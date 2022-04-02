@@ -11,3 +11,10 @@ repository = "https://github.com/jkelleyrtp/blitz"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+# dioxus = { git = "https://github.com/Demonthos/dioxus", branch = "lazy_tui", features = ["native-core"] }
+dioxus = { path = "../dioxus", features = ["native-core"] }
+stretch2 = { git = "https://github.com/Demonthos/stretch" }
+druid-shell = "0.7.0"
+tokio = { version = "1.17.0", features = ["full"] }
+parcel_css = "1.0.0-alpha.21"
+cssparser = "0.29.2"
