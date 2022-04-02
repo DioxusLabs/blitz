@@ -1,3 +1,5 @@
+use std::f32::consts::PI;
+
 use dioxus::prelude::*;
 
 fn main() {
@@ -13,20 +15,54 @@ fn app(cx: Scope) -> Element {
         async move {
             loop {
                 count.with_mut(|f| *f += 1);
-                println!("count: {}", count.current());
                 tokio::time::sleep(std::time::Duration::from_millis(10)).await;
                 update();
             }
         }
     });
 
+    let top_left = (*count.get() as f32 / 100.0).sin() * 50.0;
+    let top_right = (PI * 0.5 + *count.get() as f32 / 100.0).sin() * 50.0;
+    let bottom_right = (PI * 1.0 + *count.get() as f32 / 100.0).sin() * 50.0;
+    let bottom_left = (PI * 1.5 + *count.get() as f32 / 100.0).sin() * 50.0;
+
     cx.render(rsx! {
-        div { width: "100%",
-            div { width: "50%", height: "100%", background_color: "blue", justify_content: "center", align_items: "center",
-                "Hello {count}!"
+        div {
+            width: "100%",
+
+            div {
+                width: "50%",
+                height: "100%",
+                background_color: "blue",
+                justify_content: "center",
+                align_items: "center",
+                border_top_left_radius: "{top_left}%",
+                border_top_right_radius: "{top_right}%",
+                border_bottom_right_radius: "{bottom_right}%",
+                border_bottom_left_radius: "{bottom_left}%",
+                border_style: "solid",
+                border_color: "red",
+                border_width: "5px",
+                color: "white",
+
+                "Hello left {count}!"
             }
-            div { width: "50%", height: "100%", background_color: "red", justify_content: "center", align_items: "center",
-                "Hello {count}!"
+            div {
+                width: "50%",
+                height: "100%",
+                background_color: "red",
+                justify_content: "center",
+                align_items: "center",
+                border_top_right_radius: "{top_left}%",
+                border_top_left_radius: "{top_right}%",
+                border_bottom_left_radius: "{bottom_right}%",
+                border_bottom_right_radius: "{bottom_left}%",
+                border_style: "solid",
+                border_color: "blue",
+                border_width: "5px",
+                color: "green",
+
+                "Hello right {count}!"
             }
         }
     })

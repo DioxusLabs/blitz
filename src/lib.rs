@@ -8,6 +8,7 @@ use layout::StretchLayout;
 mod layout;
 mod render;
 mod style;
+mod util;
 mod window;
 
 type Dom = RealDom<StretchLayout, style::Style>;

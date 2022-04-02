@@ -8,7 +8,7 @@ use dioxus::prelude::{Component, VirtualDom};
 use druid_shell::{
     kurbo::Size,
     piet::{Color, Piet, RenderContext},
-    Application, Cursor, IdleToken, KeyEvent, MouseEvent, Region, WinHandler, WindowHandle,
+    Application, Cursor, KeyEvent, MouseEvent, Region, TimerToken, WinHandler, WindowHandle,
 };
 
 use crate::{render::render, Dom};
@@ -21,15 +21,16 @@ pub struct WinState {
     size: Arc<Mutex<Size>>,
     handle: WindowHandle,
     real_dom: Arc<Mutex<Dom>>,
+    dirty: Arc<Mutex<bool>>,
 }
 
 impl WinHandler for WinState {
     fn connect(&mut self, handle: &WindowHandle) {
         self.handle = handle.clone();
+        self.handle.request_timer(Duration::from_millis(10));
     }
 
     fn prepare_paint(&mut self) {
-        println!("prepare_paint");
         self.handle.invalidate();
     }
 
@@ -56,31 +57,40 @@ impl WinHandler for WinState {
         self
     }
 
-    fn key_down(&mut self, event: KeyEvent) -> bool {
+    fn key_down(&mut self, _event: KeyEvent) -> bool {
         // println!("keydown: {:?}", event);
         false
     }
 
-    fn key_up(&mut self, event: KeyEvent) {
+    fn key_up(&mut self, _event: KeyEvent) {
         // println!("keyup: {:?}", event);
     }
 
-    fn wheel(&mut self, event: &MouseEvent) {
+    fn wheel(&mut self, _event: &MouseEvent) {
         // println!("mouse_wheel {:?}", event);
     }
 
-    fn mouse_move(&mut self, event: &MouseEvent) {
+    fn mouse_move(&mut self, _event: &MouseEvent) {
         self.handle.set_cursor(&Cursor::Arrow);
         // println!("mouse_move {:?}", event);
     }
 
-    fn mouse_down(&mut self, event: &MouseEvent) {
+    fn mouse_down(&mut self, _event: &MouseEvent) {
         // println!("mouse_down {:?}", event);
     }
 
-    fn mouse_up(&mut self, event: &MouseEvent) {
+    fn mouse_up(&mut self, _event: &MouseEvent) {
         // vdom.handle_message(SchedulerMsg::Event(e));
         // println!("mouse_up {:?}", event);
+    }
+
+    // druid_shell has no update loop, so we have to continuously create timers to check for updates
+    fn timer(&mut self, _token: TimerToken) {
+        if *self.dirty.lock().unwrap() {
+            self.handle.invalidate();
+            *self.dirty.lock().unwrap() = false;
+        }
+        self.handle.request_timer(Duration::from_millis(10));
     }
 }
 
@@ -89,10 +99,12 @@ impl WinState {
     pub fn new(root: Component<()>) -> Self {
         let rdom: Arc<Mutex<Dom>> = Arc::new(Mutex::new(RealDom::new()));
         let size = Arc::new(Mutex::new(Size::default()));
+        let dirty = Arc::new(Mutex::new(true));
 
         // Spawn a thread to run the virtual dom and update the real dom.
         let weak_rdom = Arc::downgrade(&rdom);
         let weak_size = Arc::downgrade(&size);
+        let weak_dirty = Arc::downgrade(&dirty);
 
         std::thread::spawn(move || {
             tokio::runtime::Builder::new_current_thread()
@@ -112,27 +124,31 @@ impl WinState {
                             let _to_rerender = rdom
                                 .update_state(&vdom, to_update, &mut stretch, &mut ())
                                 .unwrap();
-                            let size = weak_size.upgrade().unwrap().lock().unwrap().clone();
-                            let size = stretch2::prelude::Size {
-                                width: Number::Defined(size.width as f32),
-                                height: Number::Defined(size.height as f32),
-                            };
-                            last_size = size;
-                            stretch
-                                .compute_layout(rdom[rdom.root_id()].up_state.node.unwrap(), size)
-                                .unwrap();
-                            rdom.traverse_depth_first_mut(|n| {
-                                if let Some(node) = n.up_state.node {
-                                    n.up_state.layout = Some(*stretch.layout(node).unwrap());
-                                }
-                            });
+                            if let Some(strong) = weak_size.upgrade() {
+                                let size = strong.lock().unwrap().clone();
+                                let size = stretch2::prelude::Size {
+                                    width: Number::Defined(size.width as f32),
+                                    height: Number::Defined(size.height as f32),
+                                };
+                                last_size = size;
+                                stretch
+                                    .compute_layout(
+                                        rdom[rdom.root_id()].up_state.node.unwrap(),
+                                        size,
+                                    )
+                                    .unwrap();
+                                rdom.traverse_depth_first_mut(|n| {
+                                    if let Some(node) = n.up_state.node {
+                                        n.up_state.layout = Some(*stretch.layout(node).unwrap());
+                                    }
+                                });
+                            }
                         }
                     }
                     loop {
                         vdom.wait_for_work().await;
                         if let Some(strong) = weak_rdom.upgrade() {
                             if let Ok(mut rdom) = strong.lock() {
-                                println!("working");
                                 let mutations = vdom.work_with_deadline(|| false);
                                 // update the real dom's nodes
                                 let to_update = rdom.apply_mutations(mutations);
@@ -140,33 +156,35 @@ impl WinState {
                                 let to_rerender = rdom
                                     .update_state(&vdom, to_update, &mut stretch, &mut ())
                                     .unwrap();
-                                let size = weak_size.upgrade().unwrap().lock().unwrap().clone();
-                                let size = stretch2::prelude::Size {
-                                    width: Number::Defined(size.width as f32),
-                                    height: Number::Defined(size.height as f32),
-                                };
-                                if !to_rerender.is_empty() || last_size != size {
-                                    println!("updated");
-                                    last_size = size.clone();
-                                    stretch
-                                        .compute_layout(
-                                            rdom[rdom.root_id()].up_state.node.unwrap(),
-                                            size,
-                                        )
-                                        .unwrap();
-                                    rdom.traverse_depth_first_mut(|n| {
-                                        if let Some(node) = n.up_state.node {
-                                            n.up_state.layout =
-                                                Some(*stretch.layout(node).unwrap());
-                                        }
-                                    });
+                                if let Some(strong) = weak_size.upgrade() {
+                                    let size = strong.lock().unwrap().clone();
+                                    let size = stretch2::prelude::Size {
+                                        width: Number::Defined(size.width as f32),
+                                        height: Number::Defined(size.height as f32),
+                                    };
+                                    if !to_rerender.is_empty() || last_size != size {
+                                        last_size = size.clone();
+                                        stretch
+                                            .compute_layout(
+                                                rdom[rdom.root_id()].up_state.node.unwrap(),
+                                                size,
+                                            )
+                                            .unwrap();
+                                        rdom.traverse_depth_first_mut(|n| {
+                                            if let Some(node) = n.up_state.node {
+                                                n.up_state.layout =
+                                                    Some(*stretch.layout(node).unwrap());
+                                            }
+                                        });
+                                        *weak_dirty.upgrade().unwrap().lock().unwrap() = true;
+                                    }
+                                } else {
+                                    break;
                                 }
                             } else {
-                                println!("blocked");
-                                std::thread::sleep(Duration::from_millis(100));
+                                break;
                             }
                         } else {
-                            println!("quit");
                             break;
                         }
                     }
@@ -177,6 +195,7 @@ impl WinState {
             size,
             handle: WindowHandle::default(),
             real_dom: rdom,
+            dirty,
         }
     }
 }
