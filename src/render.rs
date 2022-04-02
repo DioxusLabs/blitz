@@ -2,15 +2,33 @@ use std::f64::consts::PI;
 use std::vec::IntoIter;
 
 use dioxus::native_core::real_dom::NodeType;
-use druid_shell::kurbo::{Point, Rect, Shape, Vec2};
-use druid_shell::piet::{Piet, RenderContext, Text, TextLayoutBuilder};
+use piet_wgpu::kurbo::{Point, Rect, Shape, Vec2};
+use piet_wgpu::{kurbo, Color, Piet, RenderContext, Text, TextLayoutBuilder};
 use stretch2::prelude::Size;
 
 use crate::util::{resolve_measure, translate_color, Axis};
 use crate::{Dom, DomNode};
 
 pub fn render(dom: &Dom, piet: &mut Piet) {
-    render_node(dom, &dom[1], piet);
+    let root = &dom[1];
+    let root_layout = root.up_state.layout.unwrap();
+    let background_brush = piet.solid_brush(Color::GRAY);
+    piet.fill(
+        &Rect {
+            x0: root_layout.location.x.into(),
+            y0: root_layout.location.y.into(),
+            x1: (root_layout.location.x + root_layout.size.width).into(),
+            y1: (root_layout.location.y + root_layout.size.height).into(),
+        },
+        &background_brush,
+    );
+    render_node(dom, &root, piet);
+    match piet.finish() {
+        Ok(()) => {}
+        Err(e) => {
+            println!("{}", e);
+        }
+    }
 }
 
 fn render_node(dom: &Dom, node: &DomNode, piet: &mut Piet) {
@@ -73,6 +91,7 @@ fn render_node(dom: &Dom, node: &DomNode, piet: &mut Piet) {
             };
             piet.stroke(&shape, &stroke_brush, 5.0);
             let fill_brush = piet.solid_brush(translate_color(&style.bg_color));
+            println!("{:?}", style.bg_color);
             piet.fill(&shape, &fill_brush);
             for child in children {
                 render_node(dom, &dom[*child], piet);
@@ -114,16 +133,16 @@ impl RoundedCornerRectangle {
 }
 
 impl Shape for RoundedCornerRectangle {
-    type PathElementsIter = IntoIter<druid_shell::kurbo::PathEl>;
+    type PathElementsIter = IntoIter<kurbo::PathEl>;
 
     fn path_elements(&self, tolerance: f64) -> Self::PathElementsIter {
-        use druid_shell::kurbo::PathEl::*;
+        use kurbo::PathEl::*;
 
         let mut paths = Vec::new();
         paths.push(MoveTo(Point::new(self.x0, self.y0 + self.top_left_radius)));
 
         paths.extend(
-            druid_shell::kurbo::Arc {
+            kurbo::Arc {
                 center: Point::new(
                     self.x0 + self.top_left_radius,
                     self.y0 + self.top_left_radius,
@@ -137,7 +156,7 @@ impl Shape for RoundedCornerRectangle {
         );
         paths.push(LineTo(Point::new(self.x1 - self.top_right_radius, self.y0)));
         paths.extend(
-            druid_shell::kurbo::Arc {
+            kurbo::Arc {
                 center: Point::new(
                     self.x1 - self.top_right_radius,
                     self.y0 + self.top_right_radius,
@@ -154,7 +173,7 @@ impl Shape for RoundedCornerRectangle {
             self.y1 - self.bottom_right_radius,
         )));
         paths.extend(
-            druid_shell::kurbo::Arc {
+            kurbo::Arc {
                 center: Point::new(
                     self.x1 - self.bottom_right_radius,
                     self.y1 - self.bottom_right_radius,
@@ -171,7 +190,7 @@ impl Shape for RoundedCornerRectangle {
             self.y1,
         )));
         paths.extend(
-            druid_shell::kurbo::Arc {
+            kurbo::Arc {
                 center: Point::new(
                     self.x0 + self.bottom_left_radius,
                     self.y1 - self.bottom_left_radius,

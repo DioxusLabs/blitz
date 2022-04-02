@@ -1,111 +1,73 @@
-use std::{
-    any::Any,
-    sync::{Arc, Mutex},
-    time::Duration,
-};
+use std::sync::{Arc, Mutex, MutexGuard};
 
 use dioxus::prelude::{Component, VirtualDom};
-use druid_shell::{
-    kurbo::Size,
-    piet::{Color, Piet, RenderContext},
-    Application, Cursor, KeyEvent, MouseEvent, Region, TimerToken, WinHandler, WindowHandle,
-};
 
-use crate::{render::render, Dom};
+use piet_wgpu::{Piet, WgpuRenderer};
+use tao::{dpi::PhysicalSize, event_loop::EventLoopProxy, window::Window};
+
+use crate::{render::render, Dom, Redraw};
 use dioxus::native_core::real_dom::RealDom;
 use stretch2::{prelude::Number, Stretch};
 
-const BG_COLOR: Color = Color::BLACK;
-
-pub struct WinState {
-    size: Arc<Mutex<Size>>,
-    handle: WindowHandle,
-    real_dom: Arc<Mutex<Dom>>,
-    dirty: Arc<Mutex<bool>>,
+pub struct ApplicationState {
+    dom: DomManager,
+    wgpu_renderer: WgpuRenderer,
 }
 
-impl WinHandler for WinState {
-    fn connect(&mut self, handle: &WindowHandle) {
-        self.handle = handle.clone();
-        self.handle.request_timer(Duration::from_millis(10));
-    }
-
-    fn prepare_paint(&mut self) {
-        self.handle.invalidate();
-    }
-
-    fn paint(&mut self, piet: &mut Piet, _: &Region) {
-        let rect = self.size.lock().unwrap().clone().to_rect();
-
-        piet.fill(rect, &BG_COLOR);
-        render(&self.real_dom.lock().unwrap(), piet);
-    }
-
-    fn size(&mut self, size: Size) {
-        *self.size.lock().unwrap() = size;
-    }
-
-    fn request_close(&mut self) {
-        self.handle.close();
-    }
-
-    fn destroy(&mut self) {
-        Application::global().quit()
-    }
-
-    fn as_any(&mut self) -> &mut dyn Any {
-        self
-    }
-
-    fn key_down(&mut self, _event: KeyEvent) -> bool {
-        // println!("keydown: {:?}", event);
-        false
-    }
-
-    fn key_up(&mut self, _event: KeyEvent) {
-        // println!("keyup: {:?}", event);
-    }
-
-    fn wheel(&mut self, _event: &MouseEvent) {
-        // println!("mouse_wheel {:?}", event);
-    }
-
-    fn mouse_move(&mut self, _event: &MouseEvent) {
-        self.handle.set_cursor(&Cursor::Arrow);
-        // println!("mouse_move {:?}", event);
-    }
-
-    fn mouse_down(&mut self, _event: &MouseEvent) {
-        // println!("mouse_down {:?}", event);
-    }
-
-    fn mouse_up(&mut self, _event: &MouseEvent) {
-        // vdom.handle_message(SchedulerMsg::Event(e));
-        // println!("mouse_up {:?}", event);
-    }
-
-    // druid_shell has no update loop, so we have to continuously create timers to check for updates
-    fn timer(&mut self, _token: TimerToken) {
-        if *self.dirty.lock().unwrap() {
-            self.handle.invalidate();
-            *self.dirty.lock().unwrap() = false;
-        }
-        self.handle.request_timer(Duration::from_millis(10));
-    }
-}
-
-impl WinState {
+impl ApplicationState {
     /// Create a new window state and spawn a vdom thread.
-    pub fn new(root: Component<()>) -> Self {
-        let rdom: Arc<Mutex<Dom>> = Arc::new(Mutex::new(RealDom::new()));
-        let size = Arc::new(Mutex::new(Size::default()));
-        let dirty = Arc::new(Mutex::new(true));
+    pub fn new(root: Component<()>, window: &Window, proxy: EventLoopProxy<Redraw>) -> Self {
+        let inner_size = window.inner_size();
 
-        // Spawn a thread to run the virtual dom and update the real dom.
+        let dom = DomManager::spawn(inner_size, root, proxy);
+
+        let mut wgpu_renderer = WgpuRenderer::new(window).unwrap();
+        wgpu_renderer.set_size(piet_wgpu::kurbo::Size {
+            width: inner_size.width as f64,
+            height: inner_size.height as f64,
+        });
+        wgpu_renderer.set_scale(1.0);
+
+        ApplicationState { dom, wgpu_renderer }
+    }
+
+    pub fn render(&mut self) {
+        let mut r = Piet::new(&mut self.wgpu_renderer);
+        self.dom.render(&mut r);
+    }
+
+    pub fn set_size(&mut self, size: PhysicalSize<u32>) {
+        self.dom.set_size(size);
+        self.wgpu_renderer.set_size(piet_wgpu::kurbo::Size {
+            width: size.width as f64,
+            height: size.height as f64,
+        });
+    }
+
+    pub fn clean(&self) -> Vec<usize> {
+        self.dom.clean()
+    }
+}
+
+/// A wrapper around the DOM that manages the lifecycle of the VDom and RealDom.
+struct DomManager {
+    rdom: Arc<Mutex<Dom>>,
+    size: Arc<Mutex<PhysicalSize<u32>>>,
+    /// The node that need to be redrawn.
+    dirty: Arc<Mutex<Vec<usize>>>,
+}
+
+impl DomManager {
+    fn spawn(size: PhysicalSize<u32>, root: Component<()>, proxy: EventLoopProxy<Redraw>) -> Self {
+        let rdom: Arc<Mutex<Dom>> = Arc::new(Mutex::new(RealDom::new()));
+        let size = Arc::new(Mutex::new(size));
+        let dirty = Arc::new(Mutex::new(Vec::new()));
+
         let weak_rdom = Arc::downgrade(&rdom);
         let weak_size = Arc::downgrade(&size);
         let weak_dirty = Arc::downgrade(&dirty);
 
+        // Spawn a thread to run the virtual dom and update the real dom.
         std::thread::spawn(move || {
             tokio::runtime::Builder::new_current_thread()
                 .enable_all()
@@ -121,7 +83,7 @@ impl WinState {
                             // update the real dom's nodes
                             let to_update = rdom.apply_mutations(vec![mutations]);
                             // update the style and layout
-                            let _to_rerender = rdom
+                            let to_rerender = rdom
                                 .update_state(&vdom, to_update, &mut stretch, &mut ())
                                 .unwrap();
                             if let Some(strong) = weak_size.upgrade() {
@@ -142,6 +104,13 @@ impl WinState {
                                         n.up_state.layout = Some(*stretch.layout(node).unwrap());
                                     }
                                 });
+                                weak_dirty
+                                    .upgrade()
+                                    .unwrap()
+                                    .lock()
+                                    .unwrap()
+                                    .extend(to_rerender.iter());
+                                proxy.send_event(Redraw).unwrap();
                             }
                         }
                     }
@@ -176,7 +145,13 @@ impl WinState {
                                                     Some(*stretch.layout(node).unwrap());
                                             }
                                         });
-                                        *weak_dirty.upgrade().unwrap().lock().unwrap() = true;
+                                        weak_dirty
+                                            .upgrade()
+                                            .unwrap()
+                                            .lock()
+                                            .unwrap()
+                                            .extend(to_rerender.iter());
+                                        proxy.send_event(Redraw).unwrap();
                                     }
                                 } else {
                                     break;
@@ -190,12 +165,22 @@ impl WinState {
                     }
                 });
         });
+        Self { rdom, size, dirty }
+    }
 
-        WinState {
-            size,
-            handle: WindowHandle::default(),
-            real_dom: rdom,
-            dirty,
-        }
+    fn clean(&self) -> Vec<usize> {
+        std::mem::replace(&mut *self.dirty.lock().unwrap(), Vec::new())
+    }
+
+    fn rdom(&self) -> MutexGuard<Dom> {
+        self.rdom.lock().unwrap()
+    }
+
+    fn set_size(&self, size: PhysicalSize<u32>) {
+        *self.size.lock().unwrap() = size;
+    }
+
+    fn render(&self, renderer: &mut Piet) {
+        render(&self.rdom(), renderer);
     }
 }

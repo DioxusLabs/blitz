@@ -1,18 +1,26 @@
+use application::ApplicationState;
 use dioxus::{
     native_core::real_dom::{Node, RealDom},
     prelude::*,
 };
-use druid_shell::{Application, HotKey, Menu, SysMods, WindowBuilder};
 use layout::StretchLayout;
+use tao::{
+    event::{Event, WindowEvent},
+    event_loop::{ControlFlow, EventLoop},
+    window::WindowBuilder,
+};
 
+mod application;
 mod layout;
 mod render;
 mod style;
 mod util;
-mod window;
 
 type Dom = RealDom<StretchLayout, style::Style>;
 type DomNode = Node<StretchLayout, style::Style>;
+
+#[derive(Debug)]
+pub struct Redraw;
 
 #[derive(Default)]
 pub struct Config;
@@ -22,27 +30,56 @@ pub fn launch(root: Component<()>) {
 }
 
 pub fn launch_cfg(root: Component<()>, _cfg: Config) {
-    let app = Application::new().unwrap();
+    let event_loop = EventLoop::with_user_event();
+    let window = WindowBuilder::new().build(&event_loop).unwrap();
+    let mut appliction = ApplicationState::new(root, &window, event_loop.create_proxy());
 
-    let mut file_menu = Menu::new();
-    file_menu.add_item(
-        0x100,
-        "Exit",
-        Some(&HotKey::new(SysMods::Cmd, "c")),
-        true,
-        false,
-    );
+    event_loop.run(move |event, _, control_flow| {
+        // ControlFlow::Wait pauses the event loop if no events are available to process.
+        // This is ideal for non-game applications that only update in response to user
+        // input, and uses significantly less power/CPU time than ControlFlow::Poll.
+        *control_flow = ControlFlow::Wait;
 
-    let mut menubar = Menu::new();
-    menubar.add_dropdown(file_menu, "Application", true);
+        match event {
+            Event::WindowEvent {
+                event: WindowEvent::CloseRequested,
+                ..
+            } => {
+                println!("The close button was pressed; stopping");
+                *control_flow = ControlFlow::Exit
+            }
+            Event::MainEventsCleared => {
+                // Application update code.
 
-    let mut builder = WindowBuilder::new(app.clone());
-    builder.set_handler(Box::new(window::WinState::new(root)));
-    builder.set_title("Blitz");
-    builder.set_menu(menubar);
+                // Queue a RedrawRequested event.
+                //
+                // You only need to call this if you've determined that you need to redraw, in
+                // applications which do not always need to. Applications that redraw continuously
+                // can just render here instead.
+                window.request_redraw();
+            }
+            Event::RedrawRequested(_) => {
+                // Redraw the application.
+                //
+                // It's preferable for applications that do not render continuously to render in
+                // this event rather than in MainEventsCleared, since rendering in here allows
+                // the program to gracefully handle redraws requested by the OS.
 
-    let window = builder.build().unwrap();
-    window.show();
-
-    app.run(None);
+                if !appliction.clean().is_empty() {
+                    appliction.render();
+                }
+            }
+            Event::UserEvent(_redraw) => {
+                window.request_redraw();
+            }
+            Event::WindowEvent {
+                event: WindowEvent::Resized(physical_size),
+                window_id: _,
+                ..
+            } => {
+                appliction.set_size(physical_size);
+            }
+            _ => (),
+        }
+    });
 }

@@ -21,10 +21,10 @@ fn app(cx: Scope) -> Element {
         }
     });
 
-    let top_left = (*count.get() as f32 / 100.0).sin() * 50.0;
-    let top_right = (PI * 0.5 + *count.get() as f32 / 100.0).sin() * 50.0;
-    let bottom_right = (PI * 1.0 + *count.get() as f32 / 100.0).sin() * 50.0;
-    let bottom_left = (PI * 1.5 + *count.get() as f32 / 100.0).sin() * 50.0;
+    let top_left = (1.0 + (*count.get() as f32 / 100.0).sin()) * 25.0;
+    let top_right = (1.0 + (PI * 0.5 + *count.get() as f32 / 100.0).sin()) * 25.0;
+    let bottom_right = (1.0 + (PI * 1.0 + *count.get() as f32 / 100.0).sin()) * 25.0;
+    let bottom_left = (1.0 + (PI * 1.5 + *count.get() as f32 / 100.0).sin()) * 25.0;
 
     cx.render(rsx! {
         div {
@@ -43,7 +43,7 @@ fn app(cx: Scope) -> Element {
                 border_style: "solid",
                 border_color: "red",
                 border_width: "5px",
-                color: "white",
+                color: "red",
 
                 "Hello left {count}!"
             }
@@ -60,7 +60,7 @@ fn app(cx: Scope) -> Element {
                 border_style: "solid",
                 border_color: "blue",
                 border_width: "5px",
-                color: "green",
+                color: "blue",
 
                 "Hello right {count}!"
             }
