@@ -91,7 +91,6 @@ fn render_node(dom: &Dom, node: &DomNode, piet: &mut Piet) {
             };
             piet.stroke(&shape, &stroke_brush, 5.0);
             let fill_brush = piet.solid_brush(translate_color(&style.bg_color));
-            println!("{:?}", style.bg_color);
             piet.fill(&shape, &fill_brush);
             for child in children {
                 render_node(dom, &dom[*child], piet);
