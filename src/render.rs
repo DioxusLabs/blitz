@@ -9,9 +9,9 @@ use stretch2::prelude::Size;
 use crate::util::{resolve_measure, translate_color, Axis};
 use crate::{Dom, DomNode};
 
-pub fn render(dom: &Dom, piet: &mut Piet) {
+pub(crate) fn render(dom: &Dom, piet: &mut Piet) {
     let root = &dom[1];
-    let root_layout = root.up_state.layout.unwrap();
+    let root_layout = root.state.layout.layout.unwrap();
     let background_brush = piet.solid_brush(Color::GRAY);
     piet.fill(
         &Rect {
@@ -32,8 +32,8 @@ pub fn render(dom: &Dom, piet: &mut Piet) {
 }
 
 fn render_node(dom: &Dom, node: &DomNode, piet: &mut Piet) {
-    let style = &node.down_state;
-    let layout = node.up_state.layout.unwrap();
+    let style = &node.state.style;
+    let layout = node.state.layout.layout.unwrap();
     match &node.node_type {
         NodeType::Text { text } => {
             let text_layout = piet

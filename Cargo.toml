@@ -18,6 +18,7 @@ tokio = { version = "1.17.0", features = ["full"] }
 parcel_css = "1.0.0-alpha.21"
 cssparser = "0.29.2"
 # adds fill
-piet-wgpu = { git = "https://github.com/Demonthos/piet-wgpu" }
+piet-wgpu = { git = "https://github.com/DioxusLabs/piet-wgpu" }
 tao = "0.7.0"
 raw-window-handle = "0.4.2"
+anymap = "0.12.1"

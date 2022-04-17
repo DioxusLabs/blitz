@@ -1,5 +1,10 @@
-use std::sync::{Arc, Mutex, MutexGuard};
+use std::{
+    cell::RefCell,
+    rc::Rc,
+    sync::{Arc, Mutex, MutexGuard},
+};
 
+use anymap::AnyMap;
 use dioxus::prelude::{Component, VirtualDom};
 
 use piet_wgpu::{Piet, WgpuRenderer};
@@ -74,7 +79,7 @@ impl DomManager {
                 .build()
                 .unwrap()
                 .block_on(async {
-                    let mut stretch = Stretch::new();
+                    let stretch = Rc::new(RefCell::new(Stretch::new()));
                     let mut vdom = VirtualDom::new(root);
                     let mutations = vdom.rebuild();
                     let mut last_size = stretch2::prelude::Size::undefined();
@@ -82,26 +87,29 @@ impl DomManager {
                         if let Ok(mut rdom) = strong.lock() {
                             // update the real dom's nodes
                             let to_update = rdom.apply_mutations(vec![mutations]);
+                            let mut ctx = AnyMap::new();
+                            ctx.insert(stretch.clone());
                             // update the style and layout
-                            let to_rerender = rdom
-                                .update_state(&vdom, to_update, &mut stretch, &mut ())
-                                .unwrap();
+                            let to_rerender = rdom.update_state(&vdom, to_update, ctx).unwrap();
                             if let Some(strong) = weak_size.upgrade() {
                                 let size = strong.lock().unwrap().clone();
+
                                 let size = stretch2::prelude::Size {
                                     width: Number::Defined(size.width as f32),
                                     height: Number::Defined(size.height as f32),
                                 };
                                 last_size = size;
                                 stretch
+                                    .borrow_mut()
                                     .compute_layout(
-                                        rdom[rdom.root_id()].up_state.node.unwrap(),
+                                        rdom[rdom.root_id()].state.layout.node.unwrap(),
                                         size,
                                     )
                                     .unwrap();
                                 rdom.traverse_depth_first_mut(|n| {
-                                    if let Some(node) = n.up_state.node {
-                                        n.up_state.layout = Some(*stretch.layout(node).unwrap());
+                                    if let Some(node) = n.state.layout.node {
+                                        n.state.layout.layout =
+                                            Some(*stretch.borrow().layout(node).unwrap());
                                     }
                                 });
                                 weak_dirty
@@ -116,17 +124,23 @@ impl DomManager {
                     }
                     loop {
                         vdom.wait_for_work().await;
+
                         if let Some(strong) = weak_rdom.upgrade() {
                             if let Ok(mut rdom) = strong.lock() {
                                 let mutations = vdom.work_with_deadline(|| false);
                                 // update the real dom's nodes
+
                                 let to_update = rdom.apply_mutations(mutations);
+
+                                let mut ctx = AnyMap::new();
+                                ctx.insert(stretch.clone());
+
                                 // update the style and layout
-                                let to_rerender = rdom
-                                    .update_state(&vdom, to_update, &mut stretch, &mut ())
-                                    .unwrap();
+                                let to_rerender = rdom.update_state(&vdom, to_update, ctx).unwrap();
+
                                 if let Some(strong) = weak_size.upgrade() {
                                     let size = strong.lock().unwrap().clone();
+
                                     let size = stretch2::prelude::Size {
                                         width: Number::Defined(size.width as f32),
                                         height: Number::Defined(size.height as f32),
@@ -134,15 +148,16 @@ impl DomManager {
                                     if !to_rerender.is_empty() || last_size != size {
                                         last_size = size.clone();
                                         stretch
+                                            .borrow_mut()
                                             .compute_layout(
-                                                rdom[rdom.root_id()].up_state.node.unwrap(),
+                                                rdom[rdom.root_id()].state.layout.node.unwrap(),
                                                 size,
                                             )
                                             .unwrap();
                                         rdom.traverse_depth_first_mut(|n| {
-                                            if let Some(node) = n.up_state.node {
-                                                n.up_state.layout =
-                                                    Some(*stretch.layout(node).unwrap());
+                                            if let Some(node) = n.state.layout.node {
+                                                n.state.layout.layout =
+                                                    Some(*stretch.borrow().layout(node).unwrap());
                                             }
                                         });
                                         weak_dirty
@@ -151,6 +166,7 @@ impl DomManager {
                                             .lock()
                                             .unwrap()
                                             .extend(to_rerender.iter());
+
                                         proxy.send_event(Redraw).unwrap();
                                     }
                                 } else {
@@ -173,7 +189,9 @@ impl DomManager {
     }
 
     fn rdom(&self) -> MutexGuard<Dom> {
-        self.rdom.lock().unwrap()
+        let r = self.rdom.lock().unwrap();
+
+        r
     }
 
     fn set_size(&self, size: PhysicalSize<u32>) {

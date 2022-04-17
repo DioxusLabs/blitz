@@ -1,6 +1,7 @@
 use cssparser::{Parser, ParserInput};
-use dioxus::native_core::real_dom::PushedDownState;
-use dioxus::prelude::*;
+use dioxus::native_core::node_ref::{AttributeMask, NodeMask, NodeView};
+use dioxus::native_core::state::ParentDepState;
+use dioxus::native_core_macro::sorted_str_slice;
 use parcel_css::properties::border_radius::BorderRadius;
 use parcel_css::values::color::CssColor;
 use parcel_css::values::rect::Rect;
@@ -14,60 +15,57 @@ pub struct Style {
     pub border_radius: BorderRadius,
 }
 
-impl Style {}
-
-impl PushedDownState for Style {
+impl ParentDepState for Style {
     type Ctx = ();
-    fn reduce(
-        &mut self,
-        parent: Option<&Self>,
-        vnode: &dioxus::prelude::VNode<'_>,
-        _: &mut Self::Ctx,
-    ) {
-        *self = Style::default();
+    type DepState = Self;
+    const NODE_MASK: NodeMask =
+        NodeMask::new_with_attrs(AttributeMask::Static(SORTED_STYLE_ATTRIBUTES));
+
+    fn reduce(&mut self, node: NodeView<'_>, parent: Option<&Self>, _: &Self::Ctx) -> bool {
+        let mut new = Style::default();
 
         // pass down some attributes from the parent
         if let Some(parent) = parent {
-            self.color = parent.color.clone();
+            new.color = parent.color.clone();
         }
 
-        match vnode {
-            VNode::Element(el) => {
-                for a in el.attributes {
-                    let mut value = ParserInput::new(&a.value);
-                    let mut parser = Parser::new(&mut value);
-                    match Property::parse(a.name.into(), &mut parser, &ParserOptions::default())
-                        .unwrap()
-                    {
-                        Property::Color(c) => {
-                            self.color = c;
-                        }
-                        Property::BackgroundColor(c) => {
-                            self.bg_color = c;
-                        }
-                        Property::BorderColor(c) => {
-                            self.border_color = c;
-                        }
-                        Property::BorderRadius(r, _) => {
-                            self.border_radius = r;
-                        }
-                        Property::BorderTopLeftRadius(r, _) => {
-                            self.border_radius.top_left = r;
-                        }
-                        Property::BorderTopRightRadius(r, _) => {
-                            self.border_radius.top_right = r;
-                        }
-                        Property::BorderBottomRightRadius(r, _) => {
-                            self.border_radius.bottom_right = r;
-                        }
-                        Property::BorderBottomLeftRadius(r, _) => {
-                            self.border_radius.bottom_left = r;
-                        }
-                        _ => {}
-                    }
+        for a in node.attributes() {
+            let mut value = ParserInput::new(&a.value);
+            let mut parser = Parser::new(&mut value);
+            match Property::parse(a.name.into(), &mut parser, &ParserOptions::default()).unwrap() {
+                Property::Color(c) => {
+                    new.color = c;
                 }
+                Property::BackgroundColor(c) => {
+                    new.bg_color = c;
+                }
+                Property::BorderColor(c) => {
+                    new.border_color = c;
+                }
+                Property::BorderRadius(r, _) => {
+                    new.border_radius = r;
+                }
+                Property::BorderTopLeftRadius(r, _) => {
+                    new.border_radius.top_left = r;
+                }
+                Property::BorderTopRightRadius(r, _) => {
+                    new.border_radius.top_right = r;
+                }
+                Property::BorderBottomRightRadius(r, _) => {
+                    new.border_radius.bottom_right = r;
+                }
+                Property::BorderBottomLeftRadius(r, _) => {
+                    new.border_radius.bottom_left = r;
+                }
+                _ => {}
             }
-            _ => {}
+        }
+
+        if self != &new {
+            *self = new;
+            true
+        } else {
+            false
         }
     }
 }
@@ -83,3 +81,14 @@ impl Default for Style {
         }
     }
 }
+
+const SORTED_STYLE_ATTRIBUTES: &[&str] = &sorted_str_slice!([
+    "color",
+    "background-color",
+    "border-color",
+    "border-radius",
+    "border-top-left-radius",
+    "border-top-right-radius",
+    "border-bottom-right-radius",
+    "border-bottom-left-radius",
+]);

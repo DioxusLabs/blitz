@@ -1,6 +1,12 @@
 use application::ApplicationState;
+use dioxus::core as dioxus_core;
+use dioxus::native_core as dioxus_native_core;
 use dioxus::{
-    native_core::real_dom::{Node, RealDom},
+    native_core::{
+        real_dom::{Node, RealDom},
+        state::*,
+    },
+    native_core_macro::State,
     prelude::*,
 };
 use layout::StretchLayout;
@@ -16,8 +22,16 @@ mod render;
 mod style;
 mod util;
 
-type Dom = RealDom<StretchLayout, style::Style>;
-type DomNode = Node<StretchLayout, style::Style>;
+#[derive(Clone, PartialEq, Default, State)]
+struct BlitzNodeState {
+    #[child_dep_state(layout, Rc<RefCell<Stretch>>)]
+    layout: StretchLayout,
+    #[parent_dep_state(style)]
+    style: style::Style,
+}
+
+type Dom = RealDom<BlitzNodeState>;
+type DomNode = Node<BlitzNodeState>;
 
 #[derive(Debug)]
 pub struct Redraw;
@@ -44,10 +58,7 @@ pub fn launch_cfg(root: Component<()>, _cfg: Config) {
             Event::WindowEvent {
                 event: WindowEvent::CloseRequested,
                 ..
-            } => {
-                println!("The close button was pressed; stopping");
-                *control_flow = ControlFlow::Exit
-            }
+            } => *control_flow = ControlFlow::Exit,
             Event::MainEventsCleared => {
                 // Application update code.
 
