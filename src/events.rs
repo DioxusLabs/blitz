@@ -40,7 +40,9 @@ impl BlitzEventHandler {
         match event {
             tao::event::Event::NewEvents(_) => (),
             tao::event::Event::WindowEvent {
-                window_id, event, ..
+                window_id: _,
+                event,
+                ..
             } => {
                 match event {
                     tao::event::WindowEvent::Resized(_) => (),
@@ -53,9 +55,9 @@ impl BlitzEventHandler {
                     tao::event::WindowEvent::ReceivedImeText(_) => (),
                     tao::event::WindowEvent::Focused(_) => (),
                     tao::event::WindowEvent::KeyboardInput {
-                        device_id,
+                        device_id: _,
                         event,
-                        is_synthetic,
+                        is_synthetic: _,
                         ..
                     } => {
                         let data = KeyboardData {
@@ -134,40 +136,40 @@ impl BlitzEventHandler {
                         self.state.modifier_state = *mods;
                     }
                     tao::event::WindowEvent::CursorMoved {
-                        device_id,
+                        device_id: _,
                         position,
-                        modifiers,
+                        ..
                     } => {
                         self.state.cursor_position = *position;
                     }
-                    tao::event::WindowEvent::CursorEntered { device_id } => (),
-                    tao::event::WindowEvent::CursorLeft { device_id } => (),
+                    tao::event::WindowEvent::CursorEntered { device_id: _ } => (),
+                    tao::event::WindowEvent::CursorLeft { device_id: _ } => (),
                     tao::event::WindowEvent::MouseWheel {
-                        device_id,
-                        delta,
-                        phase,
-                        modifiers,
+                        device_id: _,
+                        delta: _,
+                        phase: _,
+                        ..
                     } => (),
                     tao::event::WindowEvent::MouseInput {
-                        device_id,
-                        state,
-                        button,
-                        modifiers,
+                        device_id: _,
+                        state: _,
+                        button: _,
+                        ..
                     } => (),
                     tao::event::WindowEvent::TouchpadPressure {
-                        device_id,
-                        pressure,
-                        stage,
+                        device_id: _,
+                        pressure: _,
+                        stage: _,
                     } => (),
                     tao::event::WindowEvent::AxisMotion {
-                        device_id,
-                        axis,
-                        value,
+                        device_id: _,
+                        axis: _,
+                        value: _,
                     } => (),
                     tao::event::WindowEvent::Touch(_) => (),
                     tao::event::WindowEvent::ScaleFactorChanged {
-                        scale_factor,
-                        new_inner_size,
+                        scale_factor: _,
+                        new_inner_size: _,
                     } => (),
                     tao::event::WindowEvent::ThemeChanged(_) => (),
                     tao::event::WindowEvent::DecorationsClick => (),
@@ -175,19 +177,21 @@ impl BlitzEventHandler {
                 }
             }
             tao::event::Event::DeviceEvent {
-                device_id, event, ..
+                device_id: _,
+                event: _,
+                ..
             } => (),
             tao::event::Event::UserEvent(_) => (),
             tao::event::Event::MenuEvent {
-                window_id,
-                menu_id,
-                origin,
+                window_id: _,
+                menu_id: _,
+                origin: _,
                 ..
             } => (),
             tao::event::Event::TrayEvent {
-                bounds,
-                event,
-                position,
+                bounds: _,
+                event: _,
+                position: _,
                 ..
             } => (),
             tao::event::Event::GlobalShortcutEvent(_) => (),
