@@ -11,14 +11,18 @@ repository = "https://github.com/DioxusLabs/blitz"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-dioxus = { git = "https://github.com/Demonthos/dioxus", branch = "lazy_tui", features = ["native-core"] }
+dioxus = { git = "https://github.com/Demonthos/dioxus", branch = "focus", features = [
+    "native-core",
+] }
 # the master branch has a fix for lazy updating the layout
 stretch2 = { git = "https://github.com/DioxusLabs/stretch" }
 tokio = { version = "1.17.0", features = ["full"] }
-parcel_css = "1.0.0-alpha.21"
+parcel_css = "1.0.0-alpha.23"
 cssparser = "0.29.2"
 # adds fill
 piet-wgpu = { git = "https://github.com/DioxusLabs/piet-wgpu" }
 tao = "0.7.0"
 raw-window-handle = "0.4.2"
 anymap = "0.12.1"
+futures-util = "0.3.21"
+fxhash = "0.2"

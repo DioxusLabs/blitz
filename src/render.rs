@@ -6,8 +6,10 @@ use piet_wgpu::kurbo::{Point, Rect, Shape, Vec2};
 use piet_wgpu::{kurbo, Color, Piet, RenderContext, Text, TextLayoutBuilder};
 use stretch2::prelude::Size;
 
-use crate::util::{resolve_measure, translate_color, Axis};
+use crate::util::{translate_color, Axis, Resolve};
 use crate::{Dom, DomNode};
+
+const FOCUS_BORDER_WIDTH: f64 = 5.0;
 
 pub(crate) fn render(dom: &Dom, piet: &mut Piet) {
     let root = &dom[1];
@@ -39,59 +41,94 @@ fn render_node(dom: &Dom, node: &DomNode, piet: &mut Piet) {
             let text_layout = piet
                 .text()
                 .new_text_layout(text.clone())
-                .text_color(translate_color(&style.color))
+                .text_color(translate_color(&style.color.0))
                 .build()
                 .unwrap();
             let pos = Point::new(layout.location.x as f64, layout.location.y as f64);
             piet.draw_text(&text_layout, pos);
         }
         NodeType::Element { children, .. } => {
-            let stroke_brush = piet.solid_brush(translate_color(&style.border_color.0));
+            let axis = Axis::Min;
+            let rect = layout.size;
+            let viewport_size = &Size {
+                width: 100.0,
+                height: 100.0,
+            };
+            let x: f64 = layout.location.x.into();
+            let y: f64 = layout.location.y.into();
+            let width: f64 = layout.size.width.into();
+            let height: f64 = layout.size.height.into();
+            let left_border_width = if node.state.focused {
+                FOCUS_BORDER_WIDTH
+            } else {
+                style.border.width.3.resolve(axis, &rect, viewport_size)
+            };
+            let right_border_width = if node.state.focused {
+                FOCUS_BORDER_WIDTH
+            } else {
+                style.border.width.1.resolve(axis, &rect, viewport_size)
+            };
+            let top_border_width = if node.state.focused {
+                FOCUS_BORDER_WIDTH
+            } else {
+                style.border.width.0.resolve(axis, &rect, viewport_size)
+            };
+            let bottom_border_width = if node.state.focused {
+                FOCUS_BORDER_WIDTH
+            } else {
+                style.border.width.2.resolve(axis, &rect, viewport_size)
+            };
+
+            // The stroke is drawn on the outside of the border, so we need to offset the rect by the border width for each side.
+            let x_start = x + left_border_width / 2.0;
+            let y_start = y + top_border_width / 2.0;
+            let x_end = x + width - right_border_width / 2.0;
+            let y_end = y + height - bottom_border_width / 2.0;
+
             let shape = RoundedCornerRectangle {
-                x0: layout.location.x.into(),
-                y0: layout.location.y.into(),
-                x1: (layout.location.x + layout.size.width).into(),
-                y1: (layout.location.y + layout.size.height).into(),
-                top_left_radius: resolve_measure(
-                    &style.border_radius.top_left.0,
-                    Axis::Min,
-                    &layout.size,
-                    &Size {
-                        width: 100.0,
-                        height: 100.0,
-                    },
+                x0: x_start,
+                y0: y_start,
+                x1: x_end,
+                y1: y_end,
+                top_left_radius: style
+                    .border
+                    .radius
+                    .top_left
+                    .0
+                    .resolve(axis, &rect, viewport_size),
+                top_right_radius: style.border.radius.top_right.0.resolve(
+                    axis,
+                    &rect,
+                    viewport_size,
                 ),
-                top_right_radius: resolve_measure(
-                    &style.border_radius.top_right.0,
-                    Axis::Min,
-                    &layout.size,
-                    &Size {
-                        width: 100.0,
-                        height: 100.0,
-                    },
+                bottom_right_radius: style.border.radius.bottom_right.0.resolve(
+                    axis,
+                    &rect,
+                    viewport_size,
                 ),
-                bottom_right_radius: resolve_measure(
-                    &style.border_radius.bottom_right.0,
-                    Axis::Min,
-                    &layout.size,
-                    &Size {
-                        width: 100.0,
-                        height: 100.0,
-                    },
-                ),
-                bottom_left_radius: resolve_measure(
-                    &style.border_radius.bottom_left.0,
-                    Axis::Min,
-                    &layout.size,
-                    &Size {
-                        width: 100.0,
-                        height: 100.0,
-                    },
+                bottom_left_radius: style.border.radius.bottom_left.0.resolve(
+                    axis,
+                    &rect,
+                    viewport_size,
                 ),
             };
-            piet.stroke(&shape, &stroke_brush, 5.0);
-            let fill_brush = piet.solid_brush(translate_color(&style.bg_color));
-            piet.fill(&shape, &fill_brush);
+            let fill_brush = piet.solid_brush(translate_color(&style.bg_color.0));
+            if node.state.focused {
+                let stroke_brush = piet.solid_brush(Color::rgb(1.0, 1.0, 1.0));
+                piet.stroke(&shape, &stroke_brush, FOCUS_BORDER_WIDTH / 2.0);
+                let mut smaller_shape = shape;
+                smaller_shape.x0 += FOCUS_BORDER_WIDTH / 2.0;
+                smaller_shape.x1 -= FOCUS_BORDER_WIDTH / 2.0;
+                smaller_shape.y0 += FOCUS_BORDER_WIDTH / 2.0;
+                smaller_shape.y1 -= FOCUS_BORDER_WIDTH / 2.0;
+                let stroke_brush = piet.solid_brush(Color::rgb(0.0, 0.0, 0.0));
+                piet.stroke(&smaller_shape, &stroke_brush, FOCUS_BORDER_WIDTH / 2.0);
+                piet.fill(&smaller_shape, &fill_brush);
+            } else {
+                let stroke_brush = piet.solid_brush(translate_color(&style.border.colors.0));
+                piet.stroke(&shape, &stroke_brush, left_border_width);
+                piet.fill(&shape, &fill_brush);
+            };
             for child in children {
                 render_node(dom, &dom[*child], piet);
             }
@@ -101,6 +138,7 @@ fn render_node(dom: &Dom, node: &DomNode, piet: &mut Piet) {
 }
 
 /// A rectangle with rounded corners with different radii.
+#[derive(Clone)]
 struct RoundedCornerRectangle {
     x0: f64,
     y0: f64,

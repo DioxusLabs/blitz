@@ -17,21 +17,27 @@ use tao::{
 };
 
 mod application;
+mod events;
+mod focus;
 mod layout;
 mod render;
 mod style;
 mod util;
 
-#[derive(Clone, PartialEq, Default, State)]
+type Dom = RealDom<BlitzNodeState>;
+type DomNode = Node<BlitzNodeState>;
+type TaoEvent<'a> = Event<'a, Redraw>;
+
+#[derive(Clone, PartialEq, Default, State, Debug)]
 struct BlitzNodeState {
     #[child_dep_state(layout, Rc<RefCell<Stretch>>)]
     layout: StretchLayout,
-    #[parent_dep_state(style)]
+    #[state]
     style: style::Style,
+    #[node_dep_state()]
+    focusable: focus::Focusable,
+    focused: bool,
 }
-
-type Dom = RealDom<BlitzNodeState>;
-type DomNode = Node<BlitzNodeState>;
 
 #[derive(Debug)]
 pub struct Redraw;
@@ -47,12 +53,15 @@ pub fn launch_cfg(root: Component<()>, _cfg: Config) {
     let event_loop = EventLoop::with_user_event();
     let window = WindowBuilder::new().build(&event_loop).unwrap();
     let mut appliction = ApplicationState::new(root, &window, event_loop.create_proxy());
+    appliction.render();
 
     event_loop.run(move |event, _, control_flow| {
         // ControlFlow::Wait pauses the event loop if no events are available to process.
         // This is ideal for non-game applications that only update in response to user
         // input, and uses significantly less power/CPU time than ControlFlow::Poll.
         *control_flow = ControlFlow::Wait;
+
+        appliction.send_event(&event);
 
         match event {
             Event::WindowEvent {
