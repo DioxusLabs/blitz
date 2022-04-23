@@ -9,7 +9,7 @@ use stretch2::prelude::Size;
 use crate::util::{translate_color, Axis, Resolve};
 use crate::{Dom, DomNode};
 
-const FOCUS_BORDER_WIDTH: f64 = 5.0;
+const FOCUS_BORDER_WIDTH: f64 = 4.0;
 
 pub(crate) fn render(dom: &Dom, piet: &mut Piet) {
     let root = &dom[1];

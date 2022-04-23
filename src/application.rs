@@ -30,7 +30,7 @@ impl ApplicationState {
     pub fn new(root: Component<()>, window: &Window, proxy: EventLoopProxy<Redraw>) -> Self {
         let inner_size = window.inner_size();
 
-        let focus_iter = Arc::new(Mutex::new(PersistantElementIter::new()));
+        let focus_iter = Arc::new(Mutex::new(PersistantElementIter::default()));
         let weak_focus_iter = Arc::downgrade(&focus_iter);
 
         let event_handler = BlitzEventHandler::new(focus_iter);

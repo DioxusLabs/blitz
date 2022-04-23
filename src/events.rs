@@ -8,14 +8,20 @@ use dioxus::{
 };
 use tao::{dpi::PhysicalPosition, keyboard::Key};
 
-use crate::{Dom, TaoEvent};
+use crate::{focus::FocusLevel, Dom, TaoEvent};
 
 #[derive(Default)]
 struct EventState {
     modifier_state: ModifiersState,
     cursor_position: PhysicalPosition<f64>,
+    focus_state: FocusState,
+}
+
+#[derive(Default)]
+struct FocusState {
     focus_iter: Arc<Mutex<PersistantElementIter>>,
     last_focused_id: Option<ElementId>,
+    focus_level: FocusLevel,
 }
 
 #[derive(Default)]
@@ -28,7 +34,11 @@ impl BlitzEventHandler {
     pub(crate) fn new(focus_iter: Arc<Mutex<PersistantElementIter>>) -> Self {
         Self {
             state: EventState {
-                focus_iter,
+                focus_state: FocusState {
+                    focus_iter,
+                    last_focused_id: None,
+                    focus_level: FocusLevel::Unfocusable,
+                },
                 ..Default::default()
             },
             ..Default::default()
@@ -93,40 +103,123 @@ impl BlitzEventHandler {
                                 });
                             }
                             if let Key::Tab = event.logical_key {
-                                if let Ok(mut focus_iter) = self.state.focus_iter.lock() {
-                                    if let Some(last) = self.state.last_focused_id {
-                                        let last_state = &mut rdom[last].state;
-                                        if !last_state.focus.pass_focus {
+                                if let Ok(mut focus_iter) = self.state.focus_state.focus_iter.lock()
+                                {
+                                    if let Some(last) = self.state.focus_state.last_focused_id {
+                                        if !rdom[last].state.focus.pass_focus {
                                             return false;
                                         }
-                                        last_state.focused = false;
                                     }
-                                    let mut new;
-                                    let mut last = self.state.last_focused_id;
+                                    let mut loop_marker_id = self.state.focus_state.last_focused_id;
+                                    let focus_level = &mut self.state.focus_state.focus_level;
                                     let shift = self.state.modifier_state.shift_key();
+                                    let mut next_focus = None;
 
                                     loop {
-                                        new = if shift {
+                                        let new = if shift {
                                             focus_iter.prev(&rdom)
                                         } else {
                                             focus_iter.next(&rdom)
                                         };
-                                        if rdom[new].state.focus.focusable {
-                                            break;
+                                        let new_id = new.id();
+                                        let current_level = rdom[new_id].state.focus.level;
+                                        if let dioxus::native_core::utils::ElementProduced::Looped(
+                                            _,
+                                        ) = new
+                                        {
+                                            let mut closest_level = None;
+
+                                            if shift {
+                                                // find the closest focusable element before the current level
+                                                rdom.traverse_depth_first(|n| {
+                                                    let current_level = n.state.focus.level;
+                                                    if current_level != *focus_level {
+                                                        if current_level < *focus_level {
+                                                            if let Some(level) = &mut closest_level
+                                                            {
+                                                                if shift && current_level > *level {
+                                                                    *level = current_level;
+                                                                }
+                                                            } else {
+                                                                closest_level = Some(current_level);
+                                                            }
+                                                        }
+                                                    }
+                                                });
+                                            } else {
+                                                // find the closest focusable element after the current level
+                                                rdom.traverse_depth_first(|n| {
+                                                    let current_level = n.state.focus.level;
+                                                    if current_level != *focus_level {
+                                                        if current_level > *focus_level {
+                                                            if let Some(level) = &mut closest_level
+                                                            {
+                                                                if current_level < *level {
+                                                                    *level = current_level;
+                                                                }
+                                                            } else {
+                                                                closest_level = Some(current_level);
+                                                            }
+                                                        }
+                                                    }
+                                                });
+                                            }
+
+                                            // extend the loop_marker_id to allow for another pass
+                                            loop_marker_id = None;
+
+                                            if let Some(level) = closest_level {
+                                                *focus_level = level;
+                                            } else {
+                                                if shift {
+                                                    *focus_level = FocusLevel::Focusable;
+                                                } else {
+                                                    *focus_level = FocusLevel::Unfocusable;
+                                                }
+                                            }
                                         }
-                                        // if we loop around give up
-                                        if let Some(last) = last {
-                                            if new == last {
-                                                return false;
+
+                                        // once we have looked at all the elements exit the loop
+                                        if let Some(last) = loop_marker_id {
+                                            if new_id == last {
+                                                break;
                                             }
                                         } else {
-                                            last = Some(new);
+                                            loop_marker_id = Some(new_id);
+                                        }
+
+                                        let after_previous_focused = if shift {
+                                            current_level <= *focus_level
+                                        } else {
+                                            current_level >= *focus_level
+                                        };
+                                        if after_previous_focused && current_level.focusable() {
+                                            if current_level == *focus_level {
+                                                next_focus = Some((new_id, current_level));
+                                                break;
+                                            }
                                         }
                                     }
 
-                                    rdom[new].state.focused = true;
-                                    self.state.last_focused_id = Some(new);
-                                    return true;
+                                    if let Some((id, order)) = next_focus {
+                                        if order.focusable() {
+                                            rdom[id].state.focused = true;
+                                            if let Some(old) =
+                                                self.state.focus_state.last_focused_id.replace(id)
+                                            {
+                                                rdom[old].state.focused = false;
+                                            }
+                                            // reset the position to the currently focused element
+                                            while if shift {
+                                                focus_iter.prev(&rdom).id()
+                                            } else {
+                                                focus_iter.next(&rdom).id()
+                                            } != id
+                                            {}
+                                            return true;
+                                        }
+                                    }
+                                    return false;
                                 }
                             }
                         }
@@ -134,7 +227,7 @@ impl BlitzEventHandler {
                         self.queued_events.push(UserEvent {
                             scope_id: None,
                             priority: EventPriority::Medium,
-                            element: self.state.last_focused_id,
+                            element: self.state.focus_state.last_focused_id,
                             name: match event.state {
                                 tao::event::ElementState::Pressed => "keydown",
                                 tao::event::ElementState::Released => "keyup",

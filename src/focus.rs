@@ -1,3 +1,5 @@
+use std::num::NonZeroU16;
+
 use dioxus::{
     native_core::{
         node_ref::{AttributeMask, NodeMask, NodeView},
@@ -6,10 +8,49 @@ use dioxus::{
     native_core_macro::sorted_str_slice,
 };
 
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Ord)]
+pub(crate) enum FocusLevel {
+    Unfocusable,
+    Focusable,
+    Ordered(std::num::NonZeroU16),
+}
+
+impl FocusLevel {
+    pub fn focusable(&self) -> bool {
+        match self {
+            FocusLevel::Unfocusable => false,
+            FocusLevel::Focusable => true,
+            FocusLevel::Ordered(_) => true,
+        }
+    }
+}
+
+impl PartialOrd for FocusLevel {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        match (self, other) {
+            (FocusLevel::Unfocusable, FocusLevel::Unfocusable) => Some(std::cmp::Ordering::Equal),
+            (FocusLevel::Unfocusable, FocusLevel::Focusable) => Some(std::cmp::Ordering::Less),
+            (FocusLevel::Unfocusable, FocusLevel::Ordered(_)) => Some(std::cmp::Ordering::Less),
+            (FocusLevel::Focusable, FocusLevel::Unfocusable) => Some(std::cmp::Ordering::Greater),
+            (FocusLevel::Focusable, FocusLevel::Focusable) => Some(std::cmp::Ordering::Equal),
+            (FocusLevel::Focusable, FocusLevel::Ordered(_)) => Some(std::cmp::Ordering::Greater),
+            (FocusLevel::Ordered(_), FocusLevel::Unfocusable) => Some(std::cmp::Ordering::Greater),
+            (FocusLevel::Ordered(_), FocusLevel::Focusable) => Some(std::cmp::Ordering::Less),
+            (FocusLevel::Ordered(a), FocusLevel::Ordered(b)) => a.partial_cmp(b),
+        }
+    }
+}
+
+impl Default for FocusLevel {
+    fn default() -> Self {
+        FocusLevel::Unfocusable
+    }
+}
+
 #[derive(Clone, PartialEq, Debug, Default)]
 pub(crate) struct Focus {
-    pub focusable: bool,
     pub pass_focus: bool,
+    pub level: FocusLevel,
 }
 
 impl NodeDepState for Focus {
@@ -20,15 +61,32 @@ impl NodeDepState for Focus {
 
     fn reduce(&mut self, node: NodeView<'_>, _sibling: &Self::DepState, _: &Self::Ctx) -> bool {
         let new = Focus {
-            focusable: node
-                .listeners()
-                .iter()
-                .any(|l| FOCUS_EVENTS.binary_search(&l.event).is_ok()),
-            pass_focus: node
+            pass_focus: !node
                 .attributes()
-                .next()
-                .filter(|a| a.value.trim() == "true")
-                .is_none(),
+                .any(|a| a.name == "dioxus-prevent-default" && a.value.trim() == "true"),
+            level: if let Some(a) = node.attributes().find(|a| a.name == "tabindex") {
+                if let Ok(index) = a.value.parse::<i32>() {
+                    if index < 0 {
+                        FocusLevel::Unfocusable
+                    } else if index == 0 {
+                        FocusLevel::Focusable
+                    } else {
+                        FocusLevel::Ordered(NonZeroU16::new(index as u16).unwrap())
+                    }
+                } else {
+                    FocusLevel::Unfocusable
+                }
+            } else {
+                if node
+                    .listeners()
+                    .iter()
+                    .any(|l| FOCUS_EVENTS.binary_search(&l.event).is_ok())
+                {
+                    FocusLevel::Focusable
+                } else {
+                    FocusLevel::Unfocusable
+                }
+            },
         };
         if *self != new {
             *self = new;
@@ -40,4 +98,4 @@ impl NodeDepState for Focus {
 }
 
 const FOCUS_EVENTS: &[&str] = &sorted_str_slice!(["keydown", "keyup", "keypress"]);
-const FOCUS_ATTRIBUTES: &[&str] = &sorted_str_slice!(["dioxus-prevent-default"]);
+const FOCUS_ATTRIBUTES: &[&str] = &sorted_str_slice!(["dioxus-prevent-default", "tabindex"]);
