@@ -26,7 +26,7 @@ mod util;
 struct BlitzNodeState {
     #[child_dep_state(layout, Rc<RefCell<Stretch>>)]
     layout: StretchLayout,
-    #[parent_dep_state(style)]
+    #[state]
     style: style::Style,
 }
 

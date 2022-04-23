@@ -39,21 +39,21 @@ fn render_node(dom: &Dom, node: &DomNode, piet: &mut Piet) {
             let text_layout = piet
                 .text()
                 .new_text_layout(text.clone())
-                .text_color(translate_color(&style.color))
+                .text_color(translate_color(&style.color.0))
                 .build()
                 .unwrap();
             let pos = Point::new(layout.location.x as f64, layout.location.y as f64);
             piet.draw_text(&text_layout, pos);
         }
         NodeType::Element { children, .. } => {
-            let stroke_brush = piet.solid_brush(translate_color(&style.border_color.0));
+            let stroke_brush = piet.solid_brush(translate_color(&style.border.colors.0));
             let shape = RoundedCornerRectangle {
                 x0: layout.location.x.into(),
                 y0: layout.location.y.into(),
                 x1: (layout.location.x + layout.size.width).into(),
                 y1: (layout.location.y + layout.size.height).into(),
                 top_left_radius: resolve_measure(
-                    &style.border_radius.top_left.0,
+                    &style.border.radius.top_left.0,
                     Axis::Min,
                     &layout.size,
                     &Size {
@@ -62,7 +62,7 @@ fn render_node(dom: &Dom, node: &DomNode, piet: &mut Piet) {
                     },
                 ),
                 top_right_radius: resolve_measure(
-                    &style.border_radius.top_right.0,
+                    &style.border.radius.top_right.0,
                     Axis::Min,
                     &layout.size,
                     &Size {
@@ -71,7 +71,7 @@ fn render_node(dom: &Dom, node: &DomNode, piet: &mut Piet) {
                     },
                 ),
                 bottom_right_radius: resolve_measure(
-                    &style.border_radius.bottom_right.0,
+                    &style.border.radius.bottom_right.0,
                     Axis::Min,
                     &layout.size,
                     &Size {
@@ -80,7 +80,7 @@ fn render_node(dom: &Dom, node: &DomNode, piet: &mut Piet) {
                     },
                 ),
                 bottom_left_radius: resolve_measure(
-                    &style.border_radius.bottom_left.0,
+                    &style.border.radius.bottom_left.0,
                     Axis::Min,
                     &layout.size,
                     &Size {
@@ -90,7 +90,7 @@ fn render_node(dom: &Dom, node: &DomNode, piet: &mut Piet) {
                 ),
             };
             piet.stroke(&shape, &stroke_brush, 5.0);
-            let fill_brush = piet.solid_brush(translate_color(&style.bg_color));
+            let fill_brush = piet.solid_brush(translate_color(&style.bg_color.0));
             piet.fill(&shape, &fill_brush);
             for child in children {
                 render_node(dom, &dom[*child], piet);
