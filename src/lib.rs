@@ -35,7 +35,7 @@ struct BlitzNodeState {
     #[state]
     style: style::Style,
     #[node_dep_state()]
-    focusable: focus::Focusable,
+    focus: focus::Focus,
     focused: bool,
 }
 

@@ -95,24 +95,35 @@ impl BlitzEventHandler {
                             if let Key::Tab = event.logical_key {
                                 if let Ok(mut focus_iter) = self.state.focus_iter.lock() {
                                     if let Some(last) = self.state.last_focused_id {
-                                        rdom[last].state.focused = false;
+                                        let last_state = &mut rdom[last].state;
+                                        if !last_state.focus.pass_focus {
+                                            return false;
+                                        }
+                                        last_state.focused = false;
                                     }
                                     let mut new;
-                                    if self.state.modifier_state.shift_key() {
-                                        loop {
-                                            new = focus_iter.prev(&rdom);
-                                            if rdom[new].state.focusable.0 {
-                                                break;
-                                            }
+                                    let mut last = self.state.last_focused_id;
+                                    let shift = self.state.modifier_state.shift_key();
+
+                                    loop {
+                                        new = if shift {
+                                            focus_iter.prev(&rdom)
+                                        } else {
+                                            focus_iter.next(&rdom)
+                                        };
+                                        if rdom[new].state.focus.focusable {
+                                            break;
                                         }
-                                    } else {
-                                        loop {
-                                            new = focus_iter.next(&rdom);
-                                            if rdom[new].state.focusable.0 {
-                                                break;
+                                        // if we loop around give up
+                                        if let Some(last) = last {
+                                            if new == last {
+                                                return false;
                                             }
+                                        } else {
+                                            last = Some(new);
                                         }
                                     }
+
                                     rdom[new].state.focused = true;
                                     self.state.last_focused_id = Some(new);
                                     return true;

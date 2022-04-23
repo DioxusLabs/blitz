@@ -26,6 +26,7 @@ fn Button(cx: Scope<ButtonProps>) -> Element {
             width: "100%",
             height: "100%",
             background_color: "{color}",
+            prevent_default: "false",
             onkeydown: |e| {
                 if let KeyCode::Space = e.data.key_code{
                     toggle.modify(|f| !f);
