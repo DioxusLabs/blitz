@@ -6,7 +6,7 @@ use piet_wgpu::kurbo::{Point, Rect, Shape, Vec2};
 use piet_wgpu::{kurbo, Color, Piet, RenderContext, Text, TextLayoutBuilder};
 use stretch2::prelude::Size;
 
-use crate::util::{resolve_measure, translate_color, Axis};
+use crate::util::{translate_color, Axis, Resolve};
 use crate::{Dom, DomNode};
 
 pub(crate) fn render(dom: &Dom, piet: &mut Piet) {
@@ -52,8 +52,7 @@ fn render_node(dom: &Dom, node: &DomNode, piet: &mut Piet) {
                 y0: layout.location.y.into(),
                 x1: (layout.location.x + layout.size.width).into(),
                 y1: (layout.location.y + layout.size.height).into(),
-                top_left_radius: resolve_measure(
-                    &style.border.radius.top_left.0,
+                top_left_radius: style.border.radius.top_left.0.resolve(
                     Axis::Min,
                     &layout.size,
                     &Size {
@@ -61,8 +60,7 @@ fn render_node(dom: &Dom, node: &DomNode, piet: &mut Piet) {
                         height: 100.0,
                     },
                 ),
-                top_right_radius: resolve_measure(
-                    &style.border.radius.top_right.0,
+                top_right_radius: style.border.radius.top_right.0.resolve(
                     Axis::Min,
                     &layout.size,
                     &Size {
@@ -70,8 +68,7 @@ fn render_node(dom: &Dom, node: &DomNode, piet: &mut Piet) {
                         height: 100.0,
                     },
                 ),
-                bottom_right_radius: resolve_measure(
-                    &style.border.radius.bottom_right.0,
+                bottom_right_radius: style.border.radius.bottom_right.0.resolve(
                     Axis::Min,
                     &layout.size,
                     &Size {
@@ -79,8 +76,7 @@ fn render_node(dom: &Dom, node: &DomNode, piet: &mut Piet) {
                         height: 100.0,
                     },
                 ),
-                bottom_left_radius: resolve_measure(
-                    &style.border.radius.bottom_left.0,
+                bottom_left_radius: style.border.radius.bottom_left.0.resolve(
                     Axis::Min,
                     &layout.size,
                     &Size {
