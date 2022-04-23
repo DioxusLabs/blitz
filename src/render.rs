@@ -46,48 +46,60 @@ fn render_node(dom: &Dom, node: &DomNode, piet: &mut Piet) {
             piet.draw_text(&text_layout, pos);
         }
         NodeType::Element { children, .. } => {
-            let stroke_brush = piet.solid_brush(translate_color(&style.border.colors.0));
+            let axis = Axis::Min;
+            let rect = layout.size;
+            let viewport_size = &Size {
+                width: 100.0,
+                height: 100.0,
+            };
+            let x: f64 = layout.location.x.into();
+            let y: f64 = layout.location.y.into();
+            let width: f64 = layout.size.width.into();
+            let height: f64 = layout.size.height.into();
+            let left_border_width = style.border.width.3.resolve(axis, &rect, viewport_size);
+            let right_border_width = style.border.width.1.resolve(axis, &rect, viewport_size);
+            let top_border_width = style.border.width.0.resolve(axis, &rect, viewport_size);
+            let bottom_border_width = style.border.width.2.resolve(axis, &rect, viewport_size);
+
+            // The stroke is drawn on the outside of the border, so we need to offset the rect by the border width for each side.
+            let x_start = x + left_border_width / 2.0;
+            let y_start = y + top_border_width / 2.0;
+            let x_end = x + width - right_border_width / 2.0;
+            let y_end = y + height - bottom_border_width / 2.0;
+
             let shape = RoundedCornerRectangle {
-                x0: layout.location.x.into(),
-                y0: layout.location.y.into(),
-                x1: (layout.location.x + layout.size.width).into(),
-                y1: (layout.location.y + layout.size.height).into(),
-                top_left_radius: style.border.radius.top_left.0.resolve(
-                    Axis::Min,
-                    &layout.size,
-                    &Size {
-                        width: 100.0,
-                        height: 100.0,
-                    },
-                ),
+                x0: x_start,
+                y0: y_start,
+                x1: x_end,
+                y1: y_end,
+                top_left_radius: style
+                    .border
+                    .radius
+                    .top_left
+                    .0
+                    .resolve(axis, &rect, viewport_size),
                 top_right_radius: style.border.radius.top_right.0.resolve(
-                    Axis::Min,
-                    &layout.size,
-                    &Size {
-                        width: 100.0,
-                        height: 100.0,
-                    },
+                    axis,
+                    &rect,
+                    viewport_size,
                 ),
                 bottom_right_radius: style.border.radius.bottom_right.0.resolve(
-                    Axis::Min,
-                    &layout.size,
-                    &Size {
-                        width: 100.0,
-                        height: 100.0,
-                    },
+                    axis,
+                    &rect,
+                    viewport_size,
                 ),
                 bottom_left_radius: style.border.radius.bottom_left.0.resolve(
-                    Axis::Min,
-                    &layout.size,
-                    &Size {
-                        width: 100.0,
-                        height: 100.0,
-                    },
+                    axis,
+                    &rect,
+                    viewport_size,
                 ),
             };
-            piet.stroke(&shape, &stroke_brush, 5.0);
             let fill_brush = piet.solid_brush(translate_color(&style.bg_color.0));
+
+            let stroke_brush = piet.solid_brush(translate_color(&style.border.colors.0));
+            piet.stroke(&shape, &stroke_brush, left_border_width);
             piet.fill(&shape, &fill_brush);
+
             for child in children {
                 render_node(dom, &dom[*child], piet);
             }
