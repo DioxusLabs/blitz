@@ -199,6 +199,6 @@ impl DomManager {
     }
 
     fn render(&self, renderer: &mut Piet) {
-        render(&self.rdom(), renderer);
+        render(&self.rdom(), renderer, self.size.lock().unwrap().clone());
     }
 }

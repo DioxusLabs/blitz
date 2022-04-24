@@ -32,11 +32,11 @@ pub(crate) fn translate_color(color: &CssColor) -> Color {
 }
 
 pub(crate) trait Resolve {
-    fn resolve(&self, axis: Axis, rect: &Size<f32>, viewport_size: &Size<f32>) -> f64;
+    fn resolve(&self, axis: Axis, rect: &Size<f32>, viewport_size: &Size<u32>) -> f64;
 }
 
 impl<T: Resolve> Resolve for Calc<T> {
-    fn resolve(&self, axis: Axis, rect: &Size<f32>, viewport_size: &Size<f32>) -> f64 {
+    fn resolve(&self, axis: Axis, rect: &Size<f32>, viewport_size: &Size<u32>) -> f64 {
         match self {
             parcel_css::values::calc::Calc::Value(v) => v.resolve(axis, rect, viewport_size),
             parcel_css::values::calc::Calc::Number(px) => *px as f64,
@@ -52,7 +52,7 @@ impl<T: Resolve> Resolve for Calc<T> {
 }
 
 impl<T: Resolve> Resolve for MathFunction<T> {
-    fn resolve(&self, axis: Axis, rect: &Size<f32>, viewport_size: &Size<f32>) -> f64 {
+    fn resolve(&self, axis: Axis, rect: &Size<f32>, viewport_size: &Size<u32>) -> f64 {
         match self {
             parcel_css::values::calc::MathFunction::Calc(c) => c.resolve(axis, rect, viewport_size),
             parcel_css::values::calc::MathFunction::Min(v) => v
@@ -77,7 +77,7 @@ impl<T: Resolve> Resolve for MathFunction<T> {
 }
 
 impl Resolve for BorderSideWidth {
-    fn resolve(&self, axis: Axis, rect: &Size<f32>, viewport_size: &Size<f32>) -> f64 {
+    fn resolve(&self, axis: Axis, rect: &Size<f32>, viewport_size: &Size<u32>) -> f64 {
         match self {
             BorderSideWidth::Thin => 2.0,
             BorderSideWidth::Medium => 4.0,
@@ -88,17 +88,25 @@ impl Resolve for BorderSideWidth {
 }
 
 impl Resolve for LengthValue {
-    fn resolve(&self, _axis: Axis, _rect: &Size<f32>, _viewport_size: &Size<f32>) -> f64 {
+    fn resolve(&self, _axis: Axis, _rect: &Size<f32>, viewport_size: &Size<u32>) -> f64 {
         use parcel_css::values::length::LengthValue::*;
         match self {
             Px(px) => *px as f64,
+            Vw(vw) => *vw as f64 * viewport_size.width as f64 / 100.0,
+            Vh(vh) => *vh as f64 * viewport_size.height as f64 / 100.0,
+            Vmin(vmin) => {
+                *vmin as f64 * viewport_size.height.min(viewport_size.width) as f64 / 100.0
+            }
+            Vmax(vmax) => {
+                *vmax as f64 * viewport_size.height.max(viewport_size.width) as f64 / 100.0
+            }
             _ => todo!(),
         }
     }
 }
 
 impl Resolve for Length {
-    fn resolve(&self, axis: Axis, rect: &Size<f32>, viewport_size: &Size<f32>) -> f64 {
+    fn resolve(&self, axis: Axis, rect: &Size<f32>, viewport_size: &Size<u32>) -> f64 {
         match self {
             Length::Value(l) => l.resolve(axis, rect, viewport_size),
             Length::Calc(c) => c.resolve(axis, rect, viewport_size),
@@ -107,7 +115,7 @@ impl Resolve for Length {
 }
 
 impl<T: Resolve> Resolve for DimensionPercentage<T> {
-    fn resolve(&self, axis: Axis, rect: &Size<f32>, viewport_size: &Size<f32>) -> f64 {
+    fn resolve(&self, axis: Axis, rect: &Size<f32>, viewport_size: &Size<u32>) -> f64 {
         match self {
             DimensionPercentage::Dimension(v) => v.resolve(axis, rect, viewport_size),
             DimensionPercentage::Percentage(p) => match axis {
