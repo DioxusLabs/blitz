@@ -1,9 +1,6 @@
-use std::f64::consts::PI;
-use std::vec::IntoIter;
-
 use dioxus::native_core::real_dom::NodeType;
-use piet_wgpu::kurbo::{Point, Rect, Shape, Vec2};
-use piet_wgpu::{kurbo, Color, Piet, RenderContext, Text, TextLayoutBuilder};
+use piet_wgpu::kurbo::{Point, Rect, RoundedRect};
+use piet_wgpu::{Color, Piet, RenderContext, Text, TextLayoutBuilder};
 use stretch2::prelude::Size;
 use tao::dpi::PhysicalSize;
 
@@ -58,11 +55,12 @@ fn render_node(dom: &Dom, node: &DomNode, piet: &mut Piet, viewport_size: &Size<
             if node.state.focused {
                 let stroke_brush = piet.solid_brush(Color::rgb(1.0, 1.0, 1.0));
                 piet.stroke(&shape, &stroke_brush, FOCUS_BORDER_WIDTH / 2.0);
-                let mut smaller_shape = shape;
-                smaller_shape.x0 += FOCUS_BORDER_WIDTH / 2.0;
-                smaller_shape.x1 -= FOCUS_BORDER_WIDTH / 2.0;
-                smaller_shape.y0 += FOCUS_BORDER_WIDTH / 2.0;
-                smaller_shape.y1 -= FOCUS_BORDER_WIDTH / 2.0;
+                let mut smaller_rect = shape.rect();
+                smaller_rect.x0 += FOCUS_BORDER_WIDTH / 2.0;
+                smaller_rect.x1 -= FOCUS_BORDER_WIDTH / 2.0;
+                smaller_rect.y0 += FOCUS_BORDER_WIDTH / 2.0;
+                smaller_rect.y1 -= FOCUS_BORDER_WIDTH / 2.0;
+                let smaller_shape = RoundedRect::from_rect(smaller_rect, shape.radii());
                 let stroke_brush = piet.solid_brush(Color::rgb(0.0, 0.0, 0.0));
                 piet.stroke(&smaller_shape, &stroke_brush, FOCUS_BORDER_WIDTH / 2.0);
                 piet.fill(&smaller_shape, &fill_brush);
@@ -88,131 +86,7 @@ fn render_node(dom: &Dom, node: &DomNode, piet: &mut Piet, viewport_size: &Size<
     }
 }
 
-/// A rectangle with rounded corners with different radii.
-#[derive(Clone)]
-pub struct RoundedCornerRectangle {
-    x0: f64,
-    y0: f64,
-    x1: f64,
-    y1: f64,
-    top_left_radius: f64,
-    top_right_radius: f64,
-    bottom_left_radius: f64,
-    bottom_right_radius: f64,
-}
-
-impl RoundedCornerRectangle {
-    pub fn width(&self) -> f64 {
-        self.x1 - self.x0
-    }
-
-    pub fn height(&self) -> f64 {
-        self.y1 - self.y0
-    }
-
-    fn radii(&self) -> [f64; 4] {
-        [
-            self.top_left_radius,
-            self.top_right_radius,
-            self.bottom_left_radius,
-            self.bottom_right_radius,
-        ]
-    }
-}
-
-impl Shape for RoundedCornerRectangle {
-    type PathElementsIter = IntoIter<kurbo::PathEl>;
-
-    fn path_elements(&self, tolerance: f64) -> Self::PathElementsIter {
-        use kurbo::PathEl::*;
-
-        let mut paths = Vec::new();
-        paths.push(MoveTo(Point::new(self.x0, self.y0 + self.top_left_radius)));
-
-        paths.extend(
-            kurbo::Arc {
-                center: Point::new(
-                    self.x0 + self.top_left_radius,
-                    self.y0 + self.top_left_radius,
-                ),
-                radii: Vec2::new(self.top_left_radius, self.top_left_radius),
-                start_angle: PI * 1.0,
-                sweep_angle: PI / 2.0,
-                x_rotation: 0.0,
-            }
-            .append_iter(tolerance),
-        );
-        paths.push(LineTo(Point::new(self.x1 - self.top_right_radius, self.y0)));
-        paths.extend(
-            kurbo::Arc {
-                center: Point::new(
-                    self.x1 - self.top_right_radius,
-                    self.y0 + self.top_right_radius,
-                ),
-                radii: Vec2::new(self.top_right_radius, self.top_right_radius),
-                start_angle: 1.5 * PI,
-                sweep_angle: PI / 2.0,
-                x_rotation: 0.0,
-            }
-            .append_iter(tolerance),
-        );
-        paths.push(LineTo(Point::new(
-            self.x1,
-            self.y1 - self.bottom_right_radius,
-        )));
-        paths.extend(
-            kurbo::Arc {
-                center: Point::new(
-                    self.x1 - self.bottom_right_radius,
-                    self.y1 - self.bottom_right_radius,
-                ),
-                radii: Vec2::new(self.bottom_right_radius, self.bottom_right_radius),
-                start_angle: PI * 0.0,
-                sweep_angle: PI / 2.0,
-                x_rotation: 0.0,
-            }
-            .append_iter(tolerance),
-        );
-        paths.push(LineTo(Point::new(
-            self.x0 + self.bottom_left_radius,
-            self.y1,
-        )));
-        paths.extend(
-            kurbo::Arc {
-                center: Point::new(
-                    self.x0 + self.bottom_left_radius,
-                    self.y1 - self.bottom_left_radius,
-                ),
-                radii: Vec2::new(self.bottom_left_radius, self.bottom_left_radius),
-                start_angle: PI * 0.5,
-                sweep_angle: PI / 2.0,
-                x_rotation: 0.0,
-            }
-            .append_iter(tolerance),
-        );
-        paths.push(ClosePath);
-
-        paths.into_iter()
-    }
-
-    fn area(&self) -> f64 {
-        self.width() * self.height() - self.radii().iter().map(|r| r * r).sum::<f64>() * PI / 4.0
-    }
-
-    fn perimeter(&self, _accuracy: f64) -> f64 {
-        2.0 * (self.width() + self.height()) + (0.5 * PI - 2.0) * self.radii().iter().sum::<f64>()
-    }
-
-    fn winding(&self, _pt: Point) -> i32 {
-        todo!()
-    }
-
-    fn bounding_box(&self) -> Rect {
-        Rect::new(self.x0, self.y0, self.x1, self.y1)
-    }
-}
-
-fn get_shape(node: &DomNode, viewport_size: &Size<u32>) -> RoundedCornerRectangle {
+fn get_shape(node: &DomNode, viewport_size: &Size<u32>) -> RoundedRect {
     let layout = node.state.layout.layout.unwrap();
     let style = &node.state.style;
 
@@ -249,33 +123,36 @@ fn get_shape(node: &DomNode, viewport_size: &Size<u32>) -> RoundedCornerRectangl
     let x_end = x + width - right_border_width / 2.0;
     let y_end = y + height - bottom_border_width / 2.0;
 
-    RoundedCornerRectangle {
-        x0: x_start,
-        y0: y_start,
-        x1: x_end,
-        y1: y_end,
-        top_left_radius: style
-            .border
-            .radius
-            .top_left
-            .0
-            .resolve(axis, &rect, &viewport_size),
-        top_right_radius: style
-            .border
-            .radius
-            .top_right
-            .0
-            .resolve(axis, &rect, &viewport_size),
-        bottom_right_radius: style.border.radius.bottom_right.0.resolve(
-            axis,
-            &rect,
-            &viewport_size,
+    RoundedRect::new(
+        x_start,
+        y_start,
+        x_end,
+        y_end,
+        (
+            style
+                .border
+                .radius
+                .top_left
+                .0
+                .resolve(axis, &rect, &viewport_size),
+            style
+                .border
+                .radius
+                .top_right
+                .0
+                .resolve(axis, &rect, &viewport_size),
+            style
+                .border
+                .radius
+                .bottom_right
+                .0
+                .resolve(axis, &rect, &viewport_size),
+            style
+                .border
+                .radius
+                .bottom_left
+                .0
+                .resolve(axis, &rect, &viewport_size),
         ),
-        bottom_left_radius: style
-            .border
-            .radius
-            .bottom_left
-            .0
-            .resolve(axis, &rect, &viewport_size),
-    }
+    )
 }
