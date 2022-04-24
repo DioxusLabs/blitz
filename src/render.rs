@@ -12,7 +12,7 @@ const FOCUS_BORDER_WIDTH: f64 = 6.0;
 pub(crate) fn render(dom: &Dom, piet: &mut Piet, window_size: PhysicalSize<u32>) {
     let root = &dom[1];
     let root_layout = root.state.layout.layout.unwrap();
-    let background_brush = piet.solid_brush(Color::GRAY);
+    let background_brush = piet.solid_brush(Color::WHITE);
     piet.fill(
         &Rect {
             x0: root_layout.location.x.into(),
