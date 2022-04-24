@@ -218,10 +218,6 @@ fn get_shape(node: &DomNode, viewport_size: &Size<u32>) -> RoundedCornerRectangl
 
     let axis = Axis::Min;
     let rect = layout.size;
-    let viewport_size = &Size {
-        width: 100.0,
-        height: 100.0,
-    };
     let x: f64 = layout.location.x.into();
     let y: f64 = layout.location.y.into();
     let width: f64 = layout.size.width.into();
