@@ -123,6 +123,7 @@ impl FocusState {
             let mut loop_marker_id = self.last_focused_id;
             let focus_level = &mut self.focus_level;
             let mut next_focus = None;
+            let starting_focus_level = *focus_level;
 
             loop {
                 let new = if forward {
@@ -180,6 +181,11 @@ impl FocusState {
                         } else {
                             *focus_level = FocusLevel::Focusable;
                         }
+                    }
+
+                    // if the focus level looped, we are done
+                    if *focus_level == starting_focus_level {
+                        break;
                     }
                 }
 
