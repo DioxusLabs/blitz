@@ -27,7 +27,7 @@ impl Default for Style {
         use cssparser::RGBA;
         Style {
             color: ForgroundColor(CssColor::RGBA(RGBA::new(0, 0, 0, 255))),
-            bg_color: BackgroundColor(CssColor::RGBA(RGBA::new(255, 255, 255, 255))),
+            bg_color: BackgroundColor(CssColor::RGBA(RGBA::new(255, 255, 255, 0))),
             border: Border::default(),
         }
     }
