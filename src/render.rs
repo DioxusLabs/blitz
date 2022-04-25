@@ -86,7 +86,7 @@ fn render_node(dom: &Dom, node: &DomNode, piet: &mut Piet, viewport_size: &Size<
     }
 }
 
-fn get_shape(node: &DomNode, viewport_size: &Size<u32>) -> RoundedRect {
+pub(crate) fn get_shape(node: &DomNode, viewport_size: &Size<u32>) -> RoundedRect {
     let layout = node.state.layout.layout.unwrap();
     let style = &node.state.style;
 

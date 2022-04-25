@@ -20,6 +20,7 @@ mod application;
 mod events;
 mod focus;
 mod layout;
+mod mouse;
 mod render;
 mod style;
 mod util;
@@ -36,6 +37,8 @@ struct BlitzNodeState {
     style: style::Style,
     #[node_dep_state()]
     focus: focus::Focus,
+    #[node_dep_state()]
+    mouse_effected: mouse::MouseEffected,
     focused: bool,
 }
 

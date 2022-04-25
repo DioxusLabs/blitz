@@ -22,7 +22,7 @@ use stretch2::{prelude::Number, Stretch};
 pub struct ApplicationState {
     dom: DomManager,
     wgpu_renderer: WgpuRenderer,
-    event_handler: BlitzEventHandler,
+    event_handler: Arc<Mutex<BlitzEventHandler>>,
 }
 
 impl ApplicationState {
@@ -33,9 +33,10 @@ impl ApplicationState {
         let focus_iter = Arc::new(Mutex::new(PersistantElementIter::default()));
         let weak_focus_iter = Arc::downgrade(&focus_iter);
 
-        let event_handler = BlitzEventHandler::new(focus_iter);
+        let event_handler = Arc::new(Mutex::new(BlitzEventHandler::new(focus_iter)));
+        let weak_event_handler = Arc::downgrade(&event_handler);
 
-        let dom = DomManager::spawn(inner_size, root, proxy, weak_focus_iter);
+        let dom = DomManager::spawn(inner_size, root, proxy, weak_focus_iter, weak_event_handler);
 
         let mut wgpu_renderer = WgpuRenderer::new(window).unwrap();
         wgpu_renderer.set_size(piet_wgpu::kurbo::Size {
@@ -72,13 +73,22 @@ impl ApplicationState {
     }
 
     pub fn send_event(&mut self, event: &TaoEvent) {
-        if self
-            .event_handler
-            .register_event(event, &mut self.dom.rdom())
+        let size = self.dom.size();
+        let size = stretch2::prelude::Size {
+            width: size.width,
+            height: size.height,
+        };
+        let evts;
+        let redraw;
         {
-            self.force_redraw()
+            let rdom = &mut self.dom.rdom();
+            let mut event_handler = self.event_handler.lock().unwrap();
+            redraw = event_handler.register_event(event, rdom, &size);
+            evts = event_handler.drain_events();
         }
-        let evts = self.event_handler.drain_events();
+        if redraw {
+            self.force_redraw();
+        }
         self.dom.send_events(evts);
     }
 
@@ -104,6 +114,7 @@ impl DomManager {
         root: Component<()>,
         proxy: EventLoopProxy<Redraw>,
         weak_focus_iter: Weak<Mutex<PersistantElementIter>>,
+        weak_event_handler: Weak<Mutex<BlitzEventHandler>>,
     ) -> Self {
         let rdom: Arc<Mutex<Dom>> = Arc::new(Mutex::new(RealDom::new()));
         let size = Arc::new(Mutex::new(size));
@@ -185,57 +196,72 @@ impl DomManager {
                             if let Ok(mut rdom) = strong.lock() {
                                 if let Some(strong) = weak_focus_iter.upgrade() {
                                     if let Ok(mut focus_iter) = strong.lock() {
-                                        let mutations = vdom.work_with_deadline(|| false);
+                                        if let Some(strong) = weak_event_handler.upgrade() {
+                                            if let Ok(mut event_handler) = strong.lock() {
+                                                let mutations = vdom.work_with_deadline(|| false);
 
-                                        for m in &mutations {
-                                            focus_iter.prune(m, &rdom);
-                                        }
+                                                for m in &mutations {
+                                                    event_handler.prune(m, &rdom);
+                                                    focus_iter.prune(m, &rdom);
+                                                }
 
-                                        // update the real dom's nodes
-                                        let to_update = rdom.apply_mutations(mutations);
+                                                // update the real dom's nodes
+                                                let to_update = rdom.apply_mutations(mutations);
 
-                                        let mut ctx = AnyMap::new();
-                                        ctx.insert(stretch.clone());
+                                                let mut ctx = AnyMap::new();
+                                                ctx.insert(stretch.clone());
 
-                                        // update the style and layout
-                                        let to_rerender =
-                                            rdom.update_state(&vdom, to_update, ctx).unwrap();
-
-                                        if let Some(strong) = weak_size.upgrade() {
-                                            let size = strong.lock().unwrap().clone();
-
-                                            let size = stretch2::prelude::Size {
-                                                width: Number::Defined(size.width as f32),
-                                                height: Number::Defined(size.height as f32),
-                                            };
-                                            if !to_rerender.is_empty() || last_size != size {
-                                                last_size = size.clone();
-                                                stretch
-                                                    .borrow_mut()
-                                                    .compute_layout(
-                                                        rdom[rdom.root_id()]
-                                                            .state
-                                                            .layout
-                                                            .node
-                                                            .unwrap(),
-                                                        size,
-                                                    )
+                                                // update the style and layout
+                                                let to_rerender = rdom
+                                                    .update_state(&vdom, to_update, ctx)
                                                     .unwrap();
-                                                rdom.traverse_depth_first_mut(|n| {
-                                                    if let Some(node) = n.state.layout.node {
-                                                        n.state.layout.layout = Some(
-                                                            *stretch.borrow().layout(node).unwrap(),
-                                                        );
-                                                    }
-                                                });
-                                                weak_dirty
-                                                    .upgrade()
-                                                    .unwrap()
-                                                    .lock()
-                                                    .unwrap()
-                                                    .extend(to_rerender.iter());
 
-                                                proxy.send_event(Redraw).unwrap();
+                                                if let Some(strong) = weak_size.upgrade() {
+                                                    let size = strong.lock().unwrap().clone();
+
+                                                    let size = stretch2::prelude::Size {
+                                                        width: Number::Defined(size.width as f32),
+                                                        height: Number::Defined(size.height as f32),
+                                                    };
+                                                    if !to_rerender.is_empty() || last_size != size
+                                                    {
+                                                        last_size = size.clone();
+                                                        stretch
+                                                            .borrow_mut()
+                                                            .compute_layout(
+                                                                rdom[rdom.root_id()]
+                                                                    .state
+                                                                    .layout
+                                                                    .node
+                                                                    .unwrap(),
+                                                                size,
+                                                            )
+                                                            .unwrap();
+                                                        rdom.traverse_depth_first_mut(|n| {
+                                                            if let Some(node) = n.state.layout.node
+                                                            {
+                                                                n.state.layout.layout = Some(
+                                                                    *stretch
+                                                                        .borrow()
+                                                                        .layout(node)
+                                                                        .unwrap(),
+                                                                );
+                                                            }
+                                                        });
+                                                        weak_dirty
+                                                            .upgrade()
+                                                            .unwrap()
+                                                            .lock()
+                                                            .unwrap()
+                                                            .extend(to_rerender.iter());
+
+                                                        proxy.send_event(Redraw).unwrap();
+                                                    }
+                                                } else {
+                                                    break;
+                                                }
+                                            } else {
+                                                break;
                                             }
                                         } else {
                                             break;
@@ -289,6 +315,10 @@ impl DomManager {
     fn set_size(&mut self, size: PhysicalSize<u32>) {
         *self.size.lock().unwrap() = size;
         self.force_redraw();
+    }
+
+    fn size(&self) -> PhysicalSize<u32> {
+        self.size.lock().unwrap().clone()
     }
 
     fn force_redraw(&mut self) {

@@ -230,4 +230,17 @@ impl FocusState {
         }
         false
     }
+
+    pub(crate) fn set_focus(&mut self, rdom: &mut Dom, id: ElementId) {
+        if let Ok(mut focus_iter) = self.focus_iter.lock() {
+            if let Some(old) = self.last_focused_id.replace(id) {
+                rdom[old].state.focused = false;
+            }
+            let state = &mut rdom[id].state;
+            state.focused = true;
+            self.focus_level = state.focus.level;
+            // reset the position to the currently focused element
+            while focus_iter.next(&rdom).id() != id {}
+        }
+    }
 }

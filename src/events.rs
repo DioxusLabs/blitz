@@ -1,23 +1,41 @@
-use std::sync::{Arc, Mutex};
-use tao::keyboard::ModifiersState;
+use piet_wgpu::kurbo::Point;
+use std::{
+    sync::{Arc, Mutex},
+    time::{Duration, Instant},
+};
+use stretch2::prelude::Size;
+use tao::{event::MouseButton, keyboard::ModifiersState};
 
 use dioxus::{
-    core::{ElementId, EventPriority, UserEvent},
-    events::KeyboardData,
-    native_core::utils::PersistantElementIter,
+    core::{ElementId, EventPriority, Mutations, UserEvent},
+    events::{KeyboardData, MouseData},
+    native_core::{real_dom::NodeType, utils::PersistantElementIter},
 };
 use tao::{dpi::PhysicalPosition, keyboard::Key};
 
 use crate::{
     focus::{FocusLevel, FocusState},
+    mouse::get_hovered,
     Dom, TaoEvent,
 };
+
+const DBL_CLICK_TIME: Duration = Duration::from_millis(500);
+
+#[derive(Default)]
+struct CursorState {
+    position: PhysicalPosition<f64>,
+    buttons: u16,
+    last_click: Option<Instant>,
+    last_pressed_element: Option<ElementId>,
+    last_clicked_element: Option<ElementId>,
+    hovered: Option<ElementId>,
+}
 
 #[derive(Default)]
 struct EventState {
     modifier_state: ModifiersState,
-    cursor_position: PhysicalPosition<f64>,
     focus_state: FocusState,
+    cursor_state: CursorState,
 }
 
 #[derive(Default)]
@@ -42,7 +60,12 @@ impl BlitzEventHandler {
     }
 
     // returns weither to force the appliction to redraw
-    pub(crate) fn register_event(&mut self, event: &TaoEvent, rdom: &mut Dom) -> bool {
+    pub(crate) fn register_event(
+        &mut self,
+        event: &TaoEvent,
+        rdom: &mut Dom,
+        viewport_size: &Size<u32>,
+    ) -> bool {
         match event {
             tao::event::Event::NewEvents(_) => (),
             tao::event::Event::WindowEvent {
@@ -126,7 +149,66 @@ impl BlitzEventHandler {
                         position,
                         ..
                     } => {
-                        self.state.cursor_position = *position;
+                        let pos = Point::new(position.x as f64, position.y as f64);
+                        let hovered = get_hovered(rdom, &viewport_size, pos);
+                        let (mouse_x, mouse_y) = (pos.x as i32, pos.y as i32);
+                        let data = MouseData {
+                            alt_key: self.state.modifier_state.alt_key(),
+                            button: 0,
+                            buttons: 0,
+                            client_x: mouse_x,
+                            client_y: mouse_y,
+                            ctrl_key: self.state.modifier_state.control_key(),
+                            meta_key: self.state.modifier_state.super_key(),
+                            page_x: mouse_x,
+                            page_y: mouse_y,
+                            screen_x: mouse_x,
+                            screen_y: mouse_y,
+                            shift_key: self.state.modifier_state.shift_key(),
+                        };
+                        match (hovered, self.state.cursor_state.hovered) {
+                            (Some(hovered), Some(old_hovered)) => {
+                                if hovered != old_hovered {
+                                    self.queued_events.push(UserEvent {
+                                        scope_id: None,
+                                        priority: EventPriority::Medium,
+                                        element: Some(hovered),
+                                        name: "mouseenter",
+                                        data: Arc::new(data.clone()),
+                                    });
+                                    self.queued_events.push(UserEvent {
+                                        scope_id: None,
+                                        priority: EventPriority::Medium,
+                                        element: Some(old_hovered),
+                                        name: "mouseleave",
+                                        data: Arc::new(data),
+                                    });
+                                    self.state.cursor_state.hovered = Some(hovered);
+                                }
+                            }
+                            (Some(hovered), None) => {
+                                self.queued_events.push(UserEvent {
+                                    scope_id: None,
+                                    priority: EventPriority::Medium,
+                                    element: Some(hovered),
+                                    name: "mouseenter",
+                                    data: Arc::new(data),
+                                });
+                                self.state.cursor_state.hovered = Some(hovered);
+                            }
+                            (None, Some(old_hovered)) => {
+                                self.queued_events.push(UserEvent {
+                                    scope_id: None,
+                                    priority: EventPriority::Medium,
+                                    element: Some(old_hovered),
+                                    name: "mouseleave",
+                                    data: Arc::new(data),
+                                });
+                                self.state.cursor_state.hovered = None;
+                            }
+                            (None, None) => (),
+                        }
+                        self.state.cursor_state.position = *position;
                     }
                     tao::event::WindowEvent::CursorEntered { device_id: _ } => (),
                     tao::event::WindowEvent::CursorLeft { device_id: _ } => (),
@@ -138,10 +220,106 @@ impl BlitzEventHandler {
                     } => (),
                     tao::event::WindowEvent::MouseInput {
                         device_id: _,
-                        state: _,
-                        button: _,
+                        state,
+                        button,
                         ..
-                    } => (),
+                    } => {
+                        if let Some(hovered) = self.state.cursor_state.hovered {
+                            let button = match button {
+                                MouseButton::Left => 0,
+                                MouseButton::Middle => 1,
+                                MouseButton::Right => 2,
+                                _ => todo!(),
+                            };
+
+                            match state {
+                                tao::event::ElementState::Pressed => {
+                                    self.state.cursor_state.buttons |= 1 >> button;
+                                }
+                                tao::event::ElementState::Released => {
+                                    self.state.cursor_state.buttons &= !(1 >> button);
+                                }
+                                _ => todo!(),
+                            }
+                            let position = self.state.cursor_state.position;
+                            let pos = Point::new(position.x as f64, position.y as f64);
+                            let (mouse_x, mouse_y) = (pos.x as i32, pos.y as i32);
+                            let data = MouseData {
+                                alt_key: self.state.modifier_state.alt_key(),
+                                button,
+                                buttons: self.state.cursor_state.buttons,
+                                client_x: mouse_x,
+                                client_y: mouse_y,
+                                ctrl_key: self.state.modifier_state.control_key(),
+                                meta_key: self.state.modifier_state.super_key(),
+                                page_x: mouse_x,
+                                page_y: mouse_y,
+                                screen_x: mouse_x,
+                                screen_y: mouse_y,
+                                shift_key: self.state.modifier_state.shift_key(),
+                            };
+                            match state {
+                                tao::event::ElementState::Pressed => {
+                                    self.queued_events.push(UserEvent {
+                                        scope_id: None,
+                                        priority: EventPriority::Medium,
+                                        element: Some(hovered),
+                                        name: "mousedown",
+                                        data: Arc::new(data),
+                                    });
+                                    self.state.cursor_state.last_pressed_element = Some(hovered);
+                                }
+                                tao::event::ElementState::Released => {
+                                    self.queued_events.push(UserEvent {
+                                        scope_id: None,
+                                        priority: EventPriority::Medium,
+                                        element: Some(hovered),
+                                        name: "mouseup",
+                                        data: Arc::new(data.clone()),
+                                    });
+
+                                    // click events only trigger if the mouse button is pressed and released on the same element
+                                    if self.state.cursor_state.last_pressed_element.take()
+                                        == Some(hovered)
+                                    {
+                                        self.queued_events.push(UserEvent {
+                                            scope_id: None,
+                                            priority: EventPriority::Medium,
+                                            element: Some(hovered),
+                                            name: "click",
+                                            data: Arc::new(data.clone()),
+                                        });
+
+                                        if let Some(last_clicked) =
+                                            self.state.cursor_state.last_click.take()
+                                        {
+                                            if self.state.cursor_state.last_clicked_element
+                                                == Some(hovered)
+                                                && last_clicked.elapsed() < DBL_CLICK_TIME
+                                            {
+                                                println!("{:?}", last_clicked.elapsed());
+                                                self.queued_events.push(UserEvent {
+                                                    scope_id: None,
+                                                    priority: EventPriority::Medium,
+                                                    element: Some(hovered),
+                                                    name: "dblclick",
+                                                    data: Arc::new(data),
+                                                });
+                                            }
+                                        }
+
+                                        self.state.cursor_state.last_clicked_element =
+                                            Some(hovered);
+                                        self.state.cursor_state.last_click = Some(Instant::now());
+                                    }
+                                }
+                                _ => todo!(),
+                            }
+                            if rdom[hovered].state.focus.level.focusable() {
+                                self.state.focus_state.set_focus(rdom, hovered);
+                            }
+                        }
+                    }
                     tao::event::WindowEvent::TouchpadPressure {
                         device_id: _,
                         pressure: _,
@@ -196,6 +374,46 @@ impl BlitzEventHandler {
         let mut events = Vec::new();
         std::mem::swap(&mut self.queued_events, &mut events);
         events
+    }
+
+    fn prune_id(&mut self, removed: ElementId) {
+        if let Some(id) = self.state.cursor_state.hovered {
+            if id == removed {
+                self.state.cursor_state.hovered = None;
+            }
+        }
+        if let Some(id) = self.state.cursor_state.last_pressed_element {
+            if id == removed {
+                self.state.cursor_state.last_pressed_element = None;
+            }
+        }
+        if let Some(id) = self.state.cursor_state.last_clicked_element {
+            if id == removed {
+                self.state.cursor_state.last_clicked_element = None;
+            }
+        }
+    }
+
+    pub(crate) fn prune(&mut self, mutations: &Mutations, rdom: &Dom) {
+        fn remove_children(handler: &mut BlitzEventHandler, rdom: &Dom, removed: ElementId) {
+            handler.prune_id(removed);
+            if let NodeType::Element { children, .. } = &rdom[removed].node_type {
+                for child in children {
+                    remove_children(handler, rdom, *child);
+                }
+            }
+        }
+        for m in &mutations.edits {
+            match m {
+                dioxus::core::DomEdit::ReplaceWith { root, .. } => {
+                    remove_children(self, rdom, ElementId(*root as usize))
+                }
+                dioxus::core::DomEdit::Remove { root } => {
+                    remove_children(self, rdom, ElementId(*root as usize))
+                }
+                _ => (),
+            }
+        }
     }
 }
 
