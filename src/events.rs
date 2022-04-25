@@ -297,7 +297,6 @@ impl BlitzEventHandler {
                                                 == Some(hovered)
                                                 && last_clicked.elapsed() < DBL_CLICK_TIME
                                             {
-                                                println!("{:?}", last_clicked.elapsed());
                                                 self.queued_events.push(UserEvent {
                                                     scope_id: None,
                                                     priority: EventPriority::Medium,
