@@ -16,6 +16,7 @@ use tao::{dpi::PhysicalPosition, keyboard::Key};
 use crate::{
     focus::{FocusLevel, FocusState},
     mouse::get_hovered,
+    node::EventPrevented,
     Dom, TaoEvent,
 };
 
@@ -258,6 +259,7 @@ impl BlitzEventHandler {
                                 screen_y: mouse_y,
                                 shift_key: self.state.modifier_state.shift_key(),
                             };
+                            let event_prevented = rdom[hovered].state.event_prevented;
                             match state {
                                 tao::event::ElementState::Pressed => {
                                     self.queued_events.push(UserEvent {
@@ -314,8 +316,10 @@ impl BlitzEventHandler {
                                 }
                                 _ => todo!(),
                             }
-                            if rdom[hovered].state.focus.level.focusable() {
-                                self.state.focus_state.set_focus(rdom, hovered);
+                            if event_prevented != EventPrevented::OnMouseUp {
+                                if rdom[hovered].state.focus.level.focusable() {
+                                    self.state.focus_state.set_focus(rdom, hovered);
+                                }
                             }
                         }
                     }

@@ -1,15 +1,10 @@
+pub use crate::widgets::textbox::textbox::{Input, TextProps};
 use application::ApplicationState;
-use dioxus::core as dioxus_core;
-use dioxus::native_core as dioxus_native_core;
 use dioxus::{
-    native_core::{
-        real_dom::{Node, RealDom},
-        state::*,
-    },
-    native_core_macro::State,
+    native_core::real_dom::{Node, RealDom},
     prelude::*,
 };
-use layout::StretchLayout;
+use node::BlitzNodeState;
 use tao::{
     event::{Event, WindowEvent},
     event_loop::{ControlFlow, EventLoop},
@@ -21,26 +16,15 @@ mod events;
 mod focus;
 mod layout;
 mod mouse;
+mod node;
 mod render;
 mod style;
 mod util;
+mod widgets;
 
 type Dom = RealDom<BlitzNodeState>;
 type DomNode = Node<BlitzNodeState>;
 type TaoEvent<'a> = Event<'a, Redraw>;
-
-#[derive(Clone, PartialEq, Default, State, Debug)]
-struct BlitzNodeState {
-    #[child_dep_state(layout, Rc<RefCell<Stretch>>)]
-    layout: StretchLayout,
-    #[state]
-    style: style::Style,
-    #[node_dep_state()]
-    focus: focus::Focus,
-    #[node_dep_state()]
-    mouse_effected: mouse::MouseEffected,
-    focused: bool,
-}
 
 #[derive(Debug)]
 pub struct Redraw;

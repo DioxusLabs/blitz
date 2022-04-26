@@ -54,7 +54,6 @@ impl Default for FocusLevel {
 
 #[derive(Clone, PartialEq, Debug, Default)]
 pub(crate) struct Focus {
-    pub pass_focus: bool,
     pub level: FocusLevel,
 }
 
@@ -66,9 +65,6 @@ impl NodeDepState for Focus {
 
     fn reduce(&mut self, node: NodeView<'_>, _sibling: &Self::DepState, _: &Self::Ctx) -> bool {
         let new = Focus {
-            pass_focus: !node
-                .attributes()
-                .any(|a| a.name == "dioxus-prevent-default" && a.value.trim() == "true"),
             level: if let Some(a) = node.attributes().find(|a| a.name == "tabindex") {
                 if let Ok(index) = a.value.parse::<i32>() {
                     if index < 0 {
@@ -115,11 +111,6 @@ pub(crate) struct FocusState {
 impl FocusState {
     pub fn progress(&mut self, rdom: &mut Dom, forward: bool) -> bool {
         if let Ok(mut focus_iter) = self.focus_iter.lock() {
-            if let Some(last) = self.last_focused_id {
-                if !rdom[last].state.focus.pass_focus {
-                    return false;
-                }
-            }
             let mut loop_marker_id = self.last_focused_id;
             let focus_level = &mut self.focus_level;
             let mut next_focus = None;
