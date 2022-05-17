@@ -5,11 +5,12 @@ use dioxus::native_core::node_ref::{AttributeMask, NodeMask, NodeView};
 use dioxus::native_core::state::NodeDepState;
 use dioxus::native_core::state::{ParentDepState, State};
 use dioxus::native_core_macro::{sorted_str_slice, State};
+use parcel_css::properties::border::BorderColor;
 use parcel_css::properties::border::BorderSideWidth;
+use parcel_css::properties::border::BorderWidth;
 use parcel_css::properties::border_radius::BorderRadius;
 use parcel_css::traits::Parse;
 use parcel_css::values::color::CssColor;
-use parcel_css::values::rect::Rect;
 use parcel_css::{properties::Property, stylesheet::ParserOptions};
 
 #[derive(Clone, PartialEq, Debug, State)]
@@ -91,8 +92,8 @@ impl ParentDepState for ForgroundColor {
 
 #[derive(Clone, PartialEq, Debug)]
 pub(crate) struct Border {
-    pub colors: Rect<CssColor>,
-    pub width: Rect<BorderSideWidth>,
+    pub colors: BorderColor,
+    pub width: BorderWidth,
     pub radius: BorderRadius,
 }
 
@@ -128,16 +129,16 @@ impl NodeDepState for Border {
                     new.colors = c;
                 }
                 Property::BorderTopColor(c) => {
-                    new.colors.0 = c;
+                    new.colors.top = c;
                 }
                 Property::BorderRightColor(c) => {
-                    new.colors.1 = c;
+                    new.colors.right = c;
                 }
                 Property::BorderBottomColor(c) => {
-                    new.colors.2 = c;
+                    new.colors.bottom = c;
                 }
                 Property::BorderLeftColor(c) => {
-                    new.colors.3 = c;
+                    new.colors.left = c;
                 }
                 Property::BorderRadius(r, _) => {
                     new.radius = r;
@@ -158,16 +159,16 @@ impl NodeDepState for Border {
                     new.width = width;
                 }
                 Property::BorderTopWidth(width) => {
-                    new.width.0 = width;
+                    new.width.top = width;
                 }
                 Property::BorderRightWidth(width) => {
-                    new.width.1 = width;
+                    new.width.right = width;
                 }
                 Property::BorderBottomWidth(width) => {
-                    new.width.2 = width;
+                    new.width.bottom = width;
                 }
                 Property::BorderLeftWidth(width) => {
-                    new.width.3 = width;
+                    new.width.left = width;
                 }
                 _ => {}
             }
@@ -185,9 +186,19 @@ impl NodeDepState for Border {
 impl Default for Border {
     fn default() -> Self {
         Border {
-            colors: Rect::default(),
+            colors: BorderColor {
+                top: CssColor::default(),
+                right: CssColor::default(),
+                bottom: CssColor::default(),
+                left: CssColor::default(),
+            },
             radius: BorderRadius::default(),
-            width: Rect::default(),
+            width: BorderWidth {
+                top: BorderSideWidth::default(),
+                right: BorderSideWidth::default(),
+                bottom: BorderSideWidth::default(),
+                left: BorderSideWidth::default(),
+            },
         }
     }
 }

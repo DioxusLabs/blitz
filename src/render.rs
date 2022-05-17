@@ -51,11 +51,11 @@ fn render_node(dom: &Dom, node: &DomNode, piet: &mut Piet, viewport_size: &Size<
             let shape = get_shape(node, viewport_size);
             let fill_brush = piet.solid_brush(translate_color(&style.bg_color.0));
 
-            let stroke_brush = piet.solid_brush(translate_color(&style.border.colors.0));
+            let stroke_brush = piet.solid_brush(translate_color(&style.border.colors.top));
             piet.stroke(
                 &shape,
                 &stroke_brush,
-                style.border.width.2.resolve(
+                style.border.width.top.resolve(
                     Axis::Min,
                     &node.state.layout.layout.unwrap().size,
                     viewport_size,
@@ -80,10 +80,18 @@ fn get_shape(node: &DomNode, viewport_size: &Size<u32>) -> RoundedRect {
     let y: f64 = layout.location.y.into();
     let width: f64 = layout.size.width.into();
     let height: f64 = layout.size.height.into();
-    let left_border_width = style.border.width.3.resolve(axis, &rect, &viewport_size);
-    let right_border_width = style.border.width.1.resolve(axis, &rect, &viewport_size);
-    let top_border_width = style.border.width.0.resolve(axis, &rect, &viewport_size);
-    let bottom_border_width = style.border.width.2.resolve(axis, &rect, &viewport_size);
+    let left_border_width = style.border.width.left.resolve(axis, &rect, &viewport_size);
+    let right_border_width = style
+        .border
+        .width
+        .right
+        .resolve(axis, &rect, &viewport_size);
+    let top_border_width = style.border.width.top.resolve(axis, &rect, &viewport_size);
+    let bottom_border_width = style
+        .border
+        .width
+        .bottom
+        .resolve(axis, &rect, &viewport_size);
 
     // The stroke is drawn on the outside of the border, so we need to offset the rect by the border width for each side.
     let x_start = x + left_border_width / 2.0;
