@@ -47,6 +47,7 @@ fn app(cx: Scope) -> Element {
 
                 "Hello left {count}!"
             }
+
             div {
                 width: "50%",
                 height: "100%",

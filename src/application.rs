@@ -12,7 +12,7 @@ use tao::{dpi::PhysicalSize, event_loop::EventLoopProxy, window::Window};
 
 use crate::{render::render, Dom, Redraw};
 use dioxus::native_core::real_dom::RealDom;
-use stretch2::{prelude::Number, Stretch};
+use taffy::{prelude::Number, Taffy};
 
 pub struct ApplicationState {
     dom: DomManager,
@@ -79,10 +79,10 @@ impl DomManager {
                 .build()
                 .unwrap()
                 .block_on(async {
-                    let stretch = Rc::new(RefCell::new(Stretch::new()));
+                    let stretch = Rc::new(RefCell::new(Taffy::new()));
                     let mut vdom = VirtualDom::new(root);
                     let mutations = vdom.rebuild();
-                    let mut last_size = stretch2::prelude::Size::undefined();
+                    let mut last_size = taffy::prelude::Size::undefined();
                     if let Some(strong) = weak_rdom.upgrade() {
                         if let Ok(mut rdom) = strong.lock() {
                             // update the real dom's nodes
@@ -94,7 +94,7 @@ impl DomManager {
                             if let Some(strong) = weak_size.upgrade() {
                                 let size = strong.lock().unwrap().clone();
 
-                                let size = stretch2::prelude::Size {
+                                let size = taffy::prelude::Size {
                                     width: Number::Defined(size.width as f32),
                                     height: Number::Defined(size.height as f32),
                                 };
@@ -141,7 +141,7 @@ impl DomManager {
                                 if let Some(strong) = weak_size.upgrade() {
                                     let size = strong.lock().unwrap().clone();
 
-                                    let size = stretch2::prelude::Size {
+                                    let size = taffy::prelude::Size {
                                         width: Number::Defined(size.width as f32),
                                         height: Number::Defined(size.height as f32),
                                     };

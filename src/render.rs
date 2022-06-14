@@ -1,7 +1,7 @@
 use dioxus::native_core::real_dom::NodeType;
 use piet_wgpu::kurbo::{Point, Rect, RoundedRect};
 use piet_wgpu::{Color, Piet, RenderContext, Text, TextLayoutBuilder};
-use stretch2::prelude::Size;
+use taffy::prelude::Size;
 use tao::dpi::PhysicalSize;
 
 use crate::util::{translate_color, Axis, Resolve};

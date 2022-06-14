@@ -44,12 +44,14 @@ impl NodeDepState for BackgroundColor {
 
     fn reduce(&mut self, node: NodeView<'_>, _sibling: &Self::DepState, _: &Self::Ctx) -> bool {
         if let Some(color_attr) = node.attributes().next() {
-            let mut value = ParserInput::new(&color_attr.value);
-            let mut parser = Parser::new(&mut value);
-            if let Ok(new_color) = CssColor::parse(&mut parser) {
-                if self.0 != new_color {
-                    *self = Self(new_color);
-                    return true;
+            if let Some(as_text) = color_attr.value.as_text() {
+                let mut value = ParserInput::new(as_text);
+                let mut parser = Parser::new(&mut value);
+                if let Ok(new_color) = CssColor::parse(&mut parser) {
+                    if self.0 != new_color {
+                        *self = Self(new_color);
+                        return true;
+                    }
                 }
             }
         }
@@ -69,10 +71,14 @@ impl ParentDepState for ForgroundColor {
             parent.0.clone()
         } else {
             if let Some(color_attr) = node.attributes().next() {
-                let mut value = ParserInput::new(&color_attr.value);
-                let mut parser = Parser::new(&mut value);
-                if let Ok(new_color) = CssColor::parse(&mut parser) {
-                    new_color
+                if let Some(as_text) = color_attr.value.as_text() {
+                    let mut value = ParserInput::new(as_text);
+                    let mut parser = Parser::new(&mut value);
+                    if let Ok(new_color) = CssColor::parse(&mut parser) {
+                        new_color
+                    } else {
+                        return false;
+                    }
                 } else {
                     return false;
                 }
@@ -122,7 +128,7 @@ impl NodeDepState for Border {
     fn reduce(&mut self, node: NodeView<'_>, _sibling: &Self::DepState, _: &Self::Ctx) -> bool {
         let mut new = Border::default();
         for a in node.attributes() {
-            let mut value = ParserInput::new(&a.value);
+            let mut value = ParserInput::new(&a.value.as_text().unwrap());
             let mut parser = Parser::new(&mut value);
             match Property::parse(a.name.into(), &mut parser, &ParserOptions::default()).unwrap() {
                 Property::BorderColor(c) => {
