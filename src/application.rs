@@ -92,13 +92,15 @@ impl DomManager {
                             // update the style and layout
                             let to_rerender = rdom.update_state(&vdom, to_update, ctx).unwrap();
                             if let Some(strong) = weak_size.upgrade() {
-                                let size = strong.lock().unwrap().clone();
+                                let size = strong.lock().unwrap();
 
                                 let size = taffy::prelude::Size {
                                     width: Number::Defined(size.width as f32),
                                     height: Number::Defined(size.height as f32),
                                 };
+
                                 last_size = size;
+
                                 stretch
                                     .borrow_mut()
                                     .compute_layout(
@@ -139,14 +141,14 @@ impl DomManager {
                                 let to_rerender = rdom.update_state(&vdom, to_update, ctx).unwrap();
 
                                 if let Some(strong) = weak_size.upgrade() {
-                                    let size = strong.lock().unwrap().clone();
+                                    let size = strong.lock().unwrap();
 
                                     let size = taffy::prelude::Size {
                                         width: Number::Defined(size.width as f32),
                                         height: Number::Defined(size.height as f32),
                                     };
                                     if !to_rerender.is_empty() || last_size != size {
-                                        last_size = size.clone();
+                                        last_size = size;
                                         stretch
                                             .borrow_mut()
                                             .compute_layout(
@@ -185,7 +187,7 @@ impl DomManager {
     }
 
     fn clean(&self) -> Vec<usize> {
-        std::mem::replace(&mut *self.dirty.lock().unwrap(), Vec::new())
+        std::mem::take(&mut *self.dirty.lock().unwrap())
     }
 
     fn rdom(&self) -> MutexGuard<Dom> {
@@ -199,6 +201,6 @@ impl DomManager {
     }
 
     fn render(&self, renderer: &mut Piet) {
-        render(&self.rdom(), renderer, self.size.lock().unwrap().clone());
+        render(&self.rdom(), renderer, *self.size.lock().unwrap());
     }
 }

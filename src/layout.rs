@@ -87,7 +87,7 @@ impl ChildDepState for StretchLayout {
             }
 
             if let Some(n) = self.node {
-                if &stretch.children(n).unwrap() != &child_layout {
+                if stretch.children(n).unwrap() != child_layout {
                     stretch.set_children(n, &child_layout).unwrap();
                     changed = true;
                 }

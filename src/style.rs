@@ -69,22 +69,20 @@ impl ParentDepState for ForgroundColor {
     fn reduce(&mut self, node: NodeView<'_>, parent: Option<&Self>, _: &Self::Ctx) -> bool {
         let new = if let Some(parent) = parent {
             parent.0.clone()
-        } else {
-            if let Some(color_attr) = node.attributes().next() {
-                if let Some(as_text) = color_attr.value.as_text() {
-                    let mut value = ParserInput::new(as_text);
-                    let mut parser = Parser::new(&mut value);
-                    if let Ok(new_color) = CssColor::parse(&mut parser) {
-                        new_color
-                    } else {
-                        return false;
-                    }
+        } else if let Some(color_attr) = node.attributes().next() {
+            if let Some(as_text) = color_attr.value.as_text() {
+                let mut value = ParserInput::new(as_text);
+                let mut parser = Parser::new(&mut value);
+                if let Ok(new_color) = CssColor::parse(&mut parser) {
+                    new_color
                 } else {
                     return false;
                 }
             } else {
                 return false;
             }
+        } else {
+            return false;
         };
 
         if self.0 != new {
@@ -128,7 +126,7 @@ impl NodeDepState for Border {
     fn reduce(&mut self, node: NodeView<'_>, _sibling: &Self::DepState, _: &Self::Ctx) -> bool {
         let mut new = Border::default();
         for a in node.attributes() {
-            let mut value = ParserInput::new(&a.value.as_text().unwrap());
+            let mut value = ParserInput::new(a.value.as_text().unwrap());
             let mut parser = Parser::new(&mut value);
             match Property::parse(a.name.into(), &mut parser, &ParserOptions::default()).unwrap() {
                 Property::BorderColor(c) => {

@@ -24,7 +24,7 @@ pub(crate) fn render(dom: &Dom, piet: &mut Piet, window_size: PhysicalSize<u32>)
         width: window_size.width,
         height: window_size.height,
     };
-    render_node(dom, &root, piet, &viewport_size);
+    render_node(dom, root, piet, &viewport_size);
     match piet.finish() {
         Ok(()) => {}
         Err(e) => {
@@ -80,18 +80,14 @@ fn get_shape(node: &DomNode, viewport_size: &Size<u32>) -> RoundedRect {
     let y: f64 = layout.location.y.into();
     let width: f64 = layout.size.width.into();
     let height: f64 = layout.size.height.into();
-    let left_border_width = style.border.width.left.resolve(axis, &rect, &viewport_size);
-    let right_border_width = style
-        .border
-        .width
-        .right
-        .resolve(axis, &rect, &viewport_size);
-    let top_border_width = style.border.width.top.resolve(axis, &rect, &viewport_size);
+    let left_border_width = style.border.width.left.resolve(axis, &rect, viewport_size);
+    let right_border_width = style.border.width.right.resolve(axis, &rect, viewport_size);
+    let top_border_width = style.border.width.top.resolve(axis, &rect, viewport_size);
     let bottom_border_width = style
         .border
         .width
         .bottom
-        .resolve(axis, &rect, &viewport_size);
+        .resolve(axis, &rect, viewport_size);
 
     // The stroke is drawn on the outside of the border, so we need to offset the rect by the border width for each side.
     let x_start = x + left_border_width / 2.0;
@@ -110,25 +106,25 @@ fn get_shape(node: &DomNode, viewport_size: &Size<u32>) -> RoundedRect {
                 .radius
                 .top_left
                 .0
-                .resolve(axis, &rect, &viewport_size),
+                .resolve(axis, &rect, viewport_size),
             style
                 .border
                 .radius
                 .top_right
                 .0
-                .resolve(axis, &rect, &viewport_size),
+                .resolve(axis, &rect, viewport_size),
             style
                 .border
                 .radius
                 .bottom_right
                 .0
-                .resolve(axis, &rect, &viewport_size),
+                .resolve(axis, &rect, viewport_size),
             style
                 .border
                 .radius
                 .bottom_left
                 .0
-                .resolve(axis, &rect, &viewport_size),
+                .resolve(axis, &rect, viewport_size),
         ),
     )
 }
