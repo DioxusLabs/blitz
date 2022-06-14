@@ -5,9 +5,19 @@ edition = "2021"
 authors = ["Jonathan Kelley <jkelleyrtp@gmail.com>"]
 description = "Native iced-wgpu based renderer for Dioxus"
 license = "MIT/Apache-2.0"
-repository = "https://github.com/jkelleyrtp/blitz"
+repository = "https://github.com/DioxusLabs/blitz"
 
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+dioxus = { version = "0.2.4", features = ["native-core"] }
+stretch2 = "0.4.2"
+tokio = { version = "1.17.0", features = ["full"] }
+parcel_css = "1.0.0-alpha.25"
+cssparser = "0.29.2"
+# adds fill
+piet-wgpu = { git = "https://github.com/DioxusLabs/piet-wgpu" }
+tao = "0.7.0"
+raw-window-handle = "0.4.2"
+anymap = "0.12.1"
