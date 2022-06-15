@@ -1,3 +1,4 @@
+use dioxus::core::ElementId;
 use dioxus::native_core::real_dom::NodeType;
 use piet_wgpu::kurbo::{Point, Rect, RoundedRect, Vec2};
 use piet_wgpu::{Color, Piet, RenderContext, Text, TextLayoutBuilder};
@@ -167,10 +168,14 @@ pub(crate) fn get_shape(node: &DomNode, viewport_size: &Size<u32>, location: Poi
     )
 }
 
-pub fn get_abs_pos(node: &DomNode, dom: &Dom) -> Point {
+pub(crate) fn get_abs_pos(node: &DomNode, dom: &Dom) -> Point {
     let mut node_layout = node.state.layout.layout.unwrap().location;
     let mut current = node;
     while let Some(parent_id) = current.parent {
+        // the root element is positioned at (0, 0)
+        if parent_id == ElementId(0) {
+            break;
+        }
         let parent = &dom[parent_id];
         current = parent;
         let parent_layout = parent.state.layout.layout.unwrap();

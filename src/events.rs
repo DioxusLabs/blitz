@@ -4,40 +4,55 @@ use std::{
     time::{Duration, Instant},
 };
 use taffy::prelude::Size;
-use tao::{event::MouseButton, keyboard::ModifiersState};
+use tao::event::MouseButton;
 
 use dioxus::{
     core::{ElementId, EventPriority, Mutations, UserEvent},
     events::{KeyboardData, MouseData},
-    native_core::{real_dom::NodeType, utils::PersistantElementIter},
-    prelude::dioxus_elements::geometry::{
-        ClientPoint, Coordinates, ElementPoint, PagePoint, ScreenPoint,
+    native_core::real_dom::NodeType,
+    prelude::dioxus_elements::{
+        geometry::{
+            euclid::Point2D, ClientPoint, Coordinates, ElementPoint, PagePoint, ScreenPoint,
+        },
+        input_data::{self, keyboard_types::Modifiers, MouseButtonSet},
     },
 };
-use tao::{dpi::PhysicalPosition, keyboard::Key};
+use tao::keyboard::Key;
 
-use crate::{
-    focus::{FocusLevel, FocusState},
-    mouse::get_hovered,
-    node::PreventDefault,
-    Dom, TaoEvent,
-};
+use crate::{focus::FocusState, mouse::get_hovered, node::PreventDefault, Dom, TaoEvent};
 
 const DBL_CLICK_TIME: Duration = Duration::from_millis(500);
 
-#[derive(Default)]
 struct CursorState {
-    position: PhysicalPosition<f64>,
-    buttons: u16,
+    position: Coordinates,
+    buttons: MouseButtonSet,
     last_click: Option<Instant>,
     last_pressed_element: Option<ElementId>,
     last_clicked_element: Option<ElementId>,
     hovered: Option<ElementId>,
 }
 
+impl Default for CursorState {
+    fn default() -> Self {
+        Self {
+            position: Coordinates::new(
+                Point2D::default(),
+                Point2D::default(),
+                Point2D::default(),
+                Point2D::default(),
+            ),
+            buttons: Default::default(),
+            last_click: Default::default(),
+            last_pressed_element: Default::default(),
+            last_clicked_element: Default::default(),
+            hovered: Default::default(),
+        }
+    }
+}
+
 #[derive(Default)]
 struct EventState {
-    modifier_state: ModifiersState,
+    modifier_state: Modifiers,
     cursor_state: CursorState,
     focus_state: Arc<Mutex<FocusState>>,
 }
@@ -93,10 +108,10 @@ impl BlitzEventHandler {
                             char_code: event.physical_key.to_scancode().unwrap_or_default(),
                             key: event.logical_key.to_text().unwrap_or_default().to_string(),
                             key_code: translate_key_code(&event.logical_key),
-                            alt_key: self.state.modifier_state.alt_key(),
-                            ctrl_key: self.state.modifier_state.control_key(),
-                            meta_key: self.state.modifier_state.super_key(),
-                            shift_key: self.state.modifier_state.shift_key(),
+                            alt_key: self.state.modifier_state.contains(Modifiers::ALT),
+                            ctrl_key: self.state.modifier_state.contains(Modifiers::CONTROL),
+                            meta_key: self.state.modifier_state.contains(Modifiers::META),
+                            shift_key: self.state.modifier_state.contains(Modifiers::SHIFT),
                             locale: "unknown".to_string(),
                             location: match event.location {
                                 tao::keyboard::KeyLocation::Standard => 0,
@@ -122,12 +137,10 @@ impl BlitzEventHandler {
                                 });
                             }
                             if let Key::Tab = event.logical_key {
-                                return self
-                                    .state
-                                    .focus_state
-                                    .lock()
-                                    .unwrap()
-                                    .progress(rdom, !self.state.modifier_state.shift_key());
+                                return self.state.focus_state.lock().unwrap().progress(
+                                    rdom,
+                                    !self.state.modifier_state.contains(Modifiers::SHIFT),
+                                );
                             }
                         }
 
@@ -144,7 +157,20 @@ impl BlitzEventHandler {
                         });
                     }
                     tao::event::WindowEvent::ModifiersChanged(mods) => {
-                        self.state.modifier_state = *mods;
+                        let mut modifiers = Modifiers::empty();
+                        if mods.alt_key() {
+                            modifiers |= Modifiers::ALT;
+                        }
+                        if mods.control_key() {
+                            modifiers |= Modifiers::CONTROL;
+                        }
+                        if mods.super_key() {
+                            modifiers |= Modifiers::META;
+                        }
+                        if mods.shift_key() {
+                            modifiers |= Modifiers::SHIFT;
+                        }
+                        self.state.modifier_state = modifiers;
                     }
                     tao::event::WindowEvent::CursorMoved {
                         device_id: _,
@@ -157,25 +183,17 @@ impl BlitzEventHandler {
                         let screen_point = ScreenPoint::new(mouse_x as f64, mouse_y as f64);
                         let client_point = ClientPoint::new(mouse_x as f64, mouse_y as f64);
                         let page_point = PagePoint::new(mouse_x as f64, mouse_y as f64);
+                        // the position of the element is subtracted later
                         let element_point = ElementPoint::new(mouse_x as f64, mouse_y as f64);
                         let position =
                             Coordinates::new(screen_point, client_point, element_point, page_point);
-                        let data = MouseData {
-                            alt_key: self.state.modifier_state.alt_key(),
-                            button: 0,
-                            buttons: 0,
-                            client_x: mouse_x,
-                            client_y: mouse_y,
-                            ctrl_key: self.state.modifier_state.control_key(),
-                            meta_key: self.state.modifier_state.super_key(),
-                            page_x: mouse_x,
-                            page_y: mouse_y,
-                            screen_x: mouse_x,
-                            screen_y: mouse_y,
-                            shift_key: self.state.modifier_state.shift_key(),
-                            offset_x: todo!(),
-                            offset_y: todo!(),
-                        };
+
+                        let data = MouseData::new(
+                            Coordinates::new(screen_point, client_point, element_point, page_point),
+                            None,
+                            self.state.cursor_state.buttons,
+                            self.state.modifier_state,
+                        );
                         match (hovered, self.state.cursor_state.hovered) {
                             (Some(hovered), Some(old_hovered)) => {
                                 if hovered != old_hovered {
@@ -218,7 +236,7 @@ impl BlitzEventHandler {
                             }
                             (None, None) => (),
                         }
-                        self.state.cursor_state.position = *position;
+                        self.state.cursor_state.position = position;
                     }
                     tao::event::WindowEvent::CursorEntered { device_id: _ } => (),
                     tao::event::WindowEvent::CursorLeft { device_id: _ } => (),
@@ -236,41 +254,42 @@ impl BlitzEventHandler {
                     } => {
                         if let Some(hovered) = self.state.cursor_state.hovered {
                             let button = match button {
-                                MouseButton::Left => 0,
-                                MouseButton::Middle => 1,
-                                MouseButton::Right => 2,
-                                _ => todo!(),
+                                MouseButton::Left => input_data::MouseButton::Primary,
+                                MouseButton::Middle => input_data::MouseButton::Auxiliary,
+                                MouseButton::Right => input_data::MouseButton::Secondary,
+                                MouseButton::Other(num) => match num {
+                                    4 => input_data::MouseButton::Fourth,
+                                    5 => input_data::MouseButton::Fifth,
+                                    _ => input_data::MouseButton::Unknown,
+                                },
+                                _ => input_data::MouseButton::Unknown,
                             };
 
                             match state {
                                 tao::event::ElementState::Pressed => {
-                                    self.state.cursor_state.buttons |= 1 >> button;
+                                    self.state.cursor_state.buttons |= button;
                                 }
                                 tao::event::ElementState::Released => {
-                                    self.state.cursor_state.buttons &= !(1 >> button);
+                                    self.state.cursor_state.buttons.remove(button);
                                 }
                                 _ => todo!(),
                             }
-                            let position = self.state.cursor_state.position;
-                            let pos = Point::new(position.x as f64, position.y as f64);
-                            let (mouse_x, mouse_y) = (pos.x as i32, pos.y as i32);
-                            let data = MouseData {
-                                alt_key: self.state.modifier_state.alt_key(),
-                                button,
-                                buttons: self.state.cursor_state.buttons,
-                                client_x: mouse_x,
-                                client_y: mouse_y,
-                                ctrl_key: self.state.modifier_state.control_key(),
-                                meta_key: self.state.modifier_state.super_key(),
-                                page_x: mouse_x,
-                                page_y: mouse_y,
-                                screen_x: mouse_x,
-                                screen_y: mouse_y,
-                                shift_key: self.state.modifier_state.shift_key(),
-                                offset_x: todo!(),
-                                offset_y: todo!(),
-                            };
-                            let prevent_default = rdom[hovered].state.prevent_default;
+
+                            let pos = &self.state.cursor_state.position;
+
+                            let data = MouseData::new(
+                                Coordinates::new(
+                                    pos.screen(),
+                                    pos.client(),
+                                    pos.element(),
+                                    pos.page(),
+                                ),
+                                None,
+                                self.state.cursor_state.buttons,
+                                self.state.modifier_state,
+                            );
+
+                            let prevent_default = &rdom[hovered].state.prevent_default;
                             match state {
                                 tao::event::ElementState::Pressed => {
                                     self.queued_events.push(UserEvent {
@@ -327,7 +346,7 @@ impl BlitzEventHandler {
                                 }
                                 _ => todo!(),
                             }
-                            if prevent_default != PreventDefault::MouseUp {
+                            if *prevent_default != PreventDefault::MouseUp {
                                 if rdom[hovered].state.focus.level.focusable() {
                                     self.state
                                         .focus_state
@@ -432,6 +451,10 @@ impl BlitzEventHandler {
                 _ => (),
             }
         }
+    }
+
+    pub(crate) fn clean(&self) -> bool {
+        self.state.focus_state.lock().unwrap().clean()
     }
 }
 

@@ -77,7 +77,16 @@ impl ApplicationState {
     }
 
     pub fn clean(&self) -> DirtyNodes {
-        self.dom.clean()
+        match self.dom.clean() {
+            DirtyNodes::All => DirtyNodes::All,
+            DirtyNodes::Some(dirty) => {
+                if self.event_handler.lock().unwrap().clean() {
+                    DirtyNodes::All
+                } else {
+                    DirtyNodes::Some(dirty)
+                }
+            }
+        }
     }
 
     pub fn send_event(&mut self, event: &TaoEvent) {
@@ -204,71 +213,14 @@ impl DomManager {
 
                         if let Some(strong) = weak_rdom.upgrade() {
                             if let Ok(mut rdom) = strong.lock() {
+                                let mutations = vdom.work_with_deadline(|| false);
                                 if let Some(strong) = weak_focus_state.upgrade() {
                                     if let Ok(mut focus_state) = strong.lock() {
                                         if let Some(strong) = weak_event_handler.upgrade() {
                                             if let Ok(mut event_handler) = strong.lock() {
-                                                let mutations = vdom.work_with_deadline(|| false);
-
                                                 for m in &mutations {
                                                     event_handler.prune(m, &rdom);
                                                     focus_state.prune(m, &rdom);
-                                                }
-
-                                                // update the real dom's nodes
-                                                let to_update = rdom.apply_mutations(mutations);
-
-                                                let mut ctx = AnyMap::new();
-                                                ctx.insert(stretch.clone());
-
-                                                // update the style and layout
-                                                let to_rerender = rdom
-                                                    .update_state(&vdom, to_update, ctx)
-                                                    .unwrap();
-
-                                                if let Some(strong) = weak_size.upgrade() {
-                                                    let size = strong.lock().unwrap().clone();
-
-                                                    let size = Size {
-                                                        width: Number::Defined(size.width as f32),
-                                                        height: Number::Defined(size.height as f32),
-                                                    };
-                                                    if !to_rerender.is_empty() || last_size != size
-                                                    {
-                                                        last_size = size.clone();
-                                                        stretch
-                                                            .borrow_mut()
-                                                            .compute_layout(
-                                                                rdom[rdom.root_id()]
-                                                                    .state
-                                                                    .layout
-                                                                    .node
-                                                                    .unwrap(),
-                                                                size,
-                                                            )
-                                                            .unwrap();
-                                                        rdom.traverse_depth_first_mut(|n| {
-                                                            if let Some(node) = n.state.layout.node
-                                                            {
-                                                                n.state.layout.layout = Some(
-                                                                    *stretch
-                                                                        .borrow()
-                                                                        .layout(node)
-                                                                        .unwrap(),
-                                                                );
-                                                            }
-                                                        });
-                                                        weak_dirty
-                                                            .upgrade()
-                                                            .unwrap()
-                                                            .lock()
-                                                            .unwrap()
-                                                            .extend(to_rerender.iter());
-
-                                                        proxy.send_event(Redraw).unwrap();
-                                                    }
-                                                } else {
-                                                    break;
                                                 }
                                             } else {
                                                 break;
@@ -278,6 +230,49 @@ impl DomManager {
                                         }
                                     } else {
                                         break;
+                                    }
+                                } else {
+                                    break;
+                                }
+                                // update the real dom's nodes
+                                let to_update = rdom.apply_mutations(mutations);
+
+                                let mut ctx = AnyMap::new();
+                                ctx.insert(stretch.clone());
+
+                                // update the style and layout
+                                let to_rerender = rdom.update_state(&vdom, to_update, ctx).unwrap();
+
+                                if let Some(strong) = weak_size.upgrade() {
+                                    let size = strong.lock().unwrap().clone();
+
+                                    let size = Size {
+                                        width: Number::Defined(size.width as f32),
+                                        height: Number::Defined(size.height as f32),
+                                    };
+                                    if !to_rerender.is_empty() || last_size != size {
+                                        last_size = size.clone();
+                                        stretch
+                                            .borrow_mut()
+                                            .compute_layout(
+                                                rdom[rdom.root_id()].state.layout.node.unwrap(),
+                                                size,
+                                            )
+                                            .unwrap();
+                                        rdom.traverse_depth_first_mut(|n| {
+                                            if let Some(node) = n.state.layout.node {
+                                                n.state.layout.layout =
+                                                    Some(*stretch.borrow().layout(node).unwrap());
+                                            }
+                                        });
+                                        weak_dirty
+                                            .upgrade()
+                                            .unwrap()
+                                            .lock()
+                                            .unwrap()
+                                            .extend(to_rerender.iter());
+
+                                        proxy.send_event(Redraw).unwrap();
                                     }
                                 } else {
                                     break;
