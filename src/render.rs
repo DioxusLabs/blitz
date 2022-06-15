@@ -1,5 +1,5 @@
 use dioxus::native_core::real_dom::NodeType;
-use piet_wgpu::kurbo::{Point, Rect, RoundedRect};
+use piet_wgpu::kurbo::{Point, Rect, RoundedRect, Vec2};
 use piet_wgpu::{Color, Piet, RenderContext, Text, TextLayoutBuilder};
 use taffy::prelude::Size;
 use tao::dpi::PhysicalSize;
@@ -26,7 +26,7 @@ pub(crate) fn render(dom: &Dom, piet: &mut Piet, window_size: PhysicalSize<u32>)
         width: window_size.width,
         height: window_size.height,
     };
-    render_node(dom, root, piet, &viewport_size);
+    render_node(dom, root, piet, Point::ZERO, &viewport_size);
     match piet.finish() {
         Ok(()) => {}
         Err(e) => {
@@ -35,9 +35,16 @@ pub(crate) fn render(dom: &Dom, piet: &mut Piet, window_size: PhysicalSize<u32>)
     }
 }
 
-fn render_node(dom: &Dom, node: &DomNode, piet: &mut Piet, viewport_size: &Size<u32>) {
+fn render_node(
+    dom: &Dom,
+    node: &DomNode,
+    piet: &mut Piet,
+    location: Point,
+    viewport_size: &Size<u32>,
+) {
     let style = &node.state.style;
     let layout = node.state.layout.layout.unwrap();
+    let pos = location + Vec2::new(layout.location.x as f64, layout.location.y as f64);
     match &node.node_type {
         NodeType::Text { text } => {
             let text_layout = piet
@@ -46,11 +53,10 @@ fn render_node(dom: &Dom, node: &DomNode, piet: &mut Piet, viewport_size: &Size<
                 .text_color(translate_color(&style.color.0))
                 .build()
                 .unwrap();
-            let pos = Point::new(layout.location.x as f64, layout.location.y as f64);
             piet.draw_text(&text_layout, pos);
         }
         NodeType::Element { children, .. } => {
-            let shape = get_shape(node, viewport_size);
+            let shape = get_shape(node, viewport_size, pos);
             let fill_brush = piet.solid_brush(translate_color(&style.bg_color.0));
             if node.state.focused {
                 let stroke_brush = piet.solid_brush(Color::rgb(1.0, 1.0, 1.0));
@@ -79,21 +85,21 @@ fn render_node(dom: &Dom, node: &DomNode, piet: &mut Piet, viewport_size: &Size<
             };
 
             for child in children {
-                render_node(dom, &dom[*child], piet, viewport_size);
+                render_node(dom, &dom[*child], piet, pos, viewport_size);
             }
         }
         _ => {}
     }
 }
 
-fn get_shape(node: &DomNode, viewport_size: &Size<u32>) -> RoundedRect {
+fn get_shape(node: &DomNode, viewport_size: &Size<u32>, location: Point) -> RoundedRect {
     let layout = node.state.layout.layout.unwrap();
     let style = &node.state.style;
 
     let axis = Axis::Min;
     let rect = layout.size;
-    let x: f64 = layout.location.x.into();
-    let y: f64 = layout.location.y.into();
+    let x: f64 = location.x;
+    let y: f64 = location.y;
     let width: f64 = layout.size.width.into();
     let height: f64 = layout.size.height.into();
     let left_border_width = if node.state.focused {
