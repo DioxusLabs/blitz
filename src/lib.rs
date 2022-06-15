@@ -1,10 +1,10 @@
+use crate::node::BlitzNodeState;
 pub use crate::widgets::textbox::textbox::{Input, TextProps};
 use application::ApplicationState;
 use dioxus::{
     native_core::real_dom::{Node, RealDom},
     prelude::*,
 };
-use node::BlitzNodeState;
 use tao::{
     event::{Event, WindowEvent},
     event_loop::{ControlFlow, EventLoop},

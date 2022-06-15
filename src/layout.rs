@@ -5,7 +5,7 @@ use dioxus::core::{Attribute, ElementId};
 use dioxus::native_core::layout_attributes::apply_layout_attributes;
 use dioxus::native_core::node_ref::{AttributeMask, NodeMask};
 use dioxus::native_core::state::ChildDepState;
-use stretch2::prelude::*;
+use taffy::prelude::*;
 
 #[derive(Clone, Default, Debug)]
 pub struct StretchLayout {
@@ -21,7 +21,7 @@ impl PartialEq<Self> for StretchLayout {
 }
 
 impl ChildDepState for StretchLayout {
-    type Ctx = Rc<RefCell<Stretch>>;
+    type Ctx = Rc<RefCell<Taffy>>;
     type DepState = Self;
 
     const NODE_MASK: NodeMask = NodeMask::new_with_attrs(AttributeMask::All).with_text();
@@ -68,8 +68,10 @@ impl ChildDepState for StretchLayout {
             // gather up all the styles from the attribute list
             let mut style = Style::default();
 
-            for &Attribute { name, value, .. } in node.attributes() {
-                apply_layout_attributes(name, value, &mut style);
+            for Attribute { name, value, .. } in node.attributes() {
+                if let Some(value) = value.as_text() {
+                    apply_layout_attributes(name, value, &mut style);
+                }
             }
 
             // the root node fills the entire area
@@ -85,7 +87,7 @@ impl ChildDepState for StretchLayout {
             }
 
             if let Some(n) = self.node {
-                if &stretch.children(n).unwrap() != &child_layout {
+                if stretch.children(n).unwrap() != child_layout {
                     stretch.set_children(n, &child_layout).unwrap();
                     changed = true;
                 }

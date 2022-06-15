@@ -1,77 +1,96 @@
 use dioxus::core as dioxus_core;
 use dioxus::native_core as dioxus_native_core;
-use dioxus::native_core::node_ref::AttributeMask;
-use dioxus::native_core::node_ref::NodeMask;
-use dioxus::native_core::node_ref::NodeView;
 use dioxus::native_core::state::*;
 use dioxus::native_core_macro::State;
 
-use crate::focus;
 use crate::layout::StretchLayout;
 use crate::mouse;
-use crate::style;
+use dioxus::native_core_macro::sorted_str_slice;
 
 #[derive(Clone, PartialEq, Default, State, Debug)]
 pub(crate) struct BlitzNodeState {
-    #[child_dep_state(layout, Rc<RefCell<Stretch>>)]
-    pub(crate) layout: StretchLayout,
-    #[state]
-    pub(crate) style: style::Style,
-    #[node_dep_state()]
-    pub(crate) focus: focus::Focus,
     #[node_dep_state()]
     pub(crate) mouse_effected: mouse::MouseEffected,
+    #[child_dep_state(layout, Rc<RefCell<Stretch>>)]
+    pub layout: StretchLayout,
+    #[state]
+    pub style: crate::style::Style,
     #[node_dep_state()]
-    pub(crate) event_prevented: EventPrevented,
-    pub(crate) focused: bool,
+    pub focus: crate::focus::Focus,
+    pub focused: bool,
+    #[node_dep_state()]
+    pub prevent_default: PreventDefault,
 }
 
-#[derive(Clone, Copy, PartialEq, Debug)]
-pub(crate) enum EventPrevented {
-    OnKeyDown,
-    OnKeyUp,
-    OnKeyPress,
-    OnMouseDown,
-    OnMouseUp,
-    OnMouseEnter,
-    OnMouseLeave,
-    OnClick,
-    OnDoubleClick,
-    None,
+#[derive(PartialEq, Debug, Clone)]
+pub(crate) enum PreventDefault {
+    Focus,
+    KeyPress,
+    KeyRelease,
+    KeyDown,
+    KeyUp,
+    MouseDown,
+    Click,
+    MouseEnter,
+    MouseLeave,
+    MouseOut,
+    Unknown,
+    MouseOver,
+    ContextMenu,
+    Wheel,
+    MouseUp,
 }
 
-impl Default for EventPrevented {
+impl Default for PreventDefault {
     fn default() -> Self {
-        EventPrevented::None
+        PreventDefault::Unknown
     }
 }
 
-impl NodeDepState for EventPrevented {
+impl NodeDepState for PreventDefault {
     type Ctx = ();
-    type DepState = ();
-    const NODE_MASK: NodeMask =
-        NodeMask::new_with_attrs(AttributeMask::Static(&["dioxus-prevent-default"]));
 
-    fn reduce(&mut self, node: NodeView<'_>, _sibling: &Self::DepState, _: &Self::Ctx) -> bool {
-        if let Some(prevent_default) = node
+    type DepState = ();
+
+    const NODE_MASK: dioxus_native_core::node_ref::NodeMask =
+        dioxus_native_core::node_ref::NodeMask::new_with_attrs(
+            dioxus_native_core::node_ref::AttributeMask::Static(&sorted_str_slice!([
+                "dioxus-prevent-default"
+            ])),
+        );
+
+    fn reduce(
+        &mut self,
+        node: dioxus_native_core::node_ref::NodeView,
+        _sibling: &Self::DepState,
+        _ctx: &Self::Ctx,
+    ) -> bool {
+        let new = match node
             .attributes()
             .find(|a| a.name == "dioxus-prevent-default")
+            .and_then(|a| a.value.as_text())
         {
-            match prevent_default.value {
-                "onkeydown" => *self = EventPrevented::OnKeyDown,
-                "onkeyup" => *self = EventPrevented::OnKeyUp,
-                "onkeypress" => *self = EventPrevented::OnKeyPress,
-                "onmousedown" => *self = EventPrevented::OnMouseDown,
-                "onmouseup" => *self = EventPrevented::OnMouseUp,
-                "onmouseenter" => *self = EventPrevented::OnMouseEnter,
-                "onmouseleave" => *self = EventPrevented::OnMouseLeave,
-                "onclick" => *self = EventPrevented::OnClick,
-                "ondblclick" => *self = EventPrevented::OnDoubleClick,
-                _ => todo!(),
-            }
-            true
-        } else {
+            Some("onfocus") => PreventDefault::Focus,
+            Some("onkeypress") => PreventDefault::KeyPress,
+            Some("onkeyrelease") => PreventDefault::KeyRelease,
+            Some("onkeydown") => PreventDefault::KeyDown,
+            Some("onkeyup") => PreventDefault::KeyUp,
+            Some("onclick") => PreventDefault::Click,
+            Some("onmousedown") => PreventDefault::MouseDown,
+            Some("onmouseup") => PreventDefault::MouseUp,
+            Some("onmouseenter") => PreventDefault::MouseEnter,
+            Some("onmouseover") => PreventDefault::MouseOver,
+            Some("onmouseleave") => PreventDefault::MouseLeave,
+            Some("onmouseout") => PreventDefault::MouseOut,
+            Some("onwheel") => PreventDefault::Wheel,
+            Some("oncontextmenu") => PreventDefault::ContextMenu,
+            _ => return false,
+        };
+        if new == *self {
             false
+        } else {
+            *self = new;
+            true
         }
     }
 }

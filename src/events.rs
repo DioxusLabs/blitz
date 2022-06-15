@@ -3,20 +3,23 @@ use std::{
     sync::{Arc, Mutex},
     time::{Duration, Instant},
 };
-use stretch2::prelude::Size;
+use taffy::prelude::Size;
 use tao::{event::MouseButton, keyboard::ModifiersState};
 
 use dioxus::{
     core::{ElementId, EventPriority, Mutations, UserEvent},
     events::{KeyboardData, MouseData},
     native_core::{real_dom::NodeType, utils::PersistantElementIter},
+    prelude::dioxus_elements::geometry::{
+        ClientPoint, Coordinates, ElementPoint, PagePoint, ScreenPoint,
+    },
 };
 use tao::{dpi::PhysicalPosition, keyboard::Key};
 
 use crate::{
     focus::{FocusLevel, FocusState},
     mouse::get_hovered,
-    node::EventPrevented,
+    node::PreventDefault,
     Dom, TaoEvent,
 };
 
@@ -35,8 +38,8 @@ struct CursorState {
 #[derive(Default)]
 struct EventState {
     modifier_state: ModifiersState,
-    focus_state: FocusState,
     cursor_state: CursorState,
+    focus_state: Arc<Mutex<FocusState>>,
 }
 
 #[derive(Default)]
@@ -46,14 +49,10 @@ pub struct BlitzEventHandler {
 }
 
 impl BlitzEventHandler {
-    pub(crate) fn new(focus_iter: Arc<Mutex<PersistantElementIter>>) -> Self {
+    pub(crate) fn new(focus_state: Arc<Mutex<FocusState>>) -> Self {
         Self {
             state: EventState {
-                focus_state: FocusState {
-                    focus_iter,
-                    last_focused_id: None,
-                    focus_level: FocusLevel::Unfocusable,
-                },
+                focus_state,
                 ..Default::default()
             },
             ..Default::default()
@@ -126,6 +125,8 @@ impl BlitzEventHandler {
                                 return self
                                     .state
                                     .focus_state
+                                    .lock()
+                                    .unwrap()
                                     .progress(rdom, !self.state.modifier_state.shift_key());
                             }
                         }
@@ -133,7 +134,7 @@ impl BlitzEventHandler {
                         self.queued_events.push(UserEvent {
                             scope_id: None,
                             priority: EventPriority::Medium,
-                            element: self.state.focus_state.last_focused_id,
+                            element: self.state.focus_state.lock().unwrap().last_focused_id,
                             name: match event.state {
                                 tao::event::ElementState::Pressed => "keydown",
                                 tao::event::ElementState::Released => "keyup",
@@ -151,8 +152,14 @@ impl BlitzEventHandler {
                         ..
                     } => {
                         let pos = Point::new(position.x as f64, position.y as f64);
-                        let hovered = get_hovered(rdom, &viewport_size, pos);
+                        let hovered = get_hovered(rdom, viewport_size, pos);
                         let (mouse_x, mouse_y) = (pos.x as i32, pos.y as i32);
+                        let screen_point = ScreenPoint::new(mouse_x as f64, mouse_y as f64);
+                        let client_point = ClientPoint::new(mouse_x as f64, mouse_y as f64);
+                        let page_point = PagePoint::new(mouse_x as f64, mouse_y as f64);
+                        let element_point = ElementPoint::new(mouse_x as f64, mouse_y as f64);
+                        let position =
+                            Coordinates::new(screen_point, client_point, element_point, page_point);
                         let data = MouseData {
                             alt_key: self.state.modifier_state.alt_key(),
                             button: 0,
@@ -166,6 +173,8 @@ impl BlitzEventHandler {
                             screen_x: mouse_x,
                             screen_y: mouse_y,
                             shift_key: self.state.modifier_state.shift_key(),
+                            offset_x: todo!(),
+                            offset_y: todo!(),
                         };
                         match (hovered, self.state.cursor_state.hovered) {
                             (Some(hovered), Some(old_hovered)) => {
@@ -258,8 +267,10 @@ impl BlitzEventHandler {
                                 screen_x: mouse_x,
                                 screen_y: mouse_y,
                                 shift_key: self.state.modifier_state.shift_key(),
+                                offset_x: todo!(),
+                                offset_y: todo!(),
                             };
-                            let event_prevented = rdom[hovered].state.event_prevented;
+                            let prevent_default = rdom[hovered].state.prevent_default;
                             match state {
                                 tao::event::ElementState::Pressed => {
                                     self.queued_events.push(UserEvent {
@@ -316,9 +327,13 @@ impl BlitzEventHandler {
                                 }
                                 _ => todo!(),
                             }
-                            if event_prevented != EventPrevented::OnMouseUp {
+                            if prevent_default != PreventDefault::MouseUp {
                                 if rdom[hovered].state.focus.level.focusable() {
-                                    self.state.focus_state.set_focus(rdom, hovered);
+                                    self.state
+                                        .focus_state
+                                        .lock()
+                                        .unwrap()
+                                        .set_focus(rdom, hovered);
                                 }
                             }
                         }

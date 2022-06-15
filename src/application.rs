@@ -7,7 +7,6 @@ use std::{
 use anymap::AnyMap;
 use dioxus::{
     core::{exports::futures_channel::mpsc::unbounded, SchedulerMsg, UserEvent},
-    native_core::utils::PersistantElementIter,
     prelude::{Component, UnboundedSender, VirtualDom},
 };
 
@@ -15,9 +14,12 @@ use futures_util::StreamExt;
 use piet_wgpu::{Piet, WgpuRenderer};
 use tao::{dpi::PhysicalSize, event_loop::EventLoopProxy, window::Window};
 
-use crate::{events::BlitzEventHandler, render::render, Dom, Redraw, TaoEvent};
+use crate::{events::BlitzEventHandler, focus::FocusState, render::render, Dom, Redraw, TaoEvent};
 use dioxus::native_core::real_dom::RealDom;
-use stretch2::{prelude::Number, Stretch};
+use taffy::{
+    prelude::{Number, Size},
+    Taffy,
+};
 
 pub struct ApplicationState {
     dom: DomManager,
@@ -30,13 +32,19 @@ impl ApplicationState {
     pub fn new(root: Component<()>, window: &Window, proxy: EventLoopProxy<Redraw>) -> Self {
         let inner_size = window.inner_size();
 
-        let focus_iter = Arc::new(Mutex::new(PersistantElementIter::default()));
-        let weak_focus_iter = Arc::downgrade(&focus_iter);
+        let focus_state = Arc::new(Mutex::new(FocusState::default()));
+        let weak_focus_state = Arc::downgrade(&focus_state);
 
-        let event_handler = Arc::new(Mutex::new(BlitzEventHandler::new(focus_iter)));
+        let event_handler = Arc::new(Mutex::new(BlitzEventHandler::new(focus_state)));
         let weak_event_handler = Arc::downgrade(&event_handler);
 
-        let dom = DomManager::spawn(inner_size, root, proxy, weak_focus_iter, weak_event_handler);
+        let dom = DomManager::spawn(
+            inner_size,
+            root,
+            proxy,
+            weak_event_handler,
+            weak_focus_state,
+        );
 
         let mut wgpu_renderer = WgpuRenderer::new(window).unwrap();
         wgpu_renderer.set_size(piet_wgpu::kurbo::Size {
@@ -74,7 +82,7 @@ impl ApplicationState {
 
     pub fn send_event(&mut self, event: &TaoEvent) {
         let size = self.dom.size();
-        let size = stretch2::prelude::Size {
+        let size = Size {
             width: size.width,
             height: size.height,
         };
@@ -113,8 +121,8 @@ impl DomManager {
         size: PhysicalSize<u32>,
         root: Component<()>,
         proxy: EventLoopProxy<Redraw>,
-        weak_focus_iter: Weak<Mutex<PersistantElementIter>>,
         weak_event_handler: Weak<Mutex<BlitzEventHandler>>,
+        weak_focus_state: Weak<Mutex<FocusState>>,
     ) -> Self {
         let rdom: Arc<Mutex<Dom>> = Arc::new(Mutex::new(RealDom::new()));
         let size = Arc::new(Mutex::new(size));
@@ -136,7 +144,7 @@ impl DomManager {
                 .build()
                 .unwrap()
                 .block_on(async {
-                    let stretch = Rc::new(RefCell::new(Stretch::new()));
+                    let stretch = Rc::new(RefCell::new(Taffy::new()));
                     let mut vdom = VirtualDom::new(root);
                     channel_sender_weak
                         .upgrade()
@@ -145,7 +153,7 @@ impl DomManager {
                         .unwrap()
                         .replace(vdom.get_scheduler_channel());
                     let mutations = vdom.rebuild();
-                    let mut last_size = stretch2::prelude::Size::undefined();
+                    let mut last_size = Size::undefined();
                     if let Some(strong) = weak_rdom.upgrade() {
                         if let Ok(mut rdom) = strong.lock() {
                             // update the real dom's nodes
@@ -155,13 +163,15 @@ impl DomManager {
                             // update the style and layout
                             let to_rerender = rdom.update_state(&vdom, to_update, ctx).unwrap();
                             if let Some(strong) = weak_size.upgrade() {
-                                let size = strong.lock().unwrap().clone();
+                                let size = strong.lock().unwrap();
 
-                                let size = stretch2::prelude::Size {
+                                let size = Size {
                                     width: Number::Defined(size.width as f32),
                                     height: Number::Defined(size.height as f32),
                                 };
+
                                 last_size = size;
+
                                 stretch
                                     .borrow_mut()
                                     .compute_layout(
@@ -194,15 +204,15 @@ impl DomManager {
 
                         if let Some(strong) = weak_rdom.upgrade() {
                             if let Ok(mut rdom) = strong.lock() {
-                                if let Some(strong) = weak_focus_iter.upgrade() {
-                                    if let Ok(mut focus_iter) = strong.lock() {
+                                if let Some(strong) = weak_focus_state.upgrade() {
+                                    if let Ok(mut focus_state) = strong.lock() {
                                         if let Some(strong) = weak_event_handler.upgrade() {
                                             if let Ok(mut event_handler) = strong.lock() {
                                                 let mutations = vdom.work_with_deadline(|| false);
 
                                                 for m in &mutations {
                                                     event_handler.prune(m, &rdom);
-                                                    focus_iter.prune(m, &rdom);
+                                                    focus_state.prune(m, &rdom);
                                                 }
 
                                                 // update the real dom's nodes
@@ -219,7 +229,7 @@ impl DomManager {
                                                 if let Some(strong) = weak_size.upgrade() {
                                                     let size = strong.lock().unwrap().clone();
 
-                                                    let size = stretch2::prelude::Size {
+                                                    let size = Size {
                                                         width: Number::Defined(size.width as f32),
                                                         height: Number::Defined(size.height as f32),
                                                     };
@@ -327,7 +337,7 @@ impl DomManager {
     }
 
     fn render(&self, renderer: &mut Piet) {
-        render(&self.rdom(), renderer, self.size.lock().unwrap().clone());
+        render(&self.rdom(), renderer, *self.size.lock().unwrap());
     }
 
     fn send_events(&self, events: Vec<UserEvent>) {

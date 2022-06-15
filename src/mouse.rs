@@ -7,9 +7,12 @@ use dioxus::{
     native_core_macro::sorted_str_slice,
 };
 use piet_wgpu::kurbo::{Point, Shape};
-use stretch2::prelude::Size;
+use taffy::prelude::Size;
 
-use crate::{render::get_shape, Dom, DomNode};
+use crate::{
+    render::{get_abs_pos, get_shape},
+    Dom, DomNode,
+};
 
 pub(crate) fn get_hovered(
     dom: &Dom,
@@ -18,7 +21,7 @@ pub(crate) fn get_hovered(
 ) -> Option<ElementId> {
     let mut hovered: Option<ElementId> = None;
     dom.traverse_depth_first(|node| {
-        if node.state.mouse_effected.0 && check_hovered(node, viewport_size, mouse_pos) {
+        if node.state.mouse_effected.0 && check_hovered(dom, node, viewport_size, mouse_pos) {
             if let Some(id) = hovered {
                 if node.height > dom[id].height {
                     hovered = Some(node.id);
@@ -31,8 +34,13 @@ pub(crate) fn get_hovered(
     hovered
 }
 
-pub(crate) fn check_hovered(node: &DomNode, viewport_size: &Size<u32>, mouse_pos: Point) -> bool {
-    get_shape(node, viewport_size).contains(mouse_pos)
+pub(crate) fn check_hovered(
+    dom: &Dom,
+    node: &DomNode,
+    viewport_size: &Size<u32>,
+    mouse_pos: Point,
+) -> bool {
+    get_shape(node, viewport_size, get_abs_pos(node, dom)).contains(mouse_pos)
 }
 
 #[derive(Debug, Default, PartialEq, Clone)]
