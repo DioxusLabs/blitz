@@ -7,7 +7,6 @@ use std::{
 use anymap::AnyMap;
 use dioxus::{
     core::{exports::futures_channel::mpsc::unbounded, SchedulerMsg, UserEvent},
-    native_core::utils::PersistantElementIter,
     prelude::{Component, UnboundedSender, VirtualDom},
 };
 
@@ -15,7 +14,7 @@ use futures_util::StreamExt;
 use piet_wgpu::{Piet, WgpuRenderer};
 use tao::{dpi::PhysicalSize, event_loop::EventLoopProxy, window::Window};
 
-use crate::{events::BlitzEventHandler, render::render, Dom, Redraw, TaoEvent};
+use crate::{events::BlitzEventHandler, focus::FocusState, render::render, Dom, Redraw, TaoEvent};
 use dioxus::native_core::real_dom::RealDom;
 use taffy::{
     prelude::{Number, Size},
@@ -33,12 +32,12 @@ impl ApplicationState {
     pub fn new(root: Component<()>, window: &Window, proxy: EventLoopProxy<Redraw>) -> Self {
         let inner_size = window.inner_size();
 
-        let focus_iter = Arc::new(Mutex::new(PersistantElementIter::default()));
-        let weak_focus_iter = Arc::downgrade(&focus_iter);
+        let focus_state = Arc::new(Mutex::new(FocusState::default()));
+        let weak_focus_state = Arc::downgrade(&focus_state);
 
-        let event_handler = BlitzEventHandler::new(focus_iter);
+        let event_handler = BlitzEventHandler::new(focus_state);
 
-        let dom = DomManager::spawn(inner_size, root, proxy, weak_focus_iter);
+        let dom = DomManager::spawn(inner_size, root, proxy, weak_focus_state);
 
         let mut wgpu_renderer = WgpuRenderer::new(window).unwrap();
         wgpu_renderer.set_size(piet_wgpu::kurbo::Size {
@@ -106,7 +105,7 @@ impl DomManager {
         size: PhysicalSize<u32>,
         root: Component<()>,
         proxy: EventLoopProxy<Redraw>,
-        weak_focus_iter: Weak<Mutex<PersistantElementIter>>,
+        weak_focus_iter: Weak<Mutex<FocusState>>,
     ) -> Self {
         let rdom: Arc<Mutex<Dom>> = Arc::new(Mutex::new(RealDom::new()));
         let size = Arc::new(Mutex::new(size));
@@ -189,11 +188,11 @@ impl DomManager {
                         if let Some(strong) = weak_rdom.upgrade() {
                             if let Ok(mut rdom) = strong.lock() {
                                 if let Some(strong) = weak_focus_iter.upgrade() {
-                                    if let Ok(mut focus_iter) = strong.lock() {
+                                    if let Ok(mut focus_state) = strong.lock() {
                                         let mutations = vdom.work_with_deadline(|| false);
 
                                         for m in &mutations {
-                                            focus_iter.prune(m, &rdom);
+                                            focus_state.prune(m, &rdom);
                                         }
 
                                         // update the real dom's nodes

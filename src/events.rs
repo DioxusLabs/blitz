@@ -4,20 +4,16 @@ use tao::keyboard::ModifiersState;
 use dioxus::{
     core::{ElementId, EventPriority, UserEvent},
     events::KeyboardData,
-    native_core::utils::PersistantElementIter,
 };
 use tao::{dpi::PhysicalPosition, keyboard::Key};
 
-use crate::{
-    focus::{FocusLevel, FocusState},
-    Dom, TaoEvent,
-};
+use crate::{focus::FocusState, Dom, TaoEvent};
 
 #[derive(Default)]
 struct EventState {
     modifier_state: ModifiersState,
     cursor_position: PhysicalPosition<f64>,
-    focus_state: FocusState,
+    focus_state: Arc<Mutex<FocusState>>,
 }
 
 #[derive(Default)]
@@ -27,14 +23,10 @@ pub struct BlitzEventHandler {
 }
 
 impl BlitzEventHandler {
-    pub(crate) fn new(focus_iter: Arc<Mutex<PersistantElementIter>>) -> Self {
+    pub(crate) fn new(focus_state: Arc<Mutex<FocusState>>) -> Self {
         Self {
             state: EventState {
-                focus_state: FocusState {
-                    focus_iter,
-                    last_focused_id: None,
-                    focus_level: FocusLevel::Unfocusable,
-                },
+                focus_state,
                 ..Default::default()
             },
             ..Default::default()
@@ -102,6 +94,8 @@ impl BlitzEventHandler {
                                 return self
                                     .state
                                     .focus_state
+                                    .lock()
+                                    .unwrap()
                                     .progress(rdom, !self.state.modifier_state.shift_key());
                             }
                         }
@@ -109,7 +103,7 @@ impl BlitzEventHandler {
                         self.queued_events.push(UserEvent {
                             scope_id: None,
                             priority: EventPriority::Medium,
-                            element: self.state.focus_state.last_focused_id,
+                            element: self.state.focus_state.lock().unwrap().last_focused_id,
                             name: match event.state {
                                 tao::event::ElementState::Pressed => "keydown",
                                 tao::event::ElementState::Released => "keyup",

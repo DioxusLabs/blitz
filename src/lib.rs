@@ -1,15 +1,9 @@
+use crate::node::BlitzNodeState;
 use application::ApplicationState;
-use dioxus::core as dioxus_core;
-use dioxus::native_core as dioxus_native_core;
 use dioxus::{
-    native_core::{
-        real_dom::{Node, RealDom},
-        state::*,
-    },
-    native_core_macro::State,
+    native_core::real_dom::{Node, RealDom},
     prelude::*,
 };
-use layout::StretchLayout;
 use tao::{
     event::{Event, WindowEvent},
     event_loop::{ControlFlow, EventLoop},
@@ -20,6 +14,7 @@ mod application;
 mod events;
 mod focus;
 mod layout;
+mod node;
 mod render;
 mod style;
 mod util;
@@ -27,17 +22,6 @@ mod util;
 type Dom = RealDom<BlitzNodeState>;
 type DomNode = Node<BlitzNodeState>;
 type TaoEvent<'a> = Event<'a, Redraw>;
-
-#[derive(Clone, PartialEq, Default, State, Debug)]
-struct BlitzNodeState {
-    #[child_dep_state(layout, Rc<RefCell<Stretch>>)]
-    layout: StretchLayout,
-    #[state]
-    style: style::Style,
-    #[node_dep_state()]
-    focus: focus::Focus,
-    focused: bool,
-}
 
 #[derive(Debug)]
 pub struct Redraw;

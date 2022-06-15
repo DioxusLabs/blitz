@@ -1,19 +1,18 @@
-use std::sync::{Arc, Mutex};
+use crate::{node::PreventDefault, Dom};
 
-use dioxus::{core::ElementId, native_core::utils::PersistantElementIter};
+use dioxus::core::ElementId;
+use dioxus::native_core::utils::{ElementProduced, PersistantElementIter};
+use dioxus::native_core_macro::sorted_str_slice;
 
-use crate::Dom;
-use std::num::NonZeroU16;
+use std::{cmp::Ordering, num::NonZeroU16};
 
-use dioxus::{
-    native_core::{
-        node_ref::{AttributeMask, NodeMask, NodeView},
-        state::NodeDepState,
-    },
-    native_core_macro::sorted_str_slice,
+use dioxus::native_core::{
+    node_ref::{AttributeMask, NodeMask, NodeView},
+    real_dom::NodeType,
+    state::NodeDepState,
 };
 
-#[derive(Clone, Copy, PartialEq, Eq, Debug, Ord)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub(crate) enum FocusLevel {
     Unfocusable,
     Focusable,
@@ -46,6 +45,12 @@ impl PartialOrd for FocusLevel {
     }
 }
 
+impl Ord for FocusLevel {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.partial_cmp(other).unwrap()
+    }
+}
+
 impl Default for FocusLevel {
     fn default() -> Self {
         FocusLevel::Unfocusable
@@ -54,7 +59,6 @@ impl Default for FocusLevel {
 
 #[derive(Clone, PartialEq, Debug, Default)]
 pub(crate) struct Focus {
-    pub pass_focus: bool,
     pub level: FocusLevel,
 }
 
@@ -66,32 +70,30 @@ impl NodeDepState for Focus {
 
     fn reduce(&mut self, node: NodeView<'_>, _sibling: &Self::DepState, _: &Self::Ctx) -> bool {
         let new = Focus {
-            pass_focus: !node.attributes().any(|a| {
-                a.name == "dioxus-prevent-default"
-                    && a.value.as_text().filter(|t| t.trim() == "true").is_some()
-            }),
             level: if let Some(a) = node.attributes().find(|a| a.name == "tabindex") {
-                if let Some(Ok(index)) = a.value.as_text().map(|t| t.parse::<i32>()) {
-                    if index < 0 {
-                        FocusLevel::Unfocusable
-                    } else if index == 0 {
-                        FocusLevel::Focusable
-                    } else {
-                        FocusLevel::Ordered(NonZeroU16::new(index as u16).unwrap())
+                if let Some(index) = a
+                    .value
+                    .as_int32()
+                    .or(a.value.as_text().and_then(|v| v.parse::<i32>().ok()))
+                {
+                    match index.cmp(&0) {
+                        Ordering::Less => FocusLevel::Unfocusable,
+                        Ordering::Equal => FocusLevel::Focusable,
+                        Ordering::Greater => {
+                            FocusLevel::Ordered(NonZeroU16::new(index as u16).unwrap())
+                        }
                     }
                 } else {
                     FocusLevel::Unfocusable
                 }
+            } else if node
+                .listeners()
+                .iter()
+                .any(|l| FOCUS_EVENTS.binary_search(&l.event).is_ok())
+            {
+                FocusLevel::Focusable
             } else {
-                if node
-                    .listeners()
-                    .iter()
-                    .any(|l| FOCUS_EVENTS.binary_search(&l.event).is_ok())
-                {
-                    FocusLevel::Focusable
-                } else {
-                    FocusLevel::Unfocusable
-                }
+                FocusLevel::Unfocusable
             },
         };
         if *self != new {
@@ -103,132 +105,178 @@ impl NodeDepState for Focus {
     }
 }
 
-const FOCUS_EVENTS: &[&str] = &sorted_str_slice!(["keydown", "keyup", "keypress"]);
-const FOCUS_ATTRIBUTES: &[&str] = &sorted_str_slice!(["dioxus-prevent-default", "tabindex"]);
+const FOCUS_EVENTS: &[&str] = &sorted_str_slice!(["keydown", "keypress", "keyup"]);
+const FOCUS_ATTRIBUTES: &[&str] = &sorted_str_slice!(["tabindex"]);
 
 #[derive(Default)]
 pub(crate) struct FocusState {
-    pub(crate) focus_iter: Arc<Mutex<PersistantElementIter>>,
+    pub(crate) focus_iter: PersistantElementIter,
     pub(crate) last_focused_id: Option<ElementId>,
     pub(crate) focus_level: FocusLevel,
+    pub(crate) dirty: bool,
 }
 
 impl FocusState {
+    /// Returns true if the focus has changed.
     pub fn progress(&mut self, rdom: &mut Dom, forward: bool) -> bool {
-        if let Ok(mut focus_iter) = self.focus_iter.lock() {
-            if let Some(last) = self.last_focused_id {
-                if !rdom[last].state.focus.pass_focus {
-                    return false;
-                }
+        if let Some(last) = self.last_focused_id {
+            if rdom[last].state.prevent_default == PreventDefault::KeyDown {
+                return false;
             }
-            let mut loop_marker_id = self.last_focused_id;
-            let focus_level = &mut self.focus_level;
-            let mut next_focus = None;
-            let starting_focus_level = *focus_level;
+        }
+        // the id that started focused to track when a loop has happened
+        let mut loop_marker_id = self.last_focused_id;
+        let focus_level = &mut self.focus_level;
+        let mut next_focus = None;
 
-            loop {
-                let new = if forward {
-                    focus_iter.next(&rdom)
-                } else {
-                    focus_iter.prev(&rdom)
-                };
-                let new_id = new.id();
-                let current_level = rdom[new_id].state.focus.level;
-                if let dioxus::native_core::utils::ElementProduced::Looped(_) = new {
-                    let mut closest_level = None;
+        loop {
+            let new = if forward {
+                self.focus_iter.next(rdom)
+            } else {
+                self.focus_iter.prev(rdom)
+            };
+            let new_id = new.id();
+            if let ElementProduced::Looped(_) = new {
+                let mut closest_level = None;
 
-                    if forward {
-                        // find the closest focusable element after the current level
-                        rdom.traverse_depth_first(|n| {
-                            let current_level = n.state.focus.level;
-                            if current_level != *focus_level {
-                                if current_level > *focus_level {
-                                    if let Some(level) = &mut closest_level {
-                                        if current_level < *level {
-                                            *level = current_level;
-                                        }
-                                    } else {
-                                        closest_level = Some(current_level);
-                                    }
+                if forward {
+                    // find the closest focusable element after the current level
+                    rdom.traverse_depth_first(|n| {
+                        let node_level = n.state.focus.level;
+                        if node_level != *focus_level
+                            && node_level.focusable()
+                            && node_level > *focus_level
+                        {
+                            if let Some(level) = &mut closest_level {
+                                if node_level < *level {
+                                    *level = node_level;
                                 }
+                            } else {
+                                closest_level = Some(node_level);
                             }
-                        });
-                    } else {
-                        // find the closest focusable element before the current level
-                        rdom.traverse_depth_first(|n| {
-                            let current_level = n.state.focus.level;
-                            if current_level != *focus_level {
-                                if current_level < *focus_level {
-                                    if let Some(level) = &mut closest_level {
-                                        if current_level > *level {
-                                            *level = current_level;
-                                        }
-                                    } else {
-                                        closest_level = Some(current_level);
-                                    }
-                                }
-                            }
-                        });
-                    }
-
-                    // extend the loop_marker_id to allow for another pass
-                    loop_marker_id = None;
-
-                    if let Some(level) = closest_level {
-                        *focus_level = level;
-                    } else {
-                        if forward {
-                            *focus_level = FocusLevel::Unfocusable;
-                        } else {
-                            *focus_level = FocusLevel::Focusable;
                         }
-                    }
-
-                    // if the focus level looped, we are done
-                    if *focus_level == starting_focus_level {
-                        break;
-                    }
+                    });
+                } else {
+                    // find the closest focusable element before the current level
+                    rdom.traverse_depth_first(|n| {
+                        let node_level = n.state.focus.level;
+                        if node_level != *focus_level
+                            && node_level.focusable()
+                            && node_level < *focus_level
+                        {
+                            if let Some(level) = &mut closest_level {
+                                if node_level > *level {
+                                    *level = node_level;
+                                }
+                            } else {
+                                closest_level = Some(node_level);
+                            }
+                        }
+                    });
                 }
 
-                // once we have looked at all the elements exit the loop
-                if let Some(last) = loop_marker_id {
-                    if new_id == last {
-                        break;
-                    }
-                } else {
-                    loop_marker_id = Some(new_id);
-                }
+                // extend the loop_marker_id to allow for another pass
+                loop_marker_id = None;
 
-                let after_previous_focused = if forward {
-                    current_level >= *focus_level
+                if let Some(level) = closest_level {
+                    *focus_level = level;
+                } else if forward {
+                    *focus_level = FocusLevel::Unfocusable;
                 } else {
-                    current_level <= *focus_level
-                };
-                if after_previous_focused && current_level.focusable() {
-                    if current_level == *focus_level {
-                        next_focus = Some((new_id, current_level));
-                        break;
-                    }
+                    *focus_level = FocusLevel::Focusable;
                 }
             }
 
-            if let Some((id, order)) = next_focus {
-                if order.focusable() {
-                    rdom[id].state.focused = true;
-                    if let Some(old) = self.last_focused_id.replace(id) {
-                        rdom[old].state.focused = false;
+            // once we have looked at all the elements exit the loop
+            if let Some(last) = loop_marker_id {
+                if new_id == last {
+                    break;
+                }
+            } else {
+                loop_marker_id = Some(new_id);
+            }
+
+            let current_level = rdom[new_id].state.focus.level;
+            let after_previous_focused = if forward {
+                current_level >= *focus_level
+            } else {
+                current_level <= *focus_level
+            };
+            if after_previous_focused && current_level.focusable() && current_level == *focus_level
+            {
+                next_focus = Some(new_id);
+                break;
+            }
+        }
+
+        if let Some(id) = next_focus {
+            rdom[id].state.focused = true;
+            if let Some(old) = self.last_focused_id.replace(id) {
+                rdom[old].state.focused = false;
+            }
+            // reset the position to the currently focused element
+            while self.focus_iter.next(rdom).id() != id {}
+            self.dirty = true;
+            return true;
+        }
+
+        false
+    }
+
+    pub(crate) fn prune(&mut self, mutations: &dioxus::core::Mutations, rdom: &Dom) {
+        fn remove_children(
+            to_prune: &mut [&mut Option<ElementId>],
+            rdom: &Dom,
+            removed: ElementId,
+        ) {
+            for opt in to_prune.iter_mut() {
+                if let Some(id) = opt {
+                    if *id == removed {
+                        **opt = None;
                     }
-                    // reset the position to the currently focused element
-                    while if forward {
-                        focus_iter.next(&rdom).id()
-                    } else {
-                        focus_iter.prev(&rdom).id()
-                    } != id
-                    {}
-                    return true;
+                }
+            }
+            if let NodeType::Element { children, .. } = &rdom[removed].node_type {
+                for child in children {
+                    remove_children(to_prune, rdom, *child);
                 }
             }
         }
-        false
+        if self.focus_iter.prune(mutations, rdom) {
+            self.dirty = true;
+        }
+        for m in &mutations.edits {
+            match m {
+                dioxus::core::DomEdit::ReplaceWith { root, .. } => remove_children(
+                    &mut [&mut self.last_focused_id],
+                    rdom,
+                    ElementId(*root as usize),
+                ),
+                dioxus::core::DomEdit::Remove { root } => remove_children(
+                    &mut [&mut self.last_focused_id],
+                    rdom,
+                    ElementId(*root as usize),
+                ),
+                _ => (),
+            }
+        }
+    }
+
+    pub(crate) fn set_focus(&mut self, rdom: &mut Dom, id: ElementId) {
+        if let Some(old) = self.last_focused_id.replace(id) {
+            rdom[old].state.focused = false;
+        }
+        let state = &mut rdom[id].state;
+        state.focused = true;
+        self.focus_level = state.focus.level;
+        // reset the position to the currently focused element
+        while self.focus_iter.next(rdom).id() != id {}
+        self.dirty = true;
+    }
+
+    pub(crate) fn clean(&mut self) -> bool {
+        let old = self.dirty;
+        self.dirty = false;
+        old
     }
 }
