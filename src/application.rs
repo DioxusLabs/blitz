@@ -17,7 +17,10 @@ use tao::{dpi::PhysicalSize, event_loop::EventLoopProxy, window::Window};
 
 use crate::{events::BlitzEventHandler, render::render, Dom, Redraw, TaoEvent};
 use dioxus::native_core::real_dom::RealDom;
-use stretch2::{prelude::Number, Stretch};
+use taffy::{
+    prelude::{Number, Size},
+    Taffy,
+};
 
 pub struct ApplicationState {
     dom: DomManager,
@@ -125,7 +128,7 @@ impl DomManager {
                 .build()
                 .unwrap()
                 .block_on(async {
-                    let stretch = Rc::new(RefCell::new(Stretch::new()));
+                    let stretch = Rc::new(RefCell::new(Taffy::new()));
                     let mut vdom = VirtualDom::new(root);
                     channel_sender_weak
                         .upgrade()
@@ -134,7 +137,7 @@ impl DomManager {
                         .unwrap()
                         .replace(vdom.get_scheduler_channel());
                     let mutations = vdom.rebuild();
-                    let mut last_size = stretch2::prelude::Size::undefined();
+                    let mut last_size = Size::undefined();
                     if let Some(strong) = weak_rdom.upgrade() {
                         if let Ok(mut rdom) = strong.lock() {
                             // update the real dom's nodes
@@ -144,13 +147,15 @@ impl DomManager {
                             // update the style and layout
                             let to_rerender = rdom.update_state(&vdom, to_update, ctx).unwrap();
                             if let Some(strong) = weak_size.upgrade() {
-                                let size = strong.lock().unwrap().clone();
+                                let size = strong.lock().unwrap();
 
-                                let size = stretch2::prelude::Size {
+                                let size = Size {
                                     width: Number::Defined(size.width as f32),
                                     height: Number::Defined(size.height as f32),
                                 };
+
                                 last_size = size;
+
                                 stretch
                                     .borrow_mut()
                                     .compute_layout(
@@ -202,9 +207,9 @@ impl DomManager {
                                             rdom.update_state(&vdom, to_update, ctx).unwrap();
 
                                         if let Some(strong) = weak_size.upgrade() {
-                                            let size = strong.lock().unwrap().clone();
+                                            let size = strong.lock().unwrap();
 
-                                            let size = stretch2::prelude::Size {
+                                            let size = Size {
                                                 width: Number::Defined(size.width as f32),
                                                 height: Number::Defined(size.height as f32),
                                             };
@@ -297,7 +302,7 @@ impl DomManager {
     }
 
     fn render(&self, renderer: &mut Piet) {
-        render(&self.rdom(), renderer, self.size.lock().unwrap().clone());
+        render(&self.rdom(), renderer, *self.size.lock().unwrap());
     }
 
     fn send_events(&self, events: Vec<UserEvent>) {

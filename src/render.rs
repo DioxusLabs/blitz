@@ -1,7 +1,7 @@
 use dioxus::native_core::real_dom::NodeType;
 use piet_wgpu::kurbo::{Point, Rect, RoundedRect};
 use piet_wgpu::{Color, Piet, RenderContext, Text, TextLayoutBuilder};
-use stretch2::prelude::Size;
+use taffy::prelude::Size;
 use tao::dpi::PhysicalSize;
 
 use crate::util::{translate_color, Axis, Resolve};
@@ -26,7 +26,7 @@ pub(crate) fn render(dom: &Dom, piet: &mut Piet, window_size: PhysicalSize<u32>)
         width: window_size.width,
         height: window_size.height,
     };
-    render_node(dom, &root, piet, &viewport_size);
+    render_node(dom, root, piet, &viewport_size);
     match piet.finish() {
         Ok(()) => {}
         Err(e) => {
@@ -65,11 +65,11 @@ fn render_node(dom: &Dom, node: &DomNode, piet: &mut Piet, viewport_size: &Size<
                 piet.stroke(&smaller_shape, &stroke_brush, FOCUS_BORDER_WIDTH / 2.0);
                 piet.fill(&smaller_shape, &fill_brush);
             } else {
-                let stroke_brush = piet.solid_brush(translate_color(&style.border.colors.0));
+                let stroke_brush = piet.solid_brush(translate_color(&style.border.colors.top));
                 piet.stroke(
                     &shape,
                     &stroke_brush,
-                    style.border.width.2.resolve(
+                    style.border.width.top.resolve(
                         Axis::Min,
                         &node.state.layout.layout.unwrap().size,
                         viewport_size,
@@ -99,22 +99,26 @@ fn get_shape(node: &DomNode, viewport_size: &Size<u32>) -> RoundedRect {
     let left_border_width = if node.state.focused {
         FOCUS_BORDER_WIDTH
     } else {
-        style.border.width.3.resolve(axis, &rect, viewport_size)
+        style.border.width.left.resolve(axis, &rect, viewport_size)
     };
     let right_border_width = if node.state.focused {
         FOCUS_BORDER_WIDTH
     } else {
-        style.border.width.1.resolve(axis, &rect, viewport_size)
+        style.border.width.right.resolve(axis, &rect, viewport_size)
     };
     let top_border_width = if node.state.focused {
         FOCUS_BORDER_WIDTH
     } else {
-        style.border.width.0.resolve(axis, &rect, viewport_size)
+        style.border.width.top.resolve(axis, &rect, viewport_size)
     };
     let bottom_border_width = if node.state.focused {
         FOCUS_BORDER_WIDTH
     } else {
-        style.border.width.2.resolve(axis, &rect, viewport_size)
+        style
+            .border
+            .width
+            .bottom
+            .resolve(axis, &rect, viewport_size)
     };
 
     // The stroke is drawn on the outside of the border, so we need to offset the rect by the border width for each side.

@@ -4,7 +4,7 @@ use parcel_css::values::color::CssColor;
 use parcel_css::values::length::{Length, LengthValue};
 use parcel_css::values::percentage::DimensionPercentage;
 use piet_wgpu::Color;
-use stretch2::prelude::Size;
+use taffy::prelude::Size;
 
 #[allow(dead_code)]
 #[derive(Clone, Copy)]

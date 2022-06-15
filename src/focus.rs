@@ -66,11 +66,12 @@ impl NodeDepState for Focus {
 
     fn reduce(&mut self, node: NodeView<'_>, _sibling: &Self::DepState, _: &Self::Ctx) -> bool {
         let new = Focus {
-            pass_focus: !node
-                .attributes()
-                .any(|a| a.name == "dioxus-prevent-default" && a.value.trim() == "true"),
+            pass_focus: !node.attributes().any(|a| {
+                a.name == "dioxus-prevent-default"
+                    && a.value.as_text().filter(|t| t.trim() == "true").is_some()
+            }),
             level: if let Some(a) = node.attributes().find(|a| a.name == "tabindex") {
-                if let Ok(index) = a.value.parse::<i32>() {
+                if let Some(Ok(index)) = a.value.as_text().map(|t| t.parse::<i32>()) {
                     if index < 0 {
                         FocusLevel::Unfocusable
                     } else if index == 0 {
