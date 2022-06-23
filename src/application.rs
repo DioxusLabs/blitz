@@ -70,7 +70,12 @@ impl ApplicationState {
     }
 
     pub fn clean(&self) -> DirtyNodes {
-        self.dom.clean()
+        let dirty = self.dom.clean();
+        if self.event_handler.clean() {
+            DirtyNodes::All
+        } else {
+            dirty
+        }
     }
 
     pub fn send_event(&mut self, event: &TaoEvent) {

@@ -191,6 +191,10 @@ impl BlitzEventHandler {
         std::mem::swap(&mut self.queued_events, &mut events);
         events
     }
+
+    pub fn clean(&self) -> bool {
+        self.state.focus_state.lock().unwrap().clean()
+    }
 }
 
 fn translate_key_code(key: &Key) -> dioxus::events::KeyCode {

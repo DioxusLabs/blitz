@@ -262,6 +262,7 @@ impl FocusState {
         }
     }
 
+    #[allow(unused)]
     pub(crate) fn set_focus(&mut self, rdom: &mut Dom, id: ElementId) {
         if let Some(old) = self.last_focused_id.replace(id) {
             rdom[old].state.focused = false;
