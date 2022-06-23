@@ -79,18 +79,10 @@ impl ApplicationState {
     }
 
     pub fn send_event(&mut self, event: &TaoEvent) {
-        if self
-            .event_handler
-            .register_event(event, &mut self.dom.rdom())
-        {
-            self.force_redraw()
-        }
+        self.event_handler
+            .register_event(event, &mut self.dom.rdom());
         let evts = self.event_handler.drain_events();
         self.dom.send_events(evts);
-    }
-
-    pub fn force_redraw(&mut self) {
-        self.dom.force_redraw();
     }
 }
 
