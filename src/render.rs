@@ -144,25 +144,25 @@ fn get_shape(node: &DomNode, viewport_size: &Size<u32>, location: Point) -> Roun
                 .radius
                 .top_left
                 .0
-                .resolve(axis, &rect, &viewport_size),
+                .resolve(axis, &rect, viewport_size),
             style
                 .border
                 .radius
                 .top_right
                 .0
-                .resolve(axis, &rect, &viewport_size),
+                .resolve(axis, &rect, viewport_size),
             style
                 .border
                 .radius
                 .bottom_right
                 .0
-                .resolve(axis, &rect, &viewport_size),
+                .resolve(axis, &rect, viewport_size),
             style
                 .border
                 .radius
                 .bottom_left
                 .0
-                .resolve(axis, &rect, &viewport_size),
+                .resolve(axis, &rect, viewport_size),
         ),
     )
 }

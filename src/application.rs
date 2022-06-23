@@ -218,7 +218,7 @@ impl DomManager {
                                                 height: Number::Defined(size.height as f32),
                                             };
                                             if !to_rerender.is_empty() || last_size != size {
-                                                last_size = size.clone();
+                                                last_size = size;
                                                 stretch
                                                     .borrow_mut()
                                                     .compute_layout(
@@ -284,10 +284,7 @@ impl DomManager {
         if self.force_redraw {
             DirtyNodes::All
         } else {
-            DirtyNodes::Some(std::mem::replace(
-                &mut *self.dirty.lock().unwrap(),
-                Vec::new(),
-            ))
+            DirtyNodes::Some(std::mem::take(&mut *self.dirty.lock().unwrap()))
         }
     }
 
