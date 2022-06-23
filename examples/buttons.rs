@@ -14,7 +14,6 @@ struct ButtonProps {
 fn Button(cx: Scope<ButtonProps>) -> Element {
     let toggle = use_state(&cx, || false);
     let hovered = use_state(&cx, || false);
-    let text = use_state(&cx, || "");
 
     let hue = cx.props.color_offset % 255;
     let saturation = if *toggle.get() { 50 } else { 25 } + if *hovered.get() { 50 } else { 25 };
@@ -29,7 +28,6 @@ fn Button(cx: Scope<ButtonProps>) -> Element {
             background_color: "{color}",
             tabindex: "{cx.props.layer}",
             onkeydown: |e| {
-                text.set("keydown");
                 if let KeyCode::Space = e.data.key_code{
                     toggle.modify(|f| !f);
                 }
@@ -38,18 +36,10 @@ fn Button(cx: Scope<ButtonProps>) -> Element {
                 toggle.modify(|f| !f);
             },
             onmouseenter: |_|{
-                text.set("mouseenter");
                 hovered.set(true);
             },
             onmouseleave: |_|{
-                text.set("mouseleave");
                 hovered.set(false);
-            },
-            ondblclick: |_|{
-                text.set("dblclick");
-            },
-            onclick: |_|{
-                text.set("click");
             },
             justify_content: "center",
             align_items: "center",
@@ -58,7 +48,6 @@ fn Button(cx: Scope<ButtonProps>) -> Element {
             flex_direction: "column",
 
             p{"tabindex: {cx.props.layer}"}
-            p{"{text}"}
         }
     })
 }
