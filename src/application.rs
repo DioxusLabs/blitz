@@ -316,7 +316,7 @@ impl DomManager {
     }
 
     fn size(&self) -> PhysicalSize<u32> {
-        self.size.lock().unwrap().clone()
+        *self.size.lock().unwrap()
     }
 
     fn force_redraw(&mut self) {
