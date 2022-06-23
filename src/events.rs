@@ -346,14 +346,14 @@ impl BlitzEventHandler {
                                 }
                                 _ => todo!(),
                             }
-                            if *prevent_default != PreventDefault::MouseUp {
-                                if rdom[hovered].state.focus.level.focusable() {
-                                    self.state
-                                        .focus_state
-                                        .lock()
-                                        .unwrap()
-                                        .set_focus(rdom, hovered);
-                                }
+                            if *prevent_default != PreventDefault::MouseUp
+                                && rdom[hovered].state.focus.level.focusable()
+                            {
+                                self.state
+                                    .focus_state
+                                    .lock()
+                                    .unwrap()
+                                    .set_focus(rdom, hovered);
                             }
                         }
                     }

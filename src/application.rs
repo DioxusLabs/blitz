@@ -77,15 +77,11 @@ impl ApplicationState {
     }
 
     pub fn clean(&self) -> DirtyNodes {
-        match self.dom.clean() {
-            DirtyNodes::All => DirtyNodes::All,
-            DirtyNodes::Some(dirty) => {
-                if self.event_handler.lock().unwrap().clean() {
-                    DirtyNodes::All
-                } else {
-                    DirtyNodes::Some(dirty)
-                }
-            }
+        let dirty = self.dom.clean();
+        if self.event_handler.lock().unwrap().clean() {
+            DirtyNodes::All
+        } else {
+            dirty
         }
     }
 
@@ -244,14 +240,14 @@ impl DomManager {
                                 let to_rerender = rdom.update_state(&vdom, to_update, ctx).unwrap();
 
                                 if let Some(strong) = weak_size.upgrade() {
-                                    let size = strong.lock().unwrap().clone();
+                                    let size = *strong.lock().unwrap();
 
                                     let size = Size {
                                         width: Number::Defined(size.width as f32),
                                         height: Number::Defined(size.height as f32),
                                     };
                                     if !to_rerender.is_empty() || last_size != size {
-                                        last_size = size.clone();
+                                        last_size = size;
                                         stretch
                                             .borrow_mut()
                                             .compute_layout(
@@ -306,10 +302,7 @@ impl DomManager {
         if self.force_redraw {
             DirtyNodes::All
         } else {
-            DirtyNodes::Some(std::mem::replace(
-                &mut *self.dirty.lock().unwrap(),
-                Vec::new(),
-            ))
+            DirtyNodes::Some(std::mem::take(&mut *self.dirty.lock().unwrap()))
         }
     }
 
