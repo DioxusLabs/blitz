@@ -11,7 +11,7 @@ repository = "https://github.com/DioxusLabs/blitz"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-dioxus = { git = "https://github.com/dioxuslabs/dioxus", features = [
+dioxus = { git = "https://github.com/DioxusLabs/dioxus", features = [
     "native-core",
 ] }
 taffy = "0.1"
@@ -22,3 +22,5 @@ piet-wgpu = { git = "https://github.com/DioxusLabs/piet-wgpu" }
 tao = "0.11.2"
 raw-window-handle = "0.4.2"
 anymap = "0.12.1"
+futures-util = "0.3.21"
+fxhash = "0.2"

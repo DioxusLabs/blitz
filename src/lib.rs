@@ -1,15 +1,9 @@
+use crate::node::BlitzNodeState;
 use application::ApplicationState;
-use dioxus::core as dioxus_core;
-use dioxus::native_core as dioxus_native_core;
 use dioxus::{
-    native_core::{
-        real_dom::{Node, RealDom},
-        state::*,
-    },
-    native_core_macro::State,
+    native_core::real_dom::{Node, RealDom},
     prelude::*,
 };
-use layout::StretchLayout;
 use tao::{
     event::{Event, WindowEvent},
     event_loop::{ControlFlow, EventLoop},
@@ -17,21 +11,17 @@ use tao::{
 };
 
 mod application;
+mod events;
+mod focus;
 mod layout;
+mod node;
 mod render;
 mod style;
 mod util;
 
-#[derive(Clone, PartialEq, Default, State)]
-struct BlitzNodeState {
-    #[child_dep_state(layout, Rc<RefCell<Stretch>>)]
-    layout: StretchLayout,
-    #[state]
-    style: style::Style,
-}
-
 type Dom = RealDom<BlitzNodeState>;
 type DomNode = Node<BlitzNodeState>;
+type TaoEvent<'a> = Event<'a, Redraw>;
 
 #[derive(Debug)]
 pub struct Redraw;
@@ -47,12 +37,15 @@ pub fn launch_cfg(root: Component<()>, _cfg: Config) {
     let event_loop = EventLoop::with_user_event();
     let window = WindowBuilder::new().build(&event_loop).unwrap();
     let mut appliction = ApplicationState::new(root, &window, event_loop.create_proxy());
+    appliction.render();
 
     event_loop.run(move |event, _, control_flow| {
         // ControlFlow::Wait pauses the event loop if no events are available to process.
         // This is ideal for non-game applications that only update in response to user
         // input, and uses significantly less power/CPU time than ControlFlow::Poll.
         *control_flow = ControlFlow::Wait;
+
+        appliction.send_event(&event);
 
         match event {
             Event::WindowEvent {
