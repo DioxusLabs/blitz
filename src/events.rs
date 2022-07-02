@@ -74,13 +74,12 @@ impl BlitzEventHandler {
         }
     }
 
-    // returns weither to force the appliction to redraw
     pub(crate) fn register_event(
         &mut self,
         event: &TaoEvent,
         rdom: &mut Dom,
         viewport_size: &Size<u32>,
-    ) -> bool {
+    ) {
         match event {
             tao::event::Event::NewEvents(_) => (),
             tao::event::Event::WindowEvent {
@@ -137,10 +136,11 @@ impl BlitzEventHandler {
                                 });
                             }
                             if let Key::Tab = event.logical_key {
-                                return self.state.focus_state.lock().unwrap().progress(
+                                self.state.focus_state.lock().unwrap().progress(
                                     rdom,
                                     !self.state.modifier_state.contains(Modifiers::SHIFT),
                                 );
+                                return;
                             }
                         }
 
@@ -404,7 +404,6 @@ impl BlitzEventHandler {
             tao::event::Event::LoopDestroyed => (),
             _ => (),
         }
-        false
     }
 
     pub fn drain_events(&mut self) -> Vec<UserEvent> {

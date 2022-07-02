@@ -92,21 +92,13 @@ impl ApplicationState {
             height: size.height,
         };
         let evts;
-        let redraw;
         {
             let rdom = &mut self.dom.rdom();
             let mut event_handler = self.event_handler.lock().unwrap();
-            redraw = event_handler.register_event(event, rdom, &size);
+            event_handler.register_event(event, rdom, &size);
             evts = event_handler.drain_events();
         }
-        if redraw {
-            self.force_redraw();
-        }
         self.dom.send_events(evts);
-    }
-
-    pub fn force_redraw(&mut self) {
-        self.dom.force_redraw();
     }
 }
 
