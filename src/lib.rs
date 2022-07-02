@@ -14,6 +14,7 @@ mod application;
 mod events;
 mod focus;
 mod layout;
+mod mouse;
 mod node;
 mod render;
 mod style;

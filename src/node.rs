@@ -1,11 +1,16 @@
-use crate::layout::StretchLayout;
 use dioxus::core as dioxus_core;
 use dioxus::native_core as dioxus_native_core;
+use dioxus::native_core::state::*;
+use dioxus::native_core_macro::State;
+
+use crate::layout::StretchLayout;
+use crate::mouse;
 use dioxus::native_core_macro::sorted_str_slice;
-use dioxus::{native_core::state::*, native_core_macro::State};
 
 #[derive(Clone, PartialEq, Default, State, Debug)]
 pub(crate) struct BlitzNodeState {
+    #[node_dep_state()]
+    pub(crate) mouse_effected: mouse::MouseEffected,
     #[child_dep_state(layout, Rc<RefCell<Stretch>>)]
     pub layout: StretchLayout,
     #[state]

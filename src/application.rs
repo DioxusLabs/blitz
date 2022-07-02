@@ -24,7 +24,7 @@ use taffy::{
 pub struct ApplicationState {
     dom: DomManager,
     wgpu_renderer: WgpuRenderer,
-    event_handler: BlitzEventHandler,
+    event_handler: Arc<Mutex<BlitzEventHandler>>,
 }
 
 impl ApplicationState {
@@ -35,9 +35,16 @@ impl ApplicationState {
         let focus_state = Arc::new(Mutex::new(FocusState::default()));
         let weak_focus_state = Arc::downgrade(&focus_state);
 
-        let event_handler = BlitzEventHandler::new(focus_state);
+        let event_handler = Arc::new(Mutex::new(BlitzEventHandler::new(focus_state)));
+        let weak_event_handler = Arc::downgrade(&event_handler);
 
-        let dom = DomManager::spawn(inner_size, root, proxy, weak_focus_state);
+        let dom = DomManager::spawn(
+            inner_size,
+            root,
+            proxy,
+            weak_event_handler,
+            weak_focus_state,
+        );
 
         let mut wgpu_renderer = WgpuRenderer::new(window).unwrap();
         wgpu_renderer.set_size(piet_wgpu::kurbo::Size {
@@ -71,7 +78,7 @@ impl ApplicationState {
 
     pub fn clean(&self) -> DirtyNodes {
         let dirty = self.dom.clean();
-        if self.event_handler.clean() {
+        if self.event_handler.lock().unwrap().clean() {
             DirtyNodes::All
         } else {
             dirty
@@ -79,9 +86,18 @@ impl ApplicationState {
     }
 
     pub fn send_event(&mut self, event: &TaoEvent) {
-        self.event_handler
-            .register_event(event, &mut self.dom.rdom());
-        let evts = self.event_handler.drain_events();
+        let size = self.dom.size();
+        let size = Size {
+            width: size.width,
+            height: size.height,
+        };
+        let evts;
+        {
+            let rdom = &mut self.dom.rdom();
+            let mut event_handler = self.event_handler.lock().unwrap();
+            event_handler.register_event(event, rdom, &size);
+            evts = event_handler.drain_events();
+        }
         self.dom.send_events(evts);
     }
 }
@@ -102,7 +118,8 @@ impl DomManager {
         size: PhysicalSize<u32>,
         root: Component<()>,
         proxy: EventLoopProxy<Redraw>,
-        weak_focus_iter: Weak<Mutex<FocusState>>,
+        weak_event_handler: Weak<Mutex<BlitzEventHandler>>,
+        weak_focus_state: Weak<Mutex<FocusState>>,
     ) -> Self {
         let rdom: Arc<Mutex<Dom>> = Arc::new(Mutex::new(RealDom::new()));
         let size = Arc::new(Mutex::new(size));
@@ -184,65 +201,66 @@ impl DomManager {
 
                         if let Some(strong) = weak_rdom.upgrade() {
                             if let Ok(mut rdom) = strong.lock() {
-                                if let Some(strong) = weak_focus_iter.upgrade() {
+                                let mutations = vdom.work_with_deadline(|| false);
+                                if let Some(strong) = weak_focus_state.upgrade() {
                                     if let Ok(mut focus_state) = strong.lock() {
-                                        let mutations = vdom.work_with_deadline(|| false);
-
-                                        for m in &mutations {
-                                            focus_state.prune(m, &rdom);
-                                        }
-
-                                        // update the real dom's nodes
-                                        let to_update = rdom.apply_mutations(mutations);
-
-                                        let mut ctx = AnyMap::new();
-                                        ctx.insert(stretch.clone());
-
-                                        // update the style and layout
-                                        let to_rerender =
-                                            rdom.update_state(&vdom, to_update, ctx).unwrap();
-
-                                        if let Some(strong) = weak_size.upgrade() {
-                                            let size = strong.lock().unwrap();
-
-                                            let size = Size {
-                                                width: Number::Defined(size.width as f32),
-                                                height: Number::Defined(size.height as f32),
-                                            };
-                                            if !to_rerender.is_empty() || last_size != size {
-                                                last_size = size;
-                                                stretch
-                                                    .borrow_mut()
-                                                    .compute_layout(
-                                                        rdom[rdom.root_id()]
-                                                            .state
-                                                            .layout
-                                                            .node
-                                                            .unwrap(),
-                                                        size,
-                                                    )
-                                                    .unwrap();
-                                                rdom.traverse_depth_first_mut(|n| {
-                                                    if let Some(node) = n.state.layout.node {
-                                                        n.state.layout.layout = Some(
-                                                            *stretch.borrow().layout(node).unwrap(),
-                                                        );
-                                                    }
-                                                });
-                                                weak_dirty
-                                                    .upgrade()
-                                                    .unwrap()
-                                                    .lock()
-                                                    .unwrap()
-                                                    .extend(to_rerender.iter());
-
-                                                proxy.send_event(Redraw).unwrap();
+                                        if let Some(strong) = weak_event_handler.upgrade() {
+                                            if let Ok(mut event_handler) = strong.lock() {
+                                                for m in &mutations {
+                                                    event_handler.prune(m, &rdom);
+                                                    focus_state.prune(m, &rdom);
+                                                }
+                                            } else {
+                                                break;
                                             }
                                         } else {
                                             break;
                                         }
                                     } else {
                                         break;
+                                    }
+                                } else {
+                                    break;
+                                }
+                                // update the real dom's nodes
+                                let to_update = rdom.apply_mutations(mutations);
+
+                                let mut ctx = AnyMap::new();
+                                ctx.insert(stretch.clone());
+
+                                // update the style and layout
+                                let to_rerender = rdom.update_state(&vdom, to_update, ctx).unwrap();
+
+                                if let Some(strong) = weak_size.upgrade() {
+                                    let size = *strong.lock().unwrap();
+
+                                    let size = Size {
+                                        width: Number::Defined(size.width as f32),
+                                        height: Number::Defined(size.height as f32),
+                                    };
+                                    if !to_rerender.is_empty() || last_size != size {
+                                        last_size = size;
+                                        stretch
+                                            .borrow_mut()
+                                            .compute_layout(
+                                                rdom[rdom.root_id()].state.layout.node.unwrap(),
+                                                size,
+                                            )
+                                            .unwrap();
+                                        rdom.traverse_depth_first_mut(|n| {
+                                            if let Some(node) = n.state.layout.node {
+                                                n.state.layout.layout =
+                                                    Some(*stretch.borrow().layout(node).unwrap());
+                                            }
+                                        });
+                                        weak_dirty
+                                            .upgrade()
+                                            .unwrap()
+                                            .lock()
+                                            .unwrap()
+                                            .extend(to_rerender.iter());
+
+                                        proxy.send_event(Redraw).unwrap();
                                     }
                                 } else {
                                     break;
@@ -287,6 +305,10 @@ impl DomManager {
     fn set_size(&mut self, size: PhysicalSize<u32>) {
         *self.size.lock().unwrap() = size;
         self.force_redraw();
+    }
+
+    fn size(&self) -> PhysicalSize<u32> {
+        *self.size.lock().unwrap()
     }
 
     fn force_redraw(&mut self) {

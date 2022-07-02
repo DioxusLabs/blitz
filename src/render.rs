@@ -1,3 +1,4 @@
+use dioxus::core::ElementId;
 use dioxus::native_core::real_dom::NodeType;
 use piet_wgpu::kurbo::{Point, Rect, RoundedRect, Vec2};
 use piet_wgpu::{Color, Piet, RenderContext, Text, TextLayoutBuilder};
@@ -92,7 +93,7 @@ fn render_node(
     }
 }
 
-fn get_shape(node: &DomNode, viewport_size: &Size<u32>, location: Point) -> RoundedRect {
+pub(crate) fn get_shape(node: &DomNode, viewport_size: &Size<u32>, location: Point) -> RoundedRect {
     let layout = node.state.layout.layout.unwrap();
     let style = &node.state.style;
 
@@ -165,4 +166,21 @@ fn get_shape(node: &DomNode, viewport_size: &Size<u32>, location: Point) -> Roun
                 .resolve(axis, &rect, viewport_size),
         ),
     )
+}
+
+pub(crate) fn get_abs_pos(node: &DomNode, dom: &Dom) -> Point {
+    let mut node_layout = node.state.layout.layout.unwrap().location;
+    let mut current = node;
+    while let Some(parent_id) = current.parent {
+        // the root element is positioned at (0, 0)
+        if parent_id == ElementId(0) {
+            break;
+        }
+        let parent = &dom[parent_id];
+        current = parent;
+        let parent_layout = parent.state.layout.layout.unwrap();
+        node_layout.x += parent_layout.location.x;
+        node_layout.y += parent_layout.location.y;
+    }
+    Point::new(node_layout.x as f64, node_layout.y as f64)
 }
