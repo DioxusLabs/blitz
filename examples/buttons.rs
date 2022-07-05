@@ -21,24 +21,24 @@ fn Button(cx: Scope<ButtonProps>) -> Element {
     let color = format!("hsl({hue}, {saturation}%, {brightness}%)");
 
     cx.render(rsx! {
-        div{
+        div {
             margin: "1px",
             width: "100%",
             height: "100%",
             background_color: "{color}",
             tabindex: "{cx.props.layer}",
             onkeydown: |e| {
-                if let KeyCode::Space = e.data.key_code{
+                if e.code() == keyboard_types::Code::Space {
                     toggle.modify(|f| !f);
                 }
             },
             onmouseup: |_| {
                 toggle.modify(|f| !f);
             },
-            onmouseenter: |_|{
+            onmouseenter: |_| {
                 hovered.set(true);
             },
-            onmouseleave: |_|{
+            onmouseleave: |_| {
                 hovered.set(false);
             },
             justify_content: "center",
@@ -47,48 +47,31 @@ fn Button(cx: Scope<ButtonProps>) -> Element {
             display: "flex",
             flex_direction: "column",
 
-            p{"tabindex: {cx.props.layer}"}
+            p { "tabindex: {cx.props.layer}" }
         }
     })
 }
 
 fn app(cx: Scope) -> Element {
     cx.render(rsx! {
-        div {
-            display: "flex",
-            flex_direction: "column",
-            width: "100%",
-            height: "100%",
-
+        div { display: "flex", flex_direction: "column", width: "100%", height: "100%",
             (1..8).map(|y|
-                cx.render(rsx!{
-                    div{
-                        display: "flex",
-                        flex_direction: "row",
-                        width: "100%",
-                        height: "100%",
-                        (1..8).map(|x|{
-                            if (x + y) % 2 == 0{
-                                cx.render(rsx!{
-                                    div{
-                                        width: "100%",
-                                        height: "100%",
-                                        background_color: "rgb(100, 100, 100)",
-                                    }
-                                })
-                            }
-                            else{
-                                let layer = (x + y) % 3;
-                                cx.render(rsx!{
-                                    Button{
+                rsx! {
+                    div { display: "flex", flex_direction: "row", width: "100%", height: "100%",
+                        (1..8).map(|x| {
+                            if (x + y) % 2 == 0 {
+                                rsx! { div { width: "100%", height: "100%", background_color: "rgb(100, 100, 100)" } }
+                            } else {
+                                rsx! {
+                                    Button {
                                         color_offset: x * y,
-                                        layer: layer as u16,
+                                        layer: ((x + y) % 3) as u16
                                     }
-                                })
+                                }
                             }
                         })
                     }
-                })
+                }
             )
         }
     })

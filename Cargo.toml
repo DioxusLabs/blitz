@@ -26,3 +26,4 @@ futures-util = "0.3.21"
 fxhash = "0.2"
 serde_json = "1.0.82"
 serde = { version = "1.0.138", features = ["derive"] }
+keyboard-types = "0.6.2"

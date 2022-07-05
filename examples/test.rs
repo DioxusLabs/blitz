@@ -7,7 +7,7 @@ fn main() {
 }
 
 fn app(cx: Scope) -> Element {
-    let count = use_state(&cx, || 0);
+    let mut count = use_state(&cx, || 0);
 
     use_future(&cx, (), move |_| {
         let count = count.to_owned();
@@ -39,10 +39,9 @@ fn app(cx: Scope) -> Element {
             width: "100%",
             background_color: "rgb(75%, 75%, 75%)",
             onkeydown: |e| {
-                if e.data.shift_key{
+                if e.data.shift_key {
                     count.with_mut(|f| *f -= 10);
-                }
-                else{
+                } else {
                     count.with_mut(|f| *f += 10);
                 }
             },
@@ -62,6 +61,10 @@ fn app(cx: Scope) -> Element {
                 border_width: "{width}px",
                 color: "red",
 
+                onmouseenter: move |_| {
+                    count += 10;
+                },
+
                 "Hello left {count}!"
             }
 
@@ -79,6 +82,13 @@ fn app(cx: Scope) -> Element {
                 border_color: "hsl({color}, 100%, 50%)",
                 border_width: "{width_offset}px",
                 color: "blue",
+
+                onmouseenter: move |_| {
+                    count -= 10;
+                },
+                onclick: move |_| {
+                    count += 100;
+                },
 
                 "Hello right {count}!"
             }
