@@ -4,7 +4,7 @@ Blitz is a native renderer for Dioxus that uses WGPU to draw the Dioxus virtuald
 
 Because the default Dioxus element set relies on HTML, so does Blitz, meaning Blitz can be used as a partial replacement for the web rendering engine in modern browsers.
 
-CSS is handled via [ParcelCSS]() and layout is handled with [Taffy]().
+CSS is handled via [ParcelCSS](https://github.com/parcel-bundler/parcel-css) and layout is handled with [Taffy](https://github.com/DioxusLabs/taffy).
 
 ## Extending Blitz
 
