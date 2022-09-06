@@ -1,6 +1,7 @@
 use std::f32::consts::PI;
 
 use dioxus::prelude::*;
+use keyboard_types::Modifiers;
 
 fn main() {
     blitz::launch(app);
@@ -39,7 +40,7 @@ fn app(cx: Scope) -> Element {
             width: "100%",
             background_color: "rgb(75%, 75%, 75%)",
             onkeydown: |e| {
-                if e.data.shift_key {
+                if e.data.modifiers().contains(Modifiers::SHIFT) {
                     count.with_mut(|f| *f -= 10);
                 } else {
                     count.with_mut(|f| *f += 10);

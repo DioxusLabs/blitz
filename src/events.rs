@@ -10,7 +10,6 @@ use tao::event::MouseButton;
 use dioxus::{
     core::{ElementId, EventPriority, Mutations, UserEvent},
     events::{KeyboardData, MouseData},
-    native_core::real_dom::NodeType,
     prelude::dioxus_elements::{
         geometry::{
             euclid::Point2D, ClientPoint, Coordinates, ElementPoint, PagePoint, ScreenPoint,
@@ -18,6 +17,8 @@ use dioxus::{
         input_data::{self, keyboard_types::Modifiers, MouseButtonSet},
     },
 };
+use dioxus_native_core::real_dom::NodeType;
+
 use tao::keyboard::Key;
 
 use crate::{focus::FocusState, mouse::get_hovered, node::PreventDefault, Dom, TaoEvent};

@@ -72,6 +72,7 @@ impl<T: Resolve> Resolve for MathFunction<T> {
                     rect,
                     viewport_size,
                 ))),
+            _ => todo!(),
         }
     }
 }

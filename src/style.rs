@@ -1,10 +1,10 @@
 use cssparser::{Parser, ParserInput};
 use dioxus::core as dioxus_core;
-use dioxus::native_core as dioxus_native_core;
-use dioxus::native_core::node_ref::{AttributeMask, NodeMask, NodeView};
-use dioxus::native_core::state::NodeDepState;
-use dioxus::native_core::state::{ParentDepState, State};
-use dioxus::native_core_macro::{sorted_str_slice, State};
+use dioxus_native_core;
+use dioxus_native_core::node_ref::{AttributeMask, NodeMask, NodeView};
+use dioxus_native_core::state::NodeDepState;
+use dioxus_native_core::state::{ParentDepState, State};
+use dioxus_native_core_macro::{sorted_str_slice, State};
 use parcel_css::properties::border::BorderColor;
 use parcel_css::properties::border::BorderSideWidth;
 use parcel_css::properties::border::BorderWidth;
@@ -36,13 +36,13 @@ impl Default for Style {
 
 #[derive(Clone, PartialEq, Debug)]
 pub(crate) struct BackgroundColor(pub CssColor);
-impl NodeDepState for BackgroundColor {
+impl NodeDepState<()> for BackgroundColor {
     type Ctx = ();
-    type DepState = ();
+
     const NODE_MASK: NodeMask =
         NodeMask::new_with_attrs(AttributeMask::Static(&["background-color"]));
 
-    fn reduce(&mut self, node: NodeView<'_>, _sibling: &Self::DepState, _: &Self::Ctx) -> bool {
+    fn reduce(&mut self, node: NodeView<'_>, _sibling: (), _: &Self::Ctx) -> bool {
         if let Some(color_attr) = node.attributes().next() {
             if let Some(as_text) = color_attr.value.as_text() {
                 let mut value = ParserInput::new(as_text);
@@ -101,9 +101,9 @@ pub(crate) struct Border {
     pub radius: BorderRadius,
 }
 
-impl NodeDepState for Border {
+impl NodeDepState<()> for Border {
     type Ctx = ();
-    type DepState = ();
+
     const NODE_MASK: NodeMask =
         NodeMask::new_with_attrs(AttributeMask::Static(&sorted_str_slice!([
             "border-color",
@@ -123,7 +123,7 @@ impl NodeDepState for Border {
             "border-left-width"
         ])));
 
-    fn reduce(&mut self, node: NodeView<'_>, _sibling: &Self::DepState, _: &Self::Ctx) -> bool {
+    fn reduce(&mut self, node: NodeView<'_>, _sibling: (), _: &Self::Ctx) -> bool {
         let mut new = Border::default();
         for a in node.attributes() {
             let mut value = ParserInput::new(a.value.as_text().unwrap());

@@ -2,9 +2,9 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use dioxus::core::{Attribute, ElementId};
-use dioxus::native_core::layout_attributes::apply_layout_attributes;
-use dioxus::native_core::node_ref::{AttributeMask, NodeMask};
-use dioxus::native_core::state::ChildDepState;
+use dioxus_native_core::layout_attributes::apply_layout_attributes;
+use dioxus_native_core::node_ref::{AttributeMask, NodeMask};
+use dioxus_native_core::state::ChildDepState;
 use taffy::prelude::*;
 
 #[derive(Clone, Default, Debug)]
@@ -28,7 +28,7 @@ impl ChildDepState for StretchLayout {
     /// Setup the layout
     fn reduce<'a>(
         &mut self,
-        node: dioxus::native_core::node_ref::NodeView,
+        node: dioxus_native_core::node_ref::NodeView,
         children: impl Iterator<Item = &'a Self::DepState>,
         ctx: &Self::Ctx,
     ) -> bool

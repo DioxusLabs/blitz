@@ -5,6 +5,7 @@ use std::{
 };
 
 use anymap::AnyMap;
+use dioxus::core::ElementId;
 use dioxus::{
     core::{exports::futures_channel::mpsc::unbounded, SchedulerMsg, UserEvent},
     prelude::{Component, UnboundedSender, VirtualDom},
@@ -15,7 +16,7 @@ use piet_wgpu::{Piet, WgpuRenderer};
 use tao::{dpi::PhysicalSize, event_loop::EventLoopProxy, window::Window};
 
 use crate::{events::BlitzEventHandler, focus::FocusState, render::render, Dom, Redraw, TaoEvent};
-use dioxus::native_core::real_dom::RealDom;
+use dioxus_native_core::real_dom::RealDom;
 use taffy::{
     prelude::{Number, Size},
     Taffy,
@@ -107,7 +108,7 @@ struct DomManager {
     rdom: Arc<Mutex<Dom>>,
     size: Arc<Mutex<PhysicalSize<u32>>>,
     /// The node that need to be redrawn.
-    dirty: Arc<Mutex<Vec<usize>>>,
+    dirty: Arc<Mutex<Vec<ElementId>>>,
     force_redraw: bool,
     scheduler: UnboundedSender<SchedulerMsg>,
     redraw_sender: UnboundedSender<()>,
@@ -158,7 +159,7 @@ impl DomManager {
                             let mut ctx = AnyMap::new();
                             ctx.insert(stretch.clone());
                             // update the style and layout
-                            let to_rerender = rdom.update_state(&vdom, to_update, ctx).unwrap();
+                            let to_rerender = rdom.update_state(&vdom, to_update, ctx);
                             if let Some(strong) = weak_size.upgrade() {
                                 let size = strong.lock().unwrap();
 
@@ -172,7 +173,7 @@ impl DomManager {
                                 stretch
                                     .borrow_mut()
                                     .compute_layout(
-                                        rdom[rdom.root_id()].state.layout.node.unwrap(),
+                                        rdom[ElementId(rdom.root_id())].state.layout.node.unwrap(),
                                         size,
                                     )
                                     .unwrap();
@@ -229,7 +230,7 @@ impl DomManager {
                                 ctx.insert(stretch.clone());
 
                                 // update the style and layout
-                                let to_rerender = rdom.update_state(&vdom, to_update, ctx).unwrap();
+                                let to_rerender = rdom.update_state(&vdom, to_update, ctx);
 
                                 if let Some(strong) = weak_size.upgrade() {
                                     let size = *strong.lock().unwrap();
@@ -243,7 +244,11 @@ impl DomManager {
                                         stretch
                                             .borrow_mut()
                                             .compute_layout(
-                                                rdom[rdom.root_id()].state.layout.node.unwrap(),
+                                                rdom[ElementId(rdom.root_id())]
+                                                    .state
+                                                    .layout
+                                                    .node
+                                                    .unwrap(),
                                                 size,
                                             )
                                             .unwrap();
@@ -258,7 +263,7 @@ impl DomManager {
                                             .unwrap()
                                             .lock()
                                             .unwrap()
-                                            .extend(to_rerender.iter());
+                                            .extend(to_rerender.into_iter());
 
                                         proxy.send_event(Redraw).unwrap();
                                     }
@@ -331,7 +336,7 @@ impl DomManager {
 
 pub enum DirtyNodes {
     All,
-    Some(Vec<usize>),
+    Some(Vec<ElementId>),
 }
 
 impl DirtyNodes {

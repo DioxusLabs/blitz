@@ -1,5 +1,5 @@
 use dioxus::core::ElementId;
-use dioxus::native_core::real_dom::NodeType;
+use dioxus_native_core::real_dom::NodeType;
 use piet_wgpu::kurbo::{Point, Rect, RoundedRect, Vec2};
 use piet_wgpu::{Color, Piet, RenderContext, Text, TextLayoutBuilder};
 use taffy::prelude::Size;
@@ -11,7 +11,7 @@ use crate::{Dom, DomNode};
 const FOCUS_BORDER_WIDTH: f64 = 6.0;
 
 pub(crate) fn render(dom: &Dom, piet: &mut Piet, window_size: PhysicalSize<u32>) {
-    let root = &dom[1];
+    let root = &dom[ElementId(1)];
     let root_layout = root.state.layout.layout.unwrap();
     let background_brush = piet.solid_brush(Color::WHITE);
     piet.fill(
