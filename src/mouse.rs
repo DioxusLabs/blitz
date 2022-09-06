@@ -1,11 +1,9 @@
-use dioxus::{
-    core::ElementId,
-    native_core::{
-        node_ref::{NodeMask, NodeView},
-        state::NodeDepState,
-    },
-    native_core_macro::sorted_str_slice,
+use dioxus::core::ElementId;
+use dioxus_native_core::{
+    node_ref::{NodeMask, NodeView},
+    state::NodeDepState,
 };
+use dioxus_native_core_macro::sorted_str_slice;
 use piet_wgpu::kurbo::{Point, Shape};
 use taffy::prelude::Size;
 
@@ -46,12 +44,12 @@ pub(crate) fn check_hovered(
 #[derive(Debug, Default, PartialEq, Clone)]
 pub(crate) struct MouseEffected(bool);
 
-impl NodeDepState for MouseEffected {
+impl NodeDepState<()> for MouseEffected {
     type Ctx = ();
-    type DepState = ();
+
     const NODE_MASK: NodeMask = NodeMask::new().with_listeners();
 
-    fn reduce(&mut self, node: NodeView<'_>, _sibling: &Self::DepState, _: &Self::Ctx) -> bool {
+    fn reduce(&mut self, node: NodeView<'_>, _sibling: (), _: &Self::Ctx) -> bool {
         let new = Self(
             node.listeners()
                 .iter()

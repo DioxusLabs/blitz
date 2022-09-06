@@ -1,11 +1,11 @@
 use dioxus::core as dioxus_core;
-use dioxus::native_core as dioxus_native_core;
-use dioxus::native_core::state::*;
-use dioxus::native_core_macro::State;
+use dioxus_native_core;
+use dioxus_native_core::state::*;
+use dioxus_native_core_macro::State;
 
 use crate::layout::StretchLayout;
 use crate::mouse;
-use dioxus::native_core_macro::sorted_str_slice;
+use dioxus_native_core_macro::sorted_str_slice;
 
 #[derive(Clone, PartialEq, Default, State, Debug)]
 pub(crate) struct BlitzNodeState {
@@ -47,10 +47,8 @@ impl Default for PreventDefault {
     }
 }
 
-impl NodeDepState for PreventDefault {
+impl NodeDepState<()> for PreventDefault {
     type Ctx = ();
-
-    type DepState = ();
 
     const NODE_MASK: dioxus_native_core::node_ref::NodeMask =
         dioxus_native_core::node_ref::NodeMask::new_with_attrs(
@@ -62,7 +60,7 @@ impl NodeDepState for PreventDefault {
     fn reduce(
         &mut self,
         node: dioxus_native_core::node_ref::NodeView,
-        _sibling: &Self::DepState,
+        _sibling: (),
         _ctx: &Self::Ctx,
     ) -> bool {
         let new = match node
