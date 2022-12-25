@@ -14,9 +14,9 @@ repository = "https://github.com/DioxusLabs/blitz"
 dioxus = { git = "https://github.com/DioxusLabs/dioxus" }
 dioxus-native-core = { git = "https://github.com/DioxusLabs/dioxus" }
 dioxus-native-core-macro = { git = "https://github.com/DioxusLabs/dioxus" }
-taffy = "0.1"
+taffy = "0.2.2"
 tokio = { version = "1.17.0", features = ["full"] }
-parcel_css = "1.0.0-alpha.32"
+lightningcss = "1.0.0-alpha.38"
 cssparser = "0.29.2"
 piet-wgpu = { git = "https://github.com/DioxusLabs/piet-wgpu" }
 tao = { version = "0.12.1", features = ["serde"] }
@@ -27,3 +27,4 @@ fxhash = "0.2"
 serde_json = "1.0.82"
 serde = { version = "1.0.138", features = ["derive"] }
 keyboard-types = "0.6.2"
+rustc-hash = "1.1.0"

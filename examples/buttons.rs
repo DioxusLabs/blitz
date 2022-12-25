@@ -1,4 +1,4 @@
-use dioxus::{events::KeyCode, prelude::*};
+use dioxus::prelude::*;
 
 fn main() {
     blitz::launch(app);
@@ -12,8 +12,8 @@ struct ButtonProps {
 
 #[allow(non_snake_case)]
 fn Button(cx: Scope<ButtonProps>) -> Element {
-    let toggle = use_state(&cx, || false);
-    let hovered = use_state(&cx, || false);
+    let toggle = use_state(cx, || false);
+    let hovered = use_state(cx, || false);
 
     let hue = cx.props.color_offset % 255;
     let saturation = if *toggle.get() { 50 } else { 25 } + if *hovered.get() { 50 } else { 25 };

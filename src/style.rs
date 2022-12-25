@@ -1,49 +1,34 @@
-use cssparser::{Parser, ParserInput};
-use dioxus::core as dioxus_core;
-use dioxus_native_core;
+use cssparser::{Parser, ParserInput, RGBA};
 use dioxus_native_core::node_ref::{AttributeMask, NodeMask, NodeView};
 use dioxus_native_core::state::NodeDepState;
-use dioxus_native_core::state::{ParentDepState, State};
-use dioxus_native_core_macro::{sorted_str_slice, State};
-use parcel_css::properties::border::BorderColor;
-use parcel_css::properties::border::BorderSideWidth;
-use parcel_css::properties::border::BorderWidth;
-use parcel_css::properties::border_radius::BorderRadius;
-use parcel_css::traits::Parse;
-use parcel_css::values::color::CssColor;
-use parcel_css::{properties::Property, stylesheet::ParserOptions};
-
-#[derive(Clone, PartialEq, Debug, State)]
-pub(crate) struct Style {
-    #[parent_dep_state(color)]
-    pub color: ForgroundColor,
-    #[node_dep_state()]
-    pub bg_color: BackgroundColor,
-    #[node_dep_state()]
-    pub border: Border,
-}
-
-impl Default for Style {
-    fn default() -> Self {
-        use cssparser::RGBA;
-        Style {
-            color: ForgroundColor(CssColor::RGBA(RGBA::new(0, 0, 0, 255))),
-            bg_color: BackgroundColor(CssColor::RGBA(RGBA::new(255, 255, 255, 0))),
-            border: Border::default(),
-        }
-    }
-}
+use dioxus_native_core::state::ParentDepState;
+use dioxus_native_core_macro::sorted_str_slice;
+use lightningcss::properties::border::BorderColor;
+use lightningcss::properties::border::BorderSideWidth;
+use lightningcss::properties::border::BorderWidth;
+use lightningcss::properties::border_radius::BorderRadius;
+use lightningcss::traits::Parse;
+use lightningcss::values::color::CssColor;
+use lightningcss::{properties::Property, stylesheet::ParserOptions};
 
 #[derive(Clone, PartialEq, Debug)]
 pub(crate) struct BackgroundColor(pub CssColor);
-impl NodeDepState<()> for BackgroundColor {
+
+impl Default for BackgroundColor {
+    fn default() -> Self {
+        BackgroundColor(CssColor::RGBA(RGBA::new(255, 255, 255, 0)))
+    }
+}
+
+impl NodeDepState for BackgroundColor {
+    type DepState = ();
     type Ctx = ();
 
     const NODE_MASK: NodeMask =
         NodeMask::new_with_attrs(AttributeMask::Static(&["background-color"]));
 
     fn reduce(&mut self, node: NodeView<'_>, _sibling: (), _: &Self::Ctx) -> bool {
-        if let Some(color_attr) = node.attributes().next() {
+        if let Some(color_attr) = node.attributes().into_iter().flatten().next() {
             if let Some(as_text) = color_attr.value.as_text() {
                 let mut value = ParserInput::new(as_text);
                 let mut parser = Parser::new(&mut value);
@@ -61,15 +46,22 @@ impl NodeDepState<()> for BackgroundColor {
 
 #[derive(Clone, PartialEq, Debug)]
 pub(crate) struct ForgroundColor(pub CssColor);
+
+impl Default for ForgroundColor {
+    fn default() -> Self {
+        ForgroundColor(CssColor::RGBA(RGBA::new(0, 0, 0, 255)))
+    }
+}
+
 impl ParentDepState for ForgroundColor {
     type Ctx = ();
-    type DepState = Self;
+    type DepState = (Self,);
     const NODE_MASK: NodeMask = NodeMask::new_with_attrs(AttributeMask::Static(&["color"]));
 
-    fn reduce(&mut self, node: NodeView<'_>, parent: Option<&Self>, _: &Self::Ctx) -> bool {
-        let new = if let Some(parent) = parent {
+    fn reduce(&mut self, node: NodeView<'_>, parent: Option<(&Self,)>, _: &Self::Ctx) -> bool {
+        let new = if let Some((parent,)) = parent {
             parent.0.clone()
-        } else if let Some(color_attr) = node.attributes().next() {
+        } else if let Some(color_attr) = node.attributes().into_iter().flatten().next() {
             if let Some(as_text) = color_attr.value.as_text() {
                 let mut value = ParserInput::new(as_text);
                 let mut parser = Parser::new(&mut value);
@@ -101,7 +93,8 @@ pub(crate) struct Border {
     pub radius: BorderRadius,
 }
 
-impl NodeDepState<()> for Border {
+impl NodeDepState for Border {
+    type DepState = ();
     type Ctx = ();
 
     const NODE_MASK: NodeMask =
@@ -125,56 +118,64 @@ impl NodeDepState<()> for Border {
 
     fn reduce(&mut self, node: NodeView<'_>, _sibling: (), _: &Self::Ctx) -> bool {
         let mut new = Border::default();
-        for a in node.attributes() {
-            let mut value = ParserInput::new(a.value.as_text().unwrap());
-            let mut parser = Parser::new(&mut value);
-            match Property::parse(a.name.into(), &mut parser, &ParserOptions::default()).unwrap() {
-                Property::BorderColor(c) => {
-                    new.colors = c;
+        if let Some(attributes) = node.attributes() {
+            for a in attributes {
+                let mut value = ParserInput::new(a.value.as_text().unwrap());
+                let mut parser = Parser::new(&mut value);
+                match Property::parse(
+                    a.attribute.name.as_str().into(),
+                    &mut parser,
+                    &ParserOptions::default(),
+                )
+                .unwrap()
+                {
+                    Property::BorderColor(c) => {
+                        new.colors = c;
+                    }
+                    Property::BorderTopColor(c) => {
+                        new.colors.top = c;
+                    }
+                    Property::BorderRightColor(c) => {
+                        new.colors.right = c;
+                    }
+                    Property::BorderBottomColor(c) => {
+                        new.colors.bottom = c;
+                    }
+                    Property::BorderLeftColor(c) => {
+                        new.colors.left = c;
+                    }
+                    Property::BorderRadius(r, _) => {
+                        new.radius = r;
+                    }
+                    Property::BorderTopLeftRadius(r, _) => {
+                        new.radius.top_left = r;
+                    }
+                    Property::BorderTopRightRadius(r, _) => {
+                        new.radius.top_right = r;
+                    }
+                    Property::BorderBottomRightRadius(r, _) => {
+                        new.radius.bottom_right = r;
+                    }
+                    Property::BorderBottomLeftRadius(r, _) => {
+                        new.radius.bottom_left = r;
+                    }
+                    Property::BorderWidth(width) => {
+                        new.width = width;
+                    }
+                    Property::BorderTopWidth(width) => {
+                        new.width.top = width;
+                    }
+                    Property::BorderRightWidth(width) => {
+                        new.width.right = width;
+                    }
+                    Property::BorderBottomWidth(width) => {
+                        new.width.bottom = width;
+                    }
+                    Property::BorderLeftWidth(width) => {
+                        new.width.left = width;
+                    }
+                    _ => {}
                 }
-                Property::BorderTopColor(c) => {
-                    new.colors.top = c;
-                }
-                Property::BorderRightColor(c) => {
-                    new.colors.right = c;
-                }
-                Property::BorderBottomColor(c) => {
-                    new.colors.bottom = c;
-                }
-                Property::BorderLeftColor(c) => {
-                    new.colors.left = c;
-                }
-                Property::BorderRadius(r, _) => {
-                    new.radius = r;
-                }
-                Property::BorderTopLeftRadius(r, _) => {
-                    new.radius.top_left = r;
-                }
-                Property::BorderTopRightRadius(r, _) => {
-                    new.radius.top_right = r;
-                }
-                Property::BorderBottomRightRadius(r, _) => {
-                    new.radius.bottom_right = r;
-                }
-                Property::BorderBottomLeftRadius(r, _) => {
-                    new.radius.bottom_left = r;
-                }
-                Property::BorderWidth(width) => {
-                    new.width = width;
-                }
-                Property::BorderTopWidth(width) => {
-                    new.width.top = width;
-                }
-                Property::BorderRightWidth(width) => {
-                    new.width.right = width;
-                }
-                Property::BorderBottomWidth(width) => {
-                    new.width.bottom = width;
-                }
-                Property::BorderLeftWidth(width) => {
-                    new.width.left = width;
-                }
-                _ => {}
             }
         }
 

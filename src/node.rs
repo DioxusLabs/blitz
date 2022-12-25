@@ -1,22 +1,26 @@
-use dioxus::core as dioxus_core;
-use dioxus_native_core;
 use dioxus_native_core::state::*;
 use dioxus_native_core_macro::State;
 
+use crate::focus::Focus;
 use crate::layout::StretchLayout;
-use crate::mouse;
+use crate::mouse::MouseEffected;
+use crate::style::{BackgroundColor, Border, ForgroundColor};
 use dioxus_native_core_macro::sorted_str_slice;
 
 #[derive(Clone, PartialEq, Default, State, Debug)]
 pub(crate) struct BlitzNodeState {
     #[node_dep_state()]
-    pub(crate) mouse_effected: mouse::MouseEffected,
-    #[child_dep_state(layout, Rc<RefCell<Stretch>>)]
+    pub(crate) mouse_effected: MouseEffected,
+    #[child_dep_state(layout, Arc<Mutex<Taffy>>)]
     pub layout: StretchLayout,
-    #[state]
-    pub style: crate::style::Style,
+    #[parent_dep_state(color)]
+    pub color: ForgroundColor,
     #[node_dep_state()]
-    pub focus: crate::focus::Focus,
+    pub bg_color: BackgroundColor,
+    #[node_dep_state()]
+    pub border: Border,
+    #[node_dep_state()]
+    pub focus: Focus,
     pub focused: bool,
     #[node_dep_state()]
     pub prevent_default: PreventDefault,
@@ -47,7 +51,8 @@ impl Default for PreventDefault {
     }
 }
 
-impl NodeDepState<()> for PreventDefault {
+impl NodeDepState for PreventDefault {
+    type DepState = ();
     type Ctx = ();
 
     const NODE_MASK: dioxus_native_core::node_ref::NodeMask =
@@ -65,7 +70,9 @@ impl NodeDepState<()> for PreventDefault {
     ) -> bool {
         let new = match node
             .attributes()
-            .find(|a| a.name == "dioxus-prevent-default")
+            .into_iter()
+            .flatten()
+            .find(|a| a.attribute.name == "dioxus-prevent-default")
             .and_then(|a| a.value.as_text())
         {
             Some("onfocus") => PreventDefault::Focus,

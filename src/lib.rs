@@ -1,7 +1,7 @@
 use crate::node::BlitzNodeState;
 use application::ApplicationState;
 use dioxus::prelude::*;
-use dioxus_native_core::real_dom::{Node, RealDom};
+use dioxus_native_core::{node::Node, real_dom::RealDom};
 
 use tao::{
     event::{Event, WindowEvent},

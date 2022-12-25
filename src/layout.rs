@@ -1,7 +1,6 @@
-use std::cell::RefCell;
-use std::rc::Rc;
+use std::sync::{Arc, Mutex};
 
-use dioxus::core::{Attribute, ElementId};
+use dioxus::core::ElementId;
 use dioxus_native_core::layout_attributes::apply_layout_attributes;
 use dioxus_native_core::node_ref::{AttributeMask, NodeMask};
 use dioxus_native_core::state::ChildDepState;
@@ -21,21 +20,21 @@ impl PartialEq<Self> for StretchLayout {
 }
 
 impl ChildDepState for StretchLayout {
-    type Ctx = Rc<RefCell<Taffy>>;
-    type DepState = Self;
+    type Ctx = Arc<Mutex<Taffy>>;
+    type DepState = (Self,);
 
     const NODE_MASK: NodeMask = NodeMask::new_with_attrs(AttributeMask::All).with_text();
     /// Setup the layout
     fn reduce<'a>(
         &mut self,
         node: dioxus_native_core::node_ref::NodeView,
-        children: impl Iterator<Item = &'a Self::DepState>,
+        children: impl Iterator<Item = (&'a Self,)>,
         ctx: &Self::Ctx,
     ) -> bool
     where
         Self::DepState: 'a,
     {
-        let mut stretch = ctx.borrow_mut();
+        let mut stretch = ctx.lock().unwrap();
         let mut changed = false;
         if let Some(text) = node.text() {
             let char_len = text.chars().count();
@@ -56,7 +55,7 @@ impl ChildDepState for StretchLayout {
                     changed = true;
                 }
             } else {
-                self.node = Some(stretch.new_node(style, &[]).unwrap());
+                self.node = Some(stretch.new_leaf(style).unwrap());
                 changed = true;
             }
 
@@ -68,21 +67,23 @@ impl ChildDepState for StretchLayout {
             // gather up all the styles from the attribute list
             let mut style = Style::default();
 
-            for Attribute { name, value, .. } in node.attributes() {
+            for attr in node.attributes().unwrap() {
+                let name = &attr.attribute.name;
+                let value = attr.value;
                 if let Some(value) = value.as_text() {
                     apply_layout_attributes(name, value, &mut style);
                 }
             }
 
             // the root node fills the entire area
-            if node.id() == ElementId(0) {
+            if node.id() == Some(ElementId(0)) {
                 apply_layout_attributes("width", "100%", &mut style);
                 apply_layout_attributes("height", "100%", &mut style);
             }
 
             // Set all direct nodes as our children
             let mut child_layout = vec![];
-            for l in children {
+            for (l,) in children {
                 child_layout.push(l.node.unwrap());
             }
 
@@ -96,7 +97,7 @@ impl ChildDepState for StretchLayout {
                     changed = true;
                 }
             } else {
-                self.node = Some(stretch.new_node(style, &child_layout).unwrap());
+                self.node = Some(stretch.new_with_children(style, &child_layout).unwrap());
                 changed = true;
             }
 
