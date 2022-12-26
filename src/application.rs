@@ -1,24 +1,22 @@
+use dioxus::prelude::{Component, VirtualDom};
+use piet_wgpu::{Piet, WgpuRenderer};
 use std::{
-    cell::RefCell,
-    rc::Rc,
+    any::Any,
     sync::{Arc, Mutex, MutexGuard, Weak},
 };
-
-use anymap::AnyMap;
-use dioxus::core::ElementId;
-use dioxus::{
-    core::{exports::futures_channel::mpsc::unbounded, SchedulerMsg, UserEvent},
-    prelude::{Component, UnboundedSender, VirtualDom},
-};
-
-use futures_util::StreamExt;
-use piet_wgpu::{Piet, WgpuRenderer};
 use tao::{dpi::PhysicalSize, event_loop::EventLoopProxy, window::Window};
+use tokio::sync::mpsc::{unbounded_channel, UnboundedSender};
 
-use crate::{events::BlitzEventHandler, focus::FocusState, render::render, Dom, Redraw, TaoEvent};
-use dioxus_native_core::real_dom::RealDom;
+use crate::{
+    events::{AnyEvent, BlitzEventHandler},
+    focus::FocusState,
+    render::render,
+    Dom, Redraw, TaoEvent,
+};
+use dioxus_native_core::{real_dom::RealDom, tree::TreeView, FxDashSet, NodeId, SendAnyMap};
 use taffy::{
-    prelude::{Number, Size},
+    prelude::{AvailableSpace, Size},
+    style::Dimension,
     Taffy,
 };
 
@@ -108,9 +106,9 @@ struct DomManager {
     rdom: Arc<Mutex<Dom>>,
     size: Arc<Mutex<PhysicalSize<u32>>>,
     /// The node that need to be redrawn.
-    dirty: Arc<Mutex<Vec<ElementId>>>,
+    dirty: FxDashSet<NodeId>,
     force_redraw: bool,
-    scheduler: UnboundedSender<SchedulerMsg>,
+    event_sender: UnboundedSender<AnyEvent>,
     redraw_sender: UnboundedSender<()>,
 }
 
@@ -124,16 +122,14 @@ impl DomManager {
     ) -> Self {
         let rdom: Arc<Mutex<Dom>> = Arc::new(Mutex::new(RealDom::new()));
         let size = Arc::new(Mutex::new(size));
-        let dirty = Arc::new(Mutex::new(Vec::new()));
+        let dirty = FxDashSet::default();
 
         let weak_rdom = Arc::downgrade(&rdom);
         let weak_size = Arc::downgrade(&size);
-        let weak_dirty = Arc::downgrade(&dirty);
+        let vdom_dirty = dirty.clone();
 
-        let channel_sender = Arc::new(Mutex::new(None));
-        let channel_sender_weak = Arc::downgrade(&channel_sender);
-
-        let (redraw_sender, mut redraw_receiver) = unbounded::<()>();
+        let (event_sender, mut event_receiver) = unbounded_channel::<AnyEvent>();
+        let (redraw_sender, mut redraw_receiver) = unbounded_channel::<()>();
 
         // Spawn a thread to run the virtual dom and update the real dom.
         std::thread::spawn(move || {
@@ -142,53 +138,57 @@ impl DomManager {
                 .build()
                 .unwrap()
                 .block_on(async {
-                    let stretch = Rc::new(RefCell::new(Taffy::new()));
+                    let taffy = Arc::new(Mutex::new(Taffy::new()));
                     let mut vdom = VirtualDom::new(root);
-                    channel_sender_weak
-                        .upgrade()
-                        .unwrap()
-                        .lock()
-                        .unwrap()
-                        .replace(vdom.get_scheduler_channel());
                     let mutations = vdom.rebuild();
-                    let mut last_size = Size::undefined();
+                    let mut last_size = Size::MAX_CONTENT;
                     if let Some(strong) = weak_rdom.upgrade() {
                         if let Ok(mut rdom) = strong.lock() {
                             // update the real dom's nodes
-                            let to_update = rdom.apply_mutations(vec![mutations]);
-                            let mut ctx = AnyMap::new();
-                            ctx.insert(stretch.clone());
+                            let (to_update, _) = rdom.apply_mutations(mutations);
+                            let mut ctx = SendAnyMap::new();
+                            ctx.insert(taffy.clone());
                             // update the style and layout
-                            let to_rerender = rdom.update_state(&vdom, to_update, ctx);
+                            let to_rerender = rdom.update_state(to_update, ctx);
                             if let Some(strong) = weak_size.upgrade() {
                                 let size = strong.lock().unwrap();
 
+                                let width = size.width as f32;
+                                let height = size.height as f32;
                                 let size = Size {
-                                    width: Number::Defined(size.width as f32),
-                                    height: Number::Defined(size.height as f32),
+                                    width: AvailableSpace::Definite(width),
+                                    height: AvailableSpace::Definite(height),
                                 };
 
                                 last_size = size;
 
-                                stretch
-                                    .borrow_mut()
+                                let mut locked_taffy = taffy.lock().unwrap();
+
+                                let root_node = rdom[NodeId(0)].state.layout.node.unwrap();
+
+                                // the root node fills the entire area
+
+                                let mut style = *locked_taffy.style(root_node).unwrap();
+                                style.size = Size {
+                                    width: Dimension::Points(width),
+                                    height: Dimension::Points(height),
+                                };
+                                locked_taffy.set_style(root_node, style).unwrap();
+                                locked_taffy
                                     .compute_layout(
-                                        rdom[ElementId(rdom.root_id())].state.layout.node.unwrap(),
+                                        rdom[NodeId(0)].state.layout.node.unwrap(),
                                         size,
                                     )
                                     .unwrap();
                                 rdom.traverse_depth_first_mut(|n| {
                                     if let Some(node) = n.state.layout.node {
                                         n.state.layout.layout =
-                                            Some(*stretch.borrow().layout(node).unwrap());
+                                            Some(*locked_taffy.layout(node).unwrap());
                                     }
                                 });
-                                weak_dirty
-                                    .upgrade()
-                                    .unwrap()
-                                    .lock()
-                                    .unwrap()
-                                    .extend(to_rerender.iter());
+                                for k in to_rerender.into_iter() {
+                                    vdom_dirty.insert(k);
+                                }
                                 proxy.send_event(Redraw).unwrap();
                             }
                         }
@@ -197,20 +197,26 @@ impl DomManager {
                         let wait = vdom.wait_for_work();
                         tokio::select! {
                             _ = wait=>{},
-                            _ = redraw_receiver.next()=>{},
+                            _ = redraw_receiver.recv()=>{},
+                            Some(event) = event_receiver.recv()=>{
+                                let name = event.name;
+                                let any_value:Box<dyn Any> = event.data;
+                                let data = any_value.into();
+                                let element = event.element;
+                                let bubbles = event.bubbles;
+                                vdom.handle_event(name, data, element, bubbles);
+                            }
                         }
 
                         if let Some(strong) = weak_rdom.upgrade() {
                             if let Ok(mut rdom) = strong.lock() {
-                                let mutations = vdom.work_with_deadline(|| false);
+                                let mutations = vdom.render_immediate();
                                 if let Some(strong) = weak_focus_state.upgrade() {
                                     if let Ok(mut focus_state) = strong.lock() {
                                         if let Some(strong) = weak_event_handler.upgrade() {
                                             if let Ok(mut event_handler) = strong.lock() {
-                                                for m in &mutations {
-                                                    event_handler.prune(m, &rdom);
-                                                    focus_state.prune(m, &rdom);
-                                                }
+                                                event_handler.prune(&mutations, &rdom);
+                                                focus_state.prune(&mutations, &rdom);
                                             } else {
                                                 break;
                                             }
@@ -224,46 +230,39 @@ impl DomManager {
                                     break;
                                 }
                                 // update the real dom's nodes
-                                let to_update = rdom.apply_mutations(mutations);
+                                let (to_update, _) = rdom.apply_mutations(mutations);
 
-                                let mut ctx = AnyMap::new();
-                                ctx.insert(stretch.clone());
+                                let mut ctx = SendAnyMap::new();
+                                ctx.insert(taffy.clone());
 
                                 // update the style and layout
-                                let to_rerender = rdom.update_state(&vdom, to_update, ctx);
+                                let to_rerender = rdom.update_state(to_update, ctx);
 
                                 if let Some(strong) = weak_size.upgrade() {
                                     let size = *strong.lock().unwrap();
 
                                     let size = Size {
-                                        width: Number::Defined(size.width as f32),
-                                        height: Number::Defined(size.height as f32),
+                                        width: AvailableSpace::Definite(size.width as f32),
+                                        height: AvailableSpace::Definite(size.height as f32),
                                     };
                                     if !to_rerender.is_empty() || last_size != size {
                                         last_size = size;
-                                        stretch
-                                            .borrow_mut()
+                                        let mut locked_taffy = taffy.lock().unwrap();
+                                        locked_taffy
                                             .compute_layout(
-                                                rdom[ElementId(rdom.root_id())]
-                                                    .state
-                                                    .layout
-                                                    .node
-                                                    .unwrap(),
+                                                rdom[NodeId(0)].state.layout.node.unwrap(),
                                                 size,
                                             )
                                             .unwrap();
                                         rdom.traverse_depth_first_mut(|n| {
                                             if let Some(node) = n.state.layout.node {
                                                 n.state.layout.layout =
-                                                    Some(*stretch.borrow().layout(node).unwrap());
+                                                    Some(*locked_taffy.layout(node).unwrap());
                                             }
                                         });
-                                        weak_dirty
-                                            .upgrade()
-                                            .unwrap()
-                                            .lock()
-                                            .unwrap()
-                                            .extend(to_rerender.into_iter());
+                                        for k in to_rerender.into_iter() {
+                                            vdom_dirty.insert(k);
+                                        }
 
                                         proxy.send_event(Redraw).unwrap();
                                     }
@@ -280,16 +279,11 @@ impl DomManager {
                 });
         });
 
-        while channel_sender.lock().unwrap().is_none() {
-            std::thread::sleep(std::time::Duration::from_millis(10));
-        }
-
-        let mut sender_lock = channel_sender.lock().unwrap();
         Self {
             rdom,
             size,
             dirty,
-            scheduler: sender_lock.take().unwrap(),
+            event_sender,
             redraw_sender,
             force_redraw: false,
         }
@@ -299,7 +293,9 @@ impl DomManager {
         if self.force_redraw {
             DirtyNodes::All
         } else {
-            DirtyNodes::Some(std::mem::take(&mut *self.dirty.lock().unwrap()))
+            let dirty: Vec<NodeId> = self.dirty.iter().map(|k| *k.key()).collect();
+            self.dirty.clear();
+            DirtyNodes::Some(dirty)
         }
     }
 
@@ -318,25 +314,23 @@ impl DomManager {
 
     fn force_redraw(&mut self) {
         self.force_redraw = true;
-        self.redraw_sender.unbounded_send(()).unwrap();
+        self.redraw_sender.send(()).unwrap();
     }
 
     fn render(&self, renderer: &mut Piet) {
         render(&self.rdom(), renderer, *self.size.lock().unwrap());
     }
 
-    fn send_events(&self, events: Vec<UserEvent>) {
+    fn send_events(&self, events: impl IntoIterator<Item = AnyEvent>) {
         for evt in events {
-            self.scheduler
-                .unbounded_send(SchedulerMsg::Event(evt))
-                .unwrap();
+            let _ = self.event_sender.send(evt);
         }
     }
 }
 
 pub enum DirtyNodes {
     All,
-    Some(Vec<ElementId>),
+    Some(Vec<NodeId>),
 }
 
 impl DirtyNodes {

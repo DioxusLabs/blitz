@@ -1,5 +1,6 @@
 use piet_wgpu::kurbo::Point;
 use std::{
+    any::Any,
     str::FromStr,
     sync::{Arc, Mutex},
     time::{Duration, Instant},
@@ -8,7 +9,7 @@ use taffy::prelude::Size;
 use tao::event::MouseButton;
 
 use dioxus::{
-    core::{ElementId, EventPriority, Mutations, UserEvent},
+    core::{ElementId, Mutations},
     events::{KeyboardData, MouseData},
     prelude::dioxus_elements::{
         geometry::{
@@ -17,7 +18,7 @@ use dioxus::{
         input_data::{self, keyboard_types::Modifiers, MouseButtonSet},
     },
 };
-use dioxus_native_core::real_dom::NodeType;
+use dioxus_native_core::tree::TreeView;
 
 use tao::keyboard::Key;
 
@@ -59,10 +60,17 @@ struct EventState {
     focus_state: Arc<Mutex<FocusState>>,
 }
 
+pub struct AnyEvent {
+    pub name: &'static str,
+    pub data: Box<dyn Any + Send + Sync>,
+    pub element: ElementId,
+    pub bubbles: bool,
+}
+
 #[derive(Default)]
 pub struct BlitzEventHandler {
     state: EventState,
-    queued_events: Vec<UserEvent>,
+    queued_events: Vec<AnyEvent>,
 }
 
 impl BlitzEventHandler {
@@ -133,12 +141,10 @@ impl BlitzEventHandler {
                         // keypress events are only triggered when a key that has text is pressed
                         if let tao::event::ElementState::Pressed = event.state {
                             if event.text.is_some() {
-                                self.queued_events.push(UserEvent {
-                                    scope_id: None,
-                                    priority: EventPriority::Medium,
-                                    element: Some(ElementId(1)),
+                                self.queued_events.push(AnyEvent {
                                     name: "keypress",
-                                    data: Arc::new(data.clone()),
+                                    element: ElementId(1),
+                                    data: Box::new(data.clone()),
                                     bubbles: true,
                                 });
                             }
@@ -151,18 +157,21 @@ impl BlitzEventHandler {
                             }
                         }
 
-                        self.queued_events.push(UserEvent {
-                            scope_id: None,
-                            priority: EventPriority::Medium,
-                            element: self.state.focus_state.lock().unwrap().last_focused_id,
-                            name: match event.state {
-                                tao::event::ElementState::Pressed => "keydown",
-                                tao::event::ElementState::Released => "keyup",
-                                _ => todo!(),
-                            },
-                            data: Arc::new(data),
-                            bubbles: true,
-                        });
+                        if let Some(element) = self.state.focus_state.lock().ok().and_then(|lock| {
+                            lock.last_focused_id
+                                .and_then(|last| rdom[last].mounted_id())
+                        }) {
+                            self.queued_events.push(AnyEvent {
+                                element,
+                                name: match event.state {
+                                    tao::event::ElementState::Pressed => "keydown",
+                                    tao::event::ElementState::Released => "keyup",
+                                    _ => todo!(),
+                                },
+                                data: Box::new(data),
+                                bubbles: true,
+                            });
+                        }
                     }
                     tao::event::WindowEvent::ModifiersChanged(mods) => {
                         let mut modifiers = Modifiers::empty();
@@ -185,7 +194,7 @@ impl BlitzEventHandler {
                         position,
                         ..
                     } => {
-                        let pos = Point::new(position.x as f64, position.y as f64);
+                        let pos = Point::new(position.x, position.y);
                         let hovered = get_hovered(rdom, viewport_size, pos);
                         let (mouse_x, mouse_y) = (pos.x as i32, pos.y as i32);
                         let screen_point = ScreenPoint::new(mouse_x as f64, mouse_y as f64);
@@ -205,43 +214,35 @@ impl BlitzEventHandler {
                         match (hovered, self.state.cursor_state.hovered) {
                             (Some(hovered), Some(old_hovered)) => {
                                 if hovered != old_hovered {
-                                    self.queued_events.push(UserEvent {
-                                        scope_id: None,
-                                        priority: EventPriority::Medium,
-                                        element: Some(hovered),
+                                    self.queued_events.push(AnyEvent {
+                                        element: hovered,
                                         name: "mouseenter",
-                                        data: Arc::new(data.clone()),
+                                        data: Box::new(data.clone()),
                                         bubbles: true,
                                     });
-                                    self.queued_events.push(UserEvent {
-                                        scope_id: None,
-                                        priority: EventPriority::Medium,
-                                        element: Some(old_hovered),
+                                    self.queued_events.push(AnyEvent {
+                                        element: old_hovered,
                                         name: "mouseleave",
-                                        data: Arc::new(data),
+                                        data: Box::new(data),
                                         bubbles: true,
                                     });
                                     self.state.cursor_state.hovered = Some(hovered);
                                 }
                             }
                             (Some(hovered), None) => {
-                                self.queued_events.push(UserEvent {
-                                    scope_id: None,
-                                    priority: EventPriority::Medium,
-                                    element: Some(hovered),
+                                self.queued_events.push(AnyEvent {
+                                    element: hovered,
                                     name: "mouseenter",
-                                    data: Arc::new(data),
+                                    data: Box::new(data),
                                     bubbles: true,
                                 });
                                 self.state.cursor_state.hovered = Some(hovered);
                             }
                             (None, Some(old_hovered)) => {
-                                self.queued_events.push(UserEvent {
-                                    scope_id: None,
-                                    priority: EventPriority::Medium,
-                                    element: Some(old_hovered),
+                                self.queued_events.push(AnyEvent {
+                                    element: old_hovered,
                                     name: "mouseleave",
-                                    data: Arc::new(data),
+                                    data: Box::new(data),
                                     bubbles: true,
                                 });
                                 self.state.cursor_state.hovered = None;
@@ -304,23 +305,19 @@ impl BlitzEventHandler {
                             let prevent_default = &rdom[hovered].state.prevent_default;
                             match state {
                                 tao::event::ElementState::Pressed => {
-                                    self.queued_events.push(UserEvent {
-                                        scope_id: None,
-                                        priority: EventPriority::Medium,
-                                        element: Some(hovered),
+                                    self.queued_events.push(AnyEvent {
+                                        element: hovered,
                                         name: "mousedown",
-                                        data: Arc::new(data),
+                                        data: Box::new(data),
                                         bubbles: true,
                                     });
                                     self.state.cursor_state.last_pressed_element = Some(hovered);
                                 }
                                 tao::event::ElementState::Released => {
-                                    self.queued_events.push(UserEvent {
-                                        scope_id: None,
-                                        priority: EventPriority::Medium,
-                                        element: Some(hovered),
+                                    self.queued_events.push(AnyEvent {
+                                        element: hovered,
                                         name: "mouseup",
-                                        data: Arc::new(data.clone()),
+                                        data: Box::new(data.clone()),
                                         bubbles: true,
                                     });
 
@@ -328,12 +325,10 @@ impl BlitzEventHandler {
                                     if self.state.cursor_state.last_pressed_element.take()
                                         == Some(hovered)
                                     {
-                                        self.queued_events.push(UserEvent {
-                                            scope_id: None,
-                                            priority: EventPriority::Medium,
-                                            element: Some(hovered),
+                                        self.queued_events.push(AnyEvent {
+                                            element: hovered,
                                             name: "click",
-                                            data: Arc::new(data.clone()),
+                                            data: Box::new(data.clone()),
                                             bubbles: true,
                                         });
 
@@ -344,12 +339,10 @@ impl BlitzEventHandler {
                                                 == Some(hovered)
                                                 && last_clicked.elapsed() < DBL_CLICK_TIME
                                             {
-                                                self.queued_events.push(UserEvent {
-                                                    scope_id: None,
-                                                    priority: EventPriority::Medium,
-                                                    element: Some(hovered),
+                                                self.queued_events.push(AnyEvent {
+                                                    element: hovered,
                                                     name: "dblclick",
-                                                    data: Arc::new(data),
+                                                    data: Box::new(data),
                                                     bubbles: true,
                                                 });
                                             }
@@ -369,7 +362,7 @@ impl BlitzEventHandler {
                                     .focus_state
                                     .lock()
                                     .unwrap()
-                                    .set_focus(rdom, hovered);
+                                    .set_focus(rdom, rdom.element_to_node_id(hovered));
                             }
                         }
                     }
@@ -398,7 +391,6 @@ impl BlitzEventHandler {
                 event: _,
                 ..
             } => (),
-            tao::event::Event::UserEvent(_) => (),
             tao::event::Event::MenuEvent {
                 window_id: _,
                 menu_id: _,
@@ -422,7 +414,7 @@ impl BlitzEventHandler {
         }
     }
 
-    pub fn drain_events(&mut self) -> Vec<UserEvent> {
+    pub fn drain_events(&mut self) -> Vec<AnyEvent> {
         let mut events = Vec::new();
         std::mem::swap(&mut self.queued_events, &mut events);
         events
@@ -449,20 +441,18 @@ impl BlitzEventHandler {
     pub(crate) fn prune(&mut self, mutations: &Mutations, rdom: &Dom) {
         fn remove_children(handler: &mut BlitzEventHandler, rdom: &Dom, removed: ElementId) {
             handler.prune_id(removed);
-            if let NodeType::Element { children, .. } = &rdom[removed].node_type {
+            if let Some(children) = rdom.children(rdom.element_to_node_id(removed)) {
                 for child in children {
-                    remove_children(handler, rdom, *child);
+                    if let Some(child_id) = child.mounted_id() {
+                        remove_children(handler, rdom, child_id);
+                    }
                 }
             }
         }
         for m in &mutations.edits {
             match m {
-                dioxus::core::DomEdit::ReplaceWith { root, .. } => {
-                    remove_children(self, rdom, ElementId(*root as usize))
-                }
-                dioxus::core::DomEdit::Remove { root } => {
-                    remove_children(self, rdom, ElementId(*root as usize))
-                }
+                dioxus::core::Mutation::ReplaceWith { id, .. } => remove_children(self, rdom, *id),
+                dioxus::core::Mutation::Remove { id } => remove_children(self, rdom, *id),
                 _ => (),
             }
         }

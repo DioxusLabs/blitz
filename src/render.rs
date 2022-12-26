@@ -1,5 +1,6 @@
-use dioxus::core::ElementId;
-use dioxus_native_core::real_dom::NodeType;
+use dioxus_native_core::node::NodeType;
+use dioxus_native_core::tree::TreeView;
+use dioxus_native_core::NodeId;
 use piet_wgpu::kurbo::{Point, Rect, RoundedRect, Vec2};
 use piet_wgpu::{Color, Piet, RenderContext, Text, TextLayoutBuilder};
 use taffy::prelude::Size;
@@ -11,11 +12,11 @@ use crate::{Dom, DomNode};
 const FOCUS_BORDER_WIDTH: f64 = 6.0;
 
 pub(crate) fn render(dom: &Dom, piet: &mut Piet, window_size: PhysicalSize<u32>) {
-    let root = &dom[ElementId(1)];
+    let root = &dom[NodeId(0)];
     let root_layout = root.state.layout.layout.unwrap();
     let background_brush = piet.solid_brush(Color::WHITE);
     piet.fill(
-        &Rect {
+        Rect {
             x0: root_layout.location.x.into(),
             y0: root_layout.location.y.into(),
             x1: (root_layout.location.x + root_layout.size.width).into(),
@@ -43,25 +44,25 @@ fn render_node(
     location: Point,
     viewport_size: &Size<u32>,
 ) {
-    let style = &node.state.style;
-    let layout = node.state.layout.layout.unwrap();
+    let state = &node.state;
+    let layout = state.layout.layout.unwrap();
     let pos = location + Vec2::new(layout.location.x as f64, layout.location.y as f64);
-    match &node.node_type {
+    match &node.node_data.node_type {
         NodeType::Text { text } => {
             let text_layout = piet
                 .text()
                 .new_text_layout(text.clone())
-                .text_color(translate_color(&style.color.0))
+                .text_color(translate_color(&state.color.0))
                 .build()
                 .unwrap();
             piet.draw_text(&text_layout, pos);
         }
-        NodeType::Element { children, .. } => {
+        NodeType::Element { .. } => {
             let shape = get_shape(node, viewport_size, pos);
-            let fill_brush = piet.solid_brush(translate_color(&style.bg_color.0));
+            let fill_brush = piet.solid_brush(translate_color(&state.bg_color.0));
             if node.state.focused {
                 let stroke_brush = piet.solid_brush(Color::rgb(1.0, 1.0, 1.0));
-                piet.stroke(&shape, &stroke_brush, FOCUS_BORDER_WIDTH / 2.0);
+                piet.stroke(shape, &stroke_brush, FOCUS_BORDER_WIDTH / 2.0);
                 let mut smaller_rect = shape.rect();
                 smaller_rect.x0 += FOCUS_BORDER_WIDTH / 2.0;
                 smaller_rect.x1 -= FOCUS_BORDER_WIDTH / 2.0;
@@ -69,24 +70,24 @@ fn render_node(
                 smaller_rect.y1 -= FOCUS_BORDER_WIDTH / 2.0;
                 let smaller_shape = RoundedRect::from_rect(smaller_rect, shape.radii());
                 let stroke_brush = piet.solid_brush(Color::rgb(0.0, 0.0, 0.0));
-                piet.stroke(&smaller_shape, &stroke_brush, FOCUS_BORDER_WIDTH / 2.0);
-                piet.fill(&smaller_shape, &fill_brush);
+                piet.stroke(smaller_shape, &stroke_brush, FOCUS_BORDER_WIDTH / 2.0);
+                piet.fill(smaller_shape, &fill_brush);
             } else {
-                let stroke_brush = piet.solid_brush(translate_color(&style.border.colors.top));
+                let stroke_brush = piet.solid_brush(translate_color(&state.border.colors.top));
                 piet.stroke(
-                    &shape,
+                    shape,
                     &stroke_brush,
-                    style.border.width.top.resolve(
+                    state.border.width.top.resolve(
                         Axis::Min,
                         &node.state.layout.layout.unwrap().size,
                         viewport_size,
                     ),
                 );
-                piet.fill(&shape, &fill_brush);
+                piet.fill(shape, &fill_brush);
             };
 
-            for child in children {
-                render_node(dom, &dom[*child], piet, pos, viewport_size);
+            for child in dom.children(node.node_data.node_id).unwrap() {
+                render_node(dom, child, piet, pos, viewport_size);
             }
         }
         _ => {}
@@ -94,8 +95,8 @@ fn render_node(
 }
 
 pub(crate) fn get_shape(node: &DomNode, viewport_size: &Size<u32>, location: Point) -> RoundedRect {
-    let layout = node.state.layout.layout.unwrap();
-    let style = &node.state.style;
+    let state = &node.state;
+    let layout = state.layout.layout.unwrap();
 
     let axis = Axis::Min;
     let rect = layout.size;
@@ -106,22 +107,22 @@ pub(crate) fn get_shape(node: &DomNode, viewport_size: &Size<u32>, location: Poi
     let left_border_width = if node.state.focused {
         FOCUS_BORDER_WIDTH
     } else {
-        style.border.width.left.resolve(axis, &rect, viewport_size)
+        state.border.width.left.resolve(axis, &rect, viewport_size)
     };
     let right_border_width = if node.state.focused {
         FOCUS_BORDER_WIDTH
     } else {
-        style.border.width.right.resolve(axis, &rect, viewport_size)
+        state.border.width.right.resolve(axis, &rect, viewport_size)
     };
     let top_border_width = if node.state.focused {
         FOCUS_BORDER_WIDTH
     } else {
-        style.border.width.top.resolve(axis, &rect, viewport_size)
+        state.border.width.top.resolve(axis, &rect, viewport_size)
     };
     let bottom_border_width = if node.state.focused {
         FOCUS_BORDER_WIDTH
     } else {
-        style
+        state
             .border
             .width
             .bottom
@@ -140,25 +141,25 @@ pub(crate) fn get_shape(node: &DomNode, viewport_size: &Size<u32>, location: Poi
         x_end,
         y_end,
         (
-            style
+            state
                 .border
                 .radius
                 .top_left
                 .0
                 .resolve(axis, &rect, viewport_size),
-            style
+            state
                 .border
                 .radius
                 .top_right
                 .0
                 .resolve(axis, &rect, viewport_size),
-            style
+            state
                 .border
                 .radius
                 .bottom_right
                 .0
                 .resolve(axis, &rect, viewport_size),
-            style
+            state
                 .border
                 .radius
                 .bottom_left
@@ -170,14 +171,14 @@ pub(crate) fn get_shape(node: &DomNode, viewport_size: &Size<u32>, location: Poi
 
 pub(crate) fn get_abs_pos(node: &DomNode, dom: &Dom) -> Point {
     let mut node_layout = node.state.layout.layout.unwrap().location;
-    let mut current = node;
-    while let Some(parent_id) = current.parent {
+    let mut current = node.node_data.node_id;
+    while let Some(parent) = dom.parent(current) {
+        let parent_id = parent.node_data.node_id;
         // the root element is positioned at (0, 0)
-        if parent_id == ElementId(0) {
+        if parent_id == NodeId(0) {
             break;
         }
-        let parent = &dom[parent_id];
-        current = parent;
+        current = parent.node_data.node_id;
         let parent_layout = parent.state.layout.layout.unwrap();
         node_layout.x += parent_layout.location.x;
         node_layout.y += parent_layout.location.y;

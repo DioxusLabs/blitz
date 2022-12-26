@@ -1,10 +1,11 @@
-use parcel_css::properties::border::BorderSideWidth;
-use parcel_css::values::calc::{Calc, MathFunction};
-use parcel_css::values::color::CssColor;
-use parcel_css::values::length::{Length, LengthValue};
-use parcel_css::values::percentage::DimensionPercentage;
+use lightningcss::properties::border::BorderSideWidth;
+use lightningcss::values;
 use piet_wgpu::Color;
 use taffy::prelude::Size;
+use values::calc::{Calc, MathFunction};
+use values::color::CssColor;
+use values::length::{Length, LengthValue};
+use values::percentage::DimensionPercentage;
 
 #[allow(dead_code)]
 #[derive(Clone, Copy)]
@@ -18,6 +19,7 @@ pub(crate) enum Axis {
 }
 
 pub(crate) fn translate_color(color: &CssColor) -> Color {
+    println!("color: {:?}", color);
     let rgb = color.to_rgb();
     if let CssColor::RGBA(rgba) = rgb {
         Color::rgba(
@@ -38,15 +40,15 @@ pub(crate) trait Resolve {
 impl<T: Resolve> Resolve for Calc<T> {
     fn resolve(&self, axis: Axis, rect: &Size<f32>, viewport_size: &Size<u32>) -> f64 {
         match self {
-            parcel_css::values::calc::Calc::Value(v) => v.resolve(axis, rect, viewport_size),
-            parcel_css::values::calc::Calc::Number(px) => *px as f64,
-            parcel_css::values::calc::Calc::Sum(v1, v2) => {
+            values::calc::Calc::Value(v) => v.resolve(axis, rect, viewport_size),
+            values::calc::Calc::Number(px) => *px as f64,
+            values::calc::Calc::Sum(v1, v2) => {
                 v1.resolve(axis, rect, viewport_size) + v2.resolve(axis, rect, viewport_size)
             }
-            parcel_css::values::calc::Calc::Product(v1, v2) => {
+            values::calc::Calc::Product(v1, v2) => {
                 *v1 as f64 * v2.resolve(axis, rect, viewport_size)
             }
-            parcel_css::values::calc::Calc::Function(f) => f.resolve(axis, rect, viewport_size),
+            values::calc::Calc::Function(f) => f.resolve(axis, rect, viewport_size),
         }
     }
 }
@@ -54,18 +56,18 @@ impl<T: Resolve> Resolve for Calc<T> {
 impl<T: Resolve> Resolve for MathFunction<T> {
     fn resolve(&self, axis: Axis, rect: &Size<f32>, viewport_size: &Size<u32>) -> f64 {
         match self {
-            parcel_css::values::calc::MathFunction::Calc(c) => c.resolve(axis, rect, viewport_size),
-            parcel_css::values::calc::MathFunction::Min(v) => v
+            values::calc::MathFunction::Calc(c) => c.resolve(axis, rect, viewport_size),
+            values::calc::MathFunction::Min(v) => v
                 .iter()
                 .map(|v| v.resolve(axis, rect, viewport_size))
                 .min_by(|f1, f2| f1.partial_cmp(f2).unwrap())
                 .unwrap(),
-            parcel_css::values::calc::MathFunction::Max(v) => v
+            values::calc::MathFunction::Max(v) => v
                 .iter()
                 .map(|v| v.resolve(axis, rect, viewport_size))
                 .max_by(|f1, f2| f1.partial_cmp(f2).unwrap())
                 .unwrap(),
-            parcel_css::values::calc::MathFunction::Clamp(min, val, max) => min
+            values::calc::MathFunction::Clamp(min, val, max) => min
                 .resolve(axis, rect, viewport_size)
                 .max(val.resolve(axis, rect, viewport_size).min(max.resolve(
                     axis,
@@ -90,7 +92,7 @@ impl Resolve for BorderSideWidth {
 
 impl Resolve for LengthValue {
     fn resolve(&self, _axis: Axis, _rect: &Size<f32>, viewport_size: &Size<u32>) -> f64 {
-        use parcel_css::values::length::LengthValue::*;
+        use values::length::LengthValue::*;
         match self {
             Px(px) => *px as f64,
             Vw(vw) => *vw as f64 * viewport_size.width as f64 / 100.0,

@@ -8,9 +8,9 @@ fn main() {
 }
 
 fn app(cx: Scope) -> Element {
-    let mut count = use_state(&cx, || 0);
+    let mut count = use_state(cx, || 0);
 
-    use_future(&cx, (), move |_| {
+    use_future(cx, (), move |_| {
         let count = count.to_owned();
         let update = cx.schedule_update();
         async move {
