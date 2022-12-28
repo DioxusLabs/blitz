@@ -1,3 +1,4 @@
+use keyboard_types::Code;
 use piet_wgpu::kurbo::Point;
 use std::{
     any::Any,
@@ -113,12 +114,14 @@ impl BlitzEventHandler {
                         is_synthetic: _,
                         ..
                     } => {
-                        let key = serde_json::to_value(&event.logical_key).unwrap();
                         let code = event.physical_key.to_string();
+                        let key = map_key(&event.logical_key);
+                        let code = input_data::keyboard_types::Code::from_str(&code)
+                            .unwrap_or(Code::Unidentified);
 
                         let data = KeyboardData::new(
-                            serde_json::from_value(key).unwrap(),
-                            input_data::keyboard_types::Code::from_str(&code).unwrap(),
+                            key,
+                            code,
                             match event.location {
                                 tao::keyboard::KeyLocation::Standard => {
                                     input_data::keyboard_types::Location::Standard
@@ -460,5 +463,18 @@ impl BlitzEventHandler {
 
     pub(crate) fn clean(&self) -> bool {
         self.state.focus_state.lock().unwrap().clean()
+    }
+}
+
+fn map_key(key: &tao::keyboard::Key) -> keyboard_types::Key {
+    use tao::keyboard::Key::*;
+    match key {
+        Space => keyboard_types::Key::Character(" ".to_string()),
+        _ => {
+            let key = serde_json::to_value(key).unwrap();
+            serde_json::from_value(key)
+                .ok()
+                .unwrap_or(keyboard_types::Key::Unidentified)
+        }
     }
 }
