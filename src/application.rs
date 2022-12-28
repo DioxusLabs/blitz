@@ -106,7 +106,7 @@ struct DomManager {
     rdom: Arc<Mutex<Dom>>,
     size: Arc<Mutex<PhysicalSize<u32>>>,
     /// The node that need to be redrawn.
-    dirty: FxDashSet<NodeId>,
+    dirty: Arc<FxDashSet<NodeId>>,
     force_redraw: bool,
     event_sender: UnboundedSender<AnyEvent>,
     redraw_sender: UnboundedSender<()>,
@@ -122,7 +122,7 @@ impl DomManager {
     ) -> Self {
         let rdom: Arc<Mutex<Dom>> = Arc::new(Mutex::new(RealDom::new()));
         let size = Arc::new(Mutex::new(size));
-        let dirty = FxDashSet::default();
+        let dirty = Arc::new(FxDashSet::default());
 
         let weak_rdom = Arc::downgrade(&rdom);
         let weak_size = Arc::downgrade(&size);
