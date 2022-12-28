@@ -35,6 +35,23 @@ struct CursorState {
     hovered: Option<ElementId>,
 }
 
+impl CursorState {
+    fn get_event_mouse_data(&self) -> MouseData {
+        // MouseData::new(coordinates, trigger_button, held_buttons, modifiers)
+        MouseData::new(
+            Coordinates::new(
+                self.position.screen(),
+                self.position.client(),
+                self.position.element(),
+                self.position.page(),
+            ),
+            None,
+            self.buttons,
+            Modifiers::default(),
+        )
+    }
+}
+
 impl Default for CursorState {
     fn default() -> Self {
         Self {
@@ -251,8 +268,18 @@ impl BlitzEventHandler {
                         }
                         self.state.cursor_state.position = position;
                     }
-                    tao::event::WindowEvent::CursorEntered { device_id: _ } => (),
-                    tao::event::WindowEvent::CursorLeft { device_id: _ } => (),
+                    tao::event::WindowEvent::CursorEntered { device_id: _ } => {}
+                    tao::event::WindowEvent::CursorLeft { device_id: _ } => {
+                        if let Some(old_hovered) = self.state.cursor_state.hovered {
+                            self.queued_events.push(AnyEvent {
+                                element: old_hovered,
+                                name: "mouseleave",
+                                data: Box::new(self.state.cursor_state.get_event_mouse_data()),
+                                bubbles: true,
+                            });
+                            self.state.cursor_state.hovered = None;
+                        }
+                    }
                     tao::event::WindowEvent::MouseWheel {
                         device_id: _,
                         delta: _,
