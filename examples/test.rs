@@ -3,8 +3,9 @@ use std::f32::consts::PI;
 use dioxus::prelude::*;
 use keyboard_types::Modifiers;
 
-fn main() {
-    blitz::launch(app);
+#[tokio::main]
+async fn main() {
+    blitz::launch(app).await;
 }
 
 fn app(cx: Scope) -> Element {
@@ -38,6 +39,7 @@ fn app(cx: Scope) -> Element {
     cx.render(rsx! {
         div {
             width: "100%",
+            height: "100%",
             background_color: "rgb(75%, 75%, 75%)",
             onkeydown: |e| {
                 if e.data.modifiers().contains(Modifiers::SHIFT) {
