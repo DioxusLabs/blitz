@@ -141,6 +141,7 @@ async fn spawn_dom(
     vdom_dirty: Arc<FxDashSet<NodeId>>,
 ) -> Option<()> {
     let taffy = Arc::new(Mutex::new(Taffy::new()));
+    let text_context = Arc::new(Mutex::new(TextContext::default()));
     let mut vdom = VirtualDom::new(root);
     let mutations = vdom.rebuild();
     let mut last_size;
@@ -150,7 +151,7 @@ async fn spawn_dom(
         // update the real dom's nodes
         let (to_update, _) = rdom.apply_mutations(mutations);
         let mut ctx = SendAnyMap::new();
-        ctx.insert(taffy.clone());
+        ctx.insert((taffy.clone(), text_context.clone()));
         // update the style and layout
         let to_rerender = rdom.update_state(to_update, ctx);
         let size = size.lock().unwrap();
@@ -217,7 +218,7 @@ async fn spawn_dom(
         let (to_update, _) = rdom.apply_mutations(mutations);
 
         let mut ctx = SendAnyMap::new();
-        ctx.insert(taffy.clone());
+        ctx.insert((taffy.clone(), text_context.clone()));
 
         // update the style and layout
         let to_rerender = rdom.update_state(to_update, ctx);

@@ -6,6 +6,8 @@ use dioxus_native_core::node_ref::{AttributeMask, NodeMask};
 use dioxus_native_core::state::ChildDepState;
 use taffy::prelude::*;
 
+use crate::text::TextContext;
+
 #[derive(Clone, Default, Debug)]
 pub struct StretchLayout {
     pub style: Style,
@@ -20,7 +22,7 @@ impl PartialEq<Self> for StretchLayout {
 }
 
 impl ChildDepState for StretchLayout {
-    type Ctx = Arc<Mutex<Taffy>>;
+    type Ctx = (Arc<Mutex<Taffy>>, Arc<Mutex<TextContext>>);
     type DepState = (Self,);
 
     const NODE_MASK: NodeMask = NodeMask::new_with_attrs(AttributeMask::All).with_text();
@@ -29,33 +31,33 @@ impl ChildDepState for StretchLayout {
         &mut self,
         node: dioxus_native_core::node_ref::NodeView,
         children: impl Iterator<Item = (&'a Self,)>,
-        ctx: &Self::Ctx,
+        (taffy, text_context): &Self::Ctx,
     ) -> bool
     where
         Self::DepState: 'a,
     {
-        let mut stretch = ctx.lock().unwrap();
+        let mut taffy = taffy.lock().unwrap();
         let mut changed = false;
         if let Some(text) = node.text() {
-            let char_len = text.chars().count();
+            let mut text_context = text_context.lock().unwrap();
+            let width = text_context.get_text_width(None, 16.0, text);
 
-            // todo: this should change with the font
             let style = Style {
                 size: Size {
-                    height: Dimension::Points(10.0),
+                    height: Dimension::Points(16.0),
 
-                    width: Dimension::Points(char_len as f32 * 10.0),
+                    width: Dimension::Points(width as f32),
                 },
                 ..Default::default()
             };
 
             if let Some(n) = self.node {
                 if self.style != style {
-                    stretch.set_style(n, style).unwrap();
+                    taffy.set_style(n, style).unwrap();
                     changed = true;
                 }
             } else {
-                self.node = Some(stretch.new_leaf(style).unwrap());
+                self.node = Some(taffy.new_leaf(style).unwrap());
                 changed = true;
             }
 
@@ -88,16 +90,16 @@ impl ChildDepState for StretchLayout {
             }
 
             if let Some(n) = self.node {
-                if stretch.children(n).unwrap() != child_layout {
-                    stretch.set_children(n, &child_layout).unwrap();
+                if taffy.children(n).unwrap() != child_layout {
+                    taffy.set_children(n, &child_layout).unwrap();
                     changed = true;
                 }
                 if self.style != style {
-                    stretch.set_style(n, style).unwrap();
+                    taffy.set_style(n, style).unwrap();
                     changed = true;
                 }
             } else {
-                self.node = Some(stretch.new_with_children(style, &child_layout).unwrap());
+                self.node = Some(taffy.new_with_children(style, &child_layout).unwrap());
                 changed = true;
             }
 

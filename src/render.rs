@@ -55,17 +55,14 @@ fn render_node(
     let pos = location + Vec2::new(layout.location.x as f64, layout.location.y as f64);
     match &node.node_data.node_type {
         NodeType::Text { text } => {
-            let shape = get_shape(node, viewport_size, pos);
             let text_color = translate_color(&state.color.0);
-            let stroke_color = translate_color(&state.border.colors.top);
-            let stroke = Stroke::new(10.0);
-            scene_builder.stroke(&stroke, Affine::IDENTITY, stroke_color, None, &shape);
+            let font_size = 16.0;
             text_context.add(
                 scene_builder,
                 None,
-                16.0,
+                font_size,
                 Some(text_color),
-                Affine::translate(pos.to_vec2()),
+                Affine::translate(pos.to_vec2() + Vec2::new(0.0, font_size as f64)),
                 text,
             )
         }
