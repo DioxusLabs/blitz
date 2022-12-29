@@ -1,4 +1,5 @@
 use keyboard_types::Code;
+use piet_wgpu::kurbo::Point;
 use std::{
     any::Any,
     str::FromStr,
@@ -7,7 +8,6 @@ use std::{
 };
 use taffy::prelude::Size;
 use tao::event::MouseButton;
-use vello::kurbo::Point;
 
 use dioxus::{
     core::{ElementId, Mutations},

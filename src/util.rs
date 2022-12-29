@@ -1,11 +1,11 @@
 use lightningcss::properties::border::BorderSideWidth;
 use lightningcss::values;
+use piet_wgpu::Color;
 use taffy::prelude::Size;
 use values::calc::{Calc, MathFunction};
 use values::color::CssColor;
 use values::length::{Length, LengthValue};
 use values::percentage::DimensionPercentage;
-use vello::peniko::Color;
 
 #[allow(dead_code)]
 #[derive(Clone, Copy)]

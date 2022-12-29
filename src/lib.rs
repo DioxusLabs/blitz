@@ -17,7 +17,6 @@ mod mouse;
 mod node;
 mod render;
 mod style;
-mod text;
 mod util;
 
 type Dom = RealDom<BlitzNodeState>;
@@ -30,14 +29,14 @@ pub struct Redraw;
 #[derive(Default)]
 pub struct Config;
 
-pub async fn launch(root: Component<()>) {
-    launch_cfg(root, Config::default()).await
+pub fn launch(root: Component<()>) {
+    launch_cfg(root, Config::default())
 }
 
-pub async fn launch_cfg(root: Component<()>, _cfg: Config) {
+pub fn launch_cfg(root: Component<()>, _cfg: Config) {
     let event_loop = EventLoop::with_user_event();
     let window = WindowBuilder::new().build(&event_loop).unwrap();
-    let mut appliction = ApplicationState::new(root, &window, event_loop.create_proxy()).await;
+    let mut appliction = ApplicationState::new(root, &window, event_loop.create_proxy());
     appliction.render();
 
     event_loop.run(move |event, _, control_flow| {

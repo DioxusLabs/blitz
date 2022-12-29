@@ -1,52 +1,46 @@
 use dioxus_native_core::node::NodeType;
 use dioxus_native_core::tree::TreeView;
 use dioxus_native_core::NodeId;
+use piet_wgpu::kurbo::{Point, Rect, RoundedRect, Vec2};
+use piet_wgpu::{Color, Piet, RenderContext, Text, TextLayoutBuilder};
 use taffy::prelude::Size;
 use tao::dpi::PhysicalSize;
-use vello::kurbo::{Affine, Point, Rect, RoundedRect, Vec2};
-use vello::peniko::{Color, Fill, Stroke};
-use vello::SceneBuilder;
 
-use crate::text::TextContext;
 use crate::util::{translate_color, Axis, Resolve};
 use crate::{Dom, DomNode};
 
 const FOCUS_BORDER_WIDTH: f64 = 6.0;
 
-pub(crate) fn render(
-    dom: &Dom,
-    text_context: &mut TextContext,
-    scene_builder: &mut SceneBuilder,
-    window_size: PhysicalSize<u32>,
-) {
+pub(crate) fn render(dom: &Dom, piet: &mut Piet, window_size: PhysicalSize<u32>) {
     let root = &dom[NodeId(0)];
     let root_layout = root.state.layout.layout.unwrap();
-    let shape = Rect {
-        x0: root_layout.location.x.into(),
-        y0: root_layout.location.y.into(),
-        x1: (root_layout.location.x + root_layout.size.width).into(),
-        y1: (root_layout.location.y + root_layout.size.height).into(),
-    };
-    scene_builder.fill(Fill::NonZero, Affine::IDENTITY, Color::WHITE, None, &shape);
+    let background_brush = piet.solid_brush(Color::WHITE);
+    piet.fill(
+        Rect {
+            x0: root_layout.location.x.into(),
+            y0: root_layout.location.y.into(),
+            x1: (root_layout.location.x + root_layout.size.width).into(),
+            y1: (root_layout.location.y + root_layout.size.height).into(),
+        },
+        &background_brush,
+    );
     let viewport_size = Size {
         width: window_size.width,
         height: window_size.height,
     };
-    render_node(
-        dom,
-        root,
-        text_context,
-        scene_builder,
-        Point::ZERO,
-        &viewport_size,
-    );
+    render_node(dom, root, piet, Point::ZERO, &viewport_size);
+    match piet.finish() {
+        Ok(()) => {}
+        Err(e) => {
+            println!("{}", e);
+        }
+    }
 }
 
 fn render_node(
     dom: &Dom,
     node: &DomNode,
-    text_context: &mut TextContext,
-    scene_builder: &mut SceneBuilder,
+    piet: &mut Piet,
     location: Point,
     viewport_size: &Size<u32>,
 ) {
@@ -55,55 +49,45 @@ fn render_node(
     let pos = location + Vec2::new(layout.location.x as f64, layout.location.y as f64);
     match &node.node_data.node_type {
         NodeType::Text { text } => {
-            let shape = get_shape(node, viewport_size, pos);
-            let text_color = translate_color(&state.color.0);
-            let stroke_color = translate_color(&state.border.colors.top);
-            let stroke = Stroke::new(10.0);
-            scene_builder.stroke(&stroke, Affine::IDENTITY, stroke_color, None, &shape);
-            text_context.add(
-                scene_builder,
-                None,
-                16.0,
-                Some(text_color),
-                Affine::translate(pos.to_vec2()),
-                text,
-            )
+            let text_layout = piet
+                .text()
+                .new_text_layout(text.clone())
+                .text_color(translate_color(&state.color.0))
+                .build()
+                .unwrap();
+            piet.draw_text(&text_layout, pos);
         }
         NodeType::Element { .. } => {
             let shape = get_shape(node, viewport_size, pos);
-            let fill_color = translate_color(&state.bg_color.0);
+            let fill_brush = piet.solid_brush(translate_color(&state.bg_color.0));
             if node.state.focused {
-                let stroke_color = Color::rgb(1.0, 1.0, 1.0);
-                let stroke = Stroke::new(FOCUS_BORDER_WIDTH as f32 / 2.0);
-                scene_builder.stroke(&stroke, Affine::IDENTITY, stroke_color, None, &shape);
+                let stroke_brush = piet.solid_brush(Color::rgb(1.0, 1.0, 1.0));
+                piet.stroke(shape, &stroke_brush, FOCUS_BORDER_WIDTH / 2.0);
                 let mut smaller_rect = shape.rect();
                 smaller_rect.x0 += FOCUS_BORDER_WIDTH / 2.0;
                 smaller_rect.x1 -= FOCUS_BORDER_WIDTH / 2.0;
                 smaller_rect.y0 += FOCUS_BORDER_WIDTH / 2.0;
                 smaller_rect.y1 -= FOCUS_BORDER_WIDTH / 2.0;
                 let smaller_shape = RoundedRect::from_rect(smaller_rect, shape.radii());
-                let stroke_color = Color::rgb(0.0, 0.0, 0.0);
-                scene_builder.stroke(&stroke, Affine::IDENTITY, stroke_color, None, &shape);
-                scene_builder.fill(
-                    Fill::NonZero,
-                    Affine::IDENTITY,
-                    fill_color,
-                    None,
-                    &smaller_shape,
-                );
+                let stroke_brush = piet.solid_brush(Color::rgb(0.0, 0.0, 0.0));
+                piet.stroke(smaller_shape, &stroke_brush, FOCUS_BORDER_WIDTH / 2.0);
+                piet.fill(smaller_shape, &fill_brush);
             } else {
-                let stroke_color = translate_color(&state.border.colors.top);
-                let stroke = Stroke::new(state.border.width.top.resolve(
-                    Axis::Min,
-                    &node.state.layout.layout.unwrap().size,
-                    viewport_size,
-                ) as f32);
-                scene_builder.stroke(&stroke, Affine::IDENTITY, stroke_color, None, &shape);
-                scene_builder.fill(Fill::NonZero, Affine::IDENTITY, fill_color, None, &shape);
+                let stroke_brush = piet.solid_brush(translate_color(&state.border.colors.top));
+                piet.stroke(
+                    shape,
+                    &stroke_brush,
+                    state.border.width.top.resolve(
+                        Axis::Min,
+                        &node.state.layout.layout.unwrap().size,
+                        viewport_size,
+                    ),
+                );
+                piet.fill(shape, &fill_brush);
             };
 
             for child in dom.children(node.node_data.node_id).unwrap() {
-                render_node(dom, child, text_context, scene_builder, pos, viewport_size);
+                render_node(dom, child, piet, pos, viewport_size);
             }
         }
         _ => {}
