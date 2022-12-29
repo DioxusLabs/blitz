@@ -1,7 +1,8 @@
 use dioxus::prelude::*;
 
-fn main() {
-    blitz::launch(app);
+#[tokio::main]
+async fn main() {
+    blitz::launch(app).await;
 }
 
 fn app(cx: Scope) -> Element {

@@ -5,8 +5,8 @@ use dioxus_native_core::{
     tree::TreeView,
 };
 use dioxus_native_core_macro::sorted_str_slice;
-use piet_wgpu::kurbo::{Point, Shape};
 use taffy::prelude::Size;
+use vello::kurbo::{Point, Shape};
 
 use crate::{
     render::{get_abs_pos, get_shape},
