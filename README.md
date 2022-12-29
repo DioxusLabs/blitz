@@ -1,12 +1,27 @@
 # Blitz: A wgpu renderer for Dioxus
 
-Blitz is a native renderer for Dioxus that uses WGPU to draw the Dioxus virtualdom to the screen.
+Blitz is a native renderer for Dioxus that uses WGPU (via Vello) to draw the Dioxus virtualdom to the screen.
+
+Blitz can be used without Dioxus as a regular CSS + HTML renderer. We try to maintain an API similar to the browser's DOM API for general compatibility.
 
 Because the default Dioxus element set relies on HTML, so does Blitz, meaning Blitz can be used as a partial replacement for the web rendering engine in modern browsers.
 
-CSS is handled via [ParcelCSS](https://github.com/parcel-bundler/parcel-css) and layout is handled with [Taffy](https://github.com/DioxusLabs/taffy).
+CSS is handled via [lightningcss](https://github.com/parcel-bundler/parcel-css) and layout is handled with [Taffy](https://github.com/DioxusLabs/taffy).
 
-## Extending Blitz
+## Status
 
-One project that extends Blitz is SciViz: a high-performance plotting toolkit for Rust and Python. It uses Dioxus to draw the UI and extends the regular Dioxus syntax with a custom set of components and elements.
+Blitz is in a very much WIP state right now. Lots of stuff works but even more doesn't. 
 
+- CSS doesn't cascade
+- Many types of events aren't handled
+- No support for images/videos or multimedia
+
+That being said....
+
+Please contribute! There's a lot of solid foundations here:
+
+- Taffy is underpinning layout
+- vello is underpinning drawing
+- Dioxus is underpinning state management
+
+Blitz is for *everyone*, so you don't need Dioxus to drive updates to the final render tree.
