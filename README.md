@@ -1,6 +1,6 @@
 # Blitz: A wgpu renderer for Dioxus
 
-Blitz is a native renderer for Dioxus that uses WGPU (via Vello) to draw the Dioxus virtualdom to the screen.
+Blitz is a native renderer for Dioxus that uses WGPU (via [Vello](https://github.com/linebender/vello)) to draw the Dioxus virtualdom to the screen.
 
 Blitz can be used without Dioxus as a regular CSS + HTML renderer. We try to maintain an API similar to the browser's DOM API for general compatibility.
 
@@ -21,7 +21,7 @@ That being said....
 Please contribute! There's a lot of solid foundations here:
 
 - Taffy is underpinning layout
-- vello is underpinning drawing
+- Vello is underpinning drawing
 - Dioxus is underpinning state management
 
 Blitz is for *everyone*, so you don't need Dioxus to drive updates to the final render tree.
