@@ -35,3 +35,8 @@ console_error_panic_hook = "0.1.7"
 console_log = "0.2"
 wasm-bindgen-futures = "0.4.33"
 web-sys = "0.3.60"
+
+[patch.crates-io]
+# Required for metal support to work on wgpu
+# TODO: remove when wgpu is upgraded to 0.15
+naga = { git = "https://github.com/gfx-rs/naga", rev = "ddcd5d3121150b2b1beee6e54e9125ff31aaa9a2" }
