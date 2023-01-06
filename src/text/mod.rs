@@ -1,3 +1,4 @@
+use dioxus_native_core::FxDashMap;
 use vello::{
     glyph::{
         pinot::{self, FontRef, TableProvider},
@@ -8,16 +9,22 @@ use vello::{
     SceneBuilder,
 };
 
+use self::font::DEFAULT_FONT_SIZE;
+
+pub(crate) mod font;
+
 const FONT_DATA: &[u8] = include_bytes!("Roboto-Regular.ttf");
 
 pub struct TextContext {
     gcx: GlyphContext,
+    pub(crate) nodes: FxDashMap<usize, f32>,
 }
 
 impl Default for TextContext {
     fn default() -> Self {
         Self {
             gcx: GlyphContext::new(),
+            nodes: FxDashMap::default(),
         }
     }
 }
@@ -92,5 +99,17 @@ impl TextContext {
             pen_x += advance;
         }
         pen_x
+    }
+
+    pub fn set_font_size(&mut self, node: usize, size: f32) {
+        self.nodes.insert(node, size);
+    }
+
+    pub fn get_font_size(&self, node: usize) -> f32 {
+        if let Some(font_size) = self.nodes.get(&node) {
+            *font_size
+        } else {
+            DEFAULT_FONT_SIZE
+        }
     }
 }

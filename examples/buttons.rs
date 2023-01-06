@@ -47,6 +47,7 @@ fn Button(cx: Scope<ButtonProps>) -> Element {
             text_align: "center",
             display: "flex",
             flex_direction: "column",
+            font_size: "2em",
 
             p { "tabindex: {cx.props.layer}" }
         }

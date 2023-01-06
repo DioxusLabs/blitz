@@ -40,12 +40,12 @@ impl ChildDepState for StretchLayout {
         let mut changed = false;
         if let Some(text) = node.text() {
             let mut text_context = text_context.lock().unwrap();
-            let width = text_context.get_text_width(None, 16.0, text);
+            let font_size = text_context.get_font_size(node.node_id().0);
+            let width = text_context.get_text_width(None, font_size, text);
 
             let style = Style {
                 size: Size {
-                    height: Dimension::Points(16.0),
-
+                    height: Dimension::Points(font_size),
                     width: Dimension::Points(width as f32),
                 },
                 ..Default::default()

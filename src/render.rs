@@ -56,7 +56,7 @@ fn render_node(
     match &node.node_data.node_type {
         NodeType::Text { text } => {
             let text_color = translate_color(&state.color.0);
-            let font_size = 16.0;
+            let font_size = node.state.font_size.0;
             text_context.add(
                 scene_builder,
                 None,
@@ -73,11 +73,9 @@ fn render_node(
                 let stroke_color = Color::rgb(1.0, 1.0, 1.0);
                 let stroke = Stroke::new(FOCUS_BORDER_WIDTH as f32 / 2.0);
                 scene_builder.stroke(&stroke, Affine::IDENTITY, stroke_color, None, &shape);
-                let mut smaller_rect = shape.rect();
-                smaller_rect.x0 += FOCUS_BORDER_WIDTH / 2.0;
-                smaller_rect.x1 -= FOCUS_BORDER_WIDTH / 2.0;
-                smaller_rect.y0 += FOCUS_BORDER_WIDTH / 2.0;
-                smaller_rect.y1 -= FOCUS_BORDER_WIDTH / 2.0;
+                let smaller_rect = shape
+                    .rect()
+                    .inflate(-FOCUS_BORDER_WIDTH / 2.0, -FOCUS_BORDER_WIDTH / 2.0);
                 let smaller_shape = RoundedRect::from_rect(smaller_rect, shape.radii());
                 let stroke_color = Color::rgb(0.0, 0.0, 0.0);
                 scene_builder.stroke(&stroke, Affine::IDENTITY, stroke_color, None, &shape);

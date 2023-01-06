@@ -5,12 +5,15 @@ use crate::focus::Focus;
 use crate::layout::StretchLayout;
 use crate::mouse::MouseEffected;
 use crate::style::{BackgroundColor, Border, ForgroundColor};
+use crate::text::font::FontSize;
 use dioxus_native_core_macro::sorted_str_slice;
 
 #[derive(Clone, PartialEq, Default, State, Debug)]
 pub(crate) struct BlitzNodeState {
     #[node_dep_state()]
     pub(crate) mouse_effected: MouseEffected,
+    #[parent_dep_state(font_size, Arc<Mutex<Taffy>>)]
+    pub font_size: FontSize,
     #[child_dep_state(layout, Arc<Mutex<Taffy>>)]
     pub layout: StretchLayout,
     #[parent_dep_state(color)]
