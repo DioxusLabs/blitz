@@ -18,7 +18,7 @@ taffy = "0.2.2"
 tokio = { version = "1.17.0", features = ["full"] }
 lightningcss = "1.0.0-alpha.38"
 cssparser = "0.29.2"
-vello = { git = "https://github.com/linebender/vello", rev = "dfde0936e5064ac8bb2765e1c3fdc1d5ac757a83" }
+vello = { git = "https://github.com/linebender/vello", rev = "bf523e8845e7f1b970068712ab1326a7784a5fdc" }
 wgpu = "0.14"
 tao = { version = "0.15.8", features = ["serde"] }
 raw-window-handle = "0.4.2"

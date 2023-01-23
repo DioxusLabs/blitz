@@ -52,10 +52,12 @@ impl ApplicationState {
             weak_focus_state,
         );
 
-        let render_context = RenderContext::new().await.unwrap();
+        let mut render_context = RenderContext::new().unwrap();
         let size = window.inner_size();
-        let surface = render_context.create_surface(window, size.width, size.height);
-        let wgpu_renderer = Renderer::new(&render_context.device).unwrap();
+        let surface = render_context
+            .create_surface(window, size.width, size.height)
+            .await;
+        let wgpu_renderer = Renderer::new(&render_context.devices[surface.dev_id].device).unwrap();
 
         let text_context = TextContext::default();
 
@@ -79,10 +81,11 @@ impl ApplicationState {
             .surface
             .get_current_texture()
             .expect("failed to get surface texture");
+        let device = &self.render_context.devices[self.surface.dev_id];
         self.wgpu_renderer
             .render_to_surface(
-                &self.render_context.device,
-                &self.render_context.queue,
+                &device.device,
+                &device.queue,
                 &scene,
                 &surface_texture,
                 self.surface.config.width,
@@ -90,7 +93,7 @@ impl ApplicationState {
             )
             .expect("failed to render to surface");
         surface_texture.present();
-        self.render_context.device.poll(wgpu::Maintain::Wait);
+        device.device.poll(wgpu::Maintain::Wait);
     }
 
     pub fn set_size(&mut self, size: PhysicalSize<u32>) {
