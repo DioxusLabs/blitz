@@ -11,32 +11,27 @@ repository = "https://github.com/DioxusLabs/blitz"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-dioxus = { git = "https://github.com/DioxusLabs/dioxus" }
-dioxus-native-core = { git = "https://github.com/DioxusLabs/dioxus" }
-dioxus-native-core-macro = { git = "https://github.com/DioxusLabs/dioxus" }
+dioxus = { git = "https://github.com/DioxusLabs/dioxus", rev = "741cbcbccc30cc3311bbc74ecd15817180675479" }
+dioxus-native-core = { git = "https://github.com/DioxusLabs/dioxus", rev = "741cbcbccc30cc3311bbc74ecd15817180675479" }
+dioxus-native-core-macro = { git = "https://github.com/DioxusLabs/dioxus", rev = "741cbcbccc30cc3311bbc74ecd15817180675479" }
 taffy = "0.2.2"
-tokio = { version = "1.17.0", features = ["full"] }
-lightningcss = "1.0.0-alpha.38"
-cssparser = "0.29.2"
-vello = { git = "https://github.com/linebender/vello", rev = "bf523e8845e7f1b970068712ab1326a7784a5fdc" }
-wgpu = "0.14"
-tao = { version = "0.15.8", features = ["serde"] }
-raw-window-handle = "0.4.2"
+tokio = { version = "1.25.0", features = ["full"] }
+lightningcss = "1.0.0-alpha.39"
+cssparser = "0.29.6"
+vello = { git = "https://github.com/linebender/vello", rev = "9721d4a6acd9cc7b852fbbcc33ecab9fba06d433" }
+wgpu = "0.15.0"
+tao = { version = "0.17.0", features = ["serde"] }
+raw-window-handle = "0.5.0"
 anymap = "0.12.1"
-futures-util = "0.3.21"
-fxhash = "0.2"
-serde_json = "1.0.82"
-serde = { version = "1.0.138", features = ["derive"] }
+futures-util = "0.3.26"
+fxhash = "0.2.1"
+serde_json = "1.0.91"
+serde = { version = "1.0.152", features = ["derive"] }
 keyboard-types = "0.6.2"
 rustc-hash = "1.1.0"
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 console_error_panic_hook = "0.1.7"
-console_log = "0.2"
+console_log = "0.2.0"
 wasm-bindgen-futures = "0.4.33"
 web-sys = "0.3.60"
-
-[patch.crates-io]
-# Required for metal support to work on wgpu
-# TODO: remove when wgpu is upgraded to 0.15
-naga = { git = "https://github.com/gfx-rs/naga", rev = "ddcd5d3121150b2b1beee6e54e9125ff31aaa9a2" }
