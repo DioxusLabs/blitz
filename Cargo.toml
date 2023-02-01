@@ -11,12 +11,12 @@ repository = "https://github.com/DioxusLabs/blitz"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-dioxus = { git = "https://github.com/DioxusLabs/dioxus" }
-dioxus-native-core = { git = "https://github.com/DioxusLabs/dioxus" }
-dioxus-native-core-macro = { git = "https://github.com/DioxusLabs/dioxus" }
+dioxus = { git = "https://github.com/DioxusLabs/dioxus", rev = "741cbcbccc30cc3311bbc74ecd15817180675479" }
+dioxus-native-core = { git = "https://github.com/DioxusLabs/dioxus", rev = "741cbcbccc30cc3311bbc74ecd15817180675479" }
+dioxus-native-core-macro = { git = "https://github.com/DioxusLabs/dioxus", rev = "741cbcbccc30cc3311bbc74ecd15817180675479" }
 taffy = "0.2.2"
 tokio = { version = "1.17.0", features = ["full"] }
-lightningcss = "1.0.0-alpha.38"
+lightningcss = "1.0.0-alpha.39"
 cssparser = "0.29.2"
 vello = { git = "https://github.com/linebender/vello", rev = "9721d4a6acd9cc7b852fbbcc33ecab9fba06d433" }
 wgpu = "0.15"
