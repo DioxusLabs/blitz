@@ -18,8 +18,8 @@ taffy = "0.2.2"
 tokio = { version = "1.17.0", features = ["full"] }
 lightningcss = "1.0.0-alpha.38"
 cssparser = "0.29.2"
-vello = { git = "https://github.com/linebender/vello", rev = "bf523e8845e7f1b970068712ab1326a7784a5fdc" }
-wgpu = "0.14"
+vello = { git = "https://github.com/linebender/vello", rev = "9721d4a6acd9cc7b852fbbcc33ecab9fba06d433" }
+wgpu = "0.15"
 tao = { version = "0.15.8", features = ["serde"] }
 raw-window-handle = "0.4.2"
 anymap = "0.12.1"
@@ -35,8 +35,3 @@ console_error_panic_hook = "0.1.7"
 console_log = "0.2"
 wasm-bindgen-futures = "0.4.33"
 web-sys = "0.3.60"
-
-[patch.crates-io]
-# Required for metal support to work on wgpu
-# TODO: remove when wgpu is upgraded to 0.15
-naga = { git = "https://github.com/gfx-rs/naga", rev = "ddcd5d3121150b2b1beee6e54e9125ff31aaa9a2" }
