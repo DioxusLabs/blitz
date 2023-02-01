@@ -25,12 +25,3 @@ Please contribute! There's a lot of solid foundations here:
 - Dioxus is underpinning state management
 
 Blitz is for *everyone*, so you don't need Dioxus to drive updates to the final render tree.
-
-### MacOs support
-
-There is a known issue with the wgpu on MacOS. If you're on MacOS, you'll need to add the following patch to your `Cargo.toml` to make Blitz run:
-
-```toml
-[patch.crates-io]
-naga = { git = "https://github.com/gfx-rs/naga", rev = "ddcd5d3121150b2b1beee6e54e9125ff31aaa9a2" }
-```
