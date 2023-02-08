@@ -1,8 +1,10 @@
-use crate::node::BlitzNodeState;
-use application::ApplicationState;
-use dioxus::prelude::*;
-use dioxus_native_core::{node::Node, real_dom::RealDom};
+use std::sync::{Arc, Mutex, RwLock};
 
+use application::ApplicationState;
+use dioxus_native_core::{prelude::*, Renderer};
+
+use events::EventData;
+use taffy::Taffy;
 use tao::{
     event::{Event, WindowEvent},
     event_loop::{ControlFlow, EventLoop},
@@ -14,14 +16,12 @@ mod events;
 mod focus;
 mod layout;
 mod mouse;
-mod node;
+mod prevent_default;
 mod render;
 mod style;
 mod text;
 mod util;
 
-type Dom = RealDom<BlitzNodeState>;
-type DomNode = Node<BlitzNodeState>;
 type TaoEvent<'a> = Event<'a, Redraw>;
 
 #[derive(Debug)]
@@ -30,14 +30,14 @@ pub struct Redraw;
 #[derive(Default)]
 pub struct Config;
 
-pub async fn launch(root: Component<()>) {
-    launch_cfg(root, Config::default()).await
-}
-
-pub async fn launch_cfg(root: Component<()>, _cfg: Config) {
+pub async fn render<R: Renderer<Arc<EventData>>>(
+    spawn_renderer: impl FnOnce(&Arc<RwLock<RealDom>>, &Arc<Mutex<Taffy>>) -> R + Send + 'static,
+    _cfg: Config,
+) {
     let event_loop = EventLoop::with_user_event();
     let window = WindowBuilder::new().build(&event_loop).unwrap();
-    let mut appliction = ApplicationState::new(root, &window, event_loop.create_proxy()).await;
+    let mut appliction =
+        ApplicationState::new(spawn_renderer, &window, event_loop.create_proxy()).await;
     appliction.render();
 
     event_loop.run(move |event, _, control_flow| {

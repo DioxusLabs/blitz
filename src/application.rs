@@ -1,23 +1,25 @@
-use dioxus::prelude::{Component, VirtualDom};
-use std::{
-    any::Any,
-    sync::{Arc, Mutex, MutexGuard, Weak},
-};
+use dioxus_native_core::Renderer;
+use std::sync::{Arc, Mutex, RwLock, RwLockWriteGuard};
 use tao::{dpi::PhysicalSize, event_loop::EventLoopProxy, window::Window};
 use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender};
+use vello::Renderer as VelloRenderer;
 use vello::{
     util::{RenderContext, RenderSurface},
-    Renderer, Scene, SceneBuilder,
+    Scene, SceneBuilder,
 };
 
 use crate::{
-    events::{AnyEvent, BlitzEventHandler},
-    focus::FocusState,
+    events::{BlitzEventHandler, DomEvent, EventData},
+    focus::{Focus, FocusState},
+    layout::TaffyLayout,
+    mouse::MouseEffected,
+    prevent_default::PreventDefault,
     render::render,
+    style::{BackgroundColor, Border, ForgroundColor},
     text::TextContext,
-    Dom, Redraw, TaoEvent,
+    Redraw, TaoEvent,
 };
-use dioxus_native_core::{real_dom::RealDom, tree::TreeView, FxDashSet, NodeId, SendAnyMap};
+use dioxus_native_core::{prelude::*, FxDashSet};
 use taffy::{
     prelude::{AvailableSpace, Size},
     style::Dimension,
@@ -29,35 +31,42 @@ pub struct ApplicationState {
     text_context: TextContext,
     render_context: RenderContext,
     surface: RenderSurface,
-    wgpu_renderer: Renderer,
-    event_handler: Arc<Mutex<BlitzEventHandler>>,
+    wgpu_renderer: VelloRenderer,
+    event_handler: BlitzEventHandler,
 }
 
 impl ApplicationState {
     /// Create a new window state and spawn a vdom thread.
-    pub async fn new(root: Component<()>, window: &Window, proxy: EventLoopProxy<Redraw>) -> Self {
+    pub async fn new<R: Renderer<Arc<EventData>>>(
+        spawn_renderer: impl FnOnce(&Arc<RwLock<RealDom>>, &Arc<Mutex<Taffy>>) -> R + Send + 'static,
+        window: &Window,
+        proxy: EventLoopProxy<Redraw>,
+    ) -> Self {
         let inner_size = window.inner_size();
 
-        let focus_state = Arc::new(Mutex::new(FocusState::default()));
-        let weak_focus_state = Arc::downgrade(&focus_state);
+        let mut rdom = RealDom::new(Box::new([
+            MouseEffected::to_type_erased(),
+            TaffyLayout::to_type_erased(),
+            ForgroundColor::to_type_erased(),
+            BackgroundColor::to_type_erased(),
+            Border::to_type_erased(),
+            Focus::to_type_erased(),
+            PreventDefault::to_type_erased(),
+        ]));
 
-        let event_handler = Arc::new(Mutex::new(BlitzEventHandler::new(focus_state)));
-        let weak_event_handler = Arc::downgrade(&event_handler);
+        let focus_state = FocusState::create(&mut rdom);
 
-        let dom = DomManager::spawn(
-            inner_size,
-            root,
-            proxy,
-            weak_event_handler,
-            weak_focus_state,
-        );
+        let dom = DomManager::spawn(rdom, inner_size, spawn_renderer, proxy);
+
+        let event_handler = BlitzEventHandler::new(focus_state);
 
         let mut render_context = RenderContext::new().unwrap();
         let size = window.inner_size();
         let surface = render_context
             .create_surface(window, size.width, size.height)
             .await;
-        let wgpu_renderer = Renderer::new(&render_context.devices[surface.dev_id].device).unwrap();
+        let wgpu_renderer =
+            VelloRenderer::new(&render_context.devices[surface.dev_id].device).unwrap();
 
         let text_context = TextContext::default();
 
@@ -106,12 +115,7 @@ impl ApplicationState {
     }
 
     pub fn clean(&self) -> DirtyNodes {
-        let dirty = self.dom.clean();
-        if self.event_handler.lock().unwrap().clean() {
-            DirtyNodes::All
-        } else {
-            dirty
-        }
+        self.dom.clean()
     }
 
     pub fn send_event(&mut self, event: &TaoEvent) {
@@ -123,40 +127,37 @@ impl ApplicationState {
         let evts;
         {
             let rdom = &mut self.dom.rdom();
-            let mut event_handler = self.event_handler.lock().unwrap();
-            event_handler.register_event(event, rdom, &size);
-            evts = event_handler.drain_events();
+            self.event_handler.register_event(event, rdom, &size);
+            evts = self.event_handler.drain_events();
         }
         self.dom.send_events(evts);
     }
 }
 
 #[allow(clippy::too_many_arguments)]
-async fn spawn_dom(
-    rdom: Arc<Mutex<Dom>>,
+async fn spawn_dom<R: Renderer<Arc<EventData>>>(
+    rdom: Arc<RwLock<RealDom>>,
     size: Arc<Mutex<PhysicalSize<u32>>>,
-    root: Component<()>,
+    spawn_renderer: impl FnOnce(&Arc<RwLock<RealDom>>, &Arc<Mutex<Taffy>>) -> R,
     proxy: EventLoopProxy<Redraw>,
-    event_handler: Weak<Mutex<BlitzEventHandler>>,
-    focus_state: Weak<Mutex<FocusState>>,
-    mut event_receiver: UnboundedReceiver<AnyEvent>,
+    mut event_receiver: UnboundedReceiver<DomEvent>,
     mut redraw_receiver: UnboundedReceiver<()>,
     vdom_dirty: Arc<FxDashSet<NodeId>>,
 ) -> Option<()> {
     let taffy = Arc::new(Mutex::new(Taffy::new()));
     let text_context = Arc::new(Mutex::new(TextContext::default()));
-    let mut vdom = VirtualDom::new(root);
-    let mutations = vdom.rebuild();
+    let mut renderer = spawn_renderer(&rdom, &taffy);
     let mut last_size;
 
+    // initial render
     {
-        let mut rdom = rdom.lock().ok()?;
-        // update the real dom's nodes
-        let (to_update, _) = rdom.apply_mutations(mutations);
+        let mut rdom = rdom.write().ok()?;
+        let root_id = rdom.root_id();
+        renderer.render(rdom.get_mut(root_id)?);
         let mut ctx = SendAnyMap::new();
         ctx.insert((taffy.clone(), text_context.clone()));
-        // update the style and layout
-        let to_rerender = rdom.update_state(to_update, ctx);
+        // update the state of the real dom
+        let (to_rerender, masks_dirty) = rdom.update_state(ctx, true);
         let size = size.lock().unwrap();
 
         let width = size.width as f32;
@@ -171,22 +172,16 @@ async fn spawn_dom(
         let mut locked_taffy = taffy.lock().unwrap();
 
         // the root node fills the entire area
-        let root_node = rdom[NodeId(0)].state.layout.node.unwrap();
+        let root_node = rdom.get(rdom.root_id()).unwrap();
+        let root_taffy_node = root_node.get::<TaffyLayout>().unwrap().node.unwrap();
 
-        let mut style = *locked_taffy.style(root_node).unwrap();
+        let mut style = *locked_taffy.style(root_taffy_node).unwrap();
         style.size = Size {
             width: Dimension::Points(width),
             height: Dimension::Points(height),
         };
-        locked_taffy.set_style(root_node, style).unwrap();
-        locked_taffy
-            .compute_layout(rdom[NodeId(0)].state.layout.node.unwrap(), size)
-            .unwrap();
-        rdom.traverse_depth_first_mut(|n| {
-            if let Some(node) = n.state.layout.node {
-                n.state.layout.layout = Some(*locked_taffy.layout(node).unwrap());
-            }
-        });
+        locked_taffy.set_style(root_taffy_node, style).unwrap();
+        locked_taffy.compute_layout(root_taffy_node, size).unwrap();
         for k in to_rerender.into_iter() {
             vdom_dirty.insert(k);
         }
@@ -194,37 +189,27 @@ async fn spawn_dom(
     }
 
     loop {
-        let wait = vdom.wait_for_work();
+        let wait = renderer.poll_async();
         tokio::select! {
-            _ = wait=>{},
-            _ = redraw_receiver.recv()=>{},
-            Some(event) = event_receiver.recv()=>{
-                let name = event.name;
-                let any_value:Box<dyn Any> = event.data;
-                let data = any_value.into();
-                let element = event.element;
-                let bubbles = event.bubbles;
-                vdom.handle_event(name, data, element, bubbles);
+            _ = wait => {},
+            _ = redraw_receiver.recv() => {},
+            Some(event) = event_receiver.recv() => {
+                let DomEvent { name, data, element, bubbles } = event;
+                let mut rdom = rdom.write().ok()?;
+                renderer.handle_event(rdom.get_mut(element)?, name, data, bubbles);
             }
         }
 
-        let mut rdom = rdom.lock().ok()?;
-        let mutations = vdom.render_immediate();
-        let strong = focus_state.upgrade()?;
-        let mut focus_state = strong.lock().ok()?;
-        let strong = event_handler.upgrade()?;
-        let mut event_handler = strong.lock().ok()?;
-        event_handler.prune(&mutations, &rdom);
-        focus_state.prune(&mutations, &rdom);
-
-        // update the real dom's nodes
-        let (to_update, _) = rdom.apply_mutations(mutations);
+        let mut rdom = rdom.write().ok()?;
+        // render after the event has been handled
+        let root_id = rdom.root_id();
+        renderer.render(rdom.get_mut(root_id)?);
 
         let mut ctx = SendAnyMap::new();
         ctx.insert((taffy.clone(), text_context.clone()));
 
-        // update the style and layout
-        let to_rerender = rdom.update_state(to_update, ctx);
+        // update the real dom
+        let (to_rerender, dirty_masks) = rdom.update_state(ctx, false);
 
         let size = size.lock().ok()?;
 
@@ -236,22 +221,19 @@ async fn spawn_dom(
         };
         if !to_rerender.is_empty() || last_size != size {
             last_size = size;
-            let mut locked_taffy = taffy.lock().unwrap();
-            let root_node = rdom[NodeId(0)].state.layout.node.unwrap();
-            let mut style = *locked_taffy.style(root_node).unwrap();
-            style.size = Size {
+            let mut taffy = taffy.lock().unwrap();
+            let root_node = rdom.get(rdom.root_id()).unwrap();
+            let root_node_layout = root_node.get::<TaffyLayout>().unwrap();
+            let root_taffy_node = root_node_layout.node.unwrap();
+            let style = *taffy.style(root_taffy_node).unwrap();
+            let new_size = Size {
                 width: Dimension::Points(width),
                 height: Dimension::Points(height),
             };
-            locked_taffy.set_style(root_node, style).unwrap();
-            locked_taffy
-                .compute_layout(rdom[NodeId(0)].state.layout.node.unwrap(), size)
-                .unwrap();
-            rdom.traverse_depth_first_mut(|n| {
-                if let Some(node) = n.state.layout.node {
-                    n.state.layout.layout = Some(*locked_taffy.layout(node).unwrap());
-                }
-            });
+            if style.size != new_size {
+                taffy.set_style(root_taffy_node, style).unwrap();
+            }
+            taffy.compute_layout(root_taffy_node, size).unwrap();
             for k in to_rerender.into_iter() {
                 vdom_dirty.insert(k);
             }
@@ -261,30 +243,29 @@ async fn spawn_dom(
     }
 }
 
-/// A wrapper around the DOM that manages the lifecycle of the VDom and RealDom.
+/// A wrapper around the RealDom that manages the lifecycle.
 struct DomManager {
-    rdom: Arc<Mutex<Dom>>,
+    rdom: Arc<RwLock<RealDom>>,
     size: Arc<Mutex<PhysicalSize<u32>>>,
     /// The node that need to be redrawn.
     dirty: Arc<FxDashSet<NodeId>>,
     force_redraw: bool,
-    event_sender: UnboundedSender<AnyEvent>,
+    event_sender: UnboundedSender<DomEvent>,
     redraw_sender: UnboundedSender<()>,
 }
 
 impl DomManager {
-    fn spawn(
+    fn spawn<R: Renderer<Arc<EventData>>>(
+        rdom: RealDom,
         size: PhysicalSize<u32>,
-        root: Component<()>,
+        spawn_renderer: impl FnOnce(&Arc<RwLock<RealDom>>, &Arc<Mutex<Taffy>>) -> R + Send + 'static,
         proxy: EventLoopProxy<Redraw>,
-        event_handler: Weak<Mutex<BlitzEventHandler>>,
-        focus_state: Weak<Mutex<FocusState>>,
     ) -> Self {
-        let rdom: Arc<Mutex<Dom>> = Arc::new(Mutex::new(RealDom::new()));
+        let rdom: Arc<RwLock<RealDom>> = Arc::new(RwLock::new(rdom));
         let size = Arc::new(Mutex::new(size));
         let dirty = Arc::new(FxDashSet::default());
 
-        let (event_sender, event_receiver) = unbounded_channel::<AnyEvent>();
+        let (event_sender, event_receiver) = unbounded_channel::<DomEvent>();
         let (redraw_sender, redraw_receiver) = unbounded_channel::<()>();
 
         let (rdom_clone, size_clone, dirty_clone) = (rdom.clone(), size.clone(), dirty.clone());
@@ -297,10 +278,8 @@ impl DomManager {
                 .block_on(spawn_dom(
                     rdom_clone,
                     size_clone,
-                    root,
+                    spawn_renderer,
                     proxy,
-                    event_handler,
-                    focus_state,
                     event_receiver,
                     redraw_receiver,
                     dirty_clone,
@@ -327,8 +306,8 @@ impl DomManager {
         }
     }
 
-    fn rdom(&self) -> MutexGuard<Dom> {
-        self.rdom.lock().unwrap()
+    fn rdom(&self) -> RwLockWriteGuard<RealDom> {
+        self.rdom.write().unwrap()
     }
 
     fn set_size(&mut self, size: PhysicalSize<u32>) {
@@ -354,7 +333,7 @@ impl DomManager {
         );
     }
 
-    fn send_events(&self, events: impl IntoIterator<Item = AnyEvent>) {
+    fn send_events(&self, events: impl IntoIterator<Item = DomEvent>) {
         for evt in events {
             let _ = self.event_sender.send(evt);
         }

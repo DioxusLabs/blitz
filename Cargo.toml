@@ -11,9 +11,8 @@ repository = "https://github.com/DioxusLabs/blitz"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-dioxus = { git = "https://github.com/DioxusLabs/dioxus", rev = "741cbcbccc30cc3311bbc74ecd15817180675479" }
-dioxus-native-core = { git = "https://github.com/DioxusLabs/dioxus", rev = "741cbcbccc30cc3311bbc74ecd15817180675479" }
-dioxus-native-core-macro = { git = "https://github.com/DioxusLabs/dioxus", rev = "741cbcbccc30cc3311bbc74ecd15817180675479" }
+dioxus = { path = "C:/users/desktop/github/dioxus/packages/dioxus", optional = true }
+dioxus-native-core = { path = "C:/users/desktop/github/dioxus/packages/native-core" }
 taffy = "0.2.2"
 tokio = { version = "1.25.0", features = ["full"] }
 lightningcss = "1.0.0-alpha.39"
@@ -35,3 +34,7 @@ console_error_panic_hook = "0.1.7"
 console_log = "0.2.0"
 wasm-bindgen-futures = "0.4.33"
 web-sys = "0.3.60"
+
+[features]
+default = ["dioxus-bindings"]
+dioxus-bindings = ["dioxus", "dioxus-native-core/dioxus"]

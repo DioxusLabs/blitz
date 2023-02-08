@@ -1,30 +1,5 @@
-use dioxus_native_core::state::*;
-use dioxus_native_core_macro::State;
-
-use crate::focus::Focus;
-use crate::layout::StretchLayout;
-use crate::mouse::MouseEffected;
-use crate::style::{BackgroundColor, Border, ForgroundColor};
-use dioxus_native_core_macro::sorted_str_slice;
-
-#[derive(Clone, PartialEq, Default, State, Debug)]
-pub(crate) struct BlitzNodeState {
-    #[node_dep_state()]
-    pub(crate) mouse_effected: MouseEffected,
-    #[child_dep_state(layout, Arc<Mutex<Taffy>>)]
-    pub layout: StretchLayout,
-    #[parent_dep_state(color)]
-    pub color: ForgroundColor,
-    #[node_dep_state()]
-    pub bg_color: BackgroundColor,
-    #[node_dep_state()]
-    pub border: Border,
-    #[node_dep_state()]
-    pub focus: Focus,
-    pub focused: bool,
-    #[node_dep_state()]
-    pub prevent_default: PreventDefault,
-}
+use dioxus_native_core::prelude::*;
+use dioxus_native_core::prelude::{AttributeMaskBuilder, NodeMaskBuilder};
 
 #[derive(PartialEq, Debug, Clone)]
 pub(crate) enum PreventDefault {
@@ -51,24 +26,22 @@ impl Default for PreventDefault {
     }
 }
 
-impl NodeDepState for PreventDefault {
-    type DepState = ();
-    type Ctx = ();
+impl Pass for PreventDefault {
+    type ChildDependencies = ();
+    type ParentDependencies = (Self,);
+    type NodeDependencies = ();
+    const NODE_MASK: NodeMaskBuilder<'static> =
+        NodeMaskBuilder::new().with_attrs(AttributeMaskBuilder::Some(&["dioxus-prevent-default"]));
 
-    const NODE_MASK: dioxus_native_core::node_ref::NodeMask =
-        dioxus_native_core::node_ref::NodeMask::new_with_attrs(
-            dioxus_native_core::node_ref::AttributeMask::Static(&sorted_str_slice!([
-                "dioxus-prevent-default"
-            ])),
-        );
-
-    fn reduce(
+    fn pass<'a>(
         &mut self,
-        node: dioxus_native_core::node_ref::NodeView,
-        _sibling: (),
-        _ctx: &Self::Ctx,
+        node_view: NodeView,
+        _: <Self::NodeDependencies as Dependancy>::ElementBorrowed<'a>,
+        parent: Option<<Self::ParentDependencies as Dependancy>::ElementBorrowed<'a>>,
+        _: Option<Vec<<Self::ChildDependencies as Dependancy>::ElementBorrowed<'a>>>,
+        _: &SendAnyMap,
     ) -> bool {
-        let new = match node
+        let new = match node_view
             .attributes()
             .into_iter()
             .flatten()
@@ -97,5 +70,17 @@ impl NodeDepState for PreventDefault {
             *self = new;
             true
         }
+    }
+
+    fn create<'a>(
+        node_view: NodeView<()>,
+        node: <Self::NodeDependencies as Dependancy>::ElementBorrowed<'a>,
+        parent: Option<<Self::ParentDependencies as Dependancy>::ElementBorrowed<'a>>,
+        children: Option<Vec<<Self::ChildDependencies as Dependancy>::ElementBorrowed<'a>>>,
+        context: &SendAnyMap,
+    ) -> Self {
+        let mut myself = Self::default();
+        myself.pass(node_view, node, parent, children, context);
+        myself
     }
 }
