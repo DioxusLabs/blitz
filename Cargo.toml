@@ -13,6 +13,7 @@ repository = "https://github.com/DioxusLabs/blitz"
 [dependencies]
 dioxus = { path = "C:/users/desktop/github/dioxus/packages/dioxus", optional = true }
 dioxus-native-core = { path = "C:/users/desktop/github/dioxus/packages/native-core" }
+dioxus-html = { path = "C:/users/desktop/github/dioxus/packages/html" }
 taffy = "0.2.2"
 tokio = { version = "1.25.0", features = ["full"] }
 lightningcss = "1.0.0-alpha.39"
@@ -23,7 +24,6 @@ tao = { version = "0.17.0", features = ["serde"] }
 raw-window-handle = "0.5.0"
 anymap = "0.12.1"
 futures-util = "0.3.26"
-fxhash = "0.2.1"
 serde_json = "1.0.91"
 serde = { version = "1.0.152", features = ["derive"] }
 keyboard-types = "0.6.2"

@@ -10,7 +10,6 @@ use crate::text::TextContext;
 pub struct TaffyLayout {
     pub style: Style,
     pub node: Option<Node>,
-    pub layout: Option<Layout>,
 }
 
 impl PartialEq<Self> for TaffyLayout {
@@ -71,7 +70,7 @@ impl Pass for TaffyLayout {
             // gather up all the styles from the attribute list
             let mut style = Style::default();
 
-            for attr in node_view.attributes().unwrap() {
+            for attr in node_view.attributes().into_iter().flatten() {
                 let name = &attr.attribute.name;
                 let value = attr.value;
                 if let Some(value) = value.as_text() {

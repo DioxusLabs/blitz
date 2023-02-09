@@ -1,4 +1,4 @@
-use crate::{prevent_default::PreventDefault, RealDom};
+use crate::{application::DirtyNodes, prevent_default::PreventDefault, RealDom};
 
 use std::{cmp::Ordering, num::NonZeroU16};
 
@@ -6,6 +6,7 @@ use dioxus_native_core::{
     prelude::*,
     utils::{ElementProduced, PersistantElementIter},
 };
+use rustc_hash::FxHashSet;
 
 pub struct Focused(pub bool);
 
@@ -71,7 +72,7 @@ impl Pass for Focus {
         &mut self,
         node_view: NodeView,
         _: <Self::NodeDependencies as Dependancy>::ElementBorrowed<'a>,
-        parent: Option<<Self::ParentDependencies as Dependancy>::ElementBorrowed<'a>>,
+        _: Option<<Self::ParentDependencies as Dependancy>::ElementBorrowed<'a>>,
         _: Option<Vec<<Self::ChildDependencies as Dependancy>::ElementBorrowed<'a>>>,
         _: &SendAnyMap,
     ) -> bool {
@@ -134,25 +135,25 @@ pub(crate) struct FocusState {
     pub(crate) focus_iter: PersistantElementIter,
     pub(crate) last_focused_id: Option<NodeId>,
     pub(crate) focus_level: FocusLevel,
-    pub(crate) dirty: bool,
+    pub(crate) dirty: FxHashSet<NodeId>,
 }
 
 impl FocusState {
     pub fn create(rdom: &mut RealDom) -> Self {
-        let mut focus_iter = PersistantElementIter::create(rdom);
+        let focus_iter = PersistantElementIter::create(rdom);
         Self {
             focus_iter,
             last_focused_id: None,
             focus_level: FocusLevel::default(),
-            dirty: false,
+            dirty: Default::default(),
         }
     }
 
     /// Returns true if the focus has changed.
-    pub fn progress(&mut self, rdom: &mut RealDom, forward: bool) -> bool {
+    pub fn progress(&mut self, rdom: &mut RealDom, forward: bool) {
         if let Some(last) = self.last_focused_id {
             if rdom.get(last).unwrap().get::<PreventDefault>() == Some(&PreventDefault::KeyDown) {
-                return false;
+                return;
             }
         }
         // the id that started focused to track when a loop has happened
@@ -243,15 +244,13 @@ impl FocusState {
         if let Some(id) = next_focus {
             rdom.get_mut(id).unwrap().insert(Focused(true));
             if let Some(old) = self.last_focused_id.replace(id) {
+                self.dirty.insert(old);
                 rdom.get_mut(old).unwrap().insert(Focused(false));
             }
             // reset the position to the currently focused element
             while self.focus_iter.next(rdom).id() != id {}
-            self.dirty = true;
-            return true;
+            self.dirty.insert(id);
         }
-
-        false
     }
 
     #[allow(unused)]
@@ -264,6 +263,11 @@ impl FocusState {
         self.focus_level = node.get::<Focus>().unwrap().level;
         // reset the position to the currently focused element
         while self.focus_iter.next(rdom).id() != id {}
-        self.dirty = true;
+        self.dirty.insert(id);
+    }
+
+    pub fn clean(&mut self) -> DirtyNodes {
+        let dirty = std::mem::take(&mut self.dirty);
+        DirtyNodes::Some(dirty)
     }
 }

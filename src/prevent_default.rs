@@ -37,7 +37,7 @@ impl Pass for PreventDefault {
         &mut self,
         node_view: NodeView,
         _: <Self::NodeDependencies as Dependancy>::ElementBorrowed<'a>,
-        parent: Option<<Self::ParentDependencies as Dependancy>::ElementBorrowed<'a>>,
+        _: Option<<Self::ParentDependencies as Dependancy>::ElementBorrowed<'a>>,
         _: Option<Vec<<Self::ChildDependencies as Dependancy>::ElementBorrowed<'a>>>,
         _: &SendAnyMap,
     ) -> bool {

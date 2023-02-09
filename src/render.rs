@@ -1,6 +1,8 @@
 use dioxus_native_core::prelude::*;
 use dioxus_native_core::NodeId;
+use taffy::prelude::Layout;
 use taffy::prelude::Size;
+use taffy::Taffy;
 use tao::dpi::PhysicalSize;
 use vello::kurbo::{Affine, Point, Rect, RoundedRect, Vec2};
 use vello::peniko::{Color, Fill, Stroke};
@@ -20,12 +22,14 @@ const FOCUS_BORDER_WIDTH: f64 = 6.0;
 
 pub(crate) fn render(
     dom: &RealDom,
+    taffy: &Taffy,
     text_context: &mut TextContext,
     scene_builder: &mut SceneBuilder,
     window_size: PhysicalSize<u32>,
 ) {
     let root = &dom.get(dom.root_id()).unwrap();
-    let root_layout = root.get::<TaffyLayout>().unwrap().layout.unwrap();
+    let root_node = root.get::<TaffyLayout>().unwrap().node.unwrap();
+    let root_layout = taffy.layout(root_node).unwrap();
     let shape = Rect {
         x0: root_layout.location.x.into(),
         y0: root_layout.location.y.into(),
@@ -38,6 +42,7 @@ pub(crate) fn render(
         height: window_size.height,
     };
     render_node(
+        taffy,
         *root,
         text_context,
         scene_builder,
@@ -47,13 +52,15 @@ pub(crate) fn render(
 }
 
 fn render_node(
+    taffy: &Taffy,
     node: NodeRef,
     text_context: &mut TextContext,
     scene_builder: &mut SceneBuilder,
     location: Point,
     viewport_size: &Size<u32>,
 ) {
-    let layout = node.get::<TaffyLayout>().unwrap().layout.unwrap();
+    let taffy_node = node.get::<TaffyLayout>().unwrap().node.unwrap();
+    let layout = taffy.layout(taffy_node).unwrap();
     let pos = location + Vec2::new(layout.location.x as f64, layout.location.y as f64);
     match &node.node_type() {
         NodeType::Text(TextNode { text, .. }) => {
@@ -69,9 +76,9 @@ fn render_node(
             )
         }
         NodeType::Element { .. } => {
-            let shape = get_shape(node, viewport_size, pos);
+            let shape = get_shape(layout, node, viewport_size, pos);
             let fill_color = translate_color(&node.get::<BackgroundColor>().unwrap().0);
-            if node.get::<Focused>().unwrap().0 {
+            if node.get::<Focused>().filter(|focused| focused.0).is_some() {
                 let stroke_color = Color::rgb(1.0, 1.0, 1.0);
                 let stroke = Stroke::new(FOCUS_BORDER_WIDTH as f32 / 2.0);
                 scene_builder.stroke(&stroke, Affine::IDENTITY, stroke_color, None, &shape);
@@ -102,16 +109,26 @@ fn render_node(
             };
 
             for child in node.children() {
-                render_node(child, text_context, scene_builder, pos, viewport_size);
+                render_node(
+                    taffy,
+                    child,
+                    text_context,
+                    scene_builder,
+                    pos,
+                    viewport_size,
+                );
             }
         }
         _ => {}
     }
 }
 
-pub(crate) fn get_shape(node: NodeRef, viewport_size: &Size<u32>, location: Point) -> RoundedRect {
-    let layout = node.get::<TaffyLayout>().unwrap().layout.unwrap();
-
+pub(crate) fn get_shape(
+    layout: &Layout,
+    node: NodeRef,
+    viewport_size: &Size<u32>,
+    location: Point,
+) -> RoundedRect {
     let axis = Axis::Min;
     let rect = layout.size;
     let x: f64 = location.x;
@@ -119,22 +136,23 @@ pub(crate) fn get_shape(node: NodeRef, viewport_size: &Size<u32>, location: Poin
     let width: f64 = layout.size.width.into();
     let height: f64 = layout.size.height.into();
     let border: &Border = node.get().unwrap();
-    let left_border_width = if node.get::<Focused>().unwrap().0 {
+    let focused = node.get::<Focused>().filter(|focused| focused.0).is_some();
+    let left_border_width = if focused {
         FOCUS_BORDER_WIDTH
     } else {
         border.width.left.resolve(axis, &rect, viewport_size)
     };
-    let right_border_width = if node.get::<Focused>().unwrap().0 {
+    let right_border_width = if focused {
         FOCUS_BORDER_WIDTH
     } else {
         border.width.right.resolve(axis, &rect, viewport_size)
     };
-    let top_border_width = if node.get::<Focused>().unwrap().0 {
+    let top_border_width = if focused {
         FOCUS_BORDER_WIDTH
     } else {
         border.width.top.resolve(axis, &rect, viewport_size)
     };
-    let bottom_border_width = if node.get::<Focused>().unwrap().0 {
+    let bottom_border_width = if focused {
         FOCUS_BORDER_WIDTH
     } else {
         border.width.bottom.resolve(axis, &rect, viewport_size)
@@ -172,17 +190,18 @@ pub(crate) fn get_shape(node: NodeRef, viewport_size: &Size<u32>, location: Poin
     )
 }
 
-pub(crate) fn get_abs_pos(node: NodeRef, dom: &RealDom) -> Point {
-    let mut node_layout = node.get::<TaffyLayout>().unwrap().layout.unwrap().location;
+pub(crate) fn get_abs_pos(layout: Layout, taffy: &Taffy, node: NodeRef) -> Point {
+    let mut node_layout = layout.location;
     let mut current = node.id();
-    while let Some(parent) = dom.get(current).unwrap().parent() {
+    while let Some(parent) = node.real_dom().get(current).unwrap().parent() {
         let parent_id = parent.id();
         // the root element is positioned at (0, 0)
         if parent_id == NodeId(0) {
             break;
         }
         current = parent_id;
-        let parent_layout = parent.get::<TaffyLayout>().unwrap().layout.unwrap();
+        let taffy_node = parent.get::<TaffyLayout>().unwrap().node.unwrap();
+        let parent_layout = taffy.layout(taffy_node).unwrap();
         node_layout.x += parent_layout.location.x;
         node_layout.y += parent_layout.location.y;
     }

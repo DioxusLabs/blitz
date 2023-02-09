@@ -1,14 +1,16 @@
 use keyboard_types::Code;
 use std::{
+    any::Any,
+    rc::Rc,
     str::FromStr,
     sync::Arc,
     time::{Duration, Instant},
 };
-use taffy::prelude::Size;
+use taffy::{prelude::Size, Taffy};
 use tao::event::MouseButton;
 use vello::kurbo::Point;
 
-use dioxus::prelude::dioxus_elements::{
+use dioxus_html::{
     events::{FocusData, KeyboardData, MouseData, WheelData},
     geometry::{euclid::Point2D, ClientPoint, Coordinates, ElementPoint, PagePoint, ScreenPoint},
     input_data::{self, keyboard_types::Modifiers, MouseButtonSet},
@@ -18,6 +20,7 @@ use dioxus_native_core::prelude::*;
 use tao::keyboard::Key;
 
 use crate::{
+    application::DirtyNodes,
     focus::{Focus, FocusState},
     mouse::get_hovered,
     prevent_default::PreventDefault,
@@ -76,6 +79,12 @@ struct EventState {
     focus_state: FocusState,
 }
 
+impl EventState {
+    fn clean(&mut self) -> DirtyNodes {
+        self.focus_state.clean()
+    }
+}
+
 pub struct DomEvent {
     pub name: &'static str,
     pub data: Arc<EventData>,
@@ -89,6 +98,17 @@ pub enum EventData {
     Keyboard(KeyboardData),
     Focus(FocusData),
     Wheel(WheelData),
+}
+
+impl EventData {
+    pub fn into_any(self) -> Rc<dyn Any> {
+        match self {
+            EventData::Mouse(data) => Rc::new(data),
+            EventData::Keyboard(data) => Rc::new(data),
+            EventData::Focus(data) => Rc::new(data),
+            EventData::Wheel(data) => Rc::new(data),
+        }
+    }
 }
 
 /// Stores the perisistent state of the event handler, and handles the event queue
@@ -109,10 +129,15 @@ impl BlitzEventHandler {
         }
     }
 
+    pub(crate) fn clean(&mut self) -> DirtyNodes {
+        self.state.clean()
+    }
+
     pub(crate) fn register_event(
         &mut self,
         event: &TaoEvent,
         rdom: &mut RealDom,
+        taffy: &Taffy,
         viewport_size: &Size<u32>,
     ) {
         match event {
@@ -168,7 +193,7 @@ impl BlitzEventHandler {
                             if event.text.is_some() {
                                 self.queued_events.push(DomEvent {
                                     name: "keypress",
-                                    element: NodeId(0),
+                                    element: NodeId(1),
                                     data: data.clone(),
                                     bubbles: true,
                                 });
@@ -217,7 +242,7 @@ impl BlitzEventHandler {
                         ..
                     } => {
                         let pos = Point::new(position.x, position.y);
-                        let hovered = get_hovered(rdom, viewport_size, pos);
+                        let hovered = get_hovered(taffy, rdom, viewport_size, pos);
                         let (mouse_x, mouse_y) = (pos.x as i32, pos.y as i32);
                         let screen_point = ScreenPoint::new(mouse_x as f64, mouse_y as f64);
                         let client_point = ClientPoint::new(mouse_x as f64, mouse_y as f64);
@@ -343,7 +368,7 @@ impl BlitzEventHandler {
                                     self.queued_events.push(DomEvent {
                                         element: hovered,
                                         name: "mousedown",
-                                        data: data.clone(),
+                                        data,
                                         bubbles: true,
                                     });
                                     self.state.cursor_state.last_pressed_element = Some(hovered);
@@ -456,44 +481,6 @@ impl BlitzEventHandler {
         std::mem::swap(&mut self.queued_events, &mut events);
         events
     }
-
-    fn prune_id(&mut self, removed: NodeId) {
-        if let Some(id) = self.state.cursor_state.hovered {
-            if id == removed {
-                self.state.cursor_state.hovered = None;
-            }
-        }
-        if let Some(id) = self.state.cursor_state.last_pressed_element {
-            if id == removed {
-                self.state.cursor_state.last_pressed_element = None;
-            }
-        }
-        if let Some(id) = self.state.cursor_state.last_clicked_element {
-            if id == removed {
-                self.state.cursor_state.last_clicked_element = None;
-            }
-        }
-    }
-
-    // pub(crate) fn prune(&mut self, mutations: &Mutations, rdom: &RealDom) {
-    //     fn remove_children(handler: &mut BlitzEventHandler, rdom: &RealDom, removed: NodeId) {
-    //         handler.prune_id(removed);
-    //         if let Some(children) = rdom.children(removed) {
-    //             for child in children {
-    //                 if let Some(child_id) = child.mounted_id() {
-    //                     remove_children(handler, rdom, child_id);
-    //                 }
-    //             }
-    //         }
-    //     }
-    //     for m in &mutations.edits {
-    //         match m {
-    //             dioxus::core::Mutation::ReplaceWith { id, .. } => remove_children(self, rdom, *id),
-    //             dioxus::core::Mutation::Remove { id } => remove_children(self, rdom, *id),
-    //             _ => (),
-    //         }
-    //     }
-    // }
 }
 
 fn map_key(key: &tao::keyboard::Key) -> keyboard_types::Key {

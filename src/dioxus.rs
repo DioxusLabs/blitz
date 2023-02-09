@@ -1,49 +1,52 @@
-use std::{ops::Deref, rc::Rc};
+use std::ops::Deref;
+use std::sync::Arc;
 
-use dioxus_core::{Component, VirtualDom};
-use dioxus_html::EventData;
+use dioxus::core::{Component, VirtualDom};
 use dioxus_native_core::{
     dioxus::{DioxusState, NodeImmutableDioxusExt},
     Renderer,
 };
 
-use crate::{query::Query, render, Config, TuiContext};
+use crate::events::EventData;
+use crate::{render, Config};
 
-pub fn launch(app: Component<()>) {
-    launch_cfg(app, Config::default())
+pub async fn launch(app: Component<()>) {
+    launch_cfg(app, Config::default()).await
 }
 
-pub fn launch_cfg(app: Component<()>, cfg: Config) {
-    launch_cfg_with_props(app, (), cfg);
+pub async fn launch_cfg(app: Component<()>, cfg: Config) {
+    launch_cfg_with_props(app, (), cfg).await
 }
 
-pub fn launch_cfg_with_props<Props: 'static>(app: Component<Props>, props: Props, cfg: Config) {
-    render(cfg, |rdom, taffy, event_tx| {
-        let mut vdom = VirtualDom::new_with_props(app, props)
-            .with_root_context(TuiContext { tx: event_tx })
-            .with_root_context(Query {
-                rdom: rdom.clone(),
-                stretch: taffy.clone(),
-            });
-        let muts = vdom.rebuild();
-        let mut rdom = rdom.write().unwrap();
-        let mut dioxus_state = DioxusState::create(&mut rdom);
-        dioxus_state.apply_mutations(&mut rdom, muts);
-        DioxusRenderer {
-            vdom,
-            dioxus_state,
-            #[cfg(all(feature = "hot-reload", debug_assertions))]
-            hot_reload_rx: {
-                let (hot_reload_tx, hot_reload_rx) =
-                    tokio::sync::mpsc::unbounded_channel::<dioxus_hot_reload::HotReloadMsg>();
-                dioxus_hot_reload::connect(move |msg| {
-                    let _ = hot_reload_tx.send(msg);
-                });
-                hot_reload_rx
-            },
-        }
-    })
-    .unwrap();
+pub async fn launch_cfg_with_props<Props: 'static + Send>(
+    app: Component<Props>,
+    props: Props,
+    cfg: Config,
+) {
+    render(
+        move |rdom, _| {
+            let mut vdom = VirtualDom::new_with_props(app, props);
+            let muts = vdom.rebuild();
+            let mut rdom = rdom.write().unwrap();
+            let mut dioxus_state = DioxusState::create(&mut rdom);
+            dioxus_state.apply_mutations(&mut rdom, muts);
+            DioxusRenderer {
+                vdom,
+                dioxus_state,
+                #[cfg(all(feature = "hot-reload", debug_assertions))]
+                hot_reload_rx: {
+                    let (hot_reload_tx, hot_reload_rx) =
+                        tokio::sync::mpsc::unbounded_channel::<dioxus_hot_reload::HotReloadMsg>();
+                    dioxus_hot_reload::connect(move |msg| {
+                        let _ = hot_reload_tx.send(msg);
+                    });
+                    hot_reload_rx
+                },
+            }
+        },
+        cfg,
+    )
+    .await;
 }
 
 struct DioxusRenderer {
@@ -53,7 +56,7 @@ struct DioxusRenderer {
     hot_reload_rx: tokio::sync::mpsc::UnboundedReceiver<dioxus_hot_reload::HotReloadMsg>,
 }
 
-impl Renderer<Rc<EventData>> for DioxusRenderer {
+impl Renderer<Arc<EventData>> for DioxusRenderer {
     fn render(&mut self, mut root: dioxus_native_core::NodeMut<()>) {
         let rdom = root.real_dom_mut();
         let muts = self.vdom.render_immediate();
@@ -64,7 +67,7 @@ impl Renderer<Rc<EventData>> for DioxusRenderer {
         &mut self,
         node: dioxus_native_core::NodeMut<()>,
         event: &str,
-        value: Rc<EventData>,
+        value: Arc<EventData>,
         bubbles: bool,
     ) {
         if let Some(id) = node.mounted_id() {
@@ -73,7 +76,7 @@ impl Renderer<Rc<EventData>> for DioxusRenderer {
         }
     }
 
-    fn poll_async(&mut self) -> std::pin::Pin<Box<dyn futures::Future<Output = ()> + '_>> {
+    fn poll_async(&mut self) -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + '_>> {
         #[cfg(all(feature = "hot-reload", debug_assertions))]
         return Box::pin(async {
             let hot_reload_wait = self.hot_reload_rx.recv();

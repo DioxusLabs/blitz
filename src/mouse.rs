@@ -1,13 +1,15 @@
 use dioxus_native_core::prelude::*;
-use taffy::prelude::Size;
+use taffy::{prelude::Size, Taffy};
 use vello::kurbo::{Point, Shape};
 
 use crate::{
+    layout::TaffyLayout,
     render::{get_abs_pos, get_shape},
     RealDom,
 };
 
 pub(crate) fn get_hovered(
+    taffy: &Taffy,
     dom: &RealDom,
     viewport_size: &Size<u32>,
     mouse_pos: Point,
@@ -15,7 +17,7 @@ pub(crate) fn get_hovered(
     let mut hovered: Option<NodeId> = None;
     dom.traverse_depth_first(|node| {
         if node.get::<MouseEffected>().unwrap().0
-            && check_hovered(dom, node, viewport_size, mouse_pos)
+            && check_hovered(taffy, node, viewport_size, mouse_pos)
         {
             let new_id = node.id();
             if let Some(id) = hovered {
@@ -31,12 +33,20 @@ pub(crate) fn get_hovered(
 }
 
 pub(crate) fn check_hovered(
-    dom: &RealDom,
+    taffy: &Taffy,
     node: NodeRef,
     viewport_size: &Size<u32>,
     mouse_pos: Point,
 ) -> bool {
-    get_shape(node, viewport_size, get_abs_pos(node, dom)).contains(mouse_pos)
+    let taffy_node = node.get::<TaffyLayout>().unwrap().node.unwrap();
+    let node_layout = taffy.layout(taffy_node).unwrap();
+    get_shape(
+        node_layout,
+        node,
+        viewport_size,
+        get_abs_pos(*node_layout, taffy, node),
+    )
+    .contains(mouse_pos)
 }
 
 #[derive(Debug, Default, PartialEq, Clone)]
@@ -52,7 +62,7 @@ impl Pass for MouseEffected {
         &mut self,
         node_view: NodeView,
         _: <Self::NodeDependencies as Dependancy>::ElementBorrowed<'a>,
-        parent: Option<<Self::ParentDependencies as Dependancy>::ElementBorrowed<'a>>,
+        _: Option<<Self::ParentDependencies as Dependancy>::ElementBorrowed<'a>>,
         _: Option<Vec<<Self::ChildDependencies as Dependancy>::ElementBorrowed<'a>>>,
         _: &SendAnyMap,
     ) -> bool {
@@ -88,6 +98,7 @@ const MOUSE_EVENTS: &[&str] = &[
     "hover",
     "mouseleave",
     "mouseenter",
+    "mouseup",
     "mouseclick",
     "mouseover",
 ];

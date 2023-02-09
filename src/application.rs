@@ -1,5 +1,6 @@
 use dioxus_native_core::Renderer;
-use std::sync::{Arc, Mutex, RwLock, RwLockWriteGuard};
+use rustc_hash::FxHashSet;
+use std::sync::{Arc, Mutex, MutexGuard, RwLock, RwLockWriteGuard};
 use tao::{dpi::PhysicalSize, event_loop::EventLoopProxy, window::Window};
 use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender};
 use vello::Renderer as VelloRenderer;
@@ -114,8 +115,8 @@ impl ApplicationState {
         }
     }
 
-    pub fn clean(&self) -> DirtyNodes {
-        self.dom.clean()
+    pub fn clean(&mut self) -> DirtyNodes {
+        self.event_handler.clean().or(self.dom.clean())
     }
 
     pub fn send_event(&mut self, event: &TaoEvent) {
@@ -127,7 +128,8 @@ impl ApplicationState {
         let evts;
         {
             let rdom = &mut self.dom.rdom();
-            self.event_handler.register_event(event, rdom, &size);
+            let taffy = &self.dom.taffy();
+            self.event_handler.register_event(event, rdom, taffy, &size);
             evts = self.event_handler.drain_events();
         }
         self.dom.send_events(evts);
@@ -137,6 +139,7 @@ impl ApplicationState {
 #[allow(clippy::too_many_arguments)]
 async fn spawn_dom<R: Renderer<Arc<EventData>>>(
     rdom: Arc<RwLock<RealDom>>,
+    taffy: Arc<Mutex<Taffy>>,
     size: Arc<Mutex<PhysicalSize<u32>>>,
     spawn_renderer: impl FnOnce(&Arc<RwLock<RealDom>>, &Arc<Mutex<Taffy>>) -> R,
     proxy: EventLoopProxy<Redraw>,
@@ -144,7 +147,6 @@ async fn spawn_dom<R: Renderer<Arc<EventData>>>(
     mut redraw_receiver: UnboundedReceiver<()>,
     vdom_dirty: Arc<FxDashSet<NodeId>>,
 ) -> Option<()> {
-    let taffy = Arc::new(Mutex::new(Taffy::new()));
     let text_context = Arc::new(Mutex::new(TextContext::default()));
     let mut renderer = spawn_renderer(&rdom, &taffy);
     let mut last_size;
@@ -155,9 +157,10 @@ async fn spawn_dom<R: Renderer<Arc<EventData>>>(
         let root_id = rdom.root_id();
         renderer.render(rdom.get_mut(root_id)?);
         let mut ctx = SendAnyMap::new();
-        ctx.insert((taffy.clone(), text_context.clone()));
+        ctx.insert(taffy.clone());
+        ctx.insert(text_context.clone());
         // update the state of the real dom
-        let (to_rerender, masks_dirty) = rdom.update_state(ctx, true);
+        let (to_rerender, _) = rdom.update_state(ctx, true);
         let size = size.lock().unwrap();
 
         let width = size.width as f32;
@@ -206,10 +209,11 @@ async fn spawn_dom<R: Renderer<Arc<EventData>>>(
         renderer.render(rdom.get_mut(root_id)?);
 
         let mut ctx = SendAnyMap::new();
-        ctx.insert((taffy.clone(), text_context.clone()));
+        ctx.insert(taffy.clone());
+        ctx.insert(text_context.clone());
 
         // update the real dom
-        let (to_rerender, dirty_masks) = rdom.update_state(ctx, false);
+        let (to_rerender, _) = rdom.update_state(ctx, false);
 
         let size = size.lock().ok()?;
 
@@ -225,12 +229,13 @@ async fn spawn_dom<R: Renderer<Arc<EventData>>>(
             let root_node = rdom.get(rdom.root_id()).unwrap();
             let root_node_layout = root_node.get::<TaffyLayout>().unwrap();
             let root_taffy_node = root_node_layout.node.unwrap();
-            let style = *taffy.style(root_taffy_node).unwrap();
+            let mut style = *taffy.style(root_taffy_node).unwrap();
             let new_size = Size {
                 width: Dimension::Points(width),
                 height: Dimension::Points(height),
             };
             if style.size != new_size {
+                style.size = new_size;
                 taffy.set_style(root_taffy_node, style).unwrap();
             }
             taffy.compute_layout(root_taffy_node, size).unwrap();
@@ -246,6 +251,7 @@ async fn spawn_dom<R: Renderer<Arc<EventData>>>(
 /// A wrapper around the RealDom that manages the lifecycle.
 struct DomManager {
     rdom: Arc<RwLock<RealDom>>,
+    taffy: Arc<Mutex<Taffy>>,
     size: Arc<Mutex<PhysicalSize<u32>>>,
     /// The node that need to be redrawn.
     dirty: Arc<FxDashSet<NodeId>>,
@@ -262,13 +268,15 @@ impl DomManager {
         proxy: EventLoopProxy<Redraw>,
     ) -> Self {
         let rdom: Arc<RwLock<RealDom>> = Arc::new(RwLock::new(rdom));
+        let taffy = Arc::new(Mutex::new(Taffy::new()));
         let size = Arc::new(Mutex::new(size));
         let dirty = Arc::new(FxDashSet::default());
 
         let (event_sender, event_receiver) = unbounded_channel::<DomEvent>();
         let (redraw_sender, redraw_receiver) = unbounded_channel::<()>();
 
-        let (rdom_clone, size_clone, dirty_clone) = (rdom.clone(), size.clone(), dirty.clone());
+        let (rdom_clone, size_clone, dirty_clone, taffy_clone) =
+            (rdom.clone(), size.clone(), dirty.clone(), taffy.clone());
         // Spawn a thread to run the virtual dom and update the real dom.
         std::thread::spawn(move || {
             tokio::runtime::Builder::new_current_thread()
@@ -277,6 +285,7 @@ impl DomManager {
                 .unwrap()
                 .block_on(spawn_dom(
                     rdom_clone,
+                    taffy_clone,
                     size_clone,
                     spawn_renderer,
                     proxy,
@@ -288,6 +297,7 @@ impl DomManager {
 
         Self {
             rdom,
+            taffy,
             size,
             dirty,
             event_sender,
@@ -300,7 +310,7 @@ impl DomManager {
         if self.force_redraw {
             DirtyNodes::All
         } else {
-            let dirty: Vec<NodeId> = self.dirty.iter().map(|k| *k.key()).collect();
+            let dirty = self.dirty.iter().map(|k| *k.key()).collect();
             self.dirty.clear();
             DirtyNodes::Some(dirty)
         }
@@ -308,6 +318,10 @@ impl DomManager {
 
     fn rdom(&self) -> RwLockWriteGuard<RealDom> {
         self.rdom.write().unwrap()
+    }
+
+    fn taffy(&self) -> MutexGuard<Taffy> {
+        self.taffy.lock().unwrap()
     }
 
     fn set_size(&mut self, size: PhysicalSize<u32>) {
@@ -327,6 +341,7 @@ impl DomManager {
     fn render(&self, text_context: &mut TextContext, renderer: &mut SceneBuilder) {
         render(
             &self.rdom(),
+            &self.taffy(),
             text_context,
             renderer,
             *self.size.lock().unwrap(),
@@ -342,7 +357,7 @@ impl DomManager {
 
 pub enum DirtyNodes {
     All,
-    Some(Vec<NodeId>),
+    Some(FxHashSet<NodeId>),
 }
 
 impl DirtyNodes {
@@ -350,6 +365,18 @@ impl DirtyNodes {
         match self {
             DirtyNodes::All => false,
             DirtyNodes::Some(v) => v.is_empty(),
+        }
+    }
+
+    #[allow(dead_code)]
+    pub fn or(self, other: DirtyNodes) -> DirtyNodes {
+        match (self, other) {
+            (DirtyNodes::All, _) => DirtyNodes::All,
+            (_, DirtyNodes::All) => DirtyNodes::All,
+            (DirtyNodes::Some(mut v1), DirtyNodes::Some(v2)) => {
+                v1.extend(v2);
+                DirtyNodes::Some(v1)
+            }
         }
     }
 }

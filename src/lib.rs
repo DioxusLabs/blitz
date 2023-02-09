@@ -3,7 +3,6 @@ use std::sync::{Arc, Mutex, RwLock};
 use application::ApplicationState;
 use dioxus_native_core::{prelude::*, Renderer};
 
-use events::EventData;
 use taffy::Taffy;
 use tao::{
     event::{Event, WindowEvent},
@@ -11,7 +10,13 @@ use tao::{
     window::WindowBuilder,
 };
 
+#[cfg(feature = "dioxus-bindings")]
+pub use crate::dioxus::*;
+pub use crate::events::EventData;
+
 mod application;
+#[cfg(feature = "dioxus-bindings")]
+mod dioxus;
 mod events;
 mod focus;
 mod layout;
