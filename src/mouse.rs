@@ -98,6 +98,7 @@ const MOUSE_EVENTS: &[&str] = &[
     "hover",
     "mouseleave",
     "mouseenter",
+    "click",
     "mouseup",
     "mouseclick",
     "mouseover",
