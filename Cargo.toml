@@ -14,6 +14,7 @@ repository = "https://github.com/DioxusLabs/blitz"
 dioxus = { path = "C:/users/desktop/github/dioxus/packages/dioxus", optional = true }
 dioxus-native-core = { path = "C:/users/desktop/github/dioxus/packages/native-core" }
 dioxus-html = { path = "C:/users/desktop/github/dioxus/packages/html" }
+dioxus-hot-reload = { path = "C:/users/desktop/github/dioxus/packages/hot-reload", optional = true }
 taffy = "0.2.2"
 tokio = { version = "1.25.0", features = ["full"] }
 lightningcss = "1.0.0-alpha.39"
@@ -36,5 +37,6 @@ wasm-bindgen-futures = "0.4.33"
 web-sys = "0.3.60"
 
 [features]
-default = ["dioxus-bindings"]
+default = ["dioxus-bindings", "hot-reload"]
 dioxus-bindings = ["dioxus", "dioxus-native-core/dioxus"]
+hot-reload = ["dioxus-hot-reload"]
