@@ -85,9 +85,7 @@ impl Pass for ForgroundColor {
         _: Option<Vec<<Self::ChildDependencies as Dependancy>::ElementBorrowed<'a>>>,
         _: &SendAnyMap,
     ) -> bool {
-        let new = if let Some((parent,)) = parent {
-            parent.0.clone()
-        } else if let Some(color_attr) = node_view.attributes().into_iter().flatten().next() {
+        let new = if let Some(color_attr) = node_view.attributes().into_iter().flatten().next() {
             if let Some(as_text) = color_attr.value.as_text() {
                 let mut value = ParserInput::new(as_text);
                 let mut parser = Parser::new(&mut value);
@@ -99,6 +97,8 @@ impl Pass for ForgroundColor {
             } else {
                 return false;
             }
+        } else if let Some((parent,)) = parent {
+            parent.0.clone()
         } else {
             return false;
         };
