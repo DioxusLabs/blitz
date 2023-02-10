@@ -2,13 +2,10 @@ use std::ops::Deref;
 use std::sync::Arc;
 
 use dioxus::core::{Component, VirtualDom};
-use dioxus_native_core::{
-    dioxus::{DioxusState, NodeImmutableDioxusExt},
-    Renderer,
-};
+use dioxus_native_core::dioxus::{DioxusState, NodeImmutableDioxusExt};
 
 use crate::events::EventData;
-use crate::{render, Config};
+use crate::{render, Config, Renderer};
 
 pub async fn launch(app: Component<()>) {
     launch_cfg(app, Config::default()).await
@@ -56,7 +53,7 @@ struct DioxusRenderer {
     hot_reload_rx: tokio::sync::mpsc::UnboundedReceiver<dioxus_hot_reload::HotReloadMsg>,
 }
 
-impl Renderer<Arc<EventData>> for DioxusRenderer {
+impl Renderer for DioxusRenderer {
     fn render(&mut self, mut root: dioxus_native_core::NodeMut<()>) {
         let rdom = root.real_dom_mut();
         let muts = self.vdom.render_immediate();

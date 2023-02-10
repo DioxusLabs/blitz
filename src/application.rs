@@ -1,4 +1,3 @@
-use dioxus_native_core::Renderer;
 use rustc_hash::FxHashSet;
 use std::sync::{Arc, Mutex, MutexGuard, RwLock, RwLockWriteGuard};
 use tao::{dpi::PhysicalSize, event_loop::EventLoopProxy, window::Window};
@@ -9,8 +8,9 @@ use vello::{
     Scene, SceneBuilder,
 };
 
+use crate::Renderer;
 use crate::{
-    events::{BlitzEventHandler, DomEvent, EventData},
+    events::{BlitzEventHandler, DomEvent},
     focus::{Focus, FocusState},
     layout::TaffyLayout,
     mouse::MouseEffected,
@@ -38,7 +38,7 @@ pub struct ApplicationState {
 
 impl ApplicationState {
     /// Create a new window state and spawn a vdom thread.
-    pub async fn new<R: Renderer<Arc<EventData>>>(
+    pub async fn new<R: Renderer>(
         spawn_renderer: impl FnOnce(&Arc<RwLock<RealDom>>, &Arc<Mutex<Taffy>>) -> R + Send + 'static,
         window: &Window,
         proxy: EventLoopProxy<Redraw>,
@@ -137,7 +137,7 @@ impl ApplicationState {
 }
 
 #[allow(clippy::too_many_arguments)]
-async fn spawn_dom<R: Renderer<Arc<EventData>>>(
+async fn spawn_dom<R: Renderer>(
     rdom: Arc<RwLock<RealDom>>,
     taffy: Arc<Mutex<Taffy>>,
     size: Arc<Mutex<PhysicalSize<u32>>>,
@@ -261,7 +261,7 @@ struct DomManager {
 }
 
 impl DomManager {
-    fn spawn<R: Renderer<Arc<EventData>>>(
+    fn spawn<R: Renderer>(
         rdom: RealDom,
         size: PhysicalSize<u32>,
         spawn_renderer: impl FnOnce(&Arc<RwLock<RealDom>>, &Arc<Mutex<Taffy>>) -> R + Send + 'static,

@@ -1,8 +1,12 @@
-use std::sync::{Arc, Mutex, RwLock};
+use std::{
+    pin::Pin,
+    sync::{Arc, Mutex, RwLock},
+};
 
 use application::ApplicationState;
-use dioxus_native_core::{prelude::*, Renderer};
+use dioxus_native_core::prelude::*;
 
+use futures_util::Future;
 use taffy::Taffy;
 use tao::{
     event::{Event, WindowEvent},
@@ -35,7 +39,7 @@ pub struct Redraw;
 #[derive(Default)]
 pub struct Config;
 
-pub async fn render<R: Renderer<Arc<EventData>>>(
+pub async fn render<R: Renderer>(
     spawn_renderer: impl FnOnce(&Arc<RwLock<RealDom>>, &Arc<Mutex<Taffy>>) -> R + Send + 'static,
     _cfg: Config,
 ) {
@@ -92,4 +96,10 @@ pub async fn render<R: Renderer<Arc<EventData>>>(
             _ => (),
         }
     });
+}
+
+pub trait Renderer {
+    fn render(&mut self, root: NodeMut);
+    fn handle_event(&mut self, node: NodeMut, event: &str, value: Arc<EventData>, bubbles: bool);
+    fn poll_async(&mut self) -> Pin<Box<dyn Future<Output = ()> + '_>>;
 }

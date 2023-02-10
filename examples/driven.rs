@@ -1,9 +1,8 @@
-use blitz::{self, render, Config, EventData};
+use blitz::{self, render, Config, EventData, Renderer};
 use dioxus_native_core::{
     node::{OwnedAttributeDiscription, OwnedAttributeValue, TextNode},
     prelude::*,
     real_dom::{NodeImmutable, NodeTypeMut},
-    Renderer,
 };
 use rustc_hash::FxHashSet;
 use std::sync::Arc;
@@ -187,7 +186,7 @@ impl Test {
     }
 }
 
-impl Renderer<Arc<EventData>> for Test {
+impl Renderer for Test {
     fn render(&mut self, mut root: dioxus_native_core::NodeMut) {
         for (x, y) in self.dirty.drain() {
             let row_id = root.child_ids().unwrap()[x];
