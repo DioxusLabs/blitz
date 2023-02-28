@@ -1,14 +1,2 @@
 /target
-/dist
 Cargo.lock
-.DS_Store
-
-.vscode/*
-!.vscode/settings.json
-!.vscode/tasks.json
-!.vscode/launch.json
-!.vscode/extensions.json
-tarpaulin-report.html
-
-# Jetbrain
-.idea/
