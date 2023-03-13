@@ -193,7 +193,12 @@ impl BlitzEventHandler {
                             if event.text.is_some() {
                                 self.queued_events.push(DomEvent {
                                     name: "keypress",
-                                    element: NodeId(1),
+                                    element: *rdom
+                                        .get(rdom.root_id())
+                                        .unwrap()
+                                        .child_ids()
+                                        .first()
+                                        .unwrap(),
                                     data: data.clone(),
                                     bubbles: true,
                                 });
@@ -361,8 +366,11 @@ impl BlitzEventHandler {
                                 self.state.modifier_state,
                             )));
 
-                            let hovered_node = rdom.get(hovered).unwrap();
-                            let prevent_default = hovered_node.get::<PreventDefault>().unwrap();
+                            let prevent_default = {
+                                let hovered_node = rdom.get(hovered).unwrap();
+                                let default = *hovered_node.get::<PreventDefault>().unwrap();
+                                default
+                            };
                             match state {
                                 tao::event::ElementState::Pressed => {
                                     self.queued_events.push(DomEvent {
@@ -415,7 +423,7 @@ impl BlitzEventHandler {
                                 }
                                 _ => todo!(),
                             }
-                            if *prevent_default != PreventDefault::MouseUp
+                            if prevent_default != PreventDefault::MouseUp
                                 && rdom
                                     .get(hovered)
                                     .unwrap()

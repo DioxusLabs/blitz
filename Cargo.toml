@@ -12,7 +12,8 @@ repository = "https://github.com/DioxusLabs/blitz"
 
 [dependencies]
 dioxus = { path = "C:/users/desktop/github/dioxus/packages/dioxus", optional = true }
-dioxus-native-core = { path = "C:/users/desktop/github/dioxus/packages/native-core" }
+dioxus-native-core = { path = "C:/users/desktop/github/dioxus/packages/native-core", features = ["parallel"] }
+dioxus-native-core-macro = { path = "C:/users/desktop/github/dioxus/packages/native-core-macro" }
 dioxus-html = { path = "C:/users/desktop/github/dioxus/packages/html" }
 dioxus-hot-reload = { path = "C:/users/desktop/github/dioxus/packages/hot-reload", optional = true }
 taffy = "0.2.2"
@@ -29,6 +30,8 @@ serde_json = "1.0.91"
 serde = { version = "1.0.152", features = ["derive"] }
 keyboard-types = "0.6.2"
 rustc-hash = "1.1.0"
+shipyard = {  version = "0.6.2", features = ["proc", "std"], default-features = false }
+once_cell = "1.17.1"
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 console_error_panic_hook = "0.1.7"

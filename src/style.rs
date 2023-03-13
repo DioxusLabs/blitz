@@ -1,5 +1,6 @@
 use cssparser::{Parser, ParserInput, RGBA};
 use dioxus_native_core::prelude::*;
+use dioxus_native_core_macro::partial_derive_state;
 use lightningcss::properties::border::BorderColor;
 use lightningcss::properties::border::BorderSideWidth;
 use lightningcss::properties::border::BorderWidth;
@@ -7,8 +8,9 @@ use lightningcss::properties::border_radius::BorderRadius;
 use lightningcss::traits::Parse;
 use lightningcss::values::color::CssColor;
 use lightningcss::{properties::Property, stylesheet::ParserOptions};
+use shipyard::Component;
 
-#[derive(Clone, PartialEq, Debug)]
+#[derive(Clone, PartialEq, Debug, Component)]
 pub(crate) struct BackgroundColor(pub CssColor);
 
 impl Default for BackgroundColor {
@@ -17,7 +19,8 @@ impl Default for BackgroundColor {
     }
 }
 
-impl Pass for BackgroundColor {
+#[partial_derive_state]
+impl State for BackgroundColor {
     type ChildDependencies = ();
     type ParentDependencies = ();
     type NodeDependencies = ();
@@ -25,12 +28,12 @@ impl Pass for BackgroundColor {
     const NODE_MASK: NodeMaskBuilder<'static> =
         NodeMaskBuilder::new().with_attrs(AttributeMaskBuilder::Some(&["background-color"]));
 
-    fn pass<'a>(
+    fn update<'a>(
         &mut self,
         node_view: NodeView,
         _: <Self::NodeDependencies as Dependancy>::ElementBorrowed<'a>,
         _: Option<<Self::ParentDependencies as Dependancy>::ElementBorrowed<'a>>,
-        _: Option<Vec<<Self::ChildDependencies as Dependancy>::ElementBorrowed<'a>>>,
+        _: Vec<<Self::ChildDependencies as Dependancy>::ElementBorrowed<'a>>,
         _: &SendAnyMap,
     ) -> bool {
         if let Some(color_attr) = node_view.attributes().into_iter().flatten().next() {
@@ -52,16 +55,16 @@ impl Pass for BackgroundColor {
         node_view: NodeView<()>,
         node: <Self::NodeDependencies as Dependancy>::ElementBorrowed<'a>,
         parent: Option<<Self::ParentDependencies as Dependancy>::ElementBorrowed<'a>>,
-        children: Option<Vec<<Self::ChildDependencies as Dependancy>::ElementBorrowed<'a>>>,
+        children: Vec<<Self::ChildDependencies as Dependancy>::ElementBorrowed<'a>>,
         context: &SendAnyMap,
     ) -> Self {
         let mut myself = Self::default();
-        myself.pass(node_view, node, parent, children, context);
+        myself.update(node_view, node, parent, children, context);
         myself
     }
 }
 
-#[derive(Clone, PartialEq, Debug)]
+#[derive(Clone, PartialEq, Debug, Component)]
 pub(crate) struct ForgroundColor(pub CssColor);
 
 impl Default for ForgroundColor {
@@ -70,19 +73,20 @@ impl Default for ForgroundColor {
     }
 }
 
-impl Pass for ForgroundColor {
+#[partial_derive_state]
+impl State for ForgroundColor {
     type ChildDependencies = ();
     type ParentDependencies = (Self,);
     type NodeDependencies = ();
     const NODE_MASK: NodeMaskBuilder<'static> =
         NodeMaskBuilder::new().with_attrs(AttributeMaskBuilder::Some(&["color"]));
 
-    fn pass<'a>(
+    fn update<'a>(
         &mut self,
         node_view: NodeView,
         _: <Self::NodeDependencies as Dependancy>::ElementBorrowed<'a>,
         parent: Option<<Self::ParentDependencies as Dependancy>::ElementBorrowed<'a>>,
-        _: Option<Vec<<Self::ChildDependencies as Dependancy>::ElementBorrowed<'a>>>,
+        _: Vec<<Self::ChildDependencies as Dependancy>::ElementBorrowed<'a>>,
         _: &SendAnyMap,
     ) -> bool {
         let new = if let Some(color_attr) = node_view.attributes().into_iter().flatten().next() {
@@ -115,23 +119,24 @@ impl Pass for ForgroundColor {
         node_view: NodeView<()>,
         node: <Self::NodeDependencies as Dependancy>::ElementBorrowed<'a>,
         parent: Option<<Self::ParentDependencies as Dependancy>::ElementBorrowed<'a>>,
-        children: Option<Vec<<Self::ChildDependencies as Dependancy>::ElementBorrowed<'a>>>,
+        children: Vec<<Self::ChildDependencies as Dependancy>::ElementBorrowed<'a>>,
         context: &SendAnyMap,
     ) -> Self {
         let mut myself = Self::default();
-        myself.pass(node_view, node, parent, children, context);
+        myself.update(node_view, node, parent, children, context);
         myself
     }
 }
 
-#[derive(Clone, PartialEq, Debug)]
+#[derive(Clone, PartialEq, Debug, Component)]
 pub(crate) struct Border {
     pub colors: BorderColor,
     pub width: BorderWidth,
     pub radius: BorderRadius,
 }
 
-impl Pass for Border {
+#[partial_derive_state]
+impl State for Border {
     type ChildDependencies = ();
     type ParentDependencies = ();
     type NodeDependencies = ();
@@ -155,12 +160,12 @@ impl Pass for Border {
             "border-left-width",
         ]));
 
-    fn pass<'a>(
+    fn update<'a>(
         &mut self,
         node_view: NodeView,
         _: <Self::NodeDependencies as Dependancy>::ElementBorrowed<'a>,
         _: Option<<Self::ParentDependencies as Dependancy>::ElementBorrowed<'a>>,
-        _: Option<Vec<<Self::ChildDependencies as Dependancy>::ElementBorrowed<'a>>>,
+        _: Vec<<Self::ChildDependencies as Dependancy>::ElementBorrowed<'a>>,
         _: &SendAnyMap,
     ) -> bool {
         let mut new = Border::default();
@@ -237,11 +242,11 @@ impl Pass for Border {
         node_view: NodeView<()>,
         node: <Self::NodeDependencies as Dependancy>::ElementBorrowed<'a>,
         parent: Option<<Self::ParentDependencies as Dependancy>::ElementBorrowed<'a>>,
-        children: Option<Vec<<Self::ChildDependencies as Dependancy>::ElementBorrowed<'a>>>,
+        children: Vec<<Self::ChildDependencies as Dependancy>::ElementBorrowed<'a>>,
         context: &SendAnyMap,
     ) -> Self {
         let mut myself = Self::default();
-        myself.pass(node_view, node, parent, children, context);
+        myself.update(node_view, node, parent, children, context);
         myself
     }
 }

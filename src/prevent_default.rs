@@ -1,7 +1,8 @@
 use dioxus_native_core::prelude::*;
-use dioxus_native_core::prelude::{AttributeMaskBuilder, NodeMaskBuilder};
+use dioxus_native_core_macro::partial_derive_state;
+use shipyard::Component;
 
-#[derive(PartialEq, Debug, Clone)]
+#[derive(PartialEq, Debug, Clone, Copy, Component, Default)]
 pub(crate) enum PreventDefault {
     Focus,
     KeyPress,
@@ -13,6 +14,7 @@ pub(crate) enum PreventDefault {
     MouseEnter,
     MouseLeave,
     MouseOut,
+    #[default]
     Unknown,
     MouseOver,
     ContextMenu,
@@ -20,25 +22,20 @@ pub(crate) enum PreventDefault {
     MouseUp,
 }
 
-impl Default for PreventDefault {
-    fn default() -> Self {
-        PreventDefault::Unknown
-    }
-}
-
-impl Pass for PreventDefault {
+#[partial_derive_state]
+impl State for PreventDefault {
     type ChildDependencies = ();
     type ParentDependencies = (Self,);
     type NodeDependencies = ();
     const NODE_MASK: NodeMaskBuilder<'static> =
         NodeMaskBuilder::new().with_attrs(AttributeMaskBuilder::Some(&["dioxus-prevent-default"]));
 
-    fn pass<'a>(
+    fn update<'a>(
         &mut self,
         node_view: NodeView,
         _: <Self::NodeDependencies as Dependancy>::ElementBorrowed<'a>,
         _: Option<<Self::ParentDependencies as Dependancy>::ElementBorrowed<'a>>,
-        _: Option<Vec<<Self::ChildDependencies as Dependancy>::ElementBorrowed<'a>>>,
+        _: Vec<<Self::ChildDependencies as Dependancy>::ElementBorrowed<'a>>,
         _: &SendAnyMap,
     ) -> bool {
         let new = match node_view
@@ -76,11 +73,11 @@ impl Pass for PreventDefault {
         node_view: NodeView<()>,
         node: <Self::NodeDependencies as Dependancy>::ElementBorrowed<'a>,
         parent: Option<<Self::ParentDependencies as Dependancy>::ElementBorrowed<'a>>,
-        children: Option<Vec<<Self::ChildDependencies as Dependancy>::ElementBorrowed<'a>>>,
+        children: Vec<<Self::ChildDependencies as Dependancy>::ElementBorrowed<'a>>,
         context: &SendAnyMap,
     ) -> Self {
         let mut myself = Self::default();
-        myself.pass(node_view, node, parent, children, context);
+        myself.update(node_view, node, parent, children, context);
         myself
     }
 }

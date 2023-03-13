@@ -6,12 +6,17 @@ use dioxus_native_core::{
     prelude::*,
     utils::{ElementProduced, PersistantElementIter},
 };
+use dioxus_native_core_macro::partial_derive_state;
+use once_cell::sync::Lazy;
 use rustc_hash::FxHashSet;
+use shipyard::Component;
 
+#[derive(Component)]
 pub struct Focused(pub bool);
 
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
 pub(crate) enum FocusLevel {
+    #[default]
     Unfocusable,
     Focusable,
     Ordered(std::num::NonZeroU16),
@@ -49,18 +54,13 @@ impl Ord for FocusLevel {
     }
 }
 
-impl Default for FocusLevel {
-    fn default() -> Self {
-        FocusLevel::Unfocusable
-    }
-}
-
-#[derive(Clone, PartialEq, Debug, Default)]
+#[derive(Clone, PartialEq, Debug, Default, Component)]
 pub(crate) struct Focus {
     pub level: FocusLevel,
 }
 
-impl Pass for Focus {
+#[partial_derive_state]
+impl State for Focus {
     type ChildDependencies = ();
     type ParentDependencies = ();
     type NodeDependencies = ();
@@ -68,12 +68,12 @@ impl Pass for Focus {
         .with_attrs(AttributeMaskBuilder::Some(FOCUS_ATTRIBUTES))
         .with_listeners();
 
-    fn pass<'a>(
+    fn update<'a>(
         &mut self,
         node_view: NodeView,
         _: <Self::NodeDependencies as Dependancy>::ElementBorrowed<'a>,
         _: Option<<Self::ParentDependencies as Dependancy>::ElementBorrowed<'a>>,
-        _: Option<Vec<<Self::ChildDependencies as Dependancy>::ElementBorrowed<'a>>>,
+        _: Vec<<Self::ChildDependencies as Dependancy>::ElementBorrowed<'a>>,
         _: &SendAnyMap,
     ) -> bool {
         let new = Focus {
@@ -100,7 +100,7 @@ impl Pass for Focus {
                 .listeners()
                 .into_iter()
                 .flatten()
-                .any(|l| FOCUS_EVENTS.binary_search(&l).is_ok())
+                .any(|l| FOCUS_EVENTS.contains(&l))
             {
                 FocusLevel::Focusable
             } else {
@@ -119,16 +119,17 @@ impl Pass for Focus {
         node_view: NodeView<()>,
         node: <Self::NodeDependencies as Dependancy>::ElementBorrowed<'a>,
         parent: Option<<Self::ParentDependencies as Dependancy>::ElementBorrowed<'a>>,
-        children: Option<Vec<<Self::ChildDependencies as Dependancy>::ElementBorrowed<'a>>>,
+        children: Vec<<Self::ChildDependencies as Dependancy>::ElementBorrowed<'a>>,
         context: &SendAnyMap,
     ) -> Self {
         let mut myself = Self::default();
-        myself.pass(node_view, node, parent, children, context);
+        myself.update(node_view, node, parent, children, context);
         myself
     }
 }
 
-const FOCUS_EVENTS: &[&str] = &["keydown", "keypress", "keyup"];
+static FOCUS_EVENTS: Lazy<FxHashSet<&str>> =
+    Lazy::new(|| ["keydown", "keypress", "keyup"].into_iter().collect());
 const FOCUS_ATTRIBUTES: &[&str] = &["tabindex"];
 
 pub(crate) struct FocusState {
@@ -152,7 +153,9 @@ impl FocusState {
     /// Returns true if the focus has changed.
     pub fn progress(&mut self, rdom: &mut RealDom, forward: bool) {
         if let Some(last) = self.last_focused_id {
-            if rdom.get(last).unwrap().get::<PreventDefault>() == Some(&PreventDefault::KeyDown) {
+            if rdom.get(last).unwrap().get::<PreventDefault>().as_deref()
+                == Some(&PreventDefault::KeyDown)
+            {
                 return;
             }
         }

@@ -160,7 +160,7 @@ async fn spawn_dom<R: Renderer>(
         ctx.insert(taffy.clone());
         ctx.insert(text_context.clone());
         // update the state of the real dom
-        let (to_rerender, _) = rdom.update_state(ctx, true);
+        let (to_rerender, _) = rdom.update_state(ctx);
         let size = size.lock().unwrap();
 
         let width = size.width as f32;
@@ -213,7 +213,7 @@ async fn spawn_dom<R: Renderer>(
         ctx.insert(text_context.clone());
 
         // update the real dom
-        let (to_rerender, _) = rdom.update_state(ctx, false);
+        let (to_rerender, _) = rdom.update_state(ctx);
 
         let size = size.lock().ok()?;
 

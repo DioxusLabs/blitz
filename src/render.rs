@@ -1,5 +1,4 @@
 use dioxus_native_core::prelude::*;
-use dioxus_native_core::NodeId;
 use taffy::prelude::Layout;
 use taffy::prelude::Size;
 use taffy::Taffy;
@@ -62,7 +61,7 @@ fn render_node(
     let taffy_node = node.get::<TaffyLayout>().unwrap().node.unwrap();
     let layout = taffy.layout(taffy_node).unwrap();
     let pos = location + Vec2::new(layout.location.x as f64, layout.location.y as f64);
-    match &node.node_type() {
+    match &*node.node_type() {
         NodeType::Text(TextNode { text, .. }) => {
             let text_color = translate_color(&node.get::<ForgroundColor>().unwrap().0);
             let font_size = 16.0;
@@ -135,7 +134,7 @@ pub(crate) fn get_shape(
     let y: f64 = location.y;
     let width: f64 = layout.size.width.into();
     let height: f64 = layout.size.height.into();
-    let border: &Border = node.get().unwrap();
+    let border: &Border = &node.get().unwrap();
     let focused = node.get::<Focused>().filter(|focused| focused.0).is_some();
     let left_border_width = if focused {
         FOCUS_BORDER_WIDTH
@@ -196,7 +195,7 @@ pub(crate) fn get_abs_pos(layout: Layout, taffy: &Taffy, node: NodeRef) -> Point
     while let Some(parent) = node.real_dom().get(current).unwrap().parent() {
         let parent_id = parent.id();
         // the root element is positioned at (0, 0)
-        if parent_id == NodeId(0) {
+        if parent_id == node.real_dom().root_id() {
             break;
         }
         current = parent_id;

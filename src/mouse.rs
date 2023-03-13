@@ -1,4 +1,8 @@
 use dioxus_native_core::prelude::*;
+use dioxus_native_core_macro::partial_derive_state;
+use once_cell::sync::Lazy;
+use rustc_hash::FxHashSet;
+use shipyard::Component;
 use taffy::{prelude::Size, Taffy};
 use vello::kurbo::{Point, Shape};
 
@@ -49,21 +53,22 @@ pub(crate) fn check_hovered(
     .contains(mouse_pos)
 }
 
-#[derive(Debug, Default, PartialEq, Clone)]
+#[derive(Debug, Default, PartialEq, Clone, Component)]
 pub(crate) struct MouseEffected(bool);
 
-impl Pass for MouseEffected {
+#[partial_derive_state]
+impl State for MouseEffected {
     type ChildDependencies = ();
     type ParentDependencies = ();
     type NodeDependencies = ();
     const NODE_MASK: NodeMaskBuilder<'static> = NodeMaskBuilder::new().with_listeners();
 
-    fn pass<'a>(
+    fn update<'a>(
         &mut self,
         node_view: NodeView,
         _: <Self::NodeDependencies as Dependancy>::ElementBorrowed<'a>,
         _: Option<<Self::ParentDependencies as Dependancy>::ElementBorrowed<'a>>,
-        _: Option<Vec<<Self::ChildDependencies as Dependancy>::ElementBorrowed<'a>>>,
+        _: Vec<<Self::ChildDependencies as Dependancy>::ElementBorrowed<'a>>,
         _: &SendAnyMap,
     ) -> bool {
         let new = Self(
@@ -71,7 +76,7 @@ impl Pass for MouseEffected {
                 .listeners()
                 .into_iter()
                 .flatten()
-                .any(|event| MOUSE_EVENTS.binary_search(&event).is_ok()),
+                .any(|event| MOUSE_EVENTS.contains(&event)),
         );
         if *self != new {
             *self = new;
@@ -85,21 +90,25 @@ impl Pass for MouseEffected {
         node_view: NodeView<()>,
         node: <Self::NodeDependencies as Dependancy>::ElementBorrowed<'a>,
         parent: Option<<Self::ParentDependencies as Dependancy>::ElementBorrowed<'a>>,
-        children: Option<Vec<<Self::ChildDependencies as Dependancy>::ElementBorrowed<'a>>>,
+        children: Vec<<Self::ChildDependencies as Dependancy>::ElementBorrowed<'a>>,
         context: &SendAnyMap,
     ) -> Self {
         let mut myself = Self::default();
-        myself.pass(node_view, node, parent, children, context);
+        myself.update(node_view, node, parent, children, context);
         myself
     }
 }
 
-const MOUSE_EVENTS: &[&str] = &[
-    "hover",
-    "mouseleave",
-    "mouseenter",
-    "click",
-    "mouseup",
-    "mouseclick",
-    "mouseover",
-];
+static MOUSE_EVENTS: Lazy<FxHashSet<&'static str>> = Lazy::new(|| {
+    [
+        "hover",
+        "mouseleave",
+        "mouseenter",
+        "click",
+        "mouseup",
+        "mouseclick",
+        "mouseover",
+    ]
+    .into_iter()
+    .collect()
+});
