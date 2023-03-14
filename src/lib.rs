@@ -39,7 +39,7 @@ pub struct Redraw;
 #[derive(Default)]
 pub struct Config;
 
-pub async fn render<R: Renderer>(
+pub async fn render<R: Driver>(
     spawn_renderer: impl FnOnce(&Arc<RwLock<RealDom>>, &Arc<Mutex<Taffy>>) -> R + Send + 'static,
     _cfg: Config,
 ) {
@@ -98,8 +98,8 @@ pub async fn render<R: Renderer>(
     });
 }
 
-pub trait Renderer {
-    fn render(&mut self, root: NodeMut);
+pub trait Driver {
+    fn update(&mut self, root: NodeMut);
     fn handle_event(&mut self, node: NodeMut, event: &str, value: Arc<EventData>, bubbles: bool);
     fn poll_async(&mut self) -> Pin<Box<dyn Future<Output = ()> + '_>>;
 }

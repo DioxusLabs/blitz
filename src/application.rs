@@ -8,7 +8,7 @@ use vello::{
     Scene, SceneBuilder,
 };
 
-use crate::Renderer;
+use crate::Driver;
 use crate::{
     events::{BlitzEventHandler, DomEvent},
     focus::{Focus, FocusState},
@@ -38,7 +38,7 @@ pub struct ApplicationState {
 
 impl ApplicationState {
     /// Create a new window state and spawn a vdom thread.
-    pub async fn new<R: Renderer>(
+    pub async fn new<R: Driver>(
         spawn_renderer: impl FnOnce(&Arc<RwLock<RealDom>>, &Arc<Mutex<Taffy>>) -> R + Send + 'static,
         window: &Window,
         proxy: EventLoopProxy<Redraw>,
@@ -137,7 +137,7 @@ impl ApplicationState {
 }
 
 #[allow(clippy::too_many_arguments)]
-async fn spawn_dom<R: Renderer>(
+async fn spawn_dom<R: Driver>(
     rdom: Arc<RwLock<RealDom>>,
     taffy: Arc<Mutex<Taffy>>,
     size: Arc<Mutex<PhysicalSize<u32>>>,
@@ -155,7 +155,7 @@ async fn spawn_dom<R: Renderer>(
     {
         let mut rdom = rdom.write().ok()?;
         let root_id = rdom.root_id();
-        renderer.render(rdom.get_mut(root_id)?);
+        renderer.update(rdom.get_mut(root_id)?);
         let mut ctx = SendAnyMap::new();
         ctx.insert(taffy.clone());
         ctx.insert(text_context.clone());
@@ -206,7 +206,7 @@ async fn spawn_dom<R: Renderer>(
         let mut rdom = rdom.write().ok()?;
         // render after the event has been handled
         let root_id = rdom.root_id();
-        renderer.render(rdom.get_mut(root_id)?);
+        renderer.update(rdom.get_mut(root_id)?);
 
         let mut ctx = SendAnyMap::new();
         ctx.insert(taffy.clone());
@@ -261,7 +261,7 @@ struct DomManager {
 }
 
 impl DomManager {
-    fn spawn<R: Renderer>(
+    fn spawn<R: Driver>(
         rdom: RealDom,
         size: PhysicalSize<u32>,
         spawn_renderer: impl FnOnce(&Arc<RwLock<RealDom>>, &Arc<Mutex<Taffy>>) -> R + Send + 'static,

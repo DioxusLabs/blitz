@@ -2,10 +2,10 @@ use std::ops::Deref;
 use std::sync::Arc;
 
 use dioxus::core::{Component, VirtualDom};
-use dioxus_native_core::dioxus::{DioxusState, NodeImmutableDioxusExt};
+use dioxus_native_core::prelude::*;
 
 use crate::events::EventData;
-use crate::{render, Config, Renderer};
+use crate::{render, Config, Driver};
 
 pub async fn launch(app: Component<()>) {
     launch_cfg(app, Config::default()).await
@@ -53,8 +53,8 @@ struct DioxusRenderer {
     hot_reload_rx: tokio::sync::mpsc::UnboundedReceiver<dioxus_hot_reload::HotReloadMsg>,
 }
 
-impl Renderer for DioxusRenderer {
-    fn render(&mut self, mut root: dioxus_native_core::NodeMut<()>) {
+impl Driver for DioxusRenderer {
+    fn update(&mut self, mut root: NodeMut<()>) {
         let rdom = root.real_dom_mut();
         let muts = self.vdom.render_immediate();
         self.dioxus_state.apply_mutations(rdom, muts);
@@ -62,7 +62,7 @@ impl Renderer for DioxusRenderer {
 
     fn handle_event(
         &mut self,
-        node: dioxus_native_core::NodeMut<()>,
+        node: NodeMut<()>,
         event: &str,
         value: Arc<EventData>,
         bubbles: bool,
