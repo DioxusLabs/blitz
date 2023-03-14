@@ -1,4 +1,4 @@
-use blitz::{self, render, Config, Driver, EventData};
+use blitz_core::{render, Config, Driver, EventData};
 use dioxus_native_core::{
     node::TextNode,
     prelude::*,

@@ -85,23 +85,23 @@ fn app(cx: Scope) -> Element {
                     rsx! {
                         div { display: "flex", flex_direction: "row", width: "100%", height: "100%",
                             (0..current_count).map(|x| {
-                                // if (x + y) % 2 == 0 {
-                                //     rsx! {
-                                //         div {
-                                //             border_width: "0px",
-                                //             width: "100%",
-                                //             height: "100%",
-                                //             background_color: "rgb(100, 100, 100)"
-                                //         }
-                                //     }
-                                // } else {
+                                if (x + y) % 2 == 0 {
+                                    rsx! {
+                                        div {
+                                            border_width: "0px",
+                                            width: "100%",
+                                            height: "100%",
+                                            background_color: "rgb(100, 100, 100)"
+                                        }
+                                    }
+                                } else {
                                     rsx! {
                                         Button {
                                             color_offset: x * y,
                                             layer: ((x + y) % 3) as u16
                                         }
                                     }
-                                // }
+                                }
                             })
                         }
                     }

@@ -1,105 +1,109 @@
-use std::{
-    pin::Pin,
-    sync::{Arc, Mutex, RwLock},
-};
+use std::ops::Deref;
+use std::sync::Arc;
 
-use application::ApplicationState;
+use dioxus::core::{Component, VirtualDom};
 use dioxus_native_core::prelude::*;
 
-use futures_util::Future;
-use taffy::Taffy;
-use tao::{
-    event::{Event, WindowEvent},
-    event_loop::{ControlFlow, EventLoop},
-    window::WindowBuilder,
-};
+use blitz_core::EventData;
+use blitz_core::{render, Config, Driver};
 
-#[cfg(feature = "dioxus-bindings")]
-pub use crate::dioxus::*;
-pub use crate::events::EventData;
-
-mod application;
-#[cfg(feature = "dioxus-bindings")]
-mod dioxus;
-mod events;
-mod focus;
-mod layout;
-mod mouse;
-mod prevent_default;
-mod render;
-mod style;
-mod text;
-mod util;
-
-type TaoEvent<'a> = Event<'a, Redraw>;
-
-#[derive(Debug)]
-pub struct Redraw;
-
-#[derive(Default)]
-pub struct Config;
-
-pub async fn render<R: Driver>(
-    spawn_renderer: impl FnOnce(&Arc<RwLock<RealDom>>, &Arc<Mutex<Taffy>>) -> R + Send + 'static,
-    _cfg: Config,
-) {
-    let event_loop = EventLoop::with_user_event();
-    let window = WindowBuilder::new().build(&event_loop).unwrap();
-    let mut appliction =
-        ApplicationState::new(spawn_renderer, &window, event_loop.create_proxy()).await;
-    appliction.render();
-
-    event_loop.run(move |event, _, control_flow| {
-        // ControlFlow::Wait pauses the event loop if no events are available to process.
-        // This is ideal for non-game applications that only update in response to user
-        // input, and uses significantly less power/CPU time than ControlFlow::Poll.
-        *control_flow = ControlFlow::Wait;
-
-        appliction.send_event(&event);
-
-        match event {
-            Event::WindowEvent {
-                event: WindowEvent::CloseRequested,
-                ..
-            } => *control_flow = ControlFlow::Exit,
-            Event::MainEventsCleared => {
-                // Application update code.
-
-                // Queue a RedrawRequested event.
-                //
-                // You only need to call this if you've determined that you need to redraw, in
-                // applications which do not always need to. Applications that redraw continuously
-                // can just render here instead.
-                window.request_redraw();
-            }
-            Event::RedrawRequested(_) => {
-                // Redraw the application.
-                //
-                // It's preferable for applications that do not render continuously to render in
-                // this event rather than in MainEventsCleared, since rendering in here allows
-                // the program to gracefully handle redraws requested by the OS.
-
-                if !appliction.clean().is_empty() {
-                    appliction.render();
-                }
-            }
-            Event::UserEvent(_redraw) => {
-                window.request_redraw();
-            }
-            Event::WindowEvent {
-                event: WindowEvent::Resized(physical_size),
-                window_id: _,
-                ..
-            } => {
-                appliction.set_size(physical_size);
-            }
-            _ => (),
-        }
-    });
+pub async fn launch(app: Component<()>) {
+    launch_cfg(app, Config::default()).await
 }
 
-pub trait Driver {
-    fn update(&mut self, root: NodeMut);
-    fn handle_event(&mut self, node: NodeMut, event: &str, value: Arc<EventData>, bubbles: bool);
-    fn poll_async(&mut self) -> Pin<Box<dyn Future<Output = ()> + '_>>;
+pub async fn launch_cfg(app: Component<()>, cfg: Config) {
+    launch_cfg_with_props(app, (), cfg).await
+}
+
+pub async fn launch_cfg_with_props<Props: 'static + Send>(
+    app: Component<Props>,
+    props: Props,
+    cfg: Config,
+) {
+    render(
+        move |rdom, _| {
+            let mut vdom = VirtualDom::new_with_props(app, props);
+            let muts = vdom.rebuild();
+            let mut rdom = rdom.write().unwrap();
+            let mut dioxus_state = DioxusState::create(&mut rdom);
+            dioxus_state.apply_mutations(&mut rdom, muts);
+            DioxusRenderer {
+                vdom,
+                dioxus_state,
+                #[cfg(all(feature = "hot-reload", debug_assertions))]
+                hot_reload_rx: {
+                    let (hot_reload_tx, hot_reload_rx) =
+                        tokio::sync::mpsc::unbounded_channel::<dioxus_hot_reload::HotReloadMsg>();
+                    dioxus_hot_reload::connect(move |msg| {
+                        let _ = hot_reload_tx.send(msg);
+                    });
+                    hot_reload_rx
+                },
+            }
+        },
+        cfg,
+    )
+    .await;
+}
+
+struct DioxusRenderer {
+    vdom: VirtualDom,
+    dioxus_state: DioxusState,
+    #[cfg(all(feature = "hot-reload", debug_assertions))]
+    hot_reload_rx: tokio::sync::mpsc::UnboundedReceiver<dioxus_hot_reload::HotReloadMsg>,
+}
+
+impl Driver for DioxusRenderer {
+    fn update(&mut self, mut root: NodeMut<()>) {
+        let rdom = root.real_dom_mut();
+        let muts = self.vdom.render_immediate();
+        self.dioxus_state.apply_mutations(rdom, muts);
+    }
+
+    fn handle_event(
+        &mut self,
+        node: NodeMut<()>,
+        event: &str,
+        value: Arc<EventData>,
+        bubbles: bool,
+    ) {
+        if let Some(id) = node.mounted_id() {
+            self.vdom
+                .handle_event(event, value.deref().clone().into_any(), id, bubbles);
+        }
+    }
+
+    fn poll_async(&mut self) -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + '_>> {
+        #[cfg(all(feature = "hot-reload", debug_assertions))]
+        return Box::pin(async {
+            let hot_reload_wait = self.hot_reload_rx.recv();
+            let mut hot_reload_msg = None;
+            let wait_for_work = self.vdom.wait_for_work();
+            tokio::select! {
+                Some(msg) = hot_reload_wait => {
+                    #[cfg(all(feature = "hot-reload", debug_assertions))]
+                    {
+                        hot_reload_msg = Some(msg);
+                    }
+                    #[cfg(not(all(feature = "hot-reload", debug_assertions)))]
+                    let () = msg;
+                }
+                _ = wait_for_work => {}
+            }
+            // if we have a new template, replace the old one
+            if let Some(msg) = hot_reload_msg {
+                match msg {
+                    dioxus_hot_reload::HotReloadMsg::UpdateTemplate(template) => {
+                        self.vdom.replace_template(template);
+                    }
+                    dioxus_hot_reload::HotReloadMsg::Shutdown => {
+                        std::process::exit(0);
+                    }
+                }
+            }
+        });
+
+        #[cfg(not(all(feature = "hot-reload", debug_assertions)))]
+        Box::pin(self.vdom.wait_for_work())
+    }
 }

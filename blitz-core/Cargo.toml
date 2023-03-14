@@ -1,0 +1,38 @@
+[package]
+name = "blitz-core"
+version = "0.1.0"
+edition = "2021"
+authors = ["Jonathan Kelley <jkelleyrtp@gmail.com>", "Evan Almloff"]
+description = "Native iced-wgpu based renderer for Dioxus"
+license = "MIT/Apache-2.0"
+repository = "https://github.com/DioxusLabs/blitz"
+
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+dioxus-native-core = { path = "C:/users/desktop/github/dioxus/packages/native-core" }
+dioxus-native-core-macro = { path = "C:/users/desktop/github/dioxus/packages/native-core-macro" }
+dioxus-html = { path = "C:/users/desktop/github/dioxus/packages/html" }
+taffy = "0.2.2"
+tokio = { version = "1.25.0", features = ["full"] }
+lightningcss = "1.0.0-alpha.39"
+cssparser = "0.29.6"
+vello = { git = "https://github.com/linebender/vello", rev = "9721d4a6acd9cc7b852fbbcc33ecab9fba06d433" }
+wgpu = "0.15.0"
+tao = { version = "0.17.0", features = ["serde"] }
+raw-window-handle = "0.5.0"
+anymap = "0.12.1"
+futures-util = "0.3.26"
+serde_json = "1.0.91"
+serde = { version = "1.0.152", features = ["derive"] }
+keyboard-types = "0.6.2"
+rustc-hash = "1.1.0"
+shipyard = {  version = "0.6.2", features = ["proc", "std"], default-features = false }
+once_cell = "1.17.1"
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+console_error_panic_hook = "0.1.7"
+console_log = "0.2.0"
+wasm-bindgen-futures = "0.4.33"
+web-sys = "0.3.60"

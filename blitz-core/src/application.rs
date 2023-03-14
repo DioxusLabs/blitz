@@ -45,7 +45,7 @@ impl ApplicationState {
     ) -> Self {
         let inner_size = window.inner_size();
 
-        let mut rdom = RealDom::new(Box::new([
+        let mut rdom = RealDom::new([
             MouseEffected::to_type_erased(),
             TaffyLayout::to_type_erased(),
             ForgroundColor::to_type_erased(),
@@ -53,7 +53,7 @@ impl ApplicationState {
             Border::to_type_erased(),
             Focus::to_type_erased(),
             PreventDefault::to_type_erased(),
-        ]));
+        ]);
 
         let focus_state = FocusState::create(&mut rdom);
 
