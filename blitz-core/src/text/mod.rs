@@ -1,10 +1,8 @@
 use vello::{
-    glyph::{
-        pinot::{self, FontRef, TableProvider},
-        GlyphContext,
-    },
+    fello::{raw::FontRef, MetadataProvider},
+    glyph::GlyphContext,
     kurbo::Affine,
-    peniko::Brush,
+    peniko::{Brush, Font},
     SceneBuilder,
 };
 
@@ -26,40 +24,34 @@ impl TextContext {
     pub fn add(
         &mut self,
         builder: &mut SceneBuilder,
-        font: Option<&FontRef>,
+        font: Option<&Font>,
         size: f32,
         brush: Option<impl Into<Brush>>,
         transform: Affine,
         text: &str,
     ) {
-        let brush = brush.map(|brush| brush.into());
-        let brush = brush.as_ref();
-        let font = font.unwrap_or(&FontRef {
-            data: FONT_DATA,
-            offset: 0,
-        });
-        let cmap = font.cmap().unwrap();
-        let hmtx = font.hmtx().unwrap();
-        let upem = font.head().map(|head| head.units_per_em()).unwrap_or(1000) as f64;
-        let scale = size as f64 / upem;
-        let vars: [(pinot::types::Tag, f32); 0] = [];
-        let mut provider = self.gcx.new_provider(font, None, size, false, vars);
-        let hmetrics = hmtx.hmetrics();
-        let default_advance = hmetrics
-            .get(hmetrics.len().saturating_sub(1))
-            .map(|h| h.advance_width)
-            .unwrap_or(0);
+        let font = font.and_then(to_font_ref).unwrap_or_else(default_font);
+        let fello_size = vello::fello::Size::new(size);
+        let charmap = font.charmap();
+        let metrics = font.metrics(fello_size, Default::default());
+        let line_height = metrics.ascent - metrics.descent + metrics.leading;
+        let glyph_metrics = font.glyph_metrics(fello_size, Default::default());
         let mut pen_x = 0f64;
+        let mut pen_y = 0f64;
+        let vars: [(&str, f32); 0] = [];
+        let mut provider = self.gcx.new_provider(&font, None, size, false, vars);
+        let brush = brush.map(Into::into);
         for ch in text.chars() {
-            let gid = cmap.map(ch as u32).unwrap_or(0);
-            let advance = hmetrics
-                .get(gid as usize)
-                .map(|h| h.advance_width)
-                .unwrap_or(default_advance) as f64
-                * scale;
-            if let Some(glyph) = provider.get(gid, brush) {
+            if ch == '\n' {
+                pen_y += line_height as f64;
+                pen_x = 0.0;
+                continue;
+            }
+            let gid = charmap.map(ch).unwrap_or_default();
+            let advance = glyph_metrics.advance_width(gid).unwrap_or_default() as f64;
+            if let Some(glyph) = provider.get(gid.to_u16(), brush.as_ref()) {
                 let xform = transform
-                    * Affine::translate((pen_x, 0.0))
+                    * Affine::translate((pen_x, pen_y))
                     * Affine::scale_non_uniform(1.0, -1.0);
                 builder.append(&glyph, Some(xform));
             }
@@ -67,30 +59,42 @@ impl TextContext {
         }
     }
 
-    pub fn get_text_width(&mut self, font: Option<&FontRef>, size: f32, text: &str) -> f64 {
-        let font = font.unwrap_or(&FontRef {
-            data: FONT_DATA,
-            offset: 0,
-        });
-        let cmap = font.cmap().unwrap();
-        let hmtx = font.hmtx().unwrap();
-        let upem = font.head().map(|head| head.units_per_em()).unwrap_or(1000) as f64;
-        let scale = size as f64 / upem;
-        let hmetrics = hmtx.hmetrics();
-        let default_advance = hmetrics
-            .get(hmetrics.len().saturating_sub(1))
-            .map(|h| h.advance_width)
-            .unwrap_or(0);
-        let mut pen_x = 0f64;
+    pub fn get_text_size<'a>(
+        &'a mut self,
+        font: Option<&'a Font>,
+        size: f32,
+        text: &str,
+    ) -> (f64, f64) {
+        let font = font.and_then(to_font_ref).unwrap_or_else(default_font);
+        let fello_size = vello::fello::Size::new(size);
+        let charmap = font.charmap();
+        let metrics = font.metrics(fello_size, Default::default());
+        let line_height = metrics.ascent - metrics.descent + metrics.leading;
+        let glyph_metrics = font.glyph_metrics(fello_size, Default::default());
+        let mut width = 0f64;
+        let mut height = line_height as f64;
         for ch in text.chars() {
-            let gid = cmap.map(ch as u32).unwrap_or(0);
-            let advance = hmetrics
-                .get(gid as usize)
-                .map(|h| h.advance_width)
-                .unwrap_or(default_advance) as f64
-                * scale;
-            pen_x += advance;
+            if ch == '\n' {
+                height += line_height as f64;
+                continue;
+            }
+            let gid = charmap.map(ch).unwrap_or_default();
+            let advance = glyph_metrics.advance_width(gid).unwrap_or_default() as f64;
+            width += advance;
         }
-        pen_x
+        (width, height)
     }
+}
+
+fn to_font_ref(font: &Font) -> Option<FontRef> {
+    use vello::fello::raw::FileRef;
+    let file_ref = FileRef::new(font.data.as_ref()).ok()?;
+    match file_ref {
+        FileRef::Font(font) => Some(font),
+        FileRef::Collection(collection) => collection.get(font.index).ok(),
+    }
+}
+
+fn default_font<'a>() -> FontRef<'a> {
+    FontRef::new(FONT_DATA).unwrap()
 }

@@ -2,11 +2,12 @@ use rustc_hash::FxHashSet;
 use std::sync::{Arc, Mutex, MutexGuard, RwLock, RwLockWriteGuard};
 use tao::{dpi::PhysicalSize, event_loop::EventLoopProxy, window::Window};
 use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender};
-use vello::Renderer as VelloRenderer;
 use vello::{
+    peniko::Color,
     util::{RenderContext, RenderSurface},
-    Scene, SceneBuilder,
+    RenderParams, Scene, SceneBuilder,
 };
+use vello::{Renderer as VelloRenderer, RendererOptions};
 
 use crate::Driver;
 use crate::{
@@ -66,8 +67,13 @@ impl ApplicationState {
         let surface = render_context
             .create_surface(window, size.width, size.height)
             .await;
-        let wgpu_renderer =
-            VelloRenderer::new(&render_context.devices[surface.dev_id].device).unwrap();
+        let wgpu_renderer = VelloRenderer::new(
+            &render_context.devices[surface.dev_id].device,
+            &RendererOptions {
+                surface_format: Some(surface.config.format),
+            },
+        )
+        .unwrap();
 
         let text_context = TextContext::default();
 
@@ -85,7 +91,7 @@ impl ApplicationState {
         let mut scene = Scene::new();
         let mut builder = SceneBuilder::for_scene(&mut scene);
         self.dom.render(&mut self.text_context, &mut builder);
-        builder.finish();
+        // builder.finish();
         let surface_texture = self
             .surface
             .surface
@@ -98,8 +104,11 @@ impl ApplicationState {
                 &device.queue,
                 &scene,
                 &surface_texture,
-                self.surface.config.width,
-                self.surface.config.height,
+                &RenderParams {
+                    base_color: Color::WHITE,
+                    width: self.surface.config.width,
+                    height: self.surface.config.height,
+                },
             )
             .expect("failed to render to surface");
         surface_texture.present();

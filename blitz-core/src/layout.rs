@@ -44,11 +44,11 @@ impl State for TaffyLayout {
         let mut changed = false;
         if let Some(text) = node_view.text() {
             let mut text_context = text_context.lock().unwrap();
-            let width = text_context.get_text_width(None, 16.0, text);
+            let (width, height) = text_context.get_text_size(None, 16.0, text);
 
             let style = Style {
                 size: Size {
-                    height: Dimension::Points(16.0),
+                    height: Dimension::Points(height as f32),
 
                     width: Dimension::Points(width as f32),
                 },
