@@ -9,10 +9,10 @@ use vello::{
 };
 use vello::{Renderer as VelloRenderer, RendererOptions};
 
-use crate::Driver;
 use crate::{
     events::{BlitzEventHandler, DomEvent},
     focus::{Focus, FocusState},
+    image::LoadedImage,
     layout::TaffyLayout,
     mouse::MouseEffected,
     prevent_default::PreventDefault,
@@ -21,6 +21,7 @@ use crate::{
     text::TextContext,
     Redraw, TaoEvent,
 };
+use crate::{image::ImageContext, Driver};
 use dioxus_native_core::{prelude::*, FxDashSet};
 use taffy::{
     prelude::{AvailableSpace, Size},
@@ -54,6 +55,7 @@ impl ApplicationState {
             Border::to_type_erased(),
             Focus::to_type_erased(),
             PreventDefault::to_type_erased(),
+            LoadedImage::to_type_erased(),
         ]);
 
         let focus_state = FocusState::create(&mut rdom);
@@ -159,6 +161,7 @@ async fn spawn_dom<R: Driver>(
     let text_context = Arc::new(Mutex::new(TextContext::default()));
     let mut renderer = spawn_renderer(&rdom, &taffy);
     let mut last_size;
+    let image_context = ImageContext::default();
 
     // initial render
     {
@@ -167,6 +170,7 @@ async fn spawn_dom<R: Driver>(
         renderer.update(rdom.get_mut(root_id)?);
         let mut ctx = SendAnyMap::new();
         ctx.insert(taffy.clone());
+        ctx.insert(image_context.clone());
         ctx.insert(text_context.clone());
         // update the state of the real dom
         let (to_rerender, _) = rdom.update_state(ctx);

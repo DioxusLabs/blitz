@@ -8,6 +8,7 @@ use vello::peniko::{Color, Fill, Stroke};
 use vello::SceneBuilder;
 
 use crate::focus::Focused;
+use crate::image::LoadedImage;
 use crate::layout::TaffyLayout;
 use crate::style::BackgroundColor;
 use crate::style::Border;
@@ -74,18 +75,16 @@ fn render_node(
                 text,
             )
         }
-        NodeType::Element { .. } => {
+        NodeType::Element(_) => {
             let shape = get_shape(layout, node, viewport_size, pos);
             let fill_color = translate_color(&node.get::<BackgroundColor>().unwrap().0);
+
+            // Draw a border around focused elements
             if node.get::<Focused>().filter(|focused| focused.0).is_some() {
                 let stroke_color = Color::rgb(1.0, 1.0, 1.0);
                 let stroke = Stroke::new(FOCUS_BORDER_WIDTH as f32 / 2.0);
                 scene_builder.stroke(&stroke, Affine::IDENTITY, stroke_color, None, &shape);
-                let mut smaller_rect = shape.rect();
-                smaller_rect.x0 += FOCUS_BORDER_WIDTH / 2.0;
-                smaller_rect.x1 -= FOCUS_BORDER_WIDTH / 2.0;
-                smaller_rect.y0 += FOCUS_BORDER_WIDTH / 2.0;
-                smaller_rect.y1 -= FOCUS_BORDER_WIDTH / 2.0;
+                let smaller_rect = shape.rect().inset(-FOCUS_BORDER_WIDTH / 2.0);
                 let smaller_shape = RoundedRect::from_rect(smaller_rect, shape.radii());
                 let stroke_color = Color::rgb(0.0, 0.0, 0.0);
                 scene_builder.stroke(&stroke, Affine::IDENTITY, stroke_color, None, &shape);
@@ -106,6 +105,25 @@ fn render_node(
                 scene_builder.stroke(&stroke, Affine::IDENTITY, stroke_color, None, &shape);
                 scene_builder.fill(Fill::NonZero, Affine::IDENTITY, fill_color, None, &shape);
             };
+
+            if let Some(image) = node
+                .get::<LoadedImage>()
+                .as_ref()
+                .and_then(|image| image.0.as_ref())
+            {
+                // Scale the image to fit the layout
+                let image_width = image.width as f64;
+                let image_height = image.height as f64;
+                let scale = Affine::scale_non_uniform(
+                    layout.size.width as f64 / image_width,
+                    layout.size.height as f64 / image_height,
+                );
+
+                // Translate the image to the layout's position
+                let translate = Affine::translate(pos.to_vec2());
+
+                scene_builder.draw_image(image, translate * scale);
+            }
 
             for child in node.children() {
                 render_node(
