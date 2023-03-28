@@ -7,12 +7,8 @@ async fn main() {
 
 fn app(cx: Scope) -> Element {
     cx.render(rsx! {
-        for _ in 0..10 {
+        div {
             img {
-                width: "100px",
-                height: "100px",
-                right: "10px",
-                top: "10px",
                 src: "assets/logo.png",
             }
         }
