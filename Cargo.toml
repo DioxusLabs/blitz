@@ -11,10 +11,10 @@ repository = "https://github.com/DioxusLabs/blitz"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-dioxus = { path = "C:/users/desktop/github/dioxus/packages/dioxus" }
-dioxus-native-core = { path = "C:/users/desktop/github/dioxus/packages/native-core", features = ["dioxus"] }
-dioxus-html = { path = "C:/users/desktop/github/dioxus/packages/html" }
-dioxus-hot-reload = { path = "C:/users/desktop/github/dioxus/packages/hot-reload" }
+dioxus = { git = "https://github.com/DioxusLabs/dioxus/" }
+dioxus-native-core = { git = "https://github.com/DioxusLabs/dioxus/", features = ["dioxus"] }
+dioxus-html = { git = "https://github.com/DioxusLabs/dioxus/" }
+dioxus-hot-reload = { git = "https://github.com/DioxusLabs/dioxus/" }
 blitz-core = { path = "./blitz-core" }
 tokio = { version = "1.26.0", features = ["full"] }
 keyboard-types = "0.6.2"
