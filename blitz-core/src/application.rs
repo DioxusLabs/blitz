@@ -1,5 +1,10 @@
+use quadtree_rs::area::AreaBuilder;
+use quadtree_rs::Quadtree;
 use rustc_hash::FxHashSet;
+use shipyard::Component;
 use std::sync::{Arc, Mutex, MutexGuard, RwLock, RwLockWriteGuard};
+use taffy::geometry::Point;
+use taffy::prelude::Layout;
 use tao::{dpi::PhysicalSize, event_loop::EventLoopProxy, window::Window};
 use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender};
 use vello::Renderer as VelloRenderer;
@@ -34,6 +39,7 @@ pub struct ApplicationState {
     surface: RenderSurface,
     wgpu_renderer: VelloRenderer,
     event_handler: BlitzEventHandler,
+    quadtree: Quadtree<u64, NodeId>,
 }
 
 impl ApplicationState {
@@ -78,6 +84,7 @@ impl ApplicationState {
             wgpu_renderer,
             surface,
             event_handler,
+            quadtree: Quadtree::new(20),
         }
     }
 
@@ -104,6 +111,86 @@ impl ApplicationState {
             .expect("failed to render to surface");
         surface_texture.present();
         device.device.poll(wgpu::Maintain::Wait);
+
+        // After we render, we need to update the quadtree to reflect the new positions of the nodes
+        self.update_quadtree();
+    }
+
+    // TODO: Once we implement a custom tree for Taffy we can call this when the layout actually changes for each node instead of the diffing approach this currently uses
+    fn update_quadtree(&mut self) {
+        #[derive(Component)]
+        struct QuadtreeId(u64);
+
+        fn add_to_quadtree(
+            node_id: NodeId,
+            parent_location: Point<f32>,
+            taffy: &Taffy,
+            rdom: &mut RealDom,
+            quadtree: &mut Quadtree<u64, NodeId>,
+        ) {
+            if let Some(node) = rdom.get(node_id) {
+                if let Some((size, location)) = {
+                    let layout = node.get::<TaffyLayout>();
+                    layout.and_then(|l| {
+                        if let Ok(Layout { size, location, .. }) = taffy.layout(l.node.unwrap()) {
+                            Some((size, location))
+                        } else {
+                            None
+                        }
+                    })
+                } {
+                    let location = Point {
+                        x: location.x + parent_location.x,
+                        y: location.y + parent_location.y,
+                    };
+
+                    let mut qtree_id = None;
+                    let area = AreaBuilder::default()
+                        .anchor((location.x as u64, location.y as u64).into())
+                        .dimensions((size.width as u64, size.height as u64))
+                        .build()
+                        .unwrap();
+                    match node.get::<QuadtreeId>() {
+                        Some(id) => {
+                            let id = id.0;
+                            if let Some(entry) = quadtree.get(id) {
+                                let old_area = entry.area();
+                                // If the area has changed, we need to update the quadtree
+                                if old_area != area {
+                                    quadtree.delete_by_handle(id);
+                                    qtree_id = quadtree.insert(area, node_id);
+                                }
+                            } else {
+                                // If the node is not in the quadtree, we need to add it
+                                qtree_id = quadtree.insert(area, node_id);
+                            }
+                        }
+                        None => {
+                            // If the node is not in the quadtree, we need to add it
+                            qtree_id = quadtree.insert(area, node_id);
+                        }
+                    }
+                    // Repeat for all children
+                    for child in node.child_ids() {
+                        add_to_quadtree(child, location, taffy, rdom, quadtree);
+                    }
+                    // If the node was added or updated, we need to update the node's quadtree id
+                    if let Some(id) = qtree_id {
+                        let mut node = rdom.get_mut(node_id).unwrap();
+                        node.insert(QuadtreeId(id));
+                    }
+                }
+            }
+        }
+        let mut rdom = self.dom.rdom();
+        let taffy = self.dom.taffy();
+        add_to_quadtree(
+            rdom.root_id(),
+            Point::ZERO,
+            &taffy,
+            &mut rdom,
+            &mut self.quadtree,
+        );
     }
 
     pub fn set_size(&mut self, size: PhysicalSize<u32>) {
@@ -129,7 +216,8 @@ impl ApplicationState {
         {
             let rdom = &mut self.dom.rdom();
             let taffy = &self.dom.taffy();
-            self.event_handler.register_event(event, rdom, taffy, &size);
+            self.event_handler
+                .register_event(event, rdom, taffy, &size, &self.quadtree);
             evts = self.event_handler.drain_events();
         }
         self.dom.send_events(evts);

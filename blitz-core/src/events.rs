@@ -1,4 +1,5 @@
 use keyboard_types::Code;
+use quadtree_rs::Quadtree;
 use std::{
     any::Any,
     rc::Rc,
@@ -139,6 +140,7 @@ impl BlitzEventHandler {
         rdom: &mut RealDom,
         taffy: &Taffy,
         viewport_size: &Size<u32>,
+        quadtree: &Quadtree<u64, NodeId>,
     ) {
         match event {
             tao::event::Event::NewEvents(_) => (),
@@ -247,7 +249,7 @@ impl BlitzEventHandler {
                         ..
                     } => {
                         let pos = Point::new(position.x, position.y);
-                        let hovered = get_hovered(taffy, rdom, viewport_size, pos);
+                        let hovered = get_hovered(taffy, rdom, viewport_size, pos, quadtree);
                         let (mouse_x, mouse_y) = (pos.x as i32, pos.y as i32);
                         let screen_point = ScreenPoint::new(mouse_x as f64, mouse_y as f64);
                         let client_point = ClientPoint::new(mouse_x as f64, mouse_y as f64);

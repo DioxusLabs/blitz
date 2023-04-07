@@ -1,6 +1,7 @@
 use dioxus_native_core::prelude::*;
 use dioxus_native_core_macro::partial_derive_state;
 use once_cell::sync::Lazy;
+use quadtree_rs::{area::AreaBuilder, Quadtree};
 use rustc_hash::FxHashSet;
 use shipyard::Component;
 use taffy::{prelude::Size, Taffy};
@@ -9,7 +10,6 @@ use vello::kurbo::{Point, Shape};
 use crate::{
     layout::TaffyLayout,
     render::{get_abs_pos, get_shape},
-    RealDom,
 };
 
 pub(crate) fn get_hovered(
@@ -17,23 +17,28 @@ pub(crate) fn get_hovered(
     dom: &RealDom,
     viewport_size: &Size<u32>,
     mouse_pos: Point,
+    quadtree: &Quadtree<u64, NodeId>,
 ) -> Option<NodeId> {
-    let mut hovered: Option<NodeId> = None;
-    dom.traverse_depth_first(|node| {
-        if node.get::<MouseEffected>().unwrap().0
-            && check_hovered(taffy, node, viewport_size, mouse_pos)
-        {
-            let new_id = node.id();
-            if let Some(id) = hovered {
-                if node.height() > dom.get(id).unwrap().height() {
-                    hovered = Some(new_id);
-                }
+    quadtree
+        .query(
+            AreaBuilder::default()
+                .anchor((mouse_pos.x as u64, mouse_pos.y as u64).into())
+                .dimensions((1, 1))
+                .build()
+                .unwrap(),
+        )
+        .find(|entry| {
+            // filter out nodes that are not actually hovered
+            if let Some(node) = dom.get(*entry.value_ref()) {
+                node.get::<MouseEffected>()
+                    .filter(|effected| effected.0)
+                    .is_some()
+                    && check_hovered(taffy, node, viewport_size, mouse_pos)
             } else {
-                hovered = Some(new_id);
+                false
             }
-        }
-    });
-    hovered
+        })
+        .map(|entry| *entry.value_ref())
 }
 
 pub(crate) fn check_hovered(
