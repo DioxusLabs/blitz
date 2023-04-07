@@ -7,16 +7,17 @@ use taffy::geometry::Point;
 use taffy::prelude::Layout;
 use tao::{dpi::PhysicalSize, event_loop::EventLoopProxy, window::Window};
 use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender};
-use vello::Renderer as VelloRenderer;
 use vello::{
+    peniko::Color,
     util::{RenderContext, RenderSurface},
-    Scene, SceneBuilder,
+    RenderParams, Scene, SceneBuilder,
 };
+use vello::{Renderer as VelloRenderer, RendererOptions};
 
-use crate::Driver;
 use crate::{
     events::{BlitzEventHandler, DomEvent},
     focus::{Focus, FocusState},
+    image::LoadedImage,
     layout::TaffyLayout,
     mouse::MouseEffected,
     prevent_default::PreventDefault,
@@ -25,6 +26,7 @@ use crate::{
     text::TextContext,
     Redraw, TaoEvent,
 };
+use crate::{image::ImageContext, Driver};
 use dioxus_native_core::{prelude::*, FxDashSet};
 use taffy::{
     prelude::{AvailableSpace, Size},
@@ -59,6 +61,7 @@ impl ApplicationState {
             Border::to_type_erased(),
             Focus::to_type_erased(),
             PreventDefault::to_type_erased(),
+            LoadedImage::to_type_erased(),
         ]);
 
         let focus_state = FocusState::create(&mut rdom);
@@ -72,8 +75,13 @@ impl ApplicationState {
         let surface = render_context
             .create_surface(window, size.width, size.height)
             .await;
-        let wgpu_renderer =
-            VelloRenderer::new(&render_context.devices[surface.dev_id].device).unwrap();
+        let wgpu_renderer = VelloRenderer::new(
+            &render_context.devices[surface.dev_id].device,
+            &RendererOptions {
+                surface_format: Some(surface.config.format),
+            },
+        )
+        .unwrap();
 
         let text_context = TextContext::default();
 
@@ -92,7 +100,7 @@ impl ApplicationState {
         let mut scene = Scene::new();
         let mut builder = SceneBuilder::for_scene(&mut scene);
         self.dom.render(&mut self.text_context, &mut builder);
-        builder.finish();
+        // builder.finish();
         let surface_texture = self
             .surface
             .surface
@@ -105,8 +113,11 @@ impl ApplicationState {
                 &device.queue,
                 &scene,
                 &surface_texture,
-                self.surface.config.width,
-                self.surface.config.height,
+                &RenderParams {
+                    base_color: Color::WHITE,
+                    width: self.surface.config.width,
+                    height: self.surface.config.height,
+                },
             )
             .expect("failed to render to surface");
         surface_texture.present();
@@ -238,6 +249,7 @@ async fn spawn_dom<R: Driver>(
     let text_context = Arc::new(Mutex::new(TextContext::default()));
     let mut renderer = spawn_renderer(&rdom, &taffy);
     let mut last_size;
+    let image_context = ImageContext::default();
 
     // initial render
     {
@@ -246,6 +258,7 @@ async fn spawn_dom<R: Driver>(
         renderer.update(rdom.get_mut(root_id)?);
         let mut ctx = SendAnyMap::new();
         ctx.insert(taffy.clone());
+        ctx.insert(image_context.clone());
         ctx.insert(text_context.clone());
         // update the state of the real dom
         let (to_rerender, _) = rdom.update_state(ctx);

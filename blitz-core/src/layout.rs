@@ -6,10 +6,12 @@ use dioxus_native_core_macro::partial_derive_state;
 use shipyard::Component;
 use taffy::prelude::*;
 
+use crate::image::LoadedImage;
 use crate::text::TextContext;
 
+// TODO: More layout types. This should default to box layout
 #[derive(Clone, Default, Debug, Component)]
-pub struct TaffyLayout {
+pub(crate) struct TaffyLayout {
     pub style: Style,
     pub node: Option<Node>,
 }
@@ -24,7 +26,7 @@ impl PartialEq<Self> for TaffyLayout {
 impl State for TaffyLayout {
     type ChildDependencies = (Self,);
     type ParentDependencies = ();
-    type NodeDependencies = ();
+    type NodeDependencies = (LoadedImage,);
 
     const NODE_MASK: NodeMaskBuilder<'static> = NodeMaskBuilder::new()
         .with_attrs(AttributeMaskBuilder::All)
@@ -33,7 +35,7 @@ impl State for TaffyLayout {
     fn update<'a>(
         &mut self,
         node_view: NodeView<()>,
-        _: <Self::NodeDependencies as Dependancy>::ElementBorrowed<'a>,
+        (image,): <Self::NodeDependencies as Dependancy>::ElementBorrowed<'a>,
         _: Option<<Self::ParentDependencies as Dependancy>::ElementBorrowed<'a>>,
         children: Vec<<Self::ChildDependencies as Dependancy>::ElementBorrowed<'a>>,
         context: &SendAnyMap,
@@ -44,11 +46,11 @@ impl State for TaffyLayout {
         let mut changed = false;
         if let Some(text) = node_view.text() {
             let mut text_context = text_context.lock().unwrap();
-            let width = text_context.get_text_width(None, 16.0, text);
+            let (width, height) = text_context.get_text_size(None, 16.0, text);
 
             let style = Style {
                 size: Size {
-                    height: Dimension::Points(16.0),
+                    height: Dimension::Points(height as f32),
 
                     width: Dimension::Points(width as f32),
                 },
@@ -72,6 +74,18 @@ impl State for TaffyLayout {
         } else {
             // gather up all the styles from the attribute list
             let mut style = Style::default();
+
+            // Images default to a fixed size
+            // TODO: The aspect ratio should be preserved when the image is scaled when box layout is implemented
+            if let Some(image) = &image.0 {
+                style = Style::default();
+                style.size = Size {
+                    width: Dimension::Points(image.width as f32),
+                    height: Dimension::Points(image.height as f32),
+                };
+                style.flex_grow = 0.0;
+                style.flex_shrink = 0.0;
+            }
 
             for attr in node_view.attributes().into_iter().flatten() {
                 let name = &attr.attribute.name;

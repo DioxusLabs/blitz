@@ -23,6 +23,7 @@ mod application;
 mod dioxus;
 mod events;
 mod focus;
+mod image;
 mod layout;
 mod mouse;
 mod prevent_default;
