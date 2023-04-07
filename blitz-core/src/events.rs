@@ -1,29 +1,32 @@
 use keyboard_types::Code;
+use quadtree_rs::Quadtree;
 use std::{
     any::Any,
+    rc::Rc,
     str::FromStr,
-    sync::{Arc, Mutex},
+    sync::Arc,
     time::{Duration, Instant},
 };
-use taffy::prelude::Size;
+use taffy::{prelude::Size, Taffy};
 use tao::event::MouseButton;
 use vello::kurbo::Point;
 
-use dioxus::{
-    core::{ElementId, Mutations},
-    events::{KeyboardData, MouseData},
-    prelude::dioxus_elements::{
-        geometry::{
-            euclid::Point2D, ClientPoint, Coordinates, ElementPoint, PagePoint, ScreenPoint,
-        },
-        input_data::{self, keyboard_types::Modifiers, MouseButtonSet},
-    },
+use dioxus_html::{
+    events::{FocusData, KeyboardData, MouseData, WheelData},
+    geometry::{euclid::Point2D, ClientPoint, Coordinates, ElementPoint, PagePoint, ScreenPoint},
+    input_data::{self, keyboard_types::Modifiers, MouseButtonSet},
 };
-use dioxus_native_core::tree::TreeView;
+use dioxus_native_core::prelude::*;
 
 use tao::keyboard::Key;
 
-use crate::{focus::FocusState, mouse::get_hovered, node::PreventDefault, Dom, TaoEvent};
+use crate::{
+    application::DirtyNodes,
+    focus::{Focus, FocusState},
+    mouse::get_hovered,
+    prevent_default::PreventDefault,
+    RealDom, TaoEvent,
+};
 
 const DBL_CLICK_TIME: Duration = Duration::from_millis(500);
 
@@ -31,9 +34,9 @@ struct CursorState {
     position: Coordinates,
     buttons: MouseButtonSet,
     last_click: Option<Instant>,
-    last_pressed_element: Option<ElementId>,
-    last_clicked_element: Option<ElementId>,
-    hovered: Option<ElementId>,
+    last_pressed_element: Option<NodeId>,
+    last_clicked_element: Option<NodeId>,
+    hovered: Option<NodeId>,
 }
 
 impl CursorState {
@@ -71,42 +74,73 @@ impl Default for CursorState {
     }
 }
 
-#[derive(Default)]
 struct EventState {
     modifier_state: Modifiers,
     cursor_state: CursorState,
-    focus_state: Arc<Mutex<FocusState>>,
+    focus_state: FocusState,
 }
 
-pub struct AnyEvent {
+impl EventState {
+    fn clean(&mut self) -> DirtyNodes {
+        self.focus_state.clean()
+    }
+}
+
+pub struct DomEvent {
     pub name: &'static str,
-    pub data: Box<dyn Any + Send + Sync>,
-    pub element: ElementId,
+    pub data: Arc<EventData>,
+    pub element: NodeId,
     pub bubbles: bool,
 }
 
-#[derive(Default)]
+#[derive(Debug, Clone, PartialEq)]
+pub enum EventData {
+    Mouse(MouseData),
+    Keyboard(KeyboardData),
+    Focus(FocusData),
+    Wheel(WheelData),
+}
+
+impl EventData {
+    pub fn into_any(self) -> Rc<dyn Any> {
+        match self {
+            EventData::Mouse(data) => Rc::new(data),
+            EventData::Keyboard(data) => Rc::new(data),
+            EventData::Focus(data) => Rc::new(data),
+            EventData::Wheel(data) => Rc::new(data),
+        }
+    }
+}
+
+/// Stores the perisistent state of the event handler, and handles the event queue
 pub struct BlitzEventHandler {
     state: EventState,
-    queued_events: Vec<AnyEvent>,
+    queued_events: Vec<DomEvent>,
 }
 
 impl BlitzEventHandler {
-    pub(crate) fn new(focus_state: Arc<Mutex<FocusState>>) -> Self {
+    pub(crate) fn new(focus_state: FocusState) -> Self {
         Self {
             state: EventState {
                 focus_state,
-                ..Default::default()
+                modifier_state: Default::default(),
+                cursor_state: Default::default(),
             },
-            ..Default::default()
+            queued_events: Default::default(),
         }
+    }
+
+    pub(crate) fn clean(&mut self) -> DirtyNodes {
+        self.state.clean()
     }
 
     pub(crate) fn register_event(
         &mut self,
         event: &TaoEvent,
-        rdom: &mut Dom,
+        rdom: &mut RealDom,
+        taffy: &Taffy,
         viewport_size: &Size<u32>,
+        quadtree: &Quadtree<u64, NodeId>,
     ) {
         match event {
             tao::event::Event::NewEvents(_) => (),
@@ -134,7 +168,7 @@ impl BlitzEventHandler {
                         let key = map_key(&event.logical_key);
                         let code = map_code(&event.physical_key);
 
-                        let data = KeyboardData::new(
+                        let data = Arc::new(EventData::Keyboard(KeyboardData::new(
                             key,
                             code,
                             match event.location {
@@ -154,20 +188,25 @@ impl BlitzEventHandler {
                             },
                             event.repeat,
                             self.state.modifier_state,
-                        );
+                        )));
 
                         // keypress events are only triggered when a key that has text is pressed
                         if let tao::event::ElementState::Pressed = event.state {
                             if event.text.is_some() {
-                                self.queued_events.push(AnyEvent {
+                                self.queued_events.push(DomEvent {
                                     name: "keypress",
-                                    element: ElementId(1),
-                                    data: Box::new(data.clone()),
+                                    element: *rdom
+                                        .get(rdom.root_id())
+                                        .unwrap()
+                                        .child_ids()
+                                        .first()
+                                        .unwrap(),
+                                    data: data.clone(),
                                     bubbles: true,
                                 });
                             }
                             if let Key::Tab = event.logical_key {
-                                self.state.focus_state.lock().unwrap().progress(
+                                self.state.focus_state.progress(
                                     rdom,
                                     !self.state.modifier_state.contains(Modifiers::SHIFT),
                                 );
@@ -175,18 +214,15 @@ impl BlitzEventHandler {
                             }
                         }
 
-                        if let Some(element) = self.state.focus_state.lock().ok().and_then(|lock| {
-                            lock.last_focused_id
-                                .and_then(|last| rdom[last].mounted_id())
-                        }) {
-                            self.queued_events.push(AnyEvent {
+                        if let Some(element) = self.state.focus_state.last_focused_id {
+                            self.queued_events.push(DomEvent {
                                 element,
                                 name: match event.state {
                                     tao::event::ElementState::Pressed => "keydown",
                                     tao::event::ElementState::Released => "keyup",
                                     _ => todo!(),
                                 },
-                                data: Box::new(data),
+                                data,
                                 bubbles: true,
                             });
                         }
@@ -213,7 +249,7 @@ impl BlitzEventHandler {
                         ..
                     } => {
                         let pos = Point::new(position.x, position.y);
-                        let hovered = get_hovered(rdom, viewport_size, pos);
+                        let hovered = get_hovered(taffy, rdom, viewport_size, pos, quadtree);
                         let (mouse_x, mouse_y) = (pos.x as i32, pos.y as i32);
                         let screen_point = ScreenPoint::new(mouse_x as f64, mouse_y as f64);
                         let client_point = ClientPoint::new(mouse_x as f64, mouse_y as f64);
@@ -232,35 +268,35 @@ impl BlitzEventHandler {
                         match (hovered, self.state.cursor_state.hovered) {
                             (Some(hovered), Some(old_hovered)) => {
                                 if hovered != old_hovered {
-                                    self.queued_events.push(AnyEvent {
+                                    self.queued_events.push(DomEvent {
                                         element: hovered,
                                         name: "mouseenter",
-                                        data: Box::new(data.clone()),
+                                        data: Arc::new(EventData::Mouse(data.clone())),
                                         bubbles: true,
                                     });
-                                    self.queued_events.push(AnyEvent {
+                                    self.queued_events.push(DomEvent {
                                         element: old_hovered,
                                         name: "mouseleave",
-                                        data: Box::new(data),
+                                        data: Arc::new(EventData::Mouse(data)),
                                         bubbles: true,
                                     });
                                     self.state.cursor_state.hovered = Some(hovered);
                                 }
                             }
                             (Some(hovered), None) => {
-                                self.queued_events.push(AnyEvent {
+                                self.queued_events.push(DomEvent {
                                     element: hovered,
                                     name: "mouseenter",
-                                    data: Box::new(data),
+                                    data: Arc::new(EventData::Mouse(data)),
                                     bubbles: true,
                                 });
                                 self.state.cursor_state.hovered = Some(hovered);
                             }
                             (None, Some(old_hovered)) => {
-                                self.queued_events.push(AnyEvent {
+                                self.queued_events.push(DomEvent {
                                     element: old_hovered,
                                     name: "mouseleave",
-                                    data: Box::new(data),
+                                    data: Arc::new(EventData::Mouse(data)),
                                     bubbles: true,
                                 });
                                 self.state.cursor_state.hovered = None;
@@ -272,10 +308,12 @@ impl BlitzEventHandler {
                     tao::event::WindowEvent::CursorEntered { device_id: _ } => {}
                     tao::event::WindowEvent::CursorLeft { device_id: _ } => {
                         if let Some(old_hovered) = self.state.cursor_state.hovered {
-                            self.queued_events.push(AnyEvent {
+                            self.queued_events.push(DomEvent {
                                 element: old_hovered,
                                 name: "mouseleave",
-                                data: Box::new(self.state.cursor_state.get_event_mouse_data()),
+                                data: Arc::new(EventData::Mouse(
+                                    self.state.cursor_state.get_event_mouse_data(),
+                                )),
                                 bubbles: true,
                             });
                             self.state.cursor_state.hovered = None;
@@ -318,7 +356,7 @@ impl BlitzEventHandler {
 
                             let pos = &self.state.cursor_state.position;
 
-                            let data = MouseData::new(
+                            let data = Arc::new(EventData::Mouse(MouseData::new(
                                 Coordinates::new(
                                     pos.screen(),
                                     pos.client(),
@@ -328,24 +366,28 @@ impl BlitzEventHandler {
                                 None,
                                 self.state.cursor_state.buttons,
                                 self.state.modifier_state,
-                            );
+                            )));
 
-                            let prevent_default = &rdom[hovered].state.prevent_default;
+                            let prevent_default = {
+                                let hovered_node = rdom.get(hovered).unwrap();
+                                let default = *hovered_node.get::<PreventDefault>().unwrap();
+                                default
+                            };
                             match state {
                                 tao::event::ElementState::Pressed => {
-                                    self.queued_events.push(AnyEvent {
+                                    self.queued_events.push(DomEvent {
                                         element: hovered,
                                         name: "mousedown",
-                                        data: Box::new(data),
+                                        data,
                                         bubbles: true,
                                     });
                                     self.state.cursor_state.last_pressed_element = Some(hovered);
                                 }
                                 tao::event::ElementState::Released => {
-                                    self.queued_events.push(AnyEvent {
+                                    self.queued_events.push(DomEvent {
                                         element: hovered,
                                         name: "mouseup",
-                                        data: Box::new(data.clone()),
+                                        data: data.clone(),
                                         bubbles: true,
                                     });
 
@@ -353,10 +395,10 @@ impl BlitzEventHandler {
                                     if self.state.cursor_state.last_pressed_element.take()
                                         == Some(hovered)
                                     {
-                                        self.queued_events.push(AnyEvent {
+                                        self.queued_events.push(DomEvent {
                                             element: hovered,
                                             name: "click",
-                                            data: Box::new(data.clone()),
+                                            data: data.clone(),
                                             bubbles: true,
                                         });
 
@@ -367,10 +409,10 @@ impl BlitzEventHandler {
                                                 == Some(hovered)
                                                 && last_clicked.elapsed() < DBL_CLICK_TIME
                                             {
-                                                self.queued_events.push(AnyEvent {
+                                                self.queued_events.push(DomEvent {
                                                     element: hovered,
                                                     name: "dblclick",
-                                                    data: Box::new(data),
+                                                    data,
                                                     bubbles: true,
                                                 });
                                             }
@@ -383,14 +425,16 @@ impl BlitzEventHandler {
                                 }
                                 _ => todo!(),
                             }
-                            if *prevent_default != PreventDefault::MouseUp
-                                && rdom[hovered].state.focus.level.focusable()
-                            {
-                                self.state
-                                    .focus_state
-                                    .lock()
+                            if prevent_default != PreventDefault::MouseUp
+                                && rdom
+                                    .get(hovered)
                                     .unwrap()
-                                    .set_focus(rdom, rdom.element_to_node_id(hovered));
+                                    .get::<Focus>()
+                                    .unwrap()
+                                    .level
+                                    .focusable()
+                            {
+                                self.state.focus_state.set_focus(rdom, hovered);
                             }
                         }
                     }
@@ -442,52 +486,10 @@ impl BlitzEventHandler {
         }
     }
 
-    pub fn drain_events(&mut self) -> Vec<AnyEvent> {
+    pub fn drain_events(&mut self) -> Vec<DomEvent> {
         let mut events = Vec::new();
         std::mem::swap(&mut self.queued_events, &mut events);
         events
-    }
-
-    fn prune_id(&mut self, removed: ElementId) {
-        if let Some(id) = self.state.cursor_state.hovered {
-            if id == removed {
-                self.state.cursor_state.hovered = None;
-            }
-        }
-        if let Some(id) = self.state.cursor_state.last_pressed_element {
-            if id == removed {
-                self.state.cursor_state.last_pressed_element = None;
-            }
-        }
-        if let Some(id) = self.state.cursor_state.last_clicked_element {
-            if id == removed {
-                self.state.cursor_state.last_clicked_element = None;
-            }
-        }
-    }
-
-    pub(crate) fn prune(&mut self, mutations: &Mutations, rdom: &Dom) {
-        fn remove_children(handler: &mut BlitzEventHandler, rdom: &Dom, removed: ElementId) {
-            handler.prune_id(removed);
-            if let Some(children) = rdom.children(rdom.element_to_node_id(removed)) {
-                for child in children {
-                    if let Some(child_id) = child.mounted_id() {
-                        remove_children(handler, rdom, child_id);
-                    }
-                }
-            }
-        }
-        for m in &mutations.edits {
-            match m {
-                dioxus::core::Mutation::ReplaceWith { id, .. } => remove_children(self, rdom, *id),
-                dioxus::core::Mutation::Remove { id } => remove_children(self, rdom, *id),
-                _ => (),
-            }
-        }
-    }
-
-    pub(crate) fn clean(&self) -> bool {
-        self.state.focus_state.lock().unwrap().clean()
     }
 }
 

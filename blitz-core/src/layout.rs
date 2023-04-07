@@ -1,44 +1,48 @@
 use std::sync::{Arc, Mutex};
 
-use dioxus::core::ElementId;
 use dioxus_native_core::layout_attributes::apply_layout_attributes;
-use dioxus_native_core::node_ref::{AttributeMask, NodeMask};
-use dioxus_native_core::state::ChildDepState;
+use dioxus_native_core::prelude::*;
+use dioxus_native_core_macro::partial_derive_state;
+use shipyard::Component;
 use taffy::prelude::*;
 
 use crate::text::TextContext;
 
-#[derive(Clone, Default, Debug)]
-pub struct StretchLayout {
+#[derive(Clone, Default, Debug, Component)]
+pub struct TaffyLayout {
     pub style: Style,
     pub node: Option<Node>,
-    pub layout: Option<Layout>,
 }
 
-impl PartialEq<Self> for StretchLayout {
+impl PartialEq<Self> for TaffyLayout {
     fn eq(&self, other: &Self) -> bool {
         self.style == other.style && self.node == other.node
     }
 }
 
-impl ChildDepState for StretchLayout {
-    type Ctx = (Arc<Mutex<Taffy>>, Arc<Mutex<TextContext>>);
-    type DepState = (Self,);
+#[partial_derive_state]
+impl State for TaffyLayout {
+    type ChildDependencies = (Self,);
+    type ParentDependencies = ();
+    type NodeDependencies = ();
 
-    const NODE_MASK: NodeMask = NodeMask::new_with_attrs(AttributeMask::All).with_text();
-    /// Setup the layout
-    fn reduce<'a>(
+    const NODE_MASK: NodeMaskBuilder<'static> = NodeMaskBuilder::new()
+        .with_attrs(AttributeMaskBuilder::All)
+        .with_text();
+
+    fn update<'a>(
         &mut self,
-        node: dioxus_native_core::node_ref::NodeView,
-        children: impl Iterator<Item = (&'a Self,)>,
-        (taffy, text_context): &Self::Ctx,
-    ) -> bool
-    where
-        Self::DepState: 'a,
-    {
+        node_view: NodeView<()>,
+        _: <Self::NodeDependencies as Dependancy>::ElementBorrowed<'a>,
+        _: Option<<Self::ParentDependencies as Dependancy>::ElementBorrowed<'a>>,
+        children: Vec<<Self::ChildDependencies as Dependancy>::ElementBorrowed<'a>>,
+        context: &SendAnyMap,
+    ) -> bool {
+        let taffy: &Arc<Mutex<Taffy>> = context.get().unwrap();
+        let text_context: &Arc<Mutex<TextContext>> = context.get().unwrap();
         let mut taffy = taffy.lock().unwrap();
         let mut changed = false;
-        if let Some(text) = node.text() {
+        if let Some(text) = node_view.text() {
             let mut text_context = text_context.lock().unwrap();
             let width = text_context.get_text_width(None, 16.0, text);
 
@@ -69,18 +73,12 @@ impl ChildDepState for StretchLayout {
             // gather up all the styles from the attribute list
             let mut style = Style::default();
 
-            for attr in node.attributes().unwrap() {
+            for attr in node_view.attributes().into_iter().flatten() {
                 let name = &attr.attribute.name;
                 let value = attr.value;
                 if let Some(value) = value.as_text() {
                     apply_layout_attributes(name, value, &mut style);
                 }
-            }
-
-            // the root node fills the entire area
-            if node.id() == Some(ElementId(0)) {
-                apply_layout_attributes("width", "100%", &mut style);
-                apply_layout_attributes("height", "100%", &mut style);
             }
 
             // Set all direct nodes as our children
@@ -109,5 +107,17 @@ impl ChildDepState for StretchLayout {
             }
         }
         changed
+    }
+
+    fn create<'a>(
+        node_view: NodeView<()>,
+        node: <Self::NodeDependencies as Dependancy>::ElementBorrowed<'a>,
+        parent: Option<<Self::ParentDependencies as Dependancy>::ElementBorrowed<'a>>,
+        children: Vec<<Self::ChildDependencies as Dependancy>::ElementBorrowed<'a>>,
+        context: &SendAnyMap,
+    ) -> Self {
+        let mut myself = Self::default();
+        myself.update(node_view, node, parent, children, context);
+        myself
     }
 }
