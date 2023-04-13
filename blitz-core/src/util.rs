@@ -1,5 +1,6 @@
 use lightningcss::properties::border::BorderSideWidth;
 use lightningcss::values;
+use lightningcss::values::angle::Angle;
 use taffy::prelude::Size;
 use values::calc::{Calc, MathFunction};
 use values::color::CssColor;
@@ -129,4 +130,33 @@ impl<T: Resolve> Resolve for DimensionPercentage<T> {
             DimensionPercentage::Calc(c) => c.resolve(axis, rect, viewport_size),
         }
     }
+}
+
+pub(crate) fn map_dimension_percentage<A, B>(
+    input: DimensionPercentage<A>,
+    f: impl Fn(A) -> B,
+) -> DimensionPercentage<B> {
+    match input {
+        DimensionPercentage::Dimension(v) => DimensionPercentage::Dimension(f(v)),
+        DimensionPercentage::Percentage(p) => DimensionPercentage::Percentage(p),
+        DimensionPercentage::Calc(c) => {
+            DimensionPercentage::Calc(Box::new(map_calc(*c, move |percentage| {
+                map_dimension_percentage(percentage, &f)
+            })))
+        }
+    }
+}
+
+pub(crate) fn map_calc<A, B>(input: Calc<A>, f: impl Fn(A) -> B) -> Calc<B> {
+    match input {
+        Calc::Value(v) => Calc::Value(Box::new(f(*v))),
+        Calc::Number(n) => Calc::Number(n),
+        Calc::Sum(v1, v2) => Calc::Sum(Box::new(map_calc(*v1, &f)), Box::new(map_calc(*v2, f))),
+        Calc::Product(v1, v2) => Calc::Product(v1, Box::new(map_calc(*v2, &f))),
+        Calc::Function(_) => todo!(),
+    }
+}
+
+pub(crate) fn angle_to_turn_percentage(angle: Angle) -> f32 {
+    angle.to_degrees() / 360.0
 }

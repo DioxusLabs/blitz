@@ -3,14 +3,16 @@ use taffy::prelude::Layout;
 use taffy::prelude::Size;
 use taffy::Taffy;
 use tao::dpi::PhysicalSize;
+use vello::kurbo::Shape;
 use vello::kurbo::{Affine, Point, Rect, RoundedRect, Vec2};
+use vello::peniko::Mix;
 use vello::peniko::{Color, Fill, Stroke};
 use vello::SceneBuilder;
 
 use crate::focus::Focused;
 use crate::image::LoadedImage;
 use crate::layout::TaffyLayout;
-use crate::style::BackgroundColor;
+use crate::style::Background;
 use crate::style::Border;
 use crate::style::ForgroundColor;
 use crate::text::TextContext;
@@ -77,9 +79,8 @@ fn render_node(
         }
         NodeType::Element(_) => {
             let shape = get_shape(layout, node, viewport_size, pos);
-            let fill_color = translate_color(&node.get::<BackgroundColor>().unwrap().0);
 
-            // Draw a border around focused elements
+            let fill_color = node.get::<Background>().unwrap().color;
             if node.get::<Focused>().filter(|focused| focused.0).is_some() {
                 let stroke_color = Color::rgb(1.0, 1.0, 1.0);
                 let stroke = Stroke::new(FOCUS_BORDER_WIDTH as f32 / 2.0);
@@ -223,4 +224,10 @@ pub(crate) fn get_abs_pos(layout: Layout, taffy: &Taffy, node: NodeRef) -> Point
         node_layout.y += parent_layout.location.y;
     }
     Point::new(node_layout.x as f64, node_layout.y as f64)
+}
+
+fn with_mask(sb: &mut SceneBuilder, shape: impl Shape, f: impl FnOnce(&mut SceneBuilder)) {
+    sb.push_layer(Mix::Clip, 1.0, Affine::IDENTITY, &shape);
+    f(sb);
+    sb.pop_layer();
 }

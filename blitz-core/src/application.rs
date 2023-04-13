@@ -22,7 +22,7 @@ use crate::{
     mouse::MouseEffected,
     prevent_default::PreventDefault,
     render::render,
-    style::{BackgroundColor, Border, ForgroundColor},
+    style::{Background, Border, ForgroundColor},
     text::TextContext,
     Redraw, TaoEvent,
 };
@@ -57,7 +57,7 @@ impl ApplicationState {
             MouseEffected::to_type_erased(),
             TaffyLayout::to_type_erased(),
             ForgroundColor::to_type_erased(),
-            BackgroundColor::to_type_erased(),
+            Background::to_type_erased(),
             Border::to_type_erased(),
             Focus::to_type_erased(),
             PreventDefault::to_type_erased(),
