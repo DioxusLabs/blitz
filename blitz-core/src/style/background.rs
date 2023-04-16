@@ -7,9 +7,7 @@ use lightningcss::values::gradient;
 use lightningcss::values::gradient::GradientItem;
 use lightningcss::values::length::LengthPercentage;
 use lightningcss::values::length::LengthValue;
-use lightningcss::values::position::HorizontalPosition;
 use lightningcss::values::position::HorizontalPositionKeyword;
-use lightningcss::values::position::VerticalPosition;
 use lightningcss::values::position::VerticalPositionKeyword;
 use shipyard::Component;
 use smallvec::SmallVec;
@@ -374,7 +372,6 @@ pub(crate) struct Background {
     pub color: Color,
     pub image: Image,
     pub repeat: Repeat,
-    pub position: (HorizontalPosition, VerticalPosition),
 }
 
 impl Background {
@@ -407,18 +404,6 @@ impl Default for Background {
             color: Color::rgba8(255, 255, 255, 0),
             image: Image::default(),
             repeat: Repeat::default(),
-            position: (
-                HorizontalPosition::Length(
-                    lightningcss::values::percentage::DimensionPercentage::Dimension(
-                        LengthValue::Px(0.),
-                    ),
-                ),
-                VerticalPosition::Length(
-                    lightningcss::values::percentage::DimensionPercentage::Dimension(
-                        LengthValue::Px(0.),
-                    ),
-                ),
-            ),
         }
     }
 }
@@ -463,12 +448,21 @@ impl State for Background {
                             new.color = translate_color(&new_color);
                         }
                     }
-                    "background-image" => {}
+                    "background-image" => {
+                        if let Ok(image) =
+                            lightningcss::values::image::Image::parse_string(attr_value)
+                        {
+                            new.image = Image::try_create(image, ctx).expect(
+                                "attempted to convert a background Blitz does not support yet",
+                            );
+                        }
+                    }
                     "background-repeat" => {
                         if let Ok(repeat) = background::BackgroundRepeat::parse_string(attr_value) {
                             new.repeat = repeat.into();
                         }
                     }
+
                     _ => {}
                 }
             }
