@@ -1,33 +1,60 @@
-use cssparser::{Parser, ParserInput, RGBA};
 use dioxus_native_core::prelude::*;
 use dioxus_native_core_macro::partial_derive_state;
 use lightningcss::properties::background;
-use lightningcss::properties::border::BorderColor;
-use lightningcss::properties::border::BorderSideWidth;
-use lightningcss::properties::border::BorderWidth;
-use lightningcss::properties::border_radius::BorderRadius;
 use lightningcss::traits::Parse;
 use lightningcss::values::color::CssColor;
 use lightningcss::values::gradient;
 use lightningcss::values::gradient::GradientItem;
 use lightningcss::values::length::LengthPercentage;
 use lightningcss::values::length::LengthValue;
-use lightningcss::{properties::Property, stylesheet::ParserOptions};
+use lightningcss::values::position::HorizontalPosition;
+use lightningcss::values::position::HorizontalPositionKeyword;
+use lightningcss::values::position::VerticalPosition;
+use lightningcss::values::position::VerticalPositionKeyword;
 use shipyard::Component;
+use smallvec::SmallVec;
+use std::f64::consts::PI;
+use std::sync::Arc;
+use std::sync::Mutex;
+use taffy::prelude::Layout;
 use taffy::prelude::Size;
+use vello::kurbo::Affine;
+use vello::kurbo::Point;
+use vello::kurbo::Shape;
 use vello::peniko;
+use vello::peniko::BrushRef;
 use vello::peniko::Color;
+use vello::peniko::Extend;
+use vello::peniko::Fill;
+use vello::SceneBuilder;
 
-use crate::util::angle_to_turn_percentage;
+use crate::image::ImageContext;
+use crate::render::with_mask;
 use crate::util::map_dimension_percentage;
 use crate::util::translate_color;
+use crate::util::AngleExt;
 use crate::util::Resolve;
 
 #[derive(Clone, PartialEq, Debug)]
 enum GradientType {
-    Linear,
+    Linear { direction_rad: f64 },
     Radial,
     Conic,
+}
+
+impl<'a> From<&'a gradient::LinearGradient> for GradientType {
+    fn from(l: &'a gradient::LinearGradient) -> Self {
+        GradientType::Linear {
+            direction_rad: match &l.direction {
+                gradient::LineDirection::Angle(angle) => angle.to_radians().into(),
+                gradient::LineDirection::Horizontal(HorizontalPositionKeyword::Left) => PI * 1.5,
+                gradient::LineDirection::Horizontal(HorizontalPositionKeyword::Right) => PI * 0.5,
+                gradient::LineDirection::Vertical(VerticalPositionKeyword::Top) => 0.0,
+                gradient::LineDirection::Vertical(VerticalPositionKeyword::Bottom) => PI * 1.0,
+                _ => todo!(),
+            },
+        }
+    }
 }
 
 #[derive(Clone, PartialEq, Debug)]
@@ -50,12 +77,12 @@ impl TryFrom<&GradientItem<LengthPercentage>> for ColorStop {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub(crate) struct Gradient {
     gradient_type: GradientType,
     stops: Vec<ColorStop>,
     // The last size and resolved positions and stops. This is used cache the last resolved position and stops so that we don't have to resolve them again if they are the same.
-    last_resolved: Option<GradientCache>,
+    last_resolved: Mutex<Option<GradientCache>>,
     repeating: bool,
 }
 
@@ -64,9 +91,9 @@ impl TryFrom<gradient::Gradient> for Gradient {
 
     fn try_from(gradient: gradient::Gradient) -> Result<Self, Self::Error> {
         use gradient::Gradient::*;
-        let (gradient_type, repeating) = match gradient {
-            Linear(_) => (GradientType::Linear, false),
-            RepeatingLinear(_) => (GradientType::Linear, true),
+        let (gradient_type, repeating) = match &gradient {
+            Linear(liniar) => (liniar.into(), false),
+            RepeatingLinear(liniar) => (liniar.into(), true),
             Radial(_) => (GradientType::Radial, false),
             RepeatingRadial(_) => (GradientType::Radial, true),
             Conic(_) => (GradientType::Conic, false),
@@ -84,13 +111,13 @@ impl TryFrom<gradient::Gradient> for Gradient {
                         color: stop.color,
                         position: stop.position.map(|percentage| {
                             map_dimension_percentage(percentage, |angle| {
-                                LengthValue::Px(angle_to_turn_percentage(angle))
+                                LengthValue::Px(angle.to_turn_percentage())
                             })
                         }),
                     }),
                     GradientItem::Hint(pos) => {
                         GradientItem::Hint(map_dimension_percentage(pos, |angle| {
-                            LengthValue::Px(angle_to_turn_percentage(angle))
+                            LengthValue::Px(angle.to_turn_percentage())
                         }))
                     }
                 })
@@ -106,7 +133,7 @@ impl TryFrom<gradient::Gradient> for Gradient {
         Ok(Gradient {
             gradient_type,
             stops,
-            last_resolved: None,
+            last_resolved: Default::default(),
             repeating,
         })
     }
@@ -116,7 +143,7 @@ impl TryFrom<gradient::Gradient> for Gradient {
 struct GradientCache {
     rect: Size<f32>,
     viewport_size: Size<u32>,
-    result: peniko::ColorStops,
+    result: Arc<peniko::ColorStops>,
 }
 
 impl PartialEq for Gradient {
@@ -128,43 +155,58 @@ impl PartialEq for Gradient {
 impl Gradient {
     /// Resolve all missing positions. If a position is missing, it is in between the last resolved position and the next resolved position.
     pub(crate) fn resolve_stops(
-        &mut self,
+        &self,
         rect: &Size<f32>,
         viewport_size: &Size<u32>,
-    ) -> &peniko::ColorStops {
-        let resolved = self
-            .last_resolved
+    ) -> Arc<peniko::ColorStops> {
+        let mut last_resolved = self.last_resolved.lock().unwrap();
+        let resolved = last_resolved
             .as_ref()
             .filter(|last_resolved| {
                 last_resolved.rect == *rect && last_resolved.viewport_size == *viewport_size
             })
             .is_some();
         if resolved {
-            &self.last_resolved.as_ref().unwrap().result
+            last_resolved.as_ref().unwrap().result.clone()
         } else {
             let mut resolved = smallvec::SmallVec::default();
 
-            let mut last_resolved_position = 0.0f32;
+            let mut last_resolved_position = None;
             let mut unresolved_positions: Vec<Color> = Vec::new();
-            for stop in &mut self.stops {
+
+            let mut resolve_pos =
+                |position: Option<f32>,
+                 resolved: &mut SmallVec<[peniko::ColorStop; 4]>,
+                 unresolved_positions: &mut Vec<Color>| {
+                    let resolved_position = position.unwrap_or(1.);
+                    let total_unresolved = unresolved_positions.len();
+                    for (i, unresolved_stop) in unresolved_positions.iter_mut().enumerate() {
+                        let last_pos = last_resolved_position.unwrap_or_default();
+
+                        let exclude_last_pos = last_resolved_position.is_some();
+                        let exclude_next_pos = position.is_some();
+
+                        let offset = last_pos
+                            + (((i + exclude_last_pos as usize) as f32)
+                                / (total_unresolved + (exclude_next_pos as usize) * 2 - 1) as f32)
+                                * (resolved_position - last_pos);
+
+                        resolved.push(peniko::ColorStop {
+                            color: *unresolved_stop,
+                            offset,
+                        });
+                    }
+                    unresolved_positions.clear();
+                    last_resolved_position = Some(resolved_position);
+                    resolved_position
+                };
+
+            for stop in &self.stops {
                 match &stop.position {
                     Some(position) => {
                         let position =
                             position.resolve(crate::util::Axis::X, rect, viewport_size) as f32;
-
-                        let total_unresolved = unresolved_positions.len();
-                        for (i, unresolved_stop) in unresolved_positions.iter_mut().enumerate() {
-                            let offset = last_resolved_position
-                                + ((i + 1) / (total_unresolved + 1)) as f32
-                                    * (position - last_resolved_position);
-
-                            resolved.push(peniko::ColorStop {
-                                color: *unresolved_stop,
-                                offset,
-                            });
-                        }
-                        unresolved_positions.clear();
-                        last_resolved_position = position;
+                        resolve_pos(Some(position), &mut resolved, &mut unresolved_positions);
                         resolved.push(peniko::ColorStop {
                             color: stop.color,
                             offset: position,
@@ -176,40 +218,129 @@ impl Gradient {
                 }
             }
 
-            self.last_resolved = Some(GradientCache {
+            // resolve any remaining positions
+            resolve_pos(None, &mut resolved, &mut unresolved_positions);
+
+            *last_resolved = Some(GradientCache {
                 rect: *rect,
                 viewport_size: *viewport_size,
-                result: resolved,
+                result: Arc::new(resolved),
             });
 
-            &self.last_resolved.as_ref().unwrap().result
+            last_resolved.as_ref().unwrap().result.clone()
+        }
+    }
+
+    fn render(
+        &self,
+        sb: &mut SceneBuilder,
+        shape: &impl Shape,
+        repeat: Repeat,
+        rect: &Size<f32>,
+        viewport_size: &Size<u32>,
+    ) {
+        let stops = self.resolve_stops(rect, viewport_size);
+        let extend = if self.repeating {
+            Extend::Repeat
+        } else {
+            repeat.into()
+        };
+        match &self.gradient_type {
+            GradientType::Linear { direction_rad } => {
+                // Rotating the gradient with a point th
+                let bb = shape.bounding_box();
+                let starting_point_offset = angle_to_center_offset(*direction_rad, *rect);
+                let ending_point_offset =
+                    Point::new(-starting_point_offset.x, -starting_point_offset.y);
+                let center = bb.center();
+                let start = Point::new(
+                    center.x + starting_point_offset.x,
+                    center.y + starting_point_offset.y,
+                );
+                let end = Point::new(
+                    center.x + ending_point_offset.x,
+                    center.y + ending_point_offset.y,
+                );
+
+                let kind = peniko::GradientKind::Linear { start, end };
+
+                let gradient = peniko::Gradient {
+                    kind,
+                    extend,
+                    stops: (*stops).clone(),
+                };
+
+                let brush = peniko::BrushRef::Gradient(&gradient);
+
+                sb.fill(peniko::Fill::NonZero, Affine::IDENTITY, brush, None, shape)
+            }
+            GradientType::Radial => todo!(),
+            GradientType::Conic => todo!(),
         }
     }
 }
 
-#[derive(Clone, PartialEq, Debug, Default)]
+#[derive(PartialEq, Debug, Default)]
 pub(crate) enum Image {
     #[default]
     None,
-    Url(String),
+    Image(Arc<vello::peniko::Image>),
     Gradient(Gradient),
 }
 
-impl<'a> TryFrom<lightningcss::values::image::Image<'a>> for Image {
-    type Error = ();
-
-    fn try_from(value: lightningcss::values::image::Image<'a>) -> Result<Self, Self::Error> {
-        use lightningcss::values::image::Image::*;
+impl Image {
+    fn try_create(value: lightningcss::values::image::Image, ctx: &SendAnyMap) -> Option<Self> {
+        use lightningcss::values::image;
         match value {
-            None => Ok(Image::None),
-            Url(url) => Ok(Image::Url(url.url.to_string())),
-            Gradient(gradient) => Ok(Image::Gradient((*gradient).try_into()?)),
-            _ => Err(()),
+            image::Image::None => Some(Self::None),
+            image::Image::Url(url) => {
+                let image_ctx: &ImageContext = ctx.get().expect("ImageContext not found");
+                Some(Self::Image(image_ctx.load_file(url.url.as_ref()).unwrap()))
+            }
+            image::Image::Gradient(gradient) => Some(Self::Gradient((*gradient).try_into().ok()?)),
+            _ => None,
+        }
+    }
+
+    fn render(
+        &self,
+        sb: &mut SceneBuilder,
+        shape: &impl Shape,
+        repeat: Repeat,
+        rect: &Size<f32>,
+        viewport_size: &Size<u32>,
+    ) {
+        match self {
+            Self::Gradient(gradient) => gradient.render(sb, shape, repeat, rect, viewport_size),
+            Self::Image(image) => {
+                // Translate the image to the layout's position
+                match repeat {
+                    Repeat { x: false, y: false } => {
+                        sb.fill(
+                            Fill::NonZero,
+                            Affine::IDENTITY,
+                            BrushRef::Image(image),
+                            None,
+                            &shape,
+                        );
+                    }
+                    _ => {
+                        sb.fill(
+                            Fill::NonZero,
+                            Affine::IDENTITY,
+                            BrushRef::Image(&(**image).clone().with_extend(peniko::Extend::Repeat)),
+                            None,
+                            &shape,
+                        );
+                    }
+                }
+            }
+            _ => {}
         }
     }
 }
 
-#[derive(Clone, PartialEq, Debug, Default)]
+#[derive(Clone, Copy, PartialEq, Debug, Default)]
 pub(crate) struct Repeat {
     x: bool,
     y: bool,
@@ -229,11 +360,45 @@ impl From<background::BackgroundRepeat> for Repeat {
     }
 }
 
-#[derive(Clone, PartialEq, Debug, Component)]
+impl From<Repeat> for Extend {
+    fn from(val: Repeat) -> Self {
+        match val {
+            Repeat { x: false, y: false } => Extend::Repeat,
+            _ => Extend::Pad,
+        }
+    }
+}
+
+#[derive(PartialEq, Debug, Component)]
 pub(crate) struct Background {
     pub color: Color,
     pub image: Image,
     pub repeat: Repeat,
+    pub position: (HorizontalPosition, VerticalPosition),
+}
+
+impl Background {
+    pub(crate) fn draw_shape(
+        &self,
+        sb: &mut SceneBuilder,
+        shape: &impl Shape,
+        rect: &Layout,
+        viewport_size: &Size<u32>,
+    ) {
+        // First draw the background color
+        sb.fill(
+            peniko::Fill::NonZero,
+            Affine::IDENTITY,
+            self.color,
+            None,
+            &shape,
+        );
+
+        with_mask(sb, shape, |sb| {
+            self.image
+                .render(sb, shape, self.repeat, &rect.size, viewport_size)
+        })
+    }
 }
 
 impl Default for Background {
@@ -242,6 +407,18 @@ impl Default for Background {
             color: Color::rgba8(255, 255, 255, 0),
             image: Image::default(),
             repeat: Repeat::default(),
+            position: (
+                HorizontalPosition::Length(
+                    lightningcss::values::percentage::DimensionPercentage::Dimension(
+                        LengthValue::Px(0.),
+                    ),
+                ),
+                VerticalPosition::Length(
+                    lightningcss::values::percentage::DimensionPercentage::Dimension(
+                        LengthValue::Px(0.),
+                    ),
+                ),
+            ),
         }
     }
 }
@@ -266,7 +443,7 @@ impl State for Background {
         _: <Self::NodeDependencies as Dependancy>::ElementBorrowed<'a>,
         _: Option<<Self::ParentDependencies as Dependancy>::ElementBorrowed<'a>>,
         _: Vec<<Self::ChildDependencies as Dependancy>::ElementBorrowed<'a>>,
-        _: &SendAnyMap,
+        ctx: &SendAnyMap,
     ) -> bool {
         let mut new = Background::default();
         for attr in node_view.attributes().into_iter().flatten() {
@@ -276,7 +453,7 @@ impl State for Background {
                         if let Ok(background) = background::Background::parse_string(attr_value) {
                             new.color = translate_color(&background.color);
                             new.repeat = background.repeat.into();
-                            new.image = background.image.try_into().expect(
+                            new.image = Image::try_create(background.image, ctx).expect(
                                 "attempted to convert a background Blitz does not support yet",
                             );
                         }
@@ -296,7 +473,9 @@ impl State for Background {
                 }
             }
         }
-        false
+        let updated = new != *self;
+        *self = new;
+        updated
     }
 
     fn create<'a>(
@@ -312,209 +491,130 @@ impl State for Background {
     }
 }
 
-#[derive(Clone, PartialEq, Debug, Component)]
-pub(crate) struct ForgroundColor(pub CssColor);
+// https://developer.mozilla.org/en-US/docs/Web/CSS/gradient/linear-gradient#composition_of_a_linear_gradient
+// Graphed visualization: https://www.desmos.com/calculator/7vfcr5kczy
+fn half_length_q1(width: f64, height: f64, angle: f64) -> f64 {
+    ((height / width).atan() - angle).cos() * (width.powi(2) + height.powi(2)).sqrt()
+}
 
-impl Default for ForgroundColor {
-    fn default() -> Self {
-        ForgroundColor(CssColor::RGBA(RGBA::new(0, 0, 0, 255)))
+fn angle_to_center_offset(full_angle: f64, size: Size<f32>) -> Point {
+    let x = size.width as f64 / 2.;
+    let y = size.height as f64 / 2.;
+    let full_angle = full_angle % (2. * PI);
+    let angle = full_angle % (PI / 2.);
+    // Q1
+    if (0.0..PI / 2.).contains(&full_angle) {
+        let length = half_length_q1(x, y, angle);
+        (angle.cos() * length, angle.sin() * length).into()
+    }
+    // Q2
+    else if ((PI / 2.)..PI).contains(&full_angle) {
+        let length = half_length_q1(y, x, angle);
+        (-angle.sin() * length, angle.cos() * length).into()
+    }
+    // Q3
+    else if (PI..3. * PI / 2.).contains(&full_angle) {
+        let length = half_length_q1(x, y, angle);
+        (-angle.cos() * length, -angle.sin() * length).into()
+    }
+    // Q4
+    else {
+        let length = half_length_q1(y, x, angle);
+        (angle.sin() * length, -angle.cos() * length).into()
     }
 }
 
-#[partial_derive_state]
-impl State for ForgroundColor {
-    type ChildDependencies = ();
-    type ParentDependencies = (Self,);
-    type NodeDependencies = ();
-    const NODE_MASK: NodeMaskBuilder<'static> =
-        NodeMaskBuilder::new().with_attrs(AttributeMaskBuilder::Some(&["color"]));
-
-    fn update<'a>(
-        &mut self,
-        node_view: NodeView,
-        _: <Self::NodeDependencies as Dependancy>::ElementBorrowed<'a>,
-        parent: Option<<Self::ParentDependencies as Dependancy>::ElementBorrowed<'a>>,
-        _: Vec<<Self::ChildDependencies as Dependancy>::ElementBorrowed<'a>>,
-        _: &SendAnyMap,
-    ) -> bool {
-        let new = if let Some(color_attr) = node_view.attributes().into_iter().flatten().next() {
-            if let Some(as_text) = color_attr.value.as_text() {
-                let mut value = ParserInput::new(as_text);
-                let mut parser = Parser::new(&mut value);
-                if let Ok(new_color) = CssColor::parse(&mut parser) {
-                    new_color
-                } else {
-                    return false;
-                }
-            } else {
-                return false;
+#[test]
+fn gradient_offset() {
+    // Check that when the angle points dirrectly to a midpoint of a side the offset is correct
+    assert_eq!(
+        angle_to_center_offset(
+            0.0,
+            Size {
+                width: 100.,
+                height: 100.,
             }
-        } else if let Some((parent,)) = parent {
-            parent.0.clone()
-        } else {
-            return false;
-        };
-
-        if self.0 != new {
-            *self = Self(new);
-            true
-        } else {
-            false
-        }
-    }
-
-    fn create<'a>(
-        node_view: NodeView<()>,
-        node: <Self::NodeDependencies as Dependancy>::ElementBorrowed<'a>,
-        parent: Option<<Self::ParentDependencies as Dependancy>::ElementBorrowed<'a>>,
-        children: Vec<<Self::ChildDependencies as Dependancy>::ElementBorrowed<'a>>,
-        context: &SendAnyMap,
-    ) -> Self {
-        let mut myself = Self::default();
-        myself.update(node_view, node, parent, children, context);
-        myself
-    }
-}
-
-#[derive(Clone, PartialEq, Debug, Component)]
-pub(crate) struct Border {
-    pub colors: BorderColor,
-    pub width: BorderWidth,
-    pub radius: BorderRadius,
-}
-
-#[partial_derive_state]
-impl State for Border {
-    type ChildDependencies = ();
-    type ParentDependencies = ();
-    type NodeDependencies = ();
-
-    const NODE_MASK: NodeMaskBuilder<'static> =
-        NodeMaskBuilder::new().with_attrs(AttributeMaskBuilder::Some(&[
-            "border-color",
-            "border-top-color",
-            "border-right-color",
-            "border-bottom-color",
-            "border-left-color",
-            "border-radius",
-            "border-top-left-radius",
-            "border-top-right-radius",
-            "border-bottom-right-radius",
-            "border-bottom-left-radius",
-            "border-width",
-            "border-top-width",
-            "border-right-width",
-            "border-bottom-width",
-            "border-left-width",
-        ]));
-
-    fn update<'a>(
-        &mut self,
-        node_view: NodeView,
-        _: <Self::NodeDependencies as Dependancy>::ElementBorrowed<'a>,
-        _: Option<<Self::ParentDependencies as Dependancy>::ElementBorrowed<'a>>,
-        _: Vec<<Self::ChildDependencies as Dependancy>::ElementBorrowed<'a>>,
-        _: &SendAnyMap,
-    ) -> bool {
-        let mut new = Border::default();
-        if let Some(attributes) = node_view.attributes() {
-            for a in attributes {
-                let mut value = ParserInput::new(a.value.as_text().unwrap());
-                let mut parser = Parser::new(&mut value);
-                match Property::parse(
-                    a.attribute.name.as_str().into(),
-                    &mut parser,
-                    &ParserOptions::default(),
-                )
-                .unwrap()
-                {
-                    Property::BorderColor(c) => {
-                        new.colors = c;
-                    }
-                    Property::BorderTopColor(c) => {
-                        new.colors.top = c;
-                    }
-                    Property::BorderRightColor(c) => {
-                        new.colors.right = c;
-                    }
-                    Property::BorderBottomColor(c) => {
-                        new.colors.bottom = c;
-                    }
-                    Property::BorderLeftColor(c) => {
-                        new.colors.left = c;
-                    }
-                    Property::BorderRadius(r, _) => {
-                        new.radius = r;
-                    }
-                    Property::BorderTopLeftRadius(r, _) => {
-                        new.radius.top_left = r;
-                    }
-                    Property::BorderTopRightRadius(r, _) => {
-                        new.radius.top_right = r;
-                    }
-                    Property::BorderBottomRightRadius(r, _) => {
-                        new.radius.bottom_right = r;
-                    }
-                    Property::BorderBottomLeftRadius(r, _) => {
-                        new.radius.bottom_left = r;
-                    }
-                    Property::BorderWidth(width) => {
-                        new.width = width;
-                    }
-                    Property::BorderTopWidth(width) => {
-                        new.width.top = width;
-                    }
-                    Property::BorderRightWidth(width) => {
-                        new.width.right = width;
-                    }
-                    Property::BorderBottomWidth(width) => {
-                        new.width.bottom = width;
-                    }
-                    Property::BorderLeftWidth(width) => {
-                        new.width.left = width;
-                    }
-                    _ => {}
-                }
+        )
+        .round(),
+        Point::new(50., 0.).round()
+    );
+    assert_eq!(
+        angle_to_center_offset(
+            PI / 2.,
+            Size {
+                width: 100.,
+                height: 100.,
             }
-        }
+        )
+        .round(),
+        Point::new(0., 50.).round()
+    );
+    assert_eq!(
+        angle_to_center_offset(
+            PI,
+            Size {
+                width: 100.,
+                height: 100.,
+            }
+        )
+        .round(),
+        Point::new(-50., 0.).round()
+    );
+    assert_eq!(
+        angle_to_center_offset(
+            3. * PI / 2.,
+            Size {
+                width: 100.,
+                height: 100.,
+            }
+        )
+        .round(),
+        Point::new(0., -50.).round()
+    );
 
-        if self != &mut new {
-            *self = new;
-            true
-        } else {
-            false
-        }
-    }
-
-    fn create<'a>(
-        node_view: NodeView<()>,
-        node: <Self::NodeDependencies as Dependancy>::ElementBorrowed<'a>,
-        parent: Option<<Self::ParentDependencies as Dependancy>::ElementBorrowed<'a>>,
-        children: Vec<<Self::ChildDependencies as Dependancy>::ElementBorrowed<'a>>,
-        context: &SendAnyMap,
-    ) -> Self {
-        let mut myself = Self::default();
-        myself.update(node_view, node, parent, children, context);
-        myself
-    }
-}
-
-impl Default for Border {
-    fn default() -> Self {
-        Border {
-            colors: BorderColor {
-                top: CssColor::default(),
-                right: CssColor::default(),
-                bottom: CssColor::default(),
-                left: CssColor::default(),
-            },
-            radius: BorderRadius::default(),
-            width: BorderWidth {
-                top: BorderSideWidth::default(),
-                right: BorderSideWidth::default(),
-                bottom: BorderSideWidth::default(),
-                left: BorderSideWidth::default(),
-            },
-        }
-    }
+    // Check that when the angle points to a corner or midpoint of a side the offset is correct
+    assert_eq!(
+        angle_to_center_offset(
+            PI / 4.,
+            Size {
+                width: 100.,
+                height: 100.,
+            }
+        )
+        .round(),
+        Point::new(50., 50.).round()
+    );
+    assert_eq!(
+        angle_to_center_offset(
+            3. * PI / 4.,
+            Size {
+                width: 100.,
+                height: 100.,
+            }
+        )
+        .round(),
+        Point::new(-50., 50.).round()
+    );
+    assert_eq!(
+        angle_to_center_offset(
+            5. * PI / 4.,
+            Size {
+                width: 100.,
+                height: 100.,
+            }
+        )
+        .round(),
+        Point::new(-50., -50.).round()
+    );
+    assert_eq!(
+        angle_to_center_offset(
+            7. * PI / 4.,
+            Size {
+                width: 100.,
+                height: 100.,
+            }
+        )
+        .round(),
+        Point::new(50., -50.).round()
+    );
 }

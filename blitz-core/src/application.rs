@@ -100,7 +100,6 @@ impl ApplicationState {
         let mut scene = Scene::new();
         let mut builder = SceneBuilder::for_scene(&mut scene);
         self.dom.render(&mut self.text_context, &mut builder);
-        // builder.finish();
         let surface_texture = self
             .surface
             .surface

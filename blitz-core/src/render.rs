@@ -80,7 +80,7 @@ fn render_node(
         NodeType::Element(_) => {
             let shape = get_shape(layout, node, viewport_size, pos);
 
-            let fill_color = node.get::<Background>().unwrap().color;
+            let background = node.get::<Background>().unwrap();
             if node.get::<Focused>().filter(|focused| focused.0).is_some() {
                 let stroke_color = Color::rgb(1.0, 1.0, 1.0);
                 let stroke = Stroke::new(FOCUS_BORDER_WIDTH as f32 / 2.0);
@@ -89,13 +89,7 @@ fn render_node(
                 let smaller_shape = RoundedRect::from_rect(smaller_rect, shape.radii());
                 let stroke_color = Color::rgb(0.0, 0.0, 0.0);
                 scene_builder.stroke(&stroke, Affine::IDENTITY, stroke_color, None, &shape);
-                scene_builder.fill(
-                    Fill::NonZero,
-                    Affine::IDENTITY,
-                    fill_color,
-                    None,
-                    &smaller_shape,
-                );
+                background.draw_shape(scene_builder, &smaller_shape, layout, viewport_size);
             } else {
                 let stroke_color = translate_color(&node.get::<Border>().unwrap().colors.top);
                 let stroke = Stroke::new(node.get::<Border>().unwrap().width.top.resolve(
@@ -104,7 +98,7 @@ fn render_node(
                     viewport_size,
                 ) as f32);
                 scene_builder.stroke(&stroke, Affine::IDENTITY, stroke_color, None, &shape);
-                scene_builder.fill(Fill::NonZero, Affine::IDENTITY, fill_color, None, &shape);
+                background.draw_shape(scene_builder, &shape, layout, viewport_size);
             };
 
             if let Some(image) = node
@@ -226,7 +220,11 @@ pub(crate) fn get_abs_pos(layout: Layout, taffy: &Taffy, node: NodeRef) -> Point
     Point::new(node_layout.x as f64, node_layout.y as f64)
 }
 
-fn with_mask(sb: &mut SceneBuilder, shape: impl Shape, f: impl FnOnce(&mut SceneBuilder)) {
+pub(crate) fn with_mask(
+    sb: &mut SceneBuilder,
+    shape: &impl Shape,
+    f: impl FnOnce(&mut SceneBuilder),
+) {
     sb.push_layer(Mix::Clip, 1.0, Affine::IDENTITY, &shape);
     f(sb);
     sb.pop_layer();
