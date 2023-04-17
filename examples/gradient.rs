@@ -22,9 +22,14 @@ fn app(cx: Scope) -> Element {
 
     cx.render(rsx! {
         div {
-            width: "100%",
+            width: "50%",
             height: "100%",
             background: "linear-gradient({count}deg, rgb(2,0,36), rgb(186,213,218))",
+        }
+        div {
+            width: "50%",
+            height: "100%",
+            background: "radial-gradient(circle at {((*count.get() as f32)/100.).cos()*50. + 50.}% {((*count.get() as f32)/100.).sin()*50. + 50.}%, rgb(2,0,36), rgb(186,213,218))",
         }
     })
 }

@@ -8,6 +8,7 @@ use lightningcss::values::gradient::GradientItem;
 use lightningcss::values::length::LengthPercentage;
 use lightningcss::values::length::LengthValue;
 use lightningcss::values::position::HorizontalPositionKeyword;
+use lightningcss::values::position::Position;
 use lightningcss::values::position::VerticalPositionKeyword;
 use shipyard::Component;
 use smallvec::SmallVec;
@@ -34,9 +35,66 @@ use crate::util::AngleExt;
 use crate::util::Resolve;
 
 #[derive(Clone, PartialEq, Debug)]
+struct RadialGradient {
+    position: Position,
+    // TODO: Vello doesn't support non-circle gradients yet
+    shape: lightningcss::values::gradient::Circle,
+}
+
+impl RadialGradient {
+    fn radius_in(&self, position: Point, rect: &Size<f32>, viewport_width: &Size<u32>) -> f64 {
+        fn distance_to_nearest_side(pos: f64, size: f64) -> f64 {
+            (pos.min(size - pos)).abs()
+        }
+        fn distance_to_farthest_side(pos: f64, size: f64) -> f64 {
+            (pos.max(size - pos)).abs()
+        }
+        match &self.shape {
+            gradient::Circle::Extent(gradient::ShapeExtent::ClosestSide) => {
+                distance_to_nearest_side(position.x, rect.width as f64)
+                    .min(distance_to_nearest_side(position.y, rect.height as f64))
+            }
+            gradient::Circle::Extent(gradient::ShapeExtent::FarthestSide) => {
+                distance_to_farthest_side(position.x, rect.width as f64)
+                    .max(distance_to_farthest_side(position.y, rect.height as f64))
+            }
+            gradient::Circle::Extent(gradient::ShapeExtent::ClosestCorner) => {
+                let points = [
+                    Point::new(0., 0.),
+                    Point::new(rect.width as f64, 0.),
+                    Point::new(0., rect.height as f64),
+                    Point::new(rect.width as f64, rect.height as f64),
+                ];
+                points
+                    .iter()
+                    .map(|p| p.distance(position))
+                    .min_by(|a, b| a.partial_cmp(b).unwrap())
+                    .unwrap()
+            }
+            gradient::Circle::Extent(gradient::ShapeExtent::FarthestCorner) => {
+                let points = [
+                    Point::new(0., 0.),
+                    Point::new(rect.width as f64, 0.),
+                    Point::new(0., rect.height as f64),
+                    Point::new(rect.width as f64, rect.height as f64),
+                ];
+                points
+                    .iter()
+                    .map(|p| p.distance(position))
+                    .max_by(|a, b| a.partial_cmp(b).unwrap())
+                    .unwrap()
+            }
+            gradient::Circle::Radius(radius) => {
+                radius.resolve(crate::util::Axis::X, rect, viewport_width)
+            }
+        }
+    }
+}
+
+#[derive(Clone, PartialEq, Debug)]
 enum GradientType {
     Linear { direction_rad: f64 },
-    Radial,
+    Radial(RadialGradient),
     Conic,
 }
 
@@ -52,6 +110,18 @@ impl<'a> From<&'a gradient::LinearGradient> for GradientType {
                 _ => todo!(),
             },
         }
+    }
+}
+
+impl From<gradient::RadialGradient> for GradientType {
+    fn from(r: gradient::RadialGradient) -> Self {
+        GradientType::Radial(RadialGradient {
+            position: r.position,
+            shape: match r.shape {
+                gradient::EndingShape::Circle(circle) => circle,
+                _ => gradient::Circle::Extent(gradient::ShapeExtent::FarthestSide),
+            },
+        })
     }
 }
 
@@ -92,8 +162,8 @@ impl TryFrom<gradient::Gradient> for Gradient {
         let (gradient_type, repeating) = match &gradient {
             Linear(liniar) => (liniar.into(), false),
             RepeatingLinear(liniar) => (liniar.into(), true),
-            Radial(_) => (GradientType::Radial, false),
-            RepeatingRadial(_) => (GradientType::Radial, true),
+            Radial(radial) => (radial.clone().into(), false),
+            RepeatingRadial(radial) => (radial.clone().into(), true),
             Conic(_) => (GradientType::Conic, false),
             RepeatingConic(_) => (GradientType::Conic, true),
             _ => return Err(()),
@@ -245,7 +315,6 @@ impl Gradient {
         };
         match &self.gradient_type {
             GradientType::Linear { direction_rad } => {
-                // Rotating the gradient with a point th
                 let bb = shape.bounding_box();
                 let starting_point_offset = angle_to_center_offset(*direction_rad, *rect);
                 let ending_point_offset =
@@ -272,7 +341,39 @@ impl Gradient {
 
                 sb.fill(peniko::Fill::NonZero, Affine::IDENTITY, brush, None, shape)
             }
-            GradientType::Radial => todo!(),
+            GradientType::Radial(gradient) => {
+                let bb = shape.bounding_box();
+                let pos_x = bb.x0
+                    + gradient
+                        .position
+                        .x
+                        .resolve(crate::util::Axis::X, rect, viewport_size);
+                let pos_y = bb.y0
+                    + gradient
+                        .position
+                        .y
+                        .resolve(crate::util::Axis::Y, rect, viewport_size);
+                let pos = Point::new(pos_x, pos_y);
+
+                let end_radius = gradient.radius_in(pos, rect, viewport_size) as f32;
+
+                let kind = peniko::GradientKind::Radial {
+                    start_center: pos,
+                    start_radius: 0.0,
+                    end_center: pos,
+                    end_radius,
+                };
+
+                let gradient = peniko::Gradient {
+                    kind,
+                    extend,
+                    stops: (*stops).clone(),
+                };
+
+                let brush = peniko::BrushRef::Gradient(&gradient);
+
+                sb.fill(peniko::Fill::NonZero, Affine::IDENTITY, brush, None, shape)
+            }
             GradientType::Conic => todo!(),
         }
     }
