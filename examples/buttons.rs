@@ -48,7 +48,7 @@ fn Button(cx: Scope<ButtonProps>) -> Element {
             display: "flex",
             flex_direction: "column",
 
-            // p { "{cx.props.layer}" }
+            p { "{cx.props.layer}" }
         }
     })
 }
