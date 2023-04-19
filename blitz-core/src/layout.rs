@@ -7,6 +7,7 @@ use shipyard::Component;
 use taffy::prelude::*;
 
 use crate::image::LoadedImage;
+use crate::style::FontSize;
 use crate::text::TextContext;
 
 // TODO: More layout types. This should default to box layout
@@ -26,7 +27,7 @@ impl PartialEq<Self> for TaffyLayout {
 impl State for TaffyLayout {
     type ChildDependencies = (Self,);
     type ParentDependencies = ();
-    type NodeDependencies = (LoadedImage,);
+    type NodeDependencies = (LoadedImage, FontSize);
 
     const NODE_MASK: NodeMaskBuilder<'static> = NodeMaskBuilder::new()
         .with_attrs(AttributeMaskBuilder::All)
@@ -35,7 +36,7 @@ impl State for TaffyLayout {
     fn update<'a>(
         &mut self,
         node_view: NodeView<()>,
-        (image,): <Self::NodeDependencies as Dependancy>::ElementBorrowed<'a>,
+        (image, fz): <Self::NodeDependencies as Dependancy>::ElementBorrowed<'a>,
         _: Option<<Self::ParentDependencies as Dependancy>::ElementBorrowed<'a>>,
         children: Vec<<Self::ChildDependencies as Dependancy>::ElementBorrowed<'a>>,
         context: &SendAnyMap,
@@ -46,7 +47,8 @@ impl State for TaffyLayout {
         let mut changed = false;
         if let Some(text) = node_view.text() {
             let mut text_context = text_context.lock().unwrap();
-            let (width, height) = text_context.get_text_size(None, 16.0, text);
+            let font_size = fz.0;
+            let (width, height) = text_context.get_text_size(None, font_size, text);
 
             let style = Style {
                 size: Size {

@@ -22,7 +22,7 @@ use crate::{
     mouse::MouseEffected,
     prevent_default::PreventDefault,
     render::render,
-    style::{BackgroundColor, Border, ForgroundColor},
+    style::{BackgroundColor, Border, FontSize, ForgroundColor},
     text::TextContext,
     Redraw, TaoEvent,
 };
@@ -62,6 +62,7 @@ impl ApplicationState {
             Focus::to_type_erased(),
             PreventDefault::to_type_erased(),
             LoadedImage::to_type_erased(),
+            FontSize::to_type_erased(),
         ]);
 
         let focus_state = FocusState::create(&mut rdom);

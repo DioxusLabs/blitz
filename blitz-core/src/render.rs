@@ -12,7 +12,9 @@ use crate::image::LoadedImage;
 use crate::layout::TaffyLayout;
 use crate::style::BackgroundColor;
 use crate::style::Border;
+use crate::style::FontSize;
 use crate::style::ForgroundColor;
+use crate::style::DEFAULT_FONT_SIZE;
 use crate::text::TextContext;
 use crate::util::Resolve;
 use crate::util::{translate_color, Axis};
@@ -65,7 +67,11 @@ fn render_node(
     match &*node.node_type() {
         NodeType::Text(TextNode { text, .. }) => {
             let text_color = translate_color(&node.get::<ForgroundColor>().unwrap().0);
-            let font_size = 16.0;
+            let font_size = if let Some(font_size) = node.get::<FontSize>() {
+                font_size.0
+            } else {
+                DEFAULT_FONT_SIZE
+            };
             text_context.add(
                 scene_builder,
                 None,
