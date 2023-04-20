@@ -97,32 +97,71 @@ impl ApplicationState {
         }
     }
 
-    pub fn render(&mut self) {
+    pub fn render(&mut self, dirty_nodes: DirtyNodes) {
         let mut scene = Scene::new();
         let mut builder = SceneBuilder::for_scene(&mut scene);
-        self.dom.render(&mut self.text_context, &mut builder);
-        // builder.finish();
-        let surface_texture = self
-            .surface
-            .surface
-            .get_current_texture()
-            .expect("failed to get surface texture");
-        let device = &self.render_context.devices[self.surface.dev_id];
-        self.wgpu_renderer
-            .render_to_surface(
-                &device.device,
-                &device.queue,
-                &scene,
-                &surface_texture,
-                &RenderParams {
-                    base_color: Color::WHITE,
-                    width: self.surface.config.width,
-                    height: self.surface.config.height,
-                },
-            )
-            .expect("failed to render to surface");
-        surface_texture.present();
-        device.device.poll(wgpu::Maintain::Wait);
+        let text_context = &mut self.text_context;
+
+        {
+            // collect all the nodes that need to be rendered
+            let rdom = self.dom.rdom();
+            let taffy = self.dom.taffy();
+            let mut all_dirty = match dirty_nodes {
+                DirtyNodes::All => {
+                    let mut all_nodes = Vec::new();
+                    rdom.traverse_depth_first(|node| {
+                        all_nodes.push(rdom.get(node.id()).unwrap());
+                    });
+                    all_nodes
+                }
+                DirtyNodes::Some(nodes) => {
+                    nodes.into_iter().filter_map(|id| rdom.get(id)).collect()
+                }
+            };
+            // Sort the nodes by height so that we render the parents before the children
+            all_dirty.sort_by_cached_key(|node| node.height());
+
+            println!("rendered {} nodes", all_dirty.len());
+            for node in &all_dirty {
+                render(
+                    &taffy,
+                    *node,
+                    text_context,
+                    &mut builder,
+                    *self.dom.size.lock().unwrap(),
+                );
+            }
+
+            // Apply the changes to the surface
+            if !all_dirty.is_empty() {
+                let surface_texture = self
+                    .surface
+                    .surface
+                    .get_current_texture()
+                    .expect("failed to get surface texture");
+                let device = &self.render_context.devices[self.surface.dev_id];
+                self.wgpu_renderer
+                    .render_to_surface(
+                        &device.device,
+                        &device.queue,
+                        &scene,
+                        &surface_texture,
+                        &RenderParams {
+                            base_color: Color {
+                                r: 0,
+                                g: 0,
+                                b: 0,
+                                a: 0,
+                            },
+                            width: self.surface.config.width,
+                            height: self.surface.config.height,
+                        },
+                    )
+                    .expect("failed to render to surface");
+                surface_texture.present();
+                device.device.poll(wgpu::Maintain::Wait);
+            }
+        }
 
         // After we render, we need to update the quadtree to reflect the new positions of the nodes
         self.update_quadtree();
@@ -215,7 +254,11 @@ impl ApplicationState {
     }
 
     pub fn clean(&mut self) -> DirtyNodes {
-        self.event_handler.clean().or(self.dom.clean())
+        let d = self.event_handler.clean().or(self.dom.clean());
+        if !d.is_empty() {
+            println!("{d:#?}");
+        }
+        d
     }
 
     pub fn send_event(&mut self, event: &TaoEvent) {
@@ -262,7 +305,7 @@ async fn spawn_dom<R: Driver>(
         ctx.insert(image_context.clone());
         ctx.insert(text_context.clone());
         // update the state of the real dom
-        let (to_rerender, _) = rdom.update_state(ctx);
+        let (to_rerender, elements_changed) = rdom.update_state(ctx);
         let size = size.lock().unwrap();
 
         let width = size.width as f32;
@@ -287,7 +330,7 @@ async fn spawn_dom<R: Driver>(
         };
         locked_taffy.set_style(root_taffy_node, style).unwrap();
         locked_taffy.compute_layout(root_taffy_node, size).unwrap();
-        for k in to_rerender.into_iter() {
+        for k in to_rerender.into_iter().chain(elements_changed.into_keys()) {
             vdom_dirty.insert(k);
         }
         proxy.send_event(Redraw).unwrap();
@@ -315,7 +358,7 @@ async fn spawn_dom<R: Driver>(
         ctx.insert(text_context.clone());
 
         // update the real dom
-        let (to_rerender, _) = rdom.update_state(ctx);
+        let (to_rerender, elements_changed) = rdom.update_state(ctx);
 
         let size = size.lock().ok()?;
 
@@ -341,7 +384,7 @@ async fn spawn_dom<R: Driver>(
                 taffy.set_style(root_taffy_node, style).unwrap();
             }
             taffy.compute_layout(root_taffy_node, size).unwrap();
-            for k in to_rerender.into_iter() {
+            for k in to_rerender.into_iter().chain(elements_changed.into_keys()) {
                 vdom_dirty.insert(k);
             }
 
@@ -408,8 +451,9 @@ impl DomManager {
         }
     }
 
-    fn clean(&self) -> DirtyNodes {
+    fn clean(&mut self) -> DirtyNodes {
         if self.force_redraw {
+            self.force_redraw = false;
             DirtyNodes::All
         } else {
             let dirty = self.dirty.iter().map(|k| *k.key()).collect();
@@ -426,9 +470,15 @@ impl DomManager {
         self.taffy.lock().unwrap()
     }
 
-    fn set_size(&mut self, size: PhysicalSize<u32>) {
-        *self.size.lock().unwrap() = size;
-        self.force_redraw();
+    fn set_size(&mut self, new_size: PhysicalSize<u32>) {
+        let mut size: MutexGuard<PhysicalSize<u32>> = self.size.lock().unwrap();
+        let old_size = *size;
+        if new_size != old_size {
+            dbg!(new_size, old_size);
+            *size = new_size;
+            drop(size);
+            self.force_redraw();
+        }
     }
 
     fn size(&self) -> PhysicalSize<u32> {
@@ -440,16 +490,6 @@ impl DomManager {
         self.redraw_sender.send(()).unwrap();
     }
 
-    fn render(&self, text_context: &mut TextContext, renderer: &mut SceneBuilder) {
-        render(
-            &self.rdom(),
-            &self.taffy(),
-            text_context,
-            renderer,
-            *self.size.lock().unwrap(),
-        );
-    }
-
     fn send_events(&self, events: impl IntoIterator<Item = DomEvent>) {
         for evt in events {
             let _ = self.event_sender.send(evt);
@@ -457,6 +497,7 @@ impl DomManager {
     }
 }
 
+#[derive(Debug, Clone, PartialEq)]
 pub enum DirtyNodes {
     All,
     Some(FxHashSet<NodeId>),

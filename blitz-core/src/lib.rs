@@ -48,7 +48,7 @@ pub async fn render<R: Driver>(
     let window = WindowBuilder::new().build(&event_loop).unwrap();
     let mut appliction =
         ApplicationState::new(spawn_renderer, &window, event_loop.create_proxy()).await;
-    appliction.render();
+    appliction.render(application::DirtyNodes::All);
 
     event_loop.run(move |event, _, control_flow| {
         // ControlFlow::Wait pauses the event loop if no events are available to process.
@@ -80,8 +80,9 @@ pub async fn render<R: Driver>(
                 // this event rather than in MainEventsCleared, since rendering in here allows
                 // the program to gracefully handle redraws requested by the OS.
 
-                if !appliction.clean().is_empty() {
-                    appliction.render();
+                let dirty_nodes = appliction.clean();
+                if !dirty_nodes.is_empty() {
+                    appliction.render(dirty_nodes);
                 }
             }
             Event::UserEvent(_redraw) => {

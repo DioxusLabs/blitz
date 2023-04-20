@@ -3,7 +3,7 @@ use taffy::prelude::Layout;
 use taffy::prelude::Size;
 use taffy::Taffy;
 use tao::dpi::PhysicalSize;
-use vello::kurbo::{Affine, Point, Rect, RoundedRect, Vec2};
+use vello::kurbo::{Affine, Point, RoundedRect, Vec2};
 use vello::peniko::{Color, Fill, Stroke};
 use vello::SceneBuilder;
 
@@ -18,39 +18,21 @@ use crate::style::DEFAULT_FONT_SIZE;
 use crate::text::TextContext;
 use crate::util::Resolve;
 use crate::util::{translate_color, Axis};
-use crate::RealDom;
 
 const FOCUS_BORDER_WIDTH: f64 = 6.0;
 
 pub(crate) fn render(
-    dom: &RealDom,
     taffy: &Taffy,
+    node: NodeRef,
     text_context: &mut TextContext,
     scene_builder: &mut SceneBuilder,
     window_size: PhysicalSize<u32>,
 ) {
-    let root = &dom.get(dom.root_id()).unwrap();
-    let root_node = root.get::<TaffyLayout>().unwrap().node.unwrap();
-    let root_layout = taffy.layout(root_node).unwrap();
-    let shape = Rect {
-        x0: root_layout.location.x.into(),
-        y0: root_layout.location.y.into(),
-        x1: (root_layout.location.x + root_layout.size.width).into(),
-        y1: (root_layout.location.y + root_layout.size.height).into(),
-    };
-    scene_builder.fill(Fill::NonZero, Affine::IDENTITY, Color::WHITE, None, &shape);
     let viewport_size = Size {
         width: window_size.width,
         height: window_size.height,
     };
-    render_node(
-        taffy,
-        *root,
-        text_context,
-        scene_builder,
-        Point::ZERO,
-        &viewport_size,
-    );
+    render_node(taffy, node, text_context, scene_builder, &viewport_size);
 }
 
 fn render_node(
@@ -58,12 +40,11 @@ fn render_node(
     node: NodeRef,
     text_context: &mut TextContext,
     scene_builder: &mut SceneBuilder,
-    location: Point,
     viewport_size: &Size<u32>,
 ) {
     let taffy_node = node.get::<TaffyLayout>().unwrap().node.unwrap();
     let layout = taffy.layout(taffy_node).unwrap();
-    let pos = location + Vec2::new(layout.location.x as f64, layout.location.y as f64);
+    let pos = get_abs_pos(*layout, taffy, node);
     match &*node.node_type() {
         NodeType::Text(TextNode { text, .. }) => {
             let text_color = translate_color(&node.get::<ForgroundColor>().unwrap().0);
@@ -129,17 +110,6 @@ fn render_node(
                 let translate = Affine::translate(pos.to_vec2());
 
                 scene_builder.draw_image(image, translate * scale);
-            }
-
-            for child in node.children() {
-                render_node(
-                    taffy,
-                    child,
-                    text_context,
-                    scene_builder,
-                    pos,
-                    viewport_size,
-                );
             }
         }
         _ => {}
