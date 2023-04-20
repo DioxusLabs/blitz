@@ -24,7 +24,7 @@ fn app(cx: Scope) -> Element {
         div {
             width: "50%",
             height: "100%",
-            background: "linear-gradient({count}deg, rgb(2,0,36), rgb(186,213,218))",
+            background: "linear-gradient({count}rad, rgb(2,0,36), rgb(186,213,218))",
         }
         div {
             width: "50%",
