@@ -21,7 +21,6 @@ use vello::peniko::Fill;
 use vello::SceneBuilder;
 
 use crate::image::ImageContext;
-use crate::render::with_mask;
 use crate::util::translate_color;
 
 use self::gradient::Gradient;
@@ -139,10 +138,8 @@ impl Background {
             &shape,
         );
 
-        with_mask(sb, shape, |sb| {
-            self.image
-                .render(sb, shape, self.repeat, &rect.size, viewport_size)
-        })
+        self.image
+            .render(sb, shape, self.repeat, &rect.size, viewport_size)
     }
 }
 
