@@ -306,8 +306,8 @@ impl State for FontSize {
         _: &SendAnyMap,
     ) -> bool {
         let new = if let Some(size_attr) = node_view.attributes().into_iter().flatten().next() {
-            let parent_size = if let Some(parent_size) = parent {
-                parent_size.0 .0.clone()
+            let parent_size = if let Some((parent_size,)) = parent {
+                parent_size.0
             } else {
                 DEFAULT_FONT_SIZE
             };
@@ -318,8 +318,8 @@ impl State for FontSize {
             } else {
                 DEFAULT_FONT_SIZE
             }
-        } else if let Some(parent_size) = parent {
-            parent_size.0 .0.clone()
+        } else if let Some((parent_size,)) = parent {
+            parent_size.0
         } else {
             return false;
         };
@@ -361,7 +361,7 @@ fn parse_font_size_from_attr(
                     DimensionPercentage::Dimension(l) => match l {
                         LengthValue::Rem(v) => Some(v * root_font_size),
                         LengthValue::Em(v) => Some(v * parent_font_size),
-                        _ => l.to_px().map(|v| v as f32),
+                        _ => l.to_px(),
                     },
                     // same with em.
                     DimensionPercentage::Percentage(p) => Some(p.0 * parent_font_size),
