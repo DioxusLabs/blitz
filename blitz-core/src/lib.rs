@@ -14,13 +14,9 @@ use tao::{
     window::WindowBuilder,
 };
 
-#[cfg(feature = "dioxus-bindings")]
-pub use crate::dioxus::*;
 pub use crate::events::EventData;
 
 mod application;
-#[cfg(feature = "dioxus-bindings")]
-mod dioxus;
 mod events;
 mod focus;
 mod image;

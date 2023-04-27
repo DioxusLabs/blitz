@@ -137,8 +137,8 @@ impl State for FontSize {
         _: &SendAnyMap,
     ) -> bool {
         let new = if let Some(size_attr) = node_view.attributes().into_iter().flatten().next() {
-            let parent_size = if let Some(parent_size) = parent {
-                parent_size.0 .0
+            let parent_size = if let Some((parent_size,)) = parent {
+                parent_size.0
             } else {
                 DEFAULT_FONT_SIZE
             };
@@ -149,8 +149,8 @@ impl State for FontSize {
             } else {
                 DEFAULT_FONT_SIZE
             }
-        } else if let Some(parent_size) = parent {
-            parent_size.0 .0
+        } else if let Some((parent_size,)) = parent {
+            parent_size.0
         } else {
             return false;
         };
