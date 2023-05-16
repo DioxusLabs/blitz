@@ -58,7 +58,7 @@ impl State for TaffyLayout {
                 ..Default::default()
             };
 
-            let style_has_changed = &self.style != &style;
+            let style_has_changed = self.style != style;
 
             if let Some(n) = self.node {
                 if style_has_changed {
@@ -104,7 +104,7 @@ impl State for TaffyLayout {
                 child_layout.push(l.node.unwrap());
             }
 
-            let style_has_changed = &self.style != &style;
+            let style_has_changed = self.style != style;
             if let Some(n) = self.node {
                 if taffy.children(n).unwrap() != child_layout {
                     taffy.set_children(n, &child_layout).unwrap();
