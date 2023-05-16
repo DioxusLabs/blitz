@@ -115,7 +115,11 @@ impl State for TaffyLayout {
                     changed = true;
                 }
             } else {
-                self.node = Some(taffy.new_with_children(style.clone(), &child_layout).unwrap());
+                self.node = Some(
+                    taffy
+                        .new_with_children(style.clone(), &child_layout)
+                        .unwrap(),
+                );
                 changed = true;
             }
 
