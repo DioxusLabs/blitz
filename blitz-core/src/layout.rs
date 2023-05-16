@@ -53,23 +53,24 @@ impl State for TaffyLayout {
             let style = Style {
                 size: Size {
                     height: Dimension::Points(height as f32),
-
                     width: Dimension::Points(width as f32),
                 },
                 ..Default::default()
             };
 
+            let style_has_changed = &self.style != &style;
+
             if let Some(n) = self.node {
-                if self.style != style {
-                    taffy.set_style(n, style).unwrap();
+                if style_has_changed {
+                    taffy.set_style(n, style.clone()).unwrap();
                     changed = true;
                 }
             } else {
-                self.node = Some(taffy.new_leaf(style).unwrap());
+                self.node = Some(taffy.new_leaf(style.clone()).unwrap());
                 changed = true;
             }
 
-            if style != self.style {
+            if style_has_changed {
                 self.style = style;
                 changed = true;
             }
@@ -103,21 +104,22 @@ impl State for TaffyLayout {
                 child_layout.push(l.node.unwrap());
             }
 
+            let style_has_changed = &self.style != &style;
             if let Some(n) = self.node {
                 if taffy.children(n).unwrap() != child_layout {
                     taffy.set_children(n, &child_layout).unwrap();
                     changed = true;
                 }
-                if self.style != style {
-                    taffy.set_style(n, style).unwrap();
+                if style_has_changed {
+                    taffy.set_style(n, style.clone()).unwrap();
                     changed = true;
                 }
             } else {
-                self.node = Some(taffy.new_with_children(style, &child_layout).unwrap());
+                self.node = Some(taffy.new_with_children(style.clone(), &child_layout).unwrap());
                 changed = true;
             }
 
-            if style != self.style {
+            if style_has_changed {
                 self.style = style;
                 changed = true;
             }
