@@ -14,7 +14,7 @@ repository = "https://github.com/DioxusLabs/blitz"
 dioxus-native-core = { git = "https://github.com/DioxusLabs/dioxus/" }
 dioxus-native-core-macro = { git = "https://github.com/DioxusLabs/dioxus/" }
 dioxus-html = { git = "https://github.com/DioxusLabs/dioxus/" }
-taffy = "0.2.2"
+taffy = "0.3.12"
 tokio = { version = "1.25.0", features = ["full"] }
 lightningcss = "1.0.0-alpha.39"
 cssparser = "0.29.6"

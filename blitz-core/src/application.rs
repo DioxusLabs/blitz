@@ -280,7 +280,7 @@ async fn spawn_dom<R: Driver>(
         let root_node = rdom.get(rdom.root_id()).unwrap();
         let root_taffy_node = root_node.get::<TaffyLayout>().unwrap().node.unwrap();
 
-        let mut style = *locked_taffy.style(root_taffy_node).unwrap();
+        let mut style = locked_taffy.style(root_taffy_node).unwrap().clone();
         style.size = Size {
             width: Dimension::Points(width),
             height: Dimension::Points(height),
@@ -331,7 +331,7 @@ async fn spawn_dom<R: Driver>(
             let root_node = rdom.get(rdom.root_id()).unwrap();
             let root_node_layout = root_node.get::<TaffyLayout>().unwrap();
             let root_taffy_node = root_node_layout.node.unwrap();
-            let mut style = *taffy.style(root_taffy_node).unwrap();
+            let mut style = taffy.style(root_taffy_node).unwrap().clone();
             let new_size = Size {
                 width: Dimension::Points(width),
                 height: Dimension::Points(height),
