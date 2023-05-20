@@ -10,12 +10,12 @@ use vello::SceneBuilder;
 use crate::focus::Focused;
 use crate::image::LoadedImage;
 use crate::layout::TaffyLayout;
-use crate::style::BackgroundColor;
+use crate::style::Background;
 use crate::style::Border;
-use crate::style::FontSize;
 use crate::style::ForgroundColor;
-use crate::style::DEFAULT_FONT_SIZE;
+use crate::text::FontSize;
 use crate::text::TextContext;
+use crate::text::DEFAULT_FONT_SIZE;
 use crate::util::Resolve;
 use crate::util::{translate_color, Axis};
 use crate::RealDom;
@@ -83,9 +83,8 @@ fn render_node(
         }
         NodeType::Element(_) => {
             let shape = get_shape(layout, node, viewport_size, pos);
-            let fill_color = translate_color(&node.get::<BackgroundColor>().unwrap().0);
 
-            // Draw a border around focused elements
+            let background = node.get::<Background>().unwrap();
             if node.get::<Focused>().filter(|focused| focused.0).is_some() {
                 let stroke_color = Color::rgb(1.0, 1.0, 1.0);
                 let stroke = Stroke::new(FOCUS_BORDER_WIDTH as f32 / 2.0);
@@ -94,13 +93,7 @@ fn render_node(
                 let smaller_shape = RoundedRect::from_rect(smaller_rect, shape.radii());
                 let stroke_color = Color::rgb(0.0, 0.0, 0.0);
                 scene_builder.stroke(&stroke, Affine::IDENTITY, stroke_color, None, &shape);
-                scene_builder.fill(
-                    Fill::NonZero,
-                    Affine::IDENTITY,
-                    fill_color,
-                    None,
-                    &smaller_shape,
-                );
+                background.draw_shape(scene_builder, &smaller_shape, layout, viewport_size);
             } else {
                 let stroke_color = translate_color(&node.get::<Border>().unwrap().colors.top);
                 let stroke = Stroke::new(node.get::<Border>().unwrap().width.top.resolve(
@@ -109,7 +102,7 @@ fn render_node(
                     viewport_size,
                 ) as f32);
                 scene_builder.stroke(&stroke, Affine::IDENTITY, stroke_color, None, &shape);
-                scene_builder.fill(Fill::NonZero, Affine::IDENTITY, fill_color, None, &shape);
+                background.draw_shape(scene_builder, &shape, layout, viewport_size);
             };
 
             if let Some(image) = node

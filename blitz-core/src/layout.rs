@@ -7,8 +7,7 @@ use shipyard::Component;
 use taffy::prelude::*;
 
 use crate::image::LoadedImage;
-use crate::style::FontSize;
-use crate::text::TextContext;
+use crate::text::{FontSize, TextContext};
 
 // TODO: More layout types. This should default to box layout
 #[derive(Clone, Default, Debug, Component)]

@@ -1,3 +1,13 @@
+use dioxus_native_core::node::OwnedAttributeValue;
+use dioxus_native_core::prelude::*;
+use dioxus_native_core_macro::partial_derive_state;
+use lightningcss::properties::font::AbsoluteFontSize;
+use lightningcss::properties::font::FontSize as FontSizeProperty;
+use lightningcss::properties::font::RelativeFontSize;
+use lightningcss::traits::Parse;
+use lightningcss::values::length::LengthValue;
+use lightningcss::values::percentage::DimensionPercentage;
+use shipyard::Component;
 use vello::{
     fello::{raw::FontRef, MetadataProvider},
     glyph::GlyphContext,
@@ -97,4 +107,121 @@ fn to_font_ref(font: &Font) -> Option<FontRef> {
 
 fn default_font<'a>() -> FontRef<'a> {
     FontRef::new(FONT_DATA).unwrap()
+}
+
+#[derive(Clone, PartialEq, Debug, Component)]
+pub(crate) struct FontSize(pub f32);
+pub const DEFAULT_FONT_SIZE: f32 = 16.0;
+
+impl Default for FontSize {
+    fn default() -> Self {
+        FontSize(DEFAULT_FONT_SIZE)
+    }
+}
+
+#[partial_derive_state]
+impl State for FontSize {
+    type ChildDependencies = ();
+    type ParentDependencies = (Self,);
+    type NodeDependencies = ();
+
+    const NODE_MASK: NodeMaskBuilder<'static> =
+        NodeMaskBuilder::new().with_attrs(AttributeMaskBuilder::Some(&["font-size"]));
+
+    fn update<'a>(
+        &mut self,
+        node_view: NodeView,
+        _: <Self::NodeDependencies as Dependancy>::ElementBorrowed<'a>,
+        parent: Option<<Self::ParentDependencies as Dependancy>::ElementBorrowed<'a>>,
+        _: Vec<<Self::ChildDependencies as Dependancy>::ElementBorrowed<'a>>,
+        _: &SendAnyMap,
+    ) -> bool {
+        let new = if let Some(size_attr) = node_view.attributes().into_iter().flatten().next() {
+            let parent_size = if let Some((parent_size,)) = parent {
+                parent_size.0
+            } else {
+                DEFAULT_FONT_SIZE
+            };
+            if let Some(font_size) =
+                parse_font_size_from_attr(size_attr.value, parent_size, DEFAULT_FONT_SIZE)
+            {
+                font_size
+            } else {
+                DEFAULT_FONT_SIZE
+            }
+        } else if let Some((parent_size,)) = parent {
+            parent_size.0
+        } else {
+            return false;
+        };
+
+        if self.0 != new {
+            *self = Self(new);
+            true
+        } else {
+            false
+        }
+    }
+
+    fn create<'a>(
+        node_view: NodeView<()>,
+        node: <Self::NodeDependencies as Dependancy>::ElementBorrowed<'a>,
+        parent: Option<<Self::ParentDependencies as Dependancy>::ElementBorrowed<'a>>,
+        children: Vec<<Self::ChildDependencies as Dependancy>::ElementBorrowed<'a>>,
+        context: &SendAnyMap,
+    ) -> Self {
+        let mut myself = Self::default();
+        myself.update(node_view, node, parent, children, context);
+        myself
+    }
+}
+
+fn parse_font_size_from_attr(
+    css_value: &OwnedAttributeValue,
+    parent_font_size: f32,
+    root_font_size: f32,
+) -> Option<f32> {
+    match css_value {
+        OwnedAttributeValue::Text(n) => {
+            // css font-size parse.
+            // not support
+            // 1. calc,
+            // 3. relative font size. (smaller, larger)
+            match FontSizeProperty::parse_string(n) {
+                Ok(FontSizeProperty::Length(length)) => match length {
+                    DimensionPercentage::Dimension(l) => match l {
+                        LengthValue::Rem(v) => Some(v * root_font_size),
+                        LengthValue::Em(v) => Some(v * parent_font_size),
+                        _ => l.to_px(),
+                    },
+                    // same with em.
+                    DimensionPercentage::Percentage(p) => Some(p.0 * parent_font_size),
+                    DimensionPercentage::Calc(_c) => None,
+                },
+                Ok(FontSizeProperty::Absolute(abs_val)) => {
+                    let factor = match abs_val {
+                        AbsoluteFontSize::XXSmall => 0.6,
+                        AbsoluteFontSize::XSmall => 0.75,
+                        AbsoluteFontSize::Small => 0.89, // 8/9
+                        AbsoluteFontSize::Medium => 1.0,
+                        AbsoluteFontSize::Large => 1.25,
+                        AbsoluteFontSize::XLarge => 1.5,
+                        AbsoluteFontSize::XXLarge => 2.0,
+                    };
+                    Some(factor * root_font_size)
+                }
+                Ok(FontSizeProperty::Relative(rel_val)) => {
+                    let factor = match rel_val {
+                        RelativeFontSize::Smaller => 0.8,
+                        RelativeFontSize::Larger => 1.25,
+                    };
+                    Some(factor * parent_font_size)
+                }
+                _ => None,
+            }
+        }
+        OwnedAttributeValue::Float(n) => Some(n.to_owned() as f32),
+        OwnedAttributeValue::Int(n) => Some(n.to_owned() as f32),
+        _ => None,
+    }
 }

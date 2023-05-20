@@ -22,8 +22,8 @@ use crate::{
     mouse::MouseEffected,
     prevent_default::PreventDefault,
     render::render,
-    style::{BackgroundColor, Border, FontSize, ForgroundColor},
-    text::TextContext,
+    style::{Background, Border, ForgroundColor},
+    text::{FontSize, TextContext},
     Redraw, TaoEvent,
 };
 use crate::{image::ImageContext, Driver};
@@ -57,7 +57,7 @@ impl ApplicationState {
             MouseEffected::to_type_erased(),
             TaffyLayout::to_type_erased(),
             ForgroundColor::to_type_erased(),
-            BackgroundColor::to_type_erased(),
+            Background::to_type_erased(),
             Border::to_type_erased(),
             Focus::to_type_erased(),
             PreventDefault::to_type_erased(),
@@ -101,7 +101,6 @@ impl ApplicationState {
         let mut scene = Scene::new();
         let mut builder = SceneBuilder::for_scene(&mut scene);
         self.dom.render(&mut self.text_context, &mut builder);
-        // builder.finish();
         let surface_texture = self
             .surface
             .surface
