@@ -54,7 +54,7 @@ fn angle_to_center_offset(full_angle: f64, size: Size<f32>) -> Point {
 
 #[test]
 fn gradient_offset() {
-    // Check that when the angle points dirrectly to a midpoint of a side the offset is correct
+    // Check that when the angle points directly to a midpoint of a side the offset is correct
     assert_eq!(
         angle_to_center_offset(
             0.0,
