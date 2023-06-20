@@ -1,6 +1,6 @@
 # Blitz Core: A wgpu renderer for Everyone
 
-Blitz Core is a native renderer for Dioxus that uses WGPU (via [Vello](https://github.com/linebender/vello)) to draw a DOM-like struture to the screen.
+Blitz Core is a native renderer for Dioxus that uses WGPU (via [Vello](https://github.com/linebender/vello)) to draw a DOM-like structure to the screen.
 
 Blitz Core can be used without Dioxus as a regular CSS + HTML renderer. We try to maintain an API similar to the browser's DOM API for general compatibility.
 
