@@ -23,7 +23,7 @@ pub(crate) enum Axis {
 }
 
 pub(crate) fn translate_color(color: &CssColor) -> Color {
-    let rgb = color.to_rgb();
+    let rgb = color.to_rgb().unwrap();
     if let CssColor::RGBA(rgba) = rgb {
         Color::rgba(
             rgba.red as f64 / 255.0,
