@@ -3,7 +3,7 @@ name = "blitz-core"
 version = "0.1.0"
 edition = "2021"
 authors = ["Jonathan Kelley <jkelleyrtp@gmail.com>", "Evan Almloff"]
-description = "Native iced-wgpu based renderer for Dioxus"
+description = "Native WGPU based renderer for Dioxus"
 license = "MIT/Apache-2.0"
 repository = "https://github.com/DioxusLabs/blitz"
 
