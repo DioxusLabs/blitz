@@ -11,7 +11,7 @@ repository = "https://github.com/DioxusLabs/blitz"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-dioxus-native-core = { git = "https://github.com/DioxusLabs/dioxus/" }
+dioxus-native-core = { git = "https://github.com/DioxusLabs/dioxus/", features = ["layout-attributes"] }
 dioxus-native-core-macro = { git = "https://github.com/DioxusLabs/dioxus/" }
 dioxus-html = { git = "https://github.com/DioxusLabs/dioxus/" }
 taffy = "0.3.12"
