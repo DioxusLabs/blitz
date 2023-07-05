@@ -75,11 +75,15 @@ impl ApplicationState {
         let size = window.inner_size();
         let surface = render_context
             .create_surface(window, size.width, size.height)
-            .await;
+            .await
+            .expect("Error creating surface");
         let wgpu_renderer = VelloRenderer::new(
             &render_context.devices[surface.dev_id].device,
             &RendererOptions {
                 surface_format: Some(surface.config.format),
+                timestamp_period: render_context.devices[surface.dev_id]
+                    .queue
+                    .get_timestamp_period(),
             },
         )
         .unwrap();
