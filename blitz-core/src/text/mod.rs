@@ -207,7 +207,7 @@ fn parse_font_size_from_attr(
                         AbsoluteFontSize::Large => 1.25,
                         AbsoluteFontSize::XLarge => 1.5,
                         AbsoluteFontSize::XXLarge => 2.0,
-                        AbsoluteFontSize::XXXLarge => todo!(),
+                        AbsoluteFontSize::XXXLarge => 3.0,
                     };
                     Some(factor * root_font_size)
                 }
