@@ -5,11 +5,12 @@ on:
     branches:
       - master
     paths:
-      - packages/**
+      - blitz_core/src/**
+      - blitz_core/examples/**
+      - blitz_core/Cargo.toml
       - examples/**
       - src/**
       - .github/**
-      - lib.rs
       - Cargo.toml
 
   pull_request:
@@ -17,6 +18,9 @@ on:
     branches:
       - master
     paths:
+      - blitz_core/src/**
+      - blitz_core/examples/**
+      - blitz_core/Cargo.toml
       - examples/**
       - src/**
       - .github/**
