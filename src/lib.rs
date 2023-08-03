@@ -8,7 +8,7 @@ use blitz_core::EventData;
 use blitz_core::{render, Config, Driver};
 
 pub async fn launch(app: Component<()>) {
-    launch_cfg(app, Config::default()).await
+    launch_cfg(app, Config).await
 }
 
 pub async fn launch_cfg(app: Component<()>, cfg: Config) {
