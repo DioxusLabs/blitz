@@ -20,7 +20,7 @@ lightningcss = "1.0.0-alpha.39"
 cssparser = "0.29.6"
 vello = { git = "https://github.com/linebender/vello", rev = "31f8d9ffa046d5c8cb2da8d99f24f65f00073215" }
 wgpu = "0.16"
-tao = { version = "0.17.0", features = ["serde"] }
+tao = { version = "0.20.0", features = ["serde"] }
 raw-window-handle = "0.5.0"
 anymap = "0.12.1"
 futures-util = "0.3.26"
