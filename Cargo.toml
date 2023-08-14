@@ -19,12 +19,6 @@ blitz-core = { path = "./blitz-core" }
 tokio = { version = "1.26.0", features = ["full"] }
 keyboard-types = "0.6.2"
 
-[target.'cfg(target_arch = "wasm32")'.dependencies]
-console_error_panic_hook = "0.1.7"
-console_log = "0.2.0"
-wasm-bindgen-futures = "0.4.33"
-web-sys = "0.3.60"
-
 [features]
 default = ["hot-reload"]
 hot-reload = []

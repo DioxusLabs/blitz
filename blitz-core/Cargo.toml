@@ -33,9 +33,3 @@ once_cell = "1.17.1"
 image = "0.24.5"
 quadtree_rs = "0.1.2"
 smallvec = "1.10.0"
-
-[target.'cfg(target_arch = "wasm32")'.dependencies]
-console_error_panic_hook = "0.1.7"
-console_log = "0.2.0"
-wasm-bindgen-futures = "0.4.33"
-web-sys = "0.3.60"
