@@ -17,7 +17,7 @@ dioxus-html = { git = "https://github.com/DioxusLabs/dioxus/" }
 dioxus-hot-reload = { git = "https://github.com/DioxusLabs/dioxus/" }
 blitz-core = { path = "./blitz-core" }
 tokio = { version = "1.26.0", features = ["full"] }
-keyboard-types = "0.6.2"
+keyboard-types = "0.7.0"
 
 [features]
 default = ["hot-reload"]
