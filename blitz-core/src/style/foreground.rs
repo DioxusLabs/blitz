@@ -1,8 +1,8 @@
-use cssparser::{Parser, ParserInput, RGBA};
+use cssparser::{Parser, ParserInput};
 use dioxus_native_core::prelude::*;
 use dioxus_native_core_macro::partial_derive_state;
 use lightningcss::traits::Parse;
-use lightningcss::values::color::CssColor;
+use lightningcss::values::color::{CssColor, RGBA};
 use shipyard::Component;
 
 #[derive(Clone, PartialEq, Debug, Component)]
@@ -10,7 +10,7 @@ pub(crate) struct ForgroundColor(pub CssColor);
 
 impl Default for ForgroundColor {
     fn default() -> Self {
-        ForgroundColor(CssColor::RGBA(RGBA::new(0, 0, 0, 255)))
+        ForgroundColor(CssColor::RGBA(RGBA::new(0, 0, 0, 1.)))
     }
 }
 
