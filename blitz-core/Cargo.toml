@@ -17,7 +17,7 @@ dioxus-html = { git = "https://github.com/DioxusLabs/dioxus/" }
 taffy = "0.3.12"
 tokio = { version = "1.25.0", features = ["full"] }
 lightningcss = "1.0.0-alpha.39"
-cssparser = "0.29.6"
+cssparser = "0.33.0"
 vello = { git = "https://github.com/linebender/vello", rev = "9d7c4f00d8db420337706771a37937e9025e089c" }
 wgpu = "0.17"
 tao = { version = "0.20.0", features = ["serde"] }
