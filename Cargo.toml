@@ -1,0 +1,44 @@
+[package]
+name = "stylo-dioxus"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+dioxus = { path = "../../dioxus/packages/dioxus" }
+futures-util = "0.3.29"
+slab = "0.4.9"
+tao = { version = "0.20.0", features = ["serde"] }
+raw-window-handle = "0.5.0"
+euclid = { version = "=0.22.6", features = ["serde"] }
+style = { path = "../servo/components/style", features = ["servo"] }
+
+# guts pulled from blitz
+taffy = "0.3.12"
+tokio = { version = "1.25.0", features = ["full"] }
+vello = { git = "https://github.com/linebender/vello", rev = "9d7c4f00d8db420337706771a37937e9025e089c" }
+wgpu = "0.17"
+shipyard = { version = "0.6.2", features = [
+    "proc",
+    "std",
+], default-features = false }
+
+# we'll need to make these more compatible with servo
+lightningcss = "1.0.0-alpha.39"
+cssparser = "0.33.0"
+# style = { git = "https://github.com/servo/servo.git", features = ["servo"] }
+
+
+[patch."https://github.com/servo/webrender"]
+webrender_api = { path = "../servo/third_party/webrender/webrender_api" }
+webrender = { path = "../servo/third_party/webrender/webrender" }
+
+[patch.crates-io]
+webrender_api = { path = "../servo/third_party/webrender/webrender_api" }
+webrender = { path = "../servo/third_party/webrender/webrender" }
+
+
+# webrender = { path = "third_party/webrender/webrender" }
+# webrender_api = { path = "third_party/webrender/webrender_api" }
+# webrender_api = { path = "../servo/third_party/webrender/webrender_api" }
