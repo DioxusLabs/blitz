@@ -18,3 +18,10 @@ interactive HTML/CSS renderer powered by firefox's stylo engine
 - taffy - layout - fast, relatively stable, competes well with facebook's Yoga project
 - tailwind - css - prebaked stylesheets feed into stylo, no issues, desire to use railwind though
 - dioxus - state - relatively stable, single-threaded, lots of rendering infra to borrow from blitz/native-core
+
+
+## License
+
+This project is licensed under the MIT license.
+
+Unless you explicitly state otherwise, any contribution intentionally submitted for inclusion in Dioxus by you, shall be licensed as MIT, without any additional terms or conditions.
