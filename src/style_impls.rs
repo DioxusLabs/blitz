@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use atomic_refcell::{AtomicRef, AtomicRefCell, AtomicRefMut};
-use dioxus::prelude::LazyNodes;
+use dioxus::{core::exports::bumpalo::Bump, prelude::LazyNodes};
 use euclid::{Rect, Scale, Size2D};
 use fxhash::FxHashMap;
 use html5ever::tendril::TendrilSink;
@@ -22,10 +22,10 @@ use style::{
     dom::{NodeInfo, OpaqueNode, TDocument, TElement, TNode, TShadowRoot},
     media_queries::MediaType,
     media_queries::{Device as StyleDevice, MediaList},
-    properties::PropertyId,
+    properties::{PropertyDeclarationBlock, PropertyId},
     selector_parser::SelectorImpl,
-    servo_arc::Arc,
-    shared_lock::SharedRwLock,
+    servo_arc::{Arc, ArcBorrow},
+    shared_lock::{Locked, SharedRwLock},
     sharing::StyleSharingCandidate,
     stylesheets::{AllowImportRules, DocumentStyleSheet, Origin, Stylesheet},
     stylist::Stylist,
@@ -56,7 +56,7 @@ impl RealDom {
     }
 
     pub fn root(&self) -> BlitzNode {
-        BlitzNode { dom: self, id: 0 }
+        BlitzNode(ref_based_alloc(Entry { id: 0, dom: self }))
     }
 
     pub fn new(html: String) -> RealDom {
@@ -140,14 +140,40 @@ pub struct NodeData {
 
 // Like, we do even need separate types for elements/nodes/documents?
 #[derive(Debug, Clone, Copy)]
-pub struct BlitzNode<'a> {
+pub struct BlitzNode<'a>(&'a Entry<'a>);
+
+impl<'a> BlitzNode<'a> {
+    pub fn with(&self, id: usize) -> Self {
+        Self(ref_based_alloc(Entry { id, dom: self.dom }))
+    }
+}
+
+impl<'a> std::ops::Deref for BlitzNode<'a> {
+    type Target = Entry<'a>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+pub struct Entry<'a> {
     pub dom: &'a RealDom,
     pub id: usize,
 }
 
+impl std::fmt::Debug for Entry<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Entry").field("id", &self.id).finish()
+    }
+}
+
+fn ref_based_alloc(entry: Entry) -> &Entry {
+    Box::leak(Box::new(entry))
+}
+
 impl<'a> BlitzNode<'a> {
     fn me(&self) -> &NodeData {
-        &self.dom.nodes[self.id]
+        &self.0.dom.nodes[self.0.id]
     }
 
     fn next(&self) -> Option<Self> {
@@ -156,9 +182,11 @@ impl<'a> BlitzNode<'a> {
         self.dom.nodes[node.parent?]
             .children
             .get(node.child_id + 1)
-            .map(|id| BlitzNode {
-                id: *id,
-                dom: self.dom,
+            .map(|id| {
+                BlitzNode(ref_based_alloc(Entry {
+                    id: *id,
+                    dom: self.dom,
+                }))
             })
     }
 
@@ -172,10 +200,7 @@ impl<'a> BlitzNode<'a> {
         self.dom.nodes[node.parent?]
             .children
             .get(node.child_id - 1)
-            .map(|id| BlitzNode {
-                id: *id,
-                dom: self.dom,
-            })
+            .map(|id| self.with(*id))
     }
 
     // Get the nth node in the parents child list
@@ -185,10 +210,7 @@ impl<'a> BlitzNode<'a> {
         self.dom.nodes[node.parent?]
             .children
             .get(node.child_id + n)
-            .map(|id| BlitzNode {
-                id: *id,
-                dom: self.dom,
-            })
+            .map(|id| self.with(*id))
     }
 
     fn backward(&self, n: usize) -> Option<Self> {
@@ -201,14 +223,11 @@ impl<'a> BlitzNode<'a> {
         self.dom.nodes[node.parent?]
             .children
             .get(node.child_id - n)
-            .map(|id| BlitzNode {
-                id: *id,
-                dom: self.dom,
-            })
+            .map(|id| self.with(*id))
     }
 
     fn parent(&self) -> Option<Self> {
-        self.me().parent.map(|id| BlitzNode { id, dom: self.dom })
+        self.me().parent.map(|id| self.with(id))
     }
 
     fn is_element(&self) -> bool {
@@ -290,26 +309,21 @@ impl<'a> TNode for BlitzNode<'a> {
     type ConcreteShadowRoot = BlitzNode<'a>;
 
     fn parent_node(&self) -> Option<Self> {
-        self.dom.nodes[self.id]
-            .parent
-            .map(|id| BlitzNode { id, dom: self.dom })
+        self.dom.nodes[self.id].parent.map(|id| self.with(id))
     }
 
     fn first_child(&self) -> Option<Self> {
         self.dom.nodes[self.id]
             .children
             .first()
-            .map(|id| BlitzNode {
-                id: *id,
-                dom: self.dom,
-            })
+            .map(|id| self.with(*id))
     }
 
     fn last_child(&self) -> Option<Self> {
-        self.dom.nodes[self.id].children.last().map(|id| BlitzNode {
-            id: *id,
-            dom: self.dom,
-        })
+        self.dom.nodes[self.id]
+            .children
+            .last()
+            .map(|id| self.with(*id))
     }
 
     fn prev_sibling(&self) -> Option<Self> {
@@ -322,10 +336,7 @@ impl<'a> TNode for BlitzNode<'a> {
         self.dom.nodes[node.parent?]
             .children
             .get(node.child_id - 1)
-            .map(|id| BlitzNode {
-                id: *id,
-                dom: self.dom,
-            })
+            .map(|id| self.with(*id))
     }
 
     fn next_sibling(&self) -> Option<Self> {
@@ -334,17 +345,11 @@ impl<'a> TNode for BlitzNode<'a> {
         self.dom.nodes[node.parent?]
             .children
             .get(node.child_id + 1)
-            .map(|id| BlitzNode {
-                id: *id,
-                dom: self.dom,
-            })
+            .map(|id| self.with(*id))
     }
 
     fn owner_doc(&self) -> Self::ConcreteDocument {
-        BlitzNode {
-            dom: self.dom,
-            id: 0,
-        }
+        self.with(0)
     }
 
     fn is_in_document(&self) -> bool {
@@ -501,15 +506,20 @@ impl<'a> selectors::Element for BlitzNode<'a> {
     }
 
     fn apply_selector_flags(&self, flags: ElementSelectorFlags) {
-        todo!()
+        // todo!()
     }
 
     fn is_link(&self) -> bool {
-        todo!()
+        false
+        // self.me()
+        //     .parsed.data;
+        // .borrow()
+        // .iter()
+        // .any(|(k, _)| k.local == "href")
     }
 
     fn is_html_slot_element(&self) -> bool {
-        todo!()
+        false
     }
 
     fn has_id(
@@ -517,7 +527,7 @@ impl<'a> selectors::Element for BlitzNode<'a> {
         id: &<Self::Impl as selectors::SelectorImpl>::Identifier,
         case_sensitivity: selectors::attr::CaseSensitivity,
     ) -> bool {
-        todo!()
+        false
     }
 
     fn has_class(
@@ -525,26 +535,26 @@ impl<'a> selectors::Element for BlitzNode<'a> {
         name: &<Self::Impl as selectors::SelectorImpl>::Identifier,
         case_sensitivity: selectors::attr::CaseSensitivity,
     ) -> bool {
-        todo!()
+        false
     }
 
     fn imported_part(
         &self,
         name: &<Self::Impl as selectors::SelectorImpl>::Identifier,
     ) -> Option<<Self::Impl as selectors::SelectorImpl>::Identifier> {
-        todo!()
+        None
     }
 
     fn is_part(&self, name: &<Self::Impl as selectors::SelectorImpl>::Identifier) -> bool {
-        todo!()
+        false
     }
 
     fn is_empty(&self) -> bool {
-        todo!()
+        self.dom_children().last().is_none()
     }
 
     fn is_root(&self) -> bool {
-        todo!()
+        self.parent().is_none()
     }
 }
 
@@ -560,7 +570,7 @@ impl<'a> TElement for BlitzNode<'a> {
     type TraversalChildrenIterator = Traverser<'a>;
 
     fn as_node(&self) -> Self::ConcreteNode {
-        todo!()
+        self.clone()
     }
 
     fn traversal_children(&self) -> style::dom::LayoutIterator<Self::TraversalChildrenIterator> {
@@ -568,73 +578,79 @@ impl<'a> TElement for BlitzNode<'a> {
     }
 
     fn is_html_element(&self) -> bool {
-        todo!()
+        self.is_element()
     }
 
+    // not implemented.....
     fn is_mathml_element(&self) -> bool {
-        todo!()
+        false
     }
 
+    // need to check the namespace, maybe?
     fn is_svg_element(&self) -> bool {
-        todo!()
+        false
     }
 
-    fn style_attribute(
-        &self,
-    ) -> Option<
-        style::servo_arc::ArcBorrow<
-            style::shared_lock::Locked<style::properties::PropertyDeclarationBlock>,
-        >,
-    > {
-        todo!()
+    fn style_attribute(&self) -> Option<ArcBorrow<Locked<PropertyDeclarationBlock>>> {
+        // hmmmm, we need to parse the style attribute, maybe?
+        None
     }
 
     fn animation_rule(
         &self,
         _: &SharedStyleContext,
-    ) -> Option<Arc<style::shared_lock::Locked<style::properties::PropertyDeclarationBlock>>> {
-        todo!()
+    ) -> Option<Arc<Locked<PropertyDeclarationBlock>>> {
+        None
     }
 
     fn transition_rule(
         &self,
         context: &SharedStyleContext,
-    ) -> Option<Arc<style::shared_lock::Locked<style::properties::PropertyDeclarationBlock>>> {
-        todo!()
+    ) -> Option<Arc<Locked<PropertyDeclarationBlock>>> {
+        None
     }
 
     fn state(&self) -> ElementState {
-        todo!()
+        // todo: we should track this
+        ElementState::empty()
     }
 
     fn has_part_attr(&self) -> bool {
-        todo!()
+        false
     }
 
     fn exports_any_part(&self) -> bool {
-        todo!()
+        false
     }
 
     fn id(&self) -> Option<&style::Atom> {
-        todo!()
+        None
+        // let data = self.me();
+        // match &data.parsed.data {
+        //     markup5ever_rcdom::NodeData::Element { attrs, .. } => attrs
+        //         .borrow()
+        //         .iter()
+        //         .find(|attr| attr.name.local.as_ref() == "id")
+        //         .map(|attr| attr.value),
+        //     _ => None,
+        // }
     }
 
     fn each_class<F>(&self, callback: F)
     where
         F: FnMut(&style::values::AtomIdent),
     {
-        todo!()
+        //
     }
 
     fn each_attr_name<F>(&self, callback: F)
     where
         F: FnMut(&style::LocalName),
     {
-        todo!()
     }
 
     fn has_dirty_descendants(&self) -> bool {
-        todo!()
+        true
     }
 
     fn has_snapshot(&self) -> bool {
@@ -646,36 +662,26 @@ impl<'a> TElement for BlitzNode<'a> {
         false
     }
 
-    unsafe fn set_handled_snapshot(&self) {
-        todo!()
-    }
+    unsafe fn set_handled_snapshot(&self) {}
 
-    unsafe fn set_dirty_descendants(&self) {
-        todo!()
-    }
+    unsafe fn set_dirty_descendants(&self) {}
 
-    unsafe fn unset_dirty_descendants(&self) {
-        todo!()
-    }
+    unsafe fn unset_dirty_descendants(&self) {}
 
-    fn store_children_to_process(&self, n: isize) {
-        todo!()
-    }
+    fn store_children_to_process(&self, n: isize) {}
 
     fn did_process_child(&self) -> isize {
-        todo!()
+        1
     }
 
     unsafe fn ensure_data(&self) -> AtomicRefMut<style::data::ElementData> {
-        todo!()
+        self.me().style.borrow_mut()
     }
 
-    unsafe fn clear_data(&self) {
-        todo!()
-    }
+    unsafe fn clear_data(&self) {}
 
     fn has_data(&self) -> bool {
-        todo!()
+        false
     }
 
     fn borrow_data(&self) -> Option<AtomicRef<style::data::ElementData>> {
@@ -687,15 +693,15 @@ impl<'a> TElement for BlitzNode<'a> {
     }
 
     fn skip_item_display_fixup(&self) -> bool {
-        todo!()
+        false
     }
 
     fn may_have_animations(&self) -> bool {
-        todo!()
+        false
     }
 
     fn has_animations(&self, context: &SharedStyleContext) -> bool {
-        todo!()
+        false
     }
 
     fn has_css_animations(
@@ -703,7 +709,7 @@ impl<'a> TElement for BlitzNode<'a> {
         context: &SharedStyleContext,
         pseudo_element: Option<style::selector_parser::PseudoElement>,
     ) -> bool {
-        todo!()
+        false
     }
 
     fn has_css_transitions(
@@ -711,19 +717,19 @@ impl<'a> TElement for BlitzNode<'a> {
         context: &SharedStyleContext,
         pseudo_element: Option<style::selector_parser::PseudoElement>,
     ) -> bool {
-        todo!()
+        false
     }
 
     fn shadow_root(&self) -> Option<<Self::ConcreteNode as TNode>::ConcreteShadowRoot> {
-        todo!()
+        None
     }
 
     fn containing_shadow(&self) -> Option<<Self::ConcreteNode as TNode>::ConcreteShadowRoot> {
-        todo!()
+        None
     }
 
     fn lang_attr(&self) -> Option<style::selector_parser::AttrValue> {
-        todo!()
+        None
     }
 
     fn match_element_lang(
@@ -731,11 +737,11 @@ impl<'a> TElement for BlitzNode<'a> {
         override_lang: Option<Option<style::selector_parser::AttrValue>>,
         value: &style::selector_parser::Lang,
     ) -> bool {
-        todo!()
+        false
     }
 
     fn is_html_document_body_element(&self) -> bool {
-        todo!()
+        self.0.id == 0
     }
 
     fn synthesize_presentational_hints_for_legacy_attributes<V>(
@@ -745,19 +751,26 @@ impl<'a> TElement for BlitzNode<'a> {
     ) where
         V: Push<style::applicable_declarations::ApplicableDeclarationBlock>,
     {
-        todo!()
     }
 
     fn local_name(
         &self,
     ) -> &<style::selector_parser::SelectorImpl as selectors::parser::SelectorImpl>::BorrowedLocalName
     {
-        todo!()
+        let data = self.me();
+        match &data.parsed.data {
+            markup5ever_rcdom::NodeData::Element { name, .. } => &name.local,
+            _ => panic!("Not an element"),
+        }
     }
 
     fn namespace(&self)
     -> &<style::selector_parser::SelectorImpl as selectors::parser::SelectorImpl>::BorrowedNamespaceUrl{
-        todo!()
+        let data = self.me();
+        match &data.parsed.data {
+            markup5ever_rcdom::NodeData::Element { name, .. } => &name.ns,
+            _ => panic!("Not an element"),
+        }
     }
 
     fn query_container_size(
@@ -777,37 +790,6 @@ impl<'a> Iterator for Traverser<'a> {
 
     fn next(&mut self) -> Option<Self::Item> {
         todo!()
-    }
-}
-
-pub struct BlitzTraversal<'a> {
-    cx: &'a SharedStyleContext<'a>,
-}
-impl<'a> BlitzTraversal<'a> {
-    pub(crate) fn new(cx: &'a SharedStyleContext) -> Self {
-        Self { cx }
-    }
-}
-
-impl<'a, E: TElement> DomTraversal<E> for BlitzTraversal<'a> {
-    fn process_preorder<F>(
-        &self,
-        data: &PerLevelTraversalData,
-        context: &mut StyleContext<E>,
-        node: E::ConcreteNode,
-        note_child: F,
-    ) where
-        F: FnMut(E::ConcreteNode),
-    {
-        todo!()
-    }
-
-    fn process_postorder(&self, contect: &mut StyleContext<E>, node: E::ConcreteNode) {
-        // nothing to do yet, i'm not even sure what we're supposed to do here
-    }
-
-    fn shared_context(&self) -> &SharedStyleContext {
-        self.cx
     }
 }
 

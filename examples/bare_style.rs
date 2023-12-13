@@ -21,8 +21,12 @@ fn main() {
 
     let nodes = rsx! {
         body {
-            div { background_color: "red", padding: "10px",
-                div { "hello world" }
+            div {
+                div {
+                    div {
+                        "hi"
+                    }
+                }
             }
         }
     };

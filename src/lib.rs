@@ -9,7 +9,7 @@ use style::{
         QuirksMode, RegisteredSpeculativePainters, SharedStyleContext, StyleContext,
         ThreadLocalStyleContext,
     },
-    dom::{SendNode, TDocument, TElement, TNode, TShadowRoot},
+    dom::{NodeInfo, SendNode, TDocument, TElement, TNode, TShadowRoot},
     driver::traverse_dom,
     global_style_data::GLOBAL_STYLE_DATA,
     media_queries::MediaType,
@@ -19,14 +19,15 @@ use style::{
     shared_lock::{SharedRwLock, StylesheetGuards},
     stylesheets::{AllowImportRules, DocumentStyleSheet, Origin, Stylesheet},
     stylist::Stylist,
-    traversal::{DomTraversal, PerLevelTraversalData, PreTraverseToken},
+    thread_state::ThreadState,
+    traversal::{resolve_style, DomTraversal, PerLevelTraversalData, PreTraverseToken},
     traversal_flags::TraversalFlags,
 };
 use style_impls::{BlitzNode, RealDom};
-
-use crate::style_impls::BlitzTraversal;
+use style_traverser::RecalcStyle;
 
 mod style_impls;
+mod style_traverser;
 
 static QUIRKS_MODE: QuirksMode = QuirksMode::NoQuirks;
 
@@ -90,6 +91,8 @@ pub fn render(css: &str, markup: LazyNodes) {
     //  handle_reflow
     // tests/unit/style/custom_properties.rs
 
+    style::thread_state::enter(ThreadState::LAYOUT);
+
     // Make some CSS
     let stylesheet = make_document_stylesheet(css);
 
@@ -144,18 +147,40 @@ pub fn render(css: &str, markup: LazyNodes) {
     // Note that html5ever parses the first node as the document, so we need to unwrap it and get the first child
     // For the sake of this demo, it's always just a single body node, but eventually we will want to construct something like the
     // BoxTree struct that servo uses.
-    let root_element = TDocument::as_node(&markup.root())
+    let root = markup.root();
+    let root_element = TDocument::as_node(&root)
         .first_child()
         .unwrap()
         .as_element()
         .unwrap();
 
-    let token = BlitzTraversal::pre_traverse(root_element, &shared);
-    let traversal = BlitzTraversal::new(&shared);
+    let token = style_traverser::RecalcStyle::pre_traverse(root_element, &shared);
+    let traversal = style_traverser::RecalcStyle::new(shared);
+
+    let mut tlc = ThreadLocalStyleContext::new();
+    let mut context = StyleContext {
+        shared: DomTraversal::<BlitzNode>::shared_context(&traversal),
+        thread_local: &mut tlc,
+    };
+
+    // force a style manually for each node in the tree
+    // I'm not sure if this what you're supposed to do, but eh
+    for node_idx in 0..markup.nodes.len() {
+        let entry = root.with(node_idx);
+        if entry.is_element() {
+            resolve_style(
+                &mut context,
+                entry,
+                style::stylist::RuleInclusion::All,
+                None,
+                None,
+            );
+        }
+    }
 
     // Style the elements, resolving their data
     // components/style/driver.rs
-    traverse_dom(&traversal, token, None);
+    // traverse_dom(&traversal, token, None);
 
     // Now, we should be able to query the elements for their styles
     // Print out the styles for each element
