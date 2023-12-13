@@ -22,9 +22,9 @@ use style::{
     traversal::{DomTraversal, PerLevelTraversalData, PreTraverseToken},
     traversal_flags::TraversalFlags,
 };
-use style_impls::{BlitzDocument, RealDom};
+use style_impls::{BlitzNode, RealDom};
 
-use crate::style_impls::{BlitzElement, BlitzTraversal};
+use crate::style_impls::BlitzTraversal;
 
 mod style_impls;
 
@@ -130,7 +130,7 @@ pub fn render(css: &str, markup: LazyNodes) {
     let animations = DocumentAnimationSet::default();
     let snapshots = SnapshotMap::new();
 
-    let shared = build_style_context::<BlitzElement>(
+    let shared = build_style_context::<BlitzNode>(
         &stylist,
         guards,
         &snapshots,
@@ -144,16 +144,14 @@ pub fn render(css: &str, markup: LazyNodes) {
     // Note that html5ever parses the first node as the document, so we need to unwrap it and get the first child
     // For the sake of this demo, it's always just a single body node, but eventually we will want to construct something like the
     // BoxTree struct that servo uses.
-    let root_element = markup
-        .root()
-        .as_node()
+    let root_element = TDocument::as_node(&markup.root())
         .first_child()
         .unwrap()
         .as_element()
         .unwrap();
 
     let token = BlitzTraversal::pre_traverse(root_element, &shared);
-    let traversal = BlitzTraversal::new();
+    let traversal = BlitzTraversal::new(&shared);
 
     // Style the elements, resolving their data
     // components/style/driver.rs
