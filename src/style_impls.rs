@@ -5,12 +5,19 @@ use dioxus::prelude::LazyNodes;
 use euclid::{Rect, Scale, Size2D};
 use fxhash::FxHashMap;
 use html5ever::tendril::TendrilSink;
-use markup5ever_rcdom::RcDom;
-use selectors::{matching::VisitedHandlingMode, sink::Push};
+use markup5ever_rcdom::{Handle, RcDom};
+use selectors::{
+    matching::{ElementSelectorFlags, MatchingContext, VisitedHandlingMode},
+    sink::Push,
+    OpaqueElement,
+};
 use servo_url::ServoUrl;
 use slab::Slab;
 use style::{
-    context::{QuirksMode, RegisteredSpeculativePainter, RegisteredSpeculativePainters},
+    context::{
+        QuirksMode, RegisteredSpeculativePainter, RegisteredSpeculativePainters,
+        SharedStyleContext, StyleContext,
+    },
     data::ElementData,
     dom::{NodeInfo, OpaqueNode, TDocument, TElement, TNode, TShadowRoot},
     media_queries::MediaType,
@@ -21,16 +28,25 @@ use style::{
     shared_lock::SharedRwLock,
     stylesheets::{AllowImportRules, DocumentStyleSheet, Origin, Stylesheet},
     stylist::Stylist,
-    traversal::DomTraversal,
+    traversal::{DomTraversal, PerLevelTraversalData},
     Atom,
 };
 use style_traits::{dom::ElementState, SpeculativePainter};
 
 pub struct RealDom {
-    nodes: Slab<NodeData>,
-    document: RcDom,
-    lock: SharedRwLock,
+    pub nodes: Slab<NodeData>,
+    pub document: RcDom,
+    pub lock: SharedRwLock,
     // documents: HashMap<ServoUrl, BlitzDocument>,
+}
+
+impl std::fmt::Debug for RealDom {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("RealDom")
+            .field("nodes", &self.nodes)
+            .field("lock", &self.lock)
+            .finish()
+    }
 }
 
 impl RealDom {
@@ -39,15 +55,12 @@ impl RealDom {
     }
 
     pub fn root(&self) -> BlitzDocument {
-        BlitzDocument {
-            lock: &self.lock,
-            id: 0,
-        }
+        BlitzDocument { dom: self, id: 0 }
     }
 
     pub fn new(html: String) -> RealDom {
         // parse the html into a slab of node
-        let nodes = Slab::new();
+        let mut nodes = Slab::new();
 
         // parse the html into a document
         let document = html5ever::parse_document(RcDom::default(), Default::default())
@@ -55,24 +68,78 @@ impl RealDom {
             .read_from(&mut html.as_bytes())
             .unwrap();
 
-        let lock = SharedRwLock::new();
+        fill_slab_with_handles(&mut nodes, document.document.clone(), 0, None);
 
         RealDom {
             nodes,
             document,
-            lock,
+            lock: SharedRwLock::new(),
         }
     }
 }
 
-struct NodeData {
+// Assign IDs to the RcDom nodes by walking the tree and pushing them into the slab
+// We just care that the root is 0, all else can be whatever
+// Returns the node that just got inserted
+fn fill_slab_with_handles(
+    slab: &mut Slab<NodeData>,
+    node: Handle,
+    child_index: usize,
+    parent: Option<usize>,
+) -> usize {
+    // todo: we want to skip filling comments/scripts/control, etc
+    // Dioxus-rsx won't generate this however, so we're fine for now, but elements and text nodes are different
+
+    // Reserve an entry
+    let id = {
+        let entry = slab.vacant_entry();
+        let id = entry.key();
+        entry.insert(NodeData {
+            id,
+            style: Default::default(),
+            child_id: child_index,
+            children: vec![],
+            parsed: node.clone(),
+            parent,
+        });
+        id
+    };
+
+    // Now go insert its children. We want their IDs to come back here so we know how to walk them.
+    // We'll want some sort of linked list thing too to implement NextSibiling, etc
+    // We're going to accumulate the children IDs here and then go back and edit the entry
+    // All this dance is to make the borrow checker happy.
+    slab[id].children = node
+        .children
+        .borrow()
+        .iter()
+        .enumerate()
+        .map(|(idx, child)| fill_slab_with_handles(slab, child.clone(), idx, Some(id)))
+        .collect();
+
+    id
+}
+
+#[derive(Debug)]
+pub struct NodeData {
     // todo: layout
-    style: AtomicRefCell<ElementData>,
+    pub style: AtomicRefCell<ElementData>,
+
+    pub children: Vec<usize>,
+
+    pub id: usize,
+
+    pub child_id: usize,
+
+    pub parent: Option<usize>,
+
+    // might want to make this weak
+    pub parsed: markup5ever_rcdom::Handle,
 }
 
 #[derive(Clone, Copy)]
 pub struct BlitzDocument<'a> {
-    lock: &'a SharedRwLock,
+    dom: &'a RealDom,
     id: usize,
 }
 
@@ -82,7 +149,7 @@ impl<'a> TDocument for BlitzDocument<'a> {
     fn as_node(&self) -> Self::ConcreteNode {
         BlitzNode {
             id: self.id,
-            lock: self.lock,
+            dom: &self.dom,
         }
     }
 
@@ -95,14 +162,14 @@ impl<'a> TDocument for BlitzDocument<'a> {
     }
 
     fn shared_lock(&self) -> &SharedRwLock {
-        self.lock
+        &self.dom.lock
     }
 }
 
 #[derive(Clone, Copy, Debug)]
 pub struct BlitzNode<'a> {
     id: usize,
-    lock: &'a SharedRwLock,
+    dom: &'a RealDom,
 }
 
 impl PartialEq for BlitzNode<'_> {
@@ -123,7 +190,8 @@ impl<'a> NodeInfo for BlitzNode<'a> {
 
 #[derive(Debug, Clone, Copy)]
 pub struct BlitzShadowRoot<'a> {
-    lock: &'a SharedRwLock,
+    dom: &'a RealDom,
+    id: usize,
 }
 
 impl PartialEq for BlitzShadowRoot<'_> {
@@ -136,18 +204,21 @@ impl<'a> TShadowRoot for BlitzShadowRoot<'a> {
     type ConcreteNode = BlitzNode<'a>;
 
     fn as_node(&self) -> Self::ConcreteNode {
-        todo!()
+        BlitzNode {
+            dom: self.dom,
+            id: self.id,
+        }
     }
 
     fn host(&self) -> <Self::ConcreteNode as TNode>::ConcreteElement {
-        todo!()
+        todo!("Shadow roots not implemented")
     }
 
     fn style_data<'b>(&self) -> Option<&'b style::stylist::CascadeData>
     where
         Self: 'b,
     {
-        todo!()
+        todo!("Shadow roots not implemented")
     }
 }
 
@@ -160,35 +231,73 @@ impl<'a> TNode for BlitzNode<'a> {
     type ConcreteShadowRoot = BlitzShadowRoot<'a>;
 
     fn parent_node(&self) -> Option<Self> {
-        todo!()
+        self.dom.nodes[self.id]
+            .parent
+            .map(|id| BlitzNode { id, dom: self.dom })
     }
 
     fn first_child(&self) -> Option<Self> {
-        todo!()
+        self.dom.nodes[self.id]
+            .children
+            .first()
+            .map(|id| BlitzNode {
+                id: *id,
+                dom: self.dom,
+            })
     }
 
     fn last_child(&self) -> Option<Self> {
-        todo!()
+        self.dom.nodes[self.id].children.last().map(|id| BlitzNode {
+            id: *id,
+            dom: self.dom,
+        })
     }
 
     fn prev_sibling(&self) -> Option<Self> {
-        todo!()
+        let node = &self.dom.nodes[self.id];
+
+        if node.child_id == 0 {
+            return None;
+        }
+
+        self.dom.nodes[node.parent?]
+            .children
+            .get(node.child_id - 1)
+            .map(|id| BlitzNode {
+                id: *id,
+                dom: self.dom,
+            })
     }
 
     fn next_sibling(&self) -> Option<Self> {
-        todo!()
+        let node = &self.dom.nodes[self.id];
+
+        self.dom.nodes[node.parent?]
+            .children
+            .get(node.child_id + 1)
+            .map(|id| BlitzNode {
+                id: *id,
+                dom: self.dom,
+            })
     }
 
     fn owner_doc(&self) -> Self::ConcreteDocument {
-        todo!()
+        BlitzDocument {
+            dom: self.dom,
+            id: 0,
+        }
     }
 
     fn is_in_document(&self) -> bool {
-        todo!()
+        true
     }
 
+    // I think this is the same as parent_node only in the cases when the direct parent is not a real element, forcing us
+    // to travel upwards
+    //
+    // For the sake of this demo, we're just going to return the parent node ann
     fn traversal_parent(&self) -> Option<Self::ConcreteElement> {
-        todo!()
+        self.parent_node().and_then(|node| node.as_element())
     }
 
     fn opaque(&self) -> OpaqueNode {
@@ -200,41 +309,56 @@ impl<'a> TNode for BlitzNode<'a> {
     }
 
     fn as_element(&self) -> Option<Self::ConcreteElement> {
-        todo!()
+        match &self.dom.nodes[self.id].parsed.data {
+            markup5ever_rcdom::NodeData::Element { .. } => Some(BlitzElement {
+                dom: self.dom,
+                id: self.id,
+            }),
+            _ => None,
+        }
     }
 
     fn as_document(&self) -> Option<Self::ConcreteDocument> {
-        todo!()
+        if self.id != 0 {
+            return None;
+        };
+
+        Some(BlitzDocument {
+            dom: self.dom,
+            id: self.id,
+        })
     }
 
     fn as_shadow_root(&self) -> Option<Self::ConcreteShadowRoot> {
-        todo!()
+        todo!("Shadow roots aren't real, yet")
     }
 }
 
 impl<'a> selectors::Element for BlitzNode<'a> {
     type Impl = SelectorImpl;
 
+    // use the ptr of the rc as the id
     fn opaque(&self) -> selectors::OpaqueElement {
-        todo!()
+        OpaqueElement::new(self.dom.nodes[self.id].parsed.as_ref())
     }
 
     fn parent_element(&self) -> Option<Self> {
-        todo!()
+        self.parent_node()
     }
 
     fn parent_node_is_shadow_root(&self) -> bool {
-        todo!()
+        false
     }
 
     fn containing_shadow_host(&self) -> Option<Self> {
-        todo!()
+        None
     }
 
     fn is_pseudo_element(&self) -> bool {
-        todo!()
+        false
     }
 
+    // These methods are implemented naively since we only threaded real nodes and not fake nodes
     fn prev_sibling_element(&self) -> Option<Self> {
         todo!()
     }
@@ -285,7 +409,7 @@ impl<'a> selectors::Element for BlitzNode<'a> {
     fn match_non_ts_pseudo_class(
         &self,
         pc: &<Self::Impl as selectors::SelectorImpl>::NonTSPseudoClass,
-        context: &mut selectors::matching::MatchingContext<Self::Impl>,
+        context: &mut MatchingContext<Self::Impl>,
     ) -> bool {
         todo!()
     }
@@ -293,12 +417,12 @@ impl<'a> selectors::Element for BlitzNode<'a> {
     fn match_pseudo_element(
         &self,
         pe: &<Self::Impl as selectors::SelectorImpl>::PseudoElement,
-        context: &mut selectors::matching::MatchingContext<Self::Impl>,
+        context: &mut MatchingContext<Self::Impl>,
     ) -> bool {
         todo!()
     }
 
-    fn apply_selector_flags(&self, flags: selectors::matching::ElementSelectorFlags) {
+    fn apply_selector_flags(&self, flags: ElementSelectorFlags) {
         todo!()
     }
 
@@ -348,7 +472,8 @@ impl<'a> selectors::Element for BlitzNode<'a> {
 
 #[derive(Clone, Copy, Debug)]
 pub struct BlitzElement<'a> {
-    lock: &'a SharedRwLock,
+    dom: &'a RealDom,
+    id: usize,
 }
 
 impl Eq for BlitzElement<'_> {}
@@ -360,7 +485,7 @@ impl PartialEq for BlitzElement<'_> {
 
 impl std::hash::Hash for BlitzElement<'_> {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        todo!()
+        state.write_usize(self.id)
     }
 }
 
@@ -368,23 +493,25 @@ impl<'a> selectors::Element for BlitzElement<'a> {
     type Impl = SelectorImpl;
 
     fn opaque(&self) -> selectors::OpaqueElement {
-        todo!()
+        OpaqueElement::new(self.dom.nodes[self.id].parsed.as_ref())
     }
 
     fn parent_element(&self) -> Option<Self> {
-        todo!()
+        self.as_node()
+            .parent_node()
+            .and_then(|node| node.as_element())
     }
 
     fn parent_node_is_shadow_root(&self) -> bool {
-        todo!()
+        false
     }
 
     fn containing_shadow_host(&self) -> Option<Self> {
-        todo!()
+        None
     }
 
     fn is_pseudo_element(&self) -> bool {
-        todo!()
+        false
     }
 
     fn prev_sibling_element(&self) -> Option<Self> {
@@ -407,7 +534,13 @@ impl<'a> selectors::Element for BlitzElement<'a> {
         &self,
         local_name: &<Self::Impl as selectors::SelectorImpl>::BorrowedLocalName,
     ) -> bool {
-        todo!()
+        let data = &self.dom.nodes[self.id].parsed.data;
+
+        let markup5ever_rcdom::NodeData::Element { name, .. } = data else {
+            return false;
+        };
+
+        name.local.eq_ignore_ascii_case(local_name)
     }
 
     fn has_namespace(
@@ -437,20 +570,20 @@ impl<'a> selectors::Element for BlitzElement<'a> {
     fn match_non_ts_pseudo_class(
         &self,
         pc: &<Self::Impl as selectors::SelectorImpl>::NonTSPseudoClass,
-        context: &mut selectors::matching::MatchingContext<Self::Impl>,
+        context: &mut MatchingContext<Self::Impl>,
     ) -> bool {
-        todo!()
+        false
     }
 
     fn match_pseudo_element(
         &self,
         pe: &<Self::Impl as selectors::SelectorImpl>::PseudoElement,
-        context: &mut selectors::matching::MatchingContext<Self::Impl>,
+        context: &mut MatchingContext<Self::Impl>,
     ) -> bool {
-        todo!()
+        false
     }
 
-    fn apply_selector_flags(&self, flags: selectors::matching::ElementSelectorFlags) {
+    fn apply_selector_flags(&self, flags: ElementSelectorFlags) {
         todo!()
     }
 
@@ -535,14 +668,14 @@ impl<'a> TElement for BlitzElement<'a> {
 
     fn animation_rule(
         &self,
-        _: &style::context::SharedStyleContext,
+        _: &SharedStyleContext,
     ) -> Option<Arc<style::shared_lock::Locked<style::properties::PropertyDeclarationBlock>>> {
         todo!()
     }
 
     fn transition_rule(
         &self,
-        context: &style::context::SharedStyleContext,
+        context: &SharedStyleContext,
     ) -> Option<Arc<style::shared_lock::Locked<style::properties::PropertyDeclarationBlock>>> {
         todo!()
     }
@@ -637,13 +770,13 @@ impl<'a> TElement for BlitzElement<'a> {
         todo!()
     }
 
-    fn has_animations(&self, context: &style::context::SharedStyleContext) -> bool {
+    fn has_animations(&self, context: &SharedStyleContext) -> bool {
         todo!()
     }
 
     fn has_css_animations(
         &self,
-        context: &style::context::SharedStyleContext,
+        context: &SharedStyleContext,
         pseudo_element: Option<style::selector_parser::PseudoElement>,
     ) -> bool {
         todo!()
@@ -651,7 +784,7 @@ impl<'a> TElement for BlitzElement<'a> {
 
     fn has_css_transitions(
         &self,
-        context: &style::context::SharedStyleContext,
+        context: &SharedStyleContext,
         pseudo_element: Option<style::selector_parser::PseudoElement>,
     ) -> bool {
         todo!()
@@ -733,8 +866,8 @@ impl BlitzTraversal {
 impl<E: TElement> DomTraversal<E> for BlitzTraversal {
     fn process_preorder<F>(
         &self,
-        data: &style::traversal::PerLevelTraversalData,
-        context: &mut style::context::StyleContext<E>,
+        data: &PerLevelTraversalData,
+        context: &mut StyleContext<E>,
         node: E::ConcreteNode,
         note_child: F,
     ) where
@@ -743,67 +876,21 @@ impl<E: TElement> DomTraversal<E> for BlitzTraversal {
         todo!()
     }
 
-    fn process_postorder(
-        &self,
-        contect: &mut style::context::StyleContext<E>,
-        node: E::ConcreteNode,
-    ) {
+    fn process_postorder(&self, contect: &mut StyleContext<E>, node: E::ConcreteNode) {
         todo!()
     }
 
-    fn shared_context(&self) -> &style::context::SharedStyleContext {
+    fn shared_context(&self) -> &SharedStyleContext {
         todo!()
     }
 }
 
-// pub struct RegisteredPainterImpl {
-//     painter: Box<dyn Painter>,
-//     name: Atom,
-//     // FIXME: Should be a PrecomputedHashMap.
-//     properties: FxHashMap<Atom, PropertyId>,
-// }
-
-// impl SpeculativePainter for RegisteredPainterImpl {
-//     fn speculatively_draw_a_paint_image(
-//         &self,
-//         properties: Vec<(Atom, String)>,
-//         arguments: Vec<String>,
-//     ) {
-//         self.painter
-//             .speculatively_draw_a_paint_image(properties, arguments);
-//     }
-// }
-
-// impl RegisteredSpeculativePainter for RegisteredPainterImpl {
-//     fn properties(&self) -> &FxHashMap<Atom, PropertyId> {
-//         &self.properties
-//     }
-//     fn name(&self) -> Atom {
-//         self.name.clone()
-//     }
-// }
-
-// impl Painter for RegisteredPainterImpl {
-//     fn draw_a_paint_image(
-//         &self,
-//         size: Size2D<f32, CSSPixel>,
-//         device_pixel_ratio: Scale<f32, CSSPixel, DevicePixel>,
-//         properties: Vec<(Atom, String)>,
-//         arguments: Vec<String>,
-//     ) -> Result<DrawAPaintImageResult, PaintWorkletError> {
-//         self.painter
-//             .draw_a_paint_image(size, device_pixel_ratio, properties, arguments)
-//     }
-// }
-
+/// Handle custom painters like images for layouting
+///
+/// todo: actually implement this
 pub struct RegisteredPaintersImpl;
-// struct RegisteredPaintersImpl(FxHashMap<Atom, RegisteredPainterImpl>);
-
 impl RegisteredSpeculativePainters for RegisteredPaintersImpl {
     fn get(&self, name: &Atom) -> Option<&dyn RegisteredSpeculativePainter> {
         None
-        // self.0
-        //     .get(&name)
-        // .map(|painter| painter as &dyn RegisteredSpeculativePainter)
     }
 }
