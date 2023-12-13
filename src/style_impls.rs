@@ -12,7 +12,7 @@ use slab::Slab;
 use style::{
     context::{QuirksMode, RegisteredSpeculativePainter, RegisteredSpeculativePainters},
     data::ElementData,
-    dom::{NodeInfo, TDocument, TElement, TNode, TShadowRoot},
+    dom::{NodeInfo, OpaqueNode, TDocument, TElement, TNode, TShadowRoot},
     media_queries::MediaType,
     media_queries::{Device as StyleDevice, MediaList},
     properties::PropertyId,
@@ -21,6 +21,7 @@ use style::{
     shared_lock::SharedRwLock,
     stylesheets::{AllowImportRules, DocumentStyleSheet, Origin, Stylesheet},
     stylist::Stylist,
+    traversal::DomTraversal,
     Atom,
 };
 use style_traits::{dom::ElementState, SpeculativePainter};
@@ -28,12 +29,20 @@ use style_traits::{dom::ElementState, SpeculativePainter};
 pub struct RealDom {
     nodes: Slab<NodeData>,
     document: RcDom,
+    lock: SharedRwLock,
     // documents: HashMap<ServoUrl, BlitzDocument>,
 }
 
 impl RealDom {
     pub fn from_dioxus(nodes: LazyNodes) -> Self {
         Self::new(dioxus_ssr::render_lazy(nodes))
+    }
+
+    pub fn root(&self) -> BlitzDocument {
+        BlitzDocument {
+            lock: &self.lock,
+            id: 0,
+        }
     }
 
     pub fn new(html: String) -> RealDom {
@@ -46,7 +55,13 @@ impl RealDom {
             .read_from(&mut html.as_bytes())
             .unwrap();
 
-        RealDom { nodes, document }
+        let lock = SharedRwLock::new();
+
+        RealDom {
+            nodes,
+            document,
+            lock,
+        }
     }
 }
 
@@ -58,13 +73,17 @@ struct NodeData {
 #[derive(Clone, Copy)]
 pub struct BlitzDocument<'a> {
     lock: &'a SharedRwLock,
+    id: usize,
 }
 
 impl<'a> TDocument for BlitzDocument<'a> {
     type ConcreteNode = BlitzNode<'a>;
 
     fn as_node(&self) -> Self::ConcreteNode {
-        todo!()
+        BlitzNode {
+            id: self.id,
+            lock: self.lock,
+        }
     }
 
     fn is_html_document(&self) -> bool {
@@ -82,7 +101,7 @@ impl<'a> TDocument for BlitzDocument<'a> {
 
 #[derive(Clone, Copy, Debug)]
 pub struct BlitzNode<'a> {
-    id: u64,
+    id: usize,
     lock: &'a SharedRwLock,
 }
 
@@ -172,12 +191,12 @@ impl<'a> TNode for BlitzNode<'a> {
         todo!()
     }
 
-    fn opaque(&self) -> style::dom::OpaqueNode {
-        todo!()
+    fn opaque(&self) -> OpaqueNode {
+        OpaqueNode(self.id)
     }
 
     fn debug_id(self) -> usize {
-        todo!()
+        self.id
     }
 
     fn as_element(&self) -> Option<Self::ConcreteElement> {
@@ -700,6 +719,39 @@ impl<'a> Iterator for Traverser<'a> {
     type Item = BlitzNode<'a>;
 
     fn next(&mut self) -> Option<Self::Item> {
+        todo!()
+    }
+}
+
+pub struct BlitzTraversal {}
+impl BlitzTraversal {
+    pub(crate) fn new() -> Self {
+        Self {}
+    }
+}
+
+impl<E: TElement> DomTraversal<E> for BlitzTraversal {
+    fn process_preorder<F>(
+        &self,
+        data: &style::traversal::PerLevelTraversalData,
+        context: &mut style::context::StyleContext<E>,
+        node: E::ConcreteNode,
+        note_child: F,
+    ) where
+        F: FnMut(E::ConcreteNode),
+    {
+        todo!()
+    }
+
+    fn process_postorder(
+        &self,
+        contect: &mut style::context::StyleContext<E>,
+        node: E::ConcreteNode,
+    ) {
+        todo!()
+    }
+
+    fn shared_context(&self) -> &style::context::SharedStyleContext {
         todo!()
     }
 }

@@ -2,11 +2,14 @@ use dioxus::prelude::*;
 use euclid::{Rect, Scale, Size2D};
 use servo_url::{ImmutableOrigin, ServoUrl};
 use slab::Slab;
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use style::{
     animation::DocumentAnimationSet,
-    context::{QuirksMode, RegisteredSpeculativePainters, SharedStyleContext, StyleContext},
-    dom::{TDocument, TElement, TNode, TShadowRoot},
+    context::{
+        QuirksMode, RegisteredSpeculativePainters, SharedStyleContext, StyleContext,
+        ThreadLocalStyleContext,
+    },
+    dom::{SendNode, TDocument, TElement, TNode, TShadowRoot},
     global_style_data::GLOBAL_STYLE_DATA,
     media_queries::MediaType,
     media_queries::{Device as StyleDevice, MediaList},
@@ -15,11 +18,12 @@ use style::{
     shared_lock::{SharedRwLock, StylesheetGuards},
     stylesheets::{AllowImportRules, DocumentStyleSheet, Origin, Stylesheet},
     stylist::Stylist,
+    traversal::PerLevelTraversalData,
     traversal_flags::TraversalFlags,
 };
 use style_impls::{BlitzDocument, RealDom};
 
-use crate::style_impls::BlitzElement;
+use crate::style_impls::{BlitzElement, BlitzTraversal};
 
 mod style_impls;
 
@@ -158,8 +162,8 @@ fn build_style_context<'a, E: TElement>(
     }
 }
 
-#[tokio::test]
-async fn render_simple() {
+#[test]
+fn render_simple() {
     // Figured out a single-pass system from the servo repo itself:
     //
     // components/layout_thread_2020/lib.rs:795
@@ -193,13 +197,17 @@ async fn render_simple() {
     });
 
     // servo requires a bunch of locks to be manually held
-    let (guard, author, user) = (
-        SharedRwLock::new(),
-        SharedRwLock::new(),
-        SharedRwLock::new(),
-    );
+    let (author, user) = (SharedRwLock::new(), SharedRwLock::new());
+
+    let guards = StylesheetGuards {
+        author: &author.read(),
+        ua_or_user: &user.read(),
+    };
+    let guard_ = &GLOBAL_STYLE_DATA.shared_lock;
 
     let mut stylist = make_stylist();
+
+    let guard = stylesheet.0.shared_lock.clone();
 
     // Add the stylesheets to the stylist
     stylist.append_stylesheet(stylesheet, &guard.read());
@@ -212,19 +220,45 @@ async fn render_simple() {
     // In a different world we'd use both
     let painters = style_impls::RegisteredPaintersImpl;
     let animations = DocumentAnimationSet::default();
+    let snapshots = SnapshotMap::new();
 
     let shared = build_style_context::<BlitzElement>(
         &stylist,
-        StylesheetGuards {
-            author: &author.read(),
-            ua_or_user: &user.read(),
-        },
-        &SnapshotMap::new(),
+        guards,
+        &snapshots,
         ImmutableOrigin::new_opaque(),
         0.0,
         &animations,
         false,
         &painters,
+    );
+
+    // markup.root().as_node()
+    // components/style/driver.rs
+    let root = markup.root();
+
+    let scoped_tls = None;
+    let mut tls = ThreadLocalStyleContext::<BlitzElement>::new();
+    let traversal = BlitzTraversal::new();
+    let mut context = StyleContext {
+        shared: &shared,
+        thread_local: &mut tls,
+    };
+
+    let work_unit_max = 1;
+    let mut discovered = VecDeque::with_capacity(work_unit_max * 2);
+    discovered.push_back(unsafe { SendNode::new(root.as_node()) });
+    let current_dom_depth = 1; // root.depth();
+    style::parallel::style_trees(
+        &mut context,
+        discovered,
+        root.as_node().opaque(),
+        work_unit_max,
+        (|| 32)(),
+        PerLevelTraversalData { current_dom_depth },
+        None,
+        &traversal,
+        scoped_tls.as_ref(),
     );
 
     // create a token
