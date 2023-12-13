@@ -2,7 +2,7 @@ use dioxus::prelude::*;
 
 #[tokio::main]
 async fn main() {
-    stylo_dioxus::render(app).await;
+    // stylo_dioxus::render(app).await;
 }
 
 fn app(cx: Scope) -> Element {

@@ -5,3 +5,9 @@ pub struct NodeRef {
     id: NodeId,
     // dom: &'a RealDom<V>,
 }
+
+impl NodeRef {
+    pub fn id(&self) -> NodeId {
+        self.id
+    }
+}
