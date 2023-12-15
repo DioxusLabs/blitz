@@ -11,18 +11,24 @@ fn main() {
         }
 
         h2 {
-            background-color: blue;
+            background-color: green;
         }
 
         h3 {
-            background-color: green;
+            background-color: blue;
         }
+
+        h4 {
+            background-color: yellow;
+        }
+
         "#;
 
     let nodes = rsx! {
         h1 { }
         h2 { }
         h3 { }
+        h4 { }
     };
 
     let styled_dom = stylo_dioxus::style_lazy_nodes(css, nodes);

@@ -2,13 +2,23 @@
 
 wgpu + vello + stylo + taffy + tailwindcss + dioxus
 
-## status
-
-work in progress, doesn't compile yet
-
 ## goals
 
 interactive HTML/CSS renderer powered by firefox's stylo engine
+
+## status
+TODO:
+- [x] Compute styles for html5ever document
+- [ ] Compute layout with Taffy
+- [ ] Compute styles for Dioxus Lazy Nodes
+- [ ] Pass layout and styles to WGPU for single frame to png
+- [ ] Render to window
+- [ ] Add interactivity (hit testing, etc etc)
+- [ ] Implement per-frame caching
+- [ ] Add accessibility kit
+- [ ] Multiwindow
+- [ ] use_wgpu_context() to grab an element as an arbitrary render surface
+
 
 ## the pieces
 
@@ -24,4 +34,4 @@ interactive HTML/CSS renderer powered by firefox's stylo engine
 
 This project is licensed under the MIT license.
 
-Unless you explicitly state otherwise, any contribution intentionally submitted for inclusion in Dioxus by you, shall be licensed as MIT, without any additional terms or conditions.
+Unless you explicitly state otherwise, any contribution intentionally submitted for inclusion in stylo-dioxus by you, shall be licensed as MIT, without any additional terms or conditions.
