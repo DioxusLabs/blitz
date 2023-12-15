@@ -1,5 +1,4 @@
 use style::context::{SharedStyleContext, StyleContext};
-use style::data::ElementData;
 use style::dom::{NodeInfo, TElement, TNode};
 use style::traversal::{recalc_style_at, DomTraversal, PerLevelTraversalData};
 
@@ -9,15 +8,7 @@ pub struct RecalcStyle<'a> {
 
 impl<'a> RecalcStyle<'a> {
     pub fn new(context: SharedStyleContext<'a>) -> Self {
-        RecalcStyle { context: context }
-    }
-
-    pub fn context(&self) -> &SharedStyleContext<'a> {
-        &self.context
-    }
-
-    pub fn destroy(self) -> SharedStyleContext<'a> {
-        self.context
+        RecalcStyle { context }
     }
 }
 
@@ -37,11 +28,14 @@ where
         F: FnMut(E::ConcreteNode),
     {
         unsafe {
+            // We don't need to initialize anything ehre
             // node.initialize_data();
             if !node.is_text_node() {
                 let el = node.as_element().unwrap();
                 let mut data = el.mutate_data().unwrap();
                 recalc_style_at(self, traversal_data, context, el, &mut data, note_child);
+
+                // Gets set later on
                 el.unset_dirty_descendants();
             }
         }
@@ -56,12 +50,7 @@ where
         panic!("this should never be called")
     }
 
-    fn text_node_needs_traversal(node: E::ConcreteNode, parent_data: &ElementData) -> bool {
-        // for now, traverse text nodes
-        true
-        // node.get_style_and_layout_data().is_none() || !parent_data.damage.is_empty()
-    }
-
+    #[inline]
     fn shared_context(&self) -> &SharedStyleContext {
         &self.context
     }

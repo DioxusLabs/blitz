@@ -6,30 +6,47 @@ use dioxus::prelude::*;
 
 fn main() {
     let css = r#"
-        body {
+        h1 {
             background-color: red;
         }
 
-        div {
+        h2 {
             background-color: blue;
         }
 
-        div:hover {
+        h3 {
             background-color: green;
         }
         "#;
 
     let nodes = rsx! {
-        body {
-            div {
-                div {
-                    div {
-                        "hi"
-                    }
-                }
-            }
-        }
+        h1 { }
+        h2 { }
+        h3 { }
     };
 
-    stylo_dioxus::render(css, nodes);
+    let styled_dom = stylo_dioxus::style_lazy_nodes(css, nodes);
+
+    print_styles(&styled_dom);
+}
+
+fn print_styles(markup: &stylo_dioxus::RealDom) {
+    use style::dom::{TElement, TNode};
+
+    let root = markup.root_node();
+    for node in 0..markup.nodes.len() {
+        let Some(el) = root.with(node).as_element() else {
+            continue;
+        };
+
+        let data = el.mutate_data().unwrap();
+        let primary = data.styles.primary();
+        let bg_color = &primary.get_background().background_color;
+
+        println!(
+            "Styles for node {node_idx}:\n{:#?}",
+            bg_color,
+            node_idx = node
+        );
+    }
 }

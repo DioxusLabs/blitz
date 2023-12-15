@@ -19,10 +19,10 @@ use style::{
         SharedStyleContext, StyleContext,
     },
     data::ElementData,
-    dom::{NodeInfo, OpaqueNode, TDocument, TElement, TNode, TShadowRoot},
+    dom::{LayoutIterator, NodeInfo, OpaqueNode, TDocument, TElement, TNode, TShadowRoot},
     media_queries::MediaType,
     media_queries::{Device as StyleDevice, MediaList},
-    properties::{PropertyDeclarationBlock, PropertyId},
+    properties::{PropertyDeclarationBlock, PropertyId, StyleBuilder},
     selector_parser::SelectorImpl,
     servo_arc::{Arc, ArcBorrow},
     shared_lock::{Locked, SharedRwLock},
@@ -32,7 +32,7 @@ use style::{
     traversal::{DomTraversal, PerLevelTraversalData},
     Atom,
 };
-use style_traits::{dom::ElementState, SpeculativePainter};
+use style_traits::dom::ElementState;
 
 pub struct RealDom {
     pub nodes: Slab<NodeData>,
@@ -55,7 +55,7 @@ impl RealDom {
         Self::new(dioxus_ssr::render_lazy(nodes))
     }
 
-    pub fn root(&self) -> BlitzNode {
+    pub fn root_node(&self) -> BlitzNode {
         BlitzNode(ref_based_alloc(Entry { id: 0, dom: self }))
     }
 
@@ -77,6 +77,14 @@ impl RealDom {
             lock: SharedRwLock::new(),
         }
     }
+
+    pub fn root_element(&self) -> BlitzNode {
+        TDocument::as_node(&self.root_node())
+            .first_child()
+            .unwrap()
+            .as_element()
+            .unwrap()
+    }
 }
 
 // Assign IDs to the RcDom nodes by walking the tree and pushing them into the slab
@@ -95,9 +103,10 @@ fn fill_slab_with_handles(
     let id = {
         let entry = slab.vacant_entry();
         let id = entry.key();
+        let style: AtomicRefCell<ElementData> = Default::default();
         entry.insert(NodeData {
             id,
-            style: Default::default(),
+            style,
             child_id: child_index,
             children: vec![],
             parsed: node.clone(),
@@ -105,6 +114,8 @@ fn fill_slab_with_handles(
         });
         id
     };
+
+    println!("generating {} ", id);
 
     // Now go insert its children. We want their IDs to come back here so we know how to walk them.
     // We'll want some sort of linked list thing too to implement NextSibiling, etc
@@ -138,9 +149,26 @@ pub struct NodeData {
     pub parsed: markup5ever_rcdom::Handle,
 }
 
+// store_children_to_process
+// did_process_child
+// pub struct DomData {
+// node: markup5ever_rcdom::Node,
+// local_name: html5ever::LocalName,
+// tag_name: markup5ever_rcdom::TagName,
+// namespace: html5ever::Namespace,
+// prefix: DomRefCell<Option<html5ever::Prefix>>,
+// attrs: DomRefCell<Vec<Dom<Attr>>>,
+// id_attribute: DomRefCell<Option<Atom>>,
+// is: DomRefCell<Option<LocalName>>,
+// style_attribute: DomRefCell<Option<Arc<Locked<PropertyDeclarationBlock>>>>,
+// attr_list: MutNullableDom<NamedNodeMap>,
+// class_list: MutNullableDom<DOMTokenList>,
+// state: Cell<ElementState>,
+// }
+
 // Like, we do even need separate types for elements/nodes/documents?
 #[derive(Debug, Clone, Copy)]
-pub struct BlitzNode<'a>(&'a Entry<'a>);
+pub struct BlitzNode<'a>(pub &'a Entry<'a>);
 
 impl<'a> BlitzNode<'a> {
     pub fn with(&self, id: usize) -> Self {
@@ -172,35 +200,8 @@ fn ref_based_alloc(entry: Entry) -> &Entry {
 }
 
 impl<'a> BlitzNode<'a> {
-    fn me(&self) -> &NodeData {
+    pub fn me(&self) -> &NodeData {
         &self.0.dom.nodes[self.0.id]
-    }
-
-    fn next(&self) -> Option<Self> {
-        let node = self.me();
-
-        self.dom.nodes[node.parent?]
-            .children
-            .get(node.child_id + 1)
-            .map(|id| {
-                BlitzNode(ref_based_alloc(Entry {
-                    id: *id,
-                    dom: self.dom,
-                }))
-            })
-    }
-
-    fn prev(&self) -> Option<Self> {
-        let node = self.me();
-
-        if node.child_id == 0 {
-            return None;
-        }
-
-        self.dom.nodes[node.parent?]
-            .children
-            .get(node.child_id - 1)
-            .map(|id| self.with(*id))
     }
 
     // Get the nth node in the parents child list
@@ -224,10 +225,6 @@ impl<'a> BlitzNode<'a> {
             .children
             .get(node.child_id - n)
             .map(|id| self.with(*id))
-    }
-
-    fn parent(&self) -> Option<Self> {
-        self.me().parent.map(|id| self.with(id))
     }
 
     fn is_element(&self) -> bool {
@@ -309,43 +306,23 @@ impl<'a> TNode for BlitzNode<'a> {
     type ConcreteShadowRoot = BlitzNode<'a>;
 
     fn parent_node(&self) -> Option<Self> {
-        self.dom.nodes[self.id].parent.map(|id| self.with(id))
+        self.me().parent.map(|id| self.with(id))
     }
 
     fn first_child(&self) -> Option<Self> {
-        self.dom.nodes[self.id]
-            .children
-            .first()
-            .map(|id| self.with(*id))
+        self.me().children.first().map(|id| self.with(*id))
     }
 
     fn last_child(&self) -> Option<Self> {
-        self.dom.nodes[self.id]
-            .children
-            .last()
-            .map(|id| self.with(*id))
+        self.me().children.last().map(|id| self.with(*id))
     }
 
     fn prev_sibling(&self) -> Option<Self> {
-        let node = &self.dom.nodes[self.id];
-
-        if node.child_id == 0 {
-            return None;
-        }
-
-        self.dom.nodes[node.parent?]
-            .children
-            .get(node.child_id - 1)
-            .map(|id| self.with(*id))
+        self.backward(1)
     }
 
     fn next_sibling(&self) -> Option<Self> {
-        let node = &self.dom.nodes[self.id];
-
-        self.dom.nodes[node.parent?]
-            .children
-            .get(node.child_id + 1)
-            .map(|id| self.with(*id))
+        self.forward(1)
     }
 
     fn owner_doc(&self) -> Self::ConcreteDocument {
@@ -365,7 +342,7 @@ impl<'a> TNode for BlitzNode<'a> {
     }
 
     fn opaque(&self) -> OpaqueNode {
-        OpaqueNode(self.id)
+        OpaqueNode(self.me().parsed.as_ref() as *const _ as usize)
     }
 
     fn debug_id(self) -> usize {
@@ -375,11 +352,13 @@ impl<'a> TNode for BlitzNode<'a> {
     fn as_element(&self) -> Option<Self::ConcreteElement> {
         match self.me().parsed.data {
             markup5ever_rcdom::NodeData::Element { .. } => Some(self.clone()),
+            // markup5ever_rcdom::NodeData::Document { .. } => Some(self.clone()),
             _ => None,
         }
     }
 
     fn as_document(&self) -> Option<Self::ConcreteDocument> {
+        panic!();
         if self.id != 0 {
             return None;
         };
@@ -397,11 +376,11 @@ impl<'a> selectors::Element for BlitzNode<'a> {
 
     // use the ptr of the rc as the id
     fn opaque(&self) -> selectors::OpaqueElement {
-        OpaqueElement::new(self.dom.nodes[self.id].parsed.as_ref())
+        OpaqueElement::new(self.me().parsed.as_ref())
     }
 
     fn parent_element(&self) -> Option<Self> {
-        self.parent_node()
+        TElement::traversal_parent(&self)
     }
 
     fn parent_node_is_shadow_root(&self) -> bool {
@@ -462,7 +441,11 @@ impl<'a> selectors::Element for BlitzNode<'a> {
         &self,
         local_name: &<Self::Impl as selectors::SelectorImpl>::BorrowedLocalName,
     ) -> bool {
-        todo!()
+        let data = self.me();
+        match &data.parsed.data {
+            markup5ever_rcdom::NodeData::Element { name, .. } => &name.local == local_name,
+            _ => false,
+        }
     }
 
     fn has_namespace(
@@ -550,11 +533,11 @@ impl<'a> selectors::Element for BlitzNode<'a> {
     }
 
     fn is_empty(&self) -> bool {
-        self.dom_children().last().is_none()
+        self.dom_children().next().is_none()
     }
 
     fn is_root(&self) -> bool {
-        self.parent().is_none()
+        self.parent_node().is_none()
     }
 }
 
@@ -574,7 +557,11 @@ impl<'a> TElement for BlitzNode<'a> {
     }
 
     fn traversal_children(&self) -> style::dom::LayoutIterator<Self::TraversalChildrenIterator> {
-        todo!()
+        LayoutIterator(Traverser {
+            dom: self.dom,
+            parent: self.clone(),
+            child_index: 0,
+        })
     }
 
     fn is_html_element(&self) -> bool {
@@ -650,7 +637,7 @@ impl<'a> TElement for BlitzNode<'a> {
     }
 
     fn has_dirty_descendants(&self) -> bool {
-        true
+        false
     }
 
     fn has_snapshot(&self) -> bool {
@@ -659,37 +646,48 @@ impl<'a> TElement for BlitzNode<'a> {
     }
 
     fn handled_snapshot(&self) -> bool {
-        false
+        todo!()
     }
 
-    unsafe fn set_handled_snapshot(&self) {}
+    unsafe fn set_handled_snapshot(&self) {
+        todo!()
+    }
 
-    unsafe fn set_dirty_descendants(&self) {}
+    unsafe fn set_dirty_descendants(&self) {
+        println!("setting dirty descendants");
+    }
 
-    unsafe fn unset_dirty_descendants(&self) {}
+    unsafe fn unset_dirty_descendants(&self) {
+        println!("unsetting dirty descendants");
+    }
 
-    fn store_children_to_process(&self, n: isize) {}
+    fn store_children_to_process(&self, n: isize) {
+        todo!()
+    }
 
     fn did_process_child(&self) -> isize {
-        1
+        todo!()
     }
 
     unsafe fn ensure_data(&self) -> AtomicRefMut<style::data::ElementData> {
         self.me().style.borrow_mut()
     }
 
-    unsafe fn clear_data(&self) {}
+    unsafe fn clear_data(&self) {
+        todo!()
+    }
 
     fn has_data(&self) -> bool {
-        false
+        todo!()
+        // true // all nodes should have data
     }
 
     fn borrow_data(&self) -> Option<AtomicRef<style::data::ElementData>> {
-        self.dom.nodes[self.id].style.try_borrow().ok()
+        self.me().style.try_borrow().ok()
     }
 
     fn mutate_data(&self) -> Option<AtomicRefMut<style::data::ElementData>> {
-        self.dom.nodes[self.id].style.try_borrow_mut().ok()
+        self.me().style.try_borrow_mut().ok()
     }
 
     fn skip_item_display_fixup(&self) -> bool {
@@ -760,7 +758,7 @@ impl<'a> TElement for BlitzNode<'a> {
         let data = self.me();
         match &data.parsed.data {
             markup5ever_rcdom::NodeData::Element { name, .. } => &name.local,
-            _ => panic!("Not an element"),
+            g => panic!("Not an element {g:?}"),
         }
     }
 
@@ -782,14 +780,22 @@ impl<'a> TElement for BlitzNode<'a> {
 }
 
 pub struct Traverser<'a> {
-    lock: &'a SharedRwLock,
+    dom: &'a RealDom,
+    parent: BlitzNode<'a>,
+    child_index: usize,
 }
 
 impl<'a> Iterator for Traverser<'a> {
     type Item = BlitzNode<'a>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        todo!()
+        let node = self.parent.me().children.get(self.child_index)?;
+
+        let node = self.parent.with(*node);
+
+        self.child_index += 1;
+
+        Some(node)
     }
 }
 
