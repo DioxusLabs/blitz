@@ -80,10 +80,10 @@ Blitz -> Document -> Renderer
 ## status
 TODO:
 - [x] Compute styles for html5ever document
-- [ ] Compute layout with Taffy
-- [ ] Compute styles for Dioxus Lazy Nodes
-- [ ] Pass layout and styles to WGPU for single frame to png
-- [ ] Render to window
+- [x] Compute layout with Taffy
+- [x] Compute styles for Dioxus Lazy Nodes
+- [x] Pass layout and styles to WGPU for single frame to png
+- [x] Render to window
 - [ ] Add interactivity (hit testing, etc etc)
 - [ ] Implement per-frame caching
 - [ ] Add accessibility kit
