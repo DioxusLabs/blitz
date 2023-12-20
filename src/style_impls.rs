@@ -1,5 +1,6 @@
 use std::{
     borrow::{Borrow, Cow},
+    cell::{Cell, RefCell},
     collections::HashMap,
 };
 
@@ -131,8 +132,9 @@ fn fill_slab_with_handles(
             child_id: child_index,
             children: vec![],
             node: node.clone(),
-            layout: Layout::new(),
-            taffy_style: Style::default(),
+            layout_id: Default::default(),
+            // layout: Cell::new(Layout::new()),
+            // taffy_style: Default::default(),
             parent,
         });
         id
@@ -166,11 +168,12 @@ pub struct NodeData {
 
     pub child_id: usize,
 
-    pub layout: taffy::layout::Layout,
+    pub layout_id: Cell<Option<taffy::prelude::Node>>,
+
+    // pub layout: Cell<taffy::layout::Layout>,
 
     // need to make sure we sync this style and the other style...
-    pub taffy_style: taffy::style::Style,
-
+    // pub taffy_style: RefCell<taffy::style::Style>,
     pub parent: Option<usize>,
 
     // might want to make this weak
@@ -203,8 +206,9 @@ impl<'a> BlitzNode<'a> {
         Self(ref_based_alloc(Entry { id, dom: self.dom }))
     }
 
-    pub fn bounds(&self) -> kurbo::Rect {
-        let layout = self.data().layout;
+    pub fn bounds(&self, taffy: &Taffy) -> kurbo::Rect {
+        let taffy_id = self.data().layout_id.get();
+        let layout = taffy.layout(taffy_id.unwrap()).unwrap();
 
         kurbo::Rect {
             x0: layout.location.x.into(),

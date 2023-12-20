@@ -15,14 +15,17 @@ use tao::{
 use crate::{
     blitz::Document,
     waker::{EventData, UserWindowEvent},
+    RealDom,
 };
 
 #[derive(Default)]
-pub struct Config;
+pub struct Config {
+    pub stylesheets: Vec<String>,
+}
 
 /// Launch an interactive HTML/CSS renderer driven by the Dioxus virtualdom
 pub fn launch(app: Component<()>) {
-    launch_cfg(app, Config)
+    launch_cfg(app, Config::default())
 }
 
 pub fn launch_cfg(app: Component<()>, cfg: Config) {
@@ -47,16 +50,24 @@ pub fn launch_cfg_with_props<Props: 'static + Send>(
     // By default we're drawing a single window
     let window = WindowBuilder::new().build(&event_loop).unwrap();
 
-    // Set up the blitz drawing system
-    // todo: this won't work on ios - blitz creation has to be deferred until the event loop as started
-    let mut blitz = rt.block_on(Document::from_window(&window));
-
-    // add default styles
-    blitz.add_stylesheet(DEFAULT_STYLESHEET);
-
     // Spin up the virtualdom
     // We're going to need to hit it with a special waker
     let mut virtualdom = VirtualDom::new_with_props(app, props);
+    _ = virtualdom.rebuild();
+    let markup = dioxus_ssr::render(&virtualdom);
+
+    // Set up the blitz drawing system
+    // todo: this won't work on ios - blitz creation has to be deferred until the event loop as started
+    let dom = RealDom::new(markup);
+    let mut blitz = rt.block_on(Document::from_window(&window, dom));
+
+    // add default styles, resolve layout and styles
+    for ss in cfg.stylesheets {
+        blitz.add_stylesheet(&ss);
+    }
+
+    blitz.resolve();
+    blitz.render();
 
     event_loop.run(move |event, _, control_flow| {
         // ControlFlow::Wait pauses the event loop if no events are available to process.
@@ -92,7 +103,7 @@ pub fn launch_cfg_with_props<Props: 'static + Send>(
                 // the program to gracefully handle redraws requested by the OS.
 
                 // if !appliction.clean().is_empty() {
-                blitz.render();
+                // blitz.render();
                 // }
             }
 
@@ -112,31 +123,3 @@ pub fn launch_cfg_with_props<Props: 'static + Send>(
         }
     });
 }
-
-const DEFAULT_STYLESHEET: &str = r#"
-        h1 {
-            background-color: red;
-        }
-
-        h2 {
-            background-color: green;
-        }
-
-        h3 {
-            background-color: blue;
-        }
-
-        h4 {
-            background-color: yellow;
-        }
-
-        .heading {
-            padding: 5px;
-            border-radius: 5px;
-            border: 2px solid #73AD21;
-        }
-
-        div {
-            margin: 35px;
-        }
-    "#;

@@ -44,7 +44,7 @@ fn print_styles(markup: &stylo_dioxus::RealDom) {
             continue;
         };
 
-        let data = el.mutate_data().unwrap();
+        let data = el.borrow_data().unwrap();
         let primary = data.styles.primary();
         let bg_color = &primary.get_background().background_color;
 

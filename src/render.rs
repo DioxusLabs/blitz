@@ -1,4 +1,5 @@
 use markup5ever_rcdom::RcDom;
+use style::properties::style_structs::Border;
 //
 // use dioxus_native_core::prelude::*;
 use taffy::prelude::Layout;
@@ -6,6 +7,7 @@ use taffy::prelude::Size;
 use taffy::Taffy;
 use tao::dpi::PhysicalSize;
 use vello::kurbo::{Affine, Point, Rect, RoundedRect, Vec2};
+use vello::peniko;
 use vello::peniko::{Color, Fill, Stroke};
 use vello::SceneBuilder;
 
@@ -27,6 +29,7 @@ const FOCUS_BORDER_WIDTH: f64 = 6.0;
 
 pub(crate) fn render(
     dom: &RealDom,
+    taffy: &Taffy,
     text_context: &mut TextContext,
     scene_builder: &mut SceneBuilder,
     window_size: PhysicalSize<u32>,
@@ -38,7 +41,7 @@ pub(crate) fn render(
         Affine::IDENTITY,
         Color::WHITE,
         None,
-        &root.bounds(),
+        &root.bounds(taffy),
     );
 
     let viewport_size = Size {
@@ -48,6 +51,7 @@ pub(crate) fn render(
 
     render_node(
         root,
+        taffy,
         text_context,
         scene_builder,
         Point::ZERO,
@@ -57,6 +61,7 @@ pub(crate) fn render(
 
 fn render_node(
     node: BlitzNode,
+    taffy: &Taffy,
     text_context: &mut TextContext,
     scene_builder: &mut SceneBuilder,
     location: Point,
@@ -65,11 +70,9 @@ fn render_node(
     use markup5ever_rcdom::NodeData;
 
     let element = node.data();
-    let pos = location
-        + Vec2::new(
-            element.layout.location.x as f64,
-            element.layout.location.y as f64,
-        );
+    let layout = taffy.layout(element.layout_id.get().unwrap()).unwrap();
+
+    let pos = location + Vec2::new(layout.location.x as f64, layout.location.y as f64);
 
     match &element.node.data {
         NodeData::Text { contents } => {
@@ -80,10 +83,12 @@ fn render_node(
             //     DEFAULT_FONT_SIZE
             // };
 
-            let font_size = DEFAULT_FONT_SIZE;
+            let font_size = DEFAULT_FONT_SIZE * 4.0;
             let text_color = Color::BLACK;
             let contents = contents.borrow();
             let text = contents.as_ref();
+
+            println!("text: {text} {layout:?}");
 
             text_context.add(
                 scene_builder,
@@ -100,10 +105,119 @@ fn render_node(
             template_contents,
             mathml_annotation_xml_integration_point,
         } => {
+            // let shape = get_shape(layout, node, viewport_size, pos);
+
+            println!("element: {name:?} {layout:?}");
+
+            let rect = layout.size;
+            let x: f64 = pos.x;
+            let y: f64 = pos.y;
+            let width: f64 = layout.size.width.into();
+            let height: f64 = layout.size.height.into();
+
+            let style = element.style.borrow();
+            let primary = style.styles.primary();
+            let background = primary.get_background();
+            let bg_color = background.background_color.clone();
+
+            let Border {
+                border_top_color,
+                border_top_style,
+                border_top_width,
+                border_right_color,
+                border_right_style,
+                border_right_width,
+                border_bottom_color,
+                border_bottom_style,
+                border_bottom_width,
+                border_left_color,
+                border_left_style,
+                border_left_width,
+                border_top_left_radius,
+                border_top_right_radius,
+                border_bottom_right_radius,
+                border_bottom_left_radius,
+                border_image_source,
+                border_image_outset,
+                border_image_repeat,
+                border_image_width,
+                border_image_slice,
+            } = primary.get_border();
+
+            let left_border_width = border_left_width.to_f64_px();
+            let top_border_width = border_top_width.to_f64_px();
+            let right_border_width = border_right_width.to_f64_px();
+            let bottom_border_width = border_bottom_width.to_f64_px();
+
+            // The stroke is drawn on the outside of the border, so we need to offset the rect by the border width for each side.
+            let x_start = x + left_border_width / 2.0;
+            let y_start = y + top_border_width / 2.0;
+            let x_end = x + width - right_border_width / 2.0;
+            let y_end = y + height - bottom_border_width / 2.0;
+
+            let shape = RoundedRect::new(
+                x_start,
+                y_start,
+                x_end,
+                y_end,
+                (
+                    1.0, 1.0, 1.0,
+                    1.0, // border.radius.top_left.0.resolve(axis, &rect, viewport_size),
+                        // border
+                        //     .radius
+                        //     .top_right
+                        //     .0
+                        //     .resolve(axis, &rect, viewport_size),
+                        // border
+                        //     .radius
+                        //     .bottom_right
+                        //     .0
+                        //     .resolve(axis, &rect, viewport_size),
+                        // border
+                        //     .radius
+                        //     .bottom_left
+                        //     .0
+                        //     .resolve(axis, &rect, viewport_size),
+                ),
+            );
+
+            // bg_color
+            let as_abs = bg_color.as_absolute().unwrap();
+
+            println!("stroking element {bg_color:?}");
+
+            fn components_to_u8(val: f32) -> u8 {
+                (val * 256.0) as _
+            }
+
+            let r = components_to_u8(as_abs.components.0);
+            let g = components_to_u8(as_abs.components.1);
+            let b = components_to_u8(as_abs.components.2);
+            let a = 255;
+            let color = Color { r, g, b, a };
+
+            scene_builder.fill(peniko::Fill::NonZero, Affine::IDENTITY, color, None, &shape);
+
+            // let stroke_color = translate_color(&node.get::<Border>().unwrap().colors.top);
+            let stroke = Stroke::new(10.0);
+            scene_builder.stroke(&stroke, Affine::IDENTITY, color, None, &shape);
+            // background.draw_shape(scene_builder, &shape, layout, viewport_size);
+
             // draw the rect, descend to its children with the position updated
             for id in &element.children {
                 let child = node.with(*id);
-                render_node(child, text_context, scene_builder, location, viewport_size);
+                // let mut loc = location.clone();
+
+                // loc.y += 5.0;
+
+                render_node(
+                    child,
+                    taffy,
+                    text_context,
+                    scene_builder,
+                    pos,
+                    viewport_size,
+                );
             }
         }
         NodeData::Document => todo!(),
@@ -196,18 +310,23 @@ fn render_node(
 
 // pub(crate) fn get_shape(
 //     layout: &Layout,
-//     node: NodeRef,
+//     node: BlitzNode,
 //     viewport_size: &Size<u32>,
 //     location: Point,
 // ) -> RoundedRect {
+//     // use vello::glyph::fello::raw::tables::base::Axis;
+
 //     let axis = Axis::Min;
 //     let rect = layout.size;
 //     let x: f64 = location.x;
 //     let y: f64 = location.y;
 //     let width: f64 = layout.size.width.into();
 //     let height: f64 = layout.size.height.into();
-//     let border: &Border = &node.get().unwrap();
-//     let focused = node.get::<Focused>().filter(|focused| focused.0).is_some();
+//     let focused = false;
+//     // let border = taffy::prelude::
+//     // let border: &Border = &node.get().unwrap();
+//     // let focused = node.get::<Focused>().filter(|focused| focused.0).is_some();
+//     // let focused = node.get::<Focused>().filter(|focused| focused.0).is_some();
 //     let left_border_width = if focused {
 //         FOCUS_BORDER_WIDTH
 //     } else {
