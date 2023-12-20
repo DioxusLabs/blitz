@@ -24,7 +24,7 @@ fn app(cx: Scope) -> Element {
         h1 { "h1" }
         h2 { "h2" }
         h3 { "h3" }
-        h4 { "h4" }
+        div { class: "header", "h4" }
     }
 }
 
@@ -43,5 +43,9 @@ h3 {
 
 h4 {
     background-color: yellow;
+}
+
+.header {
+    background-color: pink;
 }
 "#;

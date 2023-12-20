@@ -35,7 +35,7 @@ use style::{
     stylesheets::{AllowImportRules, DocumentStyleSheet, Origin, Stylesheet},
     stylist::Stylist,
     traversal::{DomTraversal, PerLevelTraversalData},
-    values::AtomIdent,
+    values::{AtomIdent, GenericAtomIdent},
     Atom,
 };
 use style_traits::dom::ElementState;
@@ -558,9 +558,32 @@ impl<'a> selectors::Element for BlitzNode<'a> {
 
     fn has_class(
         &self,
-        name: &<Self::Impl as selectors::SelectorImpl>::Identifier,
+        search_name: &<Self::Impl as selectors::SelectorImpl>::Identifier,
         case_sensitivity: selectors::attr::CaseSensitivity,
     ) -> bool {
+        let Some(al) = self.as_element() else {
+            return false;
+        };
+        let data = al.data().node.data.borrow();
+        let markup5ever_rcdom::NodeData::Element { name, attrs, .. } = data else {
+            return false;
+        };
+        let attrs = attrs.borrow();
+
+        for attr in attrs.iter() {
+            // make sure we only select class attributes
+            if attr.name.local.as_ref() != "class" {
+                continue;
+            }
+
+            // split the class attribute
+            for pheme in attr.value.split_ascii_whitespace() {
+                if pheme == search_name.as_ref() {
+                    return true;
+                }
+            }
+        }
+
         false
     }
 
@@ -666,45 +689,56 @@ impl<'a> TElement for BlitzNode<'a> {
         let attr_id = attrs.iter().find(|id| id.name.local.as_ref() == "id")?;
 
         let id = attr_id.value.as_ref();
-        let atom = string_cache::DefaultAtom::from(Cow::Borrowed(id));
+        let atom = Atom::from(id);
+        let leadcked = &*Box::leak(Box::new(atom));
 
-        // I've learned we actually need to store the Atom on the node itself
-        // The parser will need to migrate away from rcdom before we can do this
-        // rip
-
-        // let cache = EmptyStaticAtomSet::get();
-        // cache.
-        // string_cache::DefaultAtom::get();
-
-        // use string_cache::atom;
-        // let v = atom!("id");
-        // let atom = Atom::with(ptr, |atom: &Atom| {});
-        // use string_cache::
-        //
-        // let atom =
-        // WeakAtom::new();
-
-        // AtomIdent::with();
-        // Atom::try_static(string_to_add)
-        // style::Atom::d
-        // Some(&atom)
-
-        todo!()
-
-        // todo!()
+        Some(leadcked)
     }
 
-    fn each_class<F>(&self, callback: F)
+    fn each_class<F>(&self, mut callback: F)
     where
         F: FnMut(&style::values::AtomIdent),
     {
-        //
+        let Some(al) = self.as_element() else {
+            return;
+        };
+        let data = al.data().node.data.borrow();
+        let markup5ever_rcdom::NodeData::Element { name, attrs, .. } = data else {
+            return;
+        };
+        let attrs = attrs.borrow();
+
+        for attr in attrs.iter() {
+            // make sure we only select class attributes
+            if attr.name.local.as_ref() != "class" {
+                continue;
+            }
+
+            // split the class attribute
+            for pheme in attr.value.split_ascii_whitespace() {
+                let atom = Atom::from(pheme); // interns the string
+                callback(AtomIdent::cast(&atom));
+            }
+        }
     }
 
-    fn each_attr_name<F>(&self, callback: F)
+    fn each_attr_name<F>(&self, mut callback: F)
     where
         F: FnMut(&style::LocalName),
     {
+        let Some(al) = self.as_element() else {
+            return;
+        };
+        let data = al.data().node.data.borrow();
+        let markup5ever_rcdom::NodeData::Element { name, attrs, .. } = data else {
+            return;
+        };
+        let attrs = attrs.borrow();
+
+        for attr in attrs.iter() {
+            let b = GenericAtomIdent(attr.name.local.clone());
+            callback(&b);
+        }
     }
 
     fn has_dirty_descendants(&self) -> bool {
