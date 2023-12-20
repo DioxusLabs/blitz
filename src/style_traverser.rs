@@ -18,27 +18,24 @@ where
     E: TElement,
     E::ConcreteNode: 'dom,
 {
-    fn process_preorder<F>(
+    fn process_preorder<F: FnMut(E::ConcreteNode)>(
         &self,
         traversal_data: &PerLevelTraversalData,
         context: &mut StyleContext<E>,
         node: E::ConcreteNode,
         note_child: F,
-    ) where
-        F: FnMut(E::ConcreteNode),
-    {
-        unsafe {
-            // We don't need to initialize anything ehre
-            // node.initialize_data();
-            if !node.is_text_node() {
-                let el = node.as_element().unwrap();
-                let mut data = el.mutate_data().unwrap();
-                recalc_style_at(self, traversal_data, context, el, &mut data, note_child);
-
-                // Gets set later on
-                el.unset_dirty_descendants();
-            }
+    ) {
+        // Don't process textnodees in this traversala
+        if node.is_text_node() {
+            return;
         }
+
+        let el = node.as_element().unwrap();
+        let mut data = el.mutate_data().unwrap();
+        recalc_style_at(self, traversal_data, context, el, &mut data, note_child);
+
+        // Gets set later on
+        unsafe { el.unset_dirty_descendants() }
     }
 
     #[inline]

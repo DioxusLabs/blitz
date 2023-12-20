@@ -1,4 +1,7 @@
-use std::collections::HashMap;
+use std::{
+    borrow::{Borrow, Cow},
+    collections::HashMap,
+};
 
 use atomic_refcell::{AtomicRef, AtomicRefCell, AtomicRefMut};
 use dioxus::{core::exports::bumpalo::Bump, prelude::LazyNodes};
@@ -13,6 +16,7 @@ use selectors::{
 };
 use servo_url::ServoUrl;
 use slab::Slab;
+use string_cache::{DefaultAtom, EmptyStaticAtomSet, StaticAtomSet};
 use style::{
     context::{
         QuirksMode, RegisteredSpeculativePainter, RegisteredSpeculativePainters,
@@ -30,22 +34,27 @@ use style::{
     stylesheets::{AllowImportRules, DocumentStyleSheet, Origin, Stylesheet},
     stylist::Stylist,
     traversal::{DomTraversal, PerLevelTraversalData},
+    values::AtomIdent,
     Atom,
 };
 use style_traits::dom::ElementState;
+use taffy::prelude::{Layout, Style, Taffy};
+use vello::kurbo;
 
 pub struct RealDom {
     pub nodes: Slab<NodeData>,
+
+    /// The parsed html5ever dom
     pub document: RcDom,
-    pub lock: SharedRwLock,
-    // documents: HashMap<ServoUrl, BlitzDocument>,
+
+    pub guard: SharedRwLock,
 }
 
 impl std::fmt::Debug for RealDom {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("RealDom")
             .field("nodes", &self.nodes)
-            .field("lock", &self.lock)
+            .field("lock", &self.guard)
             .finish()
     }
 }
@@ -71,10 +80,13 @@ impl RealDom {
 
         fill_slab_with_handles(&mut nodes, document.document.clone(), 0, None);
 
+        // create the layout engine
+        let layout = Taffy::new();
+
         RealDom {
             nodes,
             document,
-            lock: SharedRwLock::new(),
+            guard: SharedRwLock::new(),
         }
     }
 
@@ -84,6 +96,15 @@ impl RealDom {
             .unwrap()
             .as_element()
             .unwrap()
+    }
+
+    ///
+    pub fn resolve_styles(&mut self) {}
+
+    ///
+    ///
+    pub fn resolve_layouts(&mut self) {
+        // self.layout.compute_layout(node, available_space);
     }
 }
 
@@ -109,7 +130,9 @@ fn fill_slab_with_handles(
             style,
             child_id: child_index,
             children: vec![],
-            parsed: node.clone(),
+            node: node.clone(),
+            layout: Layout::new(),
+            taffy_style: Style::default(),
             parent,
         });
         id
@@ -143,10 +166,15 @@ pub struct NodeData {
 
     pub child_id: usize,
 
+    pub layout: taffy::layout::Layout,
+
+    // need to make sure we sync this style and the other style...
+    pub taffy_style: taffy::style::Style,
+
     pub parent: Option<usize>,
 
     // might want to make this weak
-    pub parsed: markup5ever_rcdom::Handle,
+    pub node: markup5ever_rcdom::Handle,
 }
 
 // store_children_to_process
@@ -174,6 +202,17 @@ impl<'a> BlitzNode<'a> {
     pub fn with(&self, id: usize) -> Self {
         Self(ref_based_alloc(Entry { id, dom: self.dom }))
     }
+
+    pub fn bounds(&self) -> kurbo::Rect {
+        let layout = self.data().layout;
+
+        kurbo::Rect {
+            x0: layout.location.x.into(),
+            y0: layout.location.y.into(),
+            x1: (layout.location.x + layout.size.width).into(),
+            y1: (layout.location.y + layout.size.height).into(),
+        }
+    }
 }
 
 impl<'a> std::ops::Deref for BlitzNode<'a> {
@@ -200,13 +239,13 @@ fn ref_based_alloc(entry: Entry) -> &Entry {
 }
 
 impl<'a> BlitzNode<'a> {
-    pub fn me(&self) -> &NodeData {
+    pub fn data(&self) -> &NodeData {
         &self.0.dom.nodes[self.0.id]
     }
 
     // Get the nth node in the parents child list
     fn forward(&self, n: usize) -> Option<Self> {
-        let node = self.me();
+        let node = self.data();
 
         self.dom.nodes[node.parent?]
             .children
@@ -215,7 +254,7 @@ impl<'a> BlitzNode<'a> {
     }
 
     fn backward(&self, n: usize) -> Option<Self> {
-        let node = self.me();
+        let node = self.data();
 
         if node.child_id < n {
             return None;
@@ -229,14 +268,14 @@ impl<'a> BlitzNode<'a> {
 
     fn is_element(&self) -> bool {
         matches!(
-            self.me().parsed.data,
+            self.data().node.data,
             markup5ever_rcdom::NodeData::Element { .. }
         )
     }
 
     fn is_text_node(&self) -> bool {
         matches!(
-            self.me().parsed.data,
+            self.data().node.data,
             markup5ever_rcdom::NodeData::Text { .. }
         )
     }
@@ -266,7 +305,7 @@ impl<'a> TDocument for BlitzNode<'a> {
     }
 
     fn shared_lock(&self) -> &SharedRwLock {
-        &self.dom.lock
+        &self.dom.guard
     }
 }
 
@@ -306,15 +345,15 @@ impl<'a> TNode for BlitzNode<'a> {
     type ConcreteShadowRoot = BlitzNode<'a>;
 
     fn parent_node(&self) -> Option<Self> {
-        self.me().parent.map(|id| self.with(id))
+        self.data().parent.map(|id| self.with(id))
     }
 
     fn first_child(&self) -> Option<Self> {
-        self.me().children.first().map(|id| self.with(*id))
+        self.data().children.first().map(|id| self.with(*id))
     }
 
     fn last_child(&self) -> Option<Self> {
-        self.me().children.last().map(|id| self.with(*id))
+        self.data().children.last().map(|id| self.with(*id))
     }
 
     fn prev_sibling(&self) -> Option<Self> {
@@ -342,7 +381,7 @@ impl<'a> TNode for BlitzNode<'a> {
     }
 
     fn opaque(&self) -> OpaqueNode {
-        OpaqueNode(self.me().parsed.as_ref() as *const _ as usize)
+        OpaqueNode(self.data().node.as_ref() as *const _ as usize)
     }
 
     fn debug_id(self) -> usize {
@@ -350,7 +389,7 @@ impl<'a> TNode for BlitzNode<'a> {
     }
 
     fn as_element(&self) -> Option<Self::ConcreteElement> {
-        match self.me().parsed.data {
+        match self.data().node.data {
             markup5ever_rcdom::NodeData::Element { .. } => Some(self.clone()),
             // markup5ever_rcdom::NodeData::Document { .. } => Some(self.clone()),
             _ => None,
@@ -376,7 +415,7 @@ impl<'a> selectors::Element for BlitzNode<'a> {
 
     // use the ptr of the rc as the id
     fn opaque(&self) -> selectors::OpaqueElement {
-        OpaqueElement::new(self.me().parsed.as_ref())
+        OpaqueElement::new(self.data().node.as_ref())
     }
 
     fn parent_element(&self) -> Option<Self> {
@@ -441,8 +480,8 @@ impl<'a> selectors::Element for BlitzNode<'a> {
         &self,
         local_name: &<Self::Impl as selectors::SelectorImpl>::BorrowedLocalName,
     ) -> bool {
-        let data = self.me();
-        match &data.parsed.data {
+        let data = self.data();
+        match &data.node.data {
             markup5ever_rcdom::NodeData::Element { name, .. } => &name.local == local_name,
             _ => false,
         }
@@ -611,16 +650,44 @@ impl<'a> TElement for BlitzNode<'a> {
     }
 
     fn id(&self) -> Option<&style::Atom> {
-        None
-        // let data = self.me();
-        // match &data.parsed.data {
-        //     markup5ever_rcdom::NodeData::Element { attrs, .. } => attrs
-        //         .borrow()
-        //         .iter()
-        //         .find(|attr| attr.name.local.as_ref() == "id")
-        //         .map(|attr| attr.value),
-        //     _ => None,
-        // }
+        // None
+        let data = self.data();
+        let attrs = match data.node.data {
+            markup5ever_rcdom::NodeData::Element { ref attrs, .. } => attrs,
+            _ => return None,
+        };
+
+        let attrs = attrs.borrow();
+
+        let attr_id = attrs.iter().find(|id| id.name.local.as_ref() == "id")?;
+
+        let id = attr_id.value.as_ref();
+        let atom = string_cache::DefaultAtom::from(Cow::Borrowed(id));
+
+        // I've learned we actually need to store the Atom on the node itself
+        // The parser will need to migrate away from rcdom before we can do this
+        // rip
+
+        // let cache = EmptyStaticAtomSet::get();
+        // cache.
+        // string_cache::DefaultAtom::get();
+
+        // use string_cache::atom;
+        // let v = atom!("id");
+        // let atom = Atom::with(ptr, |atom: &Atom| {});
+        // use string_cache::
+        //
+        // let atom =
+        // WeakAtom::new();
+
+        // AtomIdent::with();
+        // Atom::try_static(string_to_add)
+        // style::Atom::d
+        // Some(&atom)
+
+        todo!()
+
+        // todo!()
     }
 
     fn each_class<F>(&self, callback: F)
@@ -670,7 +737,7 @@ impl<'a> TElement for BlitzNode<'a> {
     }
 
     unsafe fn ensure_data(&self) -> AtomicRefMut<style::data::ElementData> {
-        self.me().style.borrow_mut()
+        self.data().style.borrow_mut()
     }
 
     unsafe fn clear_data(&self) {
@@ -683,11 +750,11 @@ impl<'a> TElement for BlitzNode<'a> {
     }
 
     fn borrow_data(&self) -> Option<AtomicRef<style::data::ElementData>> {
-        self.me().style.try_borrow().ok()
+        self.data().style.try_borrow().ok()
     }
 
     fn mutate_data(&self) -> Option<AtomicRefMut<style::data::ElementData>> {
-        self.me().style.try_borrow_mut().ok()
+        self.data().style.try_borrow_mut().ok()
     }
 
     fn skip_item_display_fixup(&self) -> bool {
@@ -755,8 +822,8 @@ impl<'a> TElement for BlitzNode<'a> {
         &self,
     ) -> &<style::selector_parser::SelectorImpl as selectors::parser::SelectorImpl>::BorrowedLocalName
     {
-        let data = self.me();
-        match &data.parsed.data {
+        let data = self.data();
+        match &data.node.data {
             markup5ever_rcdom::NodeData::Element { name, .. } => &name.local,
             g => panic!("Not an element {g:?}"),
         }
@@ -764,8 +831,8 @@ impl<'a> TElement for BlitzNode<'a> {
 
     fn namespace(&self)
     -> &<style::selector_parser::SelectorImpl as selectors::parser::SelectorImpl>::BorrowedNamespaceUrl{
-        let data = self.me();
-        match &data.parsed.data {
+        let data = self.data();
+        match &data.node.data {
             markup5ever_rcdom::NodeData::Element { name, .. } => &name.ns,
             _ => panic!("Not an element"),
         }
@@ -789,7 +856,7 @@ impl<'a> Iterator for Traverser<'a> {
     type Item = BlitzNode<'a>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let node = self.parent.me().children.get(self.child_index)?;
+        let node = self.parent.data().children.get(self.child_index)?;
 
         let node = self.parent.with(*node);
 

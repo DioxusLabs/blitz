@@ -17,8 +17,25 @@ use style::{
 };
 pub use style_impls::{BlitzNode, RealDom};
 
+mod start;
+pub use start::*;
+
+mod blitz;
+mod dom;
+mod fontcache;
+mod image;
+mod imagecache;
+mod render;
 mod style_impls;
 mod style_traverser;
+mod text;
+mod tree;
+mod viewport;
+mod waker;
+
+mod mutation;
+
+mod dioxus_native;
 
 pub fn style_lazy_nodes(css: &str, markup: LazyNodes) -> RealDom {
     const QUIRKS_MODE: QuirksMode = QuirksMode::NoQuirks;

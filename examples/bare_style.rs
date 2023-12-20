@@ -1,7 +1,6 @@
 // Example: dioxus + css + stylo
 //
 // Create a style context for a dioxus document.
-
 use dioxus::prelude::*;
 
 fn main() {
