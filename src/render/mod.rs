@@ -192,12 +192,12 @@ impl Document {
                         _ => todo!(),
                     }
                 }
-                GenericImage::None => todo!(),
-                GenericImage::Url(_) => todo!(),
-                GenericImage::Rect(_) => todo!(),
-                GenericImage::PaintWorklet(_) => todo!(),
-                GenericImage::CrossFade(_) => todo!(),
-                GenericImage::ImageSet(_) => todo!(),
+                GenericImage::None => {}
+                GenericImage::Url(_) => {}
+                GenericImage::Rect(_) => {}
+                GenericImage::PaintWorklet(_) => {}
+                GenericImage::CrossFade(_) => {}
+                GenericImage::ImageSet(_) => {}
             }
         }
 

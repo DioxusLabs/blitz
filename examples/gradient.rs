@@ -13,13 +13,28 @@ fn main() {
 
 fn app(cx: Scope) -> Element {
     render! {
-        div { id: "grad1", "RAINBOX" }
+        div { id: "container",
+            div { id: "a", " Dioxus " }
+            div { id: "b", " plus " }
+            div { id: "c", " Stylo " }
+        }
     }
 }
 
 const CSS: &str = r#"
-#grad {
-
-  background-image: linear-gradient(to right, red,orange,yellow,green,blue,indigo,violet);
+#a {
+    background-color: red;
+    font-size: 40px;
+    font-color: white;
+}
+#b {
+    background-color: green;
+    font-size: 60px;
+    font-color: white;
+}
+#c {
+    background-color: blue;
+    font-size: 80px;
+    font-color: white;
 }
 "#;

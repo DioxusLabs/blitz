@@ -2,6 +2,8 @@
 
 > A WIP native engine designed for [Dioxus](https://github.com/dioxuslabs/dioxus), intended to eventually become Blitz.
 
+![screenshot](examples/screenshot.png)
+
 Render HTML and CSS using Firefox's parallel browser-grade CSS engine. Leverages:
 
 - Stylo (servo/style) for CSS resolution
@@ -122,6 +124,7 @@ TODO:
 - [ ] use_wgpu_context() to grab an element as an arbitrary render surface
 - [ ] Tests
 - [ ] Profiler
+- [ ] hot reloading
 
 - We might want to migrate to servo's layout engine once it's released
 
