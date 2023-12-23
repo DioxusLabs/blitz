@@ -30,7 +30,10 @@ fn app(cx: Scope) -> Element {
 
 const CSS: &str = r#"
 p.cool { background-color: purple; }
-#cool { background-color: blue; }
+#cool {
+    background-color: blue;
+    font-size: 32px;
+}
 .bg-red-100	{ background-color: rgb(254 226 226); }
 .bg-red-200	{ background-color: rgb(254 202 202); }
 .bg-red-300	{ background-color: rgb(252 165 165); }

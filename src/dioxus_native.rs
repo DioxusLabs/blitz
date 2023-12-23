@@ -1,17 +1,10 @@
-use crate::{dom::styling::RealDom, viewport::Viewport};
-use crate::{
-    dom::Document,
-    waker::{EventData, UserWindowEvent},
-};
+use crate::waker::{EventData, UserWindowEvent};
 use dioxus::prelude::*;
-use futures_util::{pin_mut, FutureExt};
-use std::{collections::HashMap, task::Waker};
+use std::collections::HashMap;
 use tao::{
     event::{Event, WindowEvent},
-    event_loop::{ControlFlow, EventLoop, EventLoopProxy},
-    window::{Window, WindowBuilder, WindowId},
+    event_loop::{ControlFlow, EventLoop},
 };
-use vello::Scene;
 
 #[derive(Default)]
 pub struct Config {
@@ -48,7 +41,7 @@ pub fn launch_cfg_with_props<Props: 'static + Send + Clone>(
     let mut windows = HashMap::new();
 
     // All apps start with a single window
-    let window = View::new(&event_loop, app, props, &cfg, &rt);
+    let window = crate::window::View::new(&event_loop, app, props, &cfg, &rt);
     windows.insert(window.window.id(), window);
 
     let proxy = event_loop.create_proxy();
@@ -107,158 +100,4 @@ pub fn launch_cfg_with_props<Props: 'static + Send + Clone>(
             _ => (),
         }
     });
-}
-
-struct View {
-    window: Window,
-    vdom: VirtualDom,
-    document: Document,
-    scene: Scene,
-    waker: Waker,
-}
-
-impl View {
-    fn new<P: 'static>(
-        event_loop: &EventLoop<UserWindowEvent>,
-        app: Component<P>,
-        props: P,
-        cfg: &Config,
-        rt: &tokio::runtime::Runtime,
-    ) -> Self {
-        // By default we're drawing a single window
-        // Set up the blitz drawing system
-        // todo: this won't work on ios - blitz creation has to be deferred until the event loop as started
-
-        let window = WindowBuilder::new().build(&event_loop).unwrap();
-
-        // Spin up the virtualdom
-        // We're going to need to hit it with a special waker
-        let mut vdom = VirtualDom::new_with_props(app, props);
-        _ = vdom.rebuild();
-
-        let markup = dioxus_ssr::render(&vdom);
-
-        let waker = crate::waker::tao_waker(&event_loop.create_proxy(), window.id());
-
-        let dom = RealDom::new(markup);
-
-        let size = window.inner_size();
-        let mut viewport = Viewport::new(size);
-        viewport.set_hidpi_scale(window.scale_factor() as _);
-
-        let mut document = rt.block_on(Document::from_window(&window, dom, viewport));
-        let mut scene = Scene::new();
-
-        // add default styles, resolve layout and styles
-        for ss in &cfg.stylesheets {
-            document.add_stylesheet(&ss);
-        }
-
-        document.resolve();
-        document.render(&mut scene);
-
-        Self {
-            window,
-            vdom,
-            document,
-            scene,
-            waker,
-        }
-    }
-
-    fn poll(&mut self) {
-        let mut cx = std::task::Context::from_waker(&self.waker);
-
-        loop {
-            {
-                let fut = self.vdom.wait_for_work();
-                pin_mut!(fut);
-
-                match fut.poll_unpin(&mut cx) {
-                    std::task::Poll::Ready(_) => {}
-                    std::task::Poll::Pending => break,
-                }
-            }
-
-            let edits = self.vdom.render_immediate();
-
-            // apply the mutations to the actual dom
-
-            // send_edits(view.dom.render_immediate(), &view.desktop_context.webview);
-        }
-    }
-
-    pub fn handle_window_event(&mut self, event: WindowEvent) {
-        match event {
-            WindowEvent::MouseInput {
-                device_id,
-                state,
-                button,
-                modifiers,
-            } => {}
-
-            WindowEvent::Resized(physical_size) => {
-                self.document.set_size(physical_size);
-                self.window.request_redraw();
-            }
-            WindowEvent::KeyboardInput { event, .. } => {
-                //
-                use tao::keyboard::KeyCode;
-                dbg!(&event);
-
-                match event.physical_key {
-                    KeyCode::ArrowUp => {
-                        *self.document.viewport.zoom_mut() += 0.1;
-                        self.window.request_redraw();
-                    }
-                    KeyCode::ArrowDown => {
-                        *self.document.viewport.zoom_mut() -= 0.1;
-                        self.window.request_redraw();
-                    }
-                    _ => {}
-                }
-            }
-            WindowEvent::Moved(_) => {}
-            WindowEvent::CloseRequested => {}
-            WindowEvent::Destroyed => {}
-            WindowEvent::DroppedFile(_) => {}
-            WindowEvent::HoveredFile(_) => {}
-            WindowEvent::HoveredFileCancelled => {}
-            WindowEvent::ReceivedImeText(_) => {}
-            WindowEvent::Focused(_) => {}
-            WindowEvent::ModifiersChanged(_) => {}
-            WindowEvent::CursorMoved {
-                device_id,
-                position,
-                modifiers,
-            } => {}
-            WindowEvent::CursorEntered { device_id } => {}
-            WindowEvent::CursorLeft { device_id } => {}
-            WindowEvent::MouseWheel {
-                device_id,
-                delta,
-                phase,
-                modifiers,
-            } => {}
-
-            WindowEvent::TouchpadPressure {
-                device_id,
-                pressure,
-                stage,
-            } => {}
-            WindowEvent::AxisMotion {
-                device_id,
-                axis,
-                value,
-            } => {}
-            WindowEvent::Touch(_) => {}
-            WindowEvent::ScaleFactorChanged {
-                scale_factor,
-                new_inner_size,
-            } => {}
-            WindowEvent::ThemeChanged(_) => {}
-            WindowEvent::DecorationsClick => {}
-            _ => {}
-        }
-    }
 }

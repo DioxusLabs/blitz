@@ -16,8 +16,8 @@ impl Viewport {
         Self {
             window_size,
             hidpi_scale: 1.0,
-            zoom: 3.0,
-            font_size: 32.0,
+            zoom: 1.0,
+            font_size: 16.0,
         }
     }
 

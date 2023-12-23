@@ -1,5 +1,9 @@
+use glazier::kurbo::Shape;
 use std::cell::RefCell;
-use style::properties::ComputedValues;
+use style::{
+    properties::ComputedValues,
+    values::generics::image::{GenericGradient, GenericImage},
+};
 use style_traits::CssType::COLOR;
 
 use crate::{styling::BlitzNode, viewport::Viewport};
@@ -135,6 +139,7 @@ impl Document {
         // todo: handle non-absolute colors
         let bg_color = bg_color.as_absolute().unwrap();
 
+        // Fill the color
         scene.fill(
             peniko::Fill::NonZero,
             Affine::IDENTITY,
@@ -142,6 +147,59 @@ impl Document {
             None,
             &shape,
         );
+
+        // If there's a gradient, try rendering it
+        let gradient_segments = &background.background_image.0;
+
+        // bless evan for figuring this out
+        for segment in gradient_segments {
+            match segment {
+                GenericImage::Gradient(gradient) => {
+                    //
+                    match gradient.as_ref() {
+                        GenericGradient::Linear {
+                            direction,
+                            items,
+                            repeating,
+                            compat_mode,
+                        } => {
+                            // let bb = shape.bounding_box();
+                            // let starting_point_offset = gradient.center_offset(*rect);
+                            // let ending_point_offset =
+                            //     Point::new(-starting_point_offset.x, -starting_point_offset.y);
+                            // let center = bb.center();
+                            // let start = Point::new(
+                            //     center.x + starting_point_offset.x,
+                            //     center.y + starting_point_offset.y,
+                            // );
+                            // let end = Point::new(
+                            //     center.x + ending_point_offset.x,
+                            //     center.y + ending_point_offset.y,
+                            // );
+
+                            // let kind = peniko::GradientKind::Linear { start, end };
+
+                            // let gradient = peniko::Gradient {
+                            //     kind,
+                            //     extend,
+                            //     stops: (*stops).clone(),
+                            // };
+
+                            // let brush = peniko::BrushRef::Gradient(&gradient);
+
+                            // sb.fill(peniko::Fill::NonZero, Affine::IDENTITY, brush, None, shape)
+                        }
+                        _ => todo!(),
+                    }
+                }
+                GenericImage::None => todo!(),
+                GenericImage::Url(_) => todo!(),
+                GenericImage::Rect(_) => todo!(),
+                GenericImage::PaintWorklet(_) => todo!(),
+                GenericImage::CrossFade(_) => todo!(),
+                GenericImage::ImageSet(_) => todo!(),
+            }
+        }
 
         //
         // 2. Draw the image

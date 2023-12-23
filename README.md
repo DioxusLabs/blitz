@@ -88,6 +88,7 @@ TODO:
 
 - [x] Render to window
 -- [ ] Frame
+--- [ ] gradient (figured out just not implemented)
 -- [ ] Outline
 -- [ ] Border
 -- [ ] Shadow
@@ -110,7 +111,8 @@ TODO:
 
 - [ ] Add interactivity (hit testing, etc etc)
 -- [ ] scrolling
--- [ ] Druid shell for native text selection (and a whole host of other stuff...)
+-- [ ] Druid shell (glazier) for native text selection (and a whole host of other stuff...)
+--- [ ] I think we can just add nstext directly
 -- [ ] Hooks for context menu
 -- [ ] keyboard input, event bubbling etc
 
