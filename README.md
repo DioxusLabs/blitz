@@ -97,7 +97,8 @@ TODO:
 -- [ ] text (italic, bold, size, font, quote, color, selection color, rustybuzz/swash/shaping, l-r text etc)
 -- [ ] svg (lyon? vello?)
 -- [ ] Shadow elements
--- [ ] zoom (partially implemented, needs to be user controlled)
+-- [x] zoom (partially implemented, needs to be user controlled)
+--- [ ] zoom needs to shrink available UI space (for responsive stuff)
 
 
 - [ ] Implement per-frame caching

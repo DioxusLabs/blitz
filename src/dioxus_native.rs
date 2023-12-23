@@ -59,8 +59,6 @@ pub fn launch_cfg_with_props<Props: 'static + Send + Clone>(
         // input, and uses significantly less power/CPU time than ControlFlow::Poll.
         *control_flow = ControlFlow::Wait;
 
-        // appliction.send_event(&event);
-
         match event {
             // Exit the app when close is request
             // Not always necessary
@@ -79,19 +77,13 @@ pub fn launch_cfg_with_props<Props: 'static + Send + Clone>(
                 windows.get_mut(&id).map(|view| view.poll());
             }
 
-            Event::NewEvents(cause) => {
+            Event::NewEvents(_) => {
                 for id in windows.keys() {
                     _ = proxy.send_event(UserWindowEvent(EventData::Poll, *id));
                 }
             }
 
             Event::RedrawRequested(window_id) => {
-                // Redraw the application.
-                //
-                // It's preferable for applications that do not render continuously to render in
-                // this event rather than in MainEventsCleared, since rendering in here allows
-                // the program to gracefully handle redraws requested by the OS.
-
                 windows.get_mut(&window_id).map(|window| {
                     window.document.resolve_layout();
                     window.document.render(&mut window.scene);
@@ -107,81 +99,9 @@ pub fn launch_cfg_with_props<Props: 'static + Send + Clone>(
             Event::WindowEvent {
                 window_id, event, ..
             } => {
-                //
-                match event {
-                    WindowEvent::MouseInput {
-                        device_id,
-                        state,
-                        button,
-                        modifiers,
-                    } => {}
-                    WindowEvent::Resized(physical_size) => {
-                        windows.get_mut(&window_id).map(|window| {
-                            window.document.set_size(physical_size);
-                            window.window.request_redraw();
-                        });
-                    }
-                    WindowEvent::KeyboardInput { event, .. } => {
-                        //
-
-                        use tao::keyboard::KeyCode;
-                        dbg!(&event);
-                        match event.physical_key {
-                            KeyCode::ArrowUp => {
-                                let window = windows.values_mut().next().unwrap();
-                                *window.document.viewport.zoom_mut() += 0.1;
-                                window.window.request_redraw();
-                            }
-                            KeyCode::ArrowDown => {
-                                let window = windows.values_mut().next().unwrap();
-                                *window.document.viewport.zoom_mut() -= 0.1;
-                                window.window.request_redraw();
-                            }
-                            _ => {}
-                        }
-                    }
-                    WindowEvent::Moved(_) => {}
-                    WindowEvent::CloseRequested => {}
-                    WindowEvent::Destroyed => {}
-                    WindowEvent::DroppedFile(_) => {}
-                    WindowEvent::HoveredFile(_) => {}
-                    WindowEvent::HoveredFileCancelled => {}
-                    WindowEvent::ReceivedImeText(_) => {}
-                    WindowEvent::Focused(_) => {}
-                    WindowEvent::ModifiersChanged(_) => {}
-                    WindowEvent::CursorMoved {
-                        device_id,
-                        position,
-                        modifiers,
-                    } => {}
-                    WindowEvent::CursorEntered { device_id } => {}
-                    WindowEvent::CursorLeft { device_id } => {}
-                    WindowEvent::MouseWheel {
-                        device_id,
-                        delta,
-                        phase,
-                        modifiers,
-                    } => {}
-
-                    WindowEvent::TouchpadPressure {
-                        device_id,
-                        pressure,
-                        stage,
-                    } => {}
-                    WindowEvent::AxisMotion {
-                        device_id,
-                        axis,
-                        value,
-                    } => {}
-                    WindowEvent::Touch(_) => {}
-                    WindowEvent::ScaleFactorChanged {
-                        scale_factor,
-                        new_inner_size,
-                    } => {}
-                    WindowEvent::ThemeChanged(_) => {}
-                    WindowEvent::DecorationsClick => {}
-                    _ => {}
-                }
+                windows.get_mut(&window_id).map(|window| {
+                    window.handle_window_event(event);
+                });
             }
 
             _ => (),
@@ -206,6 +126,9 @@ impl View {
         rt: &tokio::runtime::Runtime,
     ) -> Self {
         // By default we're drawing a single window
+        // Set up the blitz drawing system
+        // todo: this won't work on ios - blitz creation has to be deferred until the event loop as started
+
         let window = WindowBuilder::new().build(&event_loop).unwrap();
 
         // Spin up the virtualdom
@@ -217,8 +140,6 @@ impl View {
 
         let waker = crate::waker::tao_waker(&event_loop.create_proxy(), window.id());
 
-        // Set up the blitz drawing system
-        // todo: this won't work on ios - blitz creation has to be deferred until the event loop as started
         let dom = RealDom::new(markup);
 
         let size = window.inner_size();
@@ -264,6 +185,80 @@ impl View {
             // apply the mutations to the actual dom
 
             // send_edits(view.dom.render_immediate(), &view.desktop_context.webview);
+        }
+    }
+
+    pub fn handle_window_event(&mut self, event: WindowEvent) {
+        match event {
+            WindowEvent::MouseInput {
+                device_id,
+                state,
+                button,
+                modifiers,
+            } => {}
+
+            WindowEvent::Resized(physical_size) => {
+                self.document.set_size(physical_size);
+                self.window.request_redraw();
+            }
+            WindowEvent::KeyboardInput { event, .. } => {
+                //
+                use tao::keyboard::KeyCode;
+                dbg!(&event);
+
+                match event.physical_key {
+                    KeyCode::ArrowUp => {
+                        *self.document.viewport.zoom_mut() += 0.1;
+                        self.window.request_redraw();
+                    }
+                    KeyCode::ArrowDown => {
+                        *self.document.viewport.zoom_mut() -= 0.1;
+                        self.window.request_redraw();
+                    }
+                    _ => {}
+                }
+            }
+            WindowEvent::Moved(_) => {}
+            WindowEvent::CloseRequested => {}
+            WindowEvent::Destroyed => {}
+            WindowEvent::DroppedFile(_) => {}
+            WindowEvent::HoveredFile(_) => {}
+            WindowEvent::HoveredFileCancelled => {}
+            WindowEvent::ReceivedImeText(_) => {}
+            WindowEvent::Focused(_) => {}
+            WindowEvent::ModifiersChanged(_) => {}
+            WindowEvent::CursorMoved {
+                device_id,
+                position,
+                modifiers,
+            } => {}
+            WindowEvent::CursorEntered { device_id } => {}
+            WindowEvent::CursorLeft { device_id } => {}
+            WindowEvent::MouseWheel {
+                device_id,
+                delta,
+                phase,
+                modifiers,
+            } => {}
+
+            WindowEvent::TouchpadPressure {
+                device_id,
+                pressure,
+                stage,
+            } => {}
+            WindowEvent::AxisMotion {
+                device_id,
+                axis,
+                value,
+            } => {}
+            WindowEvent::Touch(_) => {}
+            WindowEvent::ScaleFactorChanged {
+                scale_factor,
+                new_inner_size,
+            } => {}
+            WindowEvent::ThemeChanged(_) => {}
+            WindowEvent::DecorationsClick => {}
+            _ => {}
         }
     }
 }
