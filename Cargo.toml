@@ -41,6 +41,7 @@ markup5ever_rcdom = "0.2.0"
 string_cache = "0.8.7"
 # tao = "0.24.0"
 futures-util = "0.3.29"
+glazier = { git = "https://github.com/linebender/glazier/" }
 # style = { git = "https://github.com/servo/servo.git", features = ["servo"] }
 
 

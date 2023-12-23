@@ -14,3 +14,7 @@ mod waker;
 mod dioxus_native;
 
 pub use dom::*;
+
+mod glaizer_integration;
+
+pub use glaizer_integration::*;

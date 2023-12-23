@@ -14,7 +14,7 @@ impl Document {
     /// Todo: update taffy to use an associated type instead of slab key
     /// Todo: update taffy to support traited styles so we don't even need to rely on taffy for storage
     pub fn resolve_layout(&mut self) {
-        self.layout.disable_rounding();
+        self.taffy.disable_rounding();
 
         let root = self.merge_dom(0, self.viewport.hidpi_scale, self.viewport.font_size);
 
@@ -35,11 +35,11 @@ impl Document {
 
         let style = Style {
             size: root_size,
-            ..self.layout.style(root).unwrap().clone()
+            ..self.taffy.style(root).unwrap().clone()
         };
 
-        self.layout.set_style(root, style).unwrap();
-        self.layout.compute_layout(root, available).unwrap();
+        self.taffy.set_style(root, style).unwrap();
+        self.taffy.compute_layout(root, available).unwrap();
     }
 
     // todo: this is a dumb method and should be replaced with the taffy layouttree traits
@@ -50,7 +50,7 @@ impl Document {
         let style = self.get_node_style(data, font_size, scale);
 
         // 2. Insert a leaf into taffy to associate with this node
-        let leaf = self.layout.new_leaf(style.unwrap_or_default()).unwrap();
+        let leaf = self.taffy.new_leaf(style.unwrap_or_default()).unwrap();
         data.layout_id.set(Some(leaf));
 
         // Cascade down the fontsize determined from stylo
@@ -69,7 +69,7 @@ impl Document {
         for x in 0..data.children.len() {
             let child_id = self.dom.nodes[node_id].children[x];
             let child_layout = self.merge_dom(child_id, scale, font_size);
-            self.layout.add_child(leaf, child_layout).unwrap();
+            self.taffy.add_child(leaf, child_layout).unwrap();
         }
 
         leaf
@@ -91,6 +91,18 @@ impl Document {
                     size: Size {
                         height: Dimension::Length(height as f32),
                         width: Dimension::Length(width as f32),
+                    },
+                    // padding: taffy::Rect {
+                    //     left: taffy::prelude::LengthPercentage::Length(50.0),
+                    //     right: taffy::prelude::LengthPercentage::Length(50.0),
+                    //     top: taffy::prelude::LengthPercentage::Length(50.0),
+                    //     bottom: taffy::prelude::LengthPercentage::Length(50.0),
+                    // },
+                    margin: taffy::Rect {
+                        left: taffy::prelude::LengthPercentageAuto::Length(50.0),
+                        right: taffy::prelude::LengthPercentageAuto::Length(50.0),
+                        top: taffy::prelude::LengthPercentageAuto::Length(50.0),
+                        bottom: taffy::prelude::LengthPercentageAuto::Length(50.0),
                     },
                     ..Default::default()
                 };

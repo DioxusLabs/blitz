@@ -1,3 +1,5 @@
+use std::cell::RefCell;
+
 // use dioxus_native_core::node::OwnedAttributeValue;
 // use dioxus_native_core::prelude::*;
 // use dioxus_native_core_macro::partial_derive_state;
@@ -20,12 +22,12 @@ const FONT_DATA: &[u8] = include_bytes!("Roboto-Regular.ttf");
 
 #[derive(Default)]
 pub struct TextContext {
-    gcx: GlyphContext,
+    gcx: RefCell<GlyphContext>,
 }
 
 impl TextContext {
     pub fn add(
-        &mut self,
+        &self,
         builder: &mut SceneBuilder,
         font: Option<&Font>,
         size: f32,
@@ -42,7 +44,10 @@ impl TextContext {
         let mut pen_x = 0f64;
         let mut pen_y = 0f64;
         let vars: [(&str, f32); 0] = [];
-        let mut provider = self.gcx.new_provider(&font, None, size, false, vars);
+
+        let mut gcx = self.gcx.borrow_mut();
+
+        let mut provider = gcx.new_provider(&font, None, size, false, vars);
         let brush = brush.map(Into::into);
         for ch in text.chars() {
             if ch == '\n' {

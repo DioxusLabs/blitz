@@ -1,4 +1,7 @@
+use std::cell::RefCell;
+
 use dioxus::core::{Mutation, Mutations};
+use glazier::raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
 use selectors::matching::QuirksMode;
 use style::{
     media_queries::{Device as StyleDevice, MediaList, MediaType},
@@ -36,54 +39,56 @@ pub mod styling;
 /// A rendering instance, not necessarily tied to a window
 ///
 pub struct Document {
-    dom: RealDom,
+    pub(crate) dom: RealDom,
 
-    layout: TaffyTree,
-
-    scene: Scene,
+    pub(crate) taffy: TaffyTree,
 
     /// The styling engine of firefox
-    stylist: Stylist,
+    pub(crate) stylist: Stylist,
 
     // caching for the stylist
-    snapshots: SnapshotMap,
+    pub(crate) snapshots: SnapshotMap,
 
     /// The actual viewport of the page that we're getting a glimpse of.
     /// We need this since the part of the page that's being viewed might not be the page in its entirety.
     /// This will let us opt of rendering some stuff
-    viewport: Viewport,
+    pub(crate) viewport: Viewport,
 
     /// Our drawing kit, not necessarily tied to a surface
-    renderer: VelloRenderer,
+    pub(crate) renderer: VelloRenderer,
 
-    surface: RenderSurface,
+    pub(crate) surface: RenderSurface,
 
-    render_context: RenderContext,
+    pub(crate) render_context: RenderContext,
 
     /// Our text stencil to be used with vello
-    text_context: TextContext,
+    pub(crate) text_context: TextContext,
 
     /// Our image cache
-    images: ImageCache,
+    pub(crate) images: ImageCache,
 
     /// A storage of fonts to load in and out.
     /// Whenever we encounter new fonts during parsing + mutations, this will become populated
-    fonts: FontCache,
+    pub(crate) fonts: FontCache,
 }
 
 impl Document {
-    pub async fn from_window(window: &Window, dom: RealDom) -> Self {
+    pub async fn from_window<W>(window: W, dom: RealDom, viewport: Viewport) -> Self
+    where
+        W: HasRawWindowHandle + HasRawDisplayHandle,
+    {
         // 1. Set up renderer-specific stuff
         // We build an independent viewport which can be dynamically set later
         // The intention here is to split the rendering pipeline away from tao/windowing for rendering to images
-        let size = window.inner_size();
-        let mut viewport = Viewport::new(size);
-        viewport.hidpi_scale = dbg!(window.scale_factor() * 4.0) as _;
 
         // 2. Set up Vello specific stuff
         let mut render_context = RenderContext::new().unwrap();
         let surface = render_context
-            .create_surface(window, size.width, size.height)
+            .create_surface(
+                &window,
+                viewport.window_size.width,
+                viewport.window_size.height,
+            )
             .await
             .expect("Error creating surface");
 
@@ -100,14 +105,16 @@ impl Document {
             StyleDevice::new(
                 MediaType::screen(),
                 quirks,
-                euclid::Size2D::new(size.width as _, size.height as _),
+                euclid::Size2D::new(
+                    viewport.window_size.width as _,
+                    viewport.window_size.height as _,
+                ),
                 euclid::Scale::new(viewport.hidpi_scale as _),
             ),
             quirks,
         );
 
         // 5. Build helpers for things like event handlers, hit testing
-
         Self {
             viewport,
             render_context,
@@ -115,9 +122,8 @@ impl Document {
             surface,
             dom,
             stylist,
-            scene: Scene::new(),
             snapshots: SnapshotMap::new(),
-            layout: Default::default(),
+            taffy: Default::default(),
             text_context: Default::default(),
             images: Default::default(),
             fonts: Default::default(),
@@ -172,18 +178,10 @@ impl Document {
     ///
     /// This assumes styles are resolved and layout is complete.
     /// Make sure you do those before trying to render
-    pub(crate) fn render(&mut self) {
+    pub(crate) fn render(&mut self, scene: &mut Scene) {
         println!("rendering!");
 
-        let mut builder = SceneBuilder::for_scene(&mut self.scene);
-
-        crate::render::render(
-            &self.dom,
-            &self.layout,
-            &mut self.text_context,
-            &mut builder,
-            &self.viewport,
-        );
+        self.render_internal(&mut SceneBuilder::for_scene(scene));
 
         let surface_texture = self
             .surface
@@ -194,7 +192,7 @@ impl Document {
         let device = &self.render_context.devices[self.surface.dev_id];
 
         let render_params = RenderParams {
-            base_color: Color::RED,
+            base_color: Color::WHITE,
             width: self.surface.config.width,
             height: self.surface.config.height,
         };
@@ -203,7 +201,7 @@ impl Document {
             .render_to_surface(
                 &device.device,
                 &device.queue,
-                &self.scene,
+                &scene,
                 &surface_texture,
                 &render_params,
             )

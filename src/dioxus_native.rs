@@ -11,8 +11,9 @@ use tao::{
     event_loop::{ControlFlow, EventLoop},
     window::{WindowBuilder, WindowId},
 };
+use vello::Scene;
 
-use crate::dom::styling::RealDom;
+use crate::{dom::styling::RealDom, viewport::Viewport};
 use crate::{
     dom::Document,
     waker::{EventData, UserWindowEvent},
@@ -59,7 +60,13 @@ pub fn launch_cfg_with_props<Props: 'static + Send>(
     // Set up the blitz drawing system
     // todo: this won't work on ios - blitz creation has to be deferred until the event loop as started
     let dom = RealDom::new(markup);
-    let mut blitz = rt.block_on(Document::from_window(&window, dom));
+
+    let size = window.inner_size();
+    let mut viewport = Viewport::new(size);
+    viewport.hidpi_scale = dbg!(window.scale_factor()) as _;
+
+    let mut blitz = rt.block_on(Document::from_window(&window, dom, viewport));
+    let mut scene = Scene::new();
 
     // add default styles, resolve layout and styles
     for ss in cfg.stylesheets {
@@ -67,7 +74,7 @@ pub fn launch_cfg_with_props<Props: 'static + Send>(
     }
 
     blitz.resolve();
-    blitz.render();
+    blitz.render(&mut scene);
 
     event_loop.run(move |event, _, control_flow| {
         // ControlFlow::Wait pauses the event loop if no events are available to process.
@@ -104,12 +111,26 @@ pub fn launch_cfg_with_props<Props: 'static + Send>(
 
                 // if !appliction.clean().is_empty() {
                 blitz.resolve_layout();
-                blitz.render();
+                blitz.render(&mut scene);
                 // }
             }
 
             Event::UserEvent(_redraw) => {
                 window.request_redraw();
+            }
+
+            Event::WindowEvent {
+                window_id,
+                event:
+                    WindowEvent::KeyboardInput {
+                        device_id,
+                        event,
+                        is_synthetic,
+                        ..
+                    },
+                ..
+            } => {
+                //
             }
 
             Event::WindowEvent {

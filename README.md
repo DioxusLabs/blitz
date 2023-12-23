@@ -88,14 +88,14 @@ TODO:
 - [x] Render to window
 -- [ ] Border
 -- [ ] Frame
+-- [ ] Shadow
 -- [ ] Widgets
 -- [ ] Text selection / input
 -- [ ] Checkbox/slider/etc
--- [ ] Shadow
 -- [ ] text (italic, bold, size, font, quote, color, selection color, rustybuzz/swash/shaping, l-r text etc)
 -- [ ] svg (lyon? vello?)
 -- [ ] Shadow elements
--- [ ] zoom
+-- [ ] zoom (partially implemented, needs to be user controlled)
 
 
 - [ ] Implement per-frame caching
