@@ -1,3 +1,7 @@
+//! Enable the dom to participate in styling by servo
+//!
+use crate::style_traverser;
+
 use std::{
     borrow::{Borrow, Cow},
     cell::{Cell, RefCell},
@@ -19,28 +23,101 @@ use servo_url::ServoUrl;
 use slab::Slab;
 use string_cache::{DefaultAtom, EmptyStaticAtomSet, StaticAtomSet};
 use style::{
+    animation::DocumentAnimationSet,
     context::{
         QuirksMode, RegisteredSpeculativePainter, RegisteredSpeculativePainters,
         SharedStyleContext, StyleContext,
     },
     data::ElementData,
     dom::{LayoutIterator, NodeInfo, OpaqueNode, TDocument, TElement, TNode, TShadowRoot},
+    global_style_data::GLOBAL_STYLE_DATA,
     media_queries::MediaType,
     media_queries::{Device as StyleDevice, MediaList},
     properties::{PropertyDeclarationBlock, PropertyId, StyleBuilder},
     selector_parser::SelectorImpl,
     servo_arc::{Arc, ArcBorrow},
-    shared_lock::{Locked, SharedRwLock},
+    shared_lock::{Locked, SharedRwLock, StylesheetGuards},
     sharing::StyleSharingCandidate,
     stylesheets::{AllowImportRules, DocumentStyleSheet, Origin, Stylesheet},
     stylist::Stylist,
+    thread_state::ThreadState,
     traversal::{DomTraversal, PerLevelTraversalData},
+    traversal_flags::TraversalFlags,
     values::{AtomIdent, GenericAtomIdent},
     Atom,
 };
 use style_traits::dom::ElementState;
-use taffy::prelude::{Layout, Style, Taffy};
+use taffy::prelude::{Layout, Style, TaffyTree};
 use vello::kurbo;
+
+impl crate::Document {
+    pub fn resolve_stylist(&mut self) {
+        style::thread_state::enter(ThreadState::LAYOUT);
+
+        let guard = &self.dom.guard;
+        let guards = StylesheetGuards {
+            author: &guard.read(),
+            ua_or_user: &guard.read(),
+        };
+
+        // Note that html5ever parses the first node as the document, so we need to unwrap it and get the first child
+        // For the sake of this demo, it's always just a single body node, but eventually we will want to construct something like the
+        // BoxTree struct that servo uses.
+        self.stylist.flush(
+            &guards,
+            Some(self.dom.root_element()),
+            Some(&self.snapshots),
+        );
+
+        // Build the style context used by the style traversal
+        let context = SharedStyleContext {
+            traversal_flags: TraversalFlags::empty(),
+            stylist: &self.stylist,
+            options: GLOBAL_STYLE_DATA.options.clone(),
+            guards,
+            visited_styles_enabled: false,
+            animations: (&DocumentAnimationSet::default()).clone(),
+            current_time_for_animations: 0.0,
+            snapshot_map: &self.snapshots,
+            registered_speculative_painters: &RegisteredPaintersImpl,
+        };
+
+        // components/layout_2020/lib.rs:983
+        println!("------Pre-traversing the DOM tree -----");
+        let root = self.dom.root_element();
+
+        let token = style_traverser::RecalcStyle::pre_traverse(root, &context);
+
+        // Style the elements, resolving their data
+        println!("------ Traversing domtree ------",);
+        let traverser = style_traverser::RecalcStyle::new(context);
+        style::driver::traverse_dom(&traverser, token, None);
+
+        // now print out the style data
+        print_styles(&self.dom);
+    }
+}
+
+fn print_styles(markup: &RealDom) {
+    use style::dom::{TElement, TNode};
+
+    let root = markup.root_node();
+    for node in 0..markup.nodes.len() {
+        let Some(el) = root.with(node).as_element() else {
+            continue;
+        };
+
+        let data = el.borrow_data().unwrap();
+        let primary = data.styles.primary();
+        let bg_color = &primary.get_background().background_color;
+
+        println!(
+            "Styles for node {node_idx}:\n{:#?}",
+            bg_color,
+            node_idx = node
+        );
+    }
+}
 
 pub struct RealDom {
     pub nodes: Slab<NodeData>,
@@ -80,9 +157,6 @@ impl RealDom {
             .unwrap();
 
         fill_slab_with_handles(&mut nodes, document.document.clone(), 0, None);
-
-        // create the layout engine
-        let layout = Taffy::new();
 
         RealDom {
             nodes,
@@ -159,7 +233,7 @@ fn fill_slab_with_handles(
 
 #[derive(Debug)]
 pub struct NodeData {
-    // todo: layout
+    // todo: layout from new taffy
     pub style: AtomicRefCell<ElementData>,
 
     pub children: Vec<usize>,
@@ -168,7 +242,7 @@ pub struct NodeData {
 
     pub child_id: usize,
 
-    pub layout_id: Cell<Option<taffy::prelude::Node>>,
+    pub layout_id: Cell<Option<taffy::prelude::NodeId>>,
 
     // pub layout: Cell<taffy::layout::Layout>,
 
@@ -183,10 +257,11 @@ pub struct NodeData {
 // store_children_to_process
 // did_process_child
 // pub struct DomData {
-// node: markup5ever_rcdom::Node,
-// local_name: html5ever::LocalName,
-// tag_name: markup5ever_rcdom::TagName,
-// namespace: html5ever::Namespace,
+//     // ... we can probs just get away with using the html5ever types directly. basically just using the servo dom
+//     node: markup5ever_rcdom::Nodge,
+//     local_name: html5ever::LocalName,
+//     tag_name: markup5ever_rcdom::TagName,
+//     namespace: html5ever::Namespace,
 // prefix: DomRefCell<Option<html5ever::Prefix>>,
 // attrs: DomRefCell<Vec<Dom<Attr>>>,
 // id_attribute: DomRefCell<Option<Atom>>,
@@ -194,7 +269,7 @@ pub struct NodeData {
 // style_attribute: DomRefCell<Option<Arc<Locked<PropertyDeclarationBlock>>>>,
 // attr_list: MutNullableDom<NamedNodeMap>,
 // class_list: MutNullableDom<DOMTokenList>,
-// state: Cell<ElementState>,
+//     state: Cell<ElementState>,
 // }
 
 // Like, we do even need separate types for elements/nodes/documents?
@@ -206,7 +281,7 @@ impl<'a> BlitzNode<'a> {
         Self(ref_based_alloc(Entry { id, dom: self.dom }))
     }
 
-    pub fn bounds(&self, taffy: &Taffy) -> kurbo::Rect {
+    pub fn bounds(&self, taffy: &TaffyTree) -> kurbo::Rect {
         let taffy_id = self.data().layout_id.get();
         let layout = taffy.layout(taffy_id.unwrap()).unwrap();
 
@@ -553,7 +628,13 @@ impl<'a> selectors::Element for BlitzNode<'a> {
         id: &<Self::Impl as selectors::SelectorImpl>::Identifier,
         case_sensitivity: selectors::attr::CaseSensitivity,
     ) -> bool {
-        false
+        let mut has_id = false;
+        self.each_attr_name(|f| {
+            if f.as_ref() == "id" {
+                has_id = true;
+            }
+        });
+        has_id
     }
 
     fn has_class(

@@ -21,7 +21,7 @@ style_traits = { path = "../servo/components/style_traits", features = [
 servo_url = { path = "../servo/components/url" }
 
 # guts pulled from blitz
-taffy = "0.3.12"
+taffy = { git = "https://github.com/dioxuslabs/taffy" }
 tokio = { version = "1.25.0", features = ["full"] }
 vello = { git = "https://github.com/linebender/vello", rev = "9d7c4f00d8db420337706771a37937e9025e089c" }
 wgpu = "0.17"

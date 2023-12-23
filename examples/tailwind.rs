@@ -16,22 +16,21 @@ fn main() {
 
 fn app(cx: Scope) -> Element {
     render! {
-        for _ in 0..5 {
-            div { class: "bg-red-100", "1" }
-            div { class: "bg-red-200", "2" }
-            div { class: "bg-red-300", "3" }
-            div { class: "bg-red-400", "4" }
-            div { class: "bg-red-500", "5" }
-            div { class: "bg-red-600", "6" }
-            div { class: "bg-red-700", "7" }
-            div { class: "bg-red-800", "8" }
-            div { class: "bg-red-900", "9" }
-            div { class: "bg-red-950", "10" }
+        for row in 0..3 {
+            div { class: "flex flex-row",
+                div { id: "cool", "hiiiiiiiiiiii\nhiiiii" }
+                p { class: "cool", "hi" }
+                for x in 1..=9 {
+                    div { class: "bg-red-{x}00", "{x}" }
+                }
+            }
         }
     }
 }
 
 const CSS: &str = r#"
+p.cool { background-color: purple; }
+#cool { background-color: blue; }
 .bg-red-100	{ background-color: rgb(254 226 226); }
 .bg-red-200	{ background-color: rgb(254 202 202); }
 .bg-red-300	{ background-color: rgb(252 165 165); }

@@ -74,18 +74,25 @@ impl TextContext {
         let metrics = font.metrics(fello_size, Default::default());
         let line_height = metrics.ascent - metrics.descent + metrics.leading;
         let glyph_metrics = font.glyph_metrics(fello_size, Default::default());
-        let mut width = 0f64;
+        let mut max_width = 0;
+        let mut cur_width = 0f64;
         let mut height = line_height as f64;
+
         for ch in text.chars() {
             if ch == '\n' {
                 height += line_height as f64;
+                max_width = max_width.max(cur_width as i32);
+                cur_width = 0.0;
                 continue;
             }
             let gid = charmap.map(ch).unwrap_or_default();
             let advance = glyph_metrics.advance_width(gid).unwrap_or_default() as f64;
-            width += advance;
+            cur_width += advance;
         }
-        (width, height)
+
+        max_width = max_width.max(cur_width as i32);
+
+        (max_width as _, height)
     }
 }
 

@@ -30,28 +30,30 @@ fn main() {
         h4 { }
     };
 
-    let styled_dom = stylo_dioxus::style_lazy_nodes(css, nodes);
+    let document = stylo_dioxus::Document::new();
 
-    print_styles(&styled_dom);
+    // let styled_dom = stylo_dioxus::style_lazy_nodes(css, nodes);
+
+    // print_styles(&styled_dom);
 }
 
-fn print_styles(markup: &stylo_dioxus::RealDom) {
-    use style::dom::{TElement, TNode};
+// fn print_styles(markup: &stylo_dioxus::RealDom) {
+//     use style::dom::{TElement, TNode};
 
-    let root = markup.root_node();
-    for node in 0..markup.nodes.len() {
-        let Some(el) = root.with(node).as_element() else {
-            continue;
-        };
+//     let root = markup.root_node();
+//     for node in 0..markup.nodes.len() {
+//         let Some(el) = root.with(node).as_element() else {
+//             continue;
+//         };
 
-        let data = el.borrow_data().unwrap();
-        let primary = data.styles.primary();
-        let bg_color = &primary.get_background().background_color;
+//         let data = el.borrow_data().unwrap();
+//         let primary = data.styles.primary();
+//         let bg_color = &primary.get_background().background_color;
 
-        println!(
-            "Styles for node {node_idx}:\n{:#?}",
-            bg_color,
-            node_idx = node
-        );
-    }
-}
+//         println!(
+//             "Styles for node {node_idx}:\n{:#?}",
+//             bg_color,
+//             node_idx = node
+//         );
+//     }
+// }

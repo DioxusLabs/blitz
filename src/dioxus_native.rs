@@ -5,17 +5,17 @@ use std::{
 
 use dioxus::prelude::*;
 use futures_util::Future;
-use taffy::Taffy;
+use taffy::TaffyTree;
 use tao::{
     event::{Event, WindowEvent},
     event_loop::{ControlFlow, EventLoop},
     window::{WindowBuilder, WindowId},
 };
 
+use crate::dom::styling::RealDom;
 use crate::{
-    blitz::Document,
+    dom::Document,
     waker::{EventData, UserWindowEvent},
-    RealDom,
 };
 
 #[derive(Default)]
