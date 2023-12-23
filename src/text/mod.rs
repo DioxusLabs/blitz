@@ -26,6 +26,9 @@ pub struct TextContext {
 }
 
 impl TextContext {
+    /// way more to this than meets the eye
+    /// We'll want to add a parameter for style stacks (underline, fontweight, strike-thru, etc)
+    /// https://github.com/dfrg/parley/blob/master/src/resolve/mod.rs
     pub fn add(
         &self,
         builder: &mut SceneBuilder,

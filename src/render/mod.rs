@@ -1,8 +1,9 @@
 use std::cell::RefCell;
 use style::properties::ComputedValues;
+use style_traits::CssType::COLOR;
 
-use crate::text::TextContext;
 use crate::{styling::BlitzNode, viewport::Viewport};
+use crate::{styling::NodeData, text::TextContext};
 use crate::{styling::RealDom, Document};
 use html5ever::{
     tendril::{fmt::UTF8, Tendril},
@@ -10,15 +11,9 @@ use html5ever::{
 };
 use style::color::AbsoluteColor;
 use taffy::prelude::Layout;
-use taffy::prelude::Size as LayoutSize;
-use taffy::TaffyTree;
-use vello::peniko;
-use vello::peniko::{Color, Fill, Stroke};
+use vello::kurbo::{Affine, Point, Rect, RoundedRect, Vec2};
+use vello::peniko::{self, Color, Fill, Stroke};
 use vello::SceneBuilder;
-use vello::{
-    kurbo::{Affine, Point, Rect, RoundedRect, Vec2},
-    Scene,
-};
 
 const FOCUS_BORDER_WIDTH: f64 = 6.0;
 
@@ -37,75 +32,28 @@ impl Document {
             &root_element.bounds(&self.taffy),
         );
 
-        self.render_node(sb, root_element.id, Point::ZERO, self.viewport.font_size);
+        self.render_element(sb, root_element.id, Point::ZERO);
     }
 
-    fn render_node(
-        &self,
-        scene_builder: &mut SceneBuilder,
-        node: usize,
-        location: Point,
-        font_size: f32,
-    ) {
+    /// Renders a node, but is guaranteed that the node is an element
+    /// This is because the font_size is calculated from layout resolution and all text is rendered directly here, instead
+    /// of a separate text stroking phase.
+    ///
+    /// In Blitz, text styling gets its attributes from its container element/resolved styles
+    /// In other libraries, text gets its attributes from a `text` element - this is not how HTML works.
+    ///
+    /// Approaching rendering this way guarantees we have all the styles we need when rendering text with not having
+    /// to traverse back to the parent for its styles, or needing to pass down styles
+    fn render_element(&self, scene: &mut SceneBuilder, node: usize, location: Point) {
         use markup5ever_rcdom::NodeData;
 
         let element = &self.dom.nodes[node];
-        let layout = self.taffy.layout(element.layout_id.get().unwrap()).unwrap();
-        let pos = location + Vec2::new(layout.location.x as f64, layout.location.y as f64);
+        let (layout, pos) = self.node_position(node, location);
 
-        match &element.node.data {
-            NodeData::Text { contents } => {
-                // uhhh we need the font size but I dont think text nodes have their fontsize ready?
-                self.stroke_text(scene_builder, pos, contents, font_size)
-            }
-            NodeData::Element { name, .. } => {
-                //
-                self.stroke_element(name, pos, layout, element, scene_builder)
-            }
-            NodeData::Document
-            | NodeData::Doctype { .. }
-            | NodeData::Comment { .. }
-            | NodeData::ProcessingInstruction { .. } => todo!(),
-        }
-    }
-
-    fn stroke_text(
-        &self,
-        scene_builder: &mut SceneBuilder<'_>,
-        pos: Point,
-        contents: &RefCell<Tendril<UTF8>>,
-        font_size: f32,
-    ) {
-        // let text_color = translate_color(&node.get::<ForgroundColor>().unwrap().0);
-
-        let font_size = font_size * self.viewport.hidpi_scale;
-        let text_color = Color::BLACK;
-        let transform = Affine::translate(pos.to_vec2() + Vec2::new(0.0, font_size as f64));
-
-        self.text_context.add(
-            scene_builder,
-            None,
-            font_size,
-            Some(text_color),
-            transform,
-            &contents.borrow(),
-        )
-    }
-
-    /// Draw an HTML element.
-    ///
-    /// Will need to render special elements differently....
-    fn stroke_element(
-        &self,
-        name: &QualName,
-        pos: Point,
-        layout: &Layout,
-        element: &crate::styling::NodeData,
-        scene_builder: &mut SceneBuilder<'_>,
-    ) {
-        // 1. Stroke the background
-
-        // 2. Stroke the
+        // Todo: different semantics based on the element name
+        let NodeData::Element { .. } = &element.node.data else {
+            panic!("Unexpected node found while traversing element tree during render")
+        };
 
         let style = element.style.borrow();
         let primary: &style::servo_arc::Arc<ComputedValues> = style.styles.primary();
@@ -115,11 +63,40 @@ impl Document {
         let width: f64 = layout.size.width.into();
         let height: f64 = layout.size.height.into();
 
+        // All the stuff that HTML cares about:
+        // custom_properties,
+        // writing_mode,
+        // rules,
+        // visited_style,
+        // flags,
+        // background,
+        // border,
+        // box_,
+        // column,
+        // counters,
+        // effects,
+        // font,
+        // inherited_box,
+        // inherited_table,
+        // inherited_text,
+        // inherited_ui,
+        // list,
+        // margin,
+        // outline,
+        // padding,
+        // position,
+        // table,
+        // text,
+        // ui,
+
         let background = primary.get_background();
-        let bg_color = background.background_color.clone();
-
         let border = primary.get_border();
+        let effects = primary.get_effects();
+        let font = primary.get_font();
+        let t = primary.get_text();
+        let outline = primary.get_outline();
 
+        let bg_color = background.background_color.clone();
         let left_border_width = border.border_left_width.to_f64_px();
         let top_border_width = border.border_top_width.to_f64_px();
         let right_border_width = border.border_right_width.to_f64_px();
@@ -134,34 +111,139 @@ impl Document {
         let radii = (1.0, 1.0, 1.0, 1.0);
         let shape = RoundedRect::new(x_start, y_start, x_end, y_end, radii);
 
+        // todo: handle non-absolute colors
         let bg_color = bg_color.as_absolute().unwrap();
-
-        // todo: opacity
         let color = Color {
             r: (bg_color.components.0 * 255.0) as u8,
             g: (bg_color.components.1 * 255.0) as u8,
             b: (bg_color.components.2 * 255.0) as u8,
-            a: 255,
+            a: (bg_color.alpha() * 255.0) as u8,
         };
 
-        scene_builder.fill(peniko::Fill::NonZero, Affine::IDENTITY, color, None, &shape);
+        scene.fill(peniko::Fill::NonZero, Affine::IDENTITY, color, None, &shape);
 
-        // todo: need more color points
-        let stroke = Stroke::new(0.0);
-        scene_builder.stroke(&stroke, Affine::IDENTITY, color, None, &shape);
+        // todo: borders can be different colors, thickness, etc *and* have radius
+        let stroke = Stroke::new(1.0);
+        let border_color = Color::FLORAL_WHITE;
+        scene.stroke(&stroke, Affine::IDENTITY, border_color, None, &shape);
 
-        // manually cascade this into children since text might not have it when rendering
+        // Render out children nodes now that we've painted the background, border, shadow, etc
+        // I'd rather pre-compute all the text rendering stuff
+
+        // Pull out all the stuff we need to render text
+        // We do it here so all the child text can share the same text styling (font size, color, weight, etc) without
+        // recomputing for *every* segment
+
+        let font_size = font.font_size.computed_size().px();
+
+        let font_size = font_size * self.viewport.hidpi_scale;
+        let text_color = Color::BLACK;
+
+        for child in &element.children {
+            match &self.dom.nodes[*child].node.data {
+                // Rendering text is done here in the iterator
+                // The codegen isn't as great but saves us having to do a bunch of work
+                NodeData::Text { contents } => {
+                    // todo: use the layout to handle clipping of the text
+                    let (_layout, pos) = self.node_position(*child, pos);
+                    let transform =
+                        Affine::translate(pos.to_vec2() + Vec2::new(0.0, font_size as f64));
+
+                    self.text_context.add(
+                        scene,
+                        None,
+                        font_size,
+                        Some(text_color),
+                        transform,
+                        &contents.borrow(),
+                    )
+                }
+
+                // Rendering elements is simple, just recurse
+                NodeData::Element { .. } => self.render_element(scene, *child, pos),
+
+                // Documents/comments/etc not important
+                _ => {}
+            }
+        }
+    }
+
+    fn node_position(&self, node: usize, location: Point) -> (&Layout, Point) {
+        let layout = self.layout(node);
+        let pos = location + Vec2::new(layout.location.x as f64, layout.location.y as f64);
+        (layout, pos)
+    }
+
+    fn layout(&self, child: usize) -> &Layout {
+        self.taffy
+            .layout((&self.dom.nodes[child]).layout_id.get().unwrap())
+            .unwrap()
+    }
+
+    fn render_children(
+        &self,
+        element: &NodeData,
+        scene: &mut SceneBuilder<'_>,
+        pos: Point,
+        primary: &style::servo_arc::Arc<ComputedValues>,
+    ) {
+        use markup5ever_rcdom::NodeData;
         use style::values::generics::transform::ToAbsoluteLength;
+
+        // Pull out all the stuff we need to render text
+        // We do it here so all the child text can share the same text styling (font size, color, weight, etc) without
+        // recomputing for *every* segment
+
         let font_size = primary
             .clone_font_size()
             .computed_size()
             .to_pixel_length(None)
             .unwrap();
+        let font_size = font_size * self.viewport.hidpi_scale;
+        let text_color = Color::BLACK;
 
         for id in &element.children {
-            self.render_node(scene_builder, *id, pos, font_size);
+            match &self.dom.nodes[*id].node.data {
+                // Rendering elements is simple, just recurse
+                NodeData::Element { .. } => self.render_element(scene, *id, pos),
+
+                // Rendering text is done here in the iterator
+                // The codegen isn't as great but saves us having to do a bunch of work
+                NodeData::Text { contents } => {
+                    let element = &self.dom.nodes[*id];
+                    let layout = self.taffy.layout(element.layout_id.get().unwrap()).unwrap();
+                    let pos = pos + Vec2::new(layout.location.x as f64, layout.location.y as f64);
+
+                    let transform =
+                        Affine::translate(pos.to_vec2() + Vec2::new(0.0, font_size as f64));
+
+                    self.text_context.add(
+                        scene,
+                        None,
+                        font_size,
+                        Some(text_color),
+                        transform,
+                        &contents.borrow(),
+                    )
+                }
+                NodeData::Document
+                | NodeData::Doctype { .. }
+                | NodeData::Comment { .. }
+                | NodeData::ProcessingInstruction { .. } => {}
+            }
         }
     }
+}
+
+fn get_font_size(element: &NodeData) -> f32 {
+    use style::values::generics::transform::ToAbsoluteLength;
+    let style = element.style.borrow();
+    let primary: &style::servo_arc::Arc<ComputedValues> = style.styles.primary();
+    primary
+        .clone_font_size()
+        .computed_size()
+        .to_pixel_length(None)
+        .unwrap()
 }
 
 fn convert_servo_color(color: &AbsoluteColor) -> Color {
