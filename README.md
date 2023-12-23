@@ -6,6 +6,7 @@ Render HTML and CSS using Firefox's parallel browser-grade CSS engine. Leverages
 
 - Stylo (servo/style) for CSS resolution
 - Vello for drawing
+- Glazier for input handling
 - Taffy for Layout
 - WGPU for rendering
 - Shipyard for ECS data layout
@@ -83,13 +84,40 @@ TODO:
 - [x] Compute layout with Taffy
 - [x] Compute styles for Dioxus Lazy Nodes
 - [x] Pass layout and styles to WGPU for single frame to png
+
 - [x] Render to window
-- [ ] Add interactivity (hit testing, etc etc)
+-- [ ] Border
+-- [ ] Frame
+-- [ ] Widgets
+-- [ ] Text selection / input
+-- [ ] Checkbox/slider/etc
+-- [ ] Shadow
+-- [ ] text (italic, bold, size, font, quote, color, selection color, rustybuzz/swash/shaping, l-r text etc)
+-- [ ] svg (lyon? vello?)
+-- [ ] Shadow elements
+-- [ ] zoom
+
+
 - [ ] Implement per-frame caching
+-- [ ] Text
+-- [ ] Font loading + detection
+-- [ ] quadtree
+-- [ ] scene
+-- [ ] layout
+
+- [ ] Add interactivity (hit testing, etc etc)
+-- [ ] Druid shell for native text selection (and a whole host of other stuff...)
+-- [ ] Hooks for context menu
+-- [ ] keyboard input, event bubbling etc
+-- [ ] scrolling
+
 - [ ] Add accessibility kit
 - [ ] Multiwindow
+- [ ] Animation
 - [ ] use_wgpu_context() to grab an element as an arbitrary render surface
+- [ ] Tests
 
+- We might want to migrate to servo's layout engine once its released
 
 ## License
 

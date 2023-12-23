@@ -109,16 +109,6 @@ fn default_font<'a>() -> FontRef<'a> {
     FontRef::new(FONT_DATA).unwrap()
 }
 
-#[derive(Clone, PartialEq, Debug, Component)]
-pub(crate) struct FontSize(pub f32);
-pub const DEFAULT_FONT_SIZE: f32 = 16.0;
-
-impl Default for FontSize {
-    fn default() -> Self {
-        FontSize(DEFAULT_FONT_SIZE)
-    }
-}
-
 // fn parse_font_size_from_attr(
 //     css_value: &OwnedAttributeValue,
 //     parent_font_size: f32,

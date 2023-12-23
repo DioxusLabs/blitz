@@ -77,7 +77,8 @@ impl Document {
         // We build an independent viewport which can be dynamically set later
         // The intention here is to split the rendering pipeline away from tao/windowing for rendering to images
         let size = window.inner_size();
-        let viewport = Viewport::new(size);
+        let mut viewport = Viewport::new(size);
+        viewport.hidpi_scale = dbg!(window.scale_factor() * 4.0) as _;
 
         // 2. Set up Vello specific stuff
         let mut render_context = RenderContext::new().unwrap();
@@ -100,7 +101,7 @@ impl Document {
                 MediaType::screen(),
                 quirks,
                 euclid::Size2D::new(size.width as _, size.height as _),
-                euclid::Scale::new(1.0),
+                euclid::Scale::new(viewport.hidpi_scale as _),
             ),
             quirks,
         );
@@ -146,13 +147,6 @@ impl Document {
             .force_stylesheet_origins_dirty(Origin::Author.into());
     }
 
-    // Adjust the viewport
-    pub(crate) fn set_size(&mut self, physical_size: PhysicalSize<u32>) {
-        self.viewport.window_size = physical_size;
-        self.surface.config.height = physical_size.height;
-        self.surface.config.width = physical_size.width;
-    }
-
     /// Restyle the tree and then relayout it
     pub fn resolve(&mut self) {
         // we need to resolve stylist first since it will need to drive our layout bits
@@ -162,12 +156,25 @@ impl Document {
         self.resolve_layout();
     }
 
+    // Adjust the viewport
+    pub(crate) fn set_size(&mut self, size: PhysicalSize<u32>) {
+        self.viewport.window_size = size;
+
+        if size.width > 0 && size.height > 0 {
+            // self.dom.set_size(size);
+            self.render_context
+                .resize_surface(&mut self.surface, size.width, size.height);
+        }
+    }
+
     /// Draw the current tree to current render surface
     /// Eventually we'll want the surface itself to be passed into the render function, along with things like the viewport
     ///
     /// This assumes styles are resolved and layout is complete.
     /// Make sure you do those before trying to render
     pub(crate) fn render(&mut self) {
+        println!("rendering!");
+
         let mut builder = SceneBuilder::for_scene(&mut self.scene);
 
         crate::render::render(
@@ -175,7 +182,7 @@ impl Document {
             &self.layout,
             &mut self.text,
             &mut builder,
-            self.viewport.window_size,
+            &self.viewport,
         );
 
         let surface_texture = self

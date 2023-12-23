@@ -18,9 +18,18 @@ impl Document {
     /// Todo: update taffy to use an associated type instead of slab key
     /// Todo: update taffy to support traited styles so we don't even need to rely on taffy for storage
     pub fn resolve_layout(&mut self) {
-        let root = merge_dom(&mut self.layout, &mut self.text, self.dom.root_element());
+        self.layout.disable_rounding();
 
-        // We want the root container space to be auto
+        let root = merge_dom(
+            &mut self.layout,
+            &mut self.text,
+            self.dom.root_element(),
+            self.viewport.hidpi_scale,
+            self.viewport.font_size,
+        );
+
+        // We want the root container space to be auto unless specified
+        // todo - root size should be allowed to expand past the borders.
         let root_size = Size {
             width: Dimension::Auto,
             height: Dimension::Auto,
@@ -44,7 +53,13 @@ impl Document {
     }
 }
 
-fn merge_dom(taffy: &mut TaffyTree, text_context: &mut TextContext, node: BlitzNode) -> NodeId {
+fn merge_dom(
+    taffy: &mut TaffyTree,
+    text_context: &mut TextContext,
+    node: BlitzNode,
+    scale: f32,
+    mut font_size: f32,
+) -> NodeId {
     let data = node.data();
 
     // 1. merge what we can, if we have to
@@ -52,9 +67,8 @@ fn merge_dom(taffy: &mut TaffyTree, text_context: &mut TextContext, node: BlitzN
     let style = match &data.node.data {
         // need to add a measure function?
         NodeData::Text { contents } => {
-            let text = contents.borrow();
-            let font_size = 80.0;
-            let (width, height) = text_context.get_text_size(None, font_size, text.as_ref());
+            let (width, height) =
+                text_context.get_text_size(None, font_size * scale, contents.borrow().as_ref());
 
             let style = Style {
                 size: Size {
@@ -85,7 +99,20 @@ fn merge_dom(taffy: &mut TaffyTree, text_context: &mut TextContext, node: BlitzN
     // 3. walk to to children and merge them too
     for idx in data.children.iter() {
         let child = node.with(*idx);
-        let child_layout = merge_dom(taffy, text_context, child);
+
+        // We try and see if this is an element, and if so, use its primary style font size
+        let style = data.style.borrow();
+        if let Some(primary) = style.styles.get_primary() {
+            // todo: cache this bs
+            use style::values::generics::transform::ToAbsoluteLength;
+            font_size = primary
+                .clone_font_size()
+                .computed_size()
+                .to_pixel_length(None)
+                .unwrap();
+        }
+
+        let child_layout = merge_dom(taffy, text_context, child, scale, font_size);
         taffy.add_child(leaf, child_layout).unwrap();
     }
 

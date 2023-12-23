@@ -88,7 +88,7 @@ pub fn launch_cfg_with_props<Props: 'static + Send>(
             // Nothing else to do, try redrawing?
             Event::MainEventsCleared => {
                 // We might not actually want this if nothing has changed
-                window.request_redraw()
+                // window.request_redraw()
             }
 
             Event::UserEvent(UserWindowEvent(EventData::Poll, id)) => {
@@ -103,7 +103,8 @@ pub fn launch_cfg_with_props<Props: 'static + Send>(
                 // the program to gracefully handle redraws requested by the OS.
 
                 // if !appliction.clean().is_empty() {
-                // blitz.render();
+                blitz.resolve_layout();
+                blitz.render();
                 // }
             }
 
@@ -116,6 +117,7 @@ pub fn launch_cfg_with_props<Props: 'static + Send>(
                 window_id: _,
                 ..
             } => {
+                println!("resizing!");
                 blitz.set_size(physical_size);
                 window.request_redraw();
             }

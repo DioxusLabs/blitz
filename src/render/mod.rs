@@ -1,20 +1,17 @@
 use std::cell::RefCell;
+use style::properties::ComputedValues;
 
-use crate::styling::BlitzNode;
 use crate::styling::RealDom;
-use crate::text::FontSize;
 use crate::text::TextContext;
-use crate::text::DEFAULT_FONT_SIZE;
+use crate::{styling::BlitzNode, viewport::Viewport};
 use html5ever::{
     tendril::{fmt::UTF8, Tendril},
     QualName,
 };
-use markup5ever_rcdom::RcDom;
-use style::{color::AbsoluteColor, properties::style_structs::Border};
+use style::color::AbsoluteColor;
 use taffy::prelude::Layout;
 use taffy::prelude::Size;
 use taffy::TaffyTree;
-use tao::dpi::PhysicalSize;
 use vello::kurbo::{Affine, Point, Rect, RoundedRect, Vec2};
 use vello::peniko;
 use vello::peniko::{Color, Fill, Stroke};
@@ -27,7 +24,7 @@ pub(crate) fn render(
     taffy: &TaffyTree,
     text_context: &mut TextContext,
     scene_builder: &mut SceneBuilder,
-    window_size: PhysicalSize<u32>,
+    viewport: &Viewport,
 ) {
     let root = dom.root_element();
 
@@ -46,9 +43,11 @@ pub(crate) fn render(
         scene_builder,
         Point::ZERO,
         &Size {
-            width: window_size.width,
-            height: window_size.height,
+            width: viewport.window_size.width,
+            height: viewport.window_size.height,
         },
+        viewport.hidpi_scale,
+        viewport.font_size,
     );
 }
 
@@ -59,6 +58,8 @@ fn render_node(
     scene_builder: &mut SceneBuilder,
     location: Point,
     viewport_size: &Size<u32>,
+    hidpi_scale: f32,
+    font_size: f32,
 ) {
     use markup5ever_rcdom::NodeData;
 
@@ -68,7 +69,18 @@ fn render_node(
     let pos = location + Vec2::new(layout.location.x as f64, layout.location.y as f64);
 
     match &element.node.data {
-        NodeData::Text { contents } => stroke_text(text_context, scene_builder, pos, contents),
+        NodeData::Text { contents } => {
+            // uhhh we need the font size but I dont think text nodes have their fontsize ready?
+
+            stroke_text(
+                text_context,
+                scene_builder,
+                pos,
+                contents,
+                hidpi_scale,
+                font_size,
+            )
+        }
         NodeData::Element { name, .. } => stroke_element(
             name,
             pos,
@@ -79,6 +91,7 @@ fn render_node(
             taffy,
             text_context,
             viewport_size,
+            hidpi_scale,
         ),
         NodeData::Document
         | NodeData::Doctype { .. }
@@ -92,6 +105,8 @@ fn stroke_text(
     scene_builder: &mut SceneBuilder<'_>,
     pos: Point,
     contents: &RefCell<Tendril<UTF8>>,
+    hidpi_scale: f32,
+    font_size: f32,
 ) {
     // let text_color = translate_color(&node.get::<ForgroundColor>().unwrap().0);
     // let font_size = if let Some(font_size) = node.get::<FontSize>() {
@@ -100,7 +115,7 @@ fn stroke_text(
     //     DEFAULT_FONT_SIZE
     // };
 
-    let font_size = DEFAULT_FONT_SIZE * 4.0;
+    let font_size = font_size * hidpi_scale;
     let text_color = Color::BLACK;
     let transform = Affine::translate(pos.to_vec2() + Vec2::new(0.0, font_size as f64));
 
@@ -127,6 +142,7 @@ fn stroke_element(
     taffy: &TaffyTree,
     text_context: &mut TextContext,
     viewport_size: &Size<u32>,
+    hidpi_scale: f32,
 ) {
     //         let background = node.get::<Background>().unwrap();
     //         if node.get::<Focused>().filter(|focused| focused.0).is_some() {
@@ -177,7 +193,7 @@ fn stroke_element(
     // 2. Stroke the
 
     let style = element.style.borrow();
-    let primary = style.styles.primary();
+    let primary: &style::servo_arc::Arc<ComputedValues> = style.styles.primary();
 
     let x: f64 = pos.x;
     let y: f64 = pos.y;
@@ -187,39 +203,19 @@ fn stroke_element(
     let background = primary.get_background();
     let bg_color = background.background_color.clone();
 
-    let Border {
-        border_top_color,
-        border_top_style,
-        border_top_width,
-        border_right_color,
-        border_right_style,
-        border_right_width,
-        border_bottom_color,
-        border_bottom_style,
-        border_bottom_width,
-        border_left_color,
-        border_left_style,
-        border_left_width,
-        border_top_left_radius,
-        border_top_right_radius,
-        border_bottom_right_radius,
-        border_bottom_left_radius,
-        border_image_source,
-        border_image_outset,
-        border_image_repeat,
-        border_image_width,
-        border_image_slice,
-    } = primary.get_border();
+    let border = primary.get_border();
 
-    let left_border_width = border_left_width.to_f64_px();
-    let top_border_width = border_top_width.to_f64_px();
-    let right_border_width = border_right_width.to_f64_px();
-    let bottom_border_width = border_bottom_width.to_f64_px();
+    let left_border_width = border.border_left_width.to_f64_px();
+    let top_border_width = border.border_top_width.to_f64_px();
+    let right_border_width = border.border_right_width.to_f64_px();
+    let bottom_border_width = border.border_bottom_width.to_f64_px();
 
     let x_start = x + left_border_width / 2.0;
     let y_start = y + top_border_width / 2.0;
     let x_end = x + width - right_border_width / 2.0;
     let y_end = y + height - bottom_border_width / 2.0;
+
+    // todo: rescale these by zoom
     let radii = (1.0, 1.0, 1.0, 1.0);
     let shape = RoundedRect::new(x_start, y_start, x_end, y_end, radii);
 
@@ -239,6 +235,14 @@ fn stroke_element(
     let stroke = Stroke::new(0.0);
     scene_builder.stroke(&stroke, Affine::IDENTITY, color, None, &shape);
 
+    // manually cascade this into children since text might not have it when rendering
+    use style::values::generics::transform::ToAbsoluteLength;
+    let font_size = primary
+        .clone_font_size()
+        .computed_size()
+        .to_pixel_length(None)
+        .unwrap();
+
     for id in &element.children {
         render_node(
             node.with(*id),
@@ -247,6 +251,8 @@ fn stroke_element(
             scene_builder,
             pos,
             viewport_size,
+            hidpi_scale,
+            font_size,
         );
     }
 }

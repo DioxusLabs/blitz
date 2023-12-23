@@ -18,7 +18,7 @@ fn app(cx: Scope) -> Element {
     render! {
         for row in 0..3 {
             div { class: "flex flex-row",
-                div { id: "cool", "hiiiiiiiiiiii\nhiiiii" }
+                div { id: "cool", "h123456789asdjkahskj\nhiiiii" }
                 p { class: "cool", "hi" }
                 for x in 1..=9 {
                     div { class: "bg-red-{x}00", "{x}" }
