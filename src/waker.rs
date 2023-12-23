@@ -44,30 +44,3 @@ pub fn tao_waker(proxy: &EventLoopProxy<UserWindowEvent>, id: WindowId) -> std::
         proxy: proxy.clone(),
     }))
 }
-
-pub struct PolledVirtualdom {
-    dom: VirtualDom,
-    waker: std::task::Waker,
-}
-
-/// Poll the virtualdom until it's pending
-///
-/// The waker we give it is connected to the event loop, so it will wake up the event loop when it's ready to be polled again
-///
-/// All IO is done on the tokio runtime we started earlier
-fn poll_vdom(view: &mut PolledVirtualdom) {
-    // Build the waker which we'll hand off
-    let mut cx = std::task::Context::from_waker(&view.waker);
-
-    loop {
-        let fut = view.dom.wait_for_work();
-        pin_mut!(fut);
-
-        match fut.poll_unpin(&mut cx) {
-            std::task::Poll::Ready(_) => {}
-            std::task::Poll::Pending => break,
-        }
-
-        // send_edits(view.dom.render_immediate(), &view.desktop_context.webview);
-    }
-}

@@ -93,29 +93,7 @@ impl crate::Document {
         let traverser = style_traverser::RecalcStyle::new(context);
         style::driver::traverse_dom(&traverser, token, None);
 
-        // now print out the style data
-        print_styles(&self.dom);
-    }
-}
-
-fn print_styles(markup: &RealDom) {
-    use style::dom::{TElement, TNode};
-
-    let root = markup.root_node();
-    for node in 0..markup.nodes.len() {
-        let Some(el) = root.with(node).as_element() else {
-            continue;
-        };
-
-        let data = el.borrow_data().unwrap();
-        let primary = data.styles.primary();
-        let bg_color = &primary.get_background().background_color;
-
-        println!(
-            "Styles for node {node_idx}:\n{:#?}",
-            bg_color,
-            node_idx = node
-        );
+        style::thread_state::exit(ThreadState::LAYOUT);
     }
 }
 
@@ -126,15 +104,6 @@ pub struct RealDom {
     pub document: RcDom,
 
     pub guard: SharedRwLock,
-}
-
-impl std::fmt::Debug for RealDom {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("RealDom")
-            .field("nodes", &self.nodes)
-            .field("lock", &self.guard)
-            .finish()
-    }
 }
 
 impl RealDom {
@@ -172,15 +141,6 @@ impl RealDom {
             .as_element()
             .unwrap()
     }
-
-    ///
-    pub fn resolve_styles(&mut self) {}
-
-    ///
-    ///
-    pub fn resolve_layouts(&mut self) {
-        // self.layout.compute_layout(node, available_space);
-    }
 }
 
 // Assign IDs to the RcDom nodes by walking the tree and pushing them into the slab
@@ -203,7 +163,7 @@ fn fill_slab_with_handles(
         entry.insert(NodeData {
             id,
             style,
-            child_id: child_index,
+            child_idx: child_index,
             children: vec![],
             node: node.clone(),
             layout_id: Default::default(),
@@ -233,32 +193,39 @@ fn fill_slab_with_handles(
 
 #[derive(Debug)]
 pub struct NodeData {
+    /// Our parent's ID
+    pub parent: Option<usize>,
+
+    /// Our Id
+    pub id: usize,
+
+    // Which child are we in our parent?
+    pub child_idx: usize,
+
+    // What are our children?
+    // Might want to use a linkedlist or something better at precise inserts/delets
+    pub children: Vec<usize>,
+
+    // might want to make this weak
+    pub node: markup5ever_rcdom::Handle,
+
+    // This little bundle of joy is our layout data from taffy and our style data from stylo
+    //
     // todo: layout from new taffy
     pub style: AtomicRefCell<ElementData>,
 
-    pub children: Vec<usize>,
-
-    pub id: usize,
-
-    pub child_id: usize,
-
     pub layout_id: Cell<Option<taffy::prelude::NodeId>>,
-
     // pub layout: Cell<taffy::layout::Layout>,
 
     // need to make sure we sync this style and the other style...
     // pub taffy_style: RefCell<taffy::style::Style>,
-    pub parent: Option<usize>,
-
-    // might want to make this weak
-    pub node: markup5ever_rcdom::Handle,
 }
 
 // store_children_to_process
 // did_process_child
 // pub struct DomData {
 //     // ... we can probs just get away with using the html5ever types directly. basically just using the servo dom
-//     node: markup5ever_rcdom::Nodge,
+//     node: markup5ever_rcdom::Node,
 //     local_name: html5ever::LocalName,
 //     tag_name: markup5ever_rcdom::TagName,
 //     namespace: html5ever::Namespace,
@@ -328,20 +295,20 @@ impl<'a> BlitzNode<'a> {
 
         self.dom.nodes[node.parent?]
             .children
-            .get(node.child_id + n)
+            .get(node.child_idx + n)
             .map(|id| self.with(*id))
     }
 
     fn backward(&self, n: usize) -> Option<Self> {
         let node = self.data();
 
-        if node.child_id < n {
+        if node.child_idx < n {
             return None;
         }
 
         self.dom.nodes[node.parent?]
             .children
-            .get(node.child_id - n)
+            .get(node.child_idx - n)
             .map(|id| self.with(*id))
     }
 

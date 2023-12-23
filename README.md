@@ -83,11 +83,13 @@ TODO:
 - [x] Compute styles for html5ever document
 - [x] Compute layout with Taffy
 - [x] Compute styles for Dioxus Lazy Nodes
+- [ ] Computing layout using resolved styles from stylo
 - [x] Pass layout and styles to WGPU for single frame to png
 
 - [x] Render to window
--- [ ] Border
 -- [ ] Frame
+-- [ ] Outline
+-- [ ] Border
 -- [ ] Shadow
 -- [ ] Widgets
 -- [ ] Text selection / input
@@ -106,18 +108,19 @@ TODO:
 -- [ ] layout
 
 - [ ] Add interactivity (hit testing, etc etc)
+-- [ ] scrolling
 -- [ ] Druid shell for native text selection (and a whole host of other stuff...)
 -- [ ] Hooks for context menu
 -- [ ] keyboard input, event bubbling etc
--- [ ] scrolling
 
 - [ ] Add accessibility kit
-- [ ] Multiwindow
+- [x] Multiwindow
 - [ ] Animation
 - [ ] use_wgpu_context() to grab an element as an arbitrary render surface
 - [ ] Tests
+- [ ] Profiler
 
-- We might want to migrate to servo's layout engine once its released
+- We might want to migrate to servo's layout engine once it's released
 
 ## License
 

@@ -51,17 +51,12 @@ impl Document {
         let (layout, pos) = self.node_position(node, location);
 
         // Todo: different semantics based on the element name
-        let NodeData::Element { .. } = &element.node.data else {
+        let NodeData::Element { name, .. } = &element.node.data else {
             panic!("Unexpected node found while traversing element tree during render")
         };
 
         let style = element.style.borrow();
-        let primary: &style::servo_arc::Arc<ComputedValues> = style.styles.primary();
-
-        let x: f64 = pos.x;
-        let y: f64 = pos.y;
-        let width: f64 = layout.size.width.into();
-        let height: f64 = layout.size.height.into();
+        let primary = style.styles.primary();
 
         // All the stuff that HTML cares about:
         // custom_properties,
@@ -89,18 +84,44 @@ impl Document {
         // text,
         // ui,
 
+        /*
+        Need to draw:
+        - frame
+        - image
+        - shadow
+        - border
+        - outline
+
+        need to respect:
+        - margin
+        - padding
+         */
+
         let background = primary.get_background();
         let border = primary.get_border();
         let effects = primary.get_effects();
         let font = primary.get_font();
         let t = primary.get_text();
         let outline = primary.get_outline();
+        let _outline = primary.get_position();
+        let _padding = primary.get_padding();
+        let _margin = primary.get_margin();
+        let _position = primary.get_position();
+        let inherited_text = primary.get_inherited_text();
 
+        //
+        // 1. Draw the frame
+        //
         let bg_color = background.background_color.clone();
         let left_border_width = border.border_left_width.to_f64_px();
         let top_border_width = border.border_top_width.to_f64_px();
         let right_border_width = border.border_right_width.to_f64_px();
         let bottom_border_width = border.border_bottom_width.to_f64_px();
+
+        let x: f64 = pos.x;
+        let y: f64 = pos.y;
+        let width: f64 = layout.size.width.into();
+        let height: f64 = layout.size.height.into();
 
         let x_start = x + left_border_width / 2.0;
         let y_start = y + top_border_width / 2.0;
@@ -113,19 +134,50 @@ impl Document {
 
         // todo: handle non-absolute colors
         let bg_color = bg_color.as_absolute().unwrap();
-        let color = Color {
-            r: (bg_color.components.0 * 255.0) as u8,
-            g: (bg_color.components.1 * 255.0) as u8,
-            b: (bg_color.components.2 * 255.0) as u8,
-            a: (bg_color.alpha() * 255.0) as u8,
-        };
 
-        scene.fill(peniko::Fill::NonZero, Affine::IDENTITY, color, None, &shape);
+        scene.fill(
+            peniko::Fill::NonZero,
+            Affine::IDENTITY,
+            bg_color.as_vello(),
+            None,
+            &shape,
+        );
 
+        //
+        // 2. Draw the image
+        //
+        if name.local.as_ref() == "image" {
+            // try loading the img from cache and painting it
+            //             // Scale the image to fit the layout
+            //             let image_width = image.width as f64;
+            //             let image_height = image.height as f64;
+            //             let scale = Affine::scale_non_uniform(
+            //                 layout.size.width as f64 / image_width,
+            //                 layout.size.height as f64 / image_height,
+            //             );
+
+            //             // Translate the image to the layout's position
+            //             let translate = Affine::translate(pos.to_vec2());
+
+            //             scene_builder.draw_image(image, translate * scale);
+        }
+
+        //
+        // 3. Draw the border
+        //
+        //
         // todo: borders can be different colors, thickness, etc *and* have radius
-        let stroke = Stroke::new(1.0);
+        let stroke = Stroke::new(0.0);
         let border_color = Color::FLORAL_WHITE;
         scene.stroke(&stroke, Affine::IDENTITY, border_color, None, &shape);
+
+        //
+        // 4. Draw the outline
+        //
+
+        //
+        // N. Draw the children
+        //
 
         // Render out children nodes now that we've painted the background, border, shadow, etc
         // I'd rather pre-compute all the text rendering stuff
@@ -134,10 +186,8 @@ impl Document {
         // We do it here so all the child text can share the same text styling (font size, color, weight, etc) without
         // recomputing for *every* segment
 
-        let font_size = font.font_size.computed_size().px();
-
-        let font_size = font_size * self.viewport.hidpi_scale;
-        let text_color = Color::BLACK;
+        let font_size = font.font_size.computed_size().px() * self.viewport.hidpi_scale;
+        let text_color = inherited_text.clone_color().as_vello();
 
         for child in &element.children {
             match &self.dom.nodes[*child].node.data {
@@ -179,58 +229,19 @@ impl Document {
             .layout((&self.dom.nodes[child]).layout_id.get().unwrap())
             .unwrap()
     }
+}
 
-    fn render_children(
-        &self,
-        element: &NodeData,
-        scene: &mut SceneBuilder<'_>,
-        pos: Point,
-        primary: &style::servo_arc::Arc<ComputedValues>,
-    ) {
-        use markup5ever_rcdom::NodeData;
-        use style::values::generics::transform::ToAbsoluteLength;
+trait ToVelloColor {
+    fn as_vello(&self) -> Color;
+}
 
-        // Pull out all the stuff we need to render text
-        // We do it here so all the child text can share the same text styling (font size, color, weight, etc) without
-        // recomputing for *every* segment
-
-        let font_size = primary
-            .clone_font_size()
-            .computed_size()
-            .to_pixel_length(None)
-            .unwrap();
-        let font_size = font_size * self.viewport.hidpi_scale;
-        let text_color = Color::BLACK;
-
-        for id in &element.children {
-            match &self.dom.nodes[*id].node.data {
-                // Rendering elements is simple, just recurse
-                NodeData::Element { .. } => self.render_element(scene, *id, pos),
-
-                // Rendering text is done here in the iterator
-                // The codegen isn't as great but saves us having to do a bunch of work
-                NodeData::Text { contents } => {
-                    let element = &self.dom.nodes[*id];
-                    let layout = self.taffy.layout(element.layout_id.get().unwrap()).unwrap();
-                    let pos = pos + Vec2::new(layout.location.x as f64, layout.location.y as f64);
-
-                    let transform =
-                        Affine::translate(pos.to_vec2() + Vec2::new(0.0, font_size as f64));
-
-                    self.text_context.add(
-                        scene,
-                        None,
-                        font_size,
-                        Some(text_color),
-                        transform,
-                        &contents.borrow(),
-                    )
-                }
-                NodeData::Document
-                | NodeData::Doctype { .. }
-                | NodeData::Comment { .. }
-                | NodeData::ProcessingInstruction { .. } => {}
-            }
+impl ToVelloColor for AbsoluteColor {
+    fn as_vello(&self) -> Color {
+        Color {
+            r: (self.components.0 * 255.0) as u8,
+            g: (self.components.1 * 255.0) as u8,
+            b: (self.components.2 * 255.0) as u8,
+            a: (self.alpha() * 255.0) as u8,
         }
     }
 }
@@ -281,26 +292,3 @@ fn convert_servo_color(color: &AbsoluteColor) -> Color {
 //             scene_builder.stroke(&stroke, Affine::IDENTITY, stroke_color, None, &shape);
 //             background.draw_shape(scene_builder, &shape, layout, viewport_size);
 //         };
-
-//         if let Some(image) = node
-//             .get::<LoadedImage>()
-//             .as_ref()
-//             .and_then(|image| image.0.as_ref())
-//         {
-//             // Scale the image to fit the layout
-//             let image_width = image.width as f64;
-//             let image_height = image.height as f64;
-//             let scale = Affine::scale_non_uniform(
-//                 layout.size.width as f64 / image_width,
-//                 layout.size.height as f64 / image_height,
-//             );
-
-//             // Translate the image to the layout's position
-//             let translate = Affine::translate(pos.to_vec2());
-
-//             scene_builder.draw_image(image, translate * scale);
-//         }
-
-// Stroke background
-// Stroke border
-// Stroke focused

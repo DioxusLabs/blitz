@@ -34,6 +34,7 @@ use self::styling::NodeData;
 
 mod layout;
 mod mutation;
+pub mod node;
 pub mod styling;
 
 /// A rendering instance, not necessarily tied to a window
@@ -209,5 +210,12 @@ impl Document {
 
         surface_texture.present();
         device.device.poll(wgpu::Maintain::Wait);
+    }
+
+    /// Hit the layout tree at a specific position, returning a node if it exists
+    ///
+    pub fn hit_test(&self, x: f32, y: f32) -> Option<usize> {
+        // do a split on the layout tree.
+        todo!()
     }
 }

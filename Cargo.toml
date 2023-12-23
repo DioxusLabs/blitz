@@ -55,6 +55,7 @@ webrender = { path = "../servo/third_party/webrender/webrender" }
 
 [dev-dependencies]
 comrak = { version = "0.20.0", default-features = false }
+webbrowser = "0.8.12"
 
 
 # webrender = { path = "third_party/webrender/webrender" }
