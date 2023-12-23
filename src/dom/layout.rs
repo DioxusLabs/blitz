@@ -16,7 +16,7 @@ impl Document {
     pub fn resolve_layout(&mut self) {
         self.taffy.disable_rounding();
 
-        let root = self.merge_dom(0, self.viewport.hidpi_scale, self.viewport.font_size);
+        let root = self.merge_dom(0, self.viewport.font_size);
 
         // We want the root container space to be auto unless specified
         // todo - root size should be allowed to expand past the borders.
@@ -43,11 +43,11 @@ impl Document {
     }
 
     // todo: this is a dumb method and should be replaced with the taffy layouttree traits
-    fn merge_dom(&mut self, node_id: usize, scale: f32, mut font_size: f32) -> NodeId {
+    fn merge_dom(&mut self, node_id: usize, mut font_size: f32) -> NodeId {
         let data = &self.dom.nodes[node_id];
 
         // 1. merge what we can, if we have to
-        let style = self.get_node_style(data, font_size, scale);
+        let style = self.get_node_style(data, font_size);
 
         // 2. Insert a leaf into taffy to associate with this node
         let leaf = self.taffy.new_leaf(style.unwrap_or_default()).unwrap();
@@ -68,14 +68,14 @@ impl Document {
         // Need to dance around the borrow checker, unfortunately
         for x in 0..data.children.len() {
             let child_id = self.dom.nodes[node_id].children[x];
-            let child_layout = self.merge_dom(child_id, scale, font_size);
+            let child_layout = self.merge_dom(child_id, font_size);
             self.taffy.add_child(leaf, child_layout).unwrap();
         }
 
         leaf
     }
 
-    fn get_node_style(&self, data: &NodeData, font_size: f32, scale: f32) -> Option<Style> {
+    fn get_node_style(&self, data: &NodeData, font_size: f32) -> Option<Style> {
         use markup5ever_rcdom::NodeData;
 
         match &data.node.data {
@@ -83,7 +83,7 @@ impl Document {
             NodeData::Text { contents } => {
                 let (width, height) = self.text_context.get_text_size(
                     None,
-                    font_size * scale,
+                    font_size * self.viewport.scale(),
                     contents.borrow().as_ref(),
                 );
 
@@ -99,10 +99,10 @@ impl Document {
                     //     bottom: taffy::prelude::LengthPercentage::Length(50.0),
                     // },
                     margin: taffy::Rect {
-                        left: taffy::prelude::LengthPercentageAuto::Length(50.0),
-                        right: taffy::prelude::LengthPercentageAuto::Length(50.0),
-                        top: taffy::prelude::LengthPercentageAuto::Length(50.0),
-                        bottom: taffy::prelude::LengthPercentageAuto::Length(50.0),
+                        left: taffy::prelude::LengthPercentageAuto::Length(0.0),
+                        right: taffy::prelude::LengthPercentageAuto::Length(0.0),
+                        top: taffy::prelude::LengthPercentageAuto::Length(0.0),
+                        bottom: taffy::prelude::LengthPercentageAuto::Length(0.0),
                     },
                     ..Default::default()
                 };

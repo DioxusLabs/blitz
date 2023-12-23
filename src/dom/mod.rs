@@ -110,7 +110,7 @@ impl Document {
                     viewport.window_size.width as _,
                     viewport.window_size.height as _,
                 ),
-                euclid::Scale::new(viewport.hidpi_scale as _),
+                euclid::Scale::new(viewport.scale() as _),
             ),
             quirks,
         );

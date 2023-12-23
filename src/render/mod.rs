@@ -186,7 +186,7 @@ impl Document {
         // We do it here so all the child text can share the same text styling (font size, color, weight, etc) without
         // recomputing for *every* segment
 
-        let font_size = font.font_size.computed_size().px() * self.viewport.hidpi_scale;
+        let font_size = font.font_size.computed_size().px() * self.viewport.scale();
         let text_color = inherited_text.clone_color().as_vello();
 
         for child in &element.children {

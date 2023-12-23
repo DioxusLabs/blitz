@@ -39,7 +39,7 @@ pub fn launch_glazier(f: Component<()>, cfg: crate::Config) {
         height: size.height as _,
         width: size.width as _,
     });
-    viewport.hidpi_scale = dbg!(window.get_scale().map(|f| f.x())).unwrap_or(1.0) as _;
+    viewport.set_hidpi_scale(window.get_scale().map(|f| f.x()).unwrap_or(1.0) as _);
 
     let mut blitz = rt.block_on(Document::from_window(&window, dom, viewport));
     let mut scene = Scene::new();

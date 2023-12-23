@@ -115,7 +115,31 @@ pub fn launch_cfg_with_props<Props: 'static + Send + Clone>(
                         button,
                         modifiers,
                     } => {}
-                    WindowEvent::Resized(_) => {}
+                    WindowEvent::Resized(physical_size) => {
+                        windows.get_mut(&window_id).map(|window| {
+                            window.document.set_size(physical_size);
+                            window.window.request_redraw();
+                        });
+                    }
+                    WindowEvent::KeyboardInput { event, .. } => {
+                        //
+
+                        use tao::keyboard::KeyCode;
+                        dbg!(&event);
+                        match event.physical_key {
+                            KeyCode::ArrowUp => {
+                                let window = windows.values_mut().next().unwrap();
+                                *window.document.viewport.zoom_mut() += 0.1;
+                                window.window.request_redraw();
+                            }
+                            KeyCode::ArrowDown => {
+                                let window = windows.values_mut().next().unwrap();
+                                *window.document.viewport.zoom_mut() -= 0.1;
+                                window.window.request_redraw();
+                            }
+                            _ => {}
+                        }
+                    }
                     WindowEvent::Moved(_) => {}
                     WindowEvent::CloseRequested => {}
                     WindowEvent::Destroyed => {}
@@ -124,7 +148,6 @@ pub fn launch_cfg_with_props<Props: 'static + Send + Clone>(
                     WindowEvent::HoveredFileCancelled => {}
                     WindowEvent::ReceivedImeText(_) => {}
                     WindowEvent::Focused(_) => {}
-                    WindowEvent::KeyboardInput { .. } => {}
                     WindowEvent::ModifiersChanged(_) => {}
                     WindowEvent::CursorMoved {
                         device_id,
@@ -161,17 +184,6 @@ pub fn launch_cfg_with_props<Props: 'static + Send + Clone>(
                 }
             }
 
-            Event::WindowEvent {
-                event: WindowEvent::Resized(physical_size),
-                window_id,
-                ..
-            } => {
-                println!("resizing!");
-                windows.get_mut(&window_id).map(|window| {
-                    window.document.set_size(physical_size);
-                    window.window.request_redraw();
-                });
-            }
             _ => (),
         }
     });
@@ -211,7 +223,7 @@ impl View {
 
         let size = window.inner_size();
         let mut viewport = Viewport::new(size);
-        viewport.hidpi_scale = dbg!(window.scale_factor()) as _;
+        viewport.set_hidpi_scale(window.scale_factor() as _);
 
         let mut document = rt.block_on(Document::from_window(&window, dom, viewport));
         let mut scene = Scene::new();
