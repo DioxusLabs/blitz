@@ -63,7 +63,7 @@ impl TextContext {
     }
 
     pub fn get_text_size<'a>(
-        &'a mut self,
+        &'a self,
         font: Option<&'a Font>,
         size: f32,
         text: &str,

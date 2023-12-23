@@ -61,7 +61,7 @@ pub struct Document {
     render_context: RenderContext,
 
     /// Our text stencil to be used with vello
-    text: TextContext,
+    text_context: TextContext,
 
     /// Our image cache
     images: ImageCache,
@@ -118,7 +118,7 @@ impl Document {
             scene: Scene::new(),
             snapshots: SnapshotMap::new(),
             layout: Default::default(),
-            text: Default::default(),
+            text_context: Default::default(),
             images: Default::default(),
             fonts: Default::default(),
         }
@@ -180,7 +180,7 @@ impl Document {
         crate::render::render(
             &self.dom,
             &self.layout,
-            &mut self.text,
+            &mut self.text_context,
             &mut builder,
             &self.viewport,
         );

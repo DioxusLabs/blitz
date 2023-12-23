@@ -4,11 +4,7 @@
 //! However, in Blitz, we do a style pass then a layout pass.
 //! This is slower, yes, but happens fast enough that it's not a huge issue.
 
-use crate::{
-    styling::{BlitzNode, NodeData},
-    text::TextContext,
-    Document,
-};
+use crate::{styling::NodeData, Document};
 use taffy::{prelude::NodeId, AvailableSpace, Dimension, Size, Style, TaffyTree};
 
 impl Document {
@@ -20,13 +16,7 @@ impl Document {
     pub fn resolve_layout(&mut self) {
         self.layout.disable_rounding();
 
-        let root = merge_dom(
-            &mut self.layout,
-            &mut self.text,
-            self.dom.root_element(),
-            self.viewport.hidpi_scale,
-            self.viewport.font_size,
-        );
+        let root = self.merge_dom(0, self.viewport.hidpi_scale, self.viewport.font_size);
 
         // We want the root container space to be auto unless specified
         // todo - root size should be allowed to expand past the borders.
@@ -51,79 +41,81 @@ impl Document {
         self.layout.set_style(root, style).unwrap();
         self.layout.compute_layout(root, available).unwrap();
     }
-}
 
-fn merge_dom(
-    taffy: &mut TaffyTree,
-    text_context: &mut TextContext,
-    node: BlitzNode,
-    scale: f32,
-    mut font_size: f32,
-) -> NodeId {
-    let data = node.data();
+    // todo: this is a dumb method and should be replaced with the taffy layouttree traits
+    fn merge_dom(&mut self, node_id: usize, scale: f32, mut font_size: f32) -> NodeId {
+        let data = &self.dom.nodes[node_id];
 
-    // 1. merge what we can, if we have to
-    use markup5ever_rcdom::NodeData;
-    let style = match &data.node.data {
-        // need to add a measure function?
-        NodeData::Text { contents } => {
-            let (width, height) =
-                text_context.get_text_size(None, font_size * scale, contents.borrow().as_ref());
+        // 1. merge what we can, if we have to
+        let style = self.get_node_style(data, font_size, scale);
 
-            let style = Style {
-                size: Size {
-                    height: Dimension::Length(height as f32),
-                    width: Dimension::Length(width as f32),
-                },
-                ..Default::default()
-            };
-            Some(style)
-        }
+        // 2. Insert a leaf into taffy to associate with this node
+        let leaf = self.layout.new_leaf(style.unwrap_or_default()).unwrap();
+        data.layout_id.set(Some(leaf));
 
-        // merge element via its attrs
-        NodeData::Element { name, attrs, .. } => {
-            // Get the stylo data for this
-            Some(translate_stylo_to_taffy(node, data))
-        }
-
-        NodeData::Document
-        | NodeData::Doctype { .. }
-        | NodeData::Comment { .. }
-        | NodeData::ProcessingInstruction { .. } => None,
-    };
-
-    // 2. Insert a leaf into taffy to associate with this node
-    let leaf = taffy.new_leaf(style.unwrap_or_default()).unwrap();
-    data.layout_id.set(Some(leaf));
-
-    // 3. walk to to children and merge them too
-    for idx in data.children.iter() {
-        let child = node.with(*idx);
-
-        // We try and see if this is an element, and if so, use its primary style font size
-        let style = data.style.borrow();
-        if let Some(primary) = style.styles.get_primary() {
-            // todo: cache this bs
+        // Cascade down the fontsize determined from stylo
+        data.style.borrow().styles.get_primary().map(|primary| {
+            // todo: cache this bs on the text node itself
             use style::values::generics::transform::ToAbsoluteLength;
             font_size = primary
                 .clone_font_size()
                 .computed_size()
                 .to_pixel_length(None)
                 .unwrap();
+        });
+
+        // 3. walk to to children and merge them too
+        // Need to dance around the borrow checker, unfortunately
+        for x in 0..data.children.len() {
+            let child_id = self.dom.nodes[node_id].children[x];
+            let child_layout = self.merge_dom(child_id, scale, font_size);
+            self.layout.add_child(leaf, child_layout).unwrap();
         }
 
-        let child_layout = merge_dom(taffy, text_context, child, scale, font_size);
-        taffy.add_child(leaf, child_layout).unwrap();
+        leaf
     }
 
-    leaf
+    fn get_node_style(&self, data: &NodeData, font_size: f32, scale: f32) -> Option<Style> {
+        use markup5ever_rcdom::NodeData;
+
+        match &data.node.data {
+            // need to add a measure function?
+            NodeData::Text { contents } => {
+                let (width, height) = self.text_context.get_text_size(
+                    None,
+                    font_size * scale,
+                    contents.borrow().as_ref(),
+                );
+
+                let style = Style {
+                    size: Size {
+                        height: Dimension::Length(height as f32),
+                        width: Dimension::Length(width as f32),
+                    },
+                    ..Default::default()
+                };
+                Some(style)
+            }
+
+            // merge element via its attrs
+            NodeData::Element { .. } => {
+                // Get the stylo data for this
+                Some(translate_stylo_to_taffy(data))
+            }
+
+            NodeData::Document
+            | NodeData::Doctype { .. }
+            | NodeData::Comment { .. }
+            | NodeData::ProcessingInstruction { .. } => None,
+        }
+    }
 }
 
-fn translate_stylo_to_taffy(node: BlitzNode, data: &NodeData) -> Style {
+fn translate_stylo_to_taffy(data: &NodeData) -> Style {
     let style_data = data.style.borrow();
     let primary = style_data.styles.primary();
 
-    let mut style = Style::DEFAULT;
+    let style = Style::DEFAULT;
 
     let _box = primary.get_box();
 
