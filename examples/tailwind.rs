@@ -17,13 +17,13 @@ fn main() {
 fn app(cx: Scope) -> Element {
     render! {
         for row in 0..3 {
-            div { class: "flex flex-row",
-                div { id: "cool", "h123456789asdjkahskj\nhiiiii" }
-                p { class: "cool", "hi" }
-                for x in 1..=9 {
-                    div { class: "bg-red-{x}00", "{x}" }
-                }
+            // div { class: "flex flex-row",
+            div { id: "cool", "h123456789asdjkahskj\nhiiiii" }
+            p { class: "cool", "hi" }
+            for x in 1..=9 {
+                div { class: "bg-red-{x}00 border", "{x}" }
             }
+            // }
         }
     }
 }
@@ -44,4 +44,7 @@ p.cool { background-color: purple; }
 .bg-red-800	{ background-color: rgb(153 27 27); }
 .bg-red-900	{ background-color: rgb(127 29 29); }
 .bg-red-950	{ background-color: rgb(69 10 10); }
+.border {
+    border: 1rem solid;
+}
 "#;

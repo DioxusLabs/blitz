@@ -13,11 +13,13 @@ fn main() {
 
 fn app(cx: Scope) -> Element {
     render! {
-        div { id: "container",
-            div { id: "a", " Dioxus " }
-            div { id: "b", " plus " }
-            div { id: "c", " Stylo " }
-        }
+        // div { id: "container",
+        div { id: "a", " Dioxus " }
+        div { id: "b", " plus " }
+        div { id: "c", " Stylo " }
+        div { id: "d", " native " }
+        div { id: "e", " WGPU " }
+        // }
     }
 }
 
@@ -36,5 +38,11 @@ const CSS: &str = r#"
     background-color: blue;
     font-size: 80px;
     font-color: white;
+}
+#d {
+    background-color: yellow;
+    font-size: 120px;
+    font-color: white;
+    border: 10px solid black;
 }
 "#;

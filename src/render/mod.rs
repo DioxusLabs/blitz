@@ -1,10 +1,15 @@
-use glazier::kurbo::Shape;
 use std::cell::RefCell;
 use style::{
-    properties::ComputedValues,
+    properties::{
+        shorthands::{background, border},
+        style_structs::{Background, Border},
+        ComputedValues,
+    },
     values::generics::image::{GenericGradient, GenericImage},
 };
 use style_traits::CssType::COLOR;
+use vello::kurbo::{Arc, BezPath, Dashes, PathEl, PathSegIter, Shape};
+mod multicolor_rounded_rect;
 
 use crate::{styling::BlitzNode, viewport::Viewport};
 use crate::{styling::NodeData, text::TextContext};
@@ -15,16 +20,19 @@ use html5ever::{
 };
 use style::color::AbsoluteColor;
 use taffy::prelude::Layout;
-use vello::kurbo::{Affine, Point, Rect, RoundedRect, Vec2};
-use vello::peniko::{self, Color, Fill, Stroke};
+use vello::kurbo::{Affine, Point, Rect, RoundedRect, Stroke, Vec2};
+use vello::peniko::{self, Color, Fill};
+
 use vello::SceneBuilder;
+
+use self::multicolor_rounded_rect::SplitRoundedRect;
 
 const FOCUS_BORDER_WIDTH: f64 = 6.0;
 
 impl Document {
     /// Render to any scene!
     pub(crate) fn render_internal(&self, sb: &mut SceneBuilder) {
-        let root_element = &self.dom.root_element();
+        let root = &self.dom.root_element();
 
         // We by default render a white background for the window. T
         // his is just the default stylesheet in action
@@ -33,10 +41,10 @@ impl Document {
             Affine::IDENTITY,
             Color::WHITE,
             None,
-            &root_element.bounds(&self.taffy),
+            &root.bounds(&self.taffy),
         );
 
-        self.render_element(sb, root_element.id, Point::ZERO);
+        self.render_element(sb, root.id, Point::ZERO);
     }
 
     /// Renders a node, but is guaranteed that the node is an element
@@ -117,23 +125,70 @@ impl Document {
         // 1. Draw the frame
         //
         let bg_color = background.background_color.clone();
-        let left_border_width = border.border_left_width.to_f64_px();
-        let top_border_width = border.border_top_width.to_f64_px();
-        let right_border_width = border.border_right_width.to_f64_px();
-        let bottom_border_width = border.border_bottom_width.to_f64_px();
+        let left_border_width = border.border_left_width.to_f64_px() * self.viewport.scale() as f64;
+        let top_border_width = border.border_top_width.to_f64_px() * self.viewport.scale() as f64;
+        let right_border_width =
+            border.border_right_width.to_f64_px() * self.viewport.scale() as f64;
+        let bottom_border_width =
+            border.border_bottom_width.to_f64_px() * self.viewport.scale() as f64;
 
         let x: f64 = pos.x;
         let y: f64 = pos.y;
         let width: f64 = layout.size.width.into();
         let height: f64 = layout.size.height.into();
 
-        let x_start = x + left_border_width / 2.0;
-        let y_start = y + top_border_width / 2.0;
-        let x_end = x + width - right_border_width / 2.0;
-        let y_end = y + height - bottom_border_width / 2.0;
+        let x_start = (x + left_border_width / 2.0).ceil();
+        let y_start = (y + top_border_width / 2.0).ceil();
+        let x_end = (x + width - right_border_width / 2.0).ceil();
+        let y_end = (y + height - bottom_border_width / 2.0).ceil();
 
         // todo: rescale these by zoom
-        let radii = (1.0, 1.0, 1.0, 1.0);
+        let top_left_radius_width = border
+            .border_top_left_radius
+            .0
+            .width()
+            .0
+            .to_length()
+            .unwrap()
+            .abs()
+            .px();
+
+        let top_right_radius_width = border
+            .border_top_right_radius
+            .0
+            .width()
+            .0
+            .to_length()
+            .unwrap()
+            .abs()
+            .px();
+
+        let bottom_right_radius_width = border
+            .border_bottom_right_radius
+            .0
+            .width()
+            .0
+            .to_length()
+            .unwrap()
+            .abs()
+            .px();
+
+        let bottom_left_radius_width = border
+            .border_bottom_left_radius
+            .0
+            .width()
+            .0
+            .to_length()
+            .unwrap()
+            .abs()
+            .px();
+
+        let radii = (
+            (top_left_radius_width * self.viewport.scale()) as f64,
+            (top_right_radius_width * self.viewport.scale()) as f64,
+            (bottom_right_radius_width * self.viewport.scale()) as f64,
+            (bottom_left_radius_width * self.viewport.scale()) as f64,
+        );
         let shape = RoundedRect::new(x_start, y_start, x_end, y_end, radii);
 
         // todo: handle non-absolute colors
@@ -148,86 +203,18 @@ impl Document {
             &shape,
         );
 
-        // If there's a gradient, try rendering it
-        let gradient_segments = &background.background_image.0;
-
-        // bless evan for figuring this out
-        for segment in gradient_segments {
-            match segment {
-                GenericImage::Gradient(gradient) => {
-                    //
-                    match gradient.as_ref() {
-                        GenericGradient::Linear {
-                            direction,
-                            items,
-                            repeating,
-                            compat_mode,
-                        } => {
-                            // let bb = shape.bounding_box();
-                            // let starting_point_offset = gradient.center_offset(*rect);
-                            // let ending_point_offset =
-                            //     Point::new(-starting_point_offset.x, -starting_point_offset.y);
-                            // let center = bb.center();
-                            // let start = Point::new(
-                            //     center.x + starting_point_offset.x,
-                            //     center.y + starting_point_offset.y,
-                            // );
-                            // let end = Point::new(
-                            //     center.x + ending_point_offset.x,
-                            //     center.y + ending_point_offset.y,
-                            // );
-
-                            // let kind = peniko::GradientKind::Linear { start, end };
-
-                            // let gradient = peniko::Gradient {
-                            //     kind,
-                            //     extend,
-                            //     stops: (*stops).clone(),
-                            // };
-
-                            // let brush = peniko::BrushRef::Gradient(&gradient);
-
-                            // sb.fill(peniko::Fill::NonZero, Affine::IDENTITY, brush, None, shape)
-                        }
-                        _ => todo!(),
-                    }
-                }
-                GenericImage::None => {}
-                GenericImage::Url(_) => {}
-                GenericImage::Rect(_) => {}
-                GenericImage::PaintWorklet(_) => {}
-                GenericImage::CrossFade(_) => {}
-                GenericImage::ImageSet(_) => {}
-            }
-        }
-
         //
         // 2. Draw the image
         //
-        if name.local.as_ref() == "image" {
-            // try loading the img from cache and painting it
-            //             // Scale the image to fit the layout
-            //             let image_width = image.width as f64;
-            //             let image_height = image.height as f64;
-            //             let scale = Affine::scale_non_uniform(
-            //                 layout.size.width as f64 / image_width,
-            //                 layout.size.height as f64 / image_height,
-            //             );
-
-            //             // Translate the image to the layout's position
-            //             let translate = Affine::translate(pos.to_vec2());
-
-            //             scene_builder.draw_image(image, translate * scale);
-        }
+        // bless evan for figuring this out
+        self.stroke_frame(scene, border, background);
 
         //
         // 3. Draw the border
         //
         //
         // todo: borders can be different colors, thickness, etc *and* have radius
-        let stroke = Stroke::new(0.0);
-        let border_color = Color::FLORAL_WHITE;
-        scene.stroke(&stroke, Affine::IDENTITY, border_color, None, &shape);
+        self.stroke_border(&shape, scene, &border);
 
         //
         // 4. Draw the outline
@@ -276,6 +263,176 @@ impl Document {
         }
     }
 
+    fn stroke_frame(&self, scene: &mut SceneBuilder, border: &Border, background: &Background) {
+        // If there's a gradient, try rendering it
+        let gradient_segments = &background.background_image.0;
+
+        for segment in gradient_segments {
+            match segment {
+                GenericImage::Gradient(gradient) => {
+                    //
+                    match gradient.as_ref() {
+                        GenericGradient::Linear {
+                            direction,
+                            items,
+                            repeating,
+                            compat_mode,
+                        } => {
+                            // let bb = shape.bounding_box();
+                            // let starting_point_offset = gradient.center_offset(*rect);
+                            // let ending_point_offset =
+                            //     Point::new(-starting_point_offset.x, -starting_point_offset.y);
+                            // let center = bb.center();
+                            // let start = Point::new(
+                            //     center.x + starting_point_offset.x,
+                            //     center.y + starting_point_offset.y,
+                            // );
+                            // let end = Point::new(
+                            //     center.x + ending_point_offset.x,
+                            //     center.y + ending_point_offset.y,
+                            // );
+
+                            // let kind = peniko::GradientKind::Linear { start, end };
+
+                            // let gradient = peniko::Gradient {
+                            //     kind,
+                            //     extend,
+                            //     stops: (*stops).clone(),
+                            // };
+
+                            // let brush = peniko::BrushRef::Gradient(&gradient);
+
+                            // sb.fill(peniko::Fill::NonZero, Affine::IDENTITY, brush, None, shape)
+                        }
+                        _ => todo!(),
+                    }
+                }
+                GenericImage::None => {}
+                GenericImage::Url(_) => {}
+                GenericImage::Rect(_) => {}
+                GenericImage::PaintWorklet(_) => {}
+                GenericImage::CrossFade(_) => {}
+                GenericImage::ImageSet(_) => {}
+            }
+        }
+    }
+
+    /// Returns the points of the border of a rounded rect
+    /// We draw 12 segments (each rounded corner has 2 segments) and the gaps are bridged
+    fn stroke_border(&self, shape: &RoundedRect, scene: &mut SceneBuilder, border: &Border) {
+        // Draw the top bar
+        let Border {
+            border_top_color,
+            border_top_style,
+            border_top_width,
+            border_right_color,
+            border_right_style,
+            border_right_width,
+            border_bottom_color,
+            border_bottom_style,
+            border_bottom_width,
+            border_left_color,
+            border_left_style,
+            border_left_width,
+
+            // image related stuf... idk
+            border_image_source,
+            border_image_outset,
+            border_image_repeat,
+            border_image_width,
+            border_image_slice,
+
+            // These are calculated from the rect
+            border_top_left_radius: _,
+            border_top_right_radius: _,
+            border_bottom_right_radius: _,
+            border_bottom_left_radius: _,
+        } = border;
+
+        let top_width = border_top_width.to_f64_px();
+        let right_width = border_right_width.to_f64_px();
+        let bottom_width = border_bottom_width.to_f64_px();
+        let left_width = border_left_width.to_f64_px();
+        let arcs =
+            SplitRoundedRect::new(*shape).arcs(top_width, right_width, bottom_width, left_width);
+
+        // draw top
+        self.stroke_arc(
+            &arcs.top,
+            scene,
+            top_width,
+            border_top_color
+                .as_absolute()
+                .map(ToVelloColor::as_vello)
+                .unwrap_or_default(),
+        );
+
+        // draw right
+        self.stroke_arc(
+            &arcs.right,
+            scene,
+            right_width,
+            border_right_color
+                .as_absolute()
+                .map(ToVelloColor::as_vello)
+                .unwrap_or_default(),
+        );
+
+        // draw bottom
+        self.stroke_arc(
+            &arcs.bottom,
+            scene,
+            bottom_width,
+            border_bottom_color
+                .as_absolute()
+                .map(ToVelloColor::as_vello)
+                .unwrap_or_default(),
+        );
+
+        // draw left
+        self.stroke_arc(
+            &arcs.left,
+            scene,
+            left_width,
+            border_left_color
+                .as_absolute()
+                .map(ToVelloColor::as_vello)
+                .unwrap_or_default(),
+        );
+    }
+
+    fn stroke_arc(
+        &self,
+        compound: &[Arc; 2],
+        scene: &mut SceneBuilder<'_>,
+        width: f64,
+        border_color: Color,
+    ) {
+        let mut stroke = Stroke::new((width * self.viewport.scale() as f64) as _)
+            // .with_join(peniko::Join::Miter)
+            .with_dashes(0.0, Some((12.0 * self.viewport.scale() as f64)))
+            .with_caps(vello::kurbo::Cap::Butt);
+
+        dbg!(&stroke);
+
+        let mut bez = BezPath::new();
+
+        // Push the first arc
+        for item in compound[0].path_elements(0.1) {
+            bez.push(item);
+        }
+
+        // Push the second arc, using LineTo to connect the two
+        for item in compound[1].path_elements(0.1) {
+            match item {
+                PathEl::MoveTo(a) => bez.push(PathEl::LineTo(a)),
+                item => bez.push(item),
+            }
+        }
+
+        scene.stroke(&stroke, Affine::IDENTITY, border_color, None, &bez);
+    }
+
     fn node_position(&self, node: usize, location: Point) -> (&Layout, Point) {
         let layout = self.layout(node);
         let pos = location + Vec2::new(layout.location.x as f64, layout.location.y as f64);
@@ -287,6 +444,15 @@ impl Document {
             .layout((&self.dom.nodes[child]).layout_id.get().unwrap())
             .unwrap()
     }
+}
+
+/// Calculate and cache all the properties of a laid out frame
+struct FramePlacement {
+    x: f64,
+    y: f64,
+    width: f64,
+    height: f64,
+    radii: (f64, f64, f64, f64),
 }
 
 trait ToVelloColor {

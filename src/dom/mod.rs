@@ -1,7 +1,8 @@
 use std::cell::RefCell;
 
 use dioxus::core::{Mutation, Mutations};
-use glazier::raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
+use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
+// use tao:::raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
 use selectors::matching::QuirksMode;
 use style::{
     media_queries::{Device as StyleDevice, MediaList, MediaType},
@@ -19,7 +20,7 @@ use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender};
 use vello::{
     peniko::Color,
     util::{RenderContext, RenderSurface},
-    RenderParams, Scene, SceneBuilder,
+    AaSupport, RenderParams, Scene, SceneBuilder,
 };
 use vello::{Renderer as VelloRenderer, RendererOptions};
 
@@ -93,12 +94,15 @@ impl Document {
             .await
             .expect("Error creating surface");
 
-        let device = &render_context.devices[surface.dev_id];
-        let options = RendererOptions {
-            surface_format: Some(surface.config.format),
-            timestamp_period: device.queue.get_timestamp_period(),
-        };
-        let renderer = VelloRenderer::new(&device.device, &options).unwrap();
+        let renderer = VelloRenderer::new(
+            &render_context.devices[surface.dev_id].device,
+            RendererOptions {
+                surface_format: Some(surface.config.format),
+                antialiasing_support: AaSupport::all(),
+                use_cpu: false,
+            },
+        )
+        .unwrap();
 
         // 4. Build out stylo, inserting some default stylesheets
         let quirks = QuirksMode::NoQuirks;
@@ -196,6 +200,7 @@ impl Document {
             base_color: Color::WHITE,
             width: self.surface.config.width,
             height: self.surface.config.height,
+            antialiasing_method: vello::AaConfig::Msaa16,
         };
 
         self.renderer
