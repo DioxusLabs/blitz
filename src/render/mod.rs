@@ -177,14 +177,12 @@ impl Document {
 
         // draw my weird test element
         let paths = self.top_segment(shape, border, 0.1);
-        dbg!(&paths);
         scene.fill(
             peniko::Fill::NonZero,
             Affine::IDENTITY,
-            // Affine::scale(self.viewport.scale_f64()),
             Color::BLACK,
             None,
-            &paths.as_slice(),
+            &paths,
         );
 
         //

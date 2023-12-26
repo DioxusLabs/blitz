@@ -27,26 +27,27 @@ const CSS: &str = r#"
     border-bottom-color: green;
     border-radius: 10px;
 
-    // border-radius: 1px;
-    // border-radius: 10% 30% 50% 70%;
-    // border-left: 4px solid #000;
-    // border-top: 10px solid #ff0;
-    // border-right:  3px solid red;
-    // border-bottom:  9px solid #0f0;
-    // box-shadow: 10px 10px gray;
+    border-radius: 1px;
+    border-radius: 10% 30% 50% 70%;
+    border-left: 4px solid #000;
+    border-top: 10px solid #ff0;
+    border-right:  3px solid red;
+    border-bottom:  9px solid #0f0;
+    box-shadow: 10px 10px gray;
 
 }
 
 #b {
     border: 20px solid black;
     background-color: red;
-    border-top-left-radius: 40px;
+    // border-top-left-radius: 0px;
     // border-top-right-radius: 40px;
-    // // border-radius: 10% 30% 50% 70%;
+    // border-radius: 10% 30% 50% 70%;
 
-    // border-radius: 5px;
-    // border-top-width: 8px;
-    // border-left-width: 8px;
+    border-radius: 40px;
+    border-top-width: 32px;
+    border-left-width: 4px;
+    border-right-width: 4px;
     // border-radius: 10px;
     // border-radius: 10px;
     // border-radius: 50%;
