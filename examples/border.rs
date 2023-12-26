@@ -15,6 +15,7 @@ fn app(cx: Scope) -> Element {
     render! {
         div { id: "a", "    Dioxus12312312312321\n\n\n        hi " }
         div { id: "b", "    Dioxus12312312312321\n\n\n\n\n\n\n\n        hi " }
+        div { id: "c", "    Dioxus12312312312321\n\n\n\n\n\n\n\n        hi " }
     }
 }
 
@@ -51,6 +52,15 @@ const CSS: &str = r#"
     // border-radius: 10px;
     // border-radius: 10px;
     // border-radius: 50%;
+}
+#c {
+    border: 20px solid black;
+    background-color: red;
+    border-top-left-radius: 0px;
+    border-top-right-radius: 40px;
+    border-top-width: 32px;
+    border-left-width: 8px;
+    border-right-width: 16px;
 }
 "#;
 
