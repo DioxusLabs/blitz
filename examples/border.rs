@@ -40,9 +40,9 @@ const CSS: &str = r#"
 #b {
     border: 20px solid black;
     background-color: red;
-    border-top-left-radius: 20px;
-    border-top-right-radius: 40px;
-    // border-radius: 10% 30% 50% 70%;
+    border-top-left-radius: 40px;
+    // border-top-right-radius: 40px;
+    // // border-radius: 10% 30% 50% 70%;
 
     // border-radius: 5px;
     // border-top-width: 8px;

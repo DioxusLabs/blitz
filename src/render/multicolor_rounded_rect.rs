@@ -156,45 +156,76 @@ impl Document {
 
         let mut path = vec![];
 
+        /*
+        Draw the
+
+
+
+
+
+         */
+
+
+
+
+
         // 1. Top left corner
-        // If no radius, just draw a line
+        // If no radius, just kinda draw a trapezoid
         if border_top_left_radius_width == 0.0 || border_top_left_radius_height == 0.0 {
-            path.push(PathEl::MoveTo(Point { x: rect.x0, y: rect.y0 }));
+            // inner corner
+            path.push(PathEl::MoveTo(Point { x: rect.x0+border_left_width, y: rect.y0 + border_top_width }));
+
+            // outer corner
+            path.push(PathEl::LineTo(Point { x: rect.x0, y: rect.y0 }));
         } else {
-            // Draw the leftmost outer arc
-            let radii = Vec2 { x: border_top_left_radius_width, y: border_top_left_radius_height };
-            let left_center = rect.origin() + radii;
-            let angle_start = solve_start_angle_for_border(border_top_width, border_left_width, radii.x, radii.y);
+            // If a radius is present, calculate the center of the arcs
+            // The inner and outer arc will share a center: the center of the outer arc
+            let outer_radii = Vec2 { x: border_top_left_radius_width, y: border_top_left_radius_height };
+            let inner_radii = Vec2 { x: border_top_left_radius_width - border_left_width, y: border_top_left_radius_height - border_top_width };
+            let center = rect.origin() + outer_radii;
+
+            // if the radius is bigger than the border, we need to draw the inner arc to fill in the gap
+            if border_top_left_radius_width > border_left_width || border_top_left_radius_height > border_top_width {
+                // Draw the inner arc
+                let angle_start = solve_start_angle_for_border(border_top_width, border_left_width, inner_radii.x, inner_radii.y);
+                let angle_sweep = FRAC_PI_2 - angle_start;
+                let arc = Arc::new(center, inner_radii,  PI + FRAC_PI_2, -angle_sweep, 0.0);
+                push_arc(&mut path, arc, tolerance);
+            } else {
+                path.push(PathEl::MoveTo(Point { x: rect.x0 + border_left_width, y: rect.y0 + border_top_width }));
+            }
+
+            // Draw the outer arc
+            let angle_start = solve_start_angle_for_border(border_top_width, border_left_width, outer_radii.x, outer_radii.y);
             let angle_sweep = FRAC_PI_2 - angle_start;
-            path.extend(
-                Arc::new(left_center, radii,  PI + angle_start, angle_sweep, 0.0).path_elements(tolerance)
-            );
+            let arc = Arc::new(center, outer_radii,  PI + angle_start, angle_sweep, 0.0);
+            push_arc(&mut path, arc, tolerance);
         }
 
 
         // 2. Top right corner
         // If no radius, just draw a line
-        if border_top_right_radius_width == 0.0 || border_top_right_radius_height == 0.0 {
-            path.push(PathEl::LineTo(Point { x: rect.x1, y: rect.y0 }));
-        } else {
-            // Draw the rightmost outer arc
-            let radii = Vec2 { x: border_top_right_radius_width, y: border_top_right_radius_height };
-            let right_center = rect.origin() + Vec2 { x: rect.width() - radii.x, y: radii.y } ;
+        // if border_top_right_radius_width == 0.0 || border_top_right_radius_height == 0.0 {
+        path.push(PathEl::LineTo(Point { x: rect.x1, y: rect.y0 }));
+        // } else {
+        //     // Draw the rightmost outer arc
+        //     let radii = Vec2 { x: border_top_right_radius_width, y: border_top_right_radius_height };
+        //     let right_center = rect.origin() + Vec2 { x: rect.width() - radii.x, y: radii.y } ;
 
-            let angle_start = solve_start_angle_for_border(border_top_width, border_right_width, radii.x, radii.y);
-            let angle_sweep = FRAC_PI_2 - angle_start;
-            let arc = Arc::new(right_center, radii, PI + FRAC_PI_2, angle_sweep, 0.0);
-            push_arc(&mut path, arc, 0.1);
+        //     let angle_start = solve_start_angle_for_border(border_top_width, border_right_width, radii.x, radii.y);
+        //     let angle_sweep = FRAC_PI_2 - angle_start;
+        //     let arc = Arc::new(right_center, radii, PI + FRAC_PI_2, angle_sweep, 0.0);
+        //     push_arc(&mut path, arc, 0.1);
 
 
 
-        }
+        // }
 
         // 3. Inner right corner
         // Check if the radius will clip the corner
         // If it won't we just draw a point
         // if border_top_right_radius_width <= border_top_width || border_top_right_radius_height <= border_top_width {
-            path.push(PathEl::LineTo(Point { x: rect.x1 - border_right_width, y: rect.y0 + border_top_width }));
+        path.push(PathEl::LineTo(Point { x: rect.x1 - border_right_width, y: rect.y0 + border_top_width }));
         // } else {
         //     // Draw the rightmost inner arc
         //     let radii = Vec2 {
@@ -217,7 +248,7 @@ impl Document {
         // path.push(PathEl::LineTo(Point { x: rect.x1-border_right_width , y: rect.y0 + border_top_width }));
 
         // Go to other inner corner
-        path.push(PathEl::LineTo(Point { x: rect.x0+border_left_width, y: rect.y0 + border_top_width }));
+        // path.push(PathEl::LineTo(Point { x: rect.x0+border_left_width, y: rect.y0 + border_top_width }));
 
 
 
@@ -277,7 +308,7 @@ impl Document {
 fn push_arc(path: &mut Vec<PathEl>, arc: Arc, tolerance: f64) {
     let mut elements = arc.path_elements(tolerance);
     match elements.next().unwrap() {
-        PathEl::MoveTo(a) => path.push(PathEl::LineTo(a)),
+        PathEl::MoveTo(a) if path.len() > 0 => path.push(PathEl::LineTo(a)),
         el => path.push(el),
     }
     path.extend(elements)
