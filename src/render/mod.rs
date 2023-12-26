@@ -2,13 +2,16 @@ use std::cell::RefCell;
 use style::{
     properties::{
         shorthands::{background, border},
-        style_structs::{Background, Border},
+        style_structs::{Background, Border, Outline},
         ComputedValues,
     },
-    values::generics::image::{GenericGradient, GenericImage},
+    values::{
+        computed::CSSPixelLength,
+        generics::image::{GenericGradient, GenericImage},
+    },
 };
 use style_traits::CssType::COLOR;
-use vello::kurbo::{Arc, BezPath, Dashes, PathEl, PathSegIter, Shape};
+use vello::kurbo::{Arc, BezPath, Dashes, PathEl, PathSegIter, RoundedRectRadii, Shape};
 mod multicolor_rounded_rect;
 
 use crate::{styling::BlitzNode, viewport::Viewport};
@@ -25,7 +28,7 @@ use vello::peniko::{self, Color, Fill};
 
 use vello::SceneBuilder;
 
-use self::multicolor_rounded_rect::SplitRoundedRect;
+use self::multicolor_rounded_rect::{BorderSide, SplitRoundedRect};
 
 const FOCUS_BORDER_WIDTH: f64 = 6.0;
 
@@ -124,74 +127,24 @@ impl Document {
         //
         // 1. Draw the frame
         //
-        let bg_color = background.background_color.clone();
-        let left_border_width = border.border_left_width.to_f64_px() * self.viewport.scale() as f64;
-        let top_border_width = border.border_top_width.to_f64_px() * self.viewport.scale() as f64;
-        let right_border_width =
-            border.border_right_width.to_f64_px() * self.viewport.scale() as f64;
-        let bottom_border_width =
-            border.border_bottom_width.to_f64_px() * self.viewport.scale() as f64;
 
-        let x: f64 = pos.x;
-        let y: f64 = pos.y;
+        let left_border_width = border.border_left_width.to_f64_px();
+        let top_border_width = border.border_top_width.to_f64_px();
+        let right_border_width = border.border_right_width.to_f64_px();
+        let bottom_border_width = border.border_bottom_width.to_f64_px();
+
         let width: f64 = layout.size.width.into();
         let height: f64 = layout.size.height.into();
 
-        let x_start = (x + left_border_width / 2.0).ceil();
-        let y_start = (y + top_border_width / 2.0).ceil();
-        let x_end = (x + width - right_border_width / 2.0).ceil();
-        let y_end = (y + height - bottom_border_width / 2.0).ceil();
-
-        // todo: rescale these by zoom
-        let top_left_radius_width = border
-            .border_top_left_radius
-            .0
-            .width()
-            .0
-            .to_length()
-            .unwrap()
-            .abs()
-            .px();
-
-        let top_right_radius_width = border
-            .border_top_right_radius
-            .0
-            .width()
-            .0
-            .to_length()
-            .unwrap()
-            .abs()
-            .px();
-
-        let bottom_right_radius_width = border
-            .border_bottom_right_radius
-            .0
-            .width()
-            .0
-            .to_length()
-            .unwrap()
-            .abs()
-            .px();
-
-        let bottom_left_radius_width = border
-            .border_bottom_left_radius
-            .0
-            .width()
-            .0
-            .to_length()
-            .unwrap()
-            .abs()
-            .px();
-
-        let radii = (
-            (top_left_radius_width * self.viewport.scale()) as f64,
-            (top_right_radius_width * self.viewport.scale()) as f64,
-            (bottom_right_radius_width * self.viewport.scale()) as f64,
-            (bottom_left_radius_width * self.viewport.scale()) as f64,
+        let shape = Rect::new(
+            pos.x + left_border_width / 2.0,
+            pos.y + top_border_width / 2.0,
+            pos.x + width - right_border_width / 2.0,
+            pos.y + height - bottom_border_width / 2.0,
         );
-        let shape = RoundedRect::new(x_start, y_start, x_end, y_end, radii);
 
         // todo: handle non-absolute colors
+        let bg_color = background.background_color.clone();
         let bg_color = bg_color.as_absolute().unwrap();
 
         // Fill the color
@@ -207,18 +160,32 @@ impl Document {
         // 2. Draw the image
         //
         // bless evan for figuring this out
-        self.stroke_frame(scene, border, background);
+        // self.stroke_frame(scene, border, background);
 
         //
         // 3. Draw the border
         //
         //
         // todo: borders can be different colors, thickness, etc *and* have radius
-        self.stroke_border(&shape, scene, &border);
+
+        // self.stroke_border(&shape, scene, &border);
 
         //
         // 4. Draw the outline
         //
+        // self.stroke_outline(&shape, scene, &outline);
+
+        // draw my weird test element
+        let paths = self.top_segment(shape, border, 0.1);
+        dbg!(&paths);
+        scene.fill(
+            peniko::Fill::NonZero,
+            Affine::IDENTITY,
+            // Affine::scale(self.viewport.scale_f64()),
+            Color::BLACK,
+            None,
+            &paths.as_slice(),
+        );
 
         //
         // N. Draw the children
@@ -349,56 +316,99 @@ impl Document {
             border_bottom_left_radius: _,
         } = border;
 
-        let top_width = border_top_width.to_f64_px();
-        let right_width = border_right_width.to_f64_px();
-        let bottom_width = border_bottom_width.to_f64_px();
-        let left_width = border_left_width.to_f64_px();
-        let arcs =
-            SplitRoundedRect::new(*shape).arcs(top_width, right_width, bottom_width, left_width);
+        let top_width = border_top_width.to_f64_px() * self.viewport.scale_f64();
+        let right_width = border_right_width.to_f64_px() * self.viewport.scale_f64();
+        let bottom_width = border_bottom_width.to_f64_px() * self.viewport.scale_f64();
+        let left_width = border_left_width.to_f64_px() * self.viewport.scale_f64();
 
-        // draw top
-        self.stroke_arc(
-            &arcs.top,
-            scene,
-            top_width,
-            border_top_color
-                .as_absolute()
-                .map(ToVelloColor::as_vello)
-                .unwrap_or_default(),
-        );
+        todo!()
 
-        // draw right
-        self.stroke_arc(
-            &arcs.right,
-            scene,
-            right_width,
-            border_right_color
-                .as_absolute()
-                .map(ToVelloColor::as_vello)
-                .unwrap_or_default(),
-        );
+        // let arcs = SplitRoundedRect::new(*shape).arcs(
+        //     BorderSide::Inside,
+        //     top_width,
+        //     right_width,
+        //     bottom_width,
+        //     left_width,
+        // );
 
-        // draw bottom
-        self.stroke_arc(
-            &arcs.bottom,
-            scene,
-            bottom_width,
-            border_bottom_color
-                .as_absolute()
-                .map(ToVelloColor::as_vello)
-                .unwrap_or_default(),
-        );
+        // // draw top
+        // self.stroke_arc(
+        //     &arcs.top,
+        //     scene,
+        //     top_width,
+        //     border_top_color
+        //         .as_absolute()
+        //         .map(ToVelloColor::as_vello)
+        //         .unwrap_or_default(),
+        // );
 
-        // draw left
-        self.stroke_arc(
-            &arcs.left,
-            scene,
-            left_width,
-            border_left_color
-                .as_absolute()
-                .map(ToVelloColor::as_vello)
-                .unwrap_or_default(),
-        );
+        // // draw right
+        // self.stroke_arc(
+        //     &arcs.right,
+        //     scene,
+        //     right_width,
+        //     border_right_color
+        //         .as_absolute()
+        //         .map(ToVelloColor::as_vello)
+        //         .unwrap_or_default(),
+        // );
+
+        // // draw bottom
+        // self.stroke_arc(
+        //     &arcs.bottom,
+        //     scene,
+        //     bottom_width,
+        //     border_bottom_color
+        //         .as_absolute()
+        //         .map(ToVelloColor::as_vello)
+        //         .unwrap_or_default(),
+        // );
+
+        // // draw left
+        // self.stroke_arc(
+        //     &arcs.left,
+        //     scene,
+        //     left_width,
+        //     border_left_color
+        //         .as_absolute()
+        //         .map(ToVelloColor::as_vello)
+        //         .unwrap_or_default(),
+        // );
+    }
+
+    // Basically the same s drawing borders but with different styles and orientation
+    //
+    // todo: just render a single outline stroke instead of 4 curves
+    // It's somewhat obvious when rendered that it's 4 curves instead of a single stroke, and outlines don't need 4 segments
+    pub(crate) fn stroke_outline(
+        &self,
+        shape: &RoundedRect,
+        scene: &mut SceneBuilder<'_>,
+        outline: &Outline,
+    ) {
+        let Outline {
+            outline_color,
+            outline_style,
+            outline_width,
+            outline_offset,
+        } = outline;
+
+        let width = outline_width.to_f64_px() * self.viewport.scale_f64();
+        let color = outline_color
+            .as_absolute()
+            .map(ToVelloColor::as_vello)
+            .unwrap_or_default();
+
+        todo!()
+
+        // let arcs =
+        //     SplitRoundedRect::new(*shape).arcs(BorderSide::Outside, width, width, width, width);
+
+        // // draw top
+        // self.stroke_arc(&arcs.top, scene, width, color);
+        // self.stroke_arc(&arcs.right, scene, width, color);
+        // self.stroke_arc(&arcs.bottom, scene, width, color);
+        // self.stroke_arc(&arcs.left, scene, width, color);
     }
 
     fn stroke_arc(
@@ -408,12 +418,9 @@ impl Document {
         width: f64,
         border_color: Color,
     ) {
-        let mut stroke = Stroke::new((width * self.viewport.scale() as f64) as _)
-            // .with_join(peniko::Join::Miter)
-            .with_dashes(0.0, Some((12.0 * self.viewport.scale() as f64)))
+        let mut stroke = Stroke::new((width as f64) as _)
+            .with_join(vello::kurbo::Join::Miter)
             .with_caps(vello::kurbo::Cap::Butt);
-
-        dbg!(&stroke);
 
         let mut bez = BezPath::new();
 
@@ -457,6 +464,19 @@ struct FramePlacement {
 
 trait ToVelloColor {
     fn as_vello(&self) -> Color;
+}
+
+fn to_real_radius(border: &Border) {
+    let radius = &border.border_top_left_radius.0;
+    let x = radius.width();
+    let y = radius.height();
+
+    // .0
+    // .width()
+    // .0
+    // .resolve(CSSPixelLength::new(100.0))
+    // .abs()
+    // .px();
 }
 
 impl ToVelloColor for AbsoluteColor {

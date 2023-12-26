@@ -25,6 +25,10 @@ impl Viewport {
     pub fn scale(&self) -> f32 {
         self.hidpi_scale * self.zoom
     }
+    // Total scaling, the product of the zoom and hdpi scale
+    pub fn scale_f64(&self) -> f64 {
+        self.scale() as f64
+    }
 
     pub fn set_hidpi_scale(&mut self, scale: f32) {
         self.hidpi_scale = scale;

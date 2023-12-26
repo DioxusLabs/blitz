@@ -13,17 +13,47 @@ fn main() {
 
 fn app(cx: Scope) -> Element {
     render! {
-        div { id: "a", " Dioxus12312312312321\n\n\n        hi " }
+        div { id: "a", "    Dioxus12312312312321\n\n\n        hi " }
+        div { id: "b", "    Dioxus12312312312321\n\n\n\n\n\n\n\n        hi " }
     }
 }
 
 const CSS: &str = r#"
 #a {
-    background-color: red;
+    background-color: gray;
     font-color: white;
-    border: 10px solid black;
-    border-radius: 50px 20px;
+    border: 5px solid black;
     border-top-color: green;
     border-bottom-color: green;
+    border-radius: 10px;
+
+    // border-radius: 1px;
+    // border-radius: 10% 30% 50% 70%;
+    // border-left: 4px solid #000;
+    // border-top: 10px solid #ff0;
+    // border-right:  3px solid red;
+    // border-bottom:  9px solid #0f0;
+    // box-shadow: 10px 10px gray;
+
+}
+
+#b {
+    border: 20px solid black;
+    background-color: red;
+    border-top-left-radius: 20px;
+    border-top-right-radius: 40px;
+    // border-radius: 10% 30% 50% 70%;
+
+    // border-radius: 5px;
+    // border-top-width: 8px;
+    // border-left-width: 8px;
+    // border-radius: 10px;
+    // border-radius: 10px;
+    // border-radius: 50%;
 }
 "#;
+
+// border-radius: 1px;
+
+// outline-style: solid;
+// outline-color: blue;
