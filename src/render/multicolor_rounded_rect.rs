@@ -200,6 +200,10 @@ impl ResolvedBorderLayout {
 
     // Get the arc for a corner
     fn arc(&self, corner: Corner, side: ArcSide, edge: Edge) -> Arc {
+        use ArcSide::*;
+        use Corner::*;
+        use Edge::*;
+
         let pair = self.radii(corner);
         let radii = match side {
             ArcSide::Inner => pair.inner,
@@ -219,10 +223,6 @@ impl ResolvedBorderLayout {
             ArcSide::Outer => 1.0,
         };
 
-        use ArcSide::*;
-        use Corner::*;
-        use Edge::*;
-
         // Easier to reason about if we think about just offsetting the turns from the start
         let offset = match edge {
             Top => 0.0,
@@ -241,22 +241,22 @@ impl ResolvedBorderLayout {
             (Top, TopRight, Inner) => (FRAC_PI_2 - theta, FRAC_PI_2 - theta),
 
             // Right Edge
-            (Right, TopRight, Inner) => (FRAC_PI_2, theta),
-            (Right, TopRight, Outer) => (FRAC_PI_2 - theta, theta),
-            (Right, BottomRight, Outer) => (FRAC_PI_2, theta),
-            (Right, BottomRight, Inner) => (FRAC_PI_2 + theta, theta),
+            (Right, TopRight, Inner) => (0.0, theta),
+            (Right, TopRight, Outer) => (-theta, theta),
+            (Right, BottomRight, Outer) => (0.0, theta),
+            (Right, BottomRight, Inner) => (theta, theta),
 
             // Bottom Edge
-            (Bottom, BottomRight, Inner) => (PI, FRAC_PI_2 - theta),
-            (Bottom, BottomRight, Outer) => (theta - (PI + FRAC_PI_2), FRAC_PI_2 - theta),
-            (Bottom, BottomLeft, Outer) => (PI, FRAC_PI_2 - theta),
-            (Bottom, BottomLeft, Inner) => (PI + FRAC_PI_2 - theta, FRAC_PI_2 - theta),
+            (Bottom, BottomRight, Inner) => (0.0, FRAC_PI_2 - theta),
+            (Bottom, BottomRight, Outer) => (theta - FRAC_PI_2, FRAC_PI_2 - theta),
+            (Bottom, BottomLeft, Outer) => (0.0, FRAC_PI_2 - theta),
+            (Bottom, BottomLeft, Inner) => (FRAC_PI_2 - theta, FRAC_PI_2 - theta),
 
             // Left Edge
-            (Left, BottomLeft, Inner) => (PI + FRAC_PI_2, theta),
-            (Left, BottomLeft, Outer) => (FRAC_PI_2 + PI - theta, theta),
-            (Left, TopLeft, Outer) => (PI + FRAC_PI_2, theta),
-            (Left, TopLeft, Inner) => (PI + FRAC_PI_2 + theta, theta),
+            (Left, BottomLeft, Inner) => (0.0, theta),
+            (Left, BottomLeft, Outer) => (-theta, theta),
+            (Left, TopLeft, Outer) => (0.0, theta),
+            (Left, TopLeft, Inner) => (theta, theta),
 
             _ => todo!(),
         };
@@ -264,7 +264,7 @@ impl ResolvedBorderLayout {
         Arc::new(
             pair.center,
             radii,
-            start + PI + FRAC_PI_2,
+            start + PI + FRAC_PI_2 + offset,
             sweep * sweep_direction,
             0.0,
         )
