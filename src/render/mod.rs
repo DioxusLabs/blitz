@@ -28,7 +28,7 @@ use vello::peniko::{self, Color, Fill};
 
 use vello::SceneBuilder;
 
-use self::multicolor_rounded_rect::{BorderSide, SplitRoundedRect};
+use self::multicolor_rounded_rect::{Edge, ResolvedBorderLayout};
 
 const FOCUS_BORDER_WIDTH: f64 = 6.0;
 
@@ -143,6 +143,8 @@ impl Document {
             pos.y + height - bottom_border_width / 2.0,
         );
 
+        let frame = ResolvedBorderLayout::new(border, shape, self.viewport.scale_f64());
+
         // todo: handle non-absolute colors
         let bg_color = background.background_color.clone();
         let bg_color = bg_color.as_absolute().unwrap();
@@ -167,23 +169,12 @@ impl Document {
         //
         //
         // todo: borders can be different colors, thickness, etc *and* have radius
-
-        // self.stroke_border(&shape, scene, &border);
+        self.stroke_border(&frame, scene, &border);
 
         //
         // 4. Draw the outline
         //
         // self.stroke_outline(&shape, scene, &outline);
-
-        // draw my weird test element
-        let paths = self.top_segment(shape, border, 0.1);
-        scene.fill(
-            peniko::Fill::NonZero,
-            Affine::IDENTITY,
-            Color::BLACK,
-            None,
-            &paths,
-        );
 
         //
         // N. Draw the children
@@ -206,6 +197,7 @@ impl Document {
                 NodeData::Text { contents } => {
                     // todo: use the layout to handle clipping of the text
                     let (_layout, pos) = self.node_position(*child, pos);
+                    dbg!(font_size);
                     let transform =
                         Affine::translate(pos.to_vec2() + Vec2::new(0.0, font_size as f64));
 
@@ -284,94 +276,29 @@ impl Document {
 
     /// Returns the points of the border of a rounded rect
     /// We draw 12 segments (each rounded corner has 2 segments) and the gaps are bridged
-    fn stroke_border(&self, shape: &RoundedRect, scene: &mut SceneBuilder, border: &Border) {
-        // Draw the top bar
-        let Border {
-            border_top_color,
-            border_top_style,
-            border_top_width,
-            border_right_color,
-            border_right_style,
-            border_right_width,
-            border_bottom_color,
-            border_bottom_style,
-            border_bottom_width,
-            border_left_color,
-            border_left_style,
-            border_left_width,
+    fn stroke_border(
+        &self,
+        frame: &ResolvedBorderLayout,
+        scene: &mut SceneBuilder,
+        border: &Border,
+    ) {
+        let tolerance = 0.1;
 
-            // image related stuf... idk
-            border_image_source,
-            border_image_outset,
-            border_image_repeat,
-            border_image_width,
-            border_image_slice,
+        let path = frame.border(Edge::Top, tolerance);
+        let color = Color::BLACK;
+        scene.fill(peniko::Fill::NonZero, Affine::IDENTITY, color, None, &path);
 
-            // These are calculated from the rect
-            border_top_left_radius: _,
-            border_top_right_radius: _,
-            border_bottom_right_radius: _,
-            border_bottom_left_radius: _,
-        } = border;
+        let path = frame.border(Edge::Right, tolerance);
+        let color = Color::GREEN;
+        scene.fill(peniko::Fill::NonZero, Affine::IDENTITY, color, None, &path);
 
-        let top_width = border_top_width.to_f64_px() * self.viewport.scale_f64();
-        let right_width = border_right_width.to_f64_px() * self.viewport.scale_f64();
-        let bottom_width = border_bottom_width.to_f64_px() * self.viewport.scale_f64();
-        let left_width = border_left_width.to_f64_px() * self.viewport.scale_f64();
+        let path = frame.border(Edge::Bottom, tolerance);
+        let color = Color::BLUE;
+        scene.fill(peniko::Fill::NonZero, Affine::IDENTITY, color, None, &path);
 
-        todo!()
-
-        // let arcs = SplitRoundedRect::new(*shape).arcs(
-        //     BorderSide::Inside,
-        //     top_width,
-        //     right_width,
-        //     bottom_width,
-        //     left_width,
-        // );
-
-        // // draw top
-        // self.stroke_arc(
-        //     &arcs.top,
-        //     scene,
-        //     top_width,
-        //     border_top_color
-        //         .as_absolute()
-        //         .map(ToVelloColor::as_vello)
-        //         .unwrap_or_default(),
-        // );
-
-        // // draw right
-        // self.stroke_arc(
-        //     &arcs.right,
-        //     scene,
-        //     right_width,
-        //     border_right_color
-        //         .as_absolute()
-        //         .map(ToVelloColor::as_vello)
-        //         .unwrap_or_default(),
-        // );
-
-        // // draw bottom
-        // self.stroke_arc(
-        //     &arcs.bottom,
-        //     scene,
-        //     bottom_width,
-        //     border_bottom_color
-        //         .as_absolute()
-        //         .map(ToVelloColor::as_vello)
-        //         .unwrap_or_default(),
-        // );
-
-        // // draw left
-        // self.stroke_arc(
-        //     &arcs.left,
-        //     scene,
-        //     left_width,
-        //     border_left_color
-        //         .as_absolute()
-        //         .map(ToVelloColor::as_vello)
-        //         .unwrap_or_default(),
-        // );
+        let path = frame.border(Edge::Left, tolerance);
+        let color = Color::YELLOW;
+        scene.fill(peniko::Fill::NonZero, Affine::IDENTITY, color, None, &path);
     }
 
     // Basically the same s drawing borders but with different styles and orientation
