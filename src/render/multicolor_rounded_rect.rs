@@ -145,9 +145,9 @@ impl Document {
 
         let scale = self.viewport.scale_f64();
 
-        // Resolve the radii to a length
-        let pixel_width = CSSPixelLength::new(rect.width() as _);
-        let pixel_height = CSSPixelLength::new(rect.width() as _);
+        // Resolve the radii to a length. need to downscale since the radii are in document pixels
+        let pixel_width = CSSPixelLength::new((rect.width() / scale) as _);
+        let pixel_height = CSSPixelLength::new((rect.height() / scale) as _);
 
         // Resolve and rescale
         // We have to scale since document pixels are not same same as rendered pixels
@@ -331,5 +331,9 @@ fn should_solve_properly() {
     // 0.643501
     dbg!(maybe_simple_theta(0.5));
 
-    dbg!(solve_start_angle_for_border(4.0, 1.0, 1.0, 2.0));
+    dbg!(solve_start_angle_for_border(
+        4.0,
+        1.0,
+        Vec2 { x: 1.0, y: 2.0 }
+    ));
 }
