@@ -6,7 +6,7 @@ use style::{
         ComputedValues,
     },
     values::{
-        computed::CSSPixelLength,
+        computed::{CSSPixelLength, Percentage},
         generics::image::{GenericGradient, GenericImage},
     },
 };
@@ -128,10 +128,11 @@ impl Document {
         // 1. Draw the frame
         //
 
-        let left_border_width = border.border_left_width.to_f64_px();
-        let top_border_width = border.border_top_width.to_f64_px();
-        let right_border_width = border.border_right_width.to_f64_px();
-        let bottom_border_width = border.border_bottom_width.to_f64_px();
+        let left_border_width = border.border_left_width.to_f64_px() * self.viewport.scale_f64();
+        let top_border_width = border.border_top_width.to_f64_px() * self.viewport.scale_f64();
+        let right_border_width = border.border_right_width.to_f64_px() * self.viewport.scale_f64();
+        let bottom_border_width =
+            border.border_bottom_width.to_f64_px() * self.viewport.scale_f64();
 
         let width: f64 = layout.size.width.into();
         let height: f64 = layout.size.height.into();
@@ -285,19 +286,19 @@ impl Document {
         let tolerance = 0.1;
 
         let path = frame.border(Edge::Top, tolerance);
-        let color = Color::BLACK;
+        let color = border.border_top_color.as_vello();
         scene.fill(peniko::Fill::NonZero, Affine::IDENTITY, color, None, &path);
 
         let path = frame.border(Edge::Right, tolerance);
-        let color = Color::GREEN;
+        let color = border.border_right_color.as_vello();
         scene.fill(peniko::Fill::NonZero, Affine::IDENTITY, color, None, &path);
 
         let path = frame.border(Edge::Bottom, tolerance);
-        let color = Color::BLUE;
+        let color = border.border_bottom_color.as_vello();
         scene.fill(peniko::Fill::NonZero, Affine::IDENTITY, color, None, &path);
 
         let path = frame.border(Edge::Left, tolerance);
-        let color = Color::YELLOW;
+        let color = border.border_left_color.as_vello();
         scene.fill(peniko::Fill::NonZero, Affine::IDENTITY, color, None, &path);
     }
 
@@ -402,6 +403,14 @@ fn to_real_radius(border: &Border) {
     // .resolve(CSSPixelLength::new(100.0))
     // .abs()
     // .px();
+}
+
+impl ToVelloColor for style::values::generics::color::Color<Percentage> {
+    fn as_vello(&self) -> Color {
+        self.as_absolute()
+            .map(|f| f.as_vello())
+            .unwrap_or(Color::BLACK)
+    }
 }
 
 impl ToVelloColor for AbsoluteColor {

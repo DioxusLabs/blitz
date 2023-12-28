@@ -13,15 +13,21 @@ fn main() {
 
 fn app(cx: Scope) -> Element {
     render! {
-        div { id: "b", "    Dioxus12312312312321\n\n\n\n\n\n\n\n        hi " }
-        div { id: "c", "    Dioxus12312312312321\n\n\n\n\n\n\n\n        hi " }
-        div { id: "d", "    Dioxus12312312312321\n\n\n\n\n\n\n\n        hi " }
-        div { id: "e", "    Dioxus12312312312321\n\n\n\n\n\n\n\n        hi " }
-        div { id: "a", "    Dioxus12312312312321\n\n\n        hi " }
+        div { class: "colorful", id: "a", "    Dioxus12312312312321\n\n\n        hi " }
+        div { class: "colorful", id: "b", "    Dioxus12312312312321\n\n\n\n\n\n\n\n        hi " }
+        div { class: "colorful", id: "c", "    Dioxus12312312312321\n\n\n\n\n\n\n\n        hi " }
+        div { class: "colorful", id: "d", "    Dioxus12312312312321\n\n\n\n\n\n\n\n        hi " }
+        div { class: "colorful", id: "e", "    Dioxus12312312312321\n\n\n\n\n\n\n\n        hi " }
     }
 }
 
 const CSS: &str = r#"
+.colorful {
+    border-right-color: #000;
+    border-left-color: #ff0;
+    border-top-color: #F01;
+    border-bottom-color: #0f0;
+}
 #a {
     height:300px;
     background-color: gray;
@@ -67,7 +73,12 @@ const CSS: &str = r#"
     background-color: pink;
     border: 20px solid black;
     border-radius: 30px;
+    border-right-color: #000;
+    border-left-color: #ff0;
+    border-top-color: #F01;
+    border-bottom-color: #0f0;
 }
+
 "#;
 
 // border-radius: 1px;
