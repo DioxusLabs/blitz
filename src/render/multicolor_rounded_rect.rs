@@ -1,6 +1,8 @@
 //! A rounded rect closer to the browser
 //! Implemented in such a way that splits the border into 4 parts at the midway of each radius
 //!
+//! This object is meant to be updated only when the data changes - BezPaths are expensive!
+//!
 //! Can I just say, this is a lot of work for a border
 //! HTML/css is annoyingly wild
 
@@ -18,6 +20,7 @@ use vello::kurbo::{Arc, BezPath, Ellipse, PathEl, Point, Rect, Shape, Vec2};
 /// This should be calculated once and then used to stroke borders, outlines, and frames
 ///
 /// It contains all the information needed to draw the frame, border, etc
+///
 #[derive(Debug, Clone)]
 pub struct ElementFrame {
     /// The bounding box rect for the element
@@ -47,7 +50,7 @@ pub struct ElementFrame {
 
 impl ElementFrame {
     #[rustfmt::skip]
-    pub fn new(style: &ComputedValues, layout: &Layout, pos: Point, scale: f64) -> Self {
+    pub fn new(style: &ComputedValues, layout: &Layout, scale: f64) -> Self {
         let (border, outline) = (style.get_border(), style.get_outline());
 
         // Resolve and rescale
@@ -62,10 +65,10 @@ impl ElementFrame {
         let height: f64 = layout.size.height.into();
 
         let rect = Rect::new(
-            pos.x + border_left_width / 2.0,
-            pos.y + border_top_width / 2.0,
-            pos.x + width - border_right_width / 2.0,
-            pos.y + height - border_bottom_width / 2.0,
+            border_left_width / 2.0,
+            border_top_width / 2.0,
+            width - border_right_width / 2.0,
+            height - border_bottom_width / 2.0,
         );
 
         // Resolve the radii to a length. need to downscale since the radii are in document pixels
@@ -191,7 +194,7 @@ impl ElementFrame {
     fn shape(&self, path: &mut BezPath, line: ArcSide, direction: Direction) {
         use {ArcSide::*, Corner::*, Direction::*};
 
-        for corner in [TopLeft, TopRight, BottomLeft, BottomRight] {
+        for corner in [TopLeft, TopRight, BottomRight, BottomLeft] {
             if self.is_sharp(corner) {
                 path.insert_point(self.corner(corner, line));
             } else {
@@ -417,18 +420,18 @@ impl ElementFrame {
             ..
         } = self;
 
-        let outer = match corner {
+        let outer: Vec2 = match corner {
             TopLeft => (*border_top_left_radius_width, *border_top_left_radius_height),
             TopRight => (*border_top_right_radius_width, *border_top_right_radius_height),
             BottomLeft => (*border_bottom_left_radius_width, *border_bottom_left_radius_height),
             BottomRight => (*border_bottom_right_radius_width, *border_bottom_right_radius_height),
-        };
+        }.into();
 
         let center = match corner {
             TopLeft => outer,
-            TopRight => (rect.width() - outer.0, outer.1 ),
-            BottomLeft => (outer.0, rect.height() - outer.1 ),
-            BottomRight => (rect.width() - outer.0, rect.height() - outer.1 ),
+            TopRight => (rect.width() - outer.x, outer.y ).into(),
+            BottomLeft => (outer.x, rect.height() - outer.y ).into(),
+            BottomRight => (rect.width() - outer.x, rect.height() - outer.y ).into(),
         };
 
         let radii = match side {
@@ -440,7 +443,7 @@ impl ElementFrame {
                 TopRight => (border_top_right_radius_width - border_right_width, border_top_right_radius_height - border_top_width),
                 BottomRight => (border_bottom_right_radius_width - border_right_width, border_bottom_right_radius_height - border_bottom_width),
                 BottomLeft => (border_bottom_left_radius_width - border_left_width, border_bottom_left_radius_height - border_bottom_width),
-            },
+            }.into(),
         };
 
         Ellipse::new(rect.origin() + center, radii, 0.0)

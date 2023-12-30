@@ -149,12 +149,17 @@ impl Document {
 
         // todo: maybe cache this so we don't need to constantly be figuring it out
         // It is quite a bit of math to calculate during render/traverse
-        let frame = ElementFrame::new(&style, layout, pos, scale);
+        // Also! we can cache the bezpaths themselves, saving us a bunch of work
+        let frame = ElementFrame::new(&style, layout, scale);
 
         let inherited_text = style.get_inherited_text();
         let font = style.get_font();
         let font_size = font.font_size.computed_size().px() * scale as f32;
         let text_color = inherited_text.clone_color().as_vello();
+
+        // the bezpaths for every element are (potentially) cached (not yet, tbd)
+        // By performing the transform, we prevent the cache from becoming invalid when the page shifts around
+        let transform = Affine::translate((pos.x, pos.y));
 
         ElementCx {
             frame,
@@ -165,6 +170,7 @@ impl Document {
             element,
             font_size,
             text_color,
+            transform,
         }
     }
 
@@ -191,6 +197,7 @@ struct ElementCx<'a> {
     element: &'a NodeData,
     font_size: f32,
     text_color: Color,
+    transform: Affine,
 }
 
 impl<'a> ElementCx<'a> {
@@ -250,7 +257,7 @@ impl<'a> ElementCx<'a> {
         // Fill the color
         scene.fill(
             Fill::NonZero,
-            Affine::IDENTITY,
+            self.transform,
             bg_color.as_vello(),
             None,
             &self.frame.rect,
@@ -304,7 +311,7 @@ impl<'a> ElementCx<'a> {
             Edge::Left => border.border_left_color.as_vello(),
         };
 
-        sb.fill(Fill::NonZero, Affine::IDENTITY, color, None, &path);
+        sb.fill(Fill::NonZero, self.transform, color, None, &path);
     }
 
     /// ❌ dotted - Defines a dotted border
@@ -348,7 +355,7 @@ impl<'a> ElementCx<'a> {
             BorderStyle::Double => todo!(),
         };
 
-        scene.fill(Fill::NonZero, Affine::IDENTITY, color, None, &path);
+        scene.fill(Fill::NonZero, self.transform, color, None, &path);
     }
 
     /// Applies filters to a final frame
