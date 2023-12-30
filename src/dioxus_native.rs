@@ -26,16 +26,16 @@ pub fn launch_cfg_with_props<Props: 'static + Send + Clone>(
     props: Props,
     cfg: Config,
 ) {
+    // Build an event loop for the application
+    let event_loop = EventLoop::<UserWindowEvent>::with_user_event();
+
     // Turn on the runtime and enter it
     let rt = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()
         .unwrap();
 
-    let _ = rt.enter();
-
-    // Build an event loop for the application
-    let event_loop = EventLoop::<UserWindowEvent>::with_user_event();
+    let _guard = rt.enter();
 
     // Multiwindow ftw
     let mut windows = HashMap::new();

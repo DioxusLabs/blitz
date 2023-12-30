@@ -1,8 +1,40 @@
-use std::cell::RefCell;
+// All the stuff that HTML cares about:
+// custom_properties,
+// writing_mode,
+// rules,
+// visited_style,
+// flags,
+// background,
+// border,
+// box_,
+// column,
+// counters,
+// effects,
+// font,
+// inherited_box,
+// inherited_table,
+// inherited_text,
+// inherited_ui,
+// list,
+// margin,
+// outline,
+// padding,
+// position,
+// table,
+// text,
+// ui,
+//
+// Need to draw:
+// - frame
+// - image
+// - shadow
+// - outline
+// - border
+// - list discs
+
 use style::{
     properties::{
-        shorthands::{background, border},
-        style_structs::{Background, Border, Outline},
+        style_structs::{Background, Border, Font, InheritedText, Outline},
         ComputedValues,
     },
     values::{
@@ -10,36 +42,27 @@ use style::{
         generics::image::{GenericGradient, GenericImage},
     },
 };
-use style_traits::CssType::COLOR;
 use vello::kurbo::{Arc, BezPath, Dashes, PathEl, PathSegIter, RoundedRectRadii, Shape};
 mod multicolor_rounded_rect;
-
-use crate::{styling::BlitzNode, viewport::Viewport};
-use crate::{styling::NodeData, text::TextContext};
-use crate::{styling::RealDom, Document};
-use html5ever::{
-    tendril::{fmt::UTF8, Tendril},
-    QualName,
-};
+use crate::Document;
+use crate::{styling::NodeData, util::StyloGradient};
 use style::color::AbsoluteColor;
 use taffy::prelude::Layout;
-use vello::kurbo::{Affine, Point, Rect, RoundedRect, Stroke, Vec2};
-use vello::peniko::{self, Color, Fill};
-
-use vello::SceneBuilder;
+use vello::{
+    kurbo::{Affine, Point, Rect, RoundedRect, Stroke, Vec2},
+    peniko::{self, Color, Fill},
+};
 
 use self::multicolor_rounded_rect::{Edge, ResolvedBorderLayout};
-
-const FOCUS_BORDER_WIDTH: f64 = 6.0;
+use crate::util::ToVelloColor;
+use vello::SceneBuilder;
 
 impl Document {
     /// Render to any scene!
-    pub(crate) fn render_internal(&self, sb: &mut SceneBuilder) {
+    pub(crate) fn render_internal(&self, scene: &mut SceneBuilder) {
         let root = &self.dom.root_element();
 
-        // We by default render a white background for the window. T
-        // his is just the default stylesheet in action
-        sb.fill(
+        scene.fill(
             Fill::NonZero,
             Affine::IDENTITY,
             Color::WHITE,
@@ -47,7 +70,7 @@ impl Document {
             &root.bounds(&self.taffy),
         );
 
-        self.render_element(sb, root.id, Point::ZERO);
+        self.render_element(scene, root.id, Point::ZERO);
     }
 
     /// Renders a node, but is guaranteed that the node is an element
@@ -62,279 +85,79 @@ impl Document {
     fn render_element(&self, scene: &mut SceneBuilder, node: usize, location: Point) {
         use markup5ever_rcdom::NodeData;
 
+        let cx = self.element_cx(node, location);
+
+        cx.stroke_outline(scene);
+        cx.stroke_frame(scene);
+        cx.stroke_border(scene);
+        cx.stroke_effects(scene);
+
+        for child in &cx.element.children {
+            match &self.dom.nodes[*child].node.data {
+                NodeData::Element { .. } => self.render_element(scene, *child, cx.pos),
+                NodeData::Text { contents } => self.render_text(scene, child, &cx, contents),
+                NodeData::Document => {}
+                NodeData::Doctype { .. } => {}
+                NodeData::Comment { .. } => {}
+                NodeData::ProcessingInstruction { .. } => {}
+            }
+        }
+    }
+
+    fn element_cx(&self, node: usize, location: Point) -> ElementCx {
         let element = &self.dom.nodes[node];
+
+        let style = element.style.borrow().styles.primary().clone();
+
         let (layout, pos) = self.node_position(node, location);
+        let scale = self.viewport.scale_f64();
 
-        // Todo: different semantics based on the element name
-        let NodeData::Element { name, .. } = &element.node.data else {
-            panic!("Unexpected node found while traversing element tree during render")
-        };
+        // todo: maybe cache this so we don't need to constantly be figuring it out
+        // It is quite a bit of math to calculate during render/traverse
+        let frame = ResolvedBorderLayout::new(style.get_border(), layout, pos, scale);
 
-        let style = element.style.borrow();
-        let primary = style.styles.primary();
-
-        // All the stuff that HTML cares about:
-        // custom_properties,
-        // writing_mode,
-        // rules,
-        // visited_style,
-        // flags,
-        // background,
-        // border,
-        // box_,
-        // column,
-        // counters,
-        // effects,
-        // font,
-        // inherited_box,
-        // inherited_table,
-        // inherited_text,
-        // inherited_ui,
-        // list,
-        // margin,
-        // outline,
-        // padding,
-        // position,
-        // table,
-        // text,
-        // ui,
-
-        /*
-        Need to draw:
-        - frame
-        - image
-        - shadow
-        - border
-        - outline
-
-        need to respect:
-        - margin
-        - padding
-         */
-
-        let background = primary.get_background();
-        let border = primary.get_border();
-        let effects = primary.get_effects();
-        let font = primary.get_font();
-        let t = primary.get_text();
-        let outline = primary.get_outline();
-        let _outline = primary.get_position();
-        let _padding = primary.get_padding();
-        let _margin = primary.get_margin();
-        let _position = primary.get_position();
-        let inherited_text = primary.get_inherited_text();
-
-        //
-        // 1. Draw the frame
-        //
-
-        let left_border_width = border.border_left_width.to_f64_px() * self.viewport.scale_f64();
-        let top_border_width = border.border_top_width.to_f64_px() * self.viewport.scale_f64();
-        let right_border_width = border.border_right_width.to_f64_px() * self.viewport.scale_f64();
-        let bottom_border_width =
-            border.border_bottom_width.to_f64_px() * self.viewport.scale_f64();
-
-        let width: f64 = layout.size.width.into();
-        let height: f64 = layout.size.height.into();
-
-        let shape = Rect::new(
-            pos.x + left_border_width / 2.0,
-            pos.y + top_border_width / 2.0,
-            pos.x + width - right_border_width / 2.0,
-            pos.y + height - bottom_border_width / 2.0,
-        );
-
-        let frame = ResolvedBorderLayout::new(border, shape, self.viewport.scale_f64());
-
-        // todo: handle non-absolute colors
-        let bg_color = background.background_color.clone();
-        let bg_color = bg_color.as_absolute().unwrap();
-
-        // Fill the color
-        scene.fill(
-            peniko::Fill::NonZero,
-            Affine::IDENTITY,
-            bg_color.as_vello(),
-            None,
-            &shape,
-        );
-
-        //
-        // 2. Draw the image
-        //
-        // bless evan for figuring this out
-        // self.stroke_frame(scene, border, background);
-
-        //
-        // 3. Draw the border
-        //
-        //
-        // todo: borders can be different colors, thickness, etc *and* have radius
-        self.stroke_border(&frame, scene, &border);
-
-        //
-        // 4. Draw the outline
-        //
-        // self.stroke_outline(&shape, scene, &outline);
-
-        //
-        // N. Draw the children
-        //
-
-        // Render out children nodes now that we've painted the background, border, shadow, etc
-        // I'd rather pre-compute all the text rendering stuff
-
-        // Pull out all the stuff we need to render text
-        // We do it here so all the child text can share the same text styling (font size, color, weight, etc) without
-        // recomputing for *every* segment
-
-        let font_size = font.font_size.computed_size().px() * self.viewport.scale();
+        let inherited_text = style.get_inherited_text();
+        let font = style.get_font();
+        let font_size = font.font_size.computed_size().px() * scale as f32;
         let text_color = inherited_text.clone_color().as_vello();
 
-        for child in &element.children {
-            match &self.dom.nodes[*child].node.data {
-                // Rendering text is done here in the iterator
-                // The codegen isn't as great but saves us having to do a bunch of work
-                NodeData::Text { contents } => {
-                    // todo: use the layout to handle clipping of the text
-                    let (_layout, pos) = self.node_position(*child, pos);
-                    dbg!(font_size);
-                    let transform =
-                        Affine::translate(pos.to_vec2() + Vec2::new(0.0, font_size as f64));
-
-                    self.text_context.add(
-                        scene,
-                        None,
-                        font_size,
-                        Some(text_color),
-                        transform,
-                        &contents.borrow(),
-                    )
-                }
-
-                // Rendering elements is simple, just recurse
-                NodeData::Element { .. } => self.render_element(scene, *child, pos),
-
-                // Documents/comments/etc not important
-                _ => {}
-            }
+        ElementCx {
+            frame,
+            scale,
+            style,
+            layout,
+            pos,
+            element,
+            font_size,
+            text_color,
         }
     }
 
-    fn stroke_frame(&self, scene: &mut SceneBuilder, border: &Border, background: &Background) {
-        // If there's a gradient, try rendering it
-        let gradient_segments = &background.background_image.0;
-
-        for segment in gradient_segments {
-            match segment {
-                GenericImage::Gradient(gradient) => {
-                    //
-                    match gradient.as_ref() {
-                        GenericGradient::Linear {
-                            direction,
-                            items,
-                            repeating,
-                            compat_mode,
-                        } => {
-                            // let bb = shape.bounding_box();
-                            // let starting_point_offset = gradient.center_offset(*rect);
-                            // let ending_point_offset =
-                            //     Point::new(-starting_point_offset.x, -starting_point_offset.y);
-                            // let center = bb.center();
-                            // let start = Point::new(
-                            //     center.x + starting_point_offset.x,
-                            //     center.y + starting_point_offset.y,
-                            // );
-                            // let end = Point::new(
-                            //     center.x + ending_point_offset.x,
-                            //     center.y + ending_point_offset.y,
-                            // );
-
-                            // let kind = peniko::GradientKind::Linear { start, end };
-
-                            // let gradient = peniko::Gradient {
-                            //     kind,
-                            //     extend,
-                            //     stops: (*stops).clone(),
-                            // };
-
-                            // let brush = peniko::BrushRef::Gradient(&gradient);
-
-                            // sb.fill(peniko::Fill::NonZero, Affine::IDENTITY, brush, None, shape)
-                        }
-                        _ => todo!(),
-                    }
-                }
-                GenericImage::None => {}
-                GenericImage::Url(_) => {}
-                GenericImage::Rect(_) => {}
-                GenericImage::PaintWorklet(_) => {}
-                GenericImage::CrossFade(_) => {}
-                GenericImage::ImageSet(_) => {}
-            }
-        }
-    }
-
-    /// Returns the points of the border of a rounded rect
-    /// We draw 12 segments (each rounded corner has 2 segments) and the gaps are bridged
-    fn stroke_border(
+    fn render_text(
         &self,
-        frame: &ResolvedBorderLayout,
-        scene: &mut SceneBuilder,
-        border: &Border,
-    ) {
-        let tolerance = 0.1;
-
-        let path = frame.border(Edge::Top, tolerance);
-        let color = border.border_top_color.as_vello();
-        scene.fill(peniko::Fill::NonZero, Affine::IDENTITY, color, None, &path);
-
-        let path = frame.border(Edge::Right, tolerance);
-        let color = border.border_right_color.as_vello();
-        scene.fill(peniko::Fill::NonZero, Affine::IDENTITY, color, None, &path);
-
-        let path = frame.border(Edge::Bottom, tolerance);
-        let color = border.border_bottom_color.as_vello();
-        scene.fill(peniko::Fill::NonZero, Affine::IDENTITY, color, None, &path);
-
-        let path = frame.border(Edge::Left, tolerance);
-        let color = border.border_left_color.as_vello();
-        scene.fill(peniko::Fill::NonZero, Affine::IDENTITY, color, None, &path);
-    }
-
-    // Basically the same s drawing borders but with different styles and orientation
-    //
-    // todo: just render a single outline stroke instead of 4 curves
-    // It's somewhat obvious when rendered that it's 4 curves instead of a single stroke, and outlines don't need 4 segments
-    pub(crate) fn stroke_outline(
-        &self,
-        shape: &RoundedRect,
         scene: &mut SceneBuilder<'_>,
-        outline: &Outline,
+        child: &usize,
+        parent: &ElementCx,
+        contents: &std::cell::RefCell<html5ever::tendril::Tendril<html5ever::tendril::fmt::UTF8>>,
     ) {
-        let Outline {
-            outline_color,
-            outline_style,
-            outline_width,
-            outline_offset,
-        } = outline;
+        let ElementCx {
+            font_size,
+            text_color,
+            ..
+        } = parent;
 
-        let width = outline_width.to_f64_px() * self.viewport.scale_f64();
-        let color = outline_color
-            .as_absolute()
-            .map(ToVelloColor::as_vello)
-            .unwrap_or_default();
+        let (_layout, pos) = self.node_position(*child, parent.pos);
 
-        todo!()
+        let transform = Affine::translate(pos.to_vec2() + Vec2::new(0.0, *font_size as f64));
 
-        // let arcs =
-        //     SplitRoundedRect::new(*shape).arcs(BorderSide::Outside, width, width, width, width);
-
-        // // draw top
-        // self.stroke_arc(&arcs.top, scene, width, color);
-        // self.stroke_arc(&arcs.right, scene, width, color);
-        // self.stroke_arc(&arcs.bottom, scene, width, color);
-        // self.stroke_arc(&arcs.left, scene, width, color);
+        self.text_context.add(
+            scene,
+            None,
+            *font_size,
+            Some(*text_color),
+            transform,
+            &contents.borrow(),
+        )
     }
 
     fn stroke_arc(
@@ -379,75 +202,172 @@ impl Document {
     }
 }
 
-/// Calculate and cache all the properties of a laid out frame
-struct FramePlacement {
-    x: f64,
-    y: f64,
-    width: f64,
-    height: f64,
-    radii: (f64, f64, f64, f64),
+/// A context of loaded and hot data to draw the element from
+struct ElementCx<'a> {
+    frame: ResolvedBorderLayout,
+    style: style::servo_arc::Arc<ComputedValues>,
+    layout: &'a Layout,
+    pos: Point,
+    scale: f64,
+    element: &'a NodeData,
+    font_size: f32,
+    text_color: Color,
 }
 
-trait ToVelloColor {
-    fn as_vello(&self) -> Color;
-}
+impl<'a> ElementCx<'a> {
+    fn stroke_frame(&self, scene: &mut SceneBuilder) {
+        use GenericImage::*;
 
-fn to_real_radius(border: &Border) {
-    let radius = &border.border_top_left_radius.0;
-    let x = radius.width();
-    let y = radius.height();
-
-    // .0
-    // .width()
-    // .0
-    // .resolve(CSSPixelLength::new(100.0))
-    // .abs()
-    // .px();
-}
-
-impl ToVelloColor for style::values::generics::color::Color<Percentage> {
-    fn as_vello(&self) -> Color {
-        self.as_absolute()
-            .map(|f| f.as_vello())
-            .unwrap_or(Color::BLACK)
-    }
-}
-
-impl ToVelloColor for AbsoluteColor {
-    fn as_vello(&self) -> Color {
-        Color {
-            r: (self.components.0 * 255.0) as u8,
-            g: (self.components.1 * 255.0) as u8,
-            b: (self.components.2 * 255.0) as u8,
-            a: (self.alpha() * 255.0) as u8,
+        for segment in &self.style.get_background().background_image.0 {
+            match segment {
+                None => self.draw_solid_frame(scene),
+                Gradient(gradient) => self.draw_gradient_frame(scene, gradient),
+                Url(_) => todo!("Implement background drawing for Image::Url"),
+                Rect(_) => todo!("Implement background drawing for Image::Rect"),
+                PaintWorklet(_) => todo!("Implement background drawing for Image::PaintWorklet"),
+                CrossFade(_) => todo!("Implement background drawing for Image::CrossFade"),
+                ImageSet(_) => todo!("Implement background drawing for Image::ImageSet"),
+            }
         }
     }
-}
 
-fn get_font_size(element: &NodeData) -> f32 {
-    use style::values::generics::transform::ToAbsoluteLength;
-    let style = element.style.borrow();
-    let primary: &style::servo_arc::Arc<ComputedValues> = style.styles.primary();
-    primary
-        .clone_font_size()
-        .computed_size()
-        .to_pixel_length(None)
-        .unwrap()
-}
+    fn draw_gradient_frame(&self, scene: &mut SceneBuilder, gradient: &Box<StyloGradient>) {
+        // let bb = shape.bounding_box();
+        // let starting_point_offset = gradient.center_offset(*rect);
+        // let ending_point_offset =
+        //     Point::new(-starting_point_offset.x, -starting_point_offset.y);
+        // let center = bb.center();
+        // let start = Point::new(
+        //     center.x + starting_point_offset.x,
+        //     center.y + starting_point_offset.y,
+        // );
+        // let end = Point::new(
+        //     center.x + ending_point_offset.x,
+        //     center.y + ending_point_offset.y,
+        // );
 
-fn convert_servo_color(color: &AbsoluteColor) -> Color {
-    fn components_to_u8(val: f32) -> u8 {
-        (val * 255.0) as _
+        // let kind = peniko::GradientKind::Linear { start, end };
+
+        // let gradient = peniko::Gradient {
+        //     kind,
+        //     extend,
+        //     stops: (*stops).clone(),
+        // };
+
+        // let brush = peniko::BrushRef::Gradient(&gradient);
+
+        // sb.fill(peniko::Fill::NonZero, Affine::IDENTITY, brush, None, shape)
     }
 
-    // todo: opacity
-    let r = components_to_u8(color.components.0);
-    let g = components_to_u8(color.components.1);
-    let b = components_to_u8(color.components.2);
-    let a = 255;
+    fn draw_image_frame(&self, scene: &mut SceneBuilder) {}
 
-    let color = Color { r, g, b, a };
-    color
+    fn draw_solid_frame(&self, scene: &mut SceneBuilder) {
+        let background = self.style.get_background();
+
+        // todo: handle non-absolute colors
+        let bg_color = background.background_color.clone();
+        let bg_color = bg_color.as_absolute().unwrap();
+
+        // Fill the color
+        scene.fill(
+            peniko::Fill::NonZero,
+            Affine::IDENTITY,
+            bg_color.as_vello(),
+            None,
+            &self.frame.rect,
+        );
+    }
+
+    /// Stroke a border
+    ///
+    /// The border-style property specifies what kind of border to display.
+    ///
+    /// The following values are allowed:
+    /// ❌ dotted - Defines a dotted border
+    /// ❌ dashed - Defines a dashed border
+    /// ✅ solid - Defines a solid border
+    /// ❌ double - Defines a double border
+    /// ❌ groove - Defines a 3D grooved border. The effect depends on the border-color value
+    /// ❌ ridge - Defines a 3D ridged border. The effect depends on the border-color value
+    /// ❌ inset - Defines a 3D inset border. The effect depends on the border-color value
+    /// ❌ outset - Defines a 3D outset border. The effect depends on the border-color value
+    /// ❌ none - Defines no border
+    /// ❌ hidden - Defines a hidden border
+    ///
+    /// The border-style property can have from one to four values (for the top border, right border, bottom border, and the left border).
+    fn stroke_border(&self, sb: &mut SceneBuilder) {
+        for edge in [Edge::Top, Edge::Right, Edge::Bottom, Edge::Left] {
+            self.stroke_border_edge(sb, edge);
+        }
+    }
+
+    /// The border-style property specifies what kind of border to display.
+    ///
+    /// The following values are allowed:
+    /// ❌ dotted - Defines a dotted border
+    /// ❌ dashed - Defines a dashed border
+    /// ✅ solid - Defines a solid border
+    /// ❌ double - Defines a double border
+    /// ❌ groove - Defines a 3D grooved border. The effect depends on the border-color value
+    /// ❌ ridge - Defines a 3D ridged border. The effect depends on the border-color value
+    /// ❌ inset - Defines a 3D inset border. The effect depends on the border-color value
+    /// ❌ outset - Defines a 3D outset border. The effect depends on the border-color value
+    /// ❌ none - Defines no border
+    /// ❌ hidden - Defines a hidden border
+    fn stroke_border_edge(&self, sb: &mut SceneBuilder, edge: Edge) {
+        let border = self.style.get_border();
+        let path = self.frame.border(edge);
+
+        let color = match edge {
+            Edge::Top => border.border_top_color.as_vello(),
+            Edge::Right => border.border_right_color.as_vello(),
+            Edge::Bottom => border.border_bottom_color.as_vello(),
+            Edge::Left => border.border_left_color.as_vello(),
+        };
+
+        sb.fill(peniko::Fill::NonZero, Affine::IDENTITY, color, None, &path);
+    }
+
+    // Basically the same s drawing borders but with different styles and orientation
+    //
+    // todo: just render a single outline stroke instead of 4 curves
+    // It's somewhat obvious when rendered that it's 4 curves instead of a single stroke, and outlines don't need 4 segments
+    fn stroke_outline(&self, scene: &mut SceneBuilder) {
+        let Outline {
+            outline_color,
+            outline_style,
+            outline_width,
+            outline_offset,
+        } = self.style.get_outline();
+
+        let width = outline_width.to_f64_px() * self.scale;
+        let color = outline_color
+            .as_absolute()
+            .map(ToVelloColor::as_vello)
+            .unwrap_or_default();
+
+        // let arcs =
+        //     SplitRoundedRect::new(*shape).arcs(BorderSide::Outside, width, width, width, width);
+
+        // // draw top
+        // self.stroke_arc(&arcs.top, scene, width, color);
+        // self.stroke_arc(&arcs.right, scene, width, color);
+        // self.stroke_arc(&arcs.bottom, scene, width, color);
+        // self.stroke_arc(&arcs.left, scene, width, color);
+    }
+
+    /// Applies filters to a final frame
+    ///
+    /// Notably, I don't think we can do this here since vello needs to run this as a pass
+    ///
+    /// ❌ opacity: The opacity computed value.
+    /// ❌ box_shadow: The box-shadow computed value.
+    /// ❌ clip: The clip computed value.
+    /// ❌ filter: The filter computed value.
+    /// ❌ mix_blend_mode: The mix-blend-mode computed value.
+    fn stroke_effects(&self, scene: &mut SceneBuilder<'_>) {
+        let effects = self.style.get_effects();
+    }
 }
 
 //         let background = node.get::<Background>().unwrap();

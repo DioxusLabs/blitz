@@ -13,6 +13,8 @@ mod viewport;
 mod waker;
 mod window;
 
+mod util;
+
 pub use dom::*;
 
 mod glaizer_integration;
