@@ -32,6 +32,12 @@
 // - border
 // - list discs
 
+use std::cell::RefCell;
+
+use crate::Document;
+use crate::{styling::NodeData, util::StyloGradient};
+use html5ever::tendril::{fmt::UTF8, Tendril};
+use style::color::AbsoluteColor;
 use style::{
     properties::{
         style_structs::{Background, Border, Font, InheritedText, Outline},
@@ -40,22 +46,24 @@ use style::{
     values::{
         computed::{CSSPixelLength, Percentage},
         generics::image::{GenericGradient, GenericImage},
+        specified::{BorderStyle, OutlineStyle},
     },
 };
-use vello::kurbo::{Arc, BezPath, Dashes, PathEl, PathSegIter, RoundedRectRadii, Shape};
-mod multicolor_rounded_rect;
-use crate::Document;
-use crate::{styling::NodeData, util::StyloGradient};
-use style::color::AbsoluteColor;
 use taffy::prelude::Layout;
 use vello::{
     kurbo::{Affine, Point, Rect, RoundedRect, Stroke, Vec2},
-    peniko::{self, Color, Fill},
+    peniko::{self, Color},
+};
+use vello::{
+    kurbo::{Arc, BezPath, Dashes, PathEl, PathSegIter, RoundedRectRadii, Shape},
+    peniko::Fill,
 };
 
-use self::multicolor_rounded_rect::{Edge, ResolvedBorderLayout};
+use self::multicolor_rounded_rect::{Edge, ElementFrame};
 use crate::util::ToVelloColor;
 use vello::SceneBuilder;
+
+mod multicolor_rounded_rect;
 
 impl Document {
     /// Render to any scene!
@@ -104,41 +112,12 @@ impl Document {
         }
     }
 
-    fn element_cx(&self, node: usize, location: Point) -> ElementCx {
-        let element = &self.dom.nodes[node];
-
-        let style = element.style.borrow().styles.primary().clone();
-
-        let (layout, pos) = self.node_position(node, location);
-        let scale = self.viewport.scale_f64();
-
-        // todo: maybe cache this so we don't need to constantly be figuring it out
-        // It is quite a bit of math to calculate during render/traverse
-        let frame = ResolvedBorderLayout::new(style.get_border(), layout, pos, scale);
-
-        let inherited_text = style.get_inherited_text();
-        let font = style.get_font();
-        let font_size = font.font_size.computed_size().px() * scale as f32;
-        let text_color = inherited_text.clone_color().as_vello();
-
-        ElementCx {
-            frame,
-            scale,
-            style,
-            layout,
-            pos,
-            element,
-            font_size,
-            text_color,
-        }
-    }
-
     fn render_text(
         &self,
         scene: &mut SceneBuilder<'_>,
         child: &usize,
         parent: &ElementCx,
-        contents: &std::cell::RefCell<html5ever::tendril::Tendril<html5ever::tendril::fmt::UTF8>>,
+        contents: &RefCell<Tendril<UTF8>>,
     ) {
         let ElementCx {
             font_size,
@@ -160,33 +139,33 @@ impl Document {
         )
     }
 
-    fn stroke_arc(
-        &self,
-        compound: &[Arc; 2],
-        scene: &mut SceneBuilder<'_>,
-        width: f64,
-        border_color: Color,
-    ) {
-        let mut stroke = Stroke::new((width as f64) as _)
-            .with_join(vello::kurbo::Join::Miter)
-            .with_caps(vello::kurbo::Cap::Butt);
+    fn element_cx(&self, node: usize, location: Point) -> ElementCx {
+        let element = &self.dom.nodes[node];
 
-        let mut bez = BezPath::new();
+        let style = element.style.borrow().styles.primary().clone();
 
-        // Push the first arc
-        for item in compound[0].path_elements(0.1) {
-            bez.push(item);
+        let (layout, pos) = self.node_position(node, location);
+        let scale = self.viewport.scale_f64();
+
+        // todo: maybe cache this so we don't need to constantly be figuring it out
+        // It is quite a bit of math to calculate during render/traverse
+        let frame = ElementFrame::new(&style, layout, pos, scale);
+
+        let inherited_text = style.get_inherited_text();
+        let font = style.get_font();
+        let font_size = font.font_size.computed_size().px() * scale as f32;
+        let text_color = inherited_text.clone_color().as_vello();
+
+        ElementCx {
+            frame,
+            scale,
+            style,
+            layout,
+            pos,
+            element,
+            font_size,
+            text_color,
         }
-
-        // Push the second arc, using LineTo to connect the two
-        for item in compound[1].path_elements(0.1) {
-            match item {
-                PathEl::MoveTo(a) => bez.push(PathEl::LineTo(a)),
-                item => bez.push(item),
-            }
-        }
-
-        scene.stroke(&stroke, Affine::IDENTITY, border_color, None, &bez);
     }
 
     fn node_position(&self, node: usize, location: Point) -> (&Layout, Point) {
@@ -204,7 +183,7 @@ impl Document {
 
 /// A context of loaded and hot data to draw the element from
 struct ElementCx<'a> {
-    frame: ResolvedBorderLayout,
+    frame: ElementFrame,
     style: style::servo_arc::Arc<ComputedValues>,
     layout: &'a Layout,
     pos: Point,
@@ -270,7 +249,7 @@ impl<'a> ElementCx<'a> {
 
         // Fill the color
         scene.fill(
-            peniko::Fill::NonZero,
+            Fill::NonZero,
             Affine::IDENTITY,
             bg_color.as_vello(),
             None,
@@ -291,8 +270,8 @@ impl<'a> ElementCx<'a> {
     /// ❌ ridge - Defines a 3D ridged border. The effect depends on the border-color value
     /// ❌ inset - Defines a 3D inset border. The effect depends on the border-color value
     /// ❌ outset - Defines a 3D outset border. The effect depends on the border-color value
-    /// ❌ none - Defines no border
-    /// ❌ hidden - Defines a hidden border
+    /// ✅ none - Defines no border
+    /// ✅ hidden - Defines a hidden border
     ///
     /// The border-style property can have from one to four values (for the top border, right border, bottom border, and the left border).
     fn stroke_border(&self, sb: &mut SceneBuilder) {
@@ -312,8 +291,8 @@ impl<'a> ElementCx<'a> {
     /// ❌ ridge - Defines a 3D ridged border. The effect depends on the border-color value
     /// ❌ inset - Defines a 3D inset border. The effect depends on the border-color value
     /// ❌ outset - Defines a 3D outset border. The effect depends on the border-color value
-    /// ❌ none - Defines no border
-    /// ❌ hidden - Defines a hidden border
+    /// ✅ none - Defines no border
+    /// ✅ hidden - Defines a hidden border
     fn stroke_border_edge(&self, sb: &mut SceneBuilder, edge: Edge) {
         let border = self.style.get_border();
         let path = self.frame.border(edge);
@@ -325,35 +304,51 @@ impl<'a> ElementCx<'a> {
             Edge::Left => border.border_left_color.as_vello(),
         };
 
-        sb.fill(peniko::Fill::NonZero, Affine::IDENTITY, color, None, &path);
+        sb.fill(Fill::NonZero, Affine::IDENTITY, color, None, &path);
     }
 
-    // Basically the same s drawing borders but with different styles and orientation
-    //
-    // todo: just render a single outline stroke instead of 4 curves
-    // It's somewhat obvious when rendered that it's 4 curves instead of a single stroke, and outlines don't need 4 segments
+    /// ❌ dotted - Defines a dotted border
+    /// ❌ dashed - Defines a dashed border
+    /// ✅ solid - Defines a solid border
+    /// ❌ double - Defines a double border
+    /// ❌ groove - Defines a 3D grooved border. The effect depends on the border-color value
+    /// ❌ ridge - Defines a 3D ridged border. The effect depends on the border-color value
+    /// ❌ inset - Defines a 3D inset border. The effect depends on the border-color value
+    /// ❌ outset - Defines a 3D outset border. The effect depends on the border-color value
+    /// ✅ none - Defines no border
+    /// ✅ hidden - Defines a hidden border
     fn stroke_outline(&self, scene: &mut SceneBuilder) {
         let Outline {
             outline_color,
             outline_style,
-            outline_width,
-            outline_offset,
+            ..
         } = self.style.get_outline();
 
-        let width = outline_width.to_f64_px() * self.scale;
         let color = outline_color
             .as_absolute()
             .map(ToVelloColor::as_vello)
             .unwrap_or_default();
 
-        // let arcs =
-        //     SplitRoundedRect::new(*shape).arcs(BorderSide::Outside, width, width, width, width);
+        let style = match outline_style {
+            OutlineStyle::Auto => return,
+            OutlineStyle::BorderStyle(BorderStyle::Hidden) => return,
+            OutlineStyle::BorderStyle(BorderStyle::None) => return,
+            OutlineStyle::BorderStyle(style) => style,
+        };
 
-        // // draw top
-        // self.stroke_arc(&arcs.top, scene, width, color);
-        // self.stroke_arc(&arcs.right, scene, width, color);
-        // self.stroke_arc(&arcs.bottom, scene, width, color);
-        // self.stroke_arc(&arcs.left, scene, width, color);
+        let path = match style {
+            BorderStyle::None | BorderStyle::Hidden => return,
+            BorderStyle::Solid => self.frame.outline(),
+            BorderStyle::Inset => todo!(),
+            BorderStyle::Groove => todo!(),
+            BorderStyle::Outset => todo!(),
+            BorderStyle::Ridge => todo!(),
+            BorderStyle::Dotted => todo!(),
+            BorderStyle::Dashed => todo!(),
+            BorderStyle::Double => todo!(),
+        };
+
+        scene.fill(Fill::NonZero, Affine::IDENTITY, color, None, &path);
     }
 
     /// Applies filters to a final frame

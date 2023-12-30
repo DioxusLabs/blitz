@@ -4,14 +4,14 @@
 //! Can I just say, this is a lot of work for a border
 //! HTML/css is annoyingly wild
 
+use dioxus::prelude::GlobalAttributes;
 use std::{f64::consts::FRAC_PI_2, f64::consts::PI};
-use style::{properties::style_structs::Border, values::computed::CSSPixelLength};
+use style::{
+    properties::{style_structs::Border, ComputedValues},
+    values::computed::CSSPixelLength,
+};
 use taffy::prelude::Layout;
-use vello::kurbo::{Arc, BezPath, PathEl, Point, Rect, Shape, Vec2};
-
-/// Vello uses an inner tolerance for creating segments
-/// We're just reusing the value here
-const TOLERANCE: f64 = 0.1;
+use vello::kurbo::{Arc, BezPath, Ellipse, PathEl, Point, Rect, Shape, Vec2};
 
 /// Resolved positions, thicknesses, and radii using the document scale and layout data
 ///
@@ -19,13 +19,15 @@ const TOLERANCE: f64 = 0.1;
 ///
 /// It contains all the information needed to draw the frame, border, etc
 #[derive(Debug, Clone)]
-pub struct ResolvedBorderLayout {
+pub struct ElementFrame {
     /// The bounding box rect for the element
     pub rect: Rect,
 
     /// The inner rectangle where text is laid out
     /// Note that this is different from the outer rect since text shouldn't exist in the border
     pub inner_rect: Rect,
+
+    pub outline_width: f64,
 
     pub border_top_width: f64,
     pub border_left_width: f64,
@@ -43,9 +45,10 @@ pub struct ResolvedBorderLayout {
     pub border_bottom_right_radius_height: f64,
 }
 
-impl ResolvedBorderLayout {
+impl ElementFrame {
     #[rustfmt::skip]
-    pub fn new(border: &Border, layout: &Layout, pos: Point,  scale: f64) -> Self {
+    pub fn new(style: &ComputedValues, layout: &Layout, pos: Point, scale: f64) -> Self {
+        let (border, outline) = (style.get_border(), style.get_outline());
 
         // Resolve and rescale
         // We have to scale since document pixels are not same same as rendered pixels
@@ -53,6 +56,7 @@ impl ResolvedBorderLayout {
         let border_left_width = scale * border.border_left_width.to_f64_px();
         let border_right_width = scale * border.border_right_width.to_f64_px();
         let border_bottom_width = scale * border.border_bottom_width.to_f64_px();
+        let outline_width =  scale * outline.outline_width.to_f64_px();
 
         let width: f64 = layout.size.width.into();
         let height: f64 = layout.size.height.into();
@@ -67,7 +71,6 @@ impl ResolvedBorderLayout {
         // Resolve the radii to a length. need to downscale since the radii are in document pixels
         let pixel_width = CSSPixelLength::new((rect.width() / scale) as _);
         let pixel_height = CSSPixelLength::new((rect.height() / scale) as _);
-
 
         let mut border_top_left_radius_width = scale * border.border_top_left_radius.0.width.0.resolve(pixel_width).px() as f64;
         let mut border_top_left_radius_height = scale * border.border_top_left_radius.0.height.0.resolve(pixel_height).px() as f64;
@@ -103,9 +106,11 @@ impl ResolvedBorderLayout {
             rect.y1 - border_bottom_width
         );
 
+
         Self {
             rect,
             inner_rect,
+            outline_width,
             border_top_width,
             border_left_width,
             border_right_width,
@@ -128,9 +133,8 @@ impl ResolvedBorderLayout {
     /// - jumping to an outer arc
     /// - jumping to the next outer arc (completing the edge with the previous)
     /// - drawing an inner arc
-    ///
     pub fn border(&self, edge: Edge) -> BezPath {
-        use {ArcSide::*, BorderCorner::*, Edge::*};
+        use {ArcSide::*, Corner::*, Direction::*, Edge::*};
 
         let mut path = BezPath::new();
 
@@ -148,10 +152,10 @@ impl ResolvedBorderLayout {
             path.line_to(self.corner(c0, Outer));
         } else {
             match self.corner_needs_infill(c0) {
-                true => path.insert_arc(self.arc(c0, Inner, edge), TOLERANCE),
+                true => path.insert_arc(self.arc(c0, Inner, edge, Anticlockwise)),
                 false => path.move_to(self.corner(c0, Inner)),
             }
-            path.insert_arc(self.arc(c0, Outer, edge), TOLERANCE);
+            path.insert_arc(self.arc(c0, Outer, edge, Clockwise));
         }
 
         // 2. Second corner
@@ -159,9 +163,9 @@ impl ResolvedBorderLayout {
             path.line_to(self.corner(c1, Outer));
             path.line_to(self.corner(c1, Inner));
         } else {
-            path.insert_arc(self.arc(c1, Outer, edge), TOLERANCE);
+            path.insert_arc(self.arc(c1, Outer, edge, Clockwise));
             match self.corner_needs_infill(c1) {
-                true => path.insert_arc(self.arc(c1, Inner, edge), TOLERANCE),
+                true => path.insert_arc(self.arc(c1, Inner, edge, Anticlockwise)),
                 false => path.line_to(self.corner(c1, Inner)),
             }
         }
@@ -169,37 +173,60 @@ impl ResolvedBorderLayout {
         path
     }
 
+    /// Construct a bezpath drawing the outline
     pub fn outline(&self) -> BezPath {
         let mut path = BezPath::new();
-
+        self.shape(&mut path, ArcSide::Outline, Direction::Clockwise);
+        self.shape(&mut path, ArcSide::Outer, Direction::Anticlockwise);
         path
     }
 
+    /// Construct a bezpath drawing the frame
     pub fn frame(&self) -> BezPath {
         let mut path = BezPath::new();
-
+        self.shape(&mut path, ArcSide::Inner, Direction::Clockwise);
         path
     }
 
-    fn corner(&self, corner: BorderCorner, side: ArcSide) -> Point {
+    fn shape(&self, path: &mut BezPath, line: ArcSide, direction: Direction) {
+        use {ArcSide::*, Corner::*, Direction::*};
+
+        for corner in [TopLeft, TopRight, BottomLeft, BottomRight] {
+            if self.is_sharp(corner) {
+                path.insert_point(self.corner(corner, line));
+            } else {
+                path.insert_arc(self.full_arc(corner, line, direction));
+            }
+        }
+    }
+
+    fn corner(&self, corner: Corner, side: ArcSide) -> Point {
         let Rect { x0, y0, x1, y1 } = self.rect;
 
         let (x, y) = match corner {
-            BorderCorner::TopLeft => match side {
+            Corner::TopLeft => match side {
                 ArcSide::Inner => (x0 + self.border_left_width, y0 + self.border_top_width),
                 ArcSide::Outer => (x0, y0),
+                ArcSide::Outline => todo!(),
+                ArcSide::Middle => todo!(),
             },
-            BorderCorner::TopRight => match side {
+            Corner::TopRight => match side {
                 ArcSide::Inner => (x1 - self.border_right_width, y0 + self.border_top_width),
                 ArcSide::Outer => (x1, y0),
+                ArcSide::Outline => todo!(),
+                ArcSide::Middle => todo!(),
             },
-            BorderCorner::BottomRight => match side {
+            Corner::BottomRight => match side {
                 ArcSide::Inner => (x1 - self.border_right_width, y1 - self.border_bottom_width),
                 ArcSide::Outer => (x1, y1),
+                ArcSide::Outline => todo!(),
+                ArcSide::Middle => todo!(),
             },
-            BorderCorner::BottomLeft => match side {
+            Corner::BottomLeft => match side {
                 ArcSide::Inner => (x0 + self.border_left_width, y1 - self.border_bottom_width),
                 ArcSide::Outer => (x0, y1),
+                ArcSide::Outline => todo!(),
+                ArcSide::Middle => todo!(),
             },
         };
 
@@ -208,7 +235,7 @@ impl ResolvedBorderLayout {
 
     /// Check if the corner width is smaller than the radius.
     /// If it is, we need to fill in the gap with an arc
-    fn corner_needs_infill(&self, corner: BorderCorner) -> bool {
+    fn corner_needs_infill(&self, corner: Corner) -> bool {
         let Self {
             border_top_width,
             border_left_width,
@@ -226,49 +253,70 @@ impl ResolvedBorderLayout {
         } = self;
 
         match corner {
-            BorderCorner::TopLeft => {
+            Corner::TopLeft => {
                 border_top_left_radius_width > border_left_width
                     && border_top_left_radius_height > border_top_width
             }
-            BorderCorner::TopRight => {
+            Corner::TopRight => {
                 border_top_right_radius_width > border_right_width
                     && border_top_right_radius_height > border_top_width
             }
-            BorderCorner::BottomRight => {
+            Corner::BottomRight => {
                 border_bottom_right_radius_width > border_right_width
                     && border_bottom_right_radius_height > border_bottom_width
             }
-            BorderCorner::BottomLeft => {
+            Corner::BottomLeft => {
                 border_bottom_left_radius_width > border_left_width
                     && border_bottom_left_radius_height > border_bottom_width
             }
         }
     }
 
-    // Get the arc for a corner
-    fn arc(&self, corner: BorderCorner, side: ArcSide, edge: Edge) -> Arc {
+    /// Get the complete arc for a corner, skipping the need for splitting the arc into pieces
+    fn full_arc(&self, corner: Corner, side: ArcSide, direction: Direction) -> Arc {
+        let ellipse = self.ellipse(corner, side);
+
+        // Sweep clockwise for outer arcs, counter clockwise for inner arcs
+        let sweep_direction = match direction {
+            Direction::Anticlockwise => -1.0,
+            Direction::Clockwise => 1.0,
+        };
+
+        let offset = match corner {
+            Corner::TopLeft => -FRAC_PI_2,
+            Corner::TopRight => 0.0,
+            Corner::BottomLeft => FRAC_PI_2,
+            Corner::BottomRight => PI,
+        };
+
+        Arc::new(
+            ellipse.center(),
+            ellipse.radii(),
+            // Note that we apply a fixed offset to get us in the unit circle coordinate system
+            // vello chooses the x axis as the start of the arc, so we need to offset by 3pi/2
+            offset + PI + FRAC_PI_2,
+            FRAC_PI_2 * sweep_direction,
+            0.0,
+        )
+    }
+
+    /// Get the partial arc for a corner
+    ///
+    fn arc(&self, corner: Corner, side: ArcSide, edge: Edge, direction: Direction) -> Arc {
         use ArcSide::*;
-        use BorderCorner::*;
+        use Corner::*;
         use Edge::*;
 
-        let pair = self.radii(corner);
-
-        let radii = match side {
-            ArcSide::Inner => pair.inner,
-            ArcSide::Outer => pair.outer,
-        };
+        let ellipse = self.ellipse(corner, side);
 
         // We solve a tiny system of equations to find the start angle
         // This is fixed to a single coordinate system, so we need to adjust the start angle
-        let theta = match side {
-            ArcSide::Inner => self.start_angle(corner, pair.inner),
-            ArcSide::Outer => self.start_angle(corner, pair.outer),
-        };
+        let theta = self.start_angle(corner, ellipse.radii());
 
         // Sweep clockwise for outer arcs, counter clockwise for inner arcs
-        let sweep_direction = match side {
-            ArcSide::Inner => -1.0,
-            ArcSide::Outer => 1.0,
+        let sweep_direction = match direction {
+            Direction::Anticlockwise => -1.0,
+            Direction::Clockwise => 1.0,
         };
 
         // Easier to reason about if we think about just offsetting the turns from the start
@@ -317,8 +365,8 @@ impl ResolvedBorderLayout {
         };
 
         Arc::new(
-            pair.center,
-            radii,
+            ellipse.center(),
+            ellipse.radii(),
             // Note that we apply a fixed offset to get us in the unit circle coordinate system
             // vello chooses the x axis as the start of the arc, so we need to offset by 3pi/2
             start + offset + PI + FRAC_PI_2,
@@ -328,21 +376,21 @@ impl ResolvedBorderLayout {
     }
 
     /// Check if a corner is sharp (IE the absolute radius is 0)
-    fn is_sharp(&self, corner: BorderCorner) -> bool {
+    fn is_sharp(&self, corner: Corner) -> bool {
         match corner {
-            BorderCorner::TopLeft => {
+            Corner::TopLeft => {
                 self.border_top_left_radius_width == 0.0
                     || self.border_top_left_radius_height == 0.0
             }
-            BorderCorner::TopRight => {
+            Corner::TopRight => {
                 self.border_top_right_radius_width == 0.0
                     || self.border_top_right_radius_height == 0.0
             }
-            BorderCorner::BottomRight => {
+            Corner::BottomRight => {
                 self.border_bottom_right_radius_width == 0.0
                     || self.border_bottom_right_radius_height == 0.0
             }
-            BorderCorner::BottomLeft => {
+            Corner::BottomLeft => {
                 self.border_bottom_left_radius_width == 0.0
                     || self.border_bottom_left_radius_height == 0.0
             }
@@ -350,8 +398,10 @@ impl ResolvedBorderLayout {
     }
 
     #[rustfmt::skip]
-    fn radii(&self, corner: BorderCorner) -> RadiiPair {
-        let ResolvedBorderLayout {
+    fn ellipse(&self, corner: Corner, side: ArcSide) -> Ellipse {
+        use {Corner::*, ArcSide::*};
+        let ElementFrame {
+            rect,
             border_top_width,
             border_left_width,
             border_right_width,
@@ -359,7 +409,6 @@ impl ResolvedBorderLayout {
             border_top_left_radius_height,
             border_top_right_radius_width,
             border_top_right_radius_height,
-            rect,
             border_bottom_width,
             border_bottom_left_radius_width,
             border_bottom_left_radius_height,
@@ -368,36 +417,37 @@ impl ResolvedBorderLayout {
             ..
         } = self;
 
-        let (outer, inner, center);
+        let outer = match corner {
+            TopLeft => (*border_top_left_radius_width, *border_top_left_radius_height),
+            TopRight => (*border_top_right_radius_width, *border_top_right_radius_height),
+            BottomLeft => (*border_bottom_left_radius_width, *border_bottom_left_radius_height),
+            BottomRight => (*border_bottom_right_radius_width, *border_bottom_right_radius_height),
+        };
 
-        match corner {
-            BorderCorner::TopLeft => {
-                outer = Vec2 { x: *border_top_left_radius_width, y: *border_top_left_radius_height };
-                inner = Vec2 { x: border_top_left_radius_width - border_left_width, y: border_top_left_radius_height - border_top_width };
-                center = rect.origin() + outer;
-            }
-            BorderCorner::TopRight => {
-                outer = Vec2 { x: *border_top_right_radius_width, y: *border_top_right_radius_height };
-                inner = Vec2 { x: border_top_right_radius_width - border_right_width, y: border_top_right_radius_height - border_top_width };
-                center = rect.origin() + Vec2 { x: rect.width() - outer.x, y: outer.y } ;
-            },
-            BorderCorner::BottomRight => {
-                outer = Vec2 { x: *border_bottom_right_radius_width, y: *border_bottom_right_radius_height };
-                inner = Vec2 { x: border_bottom_right_radius_width - border_right_width, y: border_bottom_right_radius_height - border_bottom_width };
-                center = rect.origin() + Vec2 { x: rect.width() - outer.x, y: rect.height() - outer.y } ;
-            },
-            BorderCorner::BottomLeft => {
-                outer = Vec2 { x: *border_bottom_left_radius_width, y: *border_bottom_left_radius_height };
-                inner = Vec2 { x: border_bottom_left_radius_width - border_left_width, y: border_bottom_left_radius_height - border_bottom_width };
-                center = rect.origin() + Vec2 { x: outer.x, y: rect.height() - outer.y } ;
-            },
-        }
+        let center = match corner {
+            TopLeft => outer,
+            TopRight => (rect.width() - outer.0, outer.1 ),
+            BottomLeft => (outer.0, rect.height() - outer.1 ),
+            BottomRight => (rect.width() - outer.0, rect.height() - outer.1 ),
+        };
 
-        RadiiPair {  inner, outer, center }
+        let radii = match side {
+            Outline => todo!("Implement outline offset"),
+            Outer => outer,
+            Middle => todo!("Implement border midline offset"),
+            Inner => match corner {
+                TopLeft => (border_top_left_radius_width - border_left_width, border_top_left_radius_height - border_top_width),
+                TopRight => (border_top_right_radius_width - border_right_width, border_top_right_radius_height - border_top_width),
+                BottomRight => (border_bottom_right_radius_width - border_right_width, border_bottom_right_radius_height - border_bottom_width),
+                BottomLeft => (border_bottom_left_radius_width - border_left_width, border_bottom_left_radius_height - border_bottom_width),
+            },
+        };
+
+        Ellipse::new(rect.origin() + center, radii, 0.0)
     }
 
-    fn start_angle(&self, corner: BorderCorner, radii: Vec2) -> f64 {
-        use BorderCorner::*;
+    fn start_angle(&self, corner: Corner, radii: Vec2) -> f64 {
+        use Corner::*;
         match corner {
             TopLeft => start_angle(self.border_top_width, self.border_left_width, radii),
             TopRight => start_angle(self.border_top_width, self.border_right_width, radii),
@@ -408,19 +458,6 @@ impl ResolvedBorderLayout {
 }
 
 #[derive(Debug, Clone, Copy)]
-struct RadiiPair {
-    inner: Vec2,
-    outer: Vec2,
-    center: Point,
-}
-
-#[derive(Debug, Clone, Copy)]
-enum ArcSide {
-    Inner,
-    Outer,
-}
-
-#[derive(Debug, Clone, Copy)]
 pub enum Edge {
     Top,
     Right,
@@ -428,26 +465,90 @@ pub enum Edge {
     Left,
 }
 
+/// There are several corners at play here
+///
+/// - Outline
+/// - Border
+/// - Frame
+///
+/// So we have 4 corner distances, clockwise/anticlockwise, and 4 corners
+///
+/// We combine the corners and their distances to have twelve options here.
+///
+/// ```a
+///    *-----------------------------------------------------------------*  <--- ArcSide::Outline
+///    |                               Outline                           |
+///    |    *--------------------------------------------------------*   |  <--- ArcSide::Outer
+///    |    |                         Border Outer                   |   |
+///    |    |    *----------------------------------------------*    |   |  <--- ArcSide::Middle
+///    |    |    |                    Border Inner              |    |   |
+///    |    |    |    *------------------------------------*    |    |   |  <--- ArcSide::Inner
+///    |    |    |    |                                    |    |    |   |
+///    |    |    |    |                                    |    |    |   |
+///    |    |    |    |                                    |    |    |   |
+///    |    |    |    |                                    |    |    |   |
+///    |    |    |    |                                    |    |    |   |
+///    |    |    |    |                                    |    |    |   |
+///    |    |    |    |                                    |    |    |   |
+///    |    |    |    |                                    |    |    |   |
+///    |    |    |    *------------------------------------*    |    |   |
+///    |    |    |                                              |    |   |
+///    |    |    *----------------------------------------------*    |   |
+///    |    |                                                        |   |
+///    |    *--------------------------------------------------------*   |
+///    |                                                                 |
+///    *-----------------------------------------------------------------*
+/// ```
 #[derive(Debug, Clone, Copy)]
-enum BorderCorner {
+enum Corner {
     TopLeft,
     TopRight,
     BottomLeft,
     BottomRight,
 }
 
-trait InsertArc {
-    fn insert_arc(&mut self, arc: Arc, tolerance: f64);
+#[derive(Debug, Clone, Copy)]
+enum ArcSide {
+    Outline,
+    Outer,
+    Middle,
+    Inner,
 }
 
-impl InsertArc for BezPath {
-    fn insert_arc(&mut self, arc: Arc, tolerance: f64) {
-        let mut elements = arc.path_elements(tolerance);
+#[derive(Debug, Clone, Copy)]
+enum Direction {
+    Clockwise,
+    Anticlockwise,
+}
+
+/// Makes it easier to insert objects into a bezpath without having to do checks
+/// Mostly because I consider the vello api slightly defficient
+trait BuildBezpath {
+    const TOLERANCE: f64;
+    fn insert_arc(&mut self, arc: Arc);
+    fn insert_point(&mut self, point: Point);
+}
+
+impl BuildBezpath for BezPath {
+    /// Vello uses an inner tolerance for creating segments
+    /// We're just reusing the value here
+    const TOLERANCE: f64 = 0.1;
+
+    fn insert_arc(&mut self, arc: Arc) {
+        let mut elements = arc.path_elements(Self::TOLERANCE);
         match elements.next().unwrap() {
             PathEl::MoveTo(a) if self.elements().len() > 0 => self.push(PathEl::LineTo(a)),
             el => self.push(el),
         }
         self.extend(elements)
+    }
+
+    fn insert_point(&mut self, point: Point) {
+        if self.elements().is_empty() {
+            self.push(PathEl::MoveTo(point));
+        } else {
+            self.push(PathEl::LineTo(point));
+        }
     }
 }
 
