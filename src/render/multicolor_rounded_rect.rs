@@ -19,13 +19,8 @@ use vello::kurbo::{Arc, BezPath, Ellipse, PathEl, Point, Rect, Shape, Vec2};
 ///
 #[derive(Debug, Clone)]
 pub struct ElementFrame {
-    /// The inner rect
     pub outer_rect: Rect,
-
-    /// The inner rectangle where text is laid out
-    /// Note that this is different from the outer rect since text shouldn't exist in the border
     pub inner_rect: Rect,
-
     pub outline_width: f64,
 
     pub border_top_width: f64,
@@ -84,6 +79,11 @@ impl ElementFrame {
         let mut border_bottom_right_radius_width = scale * border.border_bottom_right_radius.0.width.0.resolve(pixel_width).px() as f64;
         let mut border_bottom_right_radius_height = scale * border.border_bottom_right_radius.0.height.0.resolve(pixel_height).px() as f64;
 
+        rescale_borderers(&mut border_top_left_radius_width, &mut border_top_right_radius_width, inner_rect.width());
+        rescale_borderers(&mut border_bottom_left_radius_width, &mut border_bottom_right_radius_width, inner_rect.width());
+        rescale_borderers(&mut border_top_left_radius_height, &mut border_bottom_left_radius_height, inner_rect.height());
+        rescale_borderers(&mut border_top_right_radius_height, &mut border_bottom_right_radius_height, inner_rect.height());
+
         // Correct the border radii if they are too big
         // if two border radii would intersect, we need to shrink them to the intersection point
         fn rescale_borderers(left: &mut f64, right: &mut f64, dim: f64)  {
@@ -93,11 +93,6 @@ impl ElementFrame {
                 *right = (1.0 - ratio) * dim;
             }
         }
-
-        rescale_borderers(&mut border_top_left_radius_width, &mut border_top_right_radius_width, inner_rect.width());
-        rescale_borderers(&mut border_bottom_left_radius_width, &mut border_bottom_right_radius_width, inner_rect.width());
-        rescale_borderers(&mut border_top_left_radius_height, &mut border_bottom_left_radius_height, inner_rect.height());
-        rescale_borderers(&mut border_top_right_radius_height, &mut border_bottom_right_radius_height, inner_rect.height());
 
         Self {
             inner_rect,
@@ -167,9 +162,17 @@ impl ElementFrame {
 
     /// Construct a bezpath drawing the outline
     pub fn outline(&self) -> BezPath {
+        use Corner::*;
+
         let mut path = BezPath::new();
+
+        // todo: this has been known to produce quirky outputs with hugely rounded edges
         self.shape(&mut path, ArcSide::Outline, Direction::Clockwise);
+        path.move_to(self.corner(TopLeft, ArcSide::Outer));
+
         self.shape(&mut path, ArcSide::Outer, Direction::Anticlockwise);
+        path.move_to(self.corner(TopLeft, ArcSide::Outer));
+
         path
     }
 
@@ -181,9 +184,14 @@ impl ElementFrame {
     }
 
     fn shape(&self, path: &mut BezPath, line: ArcSide, direction: Direction) {
-        use {ArcSide::*, Corner::*, Direction::*};
+        use Corner::*;
 
-        for corner in [TopLeft, TopRight, BottomRight, BottomLeft] {
+        let route = match direction {
+            Direction::Clockwise => [TopLeft, TopRight, BottomRight, BottomLeft],
+            Direction::Anticlockwise => [TopLeft, BottomLeft, BottomRight, TopRight],
+        };
+
+        for corner in route {
             if self.is_sharp(corner) {
                 path.insert_point(self.corner(corner, line));
             } else {
@@ -199,25 +207,25 @@ impl ElementFrame {
             Corner::TopLeft => match side {
                 ArcSide::Inner => (x0 + self.border_left_width, y0 + self.border_top_width),
                 ArcSide::Outer => (x0, y0),
-                ArcSide::Outline => todo!(),
+                ArcSide::Outline => (x0 - self.outline_width, y0 - self.outline_width),
                 ArcSide::Middle => todo!(),
             },
             Corner::TopRight => match side {
                 ArcSide::Inner => (x1 - self.border_right_width, y0 + self.border_top_width),
                 ArcSide::Outer => (x1, y0),
-                ArcSide::Outline => todo!(),
+                ArcSide::Outline => (x1 + self.outline_width, y0 - self.outline_width),
                 ArcSide::Middle => todo!(),
             },
             Corner::BottomRight => match side {
                 ArcSide::Inner => (x1 - self.border_right_width, y1 - self.border_bottom_width),
                 ArcSide::Outer => (x1, y1),
-                ArcSide::Outline => todo!(),
+                ArcSide::Outline => (x1 + self.outline_width, y1 + self.outline_width),
                 ArcSide::Middle => todo!(),
             },
             Corner::BottomLeft => match side {
                 ArcSide::Inner => (x0 + self.border_left_width, y1 - self.border_bottom_width),
                 ArcSide::Outer => (x0, y1),
-                ArcSide::Outline => todo!(),
+                ArcSide::Outline => (x0 - self.outline_width, y1 + self.outline_width),
                 ArcSide::Middle => todo!(),
             },
         };
@@ -277,8 +285,13 @@ impl ElementFrame {
         let offset = match corner {
             Corner::TopLeft => -FRAC_PI_2,
             Corner::TopRight => 0.0,
-            Corner::BottomLeft => FRAC_PI_2,
-            Corner::BottomRight => PI,
+            Corner::BottomRight => FRAC_PI_2,
+            Corner::BottomLeft => PI,
+        };
+
+        let offset = match direction {
+            Direction::Clockwise => offset,
+            Direction::Anticlockwise => offset + FRAC_PI_2,
         };
 
         Arc::new(
@@ -406,33 +419,39 @@ impl ElementFrame {
             border_bottom_left_radius_height,
             border_bottom_right_radius_width,
             border_bottom_right_radius_height,
+            outline_width,
             ..
         } = self;
 
-        let outer: Vec2 = match corner {
+        let outer = match corner {
             TopLeft => (*border_top_left_radius_width, *border_top_left_radius_height),
             TopRight => (*border_top_right_radius_width, *border_top_right_radius_height),
             BottomLeft => (*border_bottom_left_radius_width, *border_bottom_left_radius_height),
             BottomRight => (*border_bottom_right_radius_width, *border_bottom_right_radius_height),
-        }.into();
+        };
 
         let center = match corner {
             TopLeft => outer,
-            TopRight => (rect.width() - outer.x, outer.y ).into(),
-            BottomLeft => (outer.x, rect.height() - outer.y ).into(),
-            BottomRight => (rect.width() - outer.x, rect.height() - outer.y).into(),
+            TopRight => (rect.width() - outer.0, outer.1 ).into(),
+            BottomLeft => (outer.0, rect.height() - outer.1 ).into(),
+            BottomRight => (rect.width() - outer.0, rect.height() - outer.1).into(),
         };
 
         let radii = match side {
-            Outline => todo!("Implement outline offset"),
             Outer => outer,
+            Outline => match corner {
+                TopLeft => (border_top_left_radius_width + outline_width, border_top_left_radius_height + outline_width),
+                TopRight => (border_top_right_radius_width + outline_width, border_top_right_radius_height + outline_width),
+                BottomRight => (border_bottom_right_radius_width + outline_width, border_bottom_right_radius_height + outline_width),
+                BottomLeft => (border_bottom_left_radius_width + outline_width, border_bottom_left_radius_height + outline_width),
+            },
             Middle => todo!("Implement border midline offset"),
             Inner => match corner {
                 TopLeft => (border_top_left_radius_width - border_left_width, border_top_left_radius_height - border_top_width),
                 TopRight => (border_top_right_radius_width - border_right_width, border_top_right_radius_height - border_top_width),
                 BottomRight => (border_bottom_right_radius_width - border_right_width, border_bottom_right_radius_height - border_bottom_width),
                 BottomLeft => (border_bottom_left_radius_width - border_left_width, border_bottom_left_radius_height - border_bottom_width),
-            }.into(),
+            },
         };
 
         Ellipse::new(rect.origin() + center, radii, 0.0)

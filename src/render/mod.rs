@@ -1,43 +1,8 @@
-// All the stuff that HTML cares about:
-// custom_properties,
-// writing_mode,
-// rules,
-// visited_style,
-// flags,
-// background,
-// border,
-// box_,
-// column,
-// counters,
-// effects,
-// font,
-// inherited_box,
-// inherited_table,
-// inherited_text,
-// inherited_ui,
-// list,
-// margin,
-// outline,
-// padding,
-// position,
-// table,
-// text,
-// ui,
-//
-// Need to draw:
-// - frame
-// - image
-// - shadow
-// - outline
-// - border
-// - list discs
-
 use std::cell::RefCell;
 
 use crate::Document;
 use crate::{styling::NodeData, util::StyloGradient};
 use html5ever::tendril::{fmt::UTF8, Tendril};
-use style::color::AbsoluteColor;
 use style::{
     properties::{
         style_structs::{Background, Border, Font, InheritedText, Outline},
@@ -50,13 +15,10 @@ use style::{
     },
 };
 use taffy::prelude::Layout;
+use vello::peniko::Fill;
 use vello::{
-    kurbo::{Affine, Point, Rect, RoundedRect, Stroke, Vec2},
-    peniko::{self, Color},
-};
-use vello::{
-    kurbo::{Arc, BezPath, Dashes, PathEl, PathSegIter, RoundedRectRadii, Shape},
-    peniko::Fill,
+    kurbo::{Affine, Point, Vec2},
+    peniko::Color,
 };
 
 use self::multicolor_rounded_rect::{Edge, ElementFrame};
@@ -66,7 +28,6 @@ use vello::SceneBuilder;
 mod multicolor_rounded_rect;
 
 impl Document {
-    /// Render to any scene!
     pub(crate) fn render_internal(&self, scene: &mut SceneBuilder) {
         let root = &self.dom.root_element();
 
@@ -91,6 +52,19 @@ impl Document {
     /// Approaching rendering this way guarantees we have all the styles we need when rendering text with not having
     /// to traverse back to the parent for its styles, or needing to pass down styles
     fn render_element(&self, scene: &mut SceneBuilder, node: usize, location: Point) {
+        // Need to do research on how we can cache most of the bezpaths - there's gonna be a lot of encoding between frames.
+        // Might be able to cache resources deeper in vello.
+        //
+        // Implemented (completely):
+        //  - nothing is completely done, vello is limiting all the styles we can implement (performantly)
+        //
+        // Implemented (partially):
+        //  - background, border, font, margin, outline, padding,
+        //
+        // Not Implemented:
+        //  - list, position, table, text, ui,
+        //  - custom_properties, writing_mode, rules, visited_style, flags,  box_, column, counters, effects,
+        //  - inherited_box, inherited_table, inherited_text, inherited_ui,
         use markup5ever_rcdom::NodeData;
 
         let cx = self.element_cx(node, location);
@@ -200,7 +174,7 @@ struct ElementCx<'a> {
     transform: Affine,
 }
 
-impl<'a> ElementCx<'a> {
+impl ElementCx<'_> {
     fn stroke_frame(&self, scene: &mut SceneBuilder) {
         use GenericImage::*;
 
@@ -253,6 +227,7 @@ impl<'a> ElementCx<'a> {
         // todo: handle non-absolute colors
         let bg_color = background.background_color.clone();
         let bg_color = bg_color.as_absolute().unwrap();
+        let shape = self.frame.frame();
 
         // Fill the color
         scene.fill(
@@ -260,7 +235,7 @@ impl<'a> ElementCx<'a> {
             self.transform,
             bg_color.as_vello(),
             None,
-            &self.frame.outer_rect,
+            &shape,
         );
     }
 
