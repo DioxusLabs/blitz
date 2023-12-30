@@ -6,12 +6,8 @@
 //! Can I just say, this is a lot of work for a border
 //! HTML/css is annoyingly wild
 
-use dioxus::prelude::GlobalAttributes;
 use std::{f64::consts::FRAC_PI_2, f64::consts::PI};
-use style::{
-    properties::{style_structs::Border, ComputedValues},
-    values::computed::CSSPixelLength,
-};
+use style::{properties::ComputedValues, values::computed::CSSPixelLength};
 use taffy::prelude::Layout;
 use vello::kurbo::{Arc, BezPath, Ellipse, PathEl, Point, Rect, Shape, Vec2};
 
