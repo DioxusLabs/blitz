@@ -1,7 +1,7 @@
 // background: rgb(2,0,36);
 // background: linear-gradient(90deg, rgba(2,0,36,1) 0%, rgba(9,9,121,1) 35%, rgba(0,212,255,1) 100%);
 
-use dioxus::prelude::{GlobalAttributes, *};
+use dioxus::prelude::{GlobalAttributes, SvgAttributes, *};
 use stylo_dioxus::Config;
 
 fn main() {
@@ -13,7 +13,10 @@ fn main() {
 
 fn app(cx: Scope) -> Element {
     render! {
-        div { class: "colorful", id: "a", "    Dioxus12312312312321\n\n\n        hi " }
+        div {
+            "hi           "
+        }
+        div { class: "colorful", id: "a", "    Dioxus12312312312321\n\n\n\n\n\n\n\n        hi " }
         div { class: "colorful", id: "b", "    Dioxus12312312312321\n\n\n\n\n\n\n\n        hi " }
         div { class: "colorful", id: "c", "    Dioxus12312312312321\n\n\n\n\n\n\n\n        hi " }
         div { class: "colorful", id: "d", "    Dioxus12312312312321\n\n\n\n\n\n\n\n        hi " }

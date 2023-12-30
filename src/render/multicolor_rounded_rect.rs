@@ -19,8 +19,8 @@ use vello::kurbo::{Arc, BezPath, Ellipse, PathEl, Point, Rect, Shape, Vec2};
 ///
 #[derive(Debug, Clone)]
 pub struct ElementFrame {
-    /// The bounding box rect for the element
-    pub rect: Rect,
+    /// The inner rect
+    pub outer_rect: Rect,
 
     /// The inner rectangle where text is laid out
     /// Note that this is different from the outer rect since text shouldn't exist in the border
@@ -60,16 +60,17 @@ impl ElementFrame {
         let width: f64 = layout.size.width.into();
         let height: f64 = layout.size.height.into();
 
-        let rect = Rect::new(
-            border_left_width / 2.0,
-            border_top_width / 2.0,
-            width - border_right_width / 2.0,
-            height - border_bottom_width / 2.0,
+        let outer_rect = Rect::new(0.0, 0.0, width, height);
+        let inner_rect = Rect::new(
+            border_left_width,
+            border_top_width,
+            width - border_right_width,
+            height - border_bottom_width,
         );
 
         // Resolve the radii to a length. need to downscale since the radii are in document pixels
-        let pixel_width = CSSPixelLength::new((rect.width() / scale) as _);
-        let pixel_height = CSSPixelLength::new((rect.height() / scale) as _);
+        let pixel_width = CSSPixelLength::new((inner_rect.width() / scale) as _);
+        let pixel_height = CSSPixelLength::new((inner_rect.height() / scale) as _);
 
         let mut border_top_left_radius_width = scale * border.border_top_left_radius.0.width.0.resolve(pixel_width).px() as f64;
         let mut border_top_left_radius_height = scale * border.border_top_left_radius.0.height.0.resolve(pixel_height).px() as f64;
@@ -93,22 +94,14 @@ impl ElementFrame {
             }
         }
 
-        rescale_borderers(&mut border_top_left_radius_width, &mut border_top_right_radius_width, rect.width());
-        rescale_borderers(&mut border_bottom_left_radius_width, &mut border_bottom_right_radius_width, rect.width());
-        rescale_borderers(&mut border_top_left_radius_height, &mut border_bottom_left_radius_height, rect.height());
-        rescale_borderers(&mut border_top_right_radius_height, &mut border_bottom_right_radius_height, rect.height());
-
-        let inner_rect = Rect::new(
-            rect.x0 + border_left_width,
-            rect.y0 + border_top_width,
-            rect.x1 - border_right_width,
-            rect.y1 - border_bottom_width
-        );
-
+        rescale_borderers(&mut border_top_left_radius_width, &mut border_top_right_radius_width, inner_rect.width());
+        rescale_borderers(&mut border_bottom_left_radius_width, &mut border_bottom_right_radius_width, inner_rect.width());
+        rescale_borderers(&mut border_top_left_radius_height, &mut border_bottom_left_radius_height, inner_rect.height());
+        rescale_borderers(&mut border_top_right_radius_height, &mut border_bottom_right_radius_height, inner_rect.height());
 
         Self {
-            rect,
             inner_rect,
+            outer_rect,
             outline_width,
             border_top_width,
             border_left_width,
@@ -200,7 +193,7 @@ impl ElementFrame {
     }
 
     fn corner(&self, corner: Corner, side: ArcSide) -> Point {
-        let Rect { x0, y0, x1, y1 } = self.rect;
+        let Rect { x0, y0, x1, y1 } = self.outer_rect;
 
         let (x, y) = match corner {
             Corner::TopLeft => match side {
@@ -400,7 +393,7 @@ impl ElementFrame {
     fn ellipse(&self, corner: Corner, side: ArcSide) -> Ellipse {
         use {Corner::*, ArcSide::*};
         let ElementFrame {
-            rect,
+            outer_rect: rect,
             border_top_width,
             border_left_width,
             border_right_width,
@@ -427,7 +420,7 @@ impl ElementFrame {
             TopLeft => outer,
             TopRight => (rect.width() - outer.x, outer.y ).into(),
             BottomLeft => (outer.x, rect.height() - outer.y ).into(),
-            BottomRight => (rect.width() - outer.x, rect.height() - outer.y ).into(),
+            BottomRight => (rect.width() - outer.x, rect.height() - outer.y).into(),
         };
 
         let radii = match side {

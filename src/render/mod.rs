@@ -260,7 +260,7 @@ impl<'a> ElementCx<'a> {
             self.transform,
             bg_color.as_vello(),
             None,
-            &self.frame.rect,
+            &self.frame.outer_rect,
         );
     }
 
