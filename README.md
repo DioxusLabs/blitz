@@ -89,34 +89,33 @@ TODO:
 - [x] Pass layout and styles to WGPU for single frame to png
 
 - [x] Render to window
--- [ ] Frame
---- [ ] gradient (figured out just not implemented)
--- [ ] Outline
--- [ ] Border
--- [ ] Shadow
--- [ ] Widgets
--- [ ] Text selection / input
--- [ ] Checkbox/slider/etc
--- [ ] text (italic, bold, size, font, quote, color, selection color, rustybuzz/swash/shaping, l-r text etc)
--- [ ] svg (lyon? vello?)
--- [ ] Shadow elements
--- [x] zoom (partially implemented, needs to be user controlled)
---- [ ] zoom needs to shrink available UI space (for responsive stuff)
-
+- [x] Frame
+- [ ] gradient (figured out just not implemented)
+- [x] Outline
+- [ ] Border
+- [ ] Shadow
+- [ ] Widgets
+- [ ] Text selection / input
+- [ ] Checkbox/slider/etc
+- [ ] text (italic, bold, size, font, quote, color, selection color, rustybuzz/swash/shaping, l-r text etc)
+- [ ] svg (lyon? vello?)
+- [ ] Shadow elements
+- [x] zoom (partially implemented, needs to be user controlled)
+- [ ] zoom needs to shrink available UI space (for responsive stuff)
 
 - [ ] Implement per-frame caching
--- [ ] Text
--- [ ] Font loading + detection
--- [ ] quadtree
--- [ ] scene
--- [ ] layout
+- [ ] Text
+- [ ] Font loading + detection
+- [ ] quadtree
+- [ ] scene
+- [ ] layout
 
 - [ ] Add interactivity (hit testing, etc etc)
--- [ ] scrolling
--- [ ] Druid shell (glazier) for native text selection (and a whole host of other stuff...)
---- [ ] I think we can just add nstext directly
--- [ ] Hooks for context menu
--- [ ] keyboard input, event bubbling etc
+- [ ] scrolling
+- [ ] Druid shell (glazier) for native text selection (and a whole host of other stuff...)
+- [ ] I think we can just add nstext directly
+- [ ] Hooks for context menu
+- [ ] keyboard input, event bubbling etc
 
 - [ ] Add accessibility kit
 - [x] Multiwindow
