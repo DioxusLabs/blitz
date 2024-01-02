@@ -5,6 +5,7 @@ resolver = "2"
 
 [workspace.dependencies]
 style = { git = "https://github.com/servo/servo", rev = "8faa904" }
+servo_config = { git = "https://github.com/servo/servo", rev = "8faa904" }
 selectors = { git = "https://github.com/servo/servo", rev = "8faa904" }
 style_traits = { git = "https://github.com/servo/servo", rev = "8faa904" }
 servo_url = { git = "https://github.com/servo/servo", rev = "8faa904" }

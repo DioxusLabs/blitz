@@ -47,6 +47,10 @@ impl Document {
         let nodes = Box::new(Slab::new());
         let guard = SharedRwLock::new();
         let nodes_to_id = HashMap::new();
+
+        // Make sure we turn on servo features
+        servo_config::set_pref!(layout.flexbox.enabled, true);
+
         Self {
             guard,
             nodes,

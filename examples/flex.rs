@@ -31,11 +31,10 @@ fn app(cx: Scope) -> Element {
 const CSS: &str = r#"
 #container {
     flex: 1 1 auto;
-    display: flex;
     flex-direction: row;
-    justify-content: center;
-    align-items: center;
-    align-content: center;
+    // justify-content: center;
+    // align-items: center;
+    // align-content: center;
     background-color: gray;
     border: 1px solid black;
     border-top-color: red;
@@ -54,5 +53,6 @@ const CSS: &str = r#"
     padding:20px;
     margin:20px;
     // border-radius: 10px;
+    display: flex;
 }
 "#;

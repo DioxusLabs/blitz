@@ -123,7 +123,8 @@ impl crate::document::Document {
                     // todo: support grid
 
                     dbg!(style.get_position());
-                    dbg!(display);
+                    dbg!(style.get_box());
+                    // dbg!(style.get_inhe());
                     // hmmmmmm, these seem wrong, coming from stylo
                     let display = match display.inside() {
                         style::values::specified::box_::DisplayInside::Flex => taffy::Display::Flex,

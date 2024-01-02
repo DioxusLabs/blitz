@@ -67,7 +67,7 @@ impl LayoutPartialTree for Document {
             let node = tree.node_from_id_mut(node_id);
 
             let font_metrics = FontMetrics {
-                char_width: 32.0,
+                char_width: 16.0,
                 char_height: 16.0,
             };
 
