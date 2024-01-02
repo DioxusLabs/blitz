@@ -121,6 +121,10 @@ impl crate::document::Document {
                     }: &BoxStyle = style.get_box();
 
                     // todo: support grid
+
+                    dbg!(style.get_position());
+                    dbg!(display);
+                    // hmmmmmm, these seem wrong, coming from stylo
                     let display = match display.inside() {
                         style::values::specified::box_::DisplayInside::Flex => taffy::Display::Flex,
                         _ => taffy::Display::Block,

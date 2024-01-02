@@ -30,7 +30,7 @@ fn main() {
         h4 { }
     };
 
-    let document = blitz::Document::new();
+    let document = blitz_dom::Document::new();
 
     // let styled_dom = blitz::style_lazy_nodes(css, nodes);
 
