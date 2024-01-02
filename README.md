@@ -125,6 +125,8 @@ TODO:
 - [ ] Hooks for context menu
 - [ ] keyboard input, event bubbling etc
 
+- [ ] Render a webview https://github.com/tauri-apps/wry/issues/677
+- [ ] Devtools
 - [ ] Add accessibility kit
 - [x] Multiwindow
 - [ ] Animation
