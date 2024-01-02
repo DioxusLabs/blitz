@@ -1,14 +1,40 @@
+//! Blitz-dom
+//!
+//! This crate implements a simple ECS-based DOM, with a focus on performance and ease of use. We don't attach bindings
+//! to languages here, simplifying the API and decreasing code size.
+//!
+//! The goal behind this crate is that any implementor can interact with the DOM and render it out using any renderer
+//! they want.
+
+/// The DOM implementation.
+///
+/// This is the primary entry point for this crate.
 pub mod document;
+
+/// An implementation for Html5ever's sink trait, allowing us to parse HTML into a DOM.
 pub mod htmlsink;
+
+/// Integration of taffy and the DOM.
 pub mod layout;
+
+/// A collection of methods for manipulating the DOM.
 pub mod mutation;
+
+/// The nodes themsleves, and their data.
+///
+/// todo: we want this to use ECS, but we're not done with the design yet.
 pub mod node;
+
+/// Eventually, to be where we store information for things like shadowroots, once we move off of rcdom
 pub mod nodedata;
-pub mod styling;
+
+/// Implementations that interact with servo's style engine
+pub mod stylo;
+
+/// Utilities for laying out and measuring text
 pub mod text;
-pub mod traverser;
+
 pub mod util;
-pub mod viewport;
 
 pub use document::Document;
 pub use node::Node;
