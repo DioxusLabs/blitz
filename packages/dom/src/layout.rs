@@ -140,7 +140,7 @@ fn lay_text(
     compute_leaf_layout(
         inputs,
         &node,
-        Some(|known_dimensions, available_space| {
+        |known_dimensions, available_space| {
             let context = TextContext {
                 text_content: contents.trim(),
                 writing_mode: WritingMode::Horizontal,
@@ -151,7 +151,7 @@ fn lay_text(
             //     height: 200.0,
             //     width: 100.0,
             // }
-        }),
+        },
     )
 }
 

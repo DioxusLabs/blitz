@@ -9,7 +9,7 @@ servo_config = { git = "https://github.com/servo/servo", rev = "8faa904" }
 selectors = { git = "https://github.com/servo/servo", rev = "8faa904" }
 style_traits = { git = "https://github.com/servo/servo", rev = "8faa904" }
 servo_url = { git = "https://github.com/servo/servo", rev = "8faa904" }
-taffy = { git = "https://github.com/dioxuslabs/taffy" }
+taffy = { git = "https://github.com/dioxuslabs/taffy", rev = "563d5dc" }
 dioxus = { git = "https://github.com/dioxuslabs/dioxus", tag = "v0.4.3" }
 dioxus-ssr = { git = "https://github.com/dioxuslabs/dioxus", tag = "v0.4.3" }
 
