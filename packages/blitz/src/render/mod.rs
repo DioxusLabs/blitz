@@ -113,7 +113,7 @@ impl Renderer {
         };
 
         if element.data.borrow().styles.get_primary().is_none() {
-            println!("no styles for {:?}", element);
+            // println!("no styles for {:?}", element);
             return;
         }
 

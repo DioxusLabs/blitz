@@ -165,6 +165,23 @@ impl crate::document::Document {
                         }
                     };
 
+                    let align_items = match align_items {
+                        style::computed_values::align_items::T::Stretch => {
+                            Some(taffy::AlignItems::Stretch)
+                        }
+                        style::computed_values::align_items::T::FlexStart => {
+                            Some(taffy::AlignItems::FlexStart)
+                        }
+                        style::computed_values::align_items::T::FlexEnd => {
+                            Some(taffy::AlignItems::FlexEnd)
+                        }
+                        style::computed_values::align_items::T::Center => {
+                            Some(taffy::AlignItems::Center)
+                        }
+                        style::computed_values::align_items::T::Baseline => {
+                            Some(taffy::AlignItems::Baseline)
+                        }
+                    };
                     node.style = Style {
                         margin: to_taffy_margin(margin),
                         padding: to_taffy_padding(padding),
@@ -172,6 +189,47 @@ impl crate::document::Document {
                         align_content,
                         display,
                         flex_direction,
+                        justify_content: match justify_content {
+                            style::computed_values::justify_content::T::FlexStart => {
+                                Some(taffy::JustifyContent::FlexStart)
+                            }
+                            style::computed_values::justify_content::T::Stretch => {
+                                Some(taffy::JustifyContent::Stretch)
+                            }
+                            style::computed_values::justify_content::T::FlexEnd => {
+                                Some(taffy::JustifyContent::FlexEnd)
+                            }
+                            style::computed_values::justify_content::T::Center => {
+                                Some(taffy::JustifyContent::Center)
+                            }
+                            style::computed_values::justify_content::T::SpaceBetween => {
+                                Some(taffy::JustifyContent::SpaceBetween)
+                            }
+                            style::computed_values::justify_content::T::SpaceAround => {
+                                Some(taffy::JustifyContent::SpaceAround)
+                            }
+                        },
+                        align_self: match align_self {
+                            style::computed_values::align_self::T::Auto => align_items,
+                            style::computed_values::align_self::T::Stretch => {
+                                Some(taffy::AlignItems::Stretch)
+                            }
+                            style::computed_values::align_self::T::FlexStart => {
+                                Some(taffy::AlignItems::FlexStart)
+                            }
+                            style::computed_values::align_self::T::FlexEnd => {
+                                Some(taffy::AlignItems::FlexEnd)
+                            }
+                            style::computed_values::align_self::T::Center => {
+                                Some(taffy::AlignItems::Center)
+                            }
+                            style::computed_values::align_self::T::Baseline => {
+                                Some(taffy::AlignItems::Baseline)
+                            }
+                        },
+                        flex_grow: flex_grow.0,
+                        flex_shrink: flex_shrink.0,
+                        align_items,
                         flex_wrap: match flex_wrap {
                             style::computed_values::flex_wrap::T::Wrap => taffy::FlexWrap::Wrap,
                             style::computed_values::flex_wrap::T::WrapReverse => {
