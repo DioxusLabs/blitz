@@ -92,7 +92,7 @@ TODO:
 - [x] Frame
 - [ ] gradient (figured out just not implemented)
 - [x] Outline
-- [ ] Border
+- [x] Border
 - [ ] Shadow
 - [ ] Widgets
 - [ ] Text selection / input
@@ -107,8 +107,10 @@ TODO:
 - [ ] Text
 - [ ] Font loading + detection
 - [ ] quadtree
+- [ ] bezpaths
 - [ ] scene
 - [ ] layout
+
 
 - [ ] Add interactivity (hit testing, etc etc)
 - [ ] scrolling

@@ -20,6 +20,8 @@ fn app(cx: Scope) -> Element {
             .unwrap()
     });
 
+    dbg!(&content);
+
     render! {
         div { dangerous_inner_html: "{content}" }
     }

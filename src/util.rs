@@ -6,9 +6,13 @@ mod stylo_types {
         values::{
             computed::{Angle, AngleOrPercentage, CSSPixelLength, Percentage},
             generics::{
-                color::Color, image::GenericGradient, position::GenericPosition, NonNegative,
+                color::Color,
+                image::{GenericGradient, GenericGradientItem},
+                position::GenericPosition,
+                NonNegative,
             },
         },
+        OwnedSlice,
     };
 
     use style::values::computed::{LengthPercentage, LineDirection};
@@ -24,6 +28,9 @@ mod stylo_types {
         AngleOrPercentage,
         Color<Percentage>,
     >;
+
+    //
+    pub type GradientSlice = OwnedSlice<GenericGradientItem<Color<Percentage>, LengthPercentage>>;
 
     use vello::peniko::Color as VelloColor;
 

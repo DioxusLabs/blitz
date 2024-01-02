@@ -13,36 +13,27 @@ fn main() {
 
 fn app(cx: Scope) -> Element {
     render! {
-        // div { id: "container",
-        div { id: "a", " Dioxus " }
-        div { id: "b", " plus " }
-        div { id: "c", " Stylo " }
-        div { id: "d", " native " }
-        div { id: "e", " WGPU " }
-        // }
+        div { id: "a", " Dioxus                                     \n\n\n\n\n\n\n\n\n" }
     }
 }
 
 const CSS: &str = r#"
 #a {
-    background-color: red;
-    font-size: 40px;
-    font-color: white;
-}
-#b {
-    background-color: green;
-    font-size: 60px;
-    font-color: white;
-}
-#c {
-    background-color: blue;
-    font-size: 80px;
-    font-color: white;
-}
-#d {
-    background-color: yellow;
-    font-size: 120px;
-    font-color: white;
-    border: 10px solid black;
+    height:300px;
+    background-color: gray;
+    border: 1px solid black;
+    // border-radius: 50px 20px;
+    border-top-color: red;
+    padding:20px;
+    margin:20px;
+    // border-radius: 10% 30% 50% 70%;
+    border-left: 4px solid #000;
+    border-top: 10px solid #ff0;
+    border-right:  3px solid #F01;
+    border-bottom:  9px solid #0f0;
+    box-shadow: 10px 10px gray;
+    // background: linear-gradient(#e66465, #9198e5);
+    // background: linear-gradient(#3f87a6, #ebf8e1, #f69d3c);
+    background: linear-gradient(0.25turn, #3f87a6, #ebf8e1, #f69d3c);
 }
 "#;

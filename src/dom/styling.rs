@@ -174,8 +174,6 @@ fn fill_slab_with_handles(
         id
     };
 
-    println!("generating {} ", id);
-
     // Now go insert its children. We want their IDs to come back here so we know how to walk them.
     // We'll want some sort of linked list thing too to implement NextSibiling, etc
     // We're going to accumulate the children IDs here and then go back and edit the entry

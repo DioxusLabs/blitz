@@ -72,6 +72,8 @@ pub struct Document {
     /// A storage of fonts to load in and out.
     /// Whenever we encounter new fonts during parsing + mutations, this will become populated
     pub(crate) fonts: FontCache,
+
+    pub pending_styles: Vec<String>,
 }
 
 impl Document {
@@ -132,6 +134,7 @@ impl Document {
             text_context: Default::default(),
             images: Default::default(),
             fonts: Default::default(),
+            pending_styles: Default::default(),
         }
     }
 

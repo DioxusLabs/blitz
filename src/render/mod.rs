@@ -1,21 +1,29 @@
 use std::cell::RefCell;
 
-use crate::Document;
 use crate::{styling::NodeData, util::StyloGradient};
+use crate::{util::GradientSlice, Document};
 use html5ever::tendril::{fmt::UTF8, Tendril};
 use style::{
-    properties::{
-        style_structs::{Background, Border, Font, InheritedText, Outline},
-        ComputedValues,
-    },
+    properties::{style_structs::Outline, ComputedValues},
     values::{
-        computed::{CSSPixelLength, Percentage},
-        generics::image::{GenericGradient, GenericImage},
-        specified::{BorderStyle, OutlineStyle},
+        computed::{
+            Angle, AngleOrPercentage, CSSPixelLength, LengthPercentage, LineDirection, Percentage,
+        },
+        generics::{
+            color::Color as StyloColor,
+            image::{EndingShape, GenericGradient, GenericGradientItem, GenericImage},
+            position::GenericPosition,
+            NonNegative,
+        },
+        specified::{position::VerticalPositionKeyword, BorderStyle, OutlineStyle},
     },
+    OwnedSlice,
 };
 use taffy::prelude::Layout;
-use vello::peniko::Fill;
+use vello::{
+    kurbo::Shape,
+    peniko::{self, Fill},
+};
 use vello::{
     kurbo::{Affine, Point, Vec2},
     peniko::Color,
@@ -67,12 +75,29 @@ impl Document {
         //  - inherited_box, inherited_table, inherited_text, inherited_ui,
         use markup5ever_rcdom::NodeData;
 
-        let cx = self.element_cx(node, location);
+        let element = &self.dom.nodes[node];
 
+        match &element.node.data {
+            NodeData::Element { name, .. } => {
+                // skip head nodes/script nodes
+                // these are handled elsewhere...
+                match name.local.as_ref() {
+                    "style" | "head" | "script" => {
+                        println!("early returning...");
+                        return;
+                    }
+                    _ => {}
+                }
+            }
+            _ => return,
+        }
+
+        let cx = self.element_cx(element, location);
+
+        cx.stroke_effects(scene);
         cx.stroke_outline(scene);
         cx.stroke_frame(scene);
         cx.stroke_border(scene);
-        cx.stroke_effects(scene);
 
         for child in &cx.element.children {
             match &self.dom.nodes[*child].node.data {
@@ -102,6 +127,7 @@ impl Document {
         let (_layout, pos) = self.node_position(*child, parent.pos);
 
         let transform = Affine::translate(pos.to_vec2() + Vec2::new(0.0, *font_size as f64));
+        // dbg!(&contents.borrow(), transform, font_size);
 
         self.text_context.add(
             scene,
@@ -113,12 +139,10 @@ impl Document {
         )
     }
 
-    fn element_cx(&self, node: usize, location: Point) -> ElementCx {
-        let element = &self.dom.nodes[node];
-
+    fn element_cx<'a>(&'a self, element: &'a NodeData, location: Point) -> ElementCx<'a> {
         let style = element.style.borrow().styles.primary().clone();
 
-        let (layout, pos) = self.node_position(node, location);
+        let (layout, pos) = self.node_position(element.id, location);
         let scale = self.viewport.scale_f64();
 
         // todo: maybe cache this so we don't need to constantly be figuring it out
@@ -191,32 +215,95 @@ impl ElementCx<'_> {
         }
     }
 
-    fn draw_gradient_frame(&self, scene: &mut SceneBuilder, gradient: &Box<StyloGradient>) {
-        // let bb = shape.bounding_box();
-        // let starting_point_offset = gradient.center_offset(*rect);
-        // let ending_point_offset =
-        //     Point::new(-starting_point_offset.x, -starting_point_offset.y);
-        // let center = bb.center();
-        // let start = Point::new(
-        //     center.x + starting_point_offset.x,
-        //     center.y + starting_point_offset.y,
-        // );
-        // let end = Point::new(
-        //     center.x + ending_point_offset.x,
-        //     center.y + ending_point_offset.y,
-        // );
+    fn draw_gradient_frame(&self, scene: &mut SceneBuilder, gradient: &StyloGradient) {
+        match gradient {
+            // https://developer.mozilla.org/en-US/docs/Web/CSS/gradient/linear-gradient
+            GenericGradient::Linear {
+                direction,
+                items,
+                repeating,
+                compat_mode,
+            } => self.draw_linear_gradient(scene, direction, items),
+            GenericGradient::Radial {
+                shape,
+                position,
+                items,
+                repeating,
+                compat_mode,
+            } => self.draw_radial_gradient(scene, shape, position, items, *repeating),
+            GenericGradient::Conic {
+                angle,
+                position,
+                items,
+                repeating,
+            } => self.draw_conic_gradient(scene, angle, position, items, *repeating),
+        };
+    }
 
-        // let kind = peniko::GradientKind::Linear { start, end };
+    fn draw_linear_gradient(
+        &self,
+        scene: &mut SceneBuilder<'_>,
+        direction: &LineDirection,
+        items: &GradientSlice,
+    ) {
+        let bb = self.frame.outer_rect.bounding_box();
 
-        // let gradient = peniko::Gradient {
-        //     kind,
-        //     extend,
-        //     stops: (*stops).clone(),
-        // };
+        let shape = self.frame.frame();
+        let center = bb.center();
+        let rect = self.frame.inner_rect;
+        let (start, end) = match direction {
+            LineDirection::Angle(angle) => {
+                let start = Point::new(
+                    self.frame.inner_rect.x0 + rect.width() / 2.0,
+                    self.frame.inner_rect.y0,
+                );
+                let end = Point::new(
+                    self.frame.inner_rect.x0 + rect.width() / 2.0,
+                    self.frame.inner_rect.y1,
+                );
 
-        // let brush = peniko::BrushRef::Gradient(&gradient);
+                // rotate the lind around the center
+                let line = Affine::rotate_about(-angle.radians64(), center)
+                    * vello::kurbo::Line::new(start, end);
 
-        // sb.fill(peniko::Fill::NonZero, Affine::IDENTITY, brush, None, shape)
+                (line.p0, line.p1)
+            }
+            LineDirection::Horizontal(_) => todo!(),
+            LineDirection::Vertical(ore) => {
+                let start = Point::new(
+                    self.frame.inner_rect.x0 + rect.width() / 2.0,
+                    self.frame.inner_rect.y0,
+                );
+                let end = Point::new(
+                    self.frame.inner_rect.x0 + rect.width() / 2.0,
+                    self.frame.inner_rect.y1,
+                );
+                match ore {
+                    VerticalPositionKeyword::Top => (end, start),
+                    VerticalPositionKeyword::Bottom => (start, end),
+                }
+            }
+            LineDirection::Corner(_, _) => todo!(),
+        };
+        let mut gradient = peniko::Gradient {
+            kind: peniko::GradientKind::Linear { start, end },
+            extend: Default::default(),
+            stops: Default::default(),
+        };
+        for (idx, item) in items.iter().enumerate() {
+            match item {
+                GenericGradientItem::SimpleColorStop(stop) => {
+                    let step = 1.0 / (items.len() as f32 - 1.0);
+                    let offset = step * idx as f32;
+                    let color = stop.as_vello();
+                    gradient.stops.push(peniko::ColorStop { color, offset });
+                }
+                GenericGradientItem::ComplexColorStop { color, position } => todo!(),
+                GenericGradientItem::InterpolationHint(_) => todo!(),
+            }
+        }
+        let brush = peniko::BrushRef::Gradient(&gradient);
+        scene.fill(peniko::Fill::NonZero, Affine::IDENTITY, brush, None, &shape);
     }
 
     fn draw_image_frame(&self, scene: &mut SceneBuilder) {}
@@ -248,10 +335,10 @@ impl ElementCx<'_> {
     /// ❌ dashed - Defines a dashed border
     /// ✅ solid - Defines a solid border
     /// ❌ double - Defines a double border
-    /// ❌ groove - Defines a 3D grooved border. The effect depends on the border-color value
-    /// ❌ ridge - Defines a 3D ridged border. The effect depends on the border-color value
-    /// ❌ inset - Defines a 3D inset border. The effect depends on the border-color value
-    /// ❌ outset - Defines a 3D outset border. The effect depends on the border-color value
+    /// ❌ groove - Defines a 3D grooved border.
+    /// ❌ ridge - Defines a 3D ridged border.
+    /// ❌ inset - Defines a 3D inset border.
+    /// ❌ outset - Defines a 3D outset border.
     /// ✅ none - Defines no border
     /// ✅ hidden - Defines a hidden border
     ///
@@ -264,17 +351,21 @@ impl ElementCx<'_> {
 
     /// The border-style property specifies what kind of border to display.
     ///
+    /// [Border](https://www.w3schools.com/css/css_border.asp)
+    ///
     /// The following values are allowed:
-    /// ❌ dotted - Defines a dotted border
-    /// ❌ dashed - Defines a dashed border
-    /// ✅ solid - Defines a solid border
-    /// ❌ double - Defines a double border
-    /// ❌ groove - Defines a 3D grooved border. The effect depends on the border-color value
-    /// ❌ ridge - Defines a 3D ridged border. The effect depends on the border-color value
-    /// ❌ inset - Defines a 3D inset border. The effect depends on the border-color value
-    /// ❌ outset - Defines a 3D outset border. The effect depends on the border-color value
-    /// ✅ none - Defines no border
-    /// ✅ hidden - Defines a hidden border
+    /// - ❌ dotted: Defines a dotted border
+    /// - ❌ dashed: Defines a dashed border
+    /// - ✅ solid: Defines a solid border
+    /// - ❌ double: Defines a double border
+    /// - ❌ groove: Defines a 3D grooved border*
+    /// - ❌ ridge: Defines a 3D ridged border*
+    /// - ❌ inset: Defines a 3D inset border*
+    /// - ❌ outset: Defines a 3D outset border*
+    /// - ✅ none: Defines no border
+    /// - ✅ hidden: Defines a hidden border
+    ///
+    /// [*] The effect depends on the border-color value
     fn stroke_border_edge(&self, sb: &mut SceneBuilder, edge: Edge) {
         let border = self.style.get_border();
         let path = self.frame.border(edge);
@@ -343,27 +434,42 @@ impl ElementCx<'_> {
     /// ❌ filter: The filter computed value.
     /// ❌ mix_blend_mode: The mix-blend-mode computed value.
     fn stroke_effects(&self, scene: &mut SceneBuilder<'_>) {
+        // also: if focused, draw a focus ring
+        //
+        //             let stroke_color = Color::rgb(1.0, 1.0, 1.0);
+        //             let stroke = Stroke::new(FOCUS_BORDER_WIDTH as f32 / 2.0);
+        //             scene_builder.stroke(&stroke, Affine::IDENTITY, stroke_color, None, &shape);
+        //             let smaller_rect = shape.rect().inset(-FOCUS_BORDER_WIDTH / 2.0);
+        //             let smaller_shape = RoundedRect::from_rect(smaller_rect, shape.radii());
+        //             let stroke_color = Color::rgb(0.0, 0.0, 0.0);
+        //             scene_builder.stroke(&stroke, Affine::IDENTITY, stroke_color, None, &shape);
+        //             background.draw_shape(scene_builder, &smaller_shape, layout, viewport_size);
         let effects = self.style.get_effects();
     }
-}
 
-//         let background = node.get::<Background>().unwrap();
-//         if node.get::<Focused>().filter(|focused| focused.0).is_some() {
-//             let stroke_color = Color::rgb(1.0, 1.0, 1.0);
-//             let stroke = Stroke::new(FOCUS_BORDER_WIDTH as f32 / 2.0);
-//             scene_builder.stroke(&stroke, Affine::IDENTITY, stroke_color, None, &shape);
-//             let smaller_rect = shape.rect().inset(-FOCUS_BORDER_WIDTH / 2.0);
-//             let smaller_shape = RoundedRect::from_rect(smaller_rect, shape.radii());
-//             let stroke_color = Color::rgb(0.0, 0.0, 0.0);
-//             scene_builder.stroke(&stroke, Affine::IDENTITY, stroke_color, None, &shape);
-//             background.draw_shape(scene_builder, &smaller_shape, layout, viewport_size);
-//         } else {
-//             let stroke_color = translate_color(&node.get::<Border>().unwrap().colors.top);
-//             let stroke = Stroke::new(node.get::<Border>().unwrap().width.top.resolve(
-//                 Axis::Min,
-//                 &layout.size,
-//                 viewport_size,
-//             ) as f32);
-//             scene_builder.stroke(&stroke, Affine::IDENTITY, stroke_color, None, &shape);
-//             background.draw_shape(scene_builder, &shape, layout, viewport_size);
-//         };
+    fn stroke_box_shadow(&self, scene: &mut SceneBuilder<'_>) {
+        let effects = self.style.get_effects();
+    }
+
+    fn draw_radial_gradient(
+        &self,
+        scene: &mut SceneBuilder<'_>,
+        shape: &EndingShape<NonNegative<CSSPixelLength>, NonNegative<LengthPercentage>>,
+        position: &GenericPosition<LengthPercentage, LengthPercentage>,
+        items: &OwnedSlice<GenericGradientItem<StyloColor<Percentage>, LengthPercentage>>,
+        repeating: bool,
+    ) {
+        todo!()
+    }
+
+    fn draw_conic_gradient(
+        &self,
+        scene: &mut SceneBuilder<'_>,
+        angle: &Angle,
+        position: &GenericPosition<LengthPercentage, LengthPercentage>,
+        items: &OwnedSlice<GenericGradientItem<StyloColor<Percentage>, AngleOrPercentage>>,
+        repeating: bool,
+    ) {
+        todo!()
+    }
+}

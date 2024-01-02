@@ -4,8 +4,11 @@
 //! However, in Blitz, we do a style pass then a layout pass.
 //! This is slower, yes, but happens fast enough that it's not a huge issue.
 
-use crate::{styling::NodeData, Document};
-use taffy::{prelude::NodeId, AvailableSpace, Dimension, Size, Style, TaffyTree};
+use crate::Document;
+use taffy::{
+    prelude::{FlexDirection, NodeId},
+    AvailableSpace, Dimension, Size, Style,
+};
 
 impl Document {
     /// Walk the nodes now that they're properly styled and transfer their styles to the taffy style system
@@ -16,35 +19,69 @@ impl Document {
     pub fn resolve_layout(&mut self) {
         self.taffy.disable_rounding();
 
-        let root = self.merge_dom(0, self.viewport.font_size);
-
-        // We want the root container space to be auto unless specified
-        // todo - root size should be allowed to expand past the borders.
-        let root_size = Size {
-            width: Dimension::Auto,
-            height: Dimension::Auto,
+        let layout = Style {
+            flex_direction: FlexDirection::Column,
+            size: Size {
+                width: Dimension::Auto,
+                height: Dimension::Auto,
+            },
+            ..Default::default()
         };
+
+        let root = self.taffy.new_leaf(layout).unwrap();
+
+        self.merge_dom(0, Some(root), self.viewport.font_size);
 
         // But we want the layout space to be the viewport (so things like 100vh make sense)
         // In reality, we'll want the layout size to bleed through beyond the size of the container
         // The container should not be sized unless explicitly set
-        let available = Size {
+        let available_space = Size {
             width: AvailableSpace::Definite(self.viewport.window_size.width as _),
             height: AvailableSpace::Definite(self.viewport.window_size.height as _),
         };
 
-        let style = Style {
-            size: root_size,
-            ..self.taffy.style(root).unwrap().clone()
-        };
-
-        self.taffy.set_style(root, style).unwrap();
-        self.taffy.compute_layout(root, available).unwrap();
+        self.taffy.compute_layout(root, available_space).unwrap();
     }
 
     // todo: this is a dumb method and should be replaced with the taffy layouttree traits
-    fn merge_dom(&mut self, node_id: usize, mut font_size: f32) -> NodeId {
+    fn merge_dom(&mut self, node_id: usize, parent: Option<NodeId>, mut font_size: f32) {
         let data = &self.dom.nodes[node_id];
+
+        match &data.node.data {
+            markup5ever_rcdom::NodeData::Element { name, .. } => {
+                // skip head nodes/script nodes
+                // these are handled elsewhere...
+                match name.local.as_ref() {
+                    "style" | "head" | "script" => {
+                        if name.local.as_ref() == "style" {
+                            let contents = &self.dom.nodes[data.children[0]];
+
+                            for child in &data.children {
+                                println!("{:?}", self.dom.nodes[*child]);
+                            }
+
+                            match &contents.node.data {
+                                markup5ever_rcdom::NodeData::Text { contents } => {
+                                    let contents = contents.clone();
+                                    self.add_stylesheet(contents.borrow().as_ref());
+                                }
+                                _ => panic!("{data:?}"),
+                            }
+
+                            // self.add_stylesheet(css)
+                            // self.stylist.append_stylesheet(sheet, &self.dom.guard.read());
+                        }
+                        return;
+                    }
+                    _ => {}
+                }
+            }
+            markup5ever_rcdom::NodeData::Document => {}
+            markup5ever_rcdom::NodeData::Doctype { .. } => {}
+            markup5ever_rcdom::NodeData::Text { .. } => {}
+            markup5ever_rcdom::NodeData::Comment { .. } => return,
+            markup5ever_rcdom::NodeData::ProcessingInstruction { .. } => return,
+        }
 
         // 1. merge what we can, if we have to
         let style = self.get_node_style(data, font_size);
@@ -54,28 +91,26 @@ impl Document {
         data.layout_id.set(Some(leaf));
 
         // Cascade down the fontsize determined from stylo
-        data.style.borrow().styles.get_primary().map(|primary| {
-            // todo: cache this bs on the text node itself
-            use style::values::generics::transform::ToAbsoluteLength;
-            font_size = primary
-                .clone_font_size()
-                .computed_size()
-                .to_pixel_length(None)
-                .unwrap();
-        });
+        data.style
+            .borrow()
+            .styles
+            .get_primary()
+            .map(|primary| font_size = primary.clone_font_size().computed_size().px());
+
+        // Attach this node to its parent
+        if let Some(parent) = parent {
+            _ = self.taffy.add_child(parent, leaf);
+        }
 
         // 3. walk to to children and merge them too
         // Need to dance around the borrow checker, unfortunately
         for x in 0..data.children.len() {
             let child_id = self.dom.nodes[node_id].children[x];
-            let child_layout = self.merge_dom(child_id, font_size);
-            self.taffy.add_child(leaf, child_layout).unwrap();
+            self.merge_dom(child_id, Some(leaf), font_size);
         }
-
-        leaf
     }
 
-    fn get_node_style(&self, data: &NodeData, font_size: f32) -> Option<Style> {
+    fn get_node_style(&self, data: &crate::styling::NodeData, font_size: f32) -> Option<Style> {
         use markup5ever_rcdom::NodeData;
 
         match &data.node.data {
@@ -123,7 +158,7 @@ impl Document {
     }
 }
 
-fn translate_stylo_to_taffy(data: &NodeData) -> Style {
+fn translate_stylo_to_taffy(data: &crate::styling::NodeData) -> Style {
     let style_data = data.style.borrow();
     let primary = style_data.styles.primary();
 
