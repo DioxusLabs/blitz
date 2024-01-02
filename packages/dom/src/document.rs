@@ -1,10 +1,10 @@
 use crate::{node::FlowType, Node};
 use atomic_refcell::AtomicRefCell;
 use html5ever::tendril::TendrilSink;
-use markup5ever_rcdom::{Handle, RcDom};
+use markup5ever_rcdom::{Handle, NodeData, RcDom};
 use selectors::matching::QuirksMode;
 use slab::Slab;
-use std::{cell::RefCell, pin::Pin};
+use std::{cell::RefCell, collections::HashMap, pin::Pin};
 use style::{
     data::ElementData,
     dom::{TDocument, TNode},
@@ -35,6 +35,8 @@ pub struct Document {
 
     // caching for the stylist
     pub(crate) snapshots: SnapshotMap,
+
+    pub(crate) nodes_to_id: HashMap<String, usize>,
 }
 
 impl Document {
@@ -44,11 +46,13 @@ impl Document {
         let snapshots = SnapshotMap::new();
         let nodes = Box::new(Slab::new());
         let guard = SharedRwLock::new();
+        let nodes_to_id = HashMap::new();
         Self {
             guard,
             nodes,
             stylist,
             snapshots,
+            nodes_to_id,
         }
     }
 
@@ -81,13 +85,106 @@ impl Document {
             .read_from(&mut content.as_bytes())
             .unwrap();
 
-        fill_slab_with_handles(
-            &mut self.nodes,
-            document.document.clone(),
-            0,
-            None,
-            &self.guard,
-        );
+        self.populate_from_rc_dom(&[document.document.clone()], None);
+    }
+
+    pub fn populate_from_rc_dom(&mut self, children: &[Handle], parent: Option<usize>) {
+        for (child_idx, node) in children.into_iter().enumerate() {
+            // Create this node, absorbing any script/style data.
+            let id = self.add_node(node, child_idx, parent);
+
+            // Add this node to its parent's list of children.
+            if let Some(parent) = parent {
+                self.nodes[parent].children.push(id);
+            }
+
+            // Now go insert its children. We want their IDs to come back here so we know how to walk them.
+            self.populate_from_rc_dom(&node.children.borrow(), Some(id));
+        }
+    }
+
+    pub fn add_node(&mut self, node: &Handle, child_idx: usize, parent: Option<usize>) -> usize {
+        let slab_ptr = self.nodes.as_mut() as *mut Slab<Node>;
+        let entry = self.nodes.vacant_entry();
+        let id = entry.key();
+        let data: AtomicRefCell<ElementData> = Default::default();
+        let style = Style::DEFAULT;
+
+        entry.insert(Node {
+            id,
+            style,
+            child_idx,
+            children: vec![],
+            node: node.clone(),
+            parent,
+            flow: FlowType::Block,
+            cache: Cache::new(),
+            // dom_data: todo!(),
+            data,
+            unrounded_layout: Layout::new(),
+            final_layout: Layout::new(),
+            tree: slab_ptr,
+            guard: self.guard.clone(),
+        });
+
+        match &node.data {
+            NodeData::Element {
+                name,
+                attrs,
+                template_contents,
+                ..
+            } => {
+                // If the node has an ID, store it in the ID map.
+                if let Some(node_id) = attrs
+                    .borrow()
+                    .iter()
+                    .find(|attr| attr.name.local.as_ref() == "id")
+                {
+                    self.nodes_to_id.insert(node_id.value.to_string(), id);
+                }
+
+                //
+                match name.local.as_ref() {
+                    // Attach the style to the document
+                    "style" => {
+                        let mut css = String::new();
+                        for child in node.children.borrow().iter() {
+                            match &child.data {
+                                NodeData::Text { contents } => {
+                                    css.push_str(&contents.borrow().to_string());
+                                }
+                                _ => {}
+                            }
+                        }
+                        self.add_stylesheet(&css);
+                    }
+
+                    // todo: Load images
+                    "img" => {}
+
+                    // Todo: Load scripts
+                    "script" => {}
+
+                    // Load template elements (unpaired usually)
+                    "template" => {
+                        if let Some(template_contents) = template_contents.borrow().as_ref() {
+                            let id = self
+                                .populate_from_rc_dom(&template_contents.children.borrow(), None);
+                        }
+                    }
+
+                    _ => {}
+                }
+            }
+            // markup5ever_rcdom::NodeData::Document => todo!(),
+            // markup5ever_rcdom::NodeData::Doctype { name, public_id, system_id } => todo!(),
+            // markup5ever_rcdom::NodeData::Text { contents } => todo!(),
+            // markup5ever_rcdom::NodeData::Comment { contents } => todo!(),
+            // markup5ever_rcdom::NodeData::ProcessingInstruction { target, contents } => todo!(),
+            _ => {}
+        }
+
+        id
     }
 
     pub fn add_stylesheet(&mut self, css: &str) {
@@ -148,8 +245,6 @@ impl Document {
             height: AvailableSpace::Definite(size.height.to_f32_px() as _),
         };
 
-        dbg!(available_space);
-
         let root = 0_usize;
 
         taffy::compute_root_layout(self, root.into(), available_space);
@@ -158,58 +253,4 @@ impl Document {
     pub fn set_document(&mut self, content: String) {}
 
     pub fn add_element(&mut self) {}
-}
-
-// Assign IDs to the RcDom nodes by walking the tree and pushing them into the slab
-// We just care that the root is 0, all else can be whatever
-// Returns the node that just got inserted
-fn fill_slab_with_handles(
-    slab: &mut Slab<Node>,
-    node: Handle,
-    child_index: usize,
-    parent: Option<usize>,
-    guard: &SharedRwLock,
-) -> usize {
-    // todo: we want to skip filling comments/scripts/control, etc
-    // Dioxus-rsx won't generate this however, so we're fine for now, but elements and text nodes are different
-
-    // Reserve an entry
-    let id = {
-        let slab_ptr = slab as *mut Slab<Node>;
-        let entry = slab.vacant_entry();
-        let id = entry.key();
-        let data: AtomicRefCell<ElementData> = Default::default();
-        let style = Style::DEFAULT;
-        entry.insert(Node {
-            id,
-            style,
-            child_idx: child_index,
-            children: vec![],
-            node: node.clone(),
-            parent,
-            flow: FlowType::Block,
-            cache: Cache::new(),
-            // dom_data: todo!(),
-            data,
-            unrounded_layout: Layout::new(),
-            final_layout: Layout::new(),
-            tree: slab_ptr,
-            guard: guard.clone(),
-        });
-        id
-    };
-
-    // Now go insert its children. We want their IDs to come back here so we know how to walk them.
-    // We'll want some sort of linked list thing too to implement NextSibiling, etc
-    // We're going to accumulate the children IDs here and then go back and edit the entry
-    // All this dance is to make the borrow checker happy.
-    slab[id].children = node
-        .children
-        .borrow()
-        .iter()
-        .enumerate()
-        .map(|(idx, child)| fill_slab_with_handles(slab, child.clone(), idx, Some(id), guard))
-        .collect();
-
-    id
 }

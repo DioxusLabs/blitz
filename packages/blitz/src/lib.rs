@@ -7,19 +7,17 @@ lib.rs -> DioxusNative -> Window -> Document
 mod start;
 pub use start::*;
 
+mod devtools;
+mod dioxus_native;
 mod fontcache;
+mod glaizer_integration;
 mod imagecache;
 mod render;
-
-mod dioxus_native;
 mod text;
+mod util;
 mod viewport;
 mod waker;
 mod window;
-
-mod util;
-
-mod glaizer_integration;
 
 pub use glaizer_integration::*;
 

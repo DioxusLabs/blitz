@@ -68,7 +68,7 @@ impl LayoutPartialTree for Document {
 
             let font_metrics = FontMetrics {
                 char_width: 32.0,
-                char_height: 32.0,
+                char_height: 16.0,
             };
 
             match &node.node.data {
@@ -81,7 +81,27 @@ impl LayoutPartialTree for Document {
                 markup5ever_rcdom::NodeData::Element { name, attrs, .. } => {
                     // for the shadow root type elements
 
-                    // todo: need to handle shadow roots
+                    // Not all nodes need a layout.....
+                    // Skip laying out style, script, and templates
+                    match name.local.as_ref() {
+                        "title" | "head" | "style" | "template" | "script" => {
+                            return taffy::LayoutOutput::HIDDEN
+                        }
+                        _ => {}
+                    }
+
+                    // Hide hidden nodes
+                    if let Some(attr) = attrs
+                        .borrow()
+                        .iter()
+                        .find(|attr| attr.name.local.as_ref() == "hidden")
+                    {
+                        if attr.value.to_string() == "true" || attr.value.to_string() == "" {
+                            return taffy::LayoutOutput::HIDDEN;
+                        }
+                    }
+
+                    // todo: need to handle shadow roots by actually descending into them
                     if name.local.as_ref() == "input" {
                         let value = attrs
                             .borrow()
@@ -93,6 +113,7 @@ impl LayoutPartialTree for Document {
                             return lay_text(inputs, &node.style, &value, &font_metrics);
                         }
                     }
+
                     match node.style.display {
                         Display::Block => compute_block_layout(tree, node_id, inputs),
                         Display::Flex => compute_flexbox_layout(tree, node_id, inputs),

@@ -25,10 +25,10 @@ use vello::{
 };
 use vello::{Renderer as VelloRenderer, RendererOptions};
 
-use crate::fontcache::FontCache;
 use crate::imagecache::ImageCache;
 use crate::text::TextContext;
 use crate::viewport::Viewport;
+use crate::{devtools::Devtools, fontcache::FontCache};
 
 pub struct Renderer {
     pub dom: Document,
@@ -54,6 +54,8 @@ pub struct Renderer {
     /// A storage of fonts to load in and out.
     /// Whenever we encounter new fonts during parsing + mutations, this will become populated
     pub(crate) fonts: FontCache,
+
+    pub devtools: Devtools,
 }
 
 impl Renderer {
@@ -96,6 +98,7 @@ impl Renderer {
             text_context: Default::default(),
             images: Default::default(),
             fonts: Default::default(),
+            devtools: Default::default(),
         }
     }
 

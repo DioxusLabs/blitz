@@ -59,7 +59,6 @@ use taffy::{prelude::Style, LengthPercentageAuto};
 impl crate::document::Document {
     /// Walk the whole tree, converting styles to layout
     pub fn flush_styles_to_layout(&mut self, children: Vec<usize>) {
-        println!("flushing styles to layout {:?}", children);
         // make a floating element
         for child in children {
             let children = {
@@ -245,21 +244,14 @@ impl crate::document::Document {
             ua_or_user: &guard.read(),
         };
 
-        // Note that html5ever parses the first node as the document, so we need to unwrap it and get the first child
-        // For the sake of this demo, it's always just a single body node, but eventually we will want to construct something like the
-        // BoxTree struct that servo uses.
-        self.stylist.flush(
-            &guards,
-            Some({
-                let node = &self.nodes[0];
-                TDocument::as_node(&node)
-                    .first_child()
-                    .unwrap()
-                    .as_element()
-                    .unwrap()
-            }),
-            Some(&self.snapshots),
-        );
+        let root = TDocument::as_node(&&self.nodes[0])
+            .first_child()
+            .unwrap()
+            .as_element()
+            .unwrap();
+
+        self.stylist
+            .flush(&guards, Some(root), Some(&self.snapshots));
 
         // Build the style context used by the style traversal
         let context = SharedStyleContext {
@@ -396,7 +388,6 @@ impl<'a> TNode for BlitzNode<'a> {
     fn as_element(&self) -> Option<Self::ConcreteElement> {
         match self.node.data {
             NodeData::Element { .. } => Some(self),
-            // NodeData::Document { .. } => Some(self),
             _ => None,
         }
     }
@@ -500,7 +491,7 @@ impl<'a> selectors::Element for BlitzNode<'a> {
     }
 
     fn is_same_type(&self, other: &Self) -> bool {
-        unimplemented!()
+        false
     }
 
     fn attr_matches(
@@ -513,7 +504,13 @@ impl<'a> selectors::Element for BlitzNode<'a> {
             &<Self::Impl as selectors::SelectorImpl>::AttrValue,
         >,
     ) -> bool {
-        unimplemented!()
+        let mut has_attr = false;
+        self.each_attr_name(|f| {
+            if f.as_ref() == local_name.as_ref() {
+                has_attr = true;
+            }
+        });
+        has_attr
     }
 
     fn match_non_ts_pseudo_class(
@@ -779,11 +776,12 @@ impl<'a> TElement for BlitzNode<'a> {
     }
 
     unsafe fn clear_data(&self) {
-        unimplemented!()
+        // unimplemented!()
     }
 
     fn has_data(&self) -> bool {
-        unimplemented!()
+        true
+        // false
         // true // all nodes should have data
     }
 

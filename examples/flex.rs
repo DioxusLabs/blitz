@@ -6,27 +6,29 @@ use dioxus::prelude::*;
 
 fn main() {
     let cfg = Config {
-        stylesheets: vec![CSS.to_string()],
+        stylesheets: vec![],
     };
     blitz::launch_cfg(app, cfg);
 }
 
 fn app(cx: Scope) -> Element {
     render! {
-        div { id: "container",
-            div { "Hello " }
-            div { "world! " }
-        }
-        div { id: "container",
-            div { "Dioxus " }
-            div { "plus " }
-            div { "stylo " }
+        div {
+            style { CSS }
+            div { id: "container",
+                div { "Hello " }
+                div { "world! " }
+            }
+            div { id: "container",
+                div { "Dioxus " }
+                div { "plus " }
+                div { "stylo " }
+            }
         }
     }
 }
 
 const CSS: &str = r#"
-
 #container {
     display: flex;
     flex-direction: row;

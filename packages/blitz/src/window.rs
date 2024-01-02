@@ -121,6 +121,10 @@ impl View {
                         *self.renderer.viewport.zoom_mut() -= 0.1;
                         self.window.request_redraw();
                     }
+                    KeyCode::ShiftLeft => {
+                        self.renderer.devtools.show_layout = !self.renderer.devtools.show_layout;
+                        self.window.request_redraw();
+                    }
                     _ => {}
                 }
             }

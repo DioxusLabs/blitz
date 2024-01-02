@@ -1,9 +1,8 @@
 use std::cell::RefCell;
 
-use crate::{renderer::Renderer, util::StyloGradient};
+use crate::{devtools::Devtools, renderer::Renderer, util::StyloGradient};
 use crate::{text::TextContext, util::GradientSlice};
-use blitz_dom::Document;
-use blitz_dom::Node as NodeData;
+use blitz_dom::{Document, Node};
 use html5ever::tendril::{fmt::UTF8, Tendril};
 use style::{
     properties::{style_structs::Outline, ComputedValues},
@@ -23,7 +22,7 @@ use style::{
 };
 use taffy::prelude::Layout;
 use vello::{
-    kurbo::{Affine, Point, Vec2},
+    kurbo::{Affine, Point, Stroke, Vec2},
     peniko::Color,
 };
 use vello::{
@@ -91,31 +90,46 @@ impl Renderer {
 
         let (name, attrs) = match &element.node.data {
             NodeData::Element { name, attrs, .. } => {
+                // Hide hidden things...
+                // todo: move this to state on the element itself
+                if let Some(attr) = attrs
+                    .borrow()
+                    .iter()
+                    .find(|attr| attr.name.local.as_ref() == "hidden")
+                {
+                    if attr.value.to_string() == "true" || attr.value.to_string() == "" {
+                        return;
+                    }
+                }
+
                 // skip head nodes/script nodes
                 // these are handled elsewhere...
                 match name.local.as_ref() {
-                    "style" | "head" | "script" => return,
+                    "style" | "head" | "script" | "template" | "title" => return,
                     _ => (name, attrs),
                 }
             }
             _ => return,
         };
 
-        let cx = self.element_cx(element, location);
+        if element.data.borrow().styles.get_primary().is_none() {
+            println!("no styles for {:?}", element);
+            return;
+        }
 
+        let cx = self.element_cx(element, location);
         cx.stroke_effects(scene);
         cx.stroke_outline(scene);
         cx.stroke_frame(scene);
         cx.stroke_border(scene);
+        cx.stroke_devtools(scene);
 
         for child in &cx.element.children {
             match &self.dom.tree()[*child].node.data {
                 NodeData::Element { .. } => self.render_element(scene, *child, cx.pos),
                 NodeData::Text { contents } => {
-                    //
-                    let contents = contents.borrow();
                     let (_layout, pos) = self.node_position(*child, cx.pos);
-                    cx.stroke_text(scene, &self.text_context, contents.as_ref(), pos)
+                    cx.stroke_text(scene, &self.text_context, contents.borrow().as_ref(), pos)
                 }
                 NodeData::Document => {}
                 NodeData::Doctype { .. } => {}
@@ -141,7 +155,7 @@ impl Renderer {
         }
     }
 
-    fn element_cx<'a>(&'a self, element: &'a NodeData, location: Point) -> ElementCx<'a> {
+    fn element_cx<'a>(&'a self, element: &'a Node, location: Point) -> ElementCx<'a> {
         let style = element.data.borrow().styles.primary().clone();
 
         let (mut layout, mut pos) = self.node_position(element.id, location);
@@ -172,6 +186,7 @@ impl Renderer {
             font_size,
             text_color,
             transform,
+            devtools: &self.devtools,
         }
     }
 
@@ -198,10 +213,11 @@ struct ElementCx<'a> {
     layout: Layout,
     pos: Point,
     scale: f64,
-    element: &'a NodeData,
+    element: &'a Node,
     font_size: f32,
     text_color: Color,
     transform: Affine,
+    devtools: &'a Devtools,
 }
 
 impl ElementCx<'_> {
@@ -222,6 +238,30 @@ impl ElementCx<'_> {
             transform,
             contents,
         )
+    }
+
+    fn stroke_devtools(&self, scene: &mut SceneBuilder) {
+        if self.devtools.show_layout {
+            let shape = &self.frame.outer_rect;
+            let stroke = Stroke::new(self.scale);
+
+            let stroke_color = match self.element.style.display {
+                taffy::prelude::Display::Block => Color::rgb(1.0, 0.0, 0.0),
+                taffy::prelude::Display::Flex => Color::rgb(0.0, 1.0, 0.0),
+                taffy::prelude::Display::Grid => Color::rgb(0.0, 0.0, 1.0),
+                taffy::prelude::Display::None => Color::rgb(0.0, 0.0, 1.0),
+            };
+
+            scene.stroke(&stroke, self.transform, stroke_color, None, &shape);
+        }
+
+        // if self.devtools.show_style {
+        //     self.frame.draw_style(scene);
+        // }
+
+        // if self.devtools.print_hover {
+        //     self.frame.draw_hover(scene);
+        // }
     }
 
     fn stroke_frame(&self, scene: &mut SceneBuilder) {
