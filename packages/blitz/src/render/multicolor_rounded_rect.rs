@@ -44,6 +44,8 @@ impl ElementFrame {
     pub fn new(style: &ComputedValues, layout: &Layout, scale: f64) -> Self {
         let (border, outline) = (style.get_border(), style.get_outline());
 
+        // let scale = 1.0;
+
         // Resolve and rescale
         // We have to scale since document pixels are not same same as rendered pixels
         let border_top_width = scale * border.border_top_width.to_f64_px();
@@ -54,7 +56,7 @@ impl ElementFrame {
 
         let width: f64 = layout.size.width.into();
         let height: f64 = layout.size.height.into();
-        let width =  width;
+        let width =  scale * width;
         let height = scale * height;
 
         let outer_rect = Rect::new(0.0, 0.0, width, height);

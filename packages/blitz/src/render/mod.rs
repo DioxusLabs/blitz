@@ -102,6 +102,19 @@ impl Renderer {
                     }
                 }
 
+                // Hide inputs with type=hidden
+                if name.local.as_ref() == "input" {
+                    let attrs = &attrs.borrow();
+
+                    // if the input type is hidden, hide it
+                    if let Some(attr) = attrs.iter().find(|attr| attr.name.local.as_ref() == "type")
+                    {
+                        if attr.value.to_string() == "hidden" {
+                            return;
+                        }
+                    }
+                }
+
                 // skip head nodes/script nodes
                 // these are handled elsewhere...
                 match name.local.as_ref() {
@@ -115,6 +128,15 @@ impl Renderer {
         if element.data.borrow().styles.get_primary().is_none() {
             // println!("no styles for {:?}", element);
             return;
+        }
+
+        // Shouldn't even be getting here if we don't have a laayout
+        // todo: refactor all this so non-laid out elements are skipped
+        match element.style.display {
+            taffy::prelude::Display::Block => {}
+            taffy::prelude::Display::Flex => {}
+            taffy::prelude::Display::Grid => {}
+            taffy::prelude::Display::None => return,
         }
 
         let cx = self.element_cx(element, location);
@@ -148,7 +170,7 @@ impl Renderer {
                     .map(|attr| attr.value.to_string());
 
                 if let Some(value) = value {
-                    cx.stroke_text(scene, &self.text_context, value.as_ref(), location)
+                    // cx.stroke_text(scene, &self.text_context, value.as_ref(), location)
                 }
             }
             _ => {}
@@ -169,12 +191,12 @@ impl Renderer {
 
         let inherited_text = style.get_inherited_text();
         let font = style.get_font();
-        let font_size = font.font_size.computed_size().px() * scale as f32;
+        let font_size = font.font_size.computed_size().px() as f32;
         let text_color = inherited_text.clone_color().as_vello();
 
         // the bezpaths for every element are (potentially) cached (not yet, tbd)
         // By performing the transform, we prevent the cache from becoming invalid when the page shifts around
-        let transform = Affine::translate((pos.x, pos.y));
+        let transform = Affine::translate((pos.x * scale, pos.y * scale));
 
         ElementCx {
             frame,
@@ -192,11 +214,7 @@ impl Renderer {
 
     fn node_position(&self, node: usize, location: Point) -> (Layout, Point) {
         let layout = self.layout(node);
-        let pos = location
-            + Vec2::new(
-                layout.location.x as f64 * self.viewport.scale_f64(),
-                layout.location.y as f64 * self.viewport.scale_f64(),
-            );
+        let pos = location + Vec2::new(layout.location.x as f64, layout.location.y as f64);
         (layout, pos)
     }
 
@@ -228,12 +246,21 @@ impl ElementCx<'_> {
         contents: &str,
         pos: Point,
     ) {
-        let transform = Affine::translate(pos.to_vec2() + Vec2::new(0.0, self.font_size as f64));
+        let scale = self.scale;
+        // let transform = Affine::new( self.transform.to+ translate);
+
+        // let translate = Affine::translate((pos.x * scale, pos.y * scale));
+        let transform = self
+            .transform
+            .then_translate((0.0, self.font_size as f64 * self.scale as f64).into());
+
+        // let transform = Affine::translate(pos.to_vec2() + Vec2::new(0.0, self.font_size as f64))
+        //     * Affine::scale(self.scale);
 
         text_context.add(
             scene,
             None,
-            self.font_size,
+            self.font_size * self.scale as f32,
             Some(self.text_color),
             transform,
             contents,
@@ -271,7 +298,30 @@ impl ElementCx<'_> {
             match segment {
                 None => self.draw_solid_frame(scene),
                 Gradient(gradient) => self.draw_gradient_frame(scene, gradient),
-                Url(_) => todo!("Implement background drawing for Image::Url"),
+                Url(_) => {
+                    //
+                    // todo!("Implement background drawing for Image::Url")
+                    println!("Implement background drawing for Image::Url");
+                    // let background = self.style.get_background();
+
+                    // todo: handle non-absolute colors
+                    // let bg_color = background.background_color.clone();
+                    // let bg_color = bg_color.as_absolute().unwrap();
+                    // let bg_color = Color::RED;
+                    let shape = self.frame.outer_rect;
+
+                    dbg!(shape);
+
+                    // Fill the color
+                    scene.fill(
+                        Fill::NonZero,
+                        self.transform,
+                        Color::RED,
+                        // bg_color.as_vello(),
+                        Option::None,
+                        &shape,
+                    );
+                }
                 Rect(_) => todo!("Implement background drawing for Image::Rect"),
                 PaintWorklet(_) => todo!("Implement background drawing for Image::PaintWorklet"),
                 CrossFade(_) => todo!("Implement background drawing for Image::CrossFade"),

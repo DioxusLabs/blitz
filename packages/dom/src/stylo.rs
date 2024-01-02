@@ -122,13 +122,25 @@ impl crate::document::Document {
 
                     // todo: support grid
 
-                    dbg!(style.get_position());
-                    dbg!(style.get_box());
+                    // dbg!(style.get_position());
+                    // dbg!(style.get_box());
                     // dbg!(style.get_inhe());
                     // hmmmmmm, these seem wrong, coming from stylo
-                    let display = match display.inside() {
+                    let mut display_ = match display.inside() {
                         style::values::specified::box_::DisplayInside::Flex => taffy::Display::Flex,
+                        style::values::specified::box_::DisplayInside::None => taffy::Display::None,
                         _ => taffy::Display::Block,
+                    };
+
+                    // todo: support these
+                    match display.outside() {
+                        style::values::specified::box_::DisplayOutside::None => {
+                            display_ = taffy::Display::None
+                        }
+                        style::values::specified::box_::DisplayOutside::Inline => {}
+                        style::values::specified::box_::DisplayOutside::Block => {}
+                        style::values::specified::box_::DisplayOutside::TableCaption => {}
+                        style::values::specified::box_::DisplayOutside::InternalTable => {}
                     };
 
                     let align_content = match align_content {
@@ -187,7 +199,7 @@ impl crate::document::Document {
                         padding: to_taffy_padding(padding),
                         border: to_taffy_border(border),
                         align_content,
-                        display,
+                        display: display_,
                         flex_direction,
                         justify_content: match justify_content {
                             style::computed_values::justify_content::T::FlexStart => {
@@ -256,7 +268,7 @@ impl crate::document::Document {
                                 }
                             },
                         },
-
+                        size: make_taffy_size(width, height),
                         // display
                         // overflow
                         // scrollbar_width
@@ -288,6 +300,17 @@ impl crate::document::Document {
                         // grid_column
                         ..Style::DEFAULT
                     };
+
+                    // // now we need to override the style if there is a style attribute
+                    // let style_attr = node
+                    //     .attrs()
+                    //     .borrow()
+                    //     .iter()
+                    //     .find(|attr| attr.name.local.as_ref() == "style");
+
+                    // if let Some(style_attr) = style_attr {
+                    //     // style::parser::ParserContext
+                    // }
                 }
 
                 // would like to change this not require a clone, but requires some refactoring
@@ -341,6 +364,44 @@ impl crate::document::Document {
 
         style::thread_state::exit(ThreadState::LAYOUT);
     }
+}
+
+fn make_taffy_size(
+    width: &style::values::generics::length::GenericSize<
+        style::values::generics::NonNegative<style::values::computed::LengthPercentage>,
+    >,
+    height: &style::values::generics::length::GenericSize<
+        style::values::generics::NonNegative<style::values::computed::LengthPercentage>,
+    >,
+) -> taffy::prelude::Size<taffy::prelude::Dimension> {
+    let width = match width {
+        style::values::generics::length::GenericSize::LengthPercentage(p) => {
+            if let Some(p) = p.0.to_percentage() {
+                taffy::Dimension::Percent(p.0)
+            } else {
+                taffy::Dimension::Length(p.0.to_length().unwrap().px())
+            }
+        }
+        style::values::generics::length::GenericSize::Auto => taffy::Dimension::Auto,
+    };
+
+    let height = match height {
+        style::values::generics::length::GenericSize::LengthPercentage(p) => {
+            if let Some(p) = p.0.to_percentage() {
+                taffy::Dimension::Percent(p.0)
+            } else {
+                match &p.0.to_length() {
+                    Some(p) => taffy::Dimension::Length(p.px()),
+
+                    // todo: taffy needs to support calc
+                    None => taffy::Dimension::Auto,
+                }
+            }
+        }
+        style::values::generics::length::GenericSize::Auto => taffy::Dimension::Auto,
+    };
+
+    taffy::prelude::Size { width, height }
 }
 
 /// A handle to a node that Servo's style traits are implemented against
@@ -550,7 +611,11 @@ impl<'a> selectors::Element for BlitzNode<'a> {
         &self,
         ns: &<Self::Impl as selectors::SelectorImpl>::BorrowedNamespaceUrl,
     ) -> bool {
-        unimplemented!()
+        let data = self;
+        match &data.node.data {
+            NodeData::Element { name, .. } => &name.ns == ns,
+            _ => false,
+        }
     }
 
     fn is_same_type(&self, other: &Self) -> bool {
@@ -706,8 +771,10 @@ impl<'a> TElement for BlitzNode<'a> {
     }
 
     fn style_attribute(&self) -> Option<ArcBorrow<Locked<PropertyDeclarationBlock>>> {
-        // hmmmm, we need to parse the style attribute, maybe?
-        None
+        self.additional_data
+            .style_attribute
+            .as_ref()
+            .map(|f| f.borrow_arc())
     }
 
     fn animation_rule(
@@ -818,13 +885,9 @@ impl<'a> TElement for BlitzNode<'a> {
         unimplemented!()
     }
 
-    unsafe fn set_dirty_descendants(&self) {
-        println!("setting dirty descendants");
-    }
+    unsafe fn set_dirty_descendants(&self) {}
 
-    unsafe fn unset_dirty_descendants(&self) {
-        println!("unsetting dirty descendants");
-    }
+    unsafe fn unset_dirty_descendants(&self) {}
 
     fn store_children_to_process(&self, n: isize) {
         unimplemented!()
@@ -843,8 +906,8 @@ impl<'a> TElement for BlitzNode<'a> {
     }
 
     fn has_data(&self) -> bool {
-        true
-        // false
+        // true
+        false
         // true // all nodes should have data
     }
 
@@ -1054,4 +1117,13 @@ fn assert_size_of_equals() {
 
     // let size = mem::size_of::<StyleSharingCandidate<BlitzNode>>();
     // dbg!(size);
+}
+
+#[test]
+fn parse_inline() {
+    // let attrs = style::attr::AttrValue::from_serialized_tokenlist(
+    //     r#"visibility: hidden; left: 1306.5px; top: 50px; display: none;"#.to_string(),
+    // );
+
+    // let val = CSSInlineStyleDeclaration();
 }

@@ -105,9 +105,16 @@ impl Renderer {
     // Adjust the viewport
     pub(crate) fn set_size(&mut self, size: PhysicalSize<u32>) {
         self.viewport.window_size = size;
+        self.kick_viewport()
+    }
+
+    pub fn kick_viewport(&mut self) {
+        let size = self.viewport.window_size;
 
         if size.width > 0 && size.height > 0 {
-            self.dom.set_stylist_device(self.viewport.make_device());
+            self.dom
+                .set_stylist_device(dbg!(self.viewport.make_device()));
+            dbg!(&self.viewport);
             self.render_context
                 .resize_surface(&mut self.surface, size.width, size.height);
         }

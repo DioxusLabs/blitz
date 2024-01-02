@@ -50,6 +50,9 @@ impl View {
         let mut dom = Document::new(device);
         dom.write(markup);
 
+        // Include the default stylesheet
+        dom.add_stylesheet(include_str!("../default.css"));
+
         // add default styles, resolve layout and styles
         for ss in &cfg.stylesheets {
             dom.add_stylesheet(&ss);
@@ -108,20 +111,20 @@ impl View {
 
             // todo: if there's an active text input, we want to direct input towards it and translate system emi text
             WindowEvent::KeyboardInput { event, .. } => {
-                //
-                use tao::keyboard::KeyCode;
                 dbg!(&event);
 
                 match event.physical_key {
                     KeyCode::ArrowUp => {
-                        *self.renderer.viewport.zoom_mut() += 0.1;
+                        *self.renderer.viewport.zoom_mut() += 0.001;
+                        self.renderer.kick_viewport();
                         self.window.request_redraw();
                     }
                     KeyCode::ArrowDown => {
-                        *self.renderer.viewport.zoom_mut() -= 0.1;
+                        *self.renderer.viewport.zoom_mut() -= 0.001;
+                        self.renderer.kick_viewport();
                         self.window.request_redraw();
                     }
-                    KeyCode::F1 => {
+                    KeyCode::Enter => {
                         self.renderer.devtools.show_layout = !self.renderer.devtools.show_layout;
                         self.window.request_redraw();
                     }

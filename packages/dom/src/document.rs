@@ -1,4 +1,7 @@
-use crate::{node::FlowType, Node};
+use crate::{
+    node::{DomData, FlowType},
+    Node,
+};
 use atomic_refcell::AtomicRefCell;
 use html5ever::tendril::TendrilSink;
 use markup5ever_rcdom::{Handle, NodeData, RcDom};
@@ -114,7 +117,7 @@ impl Document {
         let data: AtomicRefCell<ElementData> = Default::default();
         let style = Style::DEFAULT;
 
-        entry.insert(Node {
+        let val = Node {
             id,
             style,
             child_idx,
@@ -123,13 +126,15 @@ impl Document {
             parent,
             flow: FlowType::Block,
             cache: Cache::new(),
-            // dom_data: todo!(),
             data,
             unrounded_layout: Layout::new(),
             final_layout: Layout::new(),
             tree: slab_ptr,
             guard: self.guard.clone(),
-        });
+            additional_data: DomData::default(),
+        };
+
+        let entry = entry.insert(val);
 
         match &node.data {
             NodeData::Element {
@@ -177,7 +182,7 @@ impl Document {
                         }
                     }
 
-                    _ => {}
+                    _ => entry.flush_style_attribute(),
                 }
             }
             // markup5ever_rcdom::NodeData::Document => todo!(),

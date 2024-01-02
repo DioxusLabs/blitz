@@ -6,6 +6,7 @@
 
 use crate::{
     document::Document,
+    image::{image_measure_function, ImageContext},
     node::Node,
     text::{text_measure_function, FontMetrics, TextContext, WritingMode},
 };
@@ -67,7 +68,7 @@ impl LayoutPartialTree for Document {
             let node = tree.node_from_id_mut(node_id);
 
             let font_metrics = FontMetrics {
-                char_width: 16.0,
+                char_width: 8.0,
                 char_height: 16.0,
             };
 
@@ -103,8 +104,18 @@ impl LayoutPartialTree for Document {
 
                     // todo: need to handle shadow roots by actually descending into them
                     if name.local.as_ref() == "input" {
+                        let attrs = &attrs.borrow();
+
+                        // if the input type is hidden, hide it
+                        if let Some(attr) =
+                            attrs.iter().find(|attr| attr.name.local.as_ref() == "type")
+                        {
+                            if attr.value.to_string() == "hidden" {
+                                return taffy::LayoutOutput::HIDDEN;
+                            }
+                        }
+
                         let value = attrs
-                            .borrow()
                             .iter()
                             .find(|attr| attr.name.local.as_ref() == "value")
                             .map(|attr| attr.value.to_string());
@@ -114,11 +125,40 @@ impl LayoutPartialTree for Document {
                         }
                     }
 
+                    if name.local.as_ref() == "img" {
+                        let attrs = &attrs.borrow();
+
+                        node.style.min_size = Size {
+                            width: Dimension::Length(272.0),
+                            height: Dimension::Length(92.0),
+                        };
+                        node.style.display = Display::Block;
+
+                        return compute_leaf_layout(
+                            inputs,
+                            &node.style,
+                            |known_dimensions, _available_space| {
+                                let image_data = ImageContext {
+                                    height: 92.0,
+                                    width: 272.0,
+                                };
+                                Size {
+                                    width: image_data.width,
+                                    height: image_data.height,
+                                }
+                                // image_measure_function(
+                                //     known_dimensions,
+                                //     &image_data, // node.image_data.as_ref().unwrap(),
+                                // )
+                            },
+                        );
+                    }
+
                     match node.style.display {
                         Display::Block => compute_block_layout(tree, node_id, inputs),
                         Display::Flex => compute_flexbox_layout(tree, node_id, inputs),
                         Display::Grid => compute_grid_layout(tree, node_id, inputs),
-                        _ => todo!(),
+                        Display::None => taffy::LayoutOutput::HIDDEN,
                     }
                 }
                 markup5ever_rcdom::NodeData::Document => {
@@ -137,22 +177,18 @@ fn lay_text(
     contents: &str,
     font_metrics: &FontMetrics,
 ) -> taffy::LayoutOutput {
-    compute_leaf_layout(
-        inputs,
-        &node,
-        |known_dimensions, available_space| {
-            let context = TextContext {
-                text_content: contents.trim(),
-                writing_mode: WritingMode::Horizontal,
-            };
-            text_measure_function(known_dimensions, available_space, &context, font_metrics)
+    compute_leaf_layout(inputs, &node, |known_dimensions, available_space| {
+        let context = TextContext {
+            text_content: contents.trim(),
+            writing_mode: WritingMode::Horizontal,
+        };
+        text_measure_function(known_dimensions, available_space, &context, font_metrics)
 
-            // Size {
-            //     height: 200.0,
-            //     width: 100.0,
-            // }
-        },
-    )
+        // Size {
+        //     height: 200.0,
+        //     width: 100.0,
+        // }
+    })
 }
 
 impl RoundTree for Document {

@@ -8,6 +8,7 @@ Render HTML and CSS using Firefox's parallel browser-grade CSS engine. Leverages
 
 - Stylo (servo/style) for CSS resolution
 - Vello for drawing
+- Glyphon and Cosmic Text for text
 - Glazier for input handling
 - Taffy for Layout
 - WGPU for rendering

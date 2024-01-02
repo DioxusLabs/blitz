@@ -10,10 +10,10 @@ dioxus = { workspace = true }
 dioxus-ssr = { workspace = true }
 tao = { version = "0.20.0", features = ["serde"] }
 slab = "0.4.9"
-euclid = { version = "0.22", features = ["serde"] }
 style = { workspace = true, features = ["servo"] }
-selectors = { workspace = true }
 style_traits = { workspace = true, features = ["servo"] }
+euclid = { version = "0.22", features = ["serde"] }
+selectors = { workspace = true }
 servo_url = { workspace = true }
 taffy = { workspace = true }
 tokio = { version = "1.25.0", features = ["full"] }
@@ -33,6 +33,7 @@ string_cache = "0.8.7"
 futures-util = "0.3.29"
 raw-window-handle = "0.5.2"
 blitz-dom = { path = "../dom" }
+glyphon = "0.3.0"
 
 # futures-util = "0.3.29"
 # raw-window-handle = "0.5.0"

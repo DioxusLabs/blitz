@@ -3,8 +3,18 @@ use std::cell::{Cell, RefCell};
 use atomic_refcell::AtomicRefCell;
 use html5ever::{tendril::StrTendril, Attribute, LocalName, QualName};
 use markup5ever_rcdom::{Handle, NodeData};
+use selectors::matching::QuirksMode;
+use servo_url::ServoUrl;
 use slab::Slab;
-use style::{data::ElementData, shared_lock::SharedRwLock, values::specified::Attr, Atom};
+use style::{
+    data::ElementData,
+    properties::{parse_style_attribute, PropertyDeclaration, PropertyDeclarationBlock},
+    servo_arc::Arc,
+    shared_lock::{Locked, SharedRwLock},
+    stylesheets::CssRuleType,
+    values::specified::Attr,
+    Atom,
+};
 use style_traits::dom::ElementState;
 use taffy::{
     prelude::{Layout, Style},
@@ -49,9 +59,16 @@ pub struct Node {
 
     pub flow: FlowType,
 
+    pub additional_data: DomData,
+
     // The actual tree we belong to
     // this is unsafe!!
     pub tree: *mut Slab<Node>,
+}
+
+#[derive(Default)]
+pub struct DomData {
+    pub style_attribute: Option<Arc<Locked<PropertyDeclarationBlock>>>,
 }
 
 pub enum FlowType {
@@ -120,6 +137,40 @@ impl Node {
 
     pub fn is_text_node(&self) -> bool {
         matches!(self.node.data, NodeData::Text { .. })
+    }
+
+    pub fn attrs(&self) -> &RefCell<Vec<Attribute>> {
+        match &self.node.data {
+            NodeData::Element { attrs, .. } => attrs,
+            _ => panic!("not an element"),
+        }
+    }
+
+    pub fn flush_style_attribute(&mut self) {
+        let arc = {
+            let binding = self.attrs().borrow();
+            let attr = binding
+                .iter()
+                .find(|attr| attr.name.local.as_ref() == "style");
+
+            let Some(attr) = attr else {
+                return;
+            };
+
+            let url = servo_url::ServoUrl::from_url(
+                "data:text/css;charset=utf-8;base64,".parse().unwrap(),
+            );
+
+            Arc::new(self.guard.wrap(parse_style_attribute(
+                &attr.value,
+                &url,
+                None,
+                QuirksMode::NoQuirks,
+                CssRuleType::Style,
+            )))
+        };
+
+        self.additional_data.style_attribute = Some(arc);
     }
 }
 
