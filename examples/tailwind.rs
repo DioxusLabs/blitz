@@ -4,14 +4,14 @@
 //!
 //!
 
+use blitz::Config;
 use dioxus::prelude::*;
-use stylo_dioxus::Config;
 
 fn main() {
     let cfg = Config {
         stylesheets: vec![CSS.to_string()],
     };
-    stylo_dioxus::launch_cfg(app, cfg);
+    blitz::launch_cfg(app, cfg);
 }
 
 fn app(cx: Scope) -> Element {

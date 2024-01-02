@@ -78,8 +78,8 @@ pub fn launch_cfg_with_props<Props: 'static + Send + Clone>(
 
             Event::RedrawRequested(window_id) => {
                 windows.get_mut(&window_id).map(|window| {
-                    window.document.resolve_layout();
-                    window.document.render(&mut window.scene);
+                    window.renderer.dom.resolve();
+                    window.renderer.render(&mut window.scene);
                 });
             }
 

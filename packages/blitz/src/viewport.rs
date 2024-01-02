@@ -1,3 +1,4 @@
+use style::media_queries::{Device, MediaType};
 use tao::dpi::PhysicalSize;
 
 #[derive(Default)]
@@ -44,5 +45,14 @@ impl Viewport {
 
     pub fn zoom_mut(&mut self) -> &mut f32 {
         &mut self.zoom
+    }
+
+    pub fn make_device(&self) -> Device {
+        Device::new(
+            MediaType::screen(),
+            selectors::matching::QuirksMode::NoQuirks,
+            euclid::Size2D::new(self.window_size.width as _, self.window_size.height as _),
+            euclid::Scale::new(self.scale() as _),
+        )
     }
 }

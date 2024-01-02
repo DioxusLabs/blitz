@@ -73,7 +73,6 @@
 //     fn paint(&mut self, invalid: &Region) {}
 
 //     fn as_any(&mut self) -> &mut dyn std::any::Any {
-//         todo!()
 //     }
 
 //     fn size(&mut self, size: kurbo::Size) {}

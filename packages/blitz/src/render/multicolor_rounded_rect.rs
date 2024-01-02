@@ -54,6 +54,8 @@ impl ElementFrame {
 
         let width: f64 = layout.size.width.into();
         let height: f64 = layout.size.height.into();
+        let width =  width;
+        let height = scale * height;
 
         let outer_rect = Rect::new(0.0, 0.0, width, height);
         let inner_rect = Rect::new(
@@ -208,25 +210,25 @@ impl ElementFrame {
                 ArcSide::Inner => (x0 + self.border_left_width, y0 + self.border_top_width),
                 ArcSide::Outer => (x0, y0),
                 ArcSide::Outline => (x0 - self.outline_width, y0 - self.outline_width),
-                ArcSide::Middle => todo!(),
+                ArcSide::Middle => unimplemented!(),
             },
             Corner::TopRight => match side {
                 ArcSide::Inner => (x1 - self.border_right_width, y0 + self.border_top_width),
                 ArcSide::Outer => (x1, y0),
                 ArcSide::Outline => (x1 + self.outline_width, y0 - self.outline_width),
-                ArcSide::Middle => todo!(),
+                ArcSide::Middle => unimplemented!(),
             },
             Corner::BottomRight => match side {
                 ArcSide::Inner => (x1 - self.border_right_width, y1 - self.border_bottom_width),
                 ArcSide::Outer => (x1, y1),
                 ArcSide::Outline => (x1 + self.outline_width, y1 + self.outline_width),
-                ArcSide::Middle => todo!(),
+                ArcSide::Middle => unimplemented!(),
             },
             Corner::BottomLeft => match side {
                 ArcSide::Inner => (x0 + self.border_left_width, y1 - self.border_bottom_width),
                 ArcSide::Outer => (x0, y1),
                 ArcSide::Outline => (x0 - self.outline_width, y1 + self.outline_width),
-                ArcSide::Middle => todo!(),
+                ArcSide::Middle => unimplemented!(),
             },
         };
 
@@ -366,7 +368,7 @@ impl ElementFrame {
             (Left, TopLeft, Outer) => 0.0,
             (Left, TopLeft, Inner) => theta,
 
-            _ => todo!(),
+            _ => unreachable!("Invalid edge/corner combination"),
         };
 
         Arc::new(

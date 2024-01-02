@@ -1,6 +1,10 @@
 //! Enable the dom to participate in styling by servo
 //!
-use crate::style_traverser;
+use crate::{
+    node::Node,
+    util::{to_taffy_border, to_taffy_padding},
+};
+use crate::{traverser::RecalcStyle, util::to_taffy_margin};
 
 use std::{
     borrow::{Borrow, Cow},
@@ -9,11 +13,10 @@ use std::{
 };
 
 use atomic_refcell::{AtomicRef, AtomicRefCell, AtomicRefMut};
-use dioxus::{core::exports::bumpalo::Bump, prelude::LazyNodes};
 use euclid::{Rect, Scale, Size2D};
 use fxhash::FxHashMap;
 use html5ever::tendril::TendrilSink;
-use markup5ever_rcdom::{Handle, RcDom};
+use markup5ever_rcdom::NodeData;
 use selectors::{
     matching::{ElementSelectorFlags, MatchingContext, VisitedHandlingMode},
     sink::Push,
@@ -33,7 +36,10 @@ use style::{
     global_style_data::GLOBAL_STYLE_DATA,
     media_queries::MediaType,
     media_queries::{Device as StyleDevice, MediaList},
-    properties::{PropertyDeclarationBlock, PropertyId, StyleBuilder},
+    properties::{
+        style_structs::{Border, Box as BoxStyle, Margin, Padding, Position},
+        PropertyDeclarationBlock, PropertyId, StyleBuilder,
+    },
     selector_parser::SelectorImpl,
     servo_arc::{Arc, ArcBorrow},
     shared_lock::{Locked, SharedRwLock, StylesheetGuards},
@@ -47,14 +53,192 @@ use style::{
     Atom,
 };
 use style_traits::dom::ElementState;
-use taffy::prelude::{Layout, Style, TaffyTree};
-use vello::kurbo;
+use taffy::{prelude::Style, LengthPercentageAuto};
 
-impl crate::Document {
+impl crate::document::Document {
+    /// Walk the whole tree, converting styles to layout
+    pub fn flush_styles_to_layout(&mut self, children: Vec<usize>) {
+        println!("flushing styles to layout {:?}", children);
+        // make a floating element
+        for child in children {
+            let children = {
+                let node = self.nodes.get_mut(child).unwrap();
+                let data = node.data.borrow();
+
+                if let Some(style) = data.styles.get_primary() {
+                    let margin = style.get_margin();
+                    let padding = style.get_padding();
+                    let border = style.get_border();
+                    let Position {
+                        top,
+                        right,
+                        bottom,
+                        left,
+                        z_index,
+                        flex_direction,
+                        flex_wrap,
+                        justify_content,
+                        align_content,
+                        align_items,
+                        flex_grow,
+                        flex_shrink,
+                        align_self,
+                        order,
+                        flex_basis,
+                        width,
+                        min_width,
+                        max_width,
+                        height,
+                        min_height,
+                        max_height,
+                        box_sizing,
+                        column_gap,
+                        aspect_ratio,
+                    } = style.get_position();
+
+                    let BoxStyle {
+                        _servo_top_layer,
+                        _servo_overflow_clip_box,
+                        display,
+                        position,
+                        float,
+                        clear,
+                        vertical_align,
+                        overflow_x,
+                        overflow_y,
+                        transform,
+                        rotate,
+                        scale,
+                        translate,
+                        perspective,
+                        perspective_origin,
+                        backface_visibility,
+                        transform_style,
+                        transform_origin,
+                        container_type,
+                        container_name,
+                        original_display,
+                    }: &BoxStyle = style.get_box();
+
+                    // todo: support grid
+                    let display = match display.inside() {
+                        style::values::specified::box_::DisplayInside::Flex => taffy::Display::Flex,
+                        _ => taffy::Display::Block,
+                    };
+
+                    let align_content = match align_content {
+                        style::computed_values::align_content::T::Stretch => {
+                            Some(taffy::AlignContent::Stretch)
+                        }
+                        style::computed_values::align_content::T::FlexStart => {
+                            Some(taffy::AlignContent::FlexStart)
+                        }
+                        style::computed_values::align_content::T::FlexEnd => {
+                            Some(taffy::AlignContent::FlexEnd)
+                        }
+                        style::computed_values::align_content::T::Center => {
+                            Some(taffy::AlignContent::Center)
+                        }
+                        style::computed_values::align_content::T::SpaceBetween => {
+                            Some(taffy::AlignContent::SpaceBetween)
+                        }
+                        style::computed_values::align_content::T::SpaceAround => {
+                            Some(taffy::AlignContent::SpaceAround)
+                        }
+                    };
+
+                    let flex_direction = match flex_direction {
+                        style::computed_values::flex_direction::T::Row => taffy::FlexDirection::Row,
+                        style::computed_values::flex_direction::T::RowReverse => {
+                            taffy::FlexDirection::RowReverse
+                        }
+                        style::computed_values::flex_direction::T::Column => {
+                            taffy::FlexDirection::Column
+                        }
+                        style::computed_values::flex_direction::T::ColumnReverse => {
+                            taffy::FlexDirection::ColumnReverse
+                        }
+                    };
+
+                    node.style = Style {
+                        margin: to_taffy_margin(margin),
+                        padding: to_taffy_padding(padding),
+                        border: to_taffy_border(border),
+                        align_content,
+                        display,
+                        flex_direction,
+                        flex_wrap: match flex_wrap {
+                            style::computed_values::flex_wrap::T::Wrap => taffy::FlexWrap::Wrap,
+                            style::computed_values::flex_wrap::T::WrapReverse => {
+                                taffy::FlexWrap::WrapReverse
+                            }
+                            style::computed_values::flex_wrap::T::Nowrap => taffy::FlexWrap::NoWrap,
+                        },
+                        flex_basis: match flex_basis {
+                            style::values::generics::flex::FlexBasis::Content => {
+                                taffy::Dimension::Auto
+                            }
+                            style::values::generics::flex::FlexBasis::Size(size) => match size {
+                                style::values::generics::length::GenericSize::LengthPercentage(
+                                    p,
+                                ) => {
+                                    if let Some(p) = p.0.to_percentage() {
+                                        taffy::Dimension::Percent(p.0)
+                                    } else {
+                                        taffy::Dimension::Length(p.0.to_length().unwrap().px())
+                                    }
+                                }
+                                style::values::generics::length::GenericSize::Auto => {
+                                    taffy::Dimension::Auto
+                                }
+                            },
+                        },
+
+                        // display
+                        // overflow
+                        // scrollbar_width
+                        // position
+                        // inset
+                        // size
+                        // min_size
+                        // max_size
+                        // aspect_ratio
+                        // margin
+                        // align_items
+                        // align_self
+                        // justify_items
+                        // justify_self
+                        // align_content
+                        // justify_content
+                        // gap
+                        // flex_direction
+                        // flex_wrap
+                        // flex_basis
+                        // flex_grow
+                        // flex_shrink
+                        // grid_template_rows
+                        // grid_template_columns
+                        // grid_auto_rows
+                        // grid_auto_columns
+                        // grid_auto_flow
+                        // grid_row
+                        // grid_column
+                        ..Style::DEFAULT
+                    };
+                }
+
+                // would like to change this not require a clone, but requires some refactoring
+                node.children.clone()
+            };
+
+            self.flush_styles_to_layout(children);
+        }
+    }
+
     pub fn resolve_stylist(&mut self) {
         style::thread_state::enter(ThreadState::LAYOUT);
 
-        let guard = &self.dom.guard;
+        let guard = &self.guard;
         let guards = StylesheetGuards {
             author: &guard.read(),
             ua_or_user: &guard.read(),
@@ -65,7 +249,14 @@ impl crate::Document {
         // BoxTree struct that servo uses.
         self.stylist.flush(
             &guards,
-            Some(self.dom.root_element()),
+            Some({
+                let node = &self.nodes[0];
+                TDocument::as_node(&node)
+                    .first_child()
+                    .unwrap()
+                    .as_element()
+                    .unwrap()
+            }),
             Some(&self.snapshots),
         );
 
@@ -83,261 +274,30 @@ impl crate::Document {
         };
 
         // components/layout_2020/lib.rs:983
-        println!("------Pre-traversing the DOM tree -----");
-        let root = self.dom.root_element();
+        let root = self.root_element();
+        let token = RecalcStyle::pre_traverse(root, &context);
 
-        let token = style_traverser::RecalcStyle::pre_traverse(root, &context);
-
-        // Style the elements, resolving their data
-        println!("------ Traversing domtree ------",);
-        let traverser = style_traverser::RecalcStyle::new(context);
-        style::driver::traverse_dom(&traverser, token, None);
+        if token.should_traverse() {
+            // Style the elements, resolving their data
+            let traverser = RecalcStyle::new(context);
+            style::driver::traverse_dom(&traverser, token, None);
+        }
 
         style::thread_state::exit(ThreadState::LAYOUT);
     }
 }
 
-pub struct RealDom {
-    pub nodes: Slab<NodeData>,
-
-    /// The parsed html5ever dom
-    pub document: RcDom,
-
-    pub guard: SharedRwLock,
-}
-
-impl RealDom {
-    pub fn from_dioxus(nodes: LazyNodes) -> Self {
-        Self::new(dioxus_ssr::render_lazy(nodes))
-    }
-
-    pub fn root_node(&self) -> BlitzNode {
-        BlitzNode(ref_based_alloc(Entry { id: 0, dom: self }))
-    }
-
-    pub fn new(html: String) -> RealDom {
-        // parse the html into a slab of node
-        let mut nodes = Slab::new();
-
-        // parse the html into a document
-        let document = html5ever::parse_document(RcDom::default(), Default::default())
-            .from_utf8()
-            .read_from(&mut html.as_bytes())
-            .unwrap();
-
-        fill_slab_with_handles(&mut nodes, document.document.clone(), 0, None);
-
-        RealDom {
-            nodes,
-            document,
-            guard: SharedRwLock::new(),
-        }
-    }
-
-    pub fn root_element(&self) -> BlitzNode {
-        TDocument::as_node(&self.root_node())
-            .first_child()
-            .unwrap()
-            .as_element()
-            .unwrap()
-    }
-}
-
-// Assign IDs to the RcDom nodes by walking the tree and pushing them into the slab
-// We just care that the root is 0, all else can be whatever
-// Returns the node that just got inserted
-fn fill_slab_with_handles(
-    slab: &mut Slab<NodeData>,
-    node: Handle,
-    child_index: usize,
-    parent: Option<usize>,
-) -> usize {
-    // todo: we want to skip filling comments/scripts/control, etc
-    // Dioxus-rsx won't generate this however, so we're fine for now, but elements and text nodes are different
-
-    // Reserve an entry
-    let id = {
-        let entry = slab.vacant_entry();
-        let id = entry.key();
-        let style: AtomicRefCell<ElementData> = Default::default();
-        entry.insert(NodeData {
-            id,
-            style,
-            child_idx: child_index,
-            children: vec![],
-            node: node.clone(),
-            layout_id: Default::default(),
-            // layout: Cell::new(Layout::new()),
-            // taffy_style: Default::default(),
-            parent,
-        });
-        id
-    };
-
-    // Now go insert its children. We want their IDs to come back here so we know how to walk them.
-    // We'll want some sort of linked list thing too to implement NextSibiling, etc
-    // We're going to accumulate the children IDs here and then go back and edit the entry
-    // All this dance is to make the borrow checker happy.
-    slab[id].children = node
-        .children
-        .borrow()
-        .iter()
-        .enumerate()
-        .map(|(idx, child)| fill_slab_with_handles(slab, child.clone(), idx, Some(id)))
-        .collect();
-
-    id
-}
-
-#[derive(Debug)]
-pub struct NodeData {
-    /// Our parent's ID
-    pub parent: Option<usize>,
-
-    /// Our Id
-    pub id: usize,
-
-    // Which child are we in our parent?
-    pub child_idx: usize,
-
-    // What are our children?
-    // Might want to use a linkedlist or something better at precise inserts/delets
-    pub children: Vec<usize>,
-
-    // might want to make this weak
-    pub node: markup5ever_rcdom::Handle,
-
-    // This little bundle of joy is our layout data from taffy and our style data from stylo
-    //
-    // todo: layout from new taffy
-    pub style: AtomicRefCell<ElementData>,
-
-    pub layout_id: Cell<Option<taffy::prelude::NodeId>>,
-    // pub layout: Cell<taffy::layout::Layout>,
-
-    // need to make sure we sync this style and the other style...
-    // pub taffy_style: RefCell<taffy::style::Style>,
-}
-
-// store_children_to_process
-// did_process_child
-// pub struct DomData {
-//     // ... we can probs just get away with using the html5ever types directly. basically just using the servo dom
-//     node: markup5ever_rcdom::Node,
-//     local_name: html5ever::LocalName,
-//     tag_name: markup5ever_rcdom::TagName,
-//     namespace: html5ever::Namespace,
-// prefix: DomRefCell<Option<html5ever::Prefix>>,
-// attrs: DomRefCell<Vec<Dom<Attr>>>,
-// id_attribute: DomRefCell<Option<Atom>>,
-// is: DomRefCell<Option<LocalName>>,
-// style_attribute: DomRefCell<Option<Arc<Locked<PropertyDeclarationBlock>>>>,
-// attr_list: MutNullableDom<NamedNodeMap>,
-// class_list: MutNullableDom<DOMTokenList>,
-//     state: Cell<ElementState>,
-// }
-
-// Like, we do even need separate types for elements/nodes/documents?
-#[derive(Debug, Clone, Copy)]
-pub struct BlitzNode<'a>(pub &'a Entry<'a>);
-
-impl<'a> BlitzNode<'a> {
-    pub fn with(&self, id: usize) -> Self {
-        Self(ref_based_alloc(Entry { id, dom: self.dom }))
-    }
-
-    pub fn bounds(&self, taffy: &TaffyTree) -> kurbo::Rect {
-        let taffy_id = self.data().layout_id.get();
-        let layout = taffy.layout(taffy_id.unwrap()).unwrap();
-
-        kurbo::Rect {
-            x0: layout.location.x.into(),
-            y0: layout.location.y.into(),
-            x1: (layout.location.x + layout.size.width).into(),
-            y1: (layout.location.y + layout.size.height).into(),
-        }
-    }
-}
-
-impl<'a> std::ops::Deref for BlitzNode<'a> {
-    type Target = Entry<'a>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-pub struct Entry<'a> {
-    pub dom: &'a RealDom,
-    pub id: usize,
-}
-
-impl std::fmt::Debug for Entry<'_> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("Entry").field("id", &self.id).finish()
-    }
-}
-
-fn ref_based_alloc(entry: Entry) -> &Entry {
-    Box::leak(Box::new(entry))
-}
-
-impl<'a> BlitzNode<'a> {
-    pub fn data(&self) -> &NodeData {
-        &self.0.dom.nodes[self.0.id]
-    }
-
-    // Get the nth node in the parents child list
-    fn forward(&self, n: usize) -> Option<Self> {
-        let node = self.data();
-
-        self.dom.nodes[node.parent?]
-            .children
-            .get(node.child_idx + n)
-            .map(|id| self.with(*id))
-    }
-
-    fn backward(&self, n: usize) -> Option<Self> {
-        let node = self.data();
-
-        if node.child_idx < n {
-            return None;
-        }
-
-        self.dom.nodes[node.parent?]
-            .children
-            .get(node.child_idx - n)
-            .map(|id| self.with(*id))
-    }
-
-    fn is_element(&self) -> bool {
-        matches!(
-            self.data().node.data,
-            markup5ever_rcdom::NodeData::Element { .. }
-        )
-    }
-
-    fn is_text_node(&self) -> bool {
-        matches!(
-            self.data().node.data,
-            markup5ever_rcdom::NodeData::Text { .. }
-        )
-    }
-}
-
-impl PartialEq for BlitzNode<'_> {
-    fn eq(&self, other: &Self) -> bool {
-        self.id == other.id
-    }
-}
-
-impl Eq for BlitzNode<'_> {}
+/// A handle to a node that Servo's style traits are implemented against
+///
+/// Since BlitzNodes are not persistent (IE we don't keep the pointers around between frames), we choose to just implement
+/// the tree structure in the nodes themselves, and temporarily give out pointers during the layout phase.
+type BlitzNode<'a> = &'a Node;
 
 impl<'a> TDocument for BlitzNode<'a> {
     type ConcreteNode = BlitzNode<'a>;
 
     fn as_node(&self) -> Self::ConcreteNode {
-        self.clone()
+        self
     }
 
     fn is_html_document(&self) -> bool {
@@ -349,17 +309,17 @@ impl<'a> TDocument for BlitzNode<'a> {
     }
 
     fn shared_lock(&self) -> &SharedRwLock {
-        &self.dom.guard
+        &self.guard
     }
 }
 
 impl<'a> NodeInfo for BlitzNode<'a> {
     fn is_element(&self) -> bool {
-        self.is_element()
+        Node::is_element(self)
     }
 
     fn is_text_node(&self) -> bool {
-        self.is_text_node()
+        Node::is_text_node(self)
     }
 }
 
@@ -367,7 +327,7 @@ impl<'a> TShadowRoot for BlitzNode<'a> {
     type ConcreteNode = BlitzNode<'a>;
 
     fn as_node(&self) -> Self::ConcreteNode {
-        self.clone()
+        self
     }
 
     fn host(&self) -> <Self::ConcreteNode as TNode>::ConcreteElement {
@@ -389,15 +349,15 @@ impl<'a> TNode for BlitzNode<'a> {
     type ConcreteShadowRoot = BlitzNode<'a>;
 
     fn parent_node(&self) -> Option<Self> {
-        self.data().parent.map(|id| self.with(id))
+        self.parent.map(|id| self.with(id))
     }
 
     fn first_child(&self) -> Option<Self> {
-        self.data().children.first().map(|id| self.with(*id))
+        self.children.first().map(|id| self.with(*id))
     }
 
     fn last_child(&self) -> Option<Self> {
-        self.data().children.last().map(|id| self.with(*id))
+        self.children.last().map(|id| self.with(*id))
     }
 
     fn prev_sibling(&self) -> Option<Self> {
@@ -425,7 +385,7 @@ impl<'a> TNode for BlitzNode<'a> {
     }
 
     fn opaque(&self) -> OpaqueNode {
-        OpaqueNode(self.data().node.as_ref() as *const _ as usize)
+        OpaqueNode(self as *const _ as usize)
     }
 
     fn debug_id(self) -> usize {
@@ -433,9 +393,9 @@ impl<'a> TNode for BlitzNode<'a> {
     }
 
     fn as_element(&self) -> Option<Self::ConcreteElement> {
-        match self.data().node.data {
-            markup5ever_rcdom::NodeData::Element { .. } => Some(self.clone()),
-            // markup5ever_rcdom::NodeData::Document { .. } => Some(self.clone()),
+        match self.node.data {
+            NodeData::Element { .. } => Some(self),
+            // NodeData::Document { .. } => Some(self),
             _ => None,
         }
     }
@@ -446,7 +406,7 @@ impl<'a> TNode for BlitzNode<'a> {
             return None;
         };
 
-        Some(self.clone())
+        Some(self)
     }
 
     fn as_shadow_root(&self) -> Option<Self::ConcreteShadowRoot> {
@@ -459,7 +419,7 @@ impl<'a> selectors::Element for BlitzNode<'a> {
 
     // use the ptr of the rc as the id
     fn opaque(&self) -> selectors::OpaqueElement {
-        OpaqueElement::new(self.data().node.as_ref())
+        OpaqueElement::new(self)
     }
 
     fn parent_element(&self) -> Option<Self> {
@@ -524,9 +484,9 @@ impl<'a> selectors::Element for BlitzNode<'a> {
         &self,
         local_name: &<Self::Impl as selectors::SelectorImpl>::BorrowedLocalName,
     ) -> bool {
-        let data = self.data();
+        let data = self;
         match &data.node.data {
-            markup5ever_rcdom::NodeData::Element { name, .. } => &name.local == local_name,
+            NodeData::Element { name, .. } => &name.local == local_name,
             _ => false,
         }
     }
@@ -535,11 +495,11 @@ impl<'a> selectors::Element for BlitzNode<'a> {
         &self,
         ns: &<Self::Impl as selectors::SelectorImpl>::BorrowedNamespaceUrl,
     ) -> bool {
-        todo!()
+        unimplemented!()
     }
 
     fn is_same_type(&self, other: &Self) -> bool {
-        todo!()
+        unimplemented!()
     }
 
     fn attr_matches(
@@ -552,7 +512,7 @@ impl<'a> selectors::Element for BlitzNode<'a> {
             &<Self::Impl as selectors::SelectorImpl>::AttrValue,
         >,
     ) -> bool {
-        todo!()
+        unimplemented!()
     }
 
     fn match_non_ts_pseudo_class(
@@ -572,7 +532,7 @@ impl<'a> selectors::Element for BlitzNode<'a> {
     }
 
     fn apply_selector_flags(&self, flags: ElementSelectorFlags) {
-        // todo!()
+        // unimplemented!()
     }
 
     fn is_link(&self) -> bool {
@@ -610,8 +570,8 @@ impl<'a> selectors::Element for BlitzNode<'a> {
         let Some(al) = self.as_element() else {
             return false;
         };
-        let data = al.data().node.data.borrow();
-        let markup5ever_rcdom::NodeData::Element { name, attrs, .. } = data else {
+        let data = al.node.data.borrow();
+        let NodeData::Element { name, attrs, .. } = data else {
             return false;
         };
         let attrs = attrs.borrow();
@@ -653,25 +613,19 @@ impl<'a> selectors::Element for BlitzNode<'a> {
     }
 }
 
-impl std::hash::Hash for BlitzNode<'_> {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        state.write_usize(self.id)
-    }
-}
-
 impl<'a> TElement for BlitzNode<'a> {
     type ConcreteNode = BlitzNode<'a>;
 
     type TraversalChildrenIterator = Traverser<'a>;
 
     fn as_node(&self) -> Self::ConcreteNode {
-        self.clone()
+        self
     }
 
     fn traversal_children(&self) -> style::dom::LayoutIterator<Self::TraversalChildrenIterator> {
         LayoutIterator(Traverser {
-            dom: self.dom,
-            parent: self.clone(),
+            dom: self.tree(),
+            parent: self,
             child_index: 0,
         })
     }
@@ -724,9 +678,8 @@ impl<'a> TElement for BlitzNode<'a> {
 
     fn id(&self) -> Option<&style::Atom> {
         // None
-        let data = self.data();
-        let attrs = match data.node.data {
-            markup5ever_rcdom::NodeData::Element { ref attrs, .. } => attrs,
+        let attrs = match &self.node.data {
+            NodeData::Element { ref attrs, .. } => attrs,
             _ => return None,
         };
 
@@ -748,8 +701,8 @@ impl<'a> TElement for BlitzNode<'a> {
         let Some(al) = self.as_element() else {
             return;
         };
-        let data = al.data().node.data.borrow();
-        let markup5ever_rcdom::NodeData::Element { name, attrs, .. } = data else {
+        let data = &al.node.data;
+        let NodeData::Element { name, attrs, .. } = data else {
             return;
         };
         let attrs = attrs.borrow();
@@ -775,8 +728,8 @@ impl<'a> TElement for BlitzNode<'a> {
         let Some(al) = self.as_element() else {
             return;
         };
-        let data = al.data().node.data.borrow();
-        let markup5ever_rcdom::NodeData::Element { name, attrs, .. } = data else {
+        let data = &al.node.data;
+        let NodeData::Element { name, attrs, .. } = data else {
             return;
         };
         let attrs = attrs.borrow();
@@ -797,11 +750,11 @@ impl<'a> TElement for BlitzNode<'a> {
     }
 
     fn handled_snapshot(&self) -> bool {
-        todo!()
+        unimplemented!()
     }
 
     unsafe fn set_handled_snapshot(&self) {
-        todo!()
+        unimplemented!()
     }
 
     unsafe fn set_dirty_descendants(&self) {
@@ -813,32 +766,32 @@ impl<'a> TElement for BlitzNode<'a> {
     }
 
     fn store_children_to_process(&self, n: isize) {
-        todo!()
+        unimplemented!()
     }
 
     fn did_process_child(&self) -> isize {
-        todo!()
+        unimplemented!()
     }
 
     unsafe fn ensure_data(&self) -> AtomicRefMut<style::data::ElementData> {
-        self.data().style.borrow_mut()
+        self.data.borrow_mut()
     }
 
     unsafe fn clear_data(&self) {
-        todo!()
+        unimplemented!()
     }
 
     fn has_data(&self) -> bool {
-        todo!()
+        unimplemented!()
         // true // all nodes should have data
     }
 
     fn borrow_data(&self) -> Option<AtomicRef<style::data::ElementData>> {
-        self.data().style.try_borrow().ok()
+        self.data.try_borrow().ok()
     }
 
     fn mutate_data(&self) -> Option<AtomicRefMut<style::data::ElementData>> {
-        self.data().style.try_borrow_mut().ok()
+        self.data.try_borrow_mut().ok()
     }
 
     fn skip_item_display_fixup(&self) -> bool {
@@ -890,7 +843,10 @@ impl<'a> TElement for BlitzNode<'a> {
     }
 
     fn is_html_document_body_element(&self) -> bool {
-        self.0.id == 0
+        match self.node.data {
+            NodeData::Document => true,
+            _ => false,
+        }
     }
 
     fn synthesize_presentational_hints_for_legacy_attributes<V>(
@@ -906,18 +862,18 @@ impl<'a> TElement for BlitzNode<'a> {
         &self,
     ) -> &<style::selector_parser::SelectorImpl as selectors::parser::SelectorImpl>::BorrowedLocalName
     {
-        let data = self.data();
+        let data = self;
         match &data.node.data {
-            markup5ever_rcdom::NodeData::Element { name, .. } => &name.local,
+            NodeData::Element { name, .. } => &name.local,
             g => panic!("Not an element {g:?}"),
         }
     }
 
-    fn namespace(&self)
+        fn namespace(&self)
     -> &<style::selector_parser::SelectorImpl as selectors::parser::SelectorImpl>::BorrowedNamespaceUrl{
-        let data = self.data();
+        let data = self;
         match &data.node.data {
-            markup5ever_rcdom::NodeData::Element { name, .. } => &name.ns,
+            NodeData::Element { name, .. } => &name.ns,
             _ => panic!("Not an element"),
         }
     }
@@ -926,12 +882,12 @@ impl<'a> TElement for BlitzNode<'a> {
         &self,
         display: &style::values::specified::Display,
     ) -> euclid::default::Size2D<Option<app_units::Au>> {
-        todo!()
+        unimplemented!()
     }
 }
 
 pub struct Traverser<'a> {
-    dom: &'a RealDom,
+    dom: &'a Slab<Node>,
     parent: BlitzNode<'a>,
     child_index: usize,
 }
@@ -940,13 +896,19 @@ impl<'a> Iterator for Traverser<'a> {
     type Item = BlitzNode<'a>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let node = self.parent.data().children.get(self.child_index)?;
+        let node = self.parent.children.get(self.child_index)?;
 
         let node = self.parent.with(*node);
 
         self.child_index += 1;
 
         Some(node)
+    }
+}
+
+impl std::hash::Hash for BlitzNode<'_> {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        state.write_usize(self.id)
     }
 }
 

@@ -1,5 +1,6 @@
 use std::cell::RefCell;
 
+use blitz_dom::Document;
 use dioxus::core::{Mutation, Mutations};
 use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
 // use tao:::raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
@@ -26,30 +27,11 @@ use vello::{Renderer as VelloRenderer, RendererOptions};
 
 use crate::fontcache::FontCache;
 use crate::imagecache::ImageCache;
-use crate::styling::BlitzNode;
-use crate::styling::RealDom;
 use crate::text::TextContext;
 use crate::viewport::Viewport;
 
-use self::styling::NodeData;
-
-mod layout;
-mod mutation;
-pub mod node;
-pub mod styling;
-
-/// A rendering instance, not necessarily tied to a window
-///
-pub struct Document {
-    pub(crate) dom: RealDom,
-
-    pub(crate) taffy: TaffyTree,
-
-    /// The styling engine of firefox
-    pub(crate) stylist: Stylist,
-
-    // caching for the stylist
-    pub(crate) snapshots: SnapshotMap,
+pub struct Renderer {
+    pub dom: Document,
 
     /// The actual viewport of the page that we're getting a glimpse of.
     /// We need this since the part of the page that's being viewed might not be the page in its entirety.
@@ -72,12 +54,10 @@ pub struct Document {
     /// A storage of fonts to load in and out.
     /// Whenever we encounter new fonts during parsing + mutations, this will become populated
     pub(crate) fonts: FontCache,
-
-    pub pending_styles: Vec<String>,
 }
 
-impl Document {
-    pub async fn from_window<W>(window: W, dom: RealDom, viewport: Viewport) -> Self
+impl Renderer {
+    pub async fn from_window<W>(window: W, dom: Document, viewport: Viewport) -> Self
     where
         W: HasRawWindowHandle + HasRawDisplayHandle,
     {
@@ -106,21 +86,6 @@ impl Document {
         )
         .unwrap();
 
-        // 4. Build out stylo, inserting some default stylesheets
-        let quirks = QuirksMode::NoQuirks;
-        let stylist = Stylist::new(
-            StyleDevice::new(
-                MediaType::screen(),
-                quirks,
-                euclid::Size2D::new(
-                    viewport.window_size.width as _,
-                    viewport.window_size.height as _,
-                ),
-                euclid::Scale::new(viewport.scale() as _),
-            ),
-            quirks,
-        );
-
         // 5. Build helpers for things like event handlers, hit testing
         Self {
             viewport,
@@ -128,46 +93,10 @@ impl Document {
             renderer,
             surface,
             dom,
-            stylist,
-            snapshots: SnapshotMap::new(),
-            taffy: Default::default(),
             text_context: Default::default(),
             images: Default::default(),
             fonts: Default::default(),
-            pending_styles: Default::default(),
         }
-    }
-
-    pub fn add_stylesheet(&mut self, css: &str) {
-        use style::servo_arc::Arc;
-
-        let data = Stylesheet::from_str(
-            css,
-            servo_url::ServoUrl::from_url("data:text/css;charset=utf-8;base64,".parse().unwrap()),
-            Origin::UserAgent,
-            Arc::new(self.dom.guard.wrap(MediaList::empty())),
-            self.dom.guard.clone(),
-            None,
-            None,
-            QuirksMode::NoQuirks,
-            0,
-            AllowImportRules::Yes,
-        );
-
-        self.stylist
-            .append_stylesheet(DocumentStyleSheet(Arc::new(data)), &self.dom.guard.read());
-
-        self.stylist
-            .force_stylesheet_origins_dirty(Origin::Author.into());
-    }
-
-    /// Restyle the tree and then relayout it
-    pub fn resolve(&mut self) {
-        // we need to resolve stylist first since it will need to drive our layout bits
-        self.resolve_stylist();
-
-        // Next we resolve layout with the data resolved by stlist
-        self.resolve_layout();
     }
 
     // Adjust the viewport
@@ -175,7 +104,7 @@ impl Document {
         self.viewport.window_size = size;
 
         if size.width > 0 && size.height > 0 {
-            // self.dom.set_size(size);
+            self.dom.set_stylist_device(self.viewport.make_device());
             self.render_context
                 .resize_surface(&mut self.surface, size.width, size.height);
         }
@@ -218,12 +147,5 @@ impl Document {
 
         surface_texture.present();
         device.device.poll(wgpu::Maintain::Wait);
-    }
-
-    /// Hit the layout tree at a specific position, returning a node if it exists
-    ///
-    pub fn hit_test(&self, x: f32, y: f32) -> Option<usize> {
-        // do a split on the layout tree.
-        todo!()
     }
 }

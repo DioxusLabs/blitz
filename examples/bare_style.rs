@@ -30,14 +30,14 @@ fn main() {
         h4 { }
     };
 
-    let document = stylo_dioxus::Document::new();
+    let document = blitz::Document::new();
 
-    // let styled_dom = stylo_dioxus::style_lazy_nodes(css, nodes);
+    // let styled_dom = blitz::style_lazy_nodes(css, nodes);
 
     // print_styles(&styled_dom);
 }
 
-// fn print_styles(markup: &stylo_dioxus::RealDom) {
+// fn print_styles(markup: &blitz::RealDom) {
 //     use style::dom::{TElement, TNode};
 
 //     let root = markup.root_node();

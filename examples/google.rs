@@ -4,15 +4,22 @@ use dioxus::prelude::*;
 use tokio::runtime::Handle;
 
 fn main() {
-    let cfg = stylo_dioxus::Config {
+    let cfg = blitz::Config {
         stylesheets: vec![],
     };
-    stylo_dioxus::launch_cfg(app, cfg);
+    blitz::launch_cfg(app, cfg);
 }
 
 fn app(cx: Scope) -> Element {
     let content = Handle::current().block_on(async move {
-        reqwest::get("https://google.com")
+        let client = reqwest::Client::builder()
+            .user_agent("Mozilla/5.0 (X11; Linux x86_64; rv:60.0) Gecko/20100101 Firefox/81.0")
+            .build()
+            .unwrap();
+
+        client
+            .get("https://google.com")
+            .send()
             .await
             .unwrap()
             .text()

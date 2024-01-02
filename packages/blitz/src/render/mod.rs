@@ -1,7 +1,9 @@
 use std::cell::RefCell;
 
-use crate::{styling::NodeData, util::StyloGradient};
-use crate::{util::GradientSlice, Document};
+use crate::{renderer::Renderer, util::StyloGradient};
+use crate::{text::TextContext, util::GradientSlice};
+use blitz_dom::Document;
+use blitz_dom::Node as NodeData;
 use html5ever::tendril::{fmt::UTF8, Tendril};
 use style::{
     properties::{style_structs::Outline, ComputedValues},
@@ -21,12 +23,12 @@ use style::{
 };
 use taffy::prelude::Layout;
 use vello::{
-    kurbo::Shape,
-    peniko::{self, Fill},
-};
-use vello::{
     kurbo::{Affine, Point, Vec2},
     peniko::Color,
+};
+use vello::{
+    kurbo::{Rect, Shape},
+    peniko::{self, Fill},
 };
 
 use self::multicolor_rounded_rect::{Edge, ElementFrame};
@@ -35,19 +37,29 @@ use vello::SceneBuilder;
 
 mod multicolor_rounded_rect;
 
-impl Document {
+impl Renderer {
     pub(crate) fn render_internal(&self, scene: &mut SceneBuilder) {
-        let root = &self.dom.root_element();
+        let root = self.dom.root_element();
 
         scene.fill(
             Fill::NonZero,
             Affine::IDENTITY,
             Color::WHITE,
             None,
-            &root.bounds(&self.taffy),
+            &self.bounds(root.id),
         );
 
         self.render_element(scene, root.id, Point::ZERO);
+    }
+
+    pub(crate) fn bounds(&self, node: usize) -> Rect {
+        let layout = self.layout(node);
+        Rect::new(
+            layout.location.x as f64,
+            layout.location.y as f64,
+            layout.size.width as f64,
+            layout.size.height as f64,
+        )
     }
 
     /// Renders a node, but is guaranteed that the node is an element
@@ -75,22 +87,19 @@ impl Document {
         //  - inherited_box, inherited_table, inherited_text, inherited_ui,
         use markup5ever_rcdom::NodeData;
 
-        let element = &self.dom.nodes[node];
+        let element = &self.dom.tree()[node];
 
-        match &element.node.data {
-            NodeData::Element { name, .. } => {
+        let (name, attrs) = match &element.node.data {
+            NodeData::Element { name, attrs, .. } => {
                 // skip head nodes/script nodes
                 // these are handled elsewhere...
                 match name.local.as_ref() {
-                    "style" | "head" | "script" => {
-                        println!("early returning...");
-                        return;
-                    }
-                    _ => {}
+                    "style" | "head" | "script" => return,
+                    _ => (name, attrs),
                 }
             }
             _ => return,
-        }
+        };
 
         let cx = self.element_cx(element, location);
 
@@ -100,55 +109,49 @@ impl Document {
         cx.stroke_border(scene);
 
         for child in &cx.element.children {
-            match &self.dom.nodes[*child].node.data {
+            match &self.dom.tree()[*child].node.data {
                 NodeData::Element { .. } => self.render_element(scene, *child, cx.pos),
-                NodeData::Text { contents } => self.render_text(scene, child, &cx, contents),
+                NodeData::Text { contents } => {
+                    //
+                    let contents = contents.borrow();
+                    let (_layout, pos) = self.node_position(*child, cx.pos);
+                    cx.stroke_text(scene, &self.text_context, contents.as_ref(), pos)
+                }
                 NodeData::Document => {}
                 NodeData::Doctype { .. } => {}
                 NodeData::Comment { .. } => {}
                 NodeData::ProcessingInstruction { .. } => {}
             }
         }
-    }
 
-    fn render_text(
-        &self,
-        scene: &mut SceneBuilder<'_>,
-        child: &usize,
-        parent: &ElementCx,
-        contents: &RefCell<Tendril<UTF8>>,
-    ) {
-        let ElementCx {
-            font_size,
-            text_color,
-            ..
-        } = parent;
+        // Draw shadow elements?
+        match name.local.as_ref() {
+            "input" => {
+                let value = attrs
+                    .borrow()
+                    .iter()
+                    .find(|attr| attr.name.local.as_ref() == "value")
+                    .map(|attr| attr.value.to_string());
 
-        let (_layout, pos) = self.node_position(*child, parent.pos);
-
-        let transform = Affine::translate(pos.to_vec2() + Vec2::new(0.0, *font_size as f64));
-        // dbg!(&contents.borrow(), transform, font_size);
-
-        self.text_context.add(
-            scene,
-            None,
-            *font_size,
-            Some(*text_color),
-            transform,
-            &contents.borrow(),
-        )
+                if let Some(value) = value {
+                    cx.stroke_text(scene, &self.text_context, value.as_ref(), location)
+                }
+            }
+            _ => {}
+        }
     }
 
     fn element_cx<'a>(&'a self, element: &'a NodeData, location: Point) -> ElementCx<'a> {
-        let style = element.style.borrow().styles.primary().clone();
+        let style = element.data.borrow().styles.primary().clone();
 
-        let (layout, pos) = self.node_position(element.id, location);
+        let (mut layout, mut pos) = self.node_position(element.id, location);
+        // dbg!(layout, pos);
         let scale = self.viewport.scale_f64();
 
         // todo: maybe cache this so we don't need to constantly be figuring it out
         // It is quite a bit of math to calculate during render/traverse
         // Also! we can cache the bezpaths themselves, saving us a bunch of work
-        let frame = ElementFrame::new(&style, layout, scale);
+        let frame = ElementFrame::new(&style, &layout, scale);
 
         let inherited_text = style.get_inherited_text();
         let font = style.get_font();
@@ -172,16 +175,19 @@ impl Document {
         }
     }
 
-    fn node_position(&self, node: usize, location: Point) -> (&Layout, Point) {
+    fn node_position(&self, node: usize, location: Point) -> (Layout, Point) {
         let layout = self.layout(node);
-        let pos = location + Vec2::new(layout.location.x as f64, layout.location.y as f64);
+        let pos = location
+            + Vec2::new(
+                layout.location.x as f64 * self.viewport.scale_f64(),
+                layout.location.y as f64 * self.viewport.scale_f64(),
+            );
         (layout, pos)
     }
 
-    fn layout(&self, child: usize) -> &Layout {
-        self.taffy
-            .layout((&self.dom.nodes[child]).layout_id.get().unwrap())
-            .unwrap()
+    fn layout(&self, child: usize) -> Layout {
+        self.dom.tree()[child].unrounded_layout
+        // self.dom.tree()[child].final_layout
     }
 }
 
@@ -189,7 +195,7 @@ impl Document {
 struct ElementCx<'a> {
     frame: ElementFrame,
     style: style::servo_arc::Arc<ComputedValues>,
-    layout: &'a Layout,
+    layout: Layout,
     pos: Point,
     scale: f64,
     element: &'a NodeData,
@@ -199,6 +205,25 @@ struct ElementCx<'a> {
 }
 
 impl ElementCx<'_> {
+    fn stroke_text(
+        &self,
+        scene: &mut SceneBuilder<'_>,
+        text_context: &TextContext,
+        contents: &str,
+        pos: Point,
+    ) {
+        let transform = Affine::translate(pos.to_vec2() + Vec2::new(0.0, self.font_size as f64));
+
+        text_context.add(
+            scene,
+            None,
+            self.font_size,
+            Some(self.text_color),
+            transform,
+            contents,
+        )
+    }
+
     fn stroke_frame(&self, scene: &mut SceneBuilder) {
         use GenericImage::*;
 
@@ -268,7 +293,7 @@ impl ElementCx<'_> {
 
                 (line.p0, line.p1)
             }
-            LineDirection::Horizontal(_) => todo!(),
+            LineDirection::Horizontal(_) => unimplemented!(),
             LineDirection::Vertical(ore) => {
                 let start = Point::new(
                     self.frame.inner_rect.x0 + rect.width() / 2.0,
@@ -283,7 +308,7 @@ impl ElementCx<'_> {
                     VerticalPositionKeyword::Bottom => (start, end),
                 }
             }
-            LineDirection::Corner(_, _) => todo!(),
+            LineDirection::Corner(_, _) => unimplemented!(),
         };
         let mut gradient = peniko::Gradient {
             kind: peniko::GradientKind::Linear { start, end },
@@ -298,8 +323,8 @@ impl ElementCx<'_> {
                     let color = stop.as_vello();
                     gradient.stops.push(peniko::ColorStop { color, offset });
                 }
-                GenericGradientItem::ComplexColorStop { color, position } => todo!(),
-                GenericGradientItem::InterpolationHint(_) => todo!(),
+                GenericGradientItem::ComplexColorStop { color, position } => unimplemented!(),
+                GenericGradientItem::InterpolationHint(_) => unimplemented!(),
             }
         }
         let brush = peniko::BrushRef::Gradient(&gradient);
@@ -412,13 +437,13 @@ impl ElementCx<'_> {
         let path = match style {
             BorderStyle::None | BorderStyle::Hidden => return,
             BorderStyle::Solid => self.frame.outline(),
-            BorderStyle::Inset => todo!(),
-            BorderStyle::Groove => todo!(),
-            BorderStyle::Outset => todo!(),
-            BorderStyle::Ridge => todo!(),
-            BorderStyle::Dotted => todo!(),
-            BorderStyle::Dashed => todo!(),
-            BorderStyle::Double => todo!(),
+            BorderStyle::Inset => unimplemented!(),
+            BorderStyle::Groove => unimplemented!(),
+            BorderStyle::Outset => unimplemented!(),
+            BorderStyle::Ridge => unimplemented!(),
+            BorderStyle::Dotted => unimplemented!(),
+            BorderStyle::Dashed => unimplemented!(),
+            BorderStyle::Double => unimplemented!(),
         };
 
         scene.fill(Fill::NonZero, self.transform, color, None, &path);
@@ -459,7 +484,7 @@ impl ElementCx<'_> {
         items: &OwnedSlice<GenericGradientItem<StyloColor<Percentage>, LengthPercentage>>,
         repeating: bool,
     ) {
-        todo!()
+        unimplemented!()
     }
 
     fn draw_conic_gradient(
@@ -470,6 +495,6 @@ impl ElementCx<'_> {
         items: &OwnedSlice<GenericGradientItem<StyloColor<Percentage>, AngleOrPercentage>>,
         repeating: bool,
     ) {
-        todo!()
+        unimplemented!()
     }
 }

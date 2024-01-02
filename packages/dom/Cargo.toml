@@ -1,0 +1,25 @@
+[package]
+name = "blitz-dom"
+version = "0.0.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+slab = "0.4.9"
+euclid = { version = "0.22", features = ["serde"] }
+style = { path = "../../../servo/components/style", features = ["servo"] }
+selectors = { path = "../../../servo/components/selectors" }
+style_traits = { path = "../../../servo/components/style_traits", features = [
+    "servo",
+] }
+servo_url = { path = "../../../servo/components/url" }
+app_units = "0.7.3"
+atomic_refcell = { version = "0.1.13", features = ["serde"] }
+fxhash = "0.2.1"
+html5ever = "0.26.0" # also conveniently the one used in servo
+markup5ever_rcdom = "0.2.0"
+string_cache = "0.8.7"
+futures-util = "0.3.29"
+taffy = { git = "https://github.com/dioxuslabs/taffy" }
+bumpalo = { version = "3.14.0", features = ["boxed", "collections"] }

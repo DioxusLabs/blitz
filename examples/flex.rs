@@ -13,27 +13,43 @@ fn main() {
 
 fn app(cx: Scope) -> Element {
     render! {
-        div { id: "a", " Dioxus                                     \n\n\n\n\n\n\n\n\n" }
+        div { id: "container",
+            div { "Hello " }
+            div { "world! " }
+        }
+        div { id: "container",
+            div { "Dioxus " }
+            div { "plus " }
+            div { "stylo " }
+        }
     }
 }
 
 const CSS: &str = r#"
-#a {
-    height:300px;
+
+#container {
+    display: flex;
+    flex-direction: row;
+    justify-content: center;
+    align-items: center;
+    align-content: center;
     background-color: gray;
     border: 1px solid black;
-    // border-radius: 50px 20px;
     border-top-color: red;
-    padding:20px;
-    margin:20px;
-    // border-radius: 10% 30% 50% 70%;
     border-left: 4px solid #000;
     border-top: 10px solid #ff0;
     border-right:  3px solid #F01;
     border-bottom:  9px solid #0f0;
     box-shadow: 10px 10px gray;
-    // background: linear-gradient(#e66465, #9198e5);
-    // background: linear-gradient(#3f87a6, #ebf8e1, #f69d3c);
-    background: linear-gradient(0.25turn, #3f87a6, #ebf8e1, #f69d3c);
+
+    // outline-width: 50px;
+    outline-style: solid;
+    outline-color: blue;
+    border-radius: 50px 20px;
+
+    // border-radius: 10% 30% 50% 70%;
+    padding:20px;
+    margin:20px;
+    // border-radius: 10px;
 }
 "#;

@@ -1,51 +1,30 @@
+
+[workspace]
+members = ["packages/blitz", "packages/dom"]
+resolver = "2"
+
+
+# This is a "virtual package"
+# It is not meant to be published, but is used so "cargo run --example XYZ" works properly
 [package]
-name = "stylo-dioxus"
-version = "0.1.0"
+name = "blitz-examples"
+version = "0.0.1"
+authors = ["Jonathan Kelley"]
 edition = "2021"
+description = "Top level crate for Blitz"
+license = "MIT OR Apache-2.0"
+keywords = ["dom", "ui", "gui", "react", "wasm"]
+rust-version = "1.60.0"
+publish = false
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
-[dependencies]
+[dev-dependencies]
+blitz = { path = "./packages/blitz" }
+blitz-dom = { path = "./packages/dom" }
 dioxus = { path = "../../dioxus/packages/dioxus" }
-dioxus-ssr = { path = "../../dioxus/packages/ssr" }
-# futures-util = "0.3.29"
-slab = "0.4.9"
-tao = { version = "0.20.0", features = ["serde"] }
-# raw-window-handle = "0.5.0"
 euclid = { version = "0.22", features = ["serde"] }
-style = { path = "../servo/components/style", features = ["servo"] }
-selectors = { path = "../servo/components/selectors" }
-style_traits = { path = "../servo/components/style_traits", features = [
-    "servo",
-] }
-servo_url = { path = "../servo/components/url" }
-
-# guts pulled from blitz
-taffy = { git = "https://github.com/dioxuslabs/taffy" }
-tokio = { version = "1.25.0", features = ["full"] }
-vello = { git = "https://github.com/linebender/vello" }
-wgpu = "0.18"
-shipyard = { version = "0.6.2", features = [
-    "proc",
-    "std",
-], default-features = false }
-
-# we'll need to make these more compatible with servo
-# lightningcss = "1.0.0-alpha.39"
-# cssparser = "0.33.0"
-app_units = "0.7.3"
-atomic_refcell = { version = "0.1.13", features = ["serde"] }
-fxhash = "0.2.1"
-html5ever = "0.26.0"                                          # also conveniently the one used in servo
-markup5ever_rcdom = "0.2.0"
-string_cache = "0.8.7"
-# tao = "0.24.0"
-futures-util = "0.3.29"
-raw-window-handle = "0.5.2"
 reqwest = "0.11.23"
-# glazier = { git = "https://github.com/linebender/glazier/" }
-# style = { git = "https://github.com/servo/servo.git", features = ["servo"] }
-
+tokio = { version = "1.25.0", features = ["full"] }
 
 [patch."https://github.com/servo/webrender"]
 webrender_api = { path = "../servo/third_party/webrender/webrender_api" }
@@ -55,11 +34,6 @@ webrender = { path = "../servo/third_party/webrender/webrender" }
 webrender_api = { path = "../servo/third_party/webrender/webrender_api" }
 webrender = { path = "../servo/third_party/webrender/webrender" }
 
-[dev-dependencies]
-comrak = { version = "0.20.0", default-features = false }
-webbrowser = "0.8.12"
-
-
-# webrender = { path = "third_party/webrender/webrender" }
-# webrender_api = { path = "third_party/webrender/webrender_api" }
-# webrender_api = { path = "../servo/third_party/webrender/webrender_api" }
+[dependencies]
+webrender = "0.61.0"
+euclid = { version = "0.22", features = ["serde"] }

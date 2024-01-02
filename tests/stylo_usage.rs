@@ -1,3 +1,4 @@
+pub use blitz::style_impls::{BlitzNode, RealDom};
 use dioxus::prelude::*;
 use style::{
     animation::DocumentAnimationSet,
@@ -15,7 +16,6 @@ use style::{
     traversal::DomTraversal,
     traversal_flags::TraversalFlags,
 };
-pub use stylo_dioxus::style_impls::{BlitzNode, RealDom};
 
 fn main() {
     let css = r#"

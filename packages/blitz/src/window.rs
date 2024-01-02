@@ -1,11 +1,11 @@
 use super::Config;
-use crate::dom::styling::RealDom;
-use crate::dom::Document;
-use crate::viewport::Viewport;
 use crate::waker::UserWindowEvent;
+use crate::{renderer::Renderer, viewport::Viewport};
+use blitz_dom::Document;
 use dioxus::core::{Component, VirtualDom};
 use futures_util::{pin_mut, FutureExt};
 use std::task::Waker;
+use style::media_queries::{Device, MediaType};
 use tao::event::WindowEvent;
 use tao::event_loop::EventLoop;
 use tao::keyboard::KeyCode;
@@ -16,7 +16,7 @@ use vello::Scene;
 pub(crate) struct View {
     pub(crate) window: Window,
     pub(crate) vdom: VirtualDom,
-    pub(crate) document: Document,
+    pub(crate) renderer: Renderer,
     pub(crate) scene: Scene,
     pub(crate) waker: Waker,
 }
@@ -32,39 +32,39 @@ impl View {
         // By default we're drawing a single window
         // Set up the blitz drawing system
         // todo: this won't work on ios - blitz creation has to be deferred until the event loop as started
-
         let window = WindowBuilder::new().build(&event_loop).unwrap();
+        let waker = crate::waker::tao_waker(&event_loop.create_proxy(), window.id());
 
         // Spin up the virtualdom
         // We're going to need to hit it with a special waker
         let mut vdom = VirtualDom::new_with_props(app, props);
         _ = vdom.rebuild();
-
         let markup = dioxus_ssr::render(&vdom);
 
-        let waker = crate::waker::tao_waker(&event_loop.create_proxy(), window.id());
-
-        let dom = RealDom::new(markup);
-
-        let size = window.inner_size();
+        let size: tao::dpi::PhysicalSize<u32> = window.inner_size();
         let mut viewport = Viewport::new(size);
         viewport.set_hidpi_scale(window.scale_factor() as _);
 
-        let mut document = rt.block_on(Document::from_window(&window, dom, viewport));
-        let mut scene = Scene::new();
+        let device = viewport.make_device();
+
+        let mut dom = Document::new(device);
+        dom.write(markup);
 
         // add default styles, resolve layout and styles
         for ss in &cfg.stylesheets {
-            document.add_stylesheet(&ss);
+            dom.add_stylesheet(&ss);
         }
 
-        document.resolve();
-        document.render(&mut scene);
+        let mut renderer = rt.block_on(Renderer::from_window(&window, dom, viewport));
+        let mut scene = Scene::new();
+
+        renderer.dom.resolve();
+        renderer.render(&mut scene);
 
         Self {
             window,
             vdom,
-            document,
+            renderer,
             scene,
             waker,
         }
@@ -102,7 +102,7 @@ impl View {
             } => {}
 
             WindowEvent::Resized(physical_size) => {
-                self.document.set_size(physical_size);
+                self.renderer.set_size(physical_size);
                 self.window.request_redraw();
             }
 
@@ -114,11 +114,11 @@ impl View {
 
                 match event.physical_key {
                     KeyCode::ArrowUp => {
-                        *self.document.viewport.zoom_mut() += 0.1;
+                        *self.renderer.viewport.zoom_mut() += 0.1;
                         self.window.request_redraw();
                     }
                     KeyCode::ArrowDown => {
-                        *self.document.viewport.zoom_mut() -= 0.1;
+                        *self.renderer.viewport.zoom_mut() -= 0.1;
                         self.window.request_redraw();
                     }
                     _ => {}
