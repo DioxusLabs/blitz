@@ -44,6 +44,12 @@ fn main() {
 }
 ```
 
+## Playing around with it
+
+1. Clone this repo
+2. `cargo run --example example_name` (flex/border,outline) all work
+3. Press arrow up/down to change scaling, press F1 to show layout rectangles
+
 ## Story
 
 Way back in 2015, Mozilla released Rust to the world as a new systems programming language. Rust was designed to replace C++ in an aging and increasingly vulnerable Firefox. The tesbed for new browser components - and Rust itself - was the Servo project. Servo was meant to test exotic ideas like multithreaded rendering while vetting out changes to Rust itself. Since then, much has changed. Mozilla no longer stewards Rust and, in 2021, effectively cancelled the Servo project.
