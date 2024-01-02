@@ -58,7 +58,7 @@ use taffy::{prelude::Style, LengthPercentageAuto};
 
 impl crate::document::Document {
     /// Walk the whole tree, converting styles to layout
-    pub fn flush_styles_to_layout(&mut self, children: Vec<usize>) {
+    pub fn flush_styles_to_layout(&mut self, children: Vec<usize>, parent: Option<usize>) {
         // make a floating element
         for child in children {
             let children = {
@@ -143,6 +143,22 @@ impl crate::document::Document {
                         style::values::specified::box_::DisplayOutside::InternalTable => {}
                     };
 
+                    let flex_basis = match flex_basis {
+                        style::values::generics::flex::FlexBasis::Content => taffy::Dimension::Auto,
+                        style::values::generics::flex::FlexBasis::Size(size) => match size {
+                            style::values::generics::length::GenericSize::LengthPercentage(p) => {
+                                if let Some(p) = p.0.to_percentage() {
+                                    taffy::Dimension::Percent(p.0)
+                                } else {
+                                    taffy::Dimension::Length(p.0.to_length().unwrap().px())
+                                }
+                            }
+                            style::values::generics::length::GenericSize::Auto => {
+                                taffy::Dimension::Auto
+                            }
+                        },
+                    };
+
                     let align_content = match align_content {
                         style::computed_values::align_content::T::Stretch => {
                             Some(taffy::AlignContent::Stretch)
@@ -194,6 +210,7 @@ impl crate::document::Document {
                             Some(taffy::AlignItems::Baseline)
                         }
                     };
+
                     node.style = Style {
                         margin: to_taffy_margin(margin),
                         padding: to_taffy_padding(padding),
@@ -249,26 +266,10 @@ impl crate::document::Document {
                             }
                             style::computed_values::flex_wrap::T::Nowrap => taffy::FlexWrap::NoWrap,
                         },
-                        flex_basis: match flex_basis {
-                            style::values::generics::flex::FlexBasis::Content => {
-                                taffy::Dimension::Auto
-                            }
-                            style::values::generics::flex::FlexBasis::Size(size) => match size {
-                                style::values::generics::length::GenericSize::LengthPercentage(
-                                    p,
-                                ) => {
-                                    if let Some(p) = p.0.to_percentage() {
-                                        taffy::Dimension::Percent(p.0)
-                                    } else {
-                                        taffy::Dimension::Length(p.0.to_length().unwrap().px())
-                                    }
-                                }
-                                style::values::generics::length::GenericSize::Auto => {
-                                    taffy::Dimension::Auto
-                                }
-                            },
-                        },
+                        flex_basis,
                         size: make_taffy_size(width, height),
+                        min_size: make_taffy_size(min_width, min_height),
+                        max_size: make_taffy_size2(max_width, max_height),
                         // display
                         // overflow
                         // scrollbar_width
@@ -317,7 +318,47 @@ impl crate::document::Document {
                 node.children.clone()
             };
 
-            self.flush_styles_to_layout(children);
+            // // Reach up to our parent and set our flex basis to auto if we're in a flex layout
+            // if let Some(parent) = parent {
+            //     let is_flex = {
+            //         let parent = self.nodes.get_mut(parent).unwrap();
+            //         let parent_data = parent.data.borrow();
+
+            //         if let Some(parent_style) = parent_data.styles.get_primary() {
+            //             let parent_display = parent_style.get_box().display;
+            //             match parent_display.inside() {
+            //                 style::values::specified::box_::DisplayInside::Flex => true,
+            //                 style::values::specified::box_::DisplayInside::None => false,
+            //                 style::values::specified::box_::DisplayInside::Contents => false,
+            //                 style::values::specified::box_::DisplayInside::Flow => false,
+            //                 style::values::specified::box_::DisplayInside::FlowRoot => false,
+            //                 style::values::specified::box_::DisplayInside::Table => false,
+            //                 style::values::specified::box_::DisplayInside::TableRowGroup => false,
+            //                 style::values::specified::box_::DisplayInside::TableColumn => false,
+            //                 style::values::specified::box_::DisplayInside::TableColumnGroup => {
+            //                     false
+            //                 }
+            //                 style::values::specified::box_::DisplayInside::TableHeaderGroup => {
+            //                     false
+            //                 }
+            //                 style::values::specified::box_::DisplayInside::TableFooterGroup => {
+            //                     false
+            //                 }
+            //                 style::values::specified::box_::DisplayInside::TableRow => false,
+            //                 style::values::specified::box_::DisplayInside::TableCell => false,
+            //             }
+            //         } else {
+            //             false
+            //         }
+            //     };
+
+            //     if is_flex {
+            //         // self.nodes[child].style.flex_basis = taffy::Dimension::Auto;
+            //         self.nodes[child].style.display = taffy::Display::Flex;
+            //     }
+            // }
+
+            self.flush_styles_to_layout(children, Some(child));
         }
     }
 
@@ -364,6 +405,39 @@ impl crate::document::Document {
 
         style::thread_state::exit(ThreadState::LAYOUT);
     }
+}
+
+fn make_taffy_size2(
+    max_width: &style::values::generics::length::GenericMaxSize<
+        style::values::generics::NonNegative<style::values::computed::LengthPercentage>,
+    >,
+    max_height: &style::values::generics::length::GenericMaxSize<
+        style::values::generics::NonNegative<style::values::computed::LengthPercentage>,
+    >,
+) -> taffy::prelude::Size<taffy::prelude::Dimension> {
+    let width = match max_width {
+        style::values::generics::length::GenericMaxSize::LengthPercentage(p) => {
+            if let Some(p) = p.0.to_percentage() {
+                taffy::Dimension::Percent(p.0)
+            } else {
+                taffy::Dimension::Length(p.0.to_length().unwrap().px())
+            }
+        }
+        style::values::generics::length::GenericMaxSize::None => taffy::prelude::Dimension::Auto,
+    };
+
+    let height = match max_height {
+        style::values::generics::length::GenericMaxSize::LengthPercentage(p) => {
+            if let Some(p) = p.0.to_percentage() {
+                taffy::Dimension::Percent(p.0)
+            } else {
+                taffy::Dimension::Length(p.0.to_length().unwrap().px())
+            }
+        }
+        style::values::generics::length::GenericMaxSize::None => taffy::prelude::Dimension::Auto,
+    };
+
+    taffy::prelude::Size { width, height }
 }
 
 fn make_taffy_size(

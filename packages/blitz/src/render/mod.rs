@@ -170,7 +170,7 @@ impl Renderer {
                     .map(|attr| attr.value.to_string());
 
                 if let Some(value) = value {
-                    // cx.stroke_text(scene, &self.text_context, value.as_ref(), location)
+                    cx.stroke_text(scene, &self.text_context, value.as_ref(), location)
                 }
             }
             _ => {}

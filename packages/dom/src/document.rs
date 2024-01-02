@@ -225,7 +225,7 @@ impl Document {
         self.resolve_stylist();
 
         // Merge stylo into taffy
-        self.flush_styles_to_layout(vec![0]);
+        self.flush_styles_to_layout(vec![0], None);
 
         // Next we resolve layout with the data resolved by stlist
         self.resolve_layout();
@@ -250,6 +250,8 @@ impl Document {
         let size = self.stylist.device().au_viewport_size();
 
         let available_space = taffy::Size {
+            // width: AvailableSpace::MaxContent,
+            // height: AvailableSpace::Definite(10000000.0),
             width: AvailableSpace::Definite(size.width.to_f32_px() as _),
             height: AvailableSpace::Definite(size.height.to_f32_px() as _),
         };

@@ -142,14 +142,14 @@ impl LayoutPartialTree for Document {
                                     height: 92.0,
                                     width: 272.0,
                                 };
-                                Size {
-                                    width: image_data.width,
-                                    height: image_data.height,
-                                }
-                                // image_measure_function(
-                                //     known_dimensions,
-                                //     &image_data, // node.image_data.as_ref().unwrap(),
-                                // )
+                                // Size {
+                                //     width: image_data.width,
+                                //     height: image_data.height,
+                                // }
+                                image_measure_function(
+                                    known_dimensions,
+                                    &image_data, // node.image_data.as_ref().unwrap(),
+                                )
                             },
                         );
                     }
