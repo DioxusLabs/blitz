@@ -3,7 +3,7 @@
 use dioxus::prelude::*;
 
 fn main() {
-    blitz::launch(app);
+    dioxus_blitz::launch(app);
 }
 
 fn app(cx: Scope) -> Element {

@@ -1,6 +1,6 @@
 
 [workspace]
-members = ["packages/blitz", "packages/dom"]
+members = ["packages/blitz", "packages/dom", "packages/dioxus-blitz"]
 resolver = "2"
 
 [workspace.dependencies]
@@ -12,6 +12,9 @@ servo_url = { git = "https://github.com/servo/servo", rev = "8faa904" }
 taffy = { git = "https://github.com/dioxuslabs/taffy", rev = "563d5dc" }
 dioxus = { git = "https://github.com/dioxuslabs/dioxus", tag = "v0.4.3" }
 dioxus-ssr = { git = "https://github.com/dioxuslabs/dioxus", tag = "v0.4.3" }
+tokio = { version = "1.25.0", features = ["full"] }
+vello = { git = "https://github.com/linebender/vello" }
+wgpu = "0.18"
 
 # This is a "virtual package"
 # It is not meant to be published, but is used so "cargo run --example XYZ" works properly
@@ -26,7 +29,6 @@ keywords = ["dom", "ui", "gui", "react", "wasm"]
 rust-version = "1.60.0"
 publish = false
 
-
 # Need to force specific versions of these dependencies
 [dependencies]
 webrender = "0.61.0"
@@ -35,6 +37,7 @@ euclid = { version = "0.22", features = ["serde"] }
 [dev-dependencies]
 blitz = { path = "./packages/blitz" }
 blitz-dom = { path = "./packages/dom" }
+dioxus-blitz = { path = "./packages/dioxus-blitz" }
 dioxus = { workspace = true }
 euclid = { version = "0.22", features = ["serde"] }
 reqwest = "0.11.23"

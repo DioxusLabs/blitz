@@ -1,18 +1,15 @@
 // background: rgb(2,0,36);
 // background: linear-gradient(90deg, rgba(2,0,36,1) 0%, rgba(9,9,121,1) 35%, rgba(0,212,255,1) 100%);
 
-use blitz::Config;
 use dioxus::prelude::*;
 
 fn main() {
-    let cfg = Config {
-        stylesheets: vec![CSS.to_string()],
-    };
-    blitz::launch_cfg(app, cfg);
+    dioxus_blitz::launch(app);
 }
 
 fn app(cx: Scope) -> Element {
     render! {
+        style { CSS }
         div { id: "a", " Dioxus                                     \n\n\n\n\n\n\n\n\n" }
     }
 }

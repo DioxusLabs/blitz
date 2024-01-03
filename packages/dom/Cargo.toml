@@ -21,3 +21,10 @@ markup5ever_rcdom = "0.2.0"
 string_cache = "0.8.7"
 futures-util = "0.3.29"
 servo_config = { workspace = true }
+
+
+# on wasm use the js feature on getrandom
+# features = ["js"]
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+getrandom = { version = "0.2", features = ["js"] }

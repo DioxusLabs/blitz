@@ -1,0 +1,18 @@
+[package]
+name = "dioxus-blitz"
+version = "0.0.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+tao = { version = "0.20.0", features = ["serde"] }
+tokio = { workspace = true, features = ["full"] }
+dioxus = { workspace = true }
+dioxus-ssr = { workspace = true }
+futures-util = "0.3.29"
+vello = { workspace = true }
+wgpu = { workspace = true }
+style = { workspace = true }
+blitz = { path = "../blitz" }
+blitz-dom = { path = "../dom" }

@@ -1,3 +1,6 @@
+mod waker;
+mod window;
+
 use crate::waker::{EventData, UserWindowEvent};
 use dioxus::prelude::*;
 use std::collections::HashMap;
@@ -47,9 +50,6 @@ pub fn launch_cfg_with_props<Props: 'static + Send + Clone>(
     let proxy = event_loop.create_proxy();
 
     event_loop.run(move |event, _target, control_flow| {
-        // ControlFlow::Wait pauses the event loop if no events are available to process.
-        // This is ideal for non-game applications that only update in response to user
-        // input, and uses significantly less power/CPU time than ControlFlow::Poll.
         *control_flow = ControlFlow::Wait;
 
         match event {
@@ -61,10 +61,7 @@ pub fn launch_cfg_with_props<Props: 'static + Send + Clone>(
             } => *control_flow = ControlFlow::Exit,
 
             // Nothing else to do, try redrawing?
-            Event::MainEventsCleared => {
-                // We might not actually want this if nothing has changed
-                // window.request_redraw()
-            }
+            Event::MainEventsCleared => {}
 
             Event::UserEvent(UserWindowEvent(EventData::Poll, id)) => {
                 windows.get_mut(&id).map(|view| view.poll());

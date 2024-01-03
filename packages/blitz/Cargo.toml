@@ -6,9 +6,6 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-dioxus = { workspace = true }
-dioxus-ssr = { workspace = true }
-tao = { version = "0.20.0", features = ["serde"] }
 slab = "0.4.9"
 style = { workspace = true, features = ["servo"] }
 style_traits = { workspace = true, features = ["servo"] }
@@ -16,9 +13,9 @@ euclid = { version = "0.22", features = ["serde"] }
 selectors = { workspace = true }
 servo_url = { workspace = true }
 taffy = { workspace = true }
-tokio = { version = "1.25.0", features = ["full"] }
-vello = { git = "https://github.com/linebender/vello" }
-wgpu = "0.18"
+tokio = { workspace = true, features = ["full"] }
+vello = { workspace = true }
+wgpu = { workspace = true }
 shipyard = { version = "0.6.2", features = [
     "proc",
     "std",
@@ -34,6 +31,7 @@ futures-util = "0.3.29"
 raw-window-handle = "0.5.2"
 blitz-dom = { path = "../dom" }
 glyphon = "0.3.0"
+cosmic-text = "0.10.0"
 
 # futures-util = "0.3.29"
 # raw-window-handle = "0.5.0"

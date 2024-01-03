@@ -1,9 +1,16 @@
-use std::cell::RefCell;
+mod multicolor_rounded_rect;
 
-use crate::{devtools::Devtools, renderer::Renderer, util::StyloGradient};
-use crate::{text::TextContext, util::GradientSlice};
+// So many imports
+use self::multicolor_rounded_rect::{Edge, ElementFrame};
+use crate::{
+    devtools::Devtools,
+    fontcache::FontCache,
+    imagecache::ImageCache,
+    text::TextContext,
+    util::{GradientSlice, StyloGradient, ToVelloColor},
+    viewport::Viewport,
+};
 use blitz_dom::{Document, Node};
-use html5ever::tendril::{fmt::UTF8, Tendril};
 use style::{
     properties::{style_structs::Outline, ComputedValues},
     values::{
@@ -22,19 +29,140 @@ use style::{
 };
 use taffy::prelude::Layout;
 use vello::{
-    kurbo::{Affine, Point, Stroke, Vec2},
-    peniko::Color,
-};
-use vello::{
-    kurbo::{Rect, Shape},
-    peniko::{self, Fill},
+    kurbo::{Affine, Point, Rect, Shape, Stroke, Vec2},
+    peniko::{self, Color, Fill},
+    util::{RenderContext, RenderSurface},
+    AaSupport, RenderParams, Renderer as VelloRenderer, RendererOptions, Scene, SceneBuilder,
 };
 
-use self::multicolor_rounded_rect::{Edge, ElementFrame};
-use crate::util::ToVelloColor;
-use vello::SceneBuilder;
+pub struct Renderer {
+    pub dom: Document,
 
-mod multicolor_rounded_rect;
+    /// The actual viewport of the page that we're getting a glimpse of.
+    /// We need this since the part of the page that's being viewed might not be the page in its entirety.
+    /// This will let us opt of rendering some stuff
+    pub(crate) viewport: Viewport,
+
+    /// Our drawing kit, not necessarily tied to a surface
+    pub(crate) renderer: VelloRenderer,
+
+    pub(crate) surface: RenderSurface,
+
+    pub(crate) render_context: RenderContext,
+
+    /// Our text stencil to be used with vello
+    pub(crate) text_context: TextContext,
+
+    /// Our image cache
+    pub(crate) images: ImageCache,
+
+    /// A storage of fonts to load in and out.
+    /// Whenever we encounter new fonts during parsing + mutations, this will become populated
+    pub(crate) fonts: FontCache,
+
+    pub devtools: Devtools,
+}
+
+impl Renderer {
+    pub async fn from_window<W>(window: W, dom: Document, viewport: Viewport) -> Self
+    where
+        W: raw_window_handle::HasRawWindowHandle + raw_window_handle::HasRawDisplayHandle,
+    {
+        // 1. Set up renderer-specific stuff
+        // We build an independent viewport which can be dynamically set later
+        // The intention here is to split the rendering pipeline away from tao/windowing for rendering to images
+
+        // 2. Set up Vello specific stuff
+        let mut render_context = RenderContext::new().unwrap();
+        let surface = render_context
+            .create_surface(&window, viewport.window_size.0, viewport.window_size.1)
+            .await
+            .expect("Error creating surface");
+
+        let renderer = VelloRenderer::new(
+            &render_context.devices[surface.dev_id].device,
+            RendererOptions {
+                surface_format: Some(surface.config.format),
+                antialiasing_support: AaSupport::all(),
+                use_cpu: false,
+            },
+        )
+        .unwrap();
+
+        // 5. Build helpers for things like event handlers, hit testing
+        Self {
+            viewport,
+            render_context,
+            renderer,
+            surface,
+            dom,
+            text_context: Default::default(),
+            images: Default::default(),
+            fonts: Default::default(),
+            devtools: Default::default(),
+        }
+    }
+
+    pub fn zoom(&mut self, zoom: f32) {
+        *self.viewport.zoom_mut() += zoom;
+        self.kick_viewport()
+    }
+
+    // Adjust the viewport
+    pub fn set_size(&mut self, physical_size: (u32, u32)) {
+        self.viewport.window_size = physical_size;
+        self.kick_viewport()
+    }
+
+    pub fn kick_viewport(&mut self) {
+        let (width, height) = self.viewport.window_size;
+
+        if width > 0 && height > 0 {
+            self.dom
+                .set_stylist_device(dbg!(self.viewport.make_device()));
+            dbg!(&self.viewport);
+            self.render_context
+                .resize_surface(&mut self.surface, width, height);
+        }
+    }
+
+    /// Draw the current tree to current render surface
+    /// Eventually we'll want the surface itself to be passed into the render function, along with things like the viewport
+    ///
+    /// This assumes styles are resolved and layout is complete.
+    /// Make sure you do those before trying to render
+    pub fn render(&mut self, scene: &mut Scene) {
+        self.render_internal(&mut SceneBuilder::for_scene(scene));
+
+        let surface_texture = self
+            .surface
+            .surface
+            .get_current_texture()
+            .expect("failed to get surface texture");
+
+        let device = &self.render_context.devices[self.surface.dev_id];
+
+        let render_params = RenderParams {
+            base_color: Color::WHITE,
+            width: self.surface.config.width,
+            height: self.surface.config.height,
+            antialiasing_method: vello::AaConfig::Msaa16,
+        };
+
+        self.renderer
+            .render_to_surface(
+                &device.device,
+                &device.queue,
+                &scene,
+                &surface_texture,
+                &render_params,
+            )
+            .expect("failed to render to surface");
+
+        surface_texture.present();
+        device.device.poll(wgpu::Maintain::Wait);
+    }
+}
 
 impl Renderer {
     pub(crate) fn render_internal(&self, scene: &mut SceneBuilder) {
@@ -180,7 +308,7 @@ impl Renderer {
     fn element_cx<'a>(&'a self, element: &'a Node, location: Point) -> ElementCx<'a> {
         let style = element.data.borrow().styles.primary().clone();
 
-        let (mut layout, mut pos) = self.node_position(element.id, location);
+        let (layout, pos) = self.node_position(element.id, location);
         // dbg!(layout, pos);
         let scale = self.viewport.scale_f64();
 

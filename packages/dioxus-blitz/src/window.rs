@@ -1,16 +1,16 @@
 use super::Config;
 use crate::waker::UserWindowEvent;
-use crate::{renderer::Renderer, viewport::Viewport};
+use blitz::{Renderer, Viewport};
 use blitz_dom::Document;
 use dioxus::core::{Component, VirtualDom};
 use futures_util::{pin_mut, FutureExt};
 use std::task::Waker;
-use style::media_queries::{Device, MediaType};
-use tao::event::WindowEvent;
-use tao::event_loop::EventLoop;
-use tao::keyboard::KeyCode;
-use tao::window::Window;
-use tao::window::WindowBuilder;
+use tao::{
+    event::WindowEvent,
+    event_loop::EventLoop,
+    keyboard::KeyCode,
+    window::{Window, WindowBuilder},
+};
 use vello::Scene;
 
 pub(crate) struct View {
@@ -32,7 +32,11 @@ impl View {
         // By default we're drawing a single window
         // Set up the blitz drawing system
         // todo: this won't work on ios - blitz creation has to be deferred until the event loop as started
-        let window = WindowBuilder::new().build(&event_loop).unwrap();
+        let window = WindowBuilder::new()
+            .with_always_on_top(cfg!(debug_assertions))
+            .build(&event_loop)
+            .unwrap();
+
         let waker = crate::waker::tao_waker(&event_loop.create_proxy(), window.id());
 
         // Spin up the virtualdom
@@ -42,7 +46,7 @@ impl View {
         let markup = dioxus_ssr::render(&vdom);
 
         let size: tao::dpi::PhysicalSize<u32> = window.inner_size();
-        let mut viewport = Viewport::new(size);
+        let mut viewport = Viewport::new((size.width, size.height));
         viewport.set_hidpi_scale(window.scale_factor() as _);
 
         let device = viewport.make_device();
@@ -51,7 +55,8 @@ impl View {
         dom.write(markup);
 
         // Include the default stylesheet
-        dom.add_stylesheet(include_str!("../default.css"));
+        // todo: should this be done in blitz itself?
+        dom.add_stylesheet(include_str!("./default.css"));
 
         // add default styles, resolve layout and styles
         for ss in &cfg.stylesheets {
@@ -105,7 +110,8 @@ impl View {
             } => {}
 
             WindowEvent::Resized(physical_size) => {
-                self.renderer.set_size(physical_size);
+                self.renderer
+                    .set_size((physical_size.width, physical_size.height));
                 self.window.request_redraw();
             }
 
@@ -115,13 +121,11 @@ impl View {
 
                 match event.physical_key {
                     KeyCode::ArrowUp => {
-                        *self.renderer.viewport.zoom_mut() += 0.001;
-                        self.renderer.kick_viewport();
+                        self.renderer.zoom(0.005);
                         self.window.request_redraw();
                     }
                     KeyCode::ArrowDown => {
-                        *self.renderer.viewport.zoom_mut() -= 0.001;
-                        self.renderer.kick_viewport();
+                        self.renderer.zoom(-0.005);
                         self.window.request_redraw();
                     }
                     KeyCode::Enter => {

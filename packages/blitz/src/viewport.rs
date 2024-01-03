@@ -1,9 +1,9 @@
+use euclid::Size2D;
 use style::media_queries::{Device, MediaType};
-use tao::dpi::PhysicalSize;
 
 #[derive(Default, Debug)]
 pub struct Viewport {
-    pub window_size: PhysicalSize<u32>,
+    pub window_size: (u32, u32),
 
     hidpi_scale: f32,
 
@@ -13,7 +13,7 @@ pub struct Viewport {
 }
 
 impl Viewport {
-    pub fn new(window_size: PhysicalSize<u32>) -> Self {
+    pub fn new(window_size: (u32, u32)) -> Self {
         Self {
             window_size,
             hidpi_scale: 1.0,
@@ -48,8 +48,8 @@ impl Viewport {
     }
 
     pub fn make_device(&self) -> Device {
-        let height = self.window_size.height as f32 / self.scale();
-        let width = self.window_size.width as f32 / self.scale();
+        let width = self.window_size.0 as f32 / self.scale();
+        let height = self.window_size.1 as f32 / self.scale();
         let viewport_size = euclid::Size2D::new(width, height);
         let device_pixel_ratio = euclid::Scale::new(self.scale());
 
