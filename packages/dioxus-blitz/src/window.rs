@@ -9,6 +9,7 @@ use tao::{
     event::WindowEvent,
     event_loop::EventLoop,
     keyboard::KeyCode,
+    menu::{AboutMetadata, MenuBar, MenuId, MenuItemAttributes},
     window::{Window, WindowBuilder},
 };
 use vello::Scene;
@@ -34,6 +35,7 @@ impl View {
         // todo: this won't work on ios - blitz creation has to be deferred until the event loop as started
         let window = WindowBuilder::new()
             .with_always_on_top(cfg!(debug_assertions))
+            .with_menu(build_menu())
             .build(&event_loop)
             .unwrap();
 
@@ -52,7 +54,6 @@ impl View {
         let device = viewport.make_device();
 
         let mut dom = Document::new(device);
-        dom.write(markup);
 
         // Include the default stylesheet
         // todo: should this be done in blitz itself?
@@ -62,6 +63,8 @@ impl View {
         for ss in &cfg.stylesheets {
             dom.add_stylesheet(&ss);
         }
+
+        dom.write(markup);
 
         let mut renderer = rt.block_on(Renderer::from_window(&window, dom, viewport));
         let mut scene = Scene::new();
@@ -128,10 +131,7 @@ impl View {
                         self.renderer.zoom(-0.005);
                         self.window.request_redraw();
                     }
-                    KeyCode::Enter => {
-                        self.renderer.devtools.show_layout = !self.renderer.devtools.show_layout;
-                        self.window.request_redraw();
-                    }
+
                     _ => {}
                 }
             }
@@ -178,4 +178,20 @@ impl View {
             _ => {}
         }
     }
+}
+
+fn build_menu() -> MenuBar {
+    let mut menu = MenuBar::new();
+
+    // Build the about section
+    let mut about = MenuBar::new();
+    about.add_native_item(tao::menu::MenuItem::About(
+        "Dioxus".into(),
+        AboutMetadata::default(),
+    ));
+    about.add_item(MenuItemAttributes::new("Show layout").with_id(MenuId::new("dev.show_layout")));
+
+    menu.add_submenu("about", true, about);
+
+    menu
 }

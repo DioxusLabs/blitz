@@ -23,9 +23,13 @@ fn app(cx: Scope) -> Element {
             .unwrap()
     });
 
-    dbg!(&content);
-
+    // render! {
+    //     div { dangerous_inner_html: "{content}" }
+    // }
+    // render! {
+    //     div { dangerous_inner_html: include_str!("./google_bits/bottom_only.html") }
+    // }
     render! {
-        div { dangerous_inner_html: "{content}" }
+        div { dangerous_inner_html: include_str!("./google_bits/google.html") }
     }
 }

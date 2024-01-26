@@ -3,11 +3,17 @@ use crate::{
     Node,
 };
 use atomic_refcell::AtomicRefCell;
-use html5ever::tendril::TendrilSink;
+use html5ever::tendril::{Tendril, TendrilSink};
 use markup5ever_rcdom::{Handle, NodeData, RcDom};
 use selectors::matching::QuirksMode;
 use slab::Slab;
-use std::{cell::RefCell, collections::HashMap, pin::Pin};
+use std::{
+    cell::{Cell, RefCell},
+    collections::HashMap,
+    fmt::Write,
+    pin::Pin,
+    rc::Rc,
+};
 use style::{
     data::ElementData,
     dom::{TDocument, TNode},
@@ -165,7 +171,50 @@ impl Document {
                                 _ => {}
                             }
                         }
+                        // unescape the css
+                        let css = html_escape::decode_html_entities(&css);
+
                         self.add_stylesheet(&css);
+                    }
+
+                    // Create a shadow element and attach it to this node
+                    "input" => {
+                        // get the value and/or placeholder:
+                        let mut value = None;
+                        let mut placeholder = None;
+                        for attr in attrs.borrow().iter() {
+                            match attr.name.local.as_ref() {
+                                "value" => {
+                                    value = Some(attr.value.to_string());
+                                }
+                                "placeholder" => {
+                                    placeholder = Some(attr.value.to_string());
+                                }
+                                _ => {}
+                            }
+                        }
+
+                        if let Some(value) = value {
+                            let mut tendril: Tendril<html5ever::tendril::fmt::UTF8> =
+                                Tendril::new();
+
+                            tendril.write_str(value.as_str()).unwrap();
+
+                            let contents: RefCell<Tendril<html5ever::tendril::fmt::UTF8>> =
+                                RefCell::new(tendril);
+
+                            let handle = Handle::new(markup5ever_rcdom::Node {
+                                parent: Cell::new(Some(Rc::downgrade(node))),
+                                children: Default::default(),
+                                data: NodeData::Text { contents },
+                            });
+
+                            // inserted as a child of the input
+                            let shadow = self.add_node(&handle, 0, Some(id));
+
+                            // attach it to its parent
+                            self.nodes[id].children.push(shadow);
+                        }
                     }
 
                     // todo: Load images
@@ -225,7 +274,7 @@ impl Document {
         self.resolve_stylist();
 
         // Merge stylo into taffy
-        self.flush_styles_to_layout(vec![0], None);
+        self.flush_styles_to_layout(vec![self.root_element().id], None, taffy::Display::Block);
 
         // Next we resolve layout with the data resolved by stlist
         self.resolve_layout();
@@ -238,6 +287,10 @@ impl Document {
             author: &guard.read(),
             ua_or_user: &guard.read(),
         };
+        let res = self
+            .stylist
+            .media_features_change_changed_style(&guards, &device);
+        dbg!(res);
         self.stylist.set_device(device, &guards);
     }
 
@@ -252,11 +305,14 @@ impl Document {
         let available_space = taffy::Size {
             // width: AvailableSpace::MaxContent,
             // height: AvailableSpace::Definite(10000000.0),
-            width: AvailableSpace::Definite(size.width.to_f32_px() as _),
-            height: AvailableSpace::Definite(size.height.to_f32_px() as _),
+            width: AvailableSpace::Definite(dbg!(1200.0)),
+            height: AvailableSpace::Definite(dbg!(2000.0)),
         };
+        //     width: AvailableSpace::Definite(dbg!(size.width.to_f32_px() as _)),
+        //     height: AvailableSpace::Definite(dbg!(size.height.to_f32_px() as _)),
+        // };
 
-        let root = 0_usize;
+        let root = 1_usize;
 
         taffy::compute_root_layout(self, root.into(), available_space);
     }

@@ -1,17 +1,11 @@
 use std::cell::RefCell;
 
-// use dioxus_native_core::node::OwnedAttributeValue;
-// use dioxus_native_core::prelude::*;
-// use dioxus_native_core_macro::partial_derive_state;
-// use lightningcss::properties::font::AbsoluteFontSize;
-// use lightningcss::properties::font::FontSize as FontSizeProperty;
-// use lightningcss::properties::font::RelativeFontSize;
-// use lightningcss::traits::Parse;
-// use lightningcss::values::length::LengthValue;
-// use lightningcss::values::percentage::DimensionPercentage;
-use shipyard::Component;
+use glyphon::{
+    Attrs, Buffer, Color, Family, FontSystem, Metrics, Resolution, Shaping, SwashCache, TextArea,
+    TextAtlas, TextBounds, TextRenderer,
+};
+use vello::{glyph::skrifa::raw::FileRef, skrifa::prelude::*};
 use vello::{
-    fello::{raw::FontRef, MetadataProvider},
     glyph::GlyphContext,
     kurbo::Affine,
     peniko::{Brush, Font},
@@ -39,18 +33,19 @@ impl TextContext {
         text: &str,
     ) {
         let font = font.and_then(to_font_ref).unwrap_or_else(default_font);
-        let fello_size = vello::fello::Size::new(size);
+        let fello_size = Size::new(size);
         let charmap = font.charmap();
-        let metrics = font.metrics(fello_size, Default::default());
+        let metrics = font.metrics(fello_size, LocationRef::default());
         let line_height = metrics.ascent - metrics.descent + metrics.leading;
-        let glyph_metrics = font.glyph_metrics(fello_size, Default::default());
+        let glyph_metrics = font.glyph_metrics(fello_size, LocationRef::default());
         let mut pen_x = 0f64;
         let mut pen_y = 0f64;
         let vars: [(&str, f32); 0] = [];
 
         let mut gcx = self.gcx.borrow_mut();
 
-        let mut provider = gcx.new_provider(&font, None, size, false, vars);
+        let mut provider = gcx.new_provider(&font, size, false, vars);
+        // let mut provider = gcx.new_provider(&font, None, size, false, vars);
         let brush = brush.map(Into::into);
         for ch in text.chars() {
             if ch == '\n' {
@@ -77,11 +72,11 @@ impl TextContext {
         text: &str,
     ) -> (f64, f64) {
         let font = font.and_then(to_font_ref).unwrap_or_else(default_font);
-        let fello_size = vello::fello::Size::new(size);
+        let fello_size = Size::new(size);
         let charmap = font.charmap();
-        let metrics = font.metrics(fello_size, Default::default());
+        let metrics = font.metrics(fello_size, LocationRef::default());
         let line_height = metrics.ascent - metrics.descent + metrics.leading;
-        let glyph_metrics = font.glyph_metrics(fello_size, Default::default());
+        let glyph_metrics = font.glyph_metrics(fello_size, LocationRef::default());
         let mut max_width = 0;
         let mut cur_width = 0f64;
         let mut height = line_height as f64;
@@ -105,7 +100,6 @@ impl TextContext {
 }
 
 fn to_font_ref(font: &Font) -> Option<FontRef> {
-    use vello::fello::raw::FileRef;
     let file_ref = FileRef::new(font.data.as_ref()).ok()?;
     match file_ref {
         FileRef::Font(font) => Some(font),
@@ -116,54 +110,3 @@ fn to_font_ref(font: &Font) -> Option<FontRef> {
 fn default_font<'a>() -> FontRef<'a> {
     FontRef::new(FONT_DATA).unwrap()
 }
-
-// fn parse_font_size_from_attr(
-//     css_value: &OwnedAttributeValue,
-//     parent_font_size: f32,
-//     root_font_size: f32,
-// ) -> Option<f32> {
-//     match css_value {
-//         OwnedAttributeValue::Text(n) => {
-//             // css font-size parse.
-//             // not support
-//             // 1. calc,
-//             // 3. relative font size. (smaller, larger)
-//             match FontSizeProperty::parse_string(n) {
-//                 Ok(FontSizeProperty::Length(length)) => match length {
-//                     DimensionPercentage::Dimension(l) => match l {
-//                         LengthValue::Rem(v) => Some(v * root_font_size),
-//                         LengthValue::Em(v) => Some(v * parent_font_size),
-//                         _ => l.to_px(),
-//                     },
-//                     // same with em.
-//                     DimensionPercentage::Percentage(p) => Some(p.0 * parent_font_size),
-//                     DimensionPercentage::Calc(_c) => None,
-//                 },
-//                 Ok(FontSizeProperty::Absolute(abs_val)) => {
-//                     let factor = match abs_val {
-//                         AbsoluteFontSize::XXSmall => 0.6,
-//                         AbsoluteFontSize::XSmall => 0.75,
-//                         AbsoluteFontSize::Small => 0.89, // 8/9
-//                         AbsoluteFontSize::Medium => 1.0,
-//                         AbsoluteFontSize::Large => 1.25,
-//                         AbsoluteFontSize::XLarge => 1.5,
-//                         AbsoluteFontSize::XXLarge => 2.0,
-//                         AbsoluteFontSize::XXXLarge => 3.0,
-//                     };
-//                     Some(factor * root_font_size)
-//                 }
-//                 Ok(FontSizeProperty::Relative(rel_val)) => {
-//                     let factor = match rel_val {
-//                         RelativeFontSize::Smaller => 0.8,
-//                         RelativeFontSize::Larger => 1.25,
-//                     };
-//                     Some(factor * parent_font_size)
-//                 }
-//                 _ => None,
-//             }
-//         }
-//         OwnedAttributeValue::Float(n) => Some(n.to_owned() as f32),
-//         OwnedAttributeValue::Int(n) => Some(n.to_owned() as f32),
-//         _ => None,
-//     }
-// }

@@ -16,7 +16,7 @@ use std::{
 use atomic_refcell::{AtomicRef, AtomicRefCell, AtomicRefMut};
 use euclid::{Rect, Scale, Size2D};
 use fxhash::FxHashMap;
-use html5ever::tendril::TendrilSink;
+use html5ever::{local_name, tendril::TendrilSink};
 use markup5ever_rcdom::NodeData;
 use selectors::{
     matching::{ElementSelectorFlags, MatchingContext, VisitedHandlingMode},
@@ -58,265 +58,302 @@ use taffy::{prelude::Style, LengthPercentageAuto};
 
 impl crate::document::Document {
     /// Walk the whole tree, converting styles to layout
-    pub fn flush_styles_to_layout(&mut self, children: Vec<usize>, parent: Option<usize>) {
+    pub fn flush_styles_to_layout(
+        &mut self,
+        children: Vec<usize>,
+        parent: Option<usize>,
+        parent_display: taffy::Display,
+    ) {
         // make a floating element
         for child in children {
-            let children = {
+            // We want to do some re-reordering of children when setting their layout only if they're in a flex or grid container
+            let mut display_ = parent_display;
+
+            let mut children = {
                 let node = self.nodes.get_mut(child).unwrap();
                 let data = node.data.borrow();
 
-                if let Some(style) = data.styles.get_primary() {
-                    let margin = style.get_margin();
-                    let padding = style.get_padding();
-                    let border = style.get_border();
-                    let Position {
-                        top,
-                        right,
-                        bottom,
-                        left,
-                        z_index,
-                        flex_direction,
-                        flex_wrap,
-                        justify_content,
-                        align_content,
-                        align_items,
-                        flex_grow,
-                        flex_shrink,
-                        align_self,
-                        order,
-                        flex_basis,
-                        width,
-                        min_width,
-                        max_width,
-                        height,
-                        min_height,
-                        max_height,
-                        box_sizing,
-                        column_gap,
-                        aspect_ratio,
-                    } = style.get_position();
+                let Some(style) = data.styles.get_primary() else {
+                    continue;
+                };
 
-                    let BoxStyle {
-                        _servo_top_layer,
-                        _servo_overflow_clip_box,
-                        display,
-                        position,
-                        float,
-                        clear,
-                        vertical_align,
-                        overflow_x,
-                        overflow_y,
-                        transform,
-                        rotate,
-                        scale,
-                        translate,
-                        perspective,
-                        perspective_origin,
-                        backface_visibility,
-                        transform_style,
-                        transform_origin,
-                        container_type,
-                        container_name,
-                        original_display,
-                    }: &BoxStyle = style.get_box();
+                // if let Some(style) = data.styles.get_primary() {
+                let margin = style.get_margin();
+                let padding = style.get_padding();
+                let border = style.get_border();
+                let Position {
+                    top,
+                    right,
+                    bottom,
+                    left,
+                    z_index,
+                    flex_direction,
+                    flex_wrap,
+                    justify_content,
+                    align_content,
+                    align_items,
+                    flex_grow,
+                    flex_shrink,
+                    align_self,
+                    order,
+                    flex_basis,
+                    width,
+                    min_width,
+                    max_width,
+                    height,
+                    min_height,
+                    max_height,
+                    box_sizing,
+                    column_gap,
+                    aspect_ratio,
+                } = style.get_position();
 
-                    // todo: support grid
+                let BoxStyle {
+                    _servo_top_layer,
+                    _servo_overflow_clip_box,
+                    display,
+                    position,
+                    float,
+                    clear,
+                    vertical_align,
+                    overflow_x,
+                    overflow_y,
+                    transform,
+                    rotate,
+                    scale,
+                    translate,
+                    perspective,
+                    perspective_origin,
+                    backface_visibility,
+                    transform_style,
+                    transform_origin,
+                    container_type,
+                    container_name,
+                    original_display,
+                }: &BoxStyle = style.get_box();
 
-                    // dbg!(style.get_position());
-                    // dbg!(style.get_box());
-                    // dbg!(style.get_inhe());
-                    // hmmmmmm, these seem wrong, coming from stylo
-                    let mut display_ = match display.inside() {
-                        style::values::specified::box_::DisplayInside::Flex => taffy::Display::Flex,
-                        style::values::specified::box_::DisplayInside::None => taffy::Display::None,
-                        _ => taffy::Display::Block,
-                    };
+                // todo: support grid
 
-                    // todo: support these
-                    match display.outside() {
-                        style::values::specified::box_::DisplayOutside::None => {
-                            display_ = taffy::Display::None
-                        }
-                        style::values::specified::box_::DisplayOutside::Inline => {}
-                        style::values::specified::box_::DisplayOutside::Block => {}
-                        style::values::specified::box_::DisplayOutside::TableCaption => {}
-                        style::values::specified::box_::DisplayOutside::InternalTable => {}
-                    };
+                // dbg!(style.get_position());
+                // dbg!(style.get_box());
+                // dbg!(style.get_inhe());
+                // hmmmmmm, these seem wrong, coming from stylo
+                display_ = match display.inside() {
+                    style::values::specified::box_::DisplayInside::Flex => taffy::Display::Flex,
+                    style::values::specified::box_::DisplayInside::None => taffy::Display::None,
+                    _ => taffy::Display::Block,
+                };
 
-                    let flex_basis = match flex_basis {
-                        style::values::generics::flex::FlexBasis::Content => taffy::Dimension::Auto,
-                        style::values::generics::flex::FlexBasis::Size(size) => match size {
-                            style::values::generics::length::GenericSize::LengthPercentage(p) => {
-                                if let Some(p) = p.0.to_percentage() {
-                                    taffy::Dimension::Percent(p.0)
-                                } else {
-                                    taffy::Dimension::Length(p.0.to_length().unwrap().px())
-                                }
+                // todo: support these
+                match display.outside() {
+                    style::values::specified::box_::DisplayOutside::None => {
+                        display_ = taffy::Display::None
+                    }
+                    style::values::specified::box_::DisplayOutside::Inline => {}
+                    style::values::specified::box_::DisplayOutside::Block => {}
+                    style::values::specified::box_::DisplayOutside::TableCaption => {}
+                    style::values::specified::box_::DisplayOutside::InternalTable => {}
+                };
+
+                let flex_basis = match flex_basis {
+                    style::values::generics::flex::FlexBasis::Content => taffy::Dimension::Auto,
+                    style::values::generics::flex::FlexBasis::Size(size) => match size {
+                        style::values::generics::length::GenericSize::LengthPercentage(p) => {
+                            if let Some(p) = p.0.to_percentage() {
+                                taffy::Dimension::Percent(p.0)
+                            } else {
+                                taffy::Dimension::Length(p.0.to_length().unwrap().px())
                             }
-                            style::values::generics::length::GenericSize::Auto => {
-                                taffy::Dimension::Auto
-                            }
-                        },
-                    };
+                        }
+                        style::values::generics::length::GenericSize::Auto => {
+                            taffy::Dimension::Auto
+                        }
+                    },
+                };
 
-                    let align_content = match align_content {
-                        style::computed_values::align_content::T::Stretch => {
-                            Some(taffy::AlignContent::Stretch)
-                        }
-                        style::computed_values::align_content::T::FlexStart => {
-                            Some(taffy::AlignContent::FlexStart)
-                        }
-                        style::computed_values::align_content::T::FlexEnd => {
-                            Some(taffy::AlignContent::FlexEnd)
-                        }
-                        style::computed_values::align_content::T::Center => {
-                            Some(taffy::AlignContent::Center)
-                        }
-                        style::computed_values::align_content::T::SpaceBetween => {
-                            Some(taffy::AlignContent::SpaceBetween)
-                        }
-                        style::computed_values::align_content::T::SpaceAround => {
-                            Some(taffy::AlignContent::SpaceAround)
-                        }
-                    };
+                let align_content = match align_content {
+                    style::computed_values::align_content::T::Stretch => {
+                        Some(taffy::AlignContent::Stretch)
+                    }
+                    style::computed_values::align_content::T::FlexStart => {
+                        Some(taffy::AlignContent::FlexStart)
+                    }
+                    style::computed_values::align_content::T::FlexEnd => {
+                        Some(taffy::AlignContent::FlexEnd)
+                    }
+                    style::computed_values::align_content::T::Center => {
+                        Some(taffy::AlignContent::Center)
+                    }
+                    style::computed_values::align_content::T::SpaceBetween => {
+                        Some(taffy::AlignContent::SpaceBetween)
+                    }
+                    style::computed_values::align_content::T::SpaceAround => {
+                        Some(taffy::AlignContent::SpaceAround)
+                    }
+                };
 
-                    let flex_direction = match flex_direction {
-                        style::computed_values::flex_direction::T::Row => taffy::FlexDirection::Row,
-                        style::computed_values::flex_direction::T::RowReverse => {
-                            taffy::FlexDirection::RowReverse
-                        }
-                        style::computed_values::flex_direction::T::Column => {
-                            taffy::FlexDirection::Column
-                        }
-                        style::computed_values::flex_direction::T::ColumnReverse => {
-                            taffy::FlexDirection::ColumnReverse
-                        }
-                    };
+                let flex_direction = match flex_direction {
+                    style::computed_values::flex_direction::T::Row => taffy::FlexDirection::Row,
+                    style::computed_values::flex_direction::T::RowReverse => {
+                        taffy::FlexDirection::RowReverse
+                    }
+                    style::computed_values::flex_direction::T::Column => {
+                        taffy::FlexDirection::Column
+                    }
+                    style::computed_values::flex_direction::T::ColumnReverse => {
+                        taffy::FlexDirection::ColumnReverse
+                    }
+                };
 
-                    let align_items = match align_items {
-                        style::computed_values::align_items::T::Stretch => {
+                let align_items = match align_items {
+                    style::computed_values::align_items::T::Stretch => {
+                        Some(taffy::AlignItems::Stretch)
+                    }
+                    style::computed_values::align_items::T::FlexStart => {
+                        Some(taffy::AlignItems::FlexStart)
+                    }
+                    style::computed_values::align_items::T::FlexEnd => {
+                        Some(taffy::AlignItems::FlexEnd)
+                    }
+                    style::computed_values::align_items::T::Center => {
+                        Some(taffy::AlignItems::Center)
+                    }
+                    style::computed_values::align_items::T::Baseline => {
+                        Some(taffy::AlignItems::Baseline)
+                    }
+                };
+
+                node.style = Style {
+                    margin: to_taffy_margin(margin),
+                    padding: to_taffy_padding(padding),
+                    border: to_taffy_border(border),
+                    align_content,
+                    display: display_,
+                    flex_direction,
+                    justify_content: match justify_content {
+                        style::computed_values::justify_content::T::FlexStart => {
+                            Some(taffy::JustifyContent::FlexStart)
+                        }
+                        style::computed_values::justify_content::T::Stretch => {
+                            Some(taffy::JustifyContent::Stretch)
+                        }
+                        style::computed_values::justify_content::T::FlexEnd => {
+                            Some(taffy::JustifyContent::FlexEnd)
+                        }
+                        style::computed_values::justify_content::T::Center => {
+                            Some(taffy::JustifyContent::Center)
+                        }
+                        style::computed_values::justify_content::T::SpaceBetween => {
+                            Some(taffy::JustifyContent::SpaceBetween)
+                        }
+                        style::computed_values::justify_content::T::SpaceAround => {
+                            Some(taffy::JustifyContent::SpaceAround)
+                        }
+                    },
+                    align_self: match align_self {
+                        style::computed_values::align_self::T::Auto => align_items,
+                        style::computed_values::align_self::T::Stretch => {
                             Some(taffy::AlignItems::Stretch)
                         }
-                        style::computed_values::align_items::T::FlexStart => {
+                        style::computed_values::align_self::T::FlexStart => {
                             Some(taffy::AlignItems::FlexStart)
                         }
-                        style::computed_values::align_items::T::FlexEnd => {
+                        style::computed_values::align_self::T::FlexEnd => {
                             Some(taffy::AlignItems::FlexEnd)
                         }
-                        style::computed_values::align_items::T::Center => {
+                        style::computed_values::align_self::T::Center => {
                             Some(taffy::AlignItems::Center)
                         }
-                        style::computed_values::align_items::T::Baseline => {
+                        style::computed_values::align_self::T::Baseline => {
                             Some(taffy::AlignItems::Baseline)
                         }
-                    };
+                    },
+                    flex_grow: flex_grow.0,
+                    flex_shrink: flex_shrink.0,
+                    align_items,
+                    flex_wrap: match flex_wrap {
+                        style::computed_values::flex_wrap::T::Wrap => taffy::FlexWrap::Wrap,
+                        style::computed_values::flex_wrap::T::WrapReverse => {
+                            taffy::FlexWrap::WrapReverse
+                        }
+                        style::computed_values::flex_wrap::T::Nowrap => taffy::FlexWrap::NoWrap,
+                    },
+                    flex_basis,
+                    size: make_taffy_size(width, height),
+                    min_size: make_taffy_size(min_width, min_height),
+                    max_size: make_taffy_size2(max_width, max_height),
+                    // display
+                    // overflow
+                    // scrollbar_width
+                    // position
+                    // inset
+                    // size
+                    // min_size
+                    // max_size
+                    // aspect_ratio
+                    // margin
+                    // align_items
+                    // align_self
+                    // justify_items
+                    // justify_self
+                    // align_content
+                    // justify_content
+                    // gap
+                    // flex_direction
+                    // flex_wrap
+                    // flex_basis
+                    // flex_grow
+                    // flex_shrink
+                    // grid_template_rows
+                    // grid_template_columns
+                    // grid_auto_rows
+                    // grid_auto_columns
+                    // grid_auto_flow
+                    // grid_row
+                    // grid_column
+                    ..Style::DEFAULT
+                };
 
-                    node.style = Style {
-                        margin: to_taffy_margin(margin),
-                        padding: to_taffy_padding(padding),
-                        border: to_taffy_border(border),
-                        align_content,
-                        display: display_,
-                        flex_direction,
-                        justify_content: match justify_content {
-                            style::computed_values::justify_content::T::FlexStart => {
-                                Some(taffy::JustifyContent::FlexStart)
-                            }
-                            style::computed_values::justify_content::T::Stretch => {
-                                Some(taffy::JustifyContent::Stretch)
-                            }
-                            style::computed_values::justify_content::T::FlexEnd => {
-                                Some(taffy::JustifyContent::FlexEnd)
-                            }
-                            style::computed_values::justify_content::T::Center => {
-                                Some(taffy::JustifyContent::Center)
-                            }
-                            style::computed_values::justify_content::T::SpaceBetween => {
-                                Some(taffy::JustifyContent::SpaceBetween)
-                            }
-                            style::computed_values::justify_content::T::SpaceAround => {
-                                Some(taffy::JustifyContent::SpaceAround)
-                            }
-                        },
-                        align_self: match align_self {
-                            style::computed_values::align_self::T::Auto => align_items,
-                            style::computed_values::align_self::T::Stretch => {
-                                Some(taffy::AlignItems::Stretch)
-                            }
-                            style::computed_values::align_self::T::FlexStart => {
-                                Some(taffy::AlignItems::FlexStart)
-                            }
-                            style::computed_values::align_self::T::FlexEnd => {
-                                Some(taffy::AlignItems::FlexEnd)
-                            }
-                            style::computed_values::align_self::T::Center => {
-                                Some(taffy::AlignItems::Center)
-                            }
-                            style::computed_values::align_self::T::Baseline => {
-                                Some(taffy::AlignItems::Baseline)
-                            }
-                        },
-                        flex_grow: flex_grow.0,
-                        flex_shrink: flex_shrink.0,
-                        align_items,
-                        flex_wrap: match flex_wrap {
-                            style::computed_values::flex_wrap::T::Wrap => taffy::FlexWrap::Wrap,
-                            style::computed_values::flex_wrap::T::WrapReverse => {
-                                taffy::FlexWrap::WrapReverse
-                            }
-                            style::computed_values::flex_wrap::T::Nowrap => taffy::FlexWrap::NoWrap,
-                        },
-                        flex_basis,
-                        size: make_taffy_size(width, height),
-                        min_size: make_taffy_size(min_width, min_height),
-                        max_size: make_taffy_size2(max_width, max_height),
-                        // display
-                        // overflow
-                        // scrollbar_width
-                        // position
-                        // inset
-                        // size
-                        // min_size
-                        // max_size
-                        // aspect_ratio
-                        // margin
-                        // align_items
-                        // align_self
-                        // justify_items
-                        // justify_self
-                        // align_content
-                        // justify_content
-                        // gap
-                        // flex_direction
-                        // flex_wrap
-                        // flex_basis
-                        // flex_grow
-                        // flex_shrink
-                        // grid_template_rows
-                        // grid_template_columns
-                        // grid_auto_rows
-                        // grid_auto_columns
-                        // grid_auto_flow
-                        // grid_row
-                        // grid_column
-                        ..Style::DEFAULT
-                    };
+                // // now we need to override the style if there is a style attribute
+                // let style_attr = node
+                //     .attrs()
+                //     .borrow()
+                //     .iter()
+                //     .find(|attr| attr.name.local.as_ref() == "style");
 
-                    // // now we need to override the style if there is a style attribute
-                    // let style_attr = node
-                    //     .attrs()
-                    //     .borrow()
-                    //     .iter()
-                    //     .find(|attr| attr.name.local.as_ref() == "style");
-
-                    // if let Some(style_attr) = style_attr {
-                    //     // style::parser::ParserContext
-                    // }
-                }
+                // if let Some(style_attr) = style_attr {
+                //     // style::parser::ParserContext
+                // }
+                // }
 
                 // would like to change this not require a clone, but requires some refactoring
                 node.children.clone()
             };
+
+            if display_ == taffy::Display::Flex {
+                // Reorder the children based on their flex order
+                // Would like to not have to
+                children.sort_by(|left, right| {
+                    let left_node = self.nodes.get(*left).unwrap();
+                    let right_node = self.nodes.get(*right).unwrap();
+
+                    let order1 = left_node
+                        .data
+                        .borrow()
+                        .styles
+                        .get_primary()
+                        .map(|style| style.get_position().order);
+
+                    let order2 = right_node
+                        .data
+                        .borrow()
+                        .styles
+                        .get_primary()
+                        .map(|style| style.get_position().order);
+
+                    order1.cmp(&order2)
+                });
+            }
 
             // // Reach up to our parent and set our flex basis to auto if we're in a flex layout
             // if let Some(parent) = parent {
@@ -358,7 +395,7 @@ impl crate::document::Document {
             //     }
             // }
 
-            self.flush_styles_to_layout(children, Some(child));
+            self.flush_styles_to_layout(children, Some(child), display_);
         }
     }
 
@@ -395,6 +432,7 @@ impl crate::document::Document {
 
         // components/layout_2020/lib.rs:983
         let root = self.root_element();
+        // dbg!(root);
         let token = RecalcStyle::pre_traverse(root, &context);
 
         if token.should_traverse() {
@@ -492,7 +530,7 @@ impl<'a> TDocument for BlitzNode<'a> {
     }
 
     fn is_html_document(&self) -> bool {
-        true
+        self.id == 1
     }
 
     fn quirks_mode(&self) -> QuirksMode {
@@ -560,7 +598,7 @@ impl<'a> TNode for BlitzNode<'a> {
     }
 
     fn owner_doc(&self) -> Self::ConcreteDocument {
-        self.with(0)
+        self.with(1)
     }
 
     fn is_in_document(&self) -> bool {
@@ -706,6 +744,7 @@ impl<'a> selectors::Element for BlitzNode<'a> {
             &<Self::Impl as selectors::SelectorImpl>::AttrValue,
         >,
     ) -> bool {
+        // println!("attr matches  {}", self.id);
         let mut has_attr = false;
         self.each_attr_name(|f| {
             if f.as_ref() == local_name.as_ref() {
@@ -736,12 +775,10 @@ impl<'a> selectors::Element for BlitzNode<'a> {
     }
 
     fn is_link(&self) -> bool {
-        false
-        // self.me()
-        //     .parsed.data;
-        // .borrow()
-        // .iter()
-        // .any(|(k, _)| k.local == "href")
+        match self.node.data {
+            NodeData::Element { ref name, .. } => name.local == local_name!("a"),
+            _ => false,
+        }
     }
 
     fn is_html_slot_element(&self) -> bool {
@@ -943,7 +980,7 @@ impl<'a> TElement for BlitzNode<'a> {
     }
 
     fn has_dirty_descendants(&self) -> bool {
-        false
+        true
     }
 
     fn has_snapshot(&self) -> bool {
@@ -976,24 +1013,45 @@ impl<'a> TElement for BlitzNode<'a> {
     }
 
     unsafe fn clear_data(&self) {
+        // println!("clear data {}", self.id);
         // unimplemented!()
     }
 
     fn has_data(&self) -> bool {
+        // docment nodes don't have data, text nodes don't have data
+        match self.node.data {
+            NodeData::Element { .. } => true,
+            _ => false,
+        }
+
+        // println!("has data? {}", self.id);
         // true
-        false
+        // false
         // true // all nodes should have data
     }
 
     fn borrow_data(&self) -> Option<AtomicRef<style::data::ElementData>> {
+        let has_data = self.has_data();
+        // println!("try borrow data?? {}, has data {}", self.id, has_data);
+        if !has_data {
+            return None;
+        }
+
         self.data.try_borrow().ok()
     }
 
     fn mutate_data(&self) -> Option<AtomicRefMut<style::data::ElementData>> {
+        let has_data = self.has_data();
+        // println!("try mutate data?? {}, has data {}", self.id, has_data);
+        if !has_data {
+            return None;
+        }
+
         self.data.try_borrow_mut().ok()
     }
 
     fn skip_item_display_fixup(&self) -> bool {
+        // println!("skip display fixup???");
         false
     }
 

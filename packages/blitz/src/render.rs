@@ -11,6 +11,7 @@ use crate::{
     viewport::Viewport,
 };
 use blitz_dom::{Document, Node};
+use html5ever::local_name;
 use style::{
     properties::{style_structs::Outline, ComputedValues},
     values::{
@@ -79,15 +80,14 @@ impl Renderer {
             .await
             .expect("Error creating surface");
 
-        let renderer = VelloRenderer::new(
-            &render_context.devices[surface.dev_id].device,
-            RendererOptions {
-                surface_format: Some(surface.config.format),
-                antialiasing_support: AaSupport::all(),
-                use_cpu: false,
-            },
-        )
-        .unwrap();
+        let options = RendererOptions {
+            surface_format: Some(surface.config.format),
+            antialiasing_support: AaSupport::all(),
+            use_cpu: false,
+        };
+
+        let renderer =
+            VelloRenderer::new(&render_context.devices[surface.dev_id].device, options).unwrap();
 
         // 5. Build helpers for things like event handlers, hit testing
         Self {
@@ -132,7 +132,12 @@ impl Renderer {
     /// This assumes styles are resolved and layout is complete.
     /// Make sure you do those before trying to render
     pub fn render(&mut self, scene: &mut Scene) {
-        self.render_internal(&mut SceneBuilder::for_scene(scene));
+        // Simply render the document (the root element (note that this is not the same as the root node)))
+        self.render_element(
+            &mut SceneBuilder::for_scene(scene),
+            self.dom.root_element().id,
+            Point::ZERO,
+        );
 
         let surface_texture = self
             .surface
@@ -162,32 +167,6 @@ impl Renderer {
         surface_texture.present();
         device.device.poll(wgpu::Maintain::Wait);
     }
-}
-
-impl Renderer {
-    pub(crate) fn render_internal(&self, scene: &mut SceneBuilder) {
-        let root = self.dom.root_element();
-
-        scene.fill(
-            Fill::NonZero,
-            Affine::IDENTITY,
-            Color::WHITE,
-            None,
-            &self.bounds(root.id),
-        );
-
-        self.render_element(scene, root.id, Point::ZERO);
-    }
-
-    pub(crate) fn bounds(&self, node: usize) -> Rect {
-        let layout = self.layout(node);
-        Rect::new(
-            layout.location.x as f64,
-            layout.location.y as f64,
-            layout.size.width as f64,
-            layout.size.height as f64,
-        )
-    }
 
     /// Renders a node, but is guaranteed that the node is an element
     /// This is because the font_size is calculated from layout resolution and all text is rendered directly here, instead
@@ -203,7 +182,9 @@ impl Renderer {
         // Might be able to cache resources deeper in vello.
         //
         // Implemented (completely):
-        //  - nothing is completely done, vello is limiting all the styles we can implement (performantly)
+        //  - nothing is completely done:
+        //  - vello is limiting all the styles we can implement (performantly)
+        //  - servo is missing a number of features (like space-evenly justify)
         //
         // Implemented (partially):
         //  - background, border, font, margin, outline, padding,
@@ -216,55 +197,44 @@ impl Renderer {
 
         let element = &self.dom.tree()[node];
 
-        let (name, attrs) = match &element.node.data {
-            NodeData::Element { name, attrs, .. } => {
-                // Hide hidden things...
-                // todo: move this to state on the element itself
-                if let Some(attr) = attrs
-                    .borrow()
-                    .iter()
-                    .find(|attr| attr.name.local.as_ref() == "hidden")
-                {
-                    if attr.value.to_string() == "true" || attr.value.to_string() == "" {
-                        return;
-                    }
-                }
-
-                // Hide inputs with type=hidden
-                if name.local.as_ref() == "input" {
-                    let attrs = &attrs.borrow();
-
-                    // if the input type is hidden, hide it
-                    if let Some(attr) = attrs.iter().find(|attr| attr.name.local.as_ref() == "type")
-                    {
-                        if attr.value.to_string() == "hidden" {
-                            return;
-                        }
-                    }
-                }
-
-                // skip head nodes/script nodes
-                // these are handled elsewhere...
-                match name.local.as_ref() {
-                    "style" | "head" | "script" | "template" | "title" => return,
-                    _ => (name, attrs),
-                }
-            }
-            _ => return,
-        };
-
-        if element.data.borrow().styles.get_primary().is_none() {
-            // println!("no styles for {:?}", element);
+        // Early return if the element is hidden
+        if matches!(element.style.display, taffy::prelude::Display::None) {
             return;
         }
 
-        // Shouldn't even be getting here if we don't have a laayout
-        // todo: refactor all this so non-laid out elements are skipped
-        match element.style.display {
-            taffy::prelude::Display::Block => {}
-            taffy::prelude::Display::Flex => {}
-            taffy::prelude::Display::Grid => {}
-            taffy::prelude::Display::None => return,
+        let NodeData::Element { name, attrs, .. } = &element.node.data else {
+            return;
+        };
+
+        // Only draw elements with a style
+        if element.data.borrow().styles.get_primary().is_none() {
+            return;
+        }
+
+        // Hide hidden things...
+        // todo: move this to state on the element itself
+        if let Some(attr) = attrs
+            .borrow()
+            .iter()
+            .find(|attr| attr.name.local == local_name!("hidden"))
+        {
+            if attr.value.as_ref() == "true" || attr.value.as_ref() == "" {
+                return;
+            }
+        }
+
+        // Hide inputs with type=hidden
+        // Can this just be css?
+        if name.local == local_name!("input") {
+            if let Some(attr) = attrs
+                .borrow()
+                .iter()
+                .find(|attr| attr.name.local == local_name!("type"))
+            {
+                if attr.value.as_ref() == "hidden" {
+                    return;
+                }
+            }
         }
 
         let cx = self.element_cx(element, location);
@@ -287,35 +257,13 @@ impl Renderer {
                 NodeData::ProcessingInstruction { .. } => {}
             }
         }
-
-        // Draw shadow elements?
-        match name.local.as_ref() {
-            "input" => {
-                let value = attrs
-                    .borrow()
-                    .iter()
-                    .find(|attr| attr.name.local.as_ref() == "value")
-                    .map(|attr| attr.value.to_string());
-
-                if let Some(value) = value {
-                    cx.stroke_text(scene, &self.text_context, value.as_ref(), location)
-                }
-            }
-            _ => {}
-        }
     }
 
     fn element_cx<'a>(&'a self, element: &'a Node, location: Point) -> ElementCx<'a> {
         let style = element.data.borrow().styles.primary().clone();
 
         let (layout, pos) = self.node_position(element.id, location);
-        // dbg!(layout, pos);
         let scale = self.viewport.scale_f64();
-
-        // todo: maybe cache this so we don't need to constantly be figuring it out
-        // It is quite a bit of math to calculate during render/traverse
-        // Also! we can cache the bezpaths themselves, saving us a bunch of work
-        let frame = ElementFrame::new(&style, &layout, scale);
 
         let inherited_text = style.get_inherited_text();
         let font = style.get_font();
@@ -325,6 +273,11 @@ impl Renderer {
         // the bezpaths for every element are (potentially) cached (not yet, tbd)
         // By performing the transform, we prevent the cache from becoming invalid when the page shifts around
         let transform = Affine::translate((pos.x * scale, pos.y * scale));
+
+        // todo: maybe cache this so we don't need to constantly be figuring it out
+        // It is quite a bit of math to calculate during render/traverse
+        // Also! we can cache the bezpaths themselves, saving us a bunch of work
+        let frame = ElementFrame::new(&style, &layout, scale);
 
         ElementCx {
             frame,
@@ -374,16 +327,8 @@ impl ElementCx<'_> {
         contents: &str,
         pos: Point,
     ) {
-        let scale = self.scale;
-        // let transform = Affine::new( self.transform.to+ translate);
-
-        // let translate = Affine::translate((pos.x * scale, pos.y * scale));
-        let transform = self
-            .transform
+        let transform = Affine::translate((pos.x * self.scale, pos.y * self.scale))
             .then_translate((0.0, self.font_size as f64 * self.scale as f64).into());
-
-        // let transform = Affine::translate(pos.to_vec2() + Vec2::new(0.0, self.font_size as f64))
-        //     * Affine::scale(self.scale);
 
         text_context.add(
             scene,
@@ -437,8 +382,6 @@ impl ElementCx<'_> {
                     // let bg_color = bg_color.as_absolute().unwrap();
                     // let bg_color = Color::RED;
                     let shape = self.frame.outer_rect;
-
-                    dbg!(shape);
 
                     // Fill the color
                     scene.fill(
@@ -669,7 +612,7 @@ impl ElementCx<'_> {
 
     /// Applies filters to a final frame
     ///
-    /// Notably, I don't think we can do this here since vello needs to run this as a pass
+    /// Notably, I don't think we can do this here since vello needs to run this as a pass (shadows need to apply everywhere)
     ///
     /// ❌ opacity: The opacity computed value.
     /// ❌ box_shadow: The box-shadow computed value.

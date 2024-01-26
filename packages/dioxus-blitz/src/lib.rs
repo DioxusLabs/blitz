@@ -7,6 +7,7 @@ use std::collections::HashMap;
 use tao::{
     event::{Event, WindowEvent},
     event_loop::{ControlFlow, EventLoop},
+    menu::MenuId,
 };
 
 #[derive(Default)]
@@ -29,9 +30,6 @@ pub fn launch_cfg_with_props<Props: 'static + Send + Clone>(
     props: Props,
     cfg: Config,
 ) {
-    // Build an event loop for the application
-    let event_loop = EventLoop::<UserWindowEvent>::with_user_event();
-
     // Turn on the runtime and enter it
     let rt = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
@@ -40,14 +38,14 @@ pub fn launch_cfg_with_props<Props: 'static + Send + Clone>(
 
     let _guard = rt.enter();
 
+    // Build an event loop for the application
+    let event_loop = EventLoop::<UserWindowEvent>::with_user_event();
+    let proxy = event_loop.create_proxy();
+
     // Multiwindow ftw
     let mut windows = HashMap::new();
-
-    // All apps start with a single window
     let window = crate::window::View::new(&event_loop, app, props, &cfg, &rt);
     windows.insert(window.window.id(), window);
-
-    let proxy = event_loop.create_proxy();
 
     event_loop.run(move |event, _target, control_flow| {
         *control_flow = ControlFlow::Wait;
@@ -85,6 +83,22 @@ pub fn launch_cfg_with_props<Props: 'static + Send + Clone>(
                     view.window.request_redraw();
                 }
             }
+            Event::MenuEvent {
+                window_id,
+                menu_id,
+                origin,
+                ..
+            } => {
+                if let Some(window_id) = window_id {
+                    if menu_id == MenuId::new("dev.show_layout") {
+                        windows.get_mut(&window_id).map(|window| {
+                            window.renderer.devtools.show_layout =
+                                !window.renderer.devtools.show_layout;
+                            window.window.request_redraw();
+                        });
+                    }
+                }
+            }
 
             Event::WindowEvent {
                 window_id, event, ..
@@ -98,3 +112,13 @@ pub fn launch_cfg_with_props<Props: 'static + Send + Clone>(
         }
     });
 }
+
+// pub struct App<P> {
+//     pub window: Window,
+//     pub vdom: VDom,
+//     pub renderer: Renderer,
+//     pub scene: Scene,
+//     pub waker: Waker,
+//     pub props: Option<P>,
+//     pub root: Component<P>,
+// }

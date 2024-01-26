@@ -68,6 +68,7 @@ pub struct Node {
 
 #[derive(Default)]
 pub struct DomData {
+    pub hidden: bool,
     pub style_attribute: Option<Arc<Locked<PropertyDeclarationBlock>>>,
 }
 
@@ -190,7 +191,8 @@ impl std::fmt::Debug for Node {
             .field("id", &self.id)
             .field("child_idx", &self.child_idx)
             .field("children", &self.children)
-            .field("style", &self.style)
+            // .field("style", &self.style)
+            .field("node", &self.node)
             .field("data", &self.data)
             .field("unrounded_layout", &self.unrounded_layout)
             .field("final_layout", &self.final_layout)

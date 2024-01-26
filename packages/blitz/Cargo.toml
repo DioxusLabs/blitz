@@ -32,6 +32,8 @@ raw-window-handle = "0.5.2"
 blitz-dom = { path = "../dom" }
 glyphon = "0.3.0"
 cosmic-text = "0.10.0"
+quadtree_rs = "0.1.2"
+askama_escape = "0.10.3"
 
 # futures-util = "0.3.29"
 # raw-window-handle = "0.5.0"

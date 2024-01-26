@@ -21,6 +21,8 @@ markup5ever_rcdom = "0.2.0"
 string_cache = "0.8.7"
 futures-util = "0.3.29"
 servo_config = { workspace = true }
+askama_escape = "0.10.3"
+html-escape = "0.2.13"
 
 
 # on wasm use the js feature on getrandom

@@ -80,17 +80,6 @@ impl LayoutPartialTree for Document {
                     &font_metrics,
                 ),
                 markup5ever_rcdom::NodeData::Element { name, attrs, .. } => {
-                    // for the shadow root type elements
-
-                    // Not all nodes need a layout.....
-                    // Skip laying out style, script, and templates
-                    match name.local.as_ref() {
-                        "title" | "head" | "style" | "template" | "script" => {
-                            return taffy::LayoutOutput::HIDDEN
-                        }
-                        _ => {}
-                    }
-
                     // Hide hidden nodes
                     if let Some(attr) = attrs
                         .borrow()
@@ -98,6 +87,7 @@ impl LayoutPartialTree for Document {
                         .find(|attr| attr.name.local.as_ref() == "hidden")
                     {
                         if attr.value.to_string() == "true" || attr.value.to_string() == "" {
+                            node.style.display = Display::None;
                             return taffy::LayoutOutput::HIDDEN;
                         }
                     }
@@ -111,17 +101,9 @@ impl LayoutPartialTree for Document {
                             attrs.iter().find(|attr| attr.name.local.as_ref() == "type")
                         {
                             if attr.value.to_string() == "hidden" {
+                                node.style.display = Display::None;
                                 return taffy::LayoutOutput::HIDDEN;
                             }
-                        }
-
-                        let value = attrs
-                            .iter()
-                            .find(|attr| attr.name.local.as_ref() == "value")
-                            .map(|attr| attr.value.to_string());
-
-                        if let Some(value) = value {
-                            return lay_text(inputs, &node.style, &value, &font_metrics);
                         }
                     }
 
@@ -154,6 +136,7 @@ impl LayoutPartialTree for Document {
                         );
                     }
 
+                    // The default CSS file will set
                     match node.style.display {
                         Display::Block => compute_block_layout(tree, node_id, inputs),
                         Display::Flex => compute_flexbox_layout(tree, node_id, inputs),
@@ -165,7 +148,7 @@ impl LayoutPartialTree for Document {
                     compute_block_layout(tree, node_id, inputs)
                 }
 
-                _ => todo!(),
+                _ => taffy::LayoutOutput::HIDDEN,
             }
         })
     }
