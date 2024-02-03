@@ -166,11 +166,6 @@ fn lay_text(
             writing_mode: WritingMode::Horizontal,
         };
         text_measure_function(known_dimensions, available_space, &context, font_metrics)
-
-        // Size {
-        //     height: 200.0,
-        //     width: 100.0,
-        // }
     })
 }
 

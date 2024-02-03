@@ -112,13 +112,3 @@ pub fn launch_cfg_with_props<Props: 'static + Send + Clone>(
         }
     });
 }
-
-// pub struct App<P> {
-//     pub window: Window,
-//     pub vdom: VDom,
-//     pub renderer: Renderer,
-//     pub scene: Scene,
-//     pub waker: Waker,
-//     pub props: Option<P>,
-//     pub root: Component<P>,
-// }

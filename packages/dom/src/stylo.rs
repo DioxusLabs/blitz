@@ -153,6 +153,7 @@ impl crate::document::Document {
                     style::values::specified::box_::DisplayOutside::Block => {}
                     style::values::specified::box_::DisplayOutside::TableCaption => {}
                     style::values::specified::box_::DisplayOutside::InternalTable => {}
+                    _ => {}
                 };
 
                 let flex_basis = match flex_basis {
@@ -168,6 +169,7 @@ impl crate::document::Document {
                         style::values::generics::length::GenericSize::Auto => {
                             taffy::Dimension::Auto
                         }
+                        _ => taffy::Dimension::Auto,
                     },
                 };
 
@@ -462,6 +464,7 @@ fn make_taffy_size2(
             }
         }
         style::values::generics::length::GenericMaxSize::None => taffy::prelude::Dimension::Auto,
+        _ => taffy::prelude::Dimension::Auto,
     };
 
     let height = match max_height {
@@ -473,6 +476,7 @@ fn make_taffy_size2(
             }
         }
         style::values::generics::length::GenericMaxSize::None => taffy::prelude::Dimension::Auto,
+        _ => taffy::prelude::Dimension::Auto,
     };
 
     taffy::prelude::Size { width, height }
@@ -495,6 +499,7 @@ fn make_taffy_size(
             }
         }
         style::values::generics::length::GenericSize::Auto => taffy::Dimension::Auto,
+        _ => taffy::prelude::Dimension::Auto,
     };
 
     let height = match height {
@@ -511,6 +516,7 @@ fn make_taffy_size(
             }
         }
         style::values::generics::length::GenericSize::Auto => taffy::Dimension::Auto,
+        _ => taffy::prelude::Dimension::Auto,
     };
 
     taffy::prelude::Size { width, height }
@@ -1141,6 +1147,26 @@ impl<'a> TElement for BlitzNode<'a> {
     ) -> euclid::default::Size2D<Option<app_units::Au>> {
         unimplemented!()
     }
+
+    // fn update_animations(
+    //     &self,
+    //     before_change_style: Option<Arc<ComputedValues>>,
+    //     tasks: style::context::UpdateAnimationsTasks,
+    // ) {
+    //     todo!()
+    // }
+
+    // fn process_post_animation(&self, tasks: style::context::PostAnimationTasks) {
+    //     todo!()
+    // }
+
+    // fn needs_transitions_update(
+    //     &self,
+    //     before_change_style: &ComputedValues,
+    //     after_change_style: &ComputedValues,
+    // ) -> bool {
+    //     todo!()
+    // }
 }
 
 pub struct Traverser<'a> {

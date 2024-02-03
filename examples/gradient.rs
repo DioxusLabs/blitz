@@ -1,6 +1,3 @@
-// background: rgb(2,0,36);
-// background: linear-gradient(90deg, rgba(2,0,36,1) 0%, rgba(9,9,121,1) 35%, rgba(0,212,255,1) 100%);
-
 use dioxus::prelude::*;
 
 fn main() {
@@ -10,11 +7,22 @@ fn main() {
 fn app(cx: Scope) -> Element {
     render! {
         style { CSS }
-        div { id: "a", " Dioxus                                     \n\n\n\n\n\n\n\n\n" }
+        for y in 0..5 {
+            div { class: "flex flex-row",
+                for x in 0..5 {
+                    div { id: "a", " Dioxus - {x}                                     \n\n\n\n\n\n\n\n\n" }
+                }
+            }
+        }
     }
 }
 
+// background: rgb(2,0,36);
+// background: linear-gradient(90deg, rgba(2,0,36,1) 0%, rgba(9,9,121,1) 35%, rgba(0,212,255,1) 100%);
+
 const CSS: &str = r#"
+.flex { display: flex; }
+.flex-row { flex-direction: row; }
 #a {
     height:300px;
     background-color: gray;

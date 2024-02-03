@@ -28,15 +28,20 @@ fn app(cx: Scope) -> Element {
             h3 { "flex-flow" }
             div {
                 id: "grid_container",
-                div { class: "floater", "__1__" }
-                div { class: "floater", "__2__" }
-                div { class: "floater", "__3__" }
-                div { class: "floater", "__4__" }
-                div { class: "floater", "__5__" }
-                div { class: "floater", "__6__" }
-                div { class: "floater", "__7__" }
-                div { class: "floater", "__8__" }
-                div { class: "floater", "__9__" }
+                for _ in 0..3 {
+                    div { class: "floater", "__1__" }
+                    div { class: "floater", "__2__" }
+                    div { class: "floater", "__3__" }
+                    div { class: "floater", "__4__" }
+                    div { class: "floater", "__5__" }
+                    div { class: "floater", "__6__" }
+                    div { class: "floater", "__7__" }
+                    div { class: "floater", "__8__" }
+                    div { class: "floater", "__9__" }
+                    div { class: "floater", "__0__" }
+                    div { class: "floater", "__A__" }
+                    div { class: "floater", "__B__" }
+                }
             }
         }
     }
@@ -67,6 +72,7 @@ const CSS: &str = r#"
 #grid_container {
   /* We first create a flex layout context */
   display: flex;
+//   width: 600px;
 
   /* Then we define the flow direction
      and if we allow the items to wrap

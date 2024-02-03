@@ -59,6 +59,8 @@ impl Document {
 
         // Make sure we turn on servo features
         servo_config::set_pref!(layout.flexbox.enabled, true);
+        servo_config::set_pref!(layout.legacy_layout, true);
+        servo_config::set_pref!(layout.columns.enabled, true);
 
         Self {
             guard,
@@ -305,12 +307,13 @@ impl Document {
         let available_space = taffy::Size {
             // width: AvailableSpace::MaxContent,
             // height: AvailableSpace::Definite(10000000.0),
-            width: AvailableSpace::Definite(dbg!(1200.0)),
-            height: AvailableSpace::Definite(dbg!(2000.0)),
+            // width: AvailableSpace::Definite(dbg!(1200.0)),
+            // height: AvailableSpace::Definite(dbg!(2000.0)),
+            // };
+            width: AvailableSpace::Definite(dbg!(size.width.to_f32_px() as _)),
+            height: AvailableSpace::Definite(dbg!((size.height.to_f32_px()) as _)),
+            // height: AvailableSpace::Definite(1000000.0),
         };
-        //     width: AvailableSpace::Definite(dbg!(size.width.to_f32_px() as _)),
-        //     height: AvailableSpace::Definite(dbg!(size.height.to_f32_px() as _)),
-        // };
 
         let root = 1_usize;
 

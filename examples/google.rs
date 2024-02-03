@@ -7,7 +7,7 @@ fn main() {
 }
 
 fn app(cx: Scope) -> Element {
-    let content = tokio::runtime::Handle::current().block_on(async move {
+    let _content = tokio::runtime::Handle::current().block_on(async move {
         let client = reqwest::Client::builder()
             .user_agent("Mozilla/5.0 (X11; Linux x86_64; rv:60.0) Gecko/20100101 Firefox/81.0")
             .build()
@@ -23,13 +23,7 @@ fn app(cx: Scope) -> Element {
             .unwrap()
     });
 
-    // render! {
-    //     div { dangerous_inner_html: "{content}" }
-    // }
-    // render! {
-    //     div { dangerous_inner_html: include_str!("./google_bits/bottom_only.html") }
-    // }
     render! {
-        div { dangerous_inner_html: include_str!("./google_bits/google.html") }
+        div { dangerous_inner_html: "{_content}" }
     }
 }

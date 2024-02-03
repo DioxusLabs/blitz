@@ -1,14 +1,18 @@
 
 [workspace]
+# members = ["packages/dom"]
+# members = ["packages/blitz", "packages/dom", "packages/dioxus-blitz"]
+# exclude = ["packages/blitz", "packages/dioxus-blitz"]
 members = ["packages/blitz", "packages/dom", "packages/dioxus-blitz"]
 resolver = "2"
 
 [workspace.dependencies]
-style = { git = "https://github.com/servo/servo", rev = "8faa904" }
-servo_config = { git = "https://github.com/servo/servo", rev = "8faa904" }
-selectors = { git = "https://github.com/servo/servo", rev = "8faa904" }
-style_traits = { git = "https://github.com/servo/servo", rev = "8faa904" }
-servo_url = { git = "https://github.com/servo/servo", rev = "8faa904" }
+style = { git = "https://github.com/servo/servo", rev = "95931de" }
+servo_config = { git = "https://github.com/servo/servo", rev = "95931de" }
+selectors = { git = "https://github.com/servo/servo", rev = "95931de" }
+style_traits = { git = "https://github.com/servo/servo", rev = "95931de" }
+servo_url = { git = "https://github.com/servo/servo", rev = "95931de" }
+
 taffy = { git = "https://github.com/dioxuslabs/taffy", rev = "563d5dc" }
 dioxus = { git = "https://github.com/dioxuslabs/dioxus", tag = "v0.4.3" }
 dioxus-ssr = { git = "https://github.com/dioxuslabs/dioxus", tag = "v0.4.3" }
@@ -32,8 +36,9 @@ publish = false
 
 # Need to force specific versions of these dependencies
 [dependencies]
-webrender = "0.61.0"
+# webrender = "0.61.0"
 euclid = { version = "0.22", features = ["serde"] }
+# mozbuild = "0.1.0"
 
 [dev-dependencies]
 blitz = { path = "./packages/blitz" }
@@ -44,14 +49,14 @@ euclid = { version = "0.22", features = ["serde"] }
 reqwest = "0.11.23"
 tokio = { version = "1.25.0", features = ["full"] }
 
-# need to match the patching of
-[patch."https://github.com/servo/webrender"]
-webrender_api = { git = "https://github.com/servo/servo", rev = "8faa904" }
-webrender = { git = "https://github.com/servo/servo", rev = "8faa904" }
+# # need to match the patching of
+# [patch."https://github.com/servo/webrender"]
+# webrender_api = { git = "https://github.com/servo/servo", rev = "95931de" }
+# webrender = { git = "https://github.com/servo/servo", rev = "95931de" }
 
-[patch.crates-io]
-webrender_api = { git = "https://github.com/servo/servo", rev = "8faa904" }
-webrender = { git = "https://github.com/servo/servo", rev = "8faa904" }
+# [patch.crates-io]
+# webrender_api = { git = "https://github.com/servo/servo", rev = "95931de" }
+# webrender = { git = "https://github.com/servo/servo", rev = "95931de" }
 
 
 # webrender_api = { path = "../../../servo/third_party/webrender/webrender_api" }

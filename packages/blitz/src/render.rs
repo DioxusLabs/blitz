@@ -489,7 +489,7 @@ impl ElementCx<'_> {
             }
         }
         let brush = peniko::BrushRef::Gradient(&gradient);
-        scene.fill(peniko::Fill::NonZero, Affine::IDENTITY, brush, None, &shape);
+        scene.fill(peniko::Fill::NonZero, self.transform, brush, None, &shape);
     }
 
     fn draw_image_frame(&self, scene: &mut SceneBuilder) {}

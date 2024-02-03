@@ -12,14 +12,15 @@ fn main() {
 
 fn app(cx: Scope) -> Element {
     render! {
+        style { "{CSS}" }
         for row in 0..3 {
-            // div { class: "flex flex-row",
-            div { id: "cool", "h123456789asdjkahskj\nhiiiii" }
-            p { class: "cool", "hi" }
-            for x in 1..=9 {
-                div { class: "bg-red-{x}00 border", "{x}" }
+                div { class: "flex flex-row",
+                div { id: "cool", "h123456789asdjkahskj\nhiiiii" }
+                p { class: "cool", "hi" }
+                for x in 1..=9 {
+                    div { class: "bg-red-{x}00 border", "{x}" }
+                }
             }
-            // }
         }
     }
 }
