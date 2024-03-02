@@ -4,6 +4,7 @@ mod window;
 use crate::waker::{EventData, UserWindowEvent};
 use dioxus::prelude::*;
 use std::collections::HashMap;
+use std::thread::Scope;
 use tao::{
     event::{Event, WindowEvent},
     event_loop::{ControlFlow, EventLoop},
@@ -19,18 +20,18 @@ pub struct Config {
 }
 
 /// Launch an interactive HTML/CSS renderer driven by the Dioxus virtualdom
-pub fn launch(app: Component<()>) {
-    launch_cfg(app, Config::default())
+pub fn launch(root: fn() -> Element) {
+    launch_cfg(root, Config::default())
 }
 
-pub fn launch_cfg(app: Component<()>, cfg: Config) {
-    launch_cfg_with_props(app, (), cfg)
+pub fn launch_cfg(root: fn() -> Element, cfg: Config) {
+    launch_cfg_with_props(root, (), cfg)
 }
 
 // todo: props shouldn't have the clone bound - should try and match dioxus-desktop behavior
-pub fn launch_cfg_with_props<Props: 'static + Send + Clone>(
-    app: Component<Props>,
-    props: Props,
+pub fn launch_cfg_with_props<P: Clone + 'static, M: 'static>(
+    root: impl ComponentFunction<P, M>,
+    props: P,
     cfg: Config,
 ) {
     // Turn on the runtime and enter it
@@ -48,7 +49,7 @@ pub fn launch_cfg_with_props<Props: 'static + Send + Clone>(
     // Multiwindow ftw
     let mut windows : HashMap<WindowId, window::View> = HashMap::new();
     let mut pending_windows = Vec::new();
-    let window = crate::window::View::new(&event_loop, app, props, &cfg);
+    let window = crate::window::View::new(&event_loop, root, props, &cfg);
     pending_windows.push(window);
     let menu_channel = MenuEvent::receiver();
 
@@ -71,8 +72,6 @@ pub fn launch_cfg_with_props<Props: 'static + Send + Clone>(
                 let RenderState::Active(state) = &window.renderer.render_state else { continue };
                 windows.insert(state.window.id(), window);
             }
-
-            *control_flow = ControlFlow::Poll;
         };
 
         #[cfg(not(any(target_os = "android", target_os = "ios")))]
@@ -119,7 +118,6 @@ pub fn launch_cfg_with_props<Props: 'static + Send + Clone>(
                 for (_, view) in windows.iter_mut() {
                     view.suspend();
                 }
-                *control_flow = ControlFlow::Wait;
             }
 
             Event::Resumed => on_resume(),

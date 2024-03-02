@@ -1,9 +1,16 @@
 //! Render the readme.md using the gpu renderer
 
-fn main() {
+use comrak::{markdown_to_html, Options};
+use dioxus::prelude::*;
+
+fn root() -> Element {
     let contents = include_str!("../README.md");
+    let html = markdown_to_html(contents, &Options::default());
+    rsx! {
+        div { dangerous_inner_html: "{html}" }
+    }
+}
 
-    // convert the markdown to html using comrak
-
-    // plug the html string into the renderer
+fn main() {
+    dioxus_blitz::launch(root);
 }

@@ -4,9 +4,9 @@ fn main() {
     dioxus_blitz::launch(app);
 }
 
-fn app(cx: Scope) -> Element {
-    render! {
-        style { CSS }
+fn app() -> Element {
+    rsx! {
+        style { {CSS} }
         for y in 0..5 {
             div { class: "flex flex-row",
                 for x in 0..5 {

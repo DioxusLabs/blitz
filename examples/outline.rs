@@ -7,9 +7,9 @@ fn main() {
     dioxus_blitz::launch(app);
 }
 
-fn app(cx: Scope) -> Element {
-    render! {
-        style { CSS }
+fn app() -> Element {
+    rsx! {
+        style { {CSS} }
         div { "padd           " }
         div { "padd           " }
         div { "padd           " }

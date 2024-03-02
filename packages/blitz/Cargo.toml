@@ -8,10 +8,8 @@ edition = "2021"
 [dependencies]
 slab = "0.4.9"
 style = { workspace = true, features = ["servo"] }
-style_traits = { workspace = true, features = ["servo"] }
 euclid = { version = "0.22", features = ["serde"] }
 selectors = { workspace = true }
-servo_url = { workspace = true }
 taffy = { workspace = true }
 tokio = { workspace = true, features = ["full"] }
 vello = { workspace = true }
@@ -46,5 +44,4 @@ askama_escape = "0.10.3"
 # style = { git = "https://github.com/servo/servo.git", features = ["servo"] }
 
 [dev-dependencies]
-comrak = { version = "0.21.0", default-features = false }
 webbrowser = "0.8.12"

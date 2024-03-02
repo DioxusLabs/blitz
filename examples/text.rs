@@ -1,12 +1,13 @@
+use std::thread::Scope;
 use dioxus::prelude::*;
 
 fn main() {
     dioxus_blitz::launch(app);
 }
 
-fn app(cx: Scope) -> Element {
-    render! {
-        style { CSS }
+fn app() -> Element {
+    rsx! {
+        style { {CSS} }
         div { id: "a",
             "Some text"
             em { "Another block of text" }

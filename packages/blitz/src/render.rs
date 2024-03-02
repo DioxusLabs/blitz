@@ -199,6 +199,7 @@ impl<'a, W> Renderer<'a, W>
     /// Make sure you do those before trying to render
     pub fn render(&mut self, scene: &mut Scene) {
         // Simply render the document (the root element (note that this is not the same as the root node)))
+        scene.reset();
         self.render_element(
             scene,
             self.dom.root_element().id,
@@ -484,6 +485,7 @@ impl ElementCx<'_> {
                 items,
                 repeating,
                 compat_mode,
+                ..
             } => self.draw_linear_gradient(scene, direction, items),
             GenericGradient::Radial {
                 shape,
@@ -491,12 +493,14 @@ impl ElementCx<'_> {
                 items,
                 repeating,
                 compat_mode,
+                ..
             } => self.draw_radial_gradient(scene, shape, position, items, *repeating),
             GenericGradient::Conic {
                 angle,
                 position,
                 items,
                 repeating,
+                ..
             } => self.draw_conic_gradient(scene, angle, position, items, *repeating),
         };
     }

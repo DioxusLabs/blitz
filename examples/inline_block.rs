@@ -6,10 +6,10 @@ fn main() {
     dioxus_blitz::launch(app);
 }
 
-fn app(cx: Scope) -> Element {
-    render! {
+fn app() -> Element {
+    rsx! {
         head {
-            style { CSS }
+            style { {CSS} }
         }
         body {
             h1 { "The display Property" }

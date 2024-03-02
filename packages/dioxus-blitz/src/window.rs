@@ -3,9 +3,11 @@ use super::Config;
 use crate::waker::UserWindowEvent;
 use blitz::{Renderer, Viewport, RenderState};
 use blitz_dom::Document;
-use dioxus::core::{Component, VirtualDom};
+use dioxus::dioxus_core::{Component, ComponentFunction, VirtualDom};
 use futures_util::{pin_mut, FutureExt};
 use std::task::Waker;
+use dioxus::html::view;
+use dioxus::prelude::Element;
 use tao::{
     event::WindowEvent,
     event_loop::EventLoop,
@@ -15,6 +17,7 @@ use tao::{
 use muda::{AboutMetadata, Menu, MenuId, MenuItem, PredefinedMenuItem, Submenu};
 use style::media_queries::Device;
 use tao::event_loop::{EventLoopProxy, EventLoopWindowTarget};
+#[cfg(target_os = "windows")]
 use tao::platform::windows::WindowExtWindows;
 use vello::Scene;
 
@@ -27,16 +30,16 @@ pub(crate) struct View<'s> {
 }
 
 impl<'a> View<'a> {
-    pub(crate) fn new<P: 'static>(
+    pub(crate) fn new<P: 'static + Clone, M: 'static>(
         event_loop: &EventLoop<UserWindowEvent>,
-        app: Component<P>,
+        root: impl ComponentFunction<P, M>,
         props: P,
         cfg: &Config,
     ) -> Self {
         // Spin up the virtualdom
         // We're going to need to hit it with a special waker
-        let mut vdom = VirtualDom::new_with_props(app, props);
-        _ = vdom.rebuild();
+        let mut vdom = VirtualDom::new_with_props(root, props);
+        vdom.rebuild_in_place();
         let markup = dioxus_ssr::render(&vdom);
         let mut scene = Scene::new();
 
@@ -88,7 +91,8 @@ impl<'a> View<'a> {
                         }
                     }
 
-                    let edits = self.vdom.render_immediate();
+
+                    // let edits = self.vdom.render_immediate();
 
                     // apply the mutations to the actual dom
 
@@ -204,11 +208,11 @@ impl<'a> View<'a> {
             }
 
             // !TODO - this may not be the right way to do this, but it's a start
-            #[cfg(target_os = "macos")]
-            {
-                menu_bar.init_for_nsapp();
-                build_menu().set_as_windows_menu_for_nsapp();
-            }
+            // #[cfg(target_os = "macos")]
+            // {
+            //     menu_bar.init_for_nsapp();
+            //     build_menu().set_as_windows_menu_for_nsapp();
+            // }
 
             let size: tao::dpi::PhysicalSize<u32> = window.inner_size();
             let mut viewport = Viewport::new((size.width, size.height));

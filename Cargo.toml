@@ -7,15 +7,14 @@ members = ["packages/blitz", "packages/dom", "packages/dioxus-blitz"]
 resolver = "2"
 
 [workspace.dependencies]
-style = { git = "https://github.com/servo/servo", rev = "95931de" }
-servo_config = { git = "https://github.com/servo/servo", rev = "95931de" }
-selectors = { git = "https://github.com/servo/servo", rev = "95931de" }
-style_traits = { git = "https://github.com/servo/servo", rev = "95931de" }
-servo_url = { git = "https://github.com/servo/servo", rev = "95931de" }
+style = { git = "https://github.com/servo/stylo", rev = "e2a4834" }
+style_config = { git = "https://github.com/servo/stylo", rev = "e2a4834" }
+style_traits = { git = "https://github.com/servo/stylo", rev = "e2a4834" }
+selectors = { git = "https://github.com/servo/stylo", rev = "e2a4834" }
 
 taffy = { git = "https://github.com/dioxuslabs/taffy", rev = "563d5dc" }
-dioxus = { git = "https://github.com/dioxuslabs/dioxus", tag = "v0.4.3" }
-dioxus-ssr = { git = "https://github.com/dioxuslabs/dioxus", tag = "v0.4.3" }
+dioxus = { git = "https://github.com/dioxuslabs/dioxus", rev = "9ae3d14" }
+dioxus-ssr = { git = "https://github.com/dioxuslabs/dioxus", rev = "9ae3d14" }
 tokio = { version = "1.25.0", features = ["full"] }
 vello = { git = "https://github.com/linebender/vello", features = ["wgpu"] }
 # fello = { git = "https://github.com/linebender/vello" }
@@ -43,6 +42,7 @@ euclid = { version = "0.22", features = ["serde"] }
 [dev-dependencies]
 blitz = { path = "./packages/blitz" }
 blitz-dom = { path = "./packages/dom" }
+comrak = { version = "0.21.0", default-features = false }
 dioxus-blitz = { path = "./packages/dioxus-blitz" }
 dioxus = { workspace = true }
 euclid = { version = "0.22", features = ["serde"] }

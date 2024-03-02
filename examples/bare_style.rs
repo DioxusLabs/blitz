@@ -3,7 +3,8 @@
 // Create a style context for a dioxus document.
 use dioxus::prelude::*;
 
-fn main() {
+
+fn root() -> Element{
     let css = r#"
         h1 {
             background-color: red;
@@ -23,14 +24,19 @@ fn main() {
 
         "#;
 
-    let nodes = rsx! {
-        h1 { }
-        h2 { }
-        h3 { }
-        h4 { }
-    };
+    rsx! {
+        style { {css} }
+        h1 { "H1" }
+        h2 { "H2" }
+        h3 { "H3" }
+        h4 { "H4" }
+    }
+}
 
-    let document = blitz_dom::Document::new();
+fn main() {
+    dioxus_blitz::launch(root);
+
+    // let document = blitz_dom::Document::new();
 
     // let styled_dom = blitz::style_lazy_nodes(css, nodes);
 
