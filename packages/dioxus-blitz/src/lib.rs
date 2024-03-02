@@ -7,8 +7,11 @@ use std::collections::HashMap;
 use tao::{
     event::{Event, WindowEvent},
     event_loop::{ControlFlow, EventLoop},
-    menu::MenuId,
 };
+use muda::{MenuEvent, MenuId};
+use tao::event_loop::EventLoopBuilder;
+use tao::window::WindowId;
+use blitz::RenderState;
 
 #[derive(Default)]
 pub struct Config {
@@ -39,16 +42,44 @@ pub fn launch_cfg_with_props<Props: 'static + Send + Clone>(
     let _guard = rt.enter();
 
     // Build an event loop for the application
-    let event_loop = EventLoop::<UserWindowEvent>::with_user_event();
+    let event_loop = EventLoopBuilder::<UserWindowEvent>::with_user_event().build();
     let proxy = event_loop.create_proxy();
 
     // Multiwindow ftw
-    let mut windows = HashMap::new();
-    let window = crate::window::View::new(&event_loop, app, props, &cfg, &rt);
-    windows.insert(window.window.id(), window);
+    let mut windows : HashMap<WindowId, window::View> = HashMap::new();
+    let mut pending_windows = Vec::new();
+    let window = crate::window::View::new(&event_loop, app, props, &cfg);
+    pending_windows.push(window);
+    let menu_channel = MenuEvent::receiver();
 
-    event_loop.run(move |event, _target, control_flow| {
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    let mut initial = true;
+
+    event_loop.run(move |event, event_loop, control_flow| {
         *control_flow = ControlFlow::Wait;
+
+        let mut on_resume = || {
+            for (_, view) in windows.iter_mut() {
+                view.resume(&event_loop, &proxy, &rt);
+            }
+
+            for view in pending_windows.iter_mut() {
+                view.resume(&event_loop, &proxy, &rt);
+            }
+
+            for window in pending_windows.drain(..) {
+                let RenderState::Active(state) = &window.renderer.render_state else { continue };
+                windows.insert(state.window.id(), window);
+            }
+
+            *control_flow = ControlFlow::Poll;
+        };
+
+        #[cfg(not(any(target_os = "android", target_os = "ios")))]
+        if initial {
+            on_resume();
+            initial = false;
+        }
 
         match event {
             // Exit the app when close is request
@@ -80,25 +111,18 @@ pub fn launch_cfg_with_props<Props: 'static + Send + Clone>(
 
             Event::UserEvent(_redraw) => {
                 for (_, view) in windows.iter() {
-                    view.window.request_redraw();
+                    view.request_redraw();
                 }
             }
-            Event::MenuEvent {
-                window_id,
-                menu_id,
-                origin,
-                ..
-            } => {
-                if let Some(window_id) = window_id {
-                    if menu_id == MenuId::new("dev.show_layout") {
-                        windows.get_mut(&window_id).map(|window| {
-                            window.renderer.devtools.show_layout =
-                                !window.renderer.devtools.show_layout;
-                            window.window.request_redraw();
-                        });
-                    }
+
+            Event::Suspended => {
+                for (_, view) in windows.iter_mut() {
+                    view.suspend();
                 }
+                *control_flow = ControlFlow::Wait;
             }
+
+            Event::Resumed => on_resume(),
 
             Event::WindowEvent {
                 window_id, event, ..
@@ -109,6 +133,15 @@ pub fn launch_cfg_with_props<Props: 'static + Send + Clone>(
             }
 
             _ => (),
+        }
+
+        if let Ok(event) = menu_channel.try_recv() {
+            if event.id == MenuId::new("dev.show_layout") {
+                for (_, view) in windows.iter_mut() {
+                    view.renderer.devtools.show_layout = !view.renderer.devtools.show_layout;
+                    view.request_redraw();
+                }
+            }
         }
     });
 }

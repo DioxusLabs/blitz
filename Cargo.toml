@@ -19,7 +19,7 @@ dioxus-ssr = { git = "https://github.com/dioxuslabs/dioxus", tag = "v0.4.3" }
 tokio = { version = "1.25.0", features = ["full"] }
 vello = { git = "https://github.com/linebender/vello", features = ["wgpu"] }
 # fello = { git = "https://github.com/linebender/vello" }
-wgpu = "0.18"
+wgpu = "0.19"
 
 # This is a "virtual package"
 # It is not meant to be published, but is used so "cargo run --example XYZ" works properly
@@ -46,8 +46,8 @@ blitz-dom = { path = "./packages/dom" }
 dioxus-blitz = { path = "./packages/dioxus-blitz" }
 dioxus = { workspace = true }
 euclid = { version = "0.22", features = ["serde"] }
-reqwest = "0.11.23"
-tokio = { version = "1.25.0", features = ["full"] }
+reqwest = "0.11.24"
+tokio = { version = "1.36.0", features = ["full"] }
 
 # # need to match the patching of
 # [patch."https://github.com/servo/webrender"]

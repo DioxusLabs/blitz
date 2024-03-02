@@ -4,12 +4,11 @@ use glyphon::{
     Attrs, Buffer, Color, Family, FontSystem, Metrics, Resolution, Shaping, SwashCache, TextArea,
     TextAtlas, TextBounds, TextRenderer,
 };
-use vello::{glyph::skrifa::raw::FileRef, skrifa::prelude::*};
+use vello::{glyph::skrifa::raw::FileRef, Scene, skrifa::prelude::*};
 use vello::{
     glyph::GlyphContext,
     kurbo::Affine,
     peniko::{Brush, Font},
-    SceneBuilder,
 };
 
 const FONT_DATA: &[u8] = include_bytes!("Roboto-Regular.ttf");
@@ -25,7 +24,7 @@ impl TextContext {
     /// https://github.com/dfrg/parley/blob/master/src/resolve/mod.rs
     pub fn add(
         &self,
-        builder: &mut SceneBuilder,
+        builder: &mut Scene,
         font: Option<&Font>,
         size: f32,
         brush: Option<impl Into<Brush>>,

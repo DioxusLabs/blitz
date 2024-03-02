@@ -1,6 +1,7 @@
+use std::sync::Arc;
 use super::Config;
 use crate::waker::UserWindowEvent;
-use blitz::{Renderer, Viewport};
+use blitz::{Renderer, Viewport, RenderState};
 use blitz_dom::Document;
 use dioxus::core::{Component, VirtualDom};
 use futures_util::{pin_mut, FutureExt};
@@ -9,51 +10,37 @@ use tao::{
     event::WindowEvent,
     event_loop::EventLoop,
     keyboard::KeyCode,
-    menu::{AboutMetadata, MenuBar, MenuId, MenuItemAttributes},
     window::{Window, WindowBuilder},
 };
+use muda::{AboutMetadata, Menu, MenuId, MenuItem, PredefinedMenuItem, Submenu};
+use style::media_queries::Device;
+use tao::event_loop::{EventLoopProxy, EventLoopWindowTarget};
+use tao::platform::windows::WindowExtWindows;
 use vello::Scene;
 
-pub(crate) struct View {
-    pub(crate) window: Window,
+
+pub(crate) struct View<'s> {
+    pub(crate) renderer: Renderer<'s, Window>,
     pub(crate) vdom: VirtualDom,
-    pub(crate) renderer: Renderer,
     pub(crate) scene: Scene,
-    pub(crate) waker: Waker,
+    pub(crate) waker: Option<Waker>,
 }
 
-impl View {
+impl<'a> View<'a> {
     pub(crate) fn new<P: 'static>(
         event_loop: &EventLoop<UserWindowEvent>,
         app: Component<P>,
         props: P,
         cfg: &Config,
-        rt: &tokio::runtime::Runtime,
     ) -> Self {
-        // By default we're drawing a single window
-        // Set up the blitz drawing system
-        // todo: this won't work on ios - blitz creation has to be deferred until the event loop as started
-        let window = WindowBuilder::new()
-            .with_always_on_top(cfg!(debug_assertions))
-            .with_menu(build_menu())
-            .build(&event_loop)
-            .unwrap();
-
-        let waker = crate::waker::tao_waker(&event_loop.create_proxy(), window.id());
-
         // Spin up the virtualdom
         // We're going to need to hit it with a special waker
         let mut vdom = VirtualDom::new_with_props(app, props);
         _ = vdom.rebuild();
         let markup = dioxus_ssr::render(&vdom);
+        let mut scene = Scene::new();
 
-        let size: tao::dpi::PhysicalSize<u32> = window.inner_size();
-        let mut viewport = Viewport::new((size.width, size.height));
-        viewport.set_hidpi_scale(window.scale_factor() as _);
-
-        let device = viewport.make_device();
-
-        let mut dom = Document::new(device);
+        let mut dom = Document::new(Viewport::new((0,0)).make_device());
 
         // Include the default stylesheet
         // todo: should this be done in blitz itself?
@@ -66,41 +53,57 @@ impl View {
 
         dom.write(markup);
 
-        let mut renderer = rt.block_on(Renderer::from_window(&window, dom, viewport));
-        let mut scene = Scene::new();
+        // let size: tao::dpi::PhysicalSize<u32> = window.inner_size();
+        // let mut viewport = Viewport::new((size.width, size.height));
+        // viewport.set_hidpi_scale(window.scale_factor() as _);
 
-        renderer.dom.resolve();
-        renderer.render(&mut scene);
+        // let device = viewport.make_device();
+        // self.dom.set_stylist_device(device);
+
+        let mut renderer = Renderer::new(dom);
+
 
         Self {
-            window,
-            vdom,
             renderer,
+            vdom,
             scene,
-            waker,
+            waker: None
         }
     }
 
     pub(crate) fn poll(&mut self) {
-        let mut cx = std::task::Context::from_waker(&self.waker);
+        match &self.waker {
+            None => {},
+            Some(waker) => {
+                let mut cx = std::task::Context::from_waker(waker);
 
-        loop {
-            {
-                let fut = self.vdom.wait_for_work();
-                pin_mut!(fut);
+                loop {
+                    {
+                        let fut = self.vdom.wait_for_work();
+                        pin_mut!(fut);
 
-                match fut.poll_unpin(&mut cx) {
-                    std::task::Poll::Ready(_) => {}
-                    std::task::Poll::Pending => break,
+                        match fut.poll_unpin(&mut cx) {
+                            std::task::Poll::Ready(_) => {}
+                            std::task::Poll::Pending => break,
+                        }
+                    }
+
+                    let edits = self.vdom.render_immediate();
+
+                    // apply the mutations to the actual dom
+
+                    // send_edits(view.dom.render_immediate(), &view.desktop_context.webview);
                 }
             }
-
-            let edits = self.vdom.render_immediate();
-
-            // apply the mutations to the actual dom
-
-            // send_edits(view.dom.render_immediate(), &view.desktop_context.webview);
         }
+    }
+
+    pub fn request_redraw(&self) {
+        let RenderState::Active(state) = &self.renderer.render_state else {
+            return;
+        };
+
+        state.window.request_redraw();
     }
 
     pub fn handle_window_event(&mut self, event: WindowEvent) {
@@ -115,7 +118,7 @@ impl View {
             WindowEvent::Resized(physical_size) => {
                 self.renderer
                     .set_size((physical_size.width, physical_size.height));
-                self.window.request_redraw();
+                self.request_redraw();
             }
 
             // todo: if there's an active text input, we want to direct input towards it and translate system emi text
@@ -125,11 +128,11 @@ impl View {
                 match event.physical_key {
                     KeyCode::ArrowUp => {
                         self.renderer.zoom(0.005);
-                        self.window.request_redraw();
+                        self.request_redraw();
                     }
                     KeyCode::ArrowDown => {
                         self.renderer.zoom(-0.005);
-                        self.window.request_redraw();
+                        self.request_redraw();
                     }
 
                     _ => {}
@@ -178,20 +181,78 @@ impl View {
             _ => {}
         }
     }
+
+    pub fn resume(
+        &mut self,
+        event_loop: &EventLoopWindowTarget<UserWindowEvent>,
+        proxy: &EventLoopProxy<UserWindowEvent>,
+        rt: &tokio::runtime::Runtime,
+    ) {
+        let window_builder = || {
+            let window = WindowBuilder::new()
+                .with_always_on_top(cfg!(debug_assertions))
+                .build(event_loop)
+                .unwrap();
+
+            #[cfg(target_os = "windows")]
+            {
+                build_menu().init_for_hwnd(window.hwnd());
+            }
+            #[cfg(target_os = "linux")]
+            {
+                build_menu().init_for_gtk_window(window.gtk_window(), window.default_vbox());
+            }
+
+            // !TODO - this may not be the right way to do this, but it's a start
+            #[cfg(target_os = "macos")]
+            {
+                menu_bar.init_for_nsapp();
+                build_menu().set_as_windows_menu_for_nsapp();
+            }
+
+            let size: tao::dpi::PhysicalSize<u32> = window.inner_size();
+            let mut viewport = Viewport::new((size.width, size.height));
+            viewport.set_hidpi_scale(window.scale_factor() as _);
+
+            return (Arc::from(window), viewport);
+        };
+
+        rt.block_on(self.renderer.resume(window_builder));
+
+        let RenderState::Active(state) = &self.renderer.render_state else {
+            panic!("Renderer failed to resume");
+        };
+
+        self.waker = Some(crate::waker::tao_waker(&proxy, state.window.id()));
+        self.renderer.render(&mut self.scene);
+    }
+
+    pub fn suspend(&mut self) {
+        self.waker = None;
+        self.renderer.suspend();
+    }
 }
 
-fn build_menu() -> MenuBar {
-    let mut menu = MenuBar::new();
+fn build_menu() -> Menu {
+    let mut menu = Menu::new();
 
     // Build the about section
-    let mut about = MenuBar::new();
-    about.add_native_item(tao::menu::MenuItem::About(
-        "Dioxus".into(),
-        AboutMetadata::default(),
-    ));
-    about.add_item(MenuItemAttributes::new("Show layout").with_id(MenuId::new("dev.show_layout")));
+    let mut about = Submenu::new("About", true);
 
-    menu.add_submenu("about", true, about);
+    about.append_items(&[
+        &PredefinedMenuItem::about(
+            "Dioxus".into(),
+            Option::from(AboutMetadata::default()),
+        ),
+        &MenuItem::with_id(
+            MenuId::new("dev.show_layout"),
+            "Show layout",
+            true,
+            None,
+        )
+    ]);
+
+    menu.append(&about).unwrap();
 
     menu
 }
