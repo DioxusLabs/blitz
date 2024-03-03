@@ -12,7 +12,7 @@ fn main() {
 
 fn app() -> Element {
     rsx! {
-        style { "{CSS}" }
+        style { {CSS} }
         for row in 0..3 {
                 div { class: "flex flex-row",
                 div { id: "cool", "h123456789asdjkahskj\nhiiiii" }

@@ -30,6 +30,7 @@ use style::{
     },
     OwnedSlice,
 };
+use style::values::specified::position::HorizontalPositionKeyword;
 use taffy::prelude::Layout;
 use vello::{
     peniko::{self, Color, Fill},
@@ -83,7 +84,7 @@ pub struct Renderer<'s, W> {
 
 impl<'a, W> Renderer<'a, W>
     where
-        W: wgpu::rwh::HasWindowHandle + wgpu::rwh::HasDisplayHandle + Sync + WasmNotSend + 'a {
+        W: raw_window_handle::HasWindowHandle + raw_window_handle::HasDisplayHandle + Sync + WasmNotSend + 'a {
     pub fn new(dom : Document) -> Self {
         // 1. Set up renderer-specific stuff
         // We build an independent viewport which can be dynamically set later
@@ -533,8 +534,21 @@ impl ElementCx<'_> {
 
                 (line.p0, line.p1)
             }
-            LineDirection::Horizontal(_) => unimplemented!(),
-            LineDirection::Vertical(ore) => {
+            LineDirection::Horizontal(horizontal) => {
+                let start = Point::new(
+                    self.frame.inner_rect.x0,
+                    self.frame.inner_rect.y0 + rect.height() / 2.0
+                );
+                let end = Point::new(
+                    self.frame.inner_rect.x1,
+                    self.frame.inner_rect.y0 + rect.height() / 2.0
+                );
+                match horizontal {
+                    HorizontalPositionKeyword::Right => (start, end),
+                    HorizontalPositionKeyword::Left => (end, start),
+                }
+            }
+            LineDirection::Vertical(vertical) => {
                 let start = Point::new(
                     self.frame.inner_rect.x0 + rect.width() / 2.0,
                     self.frame.inner_rect.y0,
@@ -543,28 +557,89 @@ impl ElementCx<'_> {
                     self.frame.inner_rect.x0 + rect.width() / 2.0,
                     self.frame.inner_rect.y1,
                 );
-                match ore {
+                match vertical {
                     VerticalPositionKeyword::Top => (end, start),
                     VerticalPositionKeyword::Bottom => (start, end),
                 }
             }
-            LineDirection::Corner(_, _) => unimplemented!(),
+            LineDirection::Corner(horizontal, vertical) => {
+                let (start_x, end_x) = match horizontal {
+                    HorizontalPositionKeyword::Right => (self.frame.inner_rect.x0, self.frame.inner_rect.x1),
+                    HorizontalPositionKeyword::Left => (self.frame.inner_rect.x1, self.frame.inner_rect.x0),
+                };
+                let (start_y, end_y) = match vertical {
+                    VerticalPositionKeyword::Top => (self.frame.inner_rect.y1, self.frame.inner_rect.y0),
+                    VerticalPositionKeyword::Bottom => (self.frame.inner_rect.y0, self.frame.inner_rect.y1),
+                };
+                (Point::new(start_x, start_y), Point::new(end_x, end_y))
+            }
         };
         let mut gradient = peniko::Gradient {
             kind: peniko::GradientKind::Linear { start, end },
             extend: Default::default(),
             stops: Default::default(),
         };
+
+        let mut hint : Option<f32> = None;
+
         for (idx, item) in items.iter().enumerate() {
-            match item {
-                GenericGradientItem::SimpleColorStop(stop) => {
+            let (color, offset) = match item {
+                GenericGradientItem::SimpleColorStop(color) => {
                     let step = 1.0 / (items.len() as f32 - 1.0);
                     let offset = step * idx as f32;
-                    let color = stop.as_vello();
-                    gradient.stops.push(peniko::ColorStop { color, offset });
+                    let color = color.as_vello();
+                    (color, offset)
                 }
-                GenericGradientItem::ComplexColorStop { color, position } => unimplemented!(),
-                GenericGradientItem::InterpolationHint(_) => unimplemented!(),
+                GenericGradientItem::ComplexColorStop { color, position } => {
+                    let offset = position.to_percentage().unwrap().0;
+                    let color = color.as_vello();
+                    (color, offset)
+                },
+                GenericGradientItem::InterpolationHint(position) => {
+                    hint = match position.to_percentage() {
+                        Some(Percentage(percentage)) => Some(percentage),
+                        _ => None
+                    };
+                    continue;
+                }
+            };
+
+            match hint {
+                None => gradient.stops.push(peniko::ColorStop { color, offset }),
+                Some(hint) => {
+                    let &last_stop = gradient.stops.last().unwrap();
+
+                    if hint <= last_stop.offset {
+                        // Upstream code has a bug here, so we're going to do something different
+                        match gradient.stops.len() {
+                            0 => (),
+                            1 => { gradient.stops.pop(); },
+                            _ => {
+                                let prev_stop = gradient.stops[gradient.stops.len() - 2];
+                                if prev_stop.offset == hint {
+                                    gradient.stops.pop();
+                                }
+                            }
+                        }
+                        gradient.stops.push(peniko::ColorStop { color, offset: hint });
+                    } else if hint >= offset {
+                        gradient.stops.push(peniko::ColorStop { color: last_stop.color, offset: hint });
+                        gradient.stops.push(peniko::ColorStop { color, offset: last_stop.offset });
+                    } else if hint == (last_stop.offset + offset) / 2.0 {
+                        gradient.stops.push(peniko::ColorStop { color, offset });
+                    } else {
+                        let mid_offset = last_stop.offset * (1.0 - hint) + offset * hint;
+                        let multiplier = hint.powf(0.5f32.log(mid_offset));
+                        let mid_color = Color::rgba8(
+                            (last_stop.color.r as f32 + multiplier * (color.r as f32 - last_stop.color.r as f32)) as u8,
+                            (last_stop.color.g as f32 + multiplier * (color.g as f32 - last_stop.color.g as f32)) as u8,
+                            (last_stop.color.b as f32 + multiplier * (color.b as f32 - last_stop.color.b as f32)) as u8,
+                            (last_stop.color.a as f32 + multiplier * (color.a as f32 - last_stop.color.a as f32)) as u8,
+                        );
+                        gradient.stops.push(dbg! {peniko::ColorStop { color: mid_color, offset: mid_offset }});
+                        gradient.stops.push(peniko::ColorStop { color, offset });
+                    }
+                }
             }
         }
         let brush = peniko::BrushRef::Gradient(&gradient);
