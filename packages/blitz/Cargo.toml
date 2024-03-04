@@ -8,10 +8,8 @@ edition = "2021"
 [dependencies]
 slab = "0.4.9"
 style = { workspace = true, features = ["servo"] }
-style_traits = { workspace = true, features = ["servo"] }
 euclid = { version = "0.22", features = ["serde"] }
 selectors = { workspace = true }
-servo_url = { workspace = true }
 taffy = { workspace = true }
 tokio = { workspace = true, features = ["full"] }
 vello = { workspace = true }
@@ -28,11 +26,11 @@ html5ever = "0.26.0"                                          # also convenientl
 markup5ever_rcdom = "0.2.0"
 string_cache = "0.8.7"
 futures-util = "0.3.29"
-raw-window-handle = "0.5.2"
+raw-window-handle = "0.6.0"
 blitz-dom = { path = "../dom" }
-glyphon = "0.3.0"
-cosmic-text = "0.10.0"
-quadtree_rs = "0.1.2"
+glyphon = "0.5.0"
+cosmic-text = "0.11.2"
+quadtree_rs = "0.1.3"
 askama_escape = "0.10.3"
 
 # futures-util = "0.3.29"
@@ -46,5 +44,4 @@ askama_escape = "0.10.3"
 # style = { git = "https://github.com/servo/servo.git", features = ["servo"] }
 
 [dev-dependencies]
-comrak = { version = "0.20.0", default-features = false }
 webbrowser = "0.8.12"

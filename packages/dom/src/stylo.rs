@@ -23,7 +23,6 @@ use selectors::{
     sink::Push,
     OpaqueElement,
 };
-use servo_url::ServoUrl;
 use slab::Slab;
 use string_cache::{DefaultAtom, EmptyStaticAtomSet, StaticAtomSet};
 use style::{

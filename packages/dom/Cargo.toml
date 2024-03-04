@@ -7,22 +7,22 @@ edition = "2021"
 
 [dependencies]
 style = { workspace = true, features = ["servo"] }
-style_traits = { workspace = true, features = ["servo"] }
 selectors = { workspace = true }
-servo_url = { workspace = true }
-servo_config = { workspace = true }
+style_config = { workspace = true }
+style_traits = { workspace = true }
 taffy = { workspace = true }
 slab = "0.4.9"
-app_units = "0.7.3"
+app_units = "0.7.5"
 euclid = { version = "0.22", features = ["serde"] }
 atomic_refcell = { version = "0.1.13", features = ["serde"] }
 fxhash = "0.2.1"
 html5ever = "0.26.0"                                          # also conveniently the one used in servo
 markup5ever_rcdom = "0.2.0"
 string_cache = "0.8.7"
-futures-util = "0.3.29"
+futures-util = "0.3.30"
 askama_escape = "0.10.3"
 html-escape = "0.2.13"
+url = { version = "2.5.0", features = ["serde"] }
 
 
 # on wasm use the js feature on getrandom

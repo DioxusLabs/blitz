@@ -10,9 +10,9 @@ fn main() {
     dioxus_blitz::launch(app);
 }
 
-fn app(cx: Scope) -> Element {
-    render! {
-        style { CSS }
+fn app() -> Element {
+    rsx! {
+        style { {CSS} }
         div {
             div {
                 h2 { "justify-content" }

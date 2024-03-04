@@ -4,7 +4,7 @@ use atomic_refcell::AtomicRefCell;
 use html5ever::{tendril::StrTendril, Attribute, LocalName, QualName};
 use markup5ever_rcdom::{Handle, NodeData};
 use selectors::matching::QuirksMode;
-use servo_url::ServoUrl;
+use style::stylesheets::UrlExtraData;
 use slab::Slab;
 use style::{
     data::ElementData,
@@ -20,6 +20,7 @@ use taffy::{
     prelude::{Layout, Style},
     Cache,
 };
+use url::Url;
 
 // todo: might be faster to migrate this to ecs and split apart at a different boundary
 pub struct Node {
@@ -158,8 +159,8 @@ impl Node {
                 return;
             };
 
-            let url = servo_url::ServoUrl::from_url(
-                "data:text/css;charset=utf-8;base64,".parse().unwrap(),
+            let url = UrlExtraData::from(
+                "data:text/css;charset=utf-8;base64,".parse::<Url>().unwrap(),
             );
 
             Arc::new(self.guard.wrap(parse_style_attribute(

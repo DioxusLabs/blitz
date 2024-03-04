@@ -4,11 +4,15 @@ mod window;
 use crate::waker::{EventData, UserWindowEvent};
 use dioxus::prelude::*;
 use std::collections::HashMap;
+use std::thread::Scope;
 use tao::{
     event::{Event, WindowEvent},
     event_loop::{ControlFlow, EventLoop},
-    menu::MenuId,
 };
+use muda::{MenuEvent, MenuId};
+use tao::event_loop::EventLoopBuilder;
+use tao::window::WindowId;
+use blitz::RenderState;
 
 #[derive(Default)]
 pub struct Config {
@@ -16,18 +20,18 @@ pub struct Config {
 }
 
 /// Launch an interactive HTML/CSS renderer driven by the Dioxus virtualdom
-pub fn launch(app: Component<()>) {
-    launch_cfg(app, Config::default())
+pub fn launch(root: fn() -> Element) {
+    launch_cfg(root, Config::default())
 }
 
-pub fn launch_cfg(app: Component<()>, cfg: Config) {
-    launch_cfg_with_props(app, (), cfg)
+pub fn launch_cfg(root: fn() -> Element, cfg: Config) {
+    launch_cfg_with_props(root, (), cfg)
 }
 
 // todo: props shouldn't have the clone bound - should try and match dioxus-desktop behavior
-pub fn launch_cfg_with_props<Props: 'static + Send + Clone>(
-    app: Component<Props>,
-    props: Props,
+pub fn launch_cfg_with_props<P: Clone + 'static, M: 'static>(
+    root: impl ComponentFunction<P, M>,
+    props: P,
     cfg: Config,
 ) {
     // Turn on the runtime and enter it
@@ -39,16 +43,42 @@ pub fn launch_cfg_with_props<Props: 'static + Send + Clone>(
     let _guard = rt.enter();
 
     // Build an event loop for the application
-    let event_loop = EventLoop::<UserWindowEvent>::with_user_event();
+    let event_loop = EventLoopBuilder::<UserWindowEvent>::with_user_event().build();
     let proxy = event_loop.create_proxy();
 
     // Multiwindow ftw
-    let mut windows = HashMap::new();
-    let window = crate::window::View::new(&event_loop, app, props, &cfg, &rt);
-    windows.insert(window.window.id(), window);
+    let mut windows : HashMap<WindowId, window::View> = HashMap::new();
+    let mut pending_windows = Vec::new();
+    let window = crate::window::View::new(&event_loop, root, props, &cfg);
+    pending_windows.push(window);
+    let menu_channel = MenuEvent::receiver();
 
-    event_loop.run(move |event, _target, control_flow| {
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    let mut initial = true;
+
+    event_loop.run(move |event, event_loop, control_flow| {
         *control_flow = ControlFlow::Wait;
+
+        let mut on_resume = || {
+            for (_, view) in windows.iter_mut() {
+                view.resume(&event_loop, &proxy, &rt);
+            }
+
+            for view in pending_windows.iter_mut() {
+                view.resume(&event_loop, &proxy, &rt);
+            }
+
+            for window in pending_windows.drain(..) {
+                let RenderState::Active(state) = &window.renderer.render_state else { continue };
+                windows.insert(state.window.id(), window);
+            }
+        };
+
+        #[cfg(not(any(target_os = "android", target_os = "ios")))]
+        if initial {
+            on_resume();
+            initial = false;
+        }
 
         match event {
             // Exit the app when close is request
@@ -80,25 +110,17 @@ pub fn launch_cfg_with_props<Props: 'static + Send + Clone>(
 
             Event::UserEvent(_redraw) => {
                 for (_, view) in windows.iter() {
-                    view.window.request_redraw();
+                    view.request_redraw();
                 }
             }
-            Event::MenuEvent {
-                window_id,
-                menu_id,
-                origin,
-                ..
-            } => {
-                if let Some(window_id) = window_id {
-                    if menu_id == MenuId::new("dev.show_layout") {
-                        windows.get_mut(&window_id).map(|window| {
-                            window.renderer.devtools.show_layout =
-                                !window.renderer.devtools.show_layout;
-                            window.window.request_redraw();
-                        });
-                    }
+
+            Event::Suspended => {
+                for (_, view) in windows.iter_mut() {
+                    view.suspend();
                 }
             }
+
+            Event::Resumed => on_resume(),
 
             Event::WindowEvent {
                 window_id, event, ..
@@ -109,6 +131,15 @@ pub fn launch_cfg_with_props<Props: 'static + Send + Clone>(
             }
 
             _ => (),
+        }
+
+        if let Ok(event) = menu_channel.try_recv() {
+            if event.id == MenuId::new("dev.show_layout") {
+                for (_, view) in windows.iter_mut() {
+                    view.renderer.devtools.show_layout = !view.renderer.devtools.show_layout;
+                    view.request_redraw();
+                }
+            }
         }
     });
 }

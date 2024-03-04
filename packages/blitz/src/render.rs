@@ -1,5 +1,7 @@
 mod multicolor_rounded_rect;
 
+use std::num::NonZeroUsize;
+use std::sync::Arc;
 // So many imports
 use self::multicolor_rounded_rect::{Edge, ElementFrame};
 use crate::{
@@ -28,26 +30,42 @@ use style::{
     },
     OwnedSlice,
 };
+use style::values::specified::position::HorizontalPositionKeyword;
 use taffy::prelude::Layout;
 use vello::{
-    kurbo::{Affine, Point, Rect, Shape, Stroke, Vec2},
     peniko::{self, Color, Fill},
-    util::{RenderContext, RenderSurface},
-    AaSupport, RenderParams, Renderer as VelloRenderer, RendererOptions, Scene, SceneBuilder,
+    util::RenderSurface,
+    kurbo::{Affine, Point, Rect, Shape, Stroke, Vec2},
+    util::{RenderContext},
+    AaSupport, RenderParams, Renderer as VelloRenderer, RendererOptions, Scene, 
 };
+use wgpu::WasmNotSend;
 
-pub struct Renderer {
-    pub dom: Document,
+
+// Simple struct to hold the state of the renderer
+pub struct ActiveRenderState<'s, W> {
+    // The fields MUST be in this order, so that the surface is dropped before the window
+    renderer: VelloRenderer,
+    surface: RenderSurface<'s>,
+    pub window: Arc<W>,
 
     /// The actual viewport of the page that we're getting a glimpse of.
     /// We need this since the part of the page that's being viewed might not be the page in its entirety.
     /// This will let us opt of rendering some stuff
-    pub(crate) viewport: Viewport,
+    viewport: Viewport,
+}
 
-    /// Our drawing kit, not necessarily tied to a surface
-    pub(crate) renderer: VelloRenderer,
+pub enum RenderState<'s, W> {
+    Active(ActiveRenderState<'s, W>),
+    // Cache a window so that it can be reused when the app is resumed after being suspended
+    Suspended(Option<(Arc<W>, Viewport)>),
+}
 
-    pub(crate) surface: RenderSurface,
+
+pub struct Renderer<'s, W> {
+    pub dom: Document,
+
+    pub render_state: RenderState<'s, W>,
 
     pub(crate) render_context: RenderContext,
 
@@ -64,37 +82,20 @@ pub struct Renderer {
     pub devtools: Devtools,
 }
 
-impl Renderer {
-    pub async fn from_window<W>(window: W, dom: Document, viewport: Viewport) -> Self
+impl<'a, W> Renderer<'a, W>
     where
-        W: raw_window_handle::HasRawWindowHandle + raw_window_handle::HasRawDisplayHandle,
-    {
+        W: raw_window_handle::HasWindowHandle + raw_window_handle::HasDisplayHandle + Sync + WasmNotSend + 'a {
+    pub fn new(dom : Document) -> Self {
         // 1. Set up renderer-specific stuff
         // We build an independent viewport which can be dynamically set later
         // The intention here is to split the rendering pipeline away from tao/windowing for rendering to images
 
         // 2. Set up Vello specific stuff
         let mut render_context = RenderContext::new().unwrap();
-        let surface = render_context
-            .create_surface(&window, viewport.window_size.0, viewport.window_size.1)
-            .await
-            .expect("Error creating surface");
 
-        let options = RendererOptions {
-            surface_format: Some(surface.config.format),
-            antialiasing_support: AaSupport::all(),
-            use_cpu: false,
-        };
-
-        let renderer =
-            VelloRenderer::new(&render_context.devices[surface.dev_id].device, options).unwrap();
-
-        // 5. Build helpers for things like event handlers, hit testing
         Self {
-            viewport,
             render_context,
-            renderer,
-            surface,
+            render_state: RenderState::Suspended(None),
             dom,
             text_context: Default::default(),
             images: Default::default(),
@@ -103,26 +104,92 @@ impl Renderer {
         }
     }
 
+    pub async fn resume(
+        &mut self,
+        window_builder: impl FnOnce() -> (Arc<W>, Viewport),
+    ) {
+        let RenderState::Suspended(cached_window) = &mut self.render_state else {
+            return;
+        };
+
+        let (window, viewport) = cached_window
+            .take()
+            .unwrap_or_else(|| window_builder());
+
+        let device = viewport.make_device();
+        self.dom.set_stylist_device(device);
+
+        let surface = self.render_context
+            .create_surface(window.clone(), viewport.window_size.0, viewport.window_size.1)
+            .await
+            .expect("Error creating surface");
+
+        let default_threads = || -> Option<NonZeroUsize> {
+            #[cfg(target_arch = "macos")]
+            {
+                Some(NonZeroUsize::new(1)?)
+            }
+            None
+        };
+
+        let options = RendererOptions {
+            surface_format: Some(surface.config.format),
+            antialiasing_support: AaSupport::all(),
+            use_cpu: false,
+            num_init_threads: default_threads(),
+        };
+
+        let renderer =
+            VelloRenderer::new(&self.render_context.devices[surface.dev_id].device, options).unwrap();
+
+        self.render_state = RenderState::Active(ActiveRenderState {
+            renderer,
+            surface,
+            window,
+            viewport,
+        });
+
+        self.dom.resolve();
+    }
+
+    pub fn suspend(&mut self) {
+        let old_state = std::mem::replace(&mut self.render_state, RenderState::Suspended(None));
+        self.render_state = match old_state {
+            RenderState::Active(state) => RenderState::Suspended(Some((state.window, state.viewport))),
+            RenderState::Suspended(_) => old_state,
+        };
+    }
+
     pub fn zoom(&mut self, zoom: f32) {
-        *self.viewport.zoom_mut() += zoom;
+        let RenderState::Active(state) = &mut self.render_state else {
+            return;
+        };
+        *state.viewport.zoom_mut() += zoom;
         self.kick_viewport()
     }
 
     // Adjust the viewport
     pub fn set_size(&mut self, physical_size: (u32, u32)) {
-        self.viewport.window_size = physical_size;
+        let RenderState::Active(state) = &mut self.render_state else {
+            return;
+        };
+        state.viewport.window_size = physical_size;
         self.kick_viewport()
     }
 
     pub fn kick_viewport(&mut self) {
-        let (width, height) = self.viewport.window_size;
+        let RenderState::Active(state) = &mut self.render_state else {
+            return;
+        };
+
+        let (width, height) = state.viewport.window_size;
 
         if width > 0 && height > 0 {
             self.dom
-                .set_stylist_device(dbg!(self.viewport.make_device()));
-            dbg!(&self.viewport);
+                .set_stylist_device(dbg!(state.viewport.make_device()));
+            dbg!(&state.viewport);
             self.render_context
-                .resize_surface(&mut self.surface, width, height);
+                .resize_surface(&mut state.surface, width, height);
         }
     }
 
@@ -133,28 +200,34 @@ impl Renderer {
     /// Make sure you do those before trying to render
     pub fn render(&mut self, scene: &mut Scene) {
         // Simply render the document (the root element (note that this is not the same as the root node)))
+        scene.reset();
         self.render_element(
-            &mut SceneBuilder::for_scene(scene),
+            scene,
             self.dom.root_element().id,
             Point::ZERO,
         );
 
-        let surface_texture = self
+        let RenderState::Active(state) = &mut self.render_state else {
+            return;
+        };
+
+        let surface_texture = state
             .surface
             .surface
             .get_current_texture()
             .expect("failed to get surface texture");
 
-        let device = &self.render_context.devices[self.surface.dev_id];
+        let device = &self.render_context.devices[state.surface.dev_id];
 
         let render_params = RenderParams {
             base_color: Color::WHITE,
-            width: self.surface.config.width,
-            height: self.surface.config.height,
+            width: state.surface.config.width,
+            height: state.surface.config.height,
             antialiasing_method: vello::AaConfig::Msaa16,
         };
 
-        self.renderer
+        state
+            .renderer
             .render_to_surface(
                 &device.device,
                 &device.queue,
@@ -177,7 +250,7 @@ impl Renderer {
     ///
     /// Approaching rendering this way guarantees we have all the styles we need when rendering text with not having
     /// to traverse back to the parent for its styles, or needing to pass down styles
-    fn render_element(&self, scene: &mut SceneBuilder, node: usize, location: Point) {
+    fn render_element(&self, scene: &mut Scene, node: usize, location: Point) {
         // Need to do research on how we can cache most of the bezpaths - there's gonna be a lot of encoding between frames.
         // Might be able to cache resources deeper in vello.
         //
@@ -259,11 +332,15 @@ impl Renderer {
         }
     }
 
-    fn element_cx<'a>(&'a self, element: &'a Node, location: Point) -> ElementCx<'a> {
+    fn element_cx<'w>(&'w self, element: &'w Node, location: Point) -> ElementCx {
+        let RenderState::Active(state) = &self.render_state else {
+            panic!("Renderer is not active");
+        };
+
         let style = element.data.borrow().styles.primary().clone();
 
         let (layout, pos) = self.node_position(element.id, location);
-        let scale = self.viewport.scale_f64();
+        let scale = state.viewport.scale_f64();
 
         let inherited_text = style.get_inherited_text();
         let font = style.get_font();
@@ -322,7 +399,7 @@ struct ElementCx<'a> {
 impl ElementCx<'_> {
     fn stroke_text(
         &self,
-        scene: &mut SceneBuilder<'_>,
+        scene: &mut Scene,
         text_context: &TextContext,
         contents: &str,
         pos: Point,
@@ -340,7 +417,7 @@ impl ElementCx<'_> {
         )
     }
 
-    fn stroke_devtools(&self, scene: &mut SceneBuilder) {
+    fn stroke_devtools(&self, scene: &mut Scene) {
         if self.devtools.show_layout {
             let shape = &self.frame.outer_rect;
             let stroke = Stroke::new(self.scale);
@@ -364,7 +441,7 @@ impl ElementCx<'_> {
         // }
     }
 
-    fn stroke_frame(&self, scene: &mut SceneBuilder) {
+    fn stroke_frame(&self, scene: &mut Scene) {
         use GenericImage::*;
 
         for segment in &self.style.get_background().background_image.0 {
@@ -401,7 +478,7 @@ impl ElementCx<'_> {
         }
     }
 
-    fn draw_gradient_frame(&self, scene: &mut SceneBuilder, gradient: &StyloGradient) {
+    fn draw_gradient_frame(&self, scene: &mut Scene, gradient: &StyloGradient) {
         match gradient {
             // https://developer.mozilla.org/en-US/docs/Web/CSS/gradient/linear-gradient
             GenericGradient::Linear {
@@ -409,6 +486,7 @@ impl ElementCx<'_> {
                 items,
                 repeating,
                 compat_mode,
+                ..
             } => self.draw_linear_gradient(scene, direction, items),
             GenericGradient::Radial {
                 shape,
@@ -416,19 +494,21 @@ impl ElementCx<'_> {
                 items,
                 repeating,
                 compat_mode,
+                ..
             } => self.draw_radial_gradient(scene, shape, position, items, *repeating),
             GenericGradient::Conic {
                 angle,
                 position,
                 items,
                 repeating,
+                ..
             } => self.draw_conic_gradient(scene, angle, position, items, *repeating),
         };
     }
 
     fn draw_linear_gradient(
         &self,
-        scene: &mut SceneBuilder<'_>,
+        scene: &mut Scene,
         direction: &LineDirection,
         items: &GradientSlice,
     ) {
@@ -454,8 +534,21 @@ impl ElementCx<'_> {
 
                 (line.p0, line.p1)
             }
-            LineDirection::Horizontal(_) => unimplemented!(),
-            LineDirection::Vertical(ore) => {
+            LineDirection::Horizontal(horizontal) => {
+                let start = Point::new(
+                    self.frame.inner_rect.x0,
+                    self.frame.inner_rect.y0 + rect.height() / 2.0
+                );
+                let end = Point::new(
+                    self.frame.inner_rect.x1,
+                    self.frame.inner_rect.y0 + rect.height() / 2.0
+                );
+                match horizontal {
+                    HorizontalPositionKeyword::Right => (start, end),
+                    HorizontalPositionKeyword::Left => (end, start),
+                }
+            }
+            LineDirection::Vertical(vertical) => {
                 let start = Point::new(
                     self.frame.inner_rect.x0 + rect.width() / 2.0,
                     self.frame.inner_rect.y0,
@@ -464,37 +557,98 @@ impl ElementCx<'_> {
                     self.frame.inner_rect.x0 + rect.width() / 2.0,
                     self.frame.inner_rect.y1,
                 );
-                match ore {
+                match vertical {
                     VerticalPositionKeyword::Top => (end, start),
                     VerticalPositionKeyword::Bottom => (start, end),
                 }
             }
-            LineDirection::Corner(_, _) => unimplemented!(),
+            LineDirection::Corner(horizontal, vertical) => {
+                let (start_x, end_x) = match horizontal {
+                    HorizontalPositionKeyword::Right => (self.frame.inner_rect.x0, self.frame.inner_rect.x1),
+                    HorizontalPositionKeyword::Left => (self.frame.inner_rect.x1, self.frame.inner_rect.x0),
+                };
+                let (start_y, end_y) = match vertical {
+                    VerticalPositionKeyword::Top => (self.frame.inner_rect.y1, self.frame.inner_rect.y0),
+                    VerticalPositionKeyword::Bottom => (self.frame.inner_rect.y0, self.frame.inner_rect.y1),
+                };
+                (Point::new(start_x, start_y), Point::new(end_x, end_y))
+            }
         };
         let mut gradient = peniko::Gradient {
             kind: peniko::GradientKind::Linear { start, end },
             extend: Default::default(),
             stops: Default::default(),
         };
+
+        let mut hint : Option<f32> = None;
+
         for (idx, item) in items.iter().enumerate() {
-            match item {
-                GenericGradientItem::SimpleColorStop(stop) => {
+            let (color, offset) = match item {
+                GenericGradientItem::SimpleColorStop(color) => {
                     let step = 1.0 / (items.len() as f32 - 1.0);
                     let offset = step * idx as f32;
-                    let color = stop.as_vello();
-                    gradient.stops.push(peniko::ColorStop { color, offset });
+                    let color = color.as_vello();
+                    (color, offset)
                 }
-                GenericGradientItem::ComplexColorStop { color, position } => unimplemented!(),
-                GenericGradientItem::InterpolationHint(_) => unimplemented!(),
+                GenericGradientItem::ComplexColorStop { color, position } => {
+                    let offset = position.to_percentage().unwrap().0;
+                    let color = color.as_vello();
+                    (color, offset)
+                },
+                GenericGradientItem::InterpolationHint(position) => {
+                    hint = match position.to_percentage() {
+                        Some(Percentage(percentage)) => Some(percentage),
+                        _ => None
+                    };
+                    continue;
+                }
+            };
+
+            match hint {
+                None => gradient.stops.push(peniko::ColorStop { color, offset }),
+                Some(hint) => {
+                    let &last_stop = gradient.stops.last().unwrap();
+
+                    if hint <= last_stop.offset {
+                        // Upstream code has a bug here, so we're going to do something different
+                        match gradient.stops.len() {
+                            0 => (),
+                            1 => { gradient.stops.pop(); },
+                            _ => {
+                                let prev_stop = gradient.stops[gradient.stops.len() - 2];
+                                if prev_stop.offset == hint {
+                                    gradient.stops.pop();
+                                }
+                            }
+                        }
+                        gradient.stops.push(peniko::ColorStop { color, offset: hint });
+                    } else if hint >= offset {
+                        gradient.stops.push(peniko::ColorStop { color: last_stop.color, offset: hint });
+                        gradient.stops.push(peniko::ColorStop { color, offset: last_stop.offset });
+                    } else if hint == (last_stop.offset + offset) / 2.0 {
+                        gradient.stops.push(peniko::ColorStop { color, offset });
+                    } else {
+                        let mid_offset = last_stop.offset * (1.0 - hint) + offset * hint;
+                        let multiplier = hint.powf(0.5f32.log(mid_offset));
+                        let mid_color = Color::rgba8(
+                            (last_stop.color.r as f32 + multiplier * (color.r as f32 - last_stop.color.r as f32)) as u8,
+                            (last_stop.color.g as f32 + multiplier * (color.g as f32 - last_stop.color.g as f32)) as u8,
+                            (last_stop.color.b as f32 + multiplier * (color.b as f32 - last_stop.color.b as f32)) as u8,
+                            (last_stop.color.a as f32 + multiplier * (color.a as f32 - last_stop.color.a as f32)) as u8,
+                        );
+                        gradient.stops.push(dbg! {peniko::ColorStop { color: mid_color, offset: mid_offset }});
+                        gradient.stops.push(peniko::ColorStop { color, offset });
+                    }
+                }
             }
         }
         let brush = peniko::BrushRef::Gradient(&gradient);
         scene.fill(peniko::Fill::NonZero, self.transform, brush, None, &shape);
     }
 
-    fn draw_image_frame(&self, scene: &mut SceneBuilder) {}
+    fn draw_image_frame(&self, scene: &mut Scene) {}
 
-    fn draw_solid_frame(&self, scene: &mut SceneBuilder) {
+    fn draw_solid_frame(&self, scene: &mut Scene) {
         let background = self.style.get_background();
 
         // todo: handle non-absolute colors
@@ -529,7 +683,7 @@ impl ElementCx<'_> {
     /// ✅ hidden - Defines a hidden border
     ///
     /// The border-style property can have from one to four values (for the top border, right border, bottom border, and the left border).
-    fn stroke_border(&self, sb: &mut SceneBuilder) {
+    fn stroke_border(&self, sb: &mut Scene) {
         for edge in [Edge::Top, Edge::Right, Edge::Bottom, Edge::Left] {
             self.stroke_border_edge(sb, edge);
         }
@@ -552,7 +706,7 @@ impl ElementCx<'_> {
     /// - ✅ hidden: Defines a hidden border
     ///
     /// [*] The effect depends on the border-color value
-    fn stroke_border_edge(&self, sb: &mut SceneBuilder, edge: Edge) {
+    fn stroke_border_edge(&self, sb: &mut Scene, edge: Edge) {
         let border = self.style.get_border();
         let path = self.frame.border(edge);
 
@@ -576,7 +730,7 @@ impl ElementCx<'_> {
     /// ❌ outset - Defines a 3D outset border. The effect depends on the border-color value
     /// ✅ none - Defines no border
     /// ✅ hidden - Defines a hidden border
-    fn stroke_outline(&self, scene: &mut SceneBuilder) {
+    fn stroke_outline(&self, scene: &mut Scene) {
         let Outline {
             outline_color,
             outline_style,
@@ -619,7 +773,7 @@ impl ElementCx<'_> {
     /// ❌ clip: The clip computed value.
     /// ❌ filter: The filter computed value.
     /// ❌ mix_blend_mode: The mix-blend-mode computed value.
-    fn stroke_effects(&self, scene: &mut SceneBuilder<'_>) {
+    fn stroke_effects(&self, scene: &mut Scene) {
         // also: if focused, draw a focus ring
         //
         //             let stroke_color = Color::rgb(1.0, 1.0, 1.0);
@@ -633,13 +787,13 @@ impl ElementCx<'_> {
         let effects = self.style.get_effects();
     }
 
-    fn stroke_box_shadow(&self, scene: &mut SceneBuilder<'_>) {
+    fn stroke_box_shadow(&self, scene: &mut Scene) {
         let effects = self.style.get_effects();
     }
 
     fn draw_radial_gradient(
         &self,
-        scene: &mut SceneBuilder<'_>,
+        scene: &mut Scene,
         shape: &EndingShape<NonNegative<CSSPixelLength>, NonNegative<LengthPercentage>>,
         position: &GenericPosition<LengthPercentage, LengthPercentage>,
         items: &OwnedSlice<GenericGradientItem<StyloColor<Percentage>, LengthPercentage>>,
@@ -650,7 +804,7 @@ impl ElementCx<'_> {
 
     fn draw_conic_gradient(
         &self,
-        scene: &mut SceneBuilder<'_>,
+        scene: &mut Scene,
         angle: &Angle,
         position: &GenericPosition<LengthPercentage, LengthPercentage>,
         items: &OwnedSlice<GenericGradientItem<StyloColor<Percentage>, AngleOrPercentage>>,

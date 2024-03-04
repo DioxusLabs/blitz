@@ -10,9 +10,9 @@ fn main() {
     dioxus_blitz::launch(app);
 }
 
-fn app(cx: Scope) -> Element {
-    render! {
-        style { CSS }
+fn app() -> Element {
+    rsx! {
+        style { {CSS} }
         h1 { "h1" }
         h2 { "h2" }
         h3 { "h3" }
