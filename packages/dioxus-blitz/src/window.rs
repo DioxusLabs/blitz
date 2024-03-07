@@ -10,6 +10,7 @@ use muda::{AboutMetadata, Menu, MenuId, MenuItem, PredefinedMenuItem, Submenu};
 use std::sync::Arc;
 use std::task::Waker;
 use style::media_queries::Device;
+use tao::dpi::LogicalSize;
 use tao::event::ElementState;
 use tao::event_loop::{EventLoopProxy, EventLoopWindowTarget};
 #[cfg(target_os = "windows")]
@@ -224,6 +225,10 @@ impl<'a> View<'a> {
     ) {
         let window_builder = || {
             let window = WindowBuilder::new()
+                .with_inner_size(LogicalSize {
+                    width: 800,
+                    height: 600,
+                })
                 .with_always_on_top(cfg!(debug_assertions))
                 .build(event_loop)
                 .unwrap();
