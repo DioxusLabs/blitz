@@ -10,6 +10,7 @@ use muda::{AboutMetadata, Menu, MenuId, MenuItem, PredefinedMenuItem, Submenu};
 use std::sync::Arc;
 use std::task::Waker;
 use style::media_queries::Device;
+use tao::event::ElementState;
 use tao::event_loop::{EventLoopProxy, EventLoopWindowTarget};
 #[cfg(target_os = "windows")]
 use tao::platform::windows::WindowExtWindows;
@@ -158,6 +159,14 @@ impl<'a> View<'a> {
                             || self.keyboard_modifiers.super_key()
                         {
                             self.renderer.reset_zoom();
+                            self.request_redraw();
+                        }
+                    }
+                    KeyCode::KeyD => {
+                        if event.state == ElementState::Pressed && self.keyboard_modifiers.alt_key()
+                        {
+                            self.renderer.devtools.show_layout =
+                                !self.renderer.devtools.show_layout;
                             self.request_redraw();
                         }
                     }
