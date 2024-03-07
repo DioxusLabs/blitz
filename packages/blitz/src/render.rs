@@ -175,6 +175,14 @@ where
         self.kick_viewport()
     }
 
+    pub fn reset_zoom(&mut self) {
+        let RenderState::Active(state) = &mut self.render_state else {
+            return;
+        };
+        *state.viewport.zoom_mut() = 1.0;
+        self.kick_viewport()
+    }
+
     // Adjust the viewport
     pub fn set_size(&mut self, physical_size: (u32, u32)) {
         let RenderState::Active(state) = &mut self.render_state else {

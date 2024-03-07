@@ -17,6 +17,7 @@ use tao::{
     event::WindowEvent,
     event_loop::EventLoop,
     keyboard::KeyCode,
+    keyboard::ModifiersState,
     window::{Window, WindowBuilder},
 };
 use vello::Scene;
@@ -26,6 +27,9 @@ pub(crate) struct View<'s> {
     pub(crate) vdom: VirtualDom,
     pub(crate) scene: Scene,
     pub(crate) waker: Option<Waker>,
+    /// The state of the keyboard modifiers (ctrl, shift, etc). Winit/Tao don't track these for us so we
+    /// need to store them in order to have access to them when processing keypress events
+    keyboard_modifiers: ModifiersState,
 }
 
 impl<'a> View<'a> {
@@ -69,6 +73,7 @@ impl<'a> View<'a> {
             vdom,
             scene,
             waker: None,
+            keyboard_modifiers: Default::default(),
         }
     }
 
@@ -122,20 +127,40 @@ impl<'a> View<'a> {
                 self.request_redraw();
             }
 
+            // Store new keyboard modifier (ctrl, shift, etc) state for later use
+            WindowEvent::ModifiersChanged(new_state) => {
+                self.keyboard_modifiers = new_state;
+            }
+
             // todo: if there's an active text input, we want to direct input towards it and translate system emi text
             WindowEvent::KeyboardInput { event, .. } => {
                 dbg!(&event);
 
                 match event.physical_key {
-                    KeyCode::ArrowUp => {
-                        self.renderer.zoom(0.005);
-                        self.request_redraw();
+                    KeyCode::Equal => {
+                        if self.keyboard_modifiers.control_key()
+                            || self.keyboard_modifiers.super_key()
+                        {
+                            self.renderer.zoom(0.1);
+                            self.request_redraw();
+                        }
                     }
-                    KeyCode::ArrowDown => {
-                        self.renderer.zoom(-0.005);
-                        self.request_redraw();
+                    KeyCode::Minus => {
+                        if self.keyboard_modifiers.control_key()
+                            || self.keyboard_modifiers.super_key()
+                        {
+                            self.renderer.zoom(-0.1);
+                            self.request_redraw();
+                        }
                     }
-
+                    KeyCode::Digit0 => {
+                        if self.keyboard_modifiers.control_key()
+                            || self.keyboard_modifiers.super_key()
+                        {
+                            self.renderer.reset_zoom();
+                            self.request_redraw();
+                        }
+                    }
                     _ => {}
                 }
             }
@@ -147,7 +172,6 @@ impl<'a> View<'a> {
             WindowEvent::HoveredFileCancelled => {}
             WindowEvent::ReceivedImeText(_) => {}
             WindowEvent::Focused(_) => {}
-            WindowEvent::ModifiersChanged(_) => {}
             WindowEvent::CursorMoved {
                 device_id,
                 position,
