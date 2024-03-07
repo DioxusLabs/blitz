@@ -252,7 +252,11 @@ impl Document {
 
         let data = Stylesheet::from_str(
             css,
-            UrlExtraData::from("data:text/css;charset=utf-8;base64,".parse::<Url>().unwrap()),
+            UrlExtraData::from(
+                "data:text/css;charset=utf-8;base64,"
+                    .parse::<Url>()
+                    .unwrap(),
+            ),
             Origin::UserAgent,
             Arc::new(self.guard.wrap(MediaList::empty())),
             self.guard.clone(),

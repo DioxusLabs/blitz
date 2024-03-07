@@ -4,8 +4,8 @@ use atomic_refcell::AtomicRefCell;
 use html5ever::{tendril::StrTendril, Attribute, LocalName, QualName};
 use markup5ever_rcdom::{Handle, NodeData};
 use selectors::matching::QuirksMode;
-use style::stylesheets::UrlExtraData;
 use slab::Slab;
+use style::stylesheets::UrlExtraData;
 use style::{
     data::ElementData,
     properties::{parse_style_attribute, PropertyDeclaration, PropertyDeclarationBlock},
@@ -160,7 +160,9 @@ impl Node {
             };
 
             let url = UrlExtraData::from(
-                "data:text/css;charset=utf-8;base64,".parse::<Url>().unwrap(),
+                "data:text/css;charset=utf-8;base64,"
+                    .parse::<Url>()
+                    .unwrap(),
             );
 
             Arc::new(self.guard.wrap(parse_style_attribute(

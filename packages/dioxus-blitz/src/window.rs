@@ -1,26 +1,25 @@
-use std::sync::Arc;
 use super::Config;
 use crate::waker::UserWindowEvent;
-use blitz::{Renderer, Viewport, RenderState};
+use blitz::{RenderState, Renderer, Viewport};
 use blitz_dom::Document;
 use dioxus::dioxus_core::{Component, ComponentFunction, VirtualDom};
-use futures_util::{pin_mut, FutureExt};
-use std::task::Waker;
 use dioxus::html::view;
 use dioxus::prelude::Element;
+use futures_util::{pin_mut, FutureExt};
+use muda::{AboutMetadata, Menu, MenuId, MenuItem, PredefinedMenuItem, Submenu};
+use std::sync::Arc;
+use std::task::Waker;
+use style::media_queries::Device;
+use tao::event_loop::{EventLoopProxy, EventLoopWindowTarget};
+#[cfg(target_os = "windows")]
+use tao::platform::windows::WindowExtWindows;
 use tao::{
     event::WindowEvent,
     event_loop::EventLoop,
     keyboard::KeyCode,
     window::{Window, WindowBuilder},
 };
-use muda::{AboutMetadata, Menu, MenuId, MenuItem, PredefinedMenuItem, Submenu};
-use style::media_queries::Device;
-use tao::event_loop::{EventLoopProxy, EventLoopWindowTarget};
-#[cfg(target_os = "windows")]
-use tao::platform::windows::WindowExtWindows;
 use vello::Scene;
-
 
 pub(crate) struct View<'s> {
     pub(crate) renderer: Renderer<'s, Window>,
@@ -43,7 +42,7 @@ impl<'a> View<'a> {
         let markup = dioxus_ssr::render(&vdom);
         let mut scene = Scene::new();
 
-        let mut dom = Document::new(Viewport::new((0,0)).make_device());
+        let mut dom = Document::new(Viewport::new((0, 0)).make_device());
 
         // Include the default stylesheet
         // todo: should this be done in blitz itself?
@@ -65,18 +64,17 @@ impl<'a> View<'a> {
 
         let mut renderer = Renderer::new(dom);
 
-
         Self {
             renderer,
             vdom,
             scene,
-            waker: None
+            waker: None,
         }
     }
 
     pub(crate) fn poll(&mut self) {
         match &self.waker {
-            None => {},
+            None => {}
             Some(waker) => {
                 let mut cx = std::task::Context::from_waker(waker);
 
@@ -90,7 +88,6 @@ impl<'a> View<'a> {
                             std::task::Poll::Pending => break,
                         }
                     }
-
 
                     // let edits = self.vdom.render_immediate();
 
@@ -244,16 +241,8 @@ fn build_menu() -> Menu {
     let mut about = Submenu::new("About", true);
 
     about.append_items(&[
-        &PredefinedMenuItem::about(
-            "Dioxus".into(),
-            Option::from(AboutMetadata::default()),
-        ),
-        &MenuItem::with_id(
-            MenuId::new("dev.show_layout"),
-            "Show layout",
-            true,
-            None,
-        )
+        &PredefinedMenuItem::about("Dioxus".into(), Option::from(AboutMetadata::default())),
+        &MenuItem::with_id(MenuId::new("dev.show_layout"), "Show layout", true, None),
     ]);
 
     menu.append(&about).unwrap();

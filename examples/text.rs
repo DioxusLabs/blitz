@@ -1,5 +1,5 @@
-use std::thread::Scope;
 use dioxus::prelude::*;
+use std::thread::Scope;
 
 fn main() {
     dioxus_blitz::launch(app);

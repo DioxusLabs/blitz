@@ -2,17 +2,17 @@ mod waker;
 mod window;
 
 use crate::waker::{EventData, UserWindowEvent};
+use blitz::RenderState;
 use dioxus::prelude::*;
+use muda::{MenuEvent, MenuId};
 use std::collections::HashMap;
 use std::thread::Scope;
+use tao::event_loop::EventLoopBuilder;
+use tao::window::WindowId;
 use tao::{
     event::{Event, WindowEvent},
     event_loop::{ControlFlow, EventLoop},
 };
-use muda::{MenuEvent, MenuId};
-use tao::event_loop::EventLoopBuilder;
-use tao::window::WindowId;
-use blitz::RenderState;
 
 #[derive(Default)]
 pub struct Config {
@@ -47,7 +47,7 @@ pub fn launch_cfg_with_props<P: Clone + 'static, M: 'static>(
     let proxy = event_loop.create_proxy();
 
     // Multiwindow ftw
-    let mut windows : HashMap<WindowId, window::View> = HashMap::new();
+    let mut windows: HashMap<WindowId, window::View> = HashMap::new();
     let mut pending_windows = Vec::new();
     let window = crate::window::View::new(&event_loop, root, props, &cfg);
     pending_windows.push(window);
@@ -69,7 +69,9 @@ pub fn launch_cfg_with_props<P: Clone + 'static, M: 'static>(
             }
 
             for window in pending_windows.drain(..) {
-                let RenderState::Active(state) = &window.renderer.render_state else { continue };
+                let RenderState::Active(state) = &window.renderer.render_state else {
+                    continue;
+                };
                 windows.insert(state.window.id(), window);
             }
         };

@@ -14,6 +14,7 @@ use crate::{
 };
 use blitz_dom::{Document, Node};
 use html5ever::local_name;
+use style::values::specified::position::HorizontalPositionKeyword;
 use style::{
     properties::{style_structs::Outline, ComputedValues},
     values::{
@@ -30,17 +31,15 @@ use style::{
     },
     OwnedSlice,
 };
-use style::values::specified::position::HorizontalPositionKeyword;
 use taffy::prelude::Layout;
 use vello::{
-    peniko::{self, Color, Fill},
-    util::RenderSurface,
     kurbo::{Affine, Point, Rect, Shape, Stroke, Vec2},
-    util::{RenderContext},
-    AaSupport, RenderParams, Renderer as VelloRenderer, RendererOptions, Scene, 
+    peniko::{self, Color, Fill},
+    util::RenderContext,
+    util::RenderSurface,
+    AaSupport, RenderParams, Renderer as VelloRenderer, RendererOptions, Scene,
 };
 use wgpu::{PresentMode, WasmNotSend};
-
 
 // Simple struct to hold the state of the renderer
 pub struct ActiveRenderState<'s, W> {
@@ -60,7 +59,6 @@ pub enum RenderState<'s, W> {
     // Cache a window so that it can be reused when the app is resumed after being suspended
     Suspended(Option<(Arc<W>, Viewport)>),
 }
-
 
 pub struct Renderer<'s, W> {
     pub dom: Document,
@@ -83,9 +81,14 @@ pub struct Renderer<'s, W> {
 }
 
 impl<'a, W> Renderer<'a, W>
-    where
-        W: raw_window_handle::HasWindowHandle + raw_window_handle::HasDisplayHandle + Sync + WasmNotSend + 'a {
-    pub fn new(dom : Document) -> Self {
+where
+    W: raw_window_handle::HasWindowHandle
+        + raw_window_handle::HasDisplayHandle
+        + Sync
+        + WasmNotSend
+        + 'a,
+{
+    pub fn new(dom: Document) -> Self {
         // 1. Set up renderer-specific stuff
         // We build an independent viewport which can be dynamically set later
         // The intention here is to split the rendering pipeline away from tao/windowing for rendering to images
@@ -104,23 +107,24 @@ impl<'a, W> Renderer<'a, W>
         }
     }
 
-    pub async fn resume(
-        &mut self,
-        window_builder: impl FnOnce() -> (Arc<W>, Viewport),
-    ) {
+    pub async fn resume(&mut self, window_builder: impl FnOnce() -> (Arc<W>, Viewport)) {
         let RenderState::Suspended(cached_window) = &mut self.render_state else {
             return;
         };
 
-        let (window, viewport) = cached_window
-            .take()
-            .unwrap_or_else(|| window_builder());
+        let (window, viewport) = cached_window.take().unwrap_or_else(|| window_builder());
 
         let device = viewport.make_device();
         self.dom.set_stylist_device(device);
 
-        let surface = self.render_context
-            .create_surface(window.clone(), viewport.window_size.0, viewport.window_size.1, PresentMode::AutoVsync)
+        let surface = self
+            .render_context
+            .create_surface(
+                window.clone(),
+                viewport.window_size.0,
+                viewport.window_size.1,
+                PresentMode::AutoVsync,
+            )
             .await
             .expect("Error creating surface");
 
@@ -140,7 +144,8 @@ impl<'a, W> Renderer<'a, W>
         };
 
         let renderer =
-            VelloRenderer::new(&self.render_context.devices[surface.dev_id].device, options).unwrap();
+            VelloRenderer::new(&self.render_context.devices[surface.dev_id].device, options)
+                .unwrap();
 
         self.render_state = RenderState::Active(ActiveRenderState {
             renderer,
@@ -155,7 +160,9 @@ impl<'a, W> Renderer<'a, W>
     pub fn suspend(&mut self) {
         let old_state = std::mem::replace(&mut self.render_state, RenderState::Suspended(None));
         self.render_state = match old_state {
-            RenderState::Active(state) => RenderState::Suspended(Some((state.window, state.viewport))),
+            RenderState::Active(state) => {
+                RenderState::Suspended(Some((state.window, state.viewport)))
+            }
             RenderState::Suspended(_) => old_state,
         };
     }
@@ -201,11 +208,7 @@ impl<'a, W> Renderer<'a, W>
     pub fn render(&mut self, scene: &mut Scene) {
         // Simply render the document (the root element (note that this is not the same as the root node)))
         scene.reset();
-        self.render_element(
-            scene,
-            self.dom.root_element().id,
-            Point::ZERO,
-        );
+        self.render_element(scene, self.dom.root_element().id, Point::ZERO);
 
         let RenderState::Active(state) = &mut self.render_state else {
             return;
@@ -537,11 +540,11 @@ impl ElementCx<'_> {
             LineDirection::Horizontal(horizontal) => {
                 let start = Point::new(
                     self.frame.inner_rect.x0,
-                    self.frame.inner_rect.y0 + rect.height() / 2.0
+                    self.frame.inner_rect.y0 + rect.height() / 2.0,
                 );
                 let end = Point::new(
                     self.frame.inner_rect.x1,
-                    self.frame.inner_rect.y0 + rect.height() / 2.0
+                    self.frame.inner_rect.y0 + rect.height() / 2.0,
                 );
                 match horizontal {
                     HorizontalPositionKeyword::Right => (start, end),
@@ -564,12 +567,20 @@ impl ElementCx<'_> {
             }
             LineDirection::Corner(horizontal, vertical) => {
                 let (start_x, end_x) = match horizontal {
-                    HorizontalPositionKeyword::Right => (self.frame.inner_rect.x0, self.frame.inner_rect.x1),
-                    HorizontalPositionKeyword::Left => (self.frame.inner_rect.x1, self.frame.inner_rect.x0),
+                    HorizontalPositionKeyword::Right => {
+                        (self.frame.inner_rect.x0, self.frame.inner_rect.x1)
+                    }
+                    HorizontalPositionKeyword::Left => {
+                        (self.frame.inner_rect.x1, self.frame.inner_rect.x0)
+                    }
                 };
                 let (start_y, end_y) = match vertical {
-                    VerticalPositionKeyword::Top => (self.frame.inner_rect.y1, self.frame.inner_rect.y0),
-                    VerticalPositionKeyword::Bottom => (self.frame.inner_rect.y0, self.frame.inner_rect.y1),
+                    VerticalPositionKeyword::Top => {
+                        (self.frame.inner_rect.y1, self.frame.inner_rect.y0)
+                    }
+                    VerticalPositionKeyword::Bottom => {
+                        (self.frame.inner_rect.y0, self.frame.inner_rect.y1)
+                    }
                 };
                 (Point::new(start_x, start_y), Point::new(end_x, end_y))
             }
@@ -580,7 +591,7 @@ impl ElementCx<'_> {
             stops: Default::default(),
         };
 
-        let mut hint : Option<f32> = None;
+        let mut hint: Option<f32> = None;
 
         for (idx, item) in items.iter().enumerate() {
             let (color, offset) = match item {
@@ -594,11 +605,11 @@ impl ElementCx<'_> {
                     let offset = position.to_percentage().unwrap().0;
                     let color = color.as_vello();
                     (color, offset)
-                },
+                }
                 GenericGradientItem::InterpolationHint(position) => {
                     hint = match position.to_percentage() {
                         Some(Percentage(percentage)) => Some(percentage),
-                        _ => None
+                        _ => None,
                     };
                     continue;
                 }
@@ -613,7 +624,9 @@ impl ElementCx<'_> {
                         // Upstream code has a bug here, so we're going to do something different
                         match gradient.stops.len() {
                             0 => (),
-                            1 => { gradient.stops.pop(); },
+                            1 => {
+                                gradient.stops.pop();
+                            }
                             _ => {
                                 let prev_stop = gradient.stops[gradient.stops.len() - 2];
                                 if prev_stop.offset == hint {
@@ -621,22 +634,41 @@ impl ElementCx<'_> {
                                 }
                             }
                         }
-                        gradient.stops.push(peniko::ColorStop { color, offset: hint });
+                        gradient.stops.push(peniko::ColorStop {
+                            color,
+                            offset: hint,
+                        });
                     } else if hint >= offset {
-                        gradient.stops.push(peniko::ColorStop { color: last_stop.color, offset: hint });
-                        gradient.stops.push(peniko::ColorStop { color, offset: last_stop.offset });
+                        gradient.stops.push(peniko::ColorStop {
+                            color: last_stop.color,
+                            offset: hint,
+                        });
+                        gradient.stops.push(peniko::ColorStop {
+                            color,
+                            offset: last_stop.offset,
+                        });
                     } else if hint == (last_stop.offset + offset) / 2.0 {
                         gradient.stops.push(peniko::ColorStop { color, offset });
                     } else {
                         let mid_offset = last_stop.offset * (1.0 - hint) + offset * hint;
                         let multiplier = hint.powf(0.5f32.log(mid_offset));
                         let mid_color = Color::rgba8(
-                            (last_stop.color.r as f32 + multiplier * (color.r as f32 - last_stop.color.r as f32)) as u8,
-                            (last_stop.color.g as f32 + multiplier * (color.g as f32 - last_stop.color.g as f32)) as u8,
-                            (last_stop.color.b as f32 + multiplier * (color.b as f32 - last_stop.color.b as f32)) as u8,
-                            (last_stop.color.a as f32 + multiplier * (color.a as f32 - last_stop.color.a as f32)) as u8,
+                            (last_stop.color.r as f32
+                                + multiplier * (color.r as f32 - last_stop.color.r as f32))
+                                as u8,
+                            (last_stop.color.g as f32
+                                + multiplier * (color.g as f32 - last_stop.color.g as f32))
+                                as u8,
+                            (last_stop.color.b as f32
+                                + multiplier * (color.b as f32 - last_stop.color.b as f32))
+                                as u8,
+                            (last_stop.color.a as f32
+                                + multiplier * (color.a as f32 - last_stop.color.a as f32))
+                                as u8,
                         );
-                        gradient.stops.push(dbg! {peniko::ColorStop { color: mid_color, offset: mid_offset }});
+                        gradient.stops.push(
+                            dbg! {peniko::ColorStop { color: mid_color, offset: mid_offset }},
+                        );
                         gradient.stops.push(peniko::ColorStop { color, offset });
                     }
                 }

@@ -4,7 +4,7 @@ use glyphon::{
     Attrs, Buffer, Color, Family, FontSystem, Metrics, Resolution, Shaping, SwashCache, TextArea,
     TextAtlas, TextBounds, TextRenderer,
 };
-use vello::{glyph::skrifa::raw::FileRef, Scene, skrifa::prelude::*};
+use vello::{glyph::skrifa::raw::FileRef, skrifa::prelude::*, Scene};
 use vello::{
     glyph::GlyphContext,
     kurbo::Affine,

@@ -3,8 +3,7 @@
 // Create a style context for a dioxus document.
 use dioxus::prelude::*;
 
-
-fn root() -> Element{
+fn root() -> Element {
     let css = r#"
         h1 {
             background-color: red;
