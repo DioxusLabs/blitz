@@ -28,7 +28,6 @@ impl Document {
         &mut self.nodes[node_id.into()]
     }
 }
-impl TraverseTree for Document {}
 
 impl TraversePartialTree for Document {
     type ChildIter<'a> = ChildIter<'a>;
@@ -45,6 +44,7 @@ impl TraversePartialTree for Document {
         NodeId::from(self.node_from_id(node_id).children[index])
     }
 }
+impl TraverseTree for Document {}
 
 impl LayoutPartialTree for Document {
     fn get_style(&self, node_id: NodeId) -> &Style {
@@ -176,6 +176,25 @@ impl RoundTree for Document {
 
     fn set_final_layout(&mut self, node_id: NodeId, layout: &Layout) {
         self.node_from_id_mut(node_id).final_layout = *layout;
+    }
+}
+
+impl PrintTree for Document {
+    fn get_debug_label(&self, node_id: NodeId) -> &'static str {
+        let style = &self.node_from_id(node_id).style;
+        match style.display {
+            Display::Flex => match style.flex_direction {
+                FlexDirection::Row | FlexDirection::RowReverse => "FLEX ROW",
+                FlexDirection::Column | FlexDirection::ColumnReverse => "FLEX COL",
+            },
+            Display::Grid => "GRID",
+            Display::Block => "BLOCK",
+            Display::None => "NONE",
+        }
+    }
+
+    fn get_final_layout(&self, node_id: NodeId) -> &Layout {
+        &self.node_from_id(node_id).final_layout
     }
 }
 

@@ -171,6 +171,12 @@ impl<'a> View<'a> {
                             self.request_redraw();
                         }
                     }
+                    KeyCode::KeyT => {
+                        if event.state == ElementState::Pressed && self.keyboard_modifiers.alt_key()
+                        {
+                            self.renderer.print_taffy_tree();
+                        }
+                    }
                     _ => {}
                 }
             }

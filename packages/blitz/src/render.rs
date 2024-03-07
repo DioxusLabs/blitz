@@ -183,6 +183,10 @@ where
         self.kick_viewport()
     }
 
+    pub fn print_taffy_tree(&self) {
+        taffy::print_tree(&self.dom, taffy::NodeId::from(0usize));
+    }
+
     // Adjust the viewport
     pub fn set_size(&mut self, physical_size: (u32, u32)) {
         let RenderState::Active(state) = &mut self.render_state else {
