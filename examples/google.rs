@@ -7,7 +7,7 @@ fn main() {
 }
 
 fn app() -> Element {
-    let _content = tokio::runtime::Handle::current().block_on(async move {
+    let content = tokio::runtime::Handle::current().block_on(async move {
         let client = reqwest::Client::builder()
             .user_agent("Mozilla/5.0 (X11; Linux x86_64; rv:60.0) Gecko/20100101 Firefox/81.0")
             .build()
@@ -22,8 +22,9 @@ fn app() -> Element {
             .await
             .unwrap()
     });
+    let content = include_str!("./google_bits/google.html");
 
     rsx! {
-        div { dangerous_inner_html: "{_content}" }
+        div { dangerous_inner_html: "{content}" }
     }
 }
