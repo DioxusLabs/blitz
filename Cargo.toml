@@ -16,7 +16,7 @@ taffy = { version = "0.4" }
 dioxus = { git = "https://github.com/dioxuslabs/dioxus", rev = "9ae3d14" }
 dioxus-ssr = { git = "https://github.com/dioxuslabs/dioxus", rev = "9ae3d14" }
 tokio = { version = "1.25.0", features = ["full"] }
-vello = { git = "https://github.com/linebender/vello", features = ["wgpu"] }
+vello = { version = "0.1", features = ["wgpu"] }
 # fello = { git = "https://github.com/linebender/vello" }
 wgpu = "0.19"
 

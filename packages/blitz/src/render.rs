@@ -39,7 +39,7 @@ use vello::{
     util::{RenderContext},
     AaSupport, RenderParams, Renderer as VelloRenderer, RendererOptions, Scene, 
 };
-use wgpu::WasmNotSend;
+use wgpu::{PresentMode, WasmNotSend};
 
 
 // Simple struct to hold the state of the renderer
@@ -120,7 +120,7 @@ impl<'a, W> Renderer<'a, W>
         self.dom.set_stylist_device(device);
 
         let surface = self.render_context
-            .create_surface(window.clone(), viewport.window_size.0, viewport.window_size.1)
+            .create_surface(window.clone(), viewport.window_size.0, viewport.window_size.1, PresentMode::AutoVsync)
             .await
             .expect("Error creating surface");
 
