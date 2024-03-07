@@ -12,7 +12,7 @@ style_config = { git = "https://github.com/servo/stylo", rev = "e2a4834" }
 style_traits = { git = "https://github.com/servo/stylo", rev = "e2a4834" }
 selectors = { git = "https://github.com/servo/stylo", rev = "e2a4834" }
 
-taffy = { git = "https://github.com/dioxuslabs/taffy", rev = "563d5dc" }
+taffy = { version = "0.4" }
 dioxus = { git = "https://github.com/dioxuslabs/dioxus", rev = "9ae3d14" }
 dioxus-ssr = { git = "https://github.com/dioxuslabs/dioxus", rev = "9ae3d14" }
 tokio = { version = "1.25.0", features = ["full"] }
