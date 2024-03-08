@@ -53,6 +53,7 @@ use style::{
     Atom,
 };
 use style_traits::dom::ElementState;
+use taffy::Display;
 use taffy::{prelude::Style, LengthPercentageAuto};
 
 impl crate::document::Document {
@@ -138,9 +139,16 @@ impl crate::document::Document {
                 // dbg!(style.get_inhe());
                 // hmmmmmm, these seem wrong, coming from stylo
                 display_ = match display.inside() {
-                    style::values::specified::box_::DisplayInside::Flex => taffy::Display::Flex,
                     style::values::specified::box_::DisplayInside::None => taffy::Display::None,
-                    _ => taffy::Display::Block,
+                    style::values::specified::box_::DisplayInside::Flex => taffy::Display::Flex,
+                    style::values::specified::box_::DisplayInside::Flow => taffy::Display::Block,
+                    style::values::specified::box_::DisplayInside::FlowRoot => {
+                        taffy::Display::Block
+                    }
+                    _ => {
+                        println!("FALLBACK {:?} {:?}", display.inside(), display.outside());
+                        taffy::Display::Block
+                    }
                 };
 
                 // todo: support these
