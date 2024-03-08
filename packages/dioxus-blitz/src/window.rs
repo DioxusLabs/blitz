@@ -11,7 +11,7 @@ use std::sync::Arc;
 use std::task::Waker;
 use style::media_queries::Device;
 use tao::dpi::LogicalSize;
-use tao::event::ElementState;
+use tao::event::{ElementState, MouseButton};
 use tao::event_loop::{EventLoopProxy, EventLoopWindowTarget};
 #[cfg(target_os = "windows")]
 use tao::platform::windows::WindowExtWindows;
@@ -121,7 +121,11 @@ impl<'a> View<'a> {
                 state,
                 button,
                 modifiers,
-            } => {}
+            } => {
+                if state == ElementState::Pressed && button == MouseButton::Left {
+                    self.renderer.click()
+                }
+            }
 
             WindowEvent::Resized(physical_size) => {
                 self.renderer

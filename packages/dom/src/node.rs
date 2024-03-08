@@ -1,10 +1,11 @@
 use std::cell::{Cell, RefCell};
 
 use atomic_refcell::AtomicRefCell;
-use html5ever::{tendril::StrTendril, Attribute, LocalName, QualName};
+use html5ever::{local_name, tendril::StrTendril, Attribute, LocalName, QualName};
 use markup5ever_rcdom::{Handle, NodeData};
 use selectors::matching::QuirksMode;
 use slab::Slab;
+use std::fmt::Write;
 use style::stylesheets::UrlExtraData;
 use style::{
     data::ElementData,
@@ -73,6 +74,7 @@ pub struct DomData {
     pub style_attribute: Option<Arc<Locked<PropertyDeclarationBlock>>>,
 }
 
+#[derive(Debug, Clone, Copy)]
 pub enum FlowType {
     Block,
     Flex,
@@ -139,6 +141,43 @@ impl Node {
 
     pub fn is_text_node(&self) -> bool {
         matches!(self.node.data, NodeData::Text { .. })
+    }
+
+    pub fn node_debug_str(&self) -> String {
+        let mut s = String::new();
+
+        fn get_attr(attrs: &Vec<Attribute>, name: LocalName) -> &str {
+            attrs
+                .iter()
+                .find(|a| a.name.local == name)
+                .map(|a| std::str::from_utf8(a.value.as_bytes()).unwrap_or("INVALID UTF8"))
+                .unwrap_or("")
+        }
+
+        match &self.node.data {
+            NodeData::Document => write!(s, "DOCUMENT"),
+            NodeData::Doctype { name, .. } => write!(s, "DOCTYPE {name}"),
+            NodeData::Text { contents } => write!(
+                s,
+                "TEXT {}",
+                &std::str::from_utf8(contents.borrow().as_bytes().split_at(10).0)
+                    .unwrap_or("INVALID UTF8")
+            ),
+            NodeData::Comment { contents } => write!(
+                s,
+                "COMMENT {}",
+                &std::str::from_utf8(contents.as_bytes().split_at(10).0).unwrap_or("INVALID UTF8")
+            ),
+            NodeData::Element { name, attrs, .. } => write!(
+                s,
+                "<{} class=\"{}\">",
+                name.local,
+                get_attr(&attrs.borrow(), local_name!("class"))
+            ),
+            NodeData::ProcessingInstruction { .. } => write!(s, "ProcessingInstruction"),
+        }
+        .unwrap();
+        s
     }
 
     pub fn attrs(&self) -> &RefCell<Vec<Attribute>> {

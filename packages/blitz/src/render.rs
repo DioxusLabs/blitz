@@ -197,6 +197,27 @@ where
         }
     }
 
+    pub fn click(&mut self) {
+        if self.devtools.highlight_hover {
+            if let Some(node_id) = self.hover_node_id {
+                let node = &self.dom.tree()[node_id];
+                println!("Node {}", node.id);
+                dbg!(&node.final_layout);
+                dbg!(&node.style);
+
+                let children: Vec<_> = node
+                    .children
+                    .iter()
+                    .map(|id| &self.dom.tree()[*id])
+                    .map(|node| (node.id, node.order(), node.node_debug_str()))
+                    .collect();
+
+                println!("Children: {:?}", children);
+                // taffy::print_tree(&self.dom, node_id.into());
+            }
+        }
+    }
+
     pub fn print_taffy_tree(&self) {
         taffy::print_tree(&self.dom, taffy::NodeId::from(0usize));
     }
