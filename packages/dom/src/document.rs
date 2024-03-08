@@ -322,6 +322,7 @@ impl Document {
         let root = 1_usize;
 
         taffy::compute_root_layout(self, root.into(), available_space);
+        taffy::round_layout(self, root.into());
     }
 
     pub fn set_document(&mut self, content: String) {}
