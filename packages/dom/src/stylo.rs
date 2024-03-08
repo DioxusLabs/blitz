@@ -337,25 +337,11 @@ impl crate::document::Document {
                 children.sort_by(|left, right| {
                     let left_node = self.nodes.get(*left).unwrap();
                     let right_node = self.nodes.get(*right).unwrap();
-
-                    let order1 = left_node
-                        .data
-                        .borrow()
-                        .styles
-                        .get_primary()
-                        .map(|style| style.get_position().order)
-                        .unwrap_or(0);
-
-                    let order2 = right_node
-                        .data
-                        .borrow()
-                        .styles
-                        .get_primary()
-                        .map(|style| style.get_position().order)
-                        .unwrap_or(0);
-
-                    order1.cmp(&order2)
+                    right_node.order().cmp(&left_node.order())
                 });
+
+                // Mutate source child array
+                self.nodes.get_mut(child).unwrap().children = children.clone();
             }
 
             // // Reach up to our parent and set our flex basis to auto if we're in a flex layout

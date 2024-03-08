@@ -177,6 +177,15 @@ impl Node {
         self.additional_data.style_attribute = Some(arc);
     }
 
+    pub fn order(&self) -> i32 {
+        self.data
+            .borrow()
+            .styles
+            .get_primary()
+            .map(|style| style.get_position().order)
+            .unwrap_or(0)
+    }
+
     /// Takes an (x, y) position (relative to the *parent's* top-left corner) and returns:
     ///    - None if the position is outside of this node's bounds
     ///    - Some(self.id) is the position is within the node but doesn't match any children
