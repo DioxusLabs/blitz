@@ -286,6 +286,11 @@ impl Document {
         self.resolve_layout();
     }
 
+    // Takes (x, y) co-ordinates (relative to the )
+    pub fn hit(&self, x: f32, y: f32) -> Option<usize> {
+        self.root_element().hit(x, y)
+    }
+
     /// Update the device and reset the stylist to process the new size
     pub fn set_stylist_device(&mut self, device: Device) {
         let guard = &self.guard;

@@ -176,6 +176,30 @@ impl Node {
 
         self.additional_data.style_attribute = Some(arc);
     }
+
+    /// Takes an (x, y) position (relative to the *parent's* top-left corner) and returns:
+    ///    - None if the position is outside of this node's bounds
+    ///    - Some(self.id) is the position is within the node but doesn't match any children
+    ///    - The result of recursively calling child.hit() on the the child element that is
+    ///      positioned at that position if there is one.
+    ///
+    /// TODO: z-index
+    /// (If multiple children are positioned at the position then a random one will be recursed into)
+    pub fn hit(&self, x: f32, y: f32) -> Option<usize> {
+        let x = x - self.final_layout.location.x;
+        let y = y - self.final_layout.location.y;
+
+        let size = self.final_layout.size;
+        if x < 0.0 || x > size.width || y < 0.0 || y > size.height {
+            return None;
+        }
+
+        // Call `.hit()` on each child in turn. If any return `Some` then return that value. Else return `Some(self.id).
+        self.children
+            .iter()
+            .find_map(|&i| self.with(i).hit(x, y))
+            .or(Some(self.id))
+    }
 }
 
 /// It might be wrong to expose this since what does *equality* mean outside the dom?

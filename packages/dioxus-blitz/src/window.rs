@@ -6,7 +6,7 @@ use dioxus::dioxus_core::{Component, ComponentFunction, VirtualDom};
 use dioxus::html::view;
 use dioxus::prelude::Element;
 use futures_util::{pin_mut, FutureExt};
-use muda::{AboutMetadata, Menu, MenuId, MenuItem, PredefinedMenuItem, Submenu};
+use muda::{AboutMetadata, LogicalPosition, Menu, MenuId, MenuItem, PredefinedMenuItem, Submenu};
 use std::sync::Arc;
 use std::task::Waker;
 use style::media_queries::Device;
@@ -171,6 +171,14 @@ impl<'a> View<'a> {
                             self.request_redraw();
                         }
                     }
+                    KeyCode::KeyH => {
+                        if event.state == ElementState::Pressed && self.keyboard_modifiers.alt_key()
+                        {
+                            self.renderer.devtools.highlight_hover =
+                                !self.renderer.devtools.highlight_hover;
+                            self.request_redraw();
+                        }
+                    }
                     KeyCode::KeyT => {
                         if event.state == ElementState::Pressed && self.keyboard_modifiers.alt_key()
                         {
@@ -192,7 +200,12 @@ impl<'a> View<'a> {
                 device_id,
                 position,
                 modifiers,
-            } => {}
+            } => {
+                let tao::dpi::LogicalPosition::<f32> { x, y } = position.to_logical(2.0);
+                if self.renderer.mouse_move(x, y) {
+                    self.request_redraw();
+                }
+            }
             WindowEvent::CursorEntered { device_id } => {}
             WindowEvent::CursorLeft { device_id } => {}
             WindowEvent::MouseWheel {

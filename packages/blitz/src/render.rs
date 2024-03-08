@@ -78,6 +78,8 @@ pub struct Renderer<'s, W> {
     pub(crate) fonts: FontCache,
 
     pub devtools: Devtools,
+
+    hover_node_id: Option<usize>,
 }
 
 impl<'a, W> Renderer<'a, W>
@@ -104,6 +106,7 @@ where
             images: Default::default(),
             fonts: Default::default(),
             devtools: Default::default(),
+            hover_node_id: Default::default(),
         }
     }
 
@@ -183,6 +186,17 @@ where
         self.kick_viewport()
     }
 
+    pub fn mouse_move(&mut self, x: f32, y: f32) -> bool {
+        let old_id = self.hover_node_id;
+        self.hover_node_id = self.dom.hit(x, y);
+        if old_id != self.hover_node_id {
+            // println!("Hovered node: {:?}", self.hover_node_id);
+            self.devtools.highlight_hover
+        } else {
+            false
+        }
+    }
+
     pub fn print_taffy_tree(&self) {
         taffy::print_tree(&self.dom, taffy::NodeId::from(0usize));
     }
@@ -221,6 +235,45 @@ where
         // Simply render the document (the root element (note that this is not the same as the root node)))
         scene.reset();
         self.render_element(scene, self.dom.root_element().id, Point::ZERO);
+
+        // Render debug overlay
+        if self.devtools.highlight_hover {
+            if let Some(node_id) = self.hover_node_id {
+                let mut node = &self.dom.tree()[node_id];
+                let taffy::Size {
+                    mut width,
+                    mut height,
+                } = node.final_layout.size;
+                let taffy::Point { x, y } = node.final_layout.location;
+
+                let mut abs_x = x;
+                let mut abs_y = y;
+
+                while let Some(parent_id) = node.parent {
+                    node = &self.dom.tree()[parent_id];
+                    let taffy::Point { x, y } = node.final_layout.location;
+                    abs_x += x;
+                    abs_y += y;
+                }
+
+                // Hack: scale factor
+                abs_x *= 2.0;
+                abs_y *= 2.0;
+                width *= 2.0;
+                height *= 2.0;
+
+                let transform = Affine::translate(Vec2::new(abs_x as f64, abs_y as f64));
+                let rect = Rect::new(0.0, 0.0, width as f64, height as f64);
+                let fill_color = Color::rgba(66.0 / 255.0, 144.0 / 255.0, 245.0 / 255.0, 0.5);
+                scene.fill(
+                    vello::peniko::Fill::NonZero,
+                    transform,
+                    fill_color,
+                    None,
+                    &rect,
+                )
+            }
+        }
 
         let RenderState::Active(state) = &mut self.render_state else {
             return;
