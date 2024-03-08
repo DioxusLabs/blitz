@@ -343,14 +343,16 @@ impl crate::document::Document {
                         .borrow()
                         .styles
                         .get_primary()
-                        .map(|style| style.get_position().order);
+                        .map(|style| style.get_position().order)
+                        .unwrap_or(0);
 
                     let order2 = right_node
                         .data
                         .borrow()
                         .styles
                         .get_primary()
-                        .map(|style| style.get_position().order);
+                        .map(|style| style.get_position().order)
+                        .unwrap_or(0);
 
                     order1.cmp(&order2)
                 });
