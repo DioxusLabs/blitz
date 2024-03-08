@@ -155,6 +155,15 @@ impl crate::document::Document {
                     _ => {}
                 };
 
+                // HACK: hide whitespace-only text nodes from Taffy
+                if parent_display == Display::Flex || parent_display == Display::Grid {
+                    if let NodeData::Text { contents } = &node.node.data {
+                        if contents.borrow().chars().all(|c| c.is_whitespace()) {
+                            display_ = taffy::Display::None;
+                        }
+                    }
+                }
+
                 let flex_basis = match flex_basis {
                     style::values::generics::flex::FlexBasis::Content => taffy::Dimension::Auto,
                     style::values::generics::flex::FlexBasis::Size(size) => match size {
