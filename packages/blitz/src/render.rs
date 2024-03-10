@@ -261,15 +261,29 @@ where
         if self.devtools.highlight_hover {
             if let Some(node_id) = self.hover_node_id {
                 let mut node = &self.dom.tree()[node_id];
-                let taffy::Size {
-                    mut width,
-                    mut height,
-                } = node.final_layout.size;
+
+                const SCALE_FACTOR: f32 = 2.0;
+
+                let taffy::Layout {
+                    size,
+                    border,
+                    padding,
+                    ..
+                } = node.final_layout;
+                let taffy::Size { width, height } = size;
+
+                let padding_border = padding + border;
+                let scaled_pb = padding_border.map(|v| f64::from(v * SCALE_FACTOR));
+                let scaled_padding = padding.map(|v| f64::from(v * SCALE_FACTOR));
+                let scaled_border = border.map(|v| f64::from(v * SCALE_FACTOR));
+
+                let content_width = width - padding_border.left - padding_border.right;
+                let content_height = height - padding_border.top - padding_border.bottom;
+
                 let taffy::Point { x, y } = node.final_layout.location;
 
                 let mut abs_x = x;
                 let mut abs_y = y;
-
                 while let Some(parent_id) = node.parent {
                     node = &self.dom.tree()[parent_id];
                     let taffy::Point { x, y } = node.final_layout.location;
@@ -278,21 +292,86 @@ where
                 }
 
                 // Hack: scale factor
-                abs_x *= 2.0;
-                abs_y *= 2.0;
-                width *= 2.0;
-                height *= 2.0;
+                let abs_x = f64::from(abs_x * SCALE_FACTOR);
+                let abs_y = f64::from(abs_y * SCALE_FACTOR);
+                let width = f64::from(width * SCALE_FACTOR);
+                let height = f64::from(height * SCALE_FACTOR);
+                let content_width = f64::from(content_width * SCALE_FACTOR);
+                let content_height = f64::from(content_height * SCALE_FACTOR);
 
-                let transform = Affine::translate(Vec2::new(abs_x as f64, abs_y as f64));
-                let rect = Rect::new(0.0, 0.0, width as f64, height as f64);
-                let fill_color = Color::rgba(66.0 / 255.0, 144.0 / 255.0, 245.0 / 255.0, 0.5);
+                // Fill content box blue
+                let base_translation = Vec2::new(abs_x, abs_y);
+                let transform =
+                    Affine::translate(base_translation + Vec2::new(scaled_pb.left, scaled_pb.top));
+                let rect = Rect::new(0.0, 0.0, content_width, content_height);
+                let fill_color = Color::rgba(66.0 / 255.0, 144.0 / 255.0, 245.0 / 255.0, 0.5); // blue
                 scene.fill(
                     vello::peniko::Fill::NonZero,
                     transform,
                     fill_color,
                     None,
                     &rect,
-                )
+                );
+
+                fn draw_cutout_rect(
+                    scene: &mut Scene,
+                    base_translation: Vec2,
+                    size: Vec2,
+                    edge_widths: taffy::Rect<f64>,
+                    color: Color,
+                ) {
+                    let mut fill = |pos: Vec2, width: f64, height: f64| {
+                        scene.fill(
+                            vello::peniko::Fill::NonZero,
+                            Affine::translate(pos),
+                            color,
+                            None,
+                            &Rect::new(0.0, 0.0, width, height),
+                        );
+                    };
+
+                    let right = size.x - edge_widths.right;
+                    let bottom = size.y - edge_widths.bottom;
+                    let inner_h = size.y - edge_widths.top - edge_widths.bottom;
+                    let inner_w = size.x - edge_widths.left - edge_widths.right;
+
+                    let bt = base_translation;
+                    let ew = edge_widths;
+
+                    // Corners
+                    fill(bt, ew.left, ew.top); // top-left
+                    fill(bt + Vec2::new(0.0, bottom), ew.left, ew.bottom); // bottom-left
+                    fill(bt + Vec2::new(right, 0.0), ew.right, ew.top); // top-right
+                    fill(bt + Vec2::new(right, bottom), ew.right, ew.bottom); // bottom-right
+
+                    // Sides
+                    fill(bt + Vec2::new(0.0, ew.top), ew.left, inner_h); // left
+                    fill(bt + Vec2::new(right, ew.top), ew.right, inner_h); // right
+                    fill(bt + Vec2::new(ew.left, 0.0), inner_w, ew.top); // top
+                    fill(bt + Vec2::new(ew.left, bottom), inner_w, ew.bottom); // bottom
+                }
+
+                let padding_color = Color::rgba(81.0 / 255.0, 144.0 / 245.0, 66.0 / 255.0, 0.5); // green
+                draw_cutout_rect(
+                    scene,
+                    base_translation
+                        + Vec2::new(scaled_border.left as f64, scaled_border.top as f64),
+                    Vec2::new(
+                        content_width as f64 + scaled_padding.left + scaled_padding.right,
+                        content_height as f64 + scaled_padding.top + scaled_padding.bottom,
+                    ),
+                    scaled_padding.map(f64::from),
+                    padding_color,
+                );
+
+                let border_color = Color::rgba(245.0 / 255.0, 66.0 / 245.0, 66.0 / 255.0, 0.5); // red
+                draw_cutout_rect(
+                    scene,
+                    base_translation,
+                    Vec2::new(width, height),
+                    scaled_border.map(f64::from),
+                    border_color,
+                );
             }
         }
 
