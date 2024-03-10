@@ -257,12 +257,15 @@ where
         scene.reset();
         self.render_element(scene, self.dom.root_element().id, Point::ZERO);
 
+        let RenderState::Active(state) = &mut self.render_state else {
+            return;
+        };
+        let scale = state.viewport.scale_f64();
+
         // Render debug overlay
         if self.devtools.highlight_hover {
             if let Some(node_id) = self.hover_node_id {
                 let mut node = &self.dom.tree()[node_id];
-
-                const SCALE_FACTOR: f32 = 2.0;
 
                 let taffy::Layout {
                     size,
@@ -273,9 +276,9 @@ where
                 let taffy::Size { width, height } = size;
 
                 let padding_border = padding + border;
-                let scaled_pb = padding_border.map(|v| f64::from(v * SCALE_FACTOR));
-                let scaled_padding = padding.map(|v| f64::from(v * SCALE_FACTOR));
-                let scaled_border = border.map(|v| f64::from(v * SCALE_FACTOR));
+                let scaled_pb = padding_border.map(|v| f64::from(v) * scale);
+                let scaled_padding = padding.map(|v| f64::from(v) * scale);
+                let scaled_border = border.map(|v| f64::from(v) * scale);
 
                 let content_width = width - padding_border.left - padding_border.right;
                 let content_height = height - padding_border.top - padding_border.bottom;
@@ -292,12 +295,12 @@ where
                 }
 
                 // Hack: scale factor
-                let abs_x = f64::from(abs_x * SCALE_FACTOR);
-                let abs_y = f64::from(abs_y * SCALE_FACTOR);
-                let width = f64::from(width * SCALE_FACTOR);
-                let height = f64::from(height * SCALE_FACTOR);
-                let content_width = f64::from(content_width * SCALE_FACTOR);
-                let content_height = f64::from(content_height * SCALE_FACTOR);
+                let abs_x = f64::from(abs_x) * scale;
+                let abs_y = f64::from(abs_y) * scale;
+                let width = f64::from(width) * scale;
+                let height = f64::from(height) * scale;
+                let content_width = f64::from(content_width) * scale;
+                let content_height = f64::from(content_height) * scale;
 
                 // Fill content box blue
                 let base_translation = Vec2::new(abs_x, abs_y);
@@ -374,10 +377,6 @@ where
                 );
             }
         }
-
-        let RenderState::Active(state) = &mut self.render_state else {
-            return;
-        };
 
         let surface_texture = state
             .surface
