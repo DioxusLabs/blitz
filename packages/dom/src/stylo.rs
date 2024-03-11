@@ -227,7 +227,7 @@ impl crate::document::Document {
                 children.sort_by(|left, right| {
                     let left_node = self.nodes.get(*left).unwrap();
                     let right_node = self.nodes.get(*right).unwrap();
-                    right_node.order().cmp(&left_node.order())
+                    left_node.order().cmp(&right_node.order())
                 });
 
                 // Mutate source child array
