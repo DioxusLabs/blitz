@@ -245,6 +245,10 @@ impl crate::document::Document {
                     ..Style::DEFAULT
                 };
 
+                // Clear Taffy cache
+                // TODO: smarter cache invalidation
+                node.cache.clear();
+
                 // // now we need to override the style if there is a style attribute
                 // let style_attr = node
                 //     .attrs()
