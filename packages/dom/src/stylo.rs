@@ -170,28 +170,12 @@ impl crate::document::Document {
                     }
                 }
 
-                let flex_basis = match flex_basis {
-                    style::values::generics::flex::FlexBasis::Content => taffy::Dimension::Auto,
-                    style::values::generics::flex::FlexBasis::Size(size) => match size {
-                        style::values::generics::length::GenericSize::LengthPercentage(p) => {
-                            if let Some(p) = p.0.to_percentage() {
-                                taffy::Dimension::Percent(p.0)
-                            } else {
-                                taffy::Dimension::Length(p.0.to_length().unwrap().px())
-                            }
-                        }
-                        style::values::generics::length::GenericSize::Auto => {
-                            taffy::Dimension::Auto
-                        }
-                        _ => taffy::Dimension::Auto,
-                    },
-                };
-
                 node.style = Style {
+                    display: display_,
+                    position: stylo_to_taffy::position(*position),
                     margin: stylo_to_taffy::margin(margin),
                     padding: stylo_to_taffy::padding(padding),
                     border: stylo_to_taffy::border(border),
-                    display: display_,
                     flex_direction: stylo_to_taffy::flex_direction(*flex_direction),
                     flex_wrap: stylo_to_taffy::flex_wrap(*flex_wrap),
                     justify_content: stylo_to_taffy::justify_content(*justify_content),
@@ -200,7 +184,7 @@ impl crate::document::Document {
                     align_self: stylo_to_taffy::align_self(*align_self),
                     flex_grow: flex_grow.0,
                     flex_shrink: flex_shrink.0,
-                    flex_basis,
+                    flex_basis: stylo_to_taffy::flex_basis(flex_basis),
                     size: taffy::Size {
                         width: stylo_to_taffy::dimension(width),
                         height: stylo_to_taffy::dimension(height),
@@ -213,27 +197,23 @@ impl crate::document::Document {
                         width: stylo_to_taffy::max_size_dimension(max_width),
                         height: stylo_to_taffy::max_size_dimension(max_height),
                     },
-                    // overflow
-                    // scrollbar_width
-                    // position
-                    // inset
-                    // size
-                    // min_size
-                    // max_size
+                    inset: taffy::Rect {
+                        left: stylo_to_taffy::length_percentage_auto(left),
+                        right: stylo_to_taffy::length_percentage_auto(right),
+                        top: stylo_to_taffy::length_percentage_auto(top),
+                        bottom: stylo_to_taffy::length_percentage_auto(bottom),
+                    },
+                    overflow: taffy::Point {
+                        x: stylo_to_taffy::overflow(*overflow_x),
+                        y: stylo_to_taffy::overflow(*overflow_y),
+                    },
+                    // TODO: we'll eventually want to support visible scrollbars
+                    // But we really ought to implement "overflow: auto" first
+                    scrollbar_width: 0.0,
                     // aspect_ratio
-                    // margin
-                    // align_items
-                    // align_self
                     // justify_items
                     // justify_self
-                    // align_content
-                    // justify_content
                     // gap
-                    // flex_direction
-                    // flex_wrap
-                    // flex_basis
-                    // flex_grow
-                    // flex_shrink
                     // grid_template_rows
                     // grid_template_columns
                     // grid_auto_rows

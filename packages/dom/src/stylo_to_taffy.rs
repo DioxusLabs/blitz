@@ -10,15 +10,19 @@ mod stylo {
     pub(crate) use style::computed_values::justify_content::T as JustifyContent;
     // pub(crate) use style::computed_values::justify_items::T as JustifyItems;
     // pub(crate) use style::computed_values::justify_self::T as JustifySelf;
+    pub(crate) use style::properties::longhands::position::computed_value::T as Position;
     pub(crate) use style::properties::style_structs::{Margin, Padding};
     pub(crate) use style::values::computed::LengthPercentage;
+    pub(crate) use style::values::generics::flex::GenericFlexBasis;
     pub(crate) use style::values::generics::length::GenericLengthPercentageOrAuto;
     pub(crate) use style::values::generics::length::GenericMaxSize;
     pub(crate) use style::values::generics::length::GenericSize;
     pub(crate) use style::values::generics::NonNegative;
+    pub(crate) use style::values::specified::box_::Overflow;
     pub(crate) type LengthPercentageAuto = GenericLengthPercentageOrAuto<LengthPercentage>;
     pub(crate) type Size = GenericSize<NonNegative<LengthPercentage>>;
     pub(crate) type MaxSize = GenericMaxSize<NonNegative<LengthPercentage>>;
+    pub(crate) type FlexBasis = GenericFlexBasis<Size>;
 }
 
 pub(crate) fn length_percentage(val: &stylo::LengthPercentage) -> taffy::LengthPercentage {
@@ -45,8 +49,8 @@ pub(crate) fn dimension(val: &stylo::Size) -> taffy::Dimension {
     match val {
         stylo::Size::LengthPercentage(val) => length_percentage(&val.0).into(),
         stylo::Size::Auto => taffy::Dimension::Auto,
-        // TODO: implement other values in Taffy
-        _ => taffy::Dimension::Auto,
+        // TODO: implement other values in Taffy (and servo configuration of stylo)
+        // _ => taffy::Dimension::Auto,
     }
 }
 
@@ -54,17 +58,8 @@ pub(crate) fn max_size_dimension(val: &stylo::MaxSize) -> taffy::Dimension {
     match val {
         stylo::MaxSize::LengthPercentage(val) => length_percentage(&val.0).into(),
         stylo::MaxSize::None => taffy::Dimension::Auto,
-        // TODO: implement other values in Taffy
-        _ => taffy::Dimension::Auto,
-    }
-}
-
-pub(crate) fn flex_direction(input: stylo::FlexDirection) -> taffy::FlexDirection {
-    match input {
-        stylo::FlexDirection::Row => taffy::FlexDirection::Row,
-        stylo::FlexDirection::RowReverse => taffy::FlexDirection::RowReverse,
-        stylo::FlexDirection::Column => taffy::FlexDirection::Column,
-        stylo::FlexDirection::ColumnReverse => taffy::FlexDirection::ColumnReverse,
+        // TODO: implement other values in Taffy (and servo configuration of stylo)
+        // _ => taffy::Dimension::Auto,
     }
 }
 
@@ -94,6 +89,47 @@ pub(crate) fn border(
         right: taffy::LengthPercentage::Length(border.border_right_width.to_f32_px()),
         top: taffy::LengthPercentage::Length(border.border_top_width.to_f32_px()),
         bottom: taffy::LengthPercentage::Length(border.border_bottom_width.to_f32_px()),
+    }
+}
+
+pub(crate) fn position(input: stylo::Position) -> taffy::Position {
+    match input {
+        // TODO: support position:static
+        stylo::Position::Relative => taffy::Position::Relative,
+        stylo::Position::Static => taffy::Position::Relative,
+
+        // TODO: support position:fixed and sticky
+        stylo::Position::Absolute => taffy::Position::Absolute,
+        stylo::Position::Fixed => taffy::Position::Absolute,
+        stylo::Position::Sticky => taffy::Position::Absolute,
+    }
+}
+
+pub(crate) fn overflow(input: stylo::Overflow) -> taffy::Overflow {
+    // TODO: Enable Overflow::Clip in servo configuration of stylo
+    match input {
+        stylo::Overflow::Visible => taffy::Overflow::Visible,
+        stylo::Overflow::Hidden => taffy::Overflow::Hidden,
+        stylo::Overflow::Scroll => taffy::Overflow::Scroll,
+        // TODO: Support Overflow::Auto in Taffy
+        stylo::Overflow::Auto => taffy::Overflow::Scroll,
+    }
+}
+
+pub(crate) fn flex_basis(input: &stylo::FlexBasis) -> taffy::Dimension {
+    // TODO: Support flex-basis: content in Taffy
+    match input {
+        stylo::FlexBasis::Content => taffy::Dimension::Auto,
+        stylo::FlexBasis::Size(size) => dimension(&size).into(),
+    }
+}
+
+pub(crate) fn flex_direction(input: stylo::FlexDirection) -> taffy::FlexDirection {
+    match input {
+        stylo::FlexDirection::Row => taffy::FlexDirection::Row,
+        stylo::FlexDirection::RowReverse => taffy::FlexDirection::RowReverse,
+        stylo::FlexDirection::Column => taffy::FlexDirection::Column,
+        stylo::FlexDirection::ColumnReverse => taffy::FlexDirection::ColumnReverse,
     }
 }
 
