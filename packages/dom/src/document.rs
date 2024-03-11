@@ -298,11 +298,8 @@ impl Document {
             author: &guard.read(),
             ua_or_user: &guard.read(),
         };
-        let res = self
-            .stylist
-            .media_features_change_changed_style(&guards, &device);
-        dbg!(res);
-        self.stylist.set_device(device, &guards);
+        let origins = self.stylist.set_device(device, &guards);
+        self.stylist.force_stylesheet_origins_dirty(origins);
     }
 
     /// Walk the nodes now that they're properly styled and transfer their styles to the taffy style system
@@ -319,8 +316,8 @@ impl Document {
             // width: AvailableSpace::Definite(dbg!(1200.0)),
             // height: AvailableSpace::Definite(dbg!(2000.0)),
             // };
-            width: AvailableSpace::Definite(dbg!(size.width.to_f32_px() as _)),
-            height: AvailableSpace::Definite(dbg!((size.height.to_f32_px()) as _)),
+            width: AvailableSpace::Definite(size.width.to_f32_px()),
+            height: AvailableSpace::Definite(size.height.to_f32_px()),
             // height: AvailableSpace::Definite(1000000.0),
         };
 

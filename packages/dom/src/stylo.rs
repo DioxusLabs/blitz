@@ -314,8 +314,6 @@ impl crate::document::Document {
         // dbg!(root);
         let token = RecalcStyle::pre_traverse(root, &context);
 
-        println!("SHOULD TRAVERSE {}", token.should_traverse());
-
         if token.should_traverse() {
             // Style the elements, resolving their data
             let traverser = RecalcStyle::new(context);
