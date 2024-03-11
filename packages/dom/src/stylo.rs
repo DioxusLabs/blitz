@@ -69,6 +69,17 @@ impl crate::document::Document {
                 let data = node.data.borrow();
 
                 let Some(style) = data.styles.get_primary() else {
+                    // HACK: hide whitespace-only text node children of flexbox and grid nodes from Taffy
+                    if parent_display == Display::Flex || parent_display == Display::Grid {
+                        if let NodeData::Text { contents } = &node.node.data {
+                            let all_whitespace =
+                                contents.borrow().chars().all(|c| c.is_whitespace());
+                            if all_whitespace {
+                                node.style.display = taffy::Display::None;
+                            }
+                        }
+                    }
+
                     continue;
                 };
 
@@ -127,18 +138,7 @@ impl crate::document::Document {
                     original_display,
                 }: &BoxStyle = style.get_box();
 
-                // Map display property to Taffy
-                //
-                // HACK: hide whitespace-only text nodes from Taffy
-                let mut display = stylo_to_taffy::display(*display);
-                if parent_display == Display::Flex || parent_display == Display::Grid {
-                    if let NodeData::Text { contents } = &node.node.data {
-                        if contents.borrow().chars().all(|c| c.is_whitespace()) {
-                            display = taffy::Display::None;
-                        }
-                    }
-                }
-
+                let display = stylo_to_taffy::display(*display);
                 node.style = Style {
                     display,
                     position: stylo_to_taffy::position(*position),
