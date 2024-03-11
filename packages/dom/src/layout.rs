@@ -181,16 +181,30 @@ impl RoundTree for Document {
 
 impl PrintTree for Document {
     fn get_debug_label(&self, node_id: NodeId) -> &'static str {
-        let style = &self.node_from_id(node_id).style;
-        match style.display {
-            Display::Flex => match style.flex_direction {
-                FlexDirection::Row | FlexDirection::RowReverse => "FLEX ROW",
-                FlexDirection::Column | FlexDirection::ColumnReverse => "FLEX COL",
-            },
-            Display::Grid => "GRID",
-            Display::Block => "BLOCK",
-            Display::None => "NONE",
-        }
+        use markup5ever_rcdom::NodeData;
+
+        let node = &self.node_from_id(node_id);
+        let style = &node.style;
+
+        match &node.node.data {
+            NodeData::Document => return "DOCUMENT",
+            NodeData::Doctype { .. } => return "DOCTYPE",
+            NodeData::Text { .. } => return node.node_debug_str().leak(),
+            NodeData::Comment { .. } => return "COMMENT",
+            NodeData::Element { .. } => {
+                let display = match style.display {
+                    Display::Flex => match style.flex_direction {
+                        FlexDirection::Row | FlexDirection::RowReverse => "FLEX ROW",
+                        FlexDirection::Column | FlexDirection::ColumnReverse => "FLEX COL",
+                    },
+                    Display::Grid => "GRID",
+                    Display::Block => "BLOCK",
+                    Display::None => "NONE",
+                };
+                return format!("{} ({})", node.node_debug_str(), display).leak();
+            }
+            NodeData::ProcessingInstruction { .. } => return "PROCESSING INSTRUCTION",
+        };
     }
 
     fn get_final_layout(&self, node_id: NodeId) -> &Layout {

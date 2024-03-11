@@ -157,23 +157,30 @@ impl Node {
         match &self.node.data {
             NodeData::Document => write!(s, "DOCUMENT"),
             NodeData::Doctype { name, .. } => write!(s, "DOCTYPE {name}"),
-            NodeData::Text { contents } => write!(
-                s,
-                "TEXT {}",
-                &std::str::from_utf8(contents.borrow().as_bytes().split_at(10).0)
-                    .unwrap_or("INVALID UTF8")
-            ),
+            NodeData::Text { contents } => {
+                let contents = contents.borrow();
+                let bytes = contents.as_bytes();
+                write!(
+                    s,
+                    "TEXT {}",
+                    &std::str::from_utf8(bytes.split_at(10.min(bytes.len())).0)
+                        .unwrap_or("INVALID UTF8")
+                )
+            }
             NodeData::Comment { contents } => write!(
                 s,
                 "COMMENT {}",
                 &std::str::from_utf8(contents.as_bytes().split_at(10).0).unwrap_or("INVALID UTF8")
             ),
-            NodeData::Element { name, attrs, .. } => write!(
-                s,
-                "<{} class=\"{}\">",
-                name.local,
-                get_attr(&attrs.borrow(), local_name!("class"))
-            ),
+            NodeData::Element { name, attrs, .. } => {
+                let attrs = attrs.borrow();
+                let klass = get_attr(&attrs, local_name!("class"));
+                if klass.len() > 0 {
+                    write!(s, "<{} class=\"{}\">", name.local, klass)
+                } else {
+                    write!(s, "<{}>", name.local)
+                }
+            }
             NodeData::ProcessingInstruction { .. } => write!(s, "ProcessingInstruction"),
         }
         .unwrap();
