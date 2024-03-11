@@ -1,12 +1,62 @@
+//! Conversion functions from Stylo types to Taffy types
+
 // Module of type aliases so we can refer to stylo types with nicer names
 mod stylo {
     pub(crate) use style::computed_values::align_content::T as AlignContent;
     pub(crate) use style::computed_values::align_items::T as AlignItems;
     pub(crate) use style::computed_values::align_self::T as AlignSelf;
     pub(crate) use style::computed_values::flex_direction::T as FlexDirection;
+    pub(crate) use style::computed_values::flex_wrap::T as FlexWrap;
     pub(crate) use style::computed_values::justify_content::T as JustifyContent;
     // pub(crate) use style::computed_values::justify_items::T as JustifyItems;
     // pub(crate) use style::computed_values::justify_self::T as JustifySelf;
+    pub(crate) use style::properties::style_structs::{Margin, Padding};
+    pub(crate) use style::values::computed::LengthPercentage;
+    pub(crate) use style::values::generics::length::GenericLengthPercentageOrAuto;
+    pub(crate) use style::values::generics::length::GenericMaxSize;
+    pub(crate) use style::values::generics::length::GenericSize;
+    pub(crate) use style::values::generics::NonNegative;
+    pub(crate) type LengthPercentageAuto = GenericLengthPercentageOrAuto<LengthPercentage>;
+    pub(crate) type Size = GenericSize<NonNegative<LengthPercentage>>;
+    pub(crate) type MaxSize = GenericMaxSize<NonNegative<LengthPercentage>>;
+}
+
+pub(crate) fn length_percentage(val: &stylo::LengthPercentage) -> taffy::LengthPercentage {
+    if let Some(length) = val.to_length() {
+        taffy::LengthPercentage::Length(length.px())
+    } else if let Some(val) = val.to_percentage() {
+        taffy::LengthPercentage::Percent(val.0)
+    } else {
+        // TODO: Support calc
+        taffy::LengthPercentage::Percent(0.0)
+    }
+}
+
+pub(crate) fn length_percentage_auto(
+    val: &stylo::LengthPercentageAuto,
+) -> taffy::LengthPercentageAuto {
+    match val {
+        stylo::LengthPercentageAuto::Auto => taffy::LengthPercentageAuto::Auto,
+        stylo::LengthPercentageAuto::LengthPercentage(val) => length_percentage(val).into(),
+    }
+}
+
+pub(crate) fn dimension(val: &stylo::Size) -> taffy::Dimension {
+    match val {
+        stylo::Size::LengthPercentage(val) => length_percentage(&val.0).into(),
+        stylo::Size::Auto => taffy::Dimension::Auto,
+        // TODO: implement other values in Taffy
+        _ => taffy::Dimension::Auto,
+    }
+}
+
+pub(crate) fn max_size_dimension(val: &stylo::MaxSize) -> taffy::Dimension {
+    match val {
+        stylo::MaxSize::LengthPercentage(val) => length_percentage(&val.0).into(),
+        stylo::MaxSize::None => taffy::Dimension::Auto,
+        // TODO: implement other values in Taffy
+        _ => taffy::Dimension::Auto,
+    }
 }
 
 pub(crate) fn flex_direction(input: stylo::FlexDirection) -> taffy::FlexDirection {
@@ -15,6 +65,43 @@ pub(crate) fn flex_direction(input: stylo::FlexDirection) -> taffy::FlexDirectio
         stylo::FlexDirection::RowReverse => taffy::FlexDirection::RowReverse,
         stylo::FlexDirection::Column => taffy::FlexDirection::Column,
         stylo::FlexDirection::ColumnReverse => taffy::FlexDirection::ColumnReverse,
+    }
+}
+
+pub(crate) fn margin(margin: &stylo::Margin) -> taffy::Rect<taffy::LengthPercentageAuto> {
+    taffy::Rect {
+        left: length_percentage_auto(&margin.margin_left),
+        right: length_percentage_auto(&margin.margin_right),
+        top: length_percentage_auto(&margin.margin_top),
+        bottom: length_percentage_auto(&margin.margin_bottom),
+    }
+}
+
+pub(crate) fn padding(padding: &stylo::Padding) -> taffy::Rect<taffy::LengthPercentage> {
+    taffy::Rect {
+        left: length_percentage(&padding.padding_left.0),
+        right: length_percentage(&padding.padding_right.0),
+        top: length_percentage(&padding.padding_top.0),
+        bottom: length_percentage(&padding.padding_bottom.0),
+    }
+}
+
+pub(crate) fn border(
+    border: &style::properties::style_structs::Border,
+) -> taffy::Rect<taffy::LengthPercentage> {
+    taffy::Rect {
+        left: taffy::LengthPercentage::Length(border.border_left_width.to_f32_px()),
+        right: taffy::LengthPercentage::Length(border.border_right_width.to_f32_px()),
+        top: taffy::LengthPercentage::Length(border.border_top_width.to_f32_px()),
+        bottom: taffy::LengthPercentage::Length(border.border_bottom_width.to_f32_px()),
+    }
+}
+
+pub(crate) fn flex_wrap(input: stylo::FlexWrap) -> taffy::FlexWrap {
+    match input {
+        stylo::FlexWrap::Wrap => taffy::FlexWrap::Wrap,
+        stylo::FlexWrap::WrapReverse => taffy::FlexWrap::WrapReverse,
+        stylo::FlexWrap::Nowrap => taffy::FlexWrap::NoWrap,
     }
 }
 

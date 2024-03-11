@@ -1,11 +1,7 @@
 //! Enable the dom to participate in styling by servo
 //!
 
-use crate::util::to_taffy_margin;
-use crate::{
-    node::Node,
-    util::{to_taffy_border, to_taffy_padding},
-};
+use crate::node::Node;
 
 use std::{
     borrow::{Borrow, Cow},
@@ -192,28 +188,31 @@ impl crate::document::Document {
                 };
 
                 node.style = Style {
-                    margin: to_taffy_margin(margin),
-                    padding: to_taffy_padding(padding),
-                    border: to_taffy_border(border),
+                    margin: stylo_to_taffy::margin(margin),
+                    padding: stylo_to_taffy::padding(padding),
+                    border: stylo_to_taffy::border(border),
                     display: display_,
                     flex_direction: stylo_to_taffy::flex_direction(*flex_direction),
+                    flex_wrap: stylo_to_taffy::flex_wrap(*flex_wrap),
                     justify_content: stylo_to_taffy::justify_content(*justify_content),
                     align_content: stylo_to_taffy::align_content(*align_content),
                     align_items: stylo_to_taffy::align_items(*align_items),
                     align_self: stylo_to_taffy::align_self(*align_self),
                     flex_grow: flex_grow.0,
                     flex_shrink: flex_shrink.0,
-                    flex_wrap: match flex_wrap {
-                        style::computed_values::flex_wrap::T::Wrap => taffy::FlexWrap::Wrap,
-                        style::computed_values::flex_wrap::T::WrapReverse => {
-                            taffy::FlexWrap::WrapReverse
-                        }
-                        style::computed_values::flex_wrap::T::Nowrap => taffy::FlexWrap::NoWrap,
-                    },
                     flex_basis,
-                    size: make_taffy_size(width, height),
-                    min_size: make_taffy_size(min_width, min_height),
-                    max_size: make_taffy_size2(max_width, max_height),
+                    size: taffy::Size {
+                        width: stylo_to_taffy::dimension(width),
+                        height: stylo_to_taffy::dimension(height),
+                    },
+                    min_size: taffy::Size {
+                        width: stylo_to_taffy::dimension(min_width),
+                        height: stylo_to_taffy::dimension(min_height),
+                    },
+                    max_size: taffy::Size {
+                        width: stylo_to_taffy::max_size_dimension(max_width),
+                        height: stylo_to_taffy::max_size_dimension(max_height),
+                    },
                     // overflow
                     // scrollbar_width
                     // position
@@ -368,81 +367,6 @@ impl crate::document::Document {
 
         style::thread_state::exit(ThreadState::LAYOUT);
     }
-}
-
-fn make_taffy_size2(
-    max_width: &style::values::generics::length::GenericMaxSize<
-        style::values::generics::NonNegative<style::values::computed::LengthPercentage>,
-    >,
-    max_height: &style::values::generics::length::GenericMaxSize<
-        style::values::generics::NonNegative<style::values::computed::LengthPercentage>,
-    >,
-) -> taffy::prelude::Size<taffy::prelude::Dimension> {
-    let width = match max_width {
-        style::values::generics::length::GenericMaxSize::LengthPercentage(p) => {
-            if let Some(p) = p.0.to_percentage() {
-                taffy::Dimension::Percent(p.0)
-            } else {
-                taffy::Dimension::Length(p.0.to_length().unwrap().px())
-            }
-        }
-        style::values::generics::length::GenericMaxSize::None => taffy::prelude::Dimension::Auto,
-        _ => taffy::prelude::Dimension::Auto,
-    };
-
-    let height = match max_height {
-        style::values::generics::length::GenericMaxSize::LengthPercentage(p) => {
-            if let Some(p) = p.0.to_percentage() {
-                taffy::Dimension::Percent(p.0)
-            } else {
-                taffy::Dimension::Length(p.0.to_length().unwrap().px())
-            }
-        }
-        style::values::generics::length::GenericMaxSize::None => taffy::prelude::Dimension::Auto,
-        _ => taffy::prelude::Dimension::Auto,
-    };
-
-    taffy::prelude::Size { width, height }
-}
-
-fn make_taffy_size(
-    width: &style::values::generics::length::GenericSize<
-        style::values::generics::NonNegative<style::values::computed::LengthPercentage>,
-    >,
-    height: &style::values::generics::length::GenericSize<
-        style::values::generics::NonNegative<style::values::computed::LengthPercentage>,
-    >,
-) -> taffy::prelude::Size<taffy::prelude::Dimension> {
-    let width = match width {
-        style::values::generics::length::GenericSize::LengthPercentage(p) => {
-            if let Some(p) = p.0.to_percentage() {
-                taffy::Dimension::Percent(p.0)
-            } else {
-                taffy::Dimension::Length(p.0.to_length().unwrap().px())
-            }
-        }
-        style::values::generics::length::GenericSize::Auto => taffy::Dimension::Auto,
-        _ => taffy::prelude::Dimension::Auto,
-    };
-
-    let height = match height {
-        style::values::generics::length::GenericSize::LengthPercentage(p) => {
-            if let Some(p) = p.0.to_percentage() {
-                taffy::Dimension::Percent(p.0)
-            } else {
-                match &p.0.to_length() {
-                    Some(p) => taffy::Dimension::Length(p.px()),
-
-                    // todo: taffy needs to support calc
-                    None => taffy::Dimension::Auto,
-                }
-            }
-        }
-        style::values::generics::length::GenericSize::Auto => taffy::Dimension::Auto,
-        _ => taffy::prelude::Dimension::Auto,
-    };
-
-    taffy::prelude::Size { width, height }
 }
 
 /// A handle to a node that Servo's style traits are implemented against
