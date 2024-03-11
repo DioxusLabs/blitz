@@ -10,19 +10,23 @@ mod stylo {
     pub(crate) use style::computed_values::justify_content::T as JustifyContent;
     // pub(crate) use style::computed_values::justify_items::T as JustifyItems;
     // pub(crate) use style::computed_values::justify_self::T as JustifySelf;
+    pub(crate) use style::properties::longhands::aspect_ratio::computed_value::T as AspectRatio;
     pub(crate) use style::properties::longhands::position::computed_value::T as Position;
     pub(crate) use style::properties::style_structs::{Margin, Padding};
     pub(crate) use style::values::computed::LengthPercentage;
     pub(crate) use style::values::generics::flex::GenericFlexBasis;
     pub(crate) use style::values::generics::length::GenericLengthPercentageOrAuto;
+    pub(crate) use style::values::generics::length::GenericLengthPercentageOrNormal;
     pub(crate) use style::values::generics::length::GenericMaxSize;
     pub(crate) use style::values::generics::length::GenericSize;
+    pub(crate) use style::values::generics::position::PreferredRatio;
     pub(crate) use style::values::generics::NonNegative;
     pub(crate) use style::values::specified::box_::Overflow;
     pub(crate) type LengthPercentageAuto = GenericLengthPercentageOrAuto<LengthPercentage>;
     pub(crate) type Size = GenericSize<NonNegative<LengthPercentage>>;
     pub(crate) type MaxSize = GenericMaxSize<NonNegative<LengthPercentage>>;
     pub(crate) type FlexBasis = GenericFlexBasis<Size>;
+    pub(crate) type Gap = GenericLengthPercentageOrNormal<NonNegative<LengthPercentage>>;
 }
 
 pub(crate) fn length_percentage(val: &stylo::LengthPercentage) -> taffy::LengthPercentage {
@@ -113,6 +117,22 @@ pub(crate) fn overflow(input: stylo::Overflow) -> taffy::Overflow {
         stylo::Overflow::Scroll => taffy::Overflow::Scroll,
         // TODO: Support Overflow::Auto in Taffy
         stylo::Overflow::Auto => taffy::Overflow::Scroll,
+    }
+}
+
+pub(crate) fn aspect_ratio(input: stylo::AspectRatio) -> Option<f32> {
+    match input.ratio {
+        stylo::PreferredRatio::None => None,
+        stylo::PreferredRatio::Ratio(val) => Some(val.0.into()),
+    }
+}
+
+pub(crate) fn gap(input: &stylo::Gap) -> taffy::LengthPercentage {
+    match input {
+        // For Flexbox and CSS Grid the "normal" value is 0px. This may need to be updated
+        // if we ever implement multi-column layout.
+        stylo::Gap::Normal => taffy::LengthPercentage::Length(0.0),
+        stylo::Gap::LengthPercentage(val) => length_percentage(&val.0),
     }
 }
 

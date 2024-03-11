@@ -207,13 +207,21 @@ impl crate::document::Document {
                         x: stylo_to_taffy::overflow(*overflow_x),
                         y: stylo_to_taffy::overflow(*overflow_y),
                     },
+                    aspect_ratio: stylo_to_taffy::aspect_ratio(*aspect_ratio),
                     // TODO: we'll eventually want to support visible scrollbars
                     // But we really ought to implement "overflow: auto" first
                     scrollbar_width: 0.0,
-                    // aspect_ratio
+
+                    gap: taffy::Size {
+                        width: stylo_to_taffy::gap(column_gap),
+                        // TODO: Enable row-gap in servo configuration of stylo
+                        height: taffy::LengthPercentage::Length(0.0),
+                    },
+
+                    // TODO: Enable CSS Grid properties in servo configuration of stylo
+                    //
                     // justify_items
                     // justify_self
-                    // gap
                     // grid_template_rows
                     // grid_template_columns
                     // grid_auto_rows
