@@ -21,6 +21,9 @@ mod stylo {
     pub(crate) use style::values::generics::length::GenericSize;
     pub(crate) use style::values::generics::position::PreferredRatio;
     pub(crate) use style::values::generics::NonNegative;
+    pub(crate) use style::values::specified::box_::Display;
+    pub(crate) use style::values::specified::box_::DisplayInside;
+    pub(crate) use style::values::specified::box_::DisplayOutside;
     pub(crate) use style::values::specified::box_::Overflow;
     pub(crate) type LengthPercentageAuto = GenericLengthPercentageOrAuto<LengthPercentage>;
     pub(crate) type Size = GenericSize<NonNegative<LengthPercentage>>;
@@ -94,6 +97,36 @@ pub(crate) fn border(
         top: taffy::LengthPercentage::Length(border.border_top_width.to_f32_px()),
         bottom: taffy::LengthPercentage::Length(border.border_bottom_width.to_f32_px()),
     }
+}
+
+pub(crate) fn display(input: stylo::Display) -> taffy::Display {
+    let mut display = match input.inside() {
+        stylo::DisplayInside::None => taffy::Display::None,
+        stylo::DisplayInside::Flex => taffy::Display::Flex,
+        stylo::DisplayInside::Flow => taffy::Display::Block,
+        stylo::DisplayInside::FlowRoot => taffy::Display::Block,
+        // TODO: Support grid layout in servo configuration of stylo
+        // TODO: Support display:contents in Taffy
+        // TODO: Support table layout in Taffy
+        _ => {
+            println!("FALLBACK {:?} {:?}", input.inside(), input.outside());
+            taffy::Display::Block
+        }
+    };
+
+    match input.outside() {
+        // This is probably redundant as I suspect display.inside() is always None
+        // when display.outside() is None.
+        stylo::DisplayOutside::None => display = taffy::Display::None,
+
+        // TODO: Support flow and table layout
+        stylo::DisplayOutside::Inline => {}
+        stylo::DisplayOutside::Block => {}
+        stylo::DisplayOutside::TableCaption => {}
+        stylo::DisplayOutside::InternalTable => {}
+    };
+
+    display
 }
 
 pub(crate) fn position(input: stylo::Position) -> taffy::Position {

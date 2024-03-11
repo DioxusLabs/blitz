@@ -64,10 +64,7 @@ impl crate::document::Document {
     ) {
         // make a floating element
         for child in children {
-            // We want to do some re-reordering of children when setting their layout only if they're in a flex or grid container
-            let mut display_ = parent_display;
-
-            let mut children = {
+            let (display, mut children) = {
                 let node = self.nodes.get_mut(child).unwrap();
                 let data = node.data.borrow();
 
@@ -130,48 +127,20 @@ impl crate::document::Document {
                     original_display,
                 }: &BoxStyle = style.get_box();
 
-                // todo: support grid
-
-                // dbg!(style.get_position());
-                // dbg!(style.get_box());
-                // dbg!(style.get_inhe());
-                // hmmmmmm, these seem wrong, coming from stylo
-                display_ = match display.inside() {
-                    style::values::specified::box_::DisplayInside::None => taffy::Display::None,
-                    style::values::specified::box_::DisplayInside::Flex => taffy::Display::Flex,
-                    style::values::specified::box_::DisplayInside::Flow => taffy::Display::Block,
-                    style::values::specified::box_::DisplayInside::FlowRoot => {
-                        taffy::Display::Block
-                    }
-                    _ => {
-                        println!("FALLBACK {:?} {:?}", display.inside(), display.outside());
-                        taffy::Display::Block
-                    }
-                };
-
-                // todo: support these
-                match display.outside() {
-                    style::values::specified::box_::DisplayOutside::None => {
-                        display_ = taffy::Display::None
-                    }
-                    style::values::specified::box_::DisplayOutside::Inline => {}
-                    style::values::specified::box_::DisplayOutside::Block => {}
-                    style::values::specified::box_::DisplayOutside::TableCaption => {}
-                    style::values::specified::box_::DisplayOutside::InternalTable => {}
-                    _ => {}
-                };
-
+                // Map display property to Taffy
+                //
                 // HACK: hide whitespace-only text nodes from Taffy
+                let mut display = stylo_to_taffy::display(*display);
                 if parent_display == Display::Flex || parent_display == Display::Grid {
                     if let NodeData::Text { contents } = &node.node.data {
                         if contents.borrow().chars().all(|c| c.is_whitespace()) {
-                            display_ = taffy::Display::None;
+                            display = taffy::Display::None;
                         }
                     }
                 }
 
                 node.style = Style {
-                    display: display_,
+                    display,
                     position: stylo_to_taffy::position(*position),
                     margin: stylo_to_taffy::margin(margin),
                     padding: stylo_to_taffy::padding(padding),
@@ -249,10 +218,10 @@ impl crate::document::Document {
                 // }
 
                 // would like to change this not require a clone, but requires some refactoring
-                node.children.clone()
+                (display, node.children.clone())
             };
 
-            if display_ == taffy::Display::Flex {
+            if display == taffy::Display::Flex {
                 // Reorder the children based on their flex order
                 // Would like to not have to
                 children.sort_by(|left, right| {
@@ -305,7 +274,7 @@ impl crate::document::Document {
             //     }
             // }
 
-            self.flush_styles_to_layout(children, Some(child), display_);
+            self.flush_styles_to_layout(children, Some(child), display);
         }
     }
 
