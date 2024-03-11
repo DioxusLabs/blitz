@@ -31,6 +31,9 @@ pub mod nodedata;
 /// Implementations that interact with servo's style engine
 pub mod stylo;
 
+/// Conversions from Stylo types to Taffy types
+pub mod stylo_to_taffy;
+
 pub mod image;
 /// Utilities for laying out and measuring text
 pub mod text;

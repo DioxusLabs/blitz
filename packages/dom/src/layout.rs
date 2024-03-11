@@ -111,8 +111,8 @@ impl LayoutPartialTree for Document {
                         let attrs = &attrs.borrow();
 
                         node.style.min_size = Size {
-                            width: Dimension::Length(272.0),
-                            height: Dimension::Length(92.0),
+                            width: Dimension::Length(0.0),
+                            height: Dimension::Length(0.0),
                         };
                         node.style.display = Display::Block;
 
@@ -121,8 +121,8 @@ impl LayoutPartialTree for Document {
                             &node.style,
                             |known_dimensions, _available_space| {
                                 let image_data = ImageContext {
-                                    height: 92.0,
-                                    width: 272.0,
+                                    width: 0.0,
+                                    height: 0.0,
                                 };
                                 // Size {
                                 //     width: image_data.width,

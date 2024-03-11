@@ -56,6 +56,8 @@ use style_traits::dom::ElementState;
 use taffy::Display;
 use taffy::{prelude::Style, LengthPercentageAuto};
 
+use super::stylo_to_taffy;
+
 impl crate::document::Document {
     /// Walk the whole tree, converting styles to layout
     pub fn flush_styles_to_layout(
@@ -189,106 +191,18 @@ impl crate::document::Document {
                     },
                 };
 
-                let align_content = match align_content {
-                    style::computed_values::align_content::T::Stretch => {
-                        Some(taffy::AlignContent::Stretch)
-                    }
-                    style::computed_values::align_content::T::FlexStart => {
-                        Some(taffy::AlignContent::FlexStart)
-                    }
-                    style::computed_values::align_content::T::FlexEnd => {
-                        Some(taffy::AlignContent::FlexEnd)
-                    }
-                    style::computed_values::align_content::T::Center => {
-                        Some(taffy::AlignContent::Center)
-                    }
-                    style::computed_values::align_content::T::SpaceBetween => {
-                        Some(taffy::AlignContent::SpaceBetween)
-                    }
-                    style::computed_values::align_content::T::SpaceAround => {
-                        Some(taffy::AlignContent::SpaceAround)
-                    }
-                };
-
-                let flex_direction = match flex_direction {
-                    style::computed_values::flex_direction::T::Row => taffy::FlexDirection::Row,
-                    style::computed_values::flex_direction::T::RowReverse => {
-                        taffy::FlexDirection::RowReverse
-                    }
-                    style::computed_values::flex_direction::T::Column => {
-                        taffy::FlexDirection::Column
-                    }
-                    style::computed_values::flex_direction::T::ColumnReverse => {
-                        taffy::FlexDirection::ColumnReverse
-                    }
-                };
-
-                let align_items = match align_items {
-                    style::computed_values::align_items::T::Stretch => {
-                        Some(taffy::AlignItems::Stretch)
-                    }
-                    style::computed_values::align_items::T::FlexStart => {
-                        Some(taffy::AlignItems::FlexStart)
-                    }
-                    style::computed_values::align_items::T::FlexEnd => {
-                        Some(taffy::AlignItems::FlexEnd)
-                    }
-                    style::computed_values::align_items::T::Center => {
-                        Some(taffy::AlignItems::Center)
-                    }
-                    style::computed_values::align_items::T::Baseline => {
-                        Some(taffy::AlignItems::Baseline)
-                    }
-                };
-
                 node.style = Style {
                     margin: to_taffy_margin(margin),
                     padding: to_taffy_padding(padding),
                     border: to_taffy_border(border),
-                    align_content,
                     display: display_,
-                    flex_direction,
-                    justify_content: match justify_content {
-                        style::computed_values::justify_content::T::FlexStart => {
-                            Some(taffy::JustifyContent::FlexStart)
-                        }
-                        style::computed_values::justify_content::T::Stretch => {
-                            Some(taffy::JustifyContent::Stretch)
-                        }
-                        style::computed_values::justify_content::T::FlexEnd => {
-                            Some(taffy::JustifyContent::FlexEnd)
-                        }
-                        style::computed_values::justify_content::T::Center => {
-                            Some(taffy::JustifyContent::Center)
-                        }
-                        style::computed_values::justify_content::T::SpaceBetween => {
-                            Some(taffy::JustifyContent::SpaceBetween)
-                        }
-                        style::computed_values::justify_content::T::SpaceAround => {
-                            Some(taffy::JustifyContent::SpaceAround)
-                        }
-                    },
-                    align_self: match align_self {
-                        style::computed_values::align_self::T::Auto => align_items,
-                        style::computed_values::align_self::T::Stretch => {
-                            Some(taffy::AlignItems::Stretch)
-                        }
-                        style::computed_values::align_self::T::FlexStart => {
-                            Some(taffy::AlignItems::FlexStart)
-                        }
-                        style::computed_values::align_self::T::FlexEnd => {
-                            Some(taffy::AlignItems::FlexEnd)
-                        }
-                        style::computed_values::align_self::T::Center => {
-                            Some(taffy::AlignItems::Center)
-                        }
-                        style::computed_values::align_self::T::Baseline => {
-                            Some(taffy::AlignItems::Baseline)
-                        }
-                    },
+                    flex_direction: stylo_to_taffy::flex_direction(*flex_direction),
+                    justify_content: stylo_to_taffy::justify_content(*justify_content),
+                    align_content: stylo_to_taffy::align_content(*align_content),
+                    align_items: stylo_to_taffy::align_items(*align_items),
+                    align_self: stylo_to_taffy::align_self(*align_self),
                     flex_grow: flex_grow.0,
                     flex_shrink: flex_shrink.0,
-                    align_items,
                     flex_wrap: match flex_wrap {
                         style::computed_values::flex_wrap::T::Wrap => taffy::FlexWrap::Wrap,
                         style::computed_values::flex_wrap::T::WrapReverse => {
@@ -300,7 +214,6 @@ impl crate::document::Document {
                     size: make_taffy_size(width, height),
                     min_size: make_taffy_size(min_width, min_height),
                     max_size: make_taffy_size2(max_width, max_height),
-                    // display
                     // overflow
                     // scrollbar_width
                     // position
@@ -440,6 +353,8 @@ impl crate::document::Document {
         let root = self.root_element();
         // dbg!(root);
         let token = RecalcStyle::pre_traverse(root, &context);
+
+        println!("SHOULD TRAVERSE {}", token.should_traverse());
 
         if token.should_traverse() {
             // Style the elements, resolving their data
