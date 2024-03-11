@@ -380,10 +380,10 @@ impl Document {
             // height: AvailableSpace::Definite(1000000.0),
         };
 
-        let root = 1_usize;
+        let root_node_id = taffy::NodeId::from(self.root_element().id);
 
-        taffy::compute_root_layout(self, root.into(), available_space);
-        taffy::round_layout(self, root.into());
+        taffy::compute_root_layout(self, root_node_id, available_space);
+        taffy::round_layout(self, root_node_id);
     }
 
     pub fn set_document(&mut self, content: String) {}
