@@ -17,7 +17,7 @@ use markup5ever_rcdom::NodeData;
 use selectors::{
     matching::{ElementSelectorFlags, MatchingContext, VisitedHandlingMode},
     sink::Push,
-    OpaqueElement,
+    Element, OpaqueElement,
 };
 use slab::Slab;
 use string_cache::{DefaultAtom, EmptyStaticAtomSet, StaticAtomSet};
@@ -288,7 +288,7 @@ impl crate::document::Document {
         };
 
         let root = TDocument::as_node(&&self.nodes[0])
-            .first_child()
+            .first_element_child()
             .unwrap()
             .as_element()
             .unwrap();

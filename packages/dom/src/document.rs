@@ -5,7 +5,7 @@ use crate::{
 use atomic_refcell::AtomicRefCell;
 use html5ever::tendril::{Tendril, TendrilSink};
 use markup5ever_rcdom::{Handle, NodeData, RcDom};
-use selectors::matching::QuirksMode;
+use selectors::{matching::QuirksMode, Element};
 use slab::Slab;
 use std::{
     cell::{Cell, RefCell},
@@ -123,7 +123,7 @@ impl Document {
 
     pub fn root_element(&self) -> &Node {
         TDocument::as_node(&self.root_node())
-            .first_child()
+            .first_element_child()
             .unwrap()
             .as_element()
             .unwrap()
@@ -136,20 +136,28 @@ impl Document {
     /// For now we just convert the string to a dom tree and then walk it
     /// Eventually we want to build dom nodes from dioxus mutatiosn, however that's not exposed yet
     pub fn write(&mut self, content: String) {
+        // HACK: strip wrapping <div></div> that comes from passing HTML document through dioxus's dangerous_inner_html
+        let mut content: &str = &content;
+        if content.starts_with("<div>") && content.ends_with("</div>") && content.contains("<html")
+        {
+            content = &content[5..(content.len() - 6)];
+        }
+
         // parse the html into a document
         let document = html5ever::parse_document(RcDom::default(), Default::default())
             .from_utf8()
             .read_from(&mut content.as_bytes())
             .unwrap();
 
-        walk_rc_dom(2, &document.document);
-
-        if !document.errors.is_empty() {
-            println!("\nParse errors:");
-            for err in document.errors.iter() {
-                println!("    {}", err);
-            }
-        }
+        // Debug print RcDom
+        //
+        // walk_rc_dom(2, &document.document);
+        // if !document.errors.is_empty() {
+        //     println!("\nParse errors:");
+        //     for err in document.errors.iter() {
+        //         println!("    {}", err);
+        //     }
+        // }
 
         self.populate_from_rc_dom(&[document.document.clone()], None);
     }
