@@ -1,3 +1,4 @@
+use crate::node::DisplayOuter;
 use crate::{
     node::{DomData, FlowType},
     Node,
@@ -187,6 +188,7 @@ impl Document {
         let val = Node {
             id,
             style,
+            display_outer: DisplayOuter::Block,
             child_idx,
             children: vec![],
             node: node.clone(),

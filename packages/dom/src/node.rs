@@ -23,6 +23,13 @@ use taffy::{
 };
 use url::Url;
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DisplayOuter {
+    Block,
+    Inline,
+    None,
+}
+
 // todo: might be faster to migrate this to ecs and split apart at a different boundary
 pub struct Node {
     /// Our parent's ID
@@ -49,6 +56,7 @@ pub struct Node {
 
     // need to make sure we sync this style and the other style...
     pub style: Style,
+    pub display_outer: DisplayOuter,
 
     pub cache: Cache,
 
@@ -176,9 +184,13 @@ impl Node {
                 let attrs = attrs.borrow();
                 let klass = get_attr(&attrs, local_name!("class"));
                 if klass.len() > 0 {
-                    write!(s, "<{} class=\"{}\">", name.local, klass)
+                    write!(
+                        s,
+                        "<{} class=\"{}\"> ({:?})",
+                        name.local, klass, self.display_outer
+                    )
                 } else {
-                    write!(s, "<{}>", name.local)
+                    write!(s, "<{}> ({:?})", name.local, self.display_outer)
                 }
             }
             NodeData::ProcessingInstruction { .. } => write!(s, "ProcessingInstruction"),

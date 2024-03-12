@@ -1,7 +1,7 @@
 //! Enable the dom to participate in styling by servo
 //!
 
-use crate::node::Node;
+use crate::node::{DisplayOuter, Node};
 
 use std::{
     borrow::{Borrow, Cow},
@@ -21,6 +21,8 @@ use selectors::{
 };
 use slab::Slab;
 use string_cache::{DefaultAtom, EmptyStaticAtomSet, StaticAtomSet};
+use style::values::specified::box_::DisplayOutside;
+use style::values::specified::TextAlignKeyword;
 use style::{
     animation::DocumentAnimationSet,
     context::{
@@ -63,20 +65,21 @@ impl crate::document::Document {
         parent_display: taffy::Display,
     ) {
         // make a floating element
-        for child in children {
+        for child in children.iter() {
             let (display, mut children) = {
-                let node = self.nodes.get_mut(child).unwrap();
+                let node = self.nodes.get_mut(*child).unwrap();
                 let data = node.data.borrow();
 
                 let Some(style) = data.styles.get_primary() else {
                     // HACK: hide whitespace-only text node children of flexbox and grid nodes from Taffy
-                    if parent_display == Display::Flex || parent_display == Display::Grid {
-                        if let NodeData::Text { contents } = &node.node.data {
-                            let all_whitespace =
-                                contents.borrow().chars().all(|c| c.is_whitespace());
-                            if all_whitespace {
-                                node.style.display = taffy::Display::None;
-                            }
+                    if let NodeData::Text { contents } = &node.node.data {
+                        node.display_outer = DisplayOuter::Inline;
+                        let all_whitespace = contents.borrow().chars().all(|c| c.is_whitespace());
+                        if all_whitespace
+                            && (parent_display == Display::Flex || parent_display == Display::Grid)
+                        {
+                            node.style.display = taffy::Display::None;
+                            node.display_outer = DisplayOuter::None;
                         }
                     }
 
@@ -117,7 +120,7 @@ impl crate::document::Document {
                 let BoxStyle {
                     _servo_top_layer,
                     _servo_overflow_clip_box,
-                    display,
+                    display: stylo_display,
                     position,
                     float,
                     clear,
@@ -138,7 +141,7 @@ impl crate::document::Document {
                     original_display,
                 }: &BoxStyle = style.get_box();
 
-                let display = stylo_to_taffy::display(*display);
+                let display = stylo_to_taffy::display(*stylo_display);
                 node.style = Style {
                     display,
                     position: stylo_to_taffy::position(*position),
@@ -201,6 +204,14 @@ impl crate::document::Document {
                     ..Style::DEFAULT
                 };
 
+                node.display_outer = match stylo_display.outside() {
+                    DisplayOutside::None => crate::node::DisplayOuter::None,
+                    DisplayOutside::Inline => crate::node::DisplayOuter::Inline,
+                    DisplayOutside::Block => crate::node::DisplayOuter::Block,
+                    DisplayOutside::TableCaption => crate::node::DisplayOuter::Block,
+                    DisplayOutside::InternalTable => crate::node::DisplayOuter::Block,
+                };
+
                 // Clear Taffy cache
                 // TODO: smarter cache invalidation
                 node.cache.clear();
@@ -231,7 +242,7 @@ impl crate::document::Document {
                 });
 
                 // Mutate source child array
-                self.nodes.get_mut(child).unwrap().children = children.clone();
+                self.nodes.get_mut(*child).unwrap().children = children.clone();
             }
 
             // // Reach up to our parent and set our flex basis to auto if we're in a flex layout
@@ -274,7 +285,43 @@ impl crate::document::Document {
             //     }
             // }
 
-            self.flush_styles_to_layout(children, Some(child), display);
+            self.flush_styles_to_layout(children, Some(*child), display);
+        }
+
+        // HACK: render block nodes with all inline (or hidden) children using
+        // a flexbox wrapped row with start alignment in both axis.
+        if let Some(parent_id) = parent {
+            if parent_display == taffy::Display::Block {
+                if children
+                    .iter()
+                    .map(|cid| self.nodes.get(*cid).unwrap())
+                    .all(|c| c.display_outer != DisplayOuter::Block)
+                {
+                    let node = self.nodes.get_mut(parent_id).unwrap();
+                    node.style.display = taffy::Display::Flex;
+                    node.style.flex_direction = taffy::FlexDirection::Row;
+                    node.style.flex_wrap = taffy::FlexWrap::Wrap;
+                    node.style.align_items = Some(taffy::AlignItems::Start);
+                    node.style.justify_content = Some(taffy::JustifyContent::Start);
+
+                    // HACK: Set flexbox alignment based on value of text-align property
+                    // This fixes some but not all <center> tags
+                    let data = node.data.borrow();
+                    if let Some(style) = data.styles.get_primary() {
+                        node.style.justify_content = Some(match style.clone_text_align() {
+                            TextAlignKeyword::Start => taffy::JustifyContent::Start,
+                            TextAlignKeyword::Left => taffy::JustifyContent::Start,
+                            TextAlignKeyword::Right => taffy::JustifyContent::End,
+                            TextAlignKeyword::Center => taffy::JustifyContent::Center,
+                            TextAlignKeyword::Justify => taffy::JustifyContent::SpaceBetween,
+                            TextAlignKeyword::End => taffy::JustifyContent::End,
+                            TextAlignKeyword::ServoCenter => taffy::JustifyContent::Center,
+                            TextAlignKeyword::ServoLeft => taffy::JustifyContent::Start,
+                            TextAlignKeyword::ServoRight => taffy::JustifyContent::End,
+                        });
+                    }
+                }
+            }
         }
     }
 

@@ -201,7 +201,7 @@ where
         if self.devtools.highlight_hover {
             if let Some(node_id) = self.hover_node_id {
                 let node = &self.dom.tree()[node_id];
-                println!("Node {}", node.id);
+                println!("Node {} {}", node.id, node.node_debug_str());
                 dbg!(&node.final_layout);
                 dbg!(&node.style);
 
