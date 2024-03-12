@@ -137,13 +137,6 @@ impl Document {
     /// For now we just convert the string to a dom tree and then walk it
     /// Eventually we want to build dom nodes from dioxus mutatiosn, however that's not exposed yet
     pub fn write(&mut self, content: &str) {
-        // HACK: strip wrapping <div></div> that comes from passing HTML document through dioxus's dangerous_inner_html
-        let mut content: &str = &content;
-        if content.starts_with("<div>") && content.ends_with("</div>") && content.contains("<html")
-        {
-            content = &content[5..(content.len() - 6)];
-        }
-
         // parse the html into a document
         let document = html5ever::parse_document(RcDom::default(), Default::default())
             .from_utf8()
