@@ -6,12 +6,11 @@ use blitz::RenderState;
 use dioxus::prelude::*;
 use muda::{MenuEvent, MenuId};
 use std::collections::HashMap;
-use std::thread::Scope;
 use tao::event_loop::EventLoopBuilder;
 use tao::window::WindowId;
 use tao::{
     event::{Event, WindowEvent},
-    event_loop::{ControlFlow, EventLoop},
+    event_loop::ControlFlow,
 };
 
 #[derive(Default)]
@@ -34,6 +33,14 @@ pub fn launch_cfg_with_props<P: Clone + 'static, M: 'static>(
     props: P,
     cfg: Config,
 ) {
+    launch_with_window(crate::window::View::new(root, props, &cfg))
+}
+
+pub fn launch_static_html(html: &str) {
+    launch_with_window(crate::window::View::from_html(html))
+}
+
+fn launch_with_window(window: crate::window::View<'static>) {
     // Turn on the runtime and enter it
     let rt = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
@@ -49,7 +56,7 @@ pub fn launch_cfg_with_props<P: Clone + 'static, M: 'static>(
     // Multiwindow ftw
     let mut windows: HashMap<WindowId, window::View> = HashMap::new();
     let mut pending_windows = Vec::new();
-    let window = crate::window::View::new(&event_loop, root, props, &cfg);
+
     pending_windows.push(window);
     let menu_channel = MenuEvent::receiver();
 

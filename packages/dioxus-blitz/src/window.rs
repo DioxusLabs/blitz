@@ -2,14 +2,11 @@ use super::Config;
 use crate::waker::UserWindowEvent;
 use blitz::{RenderState, Renderer, Viewport};
 use blitz_dom::Document;
-use dioxus::dioxus_core::{Component, ComponentFunction, VirtualDom};
-use dioxus::html::view;
-use dioxus::prelude::Element;
+use dioxus::dioxus_core::{ComponentFunction, VirtualDom};
 use futures_util::{pin_mut, FutureExt};
-use muda::{AboutMetadata, LogicalPosition, Menu, MenuId, MenuItem, PredefinedMenuItem, Submenu};
+use muda::{AboutMetadata, Menu, MenuId, MenuItem, PredefinedMenuItem, Submenu};
 use std::sync::Arc;
 use std::task::Waker;
-use style::media_queries::Device;
 use tao::dpi::LogicalSize;
 use tao::event::{ElementState, MouseButton};
 use tao::event_loop::{EventLoopProxy, EventLoopWindowTarget};
@@ -17,7 +14,6 @@ use tao::event_loop::{EventLoopProxy, EventLoopWindowTarget};
 use tao::platform::windows::WindowExtWindows;
 use tao::{
     event::WindowEvent,
-    event_loop::EventLoop,
     keyboard::KeyCode,
     keyboard::ModifiersState,
     window::{Window, WindowBuilder},
@@ -36,7 +32,6 @@ pub(crate) struct View<'s> {
 
 impl<'a> View<'a> {
     pub(crate) fn new<P: 'static + Clone, M: 'static>(
-        event_loop: &EventLoop<UserWindowEvent>,
         root: impl ComponentFunction<P, M>,
         props: P,
         cfg: &Config,
@@ -46,7 +41,6 @@ impl<'a> View<'a> {
         let mut vdom = VirtualDom::new_with_props(root, props);
         vdom.rebuild_in_place();
         let markup = dioxus_ssr::render(&vdom);
-        let mut scene = Scene::new();
 
         let mut dom = Document::new(Viewport::new((0, 0)).make_device());
 
@@ -59,7 +53,7 @@ impl<'a> View<'a> {
             dom.add_stylesheet(&ss);
         }
 
-        dom.write(markup);
+        dom.write(&markup);
 
         // let size: tao::dpi::PhysicalSize<u32> = window.inner_size();
         // let mut viewport = Viewport::new((size.width, size.height));
@@ -68,12 +62,30 @@ impl<'a> View<'a> {
         // let device = viewport.make_device();
         // self.dom.set_stylist_device(device);
 
-        let mut renderer = Renderer::new(dom);
+        let scene = Scene::new();
+        let renderer = Renderer::new(dom);
 
         Self {
             renderer,
             vdom,
             scene,
+            waker: None,
+            keyboard_modifiers: Default::default(),
+        }
+    }
+
+    pub(crate) fn from_html(html: &str) -> Self {
+        // Spin up the virtualdom and include the default stylesheet
+        let mut dom = Document::new(Viewport::new((0, 0)).make_device());
+        dom.add_stylesheet(include_str!("./default.css"));
+
+        // Populate dom with HTML
+        dom.write(&html);
+
+        Self {
+            renderer: Renderer::new(dom),
+            vdom: VirtualDom::new(|| None),
+            scene: Scene::new(),
             waker: None,
             keyboard_modifiers: Default::default(),
         }
