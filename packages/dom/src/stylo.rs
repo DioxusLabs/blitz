@@ -320,6 +320,43 @@ impl crate::document::Document {
                             TextAlignKeyword::ServoRight => taffy::JustifyContent::End,
                         });
                     }
+
+                    drop(data);
+
+                    for cid in children.iter() {
+                        let child = self.nodes.get_mut(*cid).unwrap();
+
+                        if child.display_outer != DisplayOuter::Block {
+                            continue;
+                        }
+
+                        let data = child.data.borrow();
+
+                        if let Some(style) = data.styles.get_primary() {
+                            use style::values::generics::box_::VerticalAlign;
+                            use style::values::generics::box_::VerticalAlignKeyword;
+                            match style.clone_vertical_align() {
+                                VerticalAlign::Keyword(keyword) => {
+                                    child.style.align_self = Some(match keyword {
+                                        VerticalAlignKeyword::Baseline => {
+                                            taffy::AlignSelf::Baseline
+                                        }
+                                        VerticalAlignKeyword::Sub => taffy::AlignSelf::End,
+                                        VerticalAlignKeyword::Super => taffy::AlignSelf::Start,
+                                        VerticalAlignKeyword::Top => taffy::AlignSelf::Start,
+                                        VerticalAlignKeyword::TextTop => taffy::AlignSelf::Start,
+                                        VerticalAlignKeyword::Middle => taffy::AlignSelf::Center,
+                                        VerticalAlignKeyword::Bottom => taffy::AlignSelf::End,
+                                        VerticalAlignKeyword::TextBottom => taffy::AlignSelf::End,
+                                    });
+                                }
+                                VerticalAlign::Length(length_percentage) => {
+                                    child.style.margin.top =
+                                        stylo_to_taffy::length_percentage(&length_percentage).into()
+                                }
+                            };
+                        }
+                    }
                 }
             }
         }
