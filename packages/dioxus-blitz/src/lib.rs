@@ -37,7 +37,11 @@ pub fn launch_cfg_with_props<P: Clone + 'static, M: 'static>(
 }
 
 pub fn launch_static_html(html: &str) {
-    launch_with_window(crate::window::View::from_html(html))
+    launch_static_html_cfg(html, Config::default())
+}
+
+pub fn launch_static_html_cfg(html: &str, cfg: Config) {
+    launch_with_window(crate::window::View::from_html(html, &cfg))
 }
 
 fn launch_with_window(window: crate::window::View<'static>) {

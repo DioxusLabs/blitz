@@ -74,10 +74,15 @@ impl<'a> View<'a> {
         }
     }
 
-    pub(crate) fn from_html(html: &str) -> Self {
+    pub(crate) fn from_html(html: &str, cfg: &Config) -> Self {
         // Spin up the virtualdom and include the default stylesheet
         let mut dom = Document::new(Viewport::new((0, 0)).make_device());
         dom.add_stylesheet(include_str!("./default.css"));
+
+        // Include user-specified stylesheets
+        for ss in &cfg.stylesheets {
+            dom.add_stylesheet(&ss);
+        }
 
         // Populate dom with HTML
         dom.write(&html);
