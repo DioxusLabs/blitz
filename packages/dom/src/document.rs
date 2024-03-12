@@ -236,7 +236,12 @@ impl Document {
                     // Resolve external stylesheet
                     "link" => {
                         if &*entry.attr(local_name!("rel")) == "stylesheet" {
-                            let url = entry.attr(local_name!("href"));
+                            // HACK: support some stylesheet urls that are protocol agnostic
+                            let mut url = entry.attr(local_name!("href")).to_string();
+                            if url.starts_with("//") {
+                                url = format!("https:{url}");
+                            }
+
                             match crate::util::fetch_string(&url) {
                                 Ok(css) => {
                                     drop(url);
