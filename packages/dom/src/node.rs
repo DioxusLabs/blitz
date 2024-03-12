@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::cell::{Cell, Ref, RefCell};
 
 use atomic_refcell::AtomicRefCell;
@@ -205,6 +206,26 @@ impl Node {
                 .map(|a| std::str::from_utf8(a.value.as_bytes()).unwrap_or("INVALID UTF8"))
                 .unwrap_or("")
         })
+    }
+
+    pub fn text_content(&self) -> String {
+        let mut out = String::new();
+        self.write_text_content(&mut out);
+        out
+    }
+
+    fn write_text_content(&self, out: &mut String) {
+        match &self.node.data {
+            NodeData::Text { contents } => {
+                out.push_str(&contents.borrow().to_string());
+            }
+            NodeData::Element { .. } => {
+                for child_id in self.children.iter() {
+                    self.with(*child_id).write_text_content(out);
+                }
+            }
+            _ => {}
+        }
     }
 
     pub fn flush_style_attribute(&mut self) {
