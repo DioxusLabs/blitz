@@ -1,4 +1,4 @@
-use std::cell::{Cell, RefCell};
+use std::cell::{Cell, Ref, RefCell};
 
 use atomic_refcell::AtomicRefCell;
 use html5ever::{local_name, tendril::StrTendril, Attribute, LocalName, QualName};
@@ -154,14 +154,6 @@ impl Node {
     pub fn node_debug_str(&self) -> String {
         let mut s = String::new();
 
-        fn get_attr(attrs: &Vec<Attribute>, name: LocalName) -> &str {
-            attrs
-                .iter()
-                .find(|a| a.name.local == name)
-                .map(|a| std::str::from_utf8(a.value.as_bytes()).unwrap_or("INVALID UTF8"))
-                .unwrap_or("")
-        }
-
         match &self.node.data {
             NodeData::Document => write!(s, "DOCUMENT"),
             NodeData::Doctype { name, .. } => write!(s, "DOCTYPE {name}"),
@@ -180,14 +172,13 @@ impl Node {
                 "COMMENT {}",
                 &std::str::from_utf8(contents.as_bytes().split_at(10).0).unwrap_or("INVALID UTF8")
             ),
-            NodeData::Element { name, attrs, .. } => {
-                let attrs = attrs.borrow();
-                let klass = get_attr(&attrs, local_name!("class"));
-                if klass.len() > 0 {
+            NodeData::Element { name, .. } => {
+                let class = self.attr(local_name!("class"));
+                if class.len() > 0 {
                     write!(
                         s,
                         "<{} class=\"{}\"> ({:?})",
-                        name.local, klass, self.display_outer
+                        name.local, class, self.display_outer
                     )
                 } else {
                     write!(s, "<{}> ({:?})", name.local, self.display_outer)
@@ -204,6 +195,16 @@ impl Node {
             NodeData::Element { attrs, .. } => attrs,
             _ => panic!("not an element"),
         }
+    }
+
+    pub fn attr(&self, name: LocalName) -> Ref<'_, str> {
+        Ref::map(self.attrs().borrow(), |attrs| {
+            attrs
+                .iter()
+                .find(|a| a.name.local == name)
+                .map(|a| std::str::from_utf8(a.value.as_bytes()).unwrap_or("INVALID UTF8"))
+                .unwrap_or("")
+        })
     }
 
     pub fn flush_style_attribute(&mut self) {
