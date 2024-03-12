@@ -23,6 +23,7 @@ futures-util = "0.3.30"
 askama_escape = "0.10.3"
 html-escape = "0.2.13"
 url = { version = "2.5.0", features = ["serde"] }
+ureq = "2.9"
 
 
 # on wasm use the js feature on getrandom

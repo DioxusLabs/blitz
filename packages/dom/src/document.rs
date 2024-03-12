@@ -4,6 +4,7 @@ use crate::{
     Node,
 };
 use atomic_refcell::AtomicRefCell;
+use html5ever::local_name;
 use html5ever::tendril::{Tendril, TendrilSink};
 use markup5ever_rcdom::{Handle, NodeData, RcDom};
 use selectors::{matching::QuirksMode, Element};
@@ -229,8 +230,24 @@ impl Document {
                         }
                         // unescape the css
                         let css = html_escape::decode_html_entities(&css);
-
                         self.add_stylesheet(&css);
+                    }
+
+                    // Resolve external stylesheet
+                    "link" => {
+                        if &*entry.attr(local_name!("rel")) == "stylesheet" {
+                            let url = entry.attr(local_name!("href"));
+                            match crate::util::fetch_string(&url) {
+                                Ok(css) => {
+                                    drop(url);
+                                    let css = html_escape::decode_html_entities(&css);
+                                    self.add_stylesheet(&css);
+                                }
+                                Err(_) => {
+                                    eprintln!("Error fetching stylesheet {}", url);
+                                }
+                            }
+                        }
                     }
 
                     // Create a shadow element and attach it to this node
