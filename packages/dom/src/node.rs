@@ -3,15 +3,17 @@ use std::cell::{Cell, Ref, RefCell};
 
 use atomic_refcell::AtomicRefCell;
 use html5ever::{local_name, tendril::StrTendril, Attribute, LocalName, QualName};
+use image::DynamicImage;
 use markup5ever_rcdom::{Handle, NodeData};
 use selectors::matching::QuirksMode;
 use slab::Slab;
 use std::fmt::Write;
+use std::sync::Arc;
 use style::stylesheets::UrlExtraData;
 use style::{
     data::ElementData,
     properties::{parse_style_attribute, PropertyDeclaration, PropertyDeclarationBlock},
-    servo_arc::Arc,
+    servo_arc::Arc as ServoArc,
     shared_lock::{Locked, SharedRwLock},
     stylesheets::CssRuleType,
     values::specified::Attr,
@@ -80,7 +82,8 @@ pub struct Node {
 #[derive(Default)]
 pub struct DomData {
     pub hidden: bool,
-    pub style_attribute: Option<Arc<Locked<PropertyDeclarationBlock>>>,
+    pub style_attribute: Option<ServoArc<Locked<PropertyDeclarationBlock>>>,
+    pub image: Option<Arc<DynamicImage>>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -245,7 +248,7 @@ impl Node {
                     .unwrap(),
             );
 
-            Arc::new(self.guard.wrap(parse_style_attribute(
+            ServoArc::new(self.guard.wrap(parse_style_attribute(
                 &attr.value,
                 &url,
                 None,

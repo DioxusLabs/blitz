@@ -1,5 +1,6 @@
-use std::io::Read;
+use std::io::{BufRead, BufReader, Cursor, Read};
 
+use image::DynamicImage;
 use markup5ever_rcdom::{Handle, NodeData};
 
 const USER_AGENT: &str = "Mozilla/5.0 (X11; Linux x86_64; rv:60.0) Gecko/20100101 Firefox/81.0";
@@ -26,6 +27,37 @@ pub(crate) fn fetch_blob(url: &str) -> Result<Vec<u8>, ureq::Error> {
         .read_to_end(&mut bytes)?;
 
     Ok(bytes)
+}
+
+pub(crate) fn fetch_buffered_stream(
+    url: &str,
+) -> Result<impl BufRead + Read + Send + Sync, ureq::Error> {
+    let resp = ureq::get(url).set("User-Agent", USER_AGENT).call()?;
+    Ok(BufReader::new(resp.into_reader().take(FILE_SIZE_LIMIT)))
+}
+
+pub(crate) enum ImageFetchErr {
+    FetchErr(ureq::Error),
+    ImageError(image::error::ImageError),
+}
+impl From<ureq::Error> for ImageFetchErr {
+    fn from(value: ureq::Error) -> Self {
+        Self::FetchErr(value)
+    }
+}
+impl From<image::error::ImageError> for ImageFetchErr {
+    fn from(value: image::error::ImageError) -> Self {
+        Self::ImageError(value)
+    }
+}
+
+pub(crate) fn fetch_image(url: &str) -> Result<DynamicImage, ImageFetchErr> {
+    let blob = crate::util::fetch_blob(url)?;
+    let image = image::io::Reader::new(Cursor::new(blob))
+        .with_guessed_format()
+        .expect("IO errors impossible with Cursor")
+        .decode()?;
+    Ok(image)
 }
 
 // Debug print an RcDom

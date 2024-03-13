@@ -108,30 +108,29 @@ impl LayoutPartialTree for Document {
                     }
 
                     if name.local.as_ref() == "img" {
-                        let attrs = &attrs.borrow();
-
                         node.style.min_size = Size {
                             width: Dimension::Length(0.0),
                             height: Dimension::Length(0.0),
                         };
                         node.style.display = Display::Block;
 
+                        // Get image's native size
+                        let image_data = match &node.additional_data.image {
+                            Some(image) => ImageContext {
+                                width: image.width() as f32,
+                                height: image.height() as f32,
+                            },
+                            None => ImageContext {
+                                width: 0.0,
+                                height: 0.0,
+                            },
+                        };
+
                         return compute_leaf_layout(
                             inputs,
                             &node.style,
                             |known_dimensions, _available_space| {
-                                let image_data = ImageContext {
-                                    width: 0.0,
-                                    height: 0.0,
-                                };
-                                // Size {
-                                //     width: image_data.width,
-                                //     height: image_data.height,
-                                // }
-                                image_measure_function(
-                                    known_dimensions,
-                                    &image_data, // node.image_data.as_ref().unwrap(),
-                                )
+                                image_measure_function(known_dimensions, &image_data)
                             },
                         );
                     }

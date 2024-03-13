@@ -1,5 +1,6 @@
 use taffy::geometry::Size;
 
+#[derive(Debug, Clone, Copy)]
 pub struct ImageContext {
     pub width: f32,
     pub height: f32,

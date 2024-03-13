@@ -24,6 +24,7 @@ askama_escape = "0.10.3"
 html-escape = "0.2.13"
 url = { version = "2.5.0", features = ["serde"] }
 ureq = "2.9"
+image = "0.25"
 
 
 # on wasm use the js feature on getrandom

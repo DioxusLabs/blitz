@@ -14,6 +14,7 @@ use crate::{
 };
 use blitz_dom::{Document, Node};
 use html5ever::local_name;
+use image::{imageops::FilterType, DynamicImage};
 use style::values::specified::position::HorizontalPositionKeyword;
 use style::{
     properties::{style_structs::Outline, ComputedValues},
@@ -492,6 +493,7 @@ where
         cx.stroke_frame(scene);
         cx.stroke_border(scene);
         cx.stroke_devtools(scene);
+        cx.draw_image(scene);
 
         for child in &cx.element.children {
             match &self.dom.tree()[*child].node.data {
@@ -542,6 +544,7 @@ where
             font_size,
             text_color,
             transform,
+            image: element.additional_data.image.clone(),
             devtools: &self.devtools,
         }
     }
@@ -569,6 +572,7 @@ struct ElementCx<'a> {
     font_size: f32,
     text_color: Color,
     transform: Affine,
+    image: Option<Arc<DynamicImage>>,
     devtools: &'a Devtools,
 }
 
@@ -591,6 +595,32 @@ impl ElementCx<'_> {
             transform,
             contents,
         )
+    }
+
+    fn draw_image(&self, scene: &mut Scene) {
+        if let Some(image) = &self.image {
+            let transform = Affine::translate((self.pos.x * self.scale, self.pos.y * self.scale));
+
+            let width = self.frame.inner_rect.width() as u32;
+            let height = self.frame.inner_rect.height() as u32;
+
+            let image_data = image
+                .clone()
+                .resize_to_fill(width, height, FilterType::Lanczos3)
+                .into_rgba8()
+                .into_raw();
+
+            scene.draw_image(
+                &peniko::Image {
+                    data: peniko::Blob::new(Arc::new(image_data)),
+                    format: peniko::Format::Rgba8,
+                    width,
+                    height,
+                    extend: peniko::Extend::Pad,
+                },
+                transform,
+            );
+        }
     }
 
     fn stroke_devtools(&self, scene: &mut Scene) {

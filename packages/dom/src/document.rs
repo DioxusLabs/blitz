@@ -9,12 +9,14 @@ use html5ever::tendril::{Tendril, TendrilSink};
 use markup5ever_rcdom::{Handle, NodeData, RcDom};
 use selectors::{matching::QuirksMode, Element};
 use slab::Slab;
+use std::sync::Arc;
 use std::{
     cell::{Cell, RefCell},
     collections::HashMap,
     fmt::Write,
     rc::Rc,
 };
+use style::servo_arc::Arc as ServoArc;
 use style::{
     data::ElementData,
     dom::{TDocument, TNode},
@@ -266,7 +268,22 @@ impl Document {
                     }
 
                     // todo: Load images
-                    "img" => {}
+                    "img" => {
+                        let raw_src = entry.attr(local_name!("src")).to_string();
+                        if raw_src.len() > 0 {
+                            let src = self.resolve_url(&raw_src);
+                            let image_result = crate::util::fetch_image(src.as_str());
+
+                            match image_result {
+                                Ok(image) => {
+                                    self.nodes[id].additional_data.image = Some(Arc::new(image));
+                                }
+                                Err(_) => {
+                                    eprintln!("Error fetching image {}", src);
+                                }
+                            }
+                        }
+                    }
 
                     // Todo: Load scripts
                     "script" => {}
@@ -294,8 +311,6 @@ impl Document {
     }
 
     pub fn add_stylesheet(&mut self, css: &str) {
-        use style::servo_arc::Arc;
-
         let data = Stylesheet::from_str(
             css,
             UrlExtraData::from(
@@ -304,7 +319,7 @@ impl Document {
                     .unwrap(),
             ),
             Origin::UserAgent,
-            Arc::new(self.guard.wrap(MediaList::empty())),
+            ServoArc::new(self.guard.wrap(MediaList::empty())),
             self.guard.clone(),
             None,
             None,
@@ -314,7 +329,7 @@ impl Document {
         );
 
         self.stylist
-            .append_stylesheet(DocumentStyleSheet(Arc::new(data)), &self.guard.read());
+            .append_stylesheet(DocumentStyleSheet(ServoArc::new(data)), &self.guard.read());
 
         self.stylist
             .force_stylesheet_origins_dirty(Origin::Author.into());
