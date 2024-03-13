@@ -12,6 +12,7 @@ use tao::{
     event::{Event, WindowEvent},
     event_loop::ControlFlow,
 };
+use url::Url;
 
 #[derive(Default)]
 pub struct Config {
@@ -35,6 +36,30 @@ pub fn launch_cfg_with_props<P: Clone + 'static, M: 'static>(
     cfg: Config,
 ) {
     launch_with_window(crate::window::View::new(root, props, &cfg))
+}
+
+pub fn launch_url(url: &str) {
+    const USER_AGENT: &str = "Mozilla/5.0 (X11; Linux x86_64; rv:60.0) Gecko/20100101 Firefox/81.0";
+    println!("{}", url);
+
+    // Assert that url is valid
+    let url = url.to_owned();
+    Url::parse(&url).expect("Invalid url");
+
+    let html = ureq::get(&url)
+        .set("User-Agent", USER_AGENT)
+        .call()
+        .unwrap()
+        .into_string()
+        .unwrap();
+
+    launch_static_html_cfg(
+        &html,
+        Config {
+            stylesheets: Vec::new(),
+            base_url: Some(url),
+        },
+    )
 }
 
 pub fn launch_static_html(html: &str) {

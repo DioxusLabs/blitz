@@ -29,7 +29,7 @@ pub(crate) fn fetch_blob(url: &str) -> Result<Vec<u8>, ureq::Error> {
 }
 
 // Debug print an RcDom
-pub (crate) fn walk_rc_dom(indent: usize, handle: &Handle) {
+pub(crate) fn walk_rc_dom(indent: usize, handle: &Handle) {
     let node = handle;
     for _ in 0..indent {
         print!(" ");

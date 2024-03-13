@@ -17,3 +17,5 @@ wgpu = { workspace = true }
 style = { workspace = true }
 blitz = { path = "../blitz" }
 blitz-dom = { path = "../dom" }
+url = { version = "2.5.0", features = ["serde"] }
+ureq = "2.9"
