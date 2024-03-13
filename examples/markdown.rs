@@ -31,7 +31,10 @@ fn main() {
         &html,
         Config {
             stylesheets: vec![String::from(stylesheet)],
-            base_url: Some(format!("file://{}", base_path.as_os_str().to_string_lossy())),
+            base_url: Some(format!(
+                "file://{}",
+                base_path.as_os_str().to_string_lossy()
+            )),
         },
     );
 }
