@@ -81,6 +81,7 @@ pub struct Renderer<'s, W> {
     pub devtools: Devtools,
 
     hover_node_id: Option<usize>,
+    scroll_offset: f64,
 }
 
 impl<'a, W> Renderer<'a, W>
@@ -108,6 +109,7 @@ where
             fonts: Default::default(),
             devtools: Default::default(),
             hover_node_id: Default::default(),
+            scroll_offset: 0.0,
         }
     }
 
@@ -198,6 +200,28 @@ where
         }
     }
 
+    pub fn scroll_by(&mut self, px: f64) {
+        // Invert scrolling on macos
+        #[cfg(target_os = "macos")]
+        {
+            self.scroll_offset += px;
+        }
+        #[cfg(not(target_os = "macos"))]
+        {
+            self.scroll_offset -= px;
+        }
+
+        self.clamp_scroll();
+    }
+
+    /// Clamp scroll offset
+    fn clamp_scroll(&mut self) {
+        self.scroll_offset = self
+            .scroll_offset
+            .min(0.0)
+            .max(-self.dom.root_element().final_layout.size.height as f64);
+    }
+
     pub fn click(&mut self) {
         if self.devtools.highlight_hover {
             if let Some(node_id) = self.hover_node_id {
@@ -245,6 +269,7 @@ where
             dbg!(&state.viewport);
             self.render_context
                 .resize_surface(&mut state.surface, width, height);
+            self.clamp_scroll();
         }
     }
 
@@ -256,7 +281,14 @@ where
     pub fn render(&mut self, scene: &mut Scene) {
         // Simply render the document (the root element (note that this is not the same as the root node)))
         scene.reset();
-        self.render_element(scene, self.dom.root_element().id, Point::ZERO);
+        self.render_element(
+            scene,
+            self.dom.root_element().id,
+            Point {
+                x: 0.0,
+                y: self.scroll_offset,
+            },
+        );
 
         // Render debug overlay
         if self.devtools.highlight_hover {

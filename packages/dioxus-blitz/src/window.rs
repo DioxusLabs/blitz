@@ -212,7 +212,18 @@ impl<'a> View<'a> {
                 delta,
                 phase,
                 modifiers,
-            } => {}
+            } => {
+                match delta {
+                    tao::event::MouseScrollDelta::LineDelta(_, y) => {
+                        self.renderer.scroll_by(y as f64 * 20.0)
+                    }
+                    tao::event::MouseScrollDelta::PixelDelta(offsets) => {
+                        self.renderer.scroll_by(offsets.y)
+                    }
+                    _ => {}
+                };
+                self.request_redraw();
+            }
 
             WindowEvent::TouchpadPressure {
                 device_id,
