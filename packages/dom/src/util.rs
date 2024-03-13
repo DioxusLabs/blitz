@@ -6,14 +6,13 @@ use markup5ever_rcdom::{Handle, NodeData};
 const USER_AGENT: &str = "Mozilla/5.0 (X11; Linux x86_64; rv:60.0) Gecko/20100101 Firefox/81.0";
 const FILE_SIZE_LIMIT: u64 = 1_000_000_000; // 1GB
 
-pub(crate) fn fetch_string(url: &str) -> Result<String, ureq::Error> {
-    Ok(ureq::get(url)
-        .set("User-Agent", USER_AGENT)
-        .call()?
-        .into_string()?)
-}
-
 pub(crate) fn fetch_blob(url: &str) -> Result<Vec<u8>, ureq::Error> {
+    if url.starts_with("data:") {
+        let data_url = data_url::DataUrl::process(url).unwrap();
+        let decoded = data_url.decode_to_vec().expect("Invalid data url");
+        return Ok(decoded.0);
+    }
+
     let resp = ureq::get(url).set("User-Agent", USER_AGENT).call()?;
 
     let len: usize = resp
@@ -27,6 +26,10 @@ pub(crate) fn fetch_blob(url: &str) -> Result<Vec<u8>, ureq::Error> {
         .read_to_end(&mut bytes)?;
 
     Ok(bytes)
+}
+
+pub(crate) fn fetch_string(url: &str) -> Result<String, ureq::Error> {
+    fetch_blob(url).map(|vec| String::from_utf8(vec).expect("Invalid UTF8"))
 }
 
 pub(crate) fn fetch_buffered_stream(
