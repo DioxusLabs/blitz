@@ -7,7 +7,7 @@ fn main() {
         &get_html(),
         Config {
             stylesheets: Vec::new(),
-            base_url: Some(String::from("https://google.com/")),
+            base_url: Some(String::from("https://www.google.com/")),
         },
     );
 }

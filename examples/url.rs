@@ -4,6 +4,6 @@ fn main() {
     let url = std::env::args()
         .skip(1)
         .next()
-        .unwrap_or_else(|| "https://google.com".into());
+        .unwrap_or_else(|| "https://www.google.com".into());
     dioxus_blitz::launch_url(&url);
 }
