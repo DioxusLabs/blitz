@@ -48,6 +48,9 @@ pub struct Document {
     pub(crate) snapshots: SnapshotMap,
 
     pub(crate) nodes_to_id: HashMap<String, usize>,
+
+    /// Base url for resolving linked resources (stylesheets, images, fonts, etc)
+    pub(crate) base_url: Option<url::Url>,
 }
 
 impl Document {
@@ -70,7 +73,13 @@ impl Document {
             stylist,
             snapshots,
             nodes_to_id,
+            base_url: None,
         }
+    }
+
+    /// Set base url for resolving linked resources (stylesheets, images, fonts, etc)
+    pub fn set_base_url(&mut self, url: &str) {
+        self.base_url = Url::parse(url).ok();
     }
 
     pub fn tree(&self) -> &Slab<Node> {
@@ -87,6 +96,13 @@ impl Document {
             .unwrap()
             .as_element()
             .unwrap()
+    }
+
+    fn resolve_url(&self, raw: &str) -> url::Url {
+        match &self.base_url {
+            Some(base_url) => base_url.join(raw).unwrap(),
+            None => url::Url::parse(raw).unwrap(),
+        }
     }
 
     /// Write some html to the buffer
@@ -194,15 +210,11 @@ impl Document {
                     // Resolve external stylesheet
                     "link" => {
                         if &*entry.attr(local_name!("rel")) == "stylesheet" {
-                            // HACK: support some stylesheet urls that are protocol agnostic
-                            let mut url = entry.attr(local_name!("href")).to_string();
-                            if url.starts_with("//") {
-                                url = format!("https:{url}");
-                            }
+                            let raw_url = entry.attr(local_name!("href")).to_string();
+                            let url = self.resolve_url(&raw_url);
 
-                            match crate::util::fetch_string(&url) {
+                            match crate::util::fetch_string(url.as_str()) {
                                 Ok(css) => {
-                                    drop(url);
                                     let css = html_escape::decode_html_entities(&css);
                                     self.add_stylesheet(&css);
                                 }

@@ -24,6 +24,7 @@ fn main() {
         &html,
         Config {
             stylesheets: vec![String::from(stylesheet)],
+            base_url: None,
         },
     );
 }

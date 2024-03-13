@@ -16,6 +16,7 @@ use tao::{
 #[derive(Default)]
 pub struct Config {
     pub stylesheets: Vec<String>,
+    pub base_url: Option<String>,
 }
 
 /// Launch an interactive HTML/CSS renderer driven by the Dioxus virtualdom

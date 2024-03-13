@@ -3,6 +3,7 @@ use crate::waker::UserWindowEvent;
 use blitz::{RenderState, Renderer, Viewport};
 use blitz_dom::Document;
 use dioxus::dioxus_core::{ComponentFunction, VirtualDom};
+use dioxus_ssr::config;
 use futures_util::{pin_mut, FutureExt};
 use muda::{AboutMetadata, Menu, MenuId, MenuItem, PredefinedMenuItem, Submenu};
 use std::sync::Arc;
@@ -42,44 +43,21 @@ impl<'a> View<'a> {
         vdom.rebuild_in_place();
         let markup = dioxus_ssr::render(&vdom);
 
-        let mut dom = Document::new(Viewport::new((0, 0)).make_device());
-
-        // Include the default stylesheet
-        // todo: should this be done in blitz itself?
-        dom.add_stylesheet(include_str!("./default.css"));
-
-        // add default styles, resolve layout and styles
-        for ss in &cfg.stylesheets {
-            dom.add_stylesheet(&ss);
-        }
-
-        dom.write(&markup);
-
-        // let size: tao::dpi::PhysicalSize<u32> = window.inner_size();
-        // let mut viewport = Viewport::new((size.width, size.height));
-        // viewport.set_hidpi_scale(window.scale_factor() as _);
-
-        // let device = viewport.make_device();
-        // self.dom.set_stylist_device(device);
-
-        let scene = Scene::new();
-        let renderer = Renderer::new(dom);
-
-        Self {
-            renderer,
-            vdom,
-            scene,
-            waker: None,
-            keyboard_modifiers: Default::default(),
-        }
+        // TODO: Don't render dioxus via static html
+        Self::from_html(&markup, cfg)
     }
 
     pub(crate) fn from_html(html: &str, cfg: &Config) -> Self {
         // Spin up the virtualdom and include the default stylesheet
         let mut dom = Document::new(Viewport::new((0, 0)).make_device());
-        dom.add_stylesheet(include_str!("./default.css"));
 
-        // Include user-specified stylesheets
+        // Set base url if configured
+        if let Some(url) = &cfg.base_url {
+            dom.set_base_url(&url);
+        }
+
+        // Include default and user-specified stylesheets
+        dom.add_stylesheet(include_str!("./default.css"));
         for ss in &cfg.stylesheets {
             dom.add_stylesheet(&ss);
         }

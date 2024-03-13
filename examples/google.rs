@@ -1,7 +1,15 @@
 //! Render google.com!
 
+use dioxus_blitz::Config;
+
 fn main() {
-    dioxus_blitz::launch_static_html(&get_html());
+    dioxus_blitz::launch_static_html_cfg(
+        &get_html(),
+        Config {
+            stylesheets: Vec::new(),
+            base_url: Some(String::from("https://google.com/")),
+        },
+    );
 }
 
 fn get_html() -> std::borrow::Cow<'static, str> {
