@@ -362,6 +362,9 @@ impl Document {
         let origins = self.stylist.set_device(device, &guards);
         self.stylist.force_stylesheet_origins_dirty(origins);
     }
+    pub fn stylist_device(&mut self) -> &Device {
+        self.stylist.device()
+    }
 
     /// Walk the nodes now that they're properly styled and transfer their styles to the taffy style system
     /// Ideally we could just break apart the styles into ECS bits, but alas

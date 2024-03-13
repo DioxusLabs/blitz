@@ -216,10 +216,17 @@ where
 
     /// Clamp scroll offset
     fn clamp_scroll(&mut self) {
+        let content_height = self.dom.root_element().final_layout.size.height as f64;
+        let viewport_height = self
+            .dom
+            .stylist_device()
+            .au_viewport_size()
+            .height
+            .to_f64_px();
         self.scroll_offset = self
             .scroll_offset
             .min(0.0)
-            .max(-self.dom.root_element().final_layout.size.height as f64);
+            .max(-(content_height - viewport_height));
     }
 
     pub fn click(&mut self) {
