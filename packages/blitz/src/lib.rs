@@ -1,7 +1,7 @@
 use std::ops::Deref;
 use std::sync::Arc;
 
-use dioxus::core::{Component, VirtualDom};
+use dioxus::dioxus_core::{Component, VirtualDom};
 use dioxus_native_core::prelude::*;
 
 use blitz_core::EventData;
@@ -15,7 +15,7 @@ pub async fn launch_cfg(app: Component<()>, cfg: Config) {
     launch_cfg_with_props(app, (), cfg).await
 }
 
-pub async fn launch_cfg_with_props<Props: 'static + Send>(
+pub async fn launch_cfg_with_props<Props: 'static +Clone+ Send>(
     app: Component<Props>,
     props: Props,
     cfg: Config,
@@ -23,10 +23,9 @@ pub async fn launch_cfg_with_props<Props: 'static + Send>(
     render(
         move |rdom, _| {
             let mut vdom = VirtualDom::new_with_props(app, props);
-            let muts = vdom.rebuild();
             let mut rdom = rdom.write().unwrap();
             let mut dioxus_state = DioxusState::create(&mut rdom);
-            dioxus_state.apply_mutations(&mut rdom, muts);
+            vdom.rebuild(&mut dioxus_state.create_mutation_writer(&mut rdom));
             DioxusRenderer {
                 vdom,
                 dioxus_state,
@@ -56,8 +55,7 @@ struct DioxusRenderer {
 impl Driver for DioxusRenderer {
     fn update(&mut self, mut root: NodeMut<()>) {
         let rdom = root.real_dom_mut();
-        let muts = self.vdom.render_immediate();
-        self.dioxus_state.apply_mutations(rdom, muts);
+        self.vdom.render_immediate(&mut self.dioxus_state.create_mutation_writer( rdom));
     }
 
     fn handle_event(
@@ -99,6 +97,7 @@ impl Driver for DioxusRenderer {
                     dioxus_hot_reload::HotReloadMsg::Shutdown => {
                         std::process::exit(0);
                     }
+                    _ => {}
                 }
             }
         });

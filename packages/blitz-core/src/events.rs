@@ -12,9 +12,7 @@ use tao::event::MouseButton;
 use vello::kurbo::Point;
 
 use dioxus_html::{
-    events::{FocusData, KeyboardData, MouseData, WheelData},
-    geometry::{euclid::Point2D, ClientPoint, Coordinates, ElementPoint, PagePoint, ScreenPoint},
-    input_data::{self, keyboard_types::Modifiers, MouseButtonSet},
+ geometry::{euclid::Point2D, ClientPoint, Coordinates, ElementPoint, PagePoint, ScreenPoint}, input_data::{self, keyboard_types::Modifiers, MouseButtonSet}, SerializedFocusData, SerializedKeyboardData, SerializedMouseData, SerializedWheelData
 };
 use dioxus_native_core::prelude::*;
 
@@ -40,17 +38,17 @@ struct CursorState {
 }
 
 impl CursorState {
-    fn get_event_mouse_data(&self) -> MouseData {
+    fn get_event_mouse_data(&self) -> SerializedMouseData {
         // MouseData::new(coordinates, trigger_button, held_buttons, modifiers)
-        MouseData::new(
+        SerializedMouseData::new(
+            None,
+            self.buttons,
             Coordinates::new(
                 self.position.screen(),
                 self.position.client(),
                 self.position.element(),
                 self.position.page(),
             ),
-            None,
-            self.buttons,
             Modifiers::default(),
         )
     }
@@ -95,10 +93,10 @@ pub struct DomEvent {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum EventData {
-    Mouse(MouseData),
-    Keyboard(KeyboardData),
-    Focus(FocusData),
-    Wheel(WheelData),
+    Mouse(SerializedMouseData),
+    Keyboard(SerializedKeyboardData),
+    Focus(SerializedFocusData),
+    Wheel(SerializedWheelData),
 }
 
 impl EventData {
@@ -168,7 +166,7 @@ impl BlitzEventHandler {
                         let key = map_key(&event.logical_key);
                         let code = map_code(&event.physical_key);
 
-                        let data = Arc::new(EventData::Keyboard(KeyboardData::new(
+                        let data = Arc::new(EventData::Keyboard(SerializedKeyboardData::new(
                             key,
                             code,
                             match event.location {
@@ -187,7 +185,7 @@ impl BlitzEventHandler {
                                 _ => todo!(),
                             },
                             event.repeat,
-                            self.state.modifier_state,
+                            self.state.modifier_state,true
                         )));
 
                         // keypress events are only triggered when a key that has text is pressed
@@ -259,10 +257,10 @@ impl BlitzEventHandler {
                         let position =
                             Coordinates::new(screen_point, client_point, element_point, page_point);
 
-                        let data = MouseData::new(
-                            Coordinates::new(screen_point, client_point, element_point, page_point),
+                        let data = SerializedMouseData::new(
                             None,
                             self.state.cursor_state.buttons,
+                            Coordinates::new(screen_point, client_point, element_point, page_point),
                             self.state.modifier_state,
                         );
                         match (hovered, self.state.cursor_state.hovered) {
@@ -356,15 +354,15 @@ impl BlitzEventHandler {
 
                             let pos = &self.state.cursor_state.position;
 
-                            let data = Arc::new(EventData::Mouse(MouseData::new(
+                            let data = Arc::new(EventData::Mouse(SerializedMouseData::new(
+                                None,
+                                self.state.cursor_state.buttons,
                                 Coordinates::new(
                                     pos.screen(),
                                     pos.client(),
                                     pos.element(),
                                     pos.page(),
                                 ),
-                                None,
-                                self.state.cursor_state.buttons,
                                 self.state.modifier_state,
                             )));
 

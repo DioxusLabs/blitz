@@ -66,7 +66,7 @@ impl EventData {
 pub struct FormData {
     pub(crate) value: String,
 
-    pub values: HashMap<String, FormValue>,
+    pub values: HashMap<String, String>,
 
     pub(crate) files: Option<Files>,
 }
@@ -76,7 +76,7 @@ impl HasFormData for FormData {
         self.value.clone()
     }
 
-    fn values(&self) -> HashMap<String, FormValue> {
+    fn values(&self) -> HashMap<String, String> {
         self.values.clone()
     }
 

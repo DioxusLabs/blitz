@@ -9,20 +9,20 @@ members = [
 ]
 
 [workspace.package]
-version = "0.5.0-alpha.0"
+version = "0.5.0-alpha.2"
 
 [workspace.dependencies]
-blitz = { path = "packages/blitz", version = "0.5.0-alpha.0" }
-blitz-core = { path = "packages/blitz-core", version = "0.5.0-alpha.0" }
-dioxus-tui = { path = "packages/dioxus-tui", version = "0.5.0-alpha.0" }
-dioxus-native-core = { path = "packages/native-core", version = "0.5.0-alpha.0" }
-dioxus-native-core-macro = { path = "packages/native-core-macro", version = "0.5.0-alpha.0" }
-plasmo = { path = "packages/plasmo", version = "0.5.0-alpha.0" }
+blitz = { path = "packages/blitz", version = "0.5.0-alpha.2" }
+blitz-core = { path = "packages/blitz-core", version = "0.5.0-alpha.2" }
+dioxus-tui = { path = "packages/dioxus-tui", version = "0.5.0-alpha.2" }
+dioxus-native-core = { path = "packages/native-core", version = "0.5.0-alpha.2" }
+dioxus-native-core-macro = { path = "packages/native-core-macro", version = "0.5.0-alpha.2" }
+plasmo = { path = "packages/plasmo", version = "0.5.0-alpha.2" }
 
-dioxus = { version = "0.5.0-alpha.0" }
-dioxus-core = { version = "0.5.0-alpha.0" }
-dioxus-hot-reload = { version = "0.5.0-alpha.0" }
-dioxus-html = { version = "0.5.0-alpha.0" }
+dioxus = { version = "0.5.0-alpha.2" }
+dioxus-core = { version = "0.5.0-alpha.2" }
+dioxus-hot-reload = { version = "0.5.0-alpha.2" }
+dioxus-html = { version = "0.5.0-alpha.2" }
 
 tracing = "0.1.37"
 tracing-futures = "0.2.5"
