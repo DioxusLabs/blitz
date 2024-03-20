@@ -12,7 +12,7 @@ use tao::event::MouseButton;
 use vello::kurbo::Point;
 
 use dioxus_html::{
- geometry::{euclid::Point2D, ClientPoint, Coordinates, ElementPoint, PagePoint, ScreenPoint}, input_data::{self, keyboard_types::Modifiers, MouseButtonSet}, SerializedFocusData, SerializedKeyboardData, SerializedMouseData, SerializedWheelData
+ geometry::{euclid::Point2D, ClientPoint, Coordinates, ElementPoint, PagePoint, ScreenPoint}, input_data::{self, keyboard_types::Modifiers, MouseButtonSet}, PlatformEventData, SerializedFocusData, SerializedKeyboardData, SerializedMouseData, SerializedWheelData
 };
 use dioxus_native_core::prelude::*;
 
@@ -101,12 +101,12 @@ pub enum EventData {
 
 impl EventData {
     pub fn into_any(self) -> Rc<dyn Any> {
-        match self {
-            EventData::Mouse(data) => Rc::new(data),
-            EventData::Keyboard(data) => Rc::new(data),
-            EventData::Focus(data) => Rc::new(data),
-            EventData::Wheel(data) => Rc::new(data),
-        }
+        Rc::new(PlatformEventData::new(match self {
+            EventData::Mouse(data) => Box::new(data) as Box<dyn Any>,
+            EventData::Keyboard(data) => Box::new(data),
+            EventData::Focus(data) => Box::new(data),
+            EventData::Wheel(data) => Box::new(data),
+        }))
     }
 }
 

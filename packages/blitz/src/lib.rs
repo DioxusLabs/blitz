@@ -2,6 +2,7 @@ use std::ops::Deref;
 use std::sync::Arc;
 
 use dioxus::dioxus_core::{Component, VirtualDom};
+use dioxus_html::SerializedHtmlEventConverter;
 use dioxus_native_core::prelude::*;
 
 use blitz_core::EventData;
@@ -20,6 +21,9 @@ pub async fn launch_cfg_with_props<Props: 'static +Clone+ Send>(
     props: Props,
     cfg: Config,
 ) {
+    // Set the event converter
+    dioxus_html::set_event_converter(Box::new(SerializedHtmlEventConverter));
+
     render(
         move |rdom, _| {
             let mut vdom = VirtualDom::new_with_props(app, props);

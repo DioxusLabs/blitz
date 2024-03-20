@@ -14,7 +14,7 @@ dioxus-native-core = { workspace = true, features = [
     "layout-attributes",
 ] }
 dioxus-native-core-macro = { workspace = true }
-dioxus-html = { version = "0.5.0-alpha.2" }
+dioxus-html = { git = "https://github.com/DioxusLabs/dioxus" }
 taffy = "0.3.12"
 tokio = { version = "1.25.0", features = ["full"] }
 lightningcss = "1.0.0-alpha.39"
