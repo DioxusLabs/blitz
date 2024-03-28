@@ -4,6 +4,9 @@
 
 ![screenshot](examples/screenshot.png)
 
+google.com rendered with stylo-blitz!
+![screenshot](examples/google.png)
+
 Render HTML and CSS using Firefox's parallel browser-grade CSS engine. Leverages:
 
 - Stylo (servo/style) for CSS resolution
