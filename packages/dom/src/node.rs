@@ -74,12 +74,12 @@ pub enum NodeData {
     /// A comment.
     Comment, // { contents: String },
 
-             // /// A `DOCTYPE` with name, public id, and system id. See
-             // /// [document type declaration on wikipedia][https://en.wikipedia.org/wiki/Document_type_declaration]
-             // Doctype { name: String, public_id: String, system_id: String },
+     // /// A `DOCTYPE` with name, public id, and system id. See
+     // /// [document type declaration on wikipedia][https://en.wikipedia.org/wiki/Document_type_declaration]
+     // Doctype { name: String, public_id: String, system_id: String },
 
-             // /// A Processing instruction.
-             // ProcessingInstruction { target: String, contents: String },
+     // /// A Processing instruction.
+     // ProcessingInstruction { target: String, contents: String },
 }
 
 impl NodeData {
