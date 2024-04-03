@@ -526,6 +526,7 @@ enum Corner {
 enum ArcSide {
     Outline,
     Outer,
+    #[allow(unused)]
     Middle,
     Inner,
 }

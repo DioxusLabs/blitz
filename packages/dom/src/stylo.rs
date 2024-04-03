@@ -3,47 +3,33 @@
 
 use crate::node::{DisplayOuter, Node};
 
-use std::{
-    borrow::{Borrow, Cow},
-    cell::{Cell, RefCell},
-    collections::HashMap,
-};
-
-use atomic_refcell::{AtomicRef, AtomicRefCell, AtomicRefMut};
-use euclid::{Rect, Scale, Size2D};
-use fxhash::FxHashMap;
-use html5ever::{local_name, tendril::TendrilSink};
-use markup5ever_rcdom::NodeData;
+use crate::node::NodeData;
+use atomic_refcell::{AtomicRef, AtomicRefMut};
+use html5ever::{local_name, LocalName, Namespace};
 use selectors::{
     matching::{ElementSelectorFlags, MatchingContext, VisitedHandlingMode},
     sink::Push,
     Element, OpaqueElement,
 };
-use slab::Slab;
-use string_cache::{DefaultAtom, EmptyStaticAtomSet, StaticAtomSet};
+// use slab::Slab;
 use style::values::specified::box_::DisplayOutside;
 use style::values::specified::TextAlignKeyword;
+use style::CaseSensitivityExt;
 use style::{
     animation::DocumentAnimationSet,
     context::{
         QuirksMode, RegisteredSpeculativePainter, RegisteredSpeculativePainters,
         SharedStyleContext, StyleContext,
     },
-    data::ElementData,
     dom::{LayoutIterator, NodeInfo, OpaqueNode, TDocument, TElement, TNode, TShadowRoot},
     global_style_data::GLOBAL_STYLE_DATA,
-    media_queries::MediaType,
-    media_queries::{Device as StyleDevice, MediaList},
     properties::{
-        style_structs::{Border, Box as BoxStyle, Margin, Padding, Position},
-        PropertyDeclarationBlock, PropertyId, StyleBuilder,
+        style_structs::{Box as BoxStyle, Position},
+        PropertyDeclarationBlock,
     },
     selector_parser::SelectorImpl,
     servo_arc::{Arc, ArcBorrow},
     shared_lock::{Locked, SharedRwLock, StylesheetGuards},
-    sharing::StyleSharingCandidate,
-    stylesheets::{AllowImportRules, DocumentStyleSheet, Origin, Stylesheet},
-    stylist::Stylist,
     thread_state::ThreadState,
     traversal::{DomTraversal, PerLevelTraversalData},
     traversal_flags::TraversalFlags,
@@ -51,8 +37,8 @@ use style::{
     Atom,
 };
 use style_traits::dom::ElementState;
+use taffy::prelude::Style;
 use taffy::Display;
-use taffy::{prelude::Style, LengthPercentageAuto};
 
 use super::stylo_to_taffy;
 
@@ -68,13 +54,16 @@ impl crate::document::Document {
         for child in children.iter() {
             let (display, mut children) = {
                 let node = self.nodes.get_mut(*child).unwrap();
-                let data = node.data.borrow();
+                let stylo_element_data = node.stylo_element_data.borrow();
+                let primary_styles = stylo_element_data
+                    .as_ref()
+                    .and_then(|data| data.styles.get_primary());
 
-                let Some(style) = data.styles.get_primary() else {
+                let Some(style) = primary_styles else {
                     // HACK: hide whitespace-only text node children of flexbox and grid nodes from Taffy
-                    if let NodeData::Text { contents } = &node.node.data {
+                    if let NodeData::Text(data) = &node.raw_dom_data {
                         node.display_outer = DisplayOuter::Inline;
-                        let all_whitespace = contents.borrow().chars().all(|c| c.is_whitespace());
+                        let all_whitespace = data.content.chars().all(|c| c.is_whitespace());
                         if all_whitespace
                             && (parent_display == Display::Flex || parent_display == Display::Grid)
                         {
@@ -95,7 +84,7 @@ impl crate::document::Document {
                     right,
                     bottom,
                     left,
-                    z_index,
+                    // z_index,
                     flex_direction,
                     flex_wrap,
                     justify_content,
@@ -104,7 +93,7 @@ impl crate::document::Document {
                     flex_grow,
                     flex_shrink,
                     align_self,
-                    order,
+                    // order,
                     flex_basis,
                     width,
                     min_width,
@@ -112,9 +101,10 @@ impl crate::document::Document {
                     height,
                     min_height,
                     max_height,
-                    box_sizing,
+                    // box_sizing,
                     column_gap,
                     aspect_ratio,
+                    ..
                 } = style.get_position();
 
                 let BoxStyle {
@@ -122,23 +112,24 @@ impl crate::document::Document {
                     _servo_overflow_clip_box,
                     display: stylo_display,
                     position,
-                    float,
-                    clear,
-                    vertical_align,
+                    // float,
+                    // clear,
+                    // vertical_align,
                     overflow_x,
                     overflow_y,
-                    transform,
-                    rotate,
-                    scale,
-                    translate,
-                    perspective,
-                    perspective_origin,
-                    backface_visibility,
-                    transform_style,
-                    transform_origin,
-                    container_type,
-                    container_name,
-                    original_display,
+                    // transform,
+                    // rotate,
+                    // scale,
+                    // translate,
+                    // perspective,
+                    // perspective_origin,
+                    // backface_visibility,
+                    // transform_style,
+                    // transform_origin,
+                    // container_type,
+                    // container_name,
+                    // original_display,
+                    ..
                 }: &BoxStyle = style.get_box();
 
                 let display = stylo_to_taffy::display(*stylo_display);
@@ -216,18 +207,6 @@ impl crate::document::Document {
                 // TODO: smarter cache invalidation
                 node.cache.clear();
 
-                // // now we need to override the style if there is a style attribute
-                // let style_attr = node
-                //     .attrs()
-                //     .borrow()
-                //     .iter()
-                //     .find(|attr| attr.name.local.as_ref() == "style");
-
-                // if let Some(style_attr) = style_attr {
-                //     // style::parser::ParserContext
-                // }
-                // }
-
                 // would like to change this not require a clone, but requires some refactoring
                 (display, node.children.clone())
             };
@@ -244,46 +223,6 @@ impl crate::document::Document {
                 // Mutate source child array
                 self.nodes.get_mut(*child).unwrap().children = children.clone();
             }
-
-            // // Reach up to our parent and set our flex basis to auto if we're in a flex layout
-            // if let Some(parent) = parent {
-            //     let is_flex = {
-            //         let parent = self.nodes.get_mut(parent).unwrap();
-            //         let parent_data = parent.data.borrow();
-
-            //         if let Some(parent_style) = parent_data.styles.get_primary() {
-            //             let parent_display = parent_style.get_box().display;
-            //             match parent_display.inside() {
-            //                 style::values::specified::box_::DisplayInside::Flex => true,
-            //                 style::values::specified::box_::DisplayInside::None => false,
-            //                 style::values::specified::box_::DisplayInside::Contents => false,
-            //                 style::values::specified::box_::DisplayInside::Flow => false,
-            //                 style::values::specified::box_::DisplayInside::FlowRoot => false,
-            //                 style::values::specified::box_::DisplayInside::Table => false,
-            //                 style::values::specified::box_::DisplayInside::TableRowGroup => false,
-            //                 style::values::specified::box_::DisplayInside::TableColumn => false,
-            //                 style::values::specified::box_::DisplayInside::TableColumnGroup => {
-            //                     false
-            //                 }
-            //                 style::values::specified::box_::DisplayInside::TableHeaderGroup => {
-            //                     false
-            //                 }
-            //                 style::values::specified::box_::DisplayInside::TableFooterGroup => {
-            //                     false
-            //                 }
-            //                 style::values::specified::box_::DisplayInside::TableRow => false,
-            //                 style::values::specified::box_::DisplayInside::TableCell => false,
-            //             }
-            //         } else {
-            //             false
-            //         }
-            //     };
-
-            //     if is_flex {
-            //         // self.nodes[child].style.flex_basis = taffy::Dimension::Auto;
-            //         self.nodes[child].style.display = taffy::Display::Flex;
-            //     }
-            // }
 
             self.flush_styles_to_layout(children, Some(*child), display);
         }
@@ -306,8 +245,11 @@ impl crate::document::Document {
 
                     // HACK: Set flexbox alignment based on value of text-align property
                     // This fixes some but not all <center> tags
-                    let data = node.data.borrow();
-                    if let Some(style) = data.styles.get_primary() {
+                    let stylo_element_data = node.stylo_element_data.borrow();
+                    let primary_styles = stylo_element_data
+                        .as_ref()
+                        .and_then(|data| data.styles.get_primary());
+                    if let Some(style) = primary_styles {
                         node.style.justify_content = Some(match style.clone_text_align() {
                             TextAlignKeyword::Start => taffy::JustifyContent::Start,
                             TextAlignKeyword::Left => taffy::JustifyContent::Start,
@@ -321,7 +263,7 @@ impl crate::document::Document {
                         });
                     }
 
-                    drop(data);
+                    drop(stylo_element_data);
 
                     for cid in children.iter() {
                         let child = self.nodes.get_mut(*cid).unwrap();
@@ -330,9 +272,12 @@ impl crate::document::Document {
                             continue;
                         }
 
-                        let data = child.data.borrow();
+                        let stylo_element_data = child.stylo_element_data.borrow();
+                        let primary_styles = stylo_element_data
+                            .as_ref()
+                            .and_then(|data| data.styles.get_primary());
 
-                        if let Some(style) = data.styles.get_primary() {
+                        if let Some(style) = primary_styles {
                             use style::values::generics::box_::VerticalAlign;
                             use style::values::generics::box_::VerticalAlignKeyword;
                             match style.clone_vertical_align() {
@@ -422,7 +367,7 @@ impl<'a> TDocument for BlitzNode<'a> {
     }
 
     fn is_html_document(&self) -> bool {
-        self.id == 1
+        true
     }
 
     fn quirks_mode(&self) -> QuirksMode {
@@ -514,19 +459,17 @@ impl<'a> TNode for BlitzNode<'a> {
     }
 
     fn as_element(&self) -> Option<Self::ConcreteElement> {
-        match self.node.data {
+        match self.raw_dom_data {
             NodeData::Element { .. } => Some(self),
             _ => None,
         }
     }
 
     fn as_document(&self) -> Option<Self::ConcreteDocument> {
-        panic!();
-        if self.id != 0 {
-            return None;
-        };
-
-        Some(self)
+        match self.raw_dom_data {
+            NodeData::Document { .. } => Some(self),
+            _ => None,
+        }
     }
 
     fn as_shadow_root(&self) -> Option<Self::ConcreteShadowRoot> {
@@ -537,8 +480,9 @@ impl<'a> TNode for BlitzNode<'a> {
 impl<'a> selectors::Element for BlitzNode<'a> {
     type Impl = SelectorImpl;
 
-    // use the ptr of the rc as the id
     fn opaque(&self) -> selectors::OpaqueElement {
+        // FIXME: this is wrong in the case where pushing new elements casuses reallocations.
+        // We should see if selectors will accept a PR that allows creation from a usize
         OpaqueElement::new(self)
     }
 
@@ -597,42 +541,30 @@ impl<'a> selectors::Element for BlitzNode<'a> {
     }
 
     fn is_html_element_in_html_document(&self) -> bool {
-        true
+        true // self.has_namespace(ns!(html))
     }
 
-    fn has_local_name(
-        &self,
-        local_name: &<Self::Impl as selectors::SelectorImpl>::BorrowedLocalName,
-    ) -> bool {
-        let data = self;
-        match &data.node.data {
-            NodeData::Element { name, .. } => &name.local == local_name,
-            _ => false,
-        }
+    fn has_local_name(&self, local_name: &LocalName) -> bool {
+        self.raw_dom_data.is_element_with_tag_name(local_name)
     }
 
-    fn has_namespace(
-        &self,
-        ns: &<Self::Impl as selectors::SelectorImpl>::BorrowedNamespaceUrl,
-    ) -> bool {
-        let data = self;
-        match &data.node.data {
-            NodeData::Element { name, .. } => &name.ns == ns,
-            _ => false,
-        }
+    fn has_namespace(&self, ns: &Namespace) -> bool {
+        self.element_data().expect("Not an element").name.ns == *ns
     }
 
-    fn is_same_type(&self, other: &Self) -> bool {
+    fn is_same_type(&self, _other: &Self) -> bool {
+        // FIXME: implementing this correctly currently triggers a debug_assert ("Invalid cache") in selectors
+        //self.local_name() == other.local_name() && self.namespace() == other.namespace()
         false
     }
 
     fn attr_matches(
         &self,
-        ns: &selectors::attr::NamespaceConstraint<
+        _ns: &selectors::attr::NamespaceConstraint<
             &<Self::Impl as selectors::SelectorImpl>::NamespaceUrl,
         >,
         local_name: &<Self::Impl as selectors::SelectorImpl>::LocalName,
-        operation: &selectors::attr::AttrSelectorOperation<
+        _operation: &selectors::attr::AttrSelectorOperation<
             &<Self::Impl as selectors::SelectorImpl>::AttrValue,
         >,
     ) -> bool {
@@ -648,29 +580,27 @@ impl<'a> selectors::Element for BlitzNode<'a> {
 
     fn match_non_ts_pseudo_class(
         &self,
-        pc: &<Self::Impl as selectors::SelectorImpl>::NonTSPseudoClass,
-        context: &mut MatchingContext<Self::Impl>,
+        _pc: &<Self::Impl as selectors::SelectorImpl>::NonTSPseudoClass,
+        _context: &mut MatchingContext<Self::Impl>,
     ) -> bool {
         false
     }
 
     fn match_pseudo_element(
         &self,
-        pe: &<Self::Impl as selectors::SelectorImpl>::PseudoElement,
-        context: &mut MatchingContext<Self::Impl>,
+        _pe: &<Self::Impl as selectors::SelectorImpl>::PseudoElement,
+        _context: &mut MatchingContext<Self::Impl>,
     ) -> bool {
         false
     }
 
-    fn apply_selector_flags(&self, flags: ElementSelectorFlags) {
+    fn apply_selector_flags(&self, _flags: ElementSelectorFlags) {
         // unimplemented!()
     }
 
     fn is_link(&self) -> bool {
-        match self.node.data {
-            NodeData::Element { ref name, .. } => name.local == local_name!("a"),
-            _ => false,
-        }
+        self.raw_dom_data
+            .is_element_with_tag_name(&local_name!("a"))
     }
 
     fn is_html_slot_element(&self) -> bool {
@@ -682,13 +612,10 @@ impl<'a> selectors::Element for BlitzNode<'a> {
         id: &<Self::Impl as selectors::SelectorImpl>::Identifier,
         case_sensitivity: selectors::attr::CaseSensitivity,
     ) -> bool {
-        let mut has_id = false;
-        self.each_attr_name(|f| {
-            if f.as_ref() == "id" {
-                has_id = true;
-            }
-        });
-        has_id
+        self.element_data()
+            .and_then(|data| data.id.as_ref())
+            .map(|id_attr| case_sensitivity.eq_atom(id_attr, id))
+            .unwrap_or(false)
     }
 
     fn has_class(
@@ -696,24 +623,12 @@ impl<'a> selectors::Element for BlitzNode<'a> {
         search_name: &<Self::Impl as selectors::SelectorImpl>::Identifier,
         case_sensitivity: selectors::attr::CaseSensitivity,
     ) -> bool {
-        let Some(al) = self.as_element() else {
-            return false;
-        };
-        let data = al.node.data.borrow();
-        let NodeData::Element { name, attrs, .. } = data else {
-            return false;
-        };
-        let attrs = attrs.borrow();
-
-        for attr in attrs.iter() {
-            // make sure we only select class attributes
-            if attr.name.local.as_ref() != "class" {
-                continue;
-            }
-
+        let class_attr = self.raw_dom_data.attr(local_name!("class"));
+        if let Some(class_attr) = class_attr {
             // split the class attribute
-            for pheme in attr.value.split_ascii_whitespace() {
-                if pheme == search_name.as_ref() {
+            for pheme in class_attr.split_ascii_whitespace() {
+                let atom = Atom::from(pheme);
+                if case_sensitivity.eq_atom(&atom, search_name) {
                     return true;
                 }
             }
@@ -724,12 +639,12 @@ impl<'a> selectors::Element for BlitzNode<'a> {
 
     fn imported_part(
         &self,
-        name: &<Self::Impl as selectors::SelectorImpl>::Identifier,
+        _name: &<Self::Impl as selectors::SelectorImpl>::Identifier,
     ) -> Option<<Self::Impl as selectors::SelectorImpl>::Identifier> {
         None
     }
 
-    fn is_part(&self, name: &<Self::Impl as selectors::SelectorImpl>::Identifier) -> bool {
+    fn is_part(&self, _name: &<Self::Impl as selectors::SelectorImpl>::Identifier) -> bool {
         false
     }
 
@@ -753,7 +668,7 @@ impl<'a> TElement for BlitzNode<'a> {
 
     fn traversal_children(&self) -> style::dom::LayoutIterator<Self::TraversalChildrenIterator> {
         LayoutIterator(Traverser {
-            dom: self.tree(),
+            // dom: self.tree(),
             parent: self,
             child_index: 0,
         })
@@ -768,13 +683,14 @@ impl<'a> TElement for BlitzNode<'a> {
         false
     }
 
-    // need to check the namespace, maybe?
+    // need to check the namespace
     fn is_svg_element(&self) -> bool {
         false
     }
 
     fn style_attribute(&self) -> Option<ArcBorrow<Locked<PropertyDeclarationBlock>>> {
-        self.additional_data
+        self.element_data()
+            .expect("Not an element")
             .style_attribute
             .as_ref()
             .map(|f| f.borrow_arc())
@@ -789,7 +705,7 @@ impl<'a> TElement for BlitzNode<'a> {
 
     fn transition_rule(
         &self,
-        context: &SharedStyleContext,
+        _context: &SharedStyleContext,
     ) -> Option<Arc<Locked<PropertyDeclarationBlock>>> {
         None
     }
@@ -808,44 +724,17 @@ impl<'a> TElement for BlitzNode<'a> {
     }
 
     fn id(&self) -> Option<&style::Atom> {
-        // None
-        let attrs = match &self.node.data {
-            NodeData::Element { ref attrs, .. } => attrs,
-            _ => return None,
-        };
-
-        let attrs = attrs.borrow();
-
-        let attr_id = attrs.iter().find(|id| id.name.local.as_ref() == "id")?;
-
-        let id = attr_id.value.as_ref();
-        let atom = Atom::from(id);
-        let leadcked = &*Box::leak(Box::new(atom));
-
-        Some(leadcked)
+        self.element_data().and_then(|data| data.id.as_ref())
     }
 
     fn each_class<F>(&self, mut callback: F)
     where
         F: FnMut(&style::values::AtomIdent),
     {
-        let Some(al) = self.as_element() else {
-            return;
-        };
-        let data = &al.node.data;
-        let NodeData::Element { name, attrs, .. } = data else {
-            return;
-        };
-        let attrs = attrs.borrow();
-
-        for attr in attrs.iter() {
-            // make sure we only select class attributes
-            if attr.name.local.as_ref() != "class" {
-                continue;
-            }
-
+        let class_attr = self.raw_dom_data.attr(local_name!("class"));
+        if let Some(class_attr) = class_attr {
             // split the class attribute
-            for pheme in attr.value.split_ascii_whitespace() {
+            for pheme in class_attr.split_ascii_whitespace() {
                 let atom = Atom::from(pheme); // interns the string
                 callback(AtomIdent::cast(&atom));
             }
@@ -856,18 +745,10 @@ impl<'a> TElement for BlitzNode<'a> {
     where
         F: FnMut(&style::LocalName),
     {
-        let Some(al) = self.as_element() else {
-            return;
-        };
-        let data = &al.node.data;
-        let NodeData::Element { name, attrs, .. } = data else {
-            return;
-        };
-        let attrs = attrs.borrow();
-
-        for attr in attrs.iter() {
-            let b = GenericAtomIdent(attr.name.local.clone());
-            callback(&b);
+        if let Some(attrs) = self.raw_dom_data.attrs() {
+            for attr in attrs.iter() {
+                callback(&GenericAtomIdent(attr.name.local.clone()));
+            }
         }
     }
 
@@ -892,7 +773,7 @@ impl<'a> TElement for BlitzNode<'a> {
 
     unsafe fn unset_dirty_descendants(&self) {}
 
-    fn store_children_to_process(&self, n: isize) {
+    fn store_children_to_process(&self, _n: isize) {
         unimplemented!()
     }
 
@@ -901,49 +782,40 @@ impl<'a> TElement for BlitzNode<'a> {
     }
 
     unsafe fn ensure_data(&self) -> AtomicRefMut<style::data::ElementData> {
-        self.data.borrow_mut()
+        let mut stylo_data = self.stylo_element_data.borrow_mut();
+        if stylo_data.is_none() {
+            *stylo_data = Some(Default::default());
+        }
+        AtomicRefMut::map(stylo_data, |sd| sd.as_mut().unwrap())
     }
 
     unsafe fn clear_data(&self) {
-        // println!("clear data {}", self.id);
-        // unimplemented!()
+        *self.stylo_element_data.borrow_mut() = None;
     }
 
     fn has_data(&self) -> bool {
-        // docment nodes don't have data, text nodes don't have data
-        match self.node.data {
-            NodeData::Element { .. } => true,
-            _ => false,
-        }
-
-        // println!("has data? {}", self.id);
-        // true
-        // false
-        // true // all nodes should have data
+        self.stylo_element_data.borrow().is_some()
     }
 
     fn borrow_data(&self) -> Option<AtomicRef<style::data::ElementData>> {
-        let has_data = self.has_data();
-        // println!("try borrow data?? {}, has data {}", self.id, has_data);
-        if !has_data {
-            return None;
+        let stylo_data = self.stylo_element_data.borrow();
+        if stylo_data.is_some() {
+            Some(AtomicRef::map(stylo_data, |sd| sd.as_ref().unwrap()))
+        } else {
+            None
         }
-
-        self.data.try_borrow().ok()
     }
 
     fn mutate_data(&self) -> Option<AtomicRefMut<style::data::ElementData>> {
-        let has_data = self.has_data();
-        // println!("try mutate data?? {}, has data {}", self.id, has_data);
-        if !has_data {
-            return None;
+        let stylo_data = self.stylo_element_data.borrow_mut();
+        if stylo_data.is_some() {
+            Some(AtomicRefMut::map(stylo_data, |sd| sd.as_mut().unwrap()))
+        } else {
+            None
         }
-
-        self.data.try_borrow_mut().ok()
     }
 
     fn skip_item_display_fixup(&self) -> bool {
-        // println!("skip display fixup???");
         false
     }
 
@@ -951,22 +823,22 @@ impl<'a> TElement for BlitzNode<'a> {
         false
     }
 
-    fn has_animations(&self, context: &SharedStyleContext) -> bool {
+    fn has_animations(&self, _context: &SharedStyleContext) -> bool {
         false
     }
 
     fn has_css_animations(
         &self,
-        context: &SharedStyleContext,
-        pseudo_element: Option<style::selector_parser::PseudoElement>,
+        _context: &SharedStyleContext,
+        _pseudo_element: Option<style::selector_parser::PseudoElement>,
     ) -> bool {
         false
     }
 
     fn has_css_transitions(
         &self,
-        context: &SharedStyleContext,
-        pseudo_element: Option<style::selector_parser::PseudoElement>,
+        _context: &SharedStyleContext,
+        _pseudo_element: Option<style::selector_parser::PseudoElement>,
     ) -> bool {
         false
     }
@@ -985,53 +857,55 @@ impl<'a> TElement for BlitzNode<'a> {
 
     fn match_element_lang(
         &self,
-        override_lang: Option<Option<style::selector_parser::AttrValue>>,
-        value: &style::selector_parser::Lang,
+        _override_lang: Option<Option<style::selector_parser::AttrValue>>,
+        _value: &style::selector_parser::Lang,
     ) -> bool {
         false
     }
 
     fn is_html_document_body_element(&self) -> bool {
-        match self.node.data {
-            NodeData::Document => true,
-            _ => false,
+        // Check node is a <body> element
+        let is_body_element = self
+            .raw_dom_data
+            .is_element_with_tag_name(&local_name!("body"));
+
+        // If it isn't then return early
+        if !is_body_element {
+            return false;
         }
+
+        // If it is then check if it is a child of the root (<html>) element
+        let root_node = &self.tree()[0];
+        let root_element = TDocument::as_node(&root_node)
+            .first_element_child()
+            .unwrap();
+        let is_child_of_root_element = root_element.children.contains(&self.id);
+        is_child_of_root_element
     }
 
     fn synthesize_presentational_hints_for_legacy_attributes<V>(
         &self,
-        visited_handling: VisitedHandlingMode,
-        hints: &mut V,
+        _visited_handling: VisitedHandlingMode,
+        _hints: &mut V,
     ) where
         V: Push<style::applicable_declarations::ApplicableDeclarationBlock>,
     {
     }
 
-    fn local_name(
-        &self,
-    ) -> &<style::selector_parser::SelectorImpl as selectors::parser::SelectorImpl>::BorrowedLocalName
-    {
-        let data = self;
-        match &data.node.data {
-            NodeData::Element { name, .. } => &name.local,
-            g => panic!("Not an element {g:?}"),
-        }
+    fn local_name(&self) -> &LocalName {
+        &self.element_data().expect("Not an element").name.local
     }
 
-        fn namespace(&self)
-    -> &<style::selector_parser::SelectorImpl as selectors::parser::SelectorImpl>::BorrowedNamespaceUrl{
-        let data = self;
-        match &data.node.data {
-            NodeData::Element { name, .. } => &name.ns,
-            _ => panic!("Not an element"),
-        }
+    fn namespace(&self) -> &Namespace {
+        &self.element_data().expect("Not an element").name.ns
     }
 
     fn query_container_size(
         &self,
-        display: &style::values::specified::Display,
+        _display: &style::values::specified::Display,
     ) -> euclid::default::Size2D<Option<app_units::Au>> {
-        unimplemented!()
+        // FIXME: Implement container queries. For now this effectively disables them without panicking.
+        Default::default()
     }
 
     // fn update_animations(
@@ -1056,7 +930,7 @@ impl<'a> TElement for BlitzNode<'a> {
 }
 
 pub struct Traverser<'a> {
-    dom: &'a Slab<Node>,
+    // dom: &'a Slab<Node>,
     parent: BlitzNode<'a>,
     child_index: usize,
 }
@@ -1086,7 +960,7 @@ impl std::hash::Hash for BlitzNode<'_> {
 /// todo: actually implement this
 pub struct RegisteredPaintersImpl;
 impl RegisteredSpeculativePainters for RegisteredPaintersImpl {
-    fn get(&self, name: &Atom) -> Option<&dyn RegisteredSpeculativePainter> {
+    fn get(&self, _name: &Atom) -> Option<&dyn RegisteredSpeculativePainter> {
         None
     }
 }
@@ -1116,7 +990,7 @@ where
         node: E::ConcreteNode,
         note_child: F,
     ) {
-        // Don't process textnodees in this traversala
+        // Don't process textnodees in this traversal
         if node.is_text_node() {
             return;
         }
@@ -1146,7 +1020,7 @@ where
 
 #[test]
 fn assert_size_of_equals() {
-    use std::mem;
+    // use std::mem;
 
     // fn assert_layout<E>() {
     //     assert_eq!(

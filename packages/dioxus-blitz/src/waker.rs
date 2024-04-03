@@ -1,5 +1,4 @@
-use dioxus::prelude::VirtualDom;
-use futures_util::{pin_mut, task::ArcWake, FutureExt};
+use futures_util::task::ArcWake;
 use std::sync::Arc;
 use tao::{event_loop::EventLoopProxy, window::WindowId};
 
@@ -9,10 +8,8 @@ pub struct UserWindowEvent(pub EventData, pub WindowId);
 #[derive(Debug, Clone)]
 pub enum EventData {
     Poll,
-
-    NewWindow,
-
-    CloseWindow,
+    // NewWindow,
+    // CloseWindow,
 }
 
 /// Create a waker that will send a poll event to the event loop.

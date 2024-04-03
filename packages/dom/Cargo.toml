@@ -17,7 +17,6 @@ euclid = { version = "0.22", features = ["serde"] }
 atomic_refcell = { version = "0.1.13", features = ["serde"] }
 fxhash = "0.2.1"
 html5ever = "0.26.0"                                          # also conveniently the one used in servo
-markup5ever_rcdom = "0.2.0"
 string_cache = "0.8.7"
 futures-util = "0.3.30"
 askama_escape = "0.10.3"

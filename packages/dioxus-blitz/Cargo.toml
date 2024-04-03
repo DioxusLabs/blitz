@@ -19,3 +19,4 @@ blitz = { path = "../blitz" }
 blitz-dom = { path = "../dom" }
 url = { version = "2.5.0", features = ["serde"] }
 ureq = "2.9"
+rustc-hash = "1.1.0"

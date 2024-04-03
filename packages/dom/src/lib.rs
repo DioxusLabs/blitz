@@ -25,9 +25,6 @@ pub mod mutation;
 /// todo: we want this to use ECS, but we're not done with the design yet.
 pub mod node;
 
-/// Eventually, to be where we store information for things like shadowroots, once we move off of rcdom
-pub mod nodedata;
-
 /// Implementations that interact with servo's style engine
 pub mod stylo;
 
@@ -41,4 +38,5 @@ pub mod text;
 pub mod util;
 
 pub use document::Document;
+pub use htmlsink::DocumentHtmlParser;
 pub use node::Node;

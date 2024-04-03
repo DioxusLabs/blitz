@@ -1,4 +1,3 @@
-use euclid::Size2D;
 use style::media_queries::{Device, MediaType};
 
 #[derive(Default, Debug)]

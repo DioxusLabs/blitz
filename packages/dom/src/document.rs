@@ -1,24 +1,9 @@
-use crate::node::DisplayOuter;
-use crate::{
-    node::{DomData, FlowType},
-    Node,
-};
-use atomic_refcell::AtomicRefCell;
-use html5ever::local_name;
-use html5ever::tendril::{Tendril, TendrilSink};
-use markup5ever_rcdom::{Handle, NodeData, RcDom};
+use crate::Node;
 use selectors::{matching::QuirksMode, Element};
 use slab::Slab;
-use std::sync::Arc;
-use std::{
-    cell::{Cell, RefCell},
-    collections::HashMap,
-    fmt::Write,
-    rc::Rc,
-};
+use std::collections::HashMap;
 use style::servo_arc::Arc as ServoArc;
 use style::{
-    data::ElementData,
     dom::{TDocument, TNode},
     media_queries::{Device, MediaList},
     selector_parser::SnapshotMap,
@@ -26,10 +11,7 @@ use style::{
     stylesheets::{AllowImportRules, DocumentStyleSheet, Origin, Stylesheet, UrlExtraData},
     stylist::Stylist,
 };
-use taffy::{
-    prelude::{AvailableSpace, Layout, Style},
-    Cache,
-};
+use taffy::AvailableSpace;
 use url::Url;
 
 pub struct Document {
@@ -100,214 +82,32 @@ impl Document {
             .unwrap()
     }
 
-    fn resolve_url(&self, raw: &str) -> url::Url {
+    pub fn resolve_url(&self, raw: &str) -> url::Url {
         match &self.base_url {
             Some(base_url) => base_url.join(raw).unwrap(),
             None => url::Url::parse(raw).unwrap(),
         }
     }
 
-    /// Write some html to the buffer
-    ///
-    /// todo: this should be a stream implementing the htmlsink buffer thing
-    ///
-    /// For now we just convert the string to a dom tree and then walk it
-    /// Eventually we want to build dom nodes from dioxus mutatiosn, however that's not exposed yet
-    pub fn write(&mut self, content: &str) {
-        // parse the html into a document
-        let document = html5ever::parse_document(RcDom::default(), Default::default())
-            .from_utf8()
-            .read_from(&mut content.as_bytes())
-            .unwrap();
+    pub fn flush_child_indexes(&mut self, target_id: usize, child_idx: usize, level: usize) {
+        let node = &mut self.nodes[target_id];
+        node.child_idx = child_idx;
 
-        // Debug print RcDom
-        //
-        // crate::util::walk_rc_dom(2, &document.document);
-        // if !document.errors.is_empty() {
-        //     println!("\nParse errors:");
-        //     for err in document.errors.iter() {
-        //         println!("    {}", err);
-        //     }
-        // }
+        // println!("{} {} {:?} {:?}", "  ".repeat(level), target_id, node.parent, node.children);
 
-        self.populate_from_rc_dom(&[document.document.clone()], None);
-    }
-
-    pub fn populate_from_rc_dom(&mut self, children: &[Handle], parent: Option<usize>) {
-        for (child_idx, node) in children.into_iter().enumerate() {
-            // Create this node, absorbing any script/style data.
-            let id = self.add_node(node, child_idx, parent);
-
-            // Add this node to its parent's list of children.
-            if let Some(parent) = parent {
-                self.nodes[parent].children.push(id);
-            }
-
-            // Now go insert its children. We want their IDs to come back here so we know how to walk them.
-            self.populate_from_rc_dom(&node.children.borrow(), Some(id));
+        for (i, child_id) in node.children.clone().iter().enumerate() {
+            self.flush_child_indexes(*child_id, i, level + 1)
         }
     }
 
-    pub fn add_node(&mut self, node: &Handle, child_idx: usize, parent: Option<usize>) -> usize {
-        let slab_ptr = self.nodes.as_mut() as *mut Slab<Node>;
-        let entry = self.nodes.vacant_entry();
-        let id = entry.key();
-        let data: AtomicRefCell<ElementData> = Default::default();
-        let style = Style::DEFAULT;
+    pub fn print_tree(&self) {
+        crate::util::walk_tree(0, self.root_node());
+    }
 
-        let val = Node {
-            id,
-            style,
-            display_outer: DisplayOuter::Block,
-            child_idx,
-            children: vec![],
-            node: node.clone(),
-            parent,
-            flow: FlowType::Block,
-            cache: Cache::new(),
-            data,
-            unrounded_layout: Layout::new(),
-            final_layout: Layout::new(),
-            tree: slab_ptr,
-            guard: self.guard.clone(),
-            additional_data: DomData::default(),
-        };
-
-        let entry = entry.insert(val);
-
-        match &node.data {
-            NodeData::Element {
-                name,
-                attrs,
-                template_contents,
-                ..
-            } => {
-                // If the node has an ID, store it in the ID map.
-                if let Some(node_id) = attrs
-                    .borrow()
-                    .iter()
-                    .find(|attr| attr.name.local.as_ref() == "id")
-                {
-                    self.nodes_to_id.insert(node_id.value.to_string(), id);
-                }
-
-                //
-                match name.local.as_ref() {
-                    // Attach the style to the document
-                    "style" => {
-                        let mut css = String::new();
-                        for child in node.children.borrow().iter() {
-                            match &child.data {
-                                NodeData::Text { contents } => {
-                                    css.push_str(&contents.borrow().to_string());
-                                }
-                                _ => {}
-                            }
-                        }
-                        // unescape the css
-                        let css = html_escape::decode_html_entities(&css);
-                        self.add_stylesheet(&css);
-                    }
-
-                    // Resolve external stylesheet
-                    "link" => {
-                        if &*entry.attr(local_name!("rel")) == "stylesheet" {
-                            let raw_url = entry.attr(local_name!("href")).to_string();
-                            let url = self.resolve_url(&raw_url);
-
-                            match crate::util::fetch_string(url.as_str()) {
-                                Ok(css) => {
-                                    let css = html_escape::decode_html_entities(&css);
-                                    self.add_stylesheet(&css);
-                                }
-                                Err(_) => {
-                                    eprintln!("Error fetching stylesheet {}", url);
-                                }
-                            }
-                        }
-                    }
-
-                    // Create a shadow element and attach it to this node
-                    "input" => {
-                        // get the value and/or placeholder:
-                        let mut value = None;
-                        let mut placeholder = None;
-                        for attr in attrs.borrow().iter() {
-                            match attr.name.local.as_ref() {
-                                "value" => {
-                                    value = Some(attr.value.to_string());
-                                }
-                                "placeholder" => {
-                                    placeholder = Some(attr.value.to_string());
-                                }
-                                _ => {}
-                            }
-                        }
-
-                        if let Some(value) = value {
-                            let mut tendril: Tendril<html5ever::tendril::fmt::UTF8> =
-                                Tendril::new();
-
-                            tendril.write_str(value.as_str()).unwrap();
-
-                            let contents: RefCell<Tendril<html5ever::tendril::fmt::UTF8>> =
-                                RefCell::new(tendril);
-
-                            let handle = Handle::new(markup5ever_rcdom::Node {
-                                parent: Cell::new(Some(Rc::downgrade(node))),
-                                children: Default::default(),
-                                data: NodeData::Text { contents },
-                            });
-
-                            // inserted as a child of the input
-                            let shadow = self.add_node(&handle, 0, Some(id));
-
-                            // attach it to its parent
-                            self.nodes[id].children.push(shadow);
-                        }
-                    }
-
-                    // todo: Load images
-                    "img" => {
-                        let raw_src = entry.attr(local_name!("src")).to_string();
-                        if raw_src.len() > 0 {
-                            let src = self.resolve_url(&raw_src);
-                            let image_result = crate::util::fetch_image(src.as_str());
-
-                            match image_result {
-                                Ok(image) => {
-                                    self.nodes[id].additional_data.image = Some(Arc::new(image));
-                                }
-                                Err(_) => {
-                                    eprintln!("Error fetching image {}", src);
-                                }
-                            }
-                        }
-                    }
-
-                    // Todo: Load scripts
-                    "script" => {}
-
-                    // Load template elements (unpaired usually)
-                    "template" => {
-                        if let Some(template_contents) = template_contents.borrow().as_ref() {
-                            let id = self
-                                .populate_from_rc_dom(&template_contents.children.borrow(), None);
-                        }
-                    }
-
-                    _ => entry.flush_style_attribute(),
-                }
-            }
-            // markup5ever_rcdom::NodeData::Document => todo!(),
-            // markup5ever_rcdom::NodeData::Doctype { name, public_id, system_id } => todo!(),
-            // markup5ever_rcdom::NodeData::Text { contents } => todo!(),
-            // markup5ever_rcdom::NodeData::Comment { contents } => todo!(),
-            // markup5ever_rcdom::NodeData::ProcessingInstruction { target, contents } => todo!(),
-            _ => {}
-        }
-
-        id
+    pub fn process_style_element(&mut self, target_id: usize) {
+        let css = self.nodes[target_id].text_content();
+        let css = html_escape::decode_html_entities(&css);
+        self.add_stylesheet(&css);
     }
 
     pub fn add_stylesheet(&mut self, css: &str) {
@@ -375,14 +175,8 @@ impl Document {
         let size = self.stylist.device().au_viewport_size();
 
         let available_space = taffy::Size {
-            // width: AvailableSpace::MaxContent,
-            // height: AvailableSpace::Definite(10000000.0),
-            // width: AvailableSpace::Definite(dbg!(1200.0)),
-            // height: AvailableSpace::Definite(dbg!(2000.0)),
-            // };
             width: AvailableSpace::Definite(size.width.to_f32_px()),
             height: AvailableSpace::Definite(size.height.to_f32_px()),
-            // height: AvailableSpace::Definite(1000000.0),
         };
 
         let root_node_id = taffy::NodeId::from(self.root_element().id);
@@ -391,7 +185,19 @@ impl Document {
         taffy::round_layout(self, root_node_id);
     }
 
-    pub fn set_document(&mut self, content: String) {}
+    pub fn set_document(&mut self, _content: String) {}
 
     pub fn add_element(&mut self) {}
+}
+
+impl AsRef<Document> for Document {
+    fn as_ref(&self) -> &Document {
+        self
+    }
+}
+
+impl AsMut<Document> for Document {
+    fn as_mut(&mut self) -> &mut Document {
+        self
+    }
 }

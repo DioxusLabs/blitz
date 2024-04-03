@@ -1,11 +1,9 @@
-use super::Config;
 use crate::waker::UserWindowEvent;
+use crate::DocumentLike;
 use blitz::{RenderState, Renderer, Viewport};
-use blitz_dom::Document;
-use dioxus::dioxus_core::{ComponentFunction, VirtualDom};
-use dioxus_ssr::config;
+use dioxus::dioxus_core::VirtualDom;
 use futures_util::{pin_mut, FutureExt};
-use muda::{AboutMetadata, Menu, MenuId, MenuItem, PredefinedMenuItem, Submenu};
+
 use std::sync::Arc;
 use std::task::Waker;
 use tao::dpi::LogicalSize;
@@ -21,8 +19,11 @@ use tao::{
 };
 use vello::Scene;
 
-pub(crate) struct View<'s> {
-    pub(crate) renderer: Renderer<'s, Window>,
+#[cfg(not(target_os = "macos"))]
+use muda::{AboutMetadata, Menu, MenuId, MenuItem, PredefinedMenuItem, Submenu};
+
+pub(crate) struct View<'s, Doc: DocumentLike> {
+    pub(crate) renderer: Renderer<'s, Window, Doc>,
     pub(crate) vdom: VirtualDom,
     pub(crate) scene: Scene,
     pub(crate) waker: Option<Waker>,
@@ -31,49 +32,19 @@ pub(crate) struct View<'s> {
     keyboard_modifiers: ModifiersState,
 }
 
-impl<'a> View<'a> {
-    pub(crate) fn new<P: 'static + Clone, M: 'static>(
-        root: impl ComponentFunction<P, M>,
-        props: P,
-        cfg: &Config,
-    ) -> Self {
-        // Spin up the virtualdom
-        // We're going to need to hit it with a special waker
-        let mut vdom = VirtualDom::new_with_props(root, props);
-        vdom.rebuild_in_place();
-        let markup = dioxus_ssr::render(&vdom);
-
-        // TODO: Don't render dioxus via static html
-        Self::from_html(&markup, cfg)
-    }
-
-    pub(crate) fn from_html(html: &str, cfg: &Config) -> Self {
-        // Spin up the virtualdom and include the default stylesheet
-        let mut dom = Document::new(Viewport::new((0, 0)).make_device());
-
-        // Set base url if configured
-        if let Some(url) = &cfg.base_url {
-            dom.set_base_url(&url);
-        }
-
-        // Include default and user-specified stylesheets
-        dom.add_stylesheet(include_str!("./default.css"));
-        for ss in &cfg.stylesheets {
-            dom.add_stylesheet(&ss);
-        }
-
-        // Populate dom with HTML
-        dom.write(&html);
-
+impl<'a, Doc: DocumentLike> View<'a, Doc> {
+    pub(crate) fn new(doc: Doc) -> Self {
         Self {
-            renderer: Renderer::new(dom),
+            renderer: Renderer::new(doc),
             vdom: VirtualDom::new(|| None),
             scene: Scene::new(),
             waker: None,
             keyboard_modifiers: Default::default(),
         }
     }
+}
 
+impl<'a, Doc: DocumentLike> View<'a, Doc> {
     pub(crate) fn poll(&mut self) {
         match &self.waker {
             None => {}
@@ -112,10 +83,11 @@ impl<'a> View<'a> {
     pub fn handle_window_event(&mut self, event: WindowEvent) {
         match event {
             WindowEvent::MouseInput {
-                device_id,
+                // device_id,
                 state,
                 button,
-                modifiers,
+                // modifiers,
+                ..
             } => {
                 if state == ElementState::Pressed && button == MouseButton::Left {
                     self.renderer.click()
@@ -196,22 +168,24 @@ impl<'a> View<'a> {
             WindowEvent::ReceivedImeText(_) => {}
             WindowEvent::Focused(_) => {}
             WindowEvent::CursorMoved {
-                device_id,
+                // device_id,
                 position,
-                modifiers,
+                // modifiers,
+                ..
             } => {
                 let tao::dpi::LogicalPosition::<f32> { x, y } = position.to_logical(2.0);
                 if self.renderer.mouse_move(x, y) {
                     self.request_redraw();
                 }
             }
-            WindowEvent::CursorEntered { device_id } => {}
-            WindowEvent::CursorLeft { device_id } => {}
+            WindowEvent::CursorEntered { /*device_id*/.. } => {}
+            WindowEvent::CursorLeft { /*device_id*/.. } => {}
             WindowEvent::MouseWheel {
-                device_id,
+                // device_id,
                 delta,
-                phase,
-                modifiers,
+                // phase,
+                // modifiers,
+                ..
             } => {
                 match delta {
                     tao::event::MouseScrollDelta::LineDelta(_, y) => {
@@ -226,19 +200,22 @@ impl<'a> View<'a> {
             }
 
             WindowEvent::TouchpadPressure {
-                device_id,
-                pressure,
-                stage,
+                // device_id,
+                // pressure,
+                // stage,
+                ..
             } => {}
             WindowEvent::AxisMotion {
-                device_id,
-                axis,
-                value,
+                // device_id,
+                // axis,
+                // value,
+                ..
             } => {}
             WindowEvent::Touch(_) => {}
             WindowEvent::ScaleFactorChanged {
-                scale_factor,
-                new_inner_size,
+                // scale_factor,
+                // new_inner_size,
+                ..
             } => {}
             WindowEvent::ThemeChanged(_) => {}
             WindowEvent::DecorationsClick => {}
@@ -301,16 +278,19 @@ impl<'a> View<'a> {
     }
 }
 
+#[cfg(not(target_os = "macos"))]
 fn build_menu() -> Menu {
     let mut menu = Menu::new();
 
     // Build the about section
     let mut about = Submenu::new("About", true);
 
-    about.append_items(&[
-        &PredefinedMenuItem::about("Dioxus".into(), Option::from(AboutMetadata::default())),
-        &MenuItem::with_id(MenuId::new("dev.show_layout"), "Show layout", true, None),
-    ]);
+    about
+        .append_items(&[
+            &PredefinedMenuItem::about("Dioxus".into(), Option::from(AboutMetadata::default())),
+            &MenuItem::with_id(MenuId::new("dev.show_layout"), "Show layout", true, None),
+        ])
+        .unwrap();
 
     menu.append(&about).unwrap();
 

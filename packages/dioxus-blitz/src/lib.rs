@@ -1,7 +1,10 @@
+mod documents;
 mod waker;
 mod window;
 
+use crate::documents::{DocumentLike, HtmlDocument};
 use crate::waker::{EventData, UserWindowEvent};
+
 use blitz::RenderState;
 use dioxus::prelude::*;
 use muda::{MenuEvent, MenuId};
@@ -35,7 +38,14 @@ pub fn launch_cfg_with_props<P: Clone + 'static, M: 'static>(
     props: P,
     cfg: Config,
 ) {
-    launch_with_window(crate::window::View::new(root, props, &cfg))
+    // Spin up the virtualdom
+    // We're going to need to hit it with a special waker
+    let mut vdom = VirtualDom::new_with_props(root, props);
+    vdom.rebuild_in_place();
+    let markup = dioxus_ssr::render(&vdom);
+
+    // TODO: Don't render dioxus via static html
+    launch_static_html_cfg(&markup, cfg)
 }
 
 pub fn launch_url(url: &str) {
@@ -67,10 +77,12 @@ pub fn launch_static_html(html: &str) {
 }
 
 pub fn launch_static_html_cfg(html: &str, cfg: Config) {
-    launch_with_window(crate::window::View::from_html(html, &cfg))
+    let document = HtmlDocument::from_html(html, &cfg);
+    let window = crate::window::View::new(document);
+    launch_with_window(window)
 }
 
-fn launch_with_window(window: crate::window::View<'static>) {
+fn launch_with_window<Doc: DocumentLike + 'static>(window: crate::window::View<'static, Doc>) {
     // Turn on the runtime and enter it
     let rt = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
@@ -84,7 +96,7 @@ fn launch_with_window(window: crate::window::View<'static>) {
     let proxy = event_loop.create_proxy();
 
     // Multiwindow ftw
-    let mut windows: HashMap<WindowId, window::View> = HashMap::new();
+    let mut windows: HashMap<WindowId, window::View<'_, Doc>> = HashMap::new();
     let mut pending_windows = Vec::new();
 
     pending_windows.push(window);
@@ -133,7 +145,11 @@ fn launch_with_window(window: crate::window::View<'static>) {
             Event::UserEvent(UserWindowEvent(EventData::Poll, id)) => {
                 windows.get_mut(&id).map(|view| view.poll());
             }
-
+            // Event::UserEvent(_redraw) => {
+            //     for (_, view) in windows.iter() {
+            //         view.request_redraw();
+            //     }
+            // }
             Event::NewEvents(_) => {
                 for id in windows.keys() {
                     _ = proxy.send_event(UserWindowEvent(EventData::Poll, *id));
@@ -142,15 +158,9 @@ fn launch_with_window(window: crate::window::View<'static>) {
 
             Event::RedrawRequested(window_id) => {
                 windows.get_mut(&window_id).map(|window| {
-                    window.renderer.dom.resolve();
+                    window.renderer.dom.as_mut().resolve();
                     window.renderer.render(&mut window.scene);
                 });
-            }
-
-            Event::UserEvent(_redraw) => {
-                for (_, view) in windows.iter() {
-                    view.request_redraw();
-                }
             }
 
             Event::Suspended => {

@@ -1,9 +1,5 @@
 use std::cell::RefCell;
 
-use glyphon::{
-    Attrs, Buffer, Color, Family, FontSystem, Metrics, Resolution, Shaping, SwashCache, TextArea,
-    TextAtlas, TextBounds, TextRenderer,
-};
 use vello::{glyph::skrifa::raw::FileRef, skrifa::prelude::*, Scene};
 use vello::{
     glyph::GlyphContext,
@@ -64,38 +60,38 @@ impl TextContext {
         }
     }
 
-    pub fn get_text_size<'a>(
-        &'a self,
-        font: Option<&'a Font>,
-        size: f32,
-        text: &str,
-    ) -> (f64, f64) {
-        let font = font.and_then(to_font_ref).unwrap_or_else(default_font);
-        let fello_size = Size::new(size);
-        let charmap = font.charmap();
-        let metrics = font.metrics(fello_size, LocationRef::default());
-        let line_height = metrics.ascent - metrics.descent + metrics.leading;
-        let glyph_metrics = font.glyph_metrics(fello_size, LocationRef::default());
-        let mut max_width = 0;
-        let mut cur_width = 0f64;
-        let mut height = line_height as f64;
+    // pub fn get_text_size<'a>(
+    //     &'a self,
+    //     font: Option<&'a Font>,
+    //     size: f32,
+    //     text: &str,
+    // ) -> (f64, f64) {
+    //     let font = font.and_then(to_font_ref).unwrap_or_else(default_font);
+    //     let fello_size = Size::new(size);
+    //     let charmap = font.charmap();
+    //     let metrics = font.metrics(fello_size, LocationRef::default());
+    //     let line_height = metrics.ascent - metrics.descent + metrics.leading;
+    //     let glyph_metrics = font.glyph_metrics(fello_size, LocationRef::default());
+    //     let mut max_width = 0;
+    //     let mut cur_width = 0f64;
+    //     let mut height = line_height as f64;
 
-        for ch in text.chars() {
-            if ch == '\n' {
-                height += line_height as f64;
-                max_width = max_width.max(cur_width as i32);
-                cur_width = 0.0;
-                continue;
-            }
-            let gid = charmap.map(ch).unwrap_or_default();
-            let advance = glyph_metrics.advance_width(gid).unwrap_or_default() as f64;
-            cur_width += advance;
-        }
+    //     for ch in text.chars() {
+    //         if ch == '\n' {
+    //             height += line_height as f64;
+    //             max_width = max_width.max(cur_width as i32);
+    //             cur_width = 0.0;
+    //             continue;
+    //         }
+    //         let gid = charmap.map(ch).unwrap_or_default();
+    //         let advance = glyph_metrics.advance_width(gid).unwrap_or_default() as f64;
+    //         cur_width += advance;
+    //     }
 
-        max_width = max_width.max(cur_width as i32);
+    //     max_width = max_width.max(cur_width as i32);
 
-        (max_width as _, height)
-    }
+    //     (max_width as _, height)
+    // }
 }
 
 fn to_font_ref(font: &Font) -> Option<FontRef> {
