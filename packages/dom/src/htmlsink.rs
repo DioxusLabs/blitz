@@ -2,7 +2,7 @@ use std::borrow::Cow;
 use std::collections::HashSet;
 use std::sync::Arc;
 
-use crate::node::{Attribute, DisplayOuter, ElementNodeData, Node, NodeData, TextNodeData};
+use crate::node::{Attribute, ElementNodeData, Node, NodeData};
 use crate::Document;
 use html5ever::local_name;
 use html5ever::{
@@ -10,9 +10,7 @@ use html5ever::{
     tree_builder::{ElementFlags, NodeOrText, QuirksMode, TreeSink},
     ExpandedName, QualName,
 };
-use slab::Slab;
 use style::Atom;
-use taffy::{Cache, Layout};
 
 /// Convert an html5ever Attribute which uses tendril for its value to a blitz Attribute
 /// which uses String.
@@ -46,8 +44,7 @@ impl<'a> DocumentHtmlParser<'a> {
     }
 
     pub fn parse_into_doc<'d>(doc: &'d mut Document, html: &str) -> &'d mut Document {
-        let mut sink = Self::new(doc);
-        sink.create_node(NodeData::Document);
+        let sink = Self::new(doc);
         html5ever::parse_document(sink, Default::default())
             .from_utf8()
             .read_from(&mut html.as_bytes())

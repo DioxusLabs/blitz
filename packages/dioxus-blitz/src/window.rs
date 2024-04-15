@@ -1,8 +1,6 @@
 use crate::waker::UserWindowEvent;
-use crate::DocumentLike;
 use blitz::{RenderState, Renderer, Viewport};
-use dioxus::dioxus_core::VirtualDom;
-use futures_util::{pin_mut, FutureExt};
+use blitz_dom::DocumentLike;
 
 use std::sync::Arc;
 use std::task::Waker;
@@ -24,7 +22,6 @@ use muda::{AboutMetadata, Menu, MenuId, MenuItem, PredefinedMenuItem, Submenu};
 
 pub(crate) struct View<'s, Doc: DocumentLike> {
     pub(crate) renderer: Renderer<'s, Window, Doc>,
-    pub(crate) vdom: VirtualDom,
     pub(crate) scene: Scene,
     pub(crate) waker: Option<Waker>,
     /// The state of the keyboard modifiers (ctrl, shift, etc). Winit/Tao don't track these for us so we
@@ -36,7 +33,6 @@ impl<'a, Doc: DocumentLike> View<'a, Doc> {
     pub(crate) fn new(doc: Doc) -> Self {
         Self {
             renderer: Renderer::new(doc),
-            vdom: VirtualDom::new(|| None),
             scene: Scene::new(),
             waker: None,
             keyboard_modifiers: Default::default(),
@@ -49,25 +45,8 @@ impl<'a, Doc: DocumentLike> View<'a, Doc> {
         match &self.waker {
             None => {}
             Some(waker) => {
-                let mut cx = std::task::Context::from_waker(waker);
-
-                loop {
-                    {
-                        let fut = self.vdom.wait_for_work();
-                        pin_mut!(fut);
-
-                        match fut.poll_unpin(&mut cx) {
-                            std::task::Poll::Ready(_) => {}
-                            std::task::Poll::Pending => break,
-                        }
-                    }
-
-                    self.vdom.render_immediate(self.doc);
-
-                    // apply the mutations to the actual dom
-
-                    // send_edits(view.dom.render_immediate(), &view.desktop_context.webview);
-                }
+                let cx = std::task::Context::from_waker(waker);
+                self.renderer.poll(cx);
             }
         }
     }

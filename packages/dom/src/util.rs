@@ -1,7 +1,7 @@
 use std::io::{Cursor, Read};
 
-use image::DynamicImage;
 use crate::node::{Node, NodeData};
+use image::DynamicImage;
 
 const USER_AGENT: &str = "Mozilla/5.0 (X11; Linux x86_64; rv:60.0) Gecko/20100101 Firefox/81.0";
 const FILE_SIZE_LIMIT: u64 = 1_000_000_000; // 1GB
@@ -66,7 +66,6 @@ pub(crate) fn fetch_image(url: &str) -> Result<DynamicImage, ImageFetchErr> {
 
 // Debug print an RcDom
 pub fn walk_tree(indent: usize, node: &Node) {
-
     // Skip all-whitespace text nodes entirely
     if let NodeData::Text(data) = &node.raw_dom_data {
         if data.content.chars().all(|c| c.is_ascii_whitespace()) {
@@ -103,14 +102,12 @@ pub fn walk_tree(indent: usize, node: &Node) {
             } else {
                 println!("/>");
             }
-        }
-
-        // NodeData::Doctype {
-        //     ref name,
-        //     ref public_id,
-        //     ref system_id,
-        // } => println!("<!DOCTYPE {} \"{}\" \"{}\">", name, public_id, system_id),
-        // NodeData::ProcessingInstruction { .. } => unreachable!(),
+        } // NodeData::Doctype {
+          //     ref name,
+          //     ref public_id,
+          //     ref system_id,
+          // } => println!("<!DOCTYPE {} \"{}\" \"{}\">", name, public_id, system_id),
+          // NodeData::ProcessingInstruction { .. } => unreachable!(),
     }
 
     if !node.children.is_empty() {

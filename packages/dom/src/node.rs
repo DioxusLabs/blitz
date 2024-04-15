@@ -74,12 +74,12 @@ pub enum NodeData {
     /// A comment.
     Comment, // { contents: String },
 
-     // /// A `DOCTYPE` with name, public id, and system id. See
-     // /// [document type declaration on wikipedia][https://en.wikipedia.org/wiki/Document_type_declaration]
-     // Doctype { name: String, public_id: String, system_id: String },
+             // /// A `DOCTYPE` with name, public id, and system id. See
+             // /// [document type declaration on wikipedia][https://en.wikipedia.org/wiki/Document_type_declaration]
+             // Doctype { name: String, public_id: String, system_id: String },
 
-     // /// A Processing instruction.
-     // ProcessingInstruction { target: String, contents: String },
+             // /// A Processing instruction.
+             // ProcessingInstruction { target: String, contents: String },
 }
 
 impl NodeData {
@@ -90,11 +90,11 @@ impl NodeData {
         }
     }
 
-    pub fn is_element_with_tag_name(&self, name: impl PartialEq<LocalName>) -> bool {
+    pub fn is_element_with_tag_name(&self, name: &impl PartialEq<LocalName>) -> bool {
         let Some(elem) = self.downcast_element() else {
             return false;
         };
-        name == elem.name.local
+        *name == elem.name.local
     }
 
     pub fn attrs(&self) -> Option<&[Attribute]> {

@@ -15,6 +15,14 @@ use style::{
 use taffy::{AvailableSpace, Cache, Layout};
 use url::Url;
 
+pub trait DocumentLike: AsRef<Document> + AsMut<Document> + Into<Document> {
+    fn poll(&mut self, _cx: std::task::Context) {
+        // Default implementation does nothing
+    }
+}
+
+impl DocumentLike for Document {}
+
 pub struct Document {
     /// A bump-backed tree
     ///
@@ -52,14 +60,19 @@ impl Document {
         style_config::set_bool("layout.legacy_layout", true);
         style_config::set_bool("layout.columns.enabled", true);
 
-        Self {
+        let mut doc = Self {
             guard,
             nodes,
             stylist,
             snapshots,
             nodes_to_id,
             base_url: None,
-        }
+        };
+
+        // Initialise document with root Document node
+        doc.create_node(NodeData::Document);
+
+        doc
     }
 
     /// Set base url for resolving linked resources (stylesheets, images, fonts, etc)
@@ -130,18 +143,21 @@ impl Document {
 
     pub fn deep_clone_node(&mut self, node_id: usize) -> usize {
         // Load existing node
-        let node = self.nodes[node_id];
+        let node = &self.nodes[node_id];
         let data = node.raw_dom_data.clone();
         let children = node.children.clone();
 
         // Create new node
-        let new_node_id = self.create_node(node.raw_dom_data.clone());
+        let new_node_id = self.create_node(data);
 
         // Recursively clone children
         let new_children: Vec<usize> = children
             .into_iter()
             .map(|child_id| self.deep_clone_node(child_id))
             .collect();
+        for &child_id in &new_children {
+            self.nodes[child_id].parent = Some(new_node_id);
+        }
         self.nodes[new_node_id].children = new_children;
 
         new_node_id
@@ -150,13 +166,18 @@ impl Document {
     pub fn insert_before(&mut self, node_id: usize, inserted_node_ids: &[usize]) {
         // let count = inserted_node_ids.len();
 
-        let node = self.nodes[node_id];
+        // self.print_tree();
+
+        let node = &self.nodes[node_id];
         let node_child_idx = node.child_idx;
         let parent_id = node.parent.unwrap();
         let parent = &mut self.nodes[parent_id];
 
         let mut children = std::mem::replace(&mut parent.children, Vec::new());
-        children.splice(node_child_idx..node_child_idx, inserted_node_ids.into_iter().copied());
+        children.splice(
+            node_child_idx..node_child_idx,
+            inserted_node_ids.into_iter().copied(),
+        );
 
         // Update child_idx and parent values
         let mut child_idx = node_child_idx;
@@ -172,8 +193,8 @@ impl Document {
     }
 
     pub fn append(&mut self, node_id: usize, appended_node_ids: &[usize]) {
-        let node = self.nodes[node_id];
-        let node_child_idx = node.child_idx;
+        let node = &self.nodes[node_id];
+        // let node_child_idx = node.child_idx;
         let parent_id = node.parent.unwrap();
         let parent = &mut self.nodes[parent_id];
 
@@ -197,9 +218,9 @@ impl Document {
     pub fn remove_node(&mut self, node_id: usize) -> Option<Node> {
         fn remove_node_ignoring_parent(doc: &mut Document, node_id: usize) -> Option<Node> {
             let node = doc.nodes.try_remove(node_id);
-            if let Some(node) = node {
-                for child in node.children {
-                    remove_node_ignoring_parent(doc, node_id);
+            if let Some(node) = &node {
+                for &child in &node.children {
+                    remove_node_ignoring_parent(doc, child);
                 }
             }
             node
@@ -208,7 +229,12 @@ impl Document {
         let node = remove_node_ignoring_parent(self, node_id);
 
         // Update child_idx values
-        if let Some(Node { mut child_idx, parent: Some(parent_id), .. }) = node {
+        if let Some(Node {
+            mut child_idx,
+            parent: Some(parent_id),
+            ..
+        }) = node
+        {
             let parent = &mut self.nodes[parent_id];
 
             let mut children = std::mem::replace(&mut parent.children, Vec::new());
@@ -226,11 +252,6 @@ impl Document {
         }
 
         node
-
-    }
-
-    pub fn flush_child_indexes_from(parent_id: usize, idx: usize) {
-
     }
 
     pub fn resolve_url(&self, raw: &str) -> url::Url {
@@ -288,6 +309,14 @@ impl Document {
 
     /// Restyle the tree and then relayout it
     pub fn resolve(&mut self) {
+        if TDocument::as_node(&&self.nodes[0])
+            .first_element_child()
+            .is_none()
+        {
+            println!("No DOM - not resolving");
+            return;
+        }
+
         // we need to resolve stylist first since it will need to drive our layout bits
         self.resolve_stylist();
 
@@ -300,6 +329,14 @@ impl Document {
 
     // Takes (x, y) co-ordinates (relative to the )
     pub fn hit(&self, x: f32, y: f32) -> Option<usize> {
+        if TDocument::as_node(&&self.nodes[0])
+            .first_element_child()
+            .is_none()
+        {
+            println!("No DOM - not resolving");
+            return None;
+        }
+
         self.root_element().hit(x, y)
     }
 

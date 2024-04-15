@@ -14,7 +14,7 @@ use crate::{
 };
 use blitz_dom::{
     node::{NodeData, TextNodeData},
-    Document, Node,
+    DocumentLike, Node,
 };
 use html5ever::local_name;
 use image::{imageops::FilterType, DynamicImage};
@@ -64,8 +64,8 @@ pub enum RenderState<'s, W> {
     Suspended(Option<(Arc<W>, Viewport)>),
 }
 
-pub struct Renderer<'s, W, DocumentLike: AsRef<Document> + AsMut<Document> + Into<Document>> {
-    pub dom: DocumentLike,
+pub struct Renderer<'s, W, Doc: DocumentLike> {
+    pub dom: Doc,
 
     pub render_state: RenderState<'s, W>,
 
@@ -86,8 +86,7 @@ pub struct Renderer<'s, W, DocumentLike: AsRef<Document> + AsMut<Document> + Int
     scroll_offset: f64,
 }
 
-impl<'a, W, DocumentLike: AsRef<Document> + AsMut<Document> + Into<Document>>
-    Renderer<'a, W, DocumentLike>
+impl<'a, W, Doc: DocumentLike> Renderer<'a, W, Doc>
 where
     W: raw_window_handle::HasWindowHandle
         + raw_window_handle::HasDisplayHandle
@@ -95,7 +94,7 @@ where
         + WasmNotSend
         + 'a,
 {
-    pub fn new(dom: DocumentLike) -> Self {
+    pub fn new(dom: Doc) -> Self {
         // 1. Set up renderer-specific stuff
         // We build an independent viewport which can be dynamically set later
         // The intention here is to split the rendering pipeline away from tao/windowing for rendering to images
@@ -114,6 +113,10 @@ where
             hover_node_id: Default::default(),
             scroll_offset: 0.0,
         }
+    }
+
+    pub fn poll(&mut self, cx: std::task::Context) {
+        self.dom.poll(cx);
     }
 
     pub async fn resume(&mut self, window_builder: impl FnOnce() -> (Arc<W>, Viewport)) {

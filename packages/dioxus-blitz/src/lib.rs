@@ -2,11 +2,13 @@ mod documents;
 mod waker;
 mod window;
 
-use crate::documents::{DocumentLike, HtmlDocument};
+use crate::documents::HtmlDocument;
 use crate::waker::{EventData, UserWindowEvent};
 
 use blitz::RenderState;
+use blitz_dom::DocumentLike;
 use dioxus::prelude::*;
+use documents::DioxusDocument;
 use muda::{MenuEvent, MenuId};
 use std::collections::HashMap;
 use tao::event_loop::EventLoopBuilder;
@@ -36,16 +38,16 @@ pub fn launch_cfg(root: fn() -> Element, cfg: Config) {
 pub fn launch_cfg_with_props<P: Clone + 'static, M: 'static>(
     root: impl ComponentFunction<P, M>,
     props: P,
-    cfg: Config,
+    _cfg: Config,
 ) {
     // Spin up the virtualdom
     // We're going to need to hit it with a special waker
-    let mut vdom = VirtualDom::new_with_props(root, props);
-    vdom.rebuild_in_place();
-    let markup = dioxus_ssr::render(&vdom);
-
-    // TODO: Don't render dioxus via static html
-    launch_static_html_cfg(&markup, cfg)
+    let vdom = VirtualDom::new_with_props(root, props);
+    // vdom.rebuild_in_place();
+    let document = DioxusDocument::new(vdom);
+    // document.apply_mutations();
+    let window = crate::window::View::new(document);
+    launch_with_window(window)
 }
 
 pub fn launch_url(url: &str) {

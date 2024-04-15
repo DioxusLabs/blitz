@@ -37,8 +37,11 @@ pub mod text;
 
 pub mod util;
 
-pub use document::Document;
+pub use document::{Document, DocumentLike};
+pub use html5ever::{
+    local_name, namespace_prefix, namespace_url, ns, Namespace, NamespaceStaticSet, Prefix,
+    PrefixStaticSet, QualName,
+};
 pub use htmlsink::DocumentHtmlParser;
-pub use node::{Node, NodeData, TextNodeData, ElementNodeData};
-pub use html5ever::{QualName, Prefix, PrefixStaticSet, Namespace, NamespaceStaticSet, ns, namespace_prefix, local_name};
+pub use node::{ElementNodeData, Node, NodeData, TextNodeData};
 pub use string_cache::Atom;
