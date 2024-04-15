@@ -66,6 +66,10 @@ impl DioxusDocument {
     pub fn new(vdom: VirtualDom) -> Self {
         let device = Viewport::new((0, 0)).make_device();
         let mut doc = Document::new(device);
+
+        // Include default and user-specified stylesheets
+        doc.add_stylesheet(include_str!("./default.css"));
+
         let state = DioxusState::create(&mut doc);
         let mut doc = Self {
             vdom,
