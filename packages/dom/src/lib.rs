@@ -39,4 +39,6 @@ pub mod util;
 
 pub use document::Document;
 pub use htmlsink::DocumentHtmlParser;
-pub use node::Node;
+pub use node::{Node, NodeData, TextNodeData, ElementNodeData};
+pub use html5ever::{QualName, Prefix, PrefixStaticSet, Namespace, NamespaceStaticSet, ns, namespace_prefix, local_name};
+pub use string_cache::Atom;

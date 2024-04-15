@@ -62,7 +62,7 @@ impl<'a, Doc: DocumentLike> View<'a, Doc> {
                         }
                     }
 
-                    // let edits = self.vdom.render_immediate();
+                    self.vdom.render_immediate(self.doc);
 
                     // apply the mutations to the actual dom
 

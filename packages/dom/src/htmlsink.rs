@@ -55,36 +55,11 @@ impl<'a> DocumentHtmlParser<'a> {
     }
 
     fn create_node(&mut self, node_data: NodeData) -> usize {
-        let slab_ptr = self.doc.nodes.as_mut() as *mut Slab<Node>;
-        let entry = self.doc.nodes.vacant_entry();
-        let id = entry.key();
-        entry.insert(Node {
-            tree: slab_ptr,
-
-            id,
-            parent: None,
-            children: vec![],
-            child_idx: 0,
-
-            raw_dom_data: node_data,
-            stylo_element_data: Default::default(),
-            guard: self.doc.guard.clone(),
-
-            style: Default::default(),
-            hidden: false,
-            display_outer: DisplayOuter::Block,
-            cache: Cache::new(),
-            unrounded_layout: Layout::new(),
-            final_layout: Layout::new(),
-        });
-
-        id
+        self.doc.create_node(node_data)
     }
 
     fn create_text_node(&mut self, text: &str) -> usize {
-        let content = text.to_string();
-        let data = NodeData::Text(TextNodeData { content });
-        self.create_node(data)
+        self.doc.create_text_node(text)
     }
 
     fn node(&self, id: usize) -> &Node {
