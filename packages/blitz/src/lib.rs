@@ -16,7 +16,7 @@ pub async fn launch_cfg(app: Component<()>, cfg: Config) {
     launch_cfg_with_props(app, (), cfg).await
 }
 
-pub async fn launch_cfg_with_props<Props: 'static +Clone+ Send>(
+pub async fn launch_cfg_with_props<Props: 'static + Clone + Send>(
     app: Component<Props>,
     props: Props,
     cfg: Config,
@@ -59,7 +59,8 @@ struct DioxusRenderer {
 impl Driver for DioxusRenderer {
     fn update(&mut self, mut root: NodeMut<()>) {
         let rdom = root.real_dom_mut();
-        self.vdom.render_immediate(&mut self.dioxus_state.create_mutation_writer( rdom));
+        self.vdom
+            .render_immediate(&mut self.dioxus_state.create_mutation_writer(rdom));
     }
 
     fn handle_event(

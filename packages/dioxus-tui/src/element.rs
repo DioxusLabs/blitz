@@ -5,7 +5,10 @@ use std::{
 
 use dioxus_core::{ElementId, WriteMutations};
 use dioxus_html::{
-    geometry::euclid::{Point2D, Rect, Size2D},
+    geometry::{
+        euclid::{Point2D, Rect, Size2D},
+        PixelsRect,
+    },
     MountedData, MountedError, RenderedElementBacking,
 };
 
@@ -119,13 +122,8 @@ impl TuiElement {
 impl RenderedElementBacking for TuiElement {
     fn get_client_rect(
         &self,
-    ) -> std::pin::Pin<
-        Box<
-            dyn futures::Future<
-                Output = dioxus_html::MountedResult<dioxus_html::geometry::euclid::Rect<f64, f64>>,
-            >,
-        >,
-    > {
+    ) -> std::pin::Pin<Box<dyn futures::Future<Output = dioxus_html::MountedResult<PixelsRect>>>>
+    {
         let layout = self.element().layout();
         Box::pin(async move {
             match layout {

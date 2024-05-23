@@ -76,7 +76,7 @@ impl HasFormData for FormData {
         self.value.clone()
     }
 
-    fn values(&self) -> HashMap<String,FormValue> {
+    fn values(&self) -> HashMap<String, FormValue> {
         self.values.clone()
     }
 

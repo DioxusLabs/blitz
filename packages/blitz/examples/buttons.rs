@@ -14,7 +14,7 @@ struct ButtonProps {
 #[allow(non_snake_case)]
 fn Button(props: ButtonProps) -> Element {
     let mut toggle = use_signal(|| false);
-    let mut hovered = use_signal( || false);
+    let mut hovered = use_signal(|| false);
 
     let hue = props.color_offset % 255;
     let saturation = if toggle() { 50 } else { 25 } + if hovered() { 50 } else { 25 };

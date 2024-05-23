@@ -12,7 +12,10 @@ use tao::event::MouseButton;
 use vello::kurbo::Point;
 
 use dioxus_html::{
- geometry::{euclid::Point2D, ClientPoint, Coordinates, ElementPoint, PagePoint, ScreenPoint}, input_data::{self, keyboard_types::Modifiers, MouseButtonSet}, PlatformEventData, SerializedFocusData, SerializedKeyboardData, SerializedMouseData, SerializedWheelData
+    geometry::{euclid::Point2D, ClientPoint, Coordinates, ElementPoint, PagePoint, ScreenPoint},
+    input_data::{self, keyboard_types::Modifiers, MouseButtonSet},
+    PlatformEventData, SerializedFocusData, SerializedKeyboardData, SerializedMouseData,
+    SerializedWheelData,
 };
 use dioxus_native_core::prelude::*;
 
@@ -185,7 +188,8 @@ impl BlitzEventHandler {
                                 _ => todo!(),
                             },
                             event.repeat,
-                            self.state.modifier_state,true
+                            self.state.modifier_state,
+                            true,
                         )));
 
                         // keypress events are only triggered when a key that has text is pressed
