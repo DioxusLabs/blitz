@@ -10,7 +10,6 @@ use html5ever::{
     tree_builder::{ElementFlags, NodeOrText, QuirksMode, TreeSink},
     ExpandedName, QualName,
 };
-use style::Atom;
 
 /// Convert an html5ever Attribute which uses tendril for its value to a blitz Attribute
 /// which uses String.

@@ -15,6 +15,7 @@ use style::{
 };
 use taffy::{AvailableSpace, Cache, Layout};
 use url::Url;
+use parley::{FontContext, LayoutContext};
 
 pub trait DocumentLike: AsRef<Document> + AsMut<Document> + Into<Document> {
     fn poll(&mut self, _cx: std::task::Context) -> bool {
@@ -56,6 +57,11 @@ pub struct Document {
     pub(crate) quadtree: Quadtree<u64, usize>,
 
     pub(crate) stylesheets: HashMap<String, DocumentStyleSheet>,
+
+    /// A Parley font context
+    pub(crate) font_ctx: parley::FontContext,
+    /// A Parley layout context
+    pub(crate) layout_ctx: parley::LayoutContext,
 }
 
 impl Document {
@@ -81,6 +87,8 @@ impl Document {
             base_url: None,
             quadtree: Quadtree::new(20),
             stylesheets: HashMap::new(),
+            font_ctx: parley::FontContext::default(),
+            layout_ctx: parley::LayoutContext::new(),
         };
 
         // Initialise document with root Document node
@@ -161,7 +169,7 @@ impl Document {
 
     pub fn create_text_node(&mut self, text: &str) -> usize {
         let content = text.to_string();
-        let data = NodeData::Text(TextNodeData { content });
+        let data = NodeData::Text(TextNodeData::new(content));
         self.create_node(data)
     }
 

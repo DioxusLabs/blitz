@@ -311,9 +311,7 @@ impl WriteMutations for MutationWriter<'_> {
         if let NodeData::Text(ref mut text) = node.raw_dom_data {
             text.content = value.to_string();
         } else {
-            node.raw_dom_data = NodeData::Text(TextNodeData {
-                content: value.to_string(),
-            });
+            node.raw_dom_data = NodeData::Text(TextNodeData::new(value.to_string()));
         }
 
         let parent = node.parent;

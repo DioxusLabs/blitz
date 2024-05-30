@@ -583,7 +583,7 @@ where
         for child in &cx.element.children {
             match &self.dom.as_ref().tree()[*child].raw_dom_data {
                 NodeData::Element(_) => self.render_element(scene, *child, cx.pos),
-                NodeData::Text(TextNodeData { content }) => {
+                NodeData::Text(TextNodeData { content, .. }) => {
                     let (_layout, pos) = self.node_position(*child, cx.pos);
                     cx.stroke_text(scene, &self.text_context, &content, pos)
                 }

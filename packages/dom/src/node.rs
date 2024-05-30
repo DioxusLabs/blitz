@@ -5,6 +5,7 @@ use selectors::matching::QuirksMode;
 use slab::Slab;
 use std::fmt::Write;
 use std::sync::Arc;
+// use string_cache::Atom;
 use style::properties::ComputedValues;
 use style::stylesheets::UrlExtraData;
 use style::Atom;
@@ -123,6 +124,26 @@ pub struct Attribute {
     pub value: String,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+enum LayoutChildKind {
+    Regular,
+    Anonymous,
+}
+
+#[derive(Debug, Clone)]
+struct LayoutChild {
+    kind: LayoutChildKind,
+    node_id: usize,
+}
+
+#[derive(Debug, Clone)]
+enum LayoutChildrenState {
+    Uninit,
+    Resolved(Vec<LayoutChild>),
+    SameAsRegularChildren,
+}
+
+
 #[derive(Debug, Clone)]
 pub struct ElementNodeData {
     /// The elements tag name, namespace and prefix
@@ -137,7 +158,13 @@ pub struct ElementNodeData {
     /// The element's parsed style attribute (used by stylo)
     pub style_attribute: Option<ServoArc<Locked<PropertyDeclarationBlock>>>,
 
-    /// The element's image content (applies \<img\> element's only)
+    /// Parley text layout (elements with inline inner display mode only)
+    pub inline_layout: Option<Box<TextLayout>>,
+
+    /// A separate child list that includes anonymous collections of inline elements
+    pub layout_children: LayoutChildrenState,
+
+    /// The element's image content (\<img\> element's only)
     pub image: Option<Arc<DynamicImage>>,
 
     /// The element's template contents (\<template\> elements only)
@@ -194,9 +221,83 @@ impl ElementNodeData {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct TextBrush;
+
+#[derive(Clone)]
+pub struct TextLayout {
+    layout: parley::layout::Layout<TextBrush>,
+}
+
+impl std::fmt::Debug for TextLayout {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "TextLayout")
+    }
+}
+
+impl TextLayout {
+    pub fn new(
+        font_ctx: &mut parley::FontContext,
+        layout_ctx: &mut parley::LayoutContext<TextBrush>,
+        text: &str,
+        display_scale: f32,
+        // styles: &ComputedValues,
+    ) -> TextLayout {
+        let mut builder = layout_ctx.ranged_builder(font_ctx, text, display_scale);
+
+        // TODO: Apply styles
+
+        Self {
+            layout: builder.build(),
+        }
+    }
+
+    pub fn measure(&mut self, max_width: Option<f32>) -> taffy::Size<f32> {
+        self.layout
+            .break_all_lines(max_width, parley::layout::Alignment::Start);
+        self.measured_size()
+    }
+
+    pub fn measured_size(&self) -> taffy::Size<f32> {
+        taffy::Size {
+            width: self.layout.width(),
+            height: self.layout.height(),
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct TextNodeData {
+    /// The textual content of the text node
     pub content: String,
+
+    /// Parley text layout. Note that not all text nodes will have their own layout. Text nodes
+    /// that are part of a larger inline context will be added to a layout higher up the tree
+    pub layout: Option<Box<TextLayout>>,
+}
+
+impl TextNodeData {
+    pub fn get_or_init_layout(
+        &mut self,
+        font_ctx: &mut parley::FontContext,
+        layout_ctx: &mut parley::LayoutContext<TextBrush>,
+        display_scale: f32,
+        // styles: &ComputedValues,
+    ) -> &mut TextLayout {
+        let layout = TextLayout::new(font_ctx, layout_ctx, &self.content, display_scale);
+        self.layout = Some(Box::new(layout));
+
+        return &mut **self.layout.as_mut().unwrap();
+    }
+}
+
+impl TextNodeData {
+    pub fn new(content: String) -> Self {
+        Self {
+            content,
+            layout: None,
+        }
+    }
 }
 
 /*
