@@ -65,17 +65,20 @@ impl LayoutPartialTree for Document {
         compute_cached_layout(self, node_id, inputs, |tree, node_id, inputs| {
             let node = tree.node_from_id_mut(node_id);
 
-            // this is because of hidpi affecting the layout - we need to propagate this down
-            // the 2.0 is the dpi and the .2 is a bit extra since our measure function is a bit off
-            const FUDGE_FACTOR: f32 = 2.2;
-
-            let font_metrics = FontMetrics {
-                char_width: 8.0 * FUDGE_FACTOR,
-                char_height: 16.0 * FUDGE_FACTOR,
-            };
-
             match &node.raw_dom_data {
-                NodeData::Text(data) => lay_text(inputs, &node.style, &data.content, &font_metrics),
+                NodeData::Text(data) => {
+                    compute_leaf_layout(inputs, &node.style, |known_dimensions, available_space| {
+                        let context = TextContext {
+                            text_content: &data.content.trim(),
+                            writing_mode: WritingMode::Horizontal,
+                        };
+                        let font_metrics = FontMetrics {
+                            char_width: 8.0,
+                            char_height: 16.0,
+                        };
+                        text_measure_function(known_dimensions, available_space, &context, &font_metrics)
+                    })
+                },
                 NodeData::Element(element_data) => {
                     // Hide hidden nodes
                     if let Some("hidden" | "") = node.attr(local_name!("hidden")) {
@@ -139,21 +142,6 @@ impl LayoutPartialTree for Document {
             }
         })
     }
-}
-
-fn lay_text(
-    inputs: taffy::LayoutInput,
-    node: &Style,
-    contents: &str,
-    font_metrics: &FontMetrics,
-) -> taffy::LayoutOutput {
-    compute_leaf_layout(inputs, &node, |known_dimensions, available_space| {
-        let context = TextContext {
-            text_content: contents.trim(),
-            writing_mode: WritingMode::Horizontal,
-        };
-        text_measure_function(known_dimensions, available_space, &context, font_metrics)
-    })
 }
 
 impl RoundTree for Document {
