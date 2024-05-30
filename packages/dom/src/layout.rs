@@ -115,7 +115,7 @@ impl LayoutPartialTree for Document {
                             inputs,
                             &node.style,
                             |known_dimensions, _available_space| {
-                                image_measure_function(known_dimensions, &image_data)
+                                image_measure_function(known_dimensions, inputs.parent_size, &image_data, &node.style)
                             },
                         );
                     }
