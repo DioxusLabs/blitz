@@ -996,7 +996,8 @@ where
         }
 
         let el = node.as_element().unwrap();
-        let mut data = el.mutate_data().unwrap();
+        // let mut data = el.mutate_data().unwrap();
+        let mut data = unsafe { el.ensure_data() };
         recalc_style_at(self, traversal_data, context, el, &mut data, note_child);
 
         // Gets set later on

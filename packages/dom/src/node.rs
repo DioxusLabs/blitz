@@ -74,12 +74,12 @@ pub enum NodeData {
     /// A comment.
     Comment, // { contents: String },
 
-     // /// A `DOCTYPE` with name, public id, and system id. See
-     // /// [document type declaration on wikipedia][https://en.wikipedia.org/wiki/Document_type_declaration]
-     // Doctype { name: String, public_id: String, system_id: String },
+             // /// A `DOCTYPE` with name, public id, and system id. See
+             // /// [document type declaration on wikipedia][https://en.wikipedia.org/wiki/Document_type_declaration]
+             // Doctype { name: String, public_id: String, system_id: String },
 
-     // /// A Processing instruction.
-     // ProcessingInstruction { target: String, contents: String },
+             // /// A Processing instruction.
+             // ProcessingInstruction { target: String, contents: String },
 }
 
 impl NodeData {
@@ -90,18 +90,18 @@ impl NodeData {
         }
     }
 
-    pub fn is_element_with_tag_name(&self, name: &LocalName) -> bool {
+    pub fn is_element_with_tag_name(&self, name: &impl PartialEq<LocalName>) -> bool {
         let Some(elem) = self.downcast_element() else {
             return false;
         };
-        elem.name.local == *name
+        *name == elem.name.local
     }
 
     pub fn attrs(&self) -> Option<&[Attribute]> {
         Some(&self.downcast_element()?.attrs)
     }
 
-    pub fn attr(&self, name: LocalName) -> Option<&str> {
+    pub fn attr(&self, name: impl PartialEq<LocalName>) -> Option<&str> {
         self.downcast_element()?.attr(name)
     }
 }
@@ -148,8 +148,8 @@ impl ElementNodeData {
         &self.attrs
     }
 
-    pub fn attr(&self, name: LocalName) -> Option<&str> {
-        let attr = self.attrs.iter().find(|attr| attr.name.local == name)?;
+    pub fn attr(&self, name: impl PartialEq<LocalName>) -> Option<&str> {
+        let attr = self.attrs.iter().find(|attr| name == attr.name.local)?;
         Some(&attr.value)
     }
 

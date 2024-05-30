@@ -1,8 +1,7 @@
 use blitz::Viewport;
-use blitz_dom::{Document, DocumentHtmlParser};
+use blitz_dom::{Document, DocumentHtmlParser, DocumentLike};
 
 use crate::Config;
-use crate::DocumentLike;
 
 pub struct HtmlDocument {
     inner: Document,
