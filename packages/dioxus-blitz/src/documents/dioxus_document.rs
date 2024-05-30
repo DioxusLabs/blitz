@@ -500,32 +500,23 @@ fn create_template_node(doc: &mut Document, node: &TemplateNode) -> NodeId {
             attrs,
             children,
         } => {
-            let id_attr_atom = attrs.iter().find_map(|attr| match attr {
-                TemplateAttribute::Static { name, .. } if *name == "id" => Some(Atom::from(*name)),
-                _ => None,
-            });
-            let mut data = ElementNodeData {
-                name: qual_name(*tag, *namespace),
-                id: id_attr_atom,
-                attrs: attrs
-                    .into_iter()
-                    .filter_map(|attr| match attr {
-                        TemplateAttribute::Static {
-                            name,
-                            value,
-                            namespace,
-                        } => Some(Attribute {
-                            name: qual_name(*name, *namespace),
-                            value: value.to_string(),
-                        }),
-                        TemplateAttribute::Dynamic { .. } => None,
-                    })
-                    .collect(),
-                style_attribute: Default::default(),
-                image: None,
-                template_contents: None,
-                // listeners: FxHashSet::default(),
-            };
+            let name = qual_name(*tag, *namespace);
+            let attrs = attrs
+                .into_iter()
+                .filter_map(|attr| match attr {
+                    TemplateAttribute::Static {
+                        name,
+                        value,
+                        namespace,
+                    } => Some(Attribute {
+                        name: qual_name(*name, *namespace),
+                        value: value.to_string(),
+                    }),
+                    TemplateAttribute::Dynamic { .. } => None,
+                })
+                .collect();
+
+            let mut data = ElementNodeData::new(name, attrs);
             data.flush_style_attribute(doc.guard());
 
             let id = doc.create_node(NodeData::Element(data));

@@ -191,18 +191,8 @@ impl<'b> TreeSink for DocumentHtmlParser<'b> {
         attrs: Vec<html5ever::Attribute>,
         _flags: ElementFlags,
     ) -> Self::Handle {
-        let id_attr_atom = attrs
-            .iter()
-            .find(|attr| &attr.name.local == "id")
-            .map(|attr| Atom::from(attr.value.as_ref()));
-        let mut data = ElementNodeData {
-            name: name.clone(),
-            id: id_attr_atom,
-            attrs: attrs.into_iter().map(html5ever_to_blitz_attr).collect(),
-            style_attribute: Default::default(),
-            image: None,
-            template_contents: None,
-        };
+        let attrs = attrs.into_iter().map(html5ever_to_blitz_attr).collect();
+        let mut data = ElementNodeData::new(name.clone(), attrs);
         data.flush_style_attribute(&self.doc.guard);
 
         let id = self.create_node(NodeData::Element(data));

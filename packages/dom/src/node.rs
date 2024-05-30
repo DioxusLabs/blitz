@@ -147,6 +147,25 @@ pub struct ElementNodeData {
 }
 
 impl ElementNodeData {
+    pub fn new(name: QualName, attrs: Vec<Attribute>) -> Self {
+        let id_attr_atom = attrs
+            .iter()
+            .find(|attr| &attr.name.local == "id")
+            .map(|attr| attr.value.as_ref())
+            .map(|value: &str| Atom::from(value));
+        ElementNodeData {
+            name,
+            id: id_attr_atom,
+            attrs,
+            style_attribute: Default::default(),
+            inline_layout: None,
+            layout_children: LayoutChildrenState::Uninit,
+            image: None,
+            template_contents: None,
+            // listeners: FxHashSet::default(),
+        }
+    }
+
     pub fn attrs(&self) -> &[Attribute] {
         &self.attrs
     }
