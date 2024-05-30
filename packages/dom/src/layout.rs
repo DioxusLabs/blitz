@@ -78,21 +78,17 @@ impl LayoutPartialTree for Document {
                 NodeData::Text(data) => lay_text(inputs, &node.style, &data.content, &font_metrics),
                 NodeData::Element(element_data) => {
                     // Hide hidden nodes
-                    if let Some(value) = node.attr(local_name!("hidden")) {
-                        if value == "hidden" || value == "" {
-                            node.style.display = Display::None;
-                            return taffy::LayoutOutput::HIDDEN;
-                        }
+                    if let Some("hidden" | "") = node.attr(local_name!("hidden")) {
+                        node.style.display = Display::None;
+                        return taffy::LayoutOutput::HIDDEN;
                     }
 
                     // todo: need to handle shadow roots by actually descending into them
                     if *element_data.name.local == *"input" {
                         // if the input type is hidden, hide it
-                        if let Some(value) = node.attr(local_name!("type")) {
-                            if value == "hidden" {
-                                node.style.display = Display::None;
-                                return taffy::LayoutOutput::HIDDEN;
-                            }
+                        if let Some("hidden") = node.attr(local_name!("type")) {
+                            node.style.display = Display::None;
+                            return taffy::LayoutOutput::HIDDEN;
                         }
                     }
 
