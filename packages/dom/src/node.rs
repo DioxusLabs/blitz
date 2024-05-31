@@ -1,11 +1,14 @@
 use atomic_refcell::{AtomicRef, AtomicRefCell};
-use html5ever::{local_name, LocalName, QualName};
+use html5ever::{local_name, ns, LocalName, QualName};
 use image::DynamicImage;
 use selectors::matching::QuirksMode;
 use slab::Slab;
 use std::fmt::Write;
+use std::mem::Discriminant;
 use std::sync::Arc;
+use style::values::computed::Display;
 // use string_cache::Atom;
+use std::borrow::Cow;
 use style::properties::ComputedValues;
 use style::stylesheets::UrlExtraData;
 use style::Atom;
@@ -15,6 +18,8 @@ use style::{
     servo_arc::Arc as ServoArc,
     shared_lock::{Locked, SharedRwLock},
     stylesheets::CssRuleType,
+    values::specified::box_::DisplayInside,
+    values::specified::box_::DisplayOutside,
 };
 use taffy::{
     prelude::{Layout, Style},
@@ -23,6 +28,7 @@ use taffy::{
 use url::Url;
 
 use crate::events::EventListener;
+use crate::Document;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum DisplayOuter {
@@ -63,6 +69,30 @@ pub struct Node {
     pub listeners: Vec<EventListener>,
 }
 
+impl Node {
+    fn display_style(&self) -> Option<Display> {
+        Some(
+            self.stylo_element_data
+                .borrow()
+                .as_ref()?
+                .styles
+                .primary
+                .as_ref()?
+                .get_box()
+                .display,
+        )
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+enum NodeKind {
+    Document,
+    Element,
+    AnonymousBlock,
+    Text,
+    Comment,
+}
+
 /// The different kinds of nodes in the DOM.
 #[derive(Debug, Clone)]
 pub enum NodeData {
@@ -72,18 +102,22 @@ pub enum NodeData {
     /// An element with attributes.
     Element(ElementNodeData),
 
+    /// An anonymous block box
+    AnonymousBlock(ElementNodeData),
+
     /// A text node.
     Text(TextNodeData),
 
     /// A comment.
-    Comment, // { contents: String },
+    Comment,
+    // Comment { contents: String },
 
-             // /// A `DOCTYPE` with name, public id, and system id. See
-             // /// [document type declaration on wikipedia][https://en.wikipedia.org/wiki/Document_type_declaration]
-             // Doctype { name: String, public_id: String, system_id: String },
+    // /// A `DOCTYPE` with name, public id, and system id. See
+    // /// [document type declaration on wikipedia][https://en.wikipedia.org/wiki/Document_type_declaration]
+    // Doctype { name: String, public_id: String, system_id: String },
 
-             // /// A Processing instruction.
-             // ProcessingInstruction { target: String, contents: String },
+    // /// A Processing instruction.
+    // ProcessingInstruction { target: String, contents: String },
 }
 
 impl NodeData {
@@ -107,6 +141,16 @@ impl NodeData {
 
     pub fn attr(&self, name: impl PartialEq<LocalName>) -> Option<&str> {
         self.downcast_element()?.attr(name)
+    }
+
+    pub fn kind(&self) -> NodeKind {
+        match self {
+            NodeData::Document => NodeKind::Document,
+            NodeData::Element(_) => NodeKind::Element,
+            NodeData::AnonymousBlock(_) => NodeKind::AnonymousBlock,
+            NodeData::Text(_) => NodeKind::Text,
+            NodeData::Comment => NodeKind::Comment,
+        }
     }
 }
 
@@ -140,9 +184,152 @@ struct LayoutChild {
 enum LayoutChildrenState {
     Uninit,
     Resolved(Vec<LayoutChild>),
-    SameAsRegularChildren,
+    SameAsRegularChildren(LayoutChildKind),
+    NoChildren,
 }
 
+impl LayoutChildrenState {
+    fn from_dom(doc: &Document, container_node_id: usize) -> Self {}
+}
+
+fn determine_layout_children(
+    doc: &mut Document,
+    container_node_id: usize,
+) -> Option<Cow<'_, [usize]>> {
+    let container_display = doc.nodes[container_node_id]
+        .display_style()
+        .unwrap_or(Display::inline());
+
+    match container_display.inside() {
+        DisplayInside::None => None,
+        DisplayInside::Contents => None, // Some(Cow::Borrowed(&container.children)),
+        DisplayInside::Flow | DisplayInside::FlowRoot => {
+            let mut all_block = true;
+            let mut all_inline = true;
+            let mut has_contents = false;
+            for child in doc.nodes[container_node_id].children
+                .iter()
+                .copied()
+                .map(|child_id| &doc.nodes[child_id])
+            {
+                let display = child.display_style().unwrap();
+                match display.outside() {
+                    DisplayOutside::None => {}
+                    DisplayOutside::Inline => all_block = false,
+                    DisplayOutside::Block => all_inline = false,
+
+                    // TODO: Implement table layout
+                    DisplayOutside::TableCaption => {}
+                    DisplayOutside::InternalTable => {}
+                }
+                if matches!(display.inside(), DisplayInside::Contents) {
+                    has_contents = true;
+                }
+            }
+
+            // If the children are either all inline
+            if (all_block | all_inline) & !has_contents {
+                return None;
+            }
+
+            fn block_item_needs_wrap(child_node_kind: NodeKind, display_outside: DisplayOutside) -> bool {
+                child_node_kind == NodeKind::Text || display_outside == DisplayOutside::Inline
+            }
+
+            let layout_children = collect_layout_children(doc, container_node_id, block_item_needs_wrap);
+            return Some(Cow::Owned(layout_children));
+        }
+        DisplayInside::Flex /* | Display::Grid */ => {
+            let has_text_node_or_contents = doc.nodes[container_node_id].children
+                .iter()
+                .copied()
+                .map(|child_id| &doc.nodes[child_id])
+                .any(|child| {
+                    let display = child.display_style().unwrap();
+                    let node_kind = child.raw_dom_data.kind();
+                    display.inside() == DisplayInside::Contents || node_kind == NodeKind::Text
+                });
+
+            if !has_text_node_or_contents {
+                return None;
+            }
+
+            fn flex_or_grid_item_needs_wrap(child_node_kind: NodeKind, _display_outside: DisplayOutside) -> bool {
+                child_node_kind == NodeKind::Text
+            }
+
+            let layout_children = collect_layout_children(doc, container_node_id, flex_or_grid_item_needs_wrap);
+            return Some(Cow::Owned(layout_children));
+        },
+
+        // TODO: Implement table layout
+        DisplayInside::Table => None, //Some(Cow::Borrowed(&container.children)),
+        DisplayInside::TableRowGroup => None, //Some(Cow::Borrowed(&container.children)),
+        DisplayInside::TableColumn => None, //Some(Cow::Borrowed(&container.children)),
+        DisplayInside::TableColumnGroup => None, //Some(Cow::Borrowed(&container.children)),
+        DisplayInside::TableHeaderGroup => None, //Some(Cow::Borrowed(&container.children)),
+        DisplayInside::TableFooterGroup => None, //Some(Cow::Borrowed(&container.children)),
+        DisplayInside::TableRow => None, //Some(Cow::Borrowed(&container.children)),
+        DisplayInside::TableCell => None, //Some(Cow::Borrowed(&container.children)),
+    }
+}
+
+fn collect_layout_children(
+    doc: &mut Document,
+    container_node_id: usize,
+    needs_wrap: impl Fn(NodeKind, DisplayOutside) -> bool,
+) -> Vec<usize> {
+    let mut layout_children = Vec::new();
+    let mut anonymous_block_id: Option<usize> = None;
+
+    // Take children array from node to avoid borrow checker issues.
+    let children = std::mem::replace(&mut doc.nodes[container_node_id].children, Vec::new());
+
+    for child_id in children.iter().copied() {
+        // Get node kind (text, element, comment, etc)
+        let child_node_kind = doc.nodes[child_id].raw_dom_data.kind();
+
+        // Get Display style. Default to inline because nodes without styles are probably text nodes
+        let child_display = &doc.nodes[child_id]
+            .display_style()
+            .unwrap_or(Display::inline());
+        let display_inside = child_display.inside();
+        let display_outside = child_display.outside();
+
+        if child_node_kind == NodeKind::Comment || display_outside == DisplayOutside::None {
+            continue;
+        } else if display_inside == DisplayInside::Contents {
+            // TODO: implement Display::Contents. For now just treat like a regular block node.
+            anonymous_block_id = None;
+            layout_children.push(child_id);
+        } else if needs_wrap(child_node_kind, display_outside) {
+            if anonymous_block_id.is_none() {
+                const NAME: QualName = QualName {
+                    prefix: None,
+                    ns: ns!(html),
+                    local: local_name!("div"),
+                };
+                let node_id = doc.create_node(NodeData::AnonymousBlock(ElementNodeData::new(
+                    NAME,
+                    Vec::new(),
+                )));
+                anonymous_block_id = Some(node_id);
+            }
+
+            doc.nodes[anonymous_block_id.unwrap()]
+                .children
+                .push(child_id);
+        } else {
+            anonymous_block_id = None;
+            layout_children.push(child_id);
+        }
+    }
+
+    // Put children array back
+    doc.nodes[container_node_id].children = children;
+
+    layout_children
+}
 
 #[derive(Debug, Clone)]
 pub struct ElementNodeData {
