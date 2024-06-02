@@ -65,13 +65,8 @@ impl LayoutPartialTree for Document {
         compute_cached_layout(self, node_id, inputs, |tree, node_id, inputs| {
             let node = tree.node_from_id_mut(node_id);
 
-            let font_metrics = FontMetrics {
-                char_width: 8.0,
-                char_height: 16.0,
-            };
-
             match &node.raw_dom_data {
-                NodeData::Text(data) => lay_text(inputs, &node.style, &data.content, &font_metrics),
+                NodeData::Text(data) => lay_text(inputs, &node, &data.content),
                 NodeData::Element(element_data) => {
                     // Hide hidden nodes
                     if let Some(value) = node.attr(local_name!("hidden")) {
@@ -141,18 +136,28 @@ impl LayoutPartialTree for Document {
     }
 }
 
-fn lay_text(
-    inputs: taffy::LayoutInput,
-    node: &Style,
-    contents: &str,
-    font_metrics: &FontMetrics,
-) -> taffy::LayoutOutput {
-    compute_leaf_layout(inputs, &node, |known_dimensions, available_space| {
+fn lay_text(inputs: taffy::LayoutInput, node: &Node, contents: &str) -> taffy::LayoutOutput {
+    let font_metrics = {
+        let styles = node.with(node.parent.unwrap()).primary_styles().unwrap();
+        let font_size = styles.get_font().font_size.computed_size.0.px();
+        let line_height = match styles.get_inherited_text().line_height {
+            style::values::generics::text::LineHeight::Normal => 1.2 * font_size,
+            style::values::generics::text::LineHeight::Number(num) => num.0 * font_size,
+            style::values::generics::text::LineHeight::Length(line_height) => line_height.0.px(),
+        };
+
+        FontMetrics {
+            char_width: font_size,
+            char_height: line_height,
+        }
+    };
+
+    compute_leaf_layout(inputs, &node.style, |known_dimensions, available_space| {
         let context = TextContext {
             text_content: contents.trim(),
             writing_mode: WritingMode::Horizontal,
         };
-        text_measure_function(known_dimensions, available_space, &context, font_metrics)
+        text_measure_function(known_dimensions, available_space, &context, &font_metrics)
     })
 }
 
