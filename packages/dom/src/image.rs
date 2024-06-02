@@ -17,22 +17,35 @@ pub fn image_measure_function(
     let aspect_ratio = s_aspect_ratio.unwrap_or_else(|| image_context.width / image_context.height);
 
     // Resolve sizes
-    let style_size = style.size.maybe_resolve(parent_size).maybe_apply_aspect_ratio(Some(aspect_ratio));
-    let min_size = style.min_size.maybe_resolve(parent_size).maybe_apply_aspect_ratio(Some(aspect_ratio));
-    let max_size = style.min_size.maybe_resolve(parent_size).maybe_apply_aspect_ratio(Some(aspect_ratio));
+    let style_size = style
+        .size
+        .maybe_resolve(parent_size)
+        .maybe_apply_aspect_ratio(Some(aspect_ratio));
+    let min_size = style
+        .min_size
+        .maybe_resolve(parent_size)
+        .maybe_apply_aspect_ratio(Some(aspect_ratio));
+    let max_size = style
+        .min_size
+        .maybe_resolve(parent_size)
+        .maybe_apply_aspect_ratio(Some(aspect_ratio));
     let inherent_size = taffy::Size {
         width: image_context.width,
         height: image_context.height,
     };
 
-
     if known_dimensions.width.is_some() | known_dimensions.height.is_some() {
-        return known_dimensions.maybe_apply_aspect_ratio(Some(aspect_ratio)).map(|s| s.unwrap());
+        return known_dimensions
+            .maybe_apply_aspect_ratio(Some(aspect_ratio))
+            .map(|s| s.unwrap());
     }
 
     if style_size.width.is_some() | style_size.height.is_some() {
-        return style_size.maybe_clamp(min_size, max_size).maybe_apply_aspect_ratio(Some(aspect_ratio)).map(|s| s.unwrap());
+        return style_size
+            .maybe_clamp(min_size, max_size)
+            .maybe_apply_aspect_ratio(Some(aspect_ratio))
+            .map(|s| s.unwrap());
     }
 
-   inherent_size.maybe_clamp(min_size, max_size)//.maybe_apply_aspect_ratio(Some(aspect_ratio)).map(|s| s.unwrap());
+    inherent_size.maybe_clamp(min_size, max_size) //.maybe_apply_aspect_ratio(Some(aspect_ratio)).map(|s| s.unwrap());
 }
