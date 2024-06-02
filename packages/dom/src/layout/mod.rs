@@ -18,12 +18,22 @@ use taffy::{
     RoundTree, Size, Style, TraversePartialTree, TraverseTree,
 };
 
+pub (crate) mod construct;
+pub (crate) use construct::collect_layout_children;
+
 impl Document {
     fn node_from_id(&self, node_id: taffy::prelude::NodeId) -> &Node {
         &self.nodes[node_id.into()]
     }
     fn node_from_id_mut(&mut self, node_id: taffy::prelude::NodeId) -> &mut Node {
         &mut self.nodes[node_id.into()]
+    }
+
+    pub (crate) fn ensure_layout_children(&mut self, node_id: usize) {
+        let mut layout_children : Vec<usize> = Vec::new();
+        let mut anonymous_block : Option<usize> = None;
+        collect_layout_children(self, node_id, &mut layout_children, &mut anonymous_block);
+        self.nodes[node_id].layout_children = Some(layout_children);
     }
 }
 
@@ -164,7 +174,8 @@ impl PrintTree for Document {
             // NodeData::Doctype { .. } => return "DOCTYPE",
             NodeData::Text { .. } => return node.node_debug_str().leak(),
             NodeData::Comment { .. } => return "COMMENT",
-            NodeData::Element { .. } => {
+            NodeData::AnonymousBlock(_) => return "ANONYMOUS BLOCK",
+            NodeData::Element(_) => {
                 let display = match style.display {
                     Display::Flex => match style.flex_direction {
                         FlexDirection::Row | FlexDirection::RowReverse => "FLEX ROW",

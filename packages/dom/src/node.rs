@@ -50,6 +50,8 @@ pub struct Node {
     pub child_idx: usize,
     // What are our children?
     pub children: Vec<usize>,
+    /// A separate child list that includes anonymous collections of inline elements
+    pub layout_children: Option<Vec<usize>>,
 
     /// Node type (Element, TextNode, etc) specific data
     pub raw_dom_data: NodeData,
@@ -70,7 +72,7 @@ pub struct Node {
 }
 
 impl Node {
-    fn display_style(&self) -> Option<Display> {
+    pub (crate) fn display_style(&self) -> Option<Display> {
         Some(
             self.stylo_element_data
                 .borrow()
@@ -85,7 +87,7 @@ impl Node {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-enum NodeKind {
+pub enum NodeKind {
     Document,
     Element,
     AnonymousBlock,
@@ -188,148 +190,10 @@ enum LayoutChildrenState {
     NoChildren,
 }
 
-impl LayoutChildrenState {
-    fn from_dom(doc: &Document, container_node_id: usize) -> Self {}
-}
+// impl LayoutChildrenState {
+//     fn from_dom(doc: &Document, container_node_id: usize) -> Self {}
+// }
 
-fn determine_layout_children(
-    doc: &mut Document,
-    container_node_id: usize,
-) -> Option<Cow<'_, [usize]>> {
-    let container_display = doc.nodes[container_node_id]
-        .display_style()
-        .unwrap_or(Display::inline());
-
-    match container_display.inside() {
-        DisplayInside::None => None,
-        DisplayInside::Contents => None, // Some(Cow::Borrowed(&container.children)),
-        DisplayInside::Flow | DisplayInside::FlowRoot => {
-            let mut all_block = true;
-            let mut all_inline = true;
-            let mut has_contents = false;
-            for child in doc.nodes[container_node_id].children
-                .iter()
-                .copied()
-                .map(|child_id| &doc.nodes[child_id])
-            {
-                let display = child.display_style().unwrap();
-                match display.outside() {
-                    DisplayOutside::None => {}
-                    DisplayOutside::Inline => all_block = false,
-                    DisplayOutside::Block => all_inline = false,
-
-                    // TODO: Implement table layout
-                    DisplayOutside::TableCaption => {}
-                    DisplayOutside::InternalTable => {}
-                }
-                if matches!(display.inside(), DisplayInside::Contents) {
-                    has_contents = true;
-                }
-            }
-
-            // If the children are either all inline
-            if (all_block | all_inline) & !has_contents {
-                return None;
-            }
-
-            fn block_item_needs_wrap(child_node_kind: NodeKind, display_outside: DisplayOutside) -> bool {
-                child_node_kind == NodeKind::Text || display_outside == DisplayOutside::Inline
-            }
-
-            let layout_children = collect_layout_children(doc, container_node_id, block_item_needs_wrap);
-            return Some(Cow::Owned(layout_children));
-        }
-        DisplayInside::Flex /* | Display::Grid */ => {
-            let has_text_node_or_contents = doc.nodes[container_node_id].children
-                .iter()
-                .copied()
-                .map(|child_id| &doc.nodes[child_id])
-                .any(|child| {
-                    let display = child.display_style().unwrap();
-                    let node_kind = child.raw_dom_data.kind();
-                    display.inside() == DisplayInside::Contents || node_kind == NodeKind::Text
-                });
-
-            if !has_text_node_or_contents {
-                return None;
-            }
-
-            fn flex_or_grid_item_needs_wrap(child_node_kind: NodeKind, _display_outside: DisplayOutside) -> bool {
-                child_node_kind == NodeKind::Text
-            }
-
-            let layout_children = collect_layout_children(doc, container_node_id, flex_or_grid_item_needs_wrap);
-            return Some(Cow::Owned(layout_children));
-        },
-
-        // TODO: Implement table layout
-        DisplayInside::Table => None, //Some(Cow::Borrowed(&container.children)),
-        DisplayInside::TableRowGroup => None, //Some(Cow::Borrowed(&container.children)),
-        DisplayInside::TableColumn => None, //Some(Cow::Borrowed(&container.children)),
-        DisplayInside::TableColumnGroup => None, //Some(Cow::Borrowed(&container.children)),
-        DisplayInside::TableHeaderGroup => None, //Some(Cow::Borrowed(&container.children)),
-        DisplayInside::TableFooterGroup => None, //Some(Cow::Borrowed(&container.children)),
-        DisplayInside::TableRow => None, //Some(Cow::Borrowed(&container.children)),
-        DisplayInside::TableCell => None, //Some(Cow::Borrowed(&container.children)),
-    }
-}
-
-fn collect_layout_children(
-    doc: &mut Document,
-    container_node_id: usize,
-    needs_wrap: impl Fn(NodeKind, DisplayOutside) -> bool,
-) -> Vec<usize> {
-    let mut layout_children = Vec::new();
-    let mut anonymous_block_id: Option<usize> = None;
-
-    // Take children array from node to avoid borrow checker issues.
-    let children = std::mem::replace(&mut doc.nodes[container_node_id].children, Vec::new());
-
-    for child_id in children.iter().copied() {
-        // Get node kind (text, element, comment, etc)
-        let child_node_kind = doc.nodes[child_id].raw_dom_data.kind();
-
-        // Get Display style. Default to inline because nodes without styles are probably text nodes
-        let child_display = &doc.nodes[child_id]
-            .display_style()
-            .unwrap_or(Display::inline());
-        let display_inside = child_display.inside();
-        let display_outside = child_display.outside();
-
-        if child_node_kind == NodeKind::Comment || display_outside == DisplayOutside::None {
-            continue;
-        } else if display_inside == DisplayInside::Contents {
-            // TODO: implement Display::Contents. For now just treat like a regular block node.
-            anonymous_block_id = None;
-            layout_children.push(child_id);
-        } else if needs_wrap(child_node_kind, display_outside) {
-            if anonymous_block_id.is_none() {
-                const NAME: QualName = QualName {
-                    prefix: None,
-                    ns: ns!(html),
-                    local: local_name!("div"),
-                };
-                let node_id = doc.create_node(NodeData::AnonymousBlock(ElementNodeData::new(
-                    NAME,
-                    Vec::new(),
-                )));
-                anonymous_block_id = Some(node_id);
-            }
-
-            doc.nodes[anonymous_block_id.unwrap()]
-                .children
-                .push(child_id);
-        } else {
-            anonymous_block_id = None;
-            layout_children.push(child_id);
-        }
-    }
-
-    // Put children array back
-    doc.nodes[container_node_id].children = children;
-
-    layout_children
-}
 
 #[derive(Debug, Clone)]
 pub struct ElementNodeData {
@@ -347,9 +211,6 @@ pub struct ElementNodeData {
 
     /// Parley text layout (elements with inline inner display mode only)
     pub inline_layout: Option<Box<TextLayout>>,
-
-    /// A separate child list that includes anonymous collections of inline elements
-    pub layout_children: LayoutChildrenState,
 
     /// The element's image content (\<img\> element's only)
     pub image: Option<Arc<DynamicImage>>,
@@ -373,7 +234,6 @@ impl ElementNodeData {
             attrs,
             style_attribute: Default::default(),
             inline_layout: None,
-            layout_children: LayoutChildrenState::Uninit,
             image: None,
             template_contents: None,
             // listeners: FxHashSet::default(),

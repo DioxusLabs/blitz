@@ -139,6 +139,7 @@ impl Document {
             id,
             parent: None,
             children: vec![],
+            layout_children: None,
             child_idx: 0,
 
             raw_dom_data: node_data,
@@ -392,6 +393,18 @@ impl Document {
     }
     pub fn stylist_device(&mut self) -> &Device {
         self.stylist.device()
+    }
+
+    /// Ensure that the layout_children field is populated for all nodes
+    pub fn resolve_layout_children(&mut self) {
+        let node_id = self.root_element().id;
+        self.ensure_layout_children(node_id);
+
+        let mut children = Vec::new();
+
+        let children = self.nodes[node_id].children.clone
+
+        while 
     }
 
     /// Walk the nodes now that they're properly styled and transfer their styles to the taffy style system
