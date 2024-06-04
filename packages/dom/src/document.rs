@@ -346,6 +346,9 @@ impl Document {
         // Merge stylo into taffy
         self.flush_styles_to_layout(vec![self.root_element().id], None, taffy::Display::Block);
 
+        // Fix up tree for layout (insert anonymous blocks as necessary, etc)
+        self.resolve_layout_children();
+
         // Next we resolve layout with the data resolved by stlist
         self.resolve_layout();
     }
@@ -379,8 +382,8 @@ impl Document {
 
     /// Ensure that the layout_children field is populated for all nodes
     pub fn resolve_layout_children(&mut self) {
-        let node_id = self.root_element().id;
-        self.ensure_layout_children(node_id);
+        let root_node_id = self.root_element().id;
+        resolve_layout_children_recursive(self, root_node_id);
 
         pub fn resolve_layout_children_recursive(doc: &mut Document, node_id: usize) {
             doc.ensure_layout_children(node_id);

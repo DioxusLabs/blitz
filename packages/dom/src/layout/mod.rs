@@ -12,6 +12,7 @@ use crate::{
     text::{text_measure_function, FontMetrics, TextContext, WritingMode},
 };
 use html5ever::local_name;
+use std::cell::Ref;
 use taffy::{
     compute_block_layout, compute_cached_layout, compute_flexbox_layout, compute_grid_layout,
     compute_leaf_layout, prelude::*, Cache, Dimension, FlexDirection, LayoutPartialTree, NodeId,
@@ -40,10 +41,13 @@ impl Document {
 }
 
 impl TraversePartialTree for Document {
-    type ChildIter<'a> = ChildIter<'a>;
+    type ChildIter<'a> = RefCellChildIter<'a>;
 
     fn child_ids(&self, node_id: NodeId) -> Self::ChildIter<'_> {
-        ChildIter(self.node_from_id(node_id).children.iter())
+        let layout_children = self.node_from_id(node_id).layout_children.borrow(); //.unwrap().as_ref();
+        RefCellChildIter::new(Ref::map(layout_children, |children| {
+            children.as_ref().unwrap().as_slice()
+        }))
     }
 
     fn child_count(&self, node_id: NodeId) -> usize {
@@ -207,5 +211,25 @@ impl<'a> Iterator for ChildIter<'a> {
     type Item = NodeId;
     fn next(&mut self) -> Option<Self::Item> {
         self.0.next().copied().map(NodeId::from)
+    }
+}
+
+pub struct RefCellChildIter<'a> {
+    items: Ref<'a, [usize]>,
+    idx: usize,
+}
+impl<'a> RefCellChildIter<'a> {
+    fn new(items: Ref<'a, [usize]>) -> RefCellChildIter<'a> {
+        RefCellChildIter { items, idx: 0 }
+    }
+}
+
+impl<'a, 'b> Iterator for RefCellChildIter<'a> {
+    type Item = NodeId;
+    fn next(&mut self) -> Option<Self::Item> {
+        self.items.get(self.idx).map(|id| {
+            self.idx += 1;
+            NodeId::from(*id)
+        })
     }
 }

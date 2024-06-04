@@ -99,6 +99,10 @@ impl Node {
     }
 
     pub(crate) fn display_style(&self) -> Option<Display> {
+        // if self.is_text_node() {
+        //     return Some(Display::inline())
+        // }
+
         Some(
             self.stylo_element_data
                 .borrow()

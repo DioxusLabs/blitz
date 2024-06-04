@@ -42,7 +42,10 @@ pub(crate) fn collect_layout_children(
                 .copied()
                 .map(|child_id| &doc.nodes[child_id])
             {
-                let display = child.display_style().unwrap();
+                // dbg!(child.raw_dom_data.kind());
+
+                // Unwraps on Text and SVG nodes
+                let display = child.display_style().unwrap_or(Display::inline());
                 if matches!(display.inside(), DisplayInside::Contents) {
                     has_contents = true;
                 } else {
@@ -76,7 +79,7 @@ pub(crate) fn collect_layout_children(
                 .copied()
                 .map(|child_id| &doc.nodes[child_id])
                 .any(|child| {
-                    let display = child.display_style().unwrap();
+                    let display = child.display_style().unwrap_or(Display::inline());
                     let node_kind = child.raw_dom_data.kind();
                     display.inside() == DisplayInside::Contents || node_kind == NodeKind::Text
                 });
