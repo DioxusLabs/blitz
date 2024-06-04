@@ -1,10 +1,12 @@
-use html5ever::{local_name, ns, QualName};
-use style::values::{computed::Display, specified::box_::{DisplayInside, DisplayOutside}};
+use html5ever::{local_name, namespace_url, ns, QualName};
+use style::values::{
+    computed::Display,
+    specified::box_::{DisplayInside, DisplayOutside},
+};
 
 use crate::{node::NodeKind, Document, ElementNodeData, NodeData};
 
-
-pub (crate) fn collect_layout_children(
+pub(crate) fn collect_layout_children(
     doc: &mut Document,
     container_node_id: usize,
     layout_children: &mut Vec<usize>,
@@ -104,7 +106,6 @@ fn collect_complex_layout_children(
     anonymous_block_id: &mut Option<usize>,
     needs_wrap: impl Fn(NodeKind, DisplayOutside) -> bool,
 ) {
-
     // #[inline(always)]
     // fn needs_wrap(container_display_inside: DisplayInside, child_node_kind: NodeKind, child_display_outside: DisplayOutside) -> bool {
     //     child_node_kind == NodeKind::Text || (container_display_inside ==)
@@ -163,7 +164,6 @@ fn collect_complex_layout_children(
     // Put children array back
     doc.nodes[container_node_id].children = children;
 }
-
 
 // pub (crate) fn determine_layout_children(
 //     doc: &mut Document,

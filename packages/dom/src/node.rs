@@ -3,6 +3,7 @@ use html5ever::{local_name, ns, LocalName, QualName};
 use image::DynamicImage;
 use selectors::matching::QuirksMode;
 use slab::Slab;
+use std::cell::RefCell;
 use std::fmt::Write;
 use std::mem::Discriminant;
 use std::sync::Arc;
@@ -28,6 +29,7 @@ use taffy::{
 use url::Url;
 
 use crate::events::EventListener;
+use crate::layout::collect_layout_children;
 use crate::Document;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -51,7 +53,7 @@ pub struct Node {
     // What are our children?
     pub children: Vec<usize>,
     /// A separate child list that includes anonymous collections of inline elements
-    pub layout_children: Option<Vec<usize>>,
+    pub layout_children: RefCell<Option<Vec<usize>>>,
 
     /// Node type (Element, TextNode, etc) specific data
     pub raw_dom_data: NodeData,
@@ -72,7 +74,31 @@ pub struct Node {
 }
 
 impl Node {
-    pub (crate) fn display_style(&self) -> Option<Display> {
+    pub fn new(tree: *mut Slab<Node>, id: usize, guard: SharedRwLock, data: NodeData) -> Self {
+        Self {
+            tree,
+
+            id,
+            parent: None,
+            children: vec![],
+            layout_children: RefCell::new(None),
+            child_idx: 0,
+
+            raw_dom_data: data,
+            stylo_element_data: Default::default(),
+            guard,
+
+            style: Default::default(),
+            hidden: false,
+            display_outer: DisplayOuter::Block,
+            cache: Cache::new(),
+            unrounded_layout: Layout::new(),
+            final_layout: Layout::new(),
+            listeners: Default::default(),
+        }
+    }
+
+    pub(crate) fn display_style(&self) -> Option<Display> {
         Some(
             self.stylo_element_data
                 .borrow()
@@ -193,7 +219,6 @@ enum LayoutChildrenState {
 // impl LayoutChildrenState {
 //     fn from_dom(doc: &Document, container_node_id: usize) -> Self {}
 // }
-
 
 #[derive(Debug, Clone)]
 pub struct ElementNodeData {
@@ -472,6 +497,7 @@ impl Node {
                 "COMMENT",
                 // &std::str::from_utf8(data.contents.as_bytes().split_at(10).0).unwrap_or("INVALID UTF8")
             ),
+            NodeData::AnonymousBlock(_) => write!(s, "AnonymousBlock"),
             NodeData::Element(data) => {
                 let name = &data.name;
                 let class = self.attr(local_name!("class")).unwrap_or("");

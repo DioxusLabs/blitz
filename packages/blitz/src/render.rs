@@ -23,6 +23,7 @@ use style::{
     dom::TElement,
     values::{computed::ui::CursorKind, specified::position::HorizontalPositionKeyword},
 };
+use selectors::Element;
 use style::{
     properties::{style_structs::Outline, ComputedValues},
     values::{
@@ -580,17 +581,35 @@ where
         cx.stroke_devtools(scene);
         cx.draw_image(scene);
 
-        for child in &cx.element.children {
-            match &self.dom.as_ref().tree()[*child].raw_dom_data {
-                NodeData::Element(_) => self.render_element(scene, *child, cx.pos),
-                NodeData::Text(TextNodeData { content, .. }) => {
-                    let (_layout, pos) = self.node_position(*child, cx.pos);
-                    cx.stroke_text(scene, &self.text_context, &content, pos)
+        for child_id in cx.element.children.iter().copied() {
+            self.render_node(scene, child_id, cx.pos, Some(&cx));
+        }
+    }
+
+    fn render_node(
+        &self,
+        scene: &mut Scene,
+        node_id: usize,
+        location: Point,
+        parent_elem_cx: Option<&ElementCx<'_>>,
+    ) {
+        match &self.dom.as_ref().tree()[node_id].raw_dom_data {
+            NodeData::Element(_) => self.render_element(scene, node_id, location),
+            NodeData::AnonymousBlock(_) => {
+                let children = &self.dom.as_ref().tree()[node_id].children;
+                for child_id in children.iter().copied() {
+                    self.render_node(scene, child_id, location, parent_elem_cx);
                 }
-                NodeData::Document => {}
-                // NodeData::Doctype => {}
-                NodeData::Comment => {} // NodeData::ProcessingInstruction { .. } => {}
             }
+            NodeData::Text(TextNodeData { content, .. }) => {
+                let (_layout, pos) = self.node_position(node_id, location);
+                parent_elem_cx
+                    .unwrap()
+                    .stroke_text(scene, &self.text_context, &content, pos)
+            }
+            NodeData::Document => {}
+            // NodeData::Doctype => {}
+            NodeData::Comment => {} // NodeData::ProcessingInstruction { .. } => {}
         }
     }
 

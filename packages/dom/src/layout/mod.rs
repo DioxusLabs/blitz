@@ -18,8 +18,8 @@ use taffy::{
     RoundTree, Size, Style, TraversePartialTree, TraverseTree,
 };
 
-pub (crate) mod construct;
-pub (crate) use construct::collect_layout_children;
+pub(crate) mod construct;
+pub(crate) use construct::collect_layout_children;
 
 impl Document {
     fn node_from_id(&self, node_id: taffy::prelude::NodeId) -> &Node {
@@ -29,11 +29,13 @@ impl Document {
         &mut self.nodes[node_id.into()]
     }
 
-    pub (crate) fn ensure_layout_children(&mut self, node_id: usize) {
-        let mut layout_children : Vec<usize> = Vec::new();
-        let mut anonymous_block : Option<usize> = None;
-        collect_layout_children(self, node_id, &mut layout_children, &mut anonymous_block);
-        self.nodes[node_id].layout_children = Some(layout_children);
+    pub(crate) fn ensure_layout_children(&mut self, node_id: usize) {
+        if self.nodes[node_id].layout_children.borrow().is_none() {
+            let mut layout_children = Vec::new();
+            let mut anonymous_block: Option<usize> = None;
+            collect_layout_children(self, node_id, &mut layout_children, &mut anonymous_block);
+            *self.nodes[node_id].layout_children.borrow_mut() = Some(layout_children);
+        }
     }
 }
 
@@ -86,9 +88,14 @@ impl LayoutPartialTree for Document {
                             char_width: 8.0,
                             char_height: 16.0,
                         };
-                        text_measure_function(known_dimensions, available_space, &context, &font_metrics)
+                        text_measure_function(
+                            known_dimensions,
+                            available_space,
+                            &context,
+                            &font_metrics,
+                        )
                     })
-                },
+                }
                 NodeData::Element(element_data) => {
                     // Hide hidden nodes
                     if let Some("hidden" | "") = node.attr(local_name!("hidden")) {

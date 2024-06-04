@@ -1,6 +1,6 @@
-use crate::{events::RendererEvent, node::DisplayOuter};
+use crate::events::RendererEvent;
 use crate::{Node, NodeData, TextNodeData};
-use quadtree_rs::{area::AreaBuilder, Quadtree};
+use quadtree_rs::Quadtree;
 use selectors::{matching::QuirksMode, Element};
 use slab::Slab;
 use std::collections::HashMap;
@@ -13,7 +13,7 @@ use style::{
     stylesheets::{AllowImportRules, DocumentStyleSheet, Origin, Stylesheet, UrlExtraData},
     stylist::Stylist,
 };
-use taffy::{AvailableSpace, Cache, Layout};
+use taffy::AvailableSpace;
 use url::Url;
 
 pub trait DocumentLike: AsRef<Document> + AsMut<Document> + Into<Document> {
@@ -133,27 +133,9 @@ impl Document {
         let slab_ptr = self.nodes.as_mut() as *mut Slab<Node>;
         let entry = self.nodes.vacant_entry();
         let id = entry.key();
-        entry.insert(Node {
-            tree: slab_ptr,
+        let guard = self.guard.clone();
 
-            id,
-            parent: None,
-            children: vec![],
-            layout_children: None,
-            child_idx: 0,
-
-            raw_dom_data: node_data,
-            stylo_element_data: Default::default(),
-            guard: self.guard.clone(),
-
-            style: Default::default(),
-            hidden: false,
-            display_outer: DisplayOuter::Block,
-            cache: Cache::new(),
-            unrounded_layout: Layout::new(),
-            final_layout: Layout::new(),
-            listeners: Default::default(),
-        });
+        entry.insert(Node::new(slab_ptr, id, guard, node_data));
 
         // self.quadtree.insert(
         //     AreaBuilder::default()
@@ -400,11 +382,17 @@ impl Document {
         let node_id = self.root_element().id;
         self.ensure_layout_children(node_id);
 
-        let mut children = Vec::new();
+        pub fn resolve_layout_children_recursive(doc: &mut Document, node_id: usize) {
+            doc.ensure_layout_children(node_id);
 
-        let children = self.nodes[node_id].children.clone
+            let children = std::mem::replace(&mut doc.nodes[node_id].children, Vec::new());
 
-        while 
+            for child_id in children.iter().copied() {
+                resolve_layout_children_recursive(doc, child_id);
+            }
+
+            doc.nodes[node_id].children = children;
+        }
     }
 
     /// Walk the nodes now that they're properly styled and transfer their styles to the taffy style system
