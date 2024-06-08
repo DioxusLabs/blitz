@@ -1,4 +1,5 @@
 use crate::events::RendererEvent;
+use crate::node::TextBrush;
 use crate::{Node, NodeData, TextNodeData};
 use quadtree_rs::Quadtree;
 use selectors::{matching::QuirksMode, Element};
@@ -60,7 +61,7 @@ pub struct Document {
     /// A Parley font context
     pub(crate) font_ctx: parley::FontContext,
     /// A Parley layout context
-    pub(crate) layout_ctx: parley::LayoutContext,
+    pub(crate) layout_ctx: parley::LayoutContext<TextBrush>,
 }
 
 impl Document {

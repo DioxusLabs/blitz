@@ -1,10 +1,18 @@
 use html5ever::{local_name, namespace_url, ns, QualName};
-use style::values::{
-    computed::Display,
-    specified::box_::{DisplayInside, DisplayOutside},
+use parley::{builder::TreeBuilder, style::TextStyle};
+use slab::Slab;
+use style::{
+    properties::ComputedValues,
+    values::{
+        computed::Display,
+        specified::box_::{DisplayInside, DisplayOutside},
+    },
 };
 
-use crate::{node::NodeKind, Document, ElementNodeData, NodeData};
+use crate::{
+    node::{NodeKind, TextBrush, TextLayout},
+    Document, ElementNodeData, Node, NodeData,
+};
 
 pub(crate) fn collect_layout_children(
     doc: &mut Document,
@@ -12,6 +20,10 @@ pub(crate) fn collect_layout_children(
     layout_children: &mut Vec<usize>,
     anonymous_block_id: &mut Option<usize>,
 ) {
+    if doc.nodes[container_node_id].children.is_empty() {
+        return;
+    }
+
     let container_display = doc.nodes[container_node_id]
         .display_style()
         .unwrap_or(Display::inline());
@@ -59,6 +71,15 @@ pub(crate) fn collect_layout_children(
                         DisplayOutside::InternalTable => {}
                     }
                 }
+            }
+
+            // TODO: fix display:contents
+            if all_inline {
+                let inline_layout = build_inline_layout(doc, container_node_id);
+                doc.nodes[container_node_id].is_inline_root = true;
+                dbg!(&doc.nodes[container_node_id].raw_dom_data);
+                doc.nodes[container_node_id].raw_dom_data.downcast_element_mut().unwrap().inline_layout = Some(Box::new(inline_layout));
+                return layout_children.extend_from_slice(&doc.nodes[container_node_id].children);
             }
 
             // If the children are either all inline or all block then simply return the regular children
@@ -166,6 +187,96 @@ fn collect_complex_layout_children(
 
     // Put children array back
     doc.nodes[container_node_id].children = children;
+}
+
+pub(crate) fn stylo_to_parley_style(style: &ComputedValues) -> TextStyle<'static, TextBrush> {
+    use parley::style::*;
+
+    let font_styles = style.get_font();
+    // let text_styles = style.get_text();
+    let itext_styles = style.get_inherited_text();
+
+    let font_size = font_styles.font_size.used_size.0.px();
+    let line_height: f32 = match itext_styles.line_height {
+        style::values::generics::text::LineHeight::Normal => font_size * 1.2,
+        style::values::generics::text::LineHeight::Number(num) => font_size * num.0,
+        style::values::generics::text::LineHeight::Length(value) => value.0.px(),
+    };
+
+    TextStyle {
+        font_stack: FontStack::Source("sans-serif"),
+        font_size,
+        font_stretch: Default::default(),
+        font_style: Default::default(),
+        font_weight: FontWeight::new(font_styles.font_weight.value()),
+        font_variations: FontSettings::List(&[]),
+        font_features: FontSettings::List(&[]),
+        locale: Default::default(),
+        brush: TextBrush,
+        has_underline: Default::default(),
+        underline_offset: Default::default(),
+        underline_size: Default::default(),
+        underline_brush: Default::default(),
+        has_strikethrough: Default::default(),
+        strikethrough_offset: Default::default(),
+        strikethrough_size: Default::default(),
+        strikethrough_brush: Default::default(),
+        line_height,
+        word_spacing: Default::default(),
+        letter_spacing: Default::default(),
+    }
+}
+
+pub(crate) fn build_inline_layout(
+    doc: &mut Document,
+    inline_context_root_node_id: usize,
+) -> TextLayout {
+    // Get the inline context's root node's text styles
+    let root_node = &doc.nodes[inline_context_root_node_id];
+    let root_node_style = root_node
+        .primary_styles()
+        .map(|s| stylo_to_parley_style(&*s))
+        .unwrap_or_default();
+
+    // Create a parley tree builder
+    let mut text = String::new();
+    let mut builder = doc
+        .layout_ctx
+        .tree_builder(&mut doc.font_ctx, 1.0, &root_node_style);
+
+    for child_id in root_node.children.iter().copied() {
+        build_inline_layout_recursive(&mut text, &mut builder, &doc.nodes, child_id);
+    }
+
+    let layout = builder.build(&text);
+    return TextLayout { text, layout };
+
+    fn build_inline_layout_recursive(
+        text: &mut String,
+        builder: &mut TreeBuilder<TextBrush>,
+        nodes: &Slab<Node>,
+        node_id: usize,
+    ) {
+        let node = &nodes[node_id];
+
+        match &node.raw_dom_data {
+            NodeData::Element(_) | NodeData::AnonymousBlock(_) => {
+                let style = &*node.primary_styles().unwrap();
+                let parley_style = stylo_to_parley_style(style);
+                builder.push_style_span(parley_style);
+
+                for child_id in node.children.iter().copied() {
+                    build_inline_layout_recursive(text, builder, nodes, child_id);
+                }
+            }
+            NodeData::Text(data) => {
+                text.push_str(&data.content);
+                builder.push_text(data.content.len())
+            }
+            NodeData::Comment => {}
+            NodeData::Document => unreachable!(),
+        }
+    }
 }
 
 // pub (crate) fn determine_layout_children(

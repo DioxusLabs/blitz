@@ -71,6 +71,9 @@ pub struct Node {
     pub unrounded_layout: Layout,
     pub final_layout: Layout,
     pub listeners: Vec<EventListener>,
+
+    // Inline layout data
+    pub is_inline_root: bool,
 }
 
 impl Node {
@@ -95,6 +98,7 @@ impl Node {
             unrounded_layout: Layout::new(),
             final_layout: Layout::new(),
             listeners: Default::default(),
+            is_inline_root: false,
         }
     }
 
@@ -154,6 +158,13 @@ pub enum NodeData {
 
 impl NodeData {
     pub fn downcast_element(&self) -> Option<&ElementNodeData> {
+        match self {
+            Self::Element(data) => Some(data),
+            _ => None,
+        }
+    }
+
+    pub fn downcast_element_mut(&mut self) -> Option<&mut ElementNodeData> {
         match self {
             Self::Element(data) => Some(data),
             _ => None,
@@ -302,7 +313,8 @@ pub struct TextBrush;
 
 #[derive(Clone)]
 pub struct TextLayout {
-    layout: parley::layout::Layout<TextBrush>,
+    pub(crate) text: String,
+    pub(crate) layout: parley::layout::Layout<TextBrush>,
 }
 
 impl std::fmt::Debug for TextLayout {
@@ -312,21 +324,22 @@ impl std::fmt::Debug for TextLayout {
 }
 
 impl TextLayout {
-    pub fn new(
-        font_ctx: &mut parley::FontContext,
-        layout_ctx: &mut parley::LayoutContext<TextBrush>,
-        text: &str,
-        display_scale: f32,
-        // styles: &ComputedValues,
-    ) -> TextLayout {
-        let mut builder = layout_ctx.ranged_builder(font_ctx, text, display_scale);
+    // pub fn new(
+    //     font_ctx: &mut parley::FontContext,
+    //     layout_ctx: &mut parley::LayoutContext<TextBrush>,
+    //     text: &str,
+    //     display_scale: f32,
+    //     // styles: &ComputedValues,
+    // ) -> TextLayout {
+    //     let mut builder = layout_ctx.ranged_builder(font_ctx, text, display_scale);
 
-        // TODO: Apply styles
+    //     // TODO: Apply styles
 
-        Self {
-            layout: builder.build(),
-        }
-    }
+    //     Self {
+    //         text:
+    //         layout: builder.build(&text),
+    //     }
+    // }
 
     pub fn measure(&mut self, max_width: Option<f32>) -> taffy::Size<f32> {
         self.layout
@@ -346,32 +359,31 @@ impl TextLayout {
 pub struct TextNodeData {
     /// The textual content of the text node
     pub content: String,
-
-    /// Parley text layout. Note that not all text nodes will have their own layout. Text nodes
-    /// that are part of a larger inline context will be added to a layout higher up the tree
-    pub layout: Option<Box<TextLayout>>,
+    // /// Parley text layout. Note that not all text nodes will have their own layout. Text nodes
+    // /// that are part of a larger inline context will be added to a layout higher up the tree
+    // pub layout: Option<Box<TextLayout>>,
 }
 
-impl TextNodeData {
-    pub fn get_or_init_layout(
-        &mut self,
-        font_ctx: &mut parley::FontContext,
-        layout_ctx: &mut parley::LayoutContext<TextBrush>,
-        display_scale: f32,
-        // styles: &ComputedValues,
-    ) -> &mut TextLayout {
-        let layout = TextLayout::new(font_ctx, layout_ctx, &self.content, display_scale);
-        self.layout = Some(Box::new(layout));
+// impl TextNodeData {
+//     pub fn get_or_init_layout(
+//         &mut self,
+//         font_ctx: &mut parley::FontContext,
+//         layout_ctx: &mut parley::LayoutContext<TextBrush>,
+//         display_scale: f32,
+//         // styles: &ComputedValues,
+//     ) -> &mut TextLayout {
+//         let layout = TextLayout::new(font_ctx, layout_ctx, &self.content, display_scale);
+//         self.layout = Some(Box::new(layout));
 
-        return &mut **self.layout.as_mut().unwrap();
-    }
-}
+//         return &mut **self.layout.as_mut().unwrap();
+//     }
+// }
 
 impl TextNodeData {
     pub fn new(content: String) -> Self {
         Self {
             content,
-            layout: None,
+            // layout: None,
         }
     }
 }
