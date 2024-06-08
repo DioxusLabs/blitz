@@ -263,10 +263,32 @@ pub(crate) fn build_inline_layout(
         let node = &nodes[node_id];
 
         match &node.raw_dom_data {
-            NodeData::Element(_) | NodeData::AnonymousBlock(_) => {
-                let style = &*node.primary_styles().unwrap();
-                let parley_style = stylo_to_parley_style(style);
-                builder.push_style_span(parley_style);
+            NodeData::Element(element_data) | NodeData::AnonymousBlock(element_data) => {
+                // Hide hidden nodes
+                if let Some("hidden" | "") = element_data.attr(local_name!("hidden")) {
+                    return;
+                }
+
+                // if the input type is hidden, hide it
+                if *element_data.name.local == *"input" {
+                    if let Some("hidden") = element_data.attr(local_name!("type")) {
+                        return;
+                    }
+                }
+
+                let style = &node.primary_styles();
+
+                if let Some(style) = style {
+                    if style.get_box().display.is_none() {
+                        return;
+                    }
+                }
+
+                let style = style
+                    .as_ref()
+                    .map(|s| stylo_to_parley_style(&*s))
+                    .unwrap_or_default();
+                builder.push_style_span(style);
 
                 for child_id in node.children.iter().copied() {
                     build_inline_layout_recursive(text, builder, nodes, child_id);
