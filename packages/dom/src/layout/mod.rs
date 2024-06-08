@@ -83,7 +83,7 @@ impl LayoutPartialTree for Document {
 
             match &mut node.raw_dom_data {
                 NodeData::Text(data) => {
-                    unreachable!();
+                    // unreachable!();
                     compute_leaf_layout(inputs, &node.style, |known_dimensions, available_space| {
                         let context = TextContext {
                             text_content: &data.content.trim(),
@@ -166,14 +166,14 @@ impl LayoutPartialTree for Document {
                             .layout
                             .break_all_lines(max_advance, parley::layout::Alignment::Start);
 
-                        dbg!(node_id);
-                        dbg!(max_advance);
-                        dbg!(&inline_layout.text);
-                        dbg!(inline_layout.layout.width());
-                        dbg!(inline_layout.layout.height());
+                        // dbg!(node_id);
+                        // dbg!(max_advance);
+                        // dbg!(&inline_layout.text);
+                        // dbg!(inline_layout.layout.width());
+                        // dbg!(inline_layout.layout.height());
 
                         return taffy::LayoutOutput::from_outer_size(taffy::Size {
-                            width: inline_layout.layout.width(),
+                            width: inline_layout.layout.width() / 2.0,
                             height: inline_layout.layout.height() / 2.0,
                         });
                     }
