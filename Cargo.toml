@@ -13,8 +13,8 @@ style_traits = { git = "https://github.com/servo/stylo", rev = "e2a4834" }
 selectors = { git = "https://github.com/servo/stylo", rev = "e2a4834" }
 
 taffy = { version = "0.5.1" }
-dioxus = { git = "https://github.com/dioxuslabs/dioxus", rev = "9ae3d14" }
-dioxus-ssr = { git = "https://github.com/dioxuslabs/dioxus", rev = "9ae3d14" }
+dioxus = { git = "https://github.com/dioxuslabs/dioxus", rev = "e4764f2"}
+dioxus-ssr = { git = "https://github.com/dioxuslabs/dioxus", rev = "e4764f2" }
 tokio = { version = "1.25.0", features = ["full"] }
 vello = { version = "0.1", features = ["wgpu"] }
 # fello = { git = "https://github.com/linebender/vello" }
@@ -32,6 +32,9 @@ license = "MIT OR Apache-2.0"
 keywords = ["dom", "ui", "gui", "react", "wasm"]
 rust-version = "1.60.0"
 publish = false
+
+[profile.dev.package."*"]
+opt-level = 2
 
 # Need to force specific versions of these dependencies
 [dependencies]

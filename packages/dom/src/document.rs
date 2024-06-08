@@ -1,5 +1,6 @@
-use crate::node::DisplayOuter;
+use crate::{events::RendererEvent, node::DisplayOuter};
 use crate::{Node, NodeData, TextNodeData};
+use quadtree_rs::{area::AreaBuilder, Quadtree};
 use selectors::{matching::QuirksMode, Element};
 use slab::Slab;
 use std::collections::HashMap;
@@ -16,8 +17,14 @@ use taffy::{AvailableSpace, Cache, Layout};
 use url::Url;
 
 pub trait DocumentLike: AsRef<Document> + AsMut<Document> + Into<Document> {
-    fn poll(&mut self, _cx: std::task::Context) {
+    fn poll(&mut self, _cx: std::task::Context) -> bool {
         // Default implementation does nothing
+        false
+    }
+
+    fn handle_event(&mut self, _event: RendererEvent) -> bool {
+        // Default implementation does nothing
+        false
     }
 }
 
@@ -44,6 +51,9 @@ pub struct Document {
 
     /// Base url for resolving linked resources (stylesheets, images, fonts, etc)
     pub(crate) base_url: Option<url::Url>,
+
+    /// The quadtree we use for hit-testing
+    pub(crate) quadtree: Quadtree<u64, usize>,
 }
 
 impl Document {
@@ -67,6 +77,7 @@ impl Document {
             snapshots,
             nodes_to_id,
             base_url: None,
+            quadtree: Quadtree::new(20),
         };
 
         // Initialise document with root Document node
@@ -130,7 +141,17 @@ impl Document {
             cache: Cache::new(),
             unrounded_layout: Layout::new(),
             final_layout: Layout::new(),
+            listeners: Default::default(),
         });
+
+        // self.quadtree.insert(
+        //     AreaBuilder::default()
+        //         .anchor(quadtree_rs::point::Point { x: 4, y: 5 })
+        //         .dimensions((2, 3))
+        //         .build()
+        //         .unwrap(),
+        //     id as usize,
+        // );
 
         id
     }

@@ -1,14 +1,19 @@
 //! Integration between Dioxus and Blitz
 
+use std::rc::Rc;
+
 use blitz::Viewport;
 use blitz_dom::{
     namespace_url, node::Attribute, ns, Atom, Document, DocumentLike, ElementNodeData, NodeData,
     QualName, TextNodeData,
 };
 
-use dioxus::dioxus_core::{
-    AttributeValue, ElementId, Template, TemplateAttribute, TemplateNode, VirtualDom,
-    WriteMutations,
+use dioxus::{
+    dioxus_core::{
+        AttributeValue, ElementId, Template, TemplateAttribute, TemplateNode, VirtualDom,
+        WriteMutations,
+    },
+    prelude::{set_event_converter, HtmlEventConverter, MouseData, PlatformEventData},
 };
 use futures_util::{pin_mut, FutureExt};
 use rustc_hash::FxHashMap;
@@ -47,7 +52,7 @@ impl Into<Document> for DioxusDocument {
     }
 }
 impl DocumentLike for DioxusDocument {
-    fn poll(&mut self, mut cx: std::task::Context) {
+    fn poll(&mut self, mut cx: std::task::Context) -> bool {
         loop {
             {
                 let fut = self.vdom.wait_for_work();
@@ -55,10 +60,223 @@ impl DocumentLike for DioxusDocument {
 
                 match fut.poll_unpin(&mut cx) {
                     std::task::Poll::Ready(_) => {}
-                    std::task::Poll::Pending => break,
+                    std::task::Poll::Pending => return false,
+                }
+            }
+
+            self.vdom.render_immediate(&mut MutationWriter {
+                doc: &mut self.inner,
+                state: &mut self.vdom_state,
+            });
+            println!("wrote mutatins to dom");
+            return true;
+        }
+    }
+
+    fn handle_event(&mut self, event: blitz_dom::events::RendererEvent) -> bool {
+        // Collect the nodes into a chain by traversing upwards
+        // This is important so the "capture" phase can be implemented
+        let mut node = event.target;
+        let mut chain = vec![node];
+
+        // if it's a capturing event, we want to fill in the chain with the parent nodes
+        // until we reach the root - that way we can call the listeners in the correct order
+        // otherwise, we just want to call the listeners on the target
+        //
+        // todo: this is harcoded for "click" events - eventually we actually need to handle proper propagation
+        // if event.name == "click" {
+        while let Some(parent) = self.inner.tree()[node].parent {
+            chain.push(parent);
+            node = parent;
+        }
+
+        #[derive(Clone)]
+        struct NativeClickData {}
+
+        impl dioxus::html::point_interaction::InteractionLocation for NativeClickData {
+            fn client_coordinates(
+                &self,
+            ) -> dioxus::prelude::dioxus_elements::geometry::ClientPoint {
+                todo!()
+            }
+
+            fn screen_coordinates(
+                &self,
+            ) -> dioxus::prelude::dioxus_elements::geometry::ScreenPoint {
+                todo!()
+            }
+
+            fn page_coordinates(&self) -> dioxus::prelude::dioxus_elements::geometry::PagePoint {
+                todo!()
+            }
+        }
+        impl dioxus::html::point_interaction::InteractionElementOffset for NativeClickData {
+            fn element_coordinates(
+                &self,
+            ) -> dioxus::prelude::dioxus_elements::geometry::ElementPoint {
+                todo!()
+            }
+        }
+        impl dioxus::html::point_interaction::ModifiersInteraction for NativeClickData {
+            fn modifiers(&self) -> dioxus::prelude::Modifiers {
+                todo!()
+            }
+        }
+
+        impl dioxus::html::point_interaction::PointerInteraction for NativeClickData {
+            fn trigger_button(
+                &self,
+            ) -> Option<dioxus::prelude::dioxus_elements::input_data::MouseButton> {
+                todo!()
+            }
+
+            fn held_buttons(&self) -> dioxus::prelude::dioxus_elements::input_data::MouseButtonSet {
+                todo!()
+            }
+        }
+        impl dioxus::html::HasMouseData for NativeClickData {
+            fn as_any(&self) -> &dyn std::any::Any {
+                todo!()
+            }
+        }
+
+        struct NativeConverter {}
+
+        impl HtmlEventConverter for NativeConverter {
+            fn convert_animation_data(
+                &self,
+                event: &PlatformEventData,
+            ) -> dioxus::prelude::AnimationData {
+                todo!()
+            }
+
+            fn convert_clipboard_data(
+                &self,
+                event: &PlatformEventData,
+            ) -> dioxus::prelude::ClipboardData {
+                todo!()
+            }
+
+            fn convert_composition_data(
+                &self,
+                event: &PlatformEventData,
+            ) -> dioxus::prelude::CompositionData {
+                todo!()
+            }
+
+            fn convert_drag_data(&self, event: &PlatformEventData) -> dioxus::prelude::DragData {
+                todo!()
+            }
+
+            fn convert_focus_data(&self, event: &PlatformEventData) -> dioxus::prelude::FocusData {
+                todo!()
+            }
+
+            fn convert_form_data(&self, event: &PlatformEventData) -> dioxus::prelude::FormData {
+                todo!()
+            }
+
+            fn convert_image_data(&self, event: &PlatformEventData) -> dioxus::prelude::ImageData {
+                todo!()
+            }
+
+            fn convert_keyboard_data(
+                &self,
+                event: &PlatformEventData,
+            ) -> dioxus::prelude::KeyboardData {
+                todo!()
+            }
+
+            fn convert_media_data(&self, event: &PlatformEventData) -> dioxus::prelude::MediaData {
+                todo!()
+            }
+
+            fn convert_mounted_data(
+                &self,
+                event: &PlatformEventData,
+            ) -> dioxus::prelude::MountedData {
+                todo!()
+            }
+
+            fn convert_mouse_data(&self, event: &PlatformEventData) -> dioxus::prelude::MouseData {
+                let o = event.downcast::<NativeClickData>().unwrap().clone();
+                dioxus::prelude::MouseData::from(o)
+            }
+
+            fn convert_pointer_data(
+                &self,
+                event: &PlatformEventData,
+            ) -> dioxus::prelude::PointerData {
+                todo!()
+            }
+
+            fn convert_scroll_data(
+                &self,
+                event: &PlatformEventData,
+            ) -> dioxus::prelude::ScrollData {
+                todo!()
+            }
+
+            fn convert_selection_data(
+                &self,
+                event: &PlatformEventData,
+            ) -> dioxus::prelude::SelectionData {
+                todo!()
+            }
+
+            fn convert_toggle_data(
+                &self,
+                event: &PlatformEventData,
+            ) -> dioxus::prelude::ToggleData {
+                todo!()
+            }
+
+            fn convert_touch_data(&self, event: &PlatformEventData) -> dioxus::prelude::TouchData {
+                todo!()
+            }
+
+            fn convert_transition_data(
+                &self,
+                event: &PlatformEventData,
+            ) -> dioxus::prelude::TransitionData {
+                todo!()
+            }
+
+            fn convert_wheel_data(&self, event: &PlatformEventData) -> dioxus::prelude::WheelData {
+                todo!()
+            }
+        }
+
+        set_event_converter(Box::new(NativeConverter {}));
+        // }
+
+        // look for the data-dioxus-id attribute on the element
+        // todo: we might need to walk upwards to find the first element with a data-dioxus-id attribute
+        for node in chain.iter() {
+            let Some(element) = self.inner.tree()[*node].element_data() else {
+                println!(
+                    "No element data found for node {}: {:?}",
+                    node,
+                    self.inner.tree()[*node]
+                );
+                continue;
+            };
+
+            for attr in element.attrs() {
+                if attr.name.local.as_ref() == "data-dioxus-id" {
+                    if let Ok(value) = attr.value.parse::<usize>() {
+                        let id = ElementId(value);
+                        // let data = dioxus::html::EventData::Mouse()
+
+                        let data = Rc::new(PlatformEventData::new(Box::new(NativeClickData {})));
+                        self.vdom.handle_event("click", data, id, true);
+                        return true;
+                    }
                 }
             }
         }
+
+        false
     }
 }
 
@@ -66,6 +284,8 @@ impl DioxusDocument {
     pub fn new(vdom: VirtualDom) -> Self {
         let device = Viewport::new((0, 0)).make_device();
         let mut doc = Document::new(device);
+
+        // doc.add_element()
 
         // Include default and user-specified stylesheets
         doc.add_stylesheet(include_str!("./default.css"));
@@ -251,6 +471,18 @@ impl WriteMutations for MutationWriter<'_> {
                 content: value.to_string(),
             });
         }
+
+        let parent = node.parent;
+
+        if let Some(parent) = parent {
+            // if the text is the child of a style element, we want to put the style into the stylesheet cache
+            let parent = self.doc.get_node(parent).unwrap();
+            if let NodeData::Element(ref element) = parent.raw_dom_data {
+                if element.name.local.as_ref() == "style" {
+                    self.doc.add_stylesheet(value);
+                }
+            }
+        }
     }
 
     fn load_template(&mut self, name: &'static str, index: usize, id: ElementId) {
@@ -338,14 +570,48 @@ impl WriteMutations for MutationWriter<'_> {
     }
 
     fn set_node_text(&mut self, value: &str, id: ElementId) {
-        let node_id = self.state.element_to_node_id(id);
-        let node = self.doc.get_node_mut(node_id).unwrap();
-        if let NodeData::Text(ref mut text) = node.raw_dom_data {
-            text.content = value.to_string();
+        let parent = {
+            let node_id = self.state.element_to_node_id(id);
+            let node = self.doc.get_node_mut(node_id).unwrap();
+
+            if let NodeData::Text(ref mut text) = node.raw_dom_data {
+                text.content = value.to_string();
+            }
+
+            node.parent
+        };
+
+        println!("set_node_text id:{} text:{}", id.0, value);
+
+        if let Some(parent) = parent {
+            // if the text is the child of a style element, we want to put the style into the stylesheet cache
+            let parent = self.doc.get_node(parent).unwrap();
+            if let NodeData::Element(ref element) = parent.raw_dom_data {
+                if element.name.local.as_ref() == "style" {
+                    self.doc.add_stylesheet(value);
+                }
+            }
         }
     }
 
     fn create_event_listener(&mut self, _name: &'static str, _id: ElementId) {
+        // we're going to actually set the listener here as a placeholder - in JS this would also be a placeholder
+        // we might actually just want to attach the attribute to the root element (delegation)
+        self.set_attribute(
+            _name,
+            None,
+            &AttributeValue::Text("<rust func>".into()),
+            _id,
+        );
+
+        // also set the data-dioxus-id attribute so we can find the element later
+        self.set_attribute(
+            "data-dioxus-id",
+            None,
+            &AttributeValue::Text(_id.0.to_string()),
+            _id,
+        );
+
         // let node_id = self.state.element_to_node_id(id);
         // let mut node = self.rdom.get_mut(node_id).unwrap();
         // node.add_event_listener(name);
