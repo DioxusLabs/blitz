@@ -81,8 +81,9 @@ impl LayoutPartialTree for Document {
         compute_cached_layout(self, node_id, inputs, |tree, node_id, inputs| {
             let node = tree.node_from_id_mut(node_id);
 
-            match &node.raw_dom_data {
+            match &mut node.raw_dom_data {
                 NodeData::Text(data) => {
+                    unreachable!();
                     compute_leaf_layout(inputs, &node.style, |known_dimensions, available_space| {
                         let context = TextContext {
                             text_content: &data.content.trim(),
@@ -102,7 +103,7 @@ impl LayoutPartialTree for Document {
                 }
                 NodeData::Element(element_data) => {
                     // Hide hidden nodes
-                    if let Some("hidden" | "") = node.attr(local_name!("hidden")) {
+                    if let Some("hidden" | "") = element_data.attr(local_name!("hidden")) {
                         node.style.display = Display::None;
                         return taffy::LayoutOutput::HIDDEN;
                     }
@@ -110,7 +111,7 @@ impl LayoutPartialTree for Document {
                     // todo: need to handle shadow roots by actually descending into them
                     if *element_data.name.local == *"input" {
                         // if the input type is hidden, hide it
-                        if let Some("hidden") = node.attr(local_name!("type")) {
+                        if let Some("hidden") = element_data.attr(local_name!("type")) {
                             node.style.display = Display::None;
                             return taffy::LayoutOutput::HIDDEN;
                         }
@@ -147,6 +148,34 @@ impl LayoutPartialTree for Document {
                                 )
                             },
                         );
+                    }
+
+                    if node.is_inline_root {
+                        let max_advance = match inputs.available_space.width {
+                            AvailableSpace::Definite(px) => Some(px * 2.0),
+                            AvailableSpace::MinContent => Some(0.0),
+                            AvailableSpace::MaxContent => None,
+                        };
+                        let inline_layout = element_data.inline_layout.as_mut().unwrap();
+
+                        if inline_layout.text.is_empty() {
+                            return taffy::LayoutOutput::HIDDEN;
+                        }
+
+                        inline_layout
+                            .layout
+                            .break_all_lines(max_advance, parley::layout::Alignment::Start);
+
+                        dbg!(node_id);
+                        dbg!(max_advance);
+                        dbg!(&inline_layout.text);
+                        dbg!(inline_layout.layout.width());
+                        dbg!(inline_layout.layout.height());
+
+                        return taffy::LayoutOutput::from_outer_size(taffy::Size {
+                            width: inline_layout.layout.width(),
+                            height: inline_layout.layout.height() / 2.0,
+                        });
                     }
 
                     // The default CSS file will set

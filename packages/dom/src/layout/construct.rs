@@ -2,7 +2,7 @@ use html5ever::{local_name, namespace_url, ns, QualName};
 use parley::{builder::TreeBuilder, style::TextStyle};
 use slab::Slab;
 use style::{
-    properties::ComputedValues,
+    properties::{longhands::line_height, ComputedValues},
     values::{
         computed::Display,
         specified::box_::{DisplayInside, DisplayOutside},
@@ -203,6 +203,9 @@ pub(crate) fn stylo_to_parley_style(style: &ComputedValues) -> TextStyle<'static
         style::values::generics::text::LineHeight::Length(value) => value.0.px(),
     };
 
+    // Parley expects line height as a multiple of font size!
+    let line_height = line_height / font_size;
+
     TextStyle {
         font_stack: FontStack::Source("sans-serif"),
         font_size,
@@ -242,7 +245,7 @@ pub(crate) fn build_inline_layout(
     let mut text = String::new();
     let mut builder = doc
         .layout_ctx
-        .tree_builder(&mut doc.font_ctx, 1.0, &root_node_style);
+        .tree_builder(&mut doc.font_ctx, 2.0, &root_node_style);
 
     for child_id in root_node.children.iter().copied() {
         build_inline_layout_recursive(&mut text, &mut builder, &doc.nodes, child_id);
@@ -270,8 +273,9 @@ pub(crate) fn build_inline_layout(
                 }
             }
             NodeData::Text(data) => {
-                text.push_str(&data.content);
-                builder.push_text(data.content.len())
+                let sanitized = data.content.replace("\n", "");
+                text.push_str(&sanitized);
+                builder.push_text(sanitized.len())
             }
             NodeData::Comment => {}
             NodeData::Document => unreachable!(),

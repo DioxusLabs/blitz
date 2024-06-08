@@ -313,8 +313,8 @@ pub struct TextBrush;
 
 #[derive(Clone)]
 pub struct TextLayout {
-    pub(crate) text: String,
-    pub(crate) layout: parley::layout::Layout<TextBrush>,
+    pub text: String,
+    pub layout: parley::layout::Layout<TextBrush>,
 }
 
 impl std::fmt::Debug for TextLayout {

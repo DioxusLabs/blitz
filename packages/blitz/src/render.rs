@@ -14,7 +14,7 @@ use crate::{
 };
 use blitz_dom::{
     events::{EventData, RendererEvent},
-    node::{NodeData, TextNodeData},
+    node::{NodeData, TextLayout, TextNodeData},
     DocumentLike, Node,
 };
 use html5ever::local_name;
@@ -23,7 +23,6 @@ use style::{
     dom::TElement,
     values::{computed::ui::CursorKind, specified::position::HorizontalPositionKeyword},
 };
-use selectors::Element;
 use style::{
     properties::{style_structs::Outline, ComputedValues},
     values::{
@@ -593,7 +592,30 @@ where
         location: Point,
         parent_elem_cx: Option<&ElementCx<'_>>,
     ) {
-        match &self.dom.as_ref().tree()[node_id].raw_dom_data {
+        let node = &self.dom.as_ref().tree()[node_id];
+
+        if node.is_inline_root {
+            // dbg!(node.id);
+            let (_layout, pos) = self.node_position(node_id, location);
+            let text_layout = &node
+                .raw_dom_data
+                .downcast_element()
+                .unwrap()
+                .inline_layout
+                .as_ref()
+                .unwrap();
+
+            // dbg!(&text_layout.text);
+            // dbg!(text_layout.layout.width());
+            // dbg!(text_layout.layout.height());
+
+            parent_elem_cx
+                .unwrap()
+                .stroke_text(scene, &self.text_context, text_layout, pos);
+            return;
+        }
+
+        match &node.raw_dom_data {
             NodeData::Element(_) => self.render_element(scene, node_id, location),
             NodeData::AnonymousBlock(_) => {
                 let children = &self.dom.as_ref().tree()[node_id].children;
@@ -602,10 +624,10 @@ where
                 }
             }
             NodeData::Text(TextNodeData { content, .. }) => {
-                let (_layout, pos) = self.node_position(node_id, location);
-                parent_elem_cx
-                    .unwrap()
-                    .stroke_text(scene, &self.text_context, &content, pos)
+                // let (_layout, pos) = self.node_position(node_id, location);
+                // parent_elem_cx
+                //     .unwrap()
+                //     .stroke_text(scene, &self.text_context, &content, pos)
             }
             NodeData::Document => {}
             // NodeData::Doctype => {}
@@ -691,7 +713,7 @@ impl ElementCx<'_> {
         &self,
         scene: &mut Scene,
         text_context: &TextContext,
-        contents: &str,
+        layout: &TextLayout,
         pos: Point,
     ) {
         let transform = Affine::translate((pos.x * self.scale, pos.y * self.scale))
@@ -703,7 +725,7 @@ impl ElementCx<'_> {
             self.font_size * self.scale as f32,
             Some(self.text_color),
             transform,
-            contents,
+            layout,
         )
     }
 
