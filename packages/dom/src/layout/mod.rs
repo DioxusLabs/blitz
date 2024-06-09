@@ -151,31 +151,7 @@ impl LayoutPartialTree for Document {
                     }
 
                     if node.is_inline_root {
-                        let max_advance = match inputs.available_space.width {
-                            AvailableSpace::Definite(px) => Some(px * 2.0),
-                            AvailableSpace::MinContent => Some(0.0),
-                            AvailableSpace::MaxContent => None,
-                        };
-                        let inline_layout = element_data.inline_layout.as_mut().unwrap();
-
-                        if inline_layout.text.is_empty() {
-                            return taffy::LayoutOutput::HIDDEN;
-                        }
-
-                        inline_layout
-                            .layout
-                            .break_all_lines(max_advance, parley::layout::Alignment::Start);
-
-                        // dbg!(node_id);
-                        // dbg!(max_advance);
-                        // dbg!(&inline_layout.text);
-                        // dbg!(inline_layout.layout.width());
-                        // dbg!(inline_layout.layout.height());
-
-                        return taffy::LayoutOutput::from_outer_size(taffy::Size {
-                            width: inline_layout.layout.width() / 2.0,
-                            height: inline_layout.layout.height() / 2.0,
-                        });
+                        return tree.compute_inline_layout(node_id, inputs);
                     }
 
                     // The default CSS file will set
@@ -191,6 +167,63 @@ impl LayoutPartialTree for Document {
                 _ => taffy::LayoutOutput::HIDDEN,
             }
         })
+    }
+}
+
+impl Document {
+    fn compute_inline_layout(
+        &mut self,
+        node_id: NodeId,
+        inputs: taffy::tree::LayoutInput,
+    ) -> taffy::LayoutOutput {
+        // Take inline layout to satisfy borrow checker
+        let mut inline_layout = self.nodes[usize::from(node_id)]
+            .raw_dom_data
+            .downcast_element_mut()
+            .unwrap()
+            .inline_layout
+            .take()
+            .unwrap();
+
+        let max_advance = match inputs.available_space.width {
+            AvailableSpace::Definite(px) => Some(px * 2.0),
+            AvailableSpace::MinContent => Some(0.0),
+            AvailableSpace::MaxContent => None,
+        };
+
+        if inline_layout.text.is_empty() {
+            return taffy::LayoutOutput::HIDDEN;
+        }
+
+        for ibox in inline_layout.layout.inline_boxes_mut() {
+            let output = self.compute_child_layout(NodeId::from(ibox.id), inputs);
+            ibox.width = output.size.width;
+            ibox.height = output.size.height;
+        }
+
+        inline_layout
+            .layout
+            .break_all_lines(max_advance, parley::layout::Alignment::Start);
+
+        // dbg!(node_id);
+        // dbg!(max_advance);
+        // dbg!(&inline_layout.text);
+        // dbg!(inline_layout.layout.width());
+        // dbg!(inline_layout.layout.height());
+
+        let size = taffy::Size {
+            width: inline_layout.layout.width() / 2.0,
+            height: inline_layout.layout.height() / 2.0,
+        };
+
+        // Put layout back
+        self.nodes[usize::from(node_id)]
+            .raw_dom_data
+            .downcast_element_mut()
+            .unwrap()
+            .inline_layout = Some(inline_layout);
+
+        return taffy::LayoutOutput::from_outer_size(size);
     }
 }
 

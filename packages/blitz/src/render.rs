@@ -23,6 +23,8 @@ use style::{
     dom::TElement,
     values::{computed::ui::CursorKind, specified::position::HorizontalPositionKeyword},
 };
+use parley::layout::LayoutItem2;
+use selectors::Element;
 use style::{
     properties::{style_structs::Outline, ComputedValues},
     values::{
@@ -612,6 +614,20 @@ where
             parent_elem_cx
                 .unwrap()
                 .stroke_text(scene, &self.text_context, text_layout, pos);
+
+            for line in text_layout.layout.lines() {
+                for item in line.items() {
+                    if let LayoutItem2::InlineBox(ibox) = item {
+                        let location = vello::kurbo::Point {
+                            x: ibox.x.into(),
+                            y: ibox.y.into(),
+                        };
+                        let cx = self.element_cx(node, location);
+                        self.render_node(scene, ibox.id as usize, location, Some(&cx));
+                    }
+                }
+            }
+
             return;
         }
 

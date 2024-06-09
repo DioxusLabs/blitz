@@ -1,5 +1,5 @@
 use html5ever::{local_name, namespace_url, ns, QualName};
-use parley::{builder::TreeBuilder, style::TextStyle};
+use parley::{builder::TreeBuilder, style::TextStyle, InlineBox};
 use slab::Slab;
 use style::{
     properties::{longhands::line_height, ComputedValues},
@@ -75,9 +75,9 @@ pub(crate) fn collect_layout_children(
 
             // TODO: fix display:contents
             if all_inline {
+                // dbg!(&doc.nodes[container_node_id].raw_dom_data);
                 let inline_layout = build_inline_layout(doc, container_node_id);
                 doc.nodes[container_node_id].is_inline_root = true;
-                dbg!(&doc.nodes[container_node_id].raw_dom_data);
                 doc.nodes[container_node_id].raw_dom_data.downcast_element_mut().unwrap().inline_layout = Some(Box::new(inline_layout));
                 return layout_children.extend_from_slice(&doc.nodes[container_node_id].children);
             }
@@ -276,23 +276,37 @@ pub(crate) fn build_inline_layout(
                     }
                 }
 
-                let style = &node.primary_styles();
+                let display = node.display_style().unwrap_or(Display::inline());
 
-                if let Some(style) = style {
-                    if style.get_box().display.is_none() {
-                        return;
+                match display.inside() {
+                    DisplayInside::None => return,
+                    DisplayInside::Contents => {
+                        for child_id in node.children.iter().copied() {
+                            build_inline_layout_recursive(text, builder, nodes, child_id);
+                        }
                     }
-                }
+                    DisplayInside::Flow => {
+                        let style = node
+                            .primary_styles()
+                            .map(|s| stylo_to_parley_style(&*s))
+                            .unwrap_or_default();
+                        builder.push_style_span(style);
 
-                let style = style
-                    .as_ref()
-                    .map(|s| stylo_to_parley_style(&*s))
-                    .unwrap_or_default();
-                builder.push_style_span(style);
-
-                for child_id in node.children.iter().copied() {
-                    build_inline_layout_recursive(text, builder, nodes, child_id);
-                }
+                        for child_id in node.children.iter().copied() {
+                            build_inline_layout_recursive(text, builder, nodes, child_id);
+                        }
+                    }
+                    // Inline box
+                    _ => {
+                        builder.push_inline_box(InlineBox {
+                            id: node_id as u64,
+                            index: text.len(),
+                            // Width and height are set during layout
+                            width: 0.0,
+                            height: 0.0,
+                        });
+                    }
+                };
             }
             NodeData::Text(data) => {
                 let sanitized = data.content.replace("\n", "");
