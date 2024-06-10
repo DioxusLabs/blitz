@@ -732,8 +732,7 @@ impl ElementCx<'_> {
         layout: &TextLayout,
         pos: Point,
     ) {
-        let transform = Affine::translate((pos.x * self.scale, pos.y * self.scale))
-            .then_translate((0.0, self.font_size as f64 * self.scale as f64).into());
+        let transform = Affine::translate((pos.x * self.scale, pos.y * self.scale));
 
         text_context.add(
             scene,
