@@ -185,36 +185,58 @@ impl Document {
             .take()
             .unwrap();
 
-        let max_advance = match inputs.available_space.width {
-            AvailableSpace::Definite(px) => Some(px * 2.0),
-            AvailableSpace::MinContent => Some(0.0),
-            AvailableSpace::MaxContent => None,
-        };
+        // TODO: eliminate clone
+        let style = self.nodes[usize::from(node_id)].style.clone();
 
-        if inline_layout.text.is_empty() {
-            return taffy::LayoutOutput::HIDDEN;
-        }
+        let output = compute_leaf_layout(inputs, &style, |_known_dimensions, available_space| {
+            // Short circuit if inline context contains no text or inline boxes
+            if inline_layout.text.is_empty() && inline_layout.layout.inline_boxes().is_empty() {
+                return Size::ZERO;
+            }
 
-        for ibox in inline_layout.layout.inline_boxes_mut() {
-            let output = self.compute_child_layout(NodeId::from(ibox.id), inputs);
-            ibox.width = output.size.width;
-            ibox.height = output.size.height;
-        }
+            // Compute size of inline boxes
+            for ibox in inline_layout.layout.inline_boxes_mut() {
+                let output = self.compute_child_layout(NodeId::from(ibox.id), inputs);
+                ibox.width = output.size.width;
+                ibox.height = output.size.height;
+            }
 
-        inline_layout
-            .layout
-            .break_all_lines(max_advance, parley::layout::Alignment::Start);
+            // Perform inline layout
+            let max_advance = match available_space.width {
+                AvailableSpace::Definite(px) => Some(px * 2.0),
+                AvailableSpace::MinContent => Some(0.0),
+                AvailableSpace::MaxContent => None,
+            };
+            inline_layout
+                .layout
+                .break_all_lines(max_advance, parley::layout::Alignment::Start);
 
-        // dbg!(node_id);
-        // dbg!(max_advance);
-        // dbg!(&inline_layout.text);
-        // dbg!(inline_layout.layout.width());
-        // dbg!(inline_layout.layout.height());
 
-        let size = taffy::Size {
-            width: inline_layout.layout.width() / 2.0,
-            height: inline_layout.layout.height() / 2.0,
-        };
+            // Store sizes and positions of inline boxes
+            for line in inline_layout.layout.lines() {
+                for item in line.items() {
+                    if let parley::layout::LayoutItem2::InlineBox(ibox) = item {
+                        let layout = &mut self.nodes[usize::from(node_id)].unrounded_layout;
+                        layout.size.width = ibox.width;
+                        layout.size.height = ibox.height;
+                        layout.location.x = ibox.x;
+                        layout.location.y = ibox.y;
+                    }
+                }
+            }
+
+            // dbg!(node_id);
+            // dbg!(max_advance);
+            // dbg!(&inline_layout.text);
+            // dbg!(inline_layout.layout.width());
+            // dbg!(inline_layout.layout.height());
+
+            taffy::Size {
+                width: inline_layout.layout.width() / 2.0,
+                height: inline_layout.layout.height() / 2.0,
+            }
+        });
+
 
         // Put layout back
         self.nodes[usize::from(node_id)]
@@ -223,7 +245,7 @@ impl Document {
             .unwrap()
             .inline_layout = Some(inline_layout);
 
-        return taffy::LayoutOutput::from_outer_size(size);
+        output
     }
 }
 

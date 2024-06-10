@@ -534,7 +534,7 @@ where
     ///
     /// Approaching rendering this way guarantees we have all the styles we need when rendering text with not having
     /// to traverse back to the parent for its styles, or needing to pass down styles
-    fn render_element(&self, scene: &mut Scene, node: usize, location: Point) {
+    fn render_element(&self, scene: &mut Scene, node_id: usize, location: Point) {
         // Need to do research on how we can cache most of the bezpaths - there's gonna be a lot of encoding between frames.
         // Might be able to cache resources deeper in vello.
         //
@@ -551,7 +551,7 @@ where
         //  - custom_properties, writing_mode, rules, visited_style, flags,  box_, column, counters, effects,
         //  - inherited_box, inherited_table, inherited_text, inherited_ui,
 
-        let element = &self.dom.as_ref().tree()[node];
+        let element = &self.dom.as_ref().tree()[node_id];
 
         // Early return if the element is hidden
         if matches!(element.style.display, taffy::prelude::Display::None) {
@@ -582,8 +582,46 @@ where
         cx.stroke_devtools(scene);
         cx.draw_image(scene);
 
-        for child_id in cx.element.children.iter().copied() {
-            self.render_node(scene, child_id, cx.pos, Some(&cx));
+        if element.is_inline_root {
+            // dbg!(node.id);
+            let (_layout, pos) = self.node_position(node_id, location);
+            let text_layout = &element
+                .raw_dom_data
+                .downcast_element()
+                .unwrap()
+                .inline_layout
+                .as_ref()
+                .unwrap_or_else(|| {
+                    dbg!(&element);
+                    panic!();
+                });
+
+            // dbg!(&text_layout.text);
+            // dbg!(text_layout.layout.width());
+            // dbg!(text_layout.layout.height());
+
+            // Render text
+            cx.stroke_text(scene, &self.text_context, text_layout, pos);
+
+            // Render inline boxes
+            for line in text_layout.layout.lines() {
+                for item in line.items() {
+                    if let LayoutItem2::InlineBox(ibox) = item {
+
+                        // dbg!(&ibox);
+                        let location = vello::kurbo::Point {
+                            x: location.x + ibox.x as f64,
+                            y: location.y + ibox.y as f64,
+                        };
+
+                        self.render_node(scene, ibox.id as usize, location, Some(&cx));
+                    }
+                }
+            }
+        } else {
+            for child_id in cx.element.children.iter().copied() {
+                self.render_node(scene, child_id, cx.pos, Some(&cx));
+            }    
         }
     }
 
@@ -596,49 +634,14 @@ where
     ) {
         let node = &self.dom.as_ref().tree()[node_id];
 
-        if node.is_inline_root {
-            // dbg!(node.id);
-            let (_layout, pos) = self.node_position(node_id, location);
-            let text_layout = &node
-                .raw_dom_data
-                .downcast_element()
-                .unwrap()
-                .inline_layout
-                .as_ref()
-                .unwrap();
-
-            // dbg!(&text_layout.text);
-            // dbg!(text_layout.layout.width());
-            // dbg!(text_layout.layout.height());
-
-            parent_elem_cx
-                .unwrap()
-                .stroke_text(scene, &self.text_context, text_layout, pos);
-
-            for line in text_layout.layout.lines() {
-                for item in line.items() {
-                    if let LayoutItem2::InlineBox(ibox) = item {
-                        let location = vello::kurbo::Point {
-                            x: ibox.x.into(),
-                            y: ibox.y.into(),
-                        };
-                        let cx = self.element_cx(node, location);
-                        self.render_node(scene, ibox.id as usize, location, Some(&cx));
-                    }
-                }
-            }
-
-            return;
-        }
-
         match &node.raw_dom_data {
-            NodeData::Element(_) => self.render_element(scene, node_id, location),
-            NodeData::AnonymousBlock(_) => {
-                let children = &self.dom.as_ref().tree()[node_id].children;
-                for child_id in children.iter().copied() {
-                    self.render_node(scene, child_id, location, parent_elem_cx);
-                }
-            }
+            NodeData::Element(_) | NodeData::AnonymousBlock(_) => self.render_element(scene, node_id, location),
+            // NodeData::AnonymousBlock(_) => {
+            //     let children = &self.dom.as_ref().tree()[node_id].children;
+            //     for child_id in children.iter().copied() {
+            //         self.render_node(scene, child_id, location, parent_elem_cx);
+            //     }
+            // }
             NodeData::Text(TextNodeData { content, .. }) => {
                 // let (_layout, pos) = self.node_position(node_id, location);
                 // parent_elem_cx

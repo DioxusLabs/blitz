@@ -76,10 +76,10 @@ pub(crate) fn collect_layout_children(
             // TODO: fix display:contents
             if all_inline {
                 // dbg!(&doc.nodes[container_node_id].raw_dom_data);
-                let inline_layout = build_inline_layout(doc, container_node_id);
+                let (inline_layout, ilayout_children) = build_inline_layout(doc, container_node_id);
                 doc.nodes[container_node_id].is_inline_root = true;
                 doc.nodes[container_node_id].raw_dom_data.downcast_element_mut().unwrap().inline_layout = Some(Box::new(inline_layout));
-                return layout_children.extend_from_slice(&doc.nodes[container_node_id].children);
+                return layout_children.extend_from_slice(&ilayout_children);
             }
 
             // If the children are either all inline or all block then simply return the regular children
@@ -230,37 +230,81 @@ pub(crate) fn stylo_to_parley_style(style: &ComputedValues) -> TextStyle<'static
     }
 }
 
+#[derive(Debug, Clone, Copy)]
+enum WhiteSpaceCollapse {
+    Collapse,
+    Preserve,
+}
+
 pub(crate) fn build_inline_layout(
     doc: &mut Document,
     inline_context_root_node_id: usize,
-) -> TextLayout {
+) -> (TextLayout, Vec<usize>) {
     // Get the inline context's root node's text styles
     let root_node = &doc.nodes[inline_context_root_node_id];
-    let root_node_style = root_node
-        .primary_styles()
+    let root_node_style = root_node.primary_styles();
+
+    let parley_style = root_node_style
+        .as_ref()
         .map(|s| stylo_to_parley_style(&*s))
         .unwrap_or_default();
+
+    // TODO: Support more modes. For now we want to support enough for pre tags to render correctly
+    let collapse_mode = root_node_style
+        .map(|s| match s.get_inherited_text().white_space {
+            style::computed_values::white_space::T::Normal => WhiteSpaceCollapse::Collapse,
+            style::computed_values::white_space::T::Pre => WhiteSpaceCollapse::Preserve,
+            style::computed_values::white_space::T::Nowrap => WhiteSpaceCollapse::Preserve,
+            style::computed_values::white_space::T::PreWrap => WhiteSpaceCollapse::Preserve,
+            style::computed_values::white_space::T::PreLine => WhiteSpaceCollapse::Preserve,
+        })
+        .unwrap_or(WhiteSpaceCollapse::Collapse);
 
     // Create a parley tree builder
     let mut text = String::new();
     let mut builder = doc
         .layout_ctx
-        .tree_builder(&mut doc.font_ctx, 2.0, &root_node_style);
+        .tree_builder(&mut doc.font_ctx, 2.0, &parley_style);
 
     for child_id in root_node.children.iter().copied() {
-        build_inline_layout_recursive(&mut text, &mut builder, &doc.nodes, child_id);
+        build_inline_layout_recursive(&mut text, &mut builder, &doc.nodes, child_id, collapse_mode);
     }
 
     let layout = builder.build(&text);
-    return TextLayout { text, layout };
+
+    // Obtain layout children for the inline layout
+    let layout_children: Vec<usize> = layout
+        .inline_boxes()
+        .iter()
+        .map(|ibox| ibox.id as usize)
+        .collect();
+
+    // Recurse into inline boxes within layout
+    for child_id in layout_children.iter().copied() {
+        doc.ensure_layout_children(child_id);
+    }
+
+    return (TextLayout { text, layout }, layout_children);
 
     fn build_inline_layout_recursive(
         text: &mut String,
         builder: &mut TreeBuilder<TextBrush>,
         nodes: &Slab<Node>,
         node_id: usize,
+        collapse_mode: WhiteSpaceCollapse,
     ) {
         let node = &nodes[node_id];
+
+        let collapse_mode = node
+            .primary_styles()
+            .map(|s| match s.get_inherited_text().white_space {
+                style::computed_values::white_space::T::Normal => WhiteSpaceCollapse::Collapse,
+                style::computed_values::white_space::T::Pre => WhiteSpaceCollapse::Preserve,
+                style::computed_values::white_space::T::Nowrap => WhiteSpaceCollapse::Preserve,
+                style::computed_values::white_space::T::PreWrap => WhiteSpaceCollapse::Preserve,
+                style::computed_values::white_space::T::PreLine => WhiteSpaceCollapse::Preserve,
+            })
+            .unwrap_or(collapse_mode);
 
         match &node.raw_dom_data {
             NodeData::Element(element_data) | NodeData::AnonymousBlock(element_data) => {
@@ -282,18 +326,43 @@ pub(crate) fn build_inline_layout(
                     DisplayInside::None => return,
                     DisplayInside::Contents => {
                         for child_id in node.children.iter().copied() {
-                            build_inline_layout_recursive(text, builder, nodes, child_id);
+                            build_inline_layout_recursive(
+                                text,
+                                builder,
+                                nodes,
+                                child_id,
+                                collapse_mode,
+                            );
                         }
                     }
                     DisplayInside::Flow => {
-                        let style = node
-                            .primary_styles()
-                            .map(|s| stylo_to_parley_style(&*s))
-                            .unwrap_or_default();
-                        builder.push_style_span(style);
+                        if node
+                            .raw_dom_data
+                            .is_element_with_tag_name(&local_name!("img"))
+                        {
+                            builder.push_inline_box(InlineBox {
+                                id: node_id as u64,
+                                index: text.len(),
+                                // Width and height are set during layout
+                                width: 0.0,
+                                height: 0.0,
+                            });
+                        } else {
+                            let style = node
+                                .primary_styles()
+                                .map(|s| stylo_to_parley_style(&*s))
+                                .unwrap_or_default();
+                            builder.push_style_span(style);
 
-                        for child_id in node.children.iter().copied() {
-                            build_inline_layout_recursive(text, builder, nodes, child_id);
+                            for child_id in node.children.iter().copied() {
+                                build_inline_layout_recursive(
+                                    text,
+                                    builder,
+                                    nodes,
+                                    child_id,
+                                    collapse_mode,
+                                );
+                            }
                         }
                     }
                     // Inline box
@@ -309,9 +378,24 @@ pub(crate) fn build_inline_layout(
                 };
             }
             NodeData::Text(data) => {
-                let sanitized = data.content.replace("\n", "");
-                text.push_str(&sanitized);
-                builder.push_text(sanitized.len())
+                // if data.content.chars().all(|c| c.is_ascii_whitespace()) {
+                //     text.push_str(" ");
+                //     builder.push_text(1);
+                // } else {
+                match collapse_mode {
+                    WhiteSpaceCollapse::Collapse => {
+                        // TODO: collapse spaces
+                        let sanitized = data.content.replace("\n", "");
+                        text.push_str(&sanitized);
+                        builder.push_text(sanitized.len());
+                    }
+                    WhiteSpaceCollapse::Preserve => {
+                        text.push_str(&data.content);
+                        builder.push_text(data.content.len());
+                    }
+                }
+
+                // }
             }
             NodeData::Comment => {}
             NodeData::Document => unreachable!(),
