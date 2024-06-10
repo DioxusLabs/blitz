@@ -2,14 +2,33 @@
 
 use std::{ffi::OsStr, path::Path};
 
-use comrak::{markdown_to_html, Options};
+use comrak::{markdown_to_html, ExtensionOptionsBuilder, Options};
 use dioxus_blitz::Config;
 
 fn main() {
     let stylesheet = include_str!("./google_bits/github-markdown-light.css");
     let contents = include_str!("../README.md");
     // let contents = include_str!("../../taffy/README.md");
-    let body_html = markdown_to_html(contents, &Options::default());
+    let body_html = markdown_to_html(
+        contents,
+        &Options {
+            extension: ExtensionOptionsBuilder::default()
+                .strikethrough(true)
+                .tagfilter(false)
+                .table(false)
+                .autolink(true)
+                .tasklist(false)
+                .superscript(false)
+                .header_ids(None)
+                .footnotes(false)
+                .description_lists(false)
+                .front_matter_delimiter(None)
+                .multiline_block_quotes(false)
+                .build()
+                .unwrap(),
+            ..Default::default()
+        },
+    );
 
     let html = format!(
         r#"
