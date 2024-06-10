@@ -384,8 +384,23 @@ pub(crate) fn build_inline_layout(
                 // } else {
                 match collapse_mode {
                     WhiteSpaceCollapse::Collapse => {
-                        // TODO: collapse spaces
-                        let sanitized = data.content.replace("\n", "");
+
+                        // Convert newlines to spaces
+                        let sanitized = data.content.replace("\n", " ");
+
+                        // Collapse spaces
+                        let mut last_char_space = false;
+                        let sanitized: String = sanitized
+                            .chars()
+                            .filter(|c| {
+                                let this_char_space = c.is_ascii_whitespace();
+                                let prev_char_space = last_char_space;
+                                last_char_space = this_char_space;
+
+                                !(prev_char_space && this_char_space)
+                            })
+                            .collect();
+
                         text.push_str(&sanitized);
                         builder.push_text(sanitized.len());
                     }
