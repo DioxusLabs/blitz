@@ -393,11 +393,20 @@ pub(crate) fn build_inline_layout(
                 match collapse_mode {
                     WhiteSpaceCollapse::Collapse => {
                         // Convert newlines to spaces
-                        let sanitized = data.content.replace("\n", " ");
+                        let new_text = data.content.replace("\n", " ");
+
+                        // Completely remove leading whitespace
+                        // TODO: should be per-span not per-inline-context
+                        // TODO: should also trim trailing whitespace
+                        let new_text = if text.len() == 0 {
+                            new_text.trim_start()
+                        } else {
+                            &new_text
+                        };
 
                         // Collapse spaces
                         let mut last_char_space = false;
-                        let sanitized: String = sanitized
+                        let new_text: String = new_text
                             .chars()
                             .filter(|c| {
                                 let this_char_space = c.is_ascii_whitespace();
@@ -408,8 +417,8 @@ pub(crate) fn build_inline_layout(
                             })
                             .collect();
 
-                        text.push_str(&sanitized);
-                        builder.push_text(sanitized.len());
+                        text.push_str(&new_text);
+                        builder.push_text(new_text.len());
                     }
                     WhiteSpaceCollapse::Preserve => {
                         text.push_str(&data.content);
