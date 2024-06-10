@@ -102,6 +102,10 @@ impl Node {
         }
     }
 
+    pub(crate) fn take_children(&mut self) -> Vec<usize> {
+        std::mem::take(&mut self.children)
+    }
+
     pub(crate) fn display_style(&self) -> Option<Display> {
         // if self.is_text_node() {
         //     return Some(Display::inline())
