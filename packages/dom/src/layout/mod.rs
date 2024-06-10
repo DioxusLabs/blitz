@@ -188,15 +188,21 @@ impl Document {
         // TODO: eliminate clone
         let style = self.nodes[usize::from(node_id)].style.clone();
 
-        let output = compute_leaf_layout(inputs, &style, |_known_dimensions, available_space| {
+        let output = compute_leaf_layout(inputs, &style, |known_dimensions, available_space| {
             // Short circuit if inline context contains no text or inline boxes
             if inline_layout.text.is_empty() && inline_layout.layout.inline_boxes().is_empty() {
                 return Size::ZERO;
             }
 
             // Compute size of inline boxes
+            let child_inputs = taffy::tree::LayoutInput {
+                known_dimensions: Size::NONE,
+                available_space,
+                parent_size: available_space.into_options(),
+                ..inputs
+            };
             for ibox in inline_layout.layout.inline_boxes_mut() {
-                let output = self.compute_child_layout(NodeId::from(ibox.id), inputs);
+                let output = self.compute_child_layout(NodeId::from(ibox.id), child_inputs);
                 ibox.width = output.size.width;
                 ibox.height = output.size.height;
             }
@@ -211,14 +217,13 @@ impl Document {
                 .layout
                 .break_all_lines(max_advance, parley::layout::Alignment::Start);
 
-
             // Store sizes and positions of inline boxes
             for line in inline_layout.layout.lines() {
                 for item in line.items() {
                     if let parley::layout::LayoutItem2::InlineBox(ibox) = item {
-                        let layout = &mut self.nodes[usize::from(node_id)].unrounded_layout;
-                        layout.size.width = ibox.width;
-                        layout.size.height = ibox.height;
+                        let layout = &mut self.nodes[ibox.id as usize].unrounded_layout;
+                        layout.size.width = ibox.width / 2.0;
+                        layout.size.height = ibox.height / 2.0;
                         layout.location.x = ibox.x;
                         layout.location.y = ibox.y;
                     }
@@ -231,12 +236,11 @@ impl Document {
             // dbg!(inline_layout.layout.width());
             // dbg!(inline_layout.layout.height());
 
-            taffy::Size {
+            known_dimensions.unwrap_or(taffy::Size {
                 width: inline_layout.layout.width() / 2.0,
                 height: inline_layout.layout.height() / 2.0,
-            }
+            })
         });
-
 
         // Put layout back
         self.nodes[usize::from(node_id)]
