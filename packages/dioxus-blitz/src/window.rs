@@ -291,7 +291,6 @@ impl<'a, Doc: DocumentLike> View<'a, Doc> {
                     width: 800,
                     height: 600,
                 })
-                .with_always_on_top(cfg!(debug_assertions))
                 .build(event_loop)
                 .unwrap();
 
