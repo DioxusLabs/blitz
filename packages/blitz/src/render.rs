@@ -609,17 +609,17 @@ where
                     if let LayoutItem2::InlineBox(ibox) = item {
 
                         // dbg!(&ibox);
-                        let location = vello::kurbo::Point {
-                            x: location.x + ibox.x as f64,
-                            y: location.y + ibox.y as f64,
-                        };
+                        // let location = vello::kurbo::Point {
+                        //     x: location.x + ibox.x as f64,
+                        //     y: location.y + ibox.y as f64,
+                        // };
 
                         self.render_node(scene, ibox.id as usize, location, Some(&cx));
                     }
                 }
             }
         } else {
-            for child_id in cx.element.children.iter().copied() {
+            for child_id in cx.element.layout_children.borrow().as_ref().unwrap().iter().copied() {
                 self.render_node(scene, child_id, cx.pos, Some(&cx));
             }    
         }
