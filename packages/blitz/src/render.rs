@@ -607,7 +607,6 @@ where
             for line in text_layout.layout.lines() {
                 for item in line.items() {
                     if let LayoutItem2::InlineBox(ibox) = item {
-
                         // dbg!(&ibox);
                         // let location = vello::kurbo::Point {
                         //     x: location.x + ibox.x as f64,
@@ -619,9 +618,17 @@ where
                 }
             }
         } else {
-            for child_id in cx.element.layout_children.borrow().as_ref().unwrap().iter().copied() {
+            for child_id in cx
+                .element
+                .layout_children
+                .borrow()
+                .as_ref()
+                .unwrap()
+                .iter()
+                .copied()
+            {
                 self.render_node(scene, child_id, cx.pos, Some(&cx));
-            }    
+            }
         }
     }
 
@@ -635,7 +642,9 @@ where
         let node = &self.dom.as_ref().tree()[node_id];
 
         match &node.raw_dom_data {
-            NodeData::Element(_) | NodeData::AnonymousBlock(_) => self.render_element(scene, node_id, location),
+            NodeData::Element(_) | NodeData::AnonymousBlock(_) => {
+                self.render_element(scene, node_id, location)
+            }
             // NodeData::AnonymousBlock(_) => {
             //     let children = &self.dom.as_ref().tree()[node_id].children;
             //     for child_id in children.iter().copied() {

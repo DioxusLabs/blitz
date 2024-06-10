@@ -313,7 +313,9 @@ impl ElementNodeData {
 }
 
 #[derive(Debug, Clone, PartialEq, Default)]
-pub struct TextBrush;
+pub struct TextBrush {
+    pub color: peniko::Color,
+}
 
 #[derive(Clone)]
 pub struct TextLayout {

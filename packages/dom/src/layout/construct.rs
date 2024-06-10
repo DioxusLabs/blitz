@@ -203,6 +203,14 @@ pub(crate) fn stylo_to_parley_style(style: &ComputedValues) -> TextStyle<'static
         style::values::generics::text::LineHeight::Length(value) => value.0.px(),
     };
 
+    // Convert text colour
+    let [r, g, b, a] = itext_styles
+        .color
+        .to_color_space(style::color::ColorSpace::Srgb)
+        .raw_components()
+        .map(|f| (f * 255.0) as u8);
+    let color = peniko::Color { r, g, b, a };
+
     // Parley expects line height as a multiple of font size!
     let line_height = line_height / font_size;
 
@@ -215,7 +223,7 @@ pub(crate) fn stylo_to_parley_style(style: &ComputedValues) -> TextStyle<'static
         font_variations: FontSettings::List(&[]),
         font_features: FontSettings::List(&[]),
         locale: Default::default(),
-        brush: TextBrush,
+        brush: TextBrush { color },
         has_underline: Default::default(),
         underline_offset: Default::default(),
         underline_size: Default::default(),
@@ -384,7 +392,6 @@ pub(crate) fn build_inline_layout(
                 // } else {
                 match collapse_mode {
                     WhiteSpaceCollapse::Collapse => {
-
                         // Convert newlines to spaces
                         let sanitized = data.content.replace("\n", " ");
 

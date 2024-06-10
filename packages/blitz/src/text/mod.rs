@@ -84,7 +84,7 @@ impl TextContext {
 
                     builder
                         .draw_glyphs(font)
-                        .brush(&brush)
+                        .brush(&style.brush.color)
                         .transform(transform)
                         .glyph_transform(glyph_xform)
                         .font_size(font_size)
