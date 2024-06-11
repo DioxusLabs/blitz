@@ -95,7 +95,7 @@ pub(crate) fn collect_layout_children(
                 return layout_children.extend_from_slice(&doc.nodes[container_node_id].children);
             }
 
-            fn block_item_needs_wrap(child_node_kind: NodeKind, display_outside: DisplayOutside) -> bool {
+            fn block_item_needs_wrap(child_node_kind: NodeKind, display_outside: DisplayOutside, _is_whitespace_node: bool) -> bool {
                 child_node_kind == NodeKind::Text || display_outside == DisplayOutside::Inline
             }
             collect_complex_layout_children(doc, container_node_id, layout_children, anonymous_block_id, block_item_needs_wrap);
@@ -116,8 +116,8 @@ pub(crate) fn collect_layout_children(
                 return layout_children.extend_from_slice(&doc.nodes[container_node_id].children);
             }
 
-            fn flex_or_grid_item_needs_wrap(child_node_kind: NodeKind, _display_outside: DisplayOutside) -> bool {
-                child_node_kind == NodeKind::Text
+            fn flex_or_grid_item_needs_wrap(child_node_kind: NodeKind, _display_outside: DisplayOutside, is_whitespace_node: bool) -> bool {
+                child_node_kind == NodeKind::Text && !is_whitespace_node
             }
             collect_complex_layout_children(doc, container_node_id, layout_children, anonymous_block_id, flex_or_grid_item_needs_wrap);
         },
@@ -135,7 +135,7 @@ fn collect_complex_layout_children(
     container_node_id: usize,
     layout_children: &mut Vec<usize>,
     anonymous_block_id: &mut Option<usize>,
-    needs_wrap: impl Fn(NodeKind, DisplayOutside) -> bool,
+    needs_wrap: impl Fn(NodeKind, DisplayOutside, bool) -> bool,
 ) {
     // #[inline(always)]
     // fn needs_wrap(container_display_inside: DisplayInside, child_node_kind: NodeKind, child_display_outside: DisplayOutside) -> bool {
@@ -156,6 +156,11 @@ fn collect_complex_layout_children(
         let display_inside = child_display.inside();
         let display_outside = child_display.outside();
 
+        let is_whitespace_node = match &doc.nodes[child_id].raw_dom_data {
+            NodeData::Text(data) => data.content.chars().all(|c| c.is_ascii_whitespace()),
+            _ => false,
+        };
+
         // Skip comment nodes. Note that we do *not* skip `Display::None` nodes as they may need to be hidden.
         // Taffy knows how to deal with `Display::None` children.
         if child_node_kind == NodeKind::Comment {
@@ -167,7 +172,7 @@ fn collect_complex_layout_children(
         }
         // Push nodes that need wrapping into the current "anonymous block container".
         // If there is not an open one then we create one.
-        else if needs_wrap(child_node_kind, display_outside) {
+        else if needs_wrap(child_node_kind, display_outside, is_whitespace_node) {
             if anonymous_block_id.is_none() {
                 const NAME: QualName = QualName {
                     prefix: None,
