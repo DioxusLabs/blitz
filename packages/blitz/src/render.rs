@@ -617,7 +617,6 @@ where
             // dbg!(text_layout.layout.width());
             // dbg!(text_layout.layout.height());
 
-
             // Apply padding/border offset to inline root
             let taffy::Layout {
                 border, padding, ..

@@ -232,9 +232,30 @@ impl Document {
                 AvailableSpace::MinContent => Some(0.0),
                 AvailableSpace::MaxContent => None,
             };
-            inline_layout
-                .layout
-                .break_all_lines(max_advance, parley::layout::Alignment::Start);
+            let alignment = self.nodes[usize::from(node_id)]
+                .primary_styles()
+                .map(|s| {
+                    use parley::layout::Alignment;
+                    use style::values::specified::TextAlignKeyword;
+
+                    let itext_styles = (*s).get_inherited_text();
+                    match itext_styles.text_align {
+                        TextAlignKeyword::Start => Alignment::Start,
+                        TextAlignKeyword::Left => Alignment::Start,
+                        TextAlignKeyword::Right => Alignment::End,
+                        TextAlignKeyword::Center => Alignment::Middle,
+                        TextAlignKeyword::Justify => Alignment::Justified,
+                        TextAlignKeyword::End => Alignment::End,
+                        TextAlignKeyword::ServoCenter => Alignment::Middle,
+                        TextAlignKeyword::ServoLeft => Alignment::Start,
+                        TextAlignKeyword::ServoRight => Alignment::End,
+                    }
+                })
+                .unwrap_or(parley::layout::Alignment::Start);
+            // .map(|s| {
+            //     s.
+            // })
+            inline_layout.layout.break_all_lines(max_advance, alignment);
 
             // Store sizes and positions of inline boxes
             for line in inline_layout.layout.lines() {
