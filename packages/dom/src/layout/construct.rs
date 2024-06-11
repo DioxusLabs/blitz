@@ -171,6 +171,7 @@ fn collect_complex_layout_children(
                     NAME,
                     Vec::new(),
                 )));
+                layout_children.push(node_id);
                 *anonymous_block_id = Some(node_id);
             }
 

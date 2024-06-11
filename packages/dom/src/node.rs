@@ -124,7 +124,7 @@ impl Node {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum NodeKind {
     Document,
     Element,
@@ -164,6 +164,7 @@ impl NodeData {
     pub fn downcast_element(&self) -> Option<&ElementNodeData> {
         match self {
             Self::Element(data) => Some(data),
+            Self::AnonymousBlock(data) => Some(data),
             _ => None,
         }
     }
@@ -171,6 +172,7 @@ impl NodeData {
     pub fn downcast_element_mut(&mut self) -> Option<&mut ElementNodeData> {
         match self {
             Self::Element(data) => Some(data),
+            Self::AnonymousBlock(data) => Some(data),
             _ => None,
         }
     }

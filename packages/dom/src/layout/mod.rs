@@ -4,7 +4,7 @@
 //! However, in Blitz, we do a style pass then a layout pass.
 //! This is slower, yes, but happens fast enough that it's not a huge issue.
 
-use crate::node::NodeData;
+use crate::node::{NodeData, NodeKind};
 use crate::{
     document::Document,
     image::{image_measure_function, ImageContext},
@@ -35,6 +35,14 @@ impl Document {
             let mut layout_children = Vec::new();
             let mut anonymous_block: Option<usize> = None;
             collect_layout_children(self, node_id, &mut layout_children, &mut anonymous_block);
+
+            // Recurse into newly created anonymous nodes
+            for child_id in layout_children.iter().copied() {
+                if self.nodes[child_id].raw_dom_data.kind() == NodeKind::AnonymousBlock {
+                    self.ensure_layout_children(child_id);
+                }
+            }
+
             *self.nodes[node_id].layout_children.borrow_mut() = Some(layout_children);
         }
     }
@@ -51,11 +59,22 @@ impl TraversePartialTree for Document {
     }
 
     fn child_count(&self, node_id: NodeId) -> usize {
-        self.node_from_id(node_id).children.len()
+        self.node_from_id(node_id)
+            .layout_children
+            .borrow()
+            .as_ref()
+            .unwrap()
+            .len()
     }
 
     fn get_child_id(&self, node_id: NodeId, index: usize) -> NodeId {
-        NodeId::from(self.node_from_id(node_id).children[index])
+        NodeId::from(
+            self.node_from_id(node_id)
+                .layout_children
+                .borrow()
+                .as_ref()
+                .unwrap()[index],
+        )
     }
 }
 impl TraverseTree for Document {}
