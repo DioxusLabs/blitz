@@ -172,7 +172,6 @@ impl<'a, Doc: DocumentLike> View<'a, Doc> {
 
                 if changed {
                     let cursor = self.renderer.get_cursor();
-                    dbg!(cursor);
 
                     if let Some(cursor) = cursor {
                         use style::values::computed::ui::CursorKind;

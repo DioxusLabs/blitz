@@ -25,7 +25,6 @@ use style::{
 };
 use parley::layout::LayoutItem2;
 use selectors::Element;
-use style::{dom::TElement, values::specified::position::HorizontalPositionKeyword};
 use style::{
     properties::{style_structs::Outline, ComputedValues},
     values::{
