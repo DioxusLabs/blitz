@@ -24,9 +24,17 @@ pub(crate) fn collect_layout_children(
         return;
     }
 
-    let container_display = doc.nodes[container_node_id]
-        .display_style()
-        .unwrap_or(Display::inline());
+    let container_display = doc.nodes[container_node_id].display_style().unwrap_or(
+        match doc.nodes[container_node_id].raw_dom_data.kind() {
+            NodeKind::AnonymousBlock => Display::Block,
+            _ => Display::Inline,
+        },
+    );
+
+    if container_node_id == 559 {
+        dbg!(container_display.inside());
+    }
+
 
     match container_display.inside() {
         DisplayInside::None => {},

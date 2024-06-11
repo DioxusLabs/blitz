@@ -476,6 +476,7 @@ impl Node {
     pub fn element_data(&self) -> Option<&ElementNodeData> {
         match self.raw_dom_data {
             NodeData::Element(ref data) => Some(data),
+            NodeData::AnonymousBlock(ref data) => Some(data),
             _ => None,
         }
     }
@@ -483,6 +484,7 @@ impl Node {
     pub fn element_data_mut(&mut self) -> Option<&mut ElementNodeData> {
         match self.raw_dom_data {
             NodeData::Element(ref mut data) => Some(data),
+            NodeData::AnonymousBlock(ref mut data) => Some(data),
             _ => None,
         }
     }
@@ -578,7 +580,7 @@ impl Node {
             NodeData::Text(data) => {
                 out.push_str(&data.content);
             }
-            NodeData::Element { .. } => {
+            NodeData::Element(..) | NodeData::AnonymousBlock(..) => {
                 for child_id in self.children.iter() {
                     self.with(*child_id).write_text_content(out);
                 }
@@ -642,13 +644,15 @@ impl std::fmt::Debug for Node {
         f.debug_struct("NodeData")
             .field("parent", &self.parent)
             .field("id", &self.id)
+            .field("is_inline_root", &self.is_inline_root)
             .field("child_idx", &self.child_idx)
             .field("children", &self.children)
+            .field("layout_children", &self.layout_children.borrow())
             // .field("style", &self.style)
             .field("node", &self.raw_dom_data)
             .field("stylo_element_data", &self.stylo_element_data)
-            .field("unrounded_layout", &self.unrounded_layout)
-            .field("final_layout", &self.final_layout)
+            // .field("unrounded_layout", &self.unrounded_layout)
+            // .field("final_layout", &self.final_layout)
             .finish()
     }
 }

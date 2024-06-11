@@ -25,6 +25,7 @@ use style::{
 };
 use parley::layout::LayoutItem2;
 use selectors::Element;
+use style::{dom::TElement, values::specified::position::HorizontalPositionKeyword};
 use style::{
     properties::{style_structs::Outline, ComputedValues},
     values::{
@@ -684,10 +685,8 @@ where
             .stylo_element_data
             .borrow()
             .as_ref()
-            .unwrap()
-            .styles
-            .primary()
-            .clone();
+            .map(|element_data| element_data.styles.primary().clone())
+            .unwrap_or(ComputedValues::initial_values().to_arc());
 
         let (layout, pos) = self.node_position(element.id, location);
         let scale = state.viewport.scale_f64();
@@ -696,6 +695,8 @@ where
         let font = style.get_font();
         let font_size = font.font_size.computed_size().px() as f32;
         let text_color = inherited_text.clone_color().as_vello();
+        // let text_color = peniko::Color::WHITE;
+
 
         // the bezpaths for every element are (potentially) cached (not yet, tbd)
         // By performing the transform, we prevent the cache from becoming invalid when the page shifts around

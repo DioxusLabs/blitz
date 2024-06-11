@@ -120,7 +120,7 @@ impl LayoutPartialTree for Document {
                         )
                     })
                 }
-                NodeData::Element(element_data) => {
+                NodeData::Element(element_data) | NodeData::AnonymousBlock(element_data) => {
                     // Hide hidden nodes
                     if let Some("hidden" | "") = element_data.attr(local_name!("hidden")) {
                         node.style.display = Display::None;
