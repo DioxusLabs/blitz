@@ -258,7 +258,11 @@ pub(crate) fn build_inline_layout(
 ) -> (TextLayout, Vec<usize>) {
     // Get the inline context's root node's text styles
     let root_node = &doc.nodes[inline_context_root_node_id];
-    let root_node_style = root_node.primary_styles();
+    let root_node_style = root_node.primary_styles().or_else(|| {
+        root_node
+            .parent
+            .and_then(|parent_id| doc.nodes[parent_id].primary_styles())
+    });
 
     let parley_style = root_node_style
         .as_ref()
