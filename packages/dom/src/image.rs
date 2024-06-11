@@ -26,7 +26,7 @@ pub fn image_measure_function(
         .maybe_resolve(parent_size)
         .maybe_apply_aspect_ratio(Some(aspect_ratio));
     let max_size = style
-        .min_size
+        .max_size
         .maybe_resolve(parent_size)
         .maybe_apply_aspect_ratio(Some(aspect_ratio));
     let inherent_size = taffy::Size {
@@ -47,5 +47,9 @@ pub fn image_measure_function(
             .map(|s| s.unwrap());
     }
 
-    inherent_size.maybe_clamp(min_size, max_size) //.maybe_apply_aspect_ratio(Some(aspect_ratio)).map(|s| s.unwrap());
+    inherent_size
+        .maybe_clamp(min_size, max_size)
+        .map(Some)
+        .maybe_apply_aspect_ratio(Some(aspect_ratio))
+        .map(|s| s.unwrap())
 }

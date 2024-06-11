@@ -137,11 +137,11 @@ impl LayoutPartialTree for Document {
                     }
 
                     if *element_data.name.local == *"img" {
-                        node.style.min_size = Size {
-                            width: Dimension::Length(0.0),
-                            height: Dimension::Length(0.0),
-                        };
-                        node.style.display = Display::Block;
+                        // node.style.min_size = Size {
+                        //     width: Dimension::Length(0.0),
+                        //     height: Dimension::Length(0.0),
+                        // };
+                        // node.style.display = Display::Block;
 
                         // Get image's native size
                         let image_data = match &element_data.image {
