@@ -372,6 +372,8 @@ pub(crate) fn build_inline_layout(
                                     collapse_mode,
                                 );
                             }
+
+                            builder.pop_style_span();
                         }
                     }
                     // Inline box
