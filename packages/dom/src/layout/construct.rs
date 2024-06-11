@@ -2,7 +2,9 @@ use html5ever::{local_name, namespace_url, ns, QualName};
 use parley::{builder::TreeBuilder, style::TextStyle, InlineBox};
 use slab::Slab;
 use style::{
+    data::ElementData,
     properties::{longhands::line_height, ComputedValues},
+    shared_lock::StylesheetGuards,
     values::{
         computed::Display,
         specified::box_::{DisplayInside, DisplayOutside},
@@ -173,6 +175,8 @@ fn collect_complex_layout_children(
         // Push nodes that need wrapping into the current "anonymous block container".
         // If there is not an open one then we create one.
         else if needs_wrap(child_node_kind, display_outside, is_whitespace_node) {
+            use style::selector_parser::PseudoElement;
+
             if anonymous_block_id.is_none() {
                 const NAME: QualName = QualName {
                     prefix: None,
@@ -183,6 +187,21 @@ fn collect_complex_layout_children(
                     NAME,
                     Vec::new(),
                 )));
+
+                // Set style data
+                let parent_style = doc.nodes[container_node_id].primary_styles().unwrap();
+                let read_guard = doc.guard.read();
+                let guards = StylesheetGuards::same(&read_guard);
+                let style = doc.stylist.style_for_anonymous::<&Node>(
+                    &guards,
+                    &PseudoElement::ServoAnonymousBox,
+                    &parent_style,
+                );
+                let mut element_data = ElementData::default();
+                element_data.styles.primary = Some(style);
+                element_data.set_restyled();
+                *doc.nodes[node_id].stylo_element_data.borrow_mut() = Some(element_data);
+
                 layout_children.push(node_id);
                 *anonymous_block_id = Some(node_id);
             }
