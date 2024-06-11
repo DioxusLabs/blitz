@@ -19,12 +19,12 @@ use blitz_dom::{
 };
 use html5ever::local_name;
 use image::{imageops::FilterType, DynamicImage};
+use parley::layout::LayoutItem2;
+use selectors::Element;
 use style::{
     dom::TElement,
     values::{computed::ui::CursorKind, specified::position::HorizontalPositionKeyword},
 };
-use parley::layout::LayoutItem2;
-use selectors::Element;
 use style::{
     properties::{style_structs::Outline, ComputedValues},
     values::{
@@ -695,7 +695,6 @@ where
         let font_size = font.font_size.computed_size().px() as f32;
         let text_color = inherited_text.clone_color().as_vello();
         // let text_color = peniko::Color::WHITE;
-
 
         // the bezpaths for every element are (potentially) cached (not yet, tbd)
         // By performing the transform, we prevent the cache from becoming invalid when the page shifts around

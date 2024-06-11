@@ -35,7 +35,6 @@ pub(crate) fn collect_layout_children(
         dbg!(container_display.inside());
     }
 
-
     match container_display.inside() {
         DisplayInside::None => {},
         DisplayInside::Contents => {
