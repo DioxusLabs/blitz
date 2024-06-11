@@ -13,12 +13,16 @@ use crate::{
     viewport::Viewport,
 };
 use blitz_dom::{
+    events::{EventData, RendererEvent},
     node::{NodeData, TextNodeData},
     DocumentLike, Node,
 };
 use html5ever::local_name;
 use image::{imageops::FilterType, DynamicImage};
-use style::{dom::TElement, values::specified::position::HorizontalPositionKeyword};
+use style::{
+    dom::TElement,
+    values::{computed::ui::CursorKind, specified::position::HorizontalPositionKeyword},
+};
 use style::{
     properties::{style_structs::Outline, ComputedValues},
     values::{
@@ -82,8 +86,9 @@ pub struct Renderer<'s, W, Doc: DocumentLike> {
     // pub(crate) fonts: FontCache,
     pub devtools: Devtools,
 
-    hover_node_id: Option<usize>,
+    pub hover_node_id: Option<usize>,
     scroll_offset: f64,
+    mouse_pos: (f32, f32),
 }
 
 impl<'a, W, Doc: DocumentLike> Renderer<'a, W, Doc>
@@ -112,11 +117,12 @@ where
             devtools: Default::default(),
             hover_node_id: Default::default(),
             scroll_offset: 0.0,
+            mouse_pos: (0.0, 0.0),
         }
     }
 
-    pub fn poll(&mut self, cx: std::task::Context) {
-        self.dom.poll(cx);
+    pub fn poll(&mut self, cx: std::task::Context) -> bool {
+        self.dom.poll(cx)
     }
 
     pub async fn resume(&mut self, window_builder: impl FnOnce() -> (Arc<W>, Viewport)) {
@@ -196,14 +202,46 @@ where
     }
 
     pub fn mouse_move(&mut self, x: f32, y: f32) -> bool {
+        let RenderState::Active(state) = &self.render_state else {
+            return false;
+        };
+
+        let x = x / state.viewport.zoom();
+        let y = y / state.viewport.zoom();
+
+        // println!("Mouse move: ({}, {})", x, y);
+        // println!("Unscaled: ({}, {})",);
+        self.mouse_pos = (x, y);
         let old_id = self.hover_node_id;
         self.hover_node_id = self.dom.as_ref().hit(x, y);
-        if old_id != self.hover_node_id {
-            // println!("Hovered node: {:?}", self.hover_node_id);
-            self.devtools.highlight_hover
-        } else {
-            false
-        }
+        old_id != self.hover_node_id
+    }
+
+    pub fn get_cursor(&self) -> Option<CursorKind> {
+        // todo: cache this on the node itself
+        let node = &self.dom.as_ref().tree()[self.hover_node_id.unwrap()];
+
+        let Some(cursor) = node.primary_styles().map(|f| {
+            let keyword = f.clone_cursor().keyword;
+
+            match keyword {
+                CursorKind::Auto => {
+                    // if the target is text, it's text cursor
+                    // todo: our "hit" function doesn't return text, only elements
+                    // this will need to be more comprehensive in the future to handle line breaks, shaping, etc.
+                    if node.is_text_node() {
+                        CursorKind::Text
+                    } else {
+                        CursorKind::Auto
+                    }
+                }
+                cusor => cusor,
+            }
+        }) else {
+            return None;
+        };
+
+        Some(cursor)
     }
 
     pub fn scroll_by(&mut self, px: f64) {
@@ -237,23 +275,42 @@ where
     }
 
     pub fn click(&mut self) {
+        let Some(node_id) = self.hover_node_id else {
+            return;
+        };
+
+        let RenderState::Active(state) = &self.render_state else {
+            return;
+        };
+
         if self.devtools.highlight_hover {
-            if let Some(node_id) = self.hover_node_id {
-                let node = &self.dom.as_ref().tree()[node_id];
-                println!("Node {} {}", node.id, node.node_debug_str());
-                dbg!(&node.final_layout);
-                dbg!(&node.style);
+            let node = &self.dom.as_ref().tree()[node_id];
+            println!("Node {} {}", node.id, node.node_debug_str());
+            dbg!(&node.final_layout);
+            dbg!(&node.style);
 
-                let children: Vec<_> = node
-                    .children
-                    .iter()
-                    .map(|id| &self.dom.as_ref().tree()[*id])
-                    .map(|node| (node.id, node.order(), node.node_debug_str()))
-                    .collect();
+            let children: Vec<_> = node
+                .children
+                .iter()
+                .map(|id| &self.dom.as_ref().tree()[*id])
+                .map(|node| (node.id, node.order(), node.node_debug_str()))
+                .collect();
 
-                println!("Children: {:?}", children);
-                // taffy::print_tree(&self.dom, node_id.into());
-            }
+            println!("Children: {:?}", children);
+            // taffy::print_tree(&self.dom, node_id.into());
+        }
+
+        // If we hit a node, then we collect the node to its parents, check for listeners, and then
+        // call those listeners
+        if !self.devtools.highlight_hover {
+            self.dom.handle_event(RendererEvent {
+                name: "click".to_string(),
+                target: node_id,
+                data: EventData::Click {
+                    x: self.mouse_pos.0 as f64,
+                    y: self.mouse_pos.1 as f64,
+                },
+            });
         }
     }
 

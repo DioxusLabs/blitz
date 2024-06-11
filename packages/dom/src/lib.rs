@@ -37,6 +37,8 @@ pub mod text;
 
 pub mod util;
 
+pub mod events;
+
 pub use document::{Document, DocumentLike};
 pub use html5ever::{
     local_name, namespace_prefix, namespace_url, ns, Namespace, NamespaceStaticSet, Prefix,

@@ -2,8 +2,8 @@ mod documents;
 mod waker;
 mod window;
 
-use crate::documents::HtmlDocument;
 use crate::waker::{EventData, UserWindowEvent};
+use crate::{documents::HtmlDocument, window::View};
 
 use blitz::RenderState;
 use blitz_dom::DocumentLike;
@@ -43,10 +43,9 @@ pub fn launch_cfg_with_props<P: Clone + 'static, M: 'static>(
     // Spin up the virtualdom
     // We're going to need to hit it with a special waker
     let vdom = VirtualDom::new_with_props(root, props);
-    // vdom.rebuild_in_place();
     let document = DioxusDocument::new(vdom);
-    // document.apply_mutations();
-    let window = crate::window::View::new(document);
+    let window = View::new(document);
+
     launch_with_window(window)
 }
 
@@ -80,11 +79,11 @@ pub fn launch_static_html(html: &str) {
 
 pub fn launch_static_html_cfg(html: &str, cfg: Config) {
     let document = HtmlDocument::from_html(html, &cfg);
-    let window = crate::window::View::new(document);
+    let window = View::new(document);
     launch_with_window(window)
 }
 
-fn launch_with_window<Doc: DocumentLike + 'static>(window: crate::window::View<'static, Doc>) {
+fn launch_with_window<Doc: DocumentLike + 'static>(window: View<'static, Doc>) {
     // Turn on the runtime and enter it
     let rt = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
@@ -145,7 +144,11 @@ fn launch_with_window<Doc: DocumentLike + 'static>(window: crate::window::View<'
             Event::MainEventsCleared => {}
 
             Event::UserEvent(UserWindowEvent(EventData::Poll, id)) => {
-                windows.get_mut(&id).map(|view| view.poll());
+                windows.get_mut(&id).map(|view| {
+                    if view.poll() {
+                        view.request_redraw();
+                    }
+                });
             }
             // Event::UserEvent(_redraw) => {
             //     for (_, view) in windows.iter() {

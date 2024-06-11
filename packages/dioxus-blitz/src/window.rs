@@ -41,12 +41,12 @@ impl<'a, Doc: DocumentLike> View<'a, Doc> {
 }
 
 impl<'a, Doc: DocumentLike> View<'a, Doc> {
-    pub(crate) fn poll(&mut self) {
+    pub(crate) fn poll(&mut self) -> bool {
         match &self.waker {
-            None => {}
+            None => false,
             Some(waker) => {
                 let cx = std::task::Context::from_waker(waker);
-                self.renderer.poll(cx);
+                self.renderer.poll(cx)
             }
         }
     }
@@ -69,7 +69,9 @@ impl<'a, Doc: DocumentLike> View<'a, Doc> {
                 ..
             } => {
                 if state == ElementState::Pressed && button == MouseButton::Left {
-                    self.renderer.click()
+                    self.renderer.click();
+
+                    self.request_redraw();
                 }
             }
 
@@ -152,10 +154,77 @@ impl<'a, Doc: DocumentLike> View<'a, Doc> {
                 // modifiers,
                 ..
             } => {
-                let tao::dpi::LogicalPosition::<f32> { x, y } = position.to_logical(2.0);
-                if self.renderer.mouse_move(x, y) {
-                    self.request_redraw();
+                let changed = if let RenderState::Active(state) = &self.renderer.render_state {
+                    let tao::dpi::LogicalPosition::<f32> { x, y } = position.to_logical(state.window.scale_factor());
+
+                    self.renderer.mouse_move(x, y)
+                } else {
+                    false
+                };
+
+                if changed {
+                    let cursor = self.renderer.get_cursor();
+                    dbg!(cursor);
+
+                    if let Some(cursor) = cursor {
+                        use style::values::computed::ui::CursorKind;
+                        use tao::window::CursorIcon as TaoCursor;
+                        let tao_cursor = match cursor {
+                            CursorKind::None => todo!("set the cursor to none"),
+                            CursorKind::Default => TaoCursor::Default,
+                            CursorKind::Pointer => TaoCursor::Hand,
+                            CursorKind::ContextMenu => TaoCursor::ContextMenu,
+                            CursorKind::Help => TaoCursor::Help,
+                            CursorKind::Progress => TaoCursor::Progress,
+                            CursorKind::Wait => TaoCursor::Wait,
+                            CursorKind::Cell => TaoCursor::Cell,
+                            CursorKind::Crosshair => TaoCursor::Crosshair,
+                            CursorKind::Text => TaoCursor::Text,
+                            CursorKind::VerticalText => TaoCursor::VerticalText,
+                            CursorKind::Alias => TaoCursor::Alias,
+                            CursorKind::Copy => TaoCursor::Copy,
+                            CursorKind::Move => TaoCursor::Move,
+                            CursorKind::NoDrop => TaoCursor::NoDrop,
+                            CursorKind::NotAllowed => TaoCursor::NotAllowed,
+                            CursorKind::Grab => TaoCursor::Grab,
+                            CursorKind::Grabbing => TaoCursor::Grabbing,
+                            CursorKind::EResize => TaoCursor::EResize,
+                            CursorKind::NResize => TaoCursor::NResize,
+                            CursorKind::NeResize => TaoCursor::NeResize,
+                            CursorKind::NwResize => TaoCursor::NwResize,
+                            CursorKind::SResize => TaoCursor::SResize,
+                            CursorKind::SeResize => TaoCursor::SeResize,
+                            CursorKind::SwResize => TaoCursor::SwResize,
+                            CursorKind::WResize => TaoCursor::WResize,
+                            CursorKind::EwResize => TaoCursor::EwResize,
+                            CursorKind::NsResize => TaoCursor::NsResize,
+                            CursorKind::NeswResize => TaoCursor::NeswResize,
+                            CursorKind::NwseResize => TaoCursor::NwseResize,
+                            CursorKind::ColResize => TaoCursor::ColResize,
+                            CursorKind::RowResize => TaoCursor::RowResize,
+                            CursorKind::AllScroll => TaoCursor::AllScroll,
+                            CursorKind::ZoomIn => TaoCursor::ZoomIn,
+                            CursorKind::ZoomOut => TaoCursor::ZoomOut,
+                            CursorKind::Auto => {
+                                // todo: we should be the ones determining this based on the UA?
+                                // https://developer.mozilla.org/en-US/docs/Web/CSS/cursor
+
+
+                                TaoCursor::Default
+                            },
+                        };
+
+                        if let RenderState::Active(state) = &self.renderer.render_state {
+                            state.window.set_cursor_icon(tao_cursor);
+
+                            if self.renderer.devtools.highlight_hover {
+                                self.request_redraw();
+                            }
+                        }
+                    }
                 }
+
+
             }
             WindowEvent::CursorEntered { /*device_id*/.. } => {}
             WindowEvent::CursorLeft { /*device_id*/.. } => {}

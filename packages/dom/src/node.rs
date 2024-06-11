@@ -21,6 +21,8 @@ use taffy::{
 };
 use url::Url;
 
+use crate::events::EventListener;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum DisplayOuter {
     Block,
@@ -57,6 +59,7 @@ pub struct Node {
     pub cache: Cache,
     pub unrounded_layout: Layout,
     pub final_layout: Layout,
+    pub listeners: Vec<EventListener>,
 }
 
 /// The different kinds of nodes in the DOM.
