@@ -1,5 +1,5 @@
 use html5ever::{local_name, namespace_url, ns, QualName};
-use parley::{builder::TreeBuilder, style::TextStyle, InlineBox};
+use parley::{builder::TreeBuilder, style::TextStyle, style::WhiteSpaceCollapse, InlineBox};
 use slab::Slab;
 use style::{
     data::ElementData,
@@ -266,12 +266,6 @@ pub(crate) fn stylo_to_parley_style(style: &ComputedValues) -> TextStyle<'static
     }
 }
 
-#[derive(Debug, Clone, Copy)]
-enum WhiteSpaceCollapse {
-    Collapse,
-    Preserve,
-}
-
 pub(crate) fn build_inline_layout(
     doc: &mut Document,
     inline_context_root_node_id: usize,
@@ -301,16 +295,17 @@ pub(crate) fn build_inline_layout(
         .unwrap_or(WhiteSpaceCollapse::Collapse);
 
     // Create a parley tree builder
-    let mut text = String::new();
+    // let mut text = String::new();
     let mut builder = doc
         .layout_ctx
         .tree_builder(&mut doc.font_ctx, 2.0, &parley_style);
+    builder.set_white_space_mode(collapse_mode);
 
     for child_id in root_node.children.iter().copied() {
-        build_inline_layout_recursive(&mut text, &mut builder, &doc.nodes, child_id, collapse_mode);
+        build_inline_layout_recursive(&mut builder, &doc.nodes, child_id, collapse_mode);
     }
 
-    let layout = builder.build(&text);
+    let (layout, text) = builder.build();
 
     // Obtain layout children for the inline layout
     let layout_children: Vec<usize> = layout
@@ -327,7 +322,6 @@ pub(crate) fn build_inline_layout(
     return (TextLayout { text, layout }, layout_children);
 
     fn build_inline_layout_recursive(
-        text: &mut String,
         builder: &mut TreeBuilder<TextBrush>,
         nodes: &Slab<Node>,
         node_id: usize,
@@ -345,6 +339,8 @@ pub(crate) fn build_inline_layout(
                 style::computed_values::white_space::T::PreLine => WhiteSpaceCollapse::Preserve,
             })
             .unwrap_or(collapse_mode);
+
+        builder.set_white_space_mode(collapse_mode);
 
         match &node.raw_dom_data {
             NodeData::Element(element_data) | NodeData::AnonymousBlock(element_data) => {
@@ -366,13 +362,7 @@ pub(crate) fn build_inline_layout(
                     DisplayInside::None => return,
                     DisplayInside::Contents => {
                         for child_id in node.children.iter().copied() {
-                            build_inline_layout_recursive(
-                                text,
-                                builder,
-                                nodes,
-                                child_id,
-                                collapse_mode,
-                            );
+                            build_inline_layout_recursive(builder, nodes, child_id, collapse_mode);
                         }
                     }
                     DisplayInside::Flow => {
@@ -382,7 +372,8 @@ pub(crate) fn build_inline_layout(
                         {
                             builder.push_inline_box(InlineBox {
                                 id: node_id as u64,
-                                index: text.len(),
+                                // Overridden by push_inline_box method
+                                index: 0,
                                 // Width and height are set during layout
                                 width: 0.0,
                                 height: 0.0,
@@ -396,7 +387,6 @@ pub(crate) fn build_inline_layout(
 
                             for child_id in node.children.iter().copied() {
                                 build_inline_layout_recursive(
-                                    text,
                                     builder,
                                     nodes,
                                     child_id,
@@ -411,7 +401,8 @@ pub(crate) fn build_inline_layout(
                     _ => {
                         builder.push_inline_box(InlineBox {
                             id: node_id as u64,
-                            index: text.len(),
+                            // Overridden by push_inline_box method
+                            index: 0,
                             // Width and height are set during layout
                             width: 0.0,
                             height: 0.0,
@@ -420,47 +411,7 @@ pub(crate) fn build_inline_layout(
                 };
             }
             NodeData::Text(data) => {
-                // if data.content.chars().all(|c| c.is_ascii_whitespace()) {
-                //     text.push_str(" ");
-                //     builder.push_text(1);
-                // } else {
-                match collapse_mode {
-                    WhiteSpaceCollapse::Collapse => {
-                        // Convert newlines to spaces
-                        let new_text = data.content.replace("\n", " ");
-
-                        // Completely remove leading whitespace
-                        // TODO: should be per-span not per-inline-context
-                        // TODO: should also trim trailing whitespace
-                        let new_text = if text.len() == 0 {
-                            new_text.trim_start()
-                        } else {
-                            &new_text
-                        };
-
-                        // Collapse spaces
-                        let mut last_char_space = false;
-                        let new_text: String = new_text
-                            .chars()
-                            .filter(|c| {
-                                let this_char_space = c.is_ascii_whitespace();
-                                let prev_char_space = last_char_space;
-                                last_char_space = this_char_space;
-
-                                !(prev_char_space && this_char_space)
-                            })
-                            .collect();
-
-                        text.push_str(&new_text);
-                        builder.push_text(new_text.len());
-                    }
-                    WhiteSpaceCollapse::Preserve => {
-                        text.push_str(&data.content);
-                        builder.push_text(data.content.len());
-                    }
-                }
-
-                // }
+                builder.push_text(&data.content);
             }
             NodeData::Comment => {}
             NodeData::Document => unreachable!(),
