@@ -563,6 +563,11 @@ where
         //  - custom_properties, writing_mode, rules, visited_style, flags,  box_, column, counters, effects,
         //  - inherited_box, inherited_table, inherited_text, inherited_ui,
 
+        let RenderState::Active(state) = &self.render_state else {
+            return;
+        };
+        let scale = state.viewport.scale_f64();
+
         let element = &self.dom.as_ref().tree()[node_id];
 
         // Early return if the element is hidden
@@ -611,6 +616,17 @@ where
             // dbg!(&text_layout.text);
             // dbg!(text_layout.layout.width());
             // dbg!(text_layout.layout.height());
+
+
+            // Apply padding/border offset to inline root
+            let taffy::Layout {
+                border, padding, ..
+            } = element.final_layout;
+            let scaled_pb = (padding + border).map(|v| f64::from(v));
+            let pos = vello::kurbo::Point {
+                x: pos.x + scaled_pb.left,
+                y: pos.y + scaled_pb.top,
+            };
 
             // Render text
             cx.stroke_text(scene, &self.text_context, text_layout, pos);
