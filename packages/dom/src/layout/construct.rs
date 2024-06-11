@@ -33,10 +33,6 @@ pub(crate) fn collect_layout_children(
         },
     );
 
-    if container_node_id == 559 {
-        dbg!(container_display.inside());
-    }
-
     match container_display.inside() {
         DisplayInside::None => {},
         DisplayInside::Contents => {
