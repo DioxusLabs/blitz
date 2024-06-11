@@ -31,20 +31,20 @@ impl Document {
     }
 
     pub(crate) fn ensure_layout_children(&mut self, node_id: usize) {
-        if self.nodes[node_id].layout_children.borrow().is_none() {
-            let mut layout_children = Vec::new();
-            let mut anonymous_block: Option<usize> = None;
-            collect_layout_children(self, node_id, &mut layout_children, &mut anonymous_block);
+        // if self.nodes[node_id].layout_children.borrow().is_none() {
+        let mut layout_children = Vec::new();
+        let mut anonymous_block: Option<usize> = None;
+        collect_layout_children(self, node_id, &mut layout_children, &mut anonymous_block);
 
-            // Recurse into newly created anonymous nodes
-            for child_id in layout_children.iter().copied() {
-                if self.nodes[child_id].raw_dom_data.kind() == NodeKind::AnonymousBlock {
-                    self.ensure_layout_children(child_id);
-                }
+        // Recurse into newly created anonymous nodes
+        for child_id in layout_children.iter().copied() {
+            if self.nodes[child_id].raw_dom_data.kind() == NodeKind::AnonymousBlock {
+                self.ensure_layout_children(child_id);
             }
-
-            *self.nodes[node_id].layout_children.borrow_mut() = Some(layout_children);
         }
+
+        *self.nodes[node_id].layout_children.borrow_mut() = Some(layout_children);
+        // }
     }
 }
 
