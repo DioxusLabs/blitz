@@ -59,19 +59,6 @@ impl<'a, Doc: DocumentLike> View<'a, Doc> {
         state.window.request_redraw();
     }
 
-    pub(crate) fn get_cursor(&self) {
-        let cursor: Option<_> = {
-            let node = &self.renderer.dom.as_ref().tree()[self.renderer.hover_node_id.unwrap()];
-            node.primary_styles().map(|f| f.clone_cursor().keyword)
-        };
-
-        if let Some(cursor) = cursor {
-            // self.set_cursor(cursor);
-        } else {
-            // self.set_cursor(style::values::computed::ui::CursorKind::Auto);
-        }
-    }
-
     pub fn handle_window_event(&mut self, event: WindowEvent) {
         match event {
             WindowEvent::MouseInput {
@@ -168,10 +155,9 @@ impl<'a, Doc: DocumentLike> View<'a, Doc> {
                 ..
             } => {
                 let changed = if let RenderState::Active(state) = &self.renderer.render_state {
-                    // todo: this is a hardcode of the hidpi scale, we should get this from the window
                     let tao::dpi::LogicalPosition::<f32> { x, y } = position.to_logical(state.window.scale_factor());
 
-                    dbg!(self.renderer.mouse_move(x, y))
+                    self.renderer.mouse_move(x, y)
                 } else {
                     false
                 };

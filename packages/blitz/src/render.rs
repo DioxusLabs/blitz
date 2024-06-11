@@ -214,12 +214,7 @@ where
         self.mouse_pos = (x, y);
         let old_id = self.hover_node_id;
         self.hover_node_id = self.dom.as_ref().hit(x, y);
-        if old_id != self.hover_node_id {
-            true
-            // self.devtools.highlight_hover
-        } else {
-            false
-        }
+        old_id != self.hover_node_id
     }
 
     pub fn get_cursor(&self) -> Option<CursorKind> {
@@ -307,15 +302,16 @@ where
 
         // If we hit a node, then we collect the node to its parents, check for listeners, and then
         // call those listeners
-
-        self.dom.handle_event(RendererEvent {
-            name: "click".to_string(),
-            target: node_id,
-            data: EventData::Click {
-                x: self.mouse_pos.0 as f64,
-                y: self.mouse_pos.1 as f64,
-            },
-        });
+        if !self.devtools.highlight_hover {
+            self.dom.handle_event(RendererEvent {
+                name: "click".to_string(),
+                target: node_id,
+                data: EventData::Click {
+                    x: self.mouse_pos.0 as f64,
+                    y: self.mouse_pos.1 as f64,
+                },
+            });
+        }
     }
 
     pub fn print_taffy_tree(&self) {

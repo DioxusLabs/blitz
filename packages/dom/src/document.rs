@@ -54,6 +54,8 @@ pub struct Document {
 
     /// The quadtree we use for hit-testing
     pub(crate) quadtree: Quadtree<u64, usize>,
+
+    pub(crate) stylesheets: HashMap<String, DocumentStyleSheet>,
 }
 
 impl Document {
@@ -78,6 +80,7 @@ impl Document {
             nodes_to_id,
             base_url: None,
             quadtree: Quadtree::new(20),
+            stylesheets: HashMap::new(),
         };
 
         // Initialise document with root Document node
@@ -303,6 +306,12 @@ impl Document {
         self.add_stylesheet(&css);
     }
 
+    pub fn remove_stylehsheet(&mut self, contents: &str) {
+        if let Some(sheet) = self.stylesheets.remove(contents) {
+            self.stylist.remove_stylesheet(sheet, &self.guard.read());
+        }
+    }
+
     pub fn add_stylesheet(&mut self, css: &str) {
         let data = Stylesheet::from_str(
             css,
@@ -321,8 +330,11 @@ impl Document {
             AllowImportRules::Yes,
         );
 
-        self.stylist
-            .append_stylesheet(DocumentStyleSheet(ServoArc::new(data)), &self.guard.read());
+        let sheet = DocumentStyleSheet(ServoArc::new(data));
+
+        self.stylesheets.insert(css.to_string(), sheet.clone());
+
+        self.stylist.append_stylesheet(sheet, &self.guard.read());
 
         self.stylist
             .force_stylesheet_origins_dirty(Origin::Author.into());

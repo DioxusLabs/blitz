@@ -14,7 +14,11 @@ fn app() -> Element {
     let mut count = use_signal(|| 0);
 
     rsx! {
-        div { class: "container",
+        div {
+            class: "container",
+            background: r#"linear-gradient(217deg, rgba(255,0,0,.8), rgba(255,0,0,0) 70.71%),
+            linear-gradient(127deg, rgba(0,255,0,.8), rgba(0,255,0,0) 70.71%),
+            linear-gradient(336deg, rgba(0,0,255,.8), rgba(0,0,255,0) 70.71%)"#,
             style { {CSS} }
             h1 { class: "header", "Count: {count}" }
             div { class: "buttons",
@@ -66,6 +70,9 @@ h4 {
     align-items: center;
     height: 100vh;
     width: 100vw;
+    background: linear-gradient(217deg, rgba(255,0,0,.8), rgba(255,0,0,0) 70.71%),
+            linear-gradient(127deg, rgba(0,255,0,.8), rgba(0,255,0,0) 70.71%),
+            linear-gradient(336deg, rgba(0,0,255,.8), rgba(0,0,255,0) 70.71%);
 }
 
 .buttons {
@@ -98,4 +105,5 @@ h4 {
     background-color: blue;
     color: white;
 }
+
 "#;
