@@ -13,8 +13,8 @@ style_traits = { git = "https://github.com/servo/stylo", rev = "e2a4834" }
 selectors = { git = "https://github.com/servo/stylo", rev = "e2a4834" }
 
 taffy = { version = "0.5.1" }
-dioxus = { git = "https://github.com/dioxuslabs/dioxus", rev = "e4764f2"}
-dioxus-ssr = { git = "https://github.com/dioxuslabs/dioxus", rev = "e4764f2" }
+dioxus = { git = "https://github.com/dioxuslabs/dioxus", rev = "a3aa6ae771a2d0a4d8cb6055c41efc0193b817ef"}
+dioxus-ssr = { git = "https://github.com/dioxuslabs/dioxus", rev = "a3aa6ae771a2d0a4d8cb6055c41efc0193b817ef" }
 tokio = { version = "1.25.0", features = ["full"] }
 vello = { version = "0.1", features = ["wgpu"] }
 # fello = { git = "https://github.com/linebender/vello" }
