@@ -293,7 +293,14 @@ where
 
             println!("Node {} {}", node.id, node.node_debug_str());
             if node.is_inline_root {
-                let text = &node.raw_dom_data.downcast_element().unwrap().inline_layout.as_ref().unwrap().text;
+                let text = &node
+                    .raw_dom_data
+                    .downcast_element()
+                    .unwrap()
+                    .inline_layout
+                    .as_ref()
+                    .unwrap()
+                    .text;
                 println!("Text content: {:?}", text);
             }
 

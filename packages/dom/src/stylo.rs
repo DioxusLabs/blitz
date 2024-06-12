@@ -58,18 +58,6 @@ impl crate::document::Document {
                     .and_then(|data| data.styles.get_primary());
 
                 let Some(style) = primary_styles else {
-                    // // HACK: hide whitespace-only text node children of flexbox and grid nodes from Taffy
-                    // if let NodeData::Text(data) = &node.raw_dom_data {
-                    //     node.display_outer = DisplayOuter::Inline;
-                    //     let all_whitespace = data.content.chars().all(|c| c.is_whitespace());
-                    //     if all_whitespace
-                    //         && (parent_display == Display::Flex || parent_display == Display::Grid)
-                    //     {
-                    //         node.style.display = taffy::Display::None;
-                    //         node.display_outer = DisplayOuter::None;
-                    //     }
-                    // }
-
                     continue;
                 };
 
@@ -232,85 +220,6 @@ impl crate::document::Document {
 
             self.flush_styles_to_layout(children);
         }
-
-        // HACK: render block nodes with all inline (or hidden) children using
-        // a flexbox wrapped row with start alignment in both axis.
-        // if let Some(parent_id) = parent {
-        //     if parent_display == taffy::Display::Block {
-        //         if children
-        //             .iter()
-        //             .map(|cid| self.nodes.get(*cid).unwrap())
-        //             .all(|c| c.display_outer != DisplayOuter::Block)
-        //         {
-        //             let node = self.nodes.get_mut(parent_id).unwrap();
-        //             node.style.display = taffy::Display::Flex;
-        //             node.style.flex_direction = taffy::FlexDirection::Row;
-        //             node.style.flex_wrap = taffy::FlexWrap::Wrap;
-        //             node.style.align_items = Some(taffy::AlignItems::Start);
-        //             node.style.justify_content = Some(taffy::JustifyContent::Start);
-
-        //             // HACK: Set flexbox alignment based on value of text-align property
-        //             // This fixes some but not all <center> tags
-        //             let stylo_element_data = node.stylo_element_data.borrow();
-        //             let primary_styles = stylo_element_data
-        //                 .as_ref()
-        //                 .and_then(|data| data.styles.get_primary());
-        //             if let Some(style) = primary_styles {
-        //                 node.style.justify_content = Some(match style.clone_text_align() {
-        //                     TextAlignKeyword::Start => taffy::JustifyContent::Start,
-        //                     TextAlignKeyword::Left => taffy::JustifyContent::Start,
-        //                     TextAlignKeyword::Right => taffy::JustifyContent::End,
-        //                     TextAlignKeyword::Center => taffy::JustifyContent::Center,
-        //                     TextAlignKeyword::Justify => taffy::JustifyContent::SpaceBetween,
-        //                     TextAlignKeyword::End => taffy::JustifyContent::End,
-        //                     TextAlignKeyword::ServoCenter => taffy::JustifyContent::Center,
-        //                     TextAlignKeyword::ServoLeft => taffy::JustifyContent::Start,
-        //                     TextAlignKeyword::ServoRight => taffy::JustifyContent::End,
-        //                 });
-        //             }
-
-        //             drop(stylo_element_data);
-
-        //             for cid in children.iter() {
-        //                 let child = self.nodes.get_mut(*cid).unwrap();
-
-        //                 if child.display_outer != DisplayOuter::Block {
-        //                     continue;
-        //                 }
-
-        //                 let stylo_element_data = child.stylo_element_data.borrow();
-        //                 let primary_styles = stylo_element_data
-        //                     .as_ref()
-        //                     .and_then(|data| data.styles.get_primary());
-
-        //                 if let Some(style) = primary_styles {
-        //                     use style::values::generics::box_::VerticalAlign;
-        //                     use style::values::generics::box_::VerticalAlignKeyword;
-        //                     match style.clone_vertical_align() {
-        //                         VerticalAlign::Keyword(keyword) => {
-        //                             child.style.align_self = Some(match keyword {
-        //                                 VerticalAlignKeyword::Baseline => {
-        //                                     taffy::AlignSelf::Baseline
-        //                                 }
-        //                                 VerticalAlignKeyword::Sub => taffy::AlignSelf::End,
-        //                                 VerticalAlignKeyword::Super => taffy::AlignSelf::Start,
-        //                                 VerticalAlignKeyword::Top => taffy::AlignSelf::Start,
-        //                                 VerticalAlignKeyword::TextTop => taffy::AlignSelf::Start,
-        //                                 VerticalAlignKeyword::Middle => taffy::AlignSelf::Center,
-        //                                 VerticalAlignKeyword::Bottom => taffy::AlignSelf::End,
-        //                                 VerticalAlignKeyword::TextBottom => taffy::AlignSelf::End,
-        //                             });
-        //                         }
-        //                         VerticalAlign::Length(length_percentage) => {
-        //                             child.style.margin.top =
-        //                                 stylo_to_taffy::length_percentage(&length_percentage).into()
-        //                         }
-        //                     };
-        //                 }
-        //             }
-        //         }
-        //     }
-        // }
     }
 
     pub fn resolve_stylist(&mut self) {
