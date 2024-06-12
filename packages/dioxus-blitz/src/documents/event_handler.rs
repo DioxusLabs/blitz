@@ -1,10 +1,4 @@
-use dioxus::{
-    dioxus_core::{
-        AttributeValue, ElementId, Template, TemplateAttribute, TemplateNode, VirtualDom,
-        WriteMutations,
-    },
-    prelude::{set_event_converter, HtmlEventConverter, MouseData, PlatformEventData},
-};
+use dioxus::prelude::{HtmlEventConverter, PlatformEventData};
 
 #[derive(Clone)]
 pub struct NativeClickData {}
@@ -51,46 +45,46 @@ impl dioxus::html::HasMouseData for NativeClickData {
 pub struct NativeConverter {}
 
 impl HtmlEventConverter for NativeConverter {
-    fn convert_animation_data(&self, event: &PlatformEventData) -> dioxus::prelude::AnimationData {
+    fn convert_animation_data(&self, _event: &PlatformEventData) -> dioxus::prelude::AnimationData {
         todo!()
     }
 
-    fn convert_clipboard_data(&self, event: &PlatformEventData) -> dioxus::prelude::ClipboardData {
+    fn convert_clipboard_data(&self, _event: &PlatformEventData) -> dioxus::prelude::ClipboardData {
         todo!()
     }
 
     fn convert_composition_data(
         &self,
-        event: &PlatformEventData,
+        _event: &PlatformEventData,
     ) -> dioxus::prelude::CompositionData {
         todo!()
     }
 
-    fn convert_drag_data(&self, event: &PlatformEventData) -> dioxus::prelude::DragData {
+    fn convert_drag_data(&self, _event: &PlatformEventData) -> dioxus::prelude::DragData {
         todo!()
     }
 
-    fn convert_focus_data(&self, event: &PlatformEventData) -> dioxus::prelude::FocusData {
+    fn convert_focus_data(&self, _event: &PlatformEventData) -> dioxus::prelude::FocusData {
         todo!()
     }
 
-    fn convert_form_data(&self, event: &PlatformEventData) -> dioxus::prelude::FormData {
+    fn convert_form_data(&self, _event: &PlatformEventData) -> dioxus::prelude::FormData {
         todo!()
     }
 
-    fn convert_image_data(&self, event: &PlatformEventData) -> dioxus::prelude::ImageData {
+    fn convert_image_data(&self, _event: &PlatformEventData) -> dioxus::prelude::ImageData {
         todo!()
     }
 
-    fn convert_keyboard_data(&self, event: &PlatformEventData) -> dioxus::prelude::KeyboardData {
+    fn convert_keyboard_data(&self, _event: &PlatformEventData) -> dioxus::prelude::KeyboardData {
         todo!()
     }
 
-    fn convert_media_data(&self, event: &PlatformEventData) -> dioxus::prelude::MediaData {
+    fn convert_media_data(&self, _event: &PlatformEventData) -> dioxus::prelude::MediaData {
         todo!()
     }
 
-    fn convert_mounted_data(&self, event: &PlatformEventData) -> dioxus::prelude::MountedData {
+    fn convert_mounted_data(&self, _event: &PlatformEventData) -> dioxus::prelude::MountedData {
         todo!()
     }
 
@@ -99,34 +93,34 @@ impl HtmlEventConverter for NativeConverter {
         dioxus::prelude::MouseData::from(o)
     }
 
-    fn convert_pointer_data(&self, event: &PlatformEventData) -> dioxus::prelude::PointerData {
+    fn convert_pointer_data(&self, _event: &PlatformEventData) -> dioxus::prelude::PointerData {
         todo!()
     }
 
-    fn convert_scroll_data(&self, event: &PlatformEventData) -> dioxus::prelude::ScrollData {
+    fn convert_scroll_data(&self, _event: &PlatformEventData) -> dioxus::prelude::ScrollData {
         todo!()
     }
 
-    fn convert_selection_data(&self, event: &PlatformEventData) -> dioxus::prelude::SelectionData {
+    fn convert_selection_data(&self, _event: &PlatformEventData) -> dioxus::prelude::SelectionData {
         todo!()
     }
 
-    fn convert_toggle_data(&self, event: &PlatformEventData) -> dioxus::prelude::ToggleData {
+    fn convert_toggle_data(&self, _event: &PlatformEventData) -> dioxus::prelude::ToggleData {
         todo!()
     }
 
-    fn convert_touch_data(&self, event: &PlatformEventData) -> dioxus::prelude::TouchData {
+    fn convert_touch_data(&self, _event: &PlatformEventData) -> dioxus::prelude::TouchData {
         todo!()
     }
 
     fn convert_transition_data(
         &self,
-        event: &PlatformEventData,
+        _event: &PlatformEventData,
     ) -> dioxus::prelude::TransitionData {
         todo!()
     }
 
-    fn convert_wheel_data(&self, event: &PlatformEventData) -> dioxus::prelude::WheelData {
+    fn convert_wheel_data(&self, _event: &PlatformEventData) -> dioxus::prelude::WheelData {
         todo!()
     }
 }

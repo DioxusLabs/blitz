@@ -13,7 +13,7 @@ use dioxus::{
         AttributeValue, ElementId, Template, TemplateAttribute, TemplateNode, VirtualDom,
         WriteMutations,
     },
-    prelude::{set_event_converter, HtmlEventConverter, MouseData, PlatformEventData},
+    prelude::{set_event_converter, PlatformEventData},
 };
 use futures_util::{pin_mut, FutureExt};
 use rustc_hash::FxHashMap;
