@@ -288,9 +288,14 @@ where
 
         if self.devtools.highlight_hover {
             let node = &self.dom.as_ref().tree()[node_id];
-            println!("Node {} {}", node.id, node.node_debug_str());
             dbg!(&node.final_layout);
             dbg!(&node.style);
+
+            println!("Node {} {}", node.id, node.node_debug_str());
+            if node.is_inline_root {
+                let text = &node.raw_dom_data.downcast_element().unwrap().inline_layout.as_ref().unwrap().text;
+                println!("Text content: {:?}", text);
+            }
 
             let children: Vec<_> = node
                 .children
