@@ -42,19 +42,11 @@ fn main() {
         body_html
     );
 
-    let f = file!();
-
-    let mut base_path = Path::new(OsStr::new(&f)).to_owned();
-    base_path.pop();
-
     dioxus_blitz::launch_static_html_cfg(
         &html,
         Config {
             stylesheets: vec![String::from(stylesheet)],
-            base_url: Some(format!(
-                "file://{}",
-                base_path.as_os_str().to_string_lossy()
-            )),
+            base_url: Some("https://raw.githubusercontent.com/DioxusLabs/blitz/main/".to_string()),
         },
     );
 }
