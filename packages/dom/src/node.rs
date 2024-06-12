@@ -300,23 +300,6 @@ impl std::fmt::Debug for TextLayout {
 }
 
 impl TextLayout {
-    // pub fn new(
-    //     font_ctx: &mut parley::FontContext,
-    //     layout_ctx: &mut parley::LayoutContext<TextBrush>,
-    //     text: &str,
-    //     display_scale: f32,
-    //     // styles: &ComputedValues,
-    // ) -> TextLayout {
-    //     let mut builder = layout_ctx.ranged_builder(font_ctx, text, display_scale);
-
-    //     // TODO: Apply styles
-
-    //     Self {
-    //         text:
-    //         layout: builder.build(&text),
-    //     }
-    // }
-
     pub fn measure(&mut self, max_width: Option<f32>) -> taffy::Size<f32> {
         self.layout
             .break_all_lines(max_width, parley::layout::Alignment::Start);

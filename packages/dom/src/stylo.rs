@@ -42,12 +42,7 @@ use super::stylo_to_taffy;
 
 impl crate::document::Document {
     /// Walk the whole tree, converting styles to layout
-    pub fn flush_styles_to_layout(
-        &mut self,
-        children: Vec<usize>,
-        // parent: Option<usize>,
-        // parent_display: taffy::Display,
-    ) {
+    pub fn flush_styles_to_layout(&mut self, children: Vec<usize>) {
         // make a floating element
         for child in children.iter() {
             let (display, mut children) = {

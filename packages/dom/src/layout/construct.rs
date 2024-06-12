@@ -60,8 +60,6 @@ pub(crate) fn collect_layout_children(
                 .copied()
                 .map(|child_id| &doc.nodes[child_id])
             {
-                // dbg!(child.raw_dom_data.kind());
-
                 // Unwraps on Text and SVG nodes
                 let display = child.display_style().unwrap_or(Display::inline());
                 if matches!(display.inside(), DisplayInside::Contents) {
@@ -81,7 +79,6 @@ pub(crate) fn collect_layout_children(
 
             // TODO: fix display:contents
             if all_inline {
-                // dbg!(&doc.nodes[container_node_id].raw_dom_data);
                 let (inline_layout, ilayout_children) = build_inline_layout(doc, container_node_id);
                 doc.nodes[container_node_id].is_inline_root = true;
                 doc.nodes[container_node_id].raw_dom_data.downcast_element_mut().unwrap().inline_layout = Some(Box::new(inline_layout));
@@ -137,11 +134,6 @@ fn collect_complex_layout_children(
     hide_whitespace: bool,
     needs_wrap: impl Fn(NodeKind, DisplayOutside) -> bool,
 ) {
-    // #[inline(always)]
-    // fn needs_wrap(container_display_inside: DisplayInside, child_node_kind: NodeKind, child_display_outside: DisplayOutside) -> bool {
-    //     child_node_kind == NodeKind::Text || (container_display_inside ==)
-    // }
-
     // Take children array from node to avoid borrow checker issues.
     let children = std::mem::replace(&mut doc.nodes[container_node_id].children, Vec::new());
 
@@ -346,17 +338,16 @@ pub(crate) fn build_inline_layout(
         .map(|s| stylo_to_parley_style(&*s))
         .unwrap_or_default();
 
-    // TODO: Support more modes. For now we want to support enough for pre tags to render correctly
+    // Create a parley tree builder
+    let mut builder = doc
+        .layout_ctx
+        .tree_builder(&mut doc.font_ctx, doc.scale, &parley_style);
+
+    // Set whitespace collapsing mode
     let collapse_mode = root_node_style
         .map(|s| s.get_inherited_text().white_space)
         .map(white_space_stylo_to_parley)
         .unwrap_or(WhiteSpaceCollapse::Collapse);
-
-    // Create a parley tree builder
-    // let mut text = String::new();
-    let mut builder = doc
-        .layout_ctx
-        .tree_builder(&mut doc.font_ctx, doc.scale, &parley_style);
     builder.set_white_space_mode(collapse_mode);
 
     for child_id in root_node.children.iter().copied() {
@@ -387,12 +378,12 @@ pub(crate) fn build_inline_layout(
     ) {
         let node = &nodes[node_id];
 
+        // Set whitespace collapsing mode
         let collapse_mode = node
             .primary_styles()
             .map(|s| s.get_inherited_text().white_space)
             .map(white_space_stylo_to_parley)
             .unwrap_or(collapse_mode);
-
         builder.set_white_space_mode(collapse_mode);
 
         match &node.raw_dom_data {
@@ -471,85 +462,3 @@ pub(crate) fn build_inline_layout(
         }
     }
 }
-
-// pub (crate) fn determine_layout_children(
-//     doc: &mut Document,
-//     container_node_id: usize,
-// ) -> Option<Cow<'_, [usize]>> {
-//     let container_display = doc.nodes[container_node_id]
-//         .display_style()
-//         .unwrap_or(Display::inline());
-
-//     match container_display.inside() {
-//         DisplayInside::None => None,
-//         DisplayInside::Contents => None, // Some(Cow::Borrowed(&container.children))},
-//         DisplayInside::Flow | DisplayInside::FlowRoot => {
-//             let mut all_block = true;
-//             let mut all_inline = true;
-//             let mut has_contents = false;
-//             for child in doc.nodes[container_node_id].children
-//                 .iter()
-//                 .copied()
-//                 .map(|child_id| &doc.nodes[child_id])
-//             {
-//                 let display = child.display_style().unwrap();
-//                 match display.outside() {
-//                     DisplayOutside::None => {}
-//                     DisplayOutside::Inline => all_block = false,
-//                     DisplayOutside::Block => all_inline = false,
-
-//                     // TODO: Implement table layout
-//                     DisplayOutside::TableCaption => {}
-//                     DisplayOutside::InternalTable => {}
-//                 }
-//                 if matches!(display.inside(), DisplayInside::Contents) {
-//                     has_contents = true;
-//                 }
-//             }
-
-//             // If the children are either all inline
-//             if (all_block | all_inline) & !has_contents {
-//                 return None;
-//             }
-
-//             fn block_item_needs_wrap(child_node_kind: NodeKind, display_outside: DisplayOutside) -> bool {
-//                 child_node_kind == NodeKind::Text || display_outside == DisplayOutside::Inline
-//             }
-
-//             let layout_children = collect_layout_children(doc, container_node_id, block_item_needs_wrap);
-//             return Some(Cow::Owned(layout_children));
-//         }
-//         DisplayInside::Flex /* | Display::Grid */ => {
-//             let has_text_node_or_contents = doc.nodes[container_node_id].children
-//                 .iter()
-//                 .copied()
-//                 .map(|child_id| &doc.nodes[child_id])
-//                 .any(|child| {
-//                     let display = child.display_style().unwrap();
-//                     let node_kind = child.raw_dom_data.kind();
-//                     display.inside() == DisplayInside::Contents || node_kind == NodeKind::Text
-//                 });
-
-//             if !has_text_node_or_contents {
-//                 return None;
-//             }
-
-//             fn flex_or_grid_item_needs_wrap(child_node_kind: NodeKind, _display_outside: DisplayOutside) -> bool {
-//                 child_node_kind == NodeKind::Text
-//             }
-
-//             let layout_children = collect_layout_children(doc, container_node_id, flex_or_grid_item_needs_wrap);
-//             return Some(Cow::Owned(layout_children));
-//         },
-
-//         // TODO: Implement table layout
-//         DisplayInside::Table => None, //Some(Cow::Borrowed(&container.children)),
-//         DisplayInside::TableRowGroup => None, //Some(Cow::Borrowed(&container.children)),
-//         DisplayInside::TableColumn => None, //Some(Cow::Borrowed(&container.children)),
-//         DisplayInside::TableColumnGroup => None, //Some(Cow::Borrowed(&container.children)),
-//         DisplayInside::TableHeaderGroup => None, //Some(Cow::Borrowed(&container.children)),
-//         DisplayInside::TableFooterGroup => None, //Some(Cow::Borrowed(&container.children)),
-//         DisplayInside::TableRow => None, //Some(Cow::Borrowed(&container.children)),
-//         DisplayInside::TableCell => None, //Some(Cow::Borrowed(&container.children)),
-//     }
-// }
