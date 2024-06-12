@@ -262,7 +262,7 @@ pub(crate) fn stylo_to_parley_style(style: &ComputedValues) -> TextStyle<'static
         strikethrough_brush: Default::default(),
         line_height,
         word_spacing: Default::default(),
-        letter_spacing: Default::default(),
+        letter_spacing: itext_styles.letter_spacing.0.px(),
     }
 }
 
