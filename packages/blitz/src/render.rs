@@ -640,7 +640,7 @@ where
                         //     y: location.y + ibox.y as f64,
                         // };
 
-                        self.render_node(scene, ibox.id as usize, location, Some(&cx));
+                        self.render_node(scene, ibox.id as usize, pos, Some(&cx));
                     }
                 }
             }
