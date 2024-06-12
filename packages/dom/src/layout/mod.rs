@@ -195,6 +195,9 @@ impl Document {
         node_id: NodeId,
         inputs: taffy::tree::LayoutInput,
     ) -> taffy::LayoutOutput {
+
+        let scale = self.scale;
+
         // Take inline layout to satisfy borrow checker
         let mut inline_layout = self.nodes[usize::from(node_id)]
             .raw_dom_data
@@ -222,13 +225,13 @@ impl Document {
             };
             for ibox in inline_layout.layout.inline_boxes_mut() {
                 let output = self.compute_child_layout(NodeId::from(ibox.id), child_inputs);
-                ibox.width = output.size.width;
-                ibox.height = output.size.height;
+                ibox.width = output.size.width * scale;
+                ibox.height = output.size.height * scale;
             }
 
             // Perform inline layout
             let max_advance = match available_space.width {
-                AvailableSpace::Definite(px) => Some(px * 2.0),
+                AvailableSpace::Definite(px) => Some(px * scale),
                 AvailableSpace::MinContent => Some(0.0),
                 AvailableSpace::MaxContent => None,
             };
@@ -262,10 +265,10 @@ impl Document {
                 for item in line.items() {
                     if let parley::layout::LayoutItem2::InlineBox(ibox) = item {
                         let layout = &mut self.nodes[ibox.id as usize].unrounded_layout;
-                        layout.size.width = ibox.width;
-                        layout.size.height = ibox.height;
-                        layout.location.x = ibox.x;
-                        layout.location.y = ibox.y;
+                        layout.size.width = ibox.width / scale;
+                        layout.size.height = ibox.height / scale;
+                        layout.location.x = ibox.x / scale;
+                        layout.location.y = ibox.y / scale;
                     }
                 }
             }
@@ -277,8 +280,8 @@ impl Document {
             // dbg!(inline_layout.layout.height());
 
             known_dimensions.unwrap_or(taffy::Size {
-                width: inline_layout.layout.width() / 2.0,
-                height: inline_layout.layout.height() / 2.0,
+                width: inline_layout.layout.width() / scale,
+                height: inline_layout.layout.height() / scale,
             })
         });
 

@@ -331,7 +331,7 @@ pub(crate) fn build_inline_layout(
     // let mut text = String::new();
     let mut builder = doc
         .layout_ctx
-        .tree_builder(&mut doc.font_ctx, 2.0, &parley_style);
+        .tree_builder(&mut doc.font_ctx, doc.scale, &parley_style);
     builder.set_white_space_mode(collapse_mode);
 
     for child_id in root_node.children.iter().copied() {
