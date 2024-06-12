@@ -6,7 +6,7 @@ use style::{
     properties::{longhands::line_height, ComputedValues},
     shared_lock::StylesheetGuards,
     values::{
-        computed::Display,
+        computed::{font::SingleFontFamily, Display},
         specified::box_::{DisplayInside, DisplayOutside},
     },
 };
@@ -224,12 +224,45 @@ pub(crate) fn stylo_to_parley_style(style: &ComputedValues) -> TextStyle<'static
     // let text_styles = style.get_text();
     let itext_styles = style.get_inherited_text();
 
+    // Convert font size and line height
     let font_size = font_styles.font_size.used_size.0.px();
     let line_height: f32 = match itext_styles.line_height {
         style::values::generics::text::LineHeight::Normal => font_size * 1.2,
         style::values::generics::text::LineHeight::Number(num) => font_size * num.0,
         style::values::generics::text::LineHeight::Length(value) => value.0.px(),
     };
+
+    // Convert font family
+    let families: Vec<_> = font_styles
+        .font_family
+        .families
+        .list
+        .iter()
+        .map(|family| match family {
+            SingleFontFamily::FamilyName(name) => {
+                // TODO: fix leak!
+                FontFamily::Named(name.name.as_ref().to_string().leak())
+            },
+            SingleFontFamily::Generic(generic) => FontFamily::Generic(match generic {
+                style::values::computed::font::GenericFontFamily::None => GenericFamily::SansSerif,
+                style::values::computed::font::GenericFontFamily::Serif => GenericFamily::Serif,
+                style::values::computed::font::GenericFontFamily::SansSerif => {
+                    GenericFamily::SansSerif
+                }
+                style::values::computed::font::GenericFontFamily::Monospace => {
+                    GenericFamily::Monospace
+                }
+                style::values::computed::font::GenericFontFamily::Cursive => GenericFamily::Cursive,
+                style::values::computed::font::GenericFontFamily::Fantasy => GenericFamily::Fantasy,
+                style::values::computed::font::GenericFontFamily::SystemUi => {
+                    GenericFamily::SystemUi
+                }
+            }),
+        })
+        .collect();
+
+    // TODO: fix leak!
+    let families : &'static [FontFamily] = Box::leak(families.into_boxed_slice());
 
     // Convert text colour
     let [r, g, b, a] = itext_styles
@@ -243,7 +276,7 @@ pub(crate) fn stylo_to_parley_style(style: &ComputedValues) -> TextStyle<'static
     let line_height = line_height / font_size;
 
     TextStyle {
-        font_stack: FontStack::Source("sans-serif"),
+        font_stack: FontStack::List(&families),
         font_size,
         font_stretch: Default::default(),
         font_style: Default::default(),
