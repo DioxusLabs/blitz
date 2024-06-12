@@ -613,7 +613,6 @@ where
         cx.draw_image(scene);
 
         if element.is_inline_root {
-            // dbg!(node.id);
             let (_layout, pos) = self.node_position(node_id, location);
             let text_layout = &element
                 .raw_dom_data
@@ -623,12 +622,8 @@ where
                 .as_ref()
                 .unwrap_or_else(|| {
                     dbg!(&element);
-                    panic!();
+                    panic!("Tried to render node marked as inline root that does not have an inline layout");
                 });
-
-            // dbg!(&text_layout.text);
-            // dbg!(text_layout.layout.width());
-            // dbg!(text_layout.layout.height());
 
             // Apply padding/border offset to inline root
             let taffy::Layout {
@@ -647,13 +642,7 @@ where
             for line in text_layout.layout.lines() {
                 for item in line.items() {
                     if let LayoutItem2::InlineBox(ibox) = item {
-                        // dbg!(&ibox);
-                        // let location = vello::kurbo::Point {
-                        //     x: location.x + ibox.x as f64,
-                        //     y: location.y + ibox.y as f64,
-                        // };
-
-                        self.render_node(scene, ibox.id as usize, pos, Some(&cx));
+                        self.render_node(scene, ibox.id as usize, pos);
                     }
                 }
             }
@@ -667,35 +656,22 @@ where
                 .iter()
                 .copied()
             {
-                self.render_node(scene, child_id, cx.pos, Some(&cx));
+                self.render_node(scene, child_id, cx.pos);
             }
         }
     }
 
-    fn render_node(
-        &self,
-        scene: &mut Scene,
-        node_id: usize,
-        location: Point,
-        parent_elem_cx: Option<&ElementCx<'_>>,
-    ) {
+    fn render_node(&self, scene: &mut Scene, node_id: usize, location: Point) {
         let node = &self.dom.as_ref().tree()[node_id];
 
         match &node.raw_dom_data {
             NodeData::Element(_) | NodeData::AnonymousBlock(_) => {
                 self.render_element(scene, node_id, location)
             }
-            // NodeData::AnonymousBlock(_) => {
-            //     let children = &self.dom.as_ref().tree()[node_id].children;
-            //     for child_id in children.iter().copied() {
-            //         self.render_node(scene, child_id, location, parent_elem_cx);
-            //     }
-            // }
-            NodeData::Text(TextNodeData { content, .. }) => {
-                // let (_layout, pos) = self.node_position(node_id, location);
-                // parent_elem_cx
-                //     .unwrap()
-                //     .stroke_text(scene, &self.text_context, &content, pos)
+            NodeData::Text(TextNodeData { .. }) => {
+                // Text nodes should never be rendered directly
+                // (they should always be rendered as part of an inline layout)
+                unreachable!()
             }
             NodeData::Document => {}
             // NodeData::Doctype => {}
