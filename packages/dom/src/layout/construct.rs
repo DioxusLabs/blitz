@@ -236,6 +236,8 @@ pub(crate) fn stylo_to_parley_style(style: &ComputedValues) -> TextStyle<'static
         style::values::generics::text::LineHeight::Number(num) => font_size * num.0,
         style::values::generics::text::LineHeight::Length(value) => value.0.px(),
     };
+    // Parley expects line height as a multiple of font size!
+    let line_height = line_height / font_size;
 
     // Convert font family
     let families: Vec<_> = font_styles
@@ -276,9 +278,6 @@ pub(crate) fn stylo_to_parley_style(style: &ComputedValues) -> TextStyle<'static
         .raw_components()
         .map(|f| (f * 255.0) as u8);
     let color = peniko::Color { r, g, b, a };
-
-    // Parley expects line height as a multiple of font size!
-    let line_height = line_height / font_size;
 
     TextStyle {
         font_stack: FontStack::List(&families),
