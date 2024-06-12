@@ -262,8 +262,8 @@ impl Document {
                 for item in line.items() {
                     if let parley::layout::LayoutItem2::InlineBox(ibox) = item {
                         let layout = &mut self.nodes[ibox.id as usize].unrounded_layout;
-                        layout.size.width = ibox.width / 2.0;
-                        layout.size.height = ibox.height / 2.0;
+                        layout.size.width = ibox.width;
+                        layout.size.height = ibox.height;
                         layout.location.x = ibox.x;
                         layout.location.y = ibox.y;
                     }
