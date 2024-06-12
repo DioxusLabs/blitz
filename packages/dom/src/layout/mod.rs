@@ -9,14 +9,13 @@ use crate::{
     document::Document,
     image::{image_measure_function, ImageContext},
     node::Node,
-    text::{text_measure_function, FontMetrics, TextContext, WritingMode},
 };
 use html5ever::local_name;
 use std::cell::Ref;
 use taffy::{
     compute_block_layout, compute_cached_layout, compute_flexbox_layout, compute_grid_layout,
-    compute_leaf_layout, prelude::*, Cache, Dimension, FlexDirection, LayoutPartialTree, NodeId,
-    RoundTree, Size, Style, TraversePartialTree, TraverseTree,
+    compute_leaf_layout, prelude::*, Cache, FlexDirection, LayoutPartialTree, NodeId, RoundTree,
+    Size, Style, TraversePartialTree, TraverseTree,
 };
 
 pub(crate) mod construct;

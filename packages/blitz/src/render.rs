@@ -1,14 +1,11 @@
 mod multicolor_rounded_rect;
 
+use std::num::NonZeroUsize;
 use std::sync::Arc;
-use std::{borrow::BorrowMut, num::NonZeroUsize};
 // So many imports
 use self::multicolor_rounded_rect::{Edge, ElementFrame};
 use crate::{
     devtools::Devtools,
-    // fontcache::FontCache,
-    // imagecache::ImageCache,
-    text::TextContext,
     util::{GradientSlice, StyloGradient, ToVelloColor},
     viewport::Viewport,
 };
@@ -20,7 +17,6 @@ use blitz_dom::{
 use html5ever::local_name;
 use image::{imageops::FilterType, DynamicImage};
 use parley::layout::LayoutItem2;
-use selectors::Element;
 use style::{
     dom::TElement,
     values::{computed::ui::CursorKind, specified::position::HorizontalPositionKeyword},
@@ -77,9 +73,6 @@ pub struct Renderer<'s, W, Doc: DocumentLike> {
 
     pub(crate) render_context: RenderContext,
 
-    /// Our text stencil to be used with vello
-    pub(crate) text_context: TextContext,
-
     /// Our image cache
     // pub(crate) images: ImageCache,
 
@@ -113,9 +106,6 @@ where
             render_context,
             render_state: RenderState::Suspended(None),
             dom,
-            text_context: Default::default(),
-            // images: Default::default(),
-            // fonts: Default::default(),
             devtools: Default::default(),
             hover_node_id: Default::default(),
             scroll_offset: 0.0,
@@ -282,7 +272,7 @@ where
             return;
         };
 
-        let RenderState::Active(state) = &self.render_state else {
+        let RenderState::Active(_) = &self.render_state else {
             return;
         };
 
@@ -575,12 +565,6 @@ where
         //  - list, position, table, text, ui,
         //  - custom_properties, writing_mode, rules, visited_style, flags,  box_, column, counters, effects,
         //  - inherited_box, inherited_table, inherited_text, inherited_ui,
-
-        let RenderState::Active(state) = &self.render_state else {
-            return;
-        };
-        let scale = state.viewport.scale_f64();
-
         let element = &self.dom.as_ref().tree()[node_id];
 
         // Early return if the element is hidden
@@ -636,7 +620,7 @@ where
             };
 
             // Render text
-            cx.stroke_text(scene, &self.text_context, text_layout, pos);
+            cx.stroke_text(scene, text_layout, pos);
 
             // Render inline boxes
             for line in text_layout.layout.lines() {
@@ -694,12 +678,6 @@ where
         let (layout, pos) = self.node_position(element.id, location);
         let scale = state.viewport.scale_f64();
 
-        let inherited_text = style.get_inherited_text();
-        let font = style.get_font();
-        let font_size = font.font_size.computed_size().px() as f32;
-        let text_color = inherited_text.clone_color().as_vello();
-        // let text_color = peniko::Color::WHITE;
-
         // the bezpaths for every element are (potentially) cached (not yet, tbd)
         // By performing the transform, we prevent the cache from becoming invalid when the page shifts around
         let transform = Affine::translate((pos.x * scale, pos.y * scale));
@@ -713,11 +691,8 @@ where
             frame,
             scale,
             style,
-            // layout,
             pos,
             element,
-            font_size,
-            text_color,
             transform,
             image: element.element_data().unwrap().image.clone(),
             devtools: &self.devtools,
@@ -740,35 +715,60 @@ where
 struct ElementCx<'a> {
     frame: ElementFrame,
     style: style::servo_arc::Arc<ComputedValues>,
-    // layout: Layout,
     pos: Point,
     scale: f64,
     element: &'a Node,
-    font_size: f32,
-    text_color: Color,
     transform: Affine,
     image: Option<Arc<DynamicImage>>,
     devtools: &'a Devtools,
 }
 
 impl ElementCx<'_> {
-    fn stroke_text(
-        &self,
-        scene: &mut Scene,
-        text_context: &TextContext,
-        layout: &TextLayout,
-        pos: Point,
-    ) {
+    fn stroke_text(&self, scene: &mut Scene, text_layout: &TextLayout, pos: Point) {
         let transform = Affine::translate((pos.x * self.scale, pos.y * self.scale));
 
-        text_context.add(
-            scene,
-            None,
-            self.font_size * self.scale as f32,
-            Some(self.text_color),
-            transform,
-            layout,
-        )
+        for line in text_layout.layout.lines() {
+            for item in line.items() {
+                if let LayoutItem2::GlyphRun(glyph_run) = item {
+                    let mut x = glyph_run.offset();
+                    let y = glyph_run.baseline();
+                    let run = glyph_run.run();
+                    let font = run.font();
+                    let font_size = run.font_size();
+                    let style = glyph_run.style();
+                    let synthesis = run.synthesis();
+                    let glyph_xform = synthesis
+                        .skew()
+                        .map(|angle| Affine::skew(angle.to_radians().tan() as f64, 0.0));
+                    let coords = run
+                        .normalized_coords()
+                        .iter()
+                        .map(|coord| vello::skrifa::instance::NormalizedCoord::from_bits(*coord))
+                        .collect::<Vec<_>>();
+
+                    scene
+                        .draw_glyphs(font)
+                        .brush(&style.brush.color)
+                        .transform(transform)
+                        .glyph_transform(glyph_xform)
+                        .font_size(font_size)
+                        .normalized_coords(&coords)
+                        .draw(
+                            Fill::NonZero,
+                            glyph_run.glyphs().map(|glyph| {
+                                let gx = x + glyph.x;
+                                let gy = y - glyph.y;
+                                x += glyph.advance;
+                                vello::glyph::Glyph {
+                                    id: glyph.id as _,
+                                    x: gx,
+                                    y: gy,
+                                }
+                            }),
+                        );
+                }
+            }
+        }
     }
 
     fn draw_image(&self, scene: &mut Scene) {
