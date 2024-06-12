@@ -1,15 +1,13 @@
 use atomic_refcell::{AtomicRef, AtomicRefCell};
-use html5ever::{local_name, ns, LocalName, QualName};
+use html5ever::{local_name, LocalName, QualName};
 use image::DynamicImage;
 use selectors::matching::QuirksMode;
 use slab::Slab;
 use std::cell::RefCell;
 use std::fmt::Write;
-use std::mem::Discriminant;
 use std::sync::Arc;
 use style::values::computed::Display;
 // use string_cache::Atom;
-use std::borrow::Cow;
 use style::properties::ComputedValues;
 use style::stylesheets::UrlExtraData;
 use style::Atom;
@@ -19,8 +17,6 @@ use style::{
     servo_arc::Arc as ServoArc,
     shared_lock::{Locked, SharedRwLock},
     stylesheets::CssRuleType,
-    values::specified::box_::DisplayInside,
-    values::specified::box_::DisplayOutside,
 };
 use taffy::{
     prelude::{Layout, Style},
@@ -29,8 +25,6 @@ use taffy::{
 use url::Url;
 
 use crate::events::EventListener;
-use crate::layout::collect_layout_children;
-use crate::Document;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum DisplayOuter {
@@ -100,10 +94,6 @@ impl Node {
             listeners: Default::default(),
             is_inline_root: false,
         }
-    }
-
-    pub(crate) fn take_children(&mut self) -> Vec<usize> {
-        std::mem::take(&mut self.children)
     }
 
     pub(crate) fn display_style(&self) -> Option<Display> {
@@ -216,30 +206,6 @@ pub struct Attribute {
     /// The value of the attribute (e.g. the `"test"` in `<div class="test">`)
     pub value: String,
 }
-
-#[derive(Debug, Clone, PartialEq)]
-enum LayoutChildKind {
-    Regular,
-    Anonymous,
-}
-
-#[derive(Debug, Clone)]
-struct LayoutChild {
-    kind: LayoutChildKind,
-    node_id: usize,
-}
-
-#[derive(Debug, Clone)]
-enum LayoutChildrenState {
-    Uninit,
-    Resolved(Vec<LayoutChild>),
-    SameAsRegularChildren(LayoutChildKind),
-    NoChildren,
-}
-
-// impl LayoutChildrenState {
-//     fn from_dom(doc: &Document, container_node_id: usize) -> Self {}
-// }
 
 #[derive(Debug, Clone)]
 pub struct ElementNodeData {
@@ -369,32 +335,11 @@ impl TextLayout {
 pub struct TextNodeData {
     /// The textual content of the text node
     pub content: String,
-    // /// Parley text layout. Note that not all text nodes will have their own layout. Text nodes
-    // /// that are part of a larger inline context will be added to a layout higher up the tree
-    // pub layout: Option<Box<TextLayout>>,
 }
-
-// impl TextNodeData {
-//     pub fn get_or_init_layout(
-//         &mut self,
-//         font_ctx: &mut parley::FontContext,
-//         layout_ctx: &mut parley::LayoutContext<TextBrush>,
-//         display_scale: f32,
-//         // styles: &ComputedValues,
-//     ) -> &mut TextLayout {
-//         let layout = TextLayout::new(font_ctx, layout_ctx, &self.content, display_scale);
-//         self.layout = Some(Box::new(layout));
-
-//         return &mut **self.layout.as_mut().unwrap();
-//     }
-// }
 
 impl TextNodeData {
     pub fn new(content: String) -> Self {
-        Self {
-            content,
-            // layout: None,
-        }
+        Self { content }
     }
 }
 
