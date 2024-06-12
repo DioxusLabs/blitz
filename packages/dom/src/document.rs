@@ -1,7 +1,7 @@
 use crate::events::RendererEvent;
 use crate::node::TextBrush;
 use crate::{Node, NodeData, TextNodeData};
-use quadtree_rs::Quadtree;
+// use quadtree_rs::Quadtree;
 use selectors::{matching::QuirksMode, Element};
 use slab::Slab;
 use std::collections::HashMap;
@@ -54,7 +54,7 @@ pub struct Document {
     pub(crate) base_url: Option<url::Url>,
 
     /// The quadtree we use for hit-testing
-    pub(crate) quadtree: Quadtree<u64, usize>,
+    // pub(crate) quadtree: Quadtree<u64, usize>,
 
     // The HiDPI display scale
     pub(crate) scale: f32,
@@ -89,7 +89,7 @@ impl Document {
             nodes_to_id,
             scale: 1.0,
             base_url: None,
-            quadtree: Quadtree::new(20),
+            // quadtree: Quadtree::new(20),
             stylesheets: HashMap::new(),
             font_ctx: parley::FontContext::default(),
             layout_ctx: parley::LayoutContext::new(),

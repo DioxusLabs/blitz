@@ -4,7 +4,7 @@ use slab::Slab;
 use style::{
     computed_values::white_space::T as StyloWhiteSpaceCollapse,
     data::ElementData,
-    properties::{longhands::line_height, ComputedValues},
+    properties::ComputedValues,
     shared_lock::StylesheetGuards,
     values::{
         computed::{font::SingleFontFamily, Display},
