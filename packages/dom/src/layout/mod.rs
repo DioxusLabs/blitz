@@ -54,7 +54,7 @@ impl TraversePartialTree for Document {
     fn child_ids(&self, node_id: NodeId) -> Self::ChildIter<'_> {
         let layout_children = self.node_from_id(node_id).layout_children.borrow(); //.unwrap().as_ref();
         RefCellChildIter::new(Ref::map(layout_children, |children| {
-            children.as_ref().unwrap().as_slice()
+            children.as_ref().map(|c| c.as_slice()).unwrap_or(&[])
         }))
     }
 
@@ -63,8 +63,8 @@ impl TraversePartialTree for Document {
             .layout_children
             .borrow()
             .as_ref()
-            .unwrap()
-            .len()
+            .map(|c| c.len())
+            .unwrap_or(0)
     }
 
     fn get_child_id(&self, node_id: NodeId, index: usize) -> NodeId {

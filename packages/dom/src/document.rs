@@ -383,7 +383,7 @@ impl Document {
 
     /// Ensure that the layout_children field is populated for all nodes
     pub fn resolve_layout_children(&mut self) {
-        let root_node_id = self.root_element().id;
+        let root_node_id = self.root_node().id;
         resolve_layout_children_recursive(self, root_node_id);
 
         pub fn resolve_layout_children_recursive(doc: &mut Document, node_id: usize) {
