@@ -242,7 +242,7 @@ impl crate::document::Document {
             options: GLOBAL_STYLE_DATA.options.clone(),
             guards,
             visited_styles_enabled: false,
-            animations: (&DocumentAnimationSet::default()).clone(),
+            animations: DocumentAnimationSet::default().clone(),
             current_time_for_animations: 0.0,
             snapshot_map: &self.snapshots,
             registered_speculative_painters: &RegisteredPaintersImpl,
@@ -397,7 +397,7 @@ impl<'a> selectors::Element for BlitzNode<'a> {
     }
 
     fn parent_element(&self) -> Option<Self> {
-        TElement::traversal_parent(&self)
+        TElement::traversal_parent(self)
     }
 
     fn parent_node_is_shadow_root(&self) -> bool {
@@ -440,14 +440,7 @@ impl<'a> selectors::Element for BlitzNode<'a> {
 
     fn first_element_child(&self) -> Option<Self> {
         let mut children = self.dom_children();
-
-        while let Some(child) = children.next() {
-            if child.is_element() {
-                return Some(child);
-            }
-        }
-
-        None
+        children.find(|child| child.is_element())
     }
 
     fn is_html_element_in_html_document(&self) -> bool {

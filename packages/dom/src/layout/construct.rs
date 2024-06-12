@@ -39,7 +39,7 @@ pub(crate) fn collect_layout_children(
         DisplayInside::Contents => {
 
             // Take children array from node to avoid borrow checker issues.
-            let children = std::mem::replace(&mut doc.nodes[container_node_id].children, Vec::new());
+            let children = std::mem::take(&mut doc.nodes[container_node_id].children);
 
             for child_id in children.iter().copied() {
               collect_layout_children(doc, child_id, layout_children, anonymous_block_id)
@@ -135,7 +135,7 @@ fn collect_complex_layout_children(
     needs_wrap: impl Fn(NodeKind, DisplayOutside) -> bool,
 ) {
     // Take children array from node to avoid borrow checker issues.
-    let children = std::mem::replace(&mut doc.nodes[container_node_id].children, Vec::new());
+    let children = std::mem::take(&mut doc.nodes[container_node_id].children);
 
     for child_id in children.iter().copied() {
         // Get node kind (text, element, comment, etc)
@@ -155,11 +155,9 @@ fn collect_complex_layout_children(
 
         // Skip comment nodes. Note that we do *not* skip `Display::None` nodes as they may need to be hidden.
         // Taffy knows how to deal with `Display::None` children.
-        if child_node_kind == NodeKind::Comment {
-            continue;
-        }
-        // Hide all-whitespace flexbox children as these should be ignored
-        else if hide_whitespace && is_whitespace_node {
+        //
+        // Also hide all-whitespace flexbox children as these should be ignored
+        if child_node_kind == NodeKind::Comment || (hide_whitespace && is_whitespace_node) {
             continue;
         }
         // Recurse into `Display::Contents` nodes
@@ -288,7 +286,7 @@ pub(crate) fn stylo_to_parley_style(style: &ComputedValues) -> TextStyle<'static
 
     TextStyle {
         // font_stack: FontStack::Single(FontFamily::Generic(GenericFamily::SystemUi)),
-        font_stack: FontStack::List(&families),
+        font_stack: FontStack::List(families),
         font_size,
         font_stretch: Default::default(),
         font_style: Default::default(),
@@ -335,7 +333,7 @@ pub(crate) fn build_inline_layout(
 
     let parley_style = root_node_style
         .as_ref()
-        .map(|s| stylo_to_parley_style(&*s))
+        .map(|s| stylo_to_parley_style(s))
         .unwrap_or_default();
 
     // Create a parley tree builder
@@ -403,7 +401,7 @@ pub(crate) fn build_inline_layout(
                 let display = node.display_style().unwrap_or(Display::inline());
 
                 match display.inside() {
-                    DisplayInside::None => return,
+                    DisplayInside::None => {}
                     DisplayInside::Contents => {
                         for child_id in node.children.iter().copied() {
                             build_inline_layout_recursive(builder, nodes, child_id, collapse_mode);
@@ -425,7 +423,7 @@ pub(crate) fn build_inline_layout(
                         } else {
                             let style = node
                                 .primary_styles()
-                                .map(|s| stylo_to_parley_style(&*s))
+                                .map(|s| stylo_to_parley_style(&s))
                                 .unwrap_or_default();
                             builder.push_style_span(style);
 

@@ -313,7 +313,7 @@ impl<'a, Doc: DocumentLike> View<'a, Doc> {
             let mut viewport = Viewport::new((size.width, size.height));
             viewport.set_hidpi_scale(window.scale_factor() as _);
 
-            return (Arc::from(window), viewport);
+            (Arc::from(window), viewport)
         };
 
         rt.block_on(self.renderer.resume(window_builder));
@@ -322,7 +322,7 @@ impl<'a, Doc: DocumentLike> View<'a, Doc> {
             panic!("Renderer failed to resume");
         };
 
-        self.waker = Some(crate::waker::tao_waker(&proxy, state.window.id()));
+        self.waker = Some(crate::waker::tao_waker(proxy, state.window.id()));
         self.renderer.render(&mut self.scene);
     }
 

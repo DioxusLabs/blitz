@@ -122,7 +122,7 @@ where
             return;
         };
 
-        let (window, viewport) = cached_window.take().unwrap_or_else(|| window_builder());
+        let (window, viewport) = cached_window.take().unwrap_or_else(window_builder);
 
         let device = viewport.make_device();
         self.dom.as_mut().set_stylist_device(device);
@@ -214,24 +214,20 @@ where
         // todo: cache this on the node itself
         let node = &self.dom.as_ref().tree()[self.hover_node_id?];
 
-        let Some(cursor) = node.primary_styles().map(|f| {
-            let keyword = f.clone_cursor().keyword;
-
-            match keyword {
-                CursorKind::Auto => {
-                    // if the target is text, it's text cursor
-                    // todo: our "hit" function doesn't return text, only elements
-                    // this will need to be more comprehensive in the future to handle line breaks, shaping, etc.
-                    if node.is_text_node() {
-                        CursorKind::Text
-                    } else {
-                        CursorKind::Auto
-                    }
+        let style = node.primary_styles()?;
+        let keyword = style.clone_cursor().keyword;
+        let cursor = match keyword {
+            CursorKind::Auto => {
+                // if the target is text, it's text cursor
+                // todo: our "hit" function doesn't return text, only elements
+                // this will need to be more comprehensive in the future to handle line breaks, shaping, etc.
+                if node.is_text_node() {
+                    CursorKind::Text
+                } else {
+                    CursorKind::Auto
                 }
-                cusor => cusor,
             }
-        }) else {
-            return None;
+            cusor => cusor,
         };
 
         Some(cursor)
@@ -411,7 +407,7 @@ where
             .render_to_surface(
                 &device.device,
                 &device.queue,
-                &scene,
+                scene,
                 &surface_texture,
                 &render_params,
             )
@@ -521,10 +517,10 @@ where
         let padding_color = Color::rgba(81.0 / 255.0, 144.0 / 245.0, 66.0 / 255.0, 0.5); // green
         draw_cutout_rect(
             scene,
-            base_translation + Vec2::new(scaled_border.left as f64, scaled_border.top as f64),
+            base_translation + Vec2::new(scaled_border.left, scaled_border.top),
             Vec2::new(
-                content_width as f64 + scaled_padding.left + scaled_padding.right,
-                content_height as f64 + scaled_padding.top + scaled_padding.bottom,
+                content_width + scaled_padding.left + scaled_padding.right,
+                content_height + scaled_padding.top + scaled_padding.bottom,
             ),
             scaled_padding.map(f64::from),
             padding_color,
@@ -613,7 +609,7 @@ where
             let taffy::Layout {
                 border, padding, ..
             } = element.final_layout;
-            let scaled_pb = (padding + border).map(|v| f64::from(v));
+            let scaled_pb = (padding + border).map(f64::from);
             let pos = vello::kurbo::Point {
                 x: pos.x + scaled_pb.left,
                 y: pos.y + scaled_pb.top,
@@ -748,7 +744,7 @@ impl ElementCx<'_> {
 
                     scene
                         .draw_glyphs(font)
-                        .brush(&style.brush.color)
+                        .brush(style.brush.color)
                         .transform(transform)
                         .glyph_transform(glyph_xform)
                         .font_size(font_size)
@@ -807,7 +803,7 @@ impl ElementCx<'_> {
                 *resized_image = Some(Arc::new(peniko_image));
             }
 
-            scene.draw_image(&resized_image.as_ref().unwrap(), transform);
+            scene.draw_image(resized_image.as_ref().unwrap(), transform);
         }
     }
 

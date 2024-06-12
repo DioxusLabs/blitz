@@ -33,13 +33,13 @@ impl HtmlDocument {
 
         // Set base url if configured
         if let Some(url) = &cfg.base_url {
-            dom.set_base_url(&url);
+            dom.set_base_url(url);
         }
 
         // Include default and user-specified stylesheets
         dom.add_stylesheet(include_str!("./default.css"));
         for ss in &cfg.stylesheets {
-            dom.add_stylesheet(&ss);
+            dom.add_stylesheet(ss);
         }
 
         // Parse HTML string into document

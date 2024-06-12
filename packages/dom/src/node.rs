@@ -366,7 +366,7 @@ impl Node {
             self.id,
             self.parent,
             self.child_idx,
-            self.node_debug_str().replace("\n", ""),
+            self.node_debug_str().replace('\n', ""),
             self.children
         );
         // println!("{} {:?}", "  ".repeat(level), self.children);
@@ -457,7 +457,7 @@ impl Node {
             NodeData::Element(data) => {
                 let name = &data.name;
                 let class = self.attr(local_name!("class")).unwrap_or("");
-                if class.len() > 0 {
+                if !class.is_empty() {
                     write!(
                         s,
                         "<{} class=\"{}\"> ({:?})",
@@ -481,7 +481,7 @@ impl Node {
         Some(&attr.value)
     }
 
-    pub fn primary_styles<'c>(&'c self) -> Option<AtomicRef<'c, ComputedValues>> {
+    pub fn primary_styles(&self) -> Option<AtomicRef<'_, ComputedValues>> {
         let stylo_element_data = self.stylo_element_data.borrow();
         if stylo_element_data
             .as_ref()
@@ -491,7 +491,7 @@ impl Node {
             Some(AtomicRef::map(
                 stylo_element_data,
                 |data: &Option<ElementData>| -> &ComputedValues {
-                    &**data.as_ref().unwrap().styles.get_primary().unwrap()
+                    data.as_ref().unwrap().styles.get_primary().unwrap()
                 },
             ))
         } else {

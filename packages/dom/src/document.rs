@@ -196,10 +196,10 @@ impl Document {
         let parent_id = node.parent.unwrap();
         let parent = &mut self.nodes[parent_id];
 
-        let mut children = std::mem::replace(&mut parent.children, Vec::new());
+        let mut children = std::mem::take(&mut parent.children);
         children.splice(
             node_child_idx..node_child_idx,
-            inserted_node_ids.into_iter().copied(),
+            inserted_node_ids.iter().copied(),
         );
 
         // Update child_idx and parent values
@@ -221,7 +221,7 @@ impl Document {
         let parent_id = node.parent.unwrap();
         let parent = &mut self.nodes[parent_id];
 
-        let mut children = std::mem::replace(&mut parent.children, Vec::new());
+        let mut children = std::mem::take(&mut parent.children);
         let old_len = children.len();
         children.extend_from_slice(appended_node_ids);
 
@@ -260,7 +260,7 @@ impl Document {
         {
             let parent = &mut self.nodes[parent_id];
 
-            let mut children = std::mem::replace(&mut parent.children, Vec::new());
+            let mut children = std::mem::take(&mut parent.children);
             children.remove(child_idx);
 
             // Update child_idx and parent values
@@ -284,14 +284,14 @@ impl Document {
         }
     }
 
-    pub fn flush_child_indexes(&mut self, target_id: usize, child_idx: usize, level: usize) {
+    pub fn flush_child_indexes(&mut self, target_id: usize, child_idx: usize, _level: usize) {
         let node = &mut self.nodes[target_id];
         node.child_idx = child_idx;
 
         // println!("{} {} {:?} {:?}", "  ".repeat(level), target_id, node.parent, node.children);
 
         for (i, child_id) in node.children.clone().iter().enumerate() {
-            self.flush_child_indexes(*child_id, i, level + 1)
+            self.flush_child_indexes(*child_id, i, _level + 1)
         }
     }
 
@@ -397,7 +397,7 @@ impl Document {
         pub fn resolve_layout_children_recursive(doc: &mut Document, node_id: usize) {
             doc.ensure_layout_children(node_id);
 
-            let children = std::mem::replace(&mut doc.nodes[node_id].children, Vec::new());
+            let children = std::mem::take(&mut doc.nodes[node_id].children);
 
             for child_id in children.iter().copied() {
                 resolve_layout_children_recursive(doc, child_id);

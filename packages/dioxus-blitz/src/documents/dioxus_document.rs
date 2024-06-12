@@ -257,7 +257,7 @@ impl WriteMutations for MutationWriter<'_> {
         println!("register_template name:{}", template.name);
         let template_root_ids: Vec<NodeId> = template
             .roots
-            .into_iter()
+            .iter()
             .map(|root| create_template_node(self.doc, root))
             .collect();
         dbg!(&template_root_ids);
@@ -299,7 +299,7 @@ impl WriteMutations for MutationWriter<'_> {
         let value_trunc = if value.len() > 20 {
             &value[0..20]
         } else {
-            &value
+            value
         };
         println!(
             "hydrate_text_node id:{} path: {:?} text:{}",
@@ -498,16 +498,16 @@ fn create_template_node(doc: &mut Document, node: &TemplateNode) -> NodeId {
             attrs,
             children,
         } => {
-            let name = qual_name(*tag, *namespace);
+            let name = qual_name(tag, *namespace);
             let attrs = attrs
-                .into_iter()
+                .iter()
                 .filter_map(|attr| match attr {
                     TemplateAttribute::Static {
                         name,
                         value,
                         namespace,
                     } => Some(Attribute {
-                        name: qual_name(*name, *namespace),
+                        name: qual_name(name, *namespace),
                         value: value.to_string(),
                     }),
                     TemplateAttribute::Dynamic { .. } => None,
@@ -530,7 +530,7 @@ fn create_template_node(doc: &mut Document, node: &TemplateNode) -> NodeId {
             // }
 
             let child_ids: Vec<NodeId> = children
-                .into_iter()
+                .iter()
                 .map(|child| create_template_node(doc, child))
                 .collect();
             for &child_id in &child_ids {

@@ -334,11 +334,11 @@ impl PrintTree for Document {
         let style = &node.style;
 
         match node.raw_dom_data {
-            NodeData::Document => return "DOCUMENT",
+            NodeData::Document => "DOCUMENT",
             // NodeData::Doctype { .. } => return "DOCTYPE",
-            NodeData::Text { .. } => return node.node_debug_str().leak(),
-            NodeData::Comment { .. } => return "COMMENT",
-            NodeData::AnonymousBlock(_) => return "ANONYMOUS BLOCK",
+            NodeData::Text { .. } => node.node_debug_str().leak(),
+            NodeData::Comment { .. } => "COMMENT",
+            NodeData::AnonymousBlock(_) => "ANONYMOUS BLOCK",
             NodeData::Element(_) => {
                 let display = match style.display {
                     Display::Flex => match style.flex_direction {
@@ -349,9 +349,9 @@ impl PrintTree for Document {
                     Display::Block => "BLOCK",
                     Display::None => "NONE",
                 };
-                return format!("{} ({})", node.node_debug_str(), display).leak();
+                format!("{} ({})", node.node_debug_str(), display).leak()
             } // NodeData::ProcessingInstruction { .. } => return "PROCESSING INSTRUCTION",
-        };
+        }
     }
 
     fn get_final_layout(&self, node_id: NodeId) -> &Layout {
@@ -377,7 +377,7 @@ impl<'a> RefCellChildIter<'a> {
     }
 }
 
-impl<'a, 'b> Iterator for RefCellChildIter<'a> {
+impl<'a> Iterator for RefCellChildIter<'a> {
     type Item = NodeId;
     fn next(&mut self) -> Option<Self::Item> {
         self.items.get(self.idx).map(|id| {
