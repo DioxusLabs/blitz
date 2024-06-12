@@ -1,7 +1,5 @@
 //! Render the readme.md using the gpu renderer
 
-use std::{ffi::OsStr, path::Path};
-
 use comrak::{markdown_to_html, ExtensionOptionsBuilder, Options};
 use dioxus_blitz::Config;
 
