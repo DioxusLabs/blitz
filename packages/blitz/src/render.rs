@@ -353,9 +353,7 @@ where
             self.dom
                 .as_mut()
                 .set_stylist_device(state.viewport.make_device());
-            self.dom
-                .as_mut()
-                .set_scale(state.viewport.scale());
+            self.dom.as_mut().set_scale(state.viewport.scale());
             self.render_context
                 .resize_surface(&mut state.surface, width, height);
             self.clamp_scroll();

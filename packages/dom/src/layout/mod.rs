@@ -102,23 +102,32 @@ impl LayoutPartialTree for Document {
 
             match &mut node.raw_dom_data {
                 NodeData::Text(data) => {
-                    // unreachable!();
-                    compute_leaf_layout(inputs, &node.style, |known_dimensions, available_space| {
-                        let context = TextContext {
-                            text_content: &data.content.trim(),
-                            writing_mode: WritingMode::Horizontal,
-                        };
-                        let font_metrics = FontMetrics {
-                            char_width: 8.0,
-                            char_height: 16.0,
-                        };
-                        text_measure_function(
-                            known_dimensions,
-                            available_space,
-                            &context,
-                            &font_metrics,
-                        )
-                    })
+                    // With the new "inline context" architecture all text nodes should be wrapped in an "inline layout context"
+                    // and should therefore never be measured individually.
+                    println!(
+                        "ERROR: Tried to lay out text node individually ({})",
+                        usize::from(node_id)
+                    );
+                    dbg!(data);
+                    // taffy::LayoutOutput::HIDDEN
+                    unreachable!();
+
+                    // compute_leaf_layout(inputs, &node.style, |known_dimensions, available_space| {
+                    //     let context = TextContext {
+                    //         text_content: &data.content.trim(),
+                    //         writing_mode: WritingMode::Horizontal,
+                    //     };
+                    //     let font_metrics = FontMetrics {
+                    //         char_width: 8.0,
+                    //         char_height: 16.0,
+                    //     };
+                    //     text_measure_function(
+                    //         known_dimensions,
+                    //         available_space,
+                    //         &context,
+                    //         &font_metrics,
+                    //     )
+                    // })
                 }
                 NodeData::Element(element_data) | NodeData::AnonymousBlock(element_data) => {
                     // Hide hidden nodes
@@ -195,7 +204,6 @@ impl Document {
         node_id: NodeId,
         inputs: taffy::tree::LayoutInput,
     ) -> taffy::LayoutOutput {
-
         let scale = self.scale;
 
         // Take inline layout to satisfy borrow checker

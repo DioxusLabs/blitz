@@ -352,11 +352,11 @@ impl Document {
         // we need to resolve stylist first since it will need to drive our layout bits
         self.resolve_stylist();
 
-        // Merge stylo into taffy
-        self.flush_styles_to_layout(vec![self.root_element().id], None, taffy::Display::Block);
-
         // Fix up tree for layout (insert anonymous blocks as necessary, etc)
         self.resolve_layout_children();
+
+        // Merge stylo into taffy
+        self.flush_styles_to_layout(vec![self.root_element().id]);
 
         // Next we resolve layout with the data resolved by stlist
         self.resolve_layout();

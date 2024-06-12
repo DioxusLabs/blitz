@@ -1,7 +1,7 @@
 //! Enable the dom to participate in styling by servo
 //!
 
-use crate::node::{DisplayOuter, Node};
+use crate::node::Node;
 
 use crate::node::NodeData;
 use atomic_refcell::{AtomicRef, AtomicRefMut};
@@ -13,7 +13,6 @@ use selectors::{
 };
 // use slab::Slab;
 use style::values::specified::box_::DisplayOutside;
-use style::values::specified::TextAlignKeyword;
 use style::CaseSensitivityExt;
 use style::{
     animation::DocumentAnimationSet,
@@ -38,7 +37,6 @@ use style::{
 };
 use style_traits::dom::ElementState;
 use taffy::prelude::Style;
-use taffy::Display;
 
 use super::stylo_to_taffy;
 
@@ -47,8 +45,8 @@ impl crate::document::Document {
     pub fn flush_styles_to_layout(
         &mut self,
         children: Vec<usize>,
-        parent: Option<usize>,
-        parent_display: taffy::Display,
+        // parent: Option<usize>,
+        // parent_display: taffy::Display,
     ) {
         // make a floating element
         for child in children.iter() {
@@ -60,17 +58,17 @@ impl crate::document::Document {
                     .and_then(|data| data.styles.get_primary());
 
                 let Some(style) = primary_styles else {
-                    // HACK: hide whitespace-only text node children of flexbox and grid nodes from Taffy
-                    if let NodeData::Text(data) = &node.raw_dom_data {
-                        node.display_outer = DisplayOuter::Inline;
-                        let all_whitespace = data.content.chars().all(|c| c.is_whitespace());
-                        if all_whitespace
-                            && (parent_display == Display::Flex || parent_display == Display::Grid)
-                        {
-                            node.style.display = taffy::Display::None;
-                            node.display_outer = DisplayOuter::None;
-                        }
-                    }
+                    // // HACK: hide whitespace-only text node children of flexbox and grid nodes from Taffy
+                    // if let NodeData::Text(data) = &node.raw_dom_data {
+                    //     node.display_outer = DisplayOuter::Inline;
+                    //     let all_whitespace = data.content.chars().all(|c| c.is_whitespace());
+                    //     if all_whitespace
+                    //         && (parent_display == Display::Flex || parent_display == Display::Grid)
+                    //     {
+                    //         node.style.display = taffy::Display::None;
+                    //         node.display_outer = DisplayOuter::None;
+                    //     }
+                    // }
 
                     continue;
                 };
@@ -208,7 +206,10 @@ impl crate::document::Document {
                 node.cache.clear();
 
                 // would like to change this not require a clone, but requires some refactoring
-                (display, node.children.clone())
+                (
+                    display,
+                    node.layout_children.borrow().as_ref().unwrap().clone(),
+                )
             };
 
             if display == taffy::Display::Flex {
@@ -221,10 +222,15 @@ impl crate::document::Document {
                 });
 
                 // Mutate source child array
-                self.nodes.get_mut(*child).unwrap().children = children.clone();
+                *self
+                    .nodes
+                    .get_mut(*child)
+                    .unwrap()
+                    .layout_children
+                    .borrow_mut() = Some(children.clone());
             }
 
-            self.flush_styles_to_layout(children, Some(*child), display);
+            self.flush_styles_to_layout(children);
         }
 
         // HACK: render block nodes with all inline (or hidden) children using

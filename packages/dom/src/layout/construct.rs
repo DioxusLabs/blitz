@@ -93,10 +93,10 @@ pub(crate) fn collect_layout_children(
                 return layout_children.extend_from_slice(&doc.nodes[container_node_id].children);
             }
 
-            fn block_item_needs_wrap(child_node_kind: NodeKind, display_outside: DisplayOutside, _is_whitespace_node: bool) -> bool {
+            fn block_item_needs_wrap(child_node_kind: NodeKind, display_outside: DisplayOutside) -> bool {
                 child_node_kind == NodeKind::Text || display_outside == DisplayOutside::Inline
             }
-            collect_complex_layout_children(doc, container_node_id, layout_children, anonymous_block_id, block_item_needs_wrap);
+            collect_complex_layout_children(doc, container_node_id, layout_children, anonymous_block_id, false, block_item_needs_wrap);
         }
         DisplayInside::Flex /* | Display::Grid */ => {
 
@@ -114,10 +114,10 @@ pub(crate) fn collect_layout_children(
                 return layout_children.extend_from_slice(&doc.nodes[container_node_id].children);
             }
 
-            fn flex_or_grid_item_needs_wrap(child_node_kind: NodeKind, _display_outside: DisplayOutside, is_whitespace_node: bool) -> bool {
-                child_node_kind == NodeKind::Text && !is_whitespace_node
+            fn flex_or_grid_item_needs_wrap(child_node_kind: NodeKind, _display_outside: DisplayOutside) -> bool {
+                child_node_kind == NodeKind::Text
             }
-            collect_complex_layout_children(doc, container_node_id, layout_children, anonymous_block_id, flex_or_grid_item_needs_wrap);
+            collect_complex_layout_children(doc, container_node_id, layout_children, anonymous_block_id, true, flex_or_grid_item_needs_wrap);
         },
 
         // TODO: Implement table layout
@@ -133,7 +133,8 @@ fn collect_complex_layout_children(
     container_node_id: usize,
     layout_children: &mut Vec<usize>,
     anonymous_block_id: &mut Option<usize>,
-    needs_wrap: impl Fn(NodeKind, DisplayOutside, bool) -> bool,
+    hide_whitespace: bool,
+    needs_wrap: impl Fn(NodeKind, DisplayOutside) -> bool,
 ) {
     // #[inline(always)]
     // fn needs_wrap(container_display_inside: DisplayInside, child_node_kind: NodeKind, child_display_outside: DisplayOutside) -> bool {
@@ -164,13 +165,17 @@ fn collect_complex_layout_children(
         if child_node_kind == NodeKind::Comment {
             continue;
         }
+        // Hide all-whitespace flexbox children as these should be ignored
+        else if hide_whitespace && is_whitespace_node {
+            continue;
+        }
         // Recurse into `Display::Contents` nodes
         else if display_inside == DisplayInside::Contents {
             collect_layout_children(doc, child_id, layout_children, anonymous_block_id)
         }
         // Push nodes that need wrapping into the current "anonymous block container".
         // If there is not an open one then we create one.
-        else if needs_wrap(child_node_kind, display_outside, is_whitespace_node) {
+        else if needs_wrap(child_node_kind, display_outside) {
             use style::selector_parser::PseudoElement;
 
             if anonymous_block_id.is_none() {
@@ -242,7 +247,7 @@ pub(crate) fn stylo_to_parley_style(style: &ComputedValues) -> TextStyle<'static
             SingleFontFamily::FamilyName(name) => {
                 // TODO: fix leak!
                 FontFamily::Named(name.name.as_ref().to_string().leak())
-            },
+            }
             SingleFontFamily::Generic(generic) => FontFamily::Generic(match generic {
                 style::values::computed::font::GenericFontFamily::None => GenericFamily::SansSerif,
                 style::values::computed::font::GenericFontFamily::Serif => GenericFamily::Serif,
@@ -262,7 +267,7 @@ pub(crate) fn stylo_to_parley_style(style: &ComputedValues) -> TextStyle<'static
         .collect();
 
     // TODO: fix leak!
-    let families : &'static [FontFamily] = Box::leak(families.into_boxed_slice());
+    let families: &'static [FontFamily] = Box::leak(families.into_boxed_slice());
 
     // Convert text colour
     let [r, g, b, a] = itext_styles
