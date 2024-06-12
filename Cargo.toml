@@ -12,7 +12,7 @@ style_config = { git = "https://github.com/servo/stylo", rev = "e2a4834" }
 style_traits = { git = "https://github.com/servo/stylo", rev = "e2a4834" }
 selectors = { git = "https://github.com/servo/stylo", rev = "e2a4834" }
 taffy = { version = "0.5.1" }
-parley = { git = "https://github.com/nicoburns/parley", rev = "d9eae94ad92ee1ccb3008b3395e04cbbd22604d3" }
+parley = { git = "https://github.com/nicoburns/parley", rev = "c7cf8f0788043d7e9bf1fb075c92395d7b824d74" }
 # parley = { path = "../parley/parley" }
 dioxus = { git = "https://github.com/dioxuslabs/dioxus", rev = "a3aa6ae771a2d0a4d8cb6055c41efc0193b817ef"}
 dioxus-ssr = { git = "https://github.com/dioxuslabs/dioxus", rev = "a3aa6ae771a2d0a4d8cb6055c41efc0193b817ef" }
