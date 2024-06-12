@@ -247,8 +247,22 @@ pub(crate) fn stylo_to_parley_style(style: &ComputedValues) -> TextStyle<'static
         .iter()
         .map(|family| match family {
             SingleFontFamily::FamilyName(name) => {
-                // TODO: fix leak!
-                FontFamily::Named(name.name.as_ref().to_string().leak())
+                'ret: {
+                    let name = name.name.as_ref();
+
+                    // Legacy web compatibility
+                    #[cfg(target_vendor = "apple")]
+                    if name == "-apple-system" {
+                        break 'ret FontFamily::Generic(GenericFamily::SystemUi);
+                    }
+                    #[cfg(target_os = "macos")]
+                    if name == "BlinkMacSystemFont" {
+                        break 'ret FontFamily::Generic(GenericFamily::SystemUi);
+                    }
+
+                    // TODO: fix leak!
+                    FontFamily::Named(name.to_string().leak())
+                }
             }
             SingleFontFamily::Generic(generic) => FontFamily::Generic(match generic {
                 style::values::computed::font::GenericFontFamily::None => GenericFamily::SansSerif,
@@ -280,6 +294,7 @@ pub(crate) fn stylo_to_parley_style(style: &ComputedValues) -> TextStyle<'static
     let color = peniko::Color { r, g, b, a };
 
     TextStyle {
+        // font_stack: FontStack::Single(FontFamily::Generic(GenericFamily::SystemUi)),
         font_stack: FontStack::List(&families),
         font_size,
         font_stretch: Default::default(),
