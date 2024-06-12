@@ -2,6 +2,7 @@ use html5ever::{local_name, namespace_url, ns, QualName};
 use parley::{builder::TreeBuilder, style::TextStyle, style::WhiteSpaceCollapse, InlineBox};
 use slab::Slab;
 use style::{
+    computed_values::white_space::T as StyloWhiteSpaceCollapse,
     data::ElementData,
     properties::{longhands::line_height, ComputedValues},
     shared_lock::StylesheetGuards,
@@ -318,6 +319,16 @@ pub(crate) fn stylo_to_parley_style(style: &ComputedValues) -> TextStyle<'static
     }
 }
 
+fn white_space_stylo_to_parley(input: StyloWhiteSpaceCollapse) -> WhiteSpaceCollapse {
+    match input {
+        StyloWhiteSpaceCollapse::Normal => WhiteSpaceCollapse::Collapse,
+        StyloWhiteSpaceCollapse::Pre => WhiteSpaceCollapse::Preserve,
+        StyloWhiteSpaceCollapse::Nowrap => WhiteSpaceCollapse::Collapse,
+        StyloWhiteSpaceCollapse::PreWrap => WhiteSpaceCollapse::Preserve,
+        StyloWhiteSpaceCollapse::PreLine => WhiteSpaceCollapse::Preserve,
+    }
+}
+
 pub(crate) fn build_inline_layout(
     doc: &mut Document,
     inline_context_root_node_id: usize,
@@ -337,13 +348,8 @@ pub(crate) fn build_inline_layout(
 
     // TODO: Support more modes. For now we want to support enough for pre tags to render correctly
     let collapse_mode = root_node_style
-        .map(|s| match s.get_inherited_text().white_space {
-            style::computed_values::white_space::T::Normal => WhiteSpaceCollapse::Collapse,
-            style::computed_values::white_space::T::Pre => WhiteSpaceCollapse::Preserve,
-            style::computed_values::white_space::T::Nowrap => WhiteSpaceCollapse::Preserve,
-            style::computed_values::white_space::T::PreWrap => WhiteSpaceCollapse::Preserve,
-            style::computed_values::white_space::T::PreLine => WhiteSpaceCollapse::Preserve,
-        })
+        .map(|s| s.get_inherited_text().white_space)
+        .map(white_space_stylo_to_parley)
         .unwrap_or(WhiteSpaceCollapse::Collapse);
 
     // Create a parley tree builder
@@ -383,13 +389,8 @@ pub(crate) fn build_inline_layout(
 
         let collapse_mode = node
             .primary_styles()
-            .map(|s| match s.get_inherited_text().white_space {
-                style::computed_values::white_space::T::Normal => WhiteSpaceCollapse::Collapse,
-                style::computed_values::white_space::T::Pre => WhiteSpaceCollapse::Preserve,
-                style::computed_values::white_space::T::Nowrap => WhiteSpaceCollapse::Preserve,
-                style::computed_values::white_space::T::PreWrap => WhiteSpaceCollapse::Preserve,
-                style::computed_values::white_space::T::PreLine => WhiteSpaceCollapse::Preserve,
-            })
+            .map(|s| s.get_inherited_text().white_space)
+            .map(white_space_stylo_to_parley)
             .unwrap_or(collapse_mode);
 
         builder.set_white_space_mode(collapse_mode);
