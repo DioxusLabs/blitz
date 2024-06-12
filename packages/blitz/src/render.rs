@@ -136,6 +136,7 @@ where
 
         let device = viewport.make_device();
         self.dom.as_mut().set_stylist_device(device);
+        self.dom.as_mut().set_scale(viewport.scale());
 
         let surface = self
             .render_context
@@ -351,8 +352,10 @@ where
         if width > 0 && height > 0 {
             self.dom
                 .as_mut()
-                .set_stylist_device(dbg!(state.viewport.make_device()));
-            dbg!(&state.viewport);
+                .set_stylist_device(state.viewport.make_device());
+            self.dom
+                .as_mut()
+                .set_scale(state.viewport.scale());
             self.render_context
                 .resize_surface(&mut state.surface, width, height);
             self.clamp_scroll();

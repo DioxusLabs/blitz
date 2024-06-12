@@ -56,6 +56,9 @@ pub struct Document {
     /// The quadtree we use for hit-testing
     pub(crate) quadtree: Quadtree<u64, usize>,
 
+    // The HiDPI display scale
+    pub(crate) scale: f32,
+
     pub(crate) stylesheets: HashMap<String, DocumentStyleSheet>,
 
     /// A Parley font context
@@ -84,6 +87,7 @@ impl Document {
             stylist,
             snapshots,
             nodes_to_id,
+            scale: 1.0,
             base_url: None,
             quadtree: Quadtree::new(20),
             stylesheets: HashMap::new(),
@@ -128,6 +132,10 @@ impl Document {
             .unwrap()
             .as_element()
             .unwrap()
+    }
+
+    pub fn set_scale(&mut self, scale: f32) {
+        self.scale = scale;
     }
 
     pub fn create_node(&mut self, node_data: NodeData) -> usize {
