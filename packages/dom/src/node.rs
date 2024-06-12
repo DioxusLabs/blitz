@@ -260,6 +260,7 @@ pub struct ElementNodeData {
 
     /// The element's image content (\<img\> element's only)
     pub image: Option<Arc<DynamicImage>>,
+    pub resized_image: RefCell<Option<Arc<peniko::Image>>>,
 
     /// The element's template contents (\<template\> elements only)
     pub template_contents: Option<usize>,
@@ -281,6 +282,7 @@ impl ElementNodeData {
             style_attribute: Default::default(),
             inline_layout: None,
             image: None,
+            resized_image: RefCell::new(None),
             template_contents: None,
             // listeners: FxHashSet::default(),
         }

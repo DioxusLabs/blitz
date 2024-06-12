@@ -1,7 +1,7 @@
 mod multicolor_rounded_rect;
 
-use std::num::NonZeroUsize;
 use std::sync::Arc;
+use std::{borrow::BorrowMut, num::NonZeroUsize};
 // So many imports
 use self::multicolor_rounded_rect::{Edge, ElementFrame};
 use crate::{
@@ -784,28 +784,42 @@ impl ElementCx<'_> {
     }
 
     fn draw_image(&self, scene: &mut Scene) {
+        let transform = Affine::translate((self.pos.x * self.scale, self.pos.y * self.scale));
+
+        let width = self.frame.inner_rect.width() as u32;
+        let height = self.frame.inner_rect.height() as u32;
+
         if let Some(image) = &self.image {
-            let transform = Affine::translate((self.pos.x * self.scale, self.pos.y * self.scale));
+            let mut resized_image = self
+                .element
+                .element_data()
+                .unwrap()
+                .resized_image
+                .borrow_mut();
 
-            let width = self.frame.inner_rect.width() as u32;
-            let height = self.frame.inner_rect.height() as u32;
+            if resized_image.is_none()
+                || resized_image
+                    .as_ref()
+                    .is_some_and(|img| img.width != width || img.height != height)
+            {
+                let image_data = image
+                    .clone()
+                    .resize_to_fill(width, height, FilterType::Lanczos3)
+                    .into_rgba8()
+                    .into_raw();
 
-            let image_data = image
-                .clone()
-                .resize_to_fill(width, height, FilterType::Lanczos3)
-                .into_rgba8()
-                .into_raw();
-
-            scene.draw_image(
-                &peniko::Image {
+                let peniko_image = peniko::Image {
                     data: peniko::Blob::new(Arc::new(image_data)),
                     format: peniko::Format::Rgba8,
                     width,
                     height,
                     extend: peniko::Extend::Pad,
-                },
-                transform,
-            );
+                };
+
+                *resized_image = Some(Arc::new(peniko_image));
+            }
+
+            scene.draw_image(&resized_image.as_ref().unwrap(), transform);
         }
     }
 
