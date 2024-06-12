@@ -2,8 +2,8 @@ use taffy::{MaybeMath, MaybeResolve};
 
 #[derive(Debug, Clone, Copy)]
 pub struct ImageContext {
-    pub width: f32,
-    pub height: f32,
+    pub inherent_size: taffy::Size<f32>,
+    pub attr_size: taffy::Size<Option<f32>>,
 }
 
 pub fn image_measure_function(
@@ -11,10 +11,13 @@ pub fn image_measure_function(
     parent_size: taffy::Size<Option<f32>>,
     image_context: &ImageContext,
     style: &taffy::Style,
+    _debug: bool,
 ) -> taffy::geometry::Size<f32> {
+    let inherent_size = image_context.inherent_size;
+
     // Use aspect_ratio from style, fall back to inherent aspect ratio
     let s_aspect_ratio = style.aspect_ratio;
-    let aspect_ratio = s_aspect_ratio.unwrap_or_else(|| image_context.width / image_context.height);
+    let aspect_ratio = s_aspect_ratio.unwrap_or_else(|| inherent_size.width / inherent_size.height);
 
     // Resolve sizes
     let style_size = style
@@ -29,10 +32,9 @@ pub fn image_measure_function(
         .max_size
         .maybe_resolve(parent_size)
         .maybe_apply_aspect_ratio(Some(aspect_ratio));
-    let inherent_size = taffy::Size {
-        width: image_context.width,
-        height: image_context.height,
-    };
+    let attr_size = image_context
+        .attr_size
+        .maybe_apply_aspect_ratio(Some(aspect_ratio));
 
     if known_dimensions.width.is_some() | known_dimensions.height.is_some() {
         return known_dimensions
@@ -42,6 +44,13 @@ pub fn image_measure_function(
 
     if style_size.width.is_some() | style_size.height.is_some() {
         return style_size
+            .maybe_clamp(min_size, max_size)
+            .maybe_apply_aspect_ratio(Some(aspect_ratio))
+            .map(|s| s.unwrap());
+    }
+
+    if attr_size.width.is_some() | attr_size.height.is_some() {
+        return attr_size
             .maybe_clamp(min_size, max_size)
             .maybe_apply_aspect_ratio(Some(aspect_ratio))
             .map(|s| s.unwrap());

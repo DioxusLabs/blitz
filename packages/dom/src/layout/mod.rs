@@ -146,36 +146,51 @@ impl LayoutPartialTree for Document {
                     }
 
                     if *element_data.name.local == *"img" {
-                        // node.style.min_size = Size {
-                        //     width: Dimension::Length(0.0),
-                        //     height: Dimension::Length(0.0),
-                        // };
-                        // node.style.display = Display::Block;
+                        // Get width and height attributes on image element
+                        //
+                        // TODO: smarter sizing using these (depending on object-fit, they shouldn't
+                        // necessarily just override the native size)
+                        let attr_size = taffy::Size {
+                            width: element_data
+                                .attr(local_name!("width"))
+                                .and_then(|val| val.parse::<f32>().ok()),
+                            height: element_data
+                                .attr(local_name!("height"))
+                                .and_then(|val| val.parse::<f32>().ok()),
+                        };
 
                         // Get image's native size
-                        let image_data = match &element_data.image {
-                            Some(image) => ImageContext {
+                        let inherent_size = match &element_data.image {
+                            Some(image) => taffy::Size {
                                 width: image.width() as f32,
                                 height: image.height() as f32,
                             },
-                            None => ImageContext {
+                            None => taffy::Size {
                                 width: 0.0,
                                 height: 0.0,
                             },
                         };
 
-                        return compute_leaf_layout(
+                        let image_context = ImageContext {
+                            inherent_size,
+                            attr_size,
+                        };
+
+                        let computed = compute_leaf_layout(
                             inputs,
                             &node.style,
                             |known_dimensions, _available_space| {
                                 image_measure_function(
                                     known_dimensions,
                                     inputs.parent_size,
-                                    &image_data,
+                                    &image_context,
                                     &node.style,
+                                    false,
                                 )
                             },
                         );
+
+                        return computed;
                     }
 
                     if node.is_inline_root {
