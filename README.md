@@ -88,12 +88,12 @@ Blitz is currently **experimental**. We are actively working on bringing into a 
 - [ ] Standard form controls (Checkbox/Dropdown/slider/etc)
 - [ ] Custom widgets
 - [ ] Shadow elements
-- [x] Zoom (partially implemented, needs to be user controlled)
-- [ ] zoom needs to shrink available UI space (for responsive stuff)
+- [x] Zoom
+- [ ] Zoom needs to shrink available UI space (for responsive stuff)
 
 ### Layout
 
-- [ ] Inline
+- [x] Inline (partial support - implementation still immature)
 - [x] Block
 - [x] Flexbox
 - [ ] Grid (implemented, but needs to be enabled in Stylo)
@@ -109,9 +109,15 @@ Blitz is currently **experimental**. We are actively working on bringing into a 
 ### Text
 
 - [ ] Font loading
-  - [ ] System font loading
+  - [x] System font loading
   - [ ] Web font loading
-- [ ] Text layout (bold, italic, size, font, color, selection color, shaping, bidi, etc)
+- [ ] Text
+  - [x] Shaping / Bidi
+  - [x] Layout / line breaking
+  - [x] Font size / line height
+  - [x] Color
+  - [ ] Bold / Italic
+  - [ ] Underline / Strikethrough
 - [ ] Text selection
 
 ### Input
@@ -120,7 +126,7 @@ Blitz is currently **experimental**. We are actively working on bringing into a 
   - [x] The root view
   - [ ] Any `overflow: scroll` element
 - [ ] Hover detection
-- [ ] Click handling (Quadtree?)
+- [x] Click handling
 - [ ] Text input
 
 ### Performance
@@ -132,6 +138,7 @@ Blitz is currently **experimental**. We are actively working on bringing into a 
 
 
 ### Other
+
 - [x] Multiwindow
 - [ ] Hooks for context menu
 - [ ] Accessibility tree
