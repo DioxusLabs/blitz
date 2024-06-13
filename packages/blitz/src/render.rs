@@ -47,7 +47,7 @@ use vello::{
     util::RenderSurface,
     AaSupport, RenderParams, Renderer as VelloRenderer, RendererOptions, Scene,
 };
-use wgpu::{PresentMode, WasmNotSend};
+use wgpu::{PresentMode, SurfaceError, WasmNotSend};
 
 // Simple struct to hold the state of the renderer
 pub struct ActiveRenderState<'s, W> {
@@ -219,7 +219,7 @@ where
 
     pub fn get_cursor(&self) -> Option<CursorKind> {
         // todo: cache this on the node itself
-        let node = &self.dom.as_ref().tree()[self.hover_node_id.unwrap()];
+        let node = &self.dom.as_ref().tree()[self.hover_node_id?];
 
         let Some(cursor) = node.primary_styles().map(|f| {
             let keyword = f.clone_cursor().keyword;
@@ -373,11 +373,12 @@ where
             return;
         };
 
-        let surface_texture = state
-            .surface
-            .surface
-            .get_current_texture()
-            .expect("failed to get surface texture");
+        let surface_texture = match state.surface.surface.get_current_texture() {
+            Ok(surface) => surface,
+            // When resizing too aggresively, the surface can get outdated (another resize) before being rendered into
+            Err(SurfaceError::Outdated) => return,
+            Err(_) => panic!("failed to get surface texture"),
+        };
 
         let device = &self.render_context.devices[state.surface.dev_id];
 

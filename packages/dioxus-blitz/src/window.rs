@@ -7,6 +7,14 @@ use std::task::Waker;
 use tao::dpi::LogicalSize;
 use tao::event::{ElementState, MouseButton};
 use tao::event_loop::{EventLoopProxy, EventLoopWindowTarget};
+#[cfg(any(
+    target_os = "linux",
+    target_os = "dragonfly",
+    target_os = "freebsd",
+    target_os = "netbsd",
+    target_os = "openbsd"
+))]
+use tao::platform::unix::WindowExtUnix;
 #[cfg(target_os = "windows")]
 use tao::platform::windows::WindowExtWindows;
 use tao::{
