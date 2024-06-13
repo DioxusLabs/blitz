@@ -215,6 +215,7 @@ fn collect_complex_layout_children(
 
 pub(crate) fn stylo_to_parley_style(style: &ComputedValues) -> TextStyle<'static, TextBrush> {
     use parley::style::*;
+    use style::values::computed::font::FontStyle as StyloFontStyle;
 
     let font_styles = style.get_font();
     // let text_styles = style.get_text();
@@ -229,6 +230,14 @@ pub(crate) fn stylo_to_parley_style(style: &ComputedValues) -> TextStyle<'static
     };
     // Parley expects line height as a multiple of font size!
     let line_height = line_height / font_size;
+
+    // Convert Bold/Italic
+    let font_weight = FontWeight::new(font_styles.font_weight.value());
+    let font_style = match font_styles.font_style {
+        StyloFontStyle::NORMAL => FontStyle::Normal,
+        StyloFontStyle::ITALIC => FontStyle::Italic,
+        val => FontStyle::Oblique(Some(val.oblique_degrees())),
+    };
 
     // Convert font family
     let families: Vec<_> = font_styles
@@ -289,8 +298,8 @@ pub(crate) fn stylo_to_parley_style(style: &ComputedValues) -> TextStyle<'static
         font_stack: FontStack::List(families),
         font_size,
         font_stretch: Default::default(),
-        font_style: Default::default(),
-        font_weight: FontWeight::new(font_styles.font_weight.value()),
+        font_style,
+        font_weight,
         font_variations: FontSettings::List(&[]),
         font_features: FontSettings::List(&[]),
         locale: Default::default(),

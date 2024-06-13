@@ -115,8 +115,8 @@ Blitz is currently **experimental**. We are actively working on bringing into a 
   - [x] Shaping / Bidi
   - [x] Layout / line breaking
   - [x] Font size / line height
-  - [x] Color
-  - [ ] Bold / Italic
+  - [x] Text color
+  - [x] Bold / Italic
   - [ ] Underline / Strikethrough
 - [ ] Text selection
 
