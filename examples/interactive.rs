@@ -61,6 +61,7 @@ h4 {
 
 .header {
     background-color: pink;
+    padding: 20px;
 }
 
 .container {
