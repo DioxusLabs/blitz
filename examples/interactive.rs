@@ -47,6 +47,10 @@ const CSS: &str = r#"
 //     background-color: red;
 // }
 
+body {
+    line-height: 1;
+}
+
 h2 {
     background-color: green;
 }
@@ -62,6 +66,8 @@ h4 {
 .header {
     background-color: pink;
     padding: 20px;
+    line-height: 1;
+    font-family: sans-serif;
 }
 
 .container {
@@ -90,6 +96,8 @@ h4 {
     border-radius: 5px;
     font-size: 1.5rem;
     cursor: pointer;
+    line-height: 1;
+    font-family: sans-serif;
 }
 
 .btn-green {
