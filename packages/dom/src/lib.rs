@@ -28,7 +28,8 @@ pub mod node;
 /// Implementations that interact with servo's style engine
 pub mod stylo;
 
-/// Conversions from Stylo types to Taffy types
+pub mod stylo_to_parley;
+/// Conversions from Stylo types to Taffy and Parley types
 pub mod stylo_to_taffy;
 
 pub mod image;

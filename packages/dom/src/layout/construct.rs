@@ -1,20 +1,18 @@
 use html5ever::{local_name, namespace_url, ns, QualName};
-use parley::{builder::TreeBuilder, style::TextStyle, style::WhiteSpaceCollapse, InlineBox};
+use parley::{builder::TreeBuilder, style::WhiteSpaceCollapse, InlineBox};
 use slab::Slab;
 use style::{
-    computed_values::white_space::T as StyloWhiteSpaceCollapse,
     data::ElementData,
-    properties::ComputedValues,
     shared_lock::StylesheetGuards,
     values::{
-        computed::{font::SingleFontFamily, Display},
+        computed::Display,
         specified::box_::{DisplayInside, DisplayOutside},
     },
 };
 
 use crate::{
     node::{NodeKind, TextBrush, TextLayout},
-    Document, ElementNodeData, Node, NodeData,
+    stylo_to_parley, Document, ElementNodeData, Node, NodeData,
 };
 
 pub(crate) fn collect_layout_children(
@@ -213,121 +211,6 @@ fn collect_complex_layout_children(
     doc.nodes[container_node_id].children = children;
 }
 
-pub(crate) fn stylo_to_parley_style(style: &ComputedValues) -> TextStyle<'static, TextBrush> {
-    use parley::style::*;
-    use style::values::computed::font::FontStyle as StyloFontStyle;
-
-    let font_styles = style.get_font();
-    // let text_styles = style.get_text();
-    let itext_styles = style.get_inherited_text();
-
-    // Convert font size and line height
-    let font_size = font_styles.font_size.used_size.0.px();
-    let line_height: f32 = match itext_styles.line_height {
-        style::values::generics::text::LineHeight::Normal => font_size * 1.2,
-        style::values::generics::text::LineHeight::Number(num) => font_size * num.0,
-        style::values::generics::text::LineHeight::Length(value) => value.0.px(),
-    };
-    // Parley expects line height as a multiple of font size!
-    let line_height = line_height / font_size;
-
-    // Convert Bold/Italic
-    let font_weight = FontWeight::new(font_styles.font_weight.value());
-    let font_style = match font_styles.font_style {
-        StyloFontStyle::NORMAL => FontStyle::Normal,
-        StyloFontStyle::ITALIC => FontStyle::Italic,
-        val => FontStyle::Oblique(Some(val.oblique_degrees())),
-    };
-
-    // Convert font family
-    let families: Vec<_> = font_styles
-        .font_family
-        .families
-        .list
-        .iter()
-        .map(|family| match family {
-            SingleFontFamily::FamilyName(name) => {
-                'ret: {
-                    let name = name.name.as_ref();
-
-                    // Legacy web compatibility
-                    #[cfg(target_vendor = "apple")]
-                    if name == "-apple-system" {
-                        break 'ret FontFamily::Generic(GenericFamily::SystemUi);
-                    }
-                    #[cfg(target_os = "macos")]
-                    if name == "BlinkMacSystemFont" {
-                        break 'ret FontFamily::Generic(GenericFamily::SystemUi);
-                    }
-
-                    // TODO: fix leak!
-                    FontFamily::Named(name.to_string().leak())
-                }
-            }
-            SingleFontFamily::Generic(generic) => FontFamily::Generic(match generic {
-                style::values::computed::font::GenericFontFamily::None => GenericFamily::SansSerif,
-                style::values::computed::font::GenericFontFamily::Serif => GenericFamily::Serif,
-                style::values::computed::font::GenericFontFamily::SansSerif => {
-                    GenericFamily::SansSerif
-                }
-                style::values::computed::font::GenericFontFamily::Monospace => {
-                    GenericFamily::Monospace
-                }
-                style::values::computed::font::GenericFontFamily::Cursive => GenericFamily::Cursive,
-                style::values::computed::font::GenericFontFamily::Fantasy => GenericFamily::Fantasy,
-                style::values::computed::font::GenericFontFamily::SystemUi => {
-                    GenericFamily::SystemUi
-                }
-            }),
-        })
-        .collect();
-
-    // TODO: fix leak!
-    let families: &'static [FontFamily] = Box::leak(families.into_boxed_slice());
-
-    // Convert text colour
-    let [r, g, b, a] = itext_styles
-        .color
-        .to_color_space(style::color::ColorSpace::Srgb)
-        .raw_components()
-        .map(|f| (f * 255.0) as u8);
-    let color = peniko::Color { r, g, b, a };
-
-    TextStyle {
-        // font_stack: FontStack::Single(FontFamily::Generic(GenericFamily::SystemUi)),
-        font_stack: FontStack::List(families),
-        font_size,
-        font_stretch: Default::default(),
-        font_style,
-        font_weight,
-        font_variations: FontSettings::List(&[]),
-        font_features: FontSettings::List(&[]),
-        locale: Default::default(),
-        brush: TextBrush { color },
-        has_underline: Default::default(),
-        underline_offset: Default::default(),
-        underline_size: Default::default(),
-        underline_brush: Default::default(),
-        has_strikethrough: Default::default(),
-        strikethrough_offset: Default::default(),
-        strikethrough_size: Default::default(),
-        strikethrough_brush: Default::default(),
-        line_height,
-        word_spacing: Default::default(),
-        letter_spacing: itext_styles.letter_spacing.0.px(),
-    }
-}
-
-fn white_space_stylo_to_parley(input: StyloWhiteSpaceCollapse) -> WhiteSpaceCollapse {
-    match input {
-        StyloWhiteSpaceCollapse::Normal => WhiteSpaceCollapse::Collapse,
-        StyloWhiteSpaceCollapse::Pre => WhiteSpaceCollapse::Preserve,
-        StyloWhiteSpaceCollapse::Nowrap => WhiteSpaceCollapse::Collapse,
-        StyloWhiteSpaceCollapse::PreWrap => WhiteSpaceCollapse::Preserve,
-        StyloWhiteSpaceCollapse::PreLine => WhiteSpaceCollapse::Preserve,
-    }
-}
-
 pub(crate) fn build_inline_layout(
     doc: &mut Document,
     inline_context_root_node_id: usize,
@@ -342,7 +225,7 @@ pub(crate) fn build_inline_layout(
 
     let parley_style = root_node_style
         .as_ref()
-        .map(|s| stylo_to_parley_style(s))
+        .map(|s| stylo_to_parley::style(s))
         .unwrap_or_default();
 
     // Create a parley tree builder
@@ -353,7 +236,7 @@ pub(crate) fn build_inline_layout(
     // Set whitespace collapsing mode
     let collapse_mode = root_node_style
         .map(|s| s.get_inherited_text().white_space)
-        .map(white_space_stylo_to_parley)
+        .map(stylo_to_parley::white_space)
         .unwrap_or(WhiteSpaceCollapse::Collapse);
     builder.set_white_space_mode(collapse_mode);
 
@@ -389,7 +272,7 @@ pub(crate) fn build_inline_layout(
         let collapse_mode = node
             .primary_styles()
             .map(|s| s.get_inherited_text().white_space)
-            .map(white_space_stylo_to_parley)
+            .map(stylo_to_parley::white_space)
             .unwrap_or(collapse_mode);
         builder.set_white_space_mode(collapse_mode);
 
@@ -432,7 +315,7 @@ pub(crate) fn build_inline_layout(
                         } else {
                             let style = node
                                 .primary_styles()
-                                .map(|s| stylo_to_parley_style(&s))
+                                .map(|s| stylo_to_parley::style(&s))
                                 .unwrap_or_default();
                             builder.push_style_span(style);
 
