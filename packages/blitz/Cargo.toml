@@ -11,6 +11,7 @@ style = { workspace = true, features = ["servo"] }
 euclid = { version = "0.22", features = ["serde"] }
 selectors = { workspace = true }
 taffy = { workspace = true }
+parley = { workspace = true }
 tokio = { workspace = true, features = ["full"] }
 vello = { workspace = true }
 wgpu = { workspace = true }

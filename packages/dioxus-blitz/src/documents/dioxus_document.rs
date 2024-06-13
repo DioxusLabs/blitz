@@ -13,7 +13,7 @@ use dioxus::{
         AttributeValue, ElementId, Template, TemplateAttribute, TemplateNode, VirtualDom,
         WriteMutations,
     },
-    prelude::{set_event_converter, HtmlEventConverter, MouseData, PlatformEventData},
+    prelude::{set_event_converter, PlatformEventData},
 };
 use futures_util::{pin_mut, FutureExt};
 use rustc_hash::FxHashMap;
@@ -257,7 +257,7 @@ impl WriteMutations for MutationWriter<'_> {
         println!("register_template name:{}", template.name);
         let template_root_ids: Vec<NodeId> = template
             .roots
-            .into_iter()
+            .iter()
             .map(|root| create_template_node(self.doc, root))
             .collect();
         dbg!(&template_root_ids);
@@ -299,7 +299,7 @@ impl WriteMutations for MutationWriter<'_> {
         let value_trunc = if value.len() > 20 {
             &value[0..20]
         } else {
-            &value
+            value
         };
         println!(
             "hydrate_text_node id:{} path: {:?} text:{}",
@@ -311,9 +311,7 @@ impl WriteMutations for MutationWriter<'_> {
         if let NodeData::Text(ref mut text) = node.raw_dom_data {
             text.content = value.to_string();
         } else {
-            node.raw_dom_data = NodeData::Text(TextNodeData {
-                content: value.to_string(),
-            });
+            node.raw_dom_data = NodeData::Text(TextNodeData::new(value.to_string()));
         }
 
         let parent = node.parent;
@@ -500,32 +498,23 @@ fn create_template_node(doc: &mut Document, node: &TemplateNode) -> NodeId {
             attrs,
             children,
         } => {
-            let id_attr_atom = attrs.iter().find_map(|attr| match attr {
-                TemplateAttribute::Static { name, .. } if *name == "id" => Some(Atom::from(*name)),
-                _ => None,
-            });
-            let mut data = ElementNodeData {
-                name: qual_name(*tag, *namespace),
-                id: id_attr_atom,
-                attrs: attrs
-                    .into_iter()
-                    .filter_map(|attr| match attr {
-                        TemplateAttribute::Static {
-                            name,
-                            value,
-                            namespace,
-                        } => Some(Attribute {
-                            name: qual_name(*name, *namespace),
-                            value: value.to_string(),
-                        }),
-                        TemplateAttribute::Dynamic { .. } => None,
-                    })
-                    .collect(),
-                style_attribute: Default::default(),
-                image: None,
-                template_contents: None,
-                // listeners: FxHashSet::default(),
-            };
+            let name = qual_name(tag, *namespace);
+            let attrs = attrs
+                .iter()
+                .filter_map(|attr| match attr {
+                    TemplateAttribute::Static {
+                        name,
+                        value,
+                        namespace,
+                    } => Some(Attribute {
+                        name: qual_name(name, *namespace),
+                        value: value.to_string(),
+                    }),
+                    TemplateAttribute::Dynamic { .. } => None,
+                })
+                .collect();
+
+            let mut data = ElementNodeData::new(name, attrs);
             data.flush_style_attribute(doc.guard());
 
             let id = doc.create_node(NodeData::Element(data));
@@ -541,7 +530,7 @@ fn create_template_node(doc: &mut Document, node: &TemplateNode) -> NodeId {
             // }
 
             let child_ids: Vec<NodeId> = children
-                .into_iter()
+                .iter()
                 .map(|child| create_template_node(doc, child))
                 .collect();
             for &child_id in &child_ids {

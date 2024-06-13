@@ -10,7 +10,6 @@ use html5ever::{
     tree_builder::{ElementFlags, NodeOrText, QuirksMode, TreeSink},
     ExpandedName, QualName,
 };
-use style::Atom;
 
 /// Convert an html5ever Attribute which uses tendril for its value to a blitz Attribute
 /// which uses String.
@@ -34,7 +33,7 @@ pub struct DocumentHtmlParser<'a> {
 }
 
 impl<'a> DocumentHtmlParser<'a> {
-    pub fn new<'b>(doc: &'b mut Document) -> DocumentHtmlParser<'b> {
+    pub fn new(doc: &mut Document) -> DocumentHtmlParser {
         DocumentHtmlParser {
             doc,
             style_nodes: Vec::new(),
@@ -93,7 +92,7 @@ impl<'a> DocumentHtmlParser<'a> {
         let href_attr = node.attr(local_name!("href"));
 
         if let (Some("stylesheet"), Some(href)) = (rel_attr, href_attr) {
-            let url = self.doc.resolve_url(&href);
+            let url = self.doc.resolve_url(href);
             match crate::util::fetch_string(url.as_str()) {
                 Ok(css) => {
                     let css = html_escape::decode_html_entities(&css);
@@ -107,8 +106,8 @@ impl<'a> DocumentHtmlParser<'a> {
     fn load_image(&mut self, target_id: usize) {
         let node = self.node(target_id);
         if let Some(raw_src) = node.attr(local_name!("src")) {
-            if raw_src.len() > 0 {
-                let src = self.doc.resolve_url(&raw_src);
+            if !raw_src.is_empty() {
+                let src = self.doc.resolve_url(raw_src);
 
                 // FIXME: Image fetching should not be a synchronous network request during parsing
                 let image_result = crate::util::fetch_image(src.as_str());
@@ -191,18 +190,8 @@ impl<'b> TreeSink for DocumentHtmlParser<'b> {
         attrs: Vec<html5ever::Attribute>,
         _flags: ElementFlags,
     ) -> Self::Handle {
-        let id_attr_atom = attrs
-            .iter()
-            .find(|attr| &attr.name.local == "id")
-            .map(|attr| Atom::from(attr.value.as_ref()));
-        let mut data = ElementNodeData {
-            name: name.clone(),
-            id: id_attr_atom,
-            attrs: attrs.into_iter().map(html5ever_to_blitz_attr).collect(),
-            style_attribute: Default::default(),
-            image: None,
-            template_contents: None,
-        };
+        let attrs = attrs.into_iter().map(html5ever_to_blitz_attr).collect();
+        let mut data = ElementNodeData::new(name.clone(), attrs);
         data.flush_style_attribute(&self.doc.guard);
 
         let id = self.create_node(NodeData::Element(data));
@@ -363,7 +352,7 @@ impl<'b> TreeSink for DocumentHtmlParser<'b> {
     fn reparent_children(&mut self, node_id: &Self::Handle, new_parent_id: &Self::Handle) {
         // Take children array from old parent
         let node = self.node_mut(*node_id);
-        let children = std::mem::replace(&mut node.children, Vec::new());
+        let children = std::mem::take(&mut node.children);
 
         // Update parent reference of children
         for child_id in children.iter() {

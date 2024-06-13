@@ -32,8 +32,6 @@ pub mod stylo;
 pub mod stylo_to_taffy;
 
 pub mod image;
-/// Utilities for laying out and measuring text
-pub mod text;
 
 pub mod util;
 

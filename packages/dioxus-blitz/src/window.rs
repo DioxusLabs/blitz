@@ -172,7 +172,6 @@ impl<'a, Doc: DocumentLike> View<'a, Doc> {
 
                 if changed {
                     let cursor = self.renderer.get_cursor();
-                    dbg!(cursor);
 
                     if let Some(cursor) = cursor {
                         use style::values::computed::ui::CursorKind;
@@ -291,7 +290,6 @@ impl<'a, Doc: DocumentLike> View<'a, Doc> {
                     width: 800,
                     height: 600,
                 })
-                .with_always_on_top(cfg!(debug_assertions))
                 .build(event_loop)
                 .unwrap();
 
@@ -315,7 +313,7 @@ impl<'a, Doc: DocumentLike> View<'a, Doc> {
             let mut viewport = Viewport::new((size.width, size.height));
             viewport.set_hidpi_scale(window.scale_factor() as _);
 
-            return (Arc::from(window), viewport);
+            (Arc::from(window), viewport)
         };
 
         rt.block_on(self.renderer.resume(window_builder));
@@ -324,7 +322,7 @@ impl<'a, Doc: DocumentLike> View<'a, Doc> {
             panic!("Renderer failed to resume");
         };
 
-        self.waker = Some(crate::waker::tao_waker(&proxy, state.window.id()));
+        self.waker = Some(crate::waker::tao_waker(proxy, state.window.id()));
         self.renderer.render(&mut self.scene);
     }
 

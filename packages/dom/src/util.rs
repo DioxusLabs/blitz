@@ -92,6 +92,8 @@ pub fn walk_tree(indent: usize, node: &Node) {
 
         NodeData::Comment => println!("<!-- COMMENT -->"),
 
+        NodeData::AnonymousBlock(_) => println!("AnonymousBlock"),
+
         NodeData::Element(data) => {
             print!("<{}", data.name.local);
             for attr in data.attrs.iter() {

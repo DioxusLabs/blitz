@@ -173,7 +173,7 @@ pub(crate) fn flex_basis(input: &stylo::FlexBasis) -> taffy::Dimension {
     // TODO: Support flex-basis: content in Taffy
     match input {
         stylo::FlexBasis::Content => taffy::Dimension::Auto,
-        stylo::FlexBasis::Size(size) => dimension(&size).into(),
+        stylo::FlexBasis::Size(size) => dimension(size),
     }
 }
 

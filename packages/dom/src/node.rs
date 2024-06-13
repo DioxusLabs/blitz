@@ -3,8 +3,11 @@ use html5ever::{local_name, LocalName, QualName};
 use image::DynamicImage;
 use selectors::matching::QuirksMode;
 use slab::Slab;
+use std::cell::RefCell;
 use std::fmt::Write;
 use std::sync::Arc;
+use style::values::computed::Display;
+// use string_cache::Atom;
 use style::properties::ComputedValues;
 use style::stylesheets::UrlExtraData;
 use style::Atom;
@@ -43,6 +46,8 @@ pub struct Node {
     pub child_idx: usize,
     // What are our children?
     pub children: Vec<usize>,
+    /// A separate child list that includes anonymous collections of inline elements
+    pub layout_children: RefCell<Option<Vec<usize>>>,
 
     /// Node type (Element, TextNode, etc) specific data
     pub raw_dom_data: NodeData,
@@ -60,6 +65,62 @@ pub struct Node {
     pub unrounded_layout: Layout,
     pub final_layout: Layout,
     pub listeners: Vec<EventListener>,
+
+    // Inline layout data
+    pub is_inline_root: bool,
+}
+
+impl Node {
+    pub fn new(tree: *mut Slab<Node>, id: usize, guard: SharedRwLock, data: NodeData) -> Self {
+        Self {
+            tree,
+
+            id,
+            parent: None,
+            children: vec![],
+            layout_children: RefCell::new(None),
+            child_idx: 0,
+
+            raw_dom_data: data,
+            stylo_element_data: Default::default(),
+            guard,
+
+            style: Default::default(),
+            hidden: false,
+            display_outer: DisplayOuter::Block,
+            cache: Cache::new(),
+            unrounded_layout: Layout::new(),
+            final_layout: Layout::new(),
+            listeners: Default::default(),
+            is_inline_root: false,
+        }
+    }
+
+    pub(crate) fn display_style(&self) -> Option<Display> {
+        // if self.is_text_node() {
+        //     return Some(Display::inline())
+        // }
+
+        Some(
+            self.stylo_element_data
+                .borrow()
+                .as_ref()?
+                .styles
+                .primary
+                .as_ref()?
+                .get_box()
+                .display,
+        )
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum NodeKind {
+    Document,
+    Element,
+    AnonymousBlock,
+    Text,
+    Comment,
 }
 
 /// The different kinds of nodes in the DOM.
@@ -71,24 +132,37 @@ pub enum NodeData {
     /// An element with attributes.
     Element(ElementNodeData),
 
+    /// An anonymous block box
+    AnonymousBlock(ElementNodeData),
+
     /// A text node.
     Text(TextNodeData),
 
     /// A comment.
-    Comment, // { contents: String },
+    Comment,
+    // Comment { contents: String },
 
-             // /// A `DOCTYPE` with name, public id, and system id. See
-             // /// [document type declaration on wikipedia][https://en.wikipedia.org/wiki/Document_type_declaration]
-             // Doctype { name: String, public_id: String, system_id: String },
+    // /// A `DOCTYPE` with name, public id, and system id. See
+    // /// [document type declaration on wikipedia][https://en.wikipedia.org/wiki/Document_type_declaration]
+    // Doctype { name: String, public_id: String, system_id: String },
 
-             // /// A Processing instruction.
-             // ProcessingInstruction { target: String, contents: String },
+    // /// A Processing instruction.
+    // ProcessingInstruction { target: String, contents: String },
 }
 
 impl NodeData {
     pub fn downcast_element(&self) -> Option<&ElementNodeData> {
         match self {
             Self::Element(data) => Some(data),
+            Self::AnonymousBlock(data) => Some(data),
+            _ => None,
+        }
+    }
+
+    pub fn downcast_element_mut(&mut self) -> Option<&mut ElementNodeData> {
+        match self {
+            Self::Element(data) => Some(data),
+            Self::AnonymousBlock(data) => Some(data),
             _ => None,
         }
     }
@@ -106,6 +180,16 @@ impl NodeData {
 
     pub fn attr(&self, name: impl PartialEq<LocalName>) -> Option<&str> {
         self.downcast_element()?.attr(name)
+    }
+
+    pub fn kind(&self) -> NodeKind {
+        match self {
+            NodeData::Document => NodeKind::Document,
+            NodeData::Element(_) => NodeKind::Element,
+            NodeData::AnonymousBlock(_) => NodeKind::AnonymousBlock,
+            NodeData::Text(_) => NodeKind::Text,
+            NodeData::Comment => NodeKind::Comment,
+        }
     }
 }
 
@@ -137,8 +221,12 @@ pub struct ElementNodeData {
     /// The element's parsed style attribute (used by stylo)
     pub style_attribute: Option<ServoArc<Locked<PropertyDeclarationBlock>>>,
 
-    /// The element's image content (applies \<img\> element's only)
+    /// Parley text layout (elements with inline inner display mode only)
+    pub inline_layout: Option<Box<TextLayout>>,
+
+    /// The element's image content (\<img\> element's only)
     pub image: Option<Arc<DynamicImage>>,
+    pub resized_image: RefCell<Option<Arc<peniko::Image>>>,
 
     /// The element's template contents (\<template\> elements only)
     pub template_contents: Option<usize>,
@@ -147,6 +235,25 @@ pub struct ElementNodeData {
 }
 
 impl ElementNodeData {
+    pub fn new(name: QualName, attrs: Vec<Attribute>) -> Self {
+        let id_attr_atom = attrs
+            .iter()
+            .find(|attr| &attr.name.local == "id")
+            .map(|attr| attr.value.as_ref())
+            .map(|value: &str| Atom::from(value));
+        ElementNodeData {
+            name,
+            id: id_attr_atom,
+            attrs,
+            style_attribute: Default::default(),
+            inline_layout: None,
+            image: None,
+            resized_image: RefCell::new(None),
+            template_contents: None,
+            // listeners: FxHashSet::default(),
+        }
+    }
+
     pub fn attrs(&self) -> &[Attribute] {
         &self.attrs
     }
@@ -175,9 +282,48 @@ impl ElementNodeData {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct TextBrush {
+    pub color: peniko::Color,
+}
+
+#[derive(Clone)]
+pub struct TextLayout {
+    pub text: String,
+    pub layout: parley::layout::Layout<TextBrush>,
+}
+
+impl std::fmt::Debug for TextLayout {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "TextLayout")
+    }
+}
+
+impl TextLayout {
+    pub fn measure(&mut self, max_width: Option<f32>) -> taffy::Size<f32> {
+        self.layout
+            .break_all_lines(max_width, parley::layout::Alignment::Start);
+        self.measured_size()
+    }
+
+    pub fn measured_size(&self) -> taffy::Size<f32> {
+        taffy::Size {
+            width: self.layout.width(),
+            height: self.layout.height(),
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct TextNodeData {
+    /// The textual content of the text node
     pub content: String,
+}
+
+impl TextNodeData {
+    pub fn new(content: String) -> Self {
+        Self { content }
+    }
 }
 
 /*
@@ -220,7 +366,7 @@ impl Node {
             self.id,
             self.parent,
             self.child_idx,
-            self.node_debug_str().replace("\n", ""),
+            self.node_debug_str().replace('\n', ""),
             self.children
         );
         // println!("{} {:?}", "  ".repeat(level), self.children);
@@ -260,6 +406,7 @@ impl Node {
     pub fn element_data(&self) -> Option<&ElementNodeData> {
         match self.raw_dom_data {
             NodeData::Element(ref data) => Some(data),
+            NodeData::AnonymousBlock(ref data) => Some(data),
             _ => None,
         }
     }
@@ -267,6 +414,7 @@ impl Node {
     pub fn element_data_mut(&mut self) -> Option<&mut ElementNodeData> {
         match self.raw_dom_data {
             NodeData::Element(ref mut data) => Some(data),
+            NodeData::AnonymousBlock(ref mut data) => Some(data),
             _ => None,
         }
     }
@@ -305,10 +453,11 @@ impl Node {
                 "COMMENT",
                 // &std::str::from_utf8(data.contents.as_bytes().split_at(10).0).unwrap_or("INVALID UTF8")
             ),
+            NodeData::AnonymousBlock(_) => write!(s, "AnonymousBlock"),
             NodeData::Element(data) => {
                 let name = &data.name;
                 let class = self.attr(local_name!("class")).unwrap_or("");
-                if class.len() > 0 {
+                if !class.is_empty() {
                     write!(
                         s,
                         "<{} class=\"{}\"> ({:?})",
@@ -332,7 +481,7 @@ impl Node {
         Some(&attr.value)
     }
 
-    pub fn primary_styles<'c>(&'c self) -> Option<AtomicRef<'c, ComputedValues>> {
+    pub fn primary_styles(&self) -> Option<AtomicRef<'_, ComputedValues>> {
         let stylo_element_data = self.stylo_element_data.borrow();
         if stylo_element_data
             .as_ref()
@@ -342,7 +491,7 @@ impl Node {
             Some(AtomicRef::map(
                 stylo_element_data,
                 |data: &Option<ElementData>| -> &ComputedValues {
-                    &**data.as_ref().unwrap().styles.get_primary().unwrap()
+                    data.as_ref().unwrap().styles.get_primary().unwrap()
                 },
             ))
         } else {
@@ -361,7 +510,7 @@ impl Node {
             NodeData::Text(data) => {
                 out.push_str(&data.content);
             }
-            NodeData::Element { .. } => {
+            NodeData::Element(..) | NodeData::AnonymousBlock(..) => {
                 for child_id in self.children.iter() {
                     self.with(*child_id).write_text_content(out);
                 }
@@ -425,13 +574,15 @@ impl std::fmt::Debug for Node {
         f.debug_struct("NodeData")
             .field("parent", &self.parent)
             .field("id", &self.id)
+            .field("is_inline_root", &self.is_inline_root)
             .field("child_idx", &self.child_idx)
             .field("children", &self.children)
+            .field("layout_children", &self.layout_children.borrow())
             // .field("style", &self.style)
             .field("node", &self.raw_dom_data)
             .field("stylo_element_data", &self.stylo_element_data)
-            .field("unrounded_layout", &self.unrounded_layout)
-            .field("final_layout", &self.final_layout)
+            // .field("unrounded_layout", &self.unrounded_layout)
+            // .field("final_layout", &self.final_layout)
             .finish()
     }
 }

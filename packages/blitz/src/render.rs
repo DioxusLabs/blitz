@@ -6,19 +6,17 @@ use std::sync::Arc;
 use self::multicolor_rounded_rect::{Edge, ElementFrame};
 use crate::{
     devtools::Devtools,
-    // fontcache::FontCache,
-    // imagecache::ImageCache,
-    text::TextContext,
     util::{GradientSlice, StyloGradient, ToVelloColor},
     viewport::Viewport,
 };
 use blitz_dom::{
     events::{EventData, RendererEvent},
-    node::{NodeData, TextNodeData},
+    node::{NodeData, TextLayout, TextNodeData},
     DocumentLike, Node,
 };
 use html5ever::local_name;
 use image::{imageops::FilterType, DynamicImage};
+use parley::layout::LayoutItem2;
 use style::{
     dom::TElement,
     values::{computed::ui::CursorKind, specified::position::HorizontalPositionKeyword},
@@ -75,9 +73,6 @@ pub struct Renderer<'s, W, Doc: DocumentLike> {
 
     pub(crate) render_context: RenderContext,
 
-    /// Our text stencil to be used with vello
-    pub(crate) text_context: TextContext,
-
     /// Our image cache
     // pub(crate) images: ImageCache,
 
@@ -111,9 +106,6 @@ where
             render_context,
             render_state: RenderState::Suspended(None),
             dom,
-            text_context: Default::default(),
-            // images: Default::default(),
-            // fonts: Default::default(),
             devtools: Default::default(),
             hover_node_id: Default::default(),
             scroll_offset: 0.0,
@@ -130,10 +122,11 @@ where
             return;
         };
 
-        let (window, viewport) = cached_window.take().unwrap_or_else(|| window_builder());
+        let (window, viewport) = cached_window.take().unwrap_or_else(window_builder);
 
         let device = viewport.make_device();
         self.dom.as_mut().set_stylist_device(device);
+        self.dom.as_mut().set_scale(viewport.scale());
 
         let surface = self
             .render_context
@@ -221,24 +214,20 @@ where
         // todo: cache this on the node itself
         let node = &self.dom.as_ref().tree()[self.hover_node_id?];
 
-        let Some(cursor) = node.primary_styles().map(|f| {
-            let keyword = f.clone_cursor().keyword;
-
-            match keyword {
-                CursorKind::Auto => {
-                    // if the target is text, it's text cursor
-                    // todo: our "hit" function doesn't return text, only elements
-                    // this will need to be more comprehensive in the future to handle line breaks, shaping, etc.
-                    if node.is_text_node() {
-                        CursorKind::Text
-                    } else {
-                        CursorKind::Auto
-                    }
+        let style = node.primary_styles()?;
+        let keyword = style.clone_cursor().keyword;
+        let cursor = match keyword {
+            CursorKind::Auto => {
+                // if the target is text, it's text cursor
+                // todo: our "hit" function doesn't return text, only elements
+                // this will need to be more comprehensive in the future to handle line breaks, shaping, etc.
+                if node.is_text_node() {
+                    CursorKind::Text
+                } else {
+                    CursorKind::Auto
                 }
-                cusor => cusor,
             }
-        }) else {
-            return None;
+            cusor => cusor,
         };
 
         Some(cursor)
@@ -279,15 +268,27 @@ where
             return;
         };
 
-        let RenderState::Active(state) = &self.render_state else {
+        let RenderState::Active(_) = &self.render_state else {
             return;
         };
 
         if self.devtools.highlight_hover {
             let node = &self.dom.as_ref().tree()[node_id];
-            println!("Node {} {}", node.id, node.node_debug_str());
             dbg!(&node.final_layout);
             dbg!(&node.style);
+
+            println!("Node {} {}", node.id, node.node_debug_str());
+            if node.is_inline_root {
+                let text = &node
+                    .raw_dom_data
+                    .downcast_element()
+                    .unwrap()
+                    .inline_layout
+                    .as_ref()
+                    .unwrap()
+                    .text;
+                println!("Text content: {:?}", text);
+            }
 
             let children: Vec<_> = node
                 .children
@@ -297,6 +298,18 @@ where
                 .collect();
 
             println!("Children: {:?}", children);
+
+            let layout_children: Vec<_> = node
+                .layout_children
+                .borrow()
+                .as_ref()
+                .unwrap()
+                .iter()
+                .map(|id| &self.dom.as_ref().tree()[*id])
+                .map(|node| (node.id, node.order(), node.node_debug_str()))
+                .collect();
+
+            println!("Layout Children: {:?}", layout_children);
             // taffy::print_tree(&self.dom, node_id.into());
         }
 
@@ -337,8 +350,8 @@ where
         if width > 0 && height > 0 {
             self.dom
                 .as_mut()
-                .set_stylist_device(dbg!(state.viewport.make_device()));
-            dbg!(&state.viewport);
+                .set_stylist_device(state.viewport.make_device());
+            self.dom.as_mut().set_scale(state.viewport.scale());
             self.render_context
                 .resize_surface(&mut state.surface, width, height);
             self.clamp_scroll();
@@ -394,7 +407,7 @@ where
             .render_to_surface(
                 &device.device,
                 &device.queue,
-                &scene,
+                scene,
                 &surface_texture,
                 &render_params,
             )
@@ -504,10 +517,10 @@ where
         let padding_color = Color::rgba(81.0 / 255.0, 144.0 / 245.0, 66.0 / 255.0, 0.5); // green
         draw_cutout_rect(
             scene,
-            base_translation + Vec2::new(scaled_border.left as f64, scaled_border.top as f64),
+            base_translation + Vec2::new(scaled_border.left, scaled_border.top),
             Vec2::new(
-                content_width as f64 + scaled_padding.left + scaled_padding.right,
-                content_height as f64 + scaled_padding.top + scaled_padding.bottom,
+                content_width + scaled_padding.left + scaled_padding.right,
+                content_height + scaled_padding.top + scaled_padding.bottom,
             ),
             scaled_padding.map(f64::from),
             padding_color,
@@ -532,7 +545,7 @@ where
     ///
     /// Approaching rendering this way guarantees we have all the styles we need when rendering text with not having
     /// to traverse back to the parent for its styles, or needing to pass down styles
-    fn render_element(&self, scene: &mut Scene, node: usize, location: Point) {
+    fn render_element(&self, scene: &mut Scene, node_id: usize, location: Point) {
         // Need to do research on how we can cache most of the bezpaths - there's gonna be a lot of encoding between frames.
         // Might be able to cache resources deeper in vello.
         //
@@ -548,8 +561,7 @@ where
         //  - list, position, table, text, ui,
         //  - custom_properties, writing_mode, rules, visited_style, flags,  box_, column, counters, effects,
         //  - inherited_box, inherited_table, inherited_text, inherited_ui,
-
-        let element = &self.dom.as_ref().tree()[node];
+        let element = &self.dom.as_ref().tree()[node_id];
 
         // Early return if the element is hidden
         if matches!(element.style.display, taffy::prelude::Display::None) {
@@ -580,17 +592,70 @@ where
         cx.stroke_devtools(scene);
         cx.draw_image(scene);
 
-        for child in &cx.element.children {
-            match &self.dom.as_ref().tree()[*child].raw_dom_data {
-                NodeData::Element(_) => self.render_element(scene, *child, cx.pos),
-                NodeData::Text(TextNodeData { content }) => {
-                    let (_layout, pos) = self.node_position(*child, cx.pos);
-                    cx.stroke_text(scene, &self.text_context, &content, pos)
+        if element.is_inline_root {
+            let (_layout, pos) = self.node_position(node_id, location);
+            let text_layout = &element
+                .raw_dom_data
+                .downcast_element()
+                .unwrap()
+                .inline_layout
+                .as_ref()
+                .unwrap_or_else(|| {
+                    dbg!(&element);
+                    panic!("Tried to render node marked as inline root that does not have an inline layout");
+                });
+
+            // Apply padding/border offset to inline root
+            let taffy::Layout {
+                border, padding, ..
+            } = element.final_layout;
+            let scaled_pb = (padding + border).map(f64::from);
+            let pos = vello::kurbo::Point {
+                x: pos.x + scaled_pb.left,
+                y: pos.y + scaled_pb.top,
+            };
+
+            // Render text
+            cx.stroke_text(scene, text_layout, pos);
+
+            // Render inline boxes
+            for line in text_layout.layout.lines() {
+                for item in line.items() {
+                    if let LayoutItem2::InlineBox(ibox) = item {
+                        self.render_node(scene, ibox.id as usize, pos);
+                    }
                 }
-                NodeData::Document => {}
-                // NodeData::Doctype => {}
-                NodeData::Comment => {} // NodeData::ProcessingInstruction { .. } => {}
             }
+        } else {
+            for child_id in cx
+                .element
+                .layout_children
+                .borrow()
+                .as_ref()
+                .unwrap()
+                .iter()
+                .copied()
+            {
+                self.render_node(scene, child_id, cx.pos);
+            }
+        }
+    }
+
+    fn render_node(&self, scene: &mut Scene, node_id: usize, location: Point) {
+        let node = &self.dom.as_ref().tree()[node_id];
+
+        match &node.raw_dom_data {
+            NodeData::Element(_) | NodeData::AnonymousBlock(_) => {
+                self.render_element(scene, node_id, location)
+            }
+            NodeData::Text(TextNodeData { .. }) => {
+                // Text nodes should never be rendered directly
+                // (they should always be rendered as part of an inline layout)
+                unreachable!()
+            }
+            NodeData::Document => {}
+            // NodeData::Doctype => {}
+            NodeData::Comment => {} // NodeData::ProcessingInstruction { .. } => {}
         }
     }
 
@@ -603,18 +668,11 @@ where
             .stylo_element_data
             .borrow()
             .as_ref()
-            .unwrap()
-            .styles
-            .primary()
-            .clone();
+            .map(|element_data| element_data.styles.primary().clone())
+            .unwrap_or(ComputedValues::initial_values().to_arc());
 
         let (layout, pos) = self.node_position(element.id, location);
         let scale = state.viewport.scale_f64();
-
-        let inherited_text = style.get_inherited_text();
-        let font = style.get_font();
-        let font_size = font.font_size.computed_size().px() as f32;
-        let text_color = inherited_text.clone_color().as_vello();
 
         // the bezpaths for every element are (potentially) cached (not yet, tbd)
         // By performing the transform, we prevent the cache from becoming invalid when the page shifts around
@@ -629,11 +687,8 @@ where
             frame,
             scale,
             style,
-            // layout,
             pos,
             element,
-            font_size,
-            text_color,
             transform,
             image: element.element_data().unwrap().image.clone(),
             devtools: &self.devtools,
@@ -656,61 +711,99 @@ where
 struct ElementCx<'a> {
     frame: ElementFrame,
     style: style::servo_arc::Arc<ComputedValues>,
-    // layout: Layout,
     pos: Point,
     scale: f64,
     element: &'a Node,
-    font_size: f32,
-    text_color: Color,
     transform: Affine,
     image: Option<Arc<DynamicImage>>,
     devtools: &'a Devtools,
 }
 
 impl ElementCx<'_> {
-    fn stroke_text(
-        &self,
-        scene: &mut Scene,
-        text_context: &TextContext,
-        contents: &str,
-        pos: Point,
-    ) {
-        let transform = Affine::translate((pos.x * self.scale, pos.y * self.scale))
-            .then_translate((0.0, self.font_size as f64 * self.scale as f64).into());
+    fn stroke_text(&self, scene: &mut Scene, text_layout: &TextLayout, pos: Point) {
+        let transform = Affine::translate((pos.x * self.scale, pos.y * self.scale));
 
-        text_context.add(
-            scene,
-            None,
-            self.font_size * self.scale as f32,
-            Some(self.text_color),
-            transform,
-            contents,
-        )
+        for line in text_layout.layout.lines() {
+            for item in line.items() {
+                if let LayoutItem2::GlyphRun(glyph_run) = item {
+                    let mut x = glyph_run.offset();
+                    let y = glyph_run.baseline();
+                    let run = glyph_run.run();
+                    let font = run.font();
+                    let font_size = run.font_size();
+                    let style = glyph_run.style();
+                    let synthesis = run.synthesis();
+                    let glyph_xform = synthesis
+                        .skew()
+                        .map(|angle| Affine::skew(angle.to_radians().tan() as f64, 0.0));
+                    let coords = run
+                        .normalized_coords()
+                        .iter()
+                        .map(|coord| vello::skrifa::instance::NormalizedCoord::from_bits(*coord))
+                        .collect::<Vec<_>>();
+
+                    scene
+                        .draw_glyphs(font)
+                        .brush(style.brush.color)
+                        .transform(transform)
+                        .glyph_transform(glyph_xform)
+                        .font_size(font_size)
+                        .normalized_coords(&coords)
+                        .draw(
+                            Fill::NonZero,
+                            glyph_run.glyphs().map(|glyph| {
+                                let gx = x + glyph.x;
+                                let gy = y - glyph.y;
+                                x += glyph.advance;
+                                vello::glyph::Glyph {
+                                    id: glyph.id as _,
+                                    x: gx,
+                                    y: gy,
+                                }
+                            }),
+                        );
+                }
+            }
+        }
     }
 
     fn draw_image(&self, scene: &mut Scene) {
+        let transform = Affine::translate((self.pos.x * self.scale, self.pos.y * self.scale));
+
+        let width = self.frame.inner_rect.width() as u32;
+        let height = self.frame.inner_rect.height() as u32;
+
         if let Some(image) = &self.image {
-            let transform = Affine::translate((self.pos.x * self.scale, self.pos.y * self.scale));
+            let mut resized_image = self
+                .element
+                .element_data()
+                .unwrap()
+                .resized_image
+                .borrow_mut();
 
-            let width = self.frame.inner_rect.width() as u32;
-            let height = self.frame.inner_rect.height() as u32;
+            if resized_image.is_none()
+                || resized_image
+                    .as_ref()
+                    .is_some_and(|img| img.width != width || img.height != height)
+            {
+                let image_data = image
+                    .clone()
+                    .resize_to_fill(width, height, FilterType::Lanczos3)
+                    .into_rgba8()
+                    .into_raw();
 
-            let image_data = image
-                .clone()
-                .resize_to_fill(width, height, FilterType::Lanczos3)
-                .into_rgba8()
-                .into_raw();
-
-            scene.draw_image(
-                &peniko::Image {
+                let peniko_image = peniko::Image {
                     data: peniko::Blob::new(Arc::new(image_data)),
                     format: peniko::Format::Rgba8,
                     width,
                     height,
                     extend: peniko::Extend::Pad,
-                },
-                transform,
-            );
+                };
+
+                *resized_image = Some(Arc::new(peniko_image));
+            }
+
+            scene.draw_image(resized_image.as_ref().unwrap(), transform);
         }
     }
 

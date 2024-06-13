@@ -11,6 +11,8 @@ selectors = { workspace = true }
 style_config = { workspace = true }
 style_traits = { workspace = true }
 taffy = { workspace = true }
+parley = { workspace = true }
+peniko = { workspace = true }
 slab = "0.4.9"
 app_units = "0.7.5"
 euclid = { version = "0.22", features = ["serde"] }

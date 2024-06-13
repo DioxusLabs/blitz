@@ -111,11 +111,11 @@ fn launch_with_window<Doc: DocumentLike + 'static>(window: View<'static, Doc>) {
 
         let mut on_resume = || {
             for (_, view) in windows.iter_mut() {
-                view.resume(&event_loop, &proxy, &rt);
+                view.resume(event_loop, &proxy, &rt);
             }
 
             for view in pending_windows.iter_mut() {
-                view.resume(&event_loop, &proxy, &rt);
+                view.resume(event_loop, &proxy, &rt);
             }
 
             for window in pending_windows.drain(..) {
@@ -144,11 +144,11 @@ fn launch_with_window<Doc: DocumentLike + 'static>(window: View<'static, Doc>) {
             Event::MainEventsCleared => {}
 
             Event::UserEvent(UserWindowEvent(EventData::Poll, id)) => {
-                windows.get_mut(&id).map(|view| {
+                if let Some(view) = windows.get_mut(&id) {
                     if view.poll() {
                         view.request_redraw();
                     }
-                });
+                };
             }
             // Event::UserEvent(_redraw) => {
             //     for (_, view) in windows.iter() {
@@ -162,10 +162,10 @@ fn launch_with_window<Doc: DocumentLike + 'static>(window: View<'static, Doc>) {
             }
 
             Event::RedrawRequested(window_id) => {
-                windows.get_mut(&window_id).map(|window| {
+                if let Some(window) = windows.get_mut(&window_id) {
                     window.renderer.dom.as_mut().resolve();
                     window.renderer.render(&mut window.scene);
-                });
+                };
             }
 
             Event::Suspended => {
@@ -179,9 +179,9 @@ fn launch_with_window<Doc: DocumentLike + 'static>(window: View<'static, Doc>) {
             Event::WindowEvent {
                 window_id, event, ..
             } => {
-                windows.get_mut(&window_id).map(|window| {
+                if let Some(window) = windows.get_mut(&window_id) {
                     window.handle_window_event(event);
-                });
+                };
             }
 
             _ => (),

@@ -1,7 +1,7 @@
 //! Enable the dom to participate in styling by servo
 //!
 
-use crate::node::{DisplayOuter, Node};
+use crate::node::Node;
 
 use crate::node::NodeData;
 use atomic_refcell::{AtomicRef, AtomicRefMut};
@@ -13,7 +13,6 @@ use selectors::{
 };
 // use slab::Slab;
 use style::values::specified::box_::DisplayOutside;
-use style::values::specified::TextAlignKeyword;
 use style::CaseSensitivityExt;
 use style::{
     animation::DocumentAnimationSet,
@@ -38,18 +37,12 @@ use style::{
 };
 use style_traits::dom::ElementState;
 use taffy::prelude::Style;
-use taffy::Display;
 
 use super::stylo_to_taffy;
 
 impl crate::document::Document {
     /// Walk the whole tree, converting styles to layout
-    pub fn flush_styles_to_layout(
-        &mut self,
-        children: Vec<usize>,
-        parent: Option<usize>,
-        parent_display: taffy::Display,
-    ) {
+    pub fn flush_styles_to_layout(&mut self, children: Vec<usize>) {
         // make a floating element
         for child in children.iter() {
             let (display, mut children) = {
@@ -60,18 +53,6 @@ impl crate::document::Document {
                     .and_then(|data| data.styles.get_primary());
 
                 let Some(style) = primary_styles else {
-                    // HACK: hide whitespace-only text node children of flexbox and grid nodes from Taffy
-                    if let NodeData::Text(data) = &node.raw_dom_data {
-                        node.display_outer = DisplayOuter::Inline;
-                        let all_whitespace = data.content.chars().all(|c| c.is_whitespace());
-                        if all_whitespace
-                            && (parent_display == Display::Flex || parent_display == Display::Grid)
-                        {
-                            node.style.display = taffy::Display::None;
-                            node.display_outer = DisplayOuter::None;
-                        }
-                    }
-
                     continue;
                 };
 
@@ -208,7 +189,10 @@ impl crate::document::Document {
                 node.cache.clear();
 
                 // would like to change this not require a clone, but requires some refactoring
-                (display, node.children.clone())
+                (
+                    display,
+                    node.layout_children.borrow().as_ref().unwrap().clone(),
+                )
             };
 
             if display == taffy::Display::Flex {
@@ -221,89 +205,15 @@ impl crate::document::Document {
                 });
 
                 // Mutate source child array
-                self.nodes.get_mut(*child).unwrap().children = children.clone();
+                *self
+                    .nodes
+                    .get_mut(*child)
+                    .unwrap()
+                    .layout_children
+                    .borrow_mut() = Some(children.clone());
             }
 
-            self.flush_styles_to_layout(children, Some(*child), display);
-        }
-
-        // HACK: render block nodes with all inline (or hidden) children using
-        // a flexbox wrapped row with start alignment in both axis.
-        if let Some(parent_id) = parent {
-            if parent_display == taffy::Display::Block {
-                if children
-                    .iter()
-                    .map(|cid| self.nodes.get(*cid).unwrap())
-                    .all(|c| c.display_outer != DisplayOuter::Block)
-                {
-                    let node = self.nodes.get_mut(parent_id).unwrap();
-                    node.style.display = taffy::Display::Flex;
-                    node.style.flex_direction = taffy::FlexDirection::Row;
-                    node.style.flex_wrap = taffy::FlexWrap::Wrap;
-                    node.style.align_items = Some(taffy::AlignItems::Start);
-                    node.style.justify_content = Some(taffy::JustifyContent::Start);
-
-                    // HACK: Set flexbox alignment based on value of text-align property
-                    // This fixes some but not all <center> tags
-                    let stylo_element_data = node.stylo_element_data.borrow();
-                    let primary_styles = stylo_element_data
-                        .as_ref()
-                        .and_then(|data| data.styles.get_primary());
-                    if let Some(style) = primary_styles {
-                        node.style.justify_content = Some(match style.clone_text_align() {
-                            TextAlignKeyword::Start => taffy::JustifyContent::Start,
-                            TextAlignKeyword::Left => taffy::JustifyContent::Start,
-                            TextAlignKeyword::Right => taffy::JustifyContent::End,
-                            TextAlignKeyword::Center => taffy::JustifyContent::Center,
-                            TextAlignKeyword::Justify => taffy::JustifyContent::SpaceBetween,
-                            TextAlignKeyword::End => taffy::JustifyContent::End,
-                            TextAlignKeyword::ServoCenter => taffy::JustifyContent::Center,
-                            TextAlignKeyword::ServoLeft => taffy::JustifyContent::Start,
-                            TextAlignKeyword::ServoRight => taffy::JustifyContent::End,
-                        });
-                    }
-
-                    drop(stylo_element_data);
-
-                    for cid in children.iter() {
-                        let child = self.nodes.get_mut(*cid).unwrap();
-
-                        if child.display_outer != DisplayOuter::Block {
-                            continue;
-                        }
-
-                        let stylo_element_data = child.stylo_element_data.borrow();
-                        let primary_styles = stylo_element_data
-                            .as_ref()
-                            .and_then(|data| data.styles.get_primary());
-
-                        if let Some(style) = primary_styles {
-                            use style::values::generics::box_::VerticalAlign;
-                            use style::values::generics::box_::VerticalAlignKeyword;
-                            match style.clone_vertical_align() {
-                                VerticalAlign::Keyword(keyword) => {
-                                    child.style.align_self = Some(match keyword {
-                                        VerticalAlignKeyword::Baseline => {
-                                            taffy::AlignSelf::Baseline
-                                        }
-                                        VerticalAlignKeyword::Sub => taffy::AlignSelf::End,
-                                        VerticalAlignKeyword::Super => taffy::AlignSelf::Start,
-                                        VerticalAlignKeyword::Top => taffy::AlignSelf::Start,
-                                        VerticalAlignKeyword::TextTop => taffy::AlignSelf::Start,
-                                        VerticalAlignKeyword::Middle => taffy::AlignSelf::Center,
-                                        VerticalAlignKeyword::Bottom => taffy::AlignSelf::End,
-                                        VerticalAlignKeyword::TextBottom => taffy::AlignSelf::End,
-                                    });
-                                }
-                                VerticalAlign::Length(length_percentage) => {
-                                    child.style.margin.top =
-                                        stylo_to_taffy::length_percentage(&length_percentage).into()
-                                }
-                            };
-                        }
-                    }
-                }
-            }
+            self.flush_styles_to_layout(children);
         }
     }
 
@@ -332,7 +242,7 @@ impl crate::document::Document {
             options: GLOBAL_STYLE_DATA.options.clone(),
             guards,
             visited_styles_enabled: false,
-            animations: (&DocumentAnimationSet::default()).clone(),
+            animations: DocumentAnimationSet::default().clone(),
             current_time_for_animations: 0.0,
             snapshot_map: &self.snapshots,
             registered_speculative_painters: &RegisteredPaintersImpl,
@@ -487,7 +397,7 @@ impl<'a> selectors::Element for BlitzNode<'a> {
     }
 
     fn parent_element(&self) -> Option<Self> {
-        TElement::traversal_parent(&self)
+        TElement::traversal_parent(self)
     }
 
     fn parent_node_is_shadow_root(&self) -> bool {
@@ -530,14 +440,7 @@ impl<'a> selectors::Element for BlitzNode<'a> {
 
     fn first_element_child(&self) -> Option<Self> {
         let mut children = self.dom_children();
-
-        while let Some(child) = children.next() {
-            if child.is_element() {
-                return Some(child);
-            }
-        }
-
-        None
+        children.find(|child| child.is_element())
     }
 
     fn is_html_element_in_html_document(&self) -> bool {

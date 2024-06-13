@@ -1,6 +1,7 @@
-use crate::{events::RendererEvent, node::DisplayOuter};
+use crate::events::RendererEvent;
+use crate::node::TextBrush;
 use crate::{Node, NodeData, TextNodeData};
-use quadtree_rs::{area::AreaBuilder, Quadtree};
+// use quadtree_rs::Quadtree;
 use selectors::{matching::QuirksMode, Element};
 use slab::Slab;
 use std::collections::HashMap;
@@ -13,7 +14,7 @@ use style::{
     stylesheets::{AllowImportRules, DocumentStyleSheet, Origin, Stylesheet, UrlExtraData},
     stylist::Stylist,
 };
-use taffy::{AvailableSpace, Cache, Layout};
+use taffy::AvailableSpace;
 use url::Url;
 
 pub trait DocumentLike: AsRef<Document> + AsMut<Document> + Into<Document> {
@@ -53,9 +54,17 @@ pub struct Document {
     pub(crate) base_url: Option<url::Url>,
 
     /// The quadtree we use for hit-testing
-    pub(crate) quadtree: Quadtree<u64, usize>,
+    // pub(crate) quadtree: Quadtree<u64, usize>,
+
+    // The HiDPI display scale
+    pub(crate) scale: f32,
 
     pub(crate) stylesheets: HashMap<String, DocumentStyleSheet>,
+
+    /// A Parley font context
+    pub(crate) font_ctx: parley::FontContext,
+    /// A Parley layout context
+    pub(crate) layout_ctx: parley::LayoutContext<TextBrush>,
 }
 
 impl Document {
@@ -78,9 +87,12 @@ impl Document {
             stylist,
             snapshots,
             nodes_to_id,
+            scale: 1.0,
             base_url: None,
-            quadtree: Quadtree::new(20),
+            // quadtree: Quadtree::new(20),
             stylesheets: HashMap::new(),
+            font_ctx: parley::FontContext::default(),
+            layout_ctx: parley::LayoutContext::new(),
         };
 
         // Initialise document with root Document node
@@ -122,30 +134,17 @@ impl Document {
             .unwrap()
     }
 
+    pub fn set_scale(&mut self, scale: f32) {
+        self.scale = scale;
+    }
+
     pub fn create_node(&mut self, node_data: NodeData) -> usize {
         let slab_ptr = self.nodes.as_mut() as *mut Slab<Node>;
         let entry = self.nodes.vacant_entry();
         let id = entry.key();
-        entry.insert(Node {
-            tree: slab_ptr,
+        let guard = self.guard.clone();
 
-            id,
-            parent: None,
-            children: vec![],
-            child_idx: 0,
-
-            raw_dom_data: node_data,
-            stylo_element_data: Default::default(),
-            guard: self.guard.clone(),
-
-            style: Default::default(),
-            hidden: false,
-            display_outer: DisplayOuter::Block,
-            cache: Cache::new(),
-            unrounded_layout: Layout::new(),
-            final_layout: Layout::new(),
-            listeners: Default::default(),
-        });
+        entry.insert(Node::new(slab_ptr, id, guard, node_data));
 
         // self.quadtree.insert(
         //     AreaBuilder::default()
@@ -161,7 +160,7 @@ impl Document {
 
     pub fn create_text_node(&mut self, text: &str) -> usize {
         let content = text.to_string();
-        let data = NodeData::Text(TextNodeData { content });
+        let data = NodeData::Text(TextNodeData::new(content));
         self.create_node(data)
     }
 
@@ -197,10 +196,10 @@ impl Document {
         let parent_id = node.parent.unwrap();
         let parent = &mut self.nodes[parent_id];
 
-        let mut children = std::mem::replace(&mut parent.children, Vec::new());
+        let mut children = std::mem::take(&mut parent.children);
         children.splice(
             node_child_idx..node_child_idx,
-            inserted_node_ids.into_iter().copied(),
+            inserted_node_ids.iter().copied(),
         );
 
         // Update child_idx and parent values
@@ -222,7 +221,7 @@ impl Document {
         let parent_id = node.parent.unwrap();
         let parent = &mut self.nodes[parent_id];
 
-        let mut children = std::mem::replace(&mut parent.children, Vec::new());
+        let mut children = std::mem::take(&mut parent.children);
         let old_len = children.len();
         children.extend_from_slice(appended_node_ids);
 
@@ -261,7 +260,7 @@ impl Document {
         {
             let parent = &mut self.nodes[parent_id];
 
-            let mut children = std::mem::replace(&mut parent.children, Vec::new());
+            let mut children = std::mem::take(&mut parent.children);
             children.remove(child_idx);
 
             // Update child_idx and parent values
@@ -285,14 +284,14 @@ impl Document {
         }
     }
 
-    pub fn flush_child_indexes(&mut self, target_id: usize, child_idx: usize, level: usize) {
+    pub fn flush_child_indexes(&mut self, target_id: usize, child_idx: usize, _level: usize) {
         let node = &mut self.nodes[target_id];
         node.child_idx = child_idx;
 
         // println!("{} {} {:?} {:?}", "  ".repeat(level), target_id, node.parent, node.children);
 
         for (i, child_id) in node.children.clone().iter().enumerate() {
-            self.flush_child_indexes(*child_id, i, level + 1)
+            self.flush_child_indexes(*child_id, i, _level + 1)
         }
     }
 
@@ -353,8 +352,11 @@ impl Document {
         // we need to resolve stylist first since it will need to drive our layout bits
         self.resolve_stylist();
 
+        // Fix up tree for layout (insert anonymous blocks as necessary, etc)
+        self.resolve_layout_children();
+
         // Merge stylo into taffy
-        self.flush_styles_to_layout(vec![self.root_element().id], None, taffy::Display::Block);
+        self.flush_styles_to_layout(vec![self.root_element().id]);
 
         // Next we resolve layout with the data resolved by stlist
         self.resolve_layout();
@@ -385,6 +387,24 @@ impl Document {
     }
     pub fn stylist_device(&mut self) -> &Device {
         self.stylist.device()
+    }
+
+    /// Ensure that the layout_children field is populated for all nodes
+    pub fn resolve_layout_children(&mut self) {
+        let root_node_id = self.root_node().id;
+        resolve_layout_children_recursive(self, root_node_id);
+
+        pub fn resolve_layout_children_recursive(doc: &mut Document, node_id: usize) {
+            doc.ensure_layout_children(node_id);
+
+            let children = std::mem::take(&mut doc.nodes[node_id].children);
+
+            for child_id in children.iter().copied() {
+                resolve_layout_children_recursive(doc, child_id);
+            }
+
+            doc.nodes[node_id].children = children;
+        }
     }
 
     /// Walk the nodes now that they're properly styled and transfer their styles to the taffy style system

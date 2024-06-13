@@ -48,12 +48,11 @@ mod stylo_types {
 
     impl ToVelloColor for AbsoluteColor {
         fn as_vello(&self) -> VelloColor {
-            VelloColor {
-                r: (self.components.0 * 255.0) as u8,
-                g: (self.components.1 * 255.0) as u8,
-                b: (self.components.2 * 255.0) as u8,
-                a: (self.alpha() * 255.0) as u8,
-            }
+            let [r, g, b, a] = self
+                .to_color_space(style::color::ColorSpace::Srgb)
+                .raw_components()
+                .map(|f| (f * 255.0) as u8);
+            VelloColor { r, g, b, a }
         }
     }
 }

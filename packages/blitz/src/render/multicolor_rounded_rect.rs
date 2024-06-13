@@ -436,9 +436,9 @@ impl ElementFrame {
 
         let center = match corner {
             TopLeft => outer,
-            TopRight => (rect.width() - outer.0, outer.1 ).into(),
-            BottomLeft => (outer.0, rect.height() - outer.1 ).into(),
-            BottomRight => (rect.width() - outer.0, rect.height() - outer.1).into(),
+            TopRight => (rect.width() - outer.0, outer.1),
+            BottomLeft => (outer.0, rect.height() - outer.1),
+            BottomRight => (rect.width() - outer.0, rect.height() - outer.1),
         };
 
         let radii = match side {
@@ -553,7 +553,7 @@ impl BuildBezpath for BezPath {
     fn insert_arc(&mut self, arc: Arc) {
         let mut elements = arc.path_elements(Self::TOLERANCE);
         match elements.next().unwrap() {
-            PathEl::MoveTo(a) if self.elements().len() > 0 => self.push(PathEl::LineTo(a)),
+            PathEl::MoveTo(a) if !self.elements().is_empty() => self.push(PathEl::LineTo(a)),
             el => self.push(el),
         }
         self.extend(elements)

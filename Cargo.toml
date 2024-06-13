@@ -11,12 +11,13 @@ style = { git = "https://github.com/servo/stylo", rev = "e2a4834" }
 style_config = { git = "https://github.com/servo/stylo", rev = "e2a4834" }
 style_traits = { git = "https://github.com/servo/stylo", rev = "e2a4834" }
 selectors = { git = "https://github.com/servo/stylo", rev = "e2a4834" }
-
 taffy = { version = "0.5.1" }
+parley = { git = "https://github.com/nicoburns/parley", rev = "03a24c7df3657aa0ee776421ca64821d25bc70e4" }
 dioxus = { git = "https://github.com/dioxuslabs/dioxus", rev = "a3aa6ae771a2d0a4d8cb6055c41efc0193b817ef"}
 dioxus-ssr = { git = "https://github.com/dioxuslabs/dioxus", rev = "a3aa6ae771a2d0a4d8cb6055c41efc0193b817ef" }
 tokio = { version = "1.25.0", features = ["full"] }
 vello = { version = "0.1", features = ["wgpu"] }
+peniko = { version = "0.1" }
 # fello = { git = "https://github.com/linebender/vello" }
 wgpu = "0.19"
 
@@ -52,6 +53,10 @@ euclid = { version = "0.22", features = ["serde"] }
 reqwest = "0.11.24"
 tokio = { version = "1.36.0", features = ["full"] }
 ureq = "2.9"
+
+# [patch."https://github.com/nicoburns/parley"]
+# parley = { path = "../parley/parley" }
+# fontique = { path = "../parley/fontique" }
 
 # # need to match the patching of
 # [patch."https://github.com/servo/webrender"]
