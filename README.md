@@ -127,7 +127,7 @@ Blitz is currently **experimental**. We are actively working on bringing into a 
 - [ ] Scrolling
   - [x] The root view
   - [ ] Any `overflow: scroll` element
-- [ ] Hover detection
+- [x] Hover detection
 - [x] Click handling
 - [ ] Text input
 

@@ -98,21 +98,39 @@ h4 {
     cursor: pointer;
     line-height: 1;
     font-family: sans-serif;
+    border-width: 2px;
+    border-style: solid;
 }
 
 .btn-green {
     background-color: green;
+    border-color: green;
     color: white;
+}
+.btn-green:hover {
+    color: green;
+    background-color: white;
 }
 
 .btn-red {
     background-color: red;
+    border-color: red;
     color: white;
+}
+.btn-red:hover {
+    color: red;
+    background-color: white;
 }
 
 .btn-blue {
     background-color: blue;
+    border-color: blue;
     color: white;
 }
+.btn-blue:hover {
+    color: blue;
+    background-color: white;
+}
+
 
 "#;
