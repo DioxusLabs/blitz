@@ -26,7 +26,7 @@ use style::{
         style_structs::{Box as BoxStyle, Position},
         PropertyDeclarationBlock,
     },
-    selector_parser::SelectorImpl,
+    selector_parser::{NonTSPseudoClass, SelectorImpl},
     servo_arc::{Arc, ArcBorrow},
     shared_lock::{Locked, SharedRwLock, StylesheetGuards},
     thread_state::ThreadState,
@@ -483,10 +483,31 @@ impl<'a> selectors::Element for BlitzNode<'a> {
 
     fn match_non_ts_pseudo_class(
         &self,
-        _pc: &<Self::Impl as selectors::SelectorImpl>::NonTSPseudoClass,
+        psuedo_class: &<Self::Impl as selectors::SelectorImpl>::NonTSPseudoClass,
         _context: &mut MatchingContext<Self::Impl>,
     ) -> bool {
-        false
+        match *psuedo_class {
+            NonTSPseudoClass::Active => false,
+            NonTSPseudoClass::AnyLink => false,
+            NonTSPseudoClass::Checked => false,
+            NonTSPseudoClass::Valid => false,
+            NonTSPseudoClass::Invalid => false,
+            NonTSPseudoClass::Defined => false,
+            NonTSPseudoClass::Disabled => false,
+            NonTSPseudoClass::Enabled => false,
+            NonTSPseudoClass::Focus => false,
+            NonTSPseudoClass::Fullscreen => false,
+            NonTSPseudoClass::Hover => self.is_hovered,
+            NonTSPseudoClass::Indeterminate => false,
+            NonTSPseudoClass::Lang(_) => false,
+            NonTSPseudoClass::Link => false,
+            NonTSPseudoClass::PlaceholderShown => false,
+            NonTSPseudoClass::ReadWrite => false,
+            NonTSPseudoClass::ReadOnly => false,
+            NonTSPseudoClass::ServoNonZeroBorder => false,
+            NonTSPseudoClass::Target => false,
+            NonTSPseudoClass::Visited => false,
+        }
     }
 
     fn match_pseudo_element(

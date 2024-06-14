@@ -223,10 +223,7 @@ impl<'a, Doc: DocumentLike> View<'a, Doc> {
 
                         if let RenderState::Active(state) = &self.renderer.render_state {
                             state.window.set_cursor_icon(tao_cursor);
-
-                            if self.renderer.devtools.highlight_hover {
-                                self.request_redraw();
-                            }
+                            self.request_redraw();
                         }
                     }
                 }

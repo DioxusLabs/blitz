@@ -5,6 +5,7 @@ use crate::{Node, NodeData, TextNodeData};
 use selectors::{matching::QuirksMode, Element};
 use slab::Slab;
 use std::collections::HashMap;
+use style::invalidation::element::restyle_hints::RestyleHint;
 use style::servo_arc::Arc as ServoArc;
 use style::{
     dom::{TDocument, TNode},
@@ -65,6 +66,8 @@ pub struct Document {
     pub(crate) font_ctx: parley::FontContext,
     /// A Parley layout context
     pub(crate) layout_ctx: parley::LayoutContext<TextBrush>,
+
+    pub(crate) hover_node_id: Option<usize>,
 }
 
 impl Document {
@@ -93,6 +96,8 @@ impl Document {
             stylesheets: HashMap::new(),
             font_ctx: parley::FontContext::default(),
             layout_ctx: parley::LayoutContext::new(),
+
+            hover_node_id: None,
         };
 
         // Initialise document with root Document node
@@ -373,6 +378,42 @@ impl Document {
         }
 
         self.root_element().hit(x, y)
+    }
+
+    pub fn set_hover_to(&mut self, x: f32, y: f32) -> bool {
+        let hover_node_id = self.hit(x, y);
+
+        if hover_node_id != self.hover_node_id {
+            let mut maybe_id = self.hover_node_id;
+            while let Some(id) = maybe_id {
+                self.nodes[id].is_hovered = false;
+                if let Some(element_data) = self.nodes[id].stylo_element_data.borrow_mut().as_mut()
+                {
+                    element_data.hint.insert(RestyleHint::RESTYLE_SELF);
+                }
+                maybe_id = self.nodes[id].parent;
+            }
+
+            let mut maybe_id = hover_node_id;
+            while let Some(id) = maybe_id {
+                self.nodes[id].is_hovered = true;
+                if let Some(element_data) = self.nodes[id].stylo_element_data.borrow_mut().as_mut()
+                {
+                    element_data.hint.insert(RestyleHint::RESTYLE_SELF);
+                }
+                maybe_id = self.nodes[id].parent;
+            }
+
+            self.hover_node_id = hover_node_id;
+
+            true
+        } else {
+            false
+        }
+    }
+
+    pub fn get_hover_node_id(&self) -> Option<usize> {
+        self.hover_node_id
     }
 
     /// Update the device and reset the stylist to process the new size

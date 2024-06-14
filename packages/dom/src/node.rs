@@ -60,6 +60,7 @@ pub struct Node {
     // Taffy layout data:
     pub style: Style,
     pub hidden: bool,
+    pub is_hovered: bool,
     pub display_outer: DisplayOuter,
     pub cache: Cache,
     pub unrounded_layout: Layout,
@@ -87,6 +88,7 @@ impl Node {
 
             style: Default::default(),
             hidden: false,
+            is_hovered: false,
             display_outer: DisplayOuter::Block,
             cache: Cache::new(),
             unrounded_layout: Layout::new(),

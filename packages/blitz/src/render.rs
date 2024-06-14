@@ -81,7 +81,6 @@ pub struct Renderer<'s, W, Doc: DocumentLike> {
     // pub(crate) fonts: FontCache,
     pub devtools: Devtools,
 
-    pub hover_node_id: Option<usize>,
     scroll_offset: f64,
     mouse_pos: (f32, f32),
 }
@@ -107,7 +106,6 @@ where
             render_state: RenderState::Suspended(None),
             dom,
             devtools: Default::default(),
-            hover_node_id: Default::default(),
             scroll_offset: 0.0,
             mouse_pos: (0.0, 0.0),
         }
@@ -204,15 +202,13 @@ where
 
         // println!("Mouse move: ({}, {})", x, y);
         // println!("Unscaled: ({}, {})",);
-        self.mouse_pos = (x, y);
-        let old_id = self.hover_node_id;
-        self.hover_node_id = self.dom.as_ref().hit(x, y);
-        old_id != self.hover_node_id
+
+        self.dom.as_mut().set_hover_to(x, y)
     }
 
     pub fn get_cursor(&self) -> Option<CursorKind> {
         // todo: cache this on the node itself
-        let node = &self.dom.as_ref().tree()[self.hover_node_id?];
+        let node = &self.dom.as_ref().tree()[self.dom.as_ref().get_hover_node_id()?];
 
         let style = node.primary_styles()?;
         let keyword = style.clone_cursor().keyword;
@@ -264,7 +260,7 @@ where
     }
 
     pub fn click(&mut self) {
-        let Some(node_id) = self.hover_node_id else {
+        let Some(node_id) = self.dom.as_ref().get_hover_node_id() else {
             return;
         };
 
@@ -407,7 +403,7 @@ where
 
         // Render debug overlay
         if self.devtools.highlight_hover {
-            if let Some(node_id) = self.hover_node_id {
+            if let Some(node_id) = self.dom.as_ref().get_hover_node_id() {
                 self.render_debug_overlay(scene, node_id);
             }
         }
