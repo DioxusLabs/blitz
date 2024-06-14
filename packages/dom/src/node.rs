@@ -299,21 +299,6 @@ impl std::fmt::Debug for TextLayout {
     }
 }
 
-impl TextLayout {
-    pub fn measure(&mut self, max_width: Option<f32>) -> taffy::Size<f32> {
-        self.layout
-            .break_all_lines(max_width, parley::layout::Alignment::Start);
-        self.measured_size()
-    }
-
-    pub fn measured_size(&self) -> taffy::Size<f32> {
-        taffy::Size {
-            width: self.layout.width(),
-            height: self.layout.height(),
-        }
-    }
-}
-
 #[derive(Debug, Clone)]
 pub struct TextNodeData {
     /// The textual content of the text node
