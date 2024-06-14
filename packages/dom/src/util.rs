@@ -83,7 +83,13 @@ pub fn walk_tree(indent: usize, node: &Node) {
             } else {
                 let content = data.content.trim();
                 if content.len() > 10 {
-                    println!("#text: {}...", content.split_at(10).0.escape_default())
+                    println!(
+                        "#text: {}...",
+                        content
+                            .split_at(content.char_indices().take(10).last().unwrap().0)
+                            .0
+                            .escape_default()
+                    )
                 } else {
                     println!("#text: {}", data.content.trim().escape_default())
                 }
