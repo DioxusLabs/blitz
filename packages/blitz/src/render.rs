@@ -273,21 +273,47 @@ where
         };
 
         if self.devtools.highlight_hover {
-            let node = &self.dom.as_ref().tree()[node_id];
+            let node = &self.dom.as_ref().get_node(node_id).unwrap();
             dbg!(&node.final_layout);
             dbg!(&node.style);
 
             println!("Node {} {}", node.id, node.node_debug_str());
             if node.is_inline_root {
-                let text = &node
+                let inline_layout = &node
                     .raw_dom_data
                     .downcast_element()
                     .unwrap()
                     .inline_layout
                     .as_ref()
-                    .unwrap()
-                    .text;
-                println!("Text content: {:?}", text);
+                    .unwrap();
+
+                println!("Text content: {:?}", inline_layout.text);
+                println!("Inline Boxes:");
+                for ibox in inline_layout.layout.inline_boxes() {
+                    print!("(id: {}) ", ibox.id);
+                }
+                println!();
+                println!("Lines:");
+                for (i, line) in inline_layout.layout.lines().enumerate() {
+                    println!("Line {i}:");
+                    for item in line.items() {
+                        print!("  ");
+                        match item {
+                            LayoutItem2::GlyphRun(run) => {
+                                print!("RUN (x: {}, w: {}) ", run.offset().round(), run.run().advance())
+                            }
+                            LayoutItem2::InlineBox(ibox) => print!(
+                                "BOX (id: {} x: {} y: {} w: {}, h: {})",
+                                ibox.id,
+                                ibox.x.round(),
+                                ibox.y.round(),
+                                ibox.width.round(),
+                                ibox.height.round()
+                            ),
+                        }
+                        println!();
+                    }
+                }
             }
 
             let children: Vec<_> = node
