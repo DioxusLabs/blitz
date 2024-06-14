@@ -302,8 +302,7 @@ pub(crate) fn build_inline_layout(
                     (DisplayOutside::Inline, DisplayInside::Flow) => {
                         let tag_name = &node.raw_dom_data.downcast_element().unwrap().name.local;
 
-                        if *tag_name == local_name!("img") || *tag_name == local_name!("input")
-                        {
+                        if *tag_name == local_name!("img") || *tag_name == local_name!("input") {
                             builder.push_inline_box(InlineBox {
                                 id: node_id as u64,
                                 // Overridden by push_inline_box method
@@ -330,7 +329,7 @@ pub(crate) fn build_inline_layout(
 
                             builder.pop_style_span();
                         }
-                    },
+                    }
                     // Inline box
                     (_, _) => {
                         builder.push_inline_box(InlineBox {

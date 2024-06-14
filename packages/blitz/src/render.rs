@@ -300,7 +300,11 @@ where
                         print!("  ");
                         match item {
                             LayoutItem2::GlyphRun(run) => {
-                                print!("RUN (x: {}, w: {}) ", run.offset().round(), run.run().advance())
+                                print!(
+                                    "RUN (x: {}, w: {}) ",
+                                    run.offset().round(),
+                                    run.run().advance()
+                                )
                             }
                             LayoutItem2::InlineBox(ibox) => print!(
                                 "BOX (id: {} x: {} y: {} w: {}, h: {})",

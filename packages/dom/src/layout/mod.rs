@@ -247,7 +247,7 @@ impl Document {
             };
             for ibox in inline_layout.layout.inline_boxes_mut() {
                 let output = self.compute_child_layout(NodeId::from(ibox.id), child_inputs);
-                
+
                 let style = &self.nodes[ibox.id as usize].style;
                 let margin = style.margin.resolve_or_zero(inputs.parent_size);
 
