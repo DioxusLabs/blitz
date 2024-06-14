@@ -292,17 +292,17 @@ pub(crate) fn build_inline_layout(
 
                 let display = node.display_style().unwrap_or(Display::inline());
 
-                match display.inside() {
-                    DisplayInside::None => {}
-                    DisplayInside::Contents => {
+                match (display.outside(), display.inside()) {
+                    (DisplayOutside::None, DisplayInside::None) => {}
+                    (DisplayOutside::None, DisplayInside::Contents) => {
                         for child_id in node.children.iter().copied() {
                             build_inline_layout_recursive(builder, nodes, child_id, collapse_mode);
                         }
                     }
-                    DisplayInside::Flow => {
-                        if node
-                            .raw_dom_data
-                            .is_element_with_tag_name(&local_name!("img"))
+                    (DisplayOutside::Inline, DisplayInside::Flow) => {
+                        let tag_name = &node.raw_dom_data.downcast_element().unwrap().name.local;
+
+                        if *tag_name == local_name!("img") || *tag_name == local_name!("input")
                         {
                             builder.push_inline_box(InlineBox {
                                 id: node_id as u64,
@@ -330,9 +330,9 @@ pub(crate) fn build_inline_layout(
 
                             builder.pop_style_span();
                         }
-                    }
+                    },
                     // Inline box
-                    _ => {
+                    (_, _) => {
                         builder.push_inline_box(InlineBox {
                             id: node_id as u64,
                             // Overridden by push_inline_box method

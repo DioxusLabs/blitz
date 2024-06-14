@@ -14,8 +14,8 @@ use html5ever::local_name;
 use std::cell::Ref;
 use taffy::{
     compute_block_layout, compute_cached_layout, compute_flexbox_layout, compute_grid_layout,
-    compute_leaf_layout, prelude::*, Cache, FlexDirection, LayoutPartialTree, NodeId, RoundTree,
-    Size, Style, TraversePartialTree, TraverseTree,
+    compute_leaf_layout, prelude::*, Cache, FlexDirection, LayoutPartialTree, MaybeMath as _,
+    MaybeResolve, NodeId, ResolveOrZero, RoundTree, Size, Style, TraversePartialTree, TraverseTree,
 };
 
 pub(crate) mod construct;
@@ -232,7 +232,7 @@ impl Document {
         // TODO: eliminate clone
         let style = self.nodes[usize::from(node_id)].style.clone();
 
-        let output = compute_leaf_layout(inputs, &style, |known_dimensions, available_space| {
+        let output = compute_leaf_layout(inputs, &style, |_known_dimensions, available_space| {
             // Short circuit if inline context contains no text or inline boxes
             if inline_layout.text.is_empty() && inline_layout.layout.inline_boxes().is_empty() {
                 return Size::ZERO;
@@ -247,8 +247,12 @@ impl Document {
             };
             for ibox in inline_layout.layout.inline_boxes_mut() {
                 let output = self.compute_child_layout(NodeId::from(ibox.id), child_inputs);
-                ibox.width = output.size.width * scale;
-                ibox.height = output.size.height * scale;
+                
+                let style = &self.nodes[ibox.id as usize].style;
+                let margin = style.margin.resolve_or_zero(inputs.parent_size);
+
+                ibox.width = (margin.left + margin.right + output.size.width) * scale;
+                ibox.height = (margin.top + margin.bottom + output.size.height) * scale;
             }
 
             // Perform inline layout
@@ -277,20 +281,68 @@ impl Document {
                     }
                 })
                 .unwrap_or(parley::layout::Alignment::Start);
-            // .map(|s| {
-            //     s.
-            // })
-            inline_layout.layout.break_all_lines(max_advance, alignment);
+
+            inline_layout.layout.break_all_lines(max_advance);
+
+            let padding = style
+                .padding
+                .resolve_or_zero(inputs.parent_size)
+                .map(|w| w * scale);
+            let border = style
+                .border
+                .resolve_or_zero(inputs.parent_size)
+                .map(|w| w * scale);
+
+            let pbw = (padding + border).horizontal_components().sum() * scale;
+
+            // Align layout
+            let alignment_width = inputs
+                .known_dimensions
+                .width
+                .map(|w| (w * scale) - pbw)
+                .unwrap_or_else(|| {
+                    let computed_width = inline_layout.layout.width();
+                    let style_width = style
+                        .size
+                        .width
+                        .maybe_resolve(inputs.parent_size.width)
+                        .map(|w| w * scale);
+                    let min_width = style
+                        .min_size
+                        .width
+                        .maybe_resolve(inputs.parent_size.width)
+                        .map(|w| w * scale);
+                    let max_width = style
+                        .max_size
+                        .width
+                        .maybe_resolve(inputs.parent_size.width)
+                        .map(|w| w * scale);
+
+                    (style_width)
+                        .unwrap_or(computed_width + pbw)
+                        .max(computed_width)
+                        .maybe_clamp(min_width, max_width)
+                        - pbw
+                });
+
+            inline_layout.layout.align(Some(alignment_width), alignment);
 
             // Store sizes and positions of inline boxes
             for line in inline_layout.layout.lines() {
                 for item in line.items() {
                     if let parley::layout::LayoutItem2::InlineBox(ibox) = item {
-                        let layout = &mut self.nodes[ibox.id as usize].unrounded_layout;
-                        layout.size.width = ibox.width / scale;
-                        layout.size.height = ibox.height / scale;
-                        layout.location.x = ibox.x / scale;
-                        layout.location.y = ibox.y / scale;
+                        let node = &mut self.nodes[ibox.id as usize];
+                        let padding = node.style.padding.resolve_or_zero(child_inputs.parent_size);
+                        let border = node.style.border.resolve_or_zero(child_inputs.parent_size);
+                        let margin = node.style.margin.resolve_or_zero(child_inputs.parent_size);
+
+                        let layout = &mut node.unrounded_layout;
+                        layout.size.width = (ibox.width / scale) - margin.left - margin.right;
+                        layout.size.height = (ibox.height / scale) - margin.top - margin.bottom;
+                        layout.location.x = (ibox.x / scale) + margin.left;
+                        layout.location.y = (ibox.y / scale) + margin.top;
+                        layout.padding = padding; //.map(|p| p / scale);
+                        layout.border = border; //.map(|p| p / scale);
                     }
                 }
             }
@@ -301,7 +353,7 @@ impl Document {
             // dbg!(inline_layout.layout.width());
             // dbg!(inline_layout.layout.height());
 
-            known_dimensions.unwrap_or(taffy::Size {
+            inputs.known_dimensions.unwrap_or(taffy::Size {
                 width: inline_layout.layout.width() / scale,
                 height: inline_layout.layout.height() / scale,
             })
