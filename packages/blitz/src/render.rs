@@ -788,6 +788,58 @@ impl ElementCx<'_> {
                                 }
                             }),
                         );
+
+                    if let Some(underline) = &style.underline {
+                        let mut draw_underline = |x: f32, y: f32, w: f32| {
+                            let thickness = 1.0 / 18.0;
+                            let offset = 1.0 / 9.0;
+                            let path = Rect::new(
+                                x as f64,
+                                y as f64 + font_size as f64 * offset,
+                                (x + w) as f64,
+                                y as f64 + font_size as f64 * (thickness + offset),
+                            );
+
+                            scene.fill(
+                                Fill::NonZero,
+                                self.transform,
+                                underline.brush.color,
+                                None,
+                                &path,
+                            );
+                        };
+                        draw_underline(
+                            glyph_run.offset(),
+                            glyph_run.baseline(),
+                            glyph_run.advance(),
+                        )
+                        // todo: intercept line when crossing an descending character like "gqy"
+                    }
+                    if let Some(strikethrough) = &style.strikethrough {
+                        let mut draw_strikethrough = |x: f32, y: f32, w: f32| {
+                            let thickness = 1.0 / 18.0;
+                            let offset = 65.0 / 252.0;
+                            let height = 1.0f64.max(font_size as f64) / 2.0;
+                            let path = Rect::new(
+                                x as f64,
+                                y as f64 + font_size as f64 * offset - height,
+                                (x + w) as f64,
+                                y as f64 + font_size as f64 * (thickness + offset) - height,
+                            );
+                            scene.fill(
+                                Fill::NonZero,
+                                self.transform,
+                                strikethrough.brush.color,
+                                None,
+                                &path,
+                            );
+                        };
+                        draw_strikethrough(
+                            glyph_run.offset(),
+                            glyph_run.baseline(),
+                            glyph_run.advance(),
+                        )
+                    }
                 }
             }
         }
