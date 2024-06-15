@@ -98,6 +98,18 @@ pub(crate) fn style(style: &stylo::ComputedValues) -> parley::TextStyle<'static,
         .map(|f| (f * 255.0) as u8);
     let color = peniko::Color { r, g, b, a };
 
+    let decoration_brush = style.get_text()
+            .text_decoration_color
+            .as_absolute()
+            .map(|color| {
+                let [r, g, b, a] = color
+                    .to_color_space(style::color::ColorSpace::Srgb)
+                    .raw_components()
+                    .map(|f| (f * 255.0) as u8);
+                let color = peniko::Color { r, g, b, a };
+                TextBrush { color }
+            });
+
     parley::TextStyle {
         // font_stack: parley::FontStack::Single(FontFamily::Generic(GenericFamily::SystemUi)),
         font_stack: parley::FontStack::List(families),
@@ -112,11 +124,11 @@ pub(crate) fn style(style: &stylo::ComputedValues) -> parley::TextStyle<'static,
         has_underline: itext_styles.text_decorations_in_effect.underline,
         underline_offset: Default::default(),
         underline_size: Default::default(),
-        underline_brush: Default::default(),
+        underline_brush: decoration_brush.clone(),
         has_strikethrough: itext_styles.text_decorations_in_effect.line_through,
         strikethrough_offset: Default::default(),
         strikethrough_size: Default::default(),
-        strikethrough_brush: Default::default(),
+        strikethrough_brush: decoration_brush,
         line_height,
         word_spacing: Default::default(),
         letter_spacing: itext_styles.letter_spacing.0.px(),
