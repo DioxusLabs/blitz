@@ -235,8 +235,8 @@ pub(crate) fn build_inline_layout(
 
     // Set whitespace collapsing mode
     let collapse_mode = root_node_style
-        .map(|s| s.get_inherited_text().white_space)
-        .map(stylo_to_parley::white_space)
+        .map(|s| s.get_inherited_text().white_space_collapse)
+        .map(stylo_to_parley::white_space_collapse)
         .unwrap_or(WhiteSpaceCollapse::Collapse);
     builder.set_white_space_mode(collapse_mode);
 
@@ -271,8 +271,8 @@ pub(crate) fn build_inline_layout(
         // Set whitespace collapsing mode
         let collapse_mode = node
             .primary_styles()
-            .map(|s| s.get_inherited_text().white_space)
-            .map(stylo_to_parley::white_space)
+            .map(|s| s.get_inherited_text().white_space_collapse)
+            .map(stylo_to_parley::white_space_collapse)
             .unwrap_or(collapse_mode);
         builder.set_white_space_mode(collapse_mode);
 

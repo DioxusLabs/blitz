@@ -23,7 +23,7 @@ shipyard = { version = "0.6.2", features = [
 app_units = "0.7.3"
 atomic_refcell = { version = "0.1.13", features = ["serde"] }
 fxhash = "0.2.1"
-html5ever = "0.26.0"                                          # also conveniently the one used in servo
+html5ever = { workspace = true }
 string_cache = "0.8.7"
 futures-util = "0.3.29"
 raw-window-handle = "0.6.0"

@@ -1,4 +1,7 @@
-use style::media_queries::{Device, MediaType};
+use style::{
+    media_queries::{Device, MediaType},
+    servo::media_queries::FontMetricsProvider,
+};
 
 #[derive(Default, Debug)]
 pub struct Viewport {
@@ -9,6 +12,22 @@ pub struct Viewport {
     zoom: f32,
 
     pub font_size: f32,
+}
+
+// TODO: implement a proper font metrics provider
+#[derive(Debug, Clone)]
+struct DummyFontMetricsProvider;
+impl FontMetricsProvider for DummyFontMetricsProvider {
+    fn query_font_metrics(
+        &self,
+        _vertical: bool,
+        _font: &style::properties::style_structs::Font,
+        _base_size: style::values::computed::CSSPixelLength,
+        _in_media_query: bool,
+        _retrieve_math_scales: bool,
+    ) -> style::font_metrics::FontMetrics {
+        Default::default()
+    }
 }
 
 impl Viewport {
@@ -57,6 +76,7 @@ impl Viewport {
             selectors::matching::QuirksMode::NoQuirks,
             viewport_size,
             device_pixel_ratio,
+            Box::new(DummyFontMetricsProvider),
         )
     }
 }

@@ -500,6 +500,7 @@ impl<'a> selectors::Element for BlitzNode<'a> {
             NonTSPseudoClass::Hover => self.is_hovered,
             NonTSPseudoClass::Indeterminate => false,
             NonTSPseudoClass::Lang(_) => false,
+            NonTSPseudoClass::CustomState(_) => false,
             NonTSPseudoClass::Link => false,
             NonTSPseudoClass::PlaceholderShown => false,
             NonTSPseudoClass::ReadWrite => false,
@@ -578,6 +579,17 @@ impl<'a> selectors::Element for BlitzNode<'a> {
 
     fn is_root(&self) -> bool {
         self.parent_node().is_none()
+    }
+
+    fn has_custom_state(
+        &self,
+        _name: &<Self::Impl as selectors::SelectorImpl>::Identifier,
+    ) -> bool {
+        false
+    }
+
+    fn add_element_unique_hashes(&self, _filter: &mut selectors::bloom::BloomFilter) -> bool {
+        false
     }
 }
 
@@ -830,6 +842,21 @@ impl<'a> TElement for BlitzNode<'a> {
     ) -> euclid::default::Size2D<Option<app_units::Au>> {
         // FIXME: Implement container queries. For now this effectively disables them without panicking.
         Default::default()
+    }
+
+    fn each_custom_state<F>(&self, _callback: F)
+    where
+        F: FnMut(&AtomIdent),
+    {
+        todo!()
+    }
+
+    fn has_selector_flags(&self, _flags: ElementSelectorFlags) -> bool {
+        todo!()
+    }
+
+    fn relative_selector_search_direction(&self) -> ElementSelectorFlags {
+        todo!()
     }
 
     // fn update_animations(

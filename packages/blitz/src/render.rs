@@ -19,7 +19,10 @@ use image::{imageops::FilterType, DynamicImage};
 use parley::layout::LayoutItem2;
 use style::{
     dom::TElement,
-    values::{computed::ui::CursorKind, specified::position::HorizontalPositionKeyword},
+    values::{
+        computed::ui::CursorKind, generics::image::GradientFlags,
+        specified::position::HorizontalPositionKeyword,
+    },
 };
 use style::{
     properties::{style_structs::Outline, ComputedValues},
@@ -886,7 +889,6 @@ impl ElementCx<'_> {
                         &shape,
                     );
                 }
-                Rect(_) => todo!("Implement background drawing for Image::Rect"),
                 PaintWorklet(_) => todo!("Implement background drawing for Image::PaintWorklet"),
                 CrossFade(_) => todo!("Implement background drawing for Image::CrossFade"),
                 ImageSet(_) => todo!("Implement background drawing for Image::ImageSet"),
@@ -908,17 +910,17 @@ impl ElementCx<'_> {
                 shape,
                 position,
                 items,
-                repeating,
+                flags,
                 // compat_mode,
                 ..
-            } => self.draw_radial_gradient(scene, shape, position, items, *repeating),
+            } => self.draw_radial_gradient(scene, shape, position, items, *flags),
             GenericGradient::Conic {
                 angle,
                 position,
                 items,
-                repeating,
+                flags,
                 ..
-            } => self.draw_conic_gradient(scene, angle, position, items, *repeating),
+            } => self.draw_conic_gradient(scene, angle, position, items, *flags),
         };
     }
 
@@ -1242,7 +1244,7 @@ impl ElementCx<'_> {
         _shape: &EndingShape<NonNegative<CSSPixelLength>, NonNegative<LengthPercentage>>,
         _position: &GenericPosition<LengthPercentage, LengthPercentage>,
         _items: &OwnedSlice<GenericGradientItem<StyloColor<Percentage>, LengthPercentage>>,
-        _repeating: bool,
+        _flags: GradientFlags,
     ) {
         unimplemented!()
     }
@@ -1253,7 +1255,7 @@ impl ElementCx<'_> {
         _angle: &Angle,
         _position: &GenericPosition<LengthPercentage, LengthPercentage>,
         _items: &OwnedSlice<GenericGradientItem<StyloColor<Percentage>, AngleOrPercentage>>,
-        _repeating: bool,
+        _flags: GradientFlags,
     ) {
         unimplemented!()
     }

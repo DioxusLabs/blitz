@@ -3,25 +3,26 @@ use crate::node::TextBrush;
 
 // Module of type aliases so we can refer to stylo types with nicer names
 pub(crate) mod stylo {
-    pub(crate) use style::computed_values::white_space::T as WhiteSpaceCollapse;
+    pub(crate) use style::computed_values::white_space_collapse::T as WhiteSpaceCollapse;
     pub(crate) use style::properties::ComputedValues;
     pub(crate) use style::values::computed::font::FontStyle;
     pub(crate) use style::values::computed::font::GenericFontFamily;
+    pub(crate) use style::values::computed::font::LineHeight;
     pub(crate) use style::values::computed::font::SingleFontFamily;
-    pub(crate) use style::values::generics::text::LineHeight;
 }
 
 pub(crate) mod parley {
     pub(crate) use parley::style::*;
 }
 
-pub(crate) fn white_space(input: stylo::WhiteSpaceCollapse) -> parley::WhiteSpaceCollapse {
+pub(crate) fn white_space_collapse(input: stylo::WhiteSpaceCollapse) -> parley::WhiteSpaceCollapse {
     match input {
-        stylo::WhiteSpaceCollapse::Normal => parley::WhiteSpaceCollapse::Collapse,
-        stylo::WhiteSpaceCollapse::Pre => parley::WhiteSpaceCollapse::Preserve,
-        stylo::WhiteSpaceCollapse::Nowrap => parley::WhiteSpaceCollapse::Collapse,
-        stylo::WhiteSpaceCollapse::PreWrap => parley::WhiteSpaceCollapse::Preserve,
-        stylo::WhiteSpaceCollapse::PreLine => parley::WhiteSpaceCollapse::Preserve,
+        stylo::WhiteSpaceCollapse::Collapse => parley::WhiteSpaceCollapse::Collapse,
+        stylo::WhiteSpaceCollapse::Preserve => parley::WhiteSpaceCollapse::Preserve,
+
+        // TODO: Implement PreserveBreaks and BreakSpaces modes
+        stylo::WhiteSpaceCollapse::PreserveBreaks => parley::WhiteSpaceCollapse::Preserve,
+        stylo::WhiteSpaceCollapse::BreakSpaces => parley::WhiteSpaceCollapse::Preserve,
     }
 }
 
@@ -32,7 +33,7 @@ pub(crate) fn style(style: &stylo::ComputedValues) -> parley::TextStyle<'static,
 
     // Convert font size and line height
     let font_size = font_styles.font_size.used_size.0.px();
-    let line_height: f32 = match itext_styles.line_height {
+    let line_height: f32 = match font_styles.line_height {
         stylo::LineHeight::Normal => font_size * 1.2,
         stylo::LineHeight::Number(num) => font_size * num.0,
         stylo::LineHeight::Length(value) => value.0.px(),

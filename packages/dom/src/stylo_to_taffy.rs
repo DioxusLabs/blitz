@@ -196,23 +196,29 @@ pub(crate) fn flex_wrap(input: stylo::FlexWrap) -> taffy::FlexWrap {
 
 pub(crate) fn justify_content(input: stylo::JustifyContent) -> Option<taffy::JustifyContent> {
     match input {
+        stylo::JustifyContent::Start => Some(taffy::JustifyContent::Start),
+        stylo::JustifyContent::End => Some(taffy::JustifyContent::End),
         stylo::JustifyContent::FlexStart => Some(taffy::JustifyContent::FlexStart),
         stylo::JustifyContent::Stretch => Some(taffy::JustifyContent::Stretch),
         stylo::JustifyContent::FlexEnd => Some(taffy::JustifyContent::FlexEnd),
         stylo::JustifyContent::Center => Some(taffy::JustifyContent::Center),
         stylo::JustifyContent::SpaceBetween => Some(taffy::JustifyContent::SpaceBetween),
         stylo::JustifyContent::SpaceAround => Some(taffy::JustifyContent::SpaceAround),
+        stylo::JustifyContent::SpaceEvenly => Some(taffy::JustifyContent::SpaceEvenly),
     }
 }
 
 pub(crate) fn align_content(input: stylo::AlignContent) -> Option<taffy::AlignContent> {
     match input {
+        stylo::AlignContent::Start => Some(taffy::AlignContent::Start),
+        stylo::AlignContent::End => Some(taffy::AlignContent::End),
         stylo::AlignContent::FlexStart => Some(taffy::AlignContent::FlexStart),
         stylo::AlignContent::Stretch => Some(taffy::AlignContent::Stretch),
         stylo::AlignContent::FlexEnd => Some(taffy::AlignContent::FlexEnd),
         stylo::AlignContent::Center => Some(taffy::AlignContent::Center),
         stylo::AlignContent::SpaceBetween => Some(taffy::AlignContent::SpaceBetween),
         stylo::AlignContent::SpaceAround => Some(taffy::AlignContent::SpaceAround),
+        stylo::AlignContent::SpaceEvenly => Some(taffy::AlignContent::SpaceEvenly),
     }
 }
 

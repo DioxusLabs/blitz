@@ -330,7 +330,6 @@ impl Document {
             None,
             None,
             QuirksMode::NoQuirks,
-            0,
             AllowImportRules::Yes,
         );
 
