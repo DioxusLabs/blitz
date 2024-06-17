@@ -128,3 +128,19 @@ pub fn walk_tree(indent: usize, node: &Node) {
         }
     }
 }
+
+use peniko::Color as PenikoColor;
+use style::color::AbsoluteColor;
+
+pub trait ToPenikoColor {
+    fn as_peniko(&self) -> PenikoColor;
+}
+impl ToPenikoColor for AbsoluteColor {
+    fn as_peniko(&self) -> PenikoColor {
+        let [r, g, b, a] = self
+            .to_color_space(style::color::ColorSpace::Srgb)
+            .raw_components()
+            .map(|f| (f * 255.0) as u8);
+        PenikoColor { r, g, b, a }
+    }
+}

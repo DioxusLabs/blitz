@@ -1,5 +1,6 @@
 //! Conversion functions from Stylo types to Parley types
 use crate::node::TextBrush;
+use crate::util::ToPenikoColor;
 
 // Module of type aliases so we can refer to stylo types with nicer names
 pub(crate) mod stylo {
@@ -91,24 +92,14 @@ pub(crate) fn style(style: &stylo::ComputedValues) -> parley::TextStyle<'static,
     let families = Box::leak(families.into_boxed_slice());
 
     // Convert text colour
-    let [r, g, b, a] = itext_styles
-        .color
-        .to_color_space(style::color::ColorSpace::Srgb)
-        .raw_components()
-        .map(|f| (f * 255.0) as u8);
-    let color = peniko::Color { r, g, b, a };
+    let color = itext_styles.color.as_peniko();
 
-    let decoration_brush = style.get_text()
-            .text_decoration_color
-            .as_absolute()
-            .map(|color| {
-                let [r, g, b, a] = color
-                    .to_color_space(style::color::ColorSpace::Srgb)
-                    .raw_components()
-                    .map(|f| (f * 255.0) as u8);
-                let color = peniko::Color { r, g, b, a };
-                TextBrush { color }
-            });
+    let decoration_brush = style
+        .get_text()
+        .text_decoration_color
+        .as_absolute()
+        .map(ToPenikoColor::as_peniko)
+        .map(|color| TextBrush { color });
 
     parley::TextStyle {
         // font_stack: parley::FontStack::Single(FontFamily::Generic(GenericFamily::SystemUi)),
