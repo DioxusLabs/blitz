@@ -761,6 +761,7 @@ impl ElementCx<'_> {
                     let run = glyph_run.run();
                     let font = run.font();
                     let font_size = run.font_size();
+                    let metrics = run.metrics();
                     let style = glyph_run.style();
                     let synthesis = run.synthesis();
                     let glyph_xform = synthesis
@@ -793,52 +794,32 @@ impl ElementCx<'_> {
                             }),
                         );
 
-                    let mut draw_decoration_line =
-                        |x: f32, y: f32, w: f32, offset: f32, size: f32, brush: &TextBrush| {
-                            let (x, y, w, size) = (
-                                x as f64,
-                                y as f64 - offset as f64 + size as f64 / 2.0,
-                                w as f64,
-                                size as f64,
-                            );
-                            let line = vello::kurbo::Line::new((x, y), (x + w, y));
-                            scene.stroke(
-                                &Stroke::new(size),
-                                self.transform,
-                                brush.color,
-                                None,
-                                &line,
-                            )
-                        };
+                    let mut draw_decoration_line = |offset: f32, size: f32, brush: &TextBrush| {
+                        let x = glyph_run.offset() as f64;
+                        let w = glyph_run.advance() as f64;
+                        let y = (glyph_run.baseline() - offset + size / 2.0) as f64;
+                        let line = vello::kurbo::Line::new((x, y), (x + w, y));
+                        scene.stroke(
+                            &Stroke::new(size as f64),
+                            transform,
+                            brush.color,
+                            None,
+                            &line,
+                        )
+                    };
 
                     if let Some(underline) = &style.underline {
-                        let metrics = glyph_run.run().metrics();
                         let offset = underline.offset.unwrap_or(metrics.underline_offset);
                         let size = underline.size.unwrap_or(metrics.underline_size);
 
-                        draw_decoration_line(
-                            glyph_run.offset(),
-                            glyph_run.baseline(),
-                            glyph_run.advance(),
-                            offset,
-                            size,
-                            &underline.brush,
-                        );
-                        // todo: intercept line when crossing an descending character like "gqy"
+                        // TODO: intercept line when crossing an descending character like "gqy"
+                        draw_decoration_line(offset, size, &underline.brush);
                     }
                     if let Some(strikethrough) = &style.strikethrough {
-                        let metrics = glyph_run.run().metrics();
                         let offset = strikethrough.offset.unwrap_or(metrics.strikethrough_offset);
                         let size = strikethrough.size.unwrap_or(metrics.strikethrough_size);
 
-                        draw_decoration_line(
-                            glyph_run.offset(),
-                            glyph_run.baseline(),
-                            glyph_run.advance(),
-                            offset,
-                            size,
-                            &strikethrough.brush,
-                        );
+                        draw_decoration_line(offset, size, &strikethrough.brush);
                     }
                 }
             }
