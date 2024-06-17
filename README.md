@@ -119,7 +119,7 @@ Blitz is currently **experimental**. We are actively working on bringing into a 
   - [x] Font size / line height
   - [x] Text color
   - [x] Bold / Italic
-  - [ ] Underline / Strikethrough
+  - [x] Underline / Strikethrough
 - [ ] Text selection
 
 ### Input
