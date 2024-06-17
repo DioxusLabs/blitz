@@ -1,5 +1,6 @@
 //! Conversion functions from Stylo types to Parley types
 use crate::node::TextBrush;
+use crate::util::ToPenikoColor;
 
 // Module of type aliases so we can refer to stylo types with nicer names
 pub(crate) mod stylo {
@@ -92,12 +93,14 @@ pub(crate) fn style(style: &stylo::ComputedValues) -> parley::TextStyle<'static,
     let families = Box::leak(families.into_boxed_slice());
 
     // Convert text colour
-    let [r, g, b, a] = itext_styles
-        .color
-        .to_color_space(style::color::ColorSpace::Srgb)
-        .raw_components()
-        .map(|f| (f * 255.0) as u8);
-    let color = peniko::Color { r, g, b, a };
+    let color = itext_styles.color.as_peniko();
+
+    let decoration_brush = style
+        .get_text()
+        .text_decoration_color
+        .as_absolute()
+        .map(ToPenikoColor::as_peniko)
+        .map(|color| TextBrush { color });
 
     parley::TextStyle {
         // font_stack: parley::FontStack::Single(FontFamily::Generic(GenericFamily::SystemUi)),
@@ -110,14 +113,14 @@ pub(crate) fn style(style: &stylo::ComputedValues) -> parley::TextStyle<'static,
         font_features: parley::FontSettings::List(&[]),
         locale: Default::default(),
         brush: TextBrush { color },
-        has_underline: Default::default(),
+        has_underline: itext_styles.text_decorations_in_effect.underline,
         underline_offset: Default::default(),
         underline_size: Default::default(),
-        underline_brush: Default::default(),
-        has_strikethrough: Default::default(),
+        underline_brush: decoration_brush.clone(),
+        has_strikethrough: itext_styles.text_decorations_in_effect.line_through,
         strikethrough_offset: Default::default(),
         strikethrough_size: Default::default(),
-        strikethrough_brush: Default::default(),
+        strikethrough_brush: decoration_brush,
         line_height,
         word_spacing: Default::default(),
         letter_spacing: itext_styles.letter_spacing.0.px(),

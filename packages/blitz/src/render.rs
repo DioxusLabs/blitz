@@ -9,6 +9,7 @@ use crate::{
     util::{GradientSlice, StyloGradient, ToVelloColor},
     viewport::Viewport,
 };
+use blitz_dom::node::TextBrush;
 use blitz_dom::{
     events::{EventData, RendererEvent},
     node::{NodeData, TextLayout, TextNodeData},
@@ -791,6 +792,54 @@ impl ElementCx<'_> {
                                 }
                             }),
                         );
+
+                    let mut draw_decoration_line =
+                        |x: f32, y: f32, w: f32, offset: f32, size: f32, brush: &TextBrush| {
+                            let (x, y, w, size) = (
+                                x as f64,
+                                y as f64 - offset as f64 + size as f64 / 2.0,
+                                w as f64,
+                                size as f64,
+                            );
+                            let line = vello::kurbo::Line::new((x, y), (x + w, y));
+                            scene.stroke(
+                                &Stroke::new(size),
+                                self.transform,
+                                brush.color,
+                                None,
+                                &line,
+                            )
+                        };
+
+                    if let Some(underline) = &style.underline {
+                        let metrics = glyph_run.run().metrics();
+                        let offset = underline.offset.unwrap_or(metrics.underline_offset);
+                        let size = underline.size.unwrap_or(metrics.underline_size);
+
+                        draw_decoration_line(
+                            glyph_run.offset(),
+                            glyph_run.baseline(),
+                            glyph_run.advance(),
+                            offset,
+                            size,
+                            &underline.brush,
+                        );
+                        // todo: intercept line when crossing an descending character like "gqy"
+                    }
+                    if let Some(strikethrough) = &style.strikethrough {
+                        let metrics = glyph_run.run().metrics();
+                        let offset = strikethrough.offset.unwrap_or(metrics.strikethrough_offset);
+                        let size = strikethrough.size.unwrap_or(metrics.strikethrough_size);
+
+                        draw_decoration_line(
+                            glyph_run.offset(),
+                            glyph_run.baseline(),
+                            glyph_run.advance(),
+                            offset,
+                            size,
+                            &strikethrough.brush,
+                        );
+                    }
                 }
             }
         }
