@@ -5,8 +5,10 @@ use selectors::matching::QuirksMode;
 use slab::Slab;
 use std::cell::RefCell;
 use std::fmt::Write;
+use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 use style::values::computed::Display;
+use style_traits::dom::ElementState;
 // use string_cache::Atom;
 use style::properties::ComputedValues;
 use style::stylesheets::UrlExtraData;
@@ -56,11 +58,14 @@ pub struct Node {
     // TODO: See if guard can be hoisted to a higher level
     pub stylo_element_data: AtomicRefCell<Option<ElementData>>,
     pub guard: SharedRwLock,
+    pub element_state: ElementState,
 
     // Taffy layout data:
     pub style: Style,
     pub hidden: bool,
     pub is_hovered: bool,
+    pub has_snapshot: bool,
+    pub snapshot_handled: AtomicBool,
     pub display_outer: DisplayOuter,
     pub cache: Cache,
     pub unrounded_layout: Layout,
@@ -85,10 +90,13 @@ impl Node {
             raw_dom_data: data,
             stylo_element_data: Default::default(),
             guard,
+            element_state: ElementState::empty(),
 
             style: Default::default(),
             hidden: false,
             is_hovered: false,
+            has_snapshot: false,
+            snapshot_handled: AtomicBool::new(false),
             display_outer: DisplayOuter::Block,
             cache: Cache::new(),
             unrounded_layout: Layout::new(),

@@ -6,6 +6,7 @@ use selectors::{matching::QuirksMode, Element};
 use slab::Slab;
 use std::collections::HashMap;
 use style::invalidation::element::restyle_hints::RestyleHint;
+use style::selector_parser::ServoElementSnapshot;
 use style::servo_arc::Arc as ServoArc;
 use style::{
     dom::{TDocument, TNode},
@@ -15,6 +16,7 @@ use style::{
     stylesheets::{AllowImportRules, DocumentStyleSheet, Origin, Stylesheet, UrlExtraData},
     stylist::Stylist,
 };
+use style_traits::dom::ElementState;
 use taffy::AvailableSpace;
 use url::Url;
 
@@ -343,6 +345,32 @@ impl Document {
             .force_stylesheet_origins_dirty(Origin::Author.into());
     }
 
+    pub fn snapshot_node(&mut self, node_id: usize) {
+        let node = &mut self.nodes[node_id];
+        let opaque_node_id = TNode::opaque(&&*node);
+        node.has_snapshot = true;
+        node.snapshot_handled
+            .store(false, std::sync::atomic::Ordering::SeqCst);
+
+        // TODO: handle invalidations other than hover
+        if let Some(_existing_snapshot) = self.snapshots.get_mut(&opaque_node_id) {
+            // Do nothing
+            // TODO: update snapshot
+        } else {
+            self.snapshots.insert(
+                opaque_node_id,
+                ServoElementSnapshot {
+                    state: Some(node.element_state),
+                    attrs: None,
+                    changed_attrs: Vec::new(),
+                    class_changed: false,
+                    id_changed: false,
+                    other_attributes_changed: false,
+                },
+            );
+        }
+    }
+
     /// Restyle the tree and then relayout it
     pub fn resolve(&mut self) {
         if TDocument::as_node(&&self.nodes[0])
@@ -386,20 +414,28 @@ impl Document {
             let mut maybe_id = self.hover_node_id;
             while let Some(id) = maybe_id {
                 self.nodes[id].is_hovered = false;
+                self.nodes[id].element_state.remove(ElementState::HOVER);
                 if let Some(element_data) = self.nodes[id].stylo_element_data.borrow_mut().as_mut()
                 {
                     element_data.hint.insert(RestyleHint::RESTYLE_SELF);
                 }
+
+                self.snapshot_node(id);
+
                 maybe_id = self.nodes[id].parent;
             }
 
             let mut maybe_id = hover_node_id;
             while let Some(id) = maybe_id {
                 self.nodes[id].is_hovered = true;
+                self.nodes[id].element_state.insert(ElementState::HOVER);
                 if let Some(element_data) = self.nodes[id].stylo_element_data.borrow_mut().as_mut()
                 {
                     element_data.hint.insert(RestyleHint::RESTYLE_SELF);
                 }
+
+                self.snapshot_node(id);
+
                 maybe_id = self.nodes[id].parent;
             }
 

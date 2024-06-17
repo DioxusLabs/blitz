@@ -1,6 +1,8 @@
 //! Enable the dom to participate in styling by servo
 //!
 
+use std::sync::atomic::Ordering;
+
 use crate::node::Node;
 
 use crate::node::NodeData;
@@ -361,7 +363,7 @@ impl<'a> TNode for BlitzNode<'a> {
     }
 
     fn opaque(&self) -> OpaqueNode {
-        OpaqueNode(self as *const _ as usize)
+        OpaqueNode(self.id)
     }
 
     fn debug_id(self) -> usize {
@@ -647,8 +649,7 @@ impl<'a> TElement for BlitzNode<'a> {
     }
 
     fn state(&self) -> ElementState {
-        // todo: we should track this
-        ElementState::empty()
+        self.element_state
     }
 
     fn has_part_attr(&self) -> bool {
@@ -693,16 +694,15 @@ impl<'a> TElement for BlitzNode<'a> {
     }
 
     fn has_snapshot(&self) -> bool {
-        // todo: We want to implement snapshots at some point
-        false
+        self.has_snapshot
     }
 
     fn handled_snapshot(&self) -> bool {
-        unimplemented!()
+        self.snapshot_handled.load(Ordering::SeqCst)
     }
 
     unsafe fn set_handled_snapshot(&self) {
-        unimplemented!()
+        self.snapshot_handled.store(true, Ordering::SeqCst);
     }
 
     unsafe fn set_dirty_descendants(&self) {}
