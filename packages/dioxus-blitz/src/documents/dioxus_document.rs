@@ -48,9 +48,9 @@ impl AsMut<Document> for DioxusDocument {
         &mut self.inner
     }
 }
-impl Into<Document> for DioxusDocument {
-    fn into(self) -> Document {
-        self.inner
+impl From<DioxusDocument> for Document {
+    fn from(doc: DioxusDocument) -> Document {
+        doc.inner
     }
 }
 impl DocumentLike for DioxusDocument {

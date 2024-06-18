@@ -270,8 +270,7 @@ impl<'b> TreeSink for DocumentHtmlParser<'b> {
                 if has_appended {
                     return;
                 } else {
-                    let id = self.create_text_node(&text);
-                    id
+                    self.create_text_node(&text)
                 }
             }
             NodeOrText::AppendNode(id) => id,
