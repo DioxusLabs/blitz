@@ -106,6 +106,26 @@ fn launch_with_window<Doc: DocumentLike + 'static>(window: View<'static, Doc>) {
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
     let mut initial = true;
 
+    // Setup hot-reloading if enabled.
+    #[cfg(all(
+        feature = "hot-reload",
+        debug_assertions,
+        not(target_os = "android"),
+        not(target_os = "ios")
+    ))]
+    {
+        let Ok(cfg) = dioxus_cli_config::CURRENT_CONFIG.as_ref() else {
+            return;
+        };
+
+        dioxus_hot_reload::connect_at(cfg.target_dir.join("dioxusin"), {
+            let proxy = proxy.clone();
+            move |template| {
+                let _ = proxy.send_event(UserEvent::HotReloadEvent(template));
+            }
+        });
+    }
+
     event_loop.run(move |event, event_loop, control_flow| {
         *control_flow = ControlFlow::Wait;
 
@@ -130,26 +150,6 @@ fn launch_with_window<Doc: DocumentLike + 'static>(window: View<'static, Doc>) {
         if initial {
             on_resume();
             initial = false;
-        }
-
-        // Setup hot-reloading if enabled.
-        #[cfg(all(
-            feature = "hot-reload",
-            debug_assertions,
-            not(target_os = "android"),
-            not(target_os = "ios")
-        ))]
-        {
-            let Ok(cfg) = dioxus_cli_config::CURRENT_CONFIG.as_ref() else {
-                return;
-            };
-
-            dioxus_hot_reload::connect_at(cfg.target_dir.join("dioxusin"), {
-                let proxy = proxy.clone();
-                move |template| {
-                    let _ = proxy.send_event(UserEvent::HotReloadEvent(template));
-                }
-            });
         }
 
         match event {
@@ -180,22 +180,32 @@ fn launch_with_window<Doc: DocumentLike + 'static>(window: View<'static, Doc>) {
                 not(target_os = "android"),
                 not(target_os = "ios")
             ))]
-            Event::UserEvent(UserEvent::HotReloadEvent(msg)) => {
-                
-               
-                    match msg {
-                        dioxus_hot_reload::HotReloadMsg::UpdateTemplate(template) => {
-                           dbg!("Update template {:?}", template);
+            Event::UserEvent(UserEvent::HotReloadEvent(msg)) => match msg {
+                dioxus_hot_reload::HotReloadMsg::UpdateTemplate(template) => {
+                    dbg!("Update template {:?}", template);
+
+                    for window in windows.values_mut() {
+                        if let Some(dx_doc) = window
+                            .renderer
+                            .dom
+                            .as_any_mut()
+                            .downcast_mut::<DioxusDocument>()
+                        {
+                            dx_doc.vdom.replace_template(template);
                         }
-                        dioxus_hot_reload::HotReloadMsg::Shutdown => {
-                           * control_flow = ControlFlow::Exit;
-                        }
-                        dioxus_hot_reload::HotReloadMsg::UpdateAsset(asset) => {
-                            dbg!("Update asset {:?}", asset);
+
+                        if window.poll() {
+                            window.request_redraw();
                         }
                     }
-               
-            }
+                }
+                dioxus_hot_reload::HotReloadMsg::Shutdown => {
+                    *control_flow = ControlFlow::Exit;
+                }
+                dioxus_hot_reload::HotReloadMsg::UpdateAsset(asset) => {
+                    dbg!("Update asset {:?}", asset);
+                }
+            },
 
             // Event::UserEvent(_redraw) => {
             //     for (_, view) in windows.iter() {
@@ -204,7 +214,10 @@ fn launch_with_window<Doc: DocumentLike + 'static>(window: View<'static, Doc>) {
             // }
             Event::NewEvents(_) => {
                 for id in windows.keys() {
-                    _ = proxy.send_event(UserEvent::Window  { data: EventData::Poll, window_id: *id });
+                    _ = proxy.send_event(UserEvent::Window {
+                        data: EventData::Poll,
+                        window_id: *id,
+                    });
                 }
             }
 

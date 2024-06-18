@@ -4,6 +4,7 @@ use crate::{Node, NodeData, TextNodeData};
 // use quadtree_rs::Quadtree;
 use selectors::{matching::QuirksMode, Element};
 use slab::Slab;
+use std::any::Any;
 use std::collections::HashMap;
 use style::invalidation::element::restyle_hints::RestyleHint;
 use style::selector_parser::ServoElementSnapshot;
@@ -20,7 +21,7 @@ use style_traits::dom::ElementState;
 use taffy::AvailableSpace;
 use url::Url;
 
-pub trait DocumentLike: AsRef<Document> + AsMut<Document> + Into<Document> {
+pub trait DocumentLike: AsRef<Document> + AsMut<Document> + Into<Document> + 'static {
     fn poll(&mut self, _cx: std::task::Context) -> bool {
         // Default implementation does nothing
         false
@@ -30,9 +31,14 @@ pub trait DocumentLike: AsRef<Document> + AsMut<Document> + Into<Document> {
         // Default implementation does nothing
         false
     }
+
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
+    }
 }
 
-impl DocumentLike for Document {}
+impl DocumentLike for Document {
+}
 
 pub struct Document {
     /// A bump-backed tree

@@ -31,7 +31,7 @@ fn qual_name(local_name: &str, namespace: Option<&str>) -> QualName {
 }
 
 pub struct DioxusDocument {
-    vdom: VirtualDom,
+    pub(crate) vdom: VirtualDom,
     vdom_state: DioxusState,
     inner: Document,
 }
@@ -122,6 +122,7 @@ impl DocumentLike for DioxusDocument {
 
         false
     }
+
 }
 
 impl DioxusDocument {
