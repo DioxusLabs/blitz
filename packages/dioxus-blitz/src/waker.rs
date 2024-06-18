@@ -43,9 +43,10 @@ pub fn tao_waker(proxy: &EventLoopProxy<UserEvent>, id: WindowId) -> std::task::
 
     impl ArcWake for DomHandle {
         fn wake_by_ref(arc_self: &Arc<Self>) {
-            _ = arc_self
-                .proxy
-                .send_event(UserEvent::Window { data: EventData::Poll, window_id: arc_self.id })
+            _ = arc_self.proxy.send_event(UserEvent::Window {
+                data: EventData::Poll,
+                window_id: arc_self.id,
+            })
         }
     }
 

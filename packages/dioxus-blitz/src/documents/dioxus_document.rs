@@ -122,7 +122,6 @@ impl DocumentLike for DioxusDocument {
 
         false
     }
-
 }
 
 impl DioxusDocument {

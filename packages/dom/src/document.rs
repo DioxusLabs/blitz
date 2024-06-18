@@ -37,8 +37,7 @@ pub trait DocumentLike: AsRef<Document> + AsMut<Document> + Into<Document> + 'st
     }
 }
 
-impl DocumentLike for Document {
-}
+impl DocumentLike for Document {}
 
 pub struct Document {
     /// A bump-backed tree
