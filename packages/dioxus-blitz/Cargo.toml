@@ -3,7 +3,9 @@ name = "dioxus-blitz"
 version = "0.0.0"
 edition = "2021"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+[features]
+hot-reload = []
+default = ["hot-reload"]
 
 [dependencies]
 tao = { version = "0.26.1", features = ["serde"] }
@@ -11,6 +13,8 @@ muda = { version = "0.11.5", features = ["serde"] }
 tokio = { workspace = true, features = ["full"] }
 dioxus = { workspace = true }
 dioxus-ssr = { workspace = true }
+dioxus-cli-config = { git = "https://github.com/dioxuslabs/dioxus", rev = "a3aa6ae771a2d0a4d8cb6055c41efc0193b817ef" }
+dioxus-hot-reload = { git = "https://github.com/dioxuslabs/dioxus", rev = "a3aa6ae771a2d0a4d8cb6055c41efc0193b817ef" }
 futures-util = "0.3.30"
 vello = { workspace = true }
 wgpu = { workspace = true }

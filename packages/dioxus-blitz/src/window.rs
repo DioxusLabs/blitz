@@ -1,4 +1,4 @@
-use crate::waker::UserWindowEvent;
+use crate::waker::UserEvent;
 use blitz::{RenderState, Renderer, Viewport};
 use blitz_dom::DocumentLike;
 
@@ -277,8 +277,8 @@ impl<'a, Doc: DocumentLike> View<'a, Doc> {
 
     pub fn resume(
         &mut self,
-        event_loop: &EventLoopWindowTarget<UserWindowEvent>,
-        proxy: &EventLoopProxy<UserWindowEvent>,
+        event_loop: &EventLoopWindowTarget<UserEvent>,
+        proxy: &EventLoopProxy<UserEvent>,
         rt: &tokio::runtime::Runtime,
     ) {
         let window_builder = || {
