@@ -141,19 +141,22 @@ where
             .await
             .expect("Error creating surface");
 
-        let default_threads = || -> Option<NonZeroUsize> {
-            #[cfg(target_arch = "macos")]
+        const DEFAULT_THREADS: Option<NonZeroUsize> = {
+            #[cfg(target_os = "macos")]
             {
-                Some(NonZeroUsize::new(1)?)
+                NonZeroUsize::new(1)
             }
-            None
+            #[cfg(not(target_os = "macos"))]
+            {
+                None
+            }
         };
 
         let options = RendererOptions {
             surface_format: Some(surface.config.format),
             antialiasing_support: AaSupport::all(),
             use_cpu: false,
-            num_init_threads: default_threads(),
+            num_init_threads: DEFAULT_THREADS,
         };
 
         let renderer =

@@ -19,9 +19,9 @@ impl AsMut<Document> for HtmlDocument {
         &mut self.inner
     }
 }
-impl Into<Document> for HtmlDocument {
-    fn into(self) -> Document {
-        self.inner
+impl From<HtmlDocument> for Document {
+    fn from(doc: HtmlDocument) -> Document {
+        doc.inner
     }
 }
 impl DocumentLike for HtmlDocument {}

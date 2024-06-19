@@ -815,8 +815,7 @@ impl<'a> TElement for BlitzNode<'a> {
         let root_element = TDocument::as_node(&root_node)
             .first_element_child()
             .unwrap();
-        let is_child_of_root_element = root_element.children.contains(&self.id);
-        is_child_of_root_element
+        root_element.children.contains(&self.id)
     }
 
     fn synthesize_presentational_hints_for_legacy_attributes<V>(
