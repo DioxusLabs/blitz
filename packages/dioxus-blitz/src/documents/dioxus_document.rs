@@ -60,7 +60,7 @@ impl DocumentLike for DioxusDocument {
             pin_mut!(fut);
 
             match fut.poll_unpin(&mut cx) {
-                std::task::Poll::Ready(_) => {},
+                std::task::Poll::Ready(_) => {}
                 std::task::Poll::Pending => return false,
             }
         }
@@ -69,7 +69,7 @@ impl DocumentLike for DioxusDocument {
             doc: &mut self.inner,
             state: &mut self.vdom_state,
         });
-        
+
         true
     }
 
