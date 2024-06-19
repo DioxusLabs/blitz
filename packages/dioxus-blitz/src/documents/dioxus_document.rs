@@ -55,23 +55,22 @@ impl From<DioxusDocument> for Document {
 }
 impl DocumentLike for DioxusDocument {
     fn poll(&mut self, mut cx: std::task::Context) -> bool {
-        loop {
-            {
-                let fut = self.vdom.wait_for_work();
-                pin_mut!(fut);
+        {
+            let fut = self.vdom.wait_for_work();
+            pin_mut!(fut);
 
-                match fut.poll_unpin(&mut cx) {
-                    std::task::Poll::Ready(_) => {}
-                    std::task::Poll::Pending => return false,
-                }
+            match fut.poll_unpin(&mut cx) {
+                std::task::Poll::Ready(_) => {},
+                std::task::Poll::Pending => return false,
             }
-
-            self.vdom.render_immediate(&mut MutationWriter {
-                doc: &mut self.inner,
-                state: &mut self.vdom_state,
-            });
-            return true;
         }
+
+        self.vdom.render_immediate(&mut MutationWriter {
+            doc: &mut self.inner,
+            state: &mut self.vdom_state,
+        });
+        
+        true
     }
 
     fn handle_event(&mut self, event: blitz_dom::events::RendererEvent) -> bool {
