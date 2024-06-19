@@ -7,6 +7,7 @@ use slab::Slab;
 use std::collections::HashMap;
 use style::invalidation::element::restyle_hints::RestyleHint;
 use style::selector_parser::ServoElementSnapshot;
+use style::servo::media_queries::FontMetricsProvider;
 use style::servo_arc::Arc as ServoArc;
 use style::{
     dom::{TDocument, TNode},
@@ -19,6 +20,22 @@ use style::{
 use style_traits::dom::ElementState;
 use taffy::AvailableSpace;
 use url::Url;
+
+// TODO: implement a proper font metrics provider
+#[derive(Debug, Clone)]
+pub struct DummyFontMetricsProvider;
+impl FontMetricsProvider for DummyFontMetricsProvider {
+    fn query_font_metrics(
+        &self,
+        _vertical: bool,
+        _font: &style::properties::style_structs::Font,
+        _base_size: style::values::computed::CSSPixelLength,
+        _in_media_query: bool,
+        _retrieve_math_scales: bool,
+    ) -> style::font_metrics::FontMetrics {
+        Default::default()
+    }
+}
 
 pub trait DocumentLike: AsRef<Document> + AsMut<Document> + Into<Document> {
     fn poll(&mut self, _cx: std::task::Context) -> bool {

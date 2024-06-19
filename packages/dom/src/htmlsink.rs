@@ -365,6 +365,7 @@ impl<'b> TreeSink for DocumentHtmlParser<'b> {
 
 #[test]
 fn parses_some_html() {
+    use crate::document::DummyFontMetricsProvider;
     use euclid::{Scale, Size2D};
     use style::media_queries::{Device, MediaType};
 
@@ -377,6 +378,7 @@ fn parses_some_html() {
         selectors::matching::QuirksMode::NoQuirks,
         viewport_size,
         device_pixel_ratio,
+        Box::new(DummyFontMetricsProvider),
     );
     let mut doc = Document::new(device);
     let sink = DocumentHtmlParser::new(&mut doc);
