@@ -296,7 +296,9 @@ impl<'a, Doc: DocumentLike> View<'a, Doc> {
             }
             #[cfg(target_os = "linux")]
             {
-                build_menu().init_for_gtk_window(window.gtk_window(), window.default_vbox());
+                build_menu()
+                    .init_for_gtk_window(window.gtk_window(), window.default_vbox())
+                    .unwrap();
             }
 
             // !TODO - this may not be the right way to do this, but it's a start
@@ -331,10 +333,10 @@ impl<'a, Doc: DocumentLike> View<'a, Doc> {
 
 #[cfg(not(target_os = "macos"))]
 fn build_menu() -> Menu {
-    let mut menu = Menu::new();
+    let menu = Menu::new();
 
     // Build the about section
-    let mut about = Submenu::new("About", true);
+    let about = Submenu::new("About", true);
 
     about
         .append_items(&[
