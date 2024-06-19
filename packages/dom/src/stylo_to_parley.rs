@@ -72,7 +72,7 @@ pub(crate) fn style(style: &stylo::ComputedValues) -> parley::TextStyle<'static,
                     }
 
                     // TODO: fix leak!
-                    parley::FontFamily::Named(name.to_string().leak())
+                    break 'ret parley::FontFamily::Named(name.to_string().leak());
                 }
             }
             stylo::SingleFontFamily::Generic(generic) => {

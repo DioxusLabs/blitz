@@ -411,13 +411,13 @@ impl PrintTree for Document {
     }
 }
 
-pub struct ChildIter<'a>(std::slice::Iter<'a, usize>);
-impl<'a> Iterator for ChildIter<'a> {
-    type Item = NodeId;
-    fn next(&mut self) -> Option<Self::Item> {
-        self.0.next().copied().map(NodeId::from)
-    }
-}
+// pub struct ChildIter<'a>(std::slice::Iter<'a, usize>);
+// impl<'a> Iterator for ChildIter<'a> {
+//     type Item = NodeId;
+//     fn next(&mut self) -> Option<Self::Item> {
+//         self.0.next().copied().map(NodeId::from)
+//     }
+// }
 
 pub struct RefCellChildIter<'a> {
     items: Ref<'a, [usize]>,
