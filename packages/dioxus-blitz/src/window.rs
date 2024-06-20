@@ -21,8 +21,6 @@ use winit::event_loop::{ActiveEventLoop, EventLoopProxy};
     target_os = "openbsd"
 ))]
 use winit::platform::unix::WindowExtUnix;
-#[cfg(target_os = "windows")]
-use winit::platform::windows::WindowExtWindows;
 use winit::{event::WindowEvent, keyboard::KeyCode, keyboard::ModifiersState, window::Window};
 
 use muda::{AboutMetadata, Menu, MenuId, MenuItem, PredefinedMenuItem, Submenu};
@@ -326,12 +324,9 @@ impl<'a, Doc: DocumentLike> View<'a, Doc> {
 pub fn init_menu_bar(menu: &Menu, window: &Window) {
     #[cfg(target_os = "windows")]
     {
-        use winit::platform::windows::WindowExtWindows;
-        use winit::raw_window_handle;
-        let id = window.window_handle_any_thread().unwrap();
-        if let raw_window_handle::RawWindowHandle::Win32(rwh) = rwh {
-            let hwnd = id.hwnd;
-            _ = menu.init_for_hwnd(hwnd as _);
+        use winit::raw_window_handle::*;
+        if let RawWindowHandle::Win32(handle) = window.window_handle().unwrap().as_raw() {
+            menu.init_for_hwnd(handle.hwnd.get()).unwrap();
         }
     }
 
