@@ -1,0 +1,71 @@
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+name: CI
+
+env:
+  RUSTDOCFLAGS: "-D warnings"
+  CARGO_REGISTRIES_CRATES_IO_PROTOCOL: "sparse"
+
+jobs:
+
+  # MSRV check.
+  # Blitz only guarantees "latest stable". However we have this check here to ensure that we advertise
+  # our MSRV. We also make an effort not to increase MSRV in patch versions of Blitz.
+  #
+  # We only run `cargo build` (not `cargo test`) so as to avoid requiring dev-dependencies to build with the MSRV
+  # version. Building is likely sufficient as runtime errors varying between rust versions is very unlikely.
+  build-msrv:
+    name: "MSRV Build [Rust 1.79]"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.79
+      - run: sudo apt install libgtk-3-dev libxdo-dev
+      - run: cargo build --workspace
+
+  test-features-default:
+    name: "Test [default features]"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - run: sudo apt install libgtk-3-dev libxdo-dev
+      - run: cargo build --workspace
+      - run: cargo test --workspace
+
+  fmt:
+    name: Rustfmt
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: stable
+          components: rustfmt
+      - run: cargo fmt --all --check
+
+  clippy:
+    name: Clippy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: nightly
+          components: clippy
+      - run: sudo apt install libgtk-3-dev libxdo-dev
+      - run: cargo clippy --workspace -- -D warnings
+
+  doc:
+    name: Documentation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo doc

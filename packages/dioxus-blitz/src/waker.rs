@@ -1,6 +1,6 @@
 use futures_util::task::ArcWake;
 use std::sync::Arc;
-use tao::{event_loop::EventLoopProxy, window::WindowId};
+use winit::{event_loop::EventLoopProxy, window::WindowId};
 
 #[derive(Debug, Clone)]
 pub enum UserEvent {

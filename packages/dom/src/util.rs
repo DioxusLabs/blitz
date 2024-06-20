@@ -6,14 +6,17 @@ use image::DynamicImage;
 const USER_AGENT: &str = "Mozilla/5.0 (X11; Linux x86_64; rv:60.0) Gecko/20100101 Firefox/81.0";
 const FILE_SIZE_LIMIT: u64 = 1_000_000_000; // 1GB
 
-pub(crate) fn fetch_blob(url: &str) -> Result<Vec<u8>, ureq::Error> {
+pub(crate) fn fetch_blob(url: &str) -> Result<Vec<u8>, Box<ureq::Error>> {
     if url.starts_with("data:") {
         let data_url = data_url::DataUrl::process(url).unwrap();
         let decoded = data_url.decode_to_vec().expect("Invalid data url");
         return Ok(decoded.0);
     }
 
-    let resp = ureq::get(url).set("User-Agent", USER_AGENT).call()?;
+    let resp = ureq::get(url)
+        .set("User-Agent", USER_AGENT)
+        .call()
+        .map_err(Box::new)?;
 
     let len: usize = resp
         .header("Content-Length")
@@ -23,12 +26,13 @@ pub(crate) fn fetch_blob(url: &str) -> Result<Vec<u8>, ureq::Error> {
 
     resp.into_reader()
         .take(FILE_SIZE_LIMIT)
-        .read_to_end(&mut bytes)?;
+        .read_to_end(&mut bytes)
+        .unwrap();
 
     Ok(bytes)
 }
 
-pub(crate) fn fetch_string(url: &str) -> Result<String, ureq::Error> {
+pub(crate) fn fetch_string(url: &str) -> Result<String, Box<ureq::Error>> {
     fetch_blob(url).map(|vec| String::from_utf8(vec).expect("Invalid UTF8"))
 }
 
@@ -41,11 +45,11 @@ pub(crate) fn fetch_string(url: &str) -> Result<String, ureq::Error> {
 
 #[allow(unused)]
 pub(crate) enum ImageFetchErr {
-    FetchErr(ureq::Error),
+    FetchErr(Box<ureq::Error>),
     ImageError(image::error::ImageError),
 }
-impl From<ureq::Error> for ImageFetchErr {
-    fn from(value: ureq::Error) -> Self {
+impl From<Box<ureq::Error>> for ImageFetchErr {
+    fn from(value: Box<ureq::Error>) -> Self {
         Self::FetchErr(value)
     }
 }

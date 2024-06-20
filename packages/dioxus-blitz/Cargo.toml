@@ -8,13 +8,12 @@ hot-reload = []
 default = []
 
 [dependencies]
-tao = { version = "0.26.1", features = ["serde"] }
+winit = "0.30.2"
 muda = { version = "0.11.5", features = ["serde"] }
 tokio = { workspace = true, features = ["full"] }
 dioxus = { workspace = true }
-dioxus-ssr = { workspace = true }
-dioxus-cli-config = { git = "https://github.com/dioxuslabs/dioxus", rev = "a3aa6ae771a2d0a4d8cb6055c41efc0193b817ef" }
-dioxus-hot-reload = { git = "https://github.com/dioxuslabs/dioxus", rev = "a3aa6ae771a2d0a4d8cb6055c41efc0193b817ef" }
+dioxus-cli-config = { git = "https://github.com/dioxuslabs/dioxus", rev = "a3aa6ae771a2d0a4d8cb6055c41efc0193b817ef"}
+dioxus-hot-reload = { git = "https://github.com/dioxuslabs/dioxus", rev = "a3aa6ae771a2d0a4d8cb6055c41efc0193b817ef"}
 futures-util = "0.3.30"
 vello = { workspace = true }
 wgpu = { workspace = true }
