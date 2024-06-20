@@ -32,6 +32,7 @@ sudo apt-get install \
 ```
 
 ### VSCode
+You can add the following JSON to your `.vscode/settings.json` to automically build Blitz on all supported targets.
 ```json
 {
     "rust-analyzer.check.features": "all",
