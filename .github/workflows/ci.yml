@@ -89,6 +89,7 @@ jobs:
               cross: false,
               command: "test",
               args: "--all --tests",
+              setup: ""
             }
           - {
               target: x86_64-apple-darwin,
@@ -96,6 +97,7 @@ jobs:
               cross: false,
               command: "test",
               args: "--all --tests",
+              setup: ""
             }
           - {
               target: x86_64-unknown-linux-gnu,
@@ -103,6 +105,13 @@ jobs:
               cross: false,
               command: "test",
               args: "--all --tests",
+              setup: "sudo apt-get update; sudo apt-get install --no-install-recommends \
+                libasound2-dev \
+                libatk1.0-dev \
+                libgtk-3-dev \
+                libudev-dev \
+                libpango1.0-dev \
+                libxdo-dev"
             }
 
     steps:
@@ -131,6 +140,9 @@ jobs:
           key: "${{ matrix.platform.target }}"
           cache-all-crates: "true"
           save-if: ${{ github.ref == 'refs/heads/main' }}
+
+      - name: Setup
+        run: ${{ matrix.platform.setup }} 
 
       - name: test
         run: |
