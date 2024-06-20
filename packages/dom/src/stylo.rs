@@ -72,9 +72,11 @@ impl crate::document::Document {
                     flex_wrap,
                     justify_content,
                     align_content,
+                    justify_items,
                     align_items,
                     flex_grow,
                     flex_shrink,
+                    justify_self,
                     align_self,
                     // order,
                     flex_basis,
@@ -124,10 +126,12 @@ impl crate::document::Document {
                     border: stylo_to_taffy::border(border),
                     flex_direction: stylo_to_taffy::flex_direction(*flex_direction),
                     flex_wrap: stylo_to_taffy::flex_wrap(*flex_wrap),
-                    justify_content: stylo_to_taffy::justify_content(*justify_content),
-                    align_content: stylo_to_taffy::align_content(*align_content),
-                    align_items: stylo_to_taffy::align_items(*align_items),
-                    align_self: stylo_to_taffy::align_self(*align_self),
+                    justify_content: stylo_to_taffy::content_alignment(justify_content.0),
+                    justify_items: stylo_to_taffy::item_alignment(justify_items.computed.0),
+                    justify_self: stylo_to_taffy::item_alignment((justify_self.0).0),
+                    align_content: stylo_to_taffy::content_alignment(align_content.0),
+                    align_items: stylo_to_taffy::item_alignment(align_items.0),
+                    align_self: stylo_to_taffy::item_alignment((align_self.0).0),
                     flex_grow: flex_grow.0,
                     flex_shrink: flex_shrink.0,
                     flex_basis: stylo_to_taffy::flex_basis(flex_basis),
@@ -166,8 +170,6 @@ impl crate::document::Document {
 
                     // TODO: Enable CSS Grid properties in servo configuration of stylo
                     //
-                    // justify_items
-                    // justify_self
                     // grid_template_rows
                     // grid_template_columns
                     // grid_auto_rows
