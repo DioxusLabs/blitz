@@ -110,7 +110,7 @@ jobs:
       - name: install stable
         uses: dtolnay/rust-toolchain@master
         with:
-          toolchain: "1.31.0"
+          toolchain: stable
           targets: ${{ matrix.platform.target }}
           components: rustfmt
 
