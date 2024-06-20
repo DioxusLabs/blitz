@@ -6,24 +6,14 @@ use winit::keyboard::PhysicalKey;
 #[allow(unused)]
 use wgpu::rwh::HasWindowHandle;
 
+use muda::{AboutMetadata, Menu, MenuId, MenuItem, PredefinedMenuItem, Submenu};
 use std::sync::Arc;
 use std::task::Waker;
 use vello::Scene;
 use winit::dpi::LogicalSize;
 use winit::event::{ElementState, MouseButton};
 use winit::event_loop::{ActiveEventLoop, EventLoopProxy};
-
-#[cfg(any(
-    target_os = "linux",
-    target_os = "dragonfly",
-    target_os = "freebsd",
-    target_os = "netbsd",
-    target_os = "openbsd"
-))]
-use winit::platform::unix::WindowExtUnix;
 use winit::{event::WindowEvent, keyboard::KeyCode, keyboard::ModifiersState, window::Window};
-
-use muda::{AboutMetadata, Menu, MenuId, MenuItem, PredefinedMenuItem, Submenu};
 
 pub(crate) struct View<'s, Doc: DocumentLike> {
     pub(crate) renderer: Renderer<'s, Window, Doc>,
@@ -293,7 +283,10 @@ impl<'a, Doc: DocumentLike> View<'a, Doc> {
                 }))
                 .unwrap();
 
-            self.menu = Some(init_menu(&window));
+            self.menu = Some(init_menu(
+                #[cfg(target_os = "windows")]
+                &window,
+            ));
 
             let size: winit::dpi::PhysicalSize<u32> = window.inner_size();
             let mut viewport = Viewport::new((size.width, size.height));
@@ -319,19 +312,17 @@ impl<'a, Doc: DocumentLike> View<'a, Doc> {
 }
 
 /// Initialize the default menu bar.
-pub fn init_menu(window: &Window) -> Menu {
+pub fn init_menu(#[cfg(target_os = "windows")] window: &Window) -> Menu {
     let menu = Menu::new();
 
     // Build the about section
     let about = Submenu::new("About", true);
-
     about
         .append_items(&[
             &PredefinedMenuItem::about("Dioxus".into(), Option::from(AboutMetadata::default())),
             &MenuItem::with_id(MenuId::new("dev.show_layout"), "Show layout", true, None),
         ])
         .unwrap();
-
     menu.append(&about).unwrap();
 
     #[cfg(target_os = "windows")]
