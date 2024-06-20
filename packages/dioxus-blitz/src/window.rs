@@ -293,7 +293,6 @@ impl<'a, Doc: DocumentLike> View<'a, Doc> {
                 }))
                 .unwrap();
 
-            
             self.menu = Some(init_menu(&window));
 
             let size: winit::dpi::PhysicalSize<u32> = window.inner_size();
@@ -335,7 +334,6 @@ pub fn init_menu(window: &Window) -> Menu {
 
     menu.append(&about).unwrap();
 
-
     #[cfg(target_os = "windows")]
     {
         use winit::raw_window_handle::*;
@@ -360,4 +358,3 @@ pub fn init_menu(window: &Window) -> Menu {
 
     menu
 }
-
