@@ -98,7 +98,9 @@ Blitz is currently **experimental**. We are actively working on bringing into a 
 - [x] Inline (partial support - implementation still immature)
 - [x] Block
 - [x] Flexbox
-- [ ] Grid (implemented, but needs to be enabled in Stylo)
+- [x] Grid
+  - [ ] Named grid lines
+  - [ ] Subgrid
 - [ ] Table
 - [ ] Z-index
 - [ ] Additional CSS features
