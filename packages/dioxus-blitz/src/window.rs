@@ -150,7 +150,6 @@ impl<'a, Doc: DocumentLike> View<'a, Doc> {
                     },
                     PhysicalKey::Unidentified(_) => {}
                 }
-               
             }
             WindowEvent::Moved(_) => {}
             WindowEvent::CloseRequested => {}
