@@ -1,12 +1,16 @@
 use crate::waker::UserWindowEvent;
 use blitz::{RenderState, Renderer, Viewport};
 use blitz_dom::DocumentLike;
+use wgpu::rwh::HasWindowHandle;
+use winit::keyboard::PhysicalKey;
+use winit::window::WindowAttributes;
 
 use std::sync::Arc;
 use std::task::Waker;
-use tao::dpi::LogicalSize;
-use tao::event::{ElementState, MouseButton};
-use tao::event_loop::{EventLoopProxy, EventLoopWindowTarget};
+use vello::Scene;
+use winit::dpi::LogicalSize;
+use winit::event::{ElementState, MouseButton};
+use winit::event_loop::{ActiveEventLoop, EventLoopProxy};
 #[cfg(any(
     target_os = "linux",
     target_os = "dragonfly",
@@ -14,16 +18,10 @@ use tao::event_loop::{EventLoopProxy, EventLoopWindowTarget};
     target_os = "netbsd",
     target_os = "openbsd"
 ))]
-use tao::platform::unix::WindowExtUnix;
+use winit::platform::unix::WindowExtUnix;
 #[cfg(target_os = "windows")]
-use tao::platform::windows::WindowExtWindows;
-use tao::{
-    event::WindowEvent,
-    keyboard::KeyCode,
-    keyboard::ModifiersState,
-    window::{Window, WindowBuilder},
-};
-use vello::Scene;
+use winit::platform::windows::WindowExtWindows;
+use winit::{event::WindowEvent, keyboard::KeyCode, keyboard::ModifiersState, window::Window};
 
 #[cfg(not(target_os = "macos"))]
 use muda::{AboutMetadata, Menu, MenuId, MenuItem, PredefinedMenuItem, Submenu};
@@ -91,7 +89,7 @@ impl<'a, Doc: DocumentLike> View<'a, Doc> {
 
             // Store new keyboard modifier (ctrl, shift, etc) state for later use
             WindowEvent::ModifiersChanged(new_state) => {
-                self.keyboard_modifiers = new_state;
+                self.keyboard_modifiers = new_state.state();
             }
 
             // todo: if there's an active text input, we want to direct input towards it and translate system emi text
@@ -99,54 +97,60 @@ impl<'a, Doc: DocumentLike> View<'a, Doc> {
                 dbg!(&event);
 
                 match event.physical_key {
-                    KeyCode::Equal => {
-                        if self.keyboard_modifiers.control_key()
-                            || self.keyboard_modifiers.super_key()
-                        {
-                            self.renderer.zoom(0.1);
-                            self.request_redraw();
+                    PhysicalKey::Code(key_code) => {
+                        match key_code {
+                            KeyCode::Equal => {
+                                if self.keyboard_modifiers.control_key()
+                                    || self.keyboard_modifiers.super_key()
+                                {
+                                    self.renderer.zoom(0.1);
+                                    self.request_redraw();
+                                }
+                            }
+                            KeyCode::Minus => {
+                                if self.keyboard_modifiers.control_key()
+                                    || self.keyboard_modifiers.super_key()
+                                {
+                                    self.renderer.zoom(-0.1);
+                                    self.request_redraw();
+                                }
+                            }
+                            KeyCode::Digit0 => {
+                                if self.keyboard_modifiers.control_key()
+                                    || self.keyboard_modifiers.super_key()
+                                {
+                                    self.renderer.reset_zoom();
+                                    self.request_redraw();
+                                }
+                            }
+                            KeyCode::KeyD => {
+                                if event.state == ElementState::Pressed && self.keyboard_modifiers.alt_key()
+                                {
+                                    self.renderer.devtools.show_layout =
+                                        !self.renderer.devtools.show_layout;
+                                    self.request_redraw();
+                                }
+                            }
+                            KeyCode::KeyH => {
+                                if event.state == ElementState::Pressed && self.keyboard_modifiers.alt_key()
+                                {
+                                    self.renderer.devtools.highlight_hover =
+                                        !self.renderer.devtools.highlight_hover;
+                                    self.request_redraw();
+                                }
+                            }
+                            KeyCode::KeyT => {
+                                if event.state == ElementState::Pressed && self.keyboard_modifiers.alt_key()
+                                {
+                                    self.renderer.print_taffy_tree();
+                                }
+                            }
+                            _ => {}
                         }
-                    }
-                    KeyCode::Minus => {
-                        if self.keyboard_modifiers.control_key()
-                            || self.keyboard_modifiers.super_key()
-                        {
-                            self.renderer.zoom(-0.1);
-                            self.request_redraw();
-                        }
-                    }
-                    KeyCode::Digit0 => {
-                        if self.keyboard_modifiers.control_key()
-                            || self.keyboard_modifiers.super_key()
-                        {
-                            self.renderer.reset_zoom();
-                            self.request_redraw();
-                        }
-                    }
-                    KeyCode::KeyD => {
-                        if event.state == ElementState::Pressed && self.keyboard_modifiers.alt_key()
-                        {
-                            self.renderer.devtools.show_layout =
-                                !self.renderer.devtools.show_layout;
-                            self.request_redraw();
-                        }
-                    }
-                    KeyCode::KeyH => {
-                        if event.state == ElementState::Pressed && self.keyboard_modifiers.alt_key()
-                        {
-                            self.renderer.devtools.highlight_hover =
-                                !self.renderer.devtools.highlight_hover;
-                            self.request_redraw();
-                        }
-                    }
-                    KeyCode::KeyT => {
-                        if event.state == ElementState::Pressed && self.keyboard_modifiers.alt_key()
-                        {
-                            self.renderer.print_taffy_tree();
-                        }
-                    }
-                    _ => {}
+                    },
+                    PhysicalKey::Unidentified(_) => {}
                 }
+               
             }
             WindowEvent::Moved(_) => {}
             WindowEvent::CloseRequested => {}
@@ -154,7 +158,6 @@ impl<'a, Doc: DocumentLike> View<'a, Doc> {
             WindowEvent::DroppedFile(_) => {}
             WindowEvent::HoveredFile(_) => {}
             WindowEvent::HoveredFileCancelled => {}
-            WindowEvent::ReceivedImeText(_) => {}
             WindowEvent::Focused(_) => {}
             WindowEvent::CursorMoved {
                 // device_id,
@@ -163,7 +166,7 @@ impl<'a, Doc: DocumentLike> View<'a, Doc> {
                 ..
             } => {
                 let changed = if let RenderState::Active(state) = &self.renderer.render_state {
-                    let tao::dpi::LogicalPosition::<f32> { x, y } = position.to_logical(state.window.scale_factor());
+                    let winit::dpi::LogicalPosition::<f32> { x, y } = position.to_logical(state.window.scale_factor());
 
                     self.renderer.mouse_move(x, y)
                 } else {
@@ -175,11 +178,11 @@ impl<'a, Doc: DocumentLike> View<'a, Doc> {
 
                     if let Some(cursor) = cursor {
                         use style::values::computed::ui::CursorKind;
-                        use tao::window::CursorIcon as TaoCursor;
+                        use winit::window::CursorIcon as TaoCursor;
                         let tao_cursor = match cursor {
                             CursorKind::None => todo!("set the cursor to none"),
                             CursorKind::Default => TaoCursor::Default,
-                            CursorKind::Pointer => TaoCursor::Hand,
+                            CursorKind::Pointer => TaoCursor::Pointer,
                             CursorKind::ContextMenu => TaoCursor::ContextMenu,
                             CursorKind::Help => TaoCursor::Help,
                             CursorKind::Progress => TaoCursor::Progress,
@@ -240,10 +243,10 @@ impl<'a, Doc: DocumentLike> View<'a, Doc> {
                 ..
             } => {
                 match delta {
-                    tao::event::MouseScrollDelta::LineDelta(_, y) => {
+                    winit::event::MouseScrollDelta::LineDelta(_, y) => {
                         self.renderer.scroll_by(y as f64 * 20.0)
                     }
-                    tao::event::MouseScrollDelta::PixelDelta(offsets) => {
+                    winit::event::MouseScrollDelta::PixelDelta(offsets) => {
                         self.renderer.scroll_by(offsets.y)
                     }
                     _ => {}
@@ -270,29 +273,30 @@ impl<'a, Doc: DocumentLike> View<'a, Doc> {
                 ..
             } => {}
             WindowEvent::ThemeChanged(_) => {}
-            WindowEvent::DecorationsClick => {}
             _ => {}
         }
     }
 
     pub fn resume(
         &mut self,
-        event_loop: &EventLoopWindowTarget<UserWindowEvent>,
+        event_loop: &ActiveEventLoop,
         proxy: &EventLoopProxy<UserWindowEvent>,
         rt: &tokio::runtime::Runtime,
     ) {
         let window_builder = || {
-            let window = WindowBuilder::new()
-                .with_inner_size(LogicalSize {
+            let window = event_loop
+                .create_window(Window::default_attributes().with_inner_size(LogicalSize {
                     width: 800,
                     height: 600,
-                })
-                .build(event_loop)
+                }))
                 .unwrap();
 
             #[cfg(target_os = "windows")]
             {
-                build_menu().init_for_hwnd(window.hwnd());
+                use winit::raw_window_handle::*;
+                if let RawWindowHandle::Win32(handle) = window.window_handle().unwrap().as_raw() {
+                    build_menu().init_for_hwnd(handle.hwnd.get()).unwrap();
+                }
             }
             #[cfg(target_os = "linux")]
             {
@@ -308,7 +312,7 @@ impl<'a, Doc: DocumentLike> View<'a, Doc> {
             //     build_menu().set_as_windows_menu_for_nsapp();
             // }
 
-            let size: tao::dpi::PhysicalSize<u32> = window.inner_size();
+            let size: winit::dpi::PhysicalSize<u32> = window.inner_size();
             let mut viewport = Viewport::new((size.width, size.height));
             viewport.set_hidpi_scale(window.scale_factor() as _);
 
