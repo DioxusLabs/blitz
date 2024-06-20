@@ -1,30 +1,19 @@
 use crate::waker::UserWindowEvent;
 use blitz::{RenderState, Renderer, Viewport};
 use blitz_dom::DocumentLike;
-use wgpu::rwh::HasWindowHandle;
 use winit::keyboard::PhysicalKey;
-use winit::window::WindowAttributes;
 
+#[allow(unused)]
+use wgpu::rwh::HasWindowHandle;
+
+use muda::{AboutMetadata, Menu, MenuId, MenuItem, PredefinedMenuItem, Submenu};
 use std::sync::Arc;
 use std::task::Waker;
 use vello::Scene;
 use winit::dpi::LogicalSize;
 use winit::event::{ElementState, MouseButton};
 use winit::event_loop::{ActiveEventLoop, EventLoopProxy};
-#[cfg(any(
-    target_os = "linux",
-    target_os = "dragonfly",
-    target_os = "freebsd",
-    target_os = "netbsd",
-    target_os = "openbsd"
-))]
-use winit::platform::unix::WindowExtUnix;
-#[cfg(target_os = "windows")]
-use winit::platform::windows::WindowExtWindows;
 use winit::{event::WindowEvent, keyboard::KeyCode, keyboard::ModifiersState, window::Window};
-
-#[cfg(not(target_os = "macos"))]
-use muda::{AboutMetadata, Menu, MenuId, MenuItem, PredefinedMenuItem, Submenu};
 
 pub(crate) struct View<'s, Doc: DocumentLike> {
     pub(crate) renderer: Renderer<'s, Window, Doc>,
@@ -33,6 +22,9 @@ pub(crate) struct View<'s, Doc: DocumentLike> {
     /// The state of the keyboard modifiers (ctrl, shift, etc). Winit/Tao don't track these for us so we
     /// need to store them in order to have access to them when processing keypress events
     keyboard_modifiers: ModifiersState,
+
+    /// Main menu bar of this view's window.
+    menu: Option<Menu>,
 }
 
 impl<'a, Doc: DocumentLike> View<'a, Doc> {
@@ -42,6 +34,7 @@ impl<'a, Doc: DocumentLike> View<'a, Doc> {
             scene: Scene::new(),
             waker: None,
             keyboard_modifiers: Default::default(),
+            menu: None,
         }
     }
 }
@@ -224,7 +217,7 @@ impl<'a, Doc: DocumentLike> View<'a, Doc> {
                         };
 
                         if let RenderState::Active(state) = &self.renderer.render_state {
-                            state.window.set_cursor_icon(tao_cursor);
+                            state.window.set_cursor(tao_cursor);
                             self.request_redraw();
                         }
                     }
@@ -248,7 +241,6 @@ impl<'a, Doc: DocumentLike> View<'a, Doc> {
                     winit::event::MouseScrollDelta::PixelDelta(offsets) => {
                         self.renderer.scroll_by(offsets.y)
                     }
-                    _ => {}
                 };
                 self.request_redraw();
             }
@@ -290,26 +282,10 @@ impl<'a, Doc: DocumentLike> View<'a, Doc> {
                 }))
                 .unwrap();
 
-            #[cfg(target_os = "windows")]
-            {
-                use winit::raw_window_handle::*;
-                if let RawWindowHandle::Win32(handle) = window.window_handle().unwrap().as_raw() {
-                    build_menu().init_for_hwnd(handle.hwnd.get()).unwrap();
-                }
-            }
-            #[cfg(target_os = "linux")]
-            {
-                build_menu()
-                    .init_for_gtk_window(window.gtk_window(), window.default_vbox())
-                    .unwrap();
-            }
-
-            // !TODO - this may not be the right way to do this, but it's a start
-            // #[cfg(target_os = "macos")]
-            // {
-            //     menu_bar.init_for_nsapp();
-            //     build_menu().set_as_windows_menu_for_nsapp();
-            // }
+            self.menu = Some(init_menu(
+                #[cfg(target_os = "windows")]
+                &window,
+            ));
 
             let size: winit::dpi::PhysicalSize<u32> = window.inner_size();
             let mut viewport = Viewport::new((size.width, size.height));
@@ -334,21 +310,41 @@ impl<'a, Doc: DocumentLike> View<'a, Doc> {
     }
 }
 
-#[cfg(not(target_os = "macos"))]
-fn build_menu() -> Menu {
+/// Initialize the default menu bar.
+pub fn init_menu(#[cfg(target_os = "windows")] window: &Window) -> Menu {
     let menu = Menu::new();
 
     // Build the about section
     let about = Submenu::new("About", true);
-
     about
         .append_items(&[
             &PredefinedMenuItem::about("Dioxus".into(), Option::from(AboutMetadata::default())),
             &MenuItem::with_id(MenuId::new("dev.show_layout"), "Show layout", true, None),
         ])
         .unwrap();
-
     menu.append(&about).unwrap();
+
+    #[cfg(target_os = "windows")]
+    {
+        use winit::raw_window_handle::*;
+        if let RawWindowHandle::Win32(handle) = window.window_handle().unwrap().as_raw() {
+            menu.init_for_hwnd(handle.hwnd.get()).unwrap();
+        }
+    }
+
+    // todo: menu on linux
+    // #[cfg(target_os = "linux")]
+    // {
+    //     use winit::platform::unix::WindowExtUnix;
+    //     menu.init_for_gtk_window(window.gtk_window(), window.default_vbox())
+    //         .unwrap();
+    // }
+
+    #[cfg(target_os = "macos")]
+    {
+        use winit::platform::macos::WindowExtMacOS;
+        menu.init_for_nsapp();
+    }
 
     menu
 }
