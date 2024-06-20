@@ -207,9 +207,7 @@ impl crate::document::Document {
                     grid_column: taffy::Line {
                         start: stylo_to_taffy::grid_line(grid_column_start),
                         end: stylo_to_taffy::grid_line(grid_column_end),
-                    },
-
-                    ..Style::DEFAULT
+                    }
                 };
 
                 node.display_outer = match stylo_display.outside() {

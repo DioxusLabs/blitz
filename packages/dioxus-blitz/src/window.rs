@@ -342,7 +342,6 @@ pub fn init_menu(#[cfg(target_os = "windows")] window: &Window) -> Menu {
 
     #[cfg(target_os = "macos")]
     {
-        use winit::platform::macos::WindowExtMacOS;
         menu.init_for_nsapp();
     }
 

@@ -234,15 +234,10 @@ pub(crate) fn grid_template_tracks(
                 stylo::TrackListValue::TrackSize(size) => {
                     taffy::TrackSizingFunction::Single(track_size(size))
                 }
-                stylo::TrackListValue::TrackRepeat(repeat) => {
-                    taffy::TrackSizingFunction::Repeat(track_repeat(repeat.count), {
-                        repeat
-                            .track_sizes
-                            .iter()
-                            .map(|track| track_size(track))
-                            .collect()
-                    })
-                }
+                stylo::TrackListValue::TrackRepeat(repeat) => taffy::TrackSizingFunction::Repeat(
+                    track_repeat(repeat.count),
+                    repeat.track_sizes.iter().map(track_size).collect(),
+                ),
             })
             .collect(),
 
@@ -255,7 +250,7 @@ pub(crate) fn grid_template_tracks(
 pub(crate) fn grid_auto_tracks(
     input: &stylo::ImplicitGridTracks,
 ) -> Vec<taffy::NonRepeatedTrackSizingFunction> {
-    input.0.iter().map(|track| track_size(track)).collect()
+    input.0.iter().map(track_size).collect()
 }
 
 pub(crate) fn track_repeat(input: stylo::RepeatCount<i32>) -> taffy::GridTrackRepetition {
@@ -286,10 +281,10 @@ pub(crate) fn track_size(
                 stylo::TrackBreadth::Breadth(lp) => length_percentage(lp),
 
                 // Are these valid? Taffy doesn't support this in any case
-                stylo::TrackBreadth::Fr(_) => todo!(),
-                stylo::TrackBreadth::Auto => todo!(),
-                stylo::TrackBreadth::MinContent => todo!(),
-                stylo::TrackBreadth::MaxContent => todo!(),
+                stylo::TrackBreadth::Fr(_) => unreachable!(),
+                stylo::TrackBreadth::Auto => unreachable!(),
+                stylo::TrackBreadth::MinContent => unreachable!(),
+                stylo::TrackBreadth::MaxContent => unreachable!(),
             }),
         },
     }
