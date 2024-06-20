@@ -4,11 +4,19 @@
 mod stylo {
     pub(crate) use style::computed_values::flex_direction::T as FlexDirection;
     pub(crate) use style::computed_values::flex_wrap::T as FlexWrap;
+    pub(crate) use style::computed_values::grid_auto_flow::T as GridAutoFlow;
     pub(crate) use style::properties::longhands::aspect_ratio::computed_value::T as AspectRatio;
     pub(crate) use style::properties::longhands::position::computed_value::T as Position;
     pub(crate) use style::properties::style_structs::{Margin, Padding};
+    pub(crate) use style::values::computed::GridLine;
+    pub(crate) use style::values::computed::GridTemplateComponent;
+    pub(crate) use style::values::computed::ImplicitGridTracks;
     pub(crate) use style::values::computed::LengthPercentage;
     pub(crate) use style::values::generics::flex::GenericFlexBasis;
+    pub(crate) use style::values::generics::grid::RepeatCount;
+    pub(crate) use style::values::generics::grid::TrackBreadth;
+    pub(crate) use style::values::generics::grid::TrackListValue;
+    pub(crate) use style::values::generics::grid::TrackSize;
     pub(crate) use style::values::generics::length::GenericLengthPercentageOrAuto;
     pub(crate) use style::values::generics::length::GenericLengthPercentageOrNormal;
     pub(crate) use style::values::generics::length::GenericMaxSize;
@@ -21,6 +29,7 @@ mod stylo {
     pub(crate) use style::values::specified::box_::DisplayInside;
     pub(crate) use style::values::specified::box_::DisplayOutside;
     pub(crate) use style::values::specified::box_::Overflow;
+    pub(crate) use style::values::specified::GenericGridTemplateComponent;
     pub(crate) type LengthPercentageAuto = GenericLengthPercentageOrAuto<LengthPercentage>;
     pub(crate) type Size = GenericSize<NonNegative<LengthPercentage>>;
     pub(crate) type MaxSize = GenericMaxSize<NonNegative<LengthPercentage>>;
@@ -99,6 +108,7 @@ pub(crate) fn display(input: stylo::Display) -> taffy::Display {
     let mut display = match input.inside() {
         stylo::DisplayInside::None => taffy::Display::None,
         stylo::DisplayInside::Flex => taffy::Display::Flex,
+        stylo::DisplayInside::Grid => taffy::Display::Grid,
         stylo::DisplayInside::Flow => taffy::Display::Block,
         stylo::DisplayInside::FlowRoot => taffy::Display::Block,
         // TODO: Support grid layout in servo configuration of stylo
@@ -187,6 +197,129 @@ pub(crate) fn flex_wrap(input: stylo::FlexWrap) -> taffy::FlexWrap {
         stylo::FlexWrap::Wrap => taffy::FlexWrap::Wrap,
         stylo::FlexWrap::WrapReverse => taffy::FlexWrap::WrapReverse,
         stylo::FlexWrap::Nowrap => taffy::FlexWrap::NoWrap,
+    }
+}
+
+pub(crate) fn grid_auto_flow(input: stylo::GridAutoFlow) -> taffy::GridAutoFlow {
+    let is_row = input.contains(stylo::GridAutoFlow::ROW);
+    let is_dense = input.contains(stylo::GridAutoFlow::DENSE);
+
+    match (is_row, is_dense) {
+        (true, false) => taffy::GridAutoFlow::Row,
+        (true, true) => taffy::GridAutoFlow::RowDense,
+        (false, false) => taffy::GridAutoFlow::Column,
+        (false, true) => taffy::GridAutoFlow::ColumnDense,
+    }
+}
+
+pub(crate) fn grid_line(input: &stylo::GridLine) -> taffy::GridPlacement {
+    if input.is_auto() {
+        taffy::GridPlacement::Auto
+    } else if input.is_span {
+        taffy::style_helpers::span(input.line_num.try_into().unwrap())
+    } else {
+        taffy::style_helpers::line(input.line_num.try_into().unwrap())
+    }
+}
+
+pub(crate) fn grid_template_tracks(
+    input: &stylo::GridTemplateComponent,
+) -> Vec<taffy::TrackSizingFunction> {
+    match input {
+        stylo::GenericGridTemplateComponent::None => Vec::new(),
+        stylo::GenericGridTemplateComponent::TrackList(list) => list
+            .values
+            .iter()
+            .map(|track| match track {
+                stylo::TrackListValue::TrackSize(size) => {
+                    taffy::TrackSizingFunction::Single(track_size(size))
+                }
+                stylo::TrackListValue::TrackRepeat(repeat) => {
+                    taffy::TrackSizingFunction::Repeat(track_repeat(repeat.count), {
+                        repeat
+                            .track_sizes
+                            .iter()
+                            .map(|track| track_size(track))
+                            .collect()
+                    })
+                }
+            })
+            .collect(),
+
+        // TODO: Implement subgrid and masonry
+        stylo::GenericGridTemplateComponent::Subgrid(_) => Vec::new(),
+        stylo::GenericGridTemplateComponent::Masonry => Vec::new(),
+    }
+}
+
+pub(crate) fn grid_auto_tracks(
+    input: &stylo::ImplicitGridTracks,
+) -> Vec<taffy::NonRepeatedTrackSizingFunction> {
+    input.0.iter().map(|track| track_size(track)).collect()
+}
+
+pub(crate) fn track_repeat(input: stylo::RepeatCount<i32>) -> taffy::GridTrackRepetition {
+    match input {
+        stylo::RepeatCount::Number(val) => {
+            taffy::GridTrackRepetition::Count(val.try_into().unwrap())
+        }
+        stylo::RepeatCount::AutoFill => taffy::GridTrackRepetition::AutoFill,
+        stylo::RepeatCount::AutoFit => taffy::GridTrackRepetition::AutoFit,
+    }
+}
+
+pub(crate) fn track_size(
+    input: &stylo::TrackSize<stylo::LengthPercentage>,
+) -> taffy::NonRepeatedTrackSizingFunction {
+    match input {
+        stylo::TrackSize::Breadth(breadth) => taffy::MinMax {
+            min: min_track(breadth),
+            max: max_track(breadth),
+        },
+        stylo::TrackSize::Minmax(min, max) => taffy::MinMax {
+            min: min_track(min),
+            max: max_track(max),
+        },
+        stylo::TrackSize::FitContent(limit) => taffy::MinMax {
+            min: taffy::MinTrackSizingFunction::Auto,
+            max: taffy::MaxTrackSizingFunction::FitContent(match limit {
+                stylo::TrackBreadth::Breadth(lp) => length_percentage(lp),
+
+                // Are these valid? Taffy doesn't support this in any case
+                stylo::TrackBreadth::Fr(_) => todo!(),
+                stylo::TrackBreadth::Auto => todo!(),
+                stylo::TrackBreadth::MinContent => todo!(),
+                stylo::TrackBreadth::MaxContent => todo!(),
+            }),
+        },
+    }
+}
+
+pub(crate) fn min_track(
+    input: &stylo::TrackBreadth<stylo::LengthPercentage>,
+) -> taffy::MinTrackSizingFunction {
+    match input {
+        stylo::TrackBreadth::Breadth(lp) => {
+            taffy::MinTrackSizingFunction::Fixed(length_percentage(lp))
+        }
+        stylo::TrackBreadth::Fr(_) => taffy::MinTrackSizingFunction::Auto,
+        stylo::TrackBreadth::Auto => taffy::MinTrackSizingFunction::Auto,
+        stylo::TrackBreadth::MinContent => taffy::MinTrackSizingFunction::MinContent,
+        stylo::TrackBreadth::MaxContent => taffy::MinTrackSizingFunction::MaxContent,
+    }
+}
+
+pub(crate) fn max_track(
+    input: &stylo::TrackBreadth<stylo::LengthPercentage>,
+) -> taffy::MaxTrackSizingFunction {
+    match input {
+        stylo::TrackBreadth::Breadth(lp) => {
+            taffy::MaxTrackSizingFunction::Fixed(length_percentage(lp))
+        }
+        stylo::TrackBreadth::Fr(val) => taffy::MaxTrackSizingFunction::Fraction(*val),
+        stylo::TrackBreadth::Auto => taffy::MaxTrackSizingFunction::Auto,
+        stylo::TrackBreadth::MinContent => taffy::MaxTrackSizingFunction::MinContent,
+        stylo::TrackBreadth::MaxContent => taffy::MaxTrackSizingFunction::MaxContent,
     }
 }
 
