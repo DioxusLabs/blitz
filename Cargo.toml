@@ -7,10 +7,10 @@ members = ["packages/blitz", "packages/dom", "packages/dioxus-blitz"]
 resolver = "2"
 
 [workspace.dependencies]
-style = { git = "https://github.com/servo/stylo", rev = "039959d" } # 2024-05-15
-style_config = { git = "https://github.com/servo/stylo", rev = "039959d" } # 2024-05-15
-style_traits = { git = "https://github.com/servo/stylo", rev = "039959d" } # 2024-05-15
-selectors = { git = "https://github.com/servo/stylo", rev = "039959d" } # 2024-05-15
+style = { git = "https://github.com/dioxuslabs/stylo", rev = "10767f4" } # 2024-05-15 + dioxus patches
+style_config = { git = "https://github.com/dioxuslabs/stylo", rev = "10767f4" } # 2024-05-15 + dioxus patches
+style_traits = { git = "https://github.com/dioxuslabs/stylo", rev = "10767f4" } # 2024-05-15 + dioxus patches
+selectors = { git = "https://github.com/dioxuslabs/stylo", rev = "10767f4" } # 2024-05-15 + dioxus patches
 html5ever = "0.27" # needs to match stylo markup5ever version
 taffy = { version = "0.5.1" }
 parley = { git = "https://github.com/nicoburns/parley", rev = "482d0fbd59eceaa68cc879e0102a7a9a87636a0d" }
