@@ -1,9 +1,7 @@
 use crate::waker::UserEvent;
 use blitz::{RenderState, Renderer, Viewport};
 use blitz_dom::DocumentLike;
-use wgpu::rwh::HasWindowHandle;
 use winit::keyboard::PhysicalKey;
-use winit::window::WindowAttributes;
 
 use std::sync::Arc;
 use std::task::Waker;
@@ -19,8 +17,6 @@ use winit::event_loop::{ActiveEventLoop, EventLoopProxy};
     target_os = "openbsd"
 ))]
 use winit::platform::unix::WindowExtUnix;
-#[cfg(target_os = "windows")]
-use winit::platform::windows::WindowExtWindows;
 use winit::{event::WindowEvent, keyboard::KeyCode, keyboard::ModifiersState, window::Window};
 
 #[cfg(not(target_os = "macos"))]
@@ -224,7 +220,7 @@ impl<'a, Doc: DocumentLike> View<'a, Doc> {
                         };
 
                         if let RenderState::Active(state) = &self.renderer.render_state {
-                            state.window.set_cursor_icon(tao_cursor);
+                            state.window.set_cursor(tao_cursor);
                             self.request_redraw();
                         }
                     }
@@ -248,7 +244,6 @@ impl<'a, Doc: DocumentLike> View<'a, Doc> {
                     winit::event::MouseScrollDelta::PixelDelta(offsets) => {
                         self.renderer.scroll_by(offsets.y)
                     }
-                    _ => {}
                 };
                 self.request_redraw();
             }

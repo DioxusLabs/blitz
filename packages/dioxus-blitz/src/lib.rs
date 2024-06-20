@@ -12,7 +12,7 @@ use documents::DioxusDocument;
 use muda::{MenuEvent, MenuId};
 use std::collections::HashMap;
 use url::Url;
-use winit::event_loop::{EventLoop, EventLoopBuilder};
+use winit::event_loop::EventLoop;
 use winit::window::WindowId;
 use winit::{
     event::{Event, WindowEvent},
@@ -126,6 +126,9 @@ fn launch_with_window<Doc: DocumentLike + 'static>(window: View<'static, Doc>) {
         });
     }
 
+    // the move to winit wants us to use a struct with a run method instead of the callback approach
+    // we want to just keep the callback approach for now
+    #[allow(deprecated)]
     event_loop
         .run(move |event, event_loop| {
             event_loop.set_control_flow(ControlFlow::Wait);
@@ -190,8 +193,6 @@ fn launch_with_window<Doc: DocumentLike + 'static>(window: View<'static, Doc>) {
                 ))]
                 Event::UserEvent(UserEvent::HotReloadEvent(msg)) => match msg {
                     dioxus_hot_reload::HotReloadMsg::UpdateTemplate(template) => {
-                        dbg!("Update template {:?}", template);
-
                         for window in windows.values_mut() {
                             if let Some(dx_doc) = window
                                 .renderer
@@ -200,15 +201,16 @@ fn launch_with_window<Doc: DocumentLike + 'static>(window: View<'static, Doc>) {
                                 .downcast_mut::<DioxusDocument>()
                             {
                                 dx_doc.vdom.replace_template(template);
-                            }
 
-                            if window.poll() {
-                                window.request_redraw();
+                                if window.poll() {
+                                    window.request_redraw();
+                                }
                             }
                         }
                     }
                     dioxus_hot_reload::HotReloadMsg::Shutdown => event_loop.exit(),
                     dioxus_hot_reload::HotReloadMsg::UpdateAsset(asset) => {
+                        // TODO dioxus-desktop seems to handle this by forcing a reload of all stylesheets.
                         dbg!("Update asset {:?}", asset);
                     }
                 },
