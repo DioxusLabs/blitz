@@ -24,7 +24,6 @@ pub(crate) struct View<'s, Doc: DocumentLike> {
     keyboard_modifiers: ModifiersState,
 
     /// Main menu bar of this view's window.
-    ///
     menu: Option<Menu>,
 }
 
