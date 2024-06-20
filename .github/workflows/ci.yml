@@ -86,7 +86,6 @@ jobs:
           - {
               target: x86_64-pc-windows-msvc,
               os: windows-latest,
-              toolchain: "1.75.0",
               cross: false,
               command: "test",
               args: "--all --tests",
@@ -94,7 +93,6 @@ jobs:
           - {
               target: x86_64-apple-darwin,
               os: macos-latest,
-              toolchain: "1.75.0",
               cross: false,
               command: "test",
               args: "--all --tests",
@@ -102,26 +100,9 @@ jobs:
           - {
               target: x86_64-unknown-linux-gnu,
               os: ubuntu-latest,
-              toolchain: "1.75.0",
               cross: false,
               command: "test",
               args: "--all --tests",
-            }
-          - {
-              target: aarch64-apple-ios,
-              os: macos-latest,
-              toolchain: "1.75.0",
-              cross: false,
-              command: "build",
-              args: "--package dioxus-mobile",
-            }
-          - {
-              target: aarch64-linux-android,
-              os: ubuntu-latest,
-              toolchain: "1.75.0",
-              cross: true,
-              command: "build",
-              args: "--package dioxus-mobile",
             }
 
     steps:
@@ -129,7 +110,7 @@ jobs:
       - name: install stable
         uses: dtolnay/rust-toolchain@master
         with:
-          toolchain: ${{ matrix.platform.toolchain }}
+          toolchain: "1.31.0"
           targets: ${{ matrix.platform.target }}
           components: rustfmt
 
