@@ -98,10 +98,13 @@ impl<'a, Doc: DocumentLike> View<'a, Doc> {
             Some(waker) => {
                 let cx = std::task::Context::from_waker(waker);
                 if self.renderer.poll(cx) {
-                    // TODO send fine grained accessibility tree updates.
-                    let changed = mem::take(&mut self.renderer.dom.as_mut().changed);
-                    if !changed.is_empty() {
-                        self.build_accessibility_tree()
+                    #[cfg(feature = "accesskit")]
+                    {
+                        // TODO send fine grained accessibility tree updates.
+                        let changed = mem::take(&mut self.renderer.dom.as_mut().changed);
+                        if !changed.is_empty() {
+                            self.build_accessibility_tree()
+                        }
                     }
 
                     true
@@ -396,36 +399,45 @@ impl<'a, Doc: DocumentLike> View<'a, Doc> {
         self.renderer.suspend();
     }
 
+    #[cfg(feature = "accesskit")]
     fn build_accessibility_tree(&mut self) {
         let Some(ref mut state) = self.state else {
             return;
         };
 
-        let changed = mem::take(&mut self.renderer.dom.as_mut().changed);
-        if !changed.is_empty() {
-            let doc = self.renderer.dom.as_ref();
+        let doc = self.renderer.dom.as_ref();
 
-            let mut nodes = Vec::new();
-            doc.visit(|node_id, node| {
-                let (id, node_builder) = state.build_node(node_id, node);
-                nodes.push((id, node_builder.build()));
-            });
+        let mut nodes = std::collections::HashMap::new();
+        let mut window = accesskit::NodeBuilder::new(accesskit::Role::Window);
 
-            let mut window = accesskit::NodeBuilder::new(accesskit::Role::Window);
-            for (id, _) in &nodes {
-                window.push_child(*id);
+        doc.visit(|node_id, node| {
+            let (id, node_builder) = state.build_node(node_id, node);
+
+            if let Some(parent_id) = node.parent {
+                let (_, parent_node): &mut (_, accesskit::NodeBuilder) =
+                    nodes.get_mut(&parent_id).unwrap();
+                parent_node.push_child(id)
+            } else {
+                window.push_child(id)
             }
-            nodes.push((accesskit::NodeId(0), window.build()));
 
-            let tree = accesskit::Tree::new(accesskit::NodeId(0));
-            let tree_update = accesskit::TreeUpdate {
-                nodes,
-                tree: Some(tree),
-                focus: accesskit::NodeId(0),
-            };
+            nodes.insert(node_id, (id, node_builder));
+        });
 
-            state.adapter.update_if_active(|| tree_update)
-        }
+        let mut nodes: Vec<_> = nodes
+            .into_iter()
+            .map(|(_, (id, node))| (id, node.build()))
+            .collect();
+        nodes.push((accesskit::NodeId(0), window.build()));
+
+        let tree = accesskit::Tree::new(accesskit::NodeId(0));
+        let tree_update = accesskit::TreeUpdate {
+            nodes,
+            tree: Some(tree),
+            focus: accesskit::NodeId(0),
+        };
+
+        state.adapter.update_if_active(|| tree_update)
     }
 }
 
