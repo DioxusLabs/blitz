@@ -1232,13 +1232,15 @@ impl ElementCx<'_> {
         let path = match style {
             BorderStyle::None | BorderStyle::Hidden => return,
             BorderStyle::Solid => self.frame.outline(),
-            BorderStyle::Inset => unimplemented!(),
-            BorderStyle::Groove => unimplemented!(),
-            BorderStyle::Outset => unimplemented!(),
-            BorderStyle::Ridge => unimplemented!(),
-            BorderStyle::Dotted => unimplemented!(),
-            BorderStyle::Dashed => unimplemented!(),
-            BorderStyle::Double => unimplemented!(),
+
+            // TODO: Implement other border styles
+            BorderStyle::Inset => self.frame.outline(),
+            BorderStyle::Groove => self.frame.outline(),
+            BorderStyle::Outset => self.frame.outline(),
+            BorderStyle::Ridge => self.frame.outline(),
+            BorderStyle::Dotted => self.frame.outline(),
+            BorderStyle::Dashed => self.frame.outline(),
+            BorderStyle::Double => self.frame.outline(),
         };
 
         scene.fill(Fill::NonZero, self.transform, color, None, &path);
