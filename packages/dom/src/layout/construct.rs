@@ -250,6 +250,8 @@ pub(crate) fn build_inline_layout(
         .map(|s| stylo_to_parley::style(s))
         .unwrap_or_default();
 
+    let root_line_height = parley_style.line_height;
+
     // Create a parley tree builder
     let mut builder = doc
         .layout_ctx
@@ -263,7 +265,13 @@ pub(crate) fn build_inline_layout(
     builder.set_white_space_mode(collapse_mode);
 
     for child_id in root_node.children.iter().copied() {
-        build_inline_layout_recursive(&mut builder, &doc.nodes, child_id, collapse_mode);
+        build_inline_layout_recursive(
+            &mut builder,
+            &doc.nodes,
+            child_id,
+            collapse_mode,
+            root_line_height,
+        );
     }
 
     let (layout, text) = builder.build();
@@ -287,6 +295,7 @@ pub(crate) fn build_inline_layout(
         nodes: &Slab<Node>,
         node_id: usize,
         collapse_mode: WhiteSpaceCollapse,
+        root_line_height: f32,
     ) {
         let node = &nodes[node_id];
 
@@ -318,7 +327,13 @@ pub(crate) fn build_inline_layout(
                     (DisplayOutside::None, DisplayInside::None) => {}
                     (DisplayOutside::None, DisplayInside::Contents) => {
                         for child_id in node.children.iter().copied() {
-                            build_inline_layout_recursive(builder, nodes, child_id, collapse_mode);
+                            build_inline_layout_recursive(
+                                builder,
+                                nodes,
+                                child_id,
+                                collapse_mode,
+                                root_line_height,
+                            );
                         }
                     }
                     (DisplayOutside::Inline, DisplayInside::Flow) => {
@@ -334,10 +349,15 @@ pub(crate) fn build_inline_layout(
                                 height: 0.0,
                             });
                         } else {
-                            let style = node
+                            let mut style = node
                                 .primary_styles()
                                 .map(|s| stylo_to_parley::style(&s))
                                 .unwrap_or_default();
+
+                            // Floor the line-height of the span by the line-height of the inline context
+                            // See https://www.w3.org/TR/CSS21/visudet.html#line-height
+                            style.line_height = style.line_height.max(root_line_height);
+
                             builder.push_style_span(style);
 
                             for child_id in node.children.iter().copied() {
@@ -346,6 +366,7 @@ pub(crate) fn build_inline_layout(
                                     nodes,
                                     child_id,
                                     collapse_mode,
+                                    root_line_height,
                                 );
                             }
 
