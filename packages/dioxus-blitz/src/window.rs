@@ -278,8 +278,42 @@ impl<'a, Doc: DocumentLike> View<'a, Doc> {
     }
 
     #[cfg(feature = "accesskit")]
-    pub fn handle_accessibility_event(&mut self, event: &accesskit_winit::Event) {
-        todo!()
+    pub fn handle_accessibility_event(&mut self, event: &accesskit_winit::WindowEvent) {
+        let Some(ref mut state) = self.state else {
+            return;
+        };
+
+        match event {
+            accesskit_winit::WindowEvent::InitialTreeRequested => {
+                let doc = self.renderer.dom.as_ref();
+                let root = doc.root_node();
+
+                let mut window = accesskit::NodeBuilder::new(accesskit::Role::Window);
+
+                let mut text = accesskit::NodeBuilder::new(accesskit::Role::StaticText);
+
+                text.set_name(dbg!(doc.get_node(root.children[0]).unwrap().text_content()));
+                window.push_child(accesskit::NodeId(1));
+
+                let tree = accesskit::Tree::new(accesskit::NodeId(0));
+                let tree_update = accesskit::TreeUpdate {
+                    nodes: vec![
+                        (accesskit::NodeId(0), window.build()),
+                        (accesskit::NodeId(1), text.build()),
+                    ],
+                    tree: Some(tree),
+                    focus: accesskit::NodeId(1),
+                };
+
+                state.adapter.update_if_active(|| tree_update)
+            }
+            accesskit_winit::WindowEvent::AccessibilityDeactivated => {
+                // TODO
+            }
+            accesskit_winit::WindowEvent::ActionRequested(_action) => {
+                // TODO
+            }
+        }
     }
 
     pub fn resume(

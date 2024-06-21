@@ -106,7 +106,6 @@ fn launch_with_window<Doc: DocumentLike + 'static>(window: View<'static, Doc>) {
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
     let mut initial = true;
 
-     
     // Setup hot-reloading if enabled.
     #[cfg(all(
         feature = "hot-reload",
@@ -126,8 +125,6 @@ fn launch_with_window<Doc: DocumentLike + 'static>(window: View<'static, Doc>) {
             }
         });
     }
-
-    
 
     // the move to winit wants us to use a struct with a run method instead of the callback approach
     // we want to just keep the callback approach for now
@@ -194,7 +191,7 @@ fn launch_with_window<Doc: DocumentLike + 'static>(window: View<'static, Doc>) {
                     #[cfg(feature = "accesskit")]
                     UserEvent::Accessibility(accessibility_event) => {
                         if let Some(window) = windows.get_mut(&accessibility_event.window_id) {
-                            window.handle_accessibility_event(&accessibility_event);
+                            window.handle_accessibility_event(&accessibility_event.window_event);
                         }
                     }
                     #[cfg(all(

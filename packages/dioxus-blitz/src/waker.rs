@@ -15,7 +15,7 @@ pub enum UserEvent {
     /// An accessibility event from `accesskit`.
     #[cfg(feature = "accesskit")]
     Accessibility(Arc<AccessibilityEvent>),
-    
+
     /// A hotreload event, basically telling us to update our templates.
     #[cfg(all(
         feature = "hot-reload",
@@ -32,7 +32,6 @@ impl From<AccessibilityEvent> for UserEvent {
         Self::Accessibility(Arc::new(value))
     }
 }
-
 
 #[derive(Debug, Clone)]
 pub enum EventData {
