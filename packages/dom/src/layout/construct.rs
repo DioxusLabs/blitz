@@ -33,27 +33,25 @@ pub(crate) fn collect_layout_children(
     );
 
     match container_display.inside() {
-        DisplayInside::None => {},
+        DisplayInside::None => {}
         DisplayInside::Contents => {
-
             // Take children array from node to avoid borrow checker issues.
             let children = std::mem::take(&mut doc.nodes[container_node_id].children);
 
             for child_id in children.iter().copied() {
-              collect_layout_children(doc, child_id, layout_children, anonymous_block_id)
+                collect_layout_children(doc, child_id, layout_children, anonymous_block_id)
             }
 
             // Put children array back
             doc.nodes[container_node_id].children = children;
-
-        },
+        }
         DisplayInside::Flow | DisplayInside::FlowRoot => {
-
             // TODO: make "all_inline" detection work in the presence of display:contents nodes
             let mut all_block = true;
             let mut all_inline = true;
             let mut has_contents = false;
-            for child in doc.nodes[container_node_id].children
+            for child in doc.nodes[container_node_id]
+                .children
                 .iter()
                 .copied()
                 .map(|child_id| &doc.nodes[child_id])
@@ -79,7 +77,11 @@ pub(crate) fn collect_layout_children(
             if all_inline {
                 let (inline_layout, ilayout_children) = build_inline_layout(doc, container_node_id);
                 doc.nodes[container_node_id].is_inline_root = true;
-                doc.nodes[container_node_id].raw_dom_data.downcast_element_mut().unwrap().inline_layout = Some(Box::new(inline_layout));
+                doc.nodes[container_node_id]
+                    .raw_dom_data
+                    .downcast_element_mut()
+                    .unwrap()
+                    .inline_layout = Some(Box::new(inline_layout));
                 return layout_children.extend_from_slice(&ilayout_children);
             }
 
@@ -89,14 +91,24 @@ pub(crate) fn collect_layout_children(
                 return layout_children.extend_from_slice(&doc.nodes[container_node_id].children);
             }
 
-            fn block_item_needs_wrap(child_node_kind: NodeKind, display_outside: DisplayOutside) -> bool {
+            fn block_item_needs_wrap(
+                child_node_kind: NodeKind,
+                display_outside: DisplayOutside,
+            ) -> bool {
                 child_node_kind == NodeKind::Text || display_outside == DisplayOutside::Inline
             }
-            collect_complex_layout_children(doc, container_node_id, layout_children, anonymous_block_id, false, block_item_needs_wrap);
+            collect_complex_layout_children(
+                doc,
+                container_node_id,
+                layout_children,
+                anonymous_block_id,
+                false,
+                block_item_needs_wrap,
+            );
         }
         DisplayInside::Flex | DisplayInside::Grid => {
-
-            let has_text_node_or_contents = doc.nodes[container_node_id].children
+            let has_text_node_or_contents = doc.nodes[container_node_id]
+                .children
                 .iter()
                 .copied()
                 .map(|child_id| &doc.nodes[child_id])
@@ -110,11 +122,21 @@ pub(crate) fn collect_layout_children(
                 return layout_children.extend_from_slice(&doc.nodes[container_node_id].children);
             }
 
-            fn flex_or_grid_item_needs_wrap(child_node_kind: NodeKind, _display_outside: DisplayOutside) -> bool {
+            fn flex_or_grid_item_needs_wrap(
+                child_node_kind: NodeKind,
+                _display_outside: DisplayOutside,
+            ) -> bool {
                 child_node_kind == NodeKind::Text
             }
-            collect_complex_layout_children(doc, container_node_id, layout_children, anonymous_block_id, true, flex_or_grid_item_needs_wrap);
-        },
+            collect_complex_layout_children(
+                doc,
+                container_node_id,
+                layout_children,
+                anonymous_block_id,
+                true,
+                flex_or_grid_item_needs_wrap,
+            );
+        }
 
         // TODO: Implement table layout
         _ => {
