@@ -25,6 +25,9 @@ struct State {
     node_ids: std::collections::HashMap<accesskit::NodeId, usize>,
 
     #[cfg(feature = "accesskit")]
+    id_to_node_ids: std::collections::HashMap<usize, accesskit::NodeId>,
+
+    #[cfg(feature = "accesskit")]
     next_id: u64,
 
     /// Main menu bar of this view's window.
@@ -32,7 +35,11 @@ struct State {
 }
 
 impl State {
-    fn build_node(&mut self, node_id: usize, node: &Node) -> (accesskit::NodeId, accesskit::Node) {
+    fn build_node(
+        &mut self,
+        node_id: usize,
+        node: &Node,
+    ) -> (accesskit::NodeId, accesskit::NodeBuilder) {
         let mut node_builder = accesskit::NodeBuilder::default();
         if let Some(element_data) = node.element_data() {
             let name = element_data.name.local.to_string();
@@ -54,7 +61,9 @@ impl State {
         self.next_id += 1;
 
         self.node_ids.insert(id, node_id);
-        (id, node_builder.build())
+        self.id_to_node_ids.insert(node_id, id);
+
+        (id, node_builder)
     }
 }
 
@@ -97,18 +106,26 @@ impl<'a, Doc: DocumentLike> View<'a, Doc> {
                     if !changed.is_empty() {
                         let doc = self.renderer.dom.as_ref();
 
-                        let nodes = changed
+                        let updates: Vec<_> = changed
                             .iter()
                             .map(|id| {
                                 let node = doc.get_node(*id).unwrap();
-                                state.build_node(*id, node)
+                                (id, state.build_node(*id, node))
                             })
                             .collect();
+
+                        let mut nodes = Vec::new();
+                        for (id, (node_id, mut node)) in updates {
+                            for child_id in &doc.get_node(*id).unwrap().children {
+                                node.push_child(state.id_to_node_ids[child_id])
+                            }
+                            nodes.push((node_id, node.build()))
+                        }
 
                         let tree_update = accesskit::TreeUpdate {
                             nodes,
                             tree: None,
-                            focus: accesskit::NodeId(1),
+                            focus: accesskit::NodeId(0),
                         };
                         state.adapter.update_if_active(|| tree_update);
                     }
@@ -350,30 +367,8 @@ impl<'a, Doc: DocumentLike> View<'a, Doc> {
                 let doc = self.renderer.dom.as_ref();
 
                 let mut nodes = Vec::new();
-                let mut next_id = 1;
-
                 doc.visit(|node_id, node| {
-                    let mut node_builder = accesskit::NodeBuilder::default();
-                    if let Some(element_data) = node.element_data() {
-                        let name = element_data.name.local.to_string();
-                        let role = match &*name {
-                            "button" => accesskit::Role::Button,
-                            "div" | "section" => accesskit::Role::Group,
-                            "p" => accesskit::Role::Paragraph,
-                            _ => accesskit::Role::Unknown,
-                        };
-
-                        node_builder.set_role(role);
-                        node_builder.set_name(name);
-                    } else if node.is_text_node() {
-                        node_builder.set_role(accesskit::Role::StaticText);
-                        node_builder.set_name(node.text_content());
-                    }
-
-                    let id = accesskit::NodeId(next_id);
-                    next_id += 1;
-
-                    state.node_ids.insert(id, node_id);
+                    let (id, node_builder) = state.build_node(node_id, node);
                     nodes.push((id, node_builder.build()));
                 });
 
@@ -387,7 +382,7 @@ impl<'a, Doc: DocumentLike> View<'a, Doc> {
                 let tree_update = accesskit::TreeUpdate {
                     nodes,
                     tree: Some(tree),
-                    focus: accesskit::NodeId(1),
+                    focus: accesskit::NodeId(0),
                 };
 
                 state.adapter.update_if_active(|| tree_update)
@@ -425,6 +420,8 @@ impl<'a, Doc: DocumentLike> View<'a, Doc> {
                 adapter: accesskit_winit::Adapter::with_event_loop_proxy(&window, proxy.clone()),
                 #[cfg(feature = "accesskit")]
                 node_ids: Default::default(),
+                #[cfg(feature = "accesskit")]
+                id_to_node_ids: Default::default(),
                 #[cfg(feature = "accesskit")]
                 next_id: 1,
                 _menu: menu,
