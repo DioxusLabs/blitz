@@ -5,7 +5,7 @@ use crate::{Node, NodeData, TextNodeData};
 use selectors::{matching::QuirksMode, Element};
 use slab::Slab;
 use std::any::Any;
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use style::invalidation::element::restyle_hints::RestyleHint;
 use style::selector_parser::ServoElementSnapshot;
 use style::servo::media_queries::FontMetricsProvider;
@@ -529,6 +529,23 @@ impl Document {
     pub fn set_document(&mut self, _content: String) {}
 
     pub fn add_element(&mut self) {}
+
+    pub fn visit<F>(&self, mut visit: F)
+    where
+        F: FnMut(&Node),
+    {
+        let mut stack = VecDeque::new();
+        stack.push_front(0);
+
+        while let Some(node_key) = stack.pop_back() {
+            let node = &self.nodes[node_key];
+            visit(node);
+
+            for &child_key in &node.children {
+                stack.push_front(child_key);
+            }
+        }
+    }
 }
 
 impl AsRef<Document> for Document {

@@ -286,21 +286,33 @@ impl<'a, Doc: DocumentLike> View<'a, Doc> {
         match event {
             accesskit_winit::WindowEvent::InitialTreeRequested => {
                 let doc = self.renderer.dom.as_ref();
-                let root = doc.root_node();
+
+                let mut nodes = Vec::new();
+                let mut next_id = 1;
+
+                doc.visit(|node| {
+                    let mut node_builder = accesskit::NodeBuilder::default();
+                    if let Some(element_data) = node.element_data() {
+                        node_builder.set_role(accesskit::Role::Group);
+                        node_builder.set_name(element_data.name.local.to_string())
+                    } else if node.is_text_node() {
+                        node_builder.set_role(accesskit::Role::StaticText);
+                        node_builder.set_name(node.text_content());
+                    }
+
+                    nodes.push((accesskit::NodeId(next_id), node_builder.build()));
+                    next_id += 1;
+                });
 
                 let mut window = accesskit::NodeBuilder::new(accesskit::Role::Window);
-
-                let mut text = accesskit::NodeBuilder::new(accesskit::Role::StaticText);
-
-                text.set_name(dbg!(doc.get_node(root.children[0]).unwrap().text_content()));
-                window.push_child(accesskit::NodeId(1));
+                for (id, _) in &nodes {
+                    window.push_child(*id);
+                }
+                nodes.push((accesskit::NodeId(0), window.build()));
 
                 let tree = accesskit::Tree::new(accesskit::NodeId(0));
                 let tree_update = accesskit::TreeUpdate {
-                    nodes: vec![
-                        (accesskit::NodeId(0), window.build()),
-                        (accesskit::NodeId(1), text.build()),
-                    ],
+                    nodes,
                     tree: Some(tree),
                     focus: accesskit::NodeId(1),
                 };
