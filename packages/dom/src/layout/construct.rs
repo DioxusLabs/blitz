@@ -337,7 +337,7 @@ pub(crate) fn build_inline_layout(
                         }
                     }
                     (DisplayOutside::Inline, DisplayInside::Flow) => {
-                        let tag_name = &node.raw_dom_data.downcast_element().unwrap().name.local;
+                        let tag_name = &element_data.name.local;
 
                         if *tag_name == local_name!("img") || *tag_name == local_name!("input") {
                             builder.push_inline_box(InlineBox {
@@ -348,6 +348,12 @@ pub(crate) fn build_inline_layout(
                                 width: 0.0,
                                 height: 0.0,
                             });
+                        } else if *tag_name == local_name!("br") {
+                            builder.push_style_modification_span(&[]);
+                            builder.set_white_space_mode(WhiteSpaceCollapse::Preserve);
+                            builder.push_text("\n");
+                            builder.pop_style_span();
+                            builder.set_white_space_mode(collapse_mode);
                         } else {
                             let mut style = node
                                 .primary_styles()
