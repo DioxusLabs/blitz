@@ -1,12 +1,13 @@
 use crate::waker::UserEvent;
 use blitz::{RenderState, Renderer, Viewport};
-use blitz_dom::DocumentLike;
+use blitz_dom::{Document, DocumentLike, Node};
 use winit::keyboard::PhysicalKey;
 
 #[allow(unused)]
 use wgpu::rwh::HasWindowHandle;
 
 use muda::{AboutMetadata, Menu, MenuId, MenuItem, PredefinedMenuItem, Submenu};
+use std::mem;
 use std::sync::Arc;
 use std::task::Waker;
 use vello::Scene;
@@ -23,8 +24,38 @@ struct State {
     #[cfg(feature = "accesskit")]
     node_ids: std::collections::HashMap<accesskit::NodeId, usize>,
 
+    #[cfg(feature = "accesskit")]
+    next_id: u64,
+
     /// Main menu bar of this view's window.
     _menu: Menu,
+}
+
+impl State {
+    fn build_node(&mut self, node_id: usize, node: &Node) -> (accesskit::NodeId, accesskit::Node) {
+        let mut node_builder = accesskit::NodeBuilder::default();
+        if let Some(element_data) = node.element_data() {
+            let name = element_data.name.local.to_string();
+            let role = match &*name {
+                "button" => accesskit::Role::Button,
+                "div" | "section" => accesskit::Role::Group,
+                "p" => accesskit::Role::Paragraph,
+                _ => accesskit::Role::Unknown,
+            };
+
+            node_builder.set_role(role);
+            node_builder.set_name(name);
+        } else if node.is_text_node() {
+            node_builder.set_role(accesskit::Role::StaticText);
+            node_builder.set_name(node.text_content());
+        }
+
+        let id = accesskit::NodeId(self.next_id);
+        self.next_id += 1;
+
+        self.node_ids.insert(id, node_id);
+        (id, node_builder.build())
+    }
 }
 
 pub(crate) struct View<'s, Doc: DocumentLike> {
@@ -57,7 +88,35 @@ impl<'a, Doc: DocumentLike> View<'a, Doc> {
             None => false,
             Some(waker) => {
                 let cx = std::task::Context::from_waker(waker);
-                self.renderer.poll(cx)
+                if self.renderer.poll(cx) {
+                    let Some(ref mut state) = self.state else {
+                        return true;
+                    };
+
+                    let changed = mem::take(&mut self.renderer.dom.as_mut().changed);
+                    if !changed.is_empty() {
+                        let doc = self.renderer.dom.as_ref();
+
+                        let nodes = changed
+                            .iter()
+                            .map(|id| {
+                                let node = doc.get_node(*id).unwrap();
+                                state.build_node(*id, node)
+                            })
+                            .collect();
+
+                        let tree_update = accesskit::TreeUpdate {
+                            nodes,
+                            tree: None,
+                            focus: accesskit::NodeId(1),
+                        };
+                        state.adapter.update_if_active(|| tree_update);
+                    }
+
+                    true
+                } else {
+                    false
+                }
             }
         }
     }
@@ -366,6 +425,8 @@ impl<'a, Doc: DocumentLike> View<'a, Doc> {
                 adapter: accesskit_winit::Adapter::with_event_loop_proxy(&window, proxy.clone()),
                 #[cfg(feature = "accesskit")]
                 node_ids: Default::default(),
+                #[cfg(feature = "accesskit")]
+                next_id: 1,
                 _menu: menu,
             });
 

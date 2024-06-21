@@ -5,7 +5,7 @@ use crate::{Node, NodeData, TextNodeData};
 use selectors::{matching::QuirksMode, Element};
 use slab::Slab;
 use std::any::Any;
-use std::collections::{HashMap, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 use style::invalidation::element::restyle_hints::RestyleHint;
 use style::selector_parser::ServoElementSnapshot;
 use style::servo::media_queries::FontMetricsProvider;
@@ -92,6 +92,8 @@ pub struct Document {
     pub(crate) layout_ctx: parley::LayoutContext<TextBrush>,
 
     pub(crate) hover_node_id: Option<usize>,
+
+    pub changed: HashSet<usize>,
 }
 
 impl Document {
@@ -122,6 +124,7 @@ impl Document {
             layout_ctx: parley::LayoutContext::new(),
 
             hover_node_id: None,
+            changed: HashSet::new(),
         };
 
         // Initialise document with root Document node
@@ -184,6 +187,9 @@ impl Document {
         //     id as usize,
         // );
 
+        // Mark the new node as changed.
+        self.changed.insert(id);
+
         id
     }
 
@@ -226,6 +232,9 @@ impl Document {
         // Get this node's parent, or the root node if it has none.
         let parent_id = node.parent.unwrap_or_default();
         let parent = &mut self.nodes[parent_id];
+
+        // Mark the node's parent as changed.
+        self.changed.insert(parent_id);
 
         let mut children = std::mem::take(&mut parent.children);
         children.splice(
