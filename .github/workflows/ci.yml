@@ -95,7 +95,7 @@ jobs:
               setup: "" #perl -pi.bak -e 's/opt-level = 2/opt-level = 0/g' Cargo.toml
             }
           - {
-              target: x86_64-apple-darwin,
+              target: aarch64-apple-darwin,
               os: macos-latest,
               cross: false,
               command: "test",
