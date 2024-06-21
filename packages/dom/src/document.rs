@@ -532,14 +532,14 @@ impl Document {
 
     pub fn visit<F>(&self, mut visit: F)
     where
-        F: FnMut(&Node),
+        F: FnMut(usize, &Node),
     {
         let mut stack = VecDeque::new();
         stack.push_front(0);
 
         while let Some(node_key) = stack.pop_back() {
             let node = &self.nodes[node_key];
-            visit(node);
+            visit(node_key, node);
 
             for &child_key in &node.children {
                 stack.push_front(child_key);

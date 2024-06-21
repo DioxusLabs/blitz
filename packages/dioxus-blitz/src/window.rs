@@ -20,6 +20,9 @@ struct State {
     #[cfg(feature = "accesskit")]
     adapter: accesskit_winit::Adapter,
 
+    #[cfg(feature = "accesskit")]
+    node_ids: std::collections::HashMap<accesskit::NodeId, usize>,
+
     /// Main menu bar of this view's window.
     _menu: Menu,
 }
@@ -290,18 +293,29 @@ impl<'a, Doc: DocumentLike> View<'a, Doc> {
                 let mut nodes = Vec::new();
                 let mut next_id = 1;
 
-                doc.visit(|node| {
+                doc.visit(|node_id, node| {
                     let mut node_builder = accesskit::NodeBuilder::default();
                     if let Some(element_data) = node.element_data() {
-                        node_builder.set_role(accesskit::Role::Group);
-                        node_builder.set_name(element_data.name.local.to_string())
+                        let name = element_data.name.local.to_string();
+                        let role = match &*name {
+                            "button" => accesskit::Role::Button,
+                            "div" | "section" => accesskit::Role::Group,
+                            "p" => accesskit::Role::Paragraph,
+                            _ => accesskit::Role::Unknown,
+                        };
+
+                        node_builder.set_role(role);
+                        node_builder.set_name(name);
                     } else if node.is_text_node() {
                         node_builder.set_role(accesskit::Role::StaticText);
                         node_builder.set_name(node.text_content());
                     }
 
-                    nodes.push((accesskit::NodeId(next_id), node_builder.build()));
+                    let id = accesskit::NodeId(next_id);
                     next_id += 1;
+
+                    state.node_ids.insert(id, node_id);
+                    nodes.push((id, node_builder.build()));
                 });
 
                 let mut window = accesskit::NodeBuilder::new(accesskit::Role::Window);
@@ -322,7 +336,7 @@ impl<'a, Doc: DocumentLike> View<'a, Doc> {
             accesskit_winit::WindowEvent::AccessibilityDeactivated => {
                 // TODO
             }
-            accesskit_winit::WindowEvent::ActionRequested(_action) => {
+            accesskit_winit::WindowEvent::ActionRequested(_req) => {
                 // TODO
             }
         }
@@ -350,6 +364,8 @@ impl<'a, Doc: DocumentLike> View<'a, Doc> {
             self.state = Some(State {
                 #[cfg(feature = "accesskit")]
                 adapter: accesskit_winit::Adapter::with_event_loop_proxy(&window, proxy.clone()),
+                #[cfg(feature = "accesskit")]
+                node_ids: Default::default(),
                 _menu: menu,
             });
 
