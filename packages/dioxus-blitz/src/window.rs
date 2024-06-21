@@ -1,6 +1,6 @@
 use crate::waker::UserEvent;
 use blitz::{RenderState, Renderer, Viewport};
-use blitz_dom::{Document, DocumentLike, Node};
+use blitz_dom::{DocumentLike, Node};
 use winit::keyboard::PhysicalKey;
 
 #[allow(unused)]
@@ -98,34 +98,10 @@ impl<'a, Doc: DocumentLike> View<'a, Doc> {
             Some(waker) => {
                 let cx = std::task::Context::from_waker(waker);
                 if self.renderer.poll(cx) {
-                    let Some(ref mut state) = self.state else {
-                        return true;
-                    };
-
+                    // TODO send fine grained accessibility tree updates.
                     let changed = mem::take(&mut self.renderer.dom.as_mut().changed);
                     if !changed.is_empty() {
-                        let doc = self.renderer.dom.as_ref();
-
-                        let mut nodes = Vec::new();
-                        doc.visit(|node_id, node| {
-                            let (id, node_builder) = state.build_node(node_id, node);
-                            nodes.push((id, node_builder.build()));
-                        });
-
-                        let mut window = accesskit::NodeBuilder::new(accesskit::Role::Window);
-                        for (id, _) in &nodes {
-                            window.push_child(*id);
-                        }
-                        nodes.push((accesskit::NodeId(0), window.build()));
-
-                        let tree = accesskit::Tree::new(accesskit::NodeId(0));
-                        let tree_update = accesskit::TreeUpdate {
-                            nodes,
-                            tree: Some(tree),
-                            focus: accesskit::NodeId(0),
-                        };
-
-                        state.adapter.update_if_active(|| tree_update)
+                        self.build_accessibility_tree()
                     }
 
                     true
@@ -356,35 +332,8 @@ impl<'a, Doc: DocumentLike> View<'a, Doc> {
 
     #[cfg(feature = "accesskit")]
     pub fn handle_accessibility_event(&mut self, event: &accesskit_winit::WindowEvent) {
-        let Some(ref mut state) = self.state else {
-            return;
-        };
-
         match event {
-            accesskit_winit::WindowEvent::InitialTreeRequested => {
-                let doc = self.renderer.dom.as_ref();
-
-                let mut nodes = Vec::new();
-                doc.visit(|node_id, node| {
-                    let (id, node_builder) = state.build_node(node_id, node);
-                    nodes.push((id, node_builder.build()));
-                });
-
-                let mut window = accesskit::NodeBuilder::new(accesskit::Role::Window);
-                for (id, _) in &nodes {
-                    window.push_child(*id);
-                }
-                nodes.push((accesskit::NodeId(0), window.build()));
-
-                let tree = accesskit::Tree::new(accesskit::NodeId(0));
-                let tree_update = accesskit::TreeUpdate {
-                    nodes,
-                    tree: Some(tree),
-                    focus: accesskit::NodeId(0),
-                };
-
-                state.adapter.update_if_active(|| tree_update)
-            }
+            accesskit_winit::WindowEvent::InitialTreeRequested => self.build_accessibility_tree(),
             accesskit_winit::WindowEvent::AccessibilityDeactivated => {
                 // TODO
             }
@@ -445,6 +394,38 @@ impl<'a, Doc: DocumentLike> View<'a, Doc> {
     pub fn suspend(&mut self) {
         self.waker = None;
         self.renderer.suspend();
+    }
+
+    fn build_accessibility_tree(&mut self) {
+        let Some(ref mut state) = self.state else {
+            return;
+        };
+
+        let changed = mem::take(&mut self.renderer.dom.as_mut().changed);
+        if !changed.is_empty() {
+            let doc = self.renderer.dom.as_ref();
+
+            let mut nodes = Vec::new();
+            doc.visit(|node_id, node| {
+                let (id, node_builder) = state.build_node(node_id, node);
+                nodes.push((id, node_builder.build()));
+            });
+
+            let mut window = accesskit::NodeBuilder::new(accesskit::Role::Window);
+            for (id, _) in &nodes {
+                window.push_child(*id);
+            }
+            nodes.push((accesskit::NodeId(0), window.build()));
+
+            let tree = accesskit::Tree::new(accesskit::NodeId(0));
+            let tree_update = accesskit::TreeUpdate {
+                nodes,
+                tree: Some(tree),
+                focus: accesskit::NodeId(0),
+            };
+
+            state.adapter.update_if_active(|| tree_update)
+        }
     }
 }
 

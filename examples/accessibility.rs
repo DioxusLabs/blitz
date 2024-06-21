@@ -7,7 +7,14 @@ fn main() {
 fn app() -> Element {
     rsx! {
         body {
-            "Dioxus 4 all"
+            App {}
         }
+    }
+}
+
+#[component]
+fn App() -> Element {
+    rsx! {
+        div { "Dioxus for all" }
     }
 }
