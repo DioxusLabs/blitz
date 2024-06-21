@@ -26,6 +26,7 @@ use style::{
     },
 };
 use style::{
+    properties::generated::longhands::visibility::computed_value::T as StyloVisibility,
     properties::{style_structs::Outline, ComputedValues},
     values::{
         computed::{
@@ -614,6 +615,17 @@ where
         // Hide inputs with type=hidden
         // Implemented here rather than using the style engine for performance reasons
         if element.local_name() == "input" && element.attr(local_name!("type")) == Some("hidden") {
+            return;
+        }
+
+        // Hide elements with a visibility style other than visible
+        if element
+            .primary_styles()
+            .unwrap()
+            .get_inherited_box()
+            .visibility
+            != StyloVisibility::Visible
+        {
             return;
         }
 
