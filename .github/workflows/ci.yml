@@ -92,7 +92,7 @@ jobs:
               cross: false,
               command: "test",
               args: "--all --tests",
-              setup: "" #perl -pi.bak -e 's/opt-level = 2/opt-level = 0/g' Cargo.toml
+              setup: perl -pi.bak -e 's/opt-level = 2/opt-level = 0/g' Cargo.toml
             }
           - {
               target: aarch64-apple-darwin,
@@ -147,6 +147,7 @@ jobs:
 
       - name: Setup
         run: ${{ matrix.platform.setup }} 
+        shell: bash
 
       - name: test
         run: |
