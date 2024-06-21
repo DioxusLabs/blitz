@@ -106,28 +106,26 @@ impl<'a, Doc: DocumentLike> View<'a, Doc> {
                     if !changed.is_empty() {
                         let doc = self.renderer.dom.as_ref();
 
-                        let updates: Vec<_> = changed
-                            .iter()
-                            .map(|id| {
-                                let node = doc.get_node(*id).unwrap();
-                                (id, state.build_node(*id, node))
-                            })
-                            .collect();
-
                         let mut nodes = Vec::new();
-                        for (id, (node_id, mut node)) in updates {
-                            for child_id in &doc.get_node(*id).unwrap().children {
-                                node.push_child(state.id_to_node_ids[child_id])
-                            }
-                            nodes.push((node_id, node.build()))
-                        }
+                        doc.visit(|node_id, node| {
+                            let (id, node_builder) = state.build_node(node_id, node);
+                            nodes.push((id, node_builder.build()));
+                        });
 
+                        let mut window = accesskit::NodeBuilder::new(accesskit::Role::Window);
+                        for (id, _) in &nodes {
+                            window.push_child(*id);
+                        }
+                        nodes.push((accesskit::NodeId(0), window.build()));
+
+                        let tree = accesskit::Tree::new(accesskit::NodeId(0));
                         let tree_update = accesskit::TreeUpdate {
                             nodes,
-                            tree: None,
+                            tree: Some(tree),
                             focus: accesskit::NodeId(0),
                         };
-                        state.adapter.update_if_active(|| tree_update);
+
+                        state.adapter.update_if_active(|| tree_update)
                     }
 
                     true
