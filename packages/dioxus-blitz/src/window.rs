@@ -15,6 +15,15 @@ use winit::event::{ElementState, MouseButton};
 use winit::event_loop::{ActiveEventLoop, EventLoopProxy};
 use winit::{event::WindowEvent, keyboard::KeyCode, keyboard::ModifiersState, window::Window};
 
+struct State {
+    /// Accessibility adapter for `accesskit`.
+    #[cfg(feature = "accesskit")]
+    adapter: accesskit_winit::Adapter,
+
+    /// Main menu bar of this view's window.
+    _menu: Menu,
+}
+
 pub(crate) struct View<'s, Doc: DocumentLike> {
     pub(crate) renderer: Renderer<'s, Window, Doc>,
     pub(crate) scene: Scene,
@@ -23,8 +32,8 @@ pub(crate) struct View<'s, Doc: DocumentLike> {
     /// need to store them in order to have access to them when processing keypress events
     keyboard_modifiers: ModifiersState,
 
-    /// Main menu bar of this view's window.
-    menu: Option<Menu>,
+    /// State of this view, created on [`View::resume`].
+    state: Option<State>,
 }
 
 impl<'a, Doc: DocumentLike> View<'a, Doc> {
@@ -34,7 +43,7 @@ impl<'a, Doc: DocumentLike> View<'a, Doc> {
             scene: Scene::new(),
             waker: None,
             keyboard_modifiers: Default::default(),
-            menu: None,
+            state: None,
         }
     }
 }
@@ -268,6 +277,11 @@ impl<'a, Doc: DocumentLike> View<'a, Doc> {
         }
     }
 
+    #[cfg(feature = "accesskit")]
+    pub fn handle_accessibility_event(&mut self, event: &accesskit_winit::Event) {
+        todo!()
+    }
+
     pub fn resume(
         &mut self,
         event_loop: &ActiveEventLoop,
@@ -282,10 +296,16 @@ impl<'a, Doc: DocumentLike> View<'a, Doc> {
                 }))
                 .unwrap();
 
-            self.menu = Some(init_menu(
+            // Initialize the menu and accessibility adapter in this view's state.
+            let menu = init_menu(
                 #[cfg(target_os = "windows")]
                 &window,
-            ));
+            );
+            self.state = Some(State {
+                #[cfg(feature = "accesskit")]
+                adapter: accesskit_winit::Adapter::with_event_loop_proxy(&window, proxy.clone()),
+                _menu: menu,
+            });
 
             let size: winit::dpi::PhysicalSize<u32> = window.inner_size();
             let mut viewport = Viewport::new((size.width, size.height));

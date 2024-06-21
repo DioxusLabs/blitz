@@ -3,10 +3,6 @@ name = "blitz"
 version = "0.1.0"
 edition = "2021"
 
-[features]
-accesskit = ["dep:accesskit"]
-default = ["accesskit"]
-
 [dependencies]
 slab = "0.4.9"
 style = { workspace = true, features = ["servo"] }
@@ -18,7 +14,6 @@ tokio = { workspace = true, features = ["full"] }
 vello = { workspace = true }
 wgpu = { workspace = true }
 
-accesskit = { version = "0.15.0", optional = true }
 app_units = "0.7.3"
 atomic_refcell = { version = "0.1.13", features = ["serde"] }
 fxhash = "0.2.1"
