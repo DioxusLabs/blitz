@@ -229,7 +229,7 @@ impl crate::document::Document {
                 )
             };
 
-            if display == taffy::Display::Flex {
+            if matches!(display, taffy::Display::Flex | taffy::Display::Grid) {
                 // Reorder the children based on their flex order
                 // Would like to not have to
                 children.sort_by(|left, right| {

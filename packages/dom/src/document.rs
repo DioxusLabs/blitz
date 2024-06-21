@@ -100,6 +100,7 @@ impl Document {
 
         // Make sure we turn on servo features
         style_config::set_bool("layout.flexbox.enabled", true);
+        style_config::set_bool("layout.grid.enabled", true);
         style_config::set_bool("layout.legacy_layout", true);
         style_config::set_bool("layout.columns.enabled", true);
 

@@ -94,7 +94,7 @@ pub(crate) fn collect_layout_children(
             }
             collect_complex_layout_children(doc, container_node_id, layout_children, anonymous_block_id, false, block_item_needs_wrap);
         }
-        DisplayInside::Flex /* | Display::Grid */ => {
+        DisplayInside::Flex | DisplayInside::Grid => {
 
             let has_text_node_or_contents = doc.nodes[container_node_id].children
                 .iter()
