@@ -4,7 +4,7 @@ version = "0.0.0"
 edition = "2021"
 
 [features]
-hot-reload = []
+hot-reload = ["dep:dioxus-cli-config", "dep:dioxus-hot-reload"]
 default = []
 
 [dependencies]
@@ -12,8 +12,8 @@ winit = { version = "0.30.2", features = ["rwh_06"] }
 muda = { version = "0.11.5", features = ["serde"] }
 tokio = { workspace = true, features = ["full"] }
 dioxus = { workspace = true }
-dioxus-cli-config = { git = "https://github.com/dioxuslabs/dioxus", rev = "a3aa6ae771a2d0a4d8cb6055c41efc0193b817ef"}
-dioxus-hot-reload = { git = "https://github.com/dioxuslabs/dioxus", rev = "a3aa6ae771a2d0a4d8cb6055c41efc0193b817ef"}
+dioxus-cli-config = { git = "https://github.com/dioxuslabs/dioxus", rev = "a3aa6ae771a2d0a4d8cb6055c41efc0193b817ef", optional = true }
+dioxus-hot-reload = { git = "https://github.com/dioxuslabs/dioxus", rev = "a3aa6ae771a2d0a4d8cb6055c41efc0193b817ef", optional = true }
 futures-util = "0.3.30"
 vello = { workspace = true }
 wgpu = { workspace = true }
