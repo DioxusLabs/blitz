@@ -612,7 +612,9 @@ impl<'a> selectors::Element for BlitzNode<'a> {
     }
 
     fn is_root(&self) -> bool {
-        self.parent_node().is_none()
+        self.parent_node()
+            .and_then(|parent| parent.parent_node())
+            .is_none()
     }
 
     fn has_custom_state(
