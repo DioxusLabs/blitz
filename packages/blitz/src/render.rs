@@ -267,7 +267,7 @@ where
             .max(-(content_height - viewport_height));
     }
 
-    pub fn click(&mut self) {
+    pub fn click(&mut self, button: &str) {
         let Some(node_id) = self.dom.as_ref().get_hover_node_id() else {
             return;
         };
@@ -277,7 +277,14 @@ where
         };
 
         if self.devtools.highlight_hover {
-            let node = &self.dom.as_ref().get_node(node_id).unwrap();
+            let mut node = self.dom.as_ref().get_node(node_id).unwrap();
+
+            if button == "right" {
+                if let Some(parent_id) = node.parent {
+                    node = self.dom.as_ref().get_node(parent_id).unwrap();
+                }
+            }
+
             dbg!(&node.final_layout);
             dbg!(&node.style);
 
@@ -349,7 +356,7 @@ where
 
         // If we hit a node, then we collect the node to its parents, check for listeners, and then
         // call those listeners
-        if !self.devtools.highlight_hover {
+        if !self.devtools.highlight_hover && button == "left" {
             self.dom.handle_event(RendererEvent {
                 name: "click".to_string(),
                 target: node_id,
