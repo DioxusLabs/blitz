@@ -206,7 +206,7 @@ where
         };
 
         let x = x / state.viewport.zoom();
-        let y = y / state.viewport.zoom();
+        let y = (y - self.scroll_offset as f32) / state.viewport.zoom();
 
         // println!("Mouse move: ({}, {})", x, y);
         // println!("Unscaled: ({}, {})",);
@@ -487,6 +487,8 @@ where
             abs_x += x;
             abs_y += y;
         }
+
+        abs_y += self.scroll_offset as f32;
 
         // Hack: scale factor
         let abs_x = f64::from(abs_x) * scale;
