@@ -217,6 +217,8 @@ pub(crate) fn grid_line(input: &stylo::GridLine) -> taffy::GridPlacement {
         taffy::GridPlacement::Auto
     } else if input.is_span {
         taffy::style_helpers::span(input.line_num.try_into().unwrap())
+    } else if input.line_num == 0 {
+        taffy::GridPlacement::Auto
     } else {
         taffy::style_helpers::line(input.line_num.try_into().unwrap())
     }
