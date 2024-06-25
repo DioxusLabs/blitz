@@ -9,7 +9,6 @@ use blitz::RenderState;
 use blitz_dom::DocumentLike;
 use dioxus::prelude::*;
 use documents::DioxusDocument;
-use muda::{MenuEvent, MenuId};
 use std::collections::HashMap;
 use url::Url;
 use winit::event_loop::EventLoop;
@@ -26,12 +25,30 @@ pub struct Config {
 }
 
 /// Launch an interactive HTML/CSS renderer driven by the Dioxus virtualdom
-pub fn launch(root: fn() -> Element) {
-    launch_cfg(root, Config::default())
+pub fn launch(
+    root: fn() -> Element,
+    #[cfg(target_os = "android")] android_app: android_activity::AndroidApp,
+) {
+    launch_cfg(
+        root,
+        Config::default(),
+        #[cfg(target_os = "android")]
+        android_app,
+    )
 }
 
-pub fn launch_cfg(root: fn() -> Element, cfg: Config) {
-    launch_cfg_with_props(root, (), cfg)
+pub fn launch_cfg(
+    root: fn() -> Element,
+    cfg: Config,
+    #[cfg(target_os = "android")] android_app: android_activity::AndroidApp,
+) {
+    launch_cfg_with_props(
+        root,
+        (),
+        cfg,
+        #[cfg(target_os = "android")]
+        android_app,
+    )
 }
 
 // todo: props shouldn't have the clone bound - should try and match dioxus-desktop behavior
@@ -39,6 +56,7 @@ pub fn launch_cfg_with_props<P: Clone + 'static, M: 'static>(
     root: impl ComponentFunction<P, M>,
     props: P,
     _cfg: Config,
+    #[cfg(target_os = "android")] android_app: android_activity::AndroidApp,
 ) {
     // Spin up the virtualdom
     // We're going to need to hit it with a special waker
@@ -46,10 +64,14 @@ pub fn launch_cfg_with_props<P: Clone + 'static, M: 'static>(
     let document = DioxusDocument::new(vdom);
     let window = View::new(document);
 
-    launch_with_window(window)
+    launch_with_window(
+        window,
+        #[cfg(target_os = "android")]
+        android_app,
+    )
 }
 
-pub fn launch_url(url: &str) {
+pub fn launch_url(url: &str,   #[cfg(target_os = "android")] android_app: android_activity::AndroidApp,) {
     const USER_AGENT: &str = "Mozilla/5.0 (X11; Linux x86_64; rv:60.0) Gecko/20100101 Firefox/81.0";
     println!("{}", url);
 
@@ -70,20 +92,41 @@ pub fn launch_url(url: &str) {
             stylesheets: Vec::new(),
             base_url: Some(url),
         },
+        #[cfg(target_os = "android")]
+        android_app,
     )
 }
 
-pub fn launch_static_html(html: &str) {
-    launch_static_html_cfg(html, Config::default())
+pub fn launch_static_html(
+    html: &str,
+    #[cfg(target_os = "android")] android_app: android_activity::AndroidApp,
+) {
+    launch_static_html_cfg(
+        html,
+        Config::default(),
+        #[cfg(target_os = "android")]
+        android_app,
+    )
 }
 
-pub fn launch_static_html_cfg(html: &str, cfg: Config) {
+pub fn launch_static_html_cfg(
+    html: &str,
+    cfg: Config,
+    #[cfg(target_os = "android")] android_app: android_activity::AndroidApp,
+) {
     let document = HtmlDocument::from_html(html, &cfg);
     let window = View::new(document);
-    launch_with_window(window)
+    launch_with_window(
+        window,
+        #[cfg(target_os = "android")]
+        android_app,
+    )
 }
 
-fn launch_with_window<Doc: DocumentLike + 'static>(window: View<'static, Doc>) {
+fn launch_with_window<Doc: DocumentLike + 'static>(
+    window: View<'static, Doc>,
+    #[cfg(target_os = "android")] android_app: android_activity::AndroidApp,
+) {
     // Turn on the runtime and enter it
     let rt = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
@@ -93,9 +136,15 @@ fn launch_with_window<Doc: DocumentLike + 'static>(window: View<'static, Doc>) {
     let _guard = rt.enter();
 
     // Build an event loop for the application
-    let event_loop = EventLoop::<UserWindowEvent>::with_user_event()
-        .build()
-        .unwrap();
+    let mut builder = EventLoop::<UserWindowEvent>::with_user_event();
+
+    #[cfg(target_os = "android")]
+    {
+        use winit::platform::android::EventLoopBuilderExtAndroid;
+        builder.with_android_app(android_app);
+    }
+
+    let event_loop = builder.build().unwrap();
     let proxy = event_loop.create_proxy();
 
     // Multiwindow ftw
@@ -103,7 +152,9 @@ fn launch_with_window<Doc: DocumentLike + 'static>(window: View<'static, Doc>) {
     let mut pending_windows = Vec::new();
 
     pending_windows.push(window);
-    let menu_channel = MenuEvent::receiver();
+
+    #[cfg(feature = "muda")]
+    let menu_channel = muda::MenuEvent::receiver();
 
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
     let mut initial = true;
@@ -193,8 +244,9 @@ fn launch_with_window<Doc: DocumentLike + 'static>(window: View<'static, Doc>) {
                 _ => (),
             }
 
+            #[cfg(feature = "muda")]
             if let Ok(event) = menu_channel.try_recv() {
-                if event.id == MenuId::new("dev.show_layout") {
+                if event.id == muda::MenuId::new("dev.show_layout") {
                     for (_, view) in windows.iter_mut() {
                         view.renderer.devtools.show_layout = !view.renderer.devtools.show_layout;
                         view.request_redraw();
