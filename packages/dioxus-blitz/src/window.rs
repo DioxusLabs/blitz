@@ -37,14 +37,29 @@ struct State {
 impl State {
     #[cfg(feature = "accesskit")]
     fn build_node(&mut self, node: &Node) -> (accesskit::NodeId, accesskit::NodeBuilder) {
+        use accesskit::Role;
+        use blitz_dom::local_name;
+
         let mut node_builder = accesskit::NodeBuilder::default();
         if let Some(element_data) = node.element_data() {
             let name = element_data.name.local.to_string();
+
+            // TODO match more roles
             let role = match &*name {
-                "button" => accesskit::Role::Button,
-                "div" | "section" => accesskit::Role::Group,
-                "p" => accesskit::Role::Paragraph,
-                _ => accesskit::Role::Unknown,
+                "button" => Role::Button,
+                "div" => Role::GenericContainer,
+                "header" => Role::Header,
+                "h1" | "h2" | "h3" | "h4" | "h5" | "h6" => Role::Heading,
+                "p" => Role::Paragraph,
+                "section" => Role::Section,
+                "input" => {
+                    let ty = element_data.attr(local_name!("type")).unwrap_or("text");
+                    match ty {
+                        "number" => Role::NumberInput,
+                        _ => Role::TextInput,
+                    }
+                }
+                _ => Role::Unknown,
             };
 
             node_builder.set_role(role);
