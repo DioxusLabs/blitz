@@ -16,30 +16,27 @@ use winit::event::{ElementState, MouseButton};
 use winit::event_loop::{ActiveEventLoop, EventLoopProxy};
 use winit::{event::WindowEvent, keyboard::KeyCode, keyboard::ModifiersState, window::Window};
 
-struct State {
-    /// Accessibility adapter for `accesskit`.
-    #[cfg(feature = "accesskit")]
+#[cfg(feature = "accesskit")]
+struct AccessibilityState {
+    /// Adapter to connect to the [`EventLoop`](`winit::event_loop::EventLoop`).
     adapter: accesskit_winit::Adapter,
 
-    #[cfg(feature = "accesskit")]
-    node_ids: std::collections::HashMap<accesskit::NodeId, usize>,
-
-    #[cfg(feature = "accesskit")]
-    id_to_node_ids: std::collections::HashMap<usize, accesskit::NodeId>,
-
-    #[cfg(feature = "accesskit")]
+    /// Next ID to assign an an [`accesskit::Node`].
     next_id: u64,
+}
+
+struct State {
+    #[cfg(feature = "accesskit")]
+    /// Accessibility adapter for `accesskit`.
+    accessibility: AccessibilityState,
 
     /// Main menu bar of this view's window.
     _menu: Menu,
 }
 
 impl State {
-    fn build_node(
-        &mut self,
-        node_id: usize,
-        node: &Node,
-    ) -> (accesskit::NodeId, accesskit::NodeBuilder) {
+    #[cfg(feature = "accesskit")]
+    fn build_node(&mut self, node: &Node) -> (accesskit::NodeId, accesskit::NodeBuilder) {
         let mut node_builder = accesskit::NodeBuilder::default();
         if let Some(element_data) = node.element_data() {
             let name = element_data.name.local.to_string();
@@ -57,11 +54,8 @@ impl State {
             node_builder.set_name(node.text_content());
         }
 
-        let id = accesskit::NodeId(self.next_id);
-        self.next_id += 1;
-
-        self.node_ids.insert(id, node_id);
-        self.id_to_node_ids.insert(node_id, id);
+        let id = accesskit::NodeId(self.accessibility.next_id);
+        self.accessibility.next_id += 1;
 
         (id, node_builder)
     }
@@ -367,13 +361,14 @@ impl<'a, Doc: DocumentLike> View<'a, Doc> {
             );
             self.state = Some(State {
                 #[cfg(feature = "accesskit")]
-                adapter: accesskit_winit::Adapter::with_event_loop_proxy(&window, proxy.clone()),
-                #[cfg(feature = "accesskit")]
-                node_ids: Default::default(),
-                #[cfg(feature = "accesskit")]
-                id_to_node_ids: Default::default(),
-                #[cfg(feature = "accesskit")]
-                next_id: 1,
+                accessibility: AccessibilityState {
+                    adapter: accesskit_winit::Adapter::with_event_loop_proxy(
+                        &window,
+                        proxy.clone(),
+                    ),
+                    next_id: 1,
+                },
+
                 _menu: menu,
             });
 
@@ -411,7 +406,7 @@ impl<'a, Doc: DocumentLike> View<'a, Doc> {
         let mut window = accesskit::NodeBuilder::new(accesskit::Role::Window);
 
         doc.visit(|node_id, node| {
-            let (id, node_builder) = state.build_node(node_id, node);
+            let (id, node_builder) = state.build_node(node);
 
             if let Some(parent_id) = node.parent {
                 let (_, parent_node): &mut (_, accesskit::NodeBuilder) =
@@ -437,7 +432,7 @@ impl<'a, Doc: DocumentLike> View<'a, Doc> {
             focus: accesskit::NodeId(0),
         };
 
-        state.adapter.update_if_active(|| tree_update)
+        state.accessibility.adapter.update_if_active(|| tree_update)
     }
 }
 
