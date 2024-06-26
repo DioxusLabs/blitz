@@ -23,7 +23,7 @@ pub(crate) struct View<'s, Doc: DocumentLike> {
     keyboard_modifiers: ModifiersState,
 
     /// Main menu bar of this view's window.
-    #[cfg(feature = "muda")]
+    #[cfg(all(feature = "menu", not(any(target_os = "android", target_os = "ios"))))]
     menu: Option<muda::Menu>,
 }
 
@@ -34,7 +34,7 @@ impl<'a, Doc: DocumentLike> View<'a, Doc> {
             scene: Scene::new(),
             waker: None,
             keyboard_modifiers: Default::default(),
-            #[cfg(feature = "muda")]
+            #[cfg(all(feature = "menu", not(any(target_os = "android", target_os = "ios"))))]
             menu: None,
         }
     }
@@ -288,7 +288,7 @@ impl<'a, Doc: DocumentLike> View<'a, Doc> {
                 }))
                 .unwrap();
 
-            #[cfg(feature = "muda")]
+            #[cfg(all(feature = "menu", not(any(target_os = "android", target_os = "ios"))))]
             {
                 self.menu = Some(init_menu(
                     #[cfg(target_os = "windows")]
@@ -318,7 +318,8 @@ impl<'a, Doc: DocumentLike> View<'a, Doc> {
     }
 }
 
-#[cfg(feature = "muda")]
+#[cfg(all(feature = "menu", not(any(target_os = "android", target_os = "ios"))))]
+
 /// Initialize the default menu bar.
 pub fn init_menu(#[cfg(target_os = "windows")] window: &Window) -> Menu {
     let menu = Menu::new();

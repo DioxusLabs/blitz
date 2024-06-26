@@ -71,7 +71,10 @@ pub fn launch_cfg_with_props<P: Clone + 'static, M: 'static>(
     )
 }
 
-pub fn launch_url(url: &str,   #[cfg(target_os = "android")] android_app: android_activity::AndroidApp,) {
+pub fn launch_url(
+    url: &str,
+    #[cfg(target_os = "android")] android_app: android_activity::AndroidApp,
+) {
     const USER_AGENT: &str = "Mozilla/5.0 (X11; Linux x86_64; rv:60.0) Gecko/20100101 Firefox/81.0";
     println!("{}", url);
 
@@ -153,7 +156,7 @@ fn launch_with_window<Doc: DocumentLike + 'static>(
 
     pending_windows.push(window);
 
-    #[cfg(feature = "muda")]
+    #[cfg(all(feature = "menu", not(any(target_os = "android", target_os = "ios"))))]
     let menu_channel = muda::MenuEvent::receiver();
 
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
@@ -244,7 +247,7 @@ fn launch_with_window<Doc: DocumentLike + 'static>(
                 _ => (),
             }
 
-            #[cfg(feature = "muda")]
+            #[cfg(all(feature = "menu", not(any(target_os = "android", target_os = "ios"))))]
             if let Ok(event) = menu_channel.try_recv() {
                 if event.id == muda::MenuId::new("dev.show_layout") {
                     for (_, view) in windows.iter_mut() {
