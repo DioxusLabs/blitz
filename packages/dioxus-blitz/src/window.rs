@@ -318,10 +318,11 @@ impl<'a, Doc: DocumentLike> View<'a, Doc> {
     }
 }
 
-#[cfg(all(feature = "menu", not(any(target_os = "android", target_os = "ios"))))]
-
 /// Initialize the default menu bar.
-pub fn init_menu(#[cfg(target_os = "windows")] window: &Window) -> Menu {
+#[cfg(all(feature = "menu", not(any(target_os = "android", target_os = "ios"))))]
+pub fn init_menu(#[cfg(target_os = "windows")] window: &Window) -> muda::Menu {
+    use muda::{AboutMetadata, Menu, MenuId, MenuItem, PredefinedMenuItem, Submenu};
+
     let menu = Menu::new();
 
     // Build the about section
