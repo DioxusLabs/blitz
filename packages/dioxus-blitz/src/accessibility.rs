@@ -1,7 +1,7 @@
+use crate::waker::UserEvent;
 use accesskit::Role;
 use blitz_dom::{local_name, Document, Node};
 use winit::{event_loop::EventLoopProxy, window::Window};
-use crate::waker::UserEvent;
 
 /// State of the accessibility node tree and platform adapter.
 pub struct AccessibilityState {
@@ -53,7 +53,7 @@ impl AccessibilityState {
         self.adapter.update_if_active(|| tree_update)
     }
 
-    #[cfg(feature = "accesskit")]
+    #[cfg(feature = "accessibility")]
     fn build_node(&mut self, node: &Node) -> (accesskit::NodeId, accesskit::NodeBuilder) {
         let mut node_builder = accesskit::NodeBuilder::default();
         if let Some(element_data) = node.element_data() {

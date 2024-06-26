@@ -2,7 +2,7 @@ mod documents;
 mod waker;
 mod window;
 
-#[cfg(feature = "accesskit")]
+#[cfg(feature = "accessibility")]
 mod accessibility;
 
 use crate::waker::{EventData, UserEvent};
@@ -191,7 +191,7 @@ fn launch_with_window<Doc: DocumentLike + 'static>(window: View<'static, Doc>) {
                             }
                         };
                     }
-                    #[cfg(feature = "accesskit")]
+                    #[cfg(feature = "accessibility")]
                     UserEvent::Accessibility(accessibility_event) => {
                         if let Some(window) = windows.get_mut(&accessibility_event.window_id) {
                             window.handle_accessibility_event(&accessibility_event.window_event);

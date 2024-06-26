@@ -17,7 +17,7 @@ use winit::event_loop::{ActiveEventLoop, EventLoopProxy};
 use winit::{event::WindowEvent, keyboard::KeyCode, keyboard::ModifiersState, window::Window};
 
 struct State {
-    #[cfg(feature = "accesskit")]
+    #[cfg(feature = "accessibility")]
     /// Accessibility adapter for `accesskit`.
     accessibility: crate::accessibility::AccessibilityState,
 
@@ -56,7 +56,7 @@ impl<'a, Doc: DocumentLike> View<'a, Doc> {
             Some(waker) => {
                 let cx = std::task::Context::from_waker(waker);
                 if self.renderer.poll(cx) {
-                    #[cfg(feature = "accesskit")]
+                    #[cfg(feature = "accessibility")]
                     {
                         if let Some(ref mut state) = self.state {
                             // TODO send fine grained accessibility tree updates.
@@ -293,7 +293,7 @@ impl<'a, Doc: DocumentLike> View<'a, Doc> {
         }
     }
 
-    #[cfg(feature = "accesskit")]
+    #[cfg(feature = "accessibility")]
     pub fn handle_accessibility_event(&mut self, event: &accesskit_winit::WindowEvent) {
         match event {
             accesskit_winit::WindowEvent::InitialTreeRequested => {
@@ -330,7 +330,7 @@ impl<'a, Doc: DocumentLike> View<'a, Doc> {
                 &window,
             );
             self.state = Some(State {
-                #[cfg(feature = "accesskit")]
+                #[cfg(feature = "accessibility")]
                 accessibility: crate::accessibility::AccessibilityState::new(
                     &window,
                     proxy.clone(),
