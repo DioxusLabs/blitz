@@ -2,6 +2,9 @@ mod documents;
 mod waker;
 mod window;
 
+#[cfg(feature = "accesskit")]
+mod accessibility;
+
 use crate::waker::{EventData, UserEvent};
 use crate::{documents::HtmlDocument, window::View};
 
