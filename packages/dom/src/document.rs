@@ -105,6 +105,7 @@ impl Document {
 
         // Make sure we turn on servo features
         style_config::set_bool("layout.flexbox.enabled", true);
+        style_config::set_bool("layout.grid.enabled", true);
         style_config::set_bool("layout.legacy_layout", true);
         style_config::set_bool("layout.columns.enabled", true);
 
@@ -521,8 +522,13 @@ impl Document {
 
         let root_node_id = taffy::NodeId::from(self.root_element().id);
 
+        // println!("\n\nRESOLVE LAYOUT\n===========\n");
+
         taffy::compute_root_layout(self, root_node_id, available_space);
         taffy::round_layout(self, root_node_id);
+
+        // println!("\n\n");
+        // taffy::print_tree(self, root_node_id)
     }
 
     pub fn set_document(&mut self, _content: String) {}

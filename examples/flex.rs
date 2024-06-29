@@ -12,8 +12,8 @@ fn main() {
 
 fn app() -> Element {
     rsx! {
-        style { {CSS} }
         div {
+            style { {CSS} }
             div {
                 h2 { "justify-content" }
                 for row in ["flex-start", "flex-end", "center", "space-between", "space-around", "space-evenly"] {
@@ -25,7 +25,7 @@ fn app() -> Element {
                     }
                 }
             }
-            h3 { "flex-flow" }
+            h3 { "CSS Grid Test"}
             div {
                 id: "grid_container",
                 for _ in 0..3 {
@@ -69,21 +69,20 @@ const CSS: &str = r#"
     display: flex;
     gap: 10px;
 }
+
+div {
+    font-family: sans-serif;
+}
+
+h3 {
+    font-size: 2em;
+}
+
 #grid_container {
-  /* We first create a flex layout context */
-  display: flex;
-//   width: 600px;
-
-  /* Then we define the flow direction
-     and if we allow the items to wrap
-   * Remember this is the same as:
-   * flex-direction: row;
-   * flex-wrap: wrap;
-   */
-  flex-flow: row wrap;
-
-  /* Then we define how is distributed the remaining space */
-  justify-content: space-around;
+  display: grid;
+  grid-template-columns: 100px 1fr 1fr 100px;
+  gap: 10px;
+  padding: 10px;
 }
 
 .floater {

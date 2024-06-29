@@ -33,27 +33,25 @@ pub(crate) fn collect_layout_children(
     );
 
     match container_display.inside() {
-        DisplayInside::None => {},
+        DisplayInside::None => {}
         DisplayInside::Contents => {
-
             // Take children array from node to avoid borrow checker issues.
             let children = std::mem::take(&mut doc.nodes[container_node_id].children);
 
             for child_id in children.iter().copied() {
-              collect_layout_children(doc, child_id, layout_children, anonymous_block_id)
+                collect_layout_children(doc, child_id, layout_children, anonymous_block_id)
             }
 
             // Put children array back
             doc.nodes[container_node_id].children = children;
-
-        },
+        }
         DisplayInside::Flow | DisplayInside::FlowRoot => {
-
             // TODO: make "all_inline" detection work in the presence of display:contents nodes
             let mut all_block = true;
             let mut all_inline = true;
             let mut has_contents = false;
-            for child in doc.nodes[container_node_id].children
+            for child in doc.nodes[container_node_id]
+                .children
                 .iter()
                 .copied()
                 .map(|child_id| &doc.nodes[child_id])
@@ -79,7 +77,11 @@ pub(crate) fn collect_layout_children(
             if all_inline {
                 let (inline_layout, ilayout_children) = build_inline_layout(doc, container_node_id);
                 doc.nodes[container_node_id].is_inline_root = true;
-                doc.nodes[container_node_id].raw_dom_data.downcast_element_mut().unwrap().inline_layout = Some(Box::new(inline_layout));
+                doc.nodes[container_node_id]
+                    .raw_dom_data
+                    .downcast_element_mut()
+                    .unwrap()
+                    .inline_layout = Some(Box::new(inline_layout));
                 return layout_children.extend_from_slice(&ilayout_children);
             }
 
@@ -89,14 +91,24 @@ pub(crate) fn collect_layout_children(
                 return layout_children.extend_from_slice(&doc.nodes[container_node_id].children);
             }
 
-            fn block_item_needs_wrap(child_node_kind: NodeKind, display_outside: DisplayOutside) -> bool {
+            fn block_item_needs_wrap(
+                child_node_kind: NodeKind,
+                display_outside: DisplayOutside,
+            ) -> bool {
                 child_node_kind == NodeKind::Text || display_outside == DisplayOutside::Inline
             }
-            collect_complex_layout_children(doc, container_node_id, layout_children, anonymous_block_id, false, block_item_needs_wrap);
+            collect_complex_layout_children(
+                doc,
+                container_node_id,
+                layout_children,
+                anonymous_block_id,
+                false,
+                block_item_needs_wrap,
+            );
         }
-        DisplayInside::Flex /* | Display::Grid */ => {
-
-            let has_text_node_or_contents = doc.nodes[container_node_id].children
+        DisplayInside::Flex | DisplayInside::Grid => {
+            let has_text_node_or_contents = doc.nodes[container_node_id]
+                .children
                 .iter()
                 .copied()
                 .map(|child_id| &doc.nodes[child_id])
@@ -110,11 +122,21 @@ pub(crate) fn collect_layout_children(
                 return layout_children.extend_from_slice(&doc.nodes[container_node_id].children);
             }
 
-            fn flex_or_grid_item_needs_wrap(child_node_kind: NodeKind, _display_outside: DisplayOutside) -> bool {
+            fn flex_or_grid_item_needs_wrap(
+                child_node_kind: NodeKind,
+                _display_outside: DisplayOutside,
+            ) -> bool {
                 child_node_kind == NodeKind::Text
             }
-            collect_complex_layout_children(doc, container_node_id, layout_children, anonymous_block_id, true, flex_or_grid_item_needs_wrap);
-        },
+            collect_complex_layout_children(
+                doc,
+                container_node_id,
+                layout_children,
+                anonymous_block_id,
+                true,
+                flex_or_grid_item_needs_wrap,
+            );
+        }
 
         // TODO: Implement table layout
         _ => {
@@ -228,6 +250,8 @@ pub(crate) fn build_inline_layout(
         .map(|s| stylo_to_parley::style(s))
         .unwrap_or_default();
 
+    let root_line_height = parley_style.line_height;
+
     // Create a parley tree builder
     let mut builder = doc
         .layout_ctx
@@ -241,7 +265,13 @@ pub(crate) fn build_inline_layout(
     builder.set_white_space_mode(collapse_mode);
 
     for child_id in root_node.children.iter().copied() {
-        build_inline_layout_recursive(&mut builder, &doc.nodes, child_id, collapse_mode);
+        build_inline_layout_recursive(
+            &mut builder,
+            &doc.nodes,
+            child_id,
+            collapse_mode,
+            root_line_height,
+        );
     }
 
     let (layout, text) = builder.build();
@@ -265,6 +295,7 @@ pub(crate) fn build_inline_layout(
         nodes: &Slab<Node>,
         node_id: usize,
         collapse_mode: WhiteSpaceCollapse,
+        root_line_height: f32,
     ) {
         let node = &nodes[node_id];
 
@@ -296,11 +327,17 @@ pub(crate) fn build_inline_layout(
                     (DisplayOutside::None, DisplayInside::None) => {}
                     (DisplayOutside::None, DisplayInside::Contents) => {
                         for child_id in node.children.iter().copied() {
-                            build_inline_layout_recursive(builder, nodes, child_id, collapse_mode);
+                            build_inline_layout_recursive(
+                                builder,
+                                nodes,
+                                child_id,
+                                collapse_mode,
+                                root_line_height,
+                            );
                         }
                     }
                     (DisplayOutside::Inline, DisplayInside::Flow) => {
-                        let tag_name = &node.raw_dom_data.downcast_element().unwrap().name.local;
+                        let tag_name = &element_data.name.local;
 
                         if *tag_name == local_name!("img") || *tag_name == local_name!("input") {
                             builder.push_inline_box(InlineBox {
@@ -311,11 +348,22 @@ pub(crate) fn build_inline_layout(
                                 width: 0.0,
                                 height: 0.0,
                             });
+                        } else if *tag_name == local_name!("br") {
+                            builder.push_style_modification_span(&[]);
+                            builder.set_white_space_mode(WhiteSpaceCollapse::Preserve);
+                            builder.push_text("\n");
+                            builder.pop_style_span();
+                            builder.set_white_space_mode(collapse_mode);
                         } else {
-                            let style = node
+                            let mut style = node
                                 .primary_styles()
                                 .map(|s| stylo_to_parley::style(&s))
                                 .unwrap_or_default();
+
+                            // Floor the line-height of the span by the line-height of the inline context
+                            // See https://www.w3.org/TR/CSS21/visudet.html#line-height
+                            style.line_height = style.line_height.max(root_line_height);
+
                             builder.push_style_span(style);
 
                             for child_id in node.children.iter().copied() {
@@ -324,6 +372,7 @@ pub(crate) fn build_inline_layout(
                                     nodes,
                                     child_id,
                                     collapse_mode,
+                                    root_line_height,
                                 );
                             }
 

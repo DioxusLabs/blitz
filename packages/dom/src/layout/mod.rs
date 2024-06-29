@@ -261,6 +261,7 @@ impl Document {
                 AvailableSpace::MinContent => Some(0.0),
                 AvailableSpace::MaxContent => None,
             };
+
             let alignment = self.nodes[usize::from(node_id)]
                 .primary_styles()
                 .map(|s| {
@@ -347,11 +348,11 @@ impl Document {
                 }
             }
 
-            // dbg!(node_id);
-            // dbg!(max_advance);
+            // println!("INLINE LAYOUT FOR {:?}. max_advance: {:?}", node_id, max_advance);
             // dbg!(&inline_layout.text);
-            // dbg!(inline_layout.layout.width());
-            // dbg!(inline_layout.layout.height());
+            // println!("Computed: w: {} h: {}", inline_layout.layout.width(), inline_layout.layout.height());
+            // println!("known_dimensions: w: {:?} h: {:?}", inputs.known_dimensions.width, inputs.known_dimensions.height);
+            // println!("\n");
 
             inputs.known_dimensions.unwrap_or(taffy::Size {
                 width: inline_layout.layout.width() / scale,

@@ -30,6 +30,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: 1.79
+      - run: perl -pi.bak -e 's/opt-level = 2/opt-level = 0/g' Cargo.toml
       - run: sudo apt install libgtk-3-dev libxdo-dev
       - run: cargo build --workspace
 
@@ -39,6 +40,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
+      - run: perl -pi.bak -e 's/opt-level = 2/opt-level = 0/g' Cargo.toml
       - run: sudo apt install libgtk-3-dev libxdo-dev
       - run: cargo build --workspace
       - run: cargo test --workspace
@@ -63,6 +65,7 @@ jobs:
         with:
           toolchain: nightly
           components: clippy
+      - run: perl -pi.bak -e 's/opt-level = 2/opt-level = 0/g' Cargo.toml
       - run: sudo apt install libgtk-3-dev libxdo-dev
       - run: cargo clippy --workspace -- -D warnings
 
@@ -84,22 +87,25 @@ jobs:
       matrix:
         platform:
           - {
+              name: windows,
               target: x86_64-pc-windows-msvc,
               os: windows-latest,
               cross: false,
               command: "test",
               args: "--all --tests",
-              setup: ""
+              setup: perl -pi.bak -e 's/opt-level = 2/opt-level = 0/g' Cargo.toml
             }
           - {
-              target: x86_64-apple-darwin,
+              name: macos,
+              target: aarch64-apple-darwin,
               os: macos-latest,
               cross: false,
               command: "test",
               args: "--all --tests",
-              setup: ""
+              setup: perl -pi.bak -e 's/opt-level = 2/opt-level = 0/g' Cargo.toml
             }
           - {
+              name: linux,
               target: x86_64-unknown-linux-gnu,
               os: ubuntu-latest,
               cross: false,
@@ -111,8 +117,11 @@ jobs:
                 libgtk-3-dev \
                 libudev-dev \
                 libpango1.0-dev \
-                libxdo-dev"
+                libxdo-dev;
+                perl -pi.bak -e 's/opt-level = 2/opt-level = 0/g' Cargo.toml"
             }
+
+    name: Test (${{ matrix.platform.name }})
 
     steps:
       - uses: actions/checkout@v4
@@ -143,6 +152,7 @@ jobs:
 
       - name: Setup
         run: ${{ matrix.platform.setup }} 
+        shell: bash
 
       - name: test
         run: |
