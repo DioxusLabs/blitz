@@ -220,12 +220,15 @@ static ANDROID_APP: std::sync::OnceLock<android_activity::AndroidApp> = std::syn
 
 #[cfg(target_os = "android")]
 #[cfg_attr(docsrs, doc(cfg(target_os = "android")))]
+/// Set the current [`AndroidApp`](android_activity::AndroidApp).
 pub fn set_android_app(app: android_activity::AndroidApp) {
     ANDROID_APP.set(app).unwrap()
 }
 
 #[cfg(target_os = "android")]
 #[cfg_attr(docsrs, doc(cfg(target_os = "android")))]
+/// Get the current [`AndroidApp`](android_activity::AndroidApp).
+/// This will panic if the android activity has not been setup with [`set_android_app`].
 pub fn current_android_app(app: android_activity::AndroidApp) -> AndroidApp {
     ANDROID_APP.get().unwrap().clone()
 }
