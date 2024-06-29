@@ -31,7 +31,7 @@ fn get_html() -> std::borrow::Cow<'static, str> {
     // });
 
     // Load static HTML
-    let content = include_str!("./google_bits/google.html");
+    let content = include_str!("./assets/google.html");
 
     content.into()
 }
