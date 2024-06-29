@@ -114,16 +114,14 @@ fn launch_with_window<Doc: DocumentLike + 'static>(window: View<'static, Doc>) {
         not(target_os = "ios")
     ))]
     {
-        let Ok(cfg) = dioxus_cli_config::CURRENT_CONFIG.as_ref() else {
-            return;
-        };
-
-        dioxus_hot_reload::connect_at(cfg.target_dir.join("dioxusin"), {
-            let proxy = proxy.clone();
-            move |template| {
-                let _ = proxy.send_event(UserEvent::HotReloadEvent(template));
-            }
-        });
+        if let Ok(cfg) = dioxus_cli_config::CURRENT_CONFIG.as_ref() {
+            dioxus_hot_reload::connect_at(cfg.target_dir.join("dioxusin"), {
+                let proxy = proxy.clone();
+                move |template| {
+                    let _ = proxy.send_event(UserEvent::HotReloadEvent(template));
+                }
+            })
+        }
     }
 
     // the move to winit wants us to use a struct with a run method instead of the callback approach
