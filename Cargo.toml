@@ -39,12 +39,9 @@ publish = false
 opt-level = 2
 
 # Need to force specific versions of these dependencies
-[dependencies]
-# webrender = "0.61.0"
-euclid = { version = "0.22", features = ["serde"] }
-# mozbuild = "0.1.0"
-
 [dev-dependencies]
+# webrender = "0.61.0"
+# mozbuild = "0.1.0"
 blitz = { path = "./packages/blitz" }
 blitz-dom = { path = "./packages/dom" }
 comrak = { version = "0.21.0", default-features = false }
