@@ -223,8 +223,7 @@ impl Document {
         let node = &self.nodes[node_id];
         let node_child_idx = node.child_idx;
 
-        // Get this node's parent, or the root node if it has none.
-        let parent_id = node.parent.unwrap_or_default();
+        let parent_id = node.parent.unwrap();
         let parent = &mut self.nodes[parent_id];
 
         let mut children = std::mem::take(&mut parent.children);
