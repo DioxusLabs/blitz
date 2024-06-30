@@ -1,3 +1,5 @@
+#![cfg_attr(docsrs, feature(doc_cfg))]
+
 mod documents;
 mod waker;
 mod window;
@@ -25,30 +27,12 @@ pub struct Config {
 }
 
 /// Launch an interactive HTML/CSS renderer driven by the Dioxus virtualdom
-pub fn launch(
-    root: fn() -> Element,
-    #[cfg(target_os = "android")] android_app: android_activity::AndroidApp,
-) {
-    launch_cfg(
-        root,
-        Config::default(),
-        #[cfg(target_os = "android")]
-        android_app,
-    )
+pub fn launch(root: fn() -> Element) {
+    launch_cfg(root, Config::default())
 }
 
-pub fn launch_cfg(
-    root: fn() -> Element,
-    cfg: Config,
-    #[cfg(target_os = "android")] android_app: android_activity::AndroidApp,
-) {
-    launch_cfg_with_props(
-        root,
-        (),
-        cfg,
-        #[cfg(target_os = "android")]
-        android_app,
-    )
+pub fn launch_cfg(root: fn() -> Element, cfg: Config) {
+    launch_cfg_with_props(root, (), cfg)
 }
 
 // todo: props shouldn't have the clone bound - should try and match dioxus-desktop behavior
@@ -56,7 +40,6 @@ pub fn launch_cfg_with_props<P: Clone + 'static, M: 'static>(
     root: impl ComponentFunction<P, M>,
     props: P,
     _cfg: Config,
-    #[cfg(target_os = "android")] android_app: android_activity::AndroidApp,
 ) {
     // Spin up the virtualdom
     // We're going to need to hit it with a special waker
@@ -64,17 +47,10 @@ pub fn launch_cfg_with_props<P: Clone + 'static, M: 'static>(
     let document = DioxusDocument::new(vdom);
     let window = View::new(document);
 
-    launch_with_window(
-        window,
-        #[cfg(target_os = "android")]
-        android_app,
-    )
+    launch_with_window(window)
 }
 
-pub fn launch_url(
-    url: &str,
-    #[cfg(target_os = "android")] android_app: android_activity::AndroidApp,
-) {
+pub fn launch_url(url: &str) {
     const USER_AGENT: &str = "Mozilla/5.0 (X11; Linux x86_64; rv:60.0) Gecko/20100101 Firefox/81.0";
     println!("{}", url);
 
@@ -95,41 +71,20 @@ pub fn launch_url(
             stylesheets: Vec::new(),
             base_url: Some(url),
         },
-        #[cfg(target_os = "android")]
-        android_app,
     )
 }
 
-pub fn launch_static_html(
-    html: &str,
-    #[cfg(target_os = "android")] android_app: android_activity::AndroidApp,
-) {
-    launch_static_html_cfg(
-        html,
-        Config::default(),
-        #[cfg(target_os = "android")]
-        android_app,
-    )
+pub fn launch_static_html(html: &str) {
+    launch_static_html_cfg(html, Config::default())
 }
 
-pub fn launch_static_html_cfg(
-    html: &str,
-    cfg: Config,
-    #[cfg(target_os = "android")] android_app: android_activity::AndroidApp,
-) {
+pub fn launch_static_html_cfg(html: &str, cfg: Config) {
     let document = HtmlDocument::from_html(html, &cfg);
     let window = View::new(document);
-    launch_with_window(
-        window,
-        #[cfg(target_os = "android")]
-        android_app,
-    )
+    launch_with_window(window)
 }
 
-fn launch_with_window<Doc: DocumentLike + 'static>(
-    window: View<'static, Doc>,
-    #[cfg(target_os = "android")] android_app: android_activity::AndroidApp,
-) {
+fn launch_with_window<Doc: DocumentLike + 'static>(window: View<'static, Doc>) {
     // Turn on the runtime and enter it
     let rt = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
@@ -144,7 +99,7 @@ fn launch_with_window<Doc: DocumentLike + 'static>(
     #[cfg(target_os = "android")]
     {
         use winit::platform::android::EventLoopBuilderExtAndroid;
-        builder.with_android_app(android_app);
+        builder.with_android_app(current_android_app());
     }
 
     let event_loop = builder.build().unwrap();
@@ -258,4 +213,22 @@ fn launch_with_window<Doc: DocumentLike + 'static>(
             }
         })
         .unwrap();
+}
+
+#[cfg(target_os = "android")]
+static ANDROID_APP: std::sync::OnceLock<android_activity::AndroidApp> = std::sync::OnceLock::new();
+
+#[cfg(target_os = "android")]
+#[cfg_attr(docsrs, doc(cfg(target_os = "android")))]
+/// Set the current [`AndroidApp`](android_activity::AndroidApp).
+pub fn set_android_app(app: android_activity::AndroidApp) {
+    ANDROID_APP.set(app).unwrap()
+}
+
+#[cfg(target_os = "android")]
+#[cfg_attr(docsrs, doc(cfg(target_os = "android")))]
+/// Get the current [`AndroidApp`](android_activity::AndroidApp).
+/// This will panic if the android activity has not been setup with [`set_android_app`].
+pub fn current_android_app(app: android_activity::AndroidApp) -> AndroidApp {
+    ANDROID_APP.get().unwrap().clone()
 }
