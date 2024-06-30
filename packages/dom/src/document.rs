@@ -516,8 +516,13 @@ impl Document {
 
         let root_node_id = taffy::NodeId::from(self.root_element().id);
 
+        // println!("\n\nRESOLVE LAYOUT\n===========\n");
+
         taffy::compute_root_layout(self, root_node_id, available_space);
         taffy::round_layout(self, root_node_id);
+
+        // println!("\n\n");
+        // taffy::print_tree(self, root_node_id)
     }
 
     pub fn set_document(&mut self, _content: String) {}

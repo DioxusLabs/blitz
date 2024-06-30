@@ -263,8 +263,8 @@ where
             .to_f64_px();
         self.scroll_offset = self
             .scroll_offset
-            .min(0.0)
-            .max(-(content_height - viewport_height));
+            .max(-(content_height - viewport_height))
+            .min(0.0);
     }
 
     pub fn click(&mut self, button: &str) {
