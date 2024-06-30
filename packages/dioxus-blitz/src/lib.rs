@@ -2,7 +2,10 @@ mod documents;
 mod waker;
 mod window;
 
-use crate::waker::{EventData, UserWindowEvent};
+#[cfg(feature = "accessibility")]
+mod accessibility;
+
+use crate::waker::{EventData, UserEvent};
 use crate::{documents::HtmlDocument, window::View};
 
 use blitz::RenderState;
@@ -93,9 +96,7 @@ fn launch_with_window<Doc: DocumentLike + 'static>(window: View<'static, Doc>) {
     let _guard = rt.enter();
 
     // Build an event loop for the application
-    let event_loop = EventLoop::<UserWindowEvent>::with_user_event()
-        .build()
-        .unwrap();
+    let event_loop = EventLoop::<UserEvent>::with_user_event().build().unwrap();
     let proxy = event_loop.create_proxy();
 
     // Multiwindow ftw
@@ -108,6 +109,29 @@ fn launch_with_window<Doc: DocumentLike + 'static>(window: View<'static, Doc>) {
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
     let mut initial = true;
 
+    // Setup hot-reloading if enabled.
+    #[cfg(all(
+        feature = "hot-reload",
+        debug_assertions,
+        not(target_os = "android"),
+        not(target_os = "ios")
+    ))]
+    {
+        let Ok(cfg) = dioxus_cli_config::CURRENT_CONFIG.as_ref() else {
+            return;
+        };
+
+        dioxus_hot_reload::connect_at(cfg.target_dir.join("dioxusin"), {
+            let proxy = proxy.clone();
+            move |template| {
+                let _ = proxy.send_event(UserEvent::HotReloadEvent(template));
+            }
+        });
+    }
+
+    // the move to winit wants us to use a struct with a run method instead of the callback approach
+    // we want to just keep the callback approach for now
+    #[allow(deprecated)]
     // the move to winit wants us to use a struct with a run method instead of the callback approach
     // we want to just keep the callback approach for now
     #[allow(deprecated)]
@@ -156,21 +180,65 @@ fn launch_with_window<Doc: DocumentLike + 'static>(window: View<'static, Doc>) {
                     };
                 }
 
-                Event::UserEvent(UserWindowEvent(EventData::Poll, id)) => {
-                    if let Some(view) = windows.get_mut(&id) {
-                        if view.poll() {
-                            view.request_redraw();
+                Event::UserEvent(user_event) => match user_event {
+                    UserEvent::Window {
+                        data: EventData::Poll,
+                        window_id: id,
+                    } => {
+                        if let Some(view) = windows.get_mut(&id) {
+                            if view.poll() {
+                                view.request_redraw();
+                            }
+                        };
+                    }
+                    #[cfg(feature = "accessibility")]
+                    UserEvent::Accessibility(accessibility_event) => {
+                        if let Some(window) = windows.get_mut(&accessibility_event.window_id) {
+                            window.handle_accessibility_event(&accessibility_event.window_event);
                         }
-                    };
-                }
+                    }
+                    #[cfg(all(
+                        feature = "hot-reload",
+                        debug_assertions,
+                        not(target_os = "android"),
+                        not(target_os = "ios")
+                    ))]
+                    UserEvent::HotReloadEvent(msg) => match msg {
+                        dioxus_hot_reload::HotReloadMsg::UpdateTemplate(template) => {
+                            for window in windows.values_mut() {
+                                if let Some(dx_doc) = window
+                                    .renderer
+                                    .dom
+                                    .as_any_mut()
+                                    .downcast_mut::<DioxusDocument>()
+                                {
+                                    dx_doc.vdom.replace_template(template);
+
+                                    if window.poll() {
+                                        window.request_redraw();
+                                    }
+                                }
+                            }
+                        }
+                        dioxus_hot_reload::HotReloadMsg::Shutdown => event_loop.exit(),
+                        dioxus_hot_reload::HotReloadMsg::UpdateAsset(asset) => {
+                            // TODO dioxus-desktop seems to handle this by forcing a reload of all stylesheets.
+                            dbg!("Update asset {:?}", asset);
+                        }
+                    },
+                },
+
                 // Event::UserEvent(_redraw) => {
                 //     for (_, view) in windows.iter() {
                 //         view.request_redraw();
                 //     }
                 // }
                 Event::NewEvents(_) => {
-                    for id in windows.keys() {
-                        _ = proxy.send_event(UserWindowEvent(EventData::Poll, *id));
+                    for window_id in windows.keys().copied() {
+                        _ = proxy.send_event(UserEvent::Window {
+                            data: EventData::Poll,
+                            window_id,
+                        });
                     }
                 }
 
@@ -187,7 +255,7 @@ fn launch_with_window<Doc: DocumentLike + 'static>(window: View<'static, Doc>) {
                 } => {
                     if let Some(window) = windows.get_mut(&window_id) {
                         window.handle_window_event(event);
-                    };
+                    }
                 }
 
                 _ => (),

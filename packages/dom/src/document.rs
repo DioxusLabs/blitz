@@ -4,7 +4,8 @@ use crate::{Node, NodeData, TextNodeData};
 // use quadtree_rs::Quadtree;
 use selectors::{matching::QuirksMode, Element};
 use slab::Slab;
-use std::collections::HashMap;
+use std::any::Any;
+use std::collections::{HashMap, HashSet, VecDeque};
 use style::invalidation::element::restyle_hints::RestyleHint;
 use style::selector_parser::ServoElementSnapshot;
 use style::servo::media_queries::FontMetricsProvider;
@@ -37,7 +38,7 @@ impl FontMetricsProvider for DummyFontMetricsProvider {
     }
 }
 
-pub trait DocumentLike: AsRef<Document> + AsMut<Document> + Into<Document> {
+pub trait DocumentLike: AsRef<Document> + AsMut<Document> + Into<Document> + 'static {
     fn poll(&mut self, _cx: std::task::Context) -> bool {
         // Default implementation does nothing
         false
@@ -46,6 +47,10 @@ pub trait DocumentLike: AsRef<Document> + AsMut<Document> + Into<Document> {
     fn handle_event(&mut self, _event: RendererEvent) -> bool {
         // Default implementation does nothing
         false
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
     }
 }
 
@@ -87,6 +92,8 @@ pub struct Document {
     pub(crate) layout_ctx: parley::LayoutContext<TextBrush>,
 
     pub(crate) hover_node_id: Option<usize>,
+
+    pub changed: HashSet<usize>,
 }
 
 impl Document {
@@ -118,6 +125,7 @@ impl Document {
             layout_ctx: parley::LayoutContext::new(),
 
             hover_node_id: None,
+            changed: HashSet::new(),
         };
 
         // Initialise document with root Document node
@@ -180,6 +188,9 @@ impl Document {
         //     id as usize,
         // );
 
+        // Mark the new node as changed.
+        self.changed.insert(id);
+
         id
     }
 
@@ -218,8 +229,13 @@ impl Document {
 
         let node = &self.nodes[node_id];
         let node_child_idx = node.child_idx;
-        let parent_id = node.parent.unwrap();
+
+        // Get this node's parent, or the root node if it has none.
+        let parent_id = node.parent.unwrap_or_default();
         let parent = &mut self.nodes[parent_id];
+
+        // Mark the node's parent as changed.
+        self.changed.insert(parent_id);
 
         let mut children = std::mem::take(&mut parent.children);
         children.splice(
@@ -528,6 +544,23 @@ impl Document {
     pub fn set_document(&mut self, _content: String) {}
 
     pub fn add_element(&mut self) {}
+
+    pub fn visit<F>(&self, mut visit: F)
+    where
+        F: FnMut(usize, &Node),
+    {
+        let mut stack = VecDeque::new();
+        stack.push_front(0);
+
+        while let Some(node_key) = stack.pop_back() {
+            let node = &self.nodes[node_key];
+            visit(node_key, node);
+
+            for &child_key in &node.children {
+                stack.push_front(child_key);
+            }
+        }
+    }
 }
 
 impl AsRef<Document> for Document {

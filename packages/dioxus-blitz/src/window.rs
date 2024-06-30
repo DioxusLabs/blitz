@@ -1,4 +1,4 @@
-use crate::waker::UserWindowEvent;
+use crate::waker::UserEvent;
 use blitz::{RenderState, Renderer, Viewport};
 use blitz_dom::DocumentLike;
 use winit::keyboard::PhysicalKey;
@@ -7,6 +7,7 @@ use winit::keyboard::PhysicalKey;
 use wgpu::rwh::HasWindowHandle;
 
 use muda::{AboutMetadata, Menu, MenuId, MenuItem, PredefinedMenuItem, Submenu};
+use std::mem;
 use std::sync::Arc;
 use std::task::Waker;
 use vello::Scene;
@@ -14,6 +15,15 @@ use winit::dpi::LogicalSize;
 use winit::event::{ElementState, MouseButton};
 use winit::event_loop::{ActiveEventLoop, EventLoopProxy};
 use winit::{event::WindowEvent, keyboard::KeyCode, keyboard::ModifiersState, window::Window};
+
+struct State {
+    #[cfg(feature = "accessibility")]
+    /// Accessibility adapter for `accesskit`.
+    accessibility: crate::accessibility::AccessibilityState,
+
+    /// Main menu bar of this view's window.
+    _menu: Menu,
+}
 
 pub(crate) struct View<'s, Doc: DocumentLike> {
     pub(crate) renderer: Renderer<'s, Window, Doc>,
@@ -23,8 +33,8 @@ pub(crate) struct View<'s, Doc: DocumentLike> {
     /// need to store them in order to have access to them when processing keypress events
     keyboard_modifiers: ModifiersState,
 
-    /// Main menu bar of this view's window.
-    menu: Option<Menu>,
+    /// State of this view, created on [`View::resume`].
+    state: Option<State>,
 }
 
 impl<'a, Doc: DocumentLike> View<'a, Doc> {
@@ -34,7 +44,7 @@ impl<'a, Doc: DocumentLike> View<'a, Doc> {
             scene: Scene::new(),
             waker: None,
             keyboard_modifiers: Default::default(),
-            menu: None,
+            state: None,
         }
     }
 }
@@ -45,7 +55,22 @@ impl<'a, Doc: DocumentLike> View<'a, Doc> {
             None => false,
             Some(waker) => {
                 let cx = std::task::Context::from_waker(waker);
-                self.renderer.poll(cx)
+                if self.renderer.poll(cx) {
+                    #[cfg(feature = "accessibility")]
+                    {
+                        if let Some(ref mut state) = self.state {
+                            // TODO send fine grained accessibility tree updates.
+                            let changed = mem::take(&mut self.renderer.dom.as_mut().changed);
+                            if !changed.is_empty() {
+                                state.accessibility.build_tree(self.renderer.dom.as_ref());
+                            }
+                        }
+                    }
+
+                    true
+                } else {
+                    false
+                }
             }
         }
     }
@@ -273,10 +298,27 @@ impl<'a, Doc: DocumentLike> View<'a, Doc> {
         }
     }
 
+    #[cfg(feature = "accessibility")]
+    pub fn handle_accessibility_event(&mut self, event: &accesskit_winit::WindowEvent) {
+        match event {
+            accesskit_winit::WindowEvent::InitialTreeRequested => {
+                if let Some(ref mut state) = self.state {
+                    state.accessibility.build_tree(self.renderer.dom.as_ref());
+                }
+            }
+            accesskit_winit::WindowEvent::AccessibilityDeactivated => {
+                // TODO
+            }
+            accesskit_winit::WindowEvent::ActionRequested(_req) => {
+                // TODO
+            }
+        }
+    }
+
     pub fn resume(
         &mut self,
         event_loop: &ActiveEventLoop,
-        proxy: &EventLoopProxy<UserWindowEvent>,
+        proxy: &EventLoopProxy<UserEvent>,
         rt: &tokio::runtime::Runtime,
     ) {
         let window_builder = || {
@@ -287,10 +329,19 @@ impl<'a, Doc: DocumentLike> View<'a, Doc> {
                 }))
                 .unwrap();
 
-            self.menu = Some(init_menu(
+            // Initialize the menu and accessibility adapter in this view's state.
+            let menu = init_menu(
                 #[cfg(target_os = "windows")]
                 &window,
-            ));
+            );
+            self.state = Some(State {
+                #[cfg(feature = "accessibility")]
+                accessibility: crate::accessibility::AccessibilityState::new(
+                    &window,
+                    proxy.clone(),
+                ),
+                _menu: menu,
+            });
 
             let size: winit::dpi::PhysicalSize<u32> = window.inner_size();
             let mut viewport = Viewport::new((size.width, size.height));
