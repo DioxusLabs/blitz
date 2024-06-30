@@ -4,7 +4,7 @@ use comrak::{markdown_to_html, ExtensionOptionsBuilder, Options};
 use dioxus_blitz::Config;
 
 fn main() {
-    let stylesheet = include_str!("./google_bits/github-markdown-light.css");
+    let stylesheet = include_str!("./assets/github-markdown-light.css");
     let contents = include_str!("../README.md");
     // let contents = include_str!("../../taffy/README.md");
     let body_html = markdown_to_html(

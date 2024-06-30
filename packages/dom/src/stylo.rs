@@ -67,26 +67,45 @@ impl crate::document::Document {
                     right,
                     bottom,
                     left,
-                    // z_index,
-                    flex_direction,
-                    flex_wrap,
-                    justify_content,
-                    align_content,
-                    align_items,
-                    flex_grow,
-                    flex_shrink,
-                    align_self,
-                    // order,
-                    flex_basis,
+
                     width,
                     min_width,
                     max_width,
                     height,
                     min_height,
                     max_height,
-                    // box_sizing,
-                    column_gap,
                     aspect_ratio,
+
+                    // box_sizing,
+                    // z_index,
+                    // order,
+                    column_gap,
+                    row_gap,
+
+                    justify_content,
+                    justify_items,
+                    justify_self,
+                    align_content,
+                    align_items,
+                    align_self,
+
+                    flex_direction,
+                    flex_wrap,
+                    flex_basis,
+                    flex_grow,
+                    flex_shrink,
+
+                    grid_auto_flow,
+
+                    grid_template_columns,
+                    grid_template_rows,
+                    grid_auto_columns,
+                    grid_auto_rows,
+
+                    grid_column_start,
+                    grid_column_end,
+                    grid_row_start,
+                    grid_row_end,
                     ..
                 } = style.get_position();
 
@@ -119,18 +138,15 @@ impl crate::document::Document {
                 node.style = Style {
                     display,
                     position: stylo_to_taffy::position(*position),
-                    margin: stylo_to_taffy::margin(margin),
-                    padding: stylo_to_taffy::padding(padding),
-                    border: stylo_to_taffy::border(border),
-                    flex_direction: stylo_to_taffy::flex_direction(*flex_direction),
-                    flex_wrap: stylo_to_taffy::flex_wrap(*flex_wrap),
-                    justify_content: stylo_to_taffy::justify_content(*justify_content),
-                    align_content: stylo_to_taffy::align_content(*align_content),
-                    align_items: stylo_to_taffy::align_items(*align_items),
-                    align_self: stylo_to_taffy::align_self(*align_self),
-                    flex_grow: flex_grow.0,
-                    flex_shrink: flex_shrink.0,
-                    flex_basis: stylo_to_taffy::flex_basis(flex_basis),
+                    overflow: taffy::Point {
+                        x: stylo_to_taffy::overflow(*overflow_x),
+                        y: stylo_to_taffy::overflow(*overflow_y),
+                    },
+
+                    // TODO: we'll eventually want to support visible scrollbars
+                    // But we really ought to implement "overflow: auto" first
+                    scrollbar_width: 0.0,
+
                     size: taffy::Size {
                         width: stylo_to_taffy::dimension(width),
                         height: stylo_to_taffy::dimension(height),
@@ -143,39 +159,55 @@ impl crate::document::Document {
                         width: stylo_to_taffy::max_size_dimension(max_width),
                         height: stylo_to_taffy::max_size_dimension(max_height),
                     },
+                    aspect_ratio: stylo_to_taffy::aspect_ratio(*aspect_ratio),
+
+                    margin: stylo_to_taffy::margin(margin),
+                    padding: stylo_to_taffy::padding(padding),
+                    border: stylo_to_taffy::border(border),
                     inset: taffy::Rect {
                         left: stylo_to_taffy::length_percentage_auto(left),
                         right: stylo_to_taffy::length_percentage_auto(right),
                         top: stylo_to_taffy::length_percentage_auto(top),
                         bottom: stylo_to_taffy::length_percentage_auto(bottom),
                     },
-                    overflow: taffy::Point {
-                        x: stylo_to_taffy::overflow(*overflow_x),
-                        y: stylo_to_taffy::overflow(*overflow_y),
-                    },
-                    aspect_ratio: stylo_to_taffy::aspect_ratio(*aspect_ratio),
-                    // TODO: we'll eventually want to support visible scrollbars
-                    // But we really ought to implement "overflow: auto" first
-                    scrollbar_width: 0.0,
 
+                    // Alignment properties
+                    justify_content: stylo_to_taffy::content_alignment(justify_content.0),
+                    justify_items: stylo_to_taffy::item_alignment(justify_items.computed.0),
+                    justify_self: stylo_to_taffy::item_alignment((justify_self.0).0),
+                    align_content: stylo_to_taffy::content_alignment(align_content.0),
+                    align_items: stylo_to_taffy::item_alignment(align_items.0),
+                    align_self: stylo_to_taffy::item_alignment((align_self.0).0),
+
+                    // Gap
                     gap: taffy::Size {
                         width: stylo_to_taffy::gap(column_gap),
-                        // TODO: Enable row-gap in servo configuration of stylo
-                        height: taffy::LengthPercentage::Length(0.0),
+                        height: stylo_to_taffy::gap(row_gap),
                     },
 
-                    // TODO: Enable CSS Grid properties in servo configuration of stylo
-                    //
-                    // justify_items
-                    // justify_self
-                    // grid_template_rows
-                    // grid_template_columns
-                    // grid_auto_rows
-                    // grid_auto_columns
-                    // grid_auto_flow
-                    // grid_row
-                    // grid_column
-                    ..Style::DEFAULT
+                    // Flexbox properties
+                    flex_direction: stylo_to_taffy::flex_direction(*flex_direction),
+                    flex_wrap: stylo_to_taffy::flex_wrap(*flex_wrap),
+                    flex_grow: flex_grow.0,
+                    flex_shrink: flex_shrink.0,
+                    flex_basis: stylo_to_taffy::flex_basis(flex_basis),
+
+                    // CSS Grid properties
+                    grid_auto_flow: stylo_to_taffy::grid_auto_flow(*grid_auto_flow),
+                    grid_template_rows: stylo_to_taffy::grid_template_tracks(grid_template_rows),
+                    grid_template_columns: stylo_to_taffy::grid_template_tracks(
+                        grid_template_columns,
+                    ),
+                    grid_auto_rows: stylo_to_taffy::grid_auto_tracks(grid_auto_rows),
+                    grid_auto_columns: stylo_to_taffy::grid_auto_tracks(grid_auto_columns),
+                    grid_row: taffy::Line {
+                        start: stylo_to_taffy::grid_line(grid_row_start),
+                        end: stylo_to_taffy::grid_line(grid_row_end),
+                    },
+                    grid_column: taffy::Line {
+                        start: stylo_to_taffy::grid_line(grid_column_start),
+                        end: stylo_to_taffy::grid_line(grid_column_end),
+                    },
                 };
 
                 node.display_outer = match stylo_display.outside() {
@@ -197,7 +229,7 @@ impl crate::document::Document {
                 )
             };
 
-            if display == taffy::Display::Flex {
+            if matches!(display, taffy::Display::Flex | taffy::Display::Grid) {
                 // Reorder the children based on their flex order
                 // Would like to not have to
                 children.sort_by(|left, right| {
@@ -580,7 +612,9 @@ impl<'a> selectors::Element for BlitzNode<'a> {
     }
 
     fn is_root(&self) -> bool {
-        self.parent_node().is_none()
+        self.parent_node()
+            .and_then(|parent| parent.parent_node())
+            .is_none()
     }
 
     fn has_custom_state(

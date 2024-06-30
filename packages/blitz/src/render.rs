@@ -26,6 +26,7 @@ use style::{
     },
 };
 use style::{
+    properties::generated::longhands::visibility::computed_value::T as StyloVisibility,
     properties::{style_structs::Outline, ComputedValues},
     values::{
         computed::{
@@ -205,7 +206,7 @@ where
         };
 
         let x = x / state.viewport.zoom();
-        let y = y / state.viewport.zoom();
+        let y = (y - self.scroll_offset as f32) / state.viewport.zoom();
 
         // println!("Mouse move: ({}, {})", x, y);
         // println!("Unscaled: ({}, {})",);
@@ -262,11 +263,11 @@ where
             .to_f64_px();
         self.scroll_offset = self
             .scroll_offset
-            .min(0.0)
-            .max(-(content_height - viewport_height));
+            .max(-(content_height - viewport_height))
+            .min(0.0);
     }
 
-    pub fn click(&mut self) {
+    pub fn click(&mut self, button: &str) {
         let Some(node_id) = self.dom.as_ref().get_hover_node_id() else {
             return;
         };
@@ -276,7 +277,14 @@ where
         };
 
         if self.devtools.highlight_hover {
-            let node = &self.dom.as_ref().get_node(node_id).unwrap();
+            let mut node = self.dom.as_ref().get_node(node_id).unwrap();
+
+            if button == "right" {
+                if let Some(parent_id) = node.parent {
+                    node = self.dom.as_ref().get_node(parent_id).unwrap();
+                }
+            }
+
             dbg!(&node.final_layout);
             dbg!(&node.style);
 
@@ -348,7 +356,7 @@ where
 
         // If we hit a node, then we collect the node to its parents, check for listeners, and then
         // call those listeners
-        if !self.devtools.highlight_hover {
+        if !self.devtools.highlight_hover && button == "left" {
             self.dom.handle_event(RendererEvent {
                 name: "click".to_string(),
                 target: node_id,
@@ -487,6 +495,8 @@ where
             abs_y += y;
         }
 
+        abs_y += self.scroll_offset as f32;
+
         // Hack: scale factor
         let abs_x = f64::from(abs_x) * scale;
         let abs_y = f64::from(abs_y) * scale;
@@ -614,6 +624,17 @@ where
         // Hide inputs with type=hidden
         // Implemented here rather than using the style engine for performance reasons
         if element.local_name() == "input" && element.attr(local_name!("type")) == Some("hidden") {
+            return;
+        }
+
+        // Hide elements with a visibility style other than visible
+        if element
+            .primary_styles()
+            .unwrap()
+            .get_inherited_box()
+            .visibility
+            != StyloVisibility::Visible
+        {
             return;
         }
 
@@ -1232,13 +1253,15 @@ impl ElementCx<'_> {
         let path = match style {
             BorderStyle::None | BorderStyle::Hidden => return,
             BorderStyle::Solid => self.frame.outline(),
-            BorderStyle::Inset => unimplemented!(),
-            BorderStyle::Groove => unimplemented!(),
-            BorderStyle::Outset => unimplemented!(),
-            BorderStyle::Ridge => unimplemented!(),
-            BorderStyle::Dotted => unimplemented!(),
-            BorderStyle::Dashed => unimplemented!(),
-            BorderStyle::Double => unimplemented!(),
+
+            // TODO: Implement other border styles
+            BorderStyle::Inset => self.frame.outline(),
+            BorderStyle::Groove => self.frame.outline(),
+            BorderStyle::Outset => self.frame.outline(),
+            BorderStyle::Ridge => self.frame.outline(),
+            BorderStyle::Dotted => self.frame.outline(),
+            BorderStyle::Dashed => self.frame.outline(),
+            BorderStyle::Double => self.frame.outline(),
         };
 
         scene.fill(Fill::NonZero, self.transform, color, None, &path);

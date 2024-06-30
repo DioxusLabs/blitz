@@ -92,8 +92,13 @@ impl<'a, Doc: DocumentLike> View<'a, Doc> {
                 // modifiers,
                 ..
             } => {
-                if state == ElementState::Pressed && button == MouseButton::Left {
-                    self.renderer.click();
+                if state == ElementState::Pressed && matches!(button, MouseButton::Left | MouseButton::Right) {
+                    self.renderer.click(match button {
+                        MouseButton::Left => "left",
+                        MouseButton::Right => "right",
+                        _ => unreachable!(),
+
+                    });
 
                     self.request_redraw();
                 }
@@ -393,7 +398,6 @@ pub fn init_menu(#[cfg(target_os = "windows")] window: &Window) -> Menu {
 
     #[cfg(target_os = "macos")]
     {
-        use winit::platform::macos::WindowExtMacOS;
         menu.init_for_nsapp();
     }
 
