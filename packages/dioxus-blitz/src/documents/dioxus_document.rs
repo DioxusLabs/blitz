@@ -271,6 +271,7 @@ impl WriteMutations for MutationWriter<'_> {
         let parent = self.state.element_to_node_id(id);
         for child in children {
             self.doc.get_node_mut(parent).unwrap().children.push(child);
+            self.doc.get_node_mut(child).unwrap().parent = Some(parent);
         }
     }
 
