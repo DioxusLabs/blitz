@@ -1,3 +1,5 @@
+#![cfg_attr(docsrs, feature(doc_cfg))]
+
 mod documents;
 mod waker;
 mod window;
@@ -9,7 +11,6 @@ use blitz::RenderState;
 use blitz_dom::DocumentLike;
 use dioxus::prelude::*;
 use documents::DioxusDocument;
-use muda::{MenuEvent, MenuId};
 use std::collections::HashMap;
 use url::Url;
 use winit::event_loop::EventLoop;
@@ -93,9 +94,15 @@ fn launch_with_window<Doc: DocumentLike + 'static>(window: View<'static, Doc>) {
     let _guard = rt.enter();
 
     // Build an event loop for the application
-    let event_loop = EventLoop::<UserWindowEvent>::with_user_event()
-        .build()
-        .unwrap();
+    let mut builder = EventLoop::<UserWindowEvent>::with_user_event();
+
+    #[cfg(target_os = "android")]
+    {
+        use winit::platform::android::EventLoopBuilderExtAndroid;
+        builder.with_android_app(current_android_app());
+    }
+
+    let event_loop = builder.build().unwrap();
     let proxy = event_loop.create_proxy();
 
     // Multiwindow ftw
@@ -103,7 +110,9 @@ fn launch_with_window<Doc: DocumentLike + 'static>(window: View<'static, Doc>) {
     let mut pending_windows = Vec::new();
 
     pending_windows.push(window);
-    let menu_channel = MenuEvent::receiver();
+
+    #[cfg(all(feature = "menu", not(any(target_os = "android", target_os = "ios"))))]
+    let menu_channel = muda::MenuEvent::receiver();
 
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
     let mut initial = true;
@@ -193,8 +202,9 @@ fn launch_with_window<Doc: DocumentLike + 'static>(window: View<'static, Doc>) {
                 _ => (),
             }
 
+            #[cfg(all(feature = "menu", not(any(target_os = "android", target_os = "ios"))))]
             if let Ok(event) = menu_channel.try_recv() {
-                if event.id == MenuId::new("dev.show_layout") {
+                if event.id == muda::MenuId::new("dev.show_layout") {
                     for (_, view) in windows.iter_mut() {
                         view.renderer.devtools.show_layout = !view.renderer.devtools.show_layout;
                         view.request_redraw();
@@ -203,4 +213,22 @@ fn launch_with_window<Doc: DocumentLike + 'static>(window: View<'static, Doc>) {
             }
         })
         .unwrap();
+}
+
+#[cfg(target_os = "android")]
+static ANDROID_APP: std::sync::OnceLock<android_activity::AndroidApp> = std::sync::OnceLock::new();
+
+#[cfg(target_os = "android")]
+#[cfg_attr(docsrs, doc(cfg(target_os = "android")))]
+/// Set the current [`AndroidApp`](android_activity::AndroidApp).
+pub fn set_android_app(app: android_activity::AndroidApp) {
+    ANDROID_APP.set(app).unwrap()
+}
+
+#[cfg(target_os = "android")]
+#[cfg_attr(docsrs, doc(cfg(target_os = "android")))]
+/// Get the current [`AndroidApp`](android_activity::AndroidApp).
+/// This will panic if the android activity has not been setup with [`set_android_app`].
+pub fn current_android_app(app: android_activity::AndroidApp) -> AndroidApp {
+    ANDROID_APP.get().unwrap().clone()
 }

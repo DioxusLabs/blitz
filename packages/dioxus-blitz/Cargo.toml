@@ -3,11 +3,13 @@ name = "dioxus-blitz"
 version = "0.0.0"
 edition = "2021"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+[features]
+menu = ["dep:muda"]
+default = ["menu"]
 
 [dependencies]
 winit = { version = "0.30.2", features = ["rwh_06"] }
-muda = { version = "0.11.5", features = ["serde"] }
+muda = { version = "0.11.5", features = ["serde"], optional = true }
 tokio = { workspace = true, features = ["full"] }
 dioxus = { workspace = true }
 futures-util = "0.3.30"
@@ -19,3 +21,10 @@ blitz-dom = { path = "../dom" }
 url = { version = "2.5.0", features = ["serde"] }
 ureq = "2.9"
 rustc-hash = "1.1.0"
+
+[target.'cfg(target_os = "android")'.dependencies]
+android-activity = { version = "0.6.0", features = ["native-activity"] }
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
