@@ -62,13 +62,18 @@ pub(crate) fn collect_layout_children(
                     has_contents = true;
                 } else {
                     match display.outside() {
-                        DisplayOutside::None => {}
-                        DisplayOutside::Inline => all_block = false,
-                        DisplayOutside::Block => all_inline = false,
+                        DisplayOutside::None => {},
+                        DisplayOutside::Block | DisplayOutside::TableCaption | DisplayOutside::InternalTable => {
+                            all_inline = false
+                        },
+                        DisplayOutside::Inline => {
+                            all_block = false;
 
-                        // TODO: Implement table layout
-                        DisplayOutside::TableCaption => {}
-                        DisplayOutside::InternalTable => {}
+                            // We need the "complex" tree fixing when an inline contains a block
+                            if child.is_or_contains_block() {
+                                all_inline = false;
+                            }
+                        },
                     }
                 }
             }
@@ -162,16 +167,22 @@ fn collect_complex_layout_children(
         let child_node_kind = doc.nodes[child_id].raw_dom_data.kind();
 
         // Get Display style. Default to inline because nodes without styles are probably text nodes
+        let contains_block = doc.nodes[child_id].is_or_contains_block();
         let child_display = &doc.nodes[child_id]
             .display_style()
             .unwrap_or(Display::inline());
         let display_inside = child_display.inside();
-        let display_outside = child_display.outside();
+        let display_outside = if contains_block {
+            DisplayOutside::Block
+        } else {
+            child_display.outside()
+        };
 
         let is_whitespace_node = match &doc.nodes[child_id].raw_dom_data {
             NodeData::Text(data) => data.content.chars().all(|c| c.is_ascii_whitespace()),
             _ => false,
         };
+
 
         // Skip comment nodes. Note that we do *not* skip `Display::None` nodes as they may need to be hidden.
         // Taffy knows how to deal with `Display::None` children.
