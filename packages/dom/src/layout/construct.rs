@@ -62,10 +62,10 @@ pub(crate) fn collect_layout_children(
                     has_contents = true;
                 } else {
                     match display.outside() {
-                        DisplayOutside::None => {},
-                        DisplayOutside::Block | DisplayOutside::TableCaption | DisplayOutside::InternalTable => {
-                            all_inline = false
-                        },
+                        DisplayOutside::None => {}
+                        DisplayOutside::Block
+                        | DisplayOutside::TableCaption
+                        | DisplayOutside::InternalTable => all_inline = false,
                         DisplayOutside::Inline => {
                             all_block = false;
 
@@ -73,7 +73,7 @@ pub(crate) fn collect_layout_children(
                             if child.is_or_contains_block() {
                                 all_inline = false;
                             }
-                        },
+                        }
                     }
                 }
             }
@@ -182,7 +182,6 @@ fn collect_complex_layout_children(
             NodeData::Text(data) => data.content.chars().all(|c| c.is_ascii_whitespace()),
             _ => false,
         };
-
 
         // Skip comment nodes. Note that we do *not* skip `Display::None` nodes as they may need to be hidden.
         // Taffy knows how to deal with `Display::None` children.
