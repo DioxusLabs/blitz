@@ -1,4 +1,4 @@
-use crate::waker::UserWindowEvent;
+use crate::waker::UserEvent;
 use blitz::{RenderState, Renderer, Viewport};
 use blitz_dom::DocumentLike;
 use winit::keyboard::PhysicalKey;
@@ -277,7 +277,7 @@ impl<'a, Doc: DocumentLike> View<'a, Doc> {
     pub fn resume(
         &mut self,
         event_loop: &ActiveEventLoop,
-        proxy: &EventLoopProxy<UserWindowEvent>,
+        proxy: &EventLoopProxy<UserEvent>,
         rt: &tokio::runtime::Runtime,
     ) {
         let window_builder = || {

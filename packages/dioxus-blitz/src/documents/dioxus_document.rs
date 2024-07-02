@@ -31,7 +31,7 @@ fn qual_name(local_name: &str, namespace: Option<&str>) -> QualName {
 }
 
 pub struct DioxusDocument {
-    vdom: VirtualDom,
+    pub(crate) vdom: VirtualDom,
     vdom_state: DioxusState,
     inner: Document,
 }
@@ -230,6 +230,7 @@ impl MutationWriter<'_> {
         }
         // If element_id is already mapping to a node, remove that node from the document
         else if let Some(mapped_node_id) = self.state.node_id_mapping[element_id] {
+            // todo: we should mark these as needing garbage collection?
             self.doc.remove_node(mapped_node_id);
         }
 
