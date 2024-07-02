@@ -4,12 +4,13 @@ version = "0.0.0"
 edition = "2021"
 
 [features]
+default = ["hot-reload", "menu"]
 hot-reload = ["dep:dioxus-cli-config", "dep:dioxus-hot-reload"]
-default = ["hot-reload"]
+menu = ["dep:muda"]
 
 [dependencies]
 winit = { version = "0.30.2", features = ["rwh_06"] }
-muda = { version = "0.11.5", features = ["serde"] }
+muda = { version = "0.11.5", features = ["serde"], optional = true }
 tokio = { workspace = true, features = ["full"] }
 dioxus = { workspace = true }
 dioxus-cli-config = { git = "https://github.com/dioxuslabs/dioxus", rev = "a3aa6ae771a2d0a4d8cb6055c41efc0193b817ef", optional = true }
@@ -23,3 +24,10 @@ blitz-dom = { path = "../dom" }
 url = { version = "2.5.0", features = ["serde"] }
 ureq = "2.9"
 rustc-hash = "1.1.0"
+
+[target.'cfg(target_os = "android")'.dependencies]
+android-activity = { version = "0.6.0", features = ["native-activity"] }
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]

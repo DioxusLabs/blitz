@@ -6,7 +6,6 @@ use winit::keyboard::PhysicalKey;
 #[allow(unused)]
 use wgpu::rwh::HasWindowHandle;
 
-use muda::{AboutMetadata, Menu, MenuId, MenuItem, PredefinedMenuItem, Submenu};
 use std::sync::Arc;
 use std::task::Waker;
 use vello::Scene;
@@ -24,7 +23,8 @@ pub(crate) struct View<'s, Doc: DocumentLike> {
     keyboard_modifiers: ModifiersState,
 
     /// Main menu bar of this view's window.
-    menu: Option<Menu>,
+    #[cfg(all(feature = "menu", not(any(target_os = "android", target_os = "ios"))))]
+    menu: Option<muda::Menu>,
 }
 
 impl<'a, Doc: DocumentLike> View<'a, Doc> {
@@ -34,6 +34,7 @@ impl<'a, Doc: DocumentLike> View<'a, Doc> {
             scene: Scene::new(),
             waker: None,
             keyboard_modifiers: Default::default(),
+            #[cfg(all(feature = "menu", not(any(target_os = "android", target_os = "ios"))))]
             menu: None,
         }
     }
@@ -287,11 +288,13 @@ impl<'a, Doc: DocumentLike> View<'a, Doc> {
                 }))
                 .unwrap();
 
-            self.menu = Some(init_menu(
-                #[cfg(target_os = "windows")]
-                &window,
-            ));
-
+            #[cfg(all(feature = "menu", not(any(target_os = "android", target_os = "ios"))))]
+            {
+                self.menu = Some(init_menu(
+                    #[cfg(target_os = "windows")]
+                    &window,
+                ));
+            }
             let size: winit::dpi::PhysicalSize<u32> = window.inner_size();
             let mut viewport = Viewport::new((size.width, size.height));
             viewport.set_hidpi_scale(window.scale_factor() as _);
@@ -316,7 +319,10 @@ impl<'a, Doc: DocumentLike> View<'a, Doc> {
 }
 
 /// Initialize the default menu bar.
-pub fn init_menu(#[cfg(target_os = "windows")] window: &Window) -> Menu {
+#[cfg(all(feature = "menu", not(any(target_os = "android", target_os = "ios"))))]
+pub fn init_menu(#[cfg(target_os = "windows")] window: &Window) -> muda::Menu {
+    use muda::{AboutMetadata, Menu, MenuId, MenuItem, PredefinedMenuItem, Submenu};
+
     let menu = Menu::new();
 
     // Build the about section
