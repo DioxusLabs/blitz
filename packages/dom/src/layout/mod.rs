@@ -246,13 +246,17 @@ impl Document {
                 ..inputs
             };
             for ibox in inline_layout.layout.inline_boxes_mut() {
-                let output = self.compute_child_layout(NodeId::from(ibox.id), child_inputs);
-
                 let style = &self.nodes[ibox.id as usize].style;
                 let margin = style.margin.resolve_or_zero(inputs.parent_size);
 
-                ibox.width = (margin.left + margin.right + output.size.width) * scale;
-                ibox.height = (margin.top + margin.bottom + output.size.height) * scale;
+                if style.position == Position::Absolute {
+                    ibox.width = 0.0;
+                    ibox.height = 0.0;
+                } else {
+                    let output = self.compute_child_layout(NodeId::from(ibox.id), child_inputs);
+                    ibox.width = (margin.left + margin.right + output.size.width) * scale;
+                    ibox.height = (margin.top + margin.bottom + output.size.height) * scale;
+                }
             }
 
             // Perform inline layout
@@ -337,13 +341,66 @@ impl Document {
                         let border = node.style.border.resolve_or_zero(child_inputs.parent_size);
                         let margin = node.style.margin.resolve_or_zero(child_inputs.parent_size);
 
-                        let layout = &mut node.unrounded_layout;
-                        layout.size.width = (ibox.width / scale) - margin.left - margin.right;
-                        layout.size.height = (ibox.height / scale) - margin.top - margin.bottom;
-                        layout.location.x = (ibox.x / scale) + margin.left;
-                        layout.location.y = (ibox.y / scale) + margin.top;
-                        layout.padding = padding; //.map(|p| p / scale);
-                        layout.border = border; //.map(|p| p / scale);
+                        // Resolve inset
+                        let left = node
+                            .style
+                            .inset
+                            .left
+                            .maybe_resolve(child_inputs.parent_size.width);
+                        let right = node
+                            .style
+                            .inset
+                            .right
+                            .maybe_resolve(child_inputs.parent_size.width);
+                        let top = node
+                            .style
+                            .inset
+                            .top
+                            .maybe_resolve(child_inputs.parent_size.height);
+                        let bottom = node
+                            .style
+                            .inset
+                            .bottom
+                            .maybe_resolve(child_inputs.parent_size.height);
+
+                        if node.style.position == Position::Absolute {
+                            let output =
+                                self.compute_child_layout(NodeId::from(ibox.id), child_inputs);
+
+                            let layout = &mut self.nodes[ibox.id as usize].unrounded_layout;
+                            layout.size = output.size;
+
+                            // TODO: Implement absolute positioning
+                            layout.location.x = left
+                                .or_else(|| {
+                                    child_inputs
+                                        .parent_size
+                                        .width
+                                        .zip(right)
+                                        .map(|(w, r)| w - r)
+                                })
+                                .unwrap_or(0.0);
+                            layout.location.y = top
+                                .or_else(|| {
+                                    child_inputs
+                                        .parent_size
+                                        .height
+                                        .zip(bottom)
+                                        .map(|(w, r)| w - r)
+                                })
+                                .unwrap_or(0.0);
+
+                            layout.padding = padding; //.map(|p| p / scale);
+                            layout.border = border; //.map(|p| p / scale);
+                        } else {
+                            let layout = &mut node.unrounded_layout;
+                            layout.size.width = (ibox.width / scale) - margin.left - margin.right;
+                            layout.size.height = (ibox.height / scale) - margin.top - margin.bottom;
+                            layout.location.x = (ibox.x / scale) + margin.left;
+                            layout.location.y = (ibox.y / scale) + margin.top;
+                            layout.padding = padding; //.map(|p| p / scale);
+                            layout.border = border; //.map(|p| p / scale);
+                        }
                     }
                 }
             }

@@ -230,6 +230,7 @@ impl MutationWriter<'_> {
         }
         // If element_id is already mapping to a node, remove that node from the document
         else if let Some(mapped_node_id) = self.state.node_id_mapping[element_id] {
+            // todo: we should mark these as needing garbage collection?
             self.doc.remove_node(mapped_node_id);
         }
 
@@ -271,6 +272,7 @@ impl WriteMutations for MutationWriter<'_> {
         let parent = self.state.element_to_node_id(id);
         for child in children {
             self.doc.get_node_mut(parent).unwrap().children.push(child);
+            self.doc.get_node_mut(child).unwrap().parent = Some(parent);
         }
     }
 

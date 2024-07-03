@@ -5,18 +5,19 @@ edition = "2021"
 
 [features]
 accessibility = ["dep:accesskit", "dep:accesskit_winit"]
-hot-reload = []
-default = ["accessibility"]
+hot-reload = ["dep:dioxus-cli-config", "dep:dioxus-hot-reload"]
+menu = ["dep:muda"]
+default = ["accessibility", "menu"]
 
 [dependencies]
 accesskit = { version = "0.15.0", optional = true }
 accesskit_winit = { version = "0.21.1", optional = true }
 winit = { version = "0.30.2", features = ["rwh_06"] }
-muda = { version = "0.11.5", features = ["serde"] }
+muda = { version = "0.11.5", features = ["serde"], optional = true }
 tokio = { workspace = true, features = ["full"] }
 dioxus = { workspace = true }
-dioxus-cli-config = { git = "https://github.com/dioxuslabs/dioxus", rev = "a3aa6ae771a2d0a4d8cb6055c41efc0193b817ef"}
-dioxus-hot-reload = { git = "https://github.com/dioxuslabs/dioxus", rev = "a3aa6ae771a2d0a4d8cb6055c41efc0193b817ef"}
+dioxus-cli-config = { git = "https://github.com/dioxuslabs/dioxus", rev = "a3aa6ae771a2d0a4d8cb6055c41efc0193b817ef", optional = true }
+dioxus-hot-reload = { git = "https://github.com/dioxuslabs/dioxus", rev = "a3aa6ae771a2d0a4d8cb6055c41efc0193b817ef", optional = true }
 futures-util = "0.3.30"
 vello = { workspace = true }
 wgpu = { workspace = true }
@@ -26,3 +27,10 @@ blitz-dom = { path = "../dom" }
 url = { version = "2.5.0", features = ["serde"] }
 ureq = "2.9"
 rustc-hash = "1.1.0"
+
+[target.'cfg(target_os = "android")'.dependencies]
+android-activity = { version = "0.6.0", features = ["native-activity"] }
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]

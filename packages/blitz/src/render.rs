@@ -1152,19 +1152,11 @@ impl ElementCx<'_> {
     fn draw_solid_frame(&self, scene: &mut Scene) {
         let background = self.style.get_background();
 
-        // todo: handle non-absolute colors
-        let bg_color = background.background_color.clone();
-        let bg_color = bg_color.as_absolute().unwrap();
+        let bg_color = background.background_color.as_vello();
         let shape = self.frame.frame();
 
         // Fill the color
-        scene.fill(
-            Fill::NonZero,
-            self.transform,
-            bg_color.as_vello(),
-            None,
-            &shape,
-        );
+        scene.fill(Fill::NonZero, self.transform, bg_color, None, &shape);
     }
 
     /// Stroke a border

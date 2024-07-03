@@ -13,6 +13,7 @@ use selectors::{
     sink::Push,
     Element, OpaqueElement,
 };
+use style::values::computed::Float;
 // use slab::Slab;
 use style::values::specified::box_::DisplayOutside;
 use style::CaseSensitivityExt;
@@ -113,8 +114,8 @@ impl crate::document::Document {
                     _servo_top_layer,
                     _servo_overflow_clip_box,
                     display: stylo_display,
-                    position,
-                    // float,
+                    position: stylo_position,
+                    float,
                     // clear,
                     // vertical_align,
                     overflow_x,
@@ -134,10 +135,29 @@ impl crate::document::Document {
                     ..
                 }: &BoxStyle = style.get_box();
 
+                // HACK: Emulate float with 'position: absolute'
+                let mut position = stylo_to_taffy::position(*stylo_position);
+                let mut inset = taffy::Rect {
+                    left: stylo_to_taffy::length_percentage_auto(left),
+                    right: stylo_to_taffy::length_percentage_auto(right),
+                    top: stylo_to_taffy::length_percentage_auto(top),
+                    bottom: stylo_to_taffy::length_percentage_auto(bottom),
+                };
+                if position == taffy::Position::Relative && *float != Float::None {
+                    position = taffy::Position::Absolute;
+                    if *float == Float::Right {
+                        inset.left = taffy::LengthPercentageAuto::Auto;
+                        inset.right = taffy::LengthPercentageAuto::Length(0.0);
+                    } else {
+                        inset.left = taffy::LengthPercentageAuto::Length(0.0);
+                        inset.right = taffy::LengthPercentageAuto::Auto;
+                    }
+                }
+
                 let display = stylo_to_taffy::display(*stylo_display);
                 node.style = Style {
                     display,
-                    position: stylo_to_taffy::position(*position),
+                    position,
                     overflow: taffy::Point {
                         x: stylo_to_taffy::overflow(*overflow_x),
                         y: stylo_to_taffy::overflow(*overflow_y),
@@ -164,12 +184,7 @@ impl crate::document::Document {
                     margin: stylo_to_taffy::margin(margin),
                     padding: stylo_to_taffy::padding(padding),
                     border: stylo_to_taffy::border(border),
-                    inset: taffy::Rect {
-                        left: stylo_to_taffy::length_percentage_auto(left),
-                        right: stylo_to_taffy::length_percentage_auto(right),
-                        top: stylo_to_taffy::length_percentage_auto(top),
-                        bottom: stylo_to_taffy::length_percentage_auto(bottom),
-                    },
+                    inset,
 
                     // Alignment properties
                     justify_content: stylo_to_taffy::content_alignment(justify_content.0),

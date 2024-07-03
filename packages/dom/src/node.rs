@@ -8,6 +8,7 @@ use std::fmt::Write;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 use style::values::computed::Display;
+use style::values::specified::box_::DisplayOutside;
 use style_traits::dom::ElementState;
 // use string_cache::Atom;
 use style::properties::ComputedValues;
@@ -121,6 +122,20 @@ impl Node {
                 .get_box()
                 .display,
         )
+    }
+
+    pub fn is_or_contains_block(&self) -> bool {
+        let display = self.display_style().unwrap_or(Display::inline());
+
+        match display.outside() {
+            DisplayOutside::None => false,
+            DisplayOutside::Block => true,
+            _ => self
+                .children
+                .iter()
+                .copied()
+                .any(|child_id| self.tree()[child_id].is_or_contains_block()),
+        }
     }
 }
 

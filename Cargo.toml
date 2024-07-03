@@ -12,7 +12,7 @@ style_config = { git = "https://github.com/dioxuslabs/stylo", rev = "10767f4" } 
 style_traits = { git = "https://github.com/dioxuslabs/stylo", rev = "10767f4" } # 2024-05-15 + dioxus patches
 selectors = { git = "https://github.com/dioxuslabs/stylo", rev = "10767f4" } # 2024-05-15 + dioxus patches
 html5ever = "0.27" # needs to match stylo markup5ever version
-taffy = { version = "0.5.1" }
+taffy = { git = "https://github.com/dioxuslabs/taffy", rev = "9651a18b7da88204741018545edd13eda8fb2b53" }
 parley = { git = "https://github.com/nicoburns/parley", rev = "482d0fbd59eceaa68cc879e0102a7a9a87636a0d" }
 dioxus = { git = "https://github.com/dioxuslabs/dioxus", rev = "a3aa6ae771a2d0a4d8cb6055c41efc0193b817ef"}
 dioxus-ssr = { git = "https://github.com/dioxuslabs/dioxus", rev = "a3aa6ae771a2d0a4d8cb6055c41efc0193b817ef" }
@@ -39,7 +39,9 @@ publish = false
 opt-level = 2
 
 # Need to force specific versions of these dependencies
-[dependencies]
+[dev-dependencies]
+# webrender = "0.61.0"
+# mozbuild = "0.1.0"
 blitz = { path = "./packages/blitz" }
 blitz-dom = { path = "./packages/dom" }
 comrak = { version = "0.21.0", default-features = false }
