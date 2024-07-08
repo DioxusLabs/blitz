@@ -1,5 +1,5 @@
 use crate::waker::UserEvent;
-use accesskit::Role;
+use accesskit::{NodeBuilder, NodeId, Role, Tree, TreeUpdate};
 use blitz_dom::{local_name, Document, Node};
 use winit::{event_loop::EventLoopProxy, window::Window};
 
@@ -21,18 +21,15 @@ impl AccessibilityState {
     }
     pub fn build_tree(&mut self, doc: &Document) {
         let mut nodes = std::collections::HashMap::new();
-        let mut window = accesskit::NodeBuilder::new(accesskit::Role::Window);
+        let mut window = NodeBuilder::new(Role::Window);
 
         doc.visit(|node_id, node| {
-            let (id, node_builder) = self.build_node(node);
-
-            if let Some(parent_id) = node.parent {
-                let (_, parent_node): &mut (_, accesskit::NodeBuilder) =
-                    nodes.get_mut(&parent_id).unwrap();
-                parent_node.push_child(id)
-            } else {
-                window.push_child(id)
-            }
+            let parent = node
+                .parent
+                .and_then(|parent_id| nodes.get_mut(&parent_id))
+                .map(|(_, parent)| parent)
+                .unwrap_or(&mut window);
+            let (id, node_builder) = self.build_node(node, parent);
 
             nodes.insert(node_id, (id, node_builder));
         });
@@ -41,21 +38,24 @@ impl AccessibilityState {
             .into_iter()
             .map(|(_, (id, node))| (id, node.build()))
             .collect();
-        nodes.push((accesskit::NodeId(0), window.build()));
+        nodes.push((NodeId(0), window.build()));
 
-        let tree = accesskit::Tree::new(accesskit::NodeId(0));
-        let tree_update = accesskit::TreeUpdate {
+        let tree = Tree::new(NodeId(0));
+        let tree_update = TreeUpdate {
             nodes,
             tree: Some(tree),
-            focus: accesskit::NodeId(0),
+            focus: NodeId(0),
         };
 
         self.adapter.update_if_active(|| tree_update)
     }
 
-    #[cfg(feature = "accessibility")]
-    fn build_node(&mut self, node: &Node) -> (accesskit::NodeId, accesskit::NodeBuilder) {
-        let mut node_builder = accesskit::NodeBuilder::default();
+    fn build_node(&mut self, node: &Node, parent: &mut NodeBuilder) -> (NodeId, NodeBuilder) {
+        let mut node_builder = NodeBuilder::default();
+
+        let id = NodeId(self.next_id);
+        self.next_id += 1;
+
         if let Some(element_data) = node.element_data() {
             let name = element_data.name.local.to_string();
 
@@ -80,12 +80,12 @@ impl AccessibilityState {
             node_builder.set_role(role);
             node_builder.set_html_tag(name);
         } else if node.is_text_node() {
-            node_builder.set_role(accesskit::Role::StaticText);
+            node_builder.set_role(Role::StaticText);
             node_builder.set_name(node.text_content());
+            parent.push_labelled_by(id)
         }
 
-        let id = accesskit::NodeId(self.next_id);
-        self.next_id += 1;
+        parent.push_child(id);
 
         (id, node_builder)
     }
