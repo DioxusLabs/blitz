@@ -78,7 +78,7 @@ impl AccessibilityState {
             };
 
             node_builder.set_role(role);
-            node_builder.set_name(name);
+            node_builder.set_html_tag(name);
         } else if node.is_text_node() {
             node_builder.set_role(accesskit::Role::StaticText);
             node_builder.set_name(node.text_content());
