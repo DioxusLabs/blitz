@@ -172,6 +172,9 @@ fn launch_with_window<Doc: DocumentLike + 'static>(window: View<'static, Doc>) {
                 initial = false;
             }
 
+            #[cfg(feature = "tracing")]
+            tracing::trace!("Received event: {:?}", event);
+
             match event {
                 // Exit the app when close is request
                 // Not always necessary
@@ -231,9 +234,8 @@ fn launch_with_window<Doc: DocumentLike + 'static>(window: View<'static, Doc>) {
                             }
                         }
                         dioxus_hot_reload::HotReloadMsg::Shutdown => event_loop.exit(),
-                        dioxus_hot_reload::HotReloadMsg::UpdateAsset(asset) => {
+                        dioxus_hot_reload::HotReloadMsg::UpdateAsset(_asset) => {
                             // TODO dioxus-desktop seems to handle this by forcing a reload of all stylesheets.
-                            dbg!("Update asset {:?}", asset);
                         }
                     },
                 },

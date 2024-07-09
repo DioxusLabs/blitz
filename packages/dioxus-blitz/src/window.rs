@@ -117,8 +117,6 @@ impl<'a, Doc: DocumentLike> View<'a, Doc> {
 
             // todo: if there's an active text input, we want to direct input towards it and translate system emi text
             WindowEvent::KeyboardInput { event, .. } => {
-                dbg!(&event);
-
                 match event.physical_key {
                     PhysicalKey::Code(key_code) => {
                         match key_code {
