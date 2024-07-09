@@ -4,9 +4,10 @@ version = "0.0.0"
 edition = "2021"
 
 [features]
-default = ["hot-reload", "menu"]
+default = ["hot-reload", "menu", "tracing"]
 hot-reload = ["dep:dioxus-cli-config", "dep:dioxus-hot-reload"]
 menu = ["dep:muda"]
+tracing = ["dep:tracing"]
 
 [dependencies]
 winit = { version = "0.30.2", features = ["rwh_06"] }
@@ -19,6 +20,7 @@ futures-util = "0.3.30"
 vello = { workspace = true }
 wgpu = { workspace = true }
 style = { workspace = true }
+tracing = { workspace = true, optional = true }
 blitz = { path = "../blitz" }
 blitz-dom = { path = "../dom" }
 url = { version = "2.5.0", features = ["serde"] }

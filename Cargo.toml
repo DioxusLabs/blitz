@@ -17,6 +17,7 @@ parley = { git = "https://github.com/nicoburns/parley", rev = "482d0fbd59eceaa68
 dioxus = { git = "https://github.com/dioxuslabs/dioxus", rev = "a3aa6ae771a2d0a4d8cb6055c41efc0193b817ef"}
 dioxus-ssr = { git = "https://github.com/dioxuslabs/dioxus", rev = "a3aa6ae771a2d0a4d8cb6055c41efc0193b817ef" }
 tokio = { version = "1.25.0", features = ["full"] }
+tracing = "0.1.40"
 vello = { version = "0.1", features = ["wgpu"] }
 peniko = { version = "0.1" }
 # fello = { git = "https://github.com/linebender/vello" }
@@ -50,6 +51,7 @@ dioxus = { workspace = true }
 euclid = { version = "0.22", features = ["serde"] }
 reqwest = "0.11.24"
 tokio = { version = "1.36.0", features = ["full"] }
+tracing-subscriber = "0.3"
 ureq = "2.9"
 
 # [patch.crates-io]

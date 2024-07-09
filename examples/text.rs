@@ -1,6 +1,8 @@
 use dioxus::prelude::*;
 
 fn main() {
+    tracing_subscriber::fmt::init();
+
     dioxus_blitz::launch(app);
 }
 
