@@ -2,13 +2,21 @@ use futures_util::task::ArcWake;
 use std::sync::Arc;
 use winit::{event_loop::EventLoopProxy, window::WindowId};
 
+#[cfg(feature = "accessibility")]
+use accesskit_winit::Event as AccessibilityEvent;
+
 #[derive(Debug, Clone)]
 pub enum UserEvent {
     Window {
         window_id: WindowId,
         data: EventData,
     },
-    /// Handle a hotreload event, basically telling us to update our templates
+
+    /// An accessibility event from `accesskit`.
+    #[cfg(feature = "accessibility")]
+    Accessibility(Arc<AccessibilityEvent>),
+
+    /// A hotreload event, basically telling us to update our templates.
     #[cfg(all(
         feature = "hot-reload",
         debug_assertions,
@@ -16,6 +24,13 @@ pub enum UserEvent {
         not(target_os = "ios")
     ))]
     HotReloadEvent(dioxus_hot_reload::HotReloadMsg),
+}
+
+#[cfg(feature = "accessibility")]
+impl From<AccessibilityEvent> for UserEvent {
+    fn from(value: AccessibilityEvent) -> Self {
+        Self::Accessibility(Arc::new(value))
+    }
 }
 
 #[derive(Debug, Clone)]
