@@ -4,12 +4,15 @@ version = "0.0.0"
 edition = "2021"
 
 [features]
-default = ["hot-reload", "menu", "tracing"]
+accessibility = ["dep:accesskit", "dep:accesskit_winit"]
 hot-reload = ["dep:dioxus-cli-config", "dep:dioxus-hot-reload"]
 menu = ["dep:muda"]
 tracing = ["dep:tracing"]
+default = ["accessibility", "hot-reload", "menu", "tracing"]
 
 [dependencies]
+accesskit = { version = "0.15.0", optional = true }
+accesskit_winit = { version = "0.21.1", optional = true }
 winit = { version = "0.30.2", features = ["rwh_06"] }
 muda = { version = "0.11.5", features = ["serde"], optional = true }
 tokio = { workspace = true, features = ["full"] }
