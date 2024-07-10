@@ -4,11 +4,12 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+selectors = { workspace = true }
+style = { workspace = true }
+taffy = { workspace = true }
 accesskit = { version = "0.15.0" }
 blitz-dom = { path = "../dom" }
 euclid = { version = "0.22", features = ["serde"] }
 masonry = { git = "https://github.com/linebender/xilem" }
-selectors = { workspace = true }
-style = { workspace = true }
 smallvec = "1.13.2"
 winit = "0.30.2"

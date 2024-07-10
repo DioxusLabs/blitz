@@ -7,6 +7,7 @@ use masonry::{
 };
 use smallvec::SmallVec;
 use std::{borrow::Cow, collections::LinkedList};
+use taffy::{AvailableSpace, NodeId, Style};
 
 pub enum Node {
     Element(WidgetPod<Element>),
@@ -30,6 +31,8 @@ pub struct Element {
     // TODO replace with stylo styles
     pub font_size: Option<f32>,
     children: LinkedList<Node>,
+    pub style: Style,
+    layout_id: Option<NodeId>,
 }
 
 impl Element {
@@ -38,6 +41,8 @@ impl Element {
             tag: tag.into(),
             font_size: None,
             children: LinkedList::new(),
+            style: Style::default(),
+            layout_id: None,
         }
     }
 
@@ -57,7 +62,7 @@ impl Widget for Element {
 
     fn lifecycle(&mut self, ctx: &mut LifeCycleCtx, event: &LifeCycle) {
         let cx = Context::current().unwrap_or_default();
-        dbg!(&cx);
+
         if let Some(font_size) = self.font_size {
             cx.inner.borrow_mut().font_size = font_size;
         }
@@ -72,14 +77,35 @@ impl Widget for Element {
     }
 
     fn layout(&mut self, ctx: &mut LayoutCtx, bc: &BoxConstraints) -> Size {
-        let cx = Context::current().unwrap_or_default();
-        dbg!(&cx);
-        if let Some(font_size) = self.font_size {
-            cx.inner.borrow_mut().font_size = font_size;
+        let (cx, is_descendant) = Context::current().map(|cx| (cx, true)).unwrap_or_default();
+        let mut cx_ref = cx.inner.borrow_mut();
+
+        if let Some(layout_id) = self.layout_id {
+            cx_ref
+                .taffy
+                .set_style(layout_id, self.style.clone())
+                .unwrap();
+        } else {
+            let layout_id = cx_ref.taffy.new_leaf(self.style.clone()).unwrap();
+
+            if let Some(parent_layout_id) = cx_ref.parent_layout_id {
+                cx_ref.taffy.add_child(parent_layout_id, layout_id).unwrap();
+            }
+
+            self.layout_id = Some(layout_id);
         }
+
+        if let Some(font_size) = self.font_size {
+            cx_ref.font_size = font_size;
+        }
+
+        cx_ref.parent_layout_id = self.layout_id;
+
+        drop(cx_ref);
         cx.enter();
 
-        self.children
+        let size = self
+            .children
             .iter_mut()
             .map(|child| match child {
                 Node::Element(elem) => {
@@ -93,7 +119,31 @@ impl Widget for Element {
                     size
                 }
             })
-            .fold(Size::default(), |acc, size| acc + size)
+            .fold(Size::default(), |acc, size| acc + size);
+
+        let cx = Context::current().unwrap();
+        cx.inner
+            .borrow_mut()
+            .taffy
+            .compute_layout(
+                self.layout_id.unwrap(),
+                taffy::Size {
+                    width: AvailableSpace::Definite(bc.max().width as _),
+                    height: AvailableSpace::Definite(bc.max().height as _),
+                },
+            )
+            .unwrap();
+        let layout = cx
+            .inner
+            .borrow()
+            .taffy
+            .layout(self.layout_id.unwrap())
+            .unwrap()
+            .clone();
+
+        dbg!(&layout);
+
+        Size::new(layout.size.width as _, layout.size.height as _)
     }
 
     fn paint(&mut self, ctx: &mut PaintCtx, scene: &mut Scene) {

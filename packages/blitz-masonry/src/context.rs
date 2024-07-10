@@ -1,11 +1,14 @@
 use std::{cell::RefCell, rc::Rc};
+use taffy::{NodeId, TaffyTree};
 
-#[derive(Clone, Debug, Default)]
+#[derive(Default)]
 pub struct Inner {
+    pub taffy: TaffyTree,
     pub font_size: f32,
+    pub parent_layout_id: Option<NodeId>,
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Default)]
 pub struct Context {
     pub inner: Rc<RefCell<Inner>>,
 }
