@@ -1,42 +1,104 @@
-#![windows_subsystem = "windows"]
+use accesskit::Role;
+use blitz_dom::{Document, DocumentHtmlParser};
+use masonry::{
+    vello::Scene,
+    widget::{Label, WidgetRef},
+    AccessCtx, AccessEvent, BoxConstraints, EventCtx, LayoutCtx, LifeCycle, LifeCycleCtx, PaintCtx,
+    PointerEvent, Size, StatusChange, TextEvent, Widget, WidgetPod,
+};
+use smallvec::{smallvec, SmallVec};
 
-use masonry::app_driver::{AppDriver, DriverCtx};
-use masonry::dpi::LogicalSize;
-use masonry::widget::{Button, Flex, Label, RootWidget};
-use masonry::{Action, WidgetId};
-use winit::window::Window;
+mod viewport;
+use self::viewport::Viewport;
 
-struct Driver;
+pub enum Node {
+    Element(WidgetPod<ElementWidget>),
+    Text(WidgetPod<Label>),
+}
 
-impl AppDriver for Driver {
-    fn on_action(&mut self, _ctx: &mut DriverCtx<'_>, _widget_id: WidgetId, action: Action) {
-        match action {
-            Action::ButtonPressed(_) => {
-                println!("Hello");
-            }
-            action => {
-                eprintln!("Unexpected action {action:?}");
-            }
+pub struct DocumentWidget {
+    doc: Document,
+    children: Vec<Node>,
+}
+
+impl DocumentWidget {
+    pub fn from_html(html: &str) -> Self {
+        let mut doc = Document::new(Viewport::new((0, 0)).make_device());
+        DocumentHtmlParser::parse_into_doc(&mut doc, html);
+
+        let mut children = Vec::new();
+        for child_id in &doc.root_node().children {
+            let child = doc.get_node(*child_id).unwrap();
+            let node = if child.is_text_node() {
+                Node::Text(WidgetPod::new(Label::new(child.text_content())))
+            } else {
+                Node::Element(WidgetPod::new(ElementWidget {}))
+            };
+            children.push(node);
         }
+
+        Self { doc, children }
     }
 }
 
-pub fn main() {
-    let label = Label::new("Hello").with_text_size(32.0);
-    
-    let main_widget = Flex::column()
-        .with_child(label);
+impl Widget for DocumentWidget {
+    fn on_pointer_event(&mut self, ctx: &mut EventCtx, event: &PointerEvent) {}
+    fn on_text_event(&mut self, ctx: &mut EventCtx, event: &TextEvent) {}
 
-    let window_size = LogicalSize::new(600.0, 400.0);
-    let window_attributes = Window::default_attributes()
-        .with_title("Blitz")
-        .with_min_inner_size(window_size);
+    fn on_access_event(&mut self, ctx: &mut EventCtx, event: &AccessEvent) {}
 
-    masonry::event_loop_runner::run(
-        masonry::event_loop_runner::EventLoop::with_user_event(),
-        window_attributes,
-        RootWidget::new(main_widget),
-        Driver,
-    )
-    .unwrap();
+    fn on_status_change(&mut self, ctx: &mut LifeCycleCtx, event: &StatusChange) {}
+
+    fn lifecycle(&mut self, ctx: &mut LifeCycleCtx, event: &LifeCycle) {}
+
+    fn layout(&mut self, ctx: &mut LayoutCtx, bc: &BoxConstraints) -> Size {
+        todo!()
+    }
+
+    fn paint(&mut self, ctx: &mut PaintCtx, scene: &mut Scene) {}
+
+    fn accessibility_role(&self) -> Role {
+        todo!()
+    }
+
+    fn accessibility(&mut self, ctx: &mut AccessCtx) {}
+
+    fn children(&self) -> SmallVec<[WidgetRef<'_, dyn Widget>; 16]> {
+        self.children
+            .iter()
+            .map(|child| match child {
+                Node::Element(elem) => elem.as_dyn(),
+                Node::Text(text) => text.as_dyn(),
+            })
+            .collect()
+    }
+}
+
+pub struct ElementWidget {}
+
+impl Widget for ElementWidget {
+    fn on_pointer_event(&mut self, ctx: &mut EventCtx, event: &PointerEvent) {}
+    fn on_text_event(&mut self, ctx: &mut EventCtx, event: &TextEvent) {}
+
+    fn on_access_event(&mut self, ctx: &mut EventCtx, event: &AccessEvent) {}
+
+    fn on_status_change(&mut self, ctx: &mut LifeCycleCtx, event: &StatusChange) {}
+
+    fn lifecycle(&mut self, ctx: &mut LifeCycleCtx, event: &LifeCycle) {}
+
+    fn layout(&mut self, ctx: &mut LayoutCtx, bc: &BoxConstraints) -> Size {
+        todo!()
+    }
+
+    fn paint(&mut self, ctx: &mut PaintCtx, scene: &mut Scene) {}
+
+    fn accessibility_role(&self) -> Role {
+        todo!()
+    }
+
+    fn accessibility(&mut self, ctx: &mut AccessCtx) {}
+
+    fn children(&self) -> SmallVec<[WidgetRef<'_, dyn Widget>; 16]> {
+        smallvec![]
+    }
 }
