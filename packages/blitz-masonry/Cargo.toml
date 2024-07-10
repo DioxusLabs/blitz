@@ -1,0 +1,8 @@
+[package]
+name = "blitz-masonry"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+masonry = { git = "https://github.com/linebender/xilem" }
+winit = "0.30.3"
