@@ -13,7 +13,7 @@ impl AppDriver for Driver {
 }
 
 pub fn main() {
-    let widget = DocumentWidget::from_html("Hello World!");
+    let widget = DocumentWidget::from_html("<h1>Hello World!</h1>");
 
     masonry::event_loop_runner::run(
         masonry::event_loop_runner::EventLoop::with_user_event(),

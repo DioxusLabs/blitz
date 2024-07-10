@@ -4,7 +4,7 @@ use masonry::{
     vello::Scene,
     widget::{Label, WidgetRef},
     AccessCtx, AccessEvent, BoxConstraints, EventCtx, LayoutCtx, LifeCycle, LifeCycleCtx, PaintCtx,
-    PointerEvent, Size, StatusChange, TextEvent, Widget, WidgetPod,
+    Point, PointerEvent, Size, StatusChange, TextEvent, Widget, WidgetPod,
 };
 use smallvec::{smallvec, SmallVec};
 
@@ -62,8 +62,16 @@ impl Widget for DocumentWidget {
         self.children
             .iter_mut()
             .map(|child| match child {
-                Node::Element(elem) => elem.layout(ctx, bc),
-                Node::Text(text) => text.layout(ctx, bc),
+                Node::Element(elem) => {
+                    let size = elem.layout(ctx, bc);
+                    ctx.place_child(elem, Point::ZERO);
+                    size
+                }
+                Node::Text(text) => {
+                    let size = text.layout(ctx, bc);
+                    ctx.place_child(text, Point::ZERO);
+                    size
+                }
             })
             .fold(Size::default(), |acc, size| acc + size)
     }
@@ -81,7 +89,14 @@ impl Widget for DocumentWidget {
         Role::Document
     }
 
-    fn accessibility(&mut self, ctx: &mut AccessCtx) {}
+    fn accessibility(&mut self, ctx: &mut AccessCtx) {
+        for child in &mut self.children {
+            match child {
+                Node::Element(elem) => elem.accessibility(ctx),
+                Node::Text(text) => text.accessibility(ctx),
+            }
+        }
+    }
 
     fn children(&self) -> SmallVec<[WidgetRef<'_, dyn Widget>; 16]> {
         self.children
