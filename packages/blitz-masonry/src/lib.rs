@@ -27,15 +27,14 @@ impl DocumentWidget {
         DocumentHtmlParser::parse_into_doc(&mut doc, html);
 
         let mut children = Vec::new();
-        for child_id in &doc.root_node().children {
-            let child = doc.get_node(*child_id).unwrap();
-            let node = if child.is_text_node() {
-                Node::Text(WidgetPod::new(Label::new(child.text_content())))
+        doc.visit(|node_id, node| {
+            let child = if node.is_text_node() {
+                Node::Text(WidgetPod::new(Label::new(node.text_content())))
             } else {
                 Node::Element(WidgetPod::new(ElementWidget {}))
             };
-            children.push(node);
-        }
+            children.push(child);
+        });
 
         Self { doc, children }
     }
@@ -43,22 +42,43 @@ impl DocumentWidget {
 
 impl Widget for DocumentWidget {
     fn on_pointer_event(&mut self, ctx: &mut EventCtx, event: &PointerEvent) {}
+
     fn on_text_event(&mut self, ctx: &mut EventCtx, event: &TextEvent) {}
 
     fn on_access_event(&mut self, ctx: &mut EventCtx, event: &AccessEvent) {}
 
     fn on_status_change(&mut self, ctx: &mut LifeCycleCtx, event: &StatusChange) {}
 
-    fn lifecycle(&mut self, ctx: &mut LifeCycleCtx, event: &LifeCycle) {}
-
-    fn layout(&mut self, ctx: &mut LayoutCtx, bc: &BoxConstraints) -> Size {
-        todo!()
+    fn lifecycle(&mut self, ctx: &mut LifeCycleCtx, event: &LifeCycle) {
+        for child in &mut self.children {
+            match child {
+                Node::Element(elem) => elem.lifecycle(ctx, event),
+                Node::Text(text) => text.lifecycle(ctx, event),
+            }
+        }
     }
 
-    fn paint(&mut self, ctx: &mut PaintCtx, scene: &mut Scene) {}
+    fn layout(&mut self, ctx: &mut LayoutCtx, bc: &BoxConstraints) -> Size {
+        self.children
+            .iter_mut()
+            .map(|child| match child {
+                Node::Element(elem) => elem.layout(ctx, bc),
+                Node::Text(text) => text.layout(ctx, bc),
+            })
+            .fold(Size::default(), |acc, size| acc + size)
+    }
+
+    fn paint(&mut self, ctx: &mut PaintCtx, scene: &mut Scene) {
+        for child in &mut self.children {
+            match child {
+                Node::Element(elem) => elem.paint(ctx, scene),
+                Node::Text(text) => text.paint(ctx, scene),
+            }
+        }
+    }
 
     fn accessibility_role(&self) -> Role {
-        todo!()
+        Role::Document
     }
 
     fn accessibility(&mut self, ctx: &mut AccessCtx) {}
@@ -87,13 +107,13 @@ impl Widget for ElementWidget {
     fn lifecycle(&mut self, ctx: &mut LifeCycleCtx, event: &LifeCycle) {}
 
     fn layout(&mut self, ctx: &mut LayoutCtx, bc: &BoxConstraints) -> Size {
-        todo!()
+        Default::default()
     }
 
     fn paint(&mut self, ctx: &mut PaintCtx, scene: &mut Scene) {}
 
     fn accessibility_role(&self) -> Role {
-        todo!()
+        Default::default()
     }
 
     fn accessibility(&mut self, ctx: &mut AccessCtx) {}

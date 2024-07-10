@@ -2,10 +2,9 @@
 
 use blitz_masonry::DocumentWidget;
 use masonry::app_driver::{AppDriver, DriverCtx};
-use masonry::dpi::LogicalSize;
-use masonry::widget::{Flex, Label, RootWidget};
-use masonry::{Action, Widget, WidgetId};
-use winit::window::Window;
+use masonry::widget::RootWidget;
+use masonry::{Action, WidgetId};
+use winit::window::WindowAttributes;
 
 struct Driver;
 
@@ -14,25 +13,13 @@ impl AppDriver for Driver {
 }
 
 pub fn main() {
-    /*
-        let label = Label::new("Hello").with_text_size(32.0);
+    let widget = DocumentWidget::from_html("Hello World!");
 
-        let main_widget = Flex::column().with_child(label);
-
-        let window_size = LogicalSize::new(600.0, 400.0);
-        let window_attributes = Window::default_attributes()
-            .with_title("Blitz")
-            .with_min_inner_size(window_size);
-
-        masonry::event_loop_runner::run(
-            masonry::event_loop_runner::EventLoop::with_user_event(),
-            window_attributes,
-            RootWidget::new(main_widget),
-            Driver,
-        )
-        .unwrap();
-    */
-
-    let widget = DocumentWidget::from_html("<div>Hello</div>");
-    dbg!(widget.children());
+    masonry::event_loop_runner::run(
+        masonry::event_loop_runner::EventLoop::with_user_event(),
+        WindowAttributes::default(),
+        RootWidget::new(widget),
+        Driver,
+    )
+    .unwrap();
 }
