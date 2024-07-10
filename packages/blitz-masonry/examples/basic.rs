@@ -1,8 +1,8 @@
 #![windows_subsystem = "windows"]
 
-use blitz_masonry::Element;
+use blitz_masonry::{Element, Text};
 use masonry::app_driver::{AppDriver, DriverCtx};
-use masonry::widget::{Label, RootWidget};
+use masonry::widget::RootWidget;
 use masonry::{Action, WidgetId};
 use winit::window::WindowAttributes;
 
@@ -14,7 +14,7 @@ impl AppDriver for Driver {
 
 pub fn main() {
     let mut h1 = Element::new("h1");
-    h1.append_child(Label::new("Hello, World!"));
+    h1.append_child(Text::new("Hello, World!"));
 
     let mut div = Element::new("div");
     div.font_size = Some(100.0);
