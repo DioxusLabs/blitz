@@ -1,8 +1,8 @@
 #![windows_subsystem = "windows"]
 
-use blitz_masonry::DocumentWidget;
+use blitz_masonry::Element;
 use masonry::app_driver::{AppDriver, DriverCtx};
-use masonry::widget::RootWidget;
+use masonry::widget::{Label, RootWidget};
 use masonry::{Action, WidgetId};
 use winit::window::WindowAttributes;
 
@@ -13,12 +13,17 @@ impl AppDriver for Driver {
 }
 
 pub fn main() {
-    let widget = DocumentWidget::from_html("<h1>Hello World!</h1>");
+    let mut h1 = Element::new("h1");
+    h1.append_child(Label::new("Hello, World!"));
+
+    let mut div = Element::new("div");
+    div.font_size = Some(100.0);
+    div.append_child(h1);
 
     masonry::event_loop_runner::run(
         masonry::event_loop_runner::EventLoop::with_user_event(),
         WindowAttributes::default(),
-        RootWidget::new(widget),
+        RootWidget::new(div),
         Driver,
     )
     .unwrap();
