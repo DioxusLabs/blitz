@@ -285,8 +285,11 @@ where
                 }
             }
 
-            dbg!(&node.final_layout);
-            dbg!(&node.style);
+            #[cfg(feature = "tracing")]
+            {
+                tracing::info!("Layout: {:?}", &node.final_layout);
+                tracing::info!("Style: {:?}", &node.style);
+            }
 
             println!("Node {} {}", node.id, node.node_debug_str());
             if node.is_inline_root {
@@ -655,8 +658,7 @@ where
                 .inline_layout
                 .as_ref()
                 .unwrap_or_else(|| {
-                    dbg!(&element);
-                    panic!("Tried to render node marked as inline root that does not have an inline layout");
+                    panic!("Tried to render node marked as inline root that does not have an inline layout: {:?}", element);
                 });
 
             // Apply padding/border offset to inline root
@@ -1135,9 +1137,11 @@ impl ElementCx<'_> {
                                 + multiplier * (color.a as f32 - last_stop.color.a as f32))
                                 as u8,
                         );
-                        gradient.stops.push(
-                            dbg! {peniko::ColorStop { color: mid_color, offset: mid_offset }},
-                        );
+                        tracing::info!("Gradient stop {:?}", mid_color);
+                        gradient.stops.push(peniko::ColorStop {
+                            color: mid_color,
+                            offset: mid_offset,
+                        });
                         gradient.stops.push(peniko::ColorStop { color, offset });
                     }
                 }
