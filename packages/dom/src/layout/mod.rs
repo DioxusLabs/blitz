@@ -79,7 +79,10 @@ impl TraversePartialTree for Document {
 impl TraverseTree for Document {}
 
 impl LayoutPartialTree for Document {
-    fn get_style(&self, node_id: NodeId) -> &Style {
+    type CoreContainerStyle<'a> = &'a taffy::Style where Self : 'a;
+    type CacheMut<'b> = &'b mut Cache where Self: 'b;
+
+    fn get_core_container_style(&self, node_id: NodeId) -> &Style {
         &self.node_from_id(node_id).style
     }
 
@@ -209,6 +212,60 @@ impl LayoutPartialTree for Document {
                 _ => taffy::LayoutOutput::HIDDEN,
             }
         })
+    }
+}
+
+impl taffy::LayoutBlockContainer for Document {
+    type BlockContainerStyle<'a> = &'a Style
+    where
+        Self: 'a;
+
+    type BlockItemStyle<'a> = &'a Style
+    where
+        Self: 'a;
+
+    fn get_block_container_style(&self, node_id: NodeId) -> Self::BlockContainerStyle<'_> {
+        self.get_core_container_style(node_id)
+    }
+
+    fn get_block_child_style(&self, child_node_id: NodeId) -> Self::BlockItemStyle<'_> {
+        self.get_core_container_style(child_node_id)
+    }
+}
+
+impl taffy::LayoutFlexboxContainer for Document {
+    type FlexboxContainerStyle<'a> = &'a Style
+    where
+        Self: 'a;
+
+    type FlexboxItemStyle<'a> = &'a Style
+    where
+        Self: 'a;
+
+    fn get_flexbox_container_style(&self, node_id: NodeId) -> Self::FlexboxContainerStyle<'_> {
+        self.get_core_container_style(node_id)
+    }
+
+    fn get_flexbox_child_style(&self, child_node_id: NodeId) -> Self::FlexboxItemStyle<'_> {
+        self.get_core_container_style(child_node_id)
+    }
+}
+
+impl taffy::LayoutGridContainer for Document {
+    type GridContainerStyle<'a> = &'a Style
+    where
+        Self: 'a;
+
+    type GridItemStyle<'a> = &'a Style
+    where
+        Self: 'a;
+
+    fn get_grid_container_style(&self, node_id: NodeId) -> Self::GridContainerStyle<'_> {
+        self.get_core_container_style(node_id)
+    }
+
+    fn get_grid_child_style(&self, child_node_id: NodeId) -> Self::GridItemStyle<'_> {
+        self.get_core_container_style(child_node_id)
     }
 }
 

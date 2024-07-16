@@ -7,6 +7,7 @@ mod stylo {
     pub(crate) use style::computed_values::grid_auto_flow::T as GridAutoFlow;
     pub(crate) use style::properties::longhands::aspect_ratio::computed_value::T as AspectRatio;
     pub(crate) use style::properties::longhands::position::computed_value::T as Position;
+    pub(crate) use style::properties::generated::longhands::box_sizing::computed_value::T as BoxSizing;
     pub(crate) use style::properties::style_structs::{Margin, Padding};
     pub(crate) use style::values::computed::GridLine;
     pub(crate) use style::values::computed::GridTemplateComponent;
@@ -101,6 +102,13 @@ pub(crate) fn border(
         right: taffy::LengthPercentage::Length(border.border_right_width.to_f32_px()),
         top: taffy::LengthPercentage::Length(border.border_top_width.to_f32_px()),
         bottom: taffy::LengthPercentage::Length(border.border_bottom_width.to_f32_px()),
+    }
+}
+
+pub (crate) fn box_sizing(input: stylo::BoxSizing) -> taffy::BoxSizing {
+    match input {
+        stylo::BoxSizing::BorderBox => taffy::BoxSizing::BorderBox,
+        stylo::BoxSizing::ContentBox => taffy::BoxSizing::ContentBox,
     }
 }
 

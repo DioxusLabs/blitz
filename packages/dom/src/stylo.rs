@@ -77,7 +77,7 @@ impl crate::document::Document {
                     max_height,
                     aspect_ratio,
 
-                    // box_sizing,
+                    box_sizing,
                     // z_index,
                     // order,
                     column_gap,
@@ -156,6 +156,7 @@ impl crate::document::Document {
 
                 let display = stylo_to_taffy::display(*stylo_display);
                 node.style = Style {
+                    box_sizing: stylo_to_taffy::box_sizing(*box_sizing),
                     display,
                     position,
                     overflow: taffy::Point {
