@@ -12,7 +12,7 @@ style_config = { git = "https://github.com/dioxuslabs/stylo", rev = "10767f4" } 
 style_traits = { git = "https://github.com/dioxuslabs/stylo", rev = "10767f4" } # 2024-05-15 + dioxus patches
 selectors = { git = "https://github.com/dioxuslabs/stylo", rev = "10767f4" } # 2024-05-15 + dioxus patches
 html5ever = "0.27" # needs to match stylo markup5ever version
-taffy = { git = "https://github.com/dioxuslabs/taffy", rev = "0ce2f3eef52826852811363a87ef28ecc38e3d55" }
+taffy = { git = "https://github.com/dioxuslabs/taffy", rev = "a2378a72fe6ebf86969bb5e9c5b15ff351bf086c" }
 parley = { git = "https://github.com/nicoburns/parley", rev = "a80765f070ab4113242f2696569304f9b48c2f5f" }
 dioxus = { git = "https://github.com/dioxuslabs/dioxus", rev = "a3aa6ae771a2d0a4d8cb6055c41efc0193b817ef"}
 dioxus-ssr = { git = "https://github.com/dioxuslabs/dioxus", rev = "a3aa6ae771a2d0a4d8cb6055c41efc0193b817ef" }
@@ -53,6 +53,7 @@ tokio = { version = "1.36.0", features = ["full"] }
 ureq = "2.9"
 
 # [patch.crates-io]
+# [patch."https://github.com/dioxuslabs/taffy"]
 # taffy = { path = "../taffy" }
 
 # [patch."https://github.com/nicoburns/parley"]
