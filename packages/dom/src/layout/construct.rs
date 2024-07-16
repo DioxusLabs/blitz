@@ -80,14 +80,25 @@ pub(crate) fn collect_layout_children(
 
             // TODO: fix display:contents
             if all_inline {
-                let (inline_layout, ilayout_children) = build_inline_layout(doc, container_node_id);
-                doc.nodes[container_node_id].is_inline_root = true;
-                doc.nodes[container_node_id]
+                // Caching because calling Parley is expensive
+                if doc.nodes[container_node_id]
                     .raw_dom_data
-                    .downcast_element_mut()
+                    .downcast_element()
                     .unwrap()
-                    .inline_layout = Some(Box::new(inline_layout));
-                return layout_children.extend_from_slice(&ilayout_children);
+                    .inline_layout
+                    .is_none()
+                {
+                    let (inline_layout, ilayout_children) =
+                        build_inline_layout(doc, container_node_id);
+                    doc.nodes[container_node_id].is_inline_root = true;
+                    doc.nodes[container_node_id]
+                        .raw_dom_data
+                        .downcast_element_mut()
+                        .unwrap()
+                        .inline_layout = Some(Box::new(inline_layout));
+                    layout_children.extend_from_slice(&ilayout_children);
+                }
+                return;
             }
 
             // If the children are either all inline or all block then simply return the regular children

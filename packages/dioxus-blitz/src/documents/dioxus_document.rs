@@ -438,8 +438,11 @@ impl WriteMutations for MutationWriter<'_> {
 
         if let Some(parent) = node.parent {
             // if the text is the child of a style element, we want to put the style into the stylesheet cache
-            let parent = self.doc.get_node(parent).unwrap();
-            if let NodeData::Element(ref element) = parent.raw_dom_data {
+            let parent = self.doc.get_node_mut(parent).unwrap();
+            if let NodeData::Element(ref mut element) = parent.raw_dom_data {
+                if changed {
+                    element.inline_layout = None;
+                }
                 // Only set stylsheets if the text content has *changed* - we need to unload
                 if changed && element.name.local.as_ref() == "style" {
                     self.doc.add_stylesheet(value);
