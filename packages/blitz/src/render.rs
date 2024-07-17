@@ -214,6 +214,11 @@ where
         self.dom.as_mut().set_hover_to(x, y)
     }
 
+    pub fn focus_next_node(&mut self) -> bool {
+        self.dom.as_mut().focus_next_node();
+        true
+    }
+
     pub fn get_cursor(&self) -> Option<CursorKind> {
         // todo: cache this on the node itself
         let node = &self.dom.as_ref().tree()[self.dom.as_ref().get_hover_node_id()?];

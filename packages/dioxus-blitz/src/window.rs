@@ -120,6 +120,10 @@ impl<'a, Doc: DocumentLike> View<'a, Doc> {
                 match event.physical_key {
                     PhysicalKey::Code(key_code) => {
                         match key_code {
+                            KeyCode::Tab if event.state == ElementState::Pressed => {
+                                self.renderer.focus_next_node();
+                                self.request_redraw();
+                            }
                             KeyCode::Equal => {
                                 if self.keyboard_modifiers.control_key()
                                     || self.keyboard_modifiers.super_key()

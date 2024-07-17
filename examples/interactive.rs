@@ -101,6 +101,9 @@ h4 {
     border-width: 2px;
     border-style: solid;
 }
+.counter-button:focus {
+    outline: 4px solid black;
+}
 
 .btn-green {
     background-color: green;

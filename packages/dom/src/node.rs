@@ -5,8 +5,10 @@ use selectors::matching::QuirksMode;
 use slab::Slab;
 use std::cell::RefCell;
 use std::fmt::Write;
+use std::str::FromStr;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
+use style::invalidation::element::restyle_hints::RestyleHint;
 use style::values::computed::Display;
 use style::values::specified::box_::DisplayOutside;
 use style_traits::dom::ElementState;
@@ -137,6 +139,43 @@ impl Node {
                 .any(|child_id| self.tree()[child_id].is_or_contains_block()),
         }
     }
+
+    pub fn is_focussable(&self) -> bool {
+        self.raw_dom_data
+            .downcast_element()
+            .map(|el| el.is_focussable)
+            .unwrap_or(false)
+    }
+
+    pub fn set_restyle_hint(&mut self, hint: RestyleHint) {
+        if let Some(element_data) = self.stylo_element_data.borrow_mut().as_mut() {
+            element_data.hint.insert(hint);
+        }
+    }
+
+    pub fn hover(&mut self) {
+        self.is_hovered = true;
+        self.element_state.insert(ElementState::HOVER);
+        self.set_restyle_hint(RestyleHint::RESTYLE_SELF);
+    }
+
+    pub fn unhover(&mut self) {
+        self.is_hovered = false;
+        self.element_state.remove(ElementState::HOVER);
+        self.set_restyle_hint(RestyleHint::RESTYLE_SELF);
+    }
+
+    pub fn focus(&mut self) {
+        self.element_state
+            .insert(ElementState::FOCUS | ElementState::FOCUSRING);
+        self.set_restyle_hint(RestyleHint::RESTYLE_SELF);
+    }
+
+    pub fn blur(&mut self) {
+        self.element_state
+            .remove(ElementState::FOCUS | ElementState::FOCUSRING);
+        self.set_restyle_hint(RestyleHint::RESTYLE_SELF);
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -243,6 +282,9 @@ pub struct ElementNodeData {
     /// The element's attributes
     pub attrs: Vec<Attribute>,
 
+    /// Whether the element is focussable
+    pub is_focussable: bool,
+
     /// The element's parsed style attribute (used by stylo)
     pub style_attribute: Option<ServoArc<Locked<PropertyDeclarationBlock>>>,
 
@@ -266,17 +308,21 @@ impl ElementNodeData {
             .find(|attr| &attr.name.local == "id")
             .map(|attr| attr.value.as_ref())
             .map(|value: &str| Atom::from(value));
-        ElementNodeData {
+
+        let mut data = ElementNodeData {
             name,
             id: id_attr_atom,
             attrs,
+            is_focussable: false,
             style_attribute: Default::default(),
             inline_layout: None,
             image: None,
             resized_image: RefCell::new(None),
             template_contents: None,
             // listeners: FxHashSet::default(),
-        }
+        };
+        data.flush_is_focussable();
+        data
     }
 
     pub fn attrs(&self) -> &[Attribute] {
@@ -286,6 +332,42 @@ impl ElementNodeData {
     pub fn attr(&self, name: impl PartialEq<LocalName>) -> Option<&str> {
         let attr = self.attrs.iter().find(|attr| name == attr.name.local)?;
         Some(&attr.value)
+    }
+
+    pub fn attr_parsed<T: FromStr>(&self, name: impl PartialEq<LocalName>) -> Option<T> {
+        let attr = self.attrs.iter().find(|attr| name == attr.name.local)?;
+        attr.value.parse::<T>().ok()
+    }
+
+    pub fn flush_is_focussable(&mut self) {
+        let disabled: bool = self.attr_parsed(local_name!("disabled")).unwrap_or(false);
+        let tabindex: Option<i32> = self.attr_parsed(local_name!("tabindex"));
+
+        self.is_focussable = !disabled
+            && match tabindex {
+                Some(index) => index >= 0,
+                None => {
+                    // Some focusable HTML elements have a default tabindex value of 0 set under the hood by the user agent.
+                    // These elements are:
+                    //   - <a> or <area> with href attribute
+                    //   - <button>, <frame>, <iframe>, <input>, <object>, <select>, <textarea>, and SVG <a> element
+                    //   - <summary> element that provides summary for a <details> element.
+
+                    if [local_name!("a"), local_name!("area")].contains(&self.name.local) {
+                        self.attr(local_name!("href")).is_some()
+                    } else {
+                        const DEFAULT_FOCUSSABLE_ELEMENTS: [LocalName; 6] = [
+                            local_name!("button"),
+                            local_name!("input"),
+                            local_name!("select"),
+                            local_name!("textarea"),
+                            local_name!("frame"),
+                            local_name!("iframe"),
+                        ];
+                        DEFAULT_FOCUSSABLE_ELEMENTS.contains(&self.name.local)
+                    }
+                }
+            }
     }
 
     pub fn flush_style_attribute(&mut self, guard: &SharedRwLock) {

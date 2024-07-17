@@ -6,7 +6,6 @@ use selectors::{matching::QuirksMode, Element};
 use slab::Slab;
 use std::any::Any;
 use std::collections::{HashMap, HashSet, VecDeque};
-use style::invalidation::element::restyle_hints::RestyleHint;
 use style::selector_parser::ServoElementSnapshot;
 use style::servo::media_queries::FontMetricsProvider;
 use style::servo_arc::Arc as ServoArc;
@@ -18,7 +17,6 @@ use style::{
     stylesheets::{AllowImportRules, DocumentStyleSheet, Origin, Stylesheet, UrlExtraData},
     stylist::Stylist,
 };
-use style_traits::dom::ElementState;
 use taffy::AvailableSpace;
 use url::Url;
 
@@ -91,7 +89,10 @@ pub struct Document {
     /// A Parley layout context
     pub(crate) layout_ctx: parley::LayoutContext<TextBrush>,
 
+    /// The node which is currently hovered (if any)
     pub(crate) hover_node_id: Option<usize>,
+    /// The node which is currently focussed (if any)
+    pub(crate) focus_node_id: Option<usize>,
 
     pub changed: HashSet<usize>,
 }
@@ -125,6 +126,7 @@ impl Document {
             layout_ctx: parley::LayoutContext::new(),
 
             hover_node_id: None,
+            focus_node_id: None,
             changed: HashSet::new(),
         };
 
@@ -155,8 +157,17 @@ impl Document {
         self.nodes.get_mut(node_id)
     }
 
+    pub fn get_focussed_node_id(&self) -> Option<usize> {
+        self.focus_node_id
+            .or(self.try_root_element().map(|el| el.id))
+    }
+
     pub fn root_node(&self) -> &Node {
         &self.nodes[0]
+    }
+
+    pub fn try_root_element(&self) -> Option<&Node> {
+        TDocument::as_node(&self.root_node()).first_element_child()
     }
 
     pub fn root_element(&self) -> &Node {
@@ -404,6 +415,11 @@ impl Document {
         }
     }
 
+    pub fn snapshot_node_and(&mut self, node_id: usize, cb: impl FnOnce(&mut Node)) {
+        self.snapshot_node(node_id);
+        cb(&mut self.nodes[node_id]);
+    }
+
     /// Restyle the tree and then relayout it
     pub fn resolve(&mut self) {
         if TDocument::as_node(&&self.nodes[0])
@@ -440,44 +456,101 @@ impl Document {
         self.root_element().hit(x, y)
     }
 
+    pub fn next_node(&self, start: &Node, mut filter: impl FnMut(&Node) -> bool) -> Option<usize> {
+        let start_id = start.id;
+        let mut node = start;
+        let mut look_in_children = true;
+        loop {
+            // Next is first child
+            let next = if look_in_children && !node.children.is_empty() {
+                let node_id = node.children[0];
+                &self.nodes[node_id]
+            }
+            // Next is next sibling or parent
+            else if let Some(parent) = node.parent_node() {
+                let self_idx = parent
+                    .children
+                    .iter()
+                    .position(|id| *id == node.id)
+                    .unwrap();
+                // Next is next sibling
+                if let Some(sibling_id) = parent.children.get(self_idx + 1) {
+                    look_in_children = true;
+                    &self.nodes[*sibling_id]
+                }
+                // Next is parent
+                else {
+                    look_in_children = false;
+                    node = parent;
+                    continue;
+                }
+            }
+            // Continue search from the root
+            else {
+                look_in_children = true;
+                self.root_node()
+            };
+
+            if filter(next) {
+                return Some(next.id);
+            } else if next.id == start_id {
+                return None;
+            }
+
+            node = next;
+        }
+    }
+
+    pub fn focus_next_node(&mut self) -> Option<usize> {
+        let focussed_node_id = self.get_focussed_node_id()?;
+        let id = self.next_node(&self.nodes[focussed_node_id], |node| node.is_focussable())?;
+        self.set_focus_to(id);
+        Some(id)
+    }
+
+    pub fn set_focus_to(&mut self, focus_node_id: usize) {
+        if Some(focus_node_id) != self.focus_node_id {
+            println!("Focussed node {}", focus_node_id);
+
+            // Remove focus from the old node
+            if let Some(id) = self.focus_node_id {
+                self.snapshot_node_and(id, |node| node.blur());
+            }
+
+            // Focus the new node
+            self.snapshot_node_and(focus_node_id, |node| node.focus());
+
+            self.focus_node_id = Some(focus_node_id);
+        }
+    }
+
     pub fn set_hover_to(&mut self, x: f32, y: f32) -> bool {
         let hover_node_id = self.hit(x, y);
 
-        if hover_node_id != self.hover_node_id {
-            let mut maybe_id = self.hover_node_id;
-            while let Some(id) = maybe_id {
-                self.nodes[id].is_hovered = false;
-                self.nodes[id].element_state.remove(ElementState::HOVER);
-                if let Some(element_data) = self.nodes[id].stylo_element_data.borrow_mut().as_mut()
-                {
-                    element_data.hint.insert(RestyleHint::RESTYLE_SELF);
-                }
-
-                self.snapshot_node(id);
-
-                maybe_id = self.nodes[id].parent;
-            }
-
-            let mut maybe_id = hover_node_id;
-            while let Some(id) = maybe_id {
-                self.nodes[id].is_hovered = true;
-                self.nodes[id].element_state.insert(ElementState::HOVER);
-                if let Some(element_data) = self.nodes[id].stylo_element_data.borrow_mut().as_mut()
-                {
-                    element_data.hint.insert(RestyleHint::RESTYLE_SELF);
-                }
-
-                self.snapshot_node(id);
-
-                maybe_id = self.nodes[id].parent;
-            }
-
-            self.hover_node_id = hover_node_id;
-
-            true
-        } else {
-            false
+        // Return early if the new node is the same as the already-hovered node
+        if hover_node_id == self.hover_node_id {
+            return false;
         }
+
+        let mut maybe_id = self.hover_node_id;
+        while let Some(id) = maybe_id {
+            self.snapshot_node_and(id, |node| {
+                node.unhover();
+                maybe_id = node.parent;
+            });
+        }
+
+        let mut maybe_id = hover_node_id;
+        while let Some(id) = maybe_id {
+            self.snapshot_node_and(id, |node| {
+                node.hover();
+                maybe_id = node.parent;
+            });
+        }
+
+        self.hover_node_id = hover_node_id;
+
+        true
     }
 
     pub fn get_hover_node_id(&self) -> Option<usize> {
