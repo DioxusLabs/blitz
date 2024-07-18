@@ -4,7 +4,7 @@
 //! However, in Blitz, we do a style pass then a layout pass.
 //! This is slower, yes, but happens fast enough that it's not a huge issue.
 
-use crate::node::{NodeData, NodeKind};
+use crate::node::{NodeData, NodeKind, NodeSpecificData};
 use crate::{
     document::Document,
     image::{image_measure_function, ImageContext},
@@ -162,10 +162,10 @@ impl LayoutPartialTree for Document {
                         };
 
                         // Get image's native size
-                        let inherent_size = match &element_data.image {
-                            Some(image) => taffy::Size {
-                                width: image.width() as f32,
-                                height: image.height() as f32,
+                        let inherent_size = match &element_data.image_data_mut() {
+                            Some(data) => taffy::Size {
+                                width: data.image.width() as f32,
+                                height: data.image.height() as f32,
                             },
                             None => taffy::Size {
                                 width: 0.0,
@@ -282,8 +282,8 @@ impl Document {
             .raw_dom_data
             .downcast_element_mut()
             .unwrap()
-            .inline_layout
-            .take()
+            .node_specific_data
+            .take_inline_layout()
             .unwrap();
 
         // TODO: eliminate clone
@@ -479,7 +479,7 @@ impl Document {
             .raw_dom_data
             .downcast_element_mut()
             .unwrap()
-            .inline_layout = Some(inline_layout);
+            .node_specific_data = NodeSpecificData::InlineRoot(inline_layout);
 
         output
     }

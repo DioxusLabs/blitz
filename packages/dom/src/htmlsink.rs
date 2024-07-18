@@ -2,7 +2,7 @@ use std::borrow::Cow;
 use std::collections::HashSet;
 use std::sync::Arc;
 
-use crate::node::{Attribute, ElementNodeData, Node, NodeData};
+use crate::node::{Attribute, ElementNodeData, ImageData, Node, NodeData, NodeSpecificData};
 use crate::Document;
 use html5ever::local_name;
 use html5ever::{
@@ -113,8 +113,11 @@ impl<'a> DocumentHtmlParser<'a> {
                 let image_result = crate::util::fetch_image(src.as_str());
                 match image_result {
                     Ok(image) => {
-                        self.node_mut(target_id).element_data_mut().unwrap().image =
-                            Some(Arc::new(image));
+                        self.node_mut(target_id)
+                            .element_data_mut()
+                            .unwrap()
+                            .node_specific_data =
+                            NodeSpecificData::Image(ImageData::new(Arc::new(image)));
                     }
                     Err(_) => {
                         eprintln!("Error fetching image {}", src);

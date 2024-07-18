@@ -11,7 +11,7 @@ use style::{
 };
 
 use crate::{
-    node::{NodeKind, TextBrush, TextLayout},
+    node::{NodeKind, NodeSpecificData, TextBrush, TextLayout},
     stylo_to_parley, Document, ElementNodeData, Node, NodeData,
 };
 
@@ -86,7 +86,7 @@ pub(crate) fn collect_layout_children(
                     .raw_dom_data
                     .downcast_element_mut()
                     .unwrap()
-                    .inline_layout = Some(Box::new(inline_layout));
+                    .node_specific_data = NodeSpecificData::InlineRoot(Box::new(inline_layout));
                 return layout_children.extend_from_slice(&ilayout_children);
             }
 

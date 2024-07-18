@@ -288,12 +288,12 @@ pub struct ElementNodeData {
     /// The element's parsed style attribute (used by stylo)
     pub style_attribute: Option<ServoArc<Locked<PropertyDeclarationBlock>>>,
 
-    /// Parley text layout (elements with inline inner display mode only)
-    pub inline_layout: Option<Box<TextLayout>>,
-
-    /// The element's image content (\<img\> element's only)
-    pub image: Option<Arc<DynamicImage>>,
-    pub resized_image: RefCell<Option<Arc<peniko::Image>>>,
+    /// Heterogeneous data that depends on the element's type.
+    /// For example:
+    ///   - The image data for \<img\> elements.
+    ///   - The parley Layout for inline roots.
+    ///   - The text editor for input/textarea elements
+    pub node_specific_data: NodeSpecificData,
 
     /// The element's template contents (\<template\> elements only)
     pub template_contents: Option<usize>,
@@ -315,9 +315,7 @@ impl ElementNodeData {
             attrs,
             is_focussable: false,
             style_attribute: Default::default(),
-            inline_layout: None,
-            image: None,
-            resized_image: RefCell::new(None),
+            node_specific_data: NodeSpecificData::None,
             template_contents: None,
             // listeners: FxHashSet::default(),
         };
@@ -337,6 +335,34 @@ impl ElementNodeData {
     pub fn attr_parsed<T: FromStr>(&self, name: impl PartialEq<LocalName>) -> Option<T> {
         let attr = self.attrs.iter().find(|attr| name == attr.name.local)?;
         attr.value.parse::<T>().ok()
+    }
+
+    pub fn image_data(&self) -> Option<&ImageData> {
+        match self.node_specific_data {
+            NodeSpecificData::Image(ref data) => Some(data),
+            _ => None,
+        }
+    }
+
+    pub fn image_data_mut(&mut self) -> Option<&mut ImageData> {
+        match self.node_specific_data {
+            NodeSpecificData::Image(ref mut data) => Some(data),
+            _ => None,
+        }
+    }
+
+    pub fn inline_layout_data(&self) -> Option<&TextLayout> {
+        match self.node_specific_data {
+            NodeSpecificData::InlineRoot(ref data) => Some(data),
+            _ => None,
+        }
+    }
+
+    pub fn inline_layout_data_mut(&mut self) -> Option<&mut TextLayout> {
+        match self.node_specific_data {
+            NodeSpecificData::InlineRoot(ref mut data) => Some(data),
+            _ => None,
+        }
     }
 
     pub fn flush_is_focussable(&mut self) {
@@ -386,6 +412,53 @@ impl ElementNodeData {
                 CssRuleType::Style,
             )))
         });
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct ImageData {
+    /// The raw image data
+    pub image: Arc<DynamicImage>,
+    /// The resized image data (for the most recent size it's been displayed at)
+    pub resized_image: RefCell<Option<Arc<peniko::Image>>>,
+}
+
+impl ImageData {
+    pub fn new(image: Arc<DynamicImage>) -> Self {
+        Self {
+            image,
+            resized_image: RefCell::new(None),
+        }
+    }
+}
+
+/// Heterogeneous data that depends on the element's type.
+#[derive(Debug, Clone)]
+pub enum NodeSpecificData {
+    /// The element's image content (\<img\> element's only)
+    Image(ImageData),
+    /// Parley text layout (elements with inline inner display mode only)
+    InlineRoot(Box<TextLayout>),
+    /// No data (for nodes that don't need any node-specific data)
+    None,
+}
+
+impl NodeSpecificData {
+    pub fn take_inline_layout(&mut self) -> Option<Box<TextLayout>> {
+        let taken = std::mem::take(self);
+        match taken {
+            Self::InlineRoot(data) => Some(data),
+            _ => {
+                *self = taken;
+                None
+            }
+        }
+    }
+}
+
+impl Default for NodeSpecificData {
+    fn default() -> Self {
+        Self::None
     }
 }
 

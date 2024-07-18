@@ -302,8 +302,7 @@ where
                     .raw_dom_data
                     .downcast_element()
                     .unwrap()
-                    .inline_layout
-                    .as_ref()
+                    .inline_layout_data()
                     .unwrap();
 
                 println!("Text content: {:?}", inline_layout.text);
@@ -660,8 +659,7 @@ where
                 .raw_dom_data
                 .downcast_element()
                 .unwrap()
-                .inline_layout
-                .as_ref()
+                .inline_layout_data()
                 .unwrap_or_else(|| {
                     panic!("Tried to render node marked as inline root that does not have an inline layout: {:?}", element);
                 });
@@ -751,7 +749,11 @@ where
             pos,
             element,
             transform,
-            image: element.element_data().unwrap().image.clone(),
+            image: element
+                .element_data()
+                .unwrap()
+                .image_data()
+                .map(|data| data.image.clone()),
             devtools: &self.devtools,
         }
     }
@@ -867,6 +869,8 @@ impl ElementCx<'_> {
             let mut resized_image = self
                 .element
                 .element_data()
+                .unwrap()
+                .image_data()
                 .unwrap()
                 .resized_image
                 .borrow_mut();
