@@ -710,7 +710,7 @@ where
             NodeData::Text(TextNodeData { .. }) => {
                 // Text nodes should never be rendered directly
                 // (they should always be rendered as part of an inline layout)
-                unreachable!()
+                // unreachable!()
             }
             NodeData::Document => {}
             // NodeData::Doctype => {}

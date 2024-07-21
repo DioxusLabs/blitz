@@ -111,8 +111,8 @@ impl LayoutPartialTree for Document {
                         usize::from(node_id)
                     );
                     dbg!(data);
-                    // taffy::LayoutOutput::HIDDEN
-                    unreachable!();
+                    taffy::LayoutOutput::HIDDEN
+                    // unreachable!();
 
                     // compute_leaf_layout(inputs, &node.style, |known_dimensions, available_space| {
                     //     let context = TextContext {
