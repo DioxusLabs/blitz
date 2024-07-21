@@ -17,7 +17,7 @@ use blitz_dom::{
 };
 use html5ever::local_name;
 use image::{imageops::FilterType, DynamicImage};
-use parley::layout::LayoutItem2;
+use parley::layout::PositionedLayoutItem;
 use style::{
     dom::TElement,
     values::{
@@ -317,14 +317,14 @@ where
                     for item in line.items() {
                         print!("  ");
                         match item {
-                            LayoutItem2::GlyphRun(run) => {
+                            PositionedLayoutItem::GlyphRun(run) => {
                                 print!(
                                     "RUN (x: {}, w: {}) ",
                                     run.offset().round(),
                                     run.run().advance()
                                 )
                             }
-                            LayoutItem2::InlineBox(ibox) => print!(
+                            PositionedLayoutItem::InlineBox(ibox) => print!(
                                 "BOX (id: {} x: {} y: {} w: {}, h: {})",
                                 ibox.id,
                                 ibox.x.round(),
@@ -680,7 +680,7 @@ where
             // Render inline boxes
             for line in text_layout.layout.lines() {
                 for item in line.items() {
-                    if let LayoutItem2::InlineBox(ibox) = item {
+                    if let PositionedLayoutItem::InlineBox(ibox) = item {
                         self.render_node(scene, ibox.id as usize, pos);
                     }
                 }
@@ -788,7 +788,7 @@ impl ElementCx<'_> {
 
         for line in text_layout.layout.lines() {
             for item in line.items() {
-                if let LayoutItem2::GlyphRun(glyph_run) = item {
+                if let PositionedLayoutItem::GlyphRun(glyph_run) = item {
                     let mut x = glyph_run.offset();
                     let y = glyph_run.baseline();
                     let run = glyph_run.run();

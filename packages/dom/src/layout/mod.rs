@@ -392,7 +392,7 @@ impl Document {
             // Store sizes and positions of inline boxes
             for line in inline_layout.layout.lines() {
                 for item in line.items() {
-                    if let parley::layout::LayoutItem2::InlineBox(ibox) = item {
+                    if let parley::layout::PositionedLayoutItem::InlineBox(ibox) = item {
                         let node = &mut self.nodes[ibox.id as usize];
                         let padding = node.style.padding.resolve_or_zero(child_inputs.parent_size);
                         let border = node.style.border.resolve_or_zero(child_inputs.parent_size);
