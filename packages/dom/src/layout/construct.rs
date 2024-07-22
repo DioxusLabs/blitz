@@ -11,7 +11,7 @@ use style::{
 };
 
 use crate::{
-    node::{NodeKind, NodeSpecificData, TextBrush, TextLayout},
+    node::{NodeKind, NodeSpecificData, TextBrush, TextInputData, TextLayout},
     stylo_to_parley, Document, ElementNodeData, Node, NodeData,
 };
 
@@ -21,6 +21,28 @@ pub(crate) fn collect_layout_children(
     layout_children: &mut Vec<usize>,
     anonymous_block_id: &mut Option<usize>,
 ) {
+    // Handle text inputs
+    let tag_name: Option<&str> = doc.nodes[container_node_id]
+        .raw_dom_data
+        .downcast_element()
+        .map(|el| el.name.local.as_ref());
+    if let Some(tag_name @ ("input" | "textarea")) = tag_name {
+        let type_attr: Option<&str> = doc.nodes[container_node_id]
+            .raw_dom_data
+            .downcast_element()
+            .and_then(|el| el.attr(local_name!("type")));
+        if tag_name == "textarea" {
+            create_text_editor(doc, container_node_id, true);
+        } else if matches!(
+            type_attr,
+            Some("text" | "password" | "email" | "number" | "search" | "tel" | "url")
+        ) {
+            create_text_editor(doc, container_node_id, false);
+        }
+
+        return;
+    }
+
     if doc.nodes[container_node_id].children.is_empty() {
         return;
     }
@@ -241,6 +263,27 @@ fn collect_complex_layout_children(
 
     // Put children array back
     doc.nodes[container_node_id].children = children;
+}
+
+fn create_text_editor(doc: &mut Document, input_element_id: usize, is_multiline: bool) {
+    let node = &mut doc.nodes[input_element_id];
+    let parley_style = node
+        .primary_styles()
+        .as_ref()
+        .map(|s| stylo_to_parley::style(s))
+        .unwrap_or_default();
+
+    let element = &mut node.raw_dom_data.downcast_element_mut().unwrap();
+    if !matches!(element.node_specific_data, NodeSpecificData::TextInput(_)) {
+        let initial_value = element.attr(local_name!("value")).unwrap_or("").to_string();
+
+        let mut text_input_data = TextInputData::new(initial_value, 16.0, is_multiline);
+        text_input_data
+            .editor
+            .set_text_size(parley_style.font_size * doc.scale);
+        text_input_data.editor.set_brush(parley_style.brush);
+        element.node_specific_data = NodeSpecificData::TextInput(text_input_data);
+    }
 }
 
 pub(crate) fn build_inline_layout(

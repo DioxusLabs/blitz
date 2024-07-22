@@ -58,9 +58,9 @@ ureq = "2.9"
 # [patch."https://github.com/dioxuslabs/taffy"]
 # taffy = { path = "../taffy" }
 
-# [patch."https://github.com/nicoburns/parley"]
-# parley = { path = "../parley/parley" }
-# fontique = { path = "../parley/fontique" }
+[patch."https://github.com/nicoburns/parley"]
+parley = { path = "../parley/parley" }
+fontique = { path = "../parley/fontique" }
 
 # # need to match the patching of
 # [patch."https://github.com/servo/webrender"]

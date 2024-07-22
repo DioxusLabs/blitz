@@ -100,7 +100,7 @@ pub(crate) fn style(style: &stylo::ComputedValues) -> parley::TextStyle<'static,
         .text_decoration_color
         .as_absolute()
         .map(ToPenikoColor::as_peniko)
-        .map(|color| TextBrush { color });
+        .map(|color| TextBrush::Normal(peniko::Brush::Solid(color)));
 
     parley::TextStyle {
         // font_stack: parley::FontStack::Single(FontFamily::Generic(GenericFamily::SystemUi)),
@@ -112,7 +112,7 @@ pub(crate) fn style(style: &stylo::ComputedValues) -> parley::TextStyle<'static,
         font_variations: parley::FontSettings::List(&[]),
         font_features: parley::FontSettings::List(&[]),
         locale: Default::default(),
-        brush: TextBrush { color },
+        brush: TextBrush::Normal(peniko::Brush::Solid(color)),
         has_underline: itext_styles.text_decorations_in_effect.underline,
         underline_offset: Default::default(),
         underline_size: Default::default(),

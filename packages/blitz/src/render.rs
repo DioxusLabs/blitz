@@ -9,10 +9,10 @@ use crate::{
     util::{GradientSlice, StyloGradient, ToVelloColor},
     viewport::Viewport,
 };
-use blitz_dom::node::TextBrush;
+use blitz_dom::node::{TextBrush, TextInputData};
 use blitz_dom::{
     events::{EventData, RendererEvent},
-    node::{NodeData, TextLayout, TextNodeData},
+    node::{NodeData, TextNodeData},
     DocumentLike, Node,
 };
 use html5ever::local_name;
@@ -653,6 +653,26 @@ where
         cx.stroke_devtools(scene);
         cx.draw_image(scene);
 
+        // Render the text in text inputs
+        if let Some(input_data) = cx.text_input {
+            let (_layout, pos) = self.node_position(node_id, location);
+            let text_layout = input_data.editor.layout();
+
+            // Apply padding/border offset to inline root
+            let taffy::Layout {
+                border, padding, ..
+            } = element.final_layout;
+            let scaled_pb = (padding + border).map(f64::from);
+            let pos = vello::kurbo::Point {
+                x: pos.x + scaled_pb.left,
+                y: pos.y + scaled_pb.top,
+            };
+
+            // Render text
+            cx.stroke_text(scene, text_layout, pos);
+            return;
+        }
+
         if element.is_inline_root {
             let (_layout, pos) = self.node_position(node_id, location);
             let text_layout = &element
@@ -675,7 +695,7 @@ where
             };
 
             // Render text
-            cx.stroke_text(scene, text_layout, pos);
+            cx.stroke_text(scene, &text_layout.layout, pos);
 
             // Render inline boxes
             for line in text_layout.layout.lines() {
@@ -754,6 +774,7 @@ where
                 .unwrap()
                 .image_data()
                 .map(|data| data.image.clone()),
+            text_input: element.element_data().unwrap().text_input_data(),
             devtools: &self.devtools,
         }
     }
@@ -779,14 +800,15 @@ struct ElementCx<'a> {
     element: &'a Node,
     transform: Affine,
     image: Option<Arc<DynamicImage>>,
+    text_input: Option<&'a TextInputData>,
     devtools: &'a Devtools,
 }
 
 impl ElementCx<'_> {
-    fn stroke_text(&self, scene: &mut Scene, text_layout: &TextLayout, pos: Point) {
+    fn stroke_text(&self, scene: &mut Scene, text_layout: &parley::Layout<TextBrush>, pos: Point) {
         let transform = Affine::translate((pos.x * self.scale, pos.y * self.scale));
 
-        for line in text_layout.layout.lines() {
+        for line in text_layout.lines() {
             for item in line.items() {
                 if let PositionedLayoutItem::GlyphRun(glyph_run) = item {
                     let mut x = glyph_run.offset();
@@ -808,7 +830,7 @@ impl ElementCx<'_> {
 
                     scene
                         .draw_glyphs(font)
-                        .brush(style.brush.color)
+                        .brush(style.brush.text_brush())
                         .transform(transform)
                         .glyph_transform(glyph_xform)
                         .font_size(font_size)
@@ -835,7 +857,7 @@ impl ElementCx<'_> {
                         scene.stroke(
                             &Stroke::new(size as f64),
                             transform,
-                            brush.color,
+                            brush.text_brush(),
                             None,
                             &line,
                         )

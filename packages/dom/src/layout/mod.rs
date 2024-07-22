@@ -100,7 +100,7 @@ impl LayoutPartialTree for Document {
         inputs: taffy::tree::LayoutInput,
     ) -> taffy::tree::LayoutOutput {
         compute_cached_layout(self, node_id, inputs, |tree, node_id, inputs| {
-            let node = tree.node_from_id_mut(node_id);
+            let node = &mut tree.nodes[node_id.into()];
 
             match &mut node.raw_dom_data {
                 NodeData::Text(data) => {
@@ -147,7 +147,10 @@ impl LayoutPartialTree for Document {
                         }
                     }
 
-                    if *element_data.name.local == *"img" {
+                    if matches!(
+                        element_data.node_specific_data,
+                        NodeSpecificData::Image(_) | NodeSpecificData::TextInput(_)
+                    ) {
                         // Get width and height attributes on image element
                         //
                         // TODO: smarter sizing using these (depending on object-fit, they shouldn't
@@ -162,20 +165,49 @@ impl LayoutPartialTree for Document {
                         };
 
                         // Get image's native size
-                        let inherent_size = match &element_data.image_data_mut() {
-                            Some(data) => taffy::Size {
-                                width: data.image.width() as f32,
-                                height: data.image.height() as f32,
-                            },
-                            None => taffy::Size {
-                                width: 0.0,
-                                height: 0.0,
-                            },
-                        };
+                        let image_context = match &mut element_data.node_specific_data {
+                            NodeSpecificData::Image(image_data) => {
+                                let width = image_data.image.width() as f32;
+                                let height = image_data.image.width() as f32;
+                                ImageContext {
+                                    inherent_size: taffy::Size { width, height },
+                                    attr_size,
+                                    inherent_aspect_ratio: Some(width / height),
+                                }
+                            }
+                            NodeSpecificData::TextInput(input_data) => {
+                                // Layout Text Input
+                                // FIXME: find better place for this to be called.
+                                input_data
+                                    .editor
+                                    .rebuild(&mut tree.font_ctx, &mut tree.layout_ctx);
 
-                        let image_context = ImageContext {
-                            inherent_size,
-                            attr_size,
+                                let inherent_size = if input_data.is_multiline {
+                                    taffy::Size {
+                                        width: 150.0,
+                                        height: 42.0,
+                                    }
+                                } else {
+                                    taffy::Size {
+                                        width: 150.0,
+                                        height: 16.0,
+                                    }
+                                };
+                                ImageContext {
+                                    inherent_size,
+                                    attr_size,
+                                    inherent_aspect_ratio: None,
+                                }
+                            }
+                            NodeSpecificData::None => ImageContext {
+                                inherent_size: taffy::Size {
+                                    width: 0.0,
+                                    height: 0.0,
+                                },
+                                attr_size,
+                                inherent_aspect_ratio: Some(1.0),
+                            },
+                            _ => unreachable!(),
                         };
 
                         let computed = compute_leaf_layout(

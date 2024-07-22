@@ -13,6 +13,7 @@ use style::values::computed::Display;
 use style::values::specified::box_::DisplayOutside;
 use style_traits::dom::ElementState;
 // use string_cache::Atom;
+use parley;
 use style::properties::ComputedValues;
 use style::stylesheets::UrlExtraData;
 use style::Atom;
@@ -351,6 +352,20 @@ impl ElementNodeData {
         }
     }
 
+    pub fn text_input_data(&self) -> Option<&TextInputData> {
+        match self.node_specific_data {
+            NodeSpecificData::TextInput(ref data) => Some(data),
+            _ => None,
+        }
+    }
+
+    pub fn text_input_data_mut(&mut self) -> Option<&mut TextInputData> {
+        match self.node_specific_data {
+            NodeSpecificData::TextInput(ref mut data) => Some(data),
+            _ => None,
+        }
+    }
+
     pub fn inline_layout_data(&self) -> Option<&TextLayout> {
         match self.node_specific_data {
             NodeSpecificData::InlineRoot(ref data) => Some(data),
@@ -432,15 +447,46 @@ impl ImageData {
     }
 }
 
+#[derive(Clone)]
+pub struct TextInputData {
+    /// A parley TextEditor instance
+    pub editor: Box<parley::editor::TextEditor<String>>,
+    /// Whether the input is a singleline or multiline input
+    pub is_multiline: bool,
+}
+
+impl TextInputData {
+    pub fn new(text: String, text_size: f32, is_multiline: bool) -> Self {
+        let editor = Box::new(parley::editor::TextEditor::new(text, text_size));
+        Self {
+            editor,
+            is_multiline,
+        }
+    }
+}
+
 /// Heterogeneous data that depends on the element's type.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub enum NodeSpecificData {
     /// The element's image content (\<img\> element's only)
     Image(ImageData),
     /// Parley text layout (elements with inline inner display mode only)
     InlineRoot(Box<TextLayout>),
+    /// Parley text editor (text inputs)
+    TextInput(TextInputData),
     /// No data (for nodes that don't need any node-specific data)
     None,
+}
+
+impl std::fmt::Debug for NodeSpecificData {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            NodeSpecificData::Image(_) => f.write_str("NodeSpecificData::Image"),
+            NodeSpecificData::InlineRoot(_) => f.write_str("NodeSpecificData::InlineRoot"),
+            NodeSpecificData::TextInput(_) => f.write_str("NodeSpecificData::TextInput"),
+            NodeSpecificData::None => f.write_str("NodeSpecificData::None"),
+        }
+    }
 }
 
 impl NodeSpecificData {
@@ -462,10 +508,7 @@ impl Default for NodeSpecificData {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Default)]
-pub struct TextBrush {
-    pub color: peniko::Color,
-}
+pub type TextBrush = parley::editor::TextBrush;
 
 #[derive(Clone)]
 pub struct TextLayout {
