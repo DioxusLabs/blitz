@@ -12,6 +12,7 @@ fn main() {
 
 fn app() -> Element {
     let mut count = use_signal(|| 0);
+    let blue = use_memo(move || if count() % 2 == 1 { "text-blue" } else { "" });
 
     rsx! {
         div {
@@ -20,7 +21,12 @@ fn app() -> Element {
             linear-gradient(127deg, rgba(0,255,0,.8), rgba(0,255,0,0) 70.71%),
             linear-gradient(336deg, rgba(0,0,255,.8), rgba(0,0,255,0) 70.71%)"#,
             style { {CSS} }
-            h1 { class: "header", "Count: {count}" }
+            h1 { class: "header {blue}", "Count: {count}" }
+            span {
+                span { "Count: " }
+                span { "{count}" }
+                span { " clicks" }
+            }
             div { class: "buttons",
                 button {
                     class: "counter-button btn-green",
@@ -68,6 +74,10 @@ h4 {
     padding: 20px;
     line-height: 1;
     font-family: sans-serif;
+}
+
+.text-blue {
+    color: blue;
 }
 
 .container {

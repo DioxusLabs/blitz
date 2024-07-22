@@ -386,6 +386,9 @@ impl WriteMutations for MutationWriter<'_> {
         id: ElementId,
     ) {
         let node_id = self.state.element_to_node_id(id);
+        if name == "style" || name == "class" || name == "id" {
+            self.doc.reset_styles(node_id);
+        }
         let node = self.doc.get_node_mut(node_id).unwrap();
         if let NodeData::Element(ref mut element) = node.raw_dom_data {
             // FIXME: support non-text attributes
@@ -437,12 +440,12 @@ impl WriteMutations for MutationWriter<'_> {
         let contents = text.content.clone();
 
         if let Some(parent) = node.parent {
+            if changed {
+                self.doc.invalidate_inline_layout(parent);
+            }
             // if the text is the child of a style element, we want to put the style into the stylesheet cache
             let parent = self.doc.get_node_mut(parent).unwrap();
             if let NodeData::Element(ref mut element) = parent.raw_dom_data {
-                if changed {
-                    element.inline_layout = None;
-                }
                 // Only set stylsheets if the text content has *changed* - we need to unload
                 if changed && element.name.local.as_ref() == "style" {
                     self.doc.add_stylesheet(value);

@@ -10,6 +10,7 @@ use style::invalidation::element::restyle_hints::RestyleHint;
 use style::selector_parser::ServoElementSnapshot;
 use style::servo::media_queries::FontMetricsProvider;
 use style::servo_arc::Arc as ServoArc;
+use style::values::specified::box_::DisplayOutside;
 use style::{
     dom::{TDocument, TNode},
     media_queries::{Device, MediaList},
@@ -444,6 +445,12 @@ impl Document {
         let hover_node_id = self.hit(x, y);
 
         if hover_node_id != self.hover_node_id {
+            if let Some(new_hover_id) = hover_node_id {
+                self.reset_styles(new_hover_id);
+            }
+            if let Some(old_hover_id) = self.hover_node_id {
+                self.reset_styles(old_hover_id);
+            }
             let mut maybe_id = self.hover_node_id;
             while let Some(id) = maybe_id {
                 self.nodes[id].is_hovered = false;
@@ -496,6 +503,36 @@ impl Document {
     }
     pub fn stylist_device(&mut self) -> &Device {
         self.stylist.device()
+    }
+
+    pub fn invalidate_inline_layout(&mut self, node_id: usize) {
+        let node = self.get_node_mut(node_id).unwrap();
+        let style = node.display_style();
+        let NodeData::Element(ref mut element) = node.raw_dom_data else {
+            return;
+        };
+        element.inline_layout = None;
+        // TODO: When let-chains lend in stable, rewrite to be nicer
+        let Some(style) = style else {
+            return;
+        };
+        let Some(parent) = node.parent else {
+            return;
+        };
+        if style.outside() == DisplayOutside::Inline {
+            self.invalidate_inline_layout(parent);
+        }
+    }
+
+    // TODO: When class, style, or hover changes, we need to clean up all the unchanged stuff in cache.
+    // For now, we clean up only inline layout as we don't cache other style related stuff.
+    pub fn reset_styles(&mut self, element_id: usize) {
+        self.invalidate_inline_layout(element_id);
+        let node = self.get_node(element_id).unwrap();
+        // I hate this clone
+        for child_id in node.children.clone().iter().copied() {
+            self.reset_styles(child_id);
+        }
     }
 
     /// Ensure that the layout_children field is populated for all nodes
