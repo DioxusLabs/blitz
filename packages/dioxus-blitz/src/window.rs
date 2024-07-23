@@ -208,42 +208,43 @@ impl<'a, Doc: DocumentLike> View<'a, Doc> {
 
     pub fn handle_winit_event(&mut self, event: WindowEvent) {
         match event {
-
+            // Window lifecycle events
+            WindowEvent::Destroyed => {}
+            WindowEvent::ActivationTokenDone { .. } => {},
+            WindowEvent::CloseRequested => {
+                // Currently handled at the level above in lib.rs
+            }
             WindowEvent::RedrawRequested => {
                 self.redraw();
             }
 
-            WindowEvent::MouseInput {
-                // device_id,
-                state,
-                button,
-                // modifiers,
-                ..
-            } => {
-                if state == ElementState::Pressed && matches!(button, MouseButton::Left | MouseButton::Right) {
-                    self.click(match button {
-                        MouseButton::Left => "left",
-                        MouseButton::Right => "right",
-                        _ => unreachable!(),
-
-                    });
-
-                    self.request_redraw();
-                }
-            }
-
+            // Window size/position events
+            WindowEvent::Moved(_) => {}
+            WindowEvent::Occluded(_) => {},
             WindowEvent::Resized(physical_size) => {
                 self.viewport.window_size = (physical_size.width, physical_size.height);
                 self.kick_viewport();
                 self.request_redraw();
             }
+            WindowEvent::ScaleFactorChanged {
+                // scale_factor,
+                // new_inner_size,
+                ..
+            } => {}
 
-            // Store new keyboard modifier (ctrl, shift, etc) state for later use
-            WindowEvent::ModifiersChanged(new_state) => {
-                self.keyboard_modifiers = new_state.state();
+            // Theme events
+            WindowEvent::ThemeChanged(_) => {
+                // TODO: dark mode / light mode support
             }
 
-            // todo: if there's an active text input, we want to direct input towards it and translate system emi text
+            // Text / keyboard events
+            WindowEvent::Ime(_) => {
+                // TODO: handle IME events
+            },
+            WindowEvent::ModifiersChanged(new_state) => {
+                // Store new keyboard modifier (ctrl, shift, etc) state for later use
+                self.keyboard_modifiers = new_state.state();
+            }
             WindowEvent::KeyboardInput { event, .. } => {
                 match event.physical_key {
                     PhysicalKey::Code(key_code) => {
@@ -307,19 +308,12 @@ impl<'a, Doc: DocumentLike> View<'a, Doc> {
                     PhysicalKey::Unidentified(_) => {}
                 }
             }
-            WindowEvent::Moved(_) => {}
-            WindowEvent::CloseRequested => {}
-            WindowEvent::Destroyed => {}
-            WindowEvent::DroppedFile(_) => {}
-            WindowEvent::HoveredFile(_) => {}
-            WindowEvent::HoveredFileCancelled => {}
-            WindowEvent::Focused(_) => {}
-            WindowEvent::CursorMoved {
-                // device_id,
-                position,
-                // modifiers,
-                ..
-            } => {
+
+
+            // Mouse/pointer events
+            WindowEvent::CursorEntered { /*device_id*/.. } => {}
+            WindowEvent::CursorLeft { /*device_id*/.. } => {}
+            WindowEvent::CursorMoved { position, .. } => {
                 let changed = if self.renderer.is_active() {
                     let winit::dpi::LogicalPosition::<f32> { x, y } = position.to_logical(self.window.scale_factor());
                     self.mouse_move(x, y)
@@ -337,15 +331,19 @@ impl<'a, Doc: DocumentLike> View<'a, Doc> {
                     }
                 }
             }
-            WindowEvent::CursorEntered { /*device_id*/.. } => {}
-            WindowEvent::CursorLeft { /*device_id*/.. } => {}
-            WindowEvent::MouseWheel {
-                // device_id,
-                delta,
-                // phase,
-                // modifiers,
-                ..
-            } => {
+            WindowEvent::MouseInput { button, state, .. } => {
+                if state == ElementState::Pressed && matches!(button, MouseButton::Left | MouseButton::Right) {
+                    self.click(match button {
+                        MouseButton::Left => "left",
+                        MouseButton::Right => "right",
+                        _ => unreachable!(),
+
+                    });
+
+                    self.request_redraw();
+                }
+            }
+            WindowEvent::MouseWheel { delta, .. } => {
                 match delta {
                     winit::event::MouseScrollDelta::LineDelta(_, y) => {
                         self.dom.as_mut().scroll_by(y as f64 * 20.0)
@@ -357,26 +355,20 @@ impl<'a, Doc: DocumentLike> View<'a, Doc> {
                 self.request_redraw();
             }
 
-            WindowEvent::TouchpadPressure {
-                // device_id,
-                // pressure,
-                // stage,
-                ..
-            } => {}
-            WindowEvent::AxisMotion {
-                // device_id,
-                // axis,
-                // value,
-                ..
-            } => {}
+            // File events
+            WindowEvent::DroppedFile(_) => {}
+            WindowEvent::HoveredFile(_) => {}
+            WindowEvent::HoveredFileCancelled => {}
+            WindowEvent::Focused(_) => {}
+
+            // Touch and motion events
             WindowEvent::Touch(_) => {}
-            WindowEvent::ScaleFactorChanged {
-                // scale_factor,
-                // new_inner_size,
-                ..
-            } => {}
-            WindowEvent::ThemeChanged(_) => {}
-            _ => {}
+            WindowEvent::TouchpadPressure { .. } => {}
+            WindowEvent::AxisMotion { .. } => {}
+            WindowEvent::PinchGesture { .. } => {},
+            WindowEvent::PanGesture { .. } => {},
+            WindowEvent::DoubleTapGesture { .. } => {},
+            WindowEvent::RotationGesture { .. } => {},
         }
     }
 
