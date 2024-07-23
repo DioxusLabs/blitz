@@ -1,6 +1,6 @@
 use crate::accessibility::AccessibilityState;
 use crate::stylo_to_winit;
-use crate::waker::{BlitzEvent, BlitzWindowEvent};
+use crate::waker::{create_waker, BlitzEvent, BlitzWindowEvent};
 use blitz::{Devtools, Renderer};
 use blitz_dom::events::{EventData, RendererEvent};
 use blitz_dom::{DocumentLike, Viewport};
@@ -101,24 +101,24 @@ impl<'a, Doc: DocumentLike> View<'a, Doc> {
 
 impl<'a, Doc: DocumentLike> View<'a, Doc> {
     pub fn resume(&mut self, rt: &tokio::runtime::Runtime) {
+        // Resolve dom
         let device = self.viewport.make_device();
         self.dom.as_mut().set_stylist_device(device);
         self.dom.as_mut().set_scale(self.viewport.scale());
+        self.dom.as_mut().resolve();
 
+        // Resume renderer
         rt.block_on(self.renderer.resume(&self.viewport));
-
         if !self.renderer.is_active() {
             panic!("Renderer failed to resume");
         };
 
-        self.dom.as_mut().resolve();
-
-        self.waker = Some(crate::waker::tao_waker(
-            &self.event_loop_proxy,
-            self.window_id(),
-        ));
+        // Render
         self.renderer
             .render(self.dom.as_ref(), self.viewport.scale_f64(), self.devtools);
+
+        // Set waker
+        self.waker = Some(create_waker(&self.event_loop_proxy, self.window_id()));
     }
 
     pub fn suspend(&mut self) {

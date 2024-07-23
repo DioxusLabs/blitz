@@ -50,7 +50,7 @@ pub enum BlitzWindowEvent {
 /// This lets the VirtualDom "come up for air" and process events while the main thread is blocked by the WebView.
 ///
 /// All other IO lives in the Tokio runtime,
-pub fn tao_waker(proxy: &EventLoopProxy<BlitzEvent>, id: WindowId) -> std::task::Waker {
+pub fn create_waker(proxy: &EventLoopProxy<BlitzEvent>, id: WindowId) -> std::task::Waker {
     struct DomHandle {
         proxy: EventLoopProxy<BlitzEvent>,
         id: WindowId,
