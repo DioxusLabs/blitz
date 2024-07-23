@@ -203,10 +203,6 @@ impl<'a, Doc: DocumentLike> View<'a, Doc> {
             return;
         };
 
-        if !self.renderer.is_active() {
-            return;
-        };
-
         if self.devtools.highlight_hover {
             let mut node = self.dom.as_ref().get_node(node_id).unwrap();
             if button == "right" {
@@ -359,20 +355,14 @@ impl<'a, Doc: DocumentLike> View<'a, Doc> {
             WindowEvent::CursorEntered { /*device_id*/.. } => {}
             WindowEvent::CursorLeft { /*device_id*/.. } => {}
             WindowEvent::CursorMoved { position, .. } => {
-                let changed = if self.renderer.is_active() {
-                    let winit::dpi::LogicalPosition::<f32> { x, y } = position.to_logical(self.window.scale_factor());
-                    self.mouse_move(x, y)
-                } else {
-                    false
-                };
+                let winit::dpi::LogicalPosition::<f32> { x, y } = position.to_logical(self.window.scale_factor());
+                let changed = self.mouse_move(x, y);
 
                 if changed {
                     let cursor = self.dom.as_ref().get_cursor();
                     if let Some(cursor) = cursor {
-                        if self.renderer.is_active() {
                             self.window.set_cursor(stylo_to_winit::cursor(cursor));
                             self.request_redraw();
-                        }
                     }
                 }
             }
