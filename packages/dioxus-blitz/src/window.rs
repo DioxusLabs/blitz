@@ -127,26 +127,24 @@ impl<'a, Doc: DocumentLike> View<'a, Doc> {
     }
 
     pub(crate) fn poll(&mut self) -> bool {
-        match &self.waker {
-            None => false,
-            Some(waker) => {
-                let cx = std::task::Context::from_waker(waker);
-                if self.dom.poll(cx) {
-                    #[cfg(feature = "accessibility")]
-                    {
-                        // TODO send fine grained accessibility tree updates.
-                        let changed = std::mem::take(&mut self.dom.as_mut().changed);
-                        if !changed.is_empty() {
-                            self.accessibility.build_tree(self.dom.as_ref());
-                        }
+        if let Some(waker) = &self.waker {
+            let cx = std::task::Context::from_waker(waker);
+            if self.dom.poll(cx) {
+                #[cfg(feature = "accessibility")]
+                {
+                    // TODO send fine grained accessibility tree updates.
+                    let changed = std::mem::take(&mut self.dom.as_mut().changed);
+                    if !changed.is_empty() {
+                        self.accessibility.build_tree(self.dom.as_ref());
                     }
-
-                    true
-                } else {
-                    false
                 }
+
+                self.request_redraw();
+                return true;
             }
         }
+
+        false
     }
 
     pub fn request_redraw(&self) {
@@ -230,6 +228,28 @@ impl<'a, Doc: DocumentLike> View<'a, Doc> {
                         y: self.mouse_pos.1 as f64,
                     },
                 });
+            }
+        }
+    }
+
+    pub fn handle_blitz_event(&mut self, event: BlitzWindowEvent) {
+        match event {
+            BlitzWindowEvent::Poll => {
+                self.poll();
+            }
+            #[cfg(feature = "accessibility")]
+            BlitzWindowEvent::Accessibility(accessibility_event) => {
+                match &*accessibility_event {
+                    accesskit_winit::WindowEvent::InitialTreeRequested => {
+                        self.accessibility.build_tree(self.dom.as_ref());
+                    }
+                    accesskit_winit::WindowEvent::AccessibilityDeactivated => {
+                        // TODO
+                    }
+                    accesskit_winit::WindowEvent::ActionRequested(_req) => {
+                        // TODO
+                    }
+                }
             }
         }
     }
@@ -393,30 +413,6 @@ impl<'a, Doc: DocumentLike> View<'a, Doc> {
             WindowEvent::PanGesture { .. } => {},
             WindowEvent::DoubleTapGesture { .. } => {},
             WindowEvent::RotationGesture { .. } => {},
-        }
-    }
-
-    pub fn handle_blitz_event(&mut self, event: BlitzWindowEvent) {
-        match event {
-            BlitzWindowEvent::Poll => {
-                if self.poll() {
-                    self.request_redraw();
-                }
-            }
-            #[cfg(feature = "accessibility")]
-            BlitzWindowEvent::Accessibility(accessibility_event) => {
-                match &*accessibility_event {
-                    accesskit_winit::WindowEvent::InitialTreeRequested => {
-                        self.accessibility.build_tree(self.dom.as_ref());
-                    }
-                    accesskit_winit::WindowEvent::AccessibilityDeactivated => {
-                        // TODO
-                    }
-                    accesskit_winit::WindowEvent::ActionRequested(_req) => {
-                        // TODO
-                    }
-                }
-            }
         }
     }
 }
