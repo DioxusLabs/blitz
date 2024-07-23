@@ -10,7 +10,6 @@ mod accessibility;
 use crate::waker::{EventData, UserEvent};
 use crate::{documents::HtmlDocument, window::View};
 
-use blitz::RenderState;
 use blitz_dom::DocumentLike;
 use dioxus::prelude::*;
 use documents::DioxusDocument;
@@ -22,6 +21,8 @@ use winit::{
     event::{Event, WindowEvent},
     event_loop::ControlFlow,
 };
+
+pub use window::WindowConfig;
 
 pub mod exports {
     pub use dioxus;
@@ -52,7 +53,7 @@ pub fn launch_cfg_with_props<P: Clone + 'static, M: 'static>(
     // We're going to need to hit it with a special waker
     let vdom = VirtualDom::new_with_props(root, props);
     let document = DioxusDocument::new(vdom);
-    let window = View::new(document);
+    let window = WindowConfig::new(document, 800.0, 600.0);
 
     launch_with_window(window)
 }
@@ -87,11 +88,11 @@ pub fn launch_static_html(html: &str) {
 
 pub fn launch_static_html_cfg(html: &str, cfg: Config) {
     let document = HtmlDocument::from_html(html, &cfg);
-    let window = View::new(document);
+    let window = WindowConfig::new(document, 800.0, 600.0);
     launch_with_window(window)
 }
 
-fn launch_with_window<Doc: DocumentLike + 'static>(window: View<'static, Doc>) {
+fn launch_with_window<Doc: DocumentLike + 'static>(window: WindowConfig<Doc>) {
     // Turn on the runtime and enter it
     let rt = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
@@ -152,16 +153,17 @@ fn launch_with_window<Doc: DocumentLike + 'static>(window: View<'static, Doc>) {
             let mut on_resume = || {
                 // Resume existing windows
                 for (_, view) in windows.iter_mut() {
-                    view.resume(event_loop, &proxy, &rt);
+                    view.resume(&rt);
                 }
 
                 // Initialise pending windows
-                for mut window in pending_windows.drain(..) {
-                    window.resume(event_loop, &proxy, &rt);
-                    let RenderState::Active(state) = &window.renderer.render_state else {
+                for window_config in pending_windows.drain(..) {
+                    let mut view = View::init(window_config, event_loop, &proxy);
+                    view.resume(&rt);
+                    if !view.renderer.is_active() {
                         continue;
-                    };
-                    windows.insert(state.window.id(), window);
+                    }
+                    windows.insert(view.window_id(), view);
                 }
             };
 
@@ -186,9 +188,8 @@ fn launch_with_window<Doc: DocumentLike + 'static>(window: View<'static, Doc>) {
                     window_id,
                     event: winit::event::WindowEvent::RedrawRequested,
                 } => {
-                    if let Some(window) = windows.get_mut(&window_id) {
-                        window.renderer.dom.as_mut().resolve();
-                        window.renderer.render();
+                    if let Some(view) = windows.get_mut(&window_id) {
+                        view.redraw();
                     };
                 }
 
@@ -218,11 +219,8 @@ fn launch_with_window<Doc: DocumentLike + 'static>(window: View<'static, Doc>) {
                     UserEvent::HotReloadEvent(msg) => match msg {
                         dioxus_hot_reload::HotReloadMsg::UpdateTemplate(template) => {
                             for window in windows.values_mut() {
-                                if let Some(dx_doc) = window
-                                    .renderer
-                                    .dom
-                                    .as_any_mut()
-                                    .downcast_mut::<DioxusDocument>()
+                                if let Some(dx_doc) =
+                                    window.dom.as_any_mut().downcast_mut::<DioxusDocument>()
                                 {
                                     dx_doc.vdom.replace_template(template);
 
@@ -276,7 +274,7 @@ fn launch_with_window<Doc: DocumentLike + 'static>(window: View<'static, Doc>) {
             if let Ok(event) = menu_channel.try_recv() {
                 if event.id == muda::MenuId::new("dev.show_layout") {
                     for (_, view) in windows.iter_mut() {
-                        view.renderer.devtools.show_layout = !view.renderer.devtools.show_layout;
+                        view.devtools.show_layout = !view.devtools.show_layout;
                         view.request_redraw();
                     }
                 }

@@ -9,6 +9,7 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use style::selector_parser::ServoElementSnapshot;
 use style::servo::media_queries::FontMetricsProvider;
 use style::servo_arc::Arc as ServoArc;
+use style::values::computed::ui::CursorKind;
 use style::{
     dom::{TDocument, TNode},
     media_queries::{Device, MediaList},
@@ -564,14 +565,18 @@ impl Document {
 
     /// Update the device and reset the stylist to process the new size
     pub fn set_stylist_device(&mut self, device: Device) {
-        let guard = &self.guard;
-        let guards = StylesheetGuards {
-            author: &guard.read(),
-            ua_or_user: &guard.read(),
+        let origins = {
+            let guard = &self.guard;
+            let guards = StylesheetGuards {
+                author: &guard.read(),
+                ua_or_user: &guard.read(),
+            };
+            self.stylist.set_device(device, &guards)
         };
-        let origins = self.stylist.set_device(device, &guards);
         self.stylist.force_stylesheet_origins_dirty(origins);
+        self.clamp_scroll();
     }
+
     pub fn stylist_device(&mut self) -> &Device {
         self.stylist.device()
     }
@@ -621,6 +626,58 @@ impl Document {
     pub fn set_document(&mut self, _content: String) {}
 
     pub fn add_element(&mut self) {}
+
+    pub fn print_taffy_tree(&self) {
+        taffy::print_tree(self, taffy::NodeId::from(0usize));
+    }
+
+    pub fn get_cursor(&self) -> Option<CursorKind> {
+        // todo: cache this on the node itself
+        let node = &self.nodes[self.get_hover_node_id()?];
+
+        let style = node.primary_styles()?;
+        let keyword = style.clone_cursor().keyword;
+        let cursor = match keyword {
+            CursorKind::Auto => {
+                // if the target is text, it's text cursor
+                // todo: our "hit" function doesn't return text, only elements
+                // this will need to be more comprehensive in the future to handle line breaks, shaping, etc.
+                if node.is_text_node() {
+                    CursorKind::Text
+                } else {
+                    CursorKind::Auto
+                }
+            }
+            cusor => cusor,
+        };
+
+        Some(cursor)
+    }
+
+    pub fn scroll_by(&mut self, px: f64) {
+        // Invert scrolling on macos
+        #[cfg(target_os = "macos")]
+        {
+            self.scroll_offset += px;
+        }
+        #[cfg(not(target_os = "macos"))]
+        {
+            self.scroll_offset -= px;
+        }
+
+        self.clamp_scroll();
+    }
+
+    /// Clamp scroll offset
+    fn clamp_scroll(&mut self) {
+        let content_height = self.root_element().final_layout.size.height as f64;
+        let viewport_height = self.stylist_device().au_viewport_size().height.to_f64_px();
+
+        self.scroll_offset = self
+            .scroll_offset
+            .max(-(content_height - viewport_height))
+            .min(0.0);
+    }
 
     pub fn visit<F>(&self, mut visit: F)
     where

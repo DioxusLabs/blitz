@@ -1,4 +1,4 @@
-use blitz_dom::document::DummyFontMetricsProvider;
+use crate::document::DummyFontMetricsProvider;
 use style::media_queries::{Device, MediaType};
 
 #[derive(Default, Debug)]

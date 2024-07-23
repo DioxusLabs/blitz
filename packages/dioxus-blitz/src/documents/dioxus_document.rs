@@ -2,10 +2,9 @@
 
 use std::rc::Rc;
 
-use blitz::Viewport;
 use blitz_dom::{
     namespace_url, node::Attribute, ns, Atom, Document, DocumentLike, ElementNodeData, NodeData,
-    QualName, TextNodeData,
+    QualName, TextNodeData, Viewport,
 };
 
 use dioxus::{

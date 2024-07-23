@@ -1,6 +1,8 @@
+use crate::accessibility::AccessibilityState;
 use crate::waker::UserEvent;
-use blitz::{RenderState, Renderer, Viewport};
-use blitz_dom::DocumentLike;
+use blitz::{Devtools, Renderer};
+use blitz_dom::events::{EventData, RendererEvent};
+use blitz_dom::{DocumentLike, Viewport};
 use winit::keyboard::PhysicalKey;
 
 #[allow(unused)]
@@ -11,37 +13,87 @@ use std::task::Waker;
 use winit::dpi::LogicalSize;
 use winit::event::{ElementState, MouseButton};
 use winit::event_loop::{ActiveEventLoop, EventLoopProxy};
+use winit::window::{WindowAttributes, WindowId};
 use winit::{event::WindowEvent, keyboard::KeyCode, keyboard::ModifiersState, window::Window};
 
-struct State {
+pub struct WindowConfig<Doc: DocumentLike> {
+    doc: Doc,
+    attributes: WindowAttributes,
+}
+
+impl<Doc: DocumentLike> WindowConfig<Doc> {
+    pub fn new(doc: Doc, width: f32, height: f32) -> Self {
+        WindowConfig {
+            doc,
+            attributes: Window::default_attributes().with_inner_size(LogicalSize { width, height }),
+        }
+    }
+
+    pub fn with_attributes(doc: Doc, attributes: WindowAttributes) -> Self {
+        WindowConfig { doc, attributes }
+    }
+}
+
+pub(crate) struct View<'s, Doc: DocumentLike> {
+    pub(crate) renderer: Renderer<'s, Window>,
+    pub(crate) dom: Doc,
+    pub(crate) waker: Option<Waker>,
+
+    event_loop_proxy: EventLoopProxy<UserEvent>,
+    window: Arc<Window>,
+
+    /// The actual viewport of the page that we're getting a glimpse of.
+    /// We need this since the part of the page that's being viewed might not be the page in its entirety.
+    /// This will let us opt of rendering some stuff
+    viewport: Viewport,
+
+    /// The state of the keyboard modifiers (ctrl, shift, etc). Winit/Tao don't track these for us so we
+    /// need to store them in order to have access to them when processing keypress events
+    keyboard_modifiers: ModifiersState,
+    pub devtools: Devtools,
+    mouse_pos: (f32, f32),
+
     #[cfg(feature = "accessibility")]
     /// Accessibility adapter for `accesskit`.
-    accessibility: crate::accessibility::AccessibilityState,
+    accessibility: AccessibilityState,
 
     /// Main menu bar of this view's window.
     #[cfg(feature = "menu")]
     _menu: muda::Menu,
 }
 
-pub(crate) struct View<'s, Doc: DocumentLike> {
-    pub(crate) renderer: Renderer<'s, Window, Doc>,
-    pub(crate) waker: Option<Waker>,
-    /// The state of the keyboard modifiers (ctrl, shift, etc). Winit/Tao don't track these for us so we
-    /// need to store them in order to have access to them when processing keypress events
-    keyboard_modifiers: ModifiersState,
-
-    #[cfg(any(feature = "accessibility", feature = "menu"))]
-    state: Option<State>,
-}
-
 impl<'a, Doc: DocumentLike> View<'a, Doc> {
-    pub(crate) fn new(doc: Doc) -> Self {
+    pub(crate) fn init(
+        config: WindowConfig<Doc>,
+        event_loop: &ActiveEventLoop,
+        proxy: &EventLoopProxy<UserEvent>,
+    ) -> Self {
+        let winit_window = Arc::from(event_loop.create_window(config.attributes).unwrap());
+
+        let size = winit_window.inner_size();
+        let mut viewport = Viewport::new((size.width, size.height));
+        viewport.set_hidpi_scale(winit_window.scale_factor() as f32);
+
         Self {
-            renderer: Renderer::new(doc),
+            renderer: Renderer::new(winit_window.clone()),
             waker: None,
             keyboard_modifiers: Default::default(),
-            #[cfg(any(feature = "accessibility", feature = "menu"))]
-            state: None,
+
+            event_loop_proxy: proxy.clone(),
+            window: winit_window.clone(),
+            dom: config.doc,
+            viewport,
+            devtools: Default::default(),
+            mouse_pos: Default::default(),
+
+            #[cfg(feature = "accessibility")]
+            accessibility: AccessibilityState::new(&winit_window, proxy.clone()),
+
+            #[cfg(feature = "menu")]
+            _menu: init_menu(
+                #[cfg(target_os = "windows")]
+                &winit_window,
+            ),
         }
     }
 }
@@ -52,15 +104,13 @@ impl<'a, Doc: DocumentLike> View<'a, Doc> {
             None => false,
             Some(waker) => {
                 let cx = std::task::Context::from_waker(waker);
-                if self.renderer.poll(cx) {
+                if self.dom.poll(cx) {
                     #[cfg(feature = "accessibility")]
                     {
-                        if let Some(ref mut state) = self.state {
-                            // TODO send fine grained accessibility tree updates.
-                            let changed = std::mem::take(&mut self.renderer.dom.as_mut().changed);
-                            if !changed.is_empty() {
-                                state.accessibility.build_tree(self.renderer.dom.as_ref());
-                            }
+                        // TODO send fine grained accessibility tree updates.
+                        let changed = std::mem::take(&mut self.dom.as_mut().changed);
+                        if !changed.is_empty() {
+                            self.accessibility.build_tree(self.dom.as_ref());
                         }
                     }
 
@@ -73,11 +123,86 @@ impl<'a, Doc: DocumentLike> View<'a, Doc> {
     }
 
     pub fn request_redraw(&self) {
-        let RenderState::Active(state) = &self.renderer.render_state else {
+        if self.renderer.is_active() {
+            self.window.request_redraw();
+        }
+    }
+
+    pub fn redraw(&mut self) {
+        self.dom.as_mut().resolve();
+        self.renderer
+            .render(self.dom.as_ref(), self.viewport.scale_f64(), self.devtools);
+    }
+
+    pub fn window_id(&self) -> WindowId {
+        self.window.id()
+    }
+
+    pub fn kick_viewport(&mut self) {
+        self.kick_dom_viewport();
+        self.kick_renderer_viewport();
+    }
+
+    pub fn kick_dom_viewport(&mut self) {
+        let (width, height) = self.viewport.window_size;
+        if width > 0 && height > 0 {
+            self.dom.as_mut().set_scale(self.viewport.scale());
+            self.dom
+                .as_mut()
+                .set_stylist_device(self.viewport.make_device());
+        }
+    }
+
+    pub fn kick_renderer_viewport(&mut self) {
+        let (width, height) = self.viewport.window_size;
+        if width > 0 && height > 0 {
+            self.renderer.set_size(width, height);
+        }
+    }
+
+    pub fn mouse_move(&mut self, x: f32, y: f32) -> bool {
+        let x = x / self.viewport.zoom();
+        let y = (y - self.dom.as_ref().scroll_offset as f32) / self.viewport.zoom();
+
+        // println!("Mouse move: ({}, {})", x, y);
+        // println!("Unscaled: ({}, {})",);
+
+        self.dom.as_mut().set_hover_to(x, y)
+    }
+
+    pub fn click(&mut self, button: &str) {
+        let Some(node_id) = self.dom.as_ref().get_hover_node_id() else {
             return;
         };
 
-        state.window.request_redraw();
+        if !self.renderer.is_active() {
+            return;
+        };
+
+        if self.devtools.highlight_hover {
+            let mut node = self.dom.as_ref().get_node(node_id).unwrap();
+            if button == "right" {
+                if let Some(parent_id) = node.parent {
+                    node = self.dom.as_ref().get_node(parent_id).unwrap();
+                }
+            }
+            self.dom.as_ref().debug_log_node(node.id);
+            self.devtools.highlight_hover = false;
+        } else {
+            // Not debug mode. Handle click as usual
+            if button == "left" {
+                // If we hit a node, then we collect the node to its parents, check for listeners, and then
+                // call those listeners
+                self.dom.handle_event(RendererEvent {
+                    name: "click".to_string(),
+                    target: node_id,
+                    data: EventData::Click {
+                        x: self.mouse_pos.0 as f64,
+                        y: self.mouse_pos.1 as f64,
+                    },
+                });
+            }
+        }
     }
 
     pub fn handle_window_event(&mut self, event: WindowEvent) {
@@ -90,7 +215,7 @@ impl<'a, Doc: DocumentLike> View<'a, Doc> {
                 ..
             } => {
                 if state == ElementState::Pressed && matches!(button, MouseButton::Left | MouseButton::Right) {
-                    self.renderer.click(match button {
+                    self.click(match button {
                         MouseButton::Left => "left",
                         MouseButton::Right => "right",
                         _ => unreachable!(),
@@ -102,8 +227,8 @@ impl<'a, Doc: DocumentLike> View<'a, Doc> {
             }
 
             WindowEvent::Resized(physical_size) => {
-                self.renderer
-                    .set_size((physical_size.width, physical_size.height));
+                self.viewport.window_size = (physical_size.width, physical_size.height);
+                self.kick_viewport();
                 self.request_redraw();
             }
 
@@ -118,14 +243,15 @@ impl<'a, Doc: DocumentLike> View<'a, Doc> {
                     PhysicalKey::Code(key_code) => {
                         match key_code {
                             KeyCode::Tab if event.state == ElementState::Pressed => {
-                                self.renderer.focus_next_node();
+                                self.dom.as_mut().focus_next_node();
                                 self.request_redraw();
                             }
                             KeyCode::Equal => {
                                 if self.keyboard_modifiers.control_key()
                                     || self.keyboard_modifiers.super_key()
                                 {
-                                    self.renderer.zoom(0.1);
+                                    *self.viewport.zoom_mut() += 0.1;
+                                    self.kick_dom_viewport();
                                     self.request_redraw();
                                 }
                             }
@@ -133,7 +259,8 @@ impl<'a, Doc: DocumentLike> View<'a, Doc> {
                                 if self.keyboard_modifiers.control_key()
                                     || self.keyboard_modifiers.super_key()
                                 {
-                                    self.renderer.zoom(-0.1);
+                                    *self.viewport.zoom_mut() -= 0.1;
+                                    self.kick_dom_viewport();
                                     self.request_redraw();
                                 }
                             }
@@ -141,30 +268,31 @@ impl<'a, Doc: DocumentLike> View<'a, Doc> {
                                 if self.keyboard_modifiers.control_key()
                                     || self.keyboard_modifiers.super_key()
                                 {
-                                    self.renderer.reset_zoom();
+                                    *self.viewport.zoom_mut() = 1.0;
+                                    self.kick_dom_viewport();
                                     self.request_redraw();
                                 }
                             }
                             KeyCode::KeyD => {
                                 if event.state == ElementState::Pressed && self.keyboard_modifiers.alt_key()
                                 {
-                                    self.renderer.devtools.show_layout =
-                                        !self.renderer.devtools.show_layout;
+                                    self.devtools.show_layout =
+                                        !self.devtools.show_layout;
                                     self.request_redraw();
                                 }
                             }
                             KeyCode::KeyH => {
                                 if event.state == ElementState::Pressed && self.keyboard_modifiers.alt_key()
                                 {
-                                    self.renderer.devtools.highlight_hover =
-                                        !self.renderer.devtools.highlight_hover;
+                                    self.devtools.highlight_hover =
+                                        !self.devtools.highlight_hover;
                                     self.request_redraw();
                                 }
                             }
                             KeyCode::KeyT => {
                                 if event.state == ElementState::Pressed && self.keyboard_modifiers.alt_key()
                                 {
-                                    self.renderer.print_taffy_tree();
+                                    self.dom.as_ref().print_taffy_tree();
                                 }
                             }
                             _ => {}
@@ -186,16 +314,15 @@ impl<'a, Doc: DocumentLike> View<'a, Doc> {
                 // modifiers,
                 ..
             } => {
-                let changed = if let RenderState::Active(state) = &self.renderer.render_state {
-                    let winit::dpi::LogicalPosition::<f32> { x, y } = position.to_logical(state.window.scale_factor());
-
-                    self.renderer.mouse_move(x, y)
+                let changed = if self.renderer.is_active() {
+                    let winit::dpi::LogicalPosition::<f32> { x, y } = position.to_logical(self.window.scale_factor());
+                    self.mouse_move(x, y)
                 } else {
                     false
                 };
 
                 if changed {
-                    let cursor = self.renderer.get_cursor();
+                    let cursor = self.dom.as_ref().get_cursor();
 
                     if let Some(cursor) = cursor {
                         use style::values::computed::ui::CursorKind;
@@ -245,8 +372,8 @@ impl<'a, Doc: DocumentLike> View<'a, Doc> {
                             },
                         };
 
-                        if let RenderState::Active(state) = &self.renderer.render_state {
-                            state.window.set_cursor(tao_cursor);
+                        if self.renderer.is_active() {
+                            self.window.set_cursor(tao_cursor);
                             self.request_redraw();
                         }
                     }
@@ -265,10 +392,10 @@ impl<'a, Doc: DocumentLike> View<'a, Doc> {
             } => {
                 match delta {
                     winit::event::MouseScrollDelta::LineDelta(_, y) => {
-                        self.renderer.scroll_by(y as f64 * 20.0)
+                        self.dom.as_mut().scroll_by(y as f64 * 20.0)
                     }
                     winit::event::MouseScrollDelta::PixelDelta(offsets) => {
-                        self.renderer.scroll_by(offsets.y)
+                        self.dom.as_mut().scroll_by(offsets.y)
                     }
                 };
                 self.request_redraw();
@@ -301,9 +428,7 @@ impl<'a, Doc: DocumentLike> View<'a, Doc> {
     pub fn handle_accessibility_event(&mut self, event: &accesskit_winit::WindowEvent) {
         match event {
             accesskit_winit::WindowEvent::InitialTreeRequested => {
-                if let Some(ref mut state) = self.state {
-                    state.accessibility.build_tree(self.renderer.dom.as_ref());
-                }
+                self.accessibility.build_tree(self.dom.as_ref());
             }
             accesskit_winit::WindowEvent::AccessibilityDeactivated => {
                 // TODO
@@ -314,52 +439,25 @@ impl<'a, Doc: DocumentLike> View<'a, Doc> {
         }
     }
 
-    pub fn resume(
-        &mut self,
-        event_loop: &ActiveEventLoop,
-        proxy: &EventLoopProxy<UserEvent>,
-        rt: &tokio::runtime::Runtime,
-    ) {
-        let window_builder = || {
-            let window = event_loop
-                .create_window(Window::default_attributes().with_inner_size(LogicalSize {
-                    width: 800,
-                    height: 600,
-                }))
-                .unwrap();
+    pub fn resume(&mut self, rt: &tokio::runtime::Runtime) {
+        let device = self.viewport.make_device();
+        self.dom.as_mut().set_stylist_device(device);
+        self.dom.as_mut().set_scale(self.viewport.scale());
 
-            // Initialize the accessibility and menu bar state.
-            #[cfg(any(feature = "accessibility", feature = "menu"))]
-            {
-                self.state = Some(State {
-                    #[cfg(feature = "accessibility")]
-                    accessibility: crate::accessibility::AccessibilityState::new(
-                        &window,
-                        proxy.clone(),
-                    ),
-                    #[cfg(feature = "menu")]
-                    _menu: init_menu(
-                        #[cfg(target_os = "windows")]
-                        &window,
-                    ),
-                });
-            }
+        rt.block_on(self.renderer.resume(&self.viewport));
 
-            let size: winit::dpi::PhysicalSize<u32> = window.inner_size();
-            let mut viewport = Viewport::new((size.width, size.height));
-            viewport.set_hidpi_scale(window.scale_factor() as _);
-
-            (Arc::from(window), viewport)
-        };
-
-        rt.block_on(self.renderer.resume(window_builder));
-
-        let RenderState::Active(state) = &self.renderer.render_state else {
+        if !self.renderer.is_active() {
             panic!("Renderer failed to resume");
         };
 
-        self.waker = Some(crate::waker::tao_waker(proxy, state.window.id()));
-        self.renderer.render();
+        self.dom.as_mut().resolve();
+
+        self.waker = Some(crate::waker::tao_waker(
+            &self.event_loop_proxy,
+            self.window_id(),
+        ));
+        self.renderer
+            .render(self.dom.as_ref(), self.viewport.scale_f64(), self.devtools);
     }
 
     pub fn suspend(&mut self) {

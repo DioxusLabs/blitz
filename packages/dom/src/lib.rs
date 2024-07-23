@@ -36,7 +36,11 @@ pub mod image;
 
 pub mod util;
 
+pub mod debug;
+
 pub mod events;
+
+pub mod viewport;
 
 pub use document::{Document, DocumentLike};
 pub use html5ever::{
@@ -46,3 +50,4 @@ pub use html5ever::{
 pub use htmlsink::DocumentHtmlParser;
 pub use node::{ElementNodeData, Node, NodeData, TextNodeData};
 pub use string_cache::Atom;
+pub use viewport::Viewport;

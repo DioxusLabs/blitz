@@ -1,5 +1,4 @@
-use blitz::Viewport;
-use blitz_dom::{Document, DocumentHtmlParser, DocumentLike};
+use blitz_dom::{Document, DocumentHtmlParser, DocumentLike, Viewport};
 
 use crate::Config;
 
