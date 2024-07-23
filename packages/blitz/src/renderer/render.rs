@@ -289,6 +289,11 @@ impl<'dom> VelloSceneGenerator<'dom> {
             return;
         }
 
+        // We can't fully support opacity yet, but we can hide elements with opacity 0
+        if element.primary_styles().unwrap().get_effects().opacity == 0.0 {
+            return;
+        }
+
         let cx = self.element_cx(element, location);
         cx.stroke_effects(scene);
         cx.stroke_outline(scene);
