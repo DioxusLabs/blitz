@@ -13,7 +13,7 @@ style_traits = { git = "https://github.com/dioxuslabs/stylo", rev = "10767f4" } 
 selectors = { git = "https://github.com/dioxuslabs/stylo", rev = "10767f4" } # 2024-05-15 + dioxus patches
 html5ever = "0.27" # needs to match stylo markup5ever version
 taffy = { git = "https://github.com/dioxuslabs/taffy", rev = "a2378a72fe6ebf86969bb5e9c5b15ff351bf086c" }
-parley = { git = "https://github.com/nicoburns/parley", rev = "09c1768153b235dbe54c0a0ce4e6e31ee0f14094" }
+parley = { git = "https://github.com/nicoburns/parley", rev = "0492eb3c11705602e34980861a5ef85c5a9ad827" }
 dioxus = { git = "https://github.com/dioxuslabs/dioxus", rev = "a3aa6ae771a2d0a4d8cb6055c41efc0193b817ef"}
 dioxus-ssr = { git = "https://github.com/dioxuslabs/dioxus", rev = "a3aa6ae771a2d0a4d8cb6055c41efc0193b817ef" }
 tokio = { version = "1.25.0", features = ["full"] }
@@ -58,9 +58,9 @@ ureq = "2.9"
 # [patch."https://github.com/dioxuslabs/taffy"]
 # taffy = { path = "../taffy" }
 
-[patch."https://github.com/nicoburns/parley"]
-parley = { path = "../parley/parley" }
-fontique = { path = "../parley/fontique" }
+# [patch."https://github.com/nicoburns/parley"]
+# parley = { path = "../parley/parley" }
+# fontique = { path = "../parley/fontique" }
 
 # # need to match the patching of
 # [patch."https://github.com/servo/webrender"]
