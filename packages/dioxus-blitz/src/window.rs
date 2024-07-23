@@ -1,4 +1,5 @@
 use crate::accessibility::AccessibilityState;
+use crate::stylo_to_winit;
 use crate::waker::UserEvent;
 use blitz::{Devtools, Renderer};
 use blitz_dom::events::{EventData, RendererEvent};
@@ -323,63 +324,13 @@ impl<'a, Doc: DocumentLike> View<'a, Doc> {
 
                 if changed {
                     let cursor = self.dom.as_ref().get_cursor();
-
                     if let Some(cursor) = cursor {
-                        use style::values::computed::ui::CursorKind;
-                        use winit::window::CursorIcon as TaoCursor;
-                        let tao_cursor = match cursor {
-                            CursorKind::None => todo!("set the cursor to none"),
-                            CursorKind::Default => TaoCursor::Default,
-                            CursorKind::Pointer => TaoCursor::Pointer,
-                            CursorKind::ContextMenu => TaoCursor::ContextMenu,
-                            CursorKind::Help => TaoCursor::Help,
-                            CursorKind::Progress => TaoCursor::Progress,
-                            CursorKind::Wait => TaoCursor::Wait,
-                            CursorKind::Cell => TaoCursor::Cell,
-                            CursorKind::Crosshair => TaoCursor::Crosshair,
-                            CursorKind::Text => TaoCursor::Text,
-                            CursorKind::VerticalText => TaoCursor::VerticalText,
-                            CursorKind::Alias => TaoCursor::Alias,
-                            CursorKind::Copy => TaoCursor::Copy,
-                            CursorKind::Move => TaoCursor::Move,
-                            CursorKind::NoDrop => TaoCursor::NoDrop,
-                            CursorKind::NotAllowed => TaoCursor::NotAllowed,
-                            CursorKind::Grab => TaoCursor::Grab,
-                            CursorKind::Grabbing => TaoCursor::Grabbing,
-                            CursorKind::EResize => TaoCursor::EResize,
-                            CursorKind::NResize => TaoCursor::NResize,
-                            CursorKind::NeResize => TaoCursor::NeResize,
-                            CursorKind::NwResize => TaoCursor::NwResize,
-                            CursorKind::SResize => TaoCursor::SResize,
-                            CursorKind::SeResize => TaoCursor::SeResize,
-                            CursorKind::SwResize => TaoCursor::SwResize,
-                            CursorKind::WResize => TaoCursor::WResize,
-                            CursorKind::EwResize => TaoCursor::EwResize,
-                            CursorKind::NsResize => TaoCursor::NsResize,
-                            CursorKind::NeswResize => TaoCursor::NeswResize,
-                            CursorKind::NwseResize => TaoCursor::NwseResize,
-                            CursorKind::ColResize => TaoCursor::ColResize,
-                            CursorKind::RowResize => TaoCursor::RowResize,
-                            CursorKind::AllScroll => TaoCursor::AllScroll,
-                            CursorKind::ZoomIn => TaoCursor::ZoomIn,
-                            CursorKind::ZoomOut => TaoCursor::ZoomOut,
-                            CursorKind::Auto => {
-                                // todo: we should be the ones determining this based on the UA?
-                                // https://developer.mozilla.org/en-US/docs/Web/CSS/cursor
-
-
-                                TaoCursor::Default
-                            },
-                        };
-
                         if self.renderer.is_active() {
-                            self.window.set_cursor(tao_cursor);
+                            self.window.set_cursor(stylo_to_winit::cursor(cursor));
                             self.request_redraw();
                         }
                     }
                 }
-
-
             }
             WindowEvent::CursorEntered { /*device_id*/.. } => {}
             WindowEvent::CursorLeft { /*device_id*/.. } => {}
