@@ -33,14 +33,14 @@ pub(crate) fn collect_layout_children(
             .and_then(|el| el.attr(local_name!("type")));
         if tag_name == "textarea" {
             create_text_editor(doc, container_node_id, true);
+            return;
         } else if matches!(
             type_attr,
             Some("text" | "password" | "email" | "number" | "search" | "tel" | "url")
         ) {
             create_text_editor(doc, container_node_id, false);
+            return;
         }
-
-        return;
     }
 
     if doc.nodes[container_node_id].children.is_empty() {
