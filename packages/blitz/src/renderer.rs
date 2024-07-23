@@ -153,5 +153,8 @@ where
 
         surface_texture.present();
         device.device.poll(wgpu::Maintain::Wait);
+
+        // Empty the Vello scene (memory optimisation)
+        self.scene.reset();
     }
 }
