@@ -100,6 +100,32 @@ impl<'a, Doc: DocumentLike> View<'a, Doc> {
 }
 
 impl<'a, Doc: DocumentLike> View<'a, Doc> {
+    pub fn resume(&mut self, rt: &tokio::runtime::Runtime) {
+        let device = self.viewport.make_device();
+        self.dom.as_mut().set_stylist_device(device);
+        self.dom.as_mut().set_scale(self.viewport.scale());
+
+        rt.block_on(self.renderer.resume(&self.viewport));
+
+        if !self.renderer.is_active() {
+            panic!("Renderer failed to resume");
+        };
+
+        self.dom.as_mut().resolve();
+
+        self.waker = Some(crate::waker::tao_waker(
+            &self.event_loop_proxy,
+            self.window_id(),
+        ));
+        self.renderer
+            .render(self.dom.as_ref(), self.viewport.scale_f64(), self.devtools);
+    }
+
+    pub fn suspend(&mut self) {
+        self.waker = None;
+        self.renderer.suspend();
+    }
+
     pub(crate) fn poll(&mut self) -> bool {
         match &self.waker {
             None => false,
@@ -392,32 +418,6 @@ impl<'a, Doc: DocumentLike> View<'a, Doc> {
                 }
             }
         }
-    }
-
-    pub fn resume(&mut self, rt: &tokio::runtime::Runtime) {
-        let device = self.viewport.make_device();
-        self.dom.as_mut().set_stylist_device(device);
-        self.dom.as_mut().set_scale(self.viewport.scale());
-
-        rt.block_on(self.renderer.resume(&self.viewport));
-
-        if !self.renderer.is_active() {
-            panic!("Renderer failed to resume");
-        };
-
-        self.dom.as_mut().resolve();
-
-        self.waker = Some(crate::waker::tao_waker(
-            &self.event_loop_proxy,
-            self.window_id(),
-        ));
-        self.renderer
-            .render(self.dom.as_ref(), self.viewport.scale_f64(), self.devtools);
-    }
-
-    pub fn suspend(&mut self) {
-        self.waker = None;
-        self.renderer.suspend();
     }
 }
 
