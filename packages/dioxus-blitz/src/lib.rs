@@ -151,26 +151,34 @@ fn launch_with_window<Doc: DocumentLike + 'static>(window: WindowConfig<Doc>) {
         .run(move |event, event_loop| {
             event_loop.set_control_flow(ControlFlow::Wait);
 
-            let mut on_resume = || {
-                // Resume existing windows
-                for (_, view) in windows.iter_mut() {
-                    view.resume(&rt);
-                }
-
-                // Initialise pending windows
-                for window_config in pending_windows.drain(..) {
-                    let mut view = View::init(window_config, event_loop, &proxy);
-                    view.resume(&rt);
-                    if !view.renderer.is_active() {
-                        continue;
+            let on_resume =
+                |windows: &mut HashMap<WindowId, window::View<'_, Doc>>,
+                 pending_windows: &mut Vec<WindowConfig<Doc>>| {
+                    // Resume existing windows
+                    for (_, view) in windows.iter_mut() {
+                        view.resume(&rt);
                     }
-                    windows.insert(view.window_id(), view);
+
+                    // Initialise pending windows
+                    for window_config in pending_windows.drain(..) {
+                        let mut view = View::init(window_config, event_loop, &proxy);
+                        view.resume(&rt);
+                        if !view.renderer.is_active() {
+                            continue;
+                        }
+                        windows.insert(view.window_id(), view);
+                    }
+                };
+
+            let on_suspend = |windows: &mut HashMap<WindowId, window::View<'_, Doc>>| {
+                for (_, view) in windows.iter_mut() {
+                    view.suspend();
                 }
             };
 
             #[cfg(not(any(target_os = "android", target_os = "ios")))]
             if initial {
-                on_resume();
+                on_resume(&mut windows, &mut pending_windows);
                 initial = false;
             }
 
@@ -178,20 +186,28 @@ fn launch_with_window<Doc: DocumentLike + 'static>(window: WindowConfig<Doc>) {
             tracing::trace!("Received event: {:?}", event);
 
             match event {
-                // Exit the app when close is request
-                // Not always necessary
+                Event::Resumed => on_resume(&mut windows, &mut pending_windows),
+                Event::Suspended => on_suspend(&mut windows),
+
+                // Exit the app when window close is requested. TODO: Only exit when last window is closed.
                 Event::WindowEvent {
                     event: WindowEvent::CloseRequested,
                     ..
                 } => event_loop.exit(),
 
-                Event::WindowEvent {
-                    window_id,
-                    event: winit::event::WindowEvent::RedrawRequested,
-                } => {
-                    if let Some(view) = windows.get_mut(&window_id) {
-                        view.redraw();
-                    };
+                Event::WindowEvent { window_id, event } => {
+                    if let Some(window) = windows.get_mut(&window_id) {
+                        window.handle_window_event(event);
+                    }
+                }
+
+                Event::NewEvents(_) => {
+                    for window_id in windows.keys().copied() {
+                        _ = proxy.send_event(UserEvent::Window {
+                            data: EventData::Poll,
+                            window_id,
+                        });
+                    }
                 }
 
                 Event::UserEvent(user_event) => match user_event {
@@ -237,36 +253,6 @@ fn launch_with_window<Doc: DocumentLike + 'static>(window: WindowConfig<Doc>) {
                         }
                     },
                 },
-
-                // Event::UserEvent(_redraw) => {
-                //     for (_, view) in windows.iter() {
-                //         view.request_redraw();
-                //     }
-                // }
-                Event::NewEvents(_) => {
-                    for window_id in windows.keys().copied() {
-                        _ = proxy.send_event(UserEvent::Window {
-                            data: EventData::Poll,
-                            window_id,
-                        });
-                    }
-                }
-
-                Event::Suspended => {
-                    for (_, view) in windows.iter_mut() {
-                        view.suspend();
-                    }
-                }
-
-                Event::Resumed => on_resume(),
-
-                Event::WindowEvent {
-                    window_id, event, ..
-                } => {
-                    if let Some(window) = windows.get_mut(&window_id) {
-                        window.handle_window_event(event);
-                    }
-                }
 
                 _ => (),
             }

@@ -208,6 +208,11 @@ impl<'a, Doc: DocumentLike> View<'a, Doc> {
 
     pub fn handle_window_event(&mut self, event: WindowEvent) {
         match event {
+
+            WindowEvent::RedrawRequested => {
+                self.redraw();
+            }
+
             WindowEvent::MouseInput {
                 // device_id,
                 state,
