@@ -151,6 +151,7 @@ impl<'a, Doc: DocumentLike> View<'a, Doc> {
             self.dom
                 .as_mut()
                 .set_stylist_device(self.viewport.make_device());
+            self.request_redraw();
         }
     }
 
@@ -158,6 +159,7 @@ impl<'a, Doc: DocumentLike> View<'a, Doc> {
         let (width, height) = self.viewport.window_size;
         if width > 0 && height > 0 {
             self.renderer.set_size(width, height);
+            self.request_redraw();
         }
     }
 
@@ -224,7 +226,6 @@ impl<'a, Doc: DocumentLike> View<'a, Doc> {
             WindowEvent::Resized(physical_size) => {
                 self.viewport.window_size = (physical_size.width, physical_size.height);
                 self.kick_viewport();
-                self.request_redraw();
             }
             WindowEvent::ScaleFactorChanged {
                 // scale_factor,
@@ -263,17 +264,14 @@ impl<'a, Doc: DocumentLike> View<'a, Doc> {
                         KeyCode::Equal => {
                             *self.viewport.zoom_mut() += 0.1;
                             self.kick_dom_viewport();
-                            self.request_redraw();
                         }
                         KeyCode::Minus => {
                             *self.viewport.zoom_mut() -= 0.1;
                             self.kick_dom_viewport();
-                            self.request_redraw();
                         }
                         KeyCode::Digit0 => {
                             *self.viewport.zoom_mut() = 1.0;
                             self.kick_dom_viewport();
-                            self.request_redraw();
                         }
                         _ => {}
                     };
