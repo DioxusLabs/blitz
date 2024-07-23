@@ -30,7 +30,7 @@ use taffy::{
 };
 use url::Url;
 
-use crate::events::EventListener;
+use crate::events::{EventListener, HitResult};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum DisplayOuter {
@@ -744,13 +744,13 @@ impl Node {
 
     /// Takes an (x, y) position (relative to the *parent's* top-left corner) and returns:
     ///    - None if the position is outside of this node's bounds
-    ///    - Some(self.id) is the position is within the node but doesn't match any children
+    ///    - Some(HitResult) if the position is within the node but doesn't match any children
     ///    - The result of recursively calling child.hit() on the the child element that is
     ///      positioned at that position if there is one.
     ///
     /// TODO: z-index
     /// (If multiple children are positioned at the position then a random one will be recursed into)
-    pub fn hit(&self, x: f32, y: f32) -> Option<usize> {
+    pub fn hit(&self, x: f32, y: f32) -> Option<HitResult> {
         let x = x - self.final_layout.location.x;
         let y = y - self.final_layout.location.y;
 
@@ -763,7 +763,11 @@ impl Node {
         self.children
             .iter()
             .find_map(|&i| self.with(i).hit(x, y))
-            .or(Some(self.id))
+            .or(Some(HitResult {
+                node_id: self.id,
+                x,
+                y,
+            }))
     }
 }
 

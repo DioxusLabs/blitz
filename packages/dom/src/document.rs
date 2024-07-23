@@ -1,4 +1,4 @@
-use crate::events::RendererEvent;
+use crate::events::{HitResult, RendererEvent};
 use crate::node::TextBrush;
 use crate::{Node, NodeData, TextNodeData};
 // use quadtree_rs::Quadtree;
@@ -444,7 +444,7 @@ impl Document {
     }
 
     // Takes (x, y) co-ordinates (relative to the )
-    pub fn hit(&self, x: f32, y: f32) -> Option<usize> {
+    pub fn hit(&self, x: f32, y: f32) -> Option<HitResult> {
         if TDocument::as_node(&&self.nodes[0])
             .first_element_child()
             .is_none()
@@ -525,7 +525,8 @@ impl Document {
     }
 
     pub fn set_hover_to(&mut self, x: f32, y: f32) -> bool {
-        let hover_node_id = self.hit(x, y);
+        let hit = self.hit(x, y);
+        let hover_node_id = hit.map(|hit| hit.node_id);
 
         // Return early if the new node is the same as the already-hovered node
         if hover_node_id == self.hover_node_id {
