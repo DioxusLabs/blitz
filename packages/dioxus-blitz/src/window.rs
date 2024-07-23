@@ -246,66 +246,66 @@ impl<'a, Doc: DocumentLike> View<'a, Doc> {
                 self.keyboard_modifiers = new_state.state();
             }
             WindowEvent::KeyboardInput { event, .. } => {
-                match event.physical_key {
-                    PhysicalKey::Code(key_code) => {
-                        match key_code {
-                            KeyCode::Tab if event.state == ElementState::Pressed => {
-                                self.dom.as_mut().focus_next_node();
-                                self.request_redraw();
-                            }
-                            KeyCode::Equal => {
-                                if self.keyboard_modifiers.control_key()
-                                    || self.keyboard_modifiers.super_key()
-                                {
-                                    *self.viewport.zoom_mut() += 0.1;
-                                    self.kick_dom_viewport();
-                                    self.request_redraw();
-                                }
-                            }
-                            KeyCode::Minus => {
-                                if self.keyboard_modifiers.control_key()
-                                    || self.keyboard_modifiers.super_key()
-                                {
-                                    *self.viewport.zoom_mut() -= 0.1;
-                                    self.kick_dom_viewport();
-                                    self.request_redraw();
-                                }
-                            }
-                            KeyCode::Digit0 => {
-                                if self.keyboard_modifiers.control_key()
-                                    || self.keyboard_modifiers.super_key()
-                                {
-                                    *self.viewport.zoom_mut() = 1.0;
-                                    self.kick_dom_viewport();
-                                    self.request_redraw();
-                                }
-                            }
-                            KeyCode::KeyD => {
-                                if event.state == ElementState::Pressed && self.keyboard_modifiers.alt_key()
-                                {
-                                    self.devtools.show_layout =
-                                        !self.devtools.show_layout;
-                                    self.request_redraw();
-                                }
-                            }
-                            KeyCode::KeyH => {
-                                if event.state == ElementState::Pressed && self.keyboard_modifiers.alt_key()
-                                {
-                                    self.devtools.highlight_hover =
-                                        !self.devtools.highlight_hover;
-                                    self.request_redraw();
-                                }
-                            }
-                            KeyCode::KeyT => {
-                                if event.state == ElementState::Pressed && self.keyboard_modifiers.alt_key()
-                                {
-                                    self.dom.as_ref().print_taffy_tree();
-                                }
-                            }
-                            _ => {}
+                let PhysicalKey::Code(key_code) = event.physical_key else {
+                    return;
+                };
+                if !event.state.is_pressed() {
+                    return;
+                }
+
+                let ctrl = self.keyboard_modifiers.control_key();
+                let meta = self.keyboard_modifiers.super_key();
+                let alt = self.keyboard_modifiers.alt_key();
+
+                // Ctrl/Super keyboard shortcuts
+                if ctrl | meta {
+                    match key_code {
+                        KeyCode::Equal => {
+                            *self.viewport.zoom_mut() += 0.1;
+                            self.kick_dom_viewport();
+                            self.request_redraw();
                         }
-                    },
-                    PhysicalKey::Unidentified(_) => {}
+                        KeyCode::Minus => {
+                            *self.viewport.zoom_mut() -= 0.1;
+                            self.kick_dom_viewport();
+                            self.request_redraw();
+                        }
+                        KeyCode::Digit0 => {
+                            *self.viewport.zoom_mut() = 1.0;
+                            self.kick_dom_viewport();
+                            self.request_redraw();
+                        }
+                        _ => {}
+                    };
+                }
+
+                // Alt keyboard shortcuts
+                if alt {
+                    match key_code {
+                        KeyCode::KeyD => {
+                            self.devtools.show_layout = !self.devtools.show_layout;
+                            self.request_redraw();
+                        }
+                        KeyCode::KeyH => {
+                            self.devtools.highlight_hover = !self.devtools.highlight_hover;
+                            self.request_redraw();
+                        }
+                        KeyCode::KeyT => {
+                            self.dom.as_ref().print_taffy_tree();
+                        }
+                        _ => {}
+                    };
+                }
+
+                // Unmodified keypresses
+                match key_code {
+                    KeyCode::Tab if event.state.is_pressed() => {
+                        self.dom.as_mut().focus_next_node();
+                        self.request_redraw();
+                    }
+                    _ => {
+                        // TODO: handle regular keypresses for text input
+                    }
                 }
             }
 
