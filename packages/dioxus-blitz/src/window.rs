@@ -17,6 +17,9 @@ use winit::event_loop::{ActiveEventLoop, EventLoopProxy};
 use winit::window::{WindowAttributes, WindowId};
 use winit::{event::WindowEvent, keyboard::KeyCode, keyboard::ModifiersState, window::Window};
 
+#[cfg(all(feature = "menu", not(any(target_os = "android", target_os = "ios"))))]
+use crate::menu::init_menu;
+
 pub struct WindowConfig<Doc: DocumentLike> {
     doc: Doc,
     attributes: WindowAttributes,
@@ -59,6 +62,7 @@ pub(crate) struct View<'s, Doc: DocumentLike> {
     accessibility: AccessibilityState,
 
     /// Main menu bar of this view's window.
+    /// Field is _ prefixed because it is never read. But it needs to be stored here to prevent it from dropping.
     #[cfg(feature = "menu")]
     _menu: muda::Menu,
 }
@@ -91,10 +95,7 @@ impl<'a, Doc: DocumentLike> View<'a, Doc> {
             accessibility: AccessibilityState::new(&winit_window, proxy.clone()),
 
             #[cfg(feature = "menu")]
-            _menu: init_menu(
-                #[cfg(target_os = "windows")]
-                &winit_window,
-            ),
+            _menu: init_menu(&winit_window),
         }
     }
 }
@@ -415,45 +416,4 @@ impl<'a, Doc: DocumentLike> View<'a, Doc> {
             WindowEvent::RotationGesture { .. } => {},
         }
     }
-}
-
-/// Initialize the default menu bar.
-#[cfg(all(feature = "menu", not(any(target_os = "android", target_os = "ios"))))]
-pub fn init_menu(#[cfg(target_os = "windows")] window: &Window) -> muda::Menu {
-    use muda::{AboutMetadata, Menu, MenuId, MenuItem, PredefinedMenuItem, Submenu};
-
-    let menu = Menu::new();
-
-    // Build the about section
-    let about = Submenu::new("About", true);
-    about
-        .append_items(&[
-            &PredefinedMenuItem::about("Dioxus".into(), Option::from(AboutMetadata::default())),
-            &MenuItem::with_id(MenuId::new("dev.show_layout"), "Show layout", true, None),
-        ])
-        .unwrap();
-    menu.append(&about).unwrap();
-
-    #[cfg(target_os = "windows")]
-    {
-        use winit::raw_window_handle::*;
-        if let RawWindowHandle::Win32(handle) = window.window_handle().unwrap().as_raw() {
-            menu.init_for_hwnd(handle.hwnd.get()).unwrap();
-        }
-    }
-
-    // todo: menu on linux
-    // #[cfg(target_os = "linux")]
-    // {
-    //     use winit::platform::unix::WindowExtUnix;
-    //     menu.init_for_gtk_window(window.gtk_window(), window.default_vbox())
-    //         .unwrap();
-    // }
-
-    #[cfg(target_os = "macos")]
-    {
-        menu.init_for_nsapp();
-    }
-
-    menu
 }

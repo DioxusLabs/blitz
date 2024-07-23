@@ -5,6 +5,9 @@ mod stylo_to_winit;
 mod waker;
 mod window;
 
+#[cfg(all(feature = "menu", not(any(target_os = "android", target_os = "ios"))))]
+mod menu;
+
 #[cfg(feature = "accessibility")]
 mod accessibility;
 
