@@ -8,7 +8,7 @@ mod window;
 #[cfg(feature = "accessibility")]
 mod accessibility;
 
-use crate::waker::{EventData, UserEvent};
+use crate::waker::{BlitzEvent, BlitzWindowEvent};
 use crate::{documents::HtmlDocument, window::View};
 
 use blitz_dom::DocumentLike;
@@ -103,7 +103,7 @@ fn launch_with_window<Doc: DocumentLike + 'static>(window: WindowConfig<Doc>) {
     let _guard = rt.enter();
 
     // Build an event loop for the application
-    let mut builder = EventLoop::<UserEvent>::with_user_event();
+    let mut builder = EventLoop::<BlitzEvent>::with_user_event();
 
     #[cfg(target_os = "android")]
     {
@@ -138,7 +138,7 @@ fn launch_with_window<Doc: DocumentLike + 'static>(window: WindowConfig<Doc>) {
             dioxus_hot_reload::connect_at(cfg.target_dir.join("dioxusin"), {
                 let proxy = proxy.clone();
                 move |template| {
-                    let _ = proxy.send_event(UserEvent::HotReloadEvent(template));
+                    let _ = proxy.send_event(BlitzEvent::HotReloadEvent(template));
                 }
             })
         }
@@ -197,53 +197,40 @@ fn launch_with_window<Doc: DocumentLike + 'static>(window: WindowConfig<Doc>) {
 
                 Event::WindowEvent { window_id, event } => {
                     if let Some(window) = windows.get_mut(&window_id) {
-                        window.handle_window_event(event);
+                        window.handle_winit_event(event);
                     }
                 }
 
                 Event::NewEvents(_) => {
                     for window_id in windows.keys().copied() {
-                        _ = proxy.send_event(UserEvent::Window {
-                            data: EventData::Poll,
+                        _ = proxy.send_event(BlitzEvent::Window {
+                            data: BlitzWindowEvent::Poll,
                             window_id,
                         });
                     }
                 }
 
                 Event::UserEvent(user_event) => match user_event {
-                    UserEvent::Window {
-                        data: EventData::Poll,
-                        window_id: id,
-                    } => {
-                        if let Some(view) = windows.get_mut(&id) {
-                            if view.poll() {
-                                view.request_redraw();
-                            }
+                    BlitzEvent::Window { data, window_id } => {
+                        if let Some(view) = windows.get_mut(&window_id) {
+                            view.handle_blitz_event(data);
                         };
                     }
-                    #[cfg(feature = "accessibility")]
-                    UserEvent::Accessibility(accessibility_event) => {
-                        if let Some(window) = windows.get_mut(&accessibility_event.window_id) {
-                            window.handle_accessibility_event(&accessibility_event.window_event);
-                        }
-                    }
+
                     #[cfg(all(
                         feature = "hot-reload",
                         debug_assertions,
                         not(target_os = "android"),
                         not(target_os = "ios")
                     ))]
-                    UserEvent::HotReloadEvent(msg) => match msg {
+                    BlitzEvent::HotReloadEvent(msg) => match msg {
                         dioxus_hot_reload::HotReloadMsg::UpdateTemplate(template) => {
                             for window in windows.values_mut() {
                                 if let Some(dx_doc) =
                                     window.dom.as_any_mut().downcast_mut::<DioxusDocument>()
                                 {
                                     dx_doc.vdom.replace_template(template);
-
-                                    if window.poll() {
-                                        window.request_redraw();
-                                    }
+                                    window.handle_blitz_event(BlitzWindowEvent::Poll);
                                 }
                             }
                         }

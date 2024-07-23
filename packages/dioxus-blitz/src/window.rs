@@ -1,6 +1,6 @@
 use crate::accessibility::AccessibilityState;
 use crate::stylo_to_winit;
-use crate::waker::UserEvent;
+use crate::waker::{BlitzEvent, BlitzWindowEvent};
 use blitz::{Devtools, Renderer};
 use blitz_dom::events::{EventData, RendererEvent};
 use blitz_dom::{DocumentLike, Viewport};
@@ -40,7 +40,7 @@ pub(crate) struct View<'s, Doc: DocumentLike> {
     pub(crate) dom: Doc,
     pub(crate) waker: Option<Waker>,
 
-    event_loop_proxy: EventLoopProxy<UserEvent>,
+    event_loop_proxy: EventLoopProxy<BlitzEvent>,
     window: Arc<Window>,
 
     /// The actual viewport of the page that we're getting a glimpse of.
@@ -67,7 +67,7 @@ impl<'a, Doc: DocumentLike> View<'a, Doc> {
     pub(crate) fn init(
         config: WindowConfig<Doc>,
         event_loop: &ActiveEventLoop,
-        proxy: &EventLoopProxy<UserEvent>,
+        proxy: &EventLoopProxy<BlitzEvent>,
     ) -> Self {
         let winit_window = Arc::from(event_loop.create_window(config.attributes).unwrap());
 
@@ -206,7 +206,7 @@ impl<'a, Doc: DocumentLike> View<'a, Doc> {
         }
     }
 
-    pub fn handle_window_event(&mut self, event: WindowEvent) {
+    pub fn handle_winit_event(&mut self, event: WindowEvent) {
         match event {
 
             WindowEvent::RedrawRequested => {
@@ -380,17 +380,26 @@ impl<'a, Doc: DocumentLike> View<'a, Doc> {
         }
     }
 
-    #[cfg(feature = "accessibility")]
-    pub fn handle_accessibility_event(&mut self, event: &accesskit_winit::WindowEvent) {
+    pub fn handle_blitz_event(&mut self, event: BlitzWindowEvent) {
         match event {
-            accesskit_winit::WindowEvent::InitialTreeRequested => {
-                self.accessibility.build_tree(self.dom.as_ref());
+            BlitzWindowEvent::Poll => {
+                if self.poll() {
+                    self.request_redraw();
+                }
             }
-            accesskit_winit::WindowEvent::AccessibilityDeactivated => {
-                // TODO
-            }
-            accesskit_winit::WindowEvent::ActionRequested(_req) => {
-                // TODO
+            #[cfg(feature = "accessibility")]
+            BlitzWindowEvent::Accessibility(accessibility_event) => {
+                match &*accessibility_event {
+                    accesskit_winit::WindowEvent::InitialTreeRequested => {
+                        self.accessibility.build_tree(self.dom.as_ref());
+                    }
+                    accesskit_winit::WindowEvent::AccessibilityDeactivated => {
+                        // TODO
+                    }
+                    accesskit_winit::WindowEvent::ActionRequested(_req) => {
+                        // TODO
+                    }
+                }
             }
         }
     }

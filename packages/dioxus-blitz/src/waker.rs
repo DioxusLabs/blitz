@@ -4,17 +4,14 @@ use winit::{event_loop::EventLoopProxy, window::WindowId};
 
 #[cfg(feature = "accessibility")]
 use accesskit_winit::Event as AccessibilityEvent;
+use accesskit_winit::WindowEvent as AccessibilityWindowEvent;
 
 #[derive(Debug, Clone)]
-pub enum UserEvent {
+pub enum BlitzEvent {
     Window {
         window_id: WindowId,
-        data: EventData,
+        data: BlitzWindowEvent,
     },
-
-    /// An accessibility event from `accesskit`.
-    #[cfg(feature = "accessibility")]
-    Accessibility(Arc<AccessibilityEvent>),
 
     /// A hotreload event, basically telling us to update our templates.
     #[cfg(all(
@@ -27,15 +24,23 @@ pub enum UserEvent {
 }
 
 #[cfg(feature = "accessibility")]
-impl From<AccessibilityEvent> for UserEvent {
+impl From<AccessibilityEvent> for BlitzEvent {
     fn from(value: AccessibilityEvent) -> Self {
-        Self::Accessibility(Arc::new(value))
+        let window_event = BlitzWindowEvent::Accessibility(Arc::new(value.window_event));
+        Self::Window {
+            window_id: value.window_id,
+            data: window_event,
+        }
     }
 }
 
 #[derive(Debug, Clone)]
-pub enum EventData {
+pub enum BlitzWindowEvent {
     Poll,
+
+    /// An accessibility event from `accesskit`.
+    #[cfg(feature = "accessibility")]
+    Accessibility(Arc<AccessibilityWindowEvent>),
     // NewWindow,
     // CloseWindow,
 }
@@ -45,9 +50,9 @@ pub enum EventData {
 /// This lets the VirtualDom "come up for air" and process events while the main thread is blocked by the WebView.
 ///
 /// All other IO lives in the Tokio runtime,
-pub fn tao_waker(proxy: &EventLoopProxy<UserEvent>, id: WindowId) -> std::task::Waker {
+pub fn tao_waker(proxy: &EventLoopProxy<BlitzEvent>, id: WindowId) -> std::task::Waker {
     struct DomHandle {
-        proxy: EventLoopProxy<UserEvent>,
+        proxy: EventLoopProxy<BlitzEvent>,
         id: WindowId,
     }
 
@@ -58,8 +63,8 @@ pub fn tao_waker(proxy: &EventLoopProxy<UserEvent>, id: WindowId) -> std::task::
 
     impl ArcWake for DomHandle {
         fn wake_by_ref(arc_self: &Arc<Self>) {
-            _ = arc_self.proxy.send_event(UserEvent::Window {
-                data: EventData::Poll,
+            _ = arc_self.proxy.send_event(BlitzEvent::Window {
+                data: BlitzWindowEvent::Poll,
                 window_id: arc_self.id,
             })
         }

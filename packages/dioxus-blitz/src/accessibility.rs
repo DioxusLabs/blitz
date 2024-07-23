@@ -1,4 +1,4 @@
-use crate::waker::UserEvent;
+use crate::waker::BlitzEvent;
 use accesskit::{NodeBuilder, NodeId, Role, Tree, TreeUpdate};
 use blitz_dom::{local_name, Document, Node};
 use winit::{event_loop::EventLoopProxy, window::Window};
@@ -13,7 +13,7 @@ pub struct AccessibilityState {
 }
 
 impl AccessibilityState {
-    pub fn new(window: &Window, proxy: EventLoopProxy<UserEvent>) -> Self {
+    pub fn new(window: &Window, proxy: EventLoopProxy<BlitzEvent>) -> Self {
         Self {
             adapter: accesskit_winit::Adapter::with_event_loop_proxy(window, proxy.clone()),
             next_id: 1,
