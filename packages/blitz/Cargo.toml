@@ -8,36 +8,12 @@ default = ["tracing"]
 tracing = ["dep:tracing"]
 
 [dependencies]
-slab = "0.4.9"
+blitz-dom = { path = "../dom" }
 style = { workspace = true, features = ["servo"] }
-euclid = { version = "0.22", features = ["serde"] }
-selectors = { workspace = true }
 taffy = { workspace = true }
 parley = { workspace = true }
-tokio = { workspace = true, features = ["full"] }
 tracing = { workspace = true, optional = true }
 vello = { workspace = true }
 wgpu = { workspace = true }
-
-app_units = "0.7.3"
-atomic_refcell = { version = "0.1.13", features = ["serde"] }
-fxhash = "0.2.1"
-html5ever = { workspace = true }
-string_cache = "0.8.7"
-futures-util = "0.3.29"
 raw-window-handle = "0.6.0"
-blitz-dom = { path = "../dom" }
 image = "0.25"
-
-# futures-util = "0.3.29"
-# raw-window-handle = "0.5.0"
-# guts pulled from blitz
-# we'll need to make these more compatible with servo
-# lightningcss = "1.0.0-alpha.39"
-# cssparser = "0.33.0"
-# tao = "0.24.0"
-# glazier = { git = "https://github.com/linebender/glazier/" }
-# style = { git = "https://github.com/servo/servo.git", features = ["servo"] }
-
-[dev-dependencies]
-webbrowser = "0.8.12"
