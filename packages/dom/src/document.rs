@@ -94,6 +94,9 @@ pub struct Document {
     /// The node which is currently focussed (if any)
     pub(crate) focus_node_id: Option<usize>,
 
+    // TODO: move to nodes
+    pub scroll_offset: f64,
+
     pub changed: HashSet<usize>,
 }
 
@@ -127,6 +130,7 @@ impl Document {
 
             hover_node_id: None,
             focus_node_id: None,
+            scroll_offset: 0.0,
             changed: HashSet::new(),
         };
 

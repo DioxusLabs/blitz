@@ -40,7 +40,9 @@ pub struct Renderer<'s, W, Doc: DocumentLike> {
 
     pub render_state: RenderState<'s, W>,
 
+    // Vello
     pub(crate) render_context: RenderContext,
+    pub(crate) scene: Scene,
 
     /// Our image cache
     // pub(crate) images: ImageCache,
@@ -49,8 +51,6 @@ pub struct Renderer<'s, W, Doc: DocumentLike> {
     /// Whenever we encounter new fonts during parsing + mutations, this will become populated
     // pub(crate) fonts: FontCache,
     pub devtools: Devtools,
-
-    scroll_offset: f64,
     mouse_pos: (f32, f32),
 }
 
@@ -73,9 +73,9 @@ where
         Self {
             render_context,
             render_state: RenderState::Suspended(None),
+            scene: Scene::new(),
             dom,
             devtools: Default::default(),
-            scroll_offset: 0.0,
             mouse_pos: (0.0, 0.0),
         }
     }
@@ -170,7 +170,7 @@ where
         };
 
         let x = x / state.viewport.zoom();
-        let y = (y - self.scroll_offset as f32) / state.viewport.zoom();
+        let y = (y - self.dom.as_ref().scroll_offset as f32) / state.viewport.zoom();
 
         // println!("Mouse move: ({}, {})", x, y);
         // println!("Unscaled: ({}, {})",);
@@ -210,11 +210,11 @@ where
         // Invert scrolling on macos
         #[cfg(target_os = "macos")]
         {
-            self.scroll_offset += px;
+            self.dom.as_mut().scroll_offset += px;
         }
         #[cfg(not(target_os = "macos"))]
         {
-            self.scroll_offset -= px;
+            self.dom.as_mut().scroll_offset -= px;
         }
 
         self.clamp_scroll();
@@ -222,15 +222,11 @@ where
 
     /// Clamp scroll offset
     fn clamp_scroll(&mut self) {
-        let content_height = self.dom.as_ref().root_element().final_layout.size.height as f64;
-        let viewport_height = self
-            .dom
-            .as_mut()
-            .stylist_device()
-            .au_viewport_size()
-            .height
-            .to_f64_px();
-        self.scroll_offset = self
+        let dom = self.dom.as_mut();
+        let content_height = dom.root_element().final_layout.size.height as f64;
+        let viewport_height = dom.stylist_device().au_viewport_size().height.to_f64_px();
+
+        dom.scroll_offset = dom
             .scroll_offset
             .max(-(content_height - viewport_height))
             .min(0.0);
@@ -370,13 +366,10 @@ where
         }
     }
 
-    pub fn render(&mut self, scene: &mut Scene) {
-        self.generate_vello_scene(scene);
-
+    pub fn render(&mut self) {
         let RenderState::Active(state) = &mut self.render_state else {
             return;
         };
-
         let surface_texture = match state.surface.surface.get_current_texture() {
             Ok(surface) => surface,
             // When resizing too aggresively, the surface can get outdated (another resize) before being rendered into
@@ -393,12 +386,20 @@ where
             antialiasing_method: vello::AaConfig::Msaa16,
         };
 
+        // Regenerate the vello scene
+        render::generate_vello_scene(
+            &mut self.scene,
+            self.dom.as_ref(),
+            state.viewport.scale_f64(),
+            self.devtools,
+        );
+
         state
             .renderer
             .render_to_surface(
                 &device.device,
                 &device.queue,
-                scene,
+                &self.scene,
                 &surface_texture,
                 &render_params,
             )

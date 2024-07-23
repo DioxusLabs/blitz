@@ -4,10 +4,13 @@ use crate::{
     devtools::Devtools,
     util::{GradientSlice, StyloGradient, ToVelloColor},
 };
-use blitz_dom::node::{TextBrush, TextInputData};
 use blitz_dom::{
     node::{NodeData, TextNodeData},
-    DocumentLike, Node,
+    Node,
+};
+use blitz_dom::{
+    node::{TextBrush, TextInputData},
+    Document,
 };
 use html5ever::local_name;
 use image::{imageops::FilterType, DynamicImage};
@@ -41,9 +44,38 @@ use vello::{
 };
 
 use super::multicolor_rounded_rect::{Edge, ElementFrame};
-use super::{RenderState, Renderer};
 
-impl<'a, W: 'a, Doc: DocumentLike> Renderer<'a, W, Doc> {
+/// Draw the current tree to current render surface
+/// Eventually we'll want the surface itself to be passed into the render function, along with things like the viewport
+///
+/// This assumes styles are resolved and layout is complete.
+/// Make sure you do those before trying to render
+pub fn generate_vello_scene(
+    scene: &mut Scene,
+    dom: &Document,
+    scale: f64,
+    devtool_config: Devtools,
+) {
+    let generator = VelloSceneGenerator {
+        dom,
+        scale,
+        devtools: devtool_config,
+        scroll_offset: dom.scroll_offset,
+    };
+    generator.generate_vello_scene(scene)
+}
+
+/// A short-lived struct which holds a bunch of parameters for rendering a vello scene so
+/// that we don't have to pass them down as parameters
+pub struct VelloSceneGenerator<'dom> {
+    /// Input parameters (read only) for generating the Scene
+    dom: &'dom Document,
+    scale: f64,
+    devtools: Devtools,
+    scroll_offset: f64,
+}
+
+impl<'dom> VelloSceneGenerator<'dom> {
     fn node_position(&self, node: usize, location: Point) -> (Layout, Point) {
         let layout = self.layout(node);
         let pos = location + Vec2::new(layout.location.x as f64, layout.location.y as f64);
@@ -83,10 +115,7 @@ impl<'a, W: 'a, Doc: DocumentLike> Renderer<'a, W, Doc> {
     /// Renders a layout debugging overlay which visualises the content size, padding and border
     /// of the node with a transparent overlay.
     fn render_debug_overlay(&self, scene: &mut Scene, node_id: usize) {
-        let RenderState::Active(state) = &self.render_state else {
-            return;
-        };
-        let scale = state.viewport.scale_f64();
+        let scale = self.scale;
 
         let mut node = &self.dom.as_ref().tree()[node_id];
 
@@ -354,10 +383,6 @@ impl<'a, W: 'a, Doc: DocumentLike> Renderer<'a, W, Doc> {
     }
 
     fn element_cx<'w>(&'w self, element: &'w Node, location: Point) -> ElementCx {
-        let RenderState::Active(state) = &self.render_state else {
-            panic!("Renderer is not active");
-        };
-
         let style = element
             .stylo_element_data
             .borrow()
@@ -366,7 +391,7 @@ impl<'a, W: 'a, Doc: DocumentLike> Renderer<'a, W, Doc> {
             .unwrap_or(ComputedValues::initial_values().to_arc());
 
         let (layout, pos) = self.node_position(element.id, location);
-        let scale = state.viewport.scale_f64();
+        let scale = self.scale;
 
         // the bezpaths for every element are (potentially) cached (not yet, tbd)
         // By performing the transform, we prevent the cache from becoming invalid when the page shifts around

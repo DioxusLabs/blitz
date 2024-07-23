@@ -150,15 +150,14 @@ fn launch_with_window<Doc: DocumentLike + 'static>(window: View<'static, Doc>) {
             event_loop.set_control_flow(ControlFlow::Wait);
 
             let mut on_resume = || {
+                // Resume existing windows
                 for (_, view) in windows.iter_mut() {
                     view.resume(event_loop, &proxy, &rt);
                 }
 
-                for view in pending_windows.iter_mut() {
-                    view.resume(event_loop, &proxy, &rt);
-                }
-
-                for window in pending_windows.drain(..) {
+                // Initialise pending windows
+                for mut window in pending_windows.drain(..) {
+                    window.resume(event_loop, &proxy, &rt);
                     let RenderState::Active(state) = &window.renderer.render_state else {
                         continue;
                     };
@@ -189,7 +188,7 @@ fn launch_with_window<Doc: DocumentLike + 'static>(window: View<'static, Doc>) {
                 } => {
                     if let Some(window) = windows.get_mut(&window_id) {
                         window.renderer.dom.as_mut().resolve();
-                        window.renderer.render(&mut window.scene);
+                        window.renderer.render();
                     };
                 }
 

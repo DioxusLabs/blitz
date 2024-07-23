@@ -8,7 +8,6 @@ use wgpu::rwh::HasWindowHandle;
 
 use std::sync::Arc;
 use std::task::Waker;
-use vello::Scene;
 use winit::dpi::LogicalSize;
 use winit::event::{ElementState, MouseButton};
 use winit::event_loop::{ActiveEventLoop, EventLoopProxy};
@@ -26,7 +25,6 @@ struct State {
 
 pub(crate) struct View<'s, Doc: DocumentLike> {
     pub(crate) renderer: Renderer<'s, Window, Doc>,
-    pub(crate) scene: Scene,
     pub(crate) waker: Option<Waker>,
     /// The state of the keyboard modifiers (ctrl, shift, etc). Winit/Tao don't track these for us so we
     /// need to store them in order to have access to them when processing keypress events
@@ -40,7 +38,6 @@ impl<'a, Doc: DocumentLike> View<'a, Doc> {
     pub(crate) fn new(doc: Doc) -> Self {
         Self {
             renderer: Renderer::new(doc),
-            scene: Scene::new(),
             waker: None,
             keyboard_modifiers: Default::default(),
             #[cfg(any(feature = "accessibility", feature = "menu"))]
@@ -362,7 +359,7 @@ impl<'a, Doc: DocumentLike> View<'a, Doc> {
         };
 
         self.waker = Some(crate::waker::tao_waker(proxy, state.window.id()));
-        self.renderer.render(&mut self.scene);
+        self.renderer.render();
     }
 
     pub fn suspend(&mut self) {
