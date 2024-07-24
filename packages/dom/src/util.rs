@@ -61,7 +61,7 @@ impl From<image::error::ImageError> for ImageFetchErr {
 
 pub(crate) fn fetch_image(url: &str) -> Result<DynamicImage, ImageFetchErr> {
     let blob = crate::util::fetch_blob(url)?;
-    let image = image::io::Reader::new(Cursor::new(blob))
+    let image = image::ImageReader::new(Cursor::new(blob))
         .with_guessed_format()
         .expect("IO errors impossible with Cursor")
         .decode()?;
