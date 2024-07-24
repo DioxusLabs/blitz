@@ -214,7 +214,6 @@ impl<'a, Doc: DocumentLike> View<'a, Doc> {
                 // If we hit a node, then we collect the node to its parents, check for listeners, and then
                 // call those listeners
                 self.dom.handle_event(RendererEvent {
-                    name: "click".to_string(),
                     target: node_id,
                     data: EventData::Click {
                         x: self.mouse_pos.0 as f64,

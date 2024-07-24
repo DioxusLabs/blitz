@@ -113,7 +113,7 @@ impl DocumentLike for DioxusDocument {
                         // let data = dioxus::html::EventData::Mouse()
 
                         let data = Rc::new(PlatformEventData::new(Box::new(NativeClickData {})));
-                        self.vdom.handle_event("click", data, id, true);
+                        self.vdom.handle_event(event.name(), data, id, true);
                         return true;
                     }
                 }
