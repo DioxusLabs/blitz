@@ -100,7 +100,7 @@ impl LayoutPartialTree for Document {
         inputs: taffy::tree::LayoutInput,
     ) -> taffy::tree::LayoutOutput {
         compute_cached_layout(self, node_id, inputs, |tree, node_id, inputs| {
-            let node = tree.node_from_id_mut(node_id);
+            let node = &mut tree.nodes[node_id.into()];
 
             match &mut node.raw_dom_data {
                 NodeData::Text(data) => {
@@ -147,6 +147,10 @@ impl LayoutPartialTree for Document {
                         }
                     }
 
+                    if let Some(input_data) = element_data.text_input_data_mut() {
+                        input_data.editor.rebuild(&mut tree.font_ctx, &mut tree.layout_ctx);
+                    }
+
                     if *element_data.name.local == *"img" {
                         // Get width and height attributes on image element
                         //
@@ -162,7 +166,7 @@ impl LayoutPartialTree for Document {
                         };
 
                         // Get image's native size
-                        let inherent_size = match &element_data.image_data_mut() {
+                        let inherent_size = match element_data.image_data_mut() {
                             Some(data) => taffy::Size {
                                 width: data.image.width() as f32,
                                 height: data.image.height() as f32,
