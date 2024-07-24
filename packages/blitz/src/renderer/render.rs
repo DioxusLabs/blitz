@@ -470,9 +470,35 @@ impl ElementCx<'_> {
                         .map(|coord| vello::skrifa::instance::NormalizedCoord::from_bits(*coord))
                         .collect::<Vec<_>>();
 
+                    let text_brush = match &style.brush {
+                        TextBrush::Normal(text_brush) => text_brush,
+                        TextBrush::Highlight { text, fill } => {
+                            scene.fill(
+                                Fill::EvenOdd,
+                                transform,
+                                fill,
+                                None,
+                                &Rect::from_origin_size(
+                                    (
+                                        glyph_run.offset() as f64,
+                                        // The y coordinate is on the baseline. We want to draw from the top of the line
+                                        // (Note that we are in a y-down coordinate system)
+                                        (y - metrics.ascent - metrics.leading) as f64,
+                                    ),
+                                    (
+                                        glyph_run.advance() as f64,
+                                        (metrics.ascent + metrics.descent + metrics.leading) as f64,
+                                    ),
+                                ),
+                            );
+
+                            text
+                        }
+                    };
+
                     scene
                         .draw_glyphs(font)
-                        .brush(style.brush.text_brush())
+                        .brush(text_brush)
                         .transform(transform)
                         .glyph_transform(glyph_xform)
                         .font_size(font_size)
