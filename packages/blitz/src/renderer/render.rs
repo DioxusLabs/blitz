@@ -316,11 +316,11 @@ impl<'dom> VelloSceneGenerator<'dom> {
 
             // Render caret
             let cursor_line = input_data.editor.get_cursor_line();
-            dbg!(&cursor_line);
+            let transform = Affine::translate((pos.x * self.scale, pos.y * self.scale));
             if let Some(line) = cursor_line {
                 scene.stroke(
                     &Stroke::new(2.),
-                    Affine::translate((pos.x, pos.y)),
+                    transform,
                     &Brush::Solid(Color::BLACK),
                     None,
                     &line,
