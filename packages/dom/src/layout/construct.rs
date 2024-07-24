@@ -275,7 +275,10 @@ fn create_text_editor(doc: &mut Document, input_element_id: usize, is_multiline:
 
     let element = &mut node.raw_dom_data.downcast_element_mut().unwrap();
     if !matches!(element.node_specific_data, NodeSpecificData::TextInput(_)) {
-        let initial_value = element.attr(local_name!("value")).unwrap_or(" ").to_string();
+        let initial_value = element
+            .attr(local_name!("value"))
+            .unwrap_or(" ")
+            .to_string();
 
         let mut text_input_data = TextInputData::new(initial_value, 16.0, is_multiline);
         text_input_data
