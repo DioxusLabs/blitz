@@ -1,7 +1,9 @@
-use crate::events::{HitResult, RendererEvent};
+use crate::events::{EventData, HitResult, RendererEvent};
 use crate::node::TextBrush;
 use crate::{Node, NodeData, TextNodeData, Viewport};
+use peniko::kurbo;
 // use quadtree_rs::Quadtree;
+use parley::editor::{PointerButton, TextEvent};
 use selectors::{matching::QuirksMode, Element};
 use slab::Slab;
 use std::any::Any;
@@ -53,8 +55,6 @@ pub trait DocumentLike: AsRef<Document> + AsMut<Document> + Into<Document> + 'st
     }
 }
 
-impl DocumentLike for Document {}
-
 pub struct Document {
     /// A bump-backed tree
     ///
@@ -99,6 +99,56 @@ pub struct Document {
     pub scroll_offset: f64,
 
     pub changed: HashSet<usize>,
+}
+
+impl DocumentLike for Document {
+    fn handle_event(&mut self, event: RendererEvent) -> bool {
+        // let node_id = event.target;
+
+        match event.data {
+            EventData::Click { x, y, mods } => {
+                let hit = self.hit(x, y);
+                if let Some(hit) = hit {
+                    assert!(hit.node_id == event.target);
+
+                    let node = &mut self.nodes[hit.node_id];
+                    let text_input_data = node
+                        .raw_dom_data
+                        .downcast_element_mut()
+                        .and_then(|el| el.text_input_data_mut());
+                    if text_input_data.is_some() {
+                        let x = hit.x as f64 * self.viewport.scale_f64();
+                        let y = hit.y as f64 * self.viewport.scale_f64();
+                        text_input_data.unwrap().editor.pointer_down(
+                            kurbo::Point { x, y },
+                            mods,
+                            PointerButton::Primary,
+                        );
+                        println!("Clicked {}", hit.node_id);
+
+                        self.set_focus_to(hit.node_id);
+                    }
+                }
+            }
+            EventData::KeyPress { event, mods } => {
+                if let Some(node_id) = self.focus_node_id {
+                    let node = &mut self.nodes[node_id];
+                    let text_input_data = node
+                        .raw_dom_data
+                        .downcast_element_mut()
+                        .and_then(|el| el.text_input_data_mut());
+                    if let Some(input_data) = text_input_data {
+                        let text_event = TextEvent::KeyboardKey(event, mods.state());
+                        input_data.editor.text_event(&text_event);
+                        println!("Sent text event to {}", node_id);
+                    }
+                }
+            }
+            EventData::Hover => {}
+        }
+
+        true
+    }
 }
 
 impl Document {
@@ -509,20 +559,24 @@ impl Document {
         Some(id)
     }
 
-    pub fn set_focus_to(&mut self, focus_node_id: usize) {
-        if Some(focus_node_id) != self.focus_node_id {
-            println!("Focussed node {}", focus_node_id);
-
-            // Remove focus from the old node
-            if let Some(id) = self.focus_node_id {
-                self.snapshot_node_and(id, |node| node.blur());
-            }
-
-            // Focus the new node
-            self.snapshot_node_and(focus_node_id, |node| node.focus());
-
-            self.focus_node_id = Some(focus_node_id);
+    pub fn set_focus_to(&mut self, focus_node_id: usize) -> bool {
+        if Some(focus_node_id) == self.focus_node_id {
+            return false;
         }
+
+        println!("Focussed node {}", focus_node_id);
+
+        // Remove focus from the old node
+        if let Some(id) = self.focus_node_id {
+            self.snapshot_node_and(id, |node| node.blur());
+        }
+
+        // Focus the new node
+        self.snapshot_node_and(focus_node_id, |node| node.focus());
+
+        self.focus_node_id = Some(focus_node_id);
+
+        true
     }
 
     pub fn set_hover_to(&mut self, x: f32, y: f32) -> bool {

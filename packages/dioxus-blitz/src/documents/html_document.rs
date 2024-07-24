@@ -23,7 +23,11 @@ impl From<HtmlDocument> for Document {
         doc.inner
     }
 }
-impl DocumentLike for HtmlDocument {}
+impl DocumentLike for HtmlDocument {
+    fn handle_event(&mut self, event: blitz_dom::events::RendererEvent) -> bool {
+        self.inner.as_mut().handle_event(event)
+    }
+}
 
 impl HtmlDocument {
     pub(crate) fn from_html(html: &str, cfg: &Config) -> Self {

@@ -35,7 +35,7 @@ use parley::layout::PositionedLayoutItem;
 use taffy::prelude::Layout;
 use vello::{
     kurbo::{Affine, Point, Rect, Shape, Stroke, Vec2},
-    peniko::{self, Color, Fill},
+    peniko::{self, Brush, Color, Fill},
     Scene,
 };
 
@@ -313,6 +313,20 @@ impl<'dom> VelloSceneGenerator<'dom> {
 
             // Render text
             cx.stroke_text(scene, text_layout, pos);
+
+            // Render caret
+            let cursor_line = input_data.editor.get_cursor_line();
+            dbg!(&cursor_line);
+            if let Some(line) = cursor_line {
+                scene.stroke(
+                    &Stroke::new(2.),
+                    Affine::translate((pos.x, pos.y)),
+                    &Brush::Solid(Color::BLACK),
+                    None,
+                    &line,
+                );
+            }
+
             return;
         }
 

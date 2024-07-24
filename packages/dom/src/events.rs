@@ -1,7 +1,10 @@
+use winit::{event::KeyEvent, event::Modifiers};
+
 pub struct EventListener {
     pub name: String,
 }
 
+#[derive(Debug)]
 pub struct RendererEvent {
     pub target: usize,
     pub data: EventData,
@@ -14,8 +17,10 @@ impl RendererEvent {
     }
 }
 
+#[derive(Debug)]
 pub enum EventData {
-    Click { x: f64, y: f64 },
+    Click { x: f32, y: f32, mods: Modifiers },
+    KeyPress { event: KeyEvent, mods: Modifiers },
     Hover,
 }
 
@@ -23,11 +28,13 @@ impl EventData {
     pub fn name(&self) -> &'static str {
         match self {
             EventData::Click { .. } => "click",
+            EventData::KeyPress { .. } => "keypress",
             EventData::Hover => "mouseover",
         }
     }
 }
 
+#[derive(Debug, Clone)]
 pub struct HitResult {
     /// The node_id of the node identified as the hit target
     pub node_id: usize,

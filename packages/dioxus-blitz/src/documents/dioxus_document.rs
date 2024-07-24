@@ -3,8 +3,8 @@
 use std::rc::Rc;
 
 use blitz_dom::{
-    namespace_url, node::Attribute, ns, Atom, Document, DocumentLike, ElementNodeData, NodeData,
-    QualName, TextNodeData, Viewport,
+    events::EventData, namespace_url, node::Attribute, ns, Atom, Document, DocumentLike,
+    ElementNodeData, NodeData, QualName, TextNodeData, Viewport,
 };
 
 use dioxus::{
@@ -92,33 +92,38 @@ impl DocumentLike for DioxusDocument {
 
         set_event_converter(Box::new(NativeConverter {}));
 
-        // look for the data-dioxus-id attribute on the element
-        // todo: we might need to walk upwards to find the first element with a data-dioxus-id attribute
-        for node in chain.iter() {
-            let Some(element) = self.inner.tree()[*node].element_data() else {
-                #[cfg(feature = "tracing")]
-                tracing::info!(
-                    "No element data found for node {}: {:?}",
-                    node,
-                    self.inner.tree()[*node]
-                );
+        if matches!(event.data, EventData::Click { .. }) {
+            // look for the data-dioxus-id attribute on the element
+            // todo: we might need to walk upwards to find the first element with a data-dioxus-id attribute
+            for node in chain.iter() {
+                let Some(element) = self.inner.tree()[*node].element_data() else {
+                    #[cfg(feature = "tracing")]
+                    tracing::info!(
+                        "No element data found for node {}: {:?}",
+                        node,
+                        self.inner.tree()[*node]
+                    );
 
-                continue;
-            };
+                    continue;
+                };
 
-            for attr in element.attrs() {
-                if attr.name.local.as_ref() == "data-dioxus-id" {
-                    if let Ok(value) = attr.value.parse::<usize>() {
-                        let id = ElementId(value);
-                        // let data = dioxus::html::EventData::Mouse()
+                for attr in element.attrs() {
+                    if attr.name.local.as_ref() == "data-dioxus-id" {
+                        if let Ok(value) = attr.value.parse::<usize>() {
+                            let id = ElementId(value);
+                            // let data = dioxus::html::EventData::Mouse()
 
-                        let data = Rc::new(PlatformEventData::new(Box::new(NativeClickData {})));
-                        self.vdom.handle_event(event.name(), data, id, true);
-                        return true;
+                            let data =
+                                Rc::new(PlatformEventData::new(Box::new(NativeClickData {})));
+                            self.vdom.handle_event(event.name(), data, id, true);
+                            return true;
+                        }
                     }
                 }
             }
         }
+
+        self.inner.as_mut().handle_event(event);
 
         false
     }

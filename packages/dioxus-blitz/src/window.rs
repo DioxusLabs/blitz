@@ -15,7 +15,7 @@ use winit::dpi::LogicalSize;
 use winit::event::{ElementState, MouseButton};
 use winit::event_loop::{ActiveEventLoop, EventLoopProxy};
 use winit::window::{WindowAttributes, WindowId};
-use winit::{event::WindowEvent, keyboard::KeyCode, keyboard::ModifiersState, window::Window};
+use winit::{event::Modifiers, event::WindowEvent, keyboard::KeyCode, window::Window};
 
 #[cfg(all(feature = "menu", not(any(target_os = "android", target_os = "ios"))))]
 use crate::menu::init_menu;
@@ -53,9 +53,10 @@ pub(crate) struct View<'s, Doc: DocumentLike> {
 
     /// The state of the keyboard modifiers (ctrl, shift, etc). Winit/Tao don't track these for us so we
     /// need to store them in order to have access to them when processing keypress events
-    keyboard_modifiers: ModifiersState,
+    keyboard_modifiers: Modifiers,
     pub devtools: Devtools,
     mouse_pos: (f32, f32),
+    dom_mouse_pos: (f32, f32),
 
     #[cfg(feature = "accessibility")]
     /// Accessibility adapter for `accesskit`.
@@ -91,6 +92,7 @@ impl<'a, Doc: DocumentLike> View<'a, Doc> {
             viewport,
             devtools: Default::default(),
             mouse_pos: Default::default(),
+            dom_mouse_pos: Default::default(),
 
             #[cfg(feature = "accessibility")]
             accessibility: AccessibilityState::new(&winit_window, proxy.clone()),
@@ -185,13 +187,15 @@ impl<'a, Doc: DocumentLike> View<'a, Doc> {
     }
 
     pub fn mouse_move(&mut self, x: f32, y: f32) -> bool {
-        let x = x / self.viewport.zoom();
-        let y = (y - self.dom.as_ref().scroll_offset as f32) / self.viewport.zoom();
+        let dom_x = x / self.viewport.zoom();
+        let dom_y = (y - self.dom.as_ref().scroll_offset as f32) / self.viewport.zoom();
 
         // println!("Mouse move: ({}, {})", x, y);
         // println!("Unscaled: ({}, {})",);
 
-        self.dom.as_mut().set_hover_to(x, y)
+        self.mouse_pos = (x, y);
+        self.dom_mouse_pos = (dom_x, dom_y);
+        self.dom.as_mut().set_hover_to(dom_x, dom_y)
     }
 
     pub fn click(&mut self, button: &str) {
@@ -216,8 +220,9 @@ impl<'a, Doc: DocumentLike> View<'a, Doc> {
                 self.dom.handle_event(RendererEvent {
                     target: node_id,
                     data: EventData::Click {
-                        x: self.mouse_pos.0 as f64,
-                        y: self.mouse_pos.1 as f64,
+                        x: self.dom_mouse_pos.0,
+                        y: self.dom_mouse_pos.1,
+                        mods: self.keyboard_modifiers,
                     },
                 });
             }
@@ -282,7 +287,7 @@ impl<'a, Doc: DocumentLike> View<'a, Doc> {
             },
             WindowEvent::ModifiersChanged(new_state) => {
                 // Store new keyboard modifier (ctrl, shift, etc) state for later use
-                self.keyboard_modifiers = new_state.state();
+                self.keyboard_modifiers = new_state;
             }
             WindowEvent::KeyboardInput { event, .. } => {
                 let PhysicalKey::Code(key_code) = event.physical_key else {
@@ -292,9 +297,9 @@ impl<'a, Doc: DocumentLike> View<'a, Doc> {
                     return;
                 }
 
-                let ctrl = self.keyboard_modifiers.control_key();
-                let meta = self.keyboard_modifiers.super_key();
-                let alt = self.keyboard_modifiers.alt_key();
+                let ctrl = self.keyboard_modifiers.state().control_key();
+                let meta = self.keyboard_modifiers.state().super_key();
+                let alt = self.keyboard_modifiers.state().alt_key();
 
                 // Ctrl/Super keyboard shortcuts
                 if ctrl | meta {
@@ -340,7 +345,13 @@ impl<'a, Doc: DocumentLike> View<'a, Doc> {
                         self.request_redraw();
                     }
                     _ => {
-                        // TODO: handle regular keypresses for text input
+                        if let Some(focus_node_id) = self.dom.as_ref().get_focussed_node_id() {
+                            self.dom.handle_event(RendererEvent {
+                                target: focus_node_id,
+                                data: EventData::KeyPress { event, mods: self.keyboard_modifiers }
+                            });
+                            self.request_redraw();
+                        }
                     }
                 }
             }

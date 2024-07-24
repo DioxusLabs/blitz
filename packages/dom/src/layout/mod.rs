@@ -148,7 +148,9 @@ impl LayoutPartialTree for Document {
                     }
 
                     if let Some(input_data) = element_data.text_input_data_mut() {
-                        input_data.editor.rebuild(&mut tree.font_ctx, &mut tree.layout_ctx);
+                        input_data
+                            .editor
+                            .rebuild(&mut tree.font_ctx, &mut tree.layout_ctx);
                     }
 
                     if *element_data.name.local == *"img" {

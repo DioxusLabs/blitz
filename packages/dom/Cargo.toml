@@ -28,6 +28,7 @@ url = { version = "2.5.0", features = ["serde"] }
 data-url = "0.3.1"
 ureq = "2.9"
 image = "0.25"
+winit = { version = "0.30.4", default-features = false }
 
 
 # on wasm use the js feature on getrandom
