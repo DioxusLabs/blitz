@@ -280,7 +280,7 @@ fn create_text_editor(doc: &mut Document, input_element_id: usize, is_multiline:
         let mut text_input_data = TextInputData::new(initial_value, 16.0, is_multiline);
         text_input_data
             .editor
-            .set_text_size(parley_style.font_size * doc.scale);
+            .set_text_size(parley_style.font_size * doc.viewport.scale());
         text_input_data.editor.set_brush(parley_style.brush);
         element.node_specific_data = NodeSpecificData::TextInput(text_input_data);
     }
@@ -306,9 +306,9 @@ pub(crate) fn build_inline_layout(
     let root_line_height = parley_style.line_height;
 
     // Create a parley tree builder
-    let mut builder = doc
-        .layout_ctx
-        .tree_builder(&mut doc.font_ctx, doc.scale, &parley_style);
+    let mut builder =
+        doc.layout_ctx
+            .tree_builder(&mut doc.font_ctx, doc.viewport.scale(), &parley_style);
 
     // Set whitespace collapsing mode
     let collapse_mode = root_node_style

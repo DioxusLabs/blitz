@@ -275,7 +275,7 @@ impl Document {
         node_id: NodeId,
         inputs: taffy::tree::LayoutInput,
     ) -> taffy::LayoutOutput {
-        let scale = self.scale;
+        let scale = self.viewport.scale();
 
         // Take inline layout to satisfy borrow checker
         let mut inline_layout = self.nodes[usize::from(node_id)]

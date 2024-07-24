@@ -75,9 +75,10 @@ impl<'a, Doc: DocumentLike> View<'a, Doc> {
     ) -> Self {
         let winit_window = Arc::from(event_loop.create_window(config.attributes).unwrap());
 
+        // Create viewport
         let size = winit_window.inner_size();
-        let mut viewport = Viewport::new((size.width, size.height));
-        viewport.set_hidpi_scale(winit_window.scale_factor() as f32);
+        let scale = winit_window.scale_factor() as f32;
+        let viewport = Viewport::new(size.width, size.height, scale);
 
         Self {
             renderer: Renderer::new(winit_window.clone()),
@@ -103,9 +104,7 @@ impl<'a, Doc: DocumentLike> View<'a, Doc> {
 impl<'a, Doc: DocumentLike> View<'a, Doc> {
     pub fn resume(&mut self, rt: &tokio::runtime::Runtime) {
         // Resolve dom
-        let device = self.viewport.make_device();
-        self.dom.as_mut().set_stylist_device(device);
-        self.dom.as_mut().set_scale(self.viewport.scale());
+        self.dom.as_mut().set_viewport(self.viewport.clone());
         self.dom.as_mut().resolve();
 
         // Resume renderer
@@ -172,10 +171,7 @@ impl<'a, Doc: DocumentLike> View<'a, Doc> {
     pub fn kick_dom_viewport(&mut self) {
         let (width, height) = self.viewport.window_size;
         if width > 0 && height > 0 {
-            self.dom.as_mut().set_scale(self.viewport.scale());
-            self.dom
-                .as_mut()
-                .set_stylist_device(self.viewport.make_device());
+            self.dom.as_mut().set_viewport(self.viewport.clone());
             self.request_redraw();
         }
     }

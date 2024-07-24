@@ -28,7 +28,8 @@ impl DocumentLike for HtmlDocument {}
 impl HtmlDocument {
     pub(crate) fn from_html(html: &str, cfg: &Config) -> Self {
         // Spin up the virtualdom and include the default stylesheet
-        let mut dom = Document::new(Viewport::new((0, 0)).make_device());
+        let viewport = Viewport::new(0, 0, 1.0);
+        let mut dom = Document::new(viewport);
 
         // Set base url if configured
         if let Some(url) = &cfg.base_url {

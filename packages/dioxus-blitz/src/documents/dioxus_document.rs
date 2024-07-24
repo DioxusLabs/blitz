@@ -126,8 +126,8 @@ impl DocumentLike for DioxusDocument {
 
 impl DioxusDocument {
     pub fn new(vdom: VirtualDom) -> Self {
-        let device = Viewport::new((0, 0)).make_device();
-        let mut doc = Document::new(device);
+        let viewport = Viewport::new(0, 0, 1.0);
+        let mut doc = Document::new(viewport);
 
         // doc.add_element()
 

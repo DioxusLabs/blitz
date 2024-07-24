@@ -1,7 +1,7 @@
 use crate::document::DummyFontMetricsProvider;
 use style::media_queries::{Device, MediaType};
 
-#[derive(Default, Debug)]
+#[derive(Default, Debug, Clone)]
 pub struct Viewport {
     pub window_size: (u32, u32),
 
@@ -13,10 +13,10 @@ pub struct Viewport {
 }
 
 impl Viewport {
-    pub fn new(window_size: (u32, u32)) -> Self {
+    pub fn new(physical_width: u32, physical_height: u32, scale_factor: f32) -> Self {
         Self {
-            window_size,
-            hidpi_scale: 1.0,
+            window_size: (physical_width, physical_height),
+            hidpi_scale: scale_factor,
             zoom: 1.0,
             font_size: 16.0,
         }
@@ -47,7 +47,7 @@ impl Viewport {
         &mut self.zoom
     }
 
-    pub fn make_device(&self) -> Device {
+    pub(crate) fn make_device(&self) -> Device {
         let width = self.window_size.0 as f32 / self.scale();
         let height = self.window_size.1 as f32 / self.scale();
         let viewport_size = euclid::Size2D::new(width, height);

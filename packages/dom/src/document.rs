@@ -1,6 +1,6 @@
 use crate::events::{HitResult, RendererEvent};
 use crate::node::TextBrush;
-use crate::{Node, NodeData, TextNodeData};
+use crate::{Node, NodeData, TextNodeData, Viewport};
 // use quadtree_rs::Quadtree;
 use selectors::{matching::QuirksMode, Element};
 use slab::Slab;
@@ -80,8 +80,8 @@ pub struct Document {
     /// The quadtree we use for hit-testing
     // pub(crate) quadtree: Quadtree<u64, usize>,
 
-    // The HiDPI display scale
-    pub(crate) scale: f32,
+    // Viewport details such as the dimensions, HiDPI scale, and zoom factor,
+    pub(crate) viewport: Viewport,
 
     pub(crate) stylesheets: HashMap<String, DocumentStyleSheet>,
 
@@ -102,15 +102,15 @@ pub struct Document {
 }
 
 impl Document {
-    pub fn new(device: Device) -> Self {
-        let quirks = QuirksMode::NoQuirks;
-        let stylist = Stylist::new(device, quirks);
+    pub fn new(viewport: Viewport) -> Self {
+        let device = viewport.make_device();
+        let stylist = Stylist::new(device, QuirksMode::NoQuirks);
         let snapshots = SnapshotMap::new();
         let nodes = Box::new(Slab::new());
         let guard = SharedRwLock::new();
         let nodes_to_id = HashMap::new();
 
-        // Make sure we turn on servo features
+        // Make sure we turn on stylo features
         style_config::set_bool("layout.flexbox.enabled", true);
         style_config::set_bool("layout.grid.enabled", true);
         style_config::set_bool("layout.legacy_layout", true);
@@ -122,7 +122,7 @@ impl Document {
             stylist,
             snapshots,
             nodes_to_id,
-            scale: 1.0,
+            viewport,
             base_url: None,
             // quadtree: Quadtree::new(20),
             stylesheets: HashMap::new(),
@@ -181,10 +181,6 @@ impl Document {
             .unwrap()
             .as_element()
             .unwrap()
-    }
-
-    pub fn set_scale(&mut self, scale: f32) {
-        self.scale = scale;
     }
 
     pub fn create_node(&mut self, node_data: NodeData) -> usize {
@@ -561,6 +557,11 @@ impl Document {
 
     pub fn get_hover_node_id(&self) -> Option<usize> {
         self.hover_node_id
+    }
+
+    pub fn set_viewport(&mut self, viewport: Viewport) {
+        self.viewport = viewport;
+        self.set_stylist_device(self.viewport.make_device());
     }
 
     /// Update the device and reset the stylist to process the new size
