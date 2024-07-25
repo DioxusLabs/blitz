@@ -352,18 +352,7 @@ impl<'dom> VelloSceneGenerator<'dom> {
 
         // Render the text in text inputs
         if let Some(input_data) = cx.text_input {
-            let (_layout, pos) = self.node_position(node_id, location);
             let text_layout = input_data.editor.layout();
-
-            // Apply padding/border offset to inline root
-            let taffy::Layout {
-                border, padding, ..
-            } = element.final_layout;
-            let scaled_pb = (padding + border).map(f64::from);
-            let pos = vello::kurbo::Point {
-                x: pos.x + scaled_pb.left,
-                y: pos.y + scaled_pb.top,
-            };
 
             // Render text
             cx.stroke_text(scene, text_layout, pos);
