@@ -83,19 +83,23 @@ impl ElementFrame {
         let mut border_bottom_right_radius_width = scale * border.border_bottom_right_radius.0.width.0.resolve(pixel_width).px() as f64;
         let mut border_bottom_right_radius_height = scale * border.border_bottom_right_radius.0.height.0.resolve(pixel_height).px() as f64;
 
-        rescale_borderers(&mut border_top_left_radius_width, &mut border_top_right_radius_width, inner_rect.width());
-        rescale_borderers(&mut border_bottom_left_radius_width, &mut border_bottom_right_radius_width, inner_rect.width());
-        rescale_borderers(&mut border_top_left_radius_height, &mut border_bottom_left_radius_height, inner_rect.height());
-        rescale_borderers(&mut border_top_right_radius_height, &mut border_bottom_right_radius_height, inner_rect.height());
+        // Correct the border radii if they are too big if two border radii would intersect, then we need to shrink
+        // ALL border radii by the same factor such that they do not
+        let top_overlap_factor = inner_rect.width() / (border_top_left_radius_width + border_top_right_radius_width);
+        let bottom_overlap_factor = inner_rect.width() / (border_bottom_left_radius_width + border_bottom_right_radius_width);
+        let left_overlap_factor = inner_rect.height() / (border_top_left_radius_height + border_bottom_left_radius_height);
+        let right_overlap_factor = inner_rect.height() / (border_top_right_radius_height + border_bottom_right_radius_height);
 
-        // Correct the border radii if they are too big
-        // if two border radii would intersect, we need to shrink them to the intersection point
-        fn rescale_borderers(left: &mut f64, right: &mut f64, dim: f64)  {
-            if *left + *right > dim {
-                let ratio = *left / (*left + *right);
-                *left = ratio * dim;
-                *right = (1.0 - ratio) * dim;
-            }
+        let min_factor = top_overlap_factor.min(bottom_overlap_factor).min(left_overlap_factor).min(right_overlap_factor).min(1.0);
+        if min_factor < 1.0 {
+            border_top_left_radius_width *= min_factor;
+            border_top_left_radius_height *= min_factor;
+            border_top_right_radius_width *= min_factor;
+            border_top_right_radius_height *= min_factor;
+            border_bottom_left_radius_width *= min_factor;
+            border_bottom_left_radius_height *= min_factor;
+            border_bottom_right_radius_width *= min_factor;
+            border_bottom_right_radius_height *= min_factor;
         }
 
         Self {
