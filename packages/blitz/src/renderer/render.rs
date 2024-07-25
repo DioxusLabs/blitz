@@ -369,11 +369,7 @@ impl<'dom> VelloSceneGenerator<'dom> {
                     &line,
                 );
             }
-
-            return;
-        }
-
-        if element.is_inline_root {
+        } else if element.is_inline_root {
             let text_layout = &element
                 .raw_dom_data
                 .downcast_element()
