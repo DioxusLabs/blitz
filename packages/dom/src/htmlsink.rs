@@ -311,8 +311,9 @@ impl<'b> TreeSink for DocumentHtmlParser<'b> {
         // Ignore. We don't care about the DOCTYPE for now.
     }
 
-    fn get_template_contents(&mut self, _target: &Self::Handle) -> Self::Handle {
-        unimplemented!()
+    fn get_template_contents(&mut self, target: &Self::Handle) -> Self::Handle {
+        // TODO: implement templates properly. This should allow to function like regular elements.
+        *target
     }
 
     fn same_node(&self, x: &Self::Handle, y: &Self::Handle) -> bool {
