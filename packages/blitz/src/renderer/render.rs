@@ -632,17 +632,17 @@ impl ElementCx<'_> {
                     // let bg_color = background.background_color.clone();
                     // let bg_color = bg_color.as_absolute().unwrap();
                     // let bg_color = Color::RED;
-                    let shape = self.frame.outer_rect;
+                    // let shape = self.frame.outer_rect;
 
-                    // Fill the color
-                    scene.fill(
-                        Fill::NonZero,
-                        self.transform,
-                        Color::RED,
-                        // bg_color.as_vello(),
-                        Option::None,
-                        &shape,
-                    );
+                    // // Fill the color
+                    // scene.fill(
+                    //     Fill::NonZero,
+                    //     self.transform,
+                    //     Color::RED,
+                    //     // bg_color.as_vello(),
+                    //     Option::None,
+                    //     &shape,
+                    // );
                 }
                 PaintWorklet(_) => todo!("Implement background drawing for Image::PaintWorklet"),
                 CrossFade(_) => todo!("Implement background drawing for Image::CrossFade"),
