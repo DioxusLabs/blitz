@@ -34,8 +34,8 @@ use image::{imageops::FilterType, DynamicImage};
 use parley::layout::PositionedLayoutItem;
 use taffy::prelude::Layout;
 use vello::{
-    kurbo::{Affine, Point, Rect, Shape, Stroke, Vec2},
-    peniko::{self, Brush, Color, Fill},
+    kurbo::{Affine, Point, Rect, Shape, Size, Stroke, Vec2},
+    peniko::{self, BlendMode, Brush, Color, Fill, Mix},
     Scene,
 };
 
@@ -343,16 +343,30 @@ impl<'dom> VelloSceneGenerator<'dom> {
 
             // Apply padding/border offset to inline root
             let taffy::Layout {
-                border, padding, ..
+                size,
+                border,
+                padding,
+                ..
             } = element.final_layout;
             let scaled_pb = (padding + border).map(f64::from);
             let pos = vello::kurbo::Point {
                 x: pos.x + scaled_pb.left,
                 y: pos.y + scaled_pb.top,
             };
+            let size = vello::kurbo::Size {
+                width: (size.width as f64 - scaled_pb.left - scaled_pb.right) * self.scale,
+                height: (size.height as f64 - scaled_pb.top - scaled_pb.bottom) * self.scale,
+            };
+
+            let transform = Affine::translate((pos.x * self.scale, pos.y * self.scale));
+            let origin = vello::kurbo::Point{ x: 0.0, y: 0.0 };
+            // let clip = size.to_rect();
+            let clip = Rect::from_origin_size(origin, size);
 
             // Render text
             cx.stroke_text(scene, &text_layout.layout, pos);
+            scene.push_layer(BlendMode::default(), 1.0, transform, &clip);
+            scene.pop_layer();
 
             // Render inline boxes
             for line in text_layout.layout.lines() {
