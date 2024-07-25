@@ -54,7 +54,7 @@ where
         // The intention here is to split the rendering pipeline away from tao/windowing for rendering to images
 
         // 2. Set up Vello specific stuff
-        let render_context = RenderContext::new().unwrap();
+        let render_context = RenderContext::new();
 
         Self {
             render_context,
