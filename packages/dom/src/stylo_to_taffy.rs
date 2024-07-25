@@ -152,7 +152,7 @@ pub(crate) fn position(input: stylo::Position) -> taffy::Position {
         // TODO: support position:fixed and sticky
         stylo::Position::Absolute => taffy::Position::Absolute,
         stylo::Position::Fixed => taffy::Position::Absolute,
-        stylo::Position::Sticky => taffy::Position::Absolute,
+        stylo::Position::Sticky => taffy::Position::Relative,
     }
 }
 
