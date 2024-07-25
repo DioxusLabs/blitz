@@ -33,8 +33,8 @@ use image::{imageops::FilterType, DynamicImage};
 use parley::layout::PositionedLayoutItem;
 use taffy::prelude::Layout;
 use vello::{
-    kurbo::{Affine, Point, Rect, Shape, Size, Stroke, Vec2},
-    peniko::{self, BlendMode, Brush, Color, Fill, Mix},
+    kurbo::{Affine, Point, Rect, Shape, Stroke, Vec2},
+    peniko::{self, Brush, Color, Fill, Mix},
     Scene,
 };
 
@@ -322,7 +322,6 @@ impl<'dom> VelloSceneGenerator<'dom> {
         };
         let transform = Affine::translate((pos.x * self.scale, pos.y * self.scale));
         let origin = vello::kurbo::Point{ x: 0.0, y: 0.0 };
-        // let clip = size.to_rect();
         let clip = Rect::from_origin_size(origin, size);
 
         if should_clip {
