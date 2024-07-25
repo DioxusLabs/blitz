@@ -1,5 +1,5 @@
-use std::sync::Arc;
 use std::sync::atomic::{self, AtomicUsize};
+use std::sync::Arc;
 
 use super::multicolor_rounded_rect::{Edge, ElementFrame};
 use crate::{
@@ -11,10 +11,14 @@ use blitz_dom::{local_name, Document, Node};
 
 use style::{
     dom::TElement,
-    properties::{generated::longhands::visibility::computed_value::T as StyloVisibility, style_structs::Outline, ComputedValues},
+    properties::{
+        generated::longhands::visibility::computed_value::T as StyloVisibility,
+        style_structs::Outline, ComputedValues,
+    },
     values::{
         computed::{
-            Angle, AngleOrPercentage, CSSPixelLength, LengthPercentage, LineDirection, Overflow, Percentage
+            Angle, AngleOrPercentage, CSSPixelLength, LengthPercentage, LineDirection, Overflow,
+            Percentage,
         },
         generics::{
             color::Color as StyloColor,
@@ -24,7 +28,10 @@ use style::{
             position::GenericPosition,
             NonNegative,
         },
-        specified::{position::{HorizontalPositionKeyword, VerticalPositionKeyword}, BorderStyle, OutlineStyle},
+        specified::{
+            position::{HorizontalPositionKeyword, VerticalPositionKeyword},
+            BorderStyle, OutlineStyle,
+        },
     },
     OwnedSlice,
 };
@@ -38,9 +45,9 @@ use vello::{
     Scene,
 };
 
-const CLIP_LIMIT : usize = 28;
-static CLIPS_USED : AtomicUsize = AtomicUsize::new(0);
-static CLIPS_WANTED : AtomicUsize = AtomicUsize::new(0);
+const CLIP_LIMIT: usize = 28;
+static CLIPS_USED: AtomicUsize = AtomicUsize::new(0);
+static CLIPS_WANTED: AtomicUsize = AtomicUsize::new(0);
 
 /// Draw the current tree to current render surface
 /// Eventually we'll want the surface itself to be passed into the render function, along with things like the viewport
@@ -53,7 +60,6 @@ pub fn generate_vello_scene(
     scale: f64,
     devtool_config: Devtools,
 ) {
-
     CLIPS_USED.store(0, atomic::Ordering::SeqCst);
     CLIPS_WANTED.store(0, atomic::Ordering::SeqCst);
 
@@ -65,7 +71,11 @@ pub fn generate_vello_scene(
     };
     generator.generate_vello_scene(scene);
 
-    println!("Rendered using {} clips ({} wanted)", CLIPS_USED.load(atomic::Ordering::SeqCst), CLIPS_WANTED.load(atomic::Ordering::SeqCst));
+    println!(
+        "Rendered using {} clips ({} wanted)",
+        CLIPS_USED.load(atomic::Ordering::SeqCst),
+        CLIPS_WANTED.load(atomic::Ordering::SeqCst)
+    );
 }
 
 /// A short-lived struct which holds a bunch of parameters for rendering a vello scene so
@@ -321,7 +331,7 @@ impl<'dom> VelloSceneGenerator<'dom> {
             height: (size.height as f64 - scaled_pb.top - scaled_pb.bottom) * self.scale,
         };
         let transform = Affine::translate((pos.x * self.scale, pos.y * self.scale));
-        let origin = vello::kurbo::Point{ x: 0.0, y: 0.0 };
+        let origin = vello::kurbo::Point { x: 0.0, y: 0.0 };
         let clip = Rect::from_origin_size(origin, size);
 
         if should_clip {
