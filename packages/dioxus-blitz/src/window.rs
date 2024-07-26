@@ -76,6 +76,9 @@ impl<'a, Doc: DocumentLike> View<'a, Doc> {
     ) -> Self {
         let winit_window = Arc::from(event_loop.create_window(config.attributes).unwrap());
 
+        // TODO: make this conditional on text input focus
+        winit_window.set_ime_allowed(true);
+
         // Create viewport
         let size = winit_window.inner_size();
         let scale = winit_window.scale_factor() as f32;
@@ -282,8 +285,11 @@ impl<'a, Doc: DocumentLike> View<'a, Doc> {
             }
 
             // Text / keyboard events
-            WindowEvent::Ime(_) => {
-                // TODO: handle IME events
+            WindowEvent::Ime(ime_event) => {
+                if let Some(target) = self.dom.as_ref().get_focussed_node_id() {
+                    self.dom.handle_event(RendererEvent { target, data: EventData::Ime(ime_event) });
+                    self.request_redraw();
+                }
             },
             WindowEvent::ModifiersChanged(new_state) => {
                 // Store new keyboard modifier (ctrl, shift, etc) state for later use

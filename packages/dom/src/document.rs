@@ -144,6 +144,20 @@ impl DocumentLike for Document {
                     }
                 }
             }
+            EventData::Ime(ime_event) => {
+                if let Some(node_id) = self.focus_node_id {
+                    let node = &mut self.nodes[node_id];
+                    let text_input_data = node
+                        .raw_dom_data
+                        .downcast_element_mut()
+                        .and_then(|el| el.text_input_data_mut());
+                    if let Some(input_data) = text_input_data {
+                        let text_event = TextEvent::Ime(ime_event);
+                        input_data.editor.text_event(&text_event);
+                        println!("Sent ime event to {}", node_id);
+                    }
+                }
+            }
             EventData::Hover => {}
         }
 

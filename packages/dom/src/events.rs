@@ -1,4 +1,4 @@
-use winit::{event::KeyEvent, event::Modifiers};
+use winit::event::{Ime, KeyEvent, Modifiers};
 
 pub struct EventListener {
     pub name: String,
@@ -21,6 +21,7 @@ impl RendererEvent {
 pub enum EventData {
     Click { x: f32, y: f32, mods: Modifiers },
     KeyPress { event: KeyEvent, mods: Modifiers },
+    Ime(Ime),
     Hover,
 }
 
@@ -29,6 +30,7 @@ impl EventData {
         match self {
             EventData::Click { .. } => "click",
             EventData::KeyPress { .. } => "keypress",
+            EventData::Ime { .. } => "input",
             EventData::Hover => "mouseover",
         }
     }
