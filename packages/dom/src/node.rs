@@ -352,6 +352,20 @@ impl ElementNodeData {
         }
     }
 
+    pub fn svg_data(&self) -> Option<&usvg::Tree> {
+        match self.node_specific_data {
+            NodeSpecificData::Svg(ref data) => Some(data),
+            _ => None,
+        }
+    }
+
+    pub fn svg_data_mut(&mut self) -> Option<&mut usvg::Tree> {
+        match self.node_specific_data {
+            NodeSpecificData::Svg(ref mut data) => Some(data),
+            _ => None,
+        }
+    }
+
     pub fn text_input_data(&self) -> Option<&TextInputData> {
         match self.node_specific_data {
             NodeSpecificData::TextInput(ref data) => Some(data),
@@ -470,6 +484,8 @@ impl TextInputData {
 pub enum NodeSpecificData {
     /// The element's image content (\<img\> element's only)
     Image(ImageData),
+    /// The element's image content (\<img\> element's only)
+    Svg(usvg::Tree),
     /// Parley text layout (elements with inline inner display mode only)
     InlineRoot(Box<TextLayout>),
     /// Parley text editor (text inputs)
@@ -482,6 +498,7 @@ impl std::fmt::Debug for NodeSpecificData {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             NodeSpecificData::Image(_) => f.write_str("NodeSpecificData::Image"),
+            NodeSpecificData::Svg(_) => f.write_str("NodeSpecificData::Svg"),
             NodeSpecificData::InlineRoot(_) => f.write_str("NodeSpecificData::InlineRoot"),
             NodeSpecificData::TextInput(_) => f.write_str("NodeSpecificData::TextInput"),
             NodeSpecificData::None => f.write_str("NodeSpecificData::None"),

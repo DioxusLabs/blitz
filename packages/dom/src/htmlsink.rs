@@ -109,18 +109,34 @@ impl<'a> DocumentHtmlParser<'a> {
             if !raw_src.is_empty() {
                 let src = self.doc.resolve_url(raw_src);
 
-                // FIXME: Image fetching should not be a synchronous network request during parsing
-                let image_result = crate::util::fetch_image(src.as_str());
-                match image_result {
-                    Ok(image) => {
-                        self.node_mut(target_id)
-                            .element_data_mut()
-                            .unwrap()
-                            .node_specific_data =
-                            NodeSpecificData::Image(ImageData::new(Arc::new(image)));
+                if src.path().ends_with(".svg") {
+                    // FIXME: Image fetching should not be a synchronous network request during parsing
+                    let svg_results = crate::util::fetch_svg(src.as_str());
+                    match svg_results {
+                        Ok(svg) => {
+                            self.node_mut(target_id)
+                                .element_data_mut()
+                                .unwrap()
+                                .node_specific_data = NodeSpecificData::Svg(svg);
+                        }
+                        Err(_) => {
+                            eprintln!("Error fetching image {}", src);
+                        }
                     }
-                    Err(_) => {
-                        eprintln!("Error fetching image {}", src);
+                } else {
+                    // FIXME: Image fetching should not be a synchronous network request during parsing
+                    let image_result = crate::util::fetch_image(src.as_str());
+                    match image_result {
+                        Ok(image) => {
+                            self.node_mut(target_id)
+                                .element_data_mut()
+                                .unwrap()
+                                .node_specific_data =
+                                NodeSpecificData::Image(ImageData::new(Arc::new(image)));
+                        }
+                        Err(_) => {
+                            eprintln!("Error fetching image {}", src);
+                        }
                     }
                 }
             }

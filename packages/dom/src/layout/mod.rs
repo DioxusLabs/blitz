@@ -168,15 +168,24 @@ impl LayoutPartialTree for Document {
                         };
 
                         // Get image's native size
-                        let inherent_size = match element_data.image_data_mut() {
-                            Some(data) => taffy::Size {
+                        let inherent_size = match &element_data.node_specific_data {
+                            NodeSpecificData::Image(data) => taffy::Size {
                                 width: data.image.width() as f32,
                                 height: data.image.height() as f32,
                             },
-                            None => taffy::Size {
+                            NodeSpecificData::Svg(svg) => {
+                                let size = svg.size();
+                                taffy::Size {
+                                    width: size.width(),
+                                    height: size.height(),
+                                }
+                            }
+                            NodeSpecificData::None => taffy::Size {
                                 width: 0.0,
                                 height: 0.0,
                             },
+
+                            _ => unreachable!(),
                         };
 
                         let image_context = ImageContext {
