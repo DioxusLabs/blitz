@@ -1,5 +1,14 @@
 #![cfg_attr(docsrs, feature(doc_cfg))]
 
+//! A native renderer for Dioxus.
+//! 
+//! ## Feature flags
+//!  - `default`: Enables the features listed below.
+//!  - `accessibility`: Enables [`accesskit`] accessibility support.
+//!  - `hot-reload`: Enables hot-reloading of Dioxus RSX.
+//!  - `menu`: Enables the [`muda`] menubar.
+//!  - `tracing`: Enables tracing support.
+
 mod documents;
 mod stylo_to_winit;
 mod waker;
