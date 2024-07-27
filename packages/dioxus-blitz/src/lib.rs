@@ -1,7 +1,7 @@
 #![cfg_attr(docsrs, feature(doc_cfg))]
 
 //! A native renderer for Dioxus.
-//! 
+//!
 //! ## Feature flags
 //!  - `default`: Enables the features listed below.
 //!  - `accessibility`: Enables [`accesskit`] accessibility support.

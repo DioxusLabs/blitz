@@ -1,5 +1,5 @@
 //! A native renderer for HTML/CSS.
-//! 
+//!
 //! ## Feature flags
 //!  - `default`: Enables the features listed below.
 //!  - `tracing`: Enables tracing support.
