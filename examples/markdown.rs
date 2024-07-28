@@ -1,14 +1,18 @@
 //! Render the readme.md using the gpu renderer
 
-use comrak::{markdown_to_html, ExtensionOptionsBuilder, Options};
+use comrak::{markdown_to_html, ExtensionOptionsBuilder, Options, RenderOptionsBuilder};
 use dioxus_blitz::Config;
 
 fn main() {
+    let contents = std::env::args()
+        .skip(1)
+        .next()
+        .map(|path| std::fs::read_to_string(path).unwrap())
+        .unwrap_or(include_str!("../README.md").to_string());
+
     let stylesheet = include_str!("./assets/github-markdown-light.css");
-    let contents = include_str!("../README.md");
-    // let contents = include_str!("../../taffy/README.md");
     let body_html = markdown_to_html(
-        contents,
+        &contents,
         &Options {
             extension: ExtensionOptionsBuilder::default()
                 .strikethrough(true)
@@ -22,6 +26,10 @@ fn main() {
                 .description_lists(false)
                 .front_matter_delimiter(None)
                 .multiline_block_quotes(false)
+                .build()
+                .unwrap(),
+            render: RenderOptionsBuilder::default()
+                .unsafe_(true)
                 .build()
                 .unwrap(),
             ..Default::default()
