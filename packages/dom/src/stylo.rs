@@ -460,10 +460,7 @@ impl<'a> selectors::Element for BlitzNode<'a> {
     }
 
     fn is_pseudo_element(&self) -> bool {
-        match self.raw_dom_data {
-            NodeData::AnonymousBlock(_) => true,
-            _ => false,
-        }
+        matches!(self.raw_dom_data, NodeData::AnonymousBlock(_))
     }
 
     // These methods are implemented naively since we only threaded real nodes and not fake nodes
