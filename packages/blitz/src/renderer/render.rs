@@ -10,8 +10,11 @@ use blitz_dom::{local_name, Document, Node};
 
 use style::{
     dom::TElement,
-    properties::generated::longhands::visibility::computed_value::T as StyloVisibility,
-    properties::{style_structs::Outline, ComputedValues},
+    properties::{
+        generated::longhands::visibility::computed_value::T as StyloVisibility,
+        style_structs::{Font, Outline},
+        ComputedValues,
+    },
     values::{
         computed::{
             Angle, AngleOrPercentage, CSSPixelLength, LengthPercentage, LineDirection, Percentage,
@@ -24,8 +27,10 @@ use style::{
             position::GenericPosition,
             NonNegative,
         },
-        specified::position::{HorizontalPositionKeyword, VerticalPositionKeyword},
-        specified::{BorderStyle, OutlineStyle},
+        specified::{
+            position::{HorizontalPositionKeyword, VerticalPositionKeyword},
+            BorderStyle, OutlineStyle,
+        },
     },
     OwnedSlice,
 };
@@ -401,7 +406,9 @@ impl<'dom> VelloSceneGenerator<'dom> {
             .borrow()
             .as_ref()
             .map(|element_data| element_data.styles.primary().clone())
-            .unwrap_or(ComputedValues::initial_values().to_arc());
+            .unwrap_or(
+                ComputedValues::initial_values_with_font_override(Font::initial_values()).to_arc(),
+            );
 
         let (layout, pos) = self.node_position(element.id, location);
         let scale = self.scale;

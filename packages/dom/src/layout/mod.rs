@@ -343,9 +343,9 @@ impl Document {
                         TextAlignKeyword::Center => Alignment::Middle,
                         TextAlignKeyword::Justify => Alignment::Justified,
                         TextAlignKeyword::End => Alignment::End,
-                        TextAlignKeyword::ServoCenter => Alignment::Middle,
-                        TextAlignKeyword::ServoLeft => Alignment::Start,
-                        TextAlignKeyword::ServoRight => Alignment::End,
+                        TextAlignKeyword::MozCenter => Alignment::Middle,
+                        TextAlignKeyword::MozLeft => Alignment::Start,
+                        TextAlignKeyword::MozRight => Alignment::End,
                     }
                 })
                 .unwrap_or(parley::layout::Alignment::Start);

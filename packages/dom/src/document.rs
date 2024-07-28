@@ -1,6 +1,7 @@
 use crate::events::{EventData, HitResult, RendererEvent};
 use crate::node::TextBrush;
 use crate::{Node, NodeData, TextNodeData, Viewport};
+use app_units::Au;
 use peniko::kurbo;
 // use quadtree_rs::Quadtree;
 use parley::editor::{PointerButton, TextEvent};
@@ -36,6 +37,17 @@ impl FontMetricsProvider for DummyFontMetricsProvider {
         _retrieve_math_scales: bool,
     ) -> style::font_metrics::FontMetrics {
         Default::default()
+    }
+
+    fn base_size_for_generic(
+        &self,
+        generic: style::values::computed::font::GenericFontFamily,
+    ) -> style::values::computed::Length {
+        let size = match generic {
+            style::values::computed::font::GenericFontFamily::Monospace => 13.0,
+            _ => 16.0,
+        };
+        style::values::computed::Length::from(Au::from_f32_px(size))
     }
 }
 

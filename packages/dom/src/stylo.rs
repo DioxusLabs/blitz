@@ -38,7 +38,7 @@ use style::{
     values::{AtomIdent, GenericAtomIdent},
     Atom,
 };
-use style_traits::dom::ElementState;
+use style_dom::ElementState;
 use taffy::prelude::Style;
 
 use super::stylo_to_taffy;

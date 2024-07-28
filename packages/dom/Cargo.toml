@@ -12,6 +12,7 @@ style = { workspace = true, features = ["servo"] }
 selectors = { workspace = true }
 style_config = { workspace = true }
 style_traits = { workspace = true }
+style_dom = { workspace = true }
 taffy = { workspace = true }
 parley = { workspace = true }
 peniko = { workspace = true }

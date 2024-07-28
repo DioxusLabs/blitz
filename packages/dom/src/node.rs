@@ -11,7 +11,7 @@ use std::sync::Arc;
 use style::invalidation::element::restyle_hints::RestyleHint;
 use style::values::computed::Display;
 use style::values::specified::box_::DisplayOutside;
-use style_traits::dom::ElementState;
+use style_dom::ElementState;
 // use string_cache::Atom;
 use parley;
 use style::properties::ComputedValues;

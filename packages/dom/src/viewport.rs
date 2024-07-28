@@ -1,5 +1,8 @@
 use crate::document::DummyFontMetricsProvider;
-use style::media_queries::{Device, MediaType};
+use style::{
+    media_queries::{Device, MediaType},
+    properties::{style_structs::Font, ComputedValues},
+};
 
 #[derive(Default, Debug, Clone)]
 pub struct Viewport {
@@ -59,6 +62,7 @@ impl Viewport {
             viewport_size,
             device_pixel_ratio,
             Box::new(DummyFontMetricsProvider),
+            ComputedValues::initial_values_with_font_override(Font::initial_values()),
         )
     }
 }
