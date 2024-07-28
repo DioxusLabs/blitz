@@ -1,10 +1,15 @@
-use std::io::{Cursor, Read};
+use std::{
+    io::{Cursor, Read},
+    sync::{Arc, OnceLock},
+};
 
 use crate::node::{Node, NodeData};
 use image::DynamicImage;
 
 const USER_AGENT: &str = "Mozilla/5.0 (X11; Linux x86_64; rv:60.0) Gecko/20100101 Firefox/81.0";
 const FILE_SIZE_LIMIT: u64 = 1_000_000_000; // 1GB
+
+static FONT_DB: OnceLock<Arc<usvg::fontdb::Database>> = OnceLock::new();
 
 pub(crate) fn fetch_blob(url: &str) -> Result<Vec<u8>, Box<ureq::Error>> {
     if url.starts_with("data:") {
@@ -47,6 +52,7 @@ pub(crate) fn fetch_string(url: &str) -> Result<String, Box<ureq::Error>> {
 pub(crate) enum ImageFetchErr {
     FetchErr(Box<ureq::Error>),
     ImageError(image::error::ImageError),
+    SvgError(usvg::Error),
 }
 impl From<Box<ureq::Error>> for ImageFetchErr {
     fn from(value: Box<ureq::Error>) -> Self {
@@ -58,6 +64,11 @@ impl From<image::error::ImageError> for ImageFetchErr {
         Self::ImageError(value)
     }
 }
+impl From<usvg::Error> for ImageFetchErr {
+    fn from(value: usvg::Error) -> Self {
+        Self::SvgError(value)
+    }
+}
 
 pub(crate) fn fetch_image(url: &str) -> Result<DynamicImage, ImageFetchErr> {
     let blob = crate::util::fetch_blob(url)?;
@@ -66,6 +77,25 @@ pub(crate) fn fetch_image(url: &str) -> Result<DynamicImage, ImageFetchErr> {
         .expect("IO errors impossible with Cursor")
         .decode()?;
     Ok(image)
+}
+
+pub(crate) fn fetch_svg(url: &str) -> Result<usvg::Tree, ImageFetchErr> {
+    let blob = crate::util::fetch_blob(url)?;
+
+    // TODO: Use fontique
+    let fontdb = FONT_DB.get_or_init(|| {
+        let mut fontdb = usvg::fontdb::Database::new();
+        fontdb.load_system_fonts();
+        Arc::new(fontdb)
+    });
+
+    let options = usvg::Options {
+        fontdb: fontdb.clone(),
+        ..Default::default()
+    };
+
+    let tree = usvg::Tree::from_data(&blob, &options)?;
+    Ok(tree)
 }
 
 // Debug print an RcDom

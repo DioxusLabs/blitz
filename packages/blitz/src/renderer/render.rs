@@ -43,6 +43,7 @@ use vello::{
     peniko::{self, Brush, Color, Fill},
     Scene,
 };
+use vello_svg::usvg;
 
 /// Draw the current tree to current render surface
 /// Eventually we'll want the surface itself to be passed into the render function, along with things like the viewport
@@ -300,6 +301,7 @@ impl<'dom> VelloSceneGenerator<'dom> {
         cx.stroke_border(scene);
         cx.stroke_devtools(scene);
         cx.draw_image(scene);
+        cx.draw_svg(scene);
 
         // Render the text in text inputs
         if let Some(input_data) = cx.text_input {
@@ -433,7 +435,8 @@ impl<'dom> VelloSceneGenerator<'dom> {
                 .element_data()
                 .unwrap()
                 .image_data()
-                .map(|data| data.image.clone()),
+                .map(|data| &*data.image),
+            svg: element.element_data().unwrap().svg_data(),
             text_input: element.element_data().unwrap().text_input_data(),
             devtools: &self.devtools,
         }
@@ -448,7 +451,8 @@ struct ElementCx<'a> {
     scale: f64,
     element: &'a Node,
     transform: Affine,
-    image: Option<Arc<DynamicImage>>,
+    image: Option<&'a DynamicImage>,
+    svg: Option<&'a usvg::Tree>,
     text_input: Option<&'a TextInputData>,
     devtools: &'a Devtools,
 }
@@ -556,13 +560,22 @@ impl ElementCx<'_> {
         }
     }
 
+    fn draw_svg(&self, scene: &mut Scene) {
+        let transform = Affine::translate((self.pos.x * self.scale, self.pos.y * self.scale))
+            .pre_scale(self.scale);
+        if let Some(svg) = self.svg {
+            let fragment = vello_svg::render_tree(svg);
+            scene.append(&fragment, Some(transform));
+        }
+    }
+
     fn draw_image(&self, scene: &mut Scene) {
         let transform = Affine::translate((self.pos.x * self.scale, self.pos.y * self.scale));
 
         let width = self.frame.inner_rect.width() as u32;
         let height = self.frame.inner_rect.height() as u32;
 
-        if let Some(image) = &self.image {
+        if let Some(image) = self.image {
             let mut resized_image = self
                 .element
                 .element_data()
@@ -779,9 +792,14 @@ impl ElementCx<'_> {
                     (color, offset)
                 }
                 GenericGradientItem::ComplexColorStop { color, position } => {
-                    let offset = position.to_percentage().unwrap().0;
-                    let color = color.as_vello();
-                    (color, offset)
+                    match position.to_percentage().map(|pos| pos.0) {
+                        Some(offset) => {
+                            let color = color.as_vello();
+                            (color, offset)
+                        }
+                        // TODO: implement absolute and calc stops
+                        None => continue,
+                    }
                 }
                 GenericGradientItem::InterpolationHint(position) => {
                     hint = match position.to_percentage() {

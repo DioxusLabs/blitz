@@ -30,6 +30,7 @@ data-url = "0.3.1"
 ureq = "2.9"
 image = "0.25.2"
 winit = { version = "0.30.4", default-features = false }
+usvg = "0.42.0"
 
 
 # on wasm use the js feature on getrandom
