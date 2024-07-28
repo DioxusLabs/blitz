@@ -344,8 +344,7 @@ impl Document {
                     use parley::layout::Alignment;
                     use style::values::specified::TextAlignKeyword;
 
-                    let itext_styles = (*s).get_inherited_text();
-                    match itext_styles.text_align {
+                    match s.clone_text_align() {
                         TextAlignKeyword::Start => Alignment::Start,
                         TextAlignKeyword::Left => Alignment::Start,
                         TextAlignKeyword::Right => Alignment::End,

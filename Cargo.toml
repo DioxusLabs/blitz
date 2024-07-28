@@ -13,7 +13,7 @@ style_traits = { git = "https://github.com/dioxuslabs/stylo", rev = "905361c3c0c
 style_dom = { git = "https://github.com/dioxuslabs/stylo", package = "dom", rev = "905361c3c0c1c133300e800aaa03135211768ee6" } # 2024-07-16 + dioxus patches
 selectors = { git = "https://github.com/dioxuslabs/stylo", rev = "905361c3c0c1c133300e800aaa03135211768ee6" } # 2024-07-16 + dioxus patches
 html5ever = "0.27" # needs to match stylo markup5ever version
-taffy = { git = "https://github.com/dioxuslabs/taffy", rev = "a2378a72fe6ebf86969bb5e9c5b15ff351bf086c" }
+taffy = { git = "https://github.com/dioxuslabs/taffy", rev = "42f75c6023434c27c9d6e69e2f3f3b5818ddd8e3" }
 parley = { git = "https://github.com/nicoburns/parley", rev = "029bf1df3e1829935fa6d25b875d3138f79a62c1" }
 dioxus = { git = "https://github.com/dioxuslabs/dioxus", rev = "a3aa6ae771a2d0a4d8cb6055c41efc0193b817ef"}
 dioxus-ssr = { git = "https://github.com/dioxuslabs/dioxus", rev = "a3aa6ae771a2d0a4d8cb6055c41efc0193b817ef" }

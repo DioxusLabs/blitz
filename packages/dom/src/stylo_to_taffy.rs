@@ -9,6 +9,7 @@ mod stylo {
     pub(crate) use style::properties::longhands::aspect_ratio::computed_value::T as AspectRatio;
     pub(crate) use style::properties::longhands::position::computed_value::T as Position;
     pub(crate) use style::properties::style_structs::{Margin, Padding};
+    pub(crate) use style::values::computed::text::TextAlign;
     pub(crate) use style::values::computed::GridLine;
     pub(crate) use style::values::computed::GridTemplateComponent;
     pub(crate) use style::values::computed::ImplicitGridTracks;
@@ -180,6 +181,15 @@ pub(crate) fn gap(input: &stylo::Gap) -> taffy::LengthPercentage {
         // if we ever implement multi-column layout.
         stylo::Gap::Normal => taffy::LengthPercentage::Length(0.0),
         stylo::Gap::LengthPercentage(val) => length_percentage(&val.0),
+    }
+}
+
+pub(crate) fn text_align(input: stylo::TextAlign) -> taffy::TextAlign {
+    match input {
+        stylo::TextAlign::MozLeft => taffy::TextAlign::LegacyLeft,
+        stylo::TextAlign::MozRight => taffy::TextAlign::LegacyRight,
+        stylo::TextAlign::MozCenter => taffy::TextAlign::LegacyCenter,
+        _ => taffy::TextAlign::Auto,
     }
 }
 

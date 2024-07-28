@@ -13,7 +13,11 @@ use selectors::{
     sink::Push,
     Element, OpaqueElement,
 };
+use style::applicable_declarations::ApplicableDeclarationBlock;
+use style::properties::{Importance, PropertyDeclaration};
+use style::rule_tree::CascadeLevel;
 use style::selector_parser::PseudoElement;
+use style::stylesheets::layer_rule::LayerOrder;
 use style::values::computed::Float;
 // use slab::Slab;
 use style::values::specified::box_::DisplayOutside;
@@ -43,6 +47,7 @@ use style_dom::ElementState;
 use taffy::prelude::Style;
 
 use super::stylo_to_taffy;
+use style::values::computed::text::TextAlign as StyloTextAlign;
 
 impl crate::document::Document {
     /// Walk the whole tree, converting styles to layout
@@ -136,6 +141,8 @@ impl crate::document::Document {
                     ..
                 }: &BoxStyle = style.get_box();
 
+                let text_align = style.clone_text_align();
+
                 // HACK: Emulate float with 'position: absolute'
                 let mut position = stylo_to_taffy::position(*stylo_position);
                 let mut inset = taffy::Rect {
@@ -195,6 +202,7 @@ impl crate::document::Document {
                     align_content: stylo_to_taffy::content_alignment(align_content.0),
                     align_items: stylo_to_taffy::item_alignment(align_items.0),
                     align_self: stylo_to_taffy::item_alignment((align_self.0).0),
+                    text_align: stylo_to_taffy::text_align(text_align),
 
                     // Gap
                     gap: taffy::Size {
@@ -875,10 +883,33 @@ impl<'a> TElement for BlitzNode<'a> {
     fn synthesize_presentational_hints_for_legacy_attributes<V>(
         &self,
         _visited_handling: VisitedHandlingMode,
-        _hints: &mut V,
+        hints: &mut V,
     ) where
         V: Push<style::applicable_declarations::ApplicableDeclarationBlock>,
     {
+        if let Some(elem) = self.raw_dom_data.downcast_element() {
+            if let Some(align) = elem.attr(local_name!("align")) {
+                let keyword = match align {
+                    "left" => Some(StyloTextAlign::MozLeft),
+                    "right" => Some(StyloTextAlign::MozRight),
+                    "center" => Some(StyloTextAlign::MozCenter),
+                    _ => None,
+                };
+
+                if let Some(keyword) = keyword {
+                    hints.push(ApplicableDeclarationBlock::from_declarations(
+                        Arc::new(self.guard.wrap(PropertyDeclarationBlock::with_one(
+                            PropertyDeclaration::TextAlign(
+                                style::values::specified::TextAlign::Keyword(keyword),
+                            ),
+                            Importance::Normal,
+                        ))),
+                        CascadeLevel::PresHints,
+                        LayerOrder::root(),
+                    ));
+                }
+            }
+        }
     }
 
     fn local_name(&self) -> &LocalName {
