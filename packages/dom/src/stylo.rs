@@ -13,6 +13,7 @@ use selectors::{
     sink::Push,
     Element, OpaqueElement,
 };
+use style::selector_parser::PseudoElement;
 use style::values::computed::Float;
 // use slab::Slab;
 use style::values::specified::box_::DisplayOutside;
@@ -459,7 +460,10 @@ impl<'a> selectors::Element for BlitzNode<'a> {
     }
 
     fn is_pseudo_element(&self) -> bool {
-        false
+        match self.raw_dom_data {
+            NodeData::AnonymousBlock(_) => true,
+            _ => false,
+        }
     }
 
     // These methods are implemented naively since we only threaded real nodes and not fake nodes
@@ -533,10 +537,10 @@ impl<'a> selectors::Element for BlitzNode<'a> {
 
     fn match_non_ts_pseudo_class(
         &self,
-        psuedo_class: &<Self::Impl as selectors::SelectorImpl>::NonTSPseudoClass,
+        pseudo_class: &<Self::Impl as selectors::SelectorImpl>::NonTSPseudoClass,
         _context: &mut MatchingContext<Self::Impl>,
     ) -> bool {
-        match *psuedo_class {
+        match *pseudo_class {
             NonTSPseudoClass::Active => false,
             NonTSPseudoClass::AnyLink => false,
             NonTSPseudoClass::Checked => false,
@@ -563,10 +567,13 @@ impl<'a> selectors::Element for BlitzNode<'a> {
 
     fn match_pseudo_element(
         &self,
-        _pe: &<Self::Impl as selectors::SelectorImpl>::PseudoElement,
+        pe: &PseudoElement,
         _context: &mut MatchingContext<Self::Impl>,
     ) -> bool {
-        false
+        match self.raw_dom_data {
+            NodeData::AnonymousBlock(_) => *pe == PseudoElement::ServoAnonymousBox,
+            _ => false,
+        }
     }
 
     fn apply_selector_flags(&self, _flags: ElementSelectorFlags) {
