@@ -84,14 +84,15 @@ Blitz is currently **experimental**. We are actively working on bringing into a 
 - [x] Gradients
 - [x] Border/Outline
 - [x] Raster images (png, jpeg, etc)
-- [ ] SVG
+- [x] Zoom
+- [] SVG
+  - [x] External SVGs (basic support)
+  - [ ] Inline SVGs
 - [ ] Shadows
 - [ ] Animations/Transitions
 - [ ] Standard form controls (Checkbox/Dropdown/slider/etc)
 - [ ] Custom widgets
 - [ ] Shadow elements
-- [x] Zoom
-- [ ] Zoom needs to shrink available UI space (for responsive stuff)
 
 ### Layout
 
@@ -104,9 +105,9 @@ Blitz is currently **experimental**. We are actively working on bringing into a 
 - [ ] Table
 - [ ] Z-index
 - [ ] Additional CSS features
+   - [x] `box-sizing: content-box`
    - [ ] `calc()`
    - [ ] `position: static`
-   - [ ] `box-sizing: content-box`
    - [ ] `direction: rtl`
    - [ ] `transform`
 
@@ -115,7 +116,7 @@ Blitz is currently **experimental**. We are actively working on bringing into a 
 - [ ] Font loading
   - [x] System font loading
   - [ ] Web font loading
-- [ ] Text
+- [x] Text
   - [x] Shaping / Bidi
   - [x] Layout / line breaking
   - [x] Font size / line height
@@ -131,23 +132,23 @@ Blitz is currently **experimental**. We are actively working on bringing into a 
   - [ ] Any `overflow: scroll` element
 - [x] Hover detection
 - [x] Click handling
-- [ ] Text input
+- [x] Text input
 
 ### Performance
 
+- [x] Hot reloading
 - [ ] Scrolling without re-resolving style and layout
 - [ ] Style caching
 - [ ] Layout caching
-- [ ] Hot reloading
 
 
 ### Other
 
 - [x] Multiwindow
-- [ ] Hooks for context menu
-- [ ] Accessibility tree
-- [ ] Focus
+- [x] Accessibility tree
+- [x] Focus
 - [ ] Devtools
+- [ ] Hooks for context menu
 - [ ] use_wgpu_context() to grab an element as an arbitrary render surface
 
 
