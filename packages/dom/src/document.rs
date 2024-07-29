@@ -482,14 +482,14 @@ impl Document {
                             if let Some(hint) = &source.format_hint {
                                 match hint {
                                     FontFaceSourceFormat::String(s) => {
-                                        println!("Skipping unsupported font of custom type {}", s);
-                                        continue;
+                                        // println!("Skipping unsupported font of custom type {}", s);
+                                        // continue;
                                     }
                                     FontFaceSourceFormat::Keyword(keyword) => {
                                         use FontFaceSourceFormatKeyword as KW;
                                         if matches!(
                                             keyword,
-                                            KW::EmbeddedOpentype | KW::Svg | KW::Woff | KW::Woff2
+                                            KW::EmbeddedOpentype | KW::Svg
                                         ) {
                                             println!(
                                                 "Skipping unsupported font of type {:?}",
@@ -510,9 +510,19 @@ impl Document {
                                 continue;
                             };
 
-                            // TODO: Support WOFF
-                            self.font_ctx.collection.register_fonts(font_data);
-                            println!("Registed font {}", url.as_str());
+                            if url.path().ends_with("woff2") || url.path().ends_with("woff") {
+                                if let Some(font_data) = woff::version2::decompress(&font_data) {
+                                    self.font_ctx.collection.register_fonts(font_data);
+                                    println!("Registed font {}", url.as_str());
+                                } else {
+                                    println!("Error decompressing woff2 data");
+                                }
+
+                            } else {
+                                self.font_ctx.collection.register_fonts(font_data);
+                                println!("Registed font {}", url.as_str());
+                            }
+
                         }
                     }
                 }
