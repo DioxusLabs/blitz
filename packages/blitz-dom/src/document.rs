@@ -1,5 +1,6 @@
 use crate::events::{EventData, HitResult, RendererEvent};
 use crate::node::{ImageData, NodeSpecificData, TextBrush};
+use crate::util::parse_svg;
 use crate::{ElementNodeData, Node, NodeData, TextNodeData, Viewport};
 use app_units::Au;
 use html5ever::local_name;
@@ -673,6 +674,23 @@ impl Document {
         let css = html_escape::decode_html_entities(&css);
         let sheet = self.make_stylesheet(&css, Origin::Author);
         self.add_stylesheet_for_node(sheet, target_id);
+    }
+
+    pub fn process_svg_element(&mut self, target_id: usize) {
+        let outer_html = self.nodes[target_id].outer_html();
+        println!("{}", outer_html);
+        match parse_svg(outer_html.as_bytes()) {
+            Ok(svg) => {
+                println!("SVG parsed successfully");
+                self.nodes[target_id]
+                    .element_data_mut()
+                    .unwrap()
+                    .node_specific_data = NodeSpecificData::Svg(svg);
+            }
+            Err(err) => {
+                dbg!(err);
+            }
+        };
     }
 
     pub fn remove_user_agent_stylesheet(&mut self, contents: &str) {
