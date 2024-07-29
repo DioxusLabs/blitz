@@ -461,6 +461,8 @@ impl Document {
 
         let sheet = DocumentStyleSheet(ServoArc::new(data));
 
+        self.add_webfonts_from_stylesheet(&*sheet.0);
+
         self.stylesheets.insert(css.to_string(), sheet.clone());
 
         self.stylist.append_stylesheet(sheet, &self.guard.read());
