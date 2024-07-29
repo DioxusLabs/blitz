@@ -11,11 +11,40 @@ const FILE_SIZE_LIMIT: u64 = 1_000_000_000; // 1GB
 
 static FONT_DB: OnceLock<Arc<usvg::fontdb::Database>> = OnceLock::new();
 
-pub(crate) fn fetch_blob(url: &str) -> Result<Vec<u8>, Box<ureq::Error>> {
+pub(crate) enum FetchErr {
+    UrlParse(url::ParseError),
+    Ureq(Box<ureq::Error>),
+    FileIo(std::io::Error),
+}
+impl From<url::ParseError> for FetchErr {
+    fn from(value: url::ParseError) -> Self {
+        Self::UrlParse(value)
+    }
+}
+impl From<Box<ureq::Error>> for FetchErr {
+    fn from(value: Box<ureq::Error>) -> Self {
+        Self::Ureq(value)
+    }
+}
+impl From<std::io::Error> for FetchErr {
+    fn from(value: std::io::Error) -> Self {
+        Self::FileIo(value)
+    }
+}
+
+pub(crate) fn fetch_blob(url: &str) -> Result<Vec<u8>, FetchErr> {
+    // Handle data URIs
     if url.starts_with("data:") {
         let data_url = data_url::DataUrl::process(url).unwrap();
         let decoded = data_url.decode_to_vec().expect("Invalid data url");
         return Ok(decoded.0);
+    }
+
+    // Handle file:// URLs
+    let parsed_url = Url::parse(url)?;
+    if parsed_url.scheme() == "file" {
+        let file_content = std::fs::read(parsed_url.path())?;
+        return Ok(file_content);
     }
 
     let resp = ureq::get(url)
@@ -37,7 +66,7 @@ pub(crate) fn fetch_blob(url: &str) -> Result<Vec<u8>, Box<ureq::Error>> {
     Ok(bytes)
 }
 
-pub(crate) fn fetch_string(url: &str) -> Result<String, Box<ureq::Error>> {
+pub(crate) fn fetch_string(url: &str) -> Result<String, FetchErr> {
     fetch_blob(url).map(|vec| String::from_utf8(vec).expect("Invalid UTF8"))
 }
 
@@ -55,23 +84,30 @@ pub(crate) enum ImageOrSvg {
 
 #[allow(unused)]
 pub(crate) enum ImageFetchErr {
-    FetchErr(Box<ureq::Error>),
-    ImageError(image::error::ImageError),
-    SvgError(usvg::Error),
+    UrlParse(url::ParseError),
+    Ureq(Box<ureq::Error>),
+    FileIo(std::io::Error),
+    ImageParse(image::error::ImageError),
+    SvgParse(usvg::Error),
 }
-impl From<Box<ureq::Error>> for ImageFetchErr {
-    fn from(value: Box<ureq::Error>) -> Self {
-        Self::FetchErr(value)
+
+impl From<FetchErr> for ImageFetchErr {
+    fn from(value: FetchErr) -> Self {
+        match value {
+            FetchErr::UrlParse(err) => Self::UrlParse(err),
+            FetchErr::Ureq(err) => Self::Ureq(err),
+            FetchErr::FileIo(err) => Self::FileIo(err),
+        }
     }
 }
 impl From<image::error::ImageError> for ImageFetchErr {
     fn from(value: image::error::ImageError) -> Self {
-        Self::ImageError(value)
+        Self::ImageParse(value)
     }
 }
 impl From<usvg::Error> for ImageFetchErr {
     fn from(value: usvg::Error) -> Self {
-        Self::SvgError(value)
+        Self::SvgParse(value)
     }
 }
 
@@ -172,6 +208,7 @@ pub fn walk_tree(indent: usize, node: &Node) {
 
 use peniko::Color as PenikoColor;
 use style::color::AbsoluteColor;
+use url::Url;
 
 pub trait ToPenikoColor {
     fn as_peniko(&self) -> PenikoColor;
