@@ -15,8 +15,8 @@ Talk to us in: the #native channel in the [Dioxus Discord](https://discord.gg/BW
 - [Vello](https://github.com/linebender/vello) + [WGPU](https://github.com/gfx-rs/wgpu) for rendering
 - [Taffy](https://github.com/DioxusLabs/taffy) for box-level layout
 - [Parley](https://github.com/linebender/parley) for text/inline-level layout
+- [AccessKit](https://github.com/AccessKit/accesskit) for accessibility
 - [Winit](https://github.com/rust-windowing/winit) for windowing and input handling
-- **Coming Soon!** [AccessKit](https://github.com/AccessKit/accesskit) for accessibility
 
 > Note: This repo contains a new version of Blitz which uses Stylo. The source code for the old version is still available on the [legacy](https://github.com/DioxusLabs/blitz/tree/legacy) branch but is not under active development.
 
