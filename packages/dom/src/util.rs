@@ -48,6 +48,11 @@ pub(crate) fn fetch_string(url: &str) -> Result<String, Box<ureq::Error>> {
 //     Ok(BufReader::new(resp.into_reader().take(FILE_SIZE_LIMIT)))
 // }
 
+pub(crate) enum ImageOrSvg {
+    Image(DynamicImage),
+    Svg(usvg::Tree),
+}
+
 #[allow(unused)]
 pub(crate) enum ImageFetchErr {
     FetchErr(Box<ureq::Error>),
@@ -70,17 +75,19 @@ impl From<usvg::Error> for ImageFetchErr {
     }
 }
 
-pub(crate) fn fetch_image(url: &str) -> Result<DynamicImage, ImageFetchErr> {
+pub(crate) fn fetch_image(url: &str) -> Result<ImageOrSvg, ImageFetchErr> {
     let blob = crate::util::fetch_blob(url)?;
-    let image = image::ImageReader::new(Cursor::new(blob))
+
+    // Try parse image
+    if let Ok(image) = image::ImageReader::new(Cursor::new(&blob))
         .with_guessed_format()
         .expect("IO errors impossible with Cursor")
-        .decode()?;
-    Ok(image)
-}
+        .decode()
+    {
+        return Ok(ImageOrSvg::Image(image));
+    };
 
-pub(crate) fn fetch_svg(url: &str) -> Result<usvg::Tree, ImageFetchErr> {
-    let blob = crate::util::fetch_blob(url)?;
+    // Try parse SVG
 
     // TODO: Use fontique
     let fontdb = FONT_DB.get_or_init(|| {
@@ -95,7 +102,7 @@ pub(crate) fn fetch_svg(url: &str) -> Result<usvg::Tree, ImageFetchErr> {
     };
 
     let tree = usvg::Tree::from_data(&blob, &options)?;
-    Ok(tree)
+    Ok(ImageOrSvg::Svg(tree))
 }
 
 // Debug print an RcDom
