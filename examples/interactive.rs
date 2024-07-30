@@ -1,8 +1,4 @@
 //! Drive the renderer from Dioxus
-//!
-//!
-//!
-//!
 
 use dioxus::prelude::*;
 
@@ -16,9 +12,6 @@ fn app() -> Element {
     rsx! {
         div {
             class: "container",
-            background: r#"linear-gradient(217deg, rgba(255,0,0,.8), rgba(255,0,0,0) 70.71%),
-            linear-gradient(127deg, rgba(0,255,0,.8), rgba(0,255,0,0) 70.71%),
-            linear-gradient(336deg, rgba(0,0,255,.8), rgba(0,0,255,0) 70.71%)"#,
             style { {CSS} }
             h1 { class: "header", "Count: {count}" }
             div { class: "buttons",
@@ -43,26 +36,6 @@ fn app() -> Element {
 }
 
 const CSS: &str = r#"
-// h1 {
-//     background-color: red;
-// }
-
-body {
-    line-height: 1;
-}
-
-h2 {
-    background-color: green;
-}
-
-h3 {
-    background-color: blue;
-}
-
-h4 {
-    background-color: yellow;
-}
-
 .header {
     background-color: pink;
     padding: 20px;
