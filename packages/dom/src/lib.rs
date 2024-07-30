@@ -5,6 +5,10 @@
 //!
 //! The goal behind this crate is that any implementor can interact with the DOM and render it out using any renderer
 //! they want.
+//!
+//! ## Feature flags
+//!  - `default`: Enables the features listed below.
+//!  - `tracing`: Enables tracing support.
 
 /// The DOM implementation.
 ///
