@@ -10,7 +10,7 @@ use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 use style::invalidation::element::restyle_hints::RestyleHint;
 use style::values::computed::Display;
-use style::values::specified::box_::DisplayOutside;
+use style::values::specified::box_::{DisplayInside, DisplayOutside};
 use style_dom::ElementState;
 // use string_cache::Atom;
 use parley;
@@ -133,11 +133,16 @@ impl Node {
         match display.outside() {
             DisplayOutside::None => false,
             DisplayOutside::Block => true,
-            _ => self
-                .children
-                .iter()
-                .copied()
-                .any(|child_id| self.tree()[child_id].is_or_contains_block()),
+            _ => {
+                if display.inside() == DisplayInside::Flow {
+                    self.children
+                        .iter()
+                        .copied()
+                        .any(|child_id| self.tree()[child_id].is_or_contains_block())
+                } else {
+                    false
+                }
+            }
         }
     }
 
