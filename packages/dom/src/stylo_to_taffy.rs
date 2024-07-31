@@ -8,8 +8,11 @@ mod stylo {
     pub(crate) use style::properties::generated::longhands::box_sizing::computed_value::T as BoxSizing;
     pub(crate) use style::properties::longhands::aspect_ratio::computed_value::T as AspectRatio;
     pub(crate) use style::properties::longhands::position::computed_value::T as Position;
+    pub(crate) use style::properties::style_structs::Box as BoxStyles;
+    pub(crate) use style::properties::style_structs::Position as PositionStyles;
     pub(crate) use style::properties::style_structs::{Margin, Padding};
     pub(crate) use style::values::computed::text::TextAlign;
+    pub(crate) use style::values::computed::Float;
     pub(crate) use style::values::computed::GridLine;
     pub(crate) use style::values::computed::GridTemplateComponent;
     pub(crate) use style::values::computed::ImplicitGridTracks;
@@ -37,6 +40,177 @@ mod stylo {
     pub(crate) type MaxSize = GenericMaxSize<NonNegative<LengthPercentage>>;
     pub(crate) type FlexBasis = GenericFlexBasis<Size>;
     pub(crate) type Gap = GenericLengthPercentageOrNormal<NonNegative<LengthPercentage>>;
+    pub(crate) use style::properties::ComputedValues;
+}
+
+pub(crate) fn entire_style(style: &stylo::ComputedValues) -> taffy::Style {
+    let margin = style.get_margin();
+    let padding = style.get_padding();
+    let border = style.get_border();
+    let stylo::PositionStyles {
+        top,
+        right,
+        bottom,
+        left,
+
+        width,
+        min_width,
+        max_width,
+        height,
+        min_height,
+        max_height,
+        aspect_ratio,
+
+        box_sizing,
+        // z_index,
+        // order,
+        column_gap,
+        row_gap,
+
+        justify_content,
+        justify_items,
+        justify_self,
+        align_content,
+        align_items,
+        align_self,
+
+        flex_direction,
+        flex_wrap,
+        flex_basis,
+        flex_grow,
+        flex_shrink,
+
+        grid_auto_flow,
+
+        grid_template_columns,
+        grid_template_rows,
+        grid_auto_columns,
+        grid_auto_rows,
+
+        grid_column_start,
+        grid_column_end,
+        grid_row_start,
+        grid_row_end,
+        ..
+    } = style.get_position();
+
+    let stylo::BoxStyles {
+        _servo_top_layer,
+        _servo_overflow_clip_box,
+        display: stylo_display,
+        position: stylo_position,
+        float,
+        // clear,
+        // vertical_align,
+        overflow_x,
+        overflow_y,
+        // transform,
+        // rotate,
+        // scale,
+        // translate,
+        // perspective,
+        // perspective_origin,
+        // backface_visibility,
+        // transform_style,
+        // transform_origin,
+        // container_type,
+        // container_name,
+        // original_display,
+        ..
+    }: &stylo::BoxStyles = style.get_box();
+
+    let text_align = style.clone_text_align();
+
+    // HACK: Emulate float with 'position: absolute'
+    let mut position = self::position(*stylo_position);
+    let mut inset = taffy::Rect {
+        left: self::length_percentage_auto(left),
+        right: self::length_percentage_auto(right),
+        top: self::length_percentage_auto(top),
+        bottom: self::length_percentage_auto(bottom),
+    };
+    if position == taffy::Position::Relative && *float != stylo::Float::None {
+        position = taffy::Position::Absolute;
+        if *float == stylo::Float::Right {
+            inset.left = taffy::LengthPercentageAuto::Auto;
+            inset.right = taffy::LengthPercentageAuto::Length(0.0);
+        } else {
+            inset.left = taffy::LengthPercentageAuto::Length(0.0);
+            inset.right = taffy::LengthPercentageAuto::Auto;
+        }
+    }
+
+    let display = self::display(*stylo_display);
+
+    taffy::Style {
+        box_sizing: self::box_sizing(*box_sizing),
+        display,
+        position,
+        overflow: taffy::Point {
+            x: self::overflow(*overflow_x),
+            y: self::overflow(*overflow_y),
+        },
+
+        // TODO: we'll eventually want to support visible scrollbars
+        // But we really ought to implement "overflow: auto" first
+        scrollbar_width: 0.0,
+
+        size: taffy::Size {
+            width: self::dimension(width),
+            height: self::dimension(height),
+        },
+        min_size: taffy::Size {
+            width: self::dimension(min_width),
+            height: self::dimension(min_height),
+        },
+        max_size: taffy::Size {
+            width: self::max_size_dimension(max_width),
+            height: self::max_size_dimension(max_height),
+        },
+        aspect_ratio: self::aspect_ratio(*aspect_ratio),
+
+        margin: self::margin(margin),
+        padding: self::padding(padding),
+        border: self::border(border),
+        inset,
+
+        // Alignment properties
+        justify_content: self::content_alignment(justify_content.0),
+        justify_items: self::item_alignment(justify_items.computed.0),
+        justify_self: self::item_alignment((justify_self.0).0),
+        align_content: self::content_alignment(align_content.0),
+        align_items: self::item_alignment(align_items.0),
+        align_self: self::item_alignment((align_self.0).0),
+        text_align: self::text_align(text_align),
+
+        // Gap
+        gap: taffy::Size {
+            width: self::gap(column_gap),
+            height: self::gap(row_gap),
+        },
+
+        // Flexbox properties
+        flex_direction: self::flex_direction(*flex_direction),
+        flex_wrap: self::flex_wrap(*flex_wrap),
+        flex_grow: flex_grow.0,
+        flex_shrink: flex_shrink.0,
+        flex_basis: self::flex_basis(flex_basis),
+
+        // CSS Grid properties
+        grid_auto_flow: self::grid_auto_flow(*grid_auto_flow),
+        grid_template_rows: self::grid_template_tracks(grid_template_rows),
+        grid_template_columns: self::grid_template_tracks(grid_template_columns),
+        grid_auto_rows: self::grid_auto_tracks(grid_auto_rows),
+        grid_auto_columns: self::grid_auto_tracks(grid_auto_columns),
+        grid_row: taffy::Line {
+            start: self::grid_line(grid_row_start),
+            end: self::grid_line(grid_row_end),
+        },
+        grid_column: taffy::Line {
+            start: self::grid_line(grid_column_start),
+            end: self::grid_line(grid_column_end),
+        },
+    }
 }
 
 pub(crate) fn length_percentage(val: &stylo::LengthPercentage) -> taffy::LengthPercentage {

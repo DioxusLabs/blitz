@@ -18,8 +18,6 @@ use style::properties::{Importance, PropertyDeclaration};
 use style::rule_tree::CascadeLevel;
 use style::selector_parser::PseudoElement;
 use style::stylesheets::layer_rule::LayerOrder;
-use style::values::computed::Float;
-// use slab::Slab;
 use style::values::specified::box_::DisplayOutside;
 use style::CaseSensitivityExt;
 use style::{
@@ -30,10 +28,7 @@ use style::{
     },
     dom::{LayoutIterator, NodeInfo, OpaqueNode, TDocument, TElement, TNode, TShadowRoot},
     global_style_data::GLOBAL_STYLE_DATA,
-    properties::{
-        style_structs::{Box as BoxStyle, Position},
-        PropertyDeclarationBlock,
-    },
+    properties::PropertyDeclarationBlock,
     selector_parser::{NonTSPseudoClass, SelectorImpl},
     servo_arc::{Arc, ArcBorrow},
     shared_lock::{Locked, SharedRwLock, StylesheetGuards},
@@ -44,7 +39,6 @@ use style::{
     Atom,
 };
 use style_dom::ElementState;
-use taffy::prelude::Style;
 
 use super::stylo_to_taffy;
 use style::values::computed::text::TextAlign as StyloTextAlign;
@@ -65,177 +59,9 @@ impl crate::document::Document {
                     continue;
                 };
 
-                // if let Some(style) = data.styles.get_primary() {
-                let margin = style.get_margin();
-                let padding = style.get_padding();
-                let border = style.get_border();
-                let Position {
-                    top,
-                    right,
-                    bottom,
-                    left,
+                node.style = stylo_to_taffy::entire_style(style);
 
-                    width,
-                    min_width,
-                    max_width,
-                    height,
-                    min_height,
-                    max_height,
-                    aspect_ratio,
-
-                    box_sizing,
-                    // z_index,
-                    // order,
-                    column_gap,
-                    row_gap,
-
-                    justify_content,
-                    justify_items,
-                    justify_self,
-                    align_content,
-                    align_items,
-                    align_self,
-
-                    flex_direction,
-                    flex_wrap,
-                    flex_basis,
-                    flex_grow,
-                    flex_shrink,
-
-                    grid_auto_flow,
-
-                    grid_template_columns,
-                    grid_template_rows,
-                    grid_auto_columns,
-                    grid_auto_rows,
-
-                    grid_column_start,
-                    grid_column_end,
-                    grid_row_start,
-                    grid_row_end,
-                    ..
-                } = style.get_position();
-
-                let BoxStyle {
-                    _servo_top_layer,
-                    _servo_overflow_clip_box,
-                    display: stylo_display,
-                    position: stylo_position,
-                    float,
-                    // clear,
-                    // vertical_align,
-                    overflow_x,
-                    overflow_y,
-                    // transform,
-                    // rotate,
-                    // scale,
-                    // translate,
-                    // perspective,
-                    // perspective_origin,
-                    // backface_visibility,
-                    // transform_style,
-                    // transform_origin,
-                    // container_type,
-                    // container_name,
-                    // original_display,
-                    ..
-                }: &BoxStyle = style.get_box();
-
-                let text_align = style.clone_text_align();
-
-                // HACK: Emulate float with 'position: absolute'
-                let mut position = stylo_to_taffy::position(*stylo_position);
-                let mut inset = taffy::Rect {
-                    left: stylo_to_taffy::length_percentage_auto(left),
-                    right: stylo_to_taffy::length_percentage_auto(right),
-                    top: stylo_to_taffy::length_percentage_auto(top),
-                    bottom: stylo_to_taffy::length_percentage_auto(bottom),
-                };
-                if position == taffy::Position::Relative && *float != Float::None {
-                    position = taffy::Position::Absolute;
-                    if *float == Float::Right {
-                        inset.left = taffy::LengthPercentageAuto::Auto;
-                        inset.right = taffy::LengthPercentageAuto::Length(0.0);
-                    } else {
-                        inset.left = taffy::LengthPercentageAuto::Length(0.0);
-                        inset.right = taffy::LengthPercentageAuto::Auto;
-                    }
-                }
-
-                let display = stylo_to_taffy::display(*stylo_display);
-                node.style = Style {
-                    box_sizing: stylo_to_taffy::box_sizing(*box_sizing),
-                    display,
-                    position,
-                    overflow: taffy::Point {
-                        x: stylo_to_taffy::overflow(*overflow_x),
-                        y: stylo_to_taffy::overflow(*overflow_y),
-                    },
-
-                    // TODO: we'll eventually want to support visible scrollbars
-                    // But we really ought to implement "overflow: auto" first
-                    scrollbar_width: 0.0,
-
-                    size: taffy::Size {
-                        width: stylo_to_taffy::dimension(width),
-                        height: stylo_to_taffy::dimension(height),
-                    },
-                    min_size: taffy::Size {
-                        width: stylo_to_taffy::dimension(min_width),
-                        height: stylo_to_taffy::dimension(min_height),
-                    },
-                    max_size: taffy::Size {
-                        width: stylo_to_taffy::max_size_dimension(max_width),
-                        height: stylo_to_taffy::max_size_dimension(max_height),
-                    },
-                    aspect_ratio: stylo_to_taffy::aspect_ratio(*aspect_ratio),
-
-                    margin: stylo_to_taffy::margin(margin),
-                    padding: stylo_to_taffy::padding(padding),
-                    border: stylo_to_taffy::border(border),
-                    inset,
-
-                    // Alignment properties
-                    justify_content: stylo_to_taffy::content_alignment(justify_content.0),
-                    justify_items: stylo_to_taffy::item_alignment(justify_items.computed.0),
-                    justify_self: stylo_to_taffy::item_alignment((justify_self.0).0),
-                    align_content: stylo_to_taffy::content_alignment(align_content.0),
-                    align_items: stylo_to_taffy::item_alignment(align_items.0),
-                    align_self: stylo_to_taffy::item_alignment((align_self.0).0),
-                    text_align: stylo_to_taffy::text_align(text_align),
-
-                    // Gap
-                    gap: taffy::Size {
-                        width: stylo_to_taffy::gap(column_gap),
-                        height: stylo_to_taffy::gap(row_gap),
-                    },
-
-                    // Flexbox properties
-                    flex_direction: stylo_to_taffy::flex_direction(*flex_direction),
-                    flex_wrap: stylo_to_taffy::flex_wrap(*flex_wrap),
-                    flex_grow: flex_grow.0,
-                    flex_shrink: flex_shrink.0,
-                    flex_basis: stylo_to_taffy::flex_basis(flex_basis),
-
-                    // CSS Grid properties
-                    grid_auto_flow: stylo_to_taffy::grid_auto_flow(*grid_auto_flow),
-                    grid_template_rows: stylo_to_taffy::grid_template_tracks(grid_template_rows),
-                    grid_template_columns: stylo_to_taffy::grid_template_tracks(
-                        grid_template_columns,
-                    ),
-                    grid_auto_rows: stylo_to_taffy::grid_auto_tracks(grid_auto_rows),
-                    grid_auto_columns: stylo_to_taffy::grid_auto_tracks(grid_auto_columns),
-                    grid_row: taffy::Line {
-                        start: stylo_to_taffy::grid_line(grid_row_start),
-                        end: stylo_to_taffy::grid_line(grid_row_end),
-                    },
-                    grid_column: taffy::Line {
-                        start: stylo_to_taffy::grid_line(grid_column_start),
-                        end: stylo_to_taffy::grid_line(grid_column_end),
-                    },
-                };
-
-                node.display_outer = match stylo_display.outside() {
+                node.display_outer = match style.clone_display().outside() {
                     DisplayOutside::None => crate::node::DisplayOuter::None,
                     DisplayOutside::Inline => crate::node::DisplayOuter::Inline,
                     DisplayOutside::Block => crate::node::DisplayOuter::Block,
@@ -249,7 +75,7 @@ impl crate::document::Document {
 
                 // would like to change this not require a clone, but requires some refactoring
                 (
-                    display,
+                    node.style.display,
                     node.layout_children.borrow().as_ref().unwrap().clone(),
                 )
             };
