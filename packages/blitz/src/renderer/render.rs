@@ -1,3 +1,4 @@
+use std::sync::atomic::{self, AtomicUsize};
 use std::sync::Arc;
 
 use super::multicolor_rounded_rect::{Edge, ElementFrame};
@@ -17,7 +18,8 @@ use style::{
     },
     values::{
         computed::{
-            Angle, AngleOrPercentage, CSSPixelLength, LengthPercentage, LineDirection, Percentage,
+            Angle, AngleOrPercentage, CSSPixelLength, LengthPercentage, LineDirection, Overflow,
+            Percentage,
         },
         generics::{
             color::Color as StyloColor,
@@ -40,10 +42,16 @@ use parley::layout::PositionedLayoutItem;
 use taffy::prelude::Layout;
 use vello::{
     kurbo::{Affine, Point, Rect, Shape, Stroke, Vec2},
-    peniko::{self, Brush, Color, Fill},
+    peniko::{self, Brush, Color, Fill, Mix},
     Scene,
 };
 use vello_svg::usvg;
+
+const CLIP_LIMIT: usize = 1024;
+static CLIPS_USED: AtomicUsize = AtomicUsize::new(0);
+static CLIP_DEPTH: AtomicUsize = AtomicUsize::new(0);
+static CLIP_DEPTH_USED: AtomicUsize = AtomicUsize::new(0);
+static CLIPS_WANTED: AtomicUsize = AtomicUsize::new(0);
 
 /// Draw the current tree to current render surface
 /// Eventually we'll want the surface itself to be passed into the render function, along with things like the viewport
@@ -56,13 +64,23 @@ pub fn generate_vello_scene(
     scale: f64,
     devtool_config: Devtools,
 ) {
+    CLIPS_USED.store(0, atomic::Ordering::SeqCst);
+    CLIPS_WANTED.store(0, atomic::Ordering::SeqCst);
+
     let generator = VelloSceneGenerator {
         dom,
         scale,
         devtools: devtool_config,
         scroll_offset: dom.scroll_offset,
     };
-    generator.generate_vello_scene(scene)
+    generator.generate_vello_scene(scene);
+
+    println!(
+        "Rendered using {} clips (depth: {}) (wanted: {})",
+        CLIPS_USED.load(atomic::Ordering::SeqCst),
+        CLIP_DEPTH_USED.load(atomic::Ordering::SeqCst),
+        CLIPS_WANTED.load(atomic::Ordering::SeqCst)
+    );
 }
 
 /// A short-lived struct which holds a bunch of parameters for rendering a vello scene so
@@ -294,6 +312,48 @@ impl<'dom> VelloSceneGenerator<'dom> {
             return;
         }
 
+        // TODO: account for overflow_x vs overflow_y
+        let styles = &element.primary_styles().unwrap();
+        let overflow = styles.get_box().overflow_x;
+        let should_clip = !matches!(overflow, Overflow::Visible);
+        let clips_available = CLIPS_USED.load(atomic::Ordering::SeqCst) <= CLIP_LIMIT;
+
+        // Apply padding/border offset to inline root
+        let (_layout, pos) = self.node_position(node_id, location);
+        let taffy::Layout {
+            size,
+            border,
+            padding,
+            ..
+        } = element.final_layout;
+        let scaled_pb = (padding + border).map(f64::from);
+        let pos = vello::kurbo::Point {
+            x: pos.x + scaled_pb.left,
+            y: pos.y + scaled_pb.top,
+        };
+        let size = vello::kurbo::Size {
+            width: (size.width as f64 - scaled_pb.left - scaled_pb.right) * self.scale,
+            height: (size.height as f64 - scaled_pb.top - scaled_pb.bottom) * self.scale,
+        };
+        let transform = Affine::translate((pos.x * self.scale, pos.y * self.scale));
+        let origin = vello::kurbo::Point { x: 0.0, y: 0.0 };
+        let clip = Rect::from_origin_size(origin, size);
+
+        // Optimise zero-area (/very small area) clips by not rendering at all
+        if should_clip && clip.area() < 0.01 {
+            return;
+        }
+
+        if should_clip {
+            CLIPS_WANTED.fetch_add(1, atomic::Ordering::SeqCst);
+        }
+        if should_clip && clips_available {
+            scene.push_layer(Mix::Clip, 1.0, transform, &clip);
+            CLIPS_USED.fetch_add(1, atomic::Ordering::SeqCst);
+            let depth = CLIP_DEPTH.fetch_add(1, atomic::Ordering::SeqCst) + 1;
+            CLIP_DEPTH_USED.fetch_max(depth, atomic::Ordering::SeqCst);
+        }
+
         let cx = self.element_cx(element, location);
         cx.stroke_effects(scene);
         cx.stroke_outline(scene);
@@ -305,18 +365,7 @@ impl<'dom> VelloSceneGenerator<'dom> {
 
         // Render the text in text inputs
         if let Some(input_data) = cx.text_input {
-            let (_layout, pos) = self.node_position(node_id, location);
             let text_layout = input_data.editor.layout();
-
-            // Apply padding/border offset to inline root
-            let taffy::Layout {
-                border, padding, ..
-            } = element.final_layout;
-            let scaled_pb = (padding + border).map(f64::from);
-            let pos = vello::kurbo::Point {
-                x: pos.x + scaled_pb.left,
-                y: pos.y + scaled_pb.top,
-            };
 
             // Render text
             cx.stroke_text(scene, text_layout, pos);
@@ -333,12 +382,7 @@ impl<'dom> VelloSceneGenerator<'dom> {
                     &line,
                 );
             }
-
-            return;
-        }
-
-        if element.is_inline_root {
-            let (_layout, pos) = self.node_position(node_id, location);
+        } else if element.is_inline_root {
             let text_layout = &element
                 .raw_dom_data
                 .downcast_element()
@@ -347,16 +391,6 @@ impl<'dom> VelloSceneGenerator<'dom> {
                 .unwrap_or_else(|| {
                     panic!("Tried to render node marked as inline root that does not have an inline layout: {:?}", element);
                 });
-
-            // Apply padding/border offset to inline root
-            let taffy::Layout {
-                border, padding, ..
-            } = element.final_layout;
-            let scaled_pb = (padding + border).map(f64::from);
-            let pos = vello::kurbo::Point {
-                x: pos.x + scaled_pb.left,
-                y: pos.y + scaled_pb.top,
-            };
 
             // Render text
             cx.stroke_text(scene, &text_layout.layout, pos);
@@ -381,6 +415,11 @@ impl<'dom> VelloSceneGenerator<'dom> {
             {
                 self.render_node(scene, child_id, cx.pos);
             }
+        }
+
+        if should_clip {
+            scene.pop_layer();
+            CLIP_DEPTH.fetch_sub(1, atomic::Ordering::SeqCst);
         }
     }
 
