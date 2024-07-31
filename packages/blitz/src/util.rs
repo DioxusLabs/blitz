@@ -42,7 +42,7 @@ mod stylo_types {
         fn as_vello(&self) -> VelloColor {
             self.as_absolute()
                 .map(|f| f.as_vello())
-                .unwrap_or(VelloColor::BLACK)
+                .unwrap_or(VelloColor::TRANSPARENT)
         }
     }
 

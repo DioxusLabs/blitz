@@ -638,9 +638,14 @@ impl ElementCx<'_> {
     fn stroke_frame(&self, scene: &mut Scene) {
         use GenericImage::*;
 
+        // Draw background color (if any)
+        self.draw_solid_frame(scene);
+
         for segment in &self.style.get_background().background_image.0 {
             match segment {
-                None => self.draw_solid_frame(scene),
+                None => {
+                    // Do nothing
+                }
                 Gradient(gradient) => self.draw_gradient_frame(scene, gradient),
                 Url(_) => {
                     //
@@ -878,13 +883,15 @@ impl ElementCx<'_> {
     // fn draw_image_frame(&self, scene: &mut Scene) {}
 
     fn draw_solid_frame(&self, scene: &mut Scene) {
-        let background = self.style.get_background();
+        let background_color = &self.style.get_background().background_color;
+        let bg_color = background_color.as_vello();
 
-        let bg_color = background.background_color.as_vello();
-        let shape = self.frame.frame();
+        if bg_color != Color::TRANSPARENT {
+            let shape = self.frame.frame();
 
-        // Fill the color
-        scene.fill(Fill::NonZero, self.transform, bg_color, None, &shape);
+            // Fill the color
+            scene.fill(Fill::NonZero, self.transform, bg_color, None, &shape);
+        }
     }
 
     /// Stroke a border
