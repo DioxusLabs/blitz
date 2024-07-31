@@ -10,7 +10,7 @@ mod stylo {
     pub(crate) use style::properties::longhands::position::computed_value::T as Position;
     pub(crate) use style::properties::style_structs::{Margin, Padding};
     pub(crate) use style::values::computed::text::TextAlign;
-    pub(crate) use style::values::computed::Float;
+    // pub(crate) use style::values::computed::Float;
     pub(crate) use style::values::computed::GridLine;
     pub(crate) use style::values::computed::GridTemplateComponent;
     pub(crate) use style::values::computed::ImplicitGridTracks;
