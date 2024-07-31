@@ -49,24 +49,25 @@ pub(crate) fn entire_style(style: &stylo::ComputedValues) -> taffy::Style {
     let box_styles = style.get_box();
     let text_align = style.clone_text_align();
 
-    // HACK: Emulate float with 'position: absolute'
-    let mut position = self::position(box_styles.position);
-    let mut inset = taffy::Rect {
+    let position = self::position(box_styles.position);
+    let inset = taffy::Rect {
         left: self::length_percentage_auto(&pos.left),
         right: self::length_percentage_auto(&pos.right),
         top: self::length_percentage_auto(&pos.top),
         bottom: self::length_percentage_auto(&pos.bottom),
     };
-    if position == taffy::Position::Relative && box_styles.float != stylo::Float::None {
-        position = taffy::Position::Absolute;
-        if box_styles.float == stylo::Float::Right {
-            inset.left = taffy::LengthPercentageAuto::Auto;
-            inset.right = taffy::LengthPercentageAuto::Length(0.0);
-        } else {
-            inset.left = taffy::LengthPercentageAuto::Length(0.0);
-            inset.right = taffy::LengthPercentageAuto::Auto;
-        }
-    }
+
+    // HACK: Emulate float with 'position: absolute'
+    // if position == taffy::Position::Relative && box_styles.float != stylo::Float::None {
+    //     position = taffy::Position::Absolute;
+    //     if box_styles.float == stylo::Float::Right {
+    //         inset.left = taffy::LengthPercentageAuto::Auto;
+    //         inset.right = taffy::LengthPercentageAuto::Length(0.0);
+    //     } else {
+    //         inset.left = taffy::LengthPercentageAuto::Length(0.0);
+    //         inset.right = taffy::LengthPercentageAuto::Auto;
+    //     }
+    // }
 
     taffy::Style {
         box_sizing: self::box_sizing(pos.box_sizing),
