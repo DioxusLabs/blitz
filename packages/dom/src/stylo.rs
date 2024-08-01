@@ -19,6 +19,7 @@ use style::properties::{Importance, PropertyDeclaration};
 use style::rule_tree::CascadeLevel;
 use style::selector_parser::PseudoElement;
 use style::stylesheets::layer_rule::LayerOrder;
+use style::values::computed::Percentage;
 use style::values::specified::box_::DisplayOutside;
 use style::CaseSensitivityExt;
 use style::{
@@ -732,6 +733,17 @@ impl<'a> TElement for BlitzNode<'a> {
             return;
         };
 
+        let mut push_style = |decl: PropertyDeclaration| {
+            hints.push(ApplicableDeclarationBlock::from_declarations(
+                Arc::new(
+                    self.guard
+                        .wrap(PropertyDeclarationBlock::with_one(decl, Importance::Normal)),
+                ),
+                CascadeLevel::PresHints,
+                LayerOrder::root(),
+            ));
+        };
+
         fn parse_color_attr(value: &str) -> Option<(u8, u8, u8, f32)> {
             if !value.starts_with('#') {
                 return None;
@@ -755,11 +767,32 @@ impl<'a> TElement for BlitzNode<'a> {
             None
         }
 
+        fn parse_size_attr(value: &str) -> Option<style::values::specified::LengthPercentage> {
+            use style::values::specified::{AbsoluteLength, LengthPercentage, NoCalcLength};
+            if let Some(value) = value.strip_suffix("px") {
+                let val: f32 = value.parse().ok()?;
+                return Some(LengthPercentage::Length(NoCalcLength::Absolute(
+                    AbsoluteLength::Px(val),
+                )));
+            }
+
+            if let Some(value) = value.strip_suffix("%") {
+                let val: f32 = value.parse().ok()?;
+                return Some(LengthPercentage::Percentage(Percentage(val / 100.0)));
+            }
+
+            let val: f32 = value.parse().ok()?;
+            Some(LengthPercentage::Length(NoCalcLength::Absolute(
+                AbsoluteLength::Px(val),
+            )))
+        }
+
         for attr in elem.attrs() {
             let name = &attr.name.local;
             let value = attr.value.as_str();
 
             if *name == local_name!("align") {
+                use style::values::specified::TextAlign;
                 let keyword = match value {
                     "left" => Some(StyloTextAlign::MozLeft),
                     "right" => Some(StyloTextAlign::MozRight),
@@ -768,32 +801,33 @@ impl<'a> TElement for BlitzNode<'a> {
                 };
 
                 if let Some(keyword) = keyword {
-                    hints.push(ApplicableDeclarationBlock::from_declarations(
-                        Arc::new(self.guard.wrap(PropertyDeclarationBlock::with_one(
-                            PropertyDeclaration::TextAlign(
-                                style::values::specified::TextAlign::Keyword(keyword),
-                            ),
-                            Importance::Normal,
-                        ))),
-                        CascadeLevel::PresHints,
-                        LayerOrder::root(),
-                    ));
+                    push_style(PropertyDeclaration::TextAlign(TextAlign::Keyword(keyword)));
+                }
+            }
+
+            if *name == local_name!("width") {
+                if let Some(width) = parse_size_attr(value) {
+                    use style::values::generics::{length::Size, NonNegative};
+                    push_style(PropertyDeclaration::Width(Size::LengthPercentage(
+                        NonNegative(width),
+                    )));
+                }
+            }
+
+            if *name == local_name!("height") {
+                if let Some(height) = parse_size_attr(value) {
+                    use style::values::generics::{length::Size, NonNegative};
+                    push_style(PropertyDeclaration::Height(Size::LengthPercentage(
+                        NonNegative(height),
+                    )));
                 }
             }
 
             if *name == local_name!("bgcolor") {
+                use style::values::specified::Color;
                 if let Some((r, g, b, a)) = parse_color_attr(value) {
-                    hints.push(ApplicableDeclarationBlock::from_declarations(
-                        Arc::new(self.guard.wrap(PropertyDeclarationBlock::with_one(
-                            PropertyDeclaration::BackgroundColor(
-                                style::values::specified::Color::from_absolute_color(
-                                    AbsoluteColor::srgb_legacy(r, g, b, a),
-                                ),
-                            ),
-                            Importance::Normal,
-                        ))),
-                        CascadeLevel::PresHints,
-                        LayerOrder::root(),
+                    push_style(PropertyDeclaration::BackgroundColor(
+                        Color::from_absolute_color(AbsoluteColor::srgb_legacy(r, g, b, a)),
                     ));
                 }
             }
