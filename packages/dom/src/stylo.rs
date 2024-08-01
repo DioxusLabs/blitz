@@ -14,6 +14,7 @@ use selectors::{
     Element, OpaqueElement,
 };
 use style::applicable_declarations::ApplicableDeclarationBlock;
+use style::color::AbsoluteColor;
 use style::properties::{Importance, PropertyDeclaration};
 use style::rule_tree::CascadeLevel;
 use style::selector_parser::PseudoElement;
@@ -713,9 +714,38 @@ impl<'a> TElement for BlitzNode<'a> {
     ) where
         V: Push<style::applicable_declarations::ApplicableDeclarationBlock>,
     {
-        if let Some(elem) = self.raw_dom_data.downcast_element() {
-            if let Some(align) = elem.attr(local_name!("align")) {
-                let keyword = match align {
+        let Some(elem) = self.raw_dom_data.downcast_element() else {
+            return;
+        };
+
+        fn parse_color_attr(value: &str) -> Option<(u8, u8, u8, f32)> {
+            if !value.starts_with('#') {
+                return None;
+            }
+
+            if value.len() == 3 {
+                let r = u8::from_str_radix(&value[0..1], 16).ok()?;
+                let g = u8::from_str_radix(&value[1..2], 16).ok()?;
+                let b = u8::from_str_radix(&value[2..3], 16).ok()?;
+                return Some((r, g, b, 1.0));
+            }
+
+            if value.len() == 6 {
+                let r = u8::from_str_radix(&value[0..2], 16).ok()?;
+                let g = u8::from_str_radix(&value[2..4], 16).ok()?;
+                let b = u8::from_str_radix(&value[4..6], 16).ok()?;
+                return Some((r, g, b, 1.0));
+            }
+
+            None
+        }
+
+        for attr in elem.attrs() {
+            let name = &attr.name.local;
+            let value = attr.value.as_str();
+
+            if *name == local_name!("align") {
+                let keyword = match value {
                     "left" => Some(StyloTextAlign::MozLeft),
                     "right" => Some(StyloTextAlign::MozRight),
                     "center" => Some(StyloTextAlign::MozCenter),
@@ -727,6 +757,23 @@ impl<'a> TElement for BlitzNode<'a> {
                         Arc::new(self.guard.wrap(PropertyDeclarationBlock::with_one(
                             PropertyDeclaration::TextAlign(
                                 style::values::specified::TextAlign::Keyword(keyword),
+                            ),
+                            Importance::Normal,
+                        ))),
+                        CascadeLevel::PresHints,
+                        LayerOrder::root(),
+                    ));
+                }
+            }
+
+            if *name == local_name!("bgcolor") {
+                if let Some((r, g, b, a)) = parse_color_attr(value) {
+                    hints.push(ApplicableDeclarationBlock::from_declarations(
+                        Arc::new(self.guard.wrap(PropertyDeclarationBlock::with_one(
+                            PropertyDeclaration::BackgroundColor(
+                                style::values::specified::Color::from_absolute_color(
+                                    AbsoluteColor::srgb_legacy(r, g, b, a),
+                                ),
                             ),
                             Importance::Normal,
                         ))),
