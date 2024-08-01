@@ -723,6 +723,7 @@ impl<'a> TElement for BlitzNode<'a> {
                 return None;
             }
 
+            let value = &value[1..];
             if value.len() == 3 {
                 let r = u8::from_str_radix(&value[0..1], 16).ok()?;
                 let g = u8::from_str_radix(&value[1..2], 16).ok()?;
