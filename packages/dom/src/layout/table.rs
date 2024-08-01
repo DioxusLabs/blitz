@@ -2,7 +2,7 @@ use std::{ops::Range, sync::Arc};
 
 use html5ever::local_name;
 use style::values::specified::box_::DisplayInside;
-use taffy::{style_helpers, LayoutPartialTree as _};
+use taffy::{compute_leaf_layout, style_helpers, LayoutPartialTree as _};
 
 use crate::{stylo_to_taffy, Document};
 
@@ -80,7 +80,7 @@ pub(crate) fn collect_table_cells(
     let node = &doc.nodes[node_id];
 
     if !node.is_element() {
-      return;
+        return;
     }
 
     let Some(display) = node.primary_styles().map(|s| s.clone_display()) else {
@@ -207,9 +207,17 @@ impl taffy::LayoutPartialTree for TableTreeWrapper<'_> {
         &mut self,
         node_id: taffy::NodeId,
         inputs: taffy::tree::LayoutInput,
-    ) -> taffy::tree::LayoutOutput {
-        let node_id = taffy::NodeId::from(self.ctx.items[usize::from(node_id)].node_id);
-        self.doc.compute_child_layout(node_id, inputs)
+    ) -> taffy::LayoutOutput {
+        let cell = &self.ctx.items[usize::from(node_id)];
+        match cell.kind {
+            TableItemKind::Row => {
+                compute_leaf_layout(inputs, &cell.style, |_, _| taffy::Size::ZERO)
+            }
+            TableItemKind::Cell => {
+                let node_id = taffy::NodeId::from(cell.node_id);
+                self.doc.compute_child_layout(node_id, inputs)
+            }
+        }
     }
 }
 
