@@ -374,7 +374,14 @@ impl<'a> selectors::Element for BlitzNode<'a> {
     ) -> bool {
         match *pseudo_class {
             NonTSPseudoClass::Active => false,
-            NonTSPseudoClass::AnyLink => false,
+            NonTSPseudoClass::AnyLink => self
+                .raw_dom_data
+                .downcast_element()
+                .map(|elem| {
+                    (elem.name.local == local_name!("a") || elem.name.local == local_name!("area"))
+                        && elem.attr(local_name!("href")).is_some()
+                })
+                .unwrap_or(false),
             NonTSPseudoClass::Checked => false,
             NonTSPseudoClass::Valid => false,
             NonTSPseudoClass::Invalid => false,
@@ -387,7 +394,14 @@ impl<'a> selectors::Element for BlitzNode<'a> {
             NonTSPseudoClass::Indeterminate => false,
             NonTSPseudoClass::Lang(_) => false,
             NonTSPseudoClass::CustomState(_) => false,
-            NonTSPseudoClass::Link => false,
+            NonTSPseudoClass::Link => self
+                .raw_dom_data
+                .downcast_element()
+                .map(|elem| {
+                    (elem.name.local == local_name!("a") || elem.name.local == local_name!("area"))
+                        && elem.attr(local_name!("href")).is_some()
+                })
+                .unwrap_or(false),
             NonTSPseudoClass::PlaceholderShown => false,
             NonTSPseudoClass::ReadWrite => false,
             NonTSPseudoClass::ReadOnly => false,
