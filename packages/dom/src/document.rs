@@ -1,5 +1,6 @@
 use crate::events::{EventData, HitResult, RendererEvent};
 use crate::node::TextBrush;
+use crate::util::fetch_blob;
 use crate::{Node, NodeData, TextNodeData, Viewport};
 use app_units::Au;
 use peniko::kurbo;
@@ -9,9 +10,11 @@ use selectors::{matching::QuirksMode, Element};
 use slab::Slab;
 use std::any::Any;
 use std::collections::{HashMap, HashSet, VecDeque};
+use style::font_face::{FontFaceSourceFormat, FontFaceSourceFormatKeyword, Source};
 use style::selector_parser::ServoElementSnapshot;
 use style::servo::media_queries::FontMetricsProvider;
 use style::servo_arc::Arc as ServoArc;
+use style::stylesheets::{CssRule, StylesheetInDocument};
 use style::values::computed::ui::CursorKind;
 use style::{
     dom::{TDocument, TNode},
@@ -458,12 +461,75 @@ impl Document {
 
         let sheet = DocumentStyleSheet(ServoArc::new(data));
 
+        self.add_webfonts_from_stylesheet(&*sheet.0);
+
         self.stylesheets.insert(css.to_string(), sheet.clone());
 
         self.stylist.append_stylesheet(sheet, &self.guard.read());
 
         self.stylist
             .force_stylesheet_origins_dirty(Origin::Author.into());
+    }
+
+    pub fn add_webfonts_from_stylesheet(&mut self, stylesheet: &Stylesheet) {
+        let read_guard = self.guard.read();
+
+        for rule in stylesheet.rules(&read_guard) {
+            if let CssRule::FontFace(rule) = rule {
+                let rule = rule.read_with(&read_guard);
+                if let Some(sources) = rule.sources.as_ref() {
+                    for source in &sources.0 {
+                        if let Source::Url(source) = source {
+                            // Skip sources with source hints for formats we definitely don't support
+                            if let Some(hint) = &source.format_hint {
+                                match hint {
+                                    FontFaceSourceFormat::String(s) => {
+                                        // println!("Skipping unsupported font of custom type {}", s);
+                                        // continue;
+                                    }
+                                    FontFaceSourceFormat::Keyword(keyword) => {
+                                        use FontFaceSourceFormatKeyword as KW;
+                                        if matches!(
+                                            keyword,
+                                            KW::EmbeddedOpentype | KW::Svg
+                                        ) {
+                                            println!(
+                                                "Skipping unsupported font of type {:?}",
+                                                keyword
+                                            );
+                                            continue;
+                                        }
+                                    }
+                                }
+                            };
+
+                            let Some(url) = source.url.url() else {
+                                println!("Source with no url");
+                                continue;
+                            };
+                            let Ok(font_data) = fetch_blob(url.as_str()) else {
+                                println!("Error fetching font {}", url.as_str());
+                                continue;
+                            };
+
+                            if url.path().ends_with("woff2") || url.path().ends_with("woff") {
+                                if let Some(font_data) = woff::version2::decompress(&font_data) {
+                                    self.font_ctx.collection.register_fonts(font_data);
+                                    println!("Registed font {}", url.as_str());
+                                } else {
+                                    println!("Error decompressing woff2 data");
+                                }
+
+                            } else {
+                                self.font_ctx.collection.register_fonts(font_data);
+                                println!("Registed font {}", url.as_str());
+                            }
+
+                        }
+                    }
+                }
+            }
+        }
     }
 
     pub fn snapshot_node(&mut self, node_id: usize) {
