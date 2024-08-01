@@ -79,6 +79,10 @@ pub(crate) fn collect_table_cells(
 ) {
     let node = &doc.nodes[node_id];
 
+    if !node.is_element() {
+      return;
+    }
+
     let Some(display) = node.primary_styles().map(|s| s.clone_display()) else {
         println!("Ignoring table descendent because it has no styles");
         return;
