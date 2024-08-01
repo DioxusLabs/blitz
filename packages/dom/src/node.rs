@@ -31,6 +31,7 @@ use taffy::{
 use url::Url;
 
 use crate::events::{EventListener, HitResult};
+use crate::layout::table::TableContext;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum DisplayOuter {
@@ -76,8 +77,9 @@ pub struct Node {
     pub final_layout: Layout,
     pub listeners: Vec<EventListener>,
 
-    // Inline layout data
+    // Flags
     pub is_inline_root: bool,
+    pub is_table_root: bool,
 }
 
 impl Node {
@@ -107,6 +109,7 @@ impl Node {
             final_layout: Layout::new(),
             listeners: Default::default(),
             is_inline_root: false,
+            is_table_root: false,
         }
     }
 
@@ -493,6 +496,8 @@ pub enum NodeSpecificData {
     Svg(usvg::Tree),
     /// Parley text layout (elements with inline inner display mode only)
     InlineRoot(Box<TextLayout>),
+    /// Pre-computed table layout data
+    TableRoot(Arc<TableContext>),
     /// Parley text editor (text inputs)
     TextInput(TextInputData),
     /// No data (for nodes that don't need any node-specific data)
@@ -505,6 +510,7 @@ impl std::fmt::Debug for NodeSpecificData {
             NodeSpecificData::Image(_) => f.write_str("NodeSpecificData::Image"),
             NodeSpecificData::Svg(_) => f.write_str("NodeSpecificData::Svg"),
             NodeSpecificData::InlineRoot(_) => f.write_str("NodeSpecificData::InlineRoot"),
+            NodeSpecificData::TableRoot(_) => f.write_str("NodeSpecificData::TableRoot"),
             NodeSpecificData::TextInput(_) => f.write_str("NodeSpecificData::TextInput"),
             NodeSpecificData::None => f.write_str("NodeSpecificData::None"),
         }

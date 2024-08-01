@@ -12,6 +12,7 @@ use crate::{
 };
 use html5ever::local_name;
 use std::cell::Ref;
+use std::sync::Arc;
 use taffy::{
     compute_block_layout, compute_cached_layout, compute_flexbox_layout, compute_grid_layout,
     compute_leaf_layout, prelude::*, Cache, FlexDirection, LayoutPartialTree, MaybeMath as _,
@@ -19,7 +20,10 @@ use taffy::{
 };
 
 pub(crate) mod construct;
+pub(crate) mod table;
 pub(crate) use construct::collect_layout_children;
+
+use self::table::TableTreeWrapper;
 
 impl Document {
     fn node_from_id(&self, node_id: taffy::prelude::NodeId) -> &Node {
@@ -208,6 +212,24 @@ impl LayoutPartialTree for Document {
                         );
 
                         return computed;
+                    }
+
+                    if node.is_table_root {
+                        let NodeSpecificData::TableRoot(context) = &tree.nodes[node_id.into()]
+                            .raw_dom_data
+                            .downcast_element()
+                            .unwrap()
+                            .node_specific_data
+                        else {
+                            panic!("Node marked as table root but doesn't have TableContext");
+                        };
+                        let context = Arc::clone(context);
+
+                        let mut table_wrapper = TableTreeWrapper {
+                            doc: tree,
+                            ctx: context,
+                        };
+                        return compute_grid_layout(&mut table_wrapper, node_id, inputs);
                     }
 
                     if node.is_inline_root {
