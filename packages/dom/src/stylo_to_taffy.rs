@@ -72,6 +72,7 @@ pub(crate) fn entire_style(style: &stylo::ComputedValues) -> taffy::Style {
     taffy::Style {
         box_sizing: self::box_sizing(pos.box_sizing),
         display: self::display(box_styles.display),
+        item_is_table: box_styles.display.inside() == stylo::DisplayInside::Table,
         position,
         overflow: taffy::Point {
             x: self::overflow(box_styles.overflow_x),
@@ -224,8 +225,9 @@ pub(crate) fn display(input: stylo::Display) -> taffy::Display {
         // TODO: Support grid layout in servo configuration of stylo
         // TODO: Support display:contents in Taffy
         // TODO: Support table layout in Taffy
+        stylo::DisplayInside::Table => taffy::Display::Grid,
         _ => {
-            println!("FALLBACK {:?} {:?}", input.inside(), input.outside());
+            // println!("FALLBACK {:?} {:?}", input.inside(), input.outside());
             taffy::Display::Block
         }
     };

@@ -29,7 +29,7 @@ fn main() {
             extension: ExtensionOptionsBuilder::default()
                 .strikethrough(true)
                 .tagfilter(false)
-                .table(false)
+                .table(true)
                 .autolink(true)
                 .tasklist(false)
                 .superscript(false)

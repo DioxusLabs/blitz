@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use html5ever::{local_name, namespace_url, ns, QualName};
 use parley::{builder::TreeBuilder, style::WhiteSpaceCollapse, InlineBox};
 use slab::Slab;
@@ -14,6 +16,8 @@ use crate::{
     node::{NodeKind, NodeSpecificData, TextBrush, TextInputData, TextLayout},
     stylo_to_parley, Document, ElementNodeData, Node, NodeData,
 };
+
+use super::table::build_table_context;
 
 pub(crate) fn collect_layout_children(
     doc: &mut Document,
@@ -67,7 +71,7 @@ pub(crate) fn collect_layout_children(
             // Put children array back
             doc.nodes[container_node_id].children = children;
         }
-        DisplayInside::Flow | DisplayInside::FlowRoot => {
+        DisplayInside::Flow | DisplayInside::FlowRoot | DisplayInside::TableCell => {
             // TODO: make "all_inline" detection work in the presence of display:contents nodes
             let mut all_block = true;
             let mut all_inline = true;
@@ -165,7 +169,17 @@ pub(crate) fn collect_layout_children(
             );
         }
 
-        // TODO: Implement table layout
+        DisplayInside::Table => {
+            let (table_context, tlayout_children) = build_table_context(doc, container_node_id);
+            doc.nodes[container_node_id].is_table_root = true;
+            doc.nodes[container_node_id]
+                .raw_dom_data
+                .downcast_element_mut()
+                .unwrap()
+                .node_specific_data = NodeSpecificData::TableRoot(Arc::new(table_context));
+            layout_children.extend_from_slice(&tlayout_children);
+        }
+
         _ => {
             layout_children.extend_from_slice(&doc.nodes[container_node_id].children);
         }
