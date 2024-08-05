@@ -24,6 +24,8 @@ impl From<HtmlDocument> for Document {
     }
 }
 impl DocumentLike for HtmlDocument {
+    type DocumentEvent = ();
+
     fn handle_event(&mut self, event: blitz_dom::events::RendererEvent) -> bool {
         self.inner.as_mut().handle_event(event)
     }

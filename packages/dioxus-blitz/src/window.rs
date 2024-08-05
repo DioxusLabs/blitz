@@ -1,7 +1,8 @@
 use crate::accessibility::AccessibilityState;
 use crate::stylo_to_winit;
-use crate::waker::{create_waker, BlitzEvent, BlitzWindowEvent};
+use crate::waker::{create_waker, BlitzEvent, BlitzWindowEvent, BlitzWindowId};
 use blitz::{Devtools, Renderer};
+use blitz_dom::document::DocumentEventApi;
 use blitz_dom::events::{EventData, RendererEvent};
 use blitz_dom::{DocumentLike, Viewport};
 use winit::keyboard::PhysicalKey;
@@ -38,12 +39,34 @@ impl<Doc: DocumentLike> WindowConfig<Doc> {
     }
 }
 
+pub struct DocumentApi<'doc, Doc: DocumentLike> {
+    event_loop_proxy: &'doc EventLoopProxy<BlitzEvent<Doc::DocumentEvent>>,
+    window: &'doc Window,
+}
+
+impl<'doc, Doc: DocumentLike> DocumentEventApi<Doc::DocumentEvent> for DocumentApi<'doc, Doc> {
+    fn request_redraw(&mut self) {
+        self.window.request_redraw();
+    }
+
+    fn exit(&mut self) {
+        self.event_loop_proxy.send_event(BlitzEvent::Exit);
+    }
+
+    fn send_document_event(&mut self, doc_event: Doc::DocumentEvent) {
+        self.event_loop_proxy.send_event(BlitzEvent::Window {
+            window_id: BlitzWindowId::SpecificWindow(self.window.id()),
+            data: BlitzWindowEvent::DocumentEvent(doc_event),
+        });
+    }
+}
+
 pub(crate) struct View<Doc: DocumentLike> {
     pub(crate) renderer: Renderer<'static, Window>,
     pub(crate) dom: Doc,
     pub(crate) waker: Option<Waker>,
 
-    event_loop_proxy: EventLoopProxy<BlitzEvent>,
+    event_loop_proxy: EventLoopProxy<BlitzEvent<Doc::DocumentEvent>>,
     window: Arc<Window>,
 
     /// The actual viewport of the page that we're getting a glimpse of.
@@ -72,7 +95,7 @@ impl<Doc: DocumentLike> View<Doc> {
     pub(crate) fn init(
         config: WindowConfig<Doc>,
         event_loop: &ActiveEventLoop,
-        proxy: &EventLoopProxy<BlitzEvent>,
+        proxy: &EventLoopProxy<BlitzEvent<Doc::DocumentEvent>>,
     ) -> Self {
         let winit_window = Arc::from(event_loop.create_window(config.attributes).unwrap());
 
@@ -232,10 +255,17 @@ impl<Doc: DocumentLike> View<Doc> {
         }
     }
 
-    pub fn handle_blitz_event(&mut self, event: BlitzWindowEvent) {
+    pub fn handle_blitz_event(&mut self, event: BlitzWindowEvent<Doc::DocumentEvent>) {
         match event {
             BlitzWindowEvent::Poll => {
                 self.poll();
+            }
+            BlitzWindowEvent::DocumentEvent(document_event) => {
+                let api: DocumentApi<Doc> = DocumentApi {
+                    event_loop_proxy: &self.event_loop_proxy,
+                    window: &self.window,
+                };
+                self.dom.handle_document_event(document_event, api);
             }
             #[cfg(feature = "accessibility")]
             BlitzWindowEvent::Accessibility(accessibility_event) => {

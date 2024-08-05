@@ -3,8 +3,8 @@
 use std::rc::Rc;
 
 use blitz_dom::{
-    events::EventData, namespace_url, node::Attribute, ns, Atom, Document, DocumentLike,
-    ElementNodeData, NodeData, QualName, TextNodeData, Viewport,
+    document::DocumentEventApi, events::EventData, namespace_url, node::Attribute, ns, Atom,
+    Document, DocumentLike, ElementNodeData, NodeData, QualName, TextNodeData, Viewport,
 };
 
 use dioxus::{
@@ -16,6 +16,8 @@ use dioxus::{
 };
 use futures_util::{pin_mut, FutureExt};
 use rustc_hash::FxHashMap;
+
+use crate::{BlitzEvent, DioxusBlitzEvent};
 
 use super::event_handler::{NativeClickData, NativeConverter};
 
@@ -53,6 +55,8 @@ impl From<DioxusDocument> for Document {
     }
 }
 impl DocumentLike for DioxusDocument {
+    type DocumentEvent = crate::DioxusBlitzEvent;
+
     fn poll(&mut self, mut cx: std::task::Context) -> bool {
         {
             let fut = self.vdom.wait_for_work();
@@ -70,6 +74,34 @@ impl DocumentLike for DioxusDocument {
         });
 
         true
+    }
+
+    fn handle_document_event(
+        &mut self,
+        event: Self::DocumentEvent,
+        mut api: impl DocumentEventApi<Self::DocumentEvent>,
+    ) {
+        match event {
+            #[cfg(all(
+                feature = "hot-reload",
+                debug_assertions,
+                not(target_os = "android"),
+                not(target_os = "ios")
+            ))]
+            DioxusBlitzEvent::HotReloadEvent(msg) => {
+                use dioxus_hot_reload::HotReloadMsg;
+                match msg {
+                    HotReloadMsg::UpdateTemplate(template) => {
+                        self.vdom.replace_template(template);
+                        api.request_redraw();
+                    }
+                    HotReloadMsg::Shutdown => api.exit(),
+                    HotReloadMsg::UpdateAsset(_asset) => {
+                        // TODO dioxus-desktop seems to handle this by forcing a reload of all stylesheets.
+                    }
+                }
+            }
+        }
     }
 
     fn handle_event(&mut self, event: blitz_dom::events::RendererEvent) -> bool {

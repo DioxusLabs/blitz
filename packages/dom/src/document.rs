@@ -23,6 +23,7 @@ use style::{
 };
 use taffy::AvailableSpace;
 use url::Url;
+use winit::event_loop::EventLoopProxy;
 
 // TODO: implement a proper font metrics provider
 #[derive(Debug, Clone)]
@@ -51,7 +52,15 @@ impl FontMetricsProvider for DummyFontMetricsProvider {
     }
 }
 
+pub trait DocumentEventApi<DocumentEvent> {
+    fn request_redraw(&mut self);
+    fn exit(&mut self);
+    fn send_document_event(&mut self, event: DocumentEvent);
+}
+
 pub trait DocumentLike: AsRef<Document> + AsMut<Document> + Into<Document> + 'static {
+    type DocumentEvent: Clone + Send + 'static;
+
     fn poll(&mut self, _cx: std::task::Context) -> bool {
         // Default implementation does nothing
         false
@@ -60,6 +69,14 @@ pub trait DocumentLike: AsRef<Document> + AsMut<Document> + Into<Document> + 'st
     fn handle_event(&mut self, _event: RendererEvent) -> bool {
         // Default implementation does nothing
         false
+    }
+
+    fn handle_document_event(
+        &mut self,
+        _event: Self::DocumentEvent,
+        _api: impl DocumentEventApi<Self::DocumentEvent>,
+    ) {
+        // Default implementation does nothing
     }
 
     fn as_any_mut(&mut self) -> &mut dyn Any {
@@ -114,6 +131,8 @@ pub struct Document {
 }
 
 impl DocumentLike for Document {
+    type DocumentEvent = ();
+
     fn handle_event(&mut self, event: RendererEvent) -> bool {
         // let node_id = event.target;
 

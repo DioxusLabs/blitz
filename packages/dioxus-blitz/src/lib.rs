@@ -28,6 +28,7 @@ use winit::event_loop::{ControlFlow, EventLoop};
 
 use crate::application::Application;
 use crate::documents::{DioxusDocument, HtmlDocument};
+use crate::waker::{BlitzWindowEvent, BlitzWindowId};
 use crate::window::View;
 
 pub use crate::waker::BlitzEvent;
@@ -41,6 +42,18 @@ pub mod exports {
 pub struct Config {
     pub stylesheets: Vec<String>,
     pub base_url: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+pub enum DioxusBlitzEvent {
+    /// A hotreload event, basically telling us to update our templates.
+    #[cfg(all(
+        feature = "hot-reload",
+        debug_assertions,
+        not(target_os = "android"),
+        not(target_os = "ios")
+    ))]
+    HotReloadEvent(dioxus_hot_reload::HotReloadMsg),
 }
 
 /// Launch an interactive HTML/CSS renderer driven by the Dioxus virtualdom
@@ -111,7 +124,7 @@ fn launch_with_window<Doc: DocumentLike + 'static>(window: WindowConfig<Doc>) {
     let _guard = rt.enter();
 
     // Build an event loop for the application
-    let mut ev_builder = EventLoop::<BlitzEvent>::with_user_event();
+    let mut ev_builder = EventLoop::<BlitzEvent<Doc::DocumentEvent>>::with_user_event();
     #[cfg(target_os = "android")]
     {
         use winit::platform::android::EventLoopBuilderExtAndroid;
@@ -133,7 +146,12 @@ fn launch_with_window<Doc: DocumentLike + 'static>(window: WindowConfig<Doc>) {
             dioxus_hot_reload::connect_at(cfg.target_dir.join("dioxusin"), {
                 let proxy = proxy.clone();
                 move |template| {
-                    let _ = proxy.send_event(BlitzEvent::HotReloadEvent(template));
+                    let _ = proxy.send_event(BlitzEvent::WindowEvent {
+                        window_id: BlitzWindowId::AllWindows,
+                        event_data: BlitzWindowEvent::DocumentEvent(
+                            DioxusBlitzEvent::HotReloadEvent(template),
+                        ),
+                    });
                 }
             })
         }

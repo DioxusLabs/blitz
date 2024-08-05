@@ -13,7 +13,7 @@ pub struct AccessibilityState {
 }
 
 impl AccessibilityState {
-    pub fn new(window: &Window, proxy: EventLoopProxy<BlitzEvent>) -> Self {
+    pub fn new<D: Send + 'static>(window: &Window, proxy: EventLoopProxy<BlitzEvent<D>>) -> Self {
         Self {
             adapter: accesskit_winit::Adapter::with_event_loop_proxy(window, proxy.clone()),
             next_id: 1,

@@ -1,4 +1,4 @@
-use crate::waker::{BlitzEvent, BlitzWindowEvent};
+use crate::waker::{BlitzEvent, BlitzWindowEvent, BlitzWindowId};
 
 use blitz_dom::DocumentLike;
 use std::collections::HashMap;
@@ -10,17 +10,20 @@ use winit::window::WindowId;
 use crate::{View, WindowConfig};
 
 pub struct Application<Doc: DocumentLike> {
-    rt: tokio::runtime::Runtime,
-    windows: HashMap<WindowId, View<Doc>>,
-    pending_windows: Vec<WindowConfig<Doc>>,
-    proxy: EventLoopProxy<BlitzEvent>,
+    pub rt: tokio::runtime::Runtime,
+    pub windows: HashMap<WindowId, View<Doc>>,
+    pub pending_windows: Vec<WindowConfig<Doc>>,
+    pub proxy: EventLoopProxy<BlitzEvent<Doc::DocumentEvent>>,
 
     #[cfg(all(feature = "menu", not(any(target_os = "android", target_os = "ios"))))]
-    menu_channel: muda::MenuEventReceiver,
+    pub menu_channel: muda::MenuEventReceiver,
 }
 
 impl<Doc: DocumentLike> Application<Doc> {
-    pub fn new(rt: tokio::runtime::Runtime, proxy: EventLoopProxy<BlitzEvent>) -> Self {
+    pub fn new(
+        rt: tokio::runtime::Runtime,
+        proxy: EventLoopProxy<BlitzEvent<Doc::DocumentEvent>>,
+    ) -> Self {
         Application {
             windows: HashMap::new(),
             pending_windows: Vec::new(),
@@ -37,7 +40,7 @@ impl<Doc: DocumentLike> Application<Doc> {
     }
 }
 
-impl<Doc: DocumentLike> ApplicationHandler<BlitzEvent> for Application<Doc> {
+impl<Doc: DocumentLike> ApplicationHandler<BlitzEvent<Doc::DocumentEvent>> for Application<Doc> {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
         // Resume existing windows
         for (_, view) in self.windows.iter_mut() {
@@ -62,12 +65,10 @@ impl<Doc: DocumentLike> ApplicationHandler<BlitzEvent> for Application<Doc> {
     }
 
     fn new_events(&mut self, _event_loop: &ActiveEventLoop, _cause: winit::event::StartCause) {
-        for window_id in self.windows.keys().copied() {
-            _ = self.proxy.send_event(BlitzEvent::Window {
-                data: BlitzWindowEvent::Poll,
-                window_id,
-            });
-        }
+        _ = self.proxy.send_event(BlitzEvent::Window {
+            window_id: BlitzWindowId::AllWindows,
+            data: BlitzWindowEvent::Poll,
+        });
 
         #[cfg(all(feature = "menu", not(any(target_os = "android", target_os = "ios"))))]
         if let Ok(event) = self.menu_channel.try_recv() {
@@ -97,37 +98,21 @@ impl<Doc: DocumentLike> ApplicationHandler<BlitzEvent> for Application<Doc> {
         }
     }
 
-    fn user_event(&mut self, event_loop: &ActiveEventLoop, event: BlitzEvent) {
+    fn user_event(&mut self, event_loop: &ActiveEventLoop, event: BlitzEvent<Doc::DocumentEvent>) {
         match event {
-            BlitzEvent::Window { data, window_id } => {
-                if let Some(view) = self.windows.get_mut(&window_id) {
-                    view.handle_blitz_event(data);
-                };
-            }
-
-            #[cfg(all(
-                feature = "hot-reload",
-                debug_assertions,
-                not(target_os = "android"),
-                not(target_os = "ios")
-            ))]
-            BlitzEvent::HotReloadEvent(msg) => match msg {
-                dioxus_hot_reload::HotReloadMsg::UpdateTemplate(template) => {
-                    for window in self.windows.values_mut() {
-                        use crate::documents::DioxusDocument;
-                        if let Some(dx_doc) =
-                            window.dom.as_any_mut().downcast_mut::<DioxusDocument>()
-                        {
-                            dx_doc.vdom.replace_template(template);
-                            window.handle_blitz_event(BlitzWindowEvent::Poll);
-                        }
+            BlitzEvent::Window { data, window_id } => match window_id {
+                BlitzWindowId::AllWindows => {
+                    for view in self.windows.values_mut() {
+                        view.handle_blitz_event(data.clone());
                     }
                 }
-                dioxus_hot_reload::HotReloadMsg::Shutdown => event_loop.exit(),
-                dioxus_hot_reload::HotReloadMsg::UpdateAsset(_asset) => {
-                    // TODO dioxus-desktop seems to handle this by forcing a reload of all stylesheets.
+                BlitzWindowId::SpecificWindow(window_id) => {
+                    if let Some(view) = self.windows.get_mut(&window_id) {
+                        view.handle_blitz_event(data);
+                    };
                 }
             },
+            BlitzEvent::Exit => event_loop.exit(),
         }
     }
 }
