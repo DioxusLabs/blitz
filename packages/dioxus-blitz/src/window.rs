@@ -68,7 +68,7 @@ pub(crate) struct View<Doc: DocumentLike> {
     _menu: muda::Menu,
 }
 
-impl<'a, Doc: DocumentLike> View<Doc> {
+impl<Doc: DocumentLike> View<Doc> {
     pub(crate) fn init(
         config: WindowConfig<Doc>,
         event_loop: &ActiveEventLoop,
