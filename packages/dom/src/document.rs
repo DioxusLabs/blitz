@@ -23,7 +23,6 @@ use style::{
 };
 use taffy::AvailableSpace;
 use url::Url;
-use winit::event_loop::EventLoopProxy;
 
 // TODO: implement a proper font metrics provider
 #[derive(Debug, Clone)]

@@ -1,26 +1,10 @@
-use blitz_dom::DocumentLike;
 use futures_util::task::ArcWake;
 use std::sync::Arc;
-use winit::{
-    event_loop::{ActiveEventLoop, EventLoopProxy},
-    window::WindowId,
-};
+use winit::{event_loop::EventLoopProxy, window::WindowId};
 
 #[cfg(feature = "accessibility")]
 use accesskit_winit::Event as AccessibilityEvent;
 use accesskit_winit::WindowEvent as AccessibilityWindowEvent;
-
-use crate::application::Application;
-
-// pub trait CustomEventHandler<Doc: DocumentLike>: Sized + Send {
-//     fn handle(self, app: &mut Application<Doc, Self>, event_loop: &ActiveEventLoop);
-// }
-
-// impl<Doc: DocumentLike> CustomEventHandler<Doc> for () {
-//     fn handle(self, app: &mut Application<Doc, Self>, event_loop: &ActiveEventLoop) {
-//         todo!()
-//     }
-// }
 
 #[derive(Debug, Clone)]
 pub enum BlitzWindowId {

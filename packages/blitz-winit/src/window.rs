@@ -50,11 +50,11 @@ impl<'doc, Doc: DocumentLike> DocumentEventApi<Doc::DocumentEvent> for DocumentA
     }
 
     fn exit(&mut self) {
-        self.event_loop_proxy.send_event(BlitzEvent::Exit);
+        let _ = self.event_loop_proxy.send_event(BlitzEvent::Exit);
     }
 
     fn send_document_event(&mut self, doc_event: Doc::DocumentEvent) {
-        self.event_loop_proxy.send_event(BlitzEvent::Window {
+        let _ = self.event_loop_proxy.send_event(BlitzEvent::Window {
             window_id: BlitzWindowId::SpecificWindow(self.window.id()),
             data: BlitzWindowEvent::DocumentEvent(doc_event),
         });

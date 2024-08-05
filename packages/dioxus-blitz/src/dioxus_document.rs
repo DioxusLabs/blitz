@@ -17,8 +17,6 @@ use dioxus::{
 use futures_util::{pin_mut, FutureExt};
 use rustc_hash::FxHashMap;
 
-use crate::{BlitzEvent, DioxusBlitzEvent};
-
 use super::event_handler::{NativeClickData, NativeConverter};
 
 type NodeId = usize;
@@ -88,7 +86,7 @@ impl DocumentLike for DioxusDocument {
                 not(target_os = "android"),
                 not(target_os = "ios")
             ))]
-            DioxusBlitzEvent::HotReloadEvent(msg) => {
+            crate::DioxusBlitzEvent::HotReloadEvent(msg) => {
                 use dioxus_hot_reload::HotReloadMsg;
                 match msg {
                     HotReloadMsg::UpdateTemplate(template) => {
