@@ -38,8 +38,8 @@ impl<Doc: DocumentLike> WindowConfig<Doc> {
     }
 }
 
-pub(crate) struct View<'s, Doc: DocumentLike> {
-    pub(crate) renderer: Renderer<'s, Window>,
+pub(crate) struct View<Doc: DocumentLike> {
+    pub(crate) renderer: Renderer<'static, Window>,
     pub(crate) dom: Doc,
     pub(crate) waker: Option<Waker>,
 
@@ -68,7 +68,7 @@ pub(crate) struct View<'s, Doc: DocumentLike> {
     _menu: muda::Menu,
 }
 
-impl<'a, Doc: DocumentLike> View<'a, Doc> {
+impl<'a, Doc: DocumentLike> View<Doc> {
     pub(crate) fn init(
         config: WindowConfig<Doc>,
         event_loop: &ActiveEventLoop,
@@ -106,7 +106,7 @@ impl<'a, Doc: DocumentLike> View<'a, Doc> {
     }
 }
 
-impl<'a, Doc: DocumentLike> View<'a, Doc> {
+impl<Doc: DocumentLike> View<Doc> {
     pub fn resume(&mut self, rt: &tokio::runtime::Runtime) {
         // Resolve dom
         self.dom.as_mut().set_viewport(self.viewport.clone());

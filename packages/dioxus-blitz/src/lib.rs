@@ -127,7 +127,7 @@ fn launch_with_window<Doc: DocumentLike + 'static>(window: WindowConfig<Doc>) {
     let proxy = event_loop.create_proxy();
 
     // Multiwindow ftw
-    let mut windows: HashMap<WindowId, window::View<'_, Doc>> = HashMap::new();
+    let mut windows: HashMap<WindowId, window::View<Doc>> = HashMap::new();
     let mut pending_windows = Vec::new();
 
     pending_windows.push(window);
@@ -164,7 +164,7 @@ fn launch_with_window<Doc: DocumentLike + 'static>(window: WindowConfig<Doc>) {
             event_loop.set_control_flow(ControlFlow::Wait);
 
             let on_resume =
-                |windows: &mut HashMap<WindowId, window::View<'_, Doc>>,
+                |windows: &mut HashMap<WindowId, window::View<Doc>>,
                  pending_windows: &mut Vec<WindowConfig<Doc>>| {
                     // Resume existing windows
                     for (_, view) in windows.iter_mut() {
@@ -182,7 +182,7 @@ fn launch_with_window<Doc: DocumentLike + 'static>(window: WindowConfig<Doc>) {
                     }
                 };
 
-            let on_suspend = |windows: &mut HashMap<WindowId, window::View<'_, Doc>>| {
+            let on_suspend = |windows: &mut HashMap<WindowId, window::View<Doc>>| {
                 for (_, view) in windows.iter_mut() {
                     view.suspend();
                 }
