@@ -21,7 +21,6 @@ slab = "0.4.9"
 app_units = "0.7.5"
 euclid = { version = "0.22", features = ["serde"] }
 atomic_refcell = { version = "0.1.13", features = ["serde"] }
-fxhash = "0.2.1"
 html5ever = { workspace = true }
 string_cache = "0.8.7"
 html-escape = "0.2.13"
@@ -31,10 +30,3 @@ ureq = "2.9"
 image = "0.25.2"
 winit = { version = "0.30.4", default-features = false }
 usvg = "0.42.0"
-
-
-# on wasm use the js feature on getrandom
-# features = ["js"]
-
-[target.'cfg(target_arch = "wasm32")'.dependencies]
-getrandom = { version = "0.2", features = ["js"] }
