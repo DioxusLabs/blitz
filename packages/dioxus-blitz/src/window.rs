@@ -260,7 +260,7 @@ impl<Doc: DocumentLike> View<Doc> {
             WindowEvent::Destroyed => {}
             WindowEvent::ActivationTokenDone { .. } => {},
             WindowEvent::CloseRequested => {
-                // Currently handled at the level above in lib.rs
+                // Currently handled at the level above in application.rs
             }
             WindowEvent::RedrawRequested => {
                 self.redraw();
