@@ -25,6 +25,7 @@ pub struct DocumentHtmlParser<'a> {
     doc: &'a mut Document,
 
     style_nodes: Vec<usize>,
+    svg_nodes: Vec<usize>,
 
     /// Errors that occurred during parsing.
     pub errors: Vec<Cow<'static, str>>,
@@ -38,6 +39,7 @@ impl<'a> DocumentHtmlParser<'a> {
         DocumentHtmlParser {
             doc,
             style_nodes: Vec::new(),
+            svg_nodes: Vec::new(),
             errors: Vec::new(),
             quirks_mode: QuirksMode::NoQuirks,
         }
@@ -168,6 +170,11 @@ impl<'b> TreeSink for DocumentHtmlParser<'b> {
             self.doc.process_style_element(*id);
         }
 
+        // Parse inline SVGs (<svg> elements)
+        for id in &self.svg_nodes {
+            self.doc.process_svg_element(*id);
+        }
+
         // Compute child_idx fields.
         self.doc.flush_child_indexes(0, 0, 0);
 
@@ -221,6 +228,7 @@ impl<'b> TreeSink for DocumentHtmlParser<'b> {
             "img" => self.load_image(id),
             "input" => self.process_button_input(id),
             "style" => self.style_nodes.push(id),
+            "svg" => self.svg_nodes.push(id),
             _ => {}
         }
 
