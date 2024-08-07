@@ -310,6 +310,21 @@ impl Document {
         new_node_id
     }
 
+    /// Used for cleaning invalid anonymous blocks
+    fn clean_anonymous_blocks(&mut self, node_id: usize) {
+        let children = &mut self.nodes[node_id].children.clone();
+        for child_id in children.iter() {
+            self.clean_anonymous_blocks(*child_id);
+        }
+
+        let node = &mut self.nodes[node_id];
+        node.anonymous_block_id = None;
+        if let Some(anonymous_block_id) = node.anonymous_block_id {
+            // Removing does pattern matching so removing the same node multiple times is ok
+            self.remove_node(anonymous_block_id);
+        }
+    }
+
     pub fn insert_before(&mut self, node_id: usize, inserted_node_ids: &[usize]) {
         // let count = inserted_node_ids.len();
 
@@ -319,6 +334,7 @@ impl Document {
         let node_child_idx = node.child_idx;
 
         let parent_id = node.parent.unwrap();
+        self.clean_anonymous_blocks(parent_id);
         let parent = &mut self.nodes[parent_id];
 
         // Mark the node's parent as changed.
@@ -347,6 +363,7 @@ impl Document {
         let node = &self.nodes[node_id];
         // let node_child_idx = node.child_idx;
         let parent_id = node.parent.unwrap();
+        self.clean_anonymous_blocks(parent_id);
         let parent = &mut self.nodes[parent_id];
 
         let mut children = std::mem::take(&mut parent.children);
@@ -383,6 +400,7 @@ impl Document {
         if let Some(Node {
             mut child_idx,
             parent: Some(parent_id),
+            anonymous_block_id,
             ..
         }) = node
         {
@@ -399,7 +417,20 @@ impl Document {
                 child_idx += 1;
             }
 
-            self.nodes[parent_id].children = children;
+            // remove unneeded anonymous blocks
+            if let Some(anonymous_block_id) = anonymous_block_id {
+                let is_block_used = children.iter().any(|child_id| {
+                    let child = self.get_node(*child_id);
+                    matches!(child, Some(child) if child.anonymous_block_id == Some(anonymous_block_id))
+                });
+
+                self.nodes[parent_id].children = children;
+                if !is_block_used {
+                    self.remove_node(anonymous_block_id);
+                }
+            } else {
+                self.nodes[parent_id].children = children;
+            }
         }
 
         node
