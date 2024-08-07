@@ -420,9 +420,9 @@ impl Document {
 
             // remove unneeded anonymous blocks
             if let Some(anonymous_block_id) = anonymous_block_id {
-                let is_block_used = !children.iter().all(|c| {
-                    let child = self.get_node(*c);
-                    matches!(child, Some(child) if child.anonymous_block_id != Some(anonymous_block_id))
+                let is_block_used = children.iter().any(|child_id| {
+                    let child = self.get_node(*child_id);
+                    matches!(child, Some(child) if child.anonymous_block_id == Some(anonymous_block_id))
                 });
 
                 self.nodes[parent_id].children = children;
