@@ -383,6 +383,7 @@ impl Document {
         if let Some(Node {
             mut child_idx,
             parent: Some(parent_id),
+            anonymous_block_id,
             ..
         }) = node
         {
@@ -399,7 +400,20 @@ impl Document {
                 child_idx += 1;
             }
 
-            self.nodes[parent_id].children = children;
+            // remove unneeded anonymous blocks
+            if let Some(anonymous_block_id) = anonymous_block_id {
+                let is_block_used = !children.iter().all(|c| {
+                    let child = self.get_node(*c);
+                    matches!(child, Some(child) if child.anonymous_block_id != Some(anonymous_block_id))
+                });
+
+                self.nodes[parent_id].children = children;
+                if !is_block_used {
+                    self.remove_node(anonymous_block_id);
+                }
+            } else {
+                self.nodes[parent_id].children = children;
+            }
         }
 
         node

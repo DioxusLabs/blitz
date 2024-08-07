@@ -235,6 +235,13 @@ fn collect_complex_layout_children(
         else if needs_wrap(child_node_kind, display_outside) {
             use style::selector_parser::PseudoElement;
 
+            // TODO: once let chaining lends in stable, make nicer
+            if anonymous_block_id.is_none() {
+                if let Some(child) = doc.get_node(child_id) {
+                    *anonymous_block_id = child.anonymous_block_id;
+                }
+            }
+
             if anonymous_block_id.is_none() {
                 const NAME: QualName = QualName {
                     prefix: None,
@@ -245,6 +252,9 @@ fn collect_complex_layout_children(
                     NAME,
                     Vec::new(),
                 )));
+
+                let child = doc.get_node_mut(child_id).unwrap();
+                child.anonymous_block_id = Some(node_id);
 
                 // Set style data
                 let parent_style = doc.nodes[container_node_id].primary_styles().unwrap();
@@ -262,6 +272,9 @@ fn collect_complex_layout_children(
 
                 layout_children.push(node_id);
                 *anonymous_block_id = Some(node_id);
+
+                #[cfg(feature = "tracing")]
+                tracing::info!("Created anonymous block container with id {}", node_id);
             }
 
             doc.nodes[anonymous_block_id.unwrap()]
