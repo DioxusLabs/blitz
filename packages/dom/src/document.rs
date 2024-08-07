@@ -310,11 +310,27 @@ impl Document {
         new_node_id
     }
 
+    /// Used for cleaning invalid anonymous blocks
+    fn clean_anonymous_blocks(&mut self, node_id: usize) {
+        let children = &mut self.nodes[node_id].children.clone();
+        for child_id in children.iter() {
+            self.clean_anonymous_blocks(*child_id);
+        }
+
+        let node = &mut self.nodes[node_id];
+        node.anonymous_block_id = None;
+        if let Some(anonymous_block_id) = node.anonymous_block_id {
+            // Removing does pattern matching so removing the same node multiple times is ok
+            self.remove_node(anonymous_block_id);
+        }
+    }
+
     pub fn insert_before(&mut self, node_id: usize, inserted_node_ids: &[usize]) {
         // let count = inserted_node_ids.len();
 
         // self.print_tree();
 
+        self.clean_anonymous_blocks(node_id);
         let node = &self.nodes[node_id];
         let node_child_idx = node.child_idx;
 
@@ -344,6 +360,8 @@ impl Document {
     }
 
     pub fn append(&mut self, node_id: usize, appended_node_ids: &[usize]) {
+        self.clean_anonymous_blocks(node_id);
+
         let node = &self.nodes[node_id];
         // let node_child_idx = node.child_idx;
         let parent_id = node.parent.unwrap();

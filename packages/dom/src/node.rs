@@ -55,6 +55,7 @@ pub struct Node {
     pub children: Vec<usize>,
     // What anonymous block are we a part of
     // Changing order of nodes requires unsetting
+    // using the "clean_anonymous_blocks" method with parent_id
     pub anonymous_block_id: Option<usize>,
     /// A separate child list that includes anonymous collections of inline elements
     pub layout_children: RefCell<Option<Vec<usize>>>,
