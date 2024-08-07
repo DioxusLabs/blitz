@@ -330,11 +330,11 @@ impl Document {
 
         // self.print_tree();
 
-        self.clean_anonymous_blocks(node_id);
         let node = &self.nodes[node_id];
         let node_child_idx = node.child_idx;
 
         let parent_id = node.parent.unwrap();
+        self.clean_anonymous_blocks(parent_id);
         let parent = &mut self.nodes[parent_id];
 
         // Mark the node's parent as changed.
@@ -360,11 +360,10 @@ impl Document {
     }
 
     pub fn append(&mut self, node_id: usize, appended_node_ids: &[usize]) {
-        self.clean_anonymous_blocks(node_id);
-
         let node = &self.nodes[node_id];
         // let node_child_idx = node.child_idx;
         let parent_id = node.parent.unwrap();
+        self.clean_anonymous_blocks(parent_id);
         let parent = &mut self.nodes[parent_id];
 
         let mut children = std::mem::take(&mut parent.children);
