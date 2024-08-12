@@ -281,11 +281,12 @@ fn collect_complex_layout_children(
 
 fn create_text_editor(doc: &mut Document, input_element_id: usize, is_multiline: bool) {
     let node = &mut doc.nodes[input_element_id];
-    let parley_style = node
+    let mut parley_style = node
         .primary_styles()
         .as_ref()
         .map(|s| stylo_to_parley::style(s))
         .unwrap_or_default();
+    let parley_style = parley_style.take_style();
 
     let element = &mut node.raw_dom_data.downcast_element_mut().unwrap();
     if !matches!(element.node_specific_data, NodeSpecificData::TextInput(_)) {
@@ -315,10 +316,11 @@ pub(crate) fn build_inline_layout(
             .and_then(|parent_id| doc.nodes[parent_id].primary_styles())
     });
 
-    let parley_style = root_node_style
+    let mut parley_style = root_node_style
         .as_ref()
         .map(|s| stylo_to_parley::style(s))
         .unwrap_or_default();
+    let parley_style = parley_style.take_style();
 
     let root_line_height = parley_style.line_height;
 
@@ -429,6 +431,8 @@ pub(crate) fn build_inline_layout(
                                 .primary_styles()
                                 .map(|s| stylo_to_parley::style(&s))
                                 .unwrap_or_default();
+
+                            let mut style = style.take_style();
 
                             // Floor the line-height of the span by the line-height of the inline context
                             // See https://www.w3.org/TR/CSS21/visudet.html#line-height
