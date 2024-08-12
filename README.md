@@ -85,7 +85,7 @@ Blitz is currently **experimental**. We are actively working on bringing into a 
 - [x] Border/Outline
 - [x] Raster images (png, jpeg, etc)
 - [x] Zoom
-- [] SVG
+- [ ] SVG
   - [x] External SVGs (basic support)
   - [ ] Inline SVGs
 - [ ] Shadows
