@@ -67,6 +67,7 @@ pub trait DocumentLike: AsRef<Document> + AsMut<Document> + Into<Document> + 'st
     }
 }
 
+// TODO (Matt): change document IDs to be u64 for accesskit compatibility.
 pub struct Document {
     /// A bump-backed tree
     ///
@@ -576,6 +577,10 @@ impl Document {
 
             node = next;
         }
+    }
+
+    pub fn focus(&self) -> Option<usize> {
+        self.focus_node_id
     }
 
     pub fn focus_next_node(&mut self) -> Option<usize> {
