@@ -7,7 +7,7 @@ use winit::{event_loop::EventLoopProxy, window::Window};
 /// State of the accessibility node tree and platform adapter.
 pub struct AccessibilityState {
     /// Adapter to connect to the [`EventLoop`](`winit::event_loop::EventLoop`).
-    adapter: accesskit_winit::Adapter,
+    pub adapter: accesskit_winit::Adapter,
 }
 
 impl AccessibilityState {

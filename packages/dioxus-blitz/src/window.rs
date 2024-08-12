@@ -255,6 +255,12 @@ impl<Doc: DocumentLike> View<Doc> {
     }
 
     pub fn handle_winit_event(&mut self, event: WindowEvent) {
+        // Process an event through AccessKit if enabled.
+        #[cfg(feature = "accessibility")]
+        self.accessibility
+            .adapter
+            .process_event(&self.window, &event);
+
         match event {
             // Window lifecycle events
             WindowEvent::Destroyed => {}
