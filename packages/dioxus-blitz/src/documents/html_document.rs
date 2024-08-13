@@ -30,7 +30,7 @@ impl DocumentLike for HtmlDocument {
 }
 
 impl HtmlDocument {
-    pub(crate) fn from_html(html: &str, cfg: &Config) -> Self {
+    pub fn from_html(html: &str, cfg: &Config) -> Self {
         // Spin up the virtualdom and include the default stylesheet
         let viewport = Viewport::new(0, 0, 1.0);
         let mut dom = Document::new(viewport);
