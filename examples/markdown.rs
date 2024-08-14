@@ -2,7 +2,10 @@
 
 use std::path::Path;
 
-use comrak::{markdown_to_html, ExtensionOptionsBuilder, Options, RenderOptionsBuilder};
+use comrak::{
+    markdown_to_html_with_plugins, plugins::syntect::SyntectAdapter, ExtensionOptionsBuilder,
+    Options, Plugins, RenderOptionsBuilder,
+};
 use dioxus_blitz::Config;
 
 fn main() {
@@ -22,8 +25,12 @@ fn main() {
             (base_url, contents)
         });
 
+    let mut plugins = Plugins::default();
+    let syntax_highligher = SyntectAdapter::new(Some("base16-ocean.light"));
+    plugins.render.codefence_syntax_highlighter = Some(&syntax_highligher as _);
+
     let stylesheet = include_str!("./assets/github-markdown-light.css");
-    let body_html = markdown_to_html(
+    let body_html = markdown_to_html_with_plugins(
         &contents,
         &Options {
             extension: ExtensionOptionsBuilder::default()
@@ -46,6 +53,7 @@ fn main() {
                 .unwrap(),
             ..Default::default()
         },
+        &plugins,
     );
 
     let html = format!(
