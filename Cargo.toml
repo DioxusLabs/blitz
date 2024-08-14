@@ -47,6 +47,7 @@ opt-level = 2
 blitz = { path = "./packages/blitz" }
 blitz-dom = { path = "./packages/dom" }
 comrak = { version = "0.21.0", default-features = false }
+png = { version = "0.17" }
 dioxus-blitz = { path = "./packages/dioxus-blitz" }
 dioxus = { workspace = true }
 euclid = { version = "0.22", features = ["serde"] }

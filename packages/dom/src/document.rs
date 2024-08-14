@@ -644,6 +644,10 @@ impl Document {
         self.set_stylist_device(self.viewport.make_device());
     }
 
+    pub fn get_viewport(&self) -> Viewport {
+        self.viewport.clone()
+    }
+
     /// Update the device and reset the stylist to process the new size
     pub fn set_stylist_device(&mut self, device: Device) {
         let origins = {

@@ -1,15 +1,31 @@
 mod multicolor_rounded_rect;
 mod render;
 
-use crate::devtools::Devtools;
+use crate::{devtools::Devtools, renderer::render::generate_vello_scene};
 use blitz_dom::{Document, Viewport};
 use std::num::NonZeroUsize;
 use std::sync::Arc;
 use vello::{
-    peniko::Color, util::RenderContext, util::RenderSurface, AaSupport, RenderParams,
-    Renderer as VelloRenderer, RendererOptions, Scene,
+    block_on_wgpu,
+    peniko::Color,
+    util::{RenderContext, RenderSurface},
+    AaSupport, RenderParams, Renderer as VelloRenderer, RendererOptions, Scene,
 };
-use wgpu::{PresentMode, SurfaceError, WasmNotSend};
+use wgpu::{
+    BufferDescriptor, BufferUsages, CommandEncoderDescriptor, Extent3d, ImageCopyBuffer,
+    PresentMode, SurfaceError, TextureDescriptor, TextureFormat, TextureUsages, WasmNotSend,
+};
+
+const DEFAULT_THREADS: Option<NonZeroUsize> = {
+    #[cfg(target_os = "macos")]
+    {
+        NonZeroUsize::new(1)
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        None
+    }
+};
 
 // Simple struct to hold the state of the renderer
 pub struct ActiveRenderState<'s> {
@@ -80,17 +96,6 @@ where
             .await
             .expect("Error creating surface");
 
-        const DEFAULT_THREADS: Option<NonZeroUsize> = {
-            #[cfg(target_os = "macos")]
-            {
-                NonZeroUsize::new(1)
-            }
-            #[cfg(not(target_os = "macos"))]
-            {
-                None
-            }
-        };
-
         let options = RendererOptions {
             surface_format: Some(surface.config.format),
             antialiasing_support: AaSupport::all(),
@@ -157,4 +162,106 @@ where
         // Empty the Vello scene (memory optimisation)
         self.scene.reset();
     }
+}
+
+pub async fn render_to_buffer(dom: &Document, viewport: Viewport) -> Vec<u8> {
+    // Create render context
+    let mut context = RenderContext::new();
+
+    // Setup device
+    let device_id = context
+        .device(None)
+        .await
+        .expect("No compatible device found");
+    let device_handle = &mut context.devices[device_id];
+    let device = &device_handle.device;
+    let queue = &device_handle.queue;
+
+    // Create renderer
+    let mut renderer = vello::Renderer::new(
+        device,
+        RendererOptions {
+            surface_format: None,
+            use_cpu: false,
+            num_init_threads: DEFAULT_THREADS,
+            antialiasing_support: vello::AaSupport::area_only(),
+        },
+    )
+    .expect("Got non-Send/Sync error from creating renderer");
+
+    let mut scene = Scene::new();
+    generate_vello_scene(&mut scene, dom, viewport.scale_f64(), Devtools::default());
+
+    let (width, height) = viewport.window_size;
+
+    let size = Extent3d {
+        width,
+        height,
+        depth_or_array_layers: 1,
+    };
+    let target = device.create_texture(&TextureDescriptor {
+        label: Some("Target texture"),
+        size,
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D2,
+        format: TextureFormat::Rgba8Unorm,
+        usage: TextureUsages::STORAGE_BINDING | TextureUsages::COPY_SRC,
+        view_formats: &[],
+    });
+    let view = target.create_view(&wgpu::TextureViewDescriptor::default());
+    let render_params = vello::RenderParams {
+        base_color: vello::peniko::Color::WHITE,
+        width,
+        height,
+        antialiasing_method: vello::AaConfig::Area,
+        // debug: vello::DebugLayers::none(),
+    };
+    renderer
+        .render_to_texture(device, queue, &scene, &view, &render_params)
+        .expect("Got non-Send/Sync error from rendering");
+    let padded_byte_width = (width * 4).next_multiple_of(256);
+    let buffer_size = padded_byte_width as u64 * height as u64;
+    let buffer = device.create_buffer(&BufferDescriptor {
+        label: Some("val"),
+        size: buffer_size,
+        usage: BufferUsages::MAP_READ | BufferUsages::COPY_DST,
+        mapped_at_creation: false,
+    });
+    let mut encoder = device.create_command_encoder(&CommandEncoderDescriptor {
+        label: Some("Copy out buffer"),
+    });
+    encoder.copy_texture_to_buffer(
+        target.as_image_copy(),
+        ImageCopyBuffer {
+            buffer: &buffer,
+            layout: wgpu::ImageDataLayout {
+                offset: 0,
+                bytes_per_row: Some(padded_byte_width),
+                rows_per_image: None,
+            },
+        },
+        size,
+    );
+    queue.submit([encoder.finish()]);
+    let buf_slice = buffer.slice(..);
+
+    let (sender, receiver) = futures_intrusive::channel::shared::oneshot_channel();
+    buf_slice.map_async(wgpu::MapMode::Read, move |v| sender.send(v).unwrap());
+    if let Some(recv_result) = block_on_wgpu(device, receiver.receive()) {
+        recv_result.unwrap();
+    } else {
+        panic!("channel was closed");
+    }
+
+    let data = buf_slice.get_mapped_range();
+    let mut result = Vec::<u8>::with_capacity((width * height * 4).try_into().unwrap());
+
+    // Pad result
+    for row in 0..height {
+        let start = (row * padded_byte_width).try_into().unwrap();
+        result.extend(&data[start..start + (width * 4) as usize]);
+    }
+
+    result
 }

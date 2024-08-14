@@ -27,9 +27,9 @@ use url::Url;
 use winit::event_loop::{ControlFlow, EventLoop};
 
 use crate::application::Application;
-use crate::documents::{DioxusDocument, HtmlDocument};
 use crate::window::View;
 
+pub use crate::documents::{DioxusDocument, HtmlDocument};
 pub use crate::waker::BlitzEvent;
 pub use crate::window::WindowConfig;
 

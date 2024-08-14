@@ -18,3 +18,4 @@ wgpu = { workspace = true }
 raw-window-handle = "0.6.0"
 image = "0.25"
 vello_svg = { git = "https://github.com/DioxusLabs/vello_svg", rev = "6a8bf4abd1ad053431253964d1b62ad4427f4311" }
+futures-intrusive = "0.5.0"

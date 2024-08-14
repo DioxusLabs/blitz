@@ -3,3 +3,6 @@
 .DS_Store
 experiments
 /.vscode
+/examples/output/*.png
+/examples/output/*.jpg
+/examples/output/*.jpeg
