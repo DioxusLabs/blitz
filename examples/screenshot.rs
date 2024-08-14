@@ -3,7 +3,11 @@
 use blitz::render_to_buffer;
 use blitz_dom::{HtmlDocument, Viewport};
 use reqwest::Url;
-use std::{fs::File, io::Write, path::Path};
+use std::{
+    fs::File,
+    io::Write,
+    path::{Path, PathBuf},
+};
 
 const USER_AGENT: &str = "Mozilla/5.0 (X11; Linux x86_64; rv:60.0) Gecko/20100101 Firefox/81.0";
 
@@ -34,7 +38,7 @@ async fn main() {
     let height = 800;
 
     // Create HtmlDocument
-    let mut document = HtmlDocument::from_html(&html, Some(url), Vec::new());
+    let mut document = HtmlDocument::from_html(&html, Some(url.clone()), Vec::new());
     document
         .as_mut()
         .set_viewport(Viewport::new(width * scale, height * scale, scale as f32));
@@ -44,7 +48,7 @@ async fn main() {
 
     // Determine height to render
     let computed_height = document.as_ref().root_element().final_layout.size.height;
-    let render_height = (computed_height as u32).max(height);
+    let render_height = (computed_height as u32).max(height).min(4000);
 
     // Render document to RGBA buffer
     let buffer = render_to_buffer(
@@ -54,12 +58,10 @@ async fn main() {
     .await;
 
     // Determine output path, and open a file at that path. TODO: make configurable.
-    let out_path = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("examples/output/screenshot")
-        .with_extension("png");
+    let out_path = compute_filename(&url);
+    let mut file = File::create(&out_path).unwrap();
 
     // Encode buffer as PNG and write it to a file
-    let mut file = File::create(&out_path).unwrap();
     write_png(&mut file, &buffer, width * scale, render_height * scale);
 
     // Log result.
@@ -84,4 +86,19 @@ fn write_png<W: Write>(writer: W, buffer: &[u8], width: u32, height: u32) {
     let mut writer = encoder.write_header().unwrap();
     writer.write_image_data(&buffer).unwrap();
     writer.finish().unwrap();
+}
+
+fn compute_filename(url: &str) -> PathBuf {
+    let cargo_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let out_dir = cargo_dir.join("examples/output");
+
+    let url = url.strip_prefix("https://").unwrap_or(url);
+    let url = url.strip_prefix("http://").unwrap_or(url);
+    let url_sanitized: String = url
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric())
+        .take(12)
+        .collect();
+
+    out_dir.join(&url_sanitized).with_extension("png")
 }
