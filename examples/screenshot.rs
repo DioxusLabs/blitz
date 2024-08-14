@@ -39,8 +39,12 @@ async fn main() {
 
     // Setup viewport. TODO: make configurable.
     let scale = 2;
-    let width = 1200;
     let height = 800;
+    let width: u32 = std::env::args()
+        .skip(2)
+        .next()
+        .and_then(|arg| arg.parse().ok())
+        .unwrap_or(1200);
 
     // Create HtmlDocument
     let mut document = HtmlDocument::from_html(&html, Some(url.clone()), Vec::new());
