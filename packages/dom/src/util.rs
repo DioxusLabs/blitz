@@ -1,6 +1,7 @@
 use std::{
     io::{Cursor, Read},
-    sync::{Arc, OnceLock}, time::Instant,
+    sync::{Arc, OnceLock},
+    time::Instant,
 };
 
 use crate::node::{Node, NodeData};
