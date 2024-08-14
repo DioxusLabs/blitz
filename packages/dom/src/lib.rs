@@ -15,6 +15,7 @@
 /// This is the primary entry point for this crate.
 pub mod document;
 
+pub mod html_document;
 /// An implementation for Html5ever's sink trait, allowing us to parse HTML into a DOM.
 pub mod htmlsink;
 
@@ -51,7 +52,10 @@ pub use html5ever::{
     local_name, namespace_prefix, namespace_url, ns, Namespace, NamespaceStaticSet, Prefix,
     PrefixStaticSet, QualName,
 };
+pub use html_document::HtmlDocument;
 pub use htmlsink::DocumentHtmlParser;
 pub use node::{ElementNodeData, Node, NodeData, TextNodeData};
 pub use string_cache::Atom;
 pub use viewport::Viewport;
+
+pub const DEFAULT_CSS: &str = include_str!("./default.css");

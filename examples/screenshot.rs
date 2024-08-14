@@ -3,8 +3,7 @@
 use std::{fs::File, path::Path};
 
 use blitz::render_to_buffer;
-use blitz_dom::Viewport;
-use dioxus_blitz::{Config, HtmlDocument};
+use blitz_dom::{HtmlDocument, Viewport};
 use reqwest::Url;
 
 #[tokio::main]
@@ -27,17 +26,13 @@ async fn main() {
         .unwrap()
         .into_string()
         .unwrap();
-    let config = Config {
-        stylesheets: Vec::new(),
-        base_url: Some(url),
-    };
 
     let scale = 2;
     let width = 800 * scale;
     let height = 600 * scale;
 
     let viewport = Viewport::new(width, height, scale as f32);
-    let mut document = HtmlDocument::from_html(&html, &config);
+    let mut document = HtmlDocument::from_html(&html, Some(url), Vec::new());
     document.as_mut().set_viewport(viewport.clone());
     document.as_mut().resolve();
 

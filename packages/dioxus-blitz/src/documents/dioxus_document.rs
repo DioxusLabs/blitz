@@ -4,7 +4,7 @@ use std::rc::Rc;
 
 use blitz_dom::{
     events::EventData, namespace_url, node::Attribute, ns, Atom, Document, DocumentLike,
-    ElementNodeData, NodeData, QualName, TextNodeData, Viewport,
+    ElementNodeData, NodeData, QualName, TextNodeData, Viewport, DEFAULT_CSS,
 };
 
 use dioxus::{
@@ -137,7 +137,7 @@ impl DioxusDocument {
         // doc.add_element()
 
         // Include default and user-specified stylesheets
-        doc.add_stylesheet(include_str!("./default.css"));
+        doc.add_stylesheet(DEFAULT_CSS);
 
         let state = DioxusState::create(&mut doc);
         let mut doc = Self {

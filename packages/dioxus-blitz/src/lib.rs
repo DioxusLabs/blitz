@@ -21,7 +21,7 @@ mod menu;
 #[cfg(feature = "accessibility")]
 mod accessibility;
 
-use blitz_dom::DocumentLike;
+use blitz_dom::{DocumentLike, HtmlDocument};
 use dioxus::prelude::{ComponentFunction, Element, VirtualDom};
 use url::Url;
 use winit::event_loop::{ControlFlow, EventLoop};
@@ -29,7 +29,7 @@ use winit::event_loop::{ControlFlow, EventLoop};
 use crate::application::Application;
 use crate::window::View;
 
-pub use crate::documents::{DioxusDocument, HtmlDocument};
+pub use crate::documents::DioxusDocument;
 pub use crate::waker::BlitzEvent;
 pub use crate::window::WindowConfig;
 
@@ -96,7 +96,7 @@ pub fn launch_static_html(html: &str) {
 }
 
 pub fn launch_static_html_cfg(html: &str, cfg: Config) {
-    let document = HtmlDocument::from_html(html, &cfg);
+    let document = HtmlDocument::from_html(html, cfg.base_url, cfg.stylesheets);
     let window = WindowConfig::new(document, 800.0, 600.0);
     launch_with_window(window)
 }

@@ -1,6 +1,7 @@
-use blitz_dom::{Document, DocumentHtmlParser, DocumentLike, Viewport};
+use crate::events::RendererEvent;
+use crate::{Document, DocumentHtmlParser, DocumentLike, Viewport};
 
-use crate::Config;
+use crate::DEFAULT_CSS;
 
 pub struct HtmlDocument {
     inner: Document,
@@ -24,25 +25,25 @@ impl From<HtmlDocument> for Document {
     }
 }
 impl DocumentLike for HtmlDocument {
-    fn handle_event(&mut self, event: blitz_dom::events::RendererEvent) -> bool {
+    fn handle_event(&mut self, event: RendererEvent) -> bool {
         self.inner.as_mut().handle_event(event)
     }
 }
 
 impl HtmlDocument {
-    pub fn from_html(html: &str, cfg: &Config) -> Self {
+    pub fn from_html(html: &str, base_url: Option<String>, stylesheets: Vec<String>) -> Self {
         // Spin up the virtualdom and include the default stylesheet
         let viewport = Viewport::new(0, 0, 1.0);
         let mut dom = Document::new(viewport);
 
         // Set base url if configured
-        if let Some(url) = &cfg.base_url {
+        if let Some(url) = &base_url {
             dom.set_base_url(url);
         }
 
         // Include default and user-specified stylesheets
-        dom.add_stylesheet(include_str!("./default.css"));
-        for ss in &cfg.stylesheets {
+        dom.add_stylesheet(DEFAULT_CSS);
+        for ss in &stylesheets {
             dom.add_stylesheet(ss);
         }
 
