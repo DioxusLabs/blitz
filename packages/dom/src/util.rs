@@ -1,6 +1,6 @@
 use std::{
     io::{Cursor, Read},
-    sync::{Arc, OnceLock},
+    sync::{Arc, OnceLock}, time::Instant,
 };
 
 use crate::node::{Node, NodeData};
@@ -33,6 +33,8 @@ impl From<std::io::Error> for FetchErr {
 }
 
 pub(crate) fn fetch_blob(url: &str) -> Result<Vec<u8>, FetchErr> {
+    let start = Instant::now();
+
     // Handle data URIs
     if url.starts_with("data:") {
         let data_url = data_url::DataUrl::process(url).unwrap();
@@ -62,6 +64,9 @@ pub(crate) fn fetch_blob(url: &str) -> Result<Vec<u8>, FetchErr> {
         .take(FILE_SIZE_LIMIT)
         .read_to_end(&mut bytes)
         .unwrap();
+
+    let time = (Instant::now() - start).as_millis();
+    println!("Fetched {} in {}ms", url, time);
 
     Ok(bytes)
 }
