@@ -7,12 +7,15 @@ use std::{
     fs::File,
     io::Write,
     path::{Path, PathBuf},
+    time::Instant,
 };
 
 const USER_AGENT: &str = "Mozilla/5.0 (X11; Linux x86_64; rv:60.0) Gecko/20100101 Firefox/81.0";
 
 #[tokio::main]
 async fn main() {
+    let mut timer = Timer::init();
+
     let url = std::env::args()
         .skip(1)
         .next()
@@ -32,6 +35,8 @@ async fn main() {
         .into_string()
         .unwrap();
 
+    timer.time("Fetched HTML");
+
     // Setup viewport. TODO: make configurable.
     let scale = 2;
     let width = 1200;
@@ -43,8 +48,12 @@ async fn main() {
         .as_mut()
         .set_viewport(Viewport::new(width * scale, height * scale, scale as f32));
 
+    timer.time("Created document (+ fetched assets)");
+
     // Compute style, layout, etc for HtmlDocument
     document.as_mut().resolve();
+
+    timer.time("Resolved styles and layout");
 
     // Determine height to render
     let computed_height = document.as_ref().root_element().final_layout.size.height;
@@ -57,6 +66,8 @@ async fn main() {
     )
     .await;
 
+    timer.time("Rendered to buffer");
+
     // Determine output path, and open a file at that path. TODO: make configurable.
     let out_path = compute_filename(&url);
     let mut file = File::create(&out_path).unwrap();
@@ -64,8 +75,12 @@ async fn main() {
     // Encode buffer as PNG and write it to a file
     write_png(&mut file, &buffer, width * scale, render_height * scale);
 
+    timer.time("Wrote out png");
+
     // Log result.
-    println!("Wrote result ({width}x{height}) to {}", out_path.display());
+    timer.total_time("\nDone");
+    println!("Screenshot is ({width}x{render_height})");
+    println!("Written to {}", out_path.display());
 }
 
 fn write_png<W: Write>(writer: W, buffer: &[u8], width: u32, height: u32) {
@@ -101,4 +116,35 @@ fn compute_filename(url: &str) -> PathBuf {
         .collect();
 
     out_dir.join(&url_sanitized).with_extension("png")
+}
+
+struct Timer {
+    initial_time: Instant,
+    last_time: Instant,
+}
+
+impl Timer {
+    fn init() -> Self {
+        let time = Instant::now();
+        Self {
+            initial_time: time,
+            last_time: time,
+        }
+    }
+
+    fn time(&mut self, message: &str) {
+        let now = Instant::now();
+        let diff = (now - self.last_time).as_millis();
+        println!("{message} in {diff}ms");
+
+        self.last_time = now;
+    }
+
+    fn total_time(&mut self, message: &str) {
+        let now = Instant::now();
+        let diff = (now - self.initial_time).as_millis();
+        println!("{message} in {diff}ms");
+
+        self.last_time = now;
+    }
 }
