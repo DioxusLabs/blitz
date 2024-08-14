@@ -600,12 +600,22 @@ impl ElementCx<'_> {
     }
 
     fn draw_svg(&self, scene: &mut Scene) {
+        let Some(svg) = self.svg else {
+            return;
+        };
+
+        let width = self.frame.inner_rect.width() as u32;
+        let height = self.frame.inner_rect.height() as u32;
+        let svg_size = svg.size();
+
+        let x_scale = width as f64 / svg_size.width() as f64;
+        let y_scale = height as f64 / svg_size.height() as f64;
+
         let transform = Affine::translate((self.pos.x * self.scale, self.pos.y * self.scale))
-            .pre_scale(self.scale);
-        if let Some(svg) = self.svg {
-            let fragment = vello_svg::render_tree(svg);
-            scene.append(&fragment, Some(transform));
-        }
+            .pre_scale_non_uniform(x_scale, y_scale);
+
+        let fragment = vello_svg::render_tree(svg);
+        scene.append(&fragment, Some(transform));
     }
 
     fn draw_image(&self, scene: &mut Scene) {
