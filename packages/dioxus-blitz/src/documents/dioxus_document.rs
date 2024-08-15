@@ -138,15 +138,15 @@ impl DioxusDocument {
         let viewport = Viewport::new(0, 0, 1.0);
         let mut doc = Document::new(viewport);
 
-        // Create a virtual "dioxus:document" element to act as the root element, as we won't necessarily
+        // Create a virtual "html" element to act as the root element, as we won't necessarily
         // have a single root otherwise, while the rest of blitz requires that we do
-        let document_element_id = doc.create_node(NodeData::Element(ElementNodeData::new(
-            qual_name("document", Some("dioxus")),
+        let html_element_id = doc.create_node(NodeData::Element(ElementNodeData::new(
+            qual_name("html", None),
             Vec::new(),
         )));
         let root_node_id = doc.root_node().id;
-        let document_element = doc.get_node_mut(document_element_id).unwrap();
-        document_element.parent = Some(root_node_id);
+        let html_element = doc.get_node_mut(html_element_id).unwrap();
+        html_element.parent = Some(root_node_id);
         let root_node = doc.get_node_mut(root_node_id).unwrap();
         // Stylo data on the root node container is needed to render the element
         let stylo_element_data = ElementData {
@@ -160,7 +160,7 @@ impl DioxusDocument {
             ..Default::default()
         };
         *root_node.stylo_element_data.borrow_mut() = Some(stylo_element_data);
-        root_node.children.push(document_element_id);
+        root_node.children.push(html_element_id);
 
         // Include default and user-specified stylesheets
         doc.add_stylesheet(DEFAULT_CSS);
