@@ -12,7 +12,7 @@ use dioxus::{
         AttributeValue, ElementId, Template, TemplateAttribute, TemplateNode, VirtualDom,
         WriteMutations,
     },
-    prelude::{set_event_converter, Element, PlatformEventData},
+    prelude::{set_event_converter, PlatformEventData},
 };
 use futures_util::{pin_mut, FutureExt};
 use rustc_hash::FxHashMap;
@@ -138,8 +138,8 @@ impl DioxusDocument {
         let viewport = Viewport::new(0, 0, 1.0);
         let mut doc = Document::new(viewport);
 
-        //Create a virtual "dioxus:document" element to act as the root element, as we won't have
-        //a single root otherwise
+        // Create a virtual "dioxus:document" element to act as the root element, as we won't necessarily
+        // have a single root otherwise, while the rest of blitz requires that we do
         let document_element_id = doc.create_node(NodeData::Element(ElementNodeData::new(
             qual_name("document", Some("dioxus")),
             Vec::new(),
@@ -148,6 +148,7 @@ impl DioxusDocument {
         let document_element = doc.get_node_mut(document_element_id).unwrap();
         document_element.parent = Some(root_node_id);
         let root_node = doc.get_node_mut(root_node_id).unwrap();
+        // Stylo data on the root node container is needed to render the element
         let stylo_element_data = ElementData {
             styles: ElementStyles {
                 primary: Some(
@@ -225,7 +226,7 @@ pub struct MutationWriter<'a> {
 impl DioxusState {
     /// Initialize the DioxusState in the RealDom
     pub fn create(doc: &mut Document) -> Self {
-        let root = doc.root_node();
+        let root = doc.root_element();
         let root_id = root.id;
 
         Self {
