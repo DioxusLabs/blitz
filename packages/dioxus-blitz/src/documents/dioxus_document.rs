@@ -16,6 +16,10 @@ use dioxus::{
 };
 use futures_util::{pin_mut, FutureExt};
 use rustc_hash::FxHashMap;
+use style::{
+    data::{ElementData, ElementStyles},
+    properties::{style_structs::Font, ComputedValues},
+};
 
 use super::event_handler::{NativeClickData, NativeConverter};
 
@@ -134,7 +138,29 @@ impl DioxusDocument {
         let viewport = Viewport::new(0, 0, 1.0);
         let mut doc = Document::new(viewport);
 
-        // doc.add_element()
+        // Create a virtual "html" element to act as the root element, as we won't necessarily
+        // have a single root otherwise, while the rest of blitz requires that we do
+        let html_element_id = doc.create_node(NodeData::Element(ElementNodeData::new(
+            qual_name("html", None),
+            Vec::new(),
+        )));
+        let root_node_id = doc.root_node().id;
+        let html_element = doc.get_node_mut(html_element_id).unwrap();
+        html_element.parent = Some(root_node_id);
+        let root_node = doc.get_node_mut(root_node_id).unwrap();
+        // Stylo data on the root node container is needed to render the element
+        let stylo_element_data = ElementData {
+            styles: ElementStyles {
+                primary: Some(
+                    ComputedValues::initial_values_with_font_override(Font::initial_values())
+                        .to_arc(),
+                ),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        *root_node.stylo_element_data.borrow_mut() = Some(stylo_element_data);
+        root_node.children.push(html_element_id);
 
         // Include default and user-specified stylesheets
         doc.add_stylesheet(DEFAULT_CSS);
@@ -200,7 +226,7 @@ pub struct MutationWriter<'a> {
 impl DioxusState {
     /// Initialize the DioxusState in the RealDom
     pub fn create(doc: &mut Document) -> Self {
-        let root = doc.root_node();
+        let root = doc.root_element();
         let root_id = root.id;
 
         Self {
