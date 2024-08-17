@@ -12,6 +12,7 @@ use style::invalidation::element::restyle_hints::RestyleHint;
 use style::values::computed::Display;
 use style::values::specified::box_::{DisplayInside, DisplayOutside};
 use style_dom::ElementState;
+use taffy::Point;
 // use string_cache::Atom;
 use parley;
 use style::properties::ComputedValues;
@@ -76,6 +77,7 @@ pub struct Node {
     pub unrounded_layout: Layout,
     pub final_layout: Layout,
     pub listeners: Vec<EventListener>,
+    pub scroll_offset: Point<f64>,
 
     // Flags
     pub is_inline_root: bool,
@@ -108,6 +110,7 @@ impl Node {
             unrounded_layout: Layout::new(),
             final_layout: Layout::new(),
             listeners: Default::default(),
+            scroll_offset: Point { x: 0.0, y: 0.0 },
             is_inline_root: false,
             is_table_root: false,
         }
@@ -796,6 +799,42 @@ impl Node {
                 x,
                 y,
             }))
+    }
+
+    pub fn scroll_by(&mut self, x: f64, y: f64) {
+        self.scroll_offset.x += x;
+        self.scroll_offset.y += y;
+
+        //If we're past our scroll bounds, transfer scrolling to parent
+        if self.scroll_offset.x >= self.final_layout.scroll_width() as f64
+            || self.scroll_offset.y >= self.final_layout.scroll_height() as f64
+        {
+            if let Some(parent) = self.parent {
+                unsafe {
+                    self.tree
+                        .as_mut()
+                        .unwrap()
+                        .get_mut(parent)
+                        .unwrap()
+                        .scroll_by(x, y);
+                }
+            }
+        }
+        // Now clamp scroll based on layout
+        self.scroll_offset.x = f64::max(
+            0.0,
+            f64::min(
+                self.scroll_offset.x,
+                self.final_layout.scroll_width() as f64,
+            ),
+        );
+        self.scroll_offset.y = f64::max(
+            0.0,
+            f64::min(
+                self.scroll_offset.y,
+                self.final_layout.scroll_height() as f64,
+            ),
+        );
     }
 }
 

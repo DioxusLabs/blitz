@@ -191,7 +191,7 @@ impl<Doc: DocumentLike> View<Doc> {
 
     pub fn mouse_move(&mut self, x: f32, y: f32) -> bool {
         let dom_x = x / self.viewport.zoom();
-        let dom_y = (y - self.dom.as_ref().scroll_offset as f32) / self.viewport.zoom();
+        let dom_y = y / self.viewport.zoom();
 
         // println!("Mouse move: ({}, {})", x, y);
         // println!("Unscaled: ({}, {})",);
@@ -391,15 +391,15 @@ impl<Doc: DocumentLike> View<Doc> {
                 }
             }
             WindowEvent::MouseWheel { delta, .. } => {
-                match delta {
-                    winit::event::MouseScrollDelta::LineDelta(_, y) => {
-                        self.dom.as_mut().scroll_by(y as f64 * 20.0)
-                    }
-                    winit::event::MouseScrollDelta::PixelDelta(offsets) => {
-                        self.dom.as_mut().scroll_by(offsets.y)
-                    }
+                let hover_node = self.dom.as_ref().get_hover_node_id().and_then(|id| self.dom.as_mut().get_node_mut(id));
+                let (scroll_x, scroll_y)= match delta {
+                    winit::event::MouseScrollDelta::LineDelta(x, y) => (x as f64 * 20.0, y as f64 * 20.0),
+                    winit::event::MouseScrollDelta::PixelDelta(offsets) => (offsets.x, offsets.y)
                 };
-                self.request_redraw();
+                if let Some(hover_node) = hover_node {
+                    hover_node.scroll_by(scroll_x, scroll_y);
+                    self.request_redraw();
+                } 
             }
 
             // File events

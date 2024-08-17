@@ -107,9 +107,6 @@ pub struct Document {
     /// The node which is currently focussed (if any)
     pub(crate) focus_node_id: Option<usize>,
 
-    // TODO: move to nodes
-    pub scroll_offset: f64,
-
     pub changed: HashSet<usize>,
 }
 
@@ -207,7 +204,6 @@ impl Document {
 
             hover_node_id: None,
             focus_node_id: None,
-            scroll_offset: 0.0,
             changed: HashSet::new(),
         };
 
@@ -659,7 +655,6 @@ impl Document {
             self.stylist.set_device(device, &guards)
         };
         self.stylist.force_stylesheet_origins_dirty(origins);
-        self.clamp_scroll();
     }
 
     pub fn stylist_device(&mut self) -> &Device {
@@ -737,31 +732,6 @@ impl Document {
         };
 
         Some(cursor)
-    }
-
-    pub fn scroll_by(&mut self, px: f64) {
-        // Invert scrolling on macos
-        #[cfg(target_os = "macos")]
-        {
-            self.scroll_offset += px;
-        }
-        #[cfg(not(target_os = "macos"))]
-        {
-            self.scroll_offset -= px;
-        }
-
-        self.clamp_scroll();
-    }
-
-    /// Clamp scroll offset
-    fn clamp_scroll(&mut self) {
-        let content_height = self.root_element().final_layout.size.height as f64;
-        let viewport_height = self.stylist_device().au_viewport_size().height.to_f64_px();
-
-        self.scroll_offset = self
-            .scroll_offset
-            .max(-(content_height - viewport_height))
-            .min(0.0);
     }
 
     pub fn visit<F>(&self, mut visit: F)
