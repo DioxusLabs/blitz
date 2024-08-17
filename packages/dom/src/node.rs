@@ -801,13 +801,17 @@ impl Node {
             }))
     }
 
+    /// Scroll this node by given x and y
+    /// Will bubble scrolling up to parent node once it can no longer scroll further
     pub fn scroll_by(&mut self, x: f64, y: f64) {
         self.scroll_offset.x += x;
         self.scroll_offset.y += y;
 
         //If we're past our scroll bounds, transfer scrolling to parent
-        if self.scroll_offset.x >= self.final_layout.scroll_width() as f64
-            || self.scroll_offset.y >= self.final_layout.scroll_height() as f64
+        if self.scroll_offset.x < 0.0
+            || self.scroll_offset.x > self.final_layout.scroll_width() as f64
+            || self.scroll_offset.y < 0.0
+            || self.scroll_offset.y > self.final_layout.scroll_height() as f64
         {
             if let Some(parent) = self.parent {
                 unsafe {
@@ -820,7 +824,11 @@ impl Node {
                 }
             }
         }
-        // Now clamp scroll based on layout
+        self.clamp_scroll_offset();
+    }
+
+    /// Ensure this node is not scrolled further than it should be able to
+    pub fn clamp_scroll_offset(&mut self) {
         self.scroll_offset.x = f64::max(
             0.0,
             f64::min(

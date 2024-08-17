@@ -692,12 +692,22 @@ impl Document {
             height: AvailableSpace::Definite(size.height.to_f32_px()),
         };
 
-        let root_node_id = taffy::NodeId::from(self.root_element().id);
+        let root_element_id = taffy::NodeId::from(self.root_element().id);
 
         // println!("\n\nRESOLVE LAYOUT\n===========\n");
 
-        taffy::compute_root_layout(self, root_node_id, available_space);
-        taffy::round_layout(self, root_node_id);
+        taffy::compute_root_layout(self, root_element_id, available_space);
+        taffy::round_layout(self, root_element_id);
+
+        // Root element's size is viewport size
+        let root_element = self.get_node_mut(self.root_element().id).unwrap();
+
+        root_element.final_layout.size = taffy::Size {
+            width: size.width.to_f32_px(),
+            height: size.height.to_f32_px(),
+        };
+
+        root_element.clamp_scroll_offset();
 
         // println!("\n\n");
         // taffy::print_tree(self, root_node_id)
