@@ -13,10 +13,17 @@ fn root() -> Element {
 
         .gap {
             height: 300px;
+            margin: 8px;
+            background: #11ff11;
+            display: flex;
+            align-items: center;
+            color: white;
         }
 
         .not-scrollable {
             background-color: yellow;
+            padding-top: 16px;
+            padding-bottom: 16px;
         "#;
 
     rsx! {
