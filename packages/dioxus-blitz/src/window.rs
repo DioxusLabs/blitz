@@ -399,7 +399,7 @@ impl<Doc: DocumentLike> View<Doc> {
                 if let Some(hover_node) = hover_node {
                     hover_node.scroll_by(scroll_x, scroll_y);
                     self.request_redraw();
-                } 
+                }
             }
 
             // File events
