@@ -26,7 +26,7 @@ style = { workspace = true }
 tracing = { workspace = true, optional = true }
 blitz = { path = "../blitz" }
 blitz-dom = { path = "../dom" }
-blitz-net = { path = "../net" }
+blitz-net = { path = "../net", features = ["non_blocking"] }
 html-escape = "0.2.13"
 url = { version = "2.5.0", features = ["serde"] }
 ureq = "2.9"

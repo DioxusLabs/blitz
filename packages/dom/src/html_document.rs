@@ -1,8 +1,9 @@
 use crate::events::RendererEvent;
 use crate::{Document, DocumentHtmlParser, DocumentLike, Viewport};
 
+use crate::util::Resource;
 use crate::DEFAULT_CSS;
-use crate::util::{NetProvider, Resource};
+use blitz_net::NetProvider;
 
 pub struct HtmlDocument {
     inner: Document,
@@ -32,7 +33,12 @@ impl DocumentLike for HtmlDocument {
 }
 
 impl HtmlDocument {
-    pub fn from_html<N: NetProvider<usize, Resource>>(html: &str, base_url: Option<String>, stylesheets: Vec<String>, net: N) -> Self {
+    pub fn from_html<N: NetProvider<usize, Resource>>(
+        html: &str,
+        base_url: Option<String>,
+        stylesheets: Vec<String>,
+        net: N,
+    ) -> Self {
         // Spin up the virtualdom and include the default stylesheet
         let viewport = Viewport::new(0, 0, 1.0);
         let mut dom = Document::new(viewport);

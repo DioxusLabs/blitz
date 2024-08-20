@@ -21,15 +21,15 @@ mod menu;
 #[cfg(feature = "accessibility")]
 mod accessibility;
 
-use std::sync::Arc;
+use crate::application::Application;
+use crate::window::View;
 use blitz_dom::{DocumentLike, HtmlDocument};
+use blitz_net::AsyncProvider;
 use dioxus::prelude::{ComponentFunction, Element, VirtualDom};
+use std::sync::Arc;
 use tokio::runtime::Runtime;
 use url::Url;
 use winit::event_loop::{ControlFlow, EventLoop};
-use blitz_dom::util::Resource;
-use crate::application::Application;
-use crate::window::View;
 
 pub use crate::documents::DioxusDocument;
 pub use crate::waker::BlitzEvent;
@@ -70,10 +70,10 @@ pub fn launch_cfg_with_props<P: Clone + 'static, M: 'static>(
         .build()
         .unwrap();
 
-    let net = Arc::new(blitz_net::Net::new(&rt));
-    
+    let net = Arc::new(AsyncProvider::new(&rt));
+
     let window = WindowConfig::new(document, 800.0, 600.0, net);
-    
+
     launch_with_window(window, rt)
 }
 
@@ -114,15 +114,19 @@ pub fn launch_static_html_cfg(html: &str, cfg: Config) {
 
     let _guard = rt.enter();
 
-    let net_provider = Arc::new(blitz_net::Net::new(&rt));
-    
-    let document = HtmlDocument::from_html(html, cfg.base_url, cfg.stylesheets, Arc::clone(&net_provider));
+    let net_provider = Arc::new(AsyncProvider::new(&rt));
+
+    let document = HtmlDocument::from_html(
+        html,
+        cfg.base_url,
+        cfg.stylesheets,
+        Arc::clone(&net_provider),
+    );
     let window = WindowConfig::new(document, 800.0, 600.0, net_provider);
     launch_with_window(window, rt)
 }
 
 fn launch_with_window<Doc: DocumentLike + 'static>(window: WindowConfig<Doc>, rt: Runtime) {
-
     // Build an event loop for the application
     let mut ev_builder = EventLoop::<BlitzEvent>::with_user_event();
     #[cfg(target_os = "android")]

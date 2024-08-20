@@ -1,10 +1,10 @@
 use std::borrow::Cow;
-use std::collections::{HashMap, HashSet};
-use std::sync::{Arc, Mutex};
+use std::collections::HashSet;
 
-use crate::node::{Attribute, ElementNodeData, ImageData, Node, NodeData, NodeSpecificData};
-use crate::util::{Resource, NetProvider};
+use crate::node::{Attribute, ElementNodeData, Node, NodeData};
+use crate::util::Resource;
 use crate::Document;
+use blitz_net::NetProvider;
 use html5ever::local_name;
 use html5ever::{
     tendril::{StrTendril, TendrilSink},
@@ -31,7 +31,7 @@ pub struct DocumentHtmlParser<'a, N> {
 
     /// The document's quirks mode.
     pub quirks_mode: QuirksMode,
-    
+
     net_provider: N,
 }
 
@@ -97,7 +97,8 @@ impl<'a, N: NetProvider<usize, Resource>> DocumentHtmlParser<'a, N> {
 
         if let (Some("stylesheet"), Some(href)) = (rel_attr, href_attr) {
             let url = self.doc.resolve_url(href);
-            self.net_provider.fetch(url, target_id, crate::util::fetch_css);
+            self.net_provider
+                .fetch(url, target_id, crate::util::fetch_css);
         }
     }
 
@@ -106,7 +107,8 @@ impl<'a, N: NetProvider<usize, Resource>> DocumentHtmlParser<'a, N> {
         if let Some(raw_src) = node.attr(local_name!("src")) {
             if !raw_src.is_empty() {
                 let src = self.doc.resolve_url(raw_src);
-                self.net_provider.fetch(src, target_id, crate::util::fetch_image);
+                self.net_provider
+                    .fetch(src, target_id, crate::util::fetch_image);
             }
         }
     }
@@ -354,11 +356,12 @@ impl<'b, N: NetProvider<usize, Resource>> TreeSink for DocumentHtmlParser<'b, N>
 #[test]
 fn parses_some_html() {
     use crate::Viewport;
+    use blitz_net::DummyProvider;
 
     let html = "<!DOCTYPE html><html><body><h1>hello world</h1></body></html>";
     let viewport = Viewport::new(800, 600, 1.0);
     let mut doc = Document::new(viewport);
-    let sink = DocumentHtmlParser::new(&mut doc, crate::util::SyncProvider);
+    let sink = DocumentHtmlParser::new(&mut doc, DummyProvider);
 
     html5ever::parse_document(sink, Default::default())
         .from_utf8()

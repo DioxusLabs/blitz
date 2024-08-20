@@ -9,6 +9,11 @@ use winit::keyboard::PhysicalKey;
 #[allow(unused)]
 use wgpu::rwh::HasWindowHandle;
 
+#[cfg(all(feature = "menu", not(any(target_os = "android", target_os = "ios"))))]
+use crate::menu::init_menu;
+use blitz_dom::node::{ImageData, NodeSpecificData};
+use blitz_dom::util::Resource;
+use blitz_net::AsyncProvider;
 use std::sync::Arc;
 use std::task::Waker;
 use tokio::runtime::Runtime;
@@ -17,29 +22,37 @@ use winit::event::{ElementState, MouseButton};
 use winit::event_loop::{ActiveEventLoop, EventLoopProxy};
 use winit::window::{WindowAttributes, WindowId};
 use winit::{event::Modifiers, event::WindowEvent, keyboard::KeyCode, window::Window};
-use blitz_dom::node::{ImageData, NodeSpecificData};
-use blitz_dom::util::Resource;
-use blitz_net::Net;
-#[cfg(all(feature = "menu", not(any(target_os = "android", target_os = "ios"))))]
-use crate::menu::init_menu;
 
 pub struct WindowConfig<Doc: DocumentLike> {
     doc: Doc,
     attributes: WindowAttributes,
-    net: Arc<Net<usize, Resource>>
+    net: Arc<AsyncProvider<usize, Resource>>,
 }
 
 impl<Doc: DocumentLike> WindowConfig<Doc> {
-    pub fn new(doc: Doc, width: f32, height: f32, net: Arc<Net<usize, Resource>>) -> Self {
+    pub fn new(
+        doc: Doc,
+        width: f32,
+        height: f32,
+        net: Arc<AsyncProvider<usize, Resource>>,
+    ) -> Self {
         WindowConfig {
             doc,
             attributes: Window::default_attributes().with_inner_size(LogicalSize { width, height }),
-            net
+            net,
         }
     }
 
-    pub fn with_attributes(doc: Doc, attributes: WindowAttributes, net: Arc<Net<usize, Resource>>) -> Self {
-        WindowConfig { doc, attributes, net }
+    pub fn with_attributes(
+        doc: Doc,
+        attributes: WindowAttributes,
+        net: Arc<AsyncProvider<usize, Resource>>,
+    ) -> Self {
+        WindowConfig {
+            doc,
+            attributes,
+            net,
+        }
     }
 }
 
@@ -51,8 +64,6 @@ pub(crate) struct View<Doc: DocumentLike> {
     event_loop_proxy: EventLoopProxy<BlitzEvent>,
     window: Arc<Window>,
 
-    net: Arc<Net<usize, Resource>>,
-    
     /// The actual viewport of the page that we're getting a glimpse of.
     /// We need this since the part of the page that's being viewed might not be the page in its entirety.
     /// This will let us opt of rendering some stuff
@@ -80,12 +91,12 @@ impl<Doc: DocumentLike> View<Doc> {
         config: WindowConfig<Doc>,
         event_loop: &ActiveEventLoop,
         proxy: &EventLoopProxy<BlitzEvent>,
-        rt: &Runtime
+        rt: &Runtime,
     ) -> Self {
         let winit_window = Arc::from(event_loop.create_window(config.attributes).unwrap());
-        
-        rt.spawn(Net::resolve(Arc::clone(&config.net), proxy.clone(), winit_window.id()));
-        
+
+        rt.spawn(Arc::clone(&config.net).resolve(proxy.clone(), winit_window.id()));
+
         // TODO: make this conditional on text input focus
         winit_window.set_ime_allowed(true);
 
@@ -101,7 +112,6 @@ impl<Doc: DocumentLike> View<Doc> {
 
             event_loop_proxy: proxy.clone(),
             window: winit_window.clone(),
-            net: config.net,
             dom: config.doc,
             viewport,
             devtools: Default::default(),
@@ -248,7 +258,7 @@ impl<Doc: DocumentLike> View<Doc> {
             BlitzWindowEvent::Poll => {
                 self.poll();
             }
-            BlitzWindowEvent::ResourceLoad { node_id, resource} => {
+            BlitzWindowEvent::ResourceLoad { node_id, resource } => {
                 match resource {
                     Resource::Css(css) => {
                         let css = html_escape::decode_html_entities(&css);
@@ -256,22 +266,17 @@ impl<Doc: DocumentLike> View<Doc> {
                     }
                     Resource::Image(image) => {
                         let node = self.dom.as_mut().get_node_mut(node_id).unwrap();
-                        node
-                            .element_data_mut()
-                            .unwrap()
-                            .node_specific_data 
-                            = NodeSpecificData::Image(ImageData::new(Arc::new(image)))
+                        node.element_data_mut().unwrap().node_specific_data =
+                            NodeSpecificData::Image(ImageData::new(Arc::new(image)))
                     }
                     Resource::Svg(tree) => {
                         let node = self.dom.as_mut().get_node_mut(node_id).unwrap();
-                        node
-                            .element_data_mut()
-                            .unwrap()
-                            .node_specific_data = NodeSpecificData::Svg(tree)
+                        node.element_data_mut().unwrap().node_specific_data =
+                            NodeSpecificData::Svg(tree)
                     }
                 }
                 self.request_redraw();
-            },
+            }
             #[cfg(feature = "accessibility")]
             BlitzWindowEvent::Accessibility(accessibility_event) => {
                 match &*accessibility_event {
