@@ -1,9 +1,9 @@
 use std::borrow::Cow;
-use std::collections::HashSet;
-use std::sync::Arc;
+use std::collections::{HashMap, HashSet};
+use std::sync::{Arc, Mutex};
 
 use crate::node::{Attribute, ElementNodeData, ImageData, Node, NodeData, NodeSpecificData};
-use crate::util::ImageOrSvg;
+use crate::util::{Resource, NetProvider};
 use crate::Document;
 use html5ever::local_name;
 use html5ever::{
@@ -21,7 +21,7 @@ fn html5ever_to_blitz_attr(attr: html5ever::Attribute) -> Attribute {
     }
 }
 
-pub struct DocumentHtmlParser<'a> {
+pub struct DocumentHtmlParser<'a, N> {
     doc: &'a mut Document,
 
     style_nodes: Vec<usize>,
@@ -31,20 +31,23 @@ pub struct DocumentHtmlParser<'a> {
 
     /// The document's quirks mode.
     pub quirks_mode: QuirksMode,
+    
+    net_provider: N,
 }
 
-impl<'a> DocumentHtmlParser<'a> {
-    pub fn new(doc: &mut Document) -> DocumentHtmlParser {
+impl<'a, N: NetProvider<usize, Resource>> DocumentHtmlParser<'a, N> {
+    pub fn new(doc: &mut Document, net_provider: N) -> DocumentHtmlParser<N> {
         DocumentHtmlParser {
             doc,
             style_nodes: Vec::new(),
             errors: Vec::new(),
             quirks_mode: QuirksMode::NoQuirks,
+            net_provider,
         }
     }
 
-    pub fn parse_into_doc<'d>(doc: &'d mut Document, html: &str) -> &'d mut Document {
-        let sink = Self::new(doc);
+    pub fn parse_into_doc<'d>(doc: &'d mut Document, net: N, html: &str) -> &'d mut Document {
+        let sink = Self::new(doc, net);
         html5ever::parse_document(sink, Default::default())
             .from_utf8()
             .read_from(&mut html.as_bytes())
@@ -94,13 +97,7 @@ impl<'a> DocumentHtmlParser<'a> {
 
         if let (Some("stylesheet"), Some(href)) = (rel_attr, href_attr) {
             let url = self.doc.resolve_url(href);
-            match crate::util::fetch_string(url.as_str()) {
-                Ok(css) => {
-                    let css = html_escape::decode_html_entities(&css);
-                    self.doc.add_stylesheet(&css);
-                }
-                Err(_) => eprintln!("Error fetching stylesheet {}", url),
-            }
+            self.net_provider.fetch(url, target_id, crate::util::fetch_css);
         }
     }
 
@@ -109,27 +106,7 @@ impl<'a> DocumentHtmlParser<'a> {
         if let Some(raw_src) = node.attr(local_name!("src")) {
             if !raw_src.is_empty() {
                 let src = self.doc.resolve_url(raw_src);
-
-                // FIXME: Image fetching should not be a synchronous network request during parsing
-                let image_result = crate::util::fetch_image(src.as_str());
-                match image_result {
-                    Ok(ImageOrSvg::Image(image)) => {
-                        self.node_mut(target_id)
-                            .element_data_mut()
-                            .unwrap()
-                            .node_specific_data =
-                            NodeSpecificData::Image(ImageData::new(Arc::new(image)));
-                    }
-                    Ok(ImageOrSvg::Svg(svg)) => {
-                        self.node_mut(target_id)
-                            .element_data_mut()
-                            .unwrap()
-                            .node_specific_data = NodeSpecificData::Svg(svg);
-                    }
-                    Err(_) => {
-                        eprintln!("Error fetching image {}", src);
-                    }
-                }
+                self.net_provider.fetch(src, target_id, crate::util::fetch_image);
             }
         }
     }
@@ -156,7 +133,7 @@ impl<'a> DocumentHtmlParser<'a> {
     }
 }
 
-impl<'b> TreeSink for DocumentHtmlParser<'b> {
+impl<'b, N: NetProvider<usize, Resource>> TreeSink for DocumentHtmlParser<'b, N> {
     type Output = &'b mut Document;
 
     // we use the ID of the nodes in the tree as the handle
@@ -381,7 +358,7 @@ fn parses_some_html() {
     let html = "<!DOCTYPE html><html><body><h1>hello world</h1></body></html>";
     let viewport = Viewport::new(800, 600, 1.0);
     let mut doc = Document::new(viewport);
-    let sink = DocumentHtmlParser::new(&mut doc);
+    let sink = DocumentHtmlParser::new(&mut doc, crate::util::SyncProvider);
 
     html5ever::parse_document(sink, Default::default())
         .from_utf8()

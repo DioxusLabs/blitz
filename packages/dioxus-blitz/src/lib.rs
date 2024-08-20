@@ -21,11 +21,13 @@ mod menu;
 #[cfg(feature = "accessibility")]
 mod accessibility;
 
+use std::sync::Arc;
 use blitz_dom::{DocumentLike, HtmlDocument};
 use dioxus::prelude::{ComponentFunction, Element, VirtualDom};
+use tokio::runtime::Runtime;
 use url::Url;
 use winit::event_loop::{ControlFlow, EventLoop};
-
+use blitz_dom::util::Resource;
 use crate::application::Application;
 use crate::window::View;
 
@@ -62,9 +64,17 @@ pub fn launch_cfg_with_props<P: Clone + 'static, M: 'static>(
     // We're going to need to hit it with a special waker
     let vdom = VirtualDom::new_with_props(root, props);
     let document = DioxusDocument::new(vdom);
-    let window = WindowConfig::new(document, 800.0, 600.0);
 
-    launch_with_window(window)
+    let rt = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+
+    let net = Arc::new(blitz_net::Net::new(&rt));
+    
+    let window = WindowConfig::new(document, 800.0, 600.0, net);
+    
+    launch_with_window(window, rt)
 }
 
 pub fn launch_url(url: &str) {
@@ -96,12 +106,6 @@ pub fn launch_static_html(html: &str) {
 }
 
 pub fn launch_static_html_cfg(html: &str, cfg: Config) {
-    let document = HtmlDocument::from_html(html, cfg.base_url, cfg.stylesheets);
-    let window = WindowConfig::new(document, 800.0, 600.0);
-    launch_with_window(window)
-}
-
-fn launch_with_window<Doc: DocumentLike + 'static>(window: WindowConfig<Doc>) {
     // Turn on the runtime and enter it
     let rt = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
@@ -109,6 +113,15 @@ fn launch_with_window<Doc: DocumentLike + 'static>(window: WindowConfig<Doc>) {
         .unwrap();
 
     let _guard = rt.enter();
+
+    let net_provider = Arc::new(blitz_net::Net::new(&rt));
+    
+    let document = HtmlDocument::from_html(html, cfg.base_url, cfg.stylesheets, Arc::clone(&net_provider));
+    let window = WindowConfig::new(document, 800.0, 600.0, net_provider);
+    launch_with_window(window, rt)
+}
+
+fn launch_with_window<Doc: DocumentLike + 'static>(window: WindowConfig<Doc>, rt: Runtime) {
 
     // Build an event loop for the application
     let mut ev_builder = EventLoop::<BlitzEvent>::with_user_event();

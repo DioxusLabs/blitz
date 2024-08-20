@@ -1,0 +1,13 @@
+[package]
+name = "blitz-net"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+tokio = { workspace = true }
+reqwest = "0.12.7"
+url = "2.5.2"
+data-url = "0.3.1"
+dom = { path = "../dom", package = "blitz-dom" }
+winit = "0.30.5"
+futures-util = "0.3.30"

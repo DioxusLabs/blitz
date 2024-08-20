@@ -3,7 +3,7 @@
 # members = ["packages/dom"]
 # members = ["packages/blitz", "packages/dom", "packages/dioxus-blitz"]
 # exclude = ["packages/blitz", "packages/dioxus-blitz"]
-members = ["packages/blitz", "packages/dom", "packages/dioxus-blitz"]
+members = ["packages/blitz", "packages/dom", "packages/dioxus-blitz", "packages/net"]
 resolver = "2"
 
 [workspace.dependencies]
