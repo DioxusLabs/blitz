@@ -12,17 +12,17 @@ style_config = { git = "https://github.com/dioxuslabs/stylo", branch = "enable-t
 style_traits = { git = "https://github.com/dioxuslabs/stylo", branch = "enable-table-moz-center-style-adjust" }
 style_dom = { git = "https://github.com/dioxuslabs/stylo", package = "dom", branch = "enable-table-moz-center-style-adjust" }
 selectors = { git = "https://github.com/dioxuslabs/stylo", branch = "enable-table-moz-center-style-adjust" }
-html5ever = "0.27" # needs to match stylo markup5ever version
+html5ever = "0.27"                                                                                                            # needs to match stylo markup5ever version
 taffy = { git = "https://github.com/dioxuslabs/taffy", rev = "950a0eb1322f15e5d1083f4793b55d52061718de" }
 parley = { git = "https://github.com/nicoburns/parley", rev = "029bf1df3e1829935fa6d25b875d3138f79a62c1" }
-dioxus = { git = "https://github.com/dioxuslabs/dioxus", rev = "a3aa6ae771a2d0a4d8cb6055c41efc0193b817ef"}
+dioxus = { git = "https://github.com/dioxuslabs/dioxus", rev = "a3aa6ae771a2d0a4d8cb6055c41efc0193b817ef" }
 dioxus-ssr = { git = "https://github.com/dioxuslabs/dioxus", rev = "a3aa6ae771a2d0a4d8cb6055c41efc0193b817ef" }
 tokio = { version = "1.25.0", features = ["full"] }
 tracing = "0.1.40"
 vello = { version = "0.2", features = ["wgpu"] }
 peniko = { version = "0.1" }
 # fello = { git = "https://github.com/linebender/vello" }
-wgpu = "0.20"
+wgpu = "22.1.0"
 
 # This is a "virtual package"
 # It is not meant to be published, but is used so "cargo run --example XYZ" works properly
@@ -55,7 +55,9 @@ incremental = false
 # mozbuild = "0.1.0"
 blitz = { path = "./packages/blitz" }
 blitz-dom = { path = "./packages/dom" }
-comrak = { version = "0.21.0", default-features = false, features = ["syntect"] }
+comrak = { version = "0.21.0", default-features = false, features = [
+    "syntect",
+] }
 png = { version = "0.17" }
 dioxus-blitz = { path = "./packages/dioxus-blitz" }
 dioxus = { workspace = true }
@@ -64,6 +66,9 @@ reqwest = "0.11.24"
 tokio = { version = "1.36.0", features = ["full"] }
 tracing-subscriber = "0.3"
 ureq = "2.9"
+
+[patch.crates-io]
+vello = { git = "https://github.com/msiglreith/vello.git", branch = "blur-rect", package = "vello" }
 
 # [patch.crates-io]
 # [patch."https://github.com/dioxuslabs/taffy"]

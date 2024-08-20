@@ -30,6 +30,7 @@ p.cool { background-color: purple; }
 #cool {
     background-color: blue;
     font-size: 32px;
+    box-shadow: 16px 16px 16px black;
 }
 .bg-red-100	{ background-color: rgb(254 226 226); }
 .bg-red-200	{ background-color: rgb(254 202 202); }

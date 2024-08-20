@@ -357,6 +357,7 @@ impl<'dom> VelloSceneGenerator<'dom> {
         let cx = self.element_cx(element, location);
         cx.stroke_effects(scene);
         cx.stroke_outline(scene);
+        cx.draw_box_shadow(scene);
         cx.stroke_frame(scene);
         cx.stroke_border(scene);
         cx.stroke_devtools(scene);
@@ -930,6 +931,41 @@ impl ElementCx<'_> {
     }
 
     // fn draw_image_frame(&self, scene: &mut Scene) {}
+
+    fn draw_box_shadow(&self, scene: &mut Scene) {
+        let box_shadow = &self.style.get_effects().box_shadow.0;
+        for shadow in box_shadow.iter() {
+            //TODO implement inset shadow
+            let shadow_color = shadow.base.color.as_vello();
+            if shadow_color != Color::TRANSPARENT {
+                let transform = self.transform.then_translate(Vec2 {
+                    x: shadow.base.horizontal.px() as f64,
+                    y: shadow.base.vertical.px() as f64,
+                });
+                dbg!(shadow.base.horizontal.px());
+
+                //TODO draw shadows with matching individual radii instead of averaging
+                let radius = (self.frame.border_top_left_radius_height
+                    + self.frame.border_bottom_left_radius_width
+                    + self.frame.border_bottom_left_radius_height
+                    + self.frame.border_bottom_left_radius_width
+                    + self.frame.border_bottom_right_radius_height
+                    + self.frame.border_bottom_right_radius_width
+                    + self.frame.border_top_right_radius_height
+                    + self.frame.border_top_right_radius_width)
+                    / 8.0;
+
+                // Fill the color
+                scene.draw_blurred_rounded_rect(
+                    transform,
+                    self.frame.outer_rect,
+                    shadow_color,
+                    radius,
+                    shadow.base.blur.px() as f64,
+                );
+            }
+        }
+    }
 
     fn draw_solid_frame(&self, scene: &mut Scene) {
         let background_color = &self.style.get_background().background_color;
