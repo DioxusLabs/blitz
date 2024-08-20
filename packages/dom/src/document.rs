@@ -1,14 +1,16 @@
 use crate::events::{EventData, HitResult, RendererEvent};
-use crate::node::TextBrush;
+use crate::node::{ImageData, NodeSpecificData, TextBrush};
 use crate::{Node, NodeData, TextNodeData, Viewport};
 use app_units::Au;
 use peniko::kurbo;
 // use quadtree_rs::Quadtree;
+use crate::util::Resource;
 use parley::editor::{PointerButton, TextEvent};
 use selectors::{matching::QuirksMode, Element};
 use slab::Slab;
 use std::any::Any;
 use std::collections::{HashMap, HashSet, VecDeque};
+use std::sync::Arc;
 use style::selector_parser::ServoElementSnapshot;
 use style::servo::media_queries::FontMetricsProvider;
 use style::servo_arc::Arc as ServoArc;
@@ -464,6 +466,24 @@ impl Document {
 
         self.stylist
             .force_stylesheet_origins_dirty(Origin::Author.into());
+    }
+
+    pub fn load_resource(&mut self, node_id: usize, resource: Resource) {
+        match resource {
+            Resource::Css(css) => {
+                let css = html_escape::decode_html_entities(&css);
+                self.add_stylesheet(&css);
+            }
+            Resource::Image(image) => {
+                let node = self.get_node_mut(node_id).unwrap();
+                node.element_data_mut().unwrap().node_specific_data =
+                    NodeSpecificData::Image(ImageData::new(Arc::new(image)))
+            }
+            Resource::Svg(tree) => {
+                let node = self.get_node_mut(node_id).unwrap();
+                node.element_data_mut().unwrap().node_specific_data = NodeSpecificData::Svg(tree)
+            }
+        }
     }
 
     pub fn snapshot_node(&mut self, node_id: usize) {

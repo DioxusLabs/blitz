@@ -1,3 +1,4 @@
+use std::rc::Rc;
 use std::sync::Arc;
 use url::Url;
 
@@ -25,6 +26,22 @@ impl<I, T, P: NetProvider<I, T>> NetProvider<I, T> for Arc<P> {
         F: Fn(&[u8]) -> T + Send + Sync + 'static,
     {
         self.as_ref().fetch(url, i, handler)
+    }
+}
+impl<I, T, P: NetProvider<I, T>> NetProvider<I, T> for Rc<P> {
+    fn fetch<F>(&self, url: Url, i: I, handler: F)
+    where
+        F: Fn(&[u8]) -> T + Send + Sync + 'static,
+    {
+        self.as_ref().fetch(url, i, handler)
+    }
+}
+impl<I, T, P: NetProvider<I, T>> NetProvider<I, T> for &P {
+    fn fetch<F>(&self, url: Url, i: I, handler: F)
+    where
+        F: Fn(&[u8]) -> T + Send + Sync + 'static,
+    {
+        NetProvider::fetch(*self, url, i, handler);
     }
 }
 

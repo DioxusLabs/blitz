@@ -11,7 +11,6 @@ use wgpu::rwh::HasWindowHandle;
 
 #[cfg(all(feature = "menu", not(any(target_os = "android", target_os = "ios"))))]
 use crate::menu::init_menu;
-use blitz_dom::node::{ImageData, NodeSpecificData};
 use blitz_dom::util::Resource;
 use blitz_net::AsyncProvider;
 use std::sync::Arc;
@@ -259,22 +258,7 @@ impl<Doc: DocumentLike> View<Doc> {
                 self.poll();
             }
             BlitzWindowEvent::ResourceLoad { node_id, resource } => {
-                match resource {
-                    Resource::Css(css) => {
-                        let css = html_escape::decode_html_entities(&css);
-                        self.dom.as_mut().add_stylesheet(&css);
-                    }
-                    Resource::Image(image) => {
-                        let node = self.dom.as_mut().get_node_mut(node_id).unwrap();
-                        node.element_data_mut().unwrap().node_specific_data =
-                            NodeSpecificData::Image(ImageData::new(Arc::new(image)))
-                    }
-                    Resource::Svg(tree) => {
-                        let node = self.dom.as_mut().get_node_mut(node_id).unwrap();
-                        node.element_data_mut().unwrap().node_specific_data =
-                            NodeSpecificData::Svg(tree)
-                    }
-                }
+                self.dom.as_mut().load_resource(node_id, resource);
                 self.request_redraw();
             }
             #[cfg(feature = "accessibility")]

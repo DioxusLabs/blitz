@@ -2,6 +2,7 @@
 
 use blitz::render_to_buffer;
 use blitz_dom::{HtmlDocument, Viewport};
+use blitz_net::SyncProvider;
 use reqwest::Url;
 use std::{
     fs::File,
@@ -46,8 +47,15 @@ async fn main() {
         .and_then(|arg| arg.parse().ok())
         .unwrap_or(1200);
 
+    let net = SyncProvider::new();
+
     // Create HtmlDocument
-    let mut document = HtmlDocument::from_html(&html, Some(url.clone()), Vec::new());
+    let mut document = HtmlDocument::from_html(&html, Some(url.clone()), Vec::new(), &net);
+
+    for (node_id, resource) in net.0.into_inner().drain(..) {
+        document.as_mut().load_resource(node_id, resource)
+    }
+
     document
         .as_mut()
         .set_viewport(Viewport::new(width * scale, height * scale, scale as f32));

@@ -2,7 +2,7 @@ use std::borrow::Cow;
 use std::collections::HashSet;
 
 use crate::node::{Attribute, ElementNodeData, Node, NodeData};
-use crate::util::Resource;
+use crate::util::{fetch_css, Resource};
 use crate::Document;
 use blitz_net::NetProvider;
 use html5ever::local_name;
@@ -98,7 +98,7 @@ impl<'a, N: NetProvider<usize, Resource>> DocumentHtmlParser<'a, N> {
         if let (Some("stylesheet"), Some(href)) = (rel_attr, href_attr) {
             let url = self.doc.resolve_url(href);
             self.net_provider
-                .fetch(url, target_id, crate::util::fetch_css);
+                .fetch(url, target_id, fetch_css);
         }
     }
 
