@@ -936,33 +936,36 @@ impl ElementCx<'_> {
         let box_shadow = &self.style.get_effects().box_shadow.0;
         for shadow in box_shadow.iter() {
             //TODO implement inset shadow
-            let shadow_color = shadow.base.color.as_vello();
-            if shadow_color != Color::TRANSPARENT {
-                let transform = self.transform.then_translate(Vec2 {
-                    x: shadow.base.horizontal.px() as f64,
-                    y: shadow.base.vertical.px() as f64,
-                });
-                dbg!(shadow.base.horizontal.px());
+            if !shadow.inset {
+                let shadow_color = shadow.base.color.as_vello();
+                if shadow_color != Color::TRANSPARENT {
+                    let transform = self.transform.then_translate(Vec2 {
+                        x: shadow.base.horizontal.px() as f64,
+                        y: shadow.base.vertical.px() as f64,
+                    });
 
-                //TODO draw shadows with matching individual radii instead of averaging
-                let radius = (self.frame.border_top_left_radius_height
-                    + self.frame.border_bottom_left_radius_width
-                    + self.frame.border_bottom_left_radius_height
-                    + self.frame.border_bottom_left_radius_width
-                    + self.frame.border_bottom_right_radius_height
-                    + self.frame.border_bottom_right_radius_width
-                    + self.frame.border_top_right_radius_height
-                    + self.frame.border_top_right_radius_width)
-                    / 8.0;
+                    //TODO draw shadows with matching individual radii instead of averaging
+                    let radius = (self.frame.border_top_left_radius_height
+                        + self.frame.border_bottom_left_radius_width
+                        + self.frame.border_bottom_left_radius_height
+                        + self.frame.border_bottom_left_radius_width
+                        + self.frame.border_bottom_right_radius_height
+                        + self.frame.border_bottom_right_radius_width
+                        + self.frame.border_top_right_radius_height
+                        + self.frame.border_top_right_radius_width)
+                        / 8.0;
 
-                // Fill the color
-                scene.draw_blurred_rounded_rect(
-                    transform,
-                    self.frame.outer_rect,
-                    shadow_color,
-                    radius,
-                    shadow.base.blur.px() as f64,
-                );
+                    // Fill the color
+                    scene.draw_blurred_rounded_rect(
+                        transform,
+                        self.frame.outer_rect,
+                        shadow_color,
+                        radius,
+                        shadow.base.blur.px() as f64,
+                    );
+                }
+            } else {
+                println!("TODO: support drawing inset box-shadow")
             }
         }
     }
