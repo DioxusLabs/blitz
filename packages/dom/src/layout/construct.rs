@@ -44,6 +44,9 @@ pub(crate) fn collect_layout_children(
         ) {
             create_text_editor(doc, container_node_id, false);
             return;
+        } else if matches!(type_attr, Some("checkbox")) {
+            create_checkbox_data(doc, container_node_id);
+            return;
         }
     }
 
@@ -300,6 +303,24 @@ fn create_text_editor(doc: &mut Document, input_element_id: usize, is_multiline:
             .set_text_size(parley_style.font_size * doc.viewport.scale());
         text_input_data.editor.set_brush(parley_style.brush);
         element.node_specific_data = NodeSpecificData::TextInput(text_input_data);
+    }
+}
+
+fn create_checkbox_data(doc: &mut Document, input_element_id: usize) {
+    let node = &mut doc.nodes[input_element_id];
+
+    let element = &mut node.raw_dom_data.downcast_element_mut().unwrap();
+    if !matches!(
+        element.node_specific_data,
+        NodeSpecificData::CheckboxInput(_)
+    ) {
+        element.node_specific_data = NodeSpecificData::CheckboxInput(
+            element
+                .attr(local_name!("checked"))
+                .unwrap_or("false")
+                .parse()
+                .unwrap_or(false),
+        );
     }
 }
 

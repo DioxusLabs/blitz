@@ -31,6 +31,9 @@ fn app() -> Element {
                 onclick: move |_| { count.set(0) },
                 "Reset"
             }
+            form {
+                input { type: "checkbox", id: "check1", name: "check1", value: "Check1", style: "width:20px;" }
+            }
         }
     }
 }

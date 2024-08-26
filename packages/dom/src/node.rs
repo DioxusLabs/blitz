@@ -388,6 +388,20 @@ impl ElementNodeData {
         }
     }
 
+    pub fn checkbox_data(&self) -> Option<bool> {
+        match self.node_specific_data {
+            NodeSpecificData::CheckboxInput(data) => Some(data),
+            _ => None,
+        }
+    }
+
+    pub fn checkbox_data_mut(&mut self) -> Option<&mut bool> {
+        match self.node_specific_data {
+            NodeSpecificData::CheckboxInput(ref mut data) => Some(data),
+            _ => None,
+        }
+    }
+
     pub fn inline_layout_data(&self) -> Option<&TextLayout> {
         match self.node_specific_data {
             NodeSpecificData::InlineRoot(ref data) => Some(data),
@@ -500,6 +514,8 @@ pub enum NodeSpecificData {
     TableRoot(Arc<TableContext>),
     /// Parley text editor (text inputs)
     TextInput(TextInputData),
+    /// Checkbox (checked)
+    CheckboxInput(bool),
     /// No data (for nodes that don't need any node-specific data)
     None,
 }
@@ -512,6 +528,7 @@ impl std::fmt::Debug for NodeSpecificData {
             NodeSpecificData::InlineRoot(_) => f.write_str("NodeSpecificData::InlineRoot"),
             NodeSpecificData::TableRoot(_) => f.write_str("NodeSpecificData::TableRoot"),
             NodeSpecificData::TextInput(_) => f.write_str("NodeSpecificData::TextInput"),
+            NodeSpecificData::CheckboxInput(_) => f.write_str("NodeSpecificData::CheckboxInput"),
             NodeSpecificData::None => f.write_str("NodeSpecificData::None"),
         }
     }

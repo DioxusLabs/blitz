@@ -362,6 +362,7 @@ impl<'dom> VelloSceneGenerator<'dom> {
         cx.stroke_devtools(scene);
         cx.draw_image(scene);
         cx.draw_svg(scene);
+        cx.draw_input(scene);
 
         // Render the text in text inputs
         if let Some(input_data) = cx.text_input {
@@ -1090,5 +1091,41 @@ impl ElementCx<'_> {
         _flags: GradientFlags,
     ) {
         unimplemented!()
+    }
+
+    fn draw_input(&self, scene: &mut Scene) {
+        if let Some(checked) = self.element.element_data().and_then(|d| d.checkbox_data()) {
+            println!("Drawing input");
+            let checkbox_frame = Rect {
+                x0: self.frame.outer_rect.x0,
+                y0: self.frame.outer_rect.y0,
+                x1: 32.0,
+                y1: 32.0,
+            };
+            scene.fill(
+                Fill::NonZero,
+                self.transform,
+                Color::WHITE,
+                None,
+                &checkbox_frame,
+            );
+            scene.stroke(
+                &Stroke::default(),
+                self.transform,
+                Color::BLACK,
+                None,
+                &checkbox_frame,
+            );
+            if checked {
+                let fragment = vello_svg::render_tree(&usvg::Tree::from_str(
+                    r##"
+                <svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" fill="#000000" height="32px" width="32px" version="1.1" viewBox="0 0 490 490" xml:space="preserve">
+<polygon points="452.253,28.326 197.831,394.674 29.044,256.875 0,292.469 207.253,461.674 490,54.528 "/>
+</svg>"##,
+                    &usvg::Options::default(),
+                ).unwrap());
+                scene.append(&fragment, Some(self.transform));
+            }
+        }
     }
 }
