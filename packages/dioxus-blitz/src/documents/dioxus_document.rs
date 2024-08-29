@@ -113,33 +113,33 @@ impl DocumentLike for DioxusDocument {
 
                 for attr in element.attrs() {
                     if attr.name.local.as_ref() == "data-dioxus-id" {
-                        dbg!(node, element);
                         if let Ok(value) = attr.value.parse::<usize>() {
                             let id = ElementId(value);
                             // let data = dioxus::html::EventData::Mouse()
-
-                            let data =
-                                Rc::new(PlatformEventData::new(Box::new(NativeClickData {})));
-                            self.vdom.handle_event(event.name(), data, id, true);
-                            if *element.name.local == *"input" {
-                                let data =
-                                    Rc::new(PlatformEventData::new(Box::new(NativeFormData {})));
-                                self.vdom.handle_event("input", data, id, true);
+                            //TODO Check for other clickable inputs here, eg radio
+                            let click_is_input_event = *element.name.local == *"input"
+                                && element.attr(local_name!("type")) == Some("checkbox");
+                            self.handle_click_event(id);
+                            if click_is_input_event {
+                                self.handle_input_event(id);
                             }
                             return true;
                         }
                     }
                 }
 
-                //Clicking labels triggers click of associated checkbox
+                //Clicking labels triggers click, and possibly input event, of associated input
                 if *element.name.local == *"label" {
-                    if let Some(target_element_id) = self.for_target_element_id(element) {
-                        let data = Rc::new(PlatformEventData::new(Box::new(NativeClickData {})));
-                        self.vdom
-                            .handle_event(event.name(), data, target_element_id, true);
-                        let data = Rc::new(PlatformEventData::new(Box::new(NativeFormData {})));
-                        self.vdom
-                            .handle_event("input", data, target_element_id, true);
+                    if let Some((target_element, target_element_id)) =
+                        self.for_target_input_element(element)
+                    {
+                        //TODO Check for other clickable inputs here, eg radio
+                        let click_is_input_event =
+                            target_element.attr(local_name!("type")) == Some("checkbox");
+                        self.handle_click_event(target_element_id);
+                        if click_is_input_event {
+                            self.handle_input_event(target_element_id);
+                        }
                         return true;
                     }
                 }
@@ -153,6 +153,16 @@ impl DocumentLike for DioxusDocument {
 }
 
 impl DioxusDocument {
+    pub fn handle_click_event(&mut self, id: ElementId) {
+        let data = Rc::new(PlatformEventData::new(Box::new(NativeClickData {})));
+        self.vdom.handle_event("click", data, id, true);
+    }
+
+    pub fn handle_input_event(&mut self, id: ElementId) {
+        let data = Rc::new(PlatformEventData::new(Box::new(NativeFormData {})));
+        self.vdom.handle_event("input", data, id, true);
+    }
+
     pub fn new(vdom: VirtualDom) -> Self {
         let viewport = Viewport::new(0, 0, 1.0);
         let mut doc = Document::new(viewport);
@@ -210,22 +220,29 @@ impl DioxusDocument {
     }
 
     /// Find the element id referenced by the "for" attribute of a given label element
-    fn for_target_element_id(&self, label_element: &ElementNodeData) -> Option<ElementId> {
+    fn for_target_input_element(
+        &self,
+        label_element: &ElementNodeData,
+    ) -> Option<(&ElementNodeData, ElementId)> {
         let target_element_dom_id = label_element.attr(local_name!("for"))?;
-        let element_id = self.inner.tree().into_iter().find_map(|(_id, node)| {
+        self.inner.tree().into_iter().find_map(|(_id, node)| {
             let element_data = node.element_data()?;
-                let id = element_data.id.as_ref()?;
-                if *id != Atom::from(target_element_dom_id) {
-                    return None;
-                }
-            element_data.attrs
-            .iter()
-            .find(|attr| attr.name.local.as_ref() == "data-dioxus-id")?
-            .value
-            .parse::<usize>()
-            .ok()
-            })?;
-        Some(ElementId(element_id))
+            let id = element_data.id.as_ref()?;
+            if *id != Atom::from(target_element_dom_id) {
+                return None;
+            }
+            if *element_data.name.local != *"input" {
+                return None;
+            }
+            let element_id = element_data
+                .attrs
+                .iter()
+                .find(|attr| *attr.name.local == *"data-dioxus-id")?
+                .value
+                .parse::<usize>()
+                .ok()?;
+            Some((element_data, ElementId(element_id)))
+        })
     }
 
     // pub fn apply_mutations(&mut self) {
