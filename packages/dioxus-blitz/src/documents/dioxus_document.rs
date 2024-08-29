@@ -110,8 +110,10 @@ impl DocumentLike for DioxusDocument {
 
                     continue;
                 };
+
                 for attr in element.attrs() {
                     if attr.name.local.as_ref() == "data-dioxus-id" {
+                        dbg!(node, element);
                         if let Ok(value) = attr.value.parse::<usize>() {
                             let id = ElementId(value);
                             // let data = dioxus::html::EventData::Mouse()
@@ -126,6 +128,19 @@ impl DocumentLike for DioxusDocument {
                             }
                             return true;
                         }
+                    }
+                }
+
+                //Clicking labels triggers click of associated checkbox
+                if *element.name.local == *"label" {
+                    if let Some(target_element_id) = self.for_target_element_id(element) {
+                        let data = Rc::new(PlatformEventData::new(Box::new(NativeClickData {})));
+                        self.vdom
+                            .handle_event(event.name(), data, target_element_id, true);
+                        let data = Rc::new(PlatformEventData::new(Box::new(NativeFormData {})));
+                        self.vdom
+                            .handle_event("input", data, target_element_id, true);
+                        return true;
                     }
                 }
             }
@@ -192,6 +207,25 @@ impl DioxusDocument {
         // dbg!(self.vdom.rebuild_to_vec());
         // std::process::exit(0);
         // dbg!(writer.state);
+    }
+
+    /// Find the element id referenced by the "for" attribute of a given label element
+    fn for_target_element_id(&self, label_element: &ElementNodeData) -> Option<ElementId> {
+        let target_element_dom_id = label_element.attr(local_name!("for"))?;
+        let element_id = self.inner.tree().into_iter().find_map(|(_id, node)| {
+            let element_data = node.element_data()?;
+                let id = element_data.id.as_ref()?;
+                if *id != Atom::from(target_element_dom_id) {
+                    return None;
+                }
+            element_data.attrs
+            .iter()
+            .find(|attr| attr.name.local.as_ref() == "data-dioxus-id")?
+            .value
+            .parse::<usize>()
+            .ok()
+            })?;
+        Some(ElementId(element_id))
     }
 
     // pub fn apply_mutations(&mut self) {

@@ -36,7 +36,6 @@ fn app() -> Element {
                 input {
                     type: "checkbox",
                     id: "check1",
-                    name: "check1",
                     value: "check1",
                     checked: "{checkbox_checked}",
                     oninput: move |_| {
@@ -44,7 +43,12 @@ fn app() -> Element {
                         checkbox_checked.set(!checkbox_checked())
                     },
                     onclick: move |_| { println!("checkbox clicked") },
-                    }
+                }
+                label {
+                    class: "label",
+                    r#for: "check1",
+                    "Check"
+                }
             }
         }
     }
@@ -123,5 +127,13 @@ const CSS: &str = r#"
     background-color: white;
 }
 
+form {
+    margin: 12px 0;
+}
+
+.label {
+    display: inline-block;
+    background: white;
+}
 
 "#;

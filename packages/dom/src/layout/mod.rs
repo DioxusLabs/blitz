@@ -150,13 +150,28 @@ impl LayoutPartialTree for Document {
                                 node.style.display = Display::None;
                                 return taffy::LayoutOutput::HIDDEN;
                             }
-                            //Checkboxes have a fixed size
-                            //TODO size should depend on css pseudoselector too
                             Some("checkbox") => {
-                                return taffy::LayoutOutput::from_outer_size(taffy::Size {
-                                    width: 16.0,
-                                    height: 16.0,
-                                });
+                                return compute_leaf_layout(
+                                    inputs,
+                                    &node.style,
+                                    |_known_size, _available_space| {
+                                        let width = node
+                                            .style
+                                            .size
+                                            .width
+                                            .resolve_or_zero(inputs.parent_size.width);
+                                        let height = node
+                                            .style
+                                            .size
+                                            .height
+                                            .resolve_or_zero(inputs.parent_size.height);
+                                        let min_size = width.min(height);
+                                        taffy::Size {
+                                            width: min_size,
+                                            height: min_size,
+                                        }
+                                    },
+                                );
                             }
                             _ => {}
                         }
