@@ -1094,35 +1094,34 @@ impl ElementCx<'_> {
     }
 
     fn draw_input(&self, scene: &mut Scene) {
-        if let Some(checked) = self.element.element_data().and_then(|d| d.checkbox_data()) {
-            println!("Drawing input");
-            let checkbox_frame = Rect {
-                x0: self.frame.outer_rect.x0,
-                y0: self.frame.outer_rect.y0,
-                x1: 32.0,
-                y1: 32.0,
-            };
+        if self.element.local_name() == "input"
+            && matches!(self.element.attr(local_name!("type")), Some("checkbox"))
+        {
+            let checked: bool = self
+                .element
+                .attr(local_name!("checked"))
+                .and_then(|c| c.parse().ok())
+                .unwrap_or_default();
             scene.fill(
                 Fill::NonZero,
                 self.transform,
                 Color::WHITE,
                 None,
-                &checkbox_frame,
+                &self.frame.outer_rect,
             );
             scene.stroke(
                 &Stroke::default(),
                 self.transform,
                 Color::BLACK,
                 None,
-                &checkbox_frame,
+                &self.frame.outer_rect,
             );
             if checked {
-                let fragment = vello_svg::render_tree(&usvg::Tree::from_str(
+                let fragment = vello_svg::render_tree(&usvg::Tree::from_str(&format!(
                     r##"
-                <svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" fill="#000000" height="32px" width="32px" version="1.1" viewBox="0 0 490 490" xml:space="preserve">
+                <svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" fill="#000000" height="{}px" width="{}px" version="1.1" viewBox="0 0 490 490" xml:space="preserve">
 <polygon points="452.253,28.326 197.831,394.674 29.044,256.875 0,292.469 207.253,461.674 490,54.528 "/>
-</svg>"##,
-                    &usvg::Options::default(),
+</svg>"##, self.frame.outer_rect.width(), self.frame.outer_rect.height()),&usvg::Options::default()
                 ).unwrap());
                 scene.append(&fragment, Some(self.transform));
             }

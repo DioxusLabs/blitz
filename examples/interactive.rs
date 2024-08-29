@@ -8,6 +8,7 @@ fn main() {
 
 fn app() -> Element {
     let mut count = use_signal(|| 0);
+    let mut checkbox_checked = use_signal(|| false);
 
     rsx! {
         div {
@@ -32,7 +33,18 @@ fn app() -> Element {
                 "Reset"
             }
             form {
-                input { type: "checkbox", id: "check1", name: "check1", value: "Check1", style: "width:20px;" }
+                input {
+                    type: "checkbox",
+                    id: "check1",
+                    name: "check1",
+                    value: "check1",
+                    checked: "{checkbox_checked}",
+                    oninput: move |_| {
+                        println!("checkbox changed");
+                        checkbox_checked.set(!checkbox_checked())
+                    },
+                    onclick: move |_| { println!("checkbox clicked") },
+                    }
             }
         }
     }

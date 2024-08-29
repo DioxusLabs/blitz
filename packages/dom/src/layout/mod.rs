@@ -144,10 +144,21 @@ impl LayoutPartialTree for Document {
 
                     // todo: need to handle shadow roots by actually descending into them
                     if *element_data.name.local == *"input" {
-                        // if the input type is hidden, hide it
-                        if let Some("hidden") = element_data.attr(local_name!("type")) {
-                            node.style.display = Display::None;
-                            return taffy::LayoutOutput::HIDDEN;
+                        match element_data.attr(local_name!("type")) {
+                            // if the input type is hidden, hide it
+                            Some("hidden") => {
+                                node.style.display = Display::None;
+                                return taffy::LayoutOutput::HIDDEN;
+                            }
+                            //Checkboxes have a fixed size
+                            //TODO size should depend on css pseudoselector too
+                            Some("checkbox") => {
+                                return taffy::LayoutOutput::from_outer_size(taffy::Size {
+                                    width: 16.0,
+                                    height: 16.0,
+                                });
+                            }
+                            _ => {}
                         }
                     }
 

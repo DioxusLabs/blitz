@@ -3,8 +3,8 @@
 use std::rc::Rc;
 
 use blitz_dom::{
-    events::EventData, namespace_url, node::Attribute, ns, Atom, Document, DocumentLike,
-    ElementNodeData, NodeData, QualName, TextNodeData, Viewport, DEFAULT_CSS,
+    events::EventData, local_name, namespace_url, node::Attribute, ns, Atom, Document,
+    DocumentLike, ElementNodeData, NodeData, QualName, TextNodeData, Viewport, DEFAULT_CSS,
 };
 
 use dioxus::{
@@ -21,7 +21,7 @@ use style::{
     properties::{style_structs::Font, ComputedValues},
 };
 
-use super::event_handler::{NativeClickData, NativeConverter};
+use super::event_handler::{NativeClickData, NativeConverter, NativeFormData};
 
 type NodeId = usize;
 
@@ -110,7 +110,6 @@ impl DocumentLike for DioxusDocument {
 
                     continue;
                 };
-
                 for attr in element.attrs() {
                     if attr.name.local.as_ref() == "data-dioxus-id" {
                         if let Ok(value) = attr.value.parse::<usize>() {
@@ -120,6 +119,11 @@ impl DocumentLike for DioxusDocument {
                             let data =
                                 Rc::new(PlatformEventData::new(Box::new(NativeClickData {})));
                             self.vdom.handle_event(event.name(), data, id, true);
+                            if *element.name.local == *"input" {
+                                let data =
+                                    Rc::new(PlatformEventData::new(Box::new(NativeFormData {})));
+                                self.vdom.handle_event("input", data, id, true);
+                            }
                             return true;
                         }
                     }
@@ -127,7 +131,7 @@ impl DocumentLike for DioxusDocument {
             }
         }
 
-        self.inner.as_mut().handle_event(event);
+        self.inner.as_mut().handle_event(event.clone());
 
         false
     }

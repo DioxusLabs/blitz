@@ -1,7 +1,8 @@
 use crate::events::{EventData, HitResult, RendererEvent};
-use crate::node::TextBrush;
+use crate::node::{Attribute, NodeSpecificData, TextBrush};
 use crate::{Node, NodeData, TextNodeData, Viewport};
 use app_units::Au;
+use html5ever::{local_name, namespace_url, ns, QualName};
 use peniko::kurbo;
 // use quadtree_rs::Quadtree;
 use parley::editor::{PointerButton, TextEvent};
@@ -124,20 +125,45 @@ impl DocumentLike for Document {
                     assert!(hit.node_id == event.target);
 
                     let node = &mut self.nodes[hit.node_id];
-                    let text_input_data = node
-                        .raw_dom_data
-                        .downcast_element_mut()
-                        .and_then(|el| el.text_input_data_mut());
-                    if text_input_data.is_some() {
+                    let Some(el) = node.raw_dom_data.downcast_element_mut() else {
+                        return true;
+                    };
+
+                    if let NodeSpecificData::TextInput(ref mut text_input_data) =
+                        el.node_specific_data
+                    {
                         let x = hit.x as f64 * self.viewport.scale_f64();
                         let y = hit.y as f64 * self.viewport.scale_f64();
-                        text_input_data.unwrap().editor.pointer_down(
+                        text_input_data.editor.pointer_down(
                             kurbo::Point { x, y },
                             mods,
                             PointerButton::Primary,
                         );
-                        println!("Clicked {}", hit.node_id);
 
+                        self.set_focus_to(hit.node_id);
+                    } else if *el.name.local == *"input"
+                        && matches!(el.attr(local_name!("type")), Some("checkbox"))
+                    {
+                        let checked_attr_opt = el
+                            .attrs
+                            .iter_mut()
+                            .find(|attr| attr.name.local == local_name!("checked"));
+
+                        let checked_attr = if let Some(attr) = checked_attr_opt {
+                            attr
+                        } else {
+                            let attr = Attribute {
+                                name: QualName::new(None, ns!(html), local_name!("checked")),
+                                value: String::from("false"),
+                            };
+                            el.attrs.push(attr);
+                            el.attrs
+                                .iter_mut()
+                                .find(|attr| attr.name.local == local_name!("checked"))
+                                .unwrap()
+                        };
+                        let checked = checked_attr.value.parse().unwrap_or(false);
+                        checked_attr.value = (!checked).to_string();
                         self.set_focus_to(hit.node_id);
                     }
                 }
