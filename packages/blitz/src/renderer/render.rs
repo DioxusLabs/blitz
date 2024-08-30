@@ -115,7 +115,10 @@ impl<'dom> VelloSceneGenerator<'dom> {
         self.render_element(
             scene,
             self.dom.as_ref().root_element().id,
-            Point { x: -viewport_scroll.x, y: -viewport_scroll.y },
+            Point {
+                x: -viewport_scroll.x,
+                y: -viewport_scroll.y,
+            },
         );
 
         // Render debug overlay

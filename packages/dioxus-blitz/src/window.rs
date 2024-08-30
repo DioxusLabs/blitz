@@ -401,7 +401,6 @@ impl<Doc: DocumentLike> View<Doc> {
                 } else {
                     self.dom.as_mut().scroll_viewport_by(scroll_x, scroll_y);
                 }
-                    
                 self.request_redraw();
             }
 
