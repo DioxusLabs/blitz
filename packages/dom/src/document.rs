@@ -95,6 +95,9 @@ pub struct Document {
     // Viewport details such as the dimensions, HiDPI scale, and zoom factor,
     pub(crate) viewport: Viewport,
 
+    // Scroll within our viewport
+    pub(crate) viewport_scroll: kurbo::Point,
+
     pub(crate) stylesheets: HashMap<String, DocumentStyleSheet>,
 
     /// A Parley font context
@@ -196,6 +199,7 @@ impl Document {
             snapshots,
             nodes_to_id,
             viewport,
+            viewport_scroll: kurbo::Point::ZERO,
             base_url: None,
             // quadtree: Quadtree::new(20),
             stylesheets: HashMap::new(),
@@ -741,18 +745,8 @@ impl Document {
             return;
         };
 
-        let new_x: f64;
-        let new_y: f64;
-        #[cfg(target_os = "macos")]
-        {
-            new_x = node.scroll_offset.x + x;
-            new_y = node.scroll_offset.y + y;
-        }
-        #[cfg(not(target_os = "macos"))]
-        {
-            new_x = node.scroll_offset.x - x;
-            new_y = node.scroll_offset.y - y;
-        }
+        let new_x = node.scroll_offset.x - x;
+        let new_y = node.scroll_offset.y - y;
 
         let mut bubble_x = 0.0;
         let mut bubble_y = 0.0;
@@ -792,7 +786,15 @@ impl Document {
 
     pub fn scroll_viewport_by(&mut self, x: f64, y: f64) {
         let content_size = self.root_element().final_layout.size;
-        self.viewport.scroll_by_with_content_size(x, y, content_size.width as f64, content_size.height as f64);
+        let new_scroll = (self.viewport_scroll.x - x, self.viewport_scroll.y - y);
+        let window_width = self.viewport.window_size.0 as f64 / self.viewport.scale() as f64;
+        let window_height = self.viewport.window_size.1 as f64 / self.viewport.scale() as f64;
+        self.viewport_scroll.x = f64::max(0.0, f64::min(new_scroll.0, content_size.width as f64 - window_width));
+        self.viewport_scroll.y = f64::max(0.0, f64::min(new_scroll.1, content_size.height as f64 - window_height))
+    }
+
+    pub fn viewport_scroll(&self) -> kurbo::Point {
+        self.viewport_scroll
     }
 
     pub fn visit<F>(&self, mut visit: F)

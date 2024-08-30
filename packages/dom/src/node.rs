@@ -12,7 +12,7 @@ use style::invalidation::element::restyle_hints::RestyleHint;
 use style::values::computed::Display;
 use style::values::specified::box_::{DisplayInside, DisplayOutside};
 use style_dom::ElementState;
-use taffy::Point;
+use peniko::kurbo;
 // use string_cache::Atom;
 use parley;
 use style::properties::ComputedValues;
@@ -77,7 +77,7 @@ pub struct Node {
     pub unrounded_layout: Layout,
     pub final_layout: Layout,
     pub listeners: Vec<EventListener>,
-    pub scroll_offset: Point<f64>,
+    pub scroll_offset: kurbo::Point,
 
     // Flags
     pub is_inline_root: bool,
@@ -110,7 +110,7 @@ impl Node {
             unrounded_layout: Layout::new(),
             final_layout: Layout::new(),
             listeners: Default::default(),
-            scroll_offset: Point { x: 0.0, y: 0.0 },
+            scroll_offset: kurbo::Point::ZERO,
             is_inline_root: false,
             is_table_root: false,
         }

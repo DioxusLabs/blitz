@@ -111,11 +111,11 @@ impl<'dom> VelloSceneGenerator<'dom> {
     pub fn generate_vello_scene(&self, scene: &mut Scene) {
         // Simply render the document (the root element (note that this is not the same as the root node)))
         scene.reset();
-        let viewport_scroll = self.dom.as_ref().get_viewport().scroll();
+        let viewport_scroll = self.dom.as_ref().viewport_scroll();
         self.render_element(
             scene,
             self.dom.as_ref().root_element().id,
-            Point { x: -viewport_scroll.0, y: -viewport_scroll.1 },
+            Point { x: -viewport_scroll.x, y: -viewport_scroll.y },
         );
 
         // Render debug overlay

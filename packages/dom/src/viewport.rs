@@ -14,7 +14,6 @@ pub struct Viewport {
 
     pub font_size: f32,
 
-    scroll: (f64, f64),
 }
 
 impl Viewport {
@@ -24,7 +23,6 @@ impl Viewport {
             hidpi_scale: scale_factor,
             zoom: 1.0,
             font_size: 16.0,
-            scroll: (0.0, 0.0),
         }
     }
 
@@ -51,29 +49,6 @@ impl Viewport {
 
     pub fn zoom_mut(&mut self) -> &mut f32 {
         &mut self.zoom
-    }
-
-    pub fn scroll_by_with_content_size(&mut self, x: f64, y: f64, content_width: f64, content_height: f64) {
-        let new_scroll: (f64, f64);
-        #[cfg(target_os = "macos")]
-        {
-            new_scroll = (self.scroll.0 + x, self.scroll.1 + y);
-        }
-        #[cfg(not(target_os = "macos"))]
-        {
-            new_scroll = (self.scroll.0 - x, self.scroll.1 - y);
-        }
-        dbg!(self.window_size.1, content_height);
-        let window_width = self.window_size.0 as f64 / self.scale() as f64;
-        let window_height = self.window_size.1 as f64 / self.scale() as f64;
-        self.scroll = (
-            f64::max(0.0, f64::min(new_scroll.0, content_width - window_width)),
-            f64::max(0.0, f64::min(new_scroll.1, content_height - window_height))
-        );
-    }
-
-    pub fn scroll(&self) -> (f64, f64) {
-        self.scroll
     }
 
     pub(crate) fn make_device(&self) -> Device {
