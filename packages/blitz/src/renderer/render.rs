@@ -111,10 +111,11 @@ impl<'dom> VelloSceneGenerator<'dom> {
     pub fn generate_vello_scene(&self, scene: &mut Scene) {
         // Simply render the document (the root element (note that this is not the same as the root node)))
         scene.reset();
+        let viewport_scroll = self.dom.as_ref().get_viewport().scroll();
         self.render_element(
             scene,
             self.dom.as_ref().root_element().id,
-            Point { x: 0.0, y: 0.0 },
+            Point { x: -viewport_scroll.0, y: -viewport_scroll.1 },
         );
 
         // Render debug overlay
@@ -356,7 +357,7 @@ impl<'dom> VelloSceneGenerator<'dom> {
         cx.stroke_border(scene);
         cx.stroke_devtools(scene);
 
-        //Now that background has been drawn, offset pos and cx in order to draw our contents scrolled
+        // Now that background has been drawn, offset pos and cx in order to draw our contents scrolled
         let pos = Point {
             x: pos.x - element.scroll_offset.x,
             y: pos.y - element.scroll_offset.y,

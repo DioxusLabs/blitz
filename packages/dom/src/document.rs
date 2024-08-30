@@ -699,16 +699,6 @@ impl Document {
         taffy::compute_root_layout(self, root_element_id, available_space);
         taffy::round_layout(self, root_element_id);
 
-        // Root element's size is viewport size
-        let root_element = self.get_node_mut(self.root_element().id).unwrap();
-
-        root_element.final_layout.size = taffy::Size {
-            width: size.width.to_f32_px(),
-            height: size.height.to_f32_px(),
-        };
-
-        root_element.clamp_scroll_offset();
-
         // println!("\n\n");
         // taffy::print_tree(self, root_node_id)
     }
@@ -742,6 +732,67 @@ impl Document {
         };
 
         Some(cursor)
+    }
+
+    /// Scroll a node by given x and y
+    /// Will bubble scrolling up to parent node once it can no longer scroll further
+    pub fn scroll_node_by(&mut self, node_id: usize, x: f64, y: f64) {
+        let Some(node) = self.nodes.get_mut(node_id) else {
+            return;
+        };
+
+        let new_x: f64;
+        let new_y: f64;
+        #[cfg(target_os = "macos")]
+        {
+            new_x = node.scroll_offset.x + x;
+            new_y = node.scroll_offset.y + y;
+        }
+        #[cfg(not(target_os = "macos"))]
+        {
+            new_x = node.scroll_offset.x - x;
+            new_y = node.scroll_offset.y - y;
+        }
+
+        let mut bubble_x = 0.0;
+        let mut bubble_y = 0.0;
+
+        let scroll_width = node.final_layout.scroll_width() as f64;
+        let scroll_height = node.final_layout.scroll_height() as f64;
+
+        // If we're past our scroll bounds, transfer remainder of scrolling to parent
+        if new_x < 0.0 {
+            bubble_x = -new_x;
+            node.scroll_offset.x = 0.0;
+        } else if new_x > scroll_width {
+            bubble_x = scroll_width - new_x;
+            node.scroll_offset.x = scroll_width;
+        } else {
+            node.scroll_offset.x = new_x;
+        }
+
+        if new_y < 0.0 {
+            bubble_y = -new_y;
+            node.scroll_offset.y = 0.0;
+        } else if new_y > scroll_height {
+            bubble_y = scroll_height - new_y;
+            node.scroll_offset.y = scroll_height;
+        } else {
+            node.scroll_offset.y = new_y;
+        }
+
+        if bubble_x != 0.0 || bubble_y != 0.0 {
+            if let Some(parent) = node.parent {
+                self.scroll_node_by(parent, bubble_x, bubble_y);
+            } else {
+                self.scroll_viewport_by(bubble_x, bubble_y);
+            }
+        }
+    }
+
+    pub fn scroll_viewport_by(&mut self, x: f64, y: f64) {
+        let content_size = self.root_element().final_layout.size;
+        self.viewport.scroll_by_with_content_size(x, y, content_size.width as f64, content_size.height as f64);
     }
 
     pub fn visit<F>(&self, mut visit: F)

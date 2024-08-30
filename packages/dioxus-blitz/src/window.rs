@@ -391,15 +391,18 @@ impl<Doc: DocumentLike> View<Doc> {
                 }
             }
             WindowEvent::MouseWheel { delta, .. } => {
-                let hover_node = self.dom.as_ref().get_hover_node_id().and_then(|id| self.dom.as_mut().get_node_mut(id));
                 let (scroll_x, scroll_y)= match delta {
                     winit::event::MouseScrollDelta::LineDelta(x, y) => (x as f64 * 20.0, y as f64 * 20.0),
                     winit::event::MouseScrollDelta::PixelDelta(offsets) => (offsets.x, offsets.y)
                 };
-                if let Some(hover_node) = hover_node {
-                    hover_node.scroll_by(scroll_x, scroll_y);
-                    self.request_redraw();
+
+                if let Some(hover_node_id)= self.dom.as_ref().get_hover_node_id() {
+                    self.dom.as_mut().scroll_node_by(hover_node_id, scroll_x, scroll_y);
+                } else {
+                    self.dom.as_mut().scroll_viewport_by(scroll_x, scroll_y);
                 }
+                    
+                self.request_redraw();
             }
 
             // File events
@@ -409,7 +412,7 @@ impl<Doc: DocumentLike> View<Doc> {
             WindowEvent::Focused(_) => {}
 
             // Touch and motion events
-            //Todo implement touch scrolling
+            // Todo implement touch scrolling
             WindowEvent::Touch(_) => {}
             WindowEvent::TouchpadPressure { .. } => {}
             WindowEvent::AxisMotion { .. } => {}
