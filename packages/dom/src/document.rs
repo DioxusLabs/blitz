@@ -740,6 +740,7 @@ impl Document {
 
     /// Scroll a node by given x and y
     /// Will bubble scrolling up to parent node once it can no longer scroll further
+    /// If we're already at the root node, bubbles scrolling up to the viewport
     pub fn scroll_node_by(&mut self, node_id: usize, x: f64, y: f64) {
         let Some(node) = self.nodes.get_mut(node_id) else {
             return;
@@ -754,7 +755,7 @@ impl Document {
         let scroll_width = node.final_layout.scroll_width() as f64;
         let scroll_height = node.final_layout.scroll_height() as f64;
 
-        // If we're past our scroll bounds, transfer remainder of scrolling to parent
+        // If we're past our scroll bounds, transfer remainder of scrolling to parent/viewport
         if new_x < 0.0 {
             bubble_x = -new_x;
             node.scroll_offset.x = 0.0;
@@ -784,6 +785,7 @@ impl Document {
         }
     }
 
+    /// Scroll the viewport by the given values
     pub fn scroll_viewport_by(&mut self, x: f64, y: f64) {
         let content_size = self.root_element().final_layout.size;
         let new_scroll = (self.viewport_scroll.x - x, self.viewport_scroll.y - y);
