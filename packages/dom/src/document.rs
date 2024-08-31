@@ -791,8 +791,14 @@ impl Document {
         let new_scroll = (self.viewport_scroll.x - x, self.viewport_scroll.y - y);
         let window_width = self.viewport.window_size.0 as f64 / self.viewport.scale() as f64;
         let window_height = self.viewport.window_size.1 as f64 / self.viewport.scale() as f64;
-        self.viewport_scroll.x = f64::max(0.0, f64::min(new_scroll.0, content_size.width as f64 - window_width));
-        self.viewport_scroll.y = f64::max(0.0, f64::min(new_scroll.1, content_size.height as f64 - window_height))
+        self.viewport_scroll.x = f64::max(
+            0.0,
+            f64::min(new_scroll.0, content_size.width as f64 - window_width),
+        );
+        self.viewport_scroll.y = f64::max(
+            0.0,
+            f64::min(new_scroll.1, content_size.height as f64 - window_height),
+        )
     }
 
     pub fn viewport_scroll(&self) -> kurbo::Point {

@@ -13,7 +13,6 @@ pub struct Viewport {
     zoom: f32,
 
     pub font_size: f32,
-
 }
 
 impl Viewport {

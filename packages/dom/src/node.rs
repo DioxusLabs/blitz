@@ -1,6 +1,7 @@
 use atomic_refcell::{AtomicRef, AtomicRefCell};
 use html5ever::{local_name, LocalName, QualName};
 use image::DynamicImage;
+use peniko::kurbo;
 use selectors::matching::QuirksMode;
 use slab::Slab;
 use std::cell::RefCell;
@@ -12,7 +13,6 @@ use style::invalidation::element::restyle_hints::RestyleHint;
 use style::values::computed::Display;
 use style::values::specified::box_::{DisplayInside, DisplayOutside};
 use style_dom::ElementState;
-use peniko::kurbo;
 // use string_cache::Atom;
 use parley;
 use style::properties::ComputedValues;
