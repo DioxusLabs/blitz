@@ -70,4 +70,9 @@ label {
     display: inline-block;
 }
 
+input {
+    /* Should be accent-color */
+    color: #0000cc;
+}
+
 "#;

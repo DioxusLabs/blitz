@@ -40,6 +40,7 @@ use style::{
 use image::{imageops::FilterType, DynamicImage};
 use parley::layout::PositionedLayoutItem;
 use taffy::prelude::Layout;
+use vello::kurbo::{BezPath, Cap, Join};
 use vello::{
     kurbo::{Affine, Point, Rect, Shape, Stroke, Vec2},
     peniko::{self, Brush, Color, Fill, Mix},
@@ -1102,28 +1103,59 @@ impl ElementCx<'_> {
                 .attr(local_name!("checked"))
                 .and_then(|c| c.parse().ok())
                 .unwrap_or_default();
-            scene.fill(
-                Fill::NonZero,
-                self.transform,
-                Color::WHITE,
-                None,
-                &self.frame.outer_rect,
-            );
-            scene.stroke(
-                &Stroke::default(),
-                self.transform,
-                Color::BLACK,
-                None,
-                &self.frame.outer_rect,
-            );
+
+            // TODO this should be coming from css accent-color, but I couldn't find how to retrieve it
+            let accent_color = self.style.get_inherited_text().color.as_vello();
+
             if checked {
-                let fragment = vello_svg::render_tree(&usvg::Tree::from_str(&format!(
-                    r##"
-                <svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" fill="#000000" height="{}px" width="{}px" version="1.1" viewBox="0 0 490 490" xml:space="preserve">
-<polygon points="452.253,28.326 197.831,394.674 29.044,256.875 0,292.469 207.253,461.674 490,54.528 "/>
-</svg>"##, self.frame.outer_rect.width(), self.frame.outer_rect.height()),&usvg::Options::default()
-                ).unwrap());
-                scene.append(&fragment, Some(self.transform));
+                scene.fill(
+                    Fill::NonZero,
+                    self.transform,
+                    accent_color,
+                    None,
+                    &self.frame.outer_rect,
+                );
+
+                //Tick code derived from masonry
+                let mut path = BezPath::new();
+                path.move_to((2.0, 9.0));
+                path.line_to((6.0, 13.0));
+                path.line_to((14.0, 2.0));
+
+                let path_scale = self
+                    .frame
+                    .outer_rect
+                    .width()
+                    .min(self.frame.outer_rect.height())
+                    / 16.0;
+                path.apply_affine(Affine::scale(path_scale));
+
+                let style = Stroke {
+                    width: 2.0 * path_scale,
+                    join: Join::Round,
+                    miter_limit: 10.0,
+                    start_cap: Cap::Round,
+                    end_cap: Cap::Round,
+                    dash_pattern: Default::default(),
+                    dash_offset: 0.0,
+                };
+
+                scene.stroke(&style, self.transform, Color::WHITE, None, &path);
+            } else {
+                scene.fill(
+                    Fill::NonZero,
+                    self.transform,
+                    Color::WHITE,
+                    None,
+                    &self.frame.outer_rect,
+                );
+                scene.stroke(
+                    &Stroke::default(),
+                    self.transform,
+                    accent_color,
+                    None,
+                    &self.frame.outer_rect,
+                );
             }
         }
     }
