@@ -114,10 +114,10 @@ impl DocumentLike for DioxusDocument {
                 if let Some(id) = DioxusDocument::dioxus_id(element) {
                     // let data = dioxus::html::EventData::Mouse()
                     //TODO Check for other clickable inputs here, eg radio
-                    let click_is_input_event = *element.name.local == *"input"
+                    let triggers_input_event = *element.name.local == *"input"
                         && element.attr(local_name!("type")) == Some("checkbox");
                     self.handle_click_event(id);
-                    if click_is_input_event {
+                    if triggers_input_event {
                         self.handle_input_event(id);
                     }
                     return true;
@@ -126,7 +126,7 @@ impl DocumentLike for DioxusDocument {
                 //Clicking labels triggers click, and possibly input event, of bound input
                 if *element.name.local == *"label" {
                     let bound_input_elements = self.inner.label_bound_input_elements(*node);
-                    if let Some((target_element_data, target_element_id)) =
+                    if let Some((element_data, dioxus_id)) =
                         bound_input_elements.into_iter().find_map(|n| {
                             let target_element_data = n.element_data()?;
                             let dioxus_id = DioxusDocument::dioxus_id(target_element_data)?;
@@ -134,11 +134,11 @@ impl DocumentLike for DioxusDocument {
                         })
                     {
                         //TODO Check for other clickable inputs here, eg radio
-                        let click_is_input_event =
-                            target_element_data.attr(local_name!("type")) == Some("checkbox");
-                        self.handle_click_event(target_element_id);
-                        if click_is_input_event {
-                            self.handle_input_event(target_element_id);
+                        let triggers_input_event =
+                            element_data.attr(local_name!("type")) == Some("checkbox");
+                        self.handle_click_event(dioxus_id);
+                        if triggers_input_event {
+                            self.handle_input_event(dioxus_id);
                         }
                         return true;
                     }

@@ -266,9 +266,12 @@ impl Document {
             .or(self.try_root_element().map(|el| el.id))
     }
 
-    /// Find the label's bound input:
+    /// Find the label's bound input elements:
     /// the element id referenced by the "for" attribute of a given label element
     /// or the first input element which is nested in the label
+    /// Note that although there should only be one bound element,
+    /// we return all possibilities instead of just the first
+    /// in order to allow the caller to decide which one is correct
     pub fn label_bound_input_elements(&self, label_node_id: usize) -> Vec<&Node> {
         let label_node = self.get_node(label_node_id).unwrap();
         let label_element = label_node.element_data().unwrap();
