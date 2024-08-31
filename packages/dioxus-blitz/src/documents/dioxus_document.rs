@@ -111,31 +111,31 @@ impl DocumentLike for DioxusDocument {
                     continue;
                 };
 
-                for attr in element.attrs() {
-                    if attr.name.local.as_ref() == "data-dioxus-id" {
-                        if let Ok(value) = attr.value.parse::<usize>() {
-                            let id = ElementId(value);
-                            // let data = dioxus::html::EventData::Mouse()
-                            //TODO Check for other clickable inputs here, eg radio
-                            let click_is_input_event = *element.name.local == *"input"
-                                && element.attr(local_name!("type")) == Some("checkbox");
-                            self.handle_click_event(id);
-                            if click_is_input_event {
-                                self.handle_input_event(id);
-                            }
-                            return true;
-                        }
+                if let Some(id) = DioxusDocument::dioxus_id(element) {
+                    // let data = dioxus::html::EventData::Mouse()
+                    //TODO Check for other clickable inputs here, eg radio
+                    let click_is_input_event = *element.name.local == *"input"
+                        && element.attr(local_name!("type")) == Some("checkbox");
+                    self.handle_click_event(id);
+                    if click_is_input_event {
+                        self.handle_input_event(id);
                     }
+                    return true;
                 }
 
-                //Clicking labels triggers click, and possibly input event, of associated input
+                //Clicking labels triggers click, and possibly input event, of bound input
                 if *element.name.local == *"label" {
-                    if let Some((target_element, target_element_id)) =
-                        self.for_target_input_element(element)
+                    let bound_input_elements = self.inner.label_bound_input_elements(*node);
+                    if let Some((target_element_data, target_element_id)) =
+                        bound_input_elements.into_iter().find_map(|n| {
+                            let target_element_data = n.element_data()?;
+                            let dioxus_id = DioxusDocument::dioxus_id(target_element_data)?;
+                            Some((target_element_data, dioxus_id))
+                        })
                     {
                         //TODO Check for other clickable inputs here, eg radio
                         let click_is_input_event =
-                            target_element.attr(local_name!("type")) == Some("checkbox");
+                            target_element_data.attr(local_name!("type")) == Some("checkbox");
                         self.handle_click_event(target_element_id);
                         if click_is_input_event {
                             self.handle_input_event(target_element_id);
@@ -146,7 +146,7 @@ impl DocumentLike for DioxusDocument {
             }
         }
 
-        self.inner.as_mut().handle_event(event.clone());
+        self.inner.as_mut().handle_event(event);
 
         false
     }
@@ -219,30 +219,16 @@ impl DioxusDocument {
         // dbg!(writer.state);
     }
 
-    /// Find the element id referenced by the "for" attribute of a given label element
-    fn for_target_input_element(
-        &self,
-        label_element: &ElementNodeData,
-    ) -> Option<(&ElementNodeData, ElementId)> {
-        let target_element_dom_id = label_element.attr(local_name!("for"))?;
-        self.inner.tree().into_iter().find_map(|(_id, node)| {
-            let element_data = node.element_data()?;
-            let id = element_data.id.as_ref()?;
-            if *id != Atom::from(target_element_dom_id) {
-                return None;
-            }
-            if *element_data.name.local != *"input" {
-                return None;
-            }
-            let element_id = element_data
+    fn dioxus_id(element_node_data: &ElementNodeData) -> Option<ElementId> {
+        Some(ElementId(
+            element_node_data
                 .attrs
                 .iter()
                 .find(|attr| *attr.name.local == *"data-dioxus-id")?
                 .value
                 .parse::<usize>()
-                .ok()?;
-            Some((element_data, ElementId(element_id)))
-        })
+                .ok()?,
+        ))
     }
 
     // pub fn apply_mutations(&mut self) {

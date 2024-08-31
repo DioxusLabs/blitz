@@ -8,7 +8,6 @@ fn main() {
 
 fn app() -> Element {
     let mut count = use_signal(|| 0);
-    let mut checkbox_checked = use_signal(|| false);
 
     rsx! {
         div {
@@ -31,24 +30,6 @@ fn app() -> Element {
                 class: "counter-button btn-blue",
                 onclick: move |_| { count.set(0) },
                 "Reset"
-            }
-            form {
-                input {
-                    type: "checkbox",
-                    id: "check1",
-                    value: "check1",
-                    checked: "{checkbox_checked}",
-                    oninput: move |_| {
-                        println!("checkbox changed");
-                        checkbox_checked.set(!checkbox_checked())
-                    },
-                    onclick: move |_| { println!("checkbox clicked") },
-                }
-                label {
-                    class: "label",
-                    r#for: "check1",
-                    "Check"
-                }
             }
         }
     }
@@ -127,13 +108,5 @@ const CSS: &str = r#"
     background-color: white;
 }
 
-form {
-    margin: 12px 0;
-}
-
-.label {
-    display: inline-block;
-    background: white;
-}
 
 "#;

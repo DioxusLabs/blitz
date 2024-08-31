@@ -4,7 +4,7 @@ pub struct EventListener {
     pub name: String,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct RendererEvent {
     pub target: usize,
     pub data: EventData,
@@ -17,7 +17,7 @@ impl RendererEvent {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub enum EventData {
     Click { x: f32, y: f32, mods: Modifiers },
     KeyPress { event: KeyEvent, mods: Modifiers },
