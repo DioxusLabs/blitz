@@ -13,6 +13,7 @@ ureq = { version = "2.10.1", optional = true}
 url = "2.5.2"
 data-url = "0.3.1"
 tracing = "0.1.40"
+thiserror = "1.0.63"
 
 [features]
 default = ["non_blocking"]
