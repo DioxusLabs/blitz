@@ -1107,14 +1107,17 @@ impl ElementCx<'_> {
             // TODO this should be coming from css accent-color, but I couldn't find how to retrieve it
             let accent_color = self.style.get_inherited_text().color.as_vello();
 
+            let scale = self
+                .frame
+                .outer_rect
+                .width()
+                .min(self.frame.outer_rect.height())
+                / 16.0;
+
+            let frame = self.frame.outer_rect.to_rounded_rect(scale * 2.0);
+
             if checked {
-                scene.fill(
-                    Fill::NonZero,
-                    self.transform,
-                    accent_color,
-                    None,
-                    &self.frame.outer_rect,
-                );
+                scene.fill(Fill::NonZero, self.transform, accent_color, None, &frame);
 
                 //Tick code derived from masonry
                 let mut path = BezPath::new();
@@ -1122,16 +1125,10 @@ impl ElementCx<'_> {
                 path.line_to((6.0, 13.0));
                 path.line_to((14.0, 2.0));
 
-                let path_scale = self
-                    .frame
-                    .outer_rect
-                    .width()
-                    .min(self.frame.outer_rect.height())
-                    / 16.0;
-                path.apply_affine(Affine::scale(path_scale));
+                path.apply_affine(Affine::scale(scale));
 
                 let style = Stroke {
-                    width: 2.0 * path_scale,
+                    width: 2.0 * scale,
                     join: Join::Round,
                     miter_limit: 10.0,
                     start_cap: Cap::Round,
@@ -1142,19 +1139,13 @@ impl ElementCx<'_> {
 
                 scene.stroke(&style, self.transform, Color::WHITE, None, &path);
             } else {
-                scene.fill(
-                    Fill::NonZero,
-                    self.transform,
-                    Color::WHITE,
-                    None,
-                    &self.frame.outer_rect,
-                );
+                scene.fill(Fill::NonZero, self.transform, Color::WHITE, None, &frame);
                 scene.stroke(
                     &Stroke::default(),
                     self.transform,
                     accent_color,
                     None,
-                    &self.frame.outer_rect,
+                    &frame,
                 );
             }
         }
