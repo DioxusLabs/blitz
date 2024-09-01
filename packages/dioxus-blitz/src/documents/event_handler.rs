@@ -1,5 +1,7 @@
+use std::collections::HashMap;
+
 use dioxus::{
-    html::{HasFileData, HasFormData},
+    html::{FormValue, HasFileData, HasFormData},
     prelude::{HtmlEventConverter, PlatformEventData},
 };
 
@@ -129,12 +131,23 @@ impl HtmlEventConverter for NativeConverter {
     }
 }
 
-#[derive(Clone)]
-pub struct NativeFormData {}
+#[derive(Clone, Debug)]
+pub struct NativeFormData {
+    pub value: String,
+    pub values: HashMap<String, FormValue>,
+}
 
 impl HasFormData for NativeFormData {
     fn as_any(&self) -> &dyn std::any::Any {
         self as &dyn std::any::Any
+    }
+
+    fn value(&self) -> String {
+        self.value.clone()
+    }
+
+    fn values(&self) -> HashMap<String, FormValue> {
+        self.values.clone()
     }
 }
 

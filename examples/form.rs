@@ -18,10 +18,12 @@ fn app() -> Element {
                     input {
                         type: "checkbox",
                         id: "check1",
+                        name: "check1",
                         value: "check1",
                         checked: "{checkbox_checked}",
-                        oninput: move |_| {
-                            checkbox_checked.set(!checkbox_checked())
+                        oninput: move |ev| {
+                            dbg!(ev);
+                            checkbox_checked.set(!checkbox_checked());
                         },
                     }
                     label {
@@ -33,7 +35,7 @@ fn app() -> Element {
                 label {
                     input {
                         type: "checkbox",
-                        id: "check2",
+                        name: "check2",
                         value: "check2",
                     }
                     "Checkbox 2 (uncontrolled)"

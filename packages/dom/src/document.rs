@@ -142,14 +142,14 @@ impl DocumentLike for Document {
                         );
 
                         self.set_focus_to(hit.node_id);
-                    } else if *el.name.local == *"input"
+                    } else if el.name.local == local_name!("input")
                         && matches!(el.attr(local_name!("type")), Some("checkbox"))
                     {
                         Document::toggle_checkbox(el);
                         self.set_focus_to(hit.node_id);
                     }
                     // Clicking labels triggers click, and possibly input event, of associated input
-                    else if *el.name.local == *"label" {
+                    else if el.name.local == local_name!("label") {
                         let node_id = node.id;
                         if let Some(target_node_id) = self
                             .label_bound_input_elements(node_id)
@@ -280,7 +280,7 @@ impl Document {
                 .into_iter()
                 .filter_map(|(_id, node)| {
                     let element_data = node.element_data()?;
-                    if *element_data.name.local != *"input" {
+                    if element_data.name.local != local_name!("input") {
                         return None;
                     }
                     let id = element_data.id.as_ref()?;
@@ -298,7 +298,7 @@ impl Document {
                 .filter_map(|child_id| {
                     let node = self.get_node(*child_id)?;
                     let element_data = node.element_data()?;
-                    if *element_data.name.local == *"input" {
+                    if element_data.name.local == local_name!("input") {
                         Some(node)
                     } else {
                         None
