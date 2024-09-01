@@ -9,7 +9,7 @@ use parley::editor::{PointerButton, TextEvent};
 use selectors::{matching::QuirksMode, Element};
 use slab::Slab;
 use std::any::Any;
-use std::collections::{HashMap, HashSet, VecDeque};
+use std::collections::{BTreeMap, Bound, HashMap, HashSet, VecDeque};
 use std::sync::Arc;
 use style::selector_parser::ServoElementSnapshot;
 use style::servo::media_queries::FontMetricsProvider;
@@ -97,7 +97,8 @@ pub struct Document {
     // Viewport details such as the dimensions, HiDPI scale, and zoom factor,
     pub(crate) viewport: Viewport,
 
-    pub(crate) stylesheets: HashMap<String, DocumentStyleSheet>,
+    pub(crate) ua_stylesheets: HashMap<String, DocumentStyleSheet>,
+    pub(crate) nodes_to_stylesheet: BTreeMap<usize, DocumentStyleSheet>,
 
     /// A Parley font context
     pub(crate) font_ctx: parley::FontContext,
@@ -203,7 +204,8 @@ impl Document {
             viewport,
             base_url: None,
             // quadtree: Quadtree::new(20),
-            stylesheets: HashMap::new(),
+            ua_stylesheets: HashMap::new(),
+            nodes_to_stylesheet: BTreeMap::new(),
             font_ctx: parley::FontContext::default(),
             layout_ctx: parley::LayoutContext::new(),
 
@@ -432,24 +434,34 @@ impl Document {
     pub fn process_style_element(&mut self, target_id: usize) {
         let css = self.nodes[target_id].text_content();
         let css = html_escape::decode_html_entities(&css);
-        self.add_stylesheet(&css);
+        let sheet = self.make_stylesheet(&css, Origin::Author);
+        self.append_or_insert_stylesheet(sheet, target_id);
     }
 
-    pub fn remove_stylehsheet(&mut self, contents: &str) {
-        if let Some(sheet) = self.stylesheets.remove(contents) {
+    pub fn remove_user_agent_stylesheet(&mut self, contents: &str) {
+        if let Some(sheet) = self.ua_stylesheets.remove(contents) {
             self.stylist.remove_stylesheet(sheet, &self.guard.read());
         }
     }
 
-    pub fn add_stylesheet(&mut self, css: &str) {
+    pub fn add_user_agent_stylesheet(&mut self, css: &str) {
+        let sheet = self.make_stylesheet(css, Origin::UserAgent);
+        self.ua_stylesheets.insert(css.to_string(), sheet.clone());
+        self.stylist.append_stylesheet(sheet, &self.guard.read());
+
+        self.stylist
+            .force_stylesheet_origins_dirty(Origin::UserAgent.into());
+    }
+
+    pub fn make_stylesheet(&self, css: impl AsRef<str>, origin: Origin) -> DocumentStyleSheet {
         let data = Stylesheet::from_str(
-            css,
+            css.as_ref(),
             UrlExtraData::from(
                 "data:text/css;charset=utf-8;base64,"
                     .parse::<Url>()
                     .unwrap(),
             ),
-            Origin::UserAgent,
+            origin,
             ServoArc::new(self.guard.wrap(MediaList::empty())),
             self.guard.clone(),
             None,
@@ -458,11 +470,31 @@ impl Document {
             AllowImportRules::Yes,
         );
 
-        let sheet = DocumentStyleSheet(ServoArc::new(data));
+        DocumentStyleSheet(ServoArc::new(data))
+    }
+    pub fn append_or_insert_stylesheet(&mut self, stylesheet: DocumentStyleSheet, node_id: usize) {
+        let old = self.nodes_to_stylesheet.insert(node_id, stylesheet.clone());
 
-        self.stylesheets.insert(css.to_string(), sheet.clone());
+        if let Some(old) = old {
+            self.stylist.remove_stylesheet(old, &self.guard.read())
+        }
 
-        self.stylist.append_stylesheet(sheet, &self.guard.read());
+        let insertion_point = self
+            .nodes_to_stylesheet
+            .range((Bound::Excluded(node_id), Bound::Unbounded))
+            .next()
+            .map(|(_, sheet)| sheet);
+
+        if let Some(insertion_point) = insertion_point {
+            self.stylist.insert_stylesheet_before(
+                stylesheet,
+                insertion_point.clone(),
+                &self.guard.read(),
+            )
+        } else {
+            self.stylist
+                .append_stylesheet(stylesheet, &self.guard.read())
+        }
 
         self.stylist
             .force_stylesheet_origins_dirty(Origin::Author.into());
@@ -471,8 +503,8 @@ impl Document {
     pub fn load_resource(&mut self, node_id: usize, resource: Resource) {
         match resource {
             Resource::Css(css) => {
-                let css = html_escape::decode_html_entities(&css);
-                self.add_stylesheet(&css);
+                self.append_or_insert_stylesheet(css, node_id);
+                self.resolve()
             }
             Resource::Image(image) => {
                 let node = self.get_node_mut(node_id).unwrap();

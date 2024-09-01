@@ -49,9 +49,9 @@ impl HtmlDocument {
         }
 
         // Include default and user-specified stylesheets
-        dom.add_stylesheet(DEFAULT_CSS);
+        dom.add_user_agent_stylesheet(DEFAULT_CSS);
         for ss in &stylesheets {
-            dom.add_stylesheet(ss);
+            dom.add_user_agent_stylesheet(ss);
         }
 
         // Parse HTML string into document
