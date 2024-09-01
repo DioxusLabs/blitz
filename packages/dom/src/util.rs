@@ -1,22 +1,51 @@
 use crate::node::{Node, NodeData};
+use blitz_net::RequestHandler;
 use image::DynamicImage;
+use selectors::context::QuirksMode;
 use std::{
     io::Cursor,
     sync::{Arc, OnceLock},
 };
+use style::{
+    color::AbsoluteColor,
+    media_queries::MediaList,
+    servo_arc::Arc as ServoArc,
+    shared_lock::SharedRwLock,
+    stylesheets::{AllowImportRules, DocumentStyleSheet, Origin, Stylesheet},
+};
+use url::Url;
+use usvg::Tree;
 
 static FONT_DB: OnceLock<Arc<usvg::fontdb::Database>> = OnceLock::new();
 
 #[derive(Clone, Debug)]
 pub enum Resource {
-    Css(String),
     Image(DynamicImage),
     Svg(Tree),
+    Css(DocumentStyleSheet),
 }
 
-pub(crate) fn fetch_css(bytes: &[u8]) -> Resource {
-    let str = String::from_utf8(bytes.into()).expect("Invalid UTF8");
-    Resource::Css(str)
+pub(crate) struct CssHandler {
+    pub source_url: Url,
+    pub guard: SharedRwLock,
+}
+impl RequestHandler<Resource> for CssHandler {
+    fn bytes(self, bytes: &[u8]) -> Resource {
+        let css = String::from_utf8(bytes.into()).expect("Invalid UTF8");
+        let escaped_css = html_escape::decode_html_entities(&css);
+        let sheet = Stylesheet::from_str(
+            &escaped_css,
+            self.source_url.into(),
+            Origin::Author,
+            ServoArc::new(self.guard.wrap(MediaList::empty())),
+            self.guard,
+            None,
+            None,
+            QuirksMode::NoQuirks,
+            AllowImportRules::Yes,
+        );
+        Resource::Css(DocumentStyleSheet(ServoArc::new(sheet)))
+    }
 }
 
 pub(crate) fn fetch_image(bytes: &[u8]) -> Resource {
@@ -112,8 +141,6 @@ pub fn walk_tree(indent: usize, node: &Node) {
 }
 
 use peniko::Color as PenikoColor;
-use style::color::AbsoluteColor;
-use usvg::Tree;
 
 pub trait ToPenikoColor {
     fn as_peniko(&self) -> PenikoColor;

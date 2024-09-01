@@ -1,8 +1,5 @@
-use std::borrow::Cow;
-use std::collections::HashSet;
-
 use crate::node::{Attribute, ElementNodeData, Node, NodeData};
-use crate::util::{fetch_css, Resource};
+use crate::util::{CssHandler, Resource};
 use crate::Document;
 use blitz_net::NetProvider;
 use html5ever::local_name;
@@ -11,6 +8,8 @@ use html5ever::{
     tree_builder::{ElementFlags, NodeOrText, QuirksMode, TreeSink},
     ExpandedName, QualName,
 };
+use std::borrow::Cow;
+use std::collections::HashSet;
 
 /// Convert an html5ever Attribute which uses tendril for its value to a blitz Attribute
 /// which uses String.
@@ -97,8 +96,14 @@ impl<'a, N: NetProvider<usize, Resource>> DocumentHtmlParser<'a, N> {
 
         if let (Some("stylesheet"), Some(href)) = (rel_attr, href_attr) {
             let url = self.doc.resolve_url(href);
-            self.net_provider
-                .fetch(url, target_id, fetch_css);
+            self.net_provider.fetch(
+                url.clone(),
+                target_id,
+                CssHandler {
+                    source_url: url,
+                    guard: self.doc.guard.clone(),
+                },
+            );
         }
     }
 
