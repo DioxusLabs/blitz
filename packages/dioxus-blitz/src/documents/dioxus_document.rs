@@ -167,7 +167,7 @@ impl DioxusDocument {
     /// Currently only cares about input checkboxes
     pub fn input_event_form_data(
         &self,
-        parent_chain: &Vec<usize>,
+        parent_chain: &[usize],
         element_node_data: &ElementNodeData,
     ) -> Rc<PlatformEventData> {
         let parent_form = parent_chain.iter().find_map(|id| {

@@ -14,7 +14,6 @@ use style::selector_parser::ServoElementSnapshot;
 use style::servo::media_queries::FontMetricsProvider;
 use style::servo_arc::Arc as ServoArc;
 use style::values::computed::ui::CursorKind;
-use style::Atom;
 use style::{
     dom::{TDocument, TNode},
     media_queries::{Device, MediaList},
@@ -284,7 +283,7 @@ impl Document {
                         return None;
                     }
                     let id = element_data.id.as_ref()?;
-                    if *id == Atom::from(target_element_dom_id) {
+                    if *id == *target_element_dom_id {
                         Some(node)
                     } else {
                         None
