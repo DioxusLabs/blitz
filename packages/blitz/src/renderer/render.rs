@@ -443,7 +443,7 @@ impl<'dom> VelloSceneGenerator<'dom> {
         }
     }
 
-    fn element_cx<'w>(&'w self, element: &'w Node, location: Point) -> ElementCx {
+    fn element_cx<'w>(&'w self, element: &'w Node, location: Point) -> ElementCx<'w> {
         let style = element
             .stylo_element_data
             .borrow()
