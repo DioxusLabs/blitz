@@ -73,8 +73,9 @@ impl<T: Send + 'static> AsyncProvider<T> {
             }
             _ => {
                 let start = tokio::time::Instant::now();
+
                 let response = client
-                    .get(url.clone())
+                    .request(handler.method(), url.clone())
                     .header("User-Agent", USER_AGENT)
                     .send()
                     .await?;

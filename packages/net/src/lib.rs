@@ -3,6 +3,8 @@ mod provider;
 use std::ops::Deref;
 use url::Url;
 
+pub use http::Method;
+
 pub use provider::*;
 
 const USER_AGENT: &str = "Mozilla/5.0 (X11; Linux x86_64; rv:60.0) Gecko/20100101 Firefox/81.0";
@@ -28,6 +30,9 @@ where
 
 pub trait RequestHandler<T>: Send + Sync + 'static {
     fn bytes(self, bytes: &[u8]) -> T;
+    fn method(&self) -> Method {
+        Method::GET
+    }
 }
 impl<F: Fn(&[u8]) -> T + Sync + Send + 'static, T> RequestHandler<T> for F {
     fn bytes(self, bytes: &[u8]) -> T {

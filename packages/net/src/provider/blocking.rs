@@ -11,7 +11,11 @@ impl<T> SyncProvider<T> {
     pub fn new() -> Self {
         Self(RefCell::new(Vec::new()))
     }
-    fn fetch_inner(&self, url: Url) -> Result<Vec<u8>, SyncProviderError> {
+    fn fetch_inner<H: RequestHandler<T>>(
+        &self,
+        url: Url,
+        handler: &H,
+    ) -> Result<Vec<u8>, SyncProviderError> {
         Ok(match url.scheme() {
             "data" => {
                 let data_url = data_url::DataUrl::process(url.as_str())?;
@@ -23,7 +27,7 @@ impl<T> SyncProvider<T> {
                 file_content
             }
             _ => {
-                let response = ureq::get(url.as_str())
+                let response = ureq::request(handler.method().as_str(), url.as_str())
                     .set("User-Agent", USER_AGENT)
                     .call()?;
 
@@ -46,7 +50,7 @@ impl<T> NetProvider<T> for SyncProvider<T> {
     where
         H: RequestHandler<T>,
     {
-        let res = match self.fetch_inner(url) {
+        let res = match self.fetch_inner(url, &handler) {
             Ok(v) => v,
             Err(e) => {
                 tracing::error!("{e}");
