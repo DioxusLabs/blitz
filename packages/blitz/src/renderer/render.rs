@@ -935,6 +935,20 @@ impl ElementCx<'_> {
 
     fn draw_outset_box_shadow(&self, scene: &mut Scene) {
         let box_shadow = &self.style.get_effects().box_shadow.0;
+
+        // TODO: Only apply clip if element has transparency
+        let has_outset_shadow = box_shadow.iter().any(|s| !s.inset);
+        if has_outset_shadow {
+            CLIPS_WANTED.fetch_add(1, atomic::Ordering::SeqCst);
+            let clips_available = CLIPS_USED.load(atomic::Ordering::SeqCst) <= CLIP_LIMIT;
+            if clips_available {
+                scene.push_layer(Mix::Clip, 1.0, self.transform, &self.frame.shadow_clip());
+                CLIPS_USED.fetch_add(1, atomic::Ordering::SeqCst);
+                let depth = CLIP_DEPTH.fetch_add(1, atomic::Ordering::SeqCst) + 1;
+                CLIP_DEPTH_USED.fetch_max(depth, atomic::Ordering::SeqCst);
+            }
+        }
+
         for shadow in box_shadow.iter().filter(|s| !s.inset) {
             let shadow_color = shadow.base.color.as_vello();
             if shadow_color != Color::TRANSPARENT {
@@ -963,6 +977,11 @@ impl ElementCx<'_> {
                     shadow.base.blur.px() as f64,
                 );
             }
+        }
+
+        if has_outset_shadow {
+            scene.pop_layer();
+            CLIP_DEPTH.fetch_sub(1, atomic::Ordering::SeqCst);
         }
     }
 
