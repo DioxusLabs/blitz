@@ -76,12 +76,12 @@ pub struct Document {
     /// We pin the tree to a guarantee to the nodes it creates that the tree is stable in memory.
     ///
     /// There is no way to create the tree - publicly or privately - that would invalidate that invariant.
-    pub(crate) nodes: Box<Slab<Node>>,
+    pub nodes: Box<Slab<Node>>,
 
     pub(crate) guard: SharedRwLock,
 
     /// The styling engine of firefox
-    pub(crate) stylist: Stylist,
+    pub stylist: Stylist,
 
     // caching for the stylist
     pub(crate) snapshots: SnapshotMap,
@@ -448,9 +448,6 @@ impl Document {
         let sheet = self.make_stylesheet(css, Origin::UserAgent);
         self.ua_stylesheets.insert(css.to_string(), sheet.clone());
         self.stylist.append_stylesheet(sheet, &self.guard.read());
-
-        self.stylist
-            .force_stylesheet_origins_dirty(Origin::UserAgent.into());
     }
 
     pub fn make_stylesheet(&self, css: impl AsRef<str>, origin: Origin) -> DocumentStyleSheet {
@@ -495,23 +492,20 @@ impl Document {
             self.stylist
                 .append_stylesheet(stylesheet, &self.guard.read())
         }
-
-        self.stylist
-            .force_stylesheet_origins_dirty(Origin::Author.into());
     }
 
-    pub fn load_resource(&mut self, node_id: usize, resource: Resource) {
+    pub fn load_resource(&mut self, resource: Resource) {
         match resource {
-            Resource::Css(css) => {
+            Resource::Css(node_id, css) => {
                 self.append_or_insert_stylesheet(css, node_id);
                 self.resolve()
             }
-            Resource::Image(image) => {
+            Resource::Image(node_id, image) => {
                 let node = self.get_node_mut(node_id).unwrap();
                 node.element_data_mut().unwrap().node_specific_data =
                     NodeSpecificData::Image(ImageData::new(Arc::new(image)))
             }
-            Resource::Svg(tree) => {
+            Resource::Svg(node_id, tree) => {
                 let node = self.get_node_mut(node_id).unwrap();
                 node.element_data_mut().unwrap().node_specific_data = NodeSpecificData::Svg(tree)
             }

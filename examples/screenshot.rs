@@ -52,13 +52,13 @@ async fn main() {
     // Create HtmlDocument
     let mut document = HtmlDocument::from_html(&html, Some(url.clone()), Vec::new(), &net);
 
-    for (node_id, resource) in net.0.into_inner().drain(..) {
-        document.as_mut().load_resource(node_id, resource)
-    }
-
     document
         .as_mut()
         .set_viewport(Viewport::new(width * scale, height * scale, scale as f32));
+
+    for resource in net.0.into_inner().drain(..) {
+        document.as_mut().load_resource(resource)
+    }
 
     timer.time("Created document (+ fetched assets)");
 

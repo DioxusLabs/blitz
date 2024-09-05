@@ -25,16 +25,11 @@ use winit::{event::Modifiers, event::WindowEvent, keyboard::KeyCode, window::Win
 pub struct WindowConfig<Doc: DocumentLike> {
     doc: Doc,
     attributes: WindowAttributes,
-    net: Arc<AsyncProvider<usize, Resource>>,
+    net: Arc<AsyncProvider<Resource>>,
 }
 
 impl<Doc: DocumentLike> WindowConfig<Doc> {
-    pub fn new(
-        doc: Doc,
-        width: f32,
-        height: f32,
-        net: Arc<AsyncProvider<usize, Resource>>,
-    ) -> Self {
+    pub fn new(doc: Doc, width: f32, height: f32, net: Arc<AsyncProvider<Resource>>) -> Self {
         WindowConfig {
             doc,
             attributes: Window::default_attributes().with_inner_size(LogicalSize { width, height }),
@@ -45,7 +40,7 @@ impl<Doc: DocumentLike> WindowConfig<Doc> {
     pub fn with_attributes(
         doc: Doc,
         attributes: WindowAttributes,
-        net: Arc<AsyncProvider<usize, Resource>>,
+        net: Arc<AsyncProvider<Resource>>,
     ) -> Self {
         WindowConfig {
             doc,
@@ -257,8 +252,8 @@ impl<Doc: DocumentLike> View<Doc> {
             BlitzWindowEvent::Poll => {
                 self.poll();
             }
-            BlitzWindowEvent::ResourceLoad { node_id, resource } => {
-                self.dom.as_mut().load_resource(node_id, resource);
+            BlitzWindowEvent::ResourceLoad(resource) => {
+                self.dom.as_mut().load_resource(resource);
                 self.request_redraw();
             }
             #[cfg(feature = "accessibility")]

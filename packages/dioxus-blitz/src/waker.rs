@@ -22,11 +22,11 @@ pub enum BlitzEvent {
     ))]
     HotReloadEvent(dioxus_hot_reload::HotReloadMsg),
 }
-impl From<(WindowId, (usize, Resource))> for BlitzEvent {
-    fn from((window_id, (node_id, resource)): (WindowId, (usize, Resource))) -> Self {
+impl From<(WindowId, Resource)> for BlitzEvent {
+    fn from((window_id, resource): (WindowId, Resource)) -> Self {
         BlitzEvent::Window {
             window_id,
-            data: BlitzWindowEvent::ResourceLoad { node_id, resource },
+            data: BlitzWindowEvent::ResourceLoad(resource),
         }
     }
 }
@@ -45,10 +45,7 @@ impl From<AccessibilityEvent> for BlitzEvent {
 #[derive(Debug, Clone)]
 pub enum BlitzWindowEvent {
     Poll,
-    ResourceLoad {
-        node_id: usize,
-        resource: Resource,
-    },
+    ResourceLoad(Resource),
     /// An accessibility event from `accesskit`.
     #[cfg(feature = "accessibility")]
     Accessibility(Arc<AccessibilityWindowEvent>),

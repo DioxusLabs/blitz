@@ -2,7 +2,7 @@ use crate::{NetProvider, RequestHandler, USER_AGENT};
 use data_url::DataUrl;
 use futures_util::{stream::FuturesUnordered, StreamExt};
 use reqwest::Client;
-use std::{fmt::Display, sync::Arc, time::Duration};
+use std::{sync::Arc, time::Duration};
 use thiserror::Error;
 use tokio::{
     runtime::{Handle, Runtime},
@@ -12,14 +12,14 @@ use tokio::{
 use url::Url;
 use winit::{event_loop::EventLoopProxy, window::WindowId};
 
-type TaskHandle<I, T> = JoinHandle<(I, Result<T, AsyncProviderError>)>;
+type TaskHandle<T> = JoinHandle<Result<T, AsyncProviderError>>;
 
-pub struct AsyncProvider<I, T> {
+pub struct AsyncProvider<T> {
     rt: Handle,
     client: Client,
-    futures: Mutex<FuturesUnordered<TaskHandle<I, T>>>,
+    futures: Mutex<FuturesUnordered<TaskHandle<T>>>,
 }
-impl<I: Send + Sync + Display, T: Send + Sync> AsyncProvider<I, T> {
+impl<T: Send + Sync> AsyncProvider<T> {
     pub fn new(rt: &Runtime) -> Self {
         Self {
             rt: rt.handle().clone(),
@@ -27,7 +27,7 @@ impl<I: Send + Sync + Display, T: Send + Sync> AsyncProvider<I, T> {
             futures: Mutex::new(FuturesUnordered::new()),
         }
     }
-    pub async fn resolve<P: From<(WindowId, (I, T))>>(
+    pub async fn resolve<P: From<(WindowId, T)>>(
         self: Arc<Self>,
         event_loop_proxy: EventLoopProxy<P>,
         window_id: WindowId,
@@ -38,14 +38,14 @@ impl<I: Send + Sync + Display, T: Send + Sync> AsyncProvider<I, T> {
             interval.tick().await;
             while let Some(ir) = self.futures.lock().await.next().await {
                 match ir {
-                    Ok((i, Ok(t))) => {
-                        let e = event_loop_proxy.send_event((window_id, (i, t)).into());
+                    Ok(Ok(t)) => {
+                        let e = event_loop_proxy.send_event((window_id, t).into());
                         if e.is_err() {
                             break 'thread;
                         }
                     }
-                    Ok((i, Err(e))) => {
-                        tracing::error!("Fetch failed for node {i}, with {e:?}")
+                    Ok(Err(e)) => {
+                        tracing::error!("Fetch failed with {e:?}")
                     }
                     Err(e) => {
                         tracing::error!("Fetch thread failed with {e}")
@@ -55,7 +55,7 @@ impl<I: Send + Sync + Display, T: Send + Sync> AsyncProvider<I, T> {
         }
     }
 }
-impl<I: Send + 'static, T: Send + 'static> AsyncProvider<I, T> {
+impl<T: Send + 'static> AsyncProvider<T> {
     async fn fetch_inner<H: RequestHandler<T>>(
         client: Client,
         url: Url,
@@ -90,17 +90,14 @@ impl<I: Send + 'static, T: Send + 'static> AsyncProvider<I, T> {
     }
 }
 
-impl<I: Send + 'static, T: Send + 'static> NetProvider<I, T> for AsyncProvider<I, T> {
-    fn fetch<H>(&self, url: Url, i: I, handler: H)
+impl<T: Send + 'static> NetProvider<T> for AsyncProvider<T> {
+    fn fetch<H>(&self, url: Url, handler: H)
     where
         H: RequestHandler<T>,
     {
         let client = self.client.clone();
 
-        let join = self.rt.spawn(async {
-            let fetch = Self::fetch_inner(client, url, handler).await;
-            (i, fetch)
-        });
+        let join = self.rt.spawn(Self::fetch_inner(client, url, handler));
 
         self.futures.blocking_lock().push(join);
     }

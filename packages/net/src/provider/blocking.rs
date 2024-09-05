@@ -6,8 +6,8 @@ use url::Url;
 
 const FILE_SIZE_LIMIT: u64 = 1_000_000_000; // 1GB
 
-pub struct SyncProvider<I, T>(pub RefCell<Vec<(I, T)>>);
-impl<I, T> SyncProvider<I, T> {
+pub struct SyncProvider<T>(pub RefCell<Vec<T>>);
+impl<T> SyncProvider<T> {
     pub fn new() -> Self {
         Self(RefCell::new(Vec::new()))
     }
@@ -41,8 +41,8 @@ impl<I, T> SyncProvider<I, T> {
         })
     }
 }
-impl<I, T> NetProvider<I, T> for SyncProvider<I, T> {
-    fn fetch<H>(&self, url: Url, i: I, handler: H)
+impl<T> NetProvider<T> for SyncProvider<T> {
+    fn fetch<H>(&self, url: Url, handler: H)
     where
         H: RequestHandler<T>,
     {
@@ -53,7 +53,7 @@ impl<I, T> NetProvider<I, T> for SyncProvider<I, T> {
                 return;
             }
         };
-        self.0.borrow_mut().push((i, handler.bytes(&res)));
+        self.0.borrow_mut().push(handler.bytes(&res));
     }
 }
 

@@ -20,12 +20,13 @@ static FONT_DB: OnceLock<Arc<usvg::fontdb::Database>> = OnceLock::new();
 
 #[derive(Clone, Debug)]
 pub enum Resource {
-    Image(DynamicImage),
-    Svg(Tree),
-    Css(DocumentStyleSheet),
+    Image(usize, DynamicImage),
+    Svg(usize, Tree),
+    Css(usize, DocumentStyleSheet),
 }
 
 pub(crate) struct CssHandler {
+    pub node: usize,
     pub source_url: Url,
     pub guard: SharedRwLock,
 }
@@ -44,35 +45,42 @@ impl RequestHandler<Resource> for CssHandler {
             QuirksMode::NoQuirks,
             AllowImportRules::Yes,
         );
-        Resource::Css(DocumentStyleSheet(ServoArc::new(sheet)))
+        Resource::Css(self.node, DocumentStyleSheet(ServoArc::new(sheet)))
     }
 }
+pub(crate) struct ImageHandler(usize);
+impl ImageHandler {
+    pub(crate) fn new(node_id: usize) -> Self {
+        Self(node_id)
+    }
+}
+impl RequestHandler<Resource> for ImageHandler {
+    fn bytes(self, bytes: &[u8]) -> Resource {
+        // Try parse image
+        if let Ok(image) = image::ImageReader::new(Cursor::new(bytes))
+            .with_guessed_format()
+            .expect("IO errors impossible with Cursor")
+            .decode()
+        {
+            return Resource::Image(self.0, image);
+        };
+        // Try parse SVG
 
-pub(crate) fn fetch_image(bytes: &[u8]) -> Resource {
-    // Try parse image
-    if let Ok(image) = image::ImageReader::new(Cursor::new(bytes))
-        .with_guessed_format()
-        .expect("IO errors impossible with Cursor")
-        .decode()
-    {
-        return Resource::Image(image);
-    };
-    // Try parse SVG
+        // TODO: Use fontique
+        let fontdb = FONT_DB.get_or_init(|| {
+            let mut fontdb = usvg::fontdb::Database::new();
+            fontdb.load_system_fonts();
+            Arc::new(fontdb)
+        });
 
-    // TODO: Use fontique
-    let fontdb = FONT_DB.get_or_init(|| {
-        let mut fontdb = usvg::fontdb::Database::new();
-        fontdb.load_system_fonts();
-        Arc::new(fontdb)
-    });
+        let options = usvg::Options {
+            fontdb: fontdb.clone(),
+            ..Default::default()
+        };
 
-    let options = usvg::Options {
-        fontdb: fontdb.clone(),
-        ..Default::default()
-    };
-
-    let tree = Tree::from_data(bytes, &options).unwrap();
-    Resource::Svg(tree)
+        let tree = Tree::from_data(bytes, &options).unwrap();
+        Resource::Svg(self.0, tree)
+    }
 }
 
 // Debug print an RcDom

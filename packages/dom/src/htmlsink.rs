@@ -1,5 +1,5 @@
 use crate::node::{Attribute, ElementNodeData, Node, NodeData};
-use crate::util::{CssHandler, Resource};
+use crate::util::{CssHandler, ImageHandler, Resource};
 use crate::Document;
 use blitz_net::NetProvider;
 use html5ever::local_name;
@@ -34,7 +34,7 @@ pub struct DocumentHtmlParser<'a, N> {
     net_provider: N,
 }
 
-impl<'a, N: NetProvider<usize, Resource>> DocumentHtmlParser<'a, N> {
+impl<'a, N: NetProvider<Resource>> DocumentHtmlParser<'a, N> {
     pub fn new(doc: &mut Document, net_provider: N) -> DocumentHtmlParser<N> {
         DocumentHtmlParser {
             doc,
@@ -98,8 +98,8 @@ impl<'a, N: NetProvider<usize, Resource>> DocumentHtmlParser<'a, N> {
             let url = self.doc.resolve_url(href);
             self.net_provider.fetch(
                 url.clone(),
-                target_id,
                 CssHandler {
+                    node: target_id,
                     source_url: url,
                     guard: self.doc.guard.clone(),
                 },
@@ -112,8 +112,7 @@ impl<'a, N: NetProvider<usize, Resource>> DocumentHtmlParser<'a, N> {
         if let Some(raw_src) = node.attr(local_name!("src")) {
             if !raw_src.is_empty() {
                 let src = self.doc.resolve_url(raw_src);
-                self.net_provider
-                    .fetch(src, target_id, crate::util::fetch_image);
+                self.net_provider.fetch(src, ImageHandler::new(target_id));
             }
         }
     }
@@ -140,7 +139,7 @@ impl<'a, N: NetProvider<usize, Resource>> DocumentHtmlParser<'a, N> {
     }
 }
 
-impl<'b, N: NetProvider<usize, Resource>> TreeSink for DocumentHtmlParser<'b, N> {
+impl<'b, N: NetProvider<Resource>> TreeSink for DocumentHtmlParser<'b, N> {
     type Output = &'b mut Document;
 
     // we use the ID of the nodes in the tree as the handle

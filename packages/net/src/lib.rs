@@ -7,22 +7,22 @@ pub use provider::*;
 
 const USER_AGENT: &str = "Mozilla/5.0 (X11; Linux x86_64; rv:60.0) Gecko/20100101 Firefox/81.0";
 
-pub trait NetProvider<I, T> {
-    fn fetch<H>(&self, url: Url, i: I, handler: H)
+pub trait NetProvider<T> {
+    fn fetch<H>(&self, url: Url, handler: H)
     where
         H: RequestHandler<T>;
 }
 
-impl<I, T, P, D> NetProvider<I, T> for D
+impl<T, P, D> NetProvider<T> for D
 where
-    P: NetProvider<I, T>,
+    P: NetProvider<T>,
     D: Deref<Target = P>,
 {
-    fn fetch<H>(&self, url: Url, i: I, handler: H)
+    fn fetch<H>(&self, url: Url, handler: H)
     where
         H: RequestHandler<T>,
     {
-        self.deref().fetch(url, i, handler)
+        self.deref().fetch(url, handler)
     }
 }
 

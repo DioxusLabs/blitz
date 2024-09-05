@@ -33,7 +33,7 @@ impl DocumentLike for HtmlDocument {
 }
 
 impl HtmlDocument {
-    pub fn from_html<N: NetProvider<usize, Resource>>(
+    pub fn from_html<N: NetProvider<Resource>>(
         html: &str,
         base_url: Option<String>,
         stylesheets: Vec<String>,
