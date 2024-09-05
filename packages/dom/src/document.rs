@@ -1,5 +1,6 @@
 use crate::events::{EventData, HitResult, RendererEvent};
-use crate::node::TextBrush;
+use crate::node::{NodeSpecificData, TextBrush};
+use crate::util::parse_svg;
 use crate::{Node, NodeData, TextNodeData, Viewport};
 use app_units::Au;
 use peniko::kurbo;
@@ -431,6 +432,23 @@ impl Document {
         let css = self.nodes[target_id].text_content();
         let css = html_escape::decode_html_entities(&css);
         self.add_stylesheet(&css);
+    }
+
+    pub fn process_svg_element(&mut self, target_id: usize) {
+        let outer_html = self.nodes[target_id].outer_html();
+        println!("{}", outer_html);
+        match parse_svg(outer_html.as_bytes()) {
+            Ok(svg) => {
+                println!("SVG parsed successfully");
+                self.nodes[target_id]
+                    .element_data_mut()
+                    .unwrap()
+                    .node_specific_data = NodeSpecificData::Svg(svg);
+            }
+            Err(err) => {
+                dbg!(err);
+            }
+        };
     }
 
     pub fn remove_stylehsheet(&mut self, contents: &str) {

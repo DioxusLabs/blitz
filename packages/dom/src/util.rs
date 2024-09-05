@@ -72,6 +72,23 @@ pub(crate) fn fetch_blob(url: &str) -> Result<Vec<u8>, FetchErr> {
     Ok(bytes)
 }
 
+pub(crate) fn parse_svg(source: &[u8]) -> Result<usvg::Tree, usvg::Error> {
+    // TODO: Use fontique
+    let fontdb = FONT_DB.get_or_init(|| {
+        let mut fontdb = usvg::fontdb::Database::new();
+        fontdb.load_system_fonts();
+        Arc::new(fontdb)
+    });
+
+    let options = usvg::Options {
+        fontdb: fontdb.clone(),
+        ..Default::default()
+    };
+
+    let tree = usvg::Tree::from_data(&source, &options)?;
+    Ok(tree)
+}
+
 pub(crate) fn fetch_string(url: &str) -> Result<String, FetchErr> {
     fetch_blob(url).map(|vec| String::from_utf8(vec).expect("Invalid UTF8"))
 }
@@ -130,20 +147,7 @@ pub(crate) fn fetch_image(url: &str) -> Result<ImageOrSvg, ImageFetchErr> {
     };
 
     // Try parse SVG
-
-    // TODO: Use fontique
-    let fontdb = FONT_DB.get_or_init(|| {
-        let mut fontdb = usvg::fontdb::Database::new();
-        fontdb.load_system_fonts();
-        Arc::new(fontdb)
-    });
-
-    let options = usvg::Options {
-        fontdb: fontdb.clone(),
-        ..Default::default()
-    };
-
-    let tree = usvg::Tree::from_data(&blob, &options)?;
+    let tree = parse_svg(&blob)?;
     Ok(ImageOrSvg::Svg(tree))
 }
 

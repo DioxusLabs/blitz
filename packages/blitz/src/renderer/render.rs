@@ -363,7 +363,12 @@ impl<'dom> VelloSceneGenerator<'dom> {
         cx.stroke_border(scene);
         cx.stroke_devtools(scene);
         cx.draw_image(scene);
-        cx.draw_svg(scene);
+
+        // Render inline SVG elements
+        if element.local_name() == "svg" {
+            cx.draw_svg(scene);
+            return;
+        }
 
         // Render the text in text inputs
         if let Some(input_data) = cx.text_input {
