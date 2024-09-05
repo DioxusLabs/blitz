@@ -19,7 +19,7 @@ pub struct AsyncProvider<T> {
     client: Client,
     futures: Mutex<FuturesUnordered<TaskHandle<T>>>,
 }
-impl<T: Send + Sync> AsyncProvider<T> {
+impl<T: Send + Sync + 'static> AsyncProvider<T> {
     pub fn new(rt: &Runtime) -> Self {
         Self {
             rt: rt.handle().clone(),
@@ -27,32 +27,34 @@ impl<T: Send + Sync> AsyncProvider<T> {
             futures: Mutex::new(FuturesUnordered::new()),
         }
     }
-    pub async fn resolve<P: From<(WindowId, T)>>(
+    pub fn resolve<P: From<(WindowId, T)> + Send>(
         self: Arc<Self>,
         event_loop_proxy: EventLoopProxy<P>,
         window_id: WindowId,
     ) {
-        let mut interval = tokio::time::interval(Duration::from_millis(100));
+        self.rt.clone().spawn(async move {
+            let mut interval = tokio::time::interval(Duration::from_millis(100));
 
-        'thread: loop {
-            interval.tick().await;
-            while let Some(ir) = self.futures.lock().await.next().await {
-                match ir {
-                    Ok(Ok(t)) => {
-                        let e = event_loop_proxy.send_event((window_id, t).into());
-                        if e.is_err() {
-                            break 'thread;
+            'thread: loop {
+                interval.tick().await;
+                while let Some(ir) = self.futures.lock().await.next().await {
+                    match ir {
+                        Ok(Ok(t)) => {
+                            let e = event_loop_proxy.send_event((window_id, t).into());
+                            if e.is_err() {
+                                break 'thread;
+                            }
                         }
-                    }
-                    Ok(Err(e)) => {
-                        tracing::error!("Fetch failed with {e:?}")
-                    }
-                    Err(e) => {
-                        tracing::error!("Fetch thread failed with {e}")
+                        Ok(Err(e)) => {
+                            tracing::error!("Fetch failed with {e:?}")
+                        }
+                        Err(e) => {
+                            tracing::error!("Fetch thread failed with {e}")
+                        }
                     }
                 }
             }
-        }
+        });
     }
 }
 impl<T: Send + 'static> AsyncProvider<T> {

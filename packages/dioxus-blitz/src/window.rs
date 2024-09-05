@@ -15,7 +15,6 @@ use blitz_dom::util::Resource;
 use blitz_net::AsyncProvider;
 use std::sync::Arc;
 use std::task::Waker;
-use tokio::runtime::Runtime;
 use winit::dpi::LogicalSize;
 use winit::event::{ElementState, MouseButton};
 use winit::event_loop::{ActiveEventLoop, EventLoopProxy};
@@ -85,11 +84,10 @@ impl<Doc: DocumentLike> View<Doc> {
         config: WindowConfig<Doc>,
         event_loop: &ActiveEventLoop,
         proxy: &EventLoopProxy<BlitzEvent>,
-        rt: &Runtime,
     ) -> Self {
         let winit_window = Arc::from(event_loop.create_window(config.attributes).unwrap());
 
-        rt.spawn(Arc::clone(&config.net).resolve(proxy.clone(), winit_window.id()));
+        Arc::clone(&config.net).resolve(proxy.clone(), winit_window.id());
 
         // TODO: make this conditional on text input focus
         winit_window.set_ime_allowed(true);

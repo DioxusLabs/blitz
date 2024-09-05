@@ -46,7 +46,7 @@ impl<Doc: DocumentLike> ApplicationHandler<BlitzEvent> for Application<Doc> {
 
         // Initialise pending windows
         for window_config in self.pending_windows.drain(..) {
-            let mut view = View::init(window_config, event_loop, &self.proxy, &self.rt);
+            let mut view = View::init(window_config, event_loop, &self.proxy);
             view.resume(&self.rt);
             if !view.renderer.is_active() {
                 continue;

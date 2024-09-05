@@ -17,6 +17,6 @@ tracing = "0.1.40"
 thiserror = "1.0.63"
 
 [features]
-default = ["non_blocking"]
+default = []
 blocking = ["dep:ureq"]
 non_blocking = ["dep:tokio", "dep:winit", "dep:futures-util", "dep:reqwest"]
