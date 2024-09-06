@@ -7,9 +7,11 @@ use crate::node::Node;
 
 use crate::node::NodeData;
 use atomic_refcell::{AtomicRef, AtomicRefMut};
+use html5ever::LocalNameStaticSet;
+use html5ever::NamespaceStaticSet;
 use html5ever::{local_name, LocalName, Namespace};
 use selectors::{
-    attr::{AttrSelectorOperation, AttrSelectorOperator},
+    attr::{AttrSelectorOperation, AttrSelectorOperator, NamespaceConstraint},
     matching::{ElementSelectorFlags, MatchingContext, VisitedHandlingMode},
     sink::Push,
     Element, OpaqueElement,
@@ -22,6 +24,7 @@ use style::selector_parser::PseudoElement;
 use style::stylesheets::layer_rule::LayerOrder;
 use style::values::computed::Percentage;
 use style::values::specified::box_::DisplayOutside;
+use style::values::AtomString;
 use style::CaseSensitivityExt;
 use style::{
     animation::DocumentAnimationSet,
@@ -351,14 +354,10 @@ impl<'a> selectors::Element for BlitzNode<'a> {
 
     fn attr_matches(
         &self,
-        _ns: &selectors::attr::NamespaceConstraint<
-            &<Self::Impl as selectors::SelectorImpl>::NamespaceUrl,
-        >,
-        local_name: &<Self::Impl as selectors::SelectorImpl>::LocalName,
-        operation: &AttrSelectorOperation<&<Self::Impl as selectors::SelectorImpl>::AttrValue>,
+        _ns: &NamespaceConstraint<&GenericAtomIdent<NamespaceStaticSet>>,
+        local_name: &GenericAtomIdent<LocalNameStaticSet>,
+        operation: &AttrSelectorOperation<&AtomString>,
     ) -> bool {
-        // println!("attr matches  {}", self.id);
-
         let Some(attr_value) = self.raw_dom_data.attr(local_name.0.clone()) else {
             return false;
         };
