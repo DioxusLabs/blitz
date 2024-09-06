@@ -24,7 +24,11 @@ mod accessibility;
 use blitz_dom::{DocumentLike, HtmlDocument};
 use dioxus::prelude::{ComponentFunction, Element, VirtualDom};
 use url::Url;
-use winit::event_loop::{ControlFlow, EventLoop};
+use winit::{
+    dpi::LogicalSize,
+    event_loop::{ControlFlow, EventLoop},
+    window::Window,
+};
 
 use crate::application::Application;
 use crate::window::View;
@@ -62,9 +66,8 @@ pub fn launch_cfg_with_props<P: Clone + 'static, M: 'static>(
     // We're going to need to hit it with a special waker
     let vdom = VirtualDom::new_with_props(root, props);
     let document = DioxusDocument::new(vdom);
-    let window = WindowConfig::new(document, 800.0, 600.0);
 
-    launch_with_window(window)
+    launch_with_document(document)
 }
 
 pub fn launch_url(url: &str) {
@@ -97,7 +100,22 @@ pub fn launch_static_html(html: &str) {
 
 pub fn launch_static_html_cfg(html: &str, cfg: Config) {
     let document = HtmlDocument::from_html(html, cfg.base_url, cfg.stylesheets);
-    let window = WindowConfig::new(document, 800.0, 600.0);
+    launch_with_document(document)
+}
+
+fn launch_with_document(doc: impl DocumentLike) {
+    let mut window_attrs = Window::default_attributes();
+    if !cfg!(all(target_os = "android", target_os = "ios")) {
+        window_attrs.inner_size = Some(
+            LogicalSize {
+                width: 800.,
+                height: 800.,
+            }
+            .into(),
+        );
+    }
+    let window = WindowConfig::new(doc);
+
     launch_with_window(window)
 }
 

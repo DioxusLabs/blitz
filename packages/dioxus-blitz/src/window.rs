@@ -11,7 +11,6 @@ use wgpu::rwh::HasWindowHandle;
 
 use std::sync::Arc;
 use std::task::Waker;
-use winit::dpi::LogicalSize;
 use winit::event::{ElementState, MouseButton};
 use winit::event_loop::{ActiveEventLoop, EventLoopProxy};
 use winit::window::{WindowAttributes, WindowId};
@@ -26,10 +25,10 @@ pub struct WindowConfig<Doc: DocumentLike> {
 }
 
 impl<Doc: DocumentLike> WindowConfig<Doc> {
-    pub fn new(doc: Doc, width: f32, height: f32) -> Self {
+    pub fn new(doc: Doc) -> Self {
         WindowConfig {
             doc,
-            attributes: Window::default_attributes().with_inner_size(LogicalSize { width, height }),
+            attributes: Window::default_attributes(),
         }
     }
 
