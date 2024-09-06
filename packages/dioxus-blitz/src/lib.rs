@@ -109,7 +109,7 @@ fn launch_with_document(doc: impl DocumentLike) {
         window_attrs.inner_size = Some(
             LogicalSize {
                 width: 800.,
-                height: 800.,
+                height: 600.,
             }
             .into(),
         );
