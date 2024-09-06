@@ -15,6 +15,10 @@ fn app() -> Element {
                 em { "Another block of text" }
                 "Should connect no space between"
             }
+            ol {
+                li { "Item 1 " }
+                li { "Item 2" }
+            }
         }
     }
 }

@@ -18,7 +18,8 @@ impl Document {
                 .raw_dom_data
                 .downcast_element()
                 .unwrap()
-                .inline_layout_data()
+                .inline_layout_data
+                .as_ref()
                 .unwrap();
 
             println!("Text content: {:?}", inline_layout.text);

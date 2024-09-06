@@ -6,7 +6,7 @@ use crate::{
     devtools::Devtools,
     util::{GradientSlice, StyloGradient, ToVelloColor},
 };
-use blitz_dom::node::{NodeData, TextBrush, TextInputData, TextNodeData};
+use blitz_dom::node::{ListItemLayout, NodeData, TextBrush, TextInputData, TextNodeData};
 use blitz_dom::{local_name, Document, Node};
 
 use style::{
@@ -382,12 +382,19 @@ impl<'dom> VelloSceneGenerator<'dom> {
                     &line,
                 );
             }
-        } else if element.is_inline_root {
+        } else if let Some(list_item_layout) = cx.list_item {
+            dbg!("Drawing marker");
+            cx.stroke_text(scene, &list_item_layout.marker_layout, pos);
+            // cx.draw_list_item(scene, list_item_layout, pos);
+        }
+
+        if element.is_inline_root {
             let text_layout = &element
                 .raw_dom_data
                 .downcast_element()
                 .unwrap()
-                .inline_layout_data()
+                .inline_layout_data
+                .as_ref()
                 .unwrap_or_else(|| {
                     panic!("Tried to render node marked as inline root that does not have an inline layout: {:?}", element);
                 });
@@ -477,6 +484,7 @@ impl<'dom> VelloSceneGenerator<'dom> {
                 .map(|data| &*data.image),
             svg: element.element_data().unwrap().svg_data(),
             text_input: element.element_data().unwrap().text_input_data(),
+            list_item: element.element_data().unwrap().list_item_data(),
             devtools: &self.devtools,
         }
     }
@@ -493,10 +501,13 @@ struct ElementCx<'a> {
     image: Option<&'a DynamicImage>,
     svg: Option<&'a usvg::Tree>,
     text_input: Option<&'a TextInputData>,
+    list_item: Option<&'a ListItemLayout>,
     devtools: &'a Devtools,
 }
 
 impl ElementCx<'_> {
+    fn draw_list_item(&self, scene: &mut Scene, list_item_layout: &ListItemLayout, pos: Point) {}
+
     fn stroke_text(&self, scene: &mut Scene, text_layout: &parley::Layout<TextBrush>, pos: Point) {
         let transform = Affine::translate((pos.x * self.scale, pos.y * self.scale));
 

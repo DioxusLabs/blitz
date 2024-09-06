@@ -13,7 +13,7 @@ use style::{
 };
 
 use crate::{
-    node::{NodeKind, NodeSpecificData, TextBrush, TextInputData, TextLayout},
+    node::{ListItemLayout, NodeKind, NodeSpecificData, TextBrush, TextInputData, TextLayout},
     stylo_to_parley, Document, ElementNodeData, Node, NodeData,
 };
 
@@ -25,25 +25,28 @@ pub(crate) fn collect_layout_children(
     layout_children: &mut Vec<usize>,
     anonymous_block_id: &mut Option<usize>,
 ) {
-    // Handle text inputs
-    let tag_name: Option<&str> = doc.nodes[container_node_id]
-        .raw_dom_data
-        .downcast_element()
-        .map(|el| el.name.local.as_ref());
-    if let Some(tag_name @ ("input" | "textarea")) = tag_name {
-        let type_attr: Option<&str> = doc.nodes[container_node_id]
-            .raw_dom_data
-            .downcast_element()
-            .and_then(|el| el.attr(local_name!("type")));
-        if tag_name == "textarea" {
-            create_text_editor(doc, container_node_id, true);
-            return;
-        } else if matches!(
-            type_attr,
-            Some("text" | "password" | "email" | "number" | "search" | "tel" | "url")
-        ) {
-            create_text_editor(doc, container_node_id, false);
-            return;
+    if let Some(el) = doc.nodes[container_node_id].raw_dom_data.downcast_element() {
+        // Handle text inputs
+        let tag_name = el.name.local.as_ref();
+        if matches!(tag_name, "input" | "textarea") {
+            let type_attr: Option<&str> = doc.nodes[container_node_id]
+                .raw_dom_data
+                .downcast_element()
+                .and_then(|el| el.attr(local_name!("type")));
+            if tag_name == "textarea" {
+                create_text_editor(doc, container_node_id, true);
+                return;
+            } else if matches!(
+                type_attr,
+                Some("text" | "password" | "email" | "number" | "search" | "tel" | "url")
+            ) {
+                create_text_editor(doc, container_node_id, false);
+                return;
+            }
+        } else if tag_name == "ol" {
+            let mut start = el.attr_parsed(local_name!("start")).unwrap_or(0);
+            let reversed = el.attr_parsed(local_name!("reversed")).unwrap_or(false);
+            collect_list_item_children(doc, &mut start, reversed, container_node_id);
         }
     }
 
@@ -112,7 +115,7 @@ pub(crate) fn collect_layout_children(
                     .raw_dom_data
                     .downcast_element_mut()
                     .unwrap()
-                    .node_specific_data = NodeSpecificData::InlineRoot(Box::new(inline_layout));
+                    .inline_layout_data = Some(Box::new(inline_layout));
                 return layout_children.extend_from_slice(&ilayout_children);
             }
 
@@ -182,6 +185,66 @@ pub(crate) fn collect_layout_children(
 
         _ => {
             layout_children.extend_from_slice(&doc.nodes[container_node_id].children);
+        }
+    }
+}
+
+fn collect_list_item_children(doc: &mut Document, idx: &mut usize, reversed: bool, node_id: usize) {
+    let mut children = doc.nodes[node_id].children.clone();
+    if reversed {
+        children.reverse();
+    }
+    for child in children.into_iter() {
+        let (layout, is_list_item_container) = {
+            let node = &doc.nodes[child];
+
+            let is_list_item_container = node
+                .element_data()
+                .map(|element_data| {
+                    element_data.name.local == local_name!("ol")
+                        || element_data.name.local == local_name!("li")
+                })
+                .unwrap_or(false);
+
+            if node
+                .display_style()
+                .is_some_and(|style| style.is_list_item())
+            {
+                let node_style = node.primary_styles().or_else(|| {
+                    node.parent
+                        .and_then(|parent_id| doc.nodes[parent_id].primary_styles())
+                });
+
+                let parley_style = node_style
+                    .as_ref()
+                    .map(|s| stylo_to_parley::style(s))
+                    .unwrap_or_default();
+
+                // Create a parley tree builder
+                let mut builder = doc.layout_ctx.tree_builder(
+                    &mut doc.font_ctx,
+                    doc.viewport.scale(),
+                    &parley_style,
+                );
+
+                builder.push_text(&idx.to_string());
+
+                (Some(builder.build().0), is_list_item_container)
+            } else {
+                (None, is_list_item_container)
+            }
+        };
+        if let Some(layout) = layout {
+            let node = &mut doc.nodes[child];
+            node.element_data_mut().unwrap().node_specific_data =
+                NodeSpecificData::ListItem(ListItemLayout {
+                    marker: Some(*idx),
+                    marker_layout: Box::new(layout),
+                });
+            *idx += 1;
+        }
+        if !is_list_item_container {
+            collect_list_item_children(doc, idx, reversed, child);
         }
     }
 }
