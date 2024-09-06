@@ -373,8 +373,8 @@ impl<'dom> VelloSceneGenerator<'dom> {
             y: cx.pos.y - element.scroll_offset.y,
         };
         cx.transform = cx.transform.then_translate(Vec2 {
-            x: cx.transform.translation().x - element.scroll_offset.x,
-            y: cx.transform.translation().y - element.scroll_offset.y,
+            x: -element.scroll_offset.x,
+            y: -element.scroll_offset.y,
         });
         cx.draw_image(scene);
         cx.draw_svg(scene);
