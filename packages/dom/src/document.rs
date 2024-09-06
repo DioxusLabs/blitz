@@ -1,7 +1,8 @@
 use crate::events::{EventData, HitResult, RendererEvent};
-use crate::node::TextBrush;
-use crate::{Node, NodeData, TextNodeData, Viewport};
+use crate::node::{Attribute, NodeSpecificData, TextBrush};
+use crate::{ElementNodeData, Node, NodeData, TextNodeData, Viewport};
 use app_units::Au;
+use html5ever::{local_name, namespace_url, ns, QualName};
 use peniko::kurbo;
 // use quadtree_rs::Quadtree;
 use parley::editor::{PointerButton, TextEvent};
@@ -124,21 +125,42 @@ impl DocumentLike for Document {
                     assert!(hit.node_id == event.target);
 
                     let node = &mut self.nodes[hit.node_id];
-                    let text_input_data = node
-                        .raw_dom_data
-                        .downcast_element_mut()
-                        .and_then(|el| el.text_input_data_mut());
-                    if text_input_data.is_some() {
+                    let Some(el) = node.raw_dom_data.downcast_element_mut() else {
+                        return true;
+                    };
+
+                    if let NodeSpecificData::TextInput(ref mut text_input_data) =
+                        el.node_specific_data
+                    {
                         let x = hit.x as f64 * self.viewport.scale_f64();
                         let y = hit.y as f64 * self.viewport.scale_f64();
-                        text_input_data.unwrap().editor.pointer_down(
+                        text_input_data.editor.pointer_down(
                             kurbo::Point { x, y },
                             mods,
                             PointerButton::Primary,
                         );
-                        println!("Clicked {}", hit.node_id);
 
                         self.set_focus_to(hit.node_id);
+                    } else if el.name.local == local_name!("input")
+                        && matches!(el.attr(local_name!("type")), Some("checkbox"))
+                    {
+                        Document::toggle_checkbox(el);
+                        self.set_focus_to(hit.node_id);
+                    }
+                    // Clicking labels triggers click, and possibly input event, of associated input
+                    else if el.name.local == local_name!("label") {
+                        let node_id = node.id;
+                        if let Some(target_node_id) = self
+                            .label_bound_input_elements(node_id)
+                            .first()
+                            .map(|n| n.id)
+                        {
+                            let target_node = self.get_node_mut(target_node_id).unwrap();
+                            if let Some(target_element) = target_node.element_data_mut() {
+                                Document::toggle_checkbox(target_element);
+                            }
+                            self.set_focus_to(node_id);
+                        }
                     }
                 }
             }
@@ -241,6 +263,71 @@ impl Document {
     pub fn get_focussed_node_id(&self) -> Option<usize> {
         self.focus_node_id
             .or(self.try_root_element().map(|el| el.id))
+    }
+
+    /// Find the label's bound input elements:
+    /// the element id referenced by the "for" attribute of a given label element
+    /// or the first input element which is nested in the label
+    /// Note that although there should only be one bound element,
+    /// we return all possibilities instead of just the first
+    /// in order to allow the caller to decide which one is correct
+    pub fn label_bound_input_elements(&self, label_node_id: usize) -> Vec<&Node> {
+        let label_node = self.get_node(label_node_id).unwrap();
+        let label_element = label_node.element_data().unwrap();
+        if let Some(target_element_dom_id) = label_element.attr(local_name!("for")) {
+            self.tree()
+                .into_iter()
+                .filter_map(|(_id, node)| {
+                    let element_data = node.element_data()?;
+                    if element_data.name.local != local_name!("input") {
+                        return None;
+                    }
+                    let id = element_data.id.as_ref()?;
+                    if *id == *target_element_dom_id {
+                        Some(node)
+                    } else {
+                        None
+                    }
+                })
+                .collect()
+        } else {
+            label_node
+                .children
+                .iter()
+                .filter_map(|child_id| {
+                    let node = self.get_node(*child_id)?;
+                    let element_data = node.element_data()?;
+                    if element_data.name.local == local_name!("input") {
+                        Some(node)
+                    } else {
+                        None
+                    }
+                })
+                .collect()
+        }
+    }
+
+    pub fn toggle_checkbox(el: &mut ElementNodeData) {
+        let checked_attr_opt = el
+            .attrs
+            .iter_mut()
+            .find(|attr| attr.name.local == local_name!("checked"));
+
+        let checked_attr = if let Some(attr) = checked_attr_opt {
+            attr
+        } else {
+            let attr = Attribute {
+                name: QualName::new(None, ns!(html), local_name!("checked")),
+                value: String::from("false"),
+            };
+            el.attrs.push(attr);
+            el.attrs
+                .iter_mut()
+                .find(|attr| attr.name.local == local_name!("checked"))
+                .unwrap()
+        };
+        let checked = checked_attr.value.parse().unwrap_or(false);
+        checked_attr.value = (!checked).to_string();
     }
 
     pub fn root_node(&self) -> &Node {

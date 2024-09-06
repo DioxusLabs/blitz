@@ -1,4 +1,9 @@
-use dioxus::prelude::{HtmlEventConverter, PlatformEventData};
+use std::collections::HashMap;
+
+use dioxus::{
+    html::{FormValue, HasFileData, HasFormData},
+    prelude::{HtmlEventConverter, PlatformEventData},
+};
 
 #[derive(Clone)]
 pub struct NativeClickData {}
@@ -68,8 +73,9 @@ impl HtmlEventConverter for NativeConverter {
         todo!()
     }
 
-    fn convert_form_data(&self, _event: &PlatformEventData) -> dioxus::prelude::FormData {
-        todo!()
+    fn convert_form_data(&self, event: &PlatformEventData) -> dioxus::prelude::FormData {
+        let o = event.downcast::<NativeFormData>().unwrap().clone();
+        dioxus::prelude::FormData::from(o)
     }
 
     fn convert_image_data(&self, _event: &PlatformEventData) -> dioxus::prelude::ImageData {
@@ -124,3 +130,25 @@ impl HtmlEventConverter for NativeConverter {
         todo!()
     }
 }
+
+#[derive(Clone, Debug)]
+pub struct NativeFormData {
+    pub value: String,
+    pub values: HashMap<String, FormValue>,
+}
+
+impl HasFormData for NativeFormData {
+    fn as_any(&self) -> &dyn std::any::Any {
+        self as &dyn std::any::Any
+    }
+
+    fn value(&self) -> String {
+        self.value.clone()
+    }
+
+    fn values(&self) -> HashMap<String, FormValue> {
+        self.values.clone()
+    }
+}
+
+impl HasFileData for NativeFormData {}
