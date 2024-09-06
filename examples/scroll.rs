@@ -19,6 +19,10 @@ fn root() -> Element {
             align-items: center;
             color: white;
         }
+        
+        .gap:hover {
+            background: red;
+        }
 
         .not-scrollable {
             background-color: yellow;
@@ -35,6 +39,7 @@ fn root() -> Element {
             }
             div {
                 class: "gap",
+                onclick: |_| println!("Gap clicked!"),
                 "gap"
             }
             div {

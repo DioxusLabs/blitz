@@ -190,8 +190,9 @@ impl<Doc: DocumentLike> View<Doc> {
     }
 
     pub fn mouse_move(&mut self, x: f32, y: f32) -> bool {
-        let dom_x = x / self.viewport.zoom();
-        let dom_y = y / self.viewport.zoom();
+        let viewport_scroll = self.dom.as_ref().viewport_scroll();
+        let dom_x = x + viewport_scroll.x as f32 / self.viewport.zoom();
+        let dom_y = y + viewport_scroll.y as f32 / self.viewport.zoom();
 
         // println!("Mouse move: ({}, {})", x, y);
         // println!("Unscaled: ({}, {})",);

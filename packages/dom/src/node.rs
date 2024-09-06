@@ -782,11 +782,15 @@ impl Node {
     /// TODO: z-index
     /// (If multiple children are positioned at the position then a random one will be recursed into)
     pub fn hit(&self, x: f32, y: f32) -> Option<HitResult> {
-        let x = x - self.final_layout.location.x;
-        let y = y - self.final_layout.location.y;
+        let x = x - self.final_layout.location.x + self.scroll_offset.x as f32;
+        let y = y - self.final_layout.location.y + self.scroll_offset.y as f32;
 
         let size = self.final_layout.size;
-        if x < 0.0 || x > size.width || y < 0.0 || y > size.height {
+        if x < 0.0
+            || x > size.width + self.scroll_offset.x as f32
+            || y < 0.0
+            || y > size.height + self.scroll_offset.y as f32
+        {
             return None;
         }
 
