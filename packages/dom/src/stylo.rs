@@ -9,6 +9,7 @@ use crate::node::NodeData;
 use atomic_refcell::{AtomicRef, AtomicRefMut};
 use html5ever::{local_name, LocalName, Namespace};
 use selectors::{
+    attr::{AttrSelectorOperation, AttrSelectorOperator},
     matching::{ElementSelectorFlags, MatchingContext, VisitedHandlingMode},
     sink::Push,
     Element, OpaqueElement,
@@ -354,18 +355,42 @@ impl<'a> selectors::Element for BlitzNode<'a> {
             &<Self::Impl as selectors::SelectorImpl>::NamespaceUrl,
         >,
         local_name: &<Self::Impl as selectors::SelectorImpl>::LocalName,
-        _operation: &selectors::attr::AttrSelectorOperation<
-            &<Self::Impl as selectors::SelectorImpl>::AttrValue,
-        >,
+        operation: &AttrSelectorOperation<&<Self::Impl as selectors::SelectorImpl>::AttrValue>,
     ) -> bool {
         // println!("attr matches  {}", self.id);
-        let mut has_attr = false;
-        self.each_attr_name(|f| {
-            if f.as_ref() == local_name.as_ref() {
-                has_attr = true;
+
+        let Some(attr_value) = self.raw_dom_data.attr(local_name.0.clone()) else {
+            return false;
+        };
+
+        match operation {
+            AttrSelectorOperation::Exists => true,
+            AttrSelectorOperation::WithValue {
+                operator,
+                case_sensitivity: _,
+                value,
+            } => {
+                let value = value.as_ref();
+
+                // TODO: case sensitivity
+                return match operator {
+                    AttrSelectorOperator::Equal => attr_value == value,
+                    AttrSelectorOperator::Includes => attr_value
+                        .split_ascii_whitespace()
+                        .any(|word| word == value),
+                    AttrSelectorOperator::DashMatch => {
+                        // Represents elements with an attribute name of attr whose value can be exactly value
+                        // or can begin with value immediately followed by a hyphen, - (U+002D)
+                        attr_value.starts_with(value)
+                            && (attr_value.len() == value.len()
+                                || attr_value.chars().nth(value.len()) == Some('-'))
+                    }
+                    AttrSelectorOperator::Prefix => attr_value.starts_with(value),
+                    AttrSelectorOperator::Substring => attr_value.contains(value),
+                    AttrSelectorOperator::Suffix => attr_value.ends_with(value),
+                };
             }
-        });
-        has_attr
+        }
     }
 
     fn match_non_ts_pseudo_class(
