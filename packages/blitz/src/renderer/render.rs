@@ -72,7 +72,6 @@ pub fn generate_vello_scene(
         dom,
         scale,
         devtools: devtool_config,
-        scroll_offset: dom.scroll_offset,
     };
     generator.generate_vello_scene(scene);
 
@@ -91,7 +90,6 @@ pub struct VelloSceneGenerator<'dom> {
     dom: &'dom Document,
     scale: f64,
     devtools: Devtools,
-    scroll_offset: f64,
 }
 
 impl<'dom> VelloSceneGenerator<'dom> {
@@ -114,12 +112,13 @@ impl<'dom> VelloSceneGenerator<'dom> {
     pub fn generate_vello_scene(&self, scene: &mut Scene) {
         // Simply render the document (the root element (note that this is not the same as the root node)))
         scene.reset();
+        let viewport_scroll = self.dom.as_ref().viewport_scroll();
         self.render_element(
             scene,
             self.dom.as_ref().root_element().id,
             Point {
-                x: 0.0,
-                y: self.scroll_offset,
+                x: -viewport_scroll.x,
+                y: -viewport_scroll.y,
             },
         );
 
@@ -164,8 +163,6 @@ impl<'dom> VelloSceneGenerator<'dom> {
             abs_x += x;
             abs_y += y;
         }
-
-        abs_y += self.scroll_offset as f32;
 
         // Hack: scale factor
         let abs_x = f64::from(abs_x) * scale;
@@ -315,8 +312,10 @@ impl<'dom> VelloSceneGenerator<'dom> {
 
         // TODO: account for overflow_x vs overflow_y
         let styles = &element.primary_styles().unwrap();
-        let overflow = styles.get_box().overflow_x;
-        let should_clip = !matches!(overflow, Overflow::Visible);
+        let overflow_x = styles.get_box().overflow_x;
+        let overflow_y = styles.get_box().overflow_y;
+        let should_clip =
+            !matches!(overflow_x, Overflow::Visible) || !matches!(overflow_y, Overflow::Visible);
         let clips_available = CLIPS_USED.load(atomic::Ordering::SeqCst) <= CLIP_LIMIT;
 
         // Apply padding/border offset to inline root
@@ -355,7 +354,7 @@ impl<'dom> VelloSceneGenerator<'dom> {
             CLIP_DEPTH_USED.fetch_max(depth, atomic::Ordering::SeqCst);
         }
 
-        let cx = self.element_cx(element, location);
+        let mut cx = self.element_cx(element, location);
         cx.stroke_effects(scene);
         cx.stroke_outline(scene);
         cx.draw_outset_box_shadow(scene);
@@ -363,6 +362,20 @@ impl<'dom> VelloSceneGenerator<'dom> {
         cx.draw_inset_box_shadow(scene);
         cx.stroke_border(scene);
         cx.stroke_devtools(scene);
+
+        // Now that background has been drawn, offset pos and cx in order to draw our contents scrolled
+        let pos = Point {
+            x: pos.x - element.scroll_offset.x,
+            y: pos.y - element.scroll_offset.y,
+        };
+        cx.pos = Point {
+            x: cx.pos.x - element.scroll_offset.x,
+            y: cx.pos.y - element.scroll_offset.y,
+        };
+        cx.transform = cx.transform.then_translate(Vec2 {
+            x: cx.transform.translation().x - element.scroll_offset.x,
+            y: cx.transform.translation().y - element.scroll_offset.y,
+        });
         cx.draw_image(scene);
         cx.draw_svg(scene);
         cx.draw_input(scene);

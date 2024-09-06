@@ -96,6 +96,9 @@ pub struct Document {
     // Viewport details such as the dimensions, HiDPI scale, and zoom factor,
     pub(crate) viewport: Viewport,
 
+    // Scroll within our viewport
+    pub(crate) viewport_scroll: kurbo::Point,
+
     pub(crate) stylesheets: HashMap<String, DocumentStyleSheet>,
 
     /// A Parley font context
@@ -107,9 +110,6 @@ pub struct Document {
     pub(crate) hover_node_id: Option<usize>,
     /// The node which is currently focussed (if any)
     pub(crate) focus_node_id: Option<usize>,
-
-    // TODO: move to nodes
-    pub scroll_offset: f64,
 
     pub changed: HashSet<usize>,
 }
@@ -221,6 +221,7 @@ impl Document {
             snapshots,
             nodes_to_id,
             viewport,
+            viewport_scroll: kurbo::Point::ZERO,
             base_url: None,
             // quadtree: Quadtree::new(20),
             stylesheets: HashMap::new(),
@@ -229,7 +230,6 @@ impl Document {
 
             hover_node_id: None,
             focus_node_id: None,
-            scroll_offset: 0.0,
             changed: HashSet::new(),
         };
 
@@ -746,7 +746,6 @@ impl Document {
             self.stylist.set_device(device, &guards)
         };
         self.stylist.force_stylesheet_origins_dirty(origins);
-        self.clamp_scroll();
     }
 
     pub fn stylist_device(&mut self) -> &Device {
@@ -784,12 +783,12 @@ impl Document {
             height: AvailableSpace::Definite(size.height.to_f32_px()),
         };
 
-        let root_node_id = taffy::NodeId::from(self.root_element().id);
+        let root_element_id = taffy::NodeId::from(self.root_element().id);
 
         // println!("\n\nRESOLVE LAYOUT\n===========\n");
 
-        taffy::compute_root_layout(self, root_node_id, available_space);
-        taffy::round_layout(self, root_node_id);
+        taffy::compute_root_layout(self, root_element_id, available_space);
+        taffy::round_layout(self, root_element_id);
 
         // println!("\n\n");
         // taffy::print_tree(self, root_node_id)
@@ -826,29 +825,71 @@ impl Document {
         Some(cursor)
     }
 
-    pub fn scroll_by(&mut self, px: f64) {
-        // Invert scrolling on macos
-        #[cfg(target_os = "macos")]
-        {
-            self.scroll_offset += px;
-        }
-        #[cfg(not(target_os = "macos"))]
-        {
-            self.scroll_offset -= px;
+    /// Scroll a node by given x and y
+    /// Will bubble scrolling up to parent node once it can no longer scroll further
+    /// If we're already at the root node, bubbles scrolling up to the viewport
+    pub fn scroll_node_by(&mut self, node_id: usize, x: f64, y: f64) {
+        let Some(node) = self.nodes.get_mut(node_id) else {
+            return;
+        };
+
+        let new_x = node.scroll_offset.x - x;
+        let new_y = node.scroll_offset.y - y;
+
+        let mut bubble_x = 0.0;
+        let mut bubble_y = 0.0;
+
+        let scroll_width = node.final_layout.scroll_width() as f64;
+        let scroll_height = node.final_layout.scroll_height() as f64;
+
+        // If we're past our scroll bounds, transfer remainder of scrolling to parent/viewport
+        if new_x < 0.0 {
+            bubble_x = -new_x;
+            node.scroll_offset.x = 0.0;
+        } else if new_x > scroll_width {
+            bubble_x = scroll_width - new_x;
+            node.scroll_offset.x = scroll_width;
+        } else {
+            node.scroll_offset.x = new_x;
         }
 
-        self.clamp_scroll();
+        if new_y < 0.0 {
+            bubble_y = -new_y;
+            node.scroll_offset.y = 0.0;
+        } else if new_y > scroll_height {
+            bubble_y = scroll_height - new_y;
+            node.scroll_offset.y = scroll_height;
+        } else {
+            node.scroll_offset.y = new_y;
+        }
+
+        if bubble_x != 0.0 || bubble_y != 0.0 {
+            if let Some(parent) = node.parent {
+                self.scroll_node_by(parent, bubble_x, bubble_y);
+            } else {
+                self.scroll_viewport_by(bubble_x, bubble_y);
+            }
+        }
     }
 
-    /// Clamp scroll offset
-    fn clamp_scroll(&mut self) {
-        let content_height = self.root_element().final_layout.size.height as f64;
-        let viewport_height = self.stylist_device().au_viewport_size().height.to_f64_px();
+    /// Scroll the viewport by the given values
+    pub fn scroll_viewport_by(&mut self, x: f64, y: f64) {
+        let content_size = self.root_element().final_layout.size;
+        let new_scroll = (self.viewport_scroll.x - x, self.viewport_scroll.y - y);
+        let window_width = self.viewport.window_size.0 as f64 / self.viewport.scale() as f64;
+        let window_height = self.viewport.window_size.1 as f64 / self.viewport.scale() as f64;
+        self.viewport_scroll.x = f64::max(
+            0.0,
+            f64::min(new_scroll.0, content_size.width as f64 - window_width),
+        );
+        self.viewport_scroll.y = f64::max(
+            0.0,
+            f64::min(new_scroll.1, content_size.height as f64 - window_height),
+        )
+    }
 
-        self.scroll_offset = self
-            .scroll_offset
-            .max(-(content_height - viewport_height))
-            .min(0.0);
+    pub fn viewport_scroll(&self) -> kurbo::Point {
+        self.viewport_scroll
     }
 
     pub fn visit<F>(&self, mut visit: F)
