@@ -1214,15 +1214,27 @@ impl ElementCx<'_> {
             && matches!(self.element.attr(local_name!("type")), Some("checkbox"))
         {
             let checked = self.element.attr(local_name!("checked")).is_some();
+            let disabled = self.element.attr(local_name!("disabled")).is_some();
 
             // TODO this should be coming from css accent-color, but I couldn't find how to retrieve it
-            let accent_color = self.style.get_inherited_text().color.as_vello();
+            let accent_color = if disabled {
+                peniko::Color {
+                    r: 209,
+                    g: 209,
+                    b: 209,
+                    a: 255,
+                }
+            } else {
+                self.style.get_inherited_text().color.as_vello()
+            };
 
-            let scale = self
+            let scale = (self
                 .frame
                 .outer_rect
                 .width()
                 .min(self.frame.outer_rect.height())
+                - 4.0)
+                .max(0.0)
                 / 16.0;
 
             let frame = self.frame.outer_rect.to_rounded_rect(scale * 2.0);
@@ -1236,7 +1248,7 @@ impl ElementCx<'_> {
                 path.line_to((6.0, 13.0));
                 path.line_to((14.0, 2.0));
 
-                path.apply_affine(Affine::scale(scale));
+                path.apply_affine(Affine::translate(Vec2 { x: 2.0, y: 1.0 }).then_scale(scale));
 
                 let style = Stroke {
                     width: 2.0 * scale,

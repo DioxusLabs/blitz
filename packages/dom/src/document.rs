@@ -129,6 +129,11 @@ impl DocumentLike for Document {
                         return true;
                     };
 
+                    let disabled = el.attr(local_name!("disabled")).is_some();
+                    if disabled {
+                        return true;
+                    }
+
                     if let NodeSpecificData::TextInput(ref mut text_input_data) =
                         el.node_specific_data
                     {
