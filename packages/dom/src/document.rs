@@ -498,7 +498,6 @@ impl Document {
         match resource {
             Resource::Css(node_id, css) => {
                 self.append_or_insert_stylesheet(css, node_id);
-                self.resolve()
             }
             Resource::Image(node_id, image) => {
                 let node = self.get_node_mut(node_id).unwrap();

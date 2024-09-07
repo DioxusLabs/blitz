@@ -1,15 +1,17 @@
 use crate::{NetProvider, RequestHandler, USER_AGENT};
+use std::any::{Any, TypeId};
 use std::cell::RefCell;
+use std::collections::HashMap;
 use std::io::Read;
 use thiserror::Error;
 use url::Url;
 
 const FILE_SIZE_LIMIT: u64 = 1_000_000_000; // 1GB
 
-pub struct SyncProvider<T>(pub RefCell<Vec<T>>);
+pub struct SyncProvider<T>(pub RefCell<Vec<T>>, pub RefCell<HashMap<TypeId, Vec<T>>>);
 impl<T> SyncProvider<T> {
     pub fn new() -> Self {
-        Self(RefCell::new(Vec::new()))
+        Self(RefCell::new(Vec::new()), RefCell::default())
     }
     fn fetch_inner<H: RequestHandler<T>>(
         &self,
@@ -57,7 +59,15 @@ impl<T> NetProvider<T> for SyncProvider<T> {
                 return;
             }
         };
-        self.0.borrow_mut().push(handler.bytes(&res));
+        if let Some(t) = handler.special() {
+            let mut entry = self.1.borrow_mut();
+            entry.entry(t).or_default().push(handler.bytes(&res));
+        } else {
+            self.0.borrow_mut().push(handler.bytes(&res));
+        }
+    }
+    fn resolve_all<M: Any>(&self, marker: M) -> Option<Vec<T>> {
+        self.1.borrow_mut().remove(&marker.type_id())
     }
 }
 

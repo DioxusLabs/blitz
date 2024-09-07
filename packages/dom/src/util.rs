@@ -2,6 +2,7 @@ use crate::node::{Node, NodeData};
 use blitz_net::RequestHandler;
 use image::DynamicImage;
 use selectors::context::QuirksMode;
+use std::any::{Any, TypeId};
 use std::{
     io::Cursor,
     sync::{Arc, OnceLock},
@@ -24,7 +25,7 @@ pub enum Resource {
     Svg(usize, Tree),
     Css(usize, DocumentStyleSheet),
 }
-
+pub(crate) struct CssMarker;
 pub(crate) struct CssHandler {
     pub node: usize,
     pub source_url: Url,
@@ -46,6 +47,9 @@ impl RequestHandler<Resource> for CssHandler {
             AllowImportRules::Yes,
         );
         Resource::Css(self.node, DocumentStyleSheet(ServoArc::new(sheet)))
+    }
+    fn special(&self) -> Option<TypeId> {
+        Some(CssMarker.type_id())
     }
 }
 pub(crate) struct ImageHandler(usize);

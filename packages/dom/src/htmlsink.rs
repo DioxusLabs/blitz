@@ -1,5 +1,5 @@
 use crate::node::{Attribute, ElementNodeData, Node, NodeData};
-use crate::util::{CssHandler, ImageHandler, Resource};
+use crate::util::{CssHandler, CssMarker, ImageHandler, Resource};
 use crate::Document;
 use blitz_net::NetProvider;
 use html5ever::local_name;
@@ -149,6 +149,13 @@ impl<'b, N: NetProvider<Resource>> TreeSink for DocumentHtmlParser<'b, N> {
         // Add inline stylesheets (<style> elements)
         for id in &self.style_nodes {
             self.doc.process_style_element(*id);
+        }
+
+        let st = self.net_provider.resolve_all(CssMarker);
+        if let Some(st) = st {
+            for res in st {
+                self.doc.load_resource(res);
+            }
         }
 
         // Compute child_idx fields.
