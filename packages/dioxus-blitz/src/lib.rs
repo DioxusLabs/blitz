@@ -23,13 +23,18 @@ mod accessibility;
 
 use crate::application::Application;
 use crate::window::View;
+use blitz_dom::util::Resource;
 use blitz_dom::{DocumentLike, HtmlDocument};
 use blitz_net::AsyncProvider;
 use dioxus::prelude::{ComponentFunction, Element, VirtualDom};
 use std::sync::Arc;
 use tokio::runtime::Runtime;
 use url::Url;
-use winit::event_loop::{ControlFlow, EventLoop};
+use winit::{
+    dpi::LogicalSize,
+    event_loop::{ControlFlow, EventLoop},
+    window::Window,
+};
 
 pub use crate::documents::DioxusDocument;
 pub use crate::waker::BlitzEvent;
@@ -65,16 +70,14 @@ pub fn launch_cfg_with_props<P: Clone + 'static, M: 'static>(
     let vdom = VirtualDom::new_with_props(root, props);
     let document = DioxusDocument::new(vdom);
 
+    // Turn on the runtime and enter it
     let rt = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()
         .unwrap();
 
-    let net = Arc::new(AsyncProvider::new(&rt));
-
-    let window = WindowConfig::new(document, 800.0, 600.0, net);
-
-    launch_with_window(window, rt)
+    let _guard = rt.enter();
+    launch_with_document(document, rt, None)
 }
 
 pub fn launch_url(url: &str) {
@@ -113,16 +116,29 @@ pub fn launch_static_html_cfg(html: &str, cfg: Config) {
         .unwrap();
 
     let _guard = rt.enter();
+    let net = AsyncProvider::new(&rt);
 
-    let net_provider = Arc::new(AsyncProvider::new(&rt));
+    let document = HtmlDocument::from_html(html, cfg.base_url, cfg.stylesheets, &net);
+    launch_with_document(document, rt, Some(Arc::new(net)));
+}
 
-    let document = HtmlDocument::from_html(
-        html,
-        cfg.base_url,
-        cfg.stylesheets,
-        Arc::clone(&net_provider),
-    );
-    let window = WindowConfig::new(document, 800.0, 600.0, net_provider);
+fn launch_with_document(
+    doc: impl DocumentLike,
+    rt: Runtime,
+    net: Option<Arc<AsyncProvider<Resource>>>,
+) {
+    let mut window_attrs = Window::default_attributes();
+    if !cfg!(all(target_os = "android", target_os = "ios")) {
+        window_attrs.inner_size = Some(
+            LogicalSize {
+                width: 800.,
+                height: 600.,
+            }
+            .into(),
+        );
+    }
+    let window = WindowConfig::new(doc, net);
+
     launch_with_window(window, rt)
 }
 

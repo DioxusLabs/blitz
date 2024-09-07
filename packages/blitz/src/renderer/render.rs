@@ -40,6 +40,7 @@ use style::{
 use image::{imageops::FilterType, DynamicImage};
 use parley::layout::PositionedLayoutItem;
 use taffy::prelude::Layout;
+use vello::kurbo::{BezPath, Cap, Join};
 use vello::{
     kurbo::{Affine, Point, Rect, Shape, Stroke, Vec2},
     peniko::{self, Brush, Color, Fill, Mix},
@@ -71,7 +72,6 @@ pub fn generate_vello_scene(
         dom,
         scale,
         devtools: devtool_config,
-        scroll_offset: dom.scroll_offset,
     };
     generator.generate_vello_scene(scene);
 
@@ -90,7 +90,6 @@ pub struct VelloSceneGenerator<'dom> {
     dom: &'dom Document,
     scale: f64,
     devtools: Devtools,
-    scroll_offset: f64,
 }
 
 impl<'dom> VelloSceneGenerator<'dom> {
@@ -113,12 +112,13 @@ impl<'dom> VelloSceneGenerator<'dom> {
     pub fn generate_vello_scene(&self, scene: &mut Scene) {
         // Simply render the document (the root element (note that this is not the same as the root node)))
         scene.reset();
+        let viewport_scroll = self.dom.as_ref().viewport_scroll();
         self.render_element(
             scene,
             self.dom.as_ref().root_element().id,
             Point {
-                x: 0.0,
-                y: self.scroll_offset,
+                x: -viewport_scroll.x,
+                y: -viewport_scroll.y,
             },
         );
 
@@ -163,8 +163,6 @@ impl<'dom> VelloSceneGenerator<'dom> {
             abs_x += x;
             abs_y += y;
         }
-
-        abs_y += self.scroll_offset as f32;
 
         // Hack: scale factor
         let abs_x = f64::from(abs_x) * scale;
@@ -314,8 +312,10 @@ impl<'dom> VelloSceneGenerator<'dom> {
 
         // TODO: account for overflow_x vs overflow_y
         let styles = &element.primary_styles().unwrap();
-        let overflow = styles.get_box().overflow_x;
-        let should_clip = !matches!(overflow, Overflow::Visible);
+        let overflow_x = styles.get_box().overflow_x;
+        let overflow_y = styles.get_box().overflow_y;
+        let should_clip =
+            !matches!(overflow_x, Overflow::Visible) || !matches!(overflow_y, Overflow::Visible);
         let clips_available = CLIPS_USED.load(atomic::Ordering::SeqCst) <= CLIP_LIMIT;
 
         // Apply padding/border offset to inline root
@@ -354,14 +354,31 @@ impl<'dom> VelloSceneGenerator<'dom> {
             CLIP_DEPTH_USED.fetch_max(depth, atomic::Ordering::SeqCst);
         }
 
-        let cx = self.element_cx(element, location);
+        let mut cx = self.element_cx(element, location);
         cx.stroke_effects(scene);
         cx.stroke_outline(scene);
+        cx.draw_outset_box_shadow(scene);
         cx.stroke_frame(scene);
+        cx.draw_inset_box_shadow(scene);
         cx.stroke_border(scene);
         cx.stroke_devtools(scene);
+
+        // Now that background has been drawn, offset pos and cx in order to draw our contents scrolled
+        let pos = Point {
+            x: pos.x - element.scroll_offset.x,
+            y: pos.y - element.scroll_offset.y,
+        };
+        cx.pos = Point {
+            x: cx.pos.x - element.scroll_offset.x,
+            y: cx.pos.y - element.scroll_offset.y,
+        };
+        cx.transform = cx.transform.then_translate(Vec2 {
+            x: -element.scroll_offset.x,
+            y: -element.scroll_offset.y,
+        });
         cx.draw_image(scene);
         cx.draw_svg(scene);
+        cx.draw_input(scene);
 
         // Render the text in text inputs
         if let Some(input_data) = cx.text_input {
@@ -441,7 +458,7 @@ impl<'dom> VelloSceneGenerator<'dom> {
         }
     }
 
-    fn element_cx<'w>(&'w self, element: &'w Node, location: Point) -> ElementCx {
+    fn element_cx<'w>(&'w self, element: &'w Node, location: Point) -> ElementCx<'w> {
         let style = element
             .stylo_element_data
             .borrow()
@@ -931,6 +948,106 @@ impl ElementCx<'_> {
 
     // fn draw_image_frame(&self, scene: &mut Scene) {}
 
+    fn draw_outset_box_shadow(&self, scene: &mut Scene) {
+        let box_shadow = &self.style.get_effects().box_shadow.0;
+
+        // TODO: Only apply clip if element has transparency
+        let has_outset_shadow = box_shadow.iter().any(|s| !s.inset);
+        if has_outset_shadow {
+            CLIPS_WANTED.fetch_add(1, atomic::Ordering::SeqCst);
+            let clips_available = CLIPS_USED.load(atomic::Ordering::SeqCst) <= CLIP_LIMIT;
+            if clips_available {
+                scene.push_layer(Mix::Clip, 1.0, self.transform, &self.frame.shadow_clip());
+                CLIPS_USED.fetch_add(1, atomic::Ordering::SeqCst);
+                let depth = CLIP_DEPTH.fetch_add(1, atomic::Ordering::SeqCst) + 1;
+                CLIP_DEPTH_USED.fetch_max(depth, atomic::Ordering::SeqCst);
+            }
+        }
+
+        for shadow in box_shadow.iter().filter(|s| !s.inset) {
+            let shadow_color = shadow.base.color.as_vello();
+            if shadow_color != Color::TRANSPARENT {
+                let transform = self.transform.then_translate(Vec2 {
+                    x: shadow.base.horizontal.px() as f64,
+                    y: shadow.base.vertical.px() as f64,
+                });
+
+                //TODO draw shadows with matching individual radii instead of averaging
+                let radius = (self.frame.border_top_left_radius_height
+                    + self.frame.border_bottom_left_radius_width
+                    + self.frame.border_bottom_left_radius_height
+                    + self.frame.border_bottom_left_radius_width
+                    + self.frame.border_bottom_right_radius_height
+                    + self.frame.border_bottom_right_radius_width
+                    + self.frame.border_top_right_radius_height
+                    + self.frame.border_top_right_radius_width)
+                    / 8.0;
+
+                // Fill the color
+                scene.draw_blurred_rounded_rect(
+                    transform,
+                    self.frame.outer_rect,
+                    shadow_color,
+                    radius,
+                    shadow.base.blur.px() as f64,
+                );
+            }
+        }
+
+        if has_outset_shadow {
+            scene.pop_layer();
+            CLIP_DEPTH.fetch_sub(1, atomic::Ordering::SeqCst);
+        }
+    }
+
+    fn draw_inset_box_shadow(&self, scene: &mut Scene) {
+        let box_shadow = &self.style.get_effects().box_shadow.0;
+        let has_inset_shadow = box_shadow.iter().any(|s| s.inset);
+        if has_inset_shadow {
+            CLIPS_WANTED.fetch_add(1, atomic::Ordering::SeqCst);
+            let clips_available = CLIPS_USED.load(atomic::Ordering::SeqCst) <= CLIP_LIMIT;
+            if clips_available {
+                scene.push_layer(Mix::Clip, 1.0, self.transform, &self.frame.frame());
+                CLIPS_USED.fetch_add(1, atomic::Ordering::SeqCst);
+                let depth = CLIP_DEPTH.fetch_add(1, atomic::Ordering::SeqCst) + 1;
+                CLIP_DEPTH_USED.fetch_max(depth, atomic::Ordering::SeqCst);
+            }
+        }
+        for shadow in box_shadow.iter().filter(|s| s.inset) {
+            let shadow_color = shadow.base.color.as_vello();
+            if shadow_color != Color::TRANSPARENT {
+                let transform = self.transform.then_translate(Vec2 {
+                    x: shadow.base.horizontal.px() as f64,
+                    y: shadow.base.vertical.px() as f64,
+                });
+
+                //TODO draw shadows with matching individual radii instead of averaging
+                let radius = (self.frame.border_top_left_radius_height
+                    + self.frame.border_bottom_left_radius_width
+                    + self.frame.border_bottom_left_radius_height
+                    + self.frame.border_bottom_left_radius_width
+                    + self.frame.border_bottom_right_radius_height
+                    + self.frame.border_bottom_right_radius_width
+                    + self.frame.border_top_right_radius_height
+                    + self.frame.border_top_right_radius_width)
+                    / 8.0;
+
+                // Fill the color
+                scene.draw_blurred_rounded_rect(
+                    transform,
+                    self.frame.outer_rect,
+                    shadow_color,
+                    radius,
+                    shadow.base.blur.px() as f64,
+                );
+            }
+        }
+        if has_inset_shadow {
+            scene.pop_layer();
+            CLIP_DEPTH.fetch_sub(1, atomic::Ordering::SeqCst);
+        }
+    }
+
     fn draw_solid_frame(&self, scene: &mut Scene) {
         let background_color = &self.style.get_background().background_color;
         let bg_color = background_color.as_vello();
@@ -1090,5 +1207,70 @@ impl ElementCx<'_> {
         _flags: GradientFlags,
     ) {
         unimplemented!()
+    }
+
+    fn draw_input(&self, scene: &mut Scene) {
+        if self.element.local_name() == "input"
+            && matches!(self.element.attr(local_name!("type")), Some("checkbox"))
+        {
+            let checked = self.element.attr(local_name!("checked")).is_some();
+            let disabled = self.element.attr(local_name!("disabled")).is_some();
+
+            // TODO this should be coming from css accent-color, but I couldn't find how to retrieve it
+            let accent_color = if disabled {
+                peniko::Color {
+                    r: 209,
+                    g: 209,
+                    b: 209,
+                    a: 255,
+                }
+            } else {
+                self.style.get_inherited_text().color.as_vello()
+            };
+
+            let scale = (self
+                .frame
+                .outer_rect
+                .width()
+                .min(self.frame.outer_rect.height())
+                - 4.0)
+                .max(0.0)
+                / 16.0;
+
+            let frame = self.frame.outer_rect.to_rounded_rect(scale * 2.0);
+
+            if checked {
+                scene.fill(Fill::NonZero, self.transform, accent_color, None, &frame);
+
+                //Tick code derived from masonry
+                let mut path = BezPath::new();
+                path.move_to((2.0, 9.0));
+                path.line_to((6.0, 13.0));
+                path.line_to((14.0, 2.0));
+
+                path.apply_affine(Affine::translate(Vec2 { x: 2.0, y: 1.0 }).then_scale(scale));
+
+                let style = Stroke {
+                    width: 2.0 * scale,
+                    join: Join::Round,
+                    miter_limit: 10.0,
+                    start_cap: Cap::Round,
+                    end_cap: Cap::Round,
+                    dash_pattern: Default::default(),
+                    dash_offset: 0.0,
+                };
+
+                scene.stroke(&style, self.transform, Color::WHITE, None, &path);
+            } else {
+                scene.fill(Fill::NonZero, self.transform, Color::WHITE, None, &frame);
+                scene.stroke(
+                    &Stroke::default(),
+                    self.transform,
+                    accent_color,
+                    None,
+                    &frame,
+                );
+            }
+        }
     }
 }

@@ -1,7 +1,8 @@
 use crate::events::{EventData, HitResult, RendererEvent};
-use crate::node::{ImageData, NodeSpecificData, TextBrush};
-use crate::{Node, NodeData, TextNodeData, Viewport};
+use crate::node::{Attribute, ImageData, NodeSpecificData, TextBrush};
+use crate::{ElementNodeData, Node, NodeData, TextNodeData, Viewport};
 use app_units::Au;
+use html5ever::{local_name, namespace_url, ns, QualName};
 use peniko::kurbo;
 // use quadtree_rs::Quadtree;
 use crate::util::Resource;
@@ -76,12 +77,12 @@ pub struct Document {
     /// We pin the tree to a guarantee to the nodes it creates that the tree is stable in memory.
     ///
     /// There is no way to create the tree - publicly or privately - that would invalidate that invariant.
-    pub nodes: Box<Slab<Node>>,
+    pub(crate) nodes: Box<Slab<Node>>,
 
     pub(crate) guard: SharedRwLock,
 
     /// The styling engine of firefox
-    pub stylist: Stylist,
+    pub(crate) stylist: Stylist,
 
     // caching for the stylist
     pub(crate) snapshots: SnapshotMap,
@@ -97,6 +98,9 @@ pub struct Document {
     // Viewport details such as the dimensions, HiDPI scale, and zoom factor,
     pub(crate) viewport: Viewport,
 
+    // Scroll within our viewport
+    pub(crate) viewport_scroll: kurbo::Point,
+
     pub(crate) ua_stylesheets: HashMap<String, DocumentStyleSheet>,
     pub(crate) nodes_to_stylesheet: BTreeMap<usize, DocumentStyleSheet>,
 
@@ -109,9 +113,6 @@ pub struct Document {
     pub(crate) hover_node_id: Option<usize>,
     /// The node which is currently focussed (if any)
     pub(crate) focus_node_id: Option<usize>,
-
-    // TODO: move to nodes
-    pub scroll_offset: f64,
 
     pub changed: HashSet<usize>,
 }
@@ -127,21 +128,47 @@ impl DocumentLike for Document {
                     assert!(hit.node_id == event.target);
 
                     let node = &mut self.nodes[hit.node_id];
-                    let text_input_data = node
-                        .raw_dom_data
-                        .downcast_element_mut()
-                        .and_then(|el| el.text_input_data_mut());
-                    if text_input_data.is_some() {
+                    let Some(el) = node.raw_dom_data.downcast_element_mut() else {
+                        return true;
+                    };
+
+                    let disabled = el.attr(local_name!("disabled")).is_some();
+                    if disabled {
+                        return true;
+                    }
+
+                    if let NodeSpecificData::TextInput(ref mut text_input_data) =
+                        el.node_specific_data
+                    {
                         let x = hit.x as f64 * self.viewport.scale_f64();
                         let y = hit.y as f64 * self.viewport.scale_f64();
-                        text_input_data.unwrap().editor.pointer_down(
+                        text_input_data.editor.pointer_down(
                             kurbo::Point { x, y },
                             mods,
                             PointerButton::Primary,
                         );
-                        println!("Clicked {}", hit.node_id);
 
                         self.set_focus_to(hit.node_id);
+                    } else if el.name.local == local_name!("input")
+                        && matches!(el.attr(local_name!("type")), Some("checkbox"))
+                    {
+                        Document::toggle_checkbox(el);
+                        self.set_focus_to(hit.node_id);
+                    }
+                    // Clicking labels triggers click, and possibly input event, of associated input
+                    else if el.name.local == local_name!("label") {
+                        let node_id = node.id;
+                        if let Some(target_node_id) = self
+                            .label_bound_input_elements(node_id)
+                            .first()
+                            .map(|n| n.id)
+                        {
+                            let target_node = self.get_node_mut(target_node_id).unwrap();
+                            if let Some(target_element) = target_node.element_data_mut() {
+                                Document::toggle_checkbox(target_element);
+                            }
+                            self.set_focus_to(node_id);
+                        }
                     }
                 }
             }
@@ -202,6 +229,7 @@ impl Document {
             snapshots,
             nodes_to_id,
             viewport,
+            viewport_scroll: kurbo::Point::ZERO,
             base_url: None,
             // quadtree: Quadtree::new(20),
             ua_stylesheets: HashMap::new(),
@@ -211,7 +239,6 @@ impl Document {
 
             hover_node_id: None,
             focus_node_id: None,
-            scroll_offset: 0.0,
             changed: HashSet::new(),
         };
 
@@ -245,6 +272,69 @@ impl Document {
     pub fn get_focussed_node_id(&self) -> Option<usize> {
         self.focus_node_id
             .or(self.try_root_element().map(|el| el.id))
+    }
+
+    /// Find the label's bound input elements:
+    /// the element id referenced by the "for" attribute of a given label element
+    /// or the first input element which is nested in the label
+    /// Note that although there should only be one bound element,
+    /// we return all possibilities instead of just the first
+    /// in order to allow the caller to decide which one is correct
+    pub fn label_bound_input_elements(&self, label_node_id: usize) -> Vec<&Node> {
+        let label_node = self.get_node(label_node_id).unwrap();
+        let label_element = label_node.element_data().unwrap();
+        if let Some(target_element_dom_id) = label_element.attr(local_name!("for")) {
+            self.tree()
+                .into_iter()
+                .filter_map(|(_id, node)| {
+                    let element_data = node.element_data()?;
+                    if element_data.name.local != local_name!("input") {
+                        return None;
+                    }
+                    let id = element_data.id.as_ref()?;
+                    if *id == *target_element_dom_id {
+                        Some(node)
+                    } else {
+                        None
+                    }
+                })
+                .collect()
+        } else {
+            label_node
+                .children
+                .iter()
+                .filter_map(|child_id| {
+                    let node = self.get_node(*child_id)?;
+                    let element_data = node.element_data()?;
+                    if element_data.name.local == local_name!("input") {
+                        Some(node)
+                    } else {
+                        None
+                    }
+                })
+                .collect()
+        }
+    }
+
+    pub fn toggle_checkbox(el: &mut ElementNodeData) {
+        let is_checked = el
+            .attrs
+            .iter()
+            .any(|attr| attr.name.local == local_name!("checked"));
+
+        if is_checked {
+            el.attrs
+                .retain(|attr| attr.name.local != local_name!("checked"))
+        } else {
+            el.attrs.push(Attribute {
+                name: QualName {
+                    prefix: None,
+                    ns: ns!(html),
+                    local: local_name!("checked"),
+                },
+                value: String::new(),
+            })
+        }
     }
 
     pub fn root_node(&self) -> &Node {
@@ -704,7 +794,6 @@ impl Document {
             self.stylist.set_device(device, &guards)
         };
         self.stylist.force_stylesheet_origins_dirty(origins);
-        self.clamp_scroll();
     }
 
     pub fn stylist_device(&mut self) -> &Device {
@@ -742,12 +831,12 @@ impl Document {
             height: AvailableSpace::Definite(size.height.to_f32_px()),
         };
 
-        let root_node_id = taffy::NodeId::from(self.root_element().id);
+        let root_element_id = taffy::NodeId::from(self.root_element().id);
 
         // println!("\n\nRESOLVE LAYOUT\n===========\n");
 
-        taffy::compute_root_layout(self, root_node_id, available_space);
-        taffy::round_layout(self, root_node_id);
+        taffy::compute_root_layout(self, root_element_id, available_space);
+        taffy::round_layout(self, root_element_id);
 
         // println!("\n\n");
         // taffy::print_tree(self, root_node_id)
@@ -784,29 +873,71 @@ impl Document {
         Some(cursor)
     }
 
-    pub fn scroll_by(&mut self, px: f64) {
-        // Invert scrolling on macos
-        #[cfg(target_os = "macos")]
-        {
-            self.scroll_offset += px;
-        }
-        #[cfg(not(target_os = "macos"))]
-        {
-            self.scroll_offset -= px;
+    /// Scroll a node by given x and y
+    /// Will bubble scrolling up to parent node once it can no longer scroll further
+    /// If we're already at the root node, bubbles scrolling up to the viewport
+    pub fn scroll_node_by(&mut self, node_id: usize, x: f64, y: f64) {
+        let Some(node) = self.nodes.get_mut(node_id) else {
+            return;
+        };
+
+        let new_x = node.scroll_offset.x - x;
+        let new_y = node.scroll_offset.y - y;
+
+        let mut bubble_x = 0.0;
+        let mut bubble_y = 0.0;
+
+        let scroll_width = node.final_layout.scroll_width() as f64;
+        let scroll_height = node.final_layout.scroll_height() as f64;
+
+        // If we're past our scroll bounds, transfer remainder of scrolling to parent/viewport
+        if new_x < 0.0 {
+            bubble_x = -new_x;
+            node.scroll_offset.x = 0.0;
+        } else if new_x > scroll_width {
+            bubble_x = scroll_width - new_x;
+            node.scroll_offset.x = scroll_width;
+        } else {
+            node.scroll_offset.x = new_x;
         }
 
-        self.clamp_scroll();
+        if new_y < 0.0 {
+            bubble_y = -new_y;
+            node.scroll_offset.y = 0.0;
+        } else if new_y > scroll_height {
+            bubble_y = scroll_height - new_y;
+            node.scroll_offset.y = scroll_height;
+        } else {
+            node.scroll_offset.y = new_y;
+        }
+
+        if bubble_x != 0.0 || bubble_y != 0.0 {
+            if let Some(parent) = node.parent {
+                self.scroll_node_by(parent, bubble_x, bubble_y);
+            } else {
+                self.scroll_viewport_by(bubble_x, bubble_y);
+            }
+        }
     }
 
-    /// Clamp scroll offset
-    fn clamp_scroll(&mut self) {
-        let content_height = self.root_element().final_layout.size.height as f64;
-        let viewport_height = self.stylist_device().au_viewport_size().height.to_f64_px();
+    /// Scroll the viewport by the given values
+    pub fn scroll_viewport_by(&mut self, x: f64, y: f64) {
+        let content_size = self.root_element().final_layout.size;
+        let new_scroll = (self.viewport_scroll.x - x, self.viewport_scroll.y - y);
+        let window_width = self.viewport.window_size.0 as f64 / self.viewport.scale() as f64;
+        let window_height = self.viewport.window_size.1 as f64 / self.viewport.scale() as f64;
+        self.viewport_scroll.x = f64::max(
+            0.0,
+            f64::min(new_scroll.0, content_size.width as f64 - window_width),
+        );
+        self.viewport_scroll.y = f64::max(
+            0.0,
+            f64::min(new_scroll.1, content_size.height as f64 - window_height),
+        )
+    }
 
-        self.scroll_offset = self
-            .scroll_offset
-            .max(-(content_height - viewport_height))
-            .min(0.0);
+    pub fn viewport_scroll(&self) -> kurbo::Point {
+        self.viewport_scroll
     }
 
     pub fn visit<F>(&self, mut visit: F)

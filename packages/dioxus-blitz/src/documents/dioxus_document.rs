@@ -1,18 +1,18 @@
 //! Integration between Dioxus and Blitz
 
-use std::rc::Rc;
+use std::{collections::HashMap, rc::Rc};
 
 use blitz_dom::{
-    events::EventData, namespace_url, node::Attribute, ns, Atom, Document, DocumentLike,
-    ElementNodeData, NodeData, QualName, TextNodeData, Viewport, DEFAULT_CSS,
+    events::EventData, local_name, namespace_url, node::Attribute, ns, Atom, Document,
+    DocumentLike, ElementNodeData, Node, NodeData, QualName, TextNodeData, Viewport, DEFAULT_CSS,
 };
 
-use super::event_handler::{NativeClickData, NativeConverter};
 use dioxus::{
     dioxus_core::{
         AttributeValue, ElementId, Template, TemplateAttribute, TemplateNode, VirtualDom,
         WriteMutations,
     },
+    html::FormValue,
     prelude::{set_event_converter, PlatformEventData},
 };
 use futures_util::{pin_mut, FutureExt};
@@ -22,6 +22,8 @@ use style::{
     properties::{style_structs::Font, ComputedValues},
     stylesheets::Origin,
 };
+
+use super::event_handler::{NativeClickData, NativeConverter, NativeFormData};
 
 type NodeId = usize;
 
@@ -111,17 +113,41 @@ impl DocumentLike for DioxusDocument {
                     continue;
                 };
 
-                for attr in element.attrs() {
-                    if attr.name.local.as_ref() == "data-dioxus-id" {
-                        if let Ok(value) = attr.value.parse::<usize>() {
-                            let id = ElementId(value);
-                            // let data = dioxus::html::EventData::Mouse()
+                if let Some(id) = DioxusDocument::dioxus_id(element) {
+                    // let data = dioxus::html::EventData::Mouse()
+                    self.vdom
+                        .handle_event("click", self.click_event_data(), id, true);
+                    //TODO Check for other inputs which trigger input event on click here, eg radio
+                    let triggers_input_event = element.name.local == local_name!("input")
+                        && element.attr(local_name!("type")) == Some("checkbox");
+                    if triggers_input_event {
+                        let form_data = self.input_event_form_data(&chain, element);
+                        self.vdom.handle_event("input", form_data, id, true);
+                    }
+                    return true;
+                }
 
-                            let data =
-                                Rc::new(PlatformEventData::new(Box::new(NativeClickData {})));
-                            self.vdom.handle_event(event.name(), data, id, true);
-                            return true;
+                //Clicking labels triggers click, and possibly input event, of bound input
+                if *element.name.local == *"label" {
+                    let bound_input_elements = self.inner.label_bound_input_elements(*node);
+                    //Filter down bound elements to those which have dioxus id
+                    if let Some((element_data, dioxus_id)) =
+                        bound_input_elements.into_iter().find_map(|n| {
+                            let target_element_data = n.element_data()?;
+                            let dioxus_id = DioxusDocument::dioxus_id(target_element_data)?;
+                            Some((target_element_data, dioxus_id))
+                        })
+                    {
+                        self.vdom
+                            .handle_event("click", self.click_event_data(), dioxus_id, true);
+                        //TODO Check for other inputs which trigger input event on click here, eg radio
+                        let triggers_input_event =
+                            element_data.attr(local_name!("type")) == Some("checkbox");
+                        if triggers_input_event {
+                            let form_data = self.input_event_form_data(&chain, element_data);
+                            self.vdom.handle_event("input", form_data, dioxus_id, true);
                         }
+                        return true;
                     }
                 }
             }
@@ -134,6 +160,80 @@ impl DocumentLike for DioxusDocument {
 }
 
 impl DioxusDocument {
+    pub fn click_event_data(&self) -> Rc<PlatformEventData> {
+        Rc::new(PlatformEventData::new(Box::new(NativeClickData {})))
+    }
+
+    /// Generate the FormData from an input event
+    /// Currently only cares about input checkboxes
+    pub fn input_event_form_data(
+        &self,
+        parent_chain: &[usize],
+        element_node_data: &ElementNodeData,
+    ) -> Rc<PlatformEventData> {
+        let parent_form = parent_chain.iter().find_map(|id| {
+            let node = self.inner.get_node(*id)?;
+            let element_data = node.element_data()?;
+            if element_data.name.local == local_name!("form") {
+                Some(node)
+            } else {
+                None
+            }
+        });
+        let values = if let Some(parent_form) = parent_form {
+            let mut values = HashMap::<String, FormValue>::new();
+            for form_input in self.input_descendents(parent_form).into_iter() {
+                // Match html behaviour here. To be included in values:
+                // - input must have a name
+                // - if its an input, we only include it if checked
+                // - if value is not specified, it defaults to 'on'
+                if let Some(name) = form_input.attr(local_name!("name")) {
+                    if form_input.attr(local_name!("type")) == Some("checkbox")
+                        && form_input.attr(local_name!("checked")) == Some("true")
+                    {
+                        let value = form_input
+                            .attr(local_name!("value"))
+                            .unwrap_or("on")
+                            .to_string();
+                        values.insert(name.to_string(), FormValue(vec![value]));
+                    }
+                }
+            }
+            values
+        } else {
+            Default::default()
+        };
+        let form_data = NativeFormData {
+            value: element_node_data
+                .attr(local_name!("value"))
+                .unwrap_or_default()
+                .to_string(),
+            values,
+        };
+        Rc::new(PlatformEventData::new(Box::new(form_data)))
+    }
+
+    /// Collect all the inputs which are descendents of a given node
+    fn input_descendents(&self, node: &Node) -> Vec<&Node> {
+        node.children
+            .iter()
+            .flat_map(|id| {
+                let mut res = Vec::<&Node>::new();
+                let Some(n) = self.inner.get_node(*id) else {
+                    return res;
+                };
+                let Some(element_data) = n.element_data() else {
+                    return res;
+                };
+                if element_data.name.local == local_name!("input") {
+                    res.push(n);
+                }
+                res.extend(self.input_descendents(n).iter());
+                res
+            })
+            .collect()
+    }
+
     pub fn new(vdom: VirtualDom) -> Self {
         let viewport = Viewport::new(0, 0, 1.0);
         let mut doc = Document::new(viewport);
@@ -188,6 +288,18 @@ impl DioxusDocument {
         // dbg!(self.vdom.rebuild_to_vec());
         // std::process::exit(0);
         // dbg!(writer.state);
+    }
+
+    fn dioxus_id(element_node_data: &ElementNodeData) -> Option<ElementId> {
+        Some(ElementId(
+            element_node_data
+                .attrs
+                .iter()
+                .find(|attr| *attr.name.local == *"data-dioxus-id")?
+                .value
+                .parse::<usize>()
+                .ok()?,
+        ))
     }
 
     // pub fn apply_mutations(&mut self) {

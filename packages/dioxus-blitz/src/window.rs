@@ -9,29 +9,29 @@ use winit::keyboard::PhysicalKey;
 #[allow(unused)]
 use wgpu::rwh::HasWindowHandle;
 
-#[cfg(all(feature = "menu", not(any(target_os = "android", target_os = "ios"))))]
-use crate::menu::init_menu;
 use blitz_dom::util::Resource;
 use blitz_net::AsyncProvider;
 use std::sync::Arc;
 use std::task::Waker;
-use winit::dpi::LogicalSize;
 use winit::event::{ElementState, MouseButton};
 use winit::event_loop::{ActiveEventLoop, EventLoopProxy};
 use winit::window::{WindowAttributes, WindowId};
 use winit::{event::Modifiers, event::WindowEvent, keyboard::KeyCode, window::Window};
 
+#[cfg(all(feature = "menu", not(any(target_os = "android", target_os = "ios"))))]
+use crate::menu::init_menu;
+
 pub struct WindowConfig<Doc: DocumentLike> {
     doc: Doc,
     attributes: WindowAttributes,
-    net: Arc<AsyncProvider<Resource>>,
+    net: Option<Arc<AsyncProvider<Resource>>>,
 }
 
 impl<Doc: DocumentLike> WindowConfig<Doc> {
-    pub fn new(doc: Doc, width: f32, height: f32, net: Arc<AsyncProvider<Resource>>) -> Self {
+    pub fn new(doc: Doc, net: Option<Arc<AsyncProvider<Resource>>>) -> Self {
         WindowConfig {
             doc,
-            attributes: Window::default_attributes().with_inner_size(LogicalSize { width, height }),
+            attributes: Window::default_attributes(),
             net,
         }
     }
@@ -39,7 +39,7 @@ impl<Doc: DocumentLike> WindowConfig<Doc> {
     pub fn with_attributes(
         doc: Doc,
         attributes: WindowAttributes,
-        net: Arc<AsyncProvider<Resource>>,
+        net: Option<Arc<AsyncProvider<Resource>>>,
     ) -> Self {
         WindowConfig {
             doc,
@@ -87,7 +87,9 @@ impl<Doc: DocumentLike> View<Doc> {
     ) -> Self {
         let winit_window = Arc::from(event_loop.create_window(config.attributes).unwrap());
 
-        Arc::clone(&config.net).resolve(proxy.clone(), winit_window.id());
+        if let Some(net) = config.net {
+            net.resolve(proxy.clone(), winit_window.id());
+        }
 
         // TODO: make this conditional on text input focus
         winit_window.set_ime_allowed(true);
@@ -203,8 +205,9 @@ impl<Doc: DocumentLike> View<Doc> {
     }
 
     pub fn mouse_move(&mut self, x: f32, y: f32) -> bool {
-        let dom_x = x / self.viewport.zoom();
-        let dom_y = (y - self.dom.as_ref().scroll_offset as f32) / self.viewport.zoom();
+        let viewport_scroll = self.dom.as_ref().viewport_scroll();
+        let dom_x = x + viewport_scroll.x as f32 / self.viewport.zoom();
+        let dom_y = y + viewport_scroll.y as f32 / self.viewport.zoom();
 
         // println!("Mouse move: ({}, {})", x, y);
         // println!("Unscaled: ({}, {})",);
@@ -408,14 +411,16 @@ impl<Doc: DocumentLike> View<Doc> {
                 }
             }
             WindowEvent::MouseWheel { delta, .. } => {
-                match delta {
-                    winit::event::MouseScrollDelta::LineDelta(_, y) => {
-                        self.dom.as_mut().scroll_by(y as f64 * 20.0)
-                    }
-                    winit::event::MouseScrollDelta::PixelDelta(offsets) => {
-                        self.dom.as_mut().scroll_by(offsets.y)
-                    }
+                let (scroll_x, scroll_y)= match delta {
+                    winit::event::MouseScrollDelta::LineDelta(x, y) => (x as f64 * 20.0, y as f64 * 20.0),
+                    winit::event::MouseScrollDelta::PixelDelta(offsets) => (offsets.x, offsets.y)
                 };
+
+                if let Some(hover_node_id)= self.dom.as_ref().get_hover_node_id() {
+                    self.dom.as_mut().scroll_node_by(hover_node_id, scroll_x, scroll_y);
+                } else {
+                    self.dom.as_mut().scroll_viewport_by(scroll_x, scroll_y);
+                }
                 self.request_redraw();
             }
 
@@ -426,6 +431,7 @@ impl<Doc: DocumentLike> View<Doc> {
             WindowEvent::Focused(_) => {}
 
             // Touch and motion events
+            // Todo implement touch scrolling
             WindowEvent::Touch(_) => {}
             WindowEvent::TouchpadPressure { .. } => {}
             WindowEvent::AxisMotion { .. } => {}

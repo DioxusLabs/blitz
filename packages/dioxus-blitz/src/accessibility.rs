@@ -71,6 +71,7 @@ impl AccessibilityState {
                     let ty = element_data.attr(local_name!("type")).unwrap_or("text");
                     match ty {
                         "number" => Role::NumberInput,
+                        "checkbox" => Role::CheckBox,
                         _ => Role::TextInput,
                     }
                 }
