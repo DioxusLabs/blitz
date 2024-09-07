@@ -1213,11 +1213,7 @@ impl ElementCx<'_> {
         if self.element.local_name() == "input"
             && matches!(self.element.attr(local_name!("type")), Some("checkbox"))
         {
-            let checked: bool = self
-                .element
-                .attr(local_name!("checked"))
-                .and_then(|c| c.parse().ok())
-                .unwrap_or_default();
+            let checked = self.element.attr(local_name!("checked")).is_some();
 
             // TODO this should be coming from css accent-color, but I couldn't find how to retrieve it
             let accent_color = self.style.get_inherited_text().color.as_vello();

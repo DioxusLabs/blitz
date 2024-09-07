@@ -308,26 +308,24 @@ impl Document {
     }
 
     pub fn toggle_checkbox(el: &mut ElementNodeData) {
-        let checked_attr_opt = el
+        let is_checked = el
             .attrs
-            .iter_mut()
-            .find(|attr| attr.name.local == local_name!("checked"));
+            .iter()
+            .any(|attr| attr.name.local == local_name!("checked"));
 
-        let checked_attr = if let Some(attr) = checked_attr_opt {
-            attr
-        } else {
-            let attr = Attribute {
-                name: QualName::new(None, ns!(html), local_name!("checked")),
-                value: String::from("false"),
-            };
-            el.attrs.push(attr);
+        if is_checked {
             el.attrs
-                .iter_mut()
-                .find(|attr| attr.name.local == local_name!("checked"))
-                .unwrap()
-        };
-        let checked = checked_attr.value.parse().unwrap_or(false);
-        checked_attr.value = (!checked).to_string();
+                .retain(|attr| attr.name.local != local_name!("checked"))
+        } else {
+            el.attrs.push(Attribute {
+                name: QualName {
+                    prefix: None,
+                    ns: ns!(html),
+                    local: local_name!("checked"),
+                },
+                value: String::new(),
+            })
+        }
     }
 
     pub fn root_node(&self) -> &Node {
