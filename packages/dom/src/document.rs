@@ -4,6 +4,9 @@ use crate::{ElementNodeData, Node, NodeData, TextNodeData, Viewport};
 use app_units::Au;
 use html5ever::local_name;
 use peniko::kurbo;
+use string_cache::Atom;
+use style::attr::{AttrIdentifier, AttrValue};
+use style::values::GenericAtomIdent;
 // use quadtree_rs::Quadtree;
 use crate::util::Resource;
 use parley::editor::{PointerButton, TextEvent};
@@ -616,11 +619,40 @@ impl Document {
             // Do nothing
             // TODO: update snapshot
         } else {
+            let attrs: Option<Vec<_>> = node.attrs().map(|attrs| {
+                attrs
+                    .iter()
+                    .map(|attr| {
+                        let ident = AttrIdentifier {
+                            local_name: GenericAtomIdent(attr.name.local.clone()),
+                            name: GenericAtomIdent(attr.name.local.clone()),
+                            namespace: GenericAtomIdent(attr.name.ns.clone()),
+                            prefix: None,
+                        };
+
+                        let value = if attr.name.local == local_name!("id") {
+                            AttrValue::Atom(Atom::from(&*attr.value))
+                        } else if attr.name.local == local_name!("class") {
+                            let classes = attr
+                                .value
+                                .split_ascii_whitespace()
+                                .map(Atom::from)
+                                .collect();
+                            AttrValue::TokenList(attr.value.clone(), classes)
+                        } else {
+                            AttrValue::String(attr.value.clone())
+                        };
+
+                        (ident, value)
+                    })
+                    .collect()
+            });
+
             self.snapshots.insert(
                 opaque_node_id,
                 ServoElementSnapshot {
                     state: Some(node.element_state),
-                    attrs: None,
+                    attrs,
                     changed_attrs: Vec::new(),
                     class_changed: false,
                     id_changed: false,
