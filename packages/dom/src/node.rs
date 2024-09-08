@@ -2,7 +2,7 @@ use atomic_refcell::{AtomicRef, AtomicRefCell};
 use html5ever::{local_name, LocalName, QualName};
 use image::DynamicImage;
 use peniko::kurbo;
-use selectors::matching::QuirksMode;
+use selectors::matching::{ElementSelectorFlags, QuirksMode};
 use slab::Slab;
 use std::cell::RefCell;
 use std::fmt::Write;
@@ -63,6 +63,7 @@ pub struct Node {
     // This little bundle of joy is our style data from stylo and a lock guard that allows access to it
     // TODO: See if guard can be hoisted to a higher level
     pub stylo_element_data: AtomicRefCell<Option<ElementData>>,
+    pub selector_flags: AtomicRefCell<ElementSelectorFlags>,
     pub guard: SharedRwLock,
     pub element_state: ElementState,
 
@@ -97,6 +98,7 @@ impl Node {
 
             raw_dom_data: data,
             stylo_element_data: Default::default(),
+            selector_flags: AtomicRefCell::new(ElementSelectorFlags::empty()),
             guard,
             element_state: ElementState::empty(),
 

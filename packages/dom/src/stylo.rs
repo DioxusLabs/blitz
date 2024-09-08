@@ -464,8 +464,20 @@ impl<'a> selectors::Element for BlitzNode<'a> {
         }
     }
 
-    fn apply_selector_flags(&self, _flags: ElementSelectorFlags) {
-        // unimplemented!()
+    fn apply_selector_flags(&self, flags: ElementSelectorFlags) {
+        // Handle flags that apply to the element.
+        let self_flags = flags.for_self();
+        if !self_flags.is_empty() {
+            *self.selector_flags.borrow_mut() |= self_flags;
+        }
+
+        // Handle flags that apply to the parent.
+        let parent_flags = flags.for_parent();
+        if !parent_flags.is_empty() {
+            if let Some(parent) = self.parent_node() {
+                *parent.selector_flags.borrow_mut() |= self_flags;
+            }
+        }
     }
 
     fn is_link(&self) -> bool {
@@ -898,12 +910,14 @@ impl<'a> TElement for BlitzNode<'a> {
         todo!()
     }
 
-    fn has_selector_flags(&self, _flags: ElementSelectorFlags) -> bool {
-        todo!()
+    fn has_selector_flags(&self, flags: ElementSelectorFlags) -> bool {
+        self.selector_flags.borrow().contains(flags)
     }
 
     fn relative_selector_search_direction(&self) -> ElementSelectorFlags {
-        todo!()
+        self.selector_flags
+            .borrow()
+            .intersection(ElementSelectorFlags::RELATIVE_SELECTOR_SEARCH_DIRECTION_ANCESTOR_SIBLING)
     }
 
     // fn update_animations(
