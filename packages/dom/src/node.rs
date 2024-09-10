@@ -405,6 +405,20 @@ impl ElementNodeData {
         }
     }
 
+    pub fn inline_layout_data(&self) -> Option<&TextLayout> {
+        match self.node_specific_data {
+            NodeSpecificData::InlineRoot(ref data) => Some(data),
+            _ => None,
+        }
+    }
+
+    pub fn inline_layout_data_mut(&mut self) -> Option<&mut TextLayout> {
+        match self.node_specific_data {
+            NodeSpecificData::InlineRoot(ref mut data) => Some(data),
+            _ => None,
+        }
+    }
+
     pub fn flush_is_focussable(&mut self) {
         let disabled: bool = self.attr_parsed(local_name!("disabled")).unwrap_or(false);
         let tabindex: Option<i32> = self.attr_parsed(local_name!("tabindex"));
@@ -497,6 +511,8 @@ pub enum NodeSpecificData {
     Image(ImageData),
     /// The element's image content (\<img\> element's only)
     Svg(usvg::Tree),
+    /// Parley text layout (elements with inline inner display mode only)
+    InlineRoot(Box<TextLayout>),
     /// Pre-computed table layout data
     TableRoot(Arc<TableContext>),
     /// Parley text editor (text inputs)
@@ -512,6 +528,7 @@ impl std::fmt::Debug for NodeSpecificData {
         match self {
             NodeSpecificData::Image(_) => f.write_str("NodeSpecificData::Image"),
             NodeSpecificData::Svg(_) => f.write_str("NodeSpecificData::Svg"),
+            NodeSpecificData::InlineRoot(_) => f.write_str("NodeSpecificData::InlineRoot"),
             NodeSpecificData::TableRoot(_) => f.write_str("NodeSpecificData::TableRoot"),
             NodeSpecificData::TextInput(_) => f.write_str("NodeSpecificData::TextInput"),
             NodeSpecificData::CheckboxInput(_) => f.write_str("NodeSpecificData::CheckboxInput"),
