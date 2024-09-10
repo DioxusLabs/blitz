@@ -3,8 +3,11 @@
 use std::{collections::HashMap, rc::Rc};
 
 use blitz_dom::{
-    events::EventData, local_name, namespace_url, node::Attribute, ns, Atom, Document,
-    DocumentLike, ElementNodeData, Node, NodeData, QualName, TextNodeData, Viewport, DEFAULT_CSS,
+    events::EventData,
+    local_name, namespace_url,
+    node::{Attribute, NodeSpecificData},
+    ns, Atom, Document, DocumentLike, ElementNodeData, Node, NodeData, QualName, TextNodeData,
+    Viewport, DEFAULT_CSS,
 };
 
 use dioxus::{
@@ -189,7 +192,10 @@ impl DioxusDocument {
                 // - if value is not specified, it defaults to 'on'
                 if let Some(name) = form_input.attr(local_name!("name")) {
                     if form_input.attr(local_name!("type")) == Some("checkbox")
-                        && form_input.attr(local_name!("checked")) == Some("true")
+                        && form_input
+                            .element_data()
+                            .and_then(|data| data.checkbox_input_checked())
+                            .unwrap_or(false)
                     {
                         let value = form_input
                             .attr(local_name!("value"))
@@ -203,13 +209,14 @@ impl DioxusDocument {
         } else {
             Default::default()
         };
-        let form_data = NativeFormData {
-            value: element_node_data
+        let value = match element_node_data.node_specific_data {
+            NodeSpecificData::CheckboxInput(checked) => checked.to_string(),
+            _ => element_node_data
                 .attr(local_name!("value"))
                 .unwrap_or_default()
                 .to_string(),
-            values,
         };
+        let form_data = NativeFormData { value, values };
         Rc::new(PlatformEventData::new(Box::new(form_data)))
     }
 
@@ -563,8 +570,11 @@ impl WriteMutations for MutationWriter<'_> {
         let node_id = self.state.element_to_node_id(id);
         let node = self.doc.get_node_mut(node_id).unwrap();
         if let NodeData::Element(ref mut element) = node.raw_dom_data {
-            // FIXME: support non-text attributes
-            if let AttributeValue::Text(val) = value {
+            if element.name.local == local_name!("input") && name == "checked" {
+                set_input_checked_state(element, value);
+            }
+            // FIXME: support other non-text attributes
+            else if let AttributeValue::Text(val) = value {
                 // FIXME check namespace
                 let existing_attr = element
                     .attrs
@@ -666,6 +676,42 @@ impl WriteMutations for MutationWriter<'_> {
 
         let node_id = self.state.element_to_node_id(id);
         self.state.stack.push(node_id);
+    }
+}
+
+/// Set 'checked' state on an input based on given attributevalue
+fn set_input_checked_state(element: &mut ElementNodeData, value: &AttributeValue) {
+    let checked: bool;
+    match value {
+        AttributeValue::Bool(checked_bool) => {
+            checked = *checked_bool;
+        }
+        AttributeValue::Text(val) => {
+            if let Ok(checked_bool) = val.parse() {
+                checked = checked_bool;
+            } else {
+                return;
+            };
+        }
+        _ => {
+            return;
+        }
+    };
+    match element.node_specific_data {
+        NodeSpecificData::CheckboxInput(ref mut checked_mut) => *checked_mut = checked,
+        // If we have just constructed the element, set the node attribute,
+        // and NodeSpecificData will be created from that later
+        // this simulates the checked attribute being set in html,
+        // and the element's checked property being set from that
+        NodeSpecificData::None => element.attrs.push(Attribute {
+            name: QualName {
+                prefix: None,
+                ns: ns!(html),
+                local: local_name!("checked"),
+            },
+            value: checked.to_string(),
+        }),
+        _ => {}
     }
 }
 

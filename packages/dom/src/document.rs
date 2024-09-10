@@ -2,7 +2,7 @@ use crate::events::{EventData, HitResult, RendererEvent};
 use crate::node::{ImageData, NodeSpecificData, TextBrush};
 use crate::{ElementNodeData, Node, NodeData, TextNodeData, Viewport};
 use app_units::Au;
-use html5ever::{local_name, namespace_url, ns, QualName};
+use html5ever::local_name;
 use peniko::kurbo;
 // use quadtree_rs::Quadtree;
 use crate::util::Resource;
@@ -316,24 +316,10 @@ impl Document {
     }
 
     pub fn toggle_checkbox(el: &mut ElementNodeData) {
-        let is_checked = el
-            .attrs
-            .iter()
-            .any(|attr| attr.name.local == local_name!("checked"));
-
-        if is_checked {
-            el.attrs
-                .retain(|attr| attr.name.local != local_name!("checked"))
-        } else {
-            el.attrs.push(Attribute {
-                name: QualName {
-                    prefix: None,
-                    ns: ns!(html),
-                    local: local_name!("checked"),
-                },
-                value: String::new(),
-            })
-        }
+        let Some(is_checked) = el.checkbox_input_checked_mut() else {
+            return;
+        };
+        *is_checked = !*is_checked;
     }
 
     pub fn root_node(&self) -> &Node {
@@ -591,7 +577,8 @@ impl Document {
             }
             Resource::Image(node_id, image) => {
                 let node = self.get_node_mut(node_id).unwrap();
-                node.element_data_mut().unwrap().node_specific_data = NodeSpecificData::Image(ImageData::new(image))
+                node.element_data_mut().unwrap().node_specific_data =
+                    NodeSpecificData::Image(ImageData::new(image))
             }
             Resource::Svg(node_id, tree) => {
                 let node = self.get_node_mut(node_id).unwrap();
