@@ -188,7 +188,10 @@ impl DioxusDocument {
                 // - if value is not specified, it defaults to 'on'
                 if let Some(name) = form_input.attr(local_name!("name")) {
                     if form_input.attr(local_name!("type")) == Some("checkbox")
-                        && form_input.attr(local_name!("checked")) == Some("true")
+                        && form_input
+                            .element_data()
+                            .and_then(|data| data.checkbox_input_checked())
+                            .unwrap_or(false)
                     {
                         let value = form_input
                             .attr(local_name!("value"))

@@ -391,16 +391,16 @@ impl ElementNodeData {
         }
     }
 
-    pub fn inline_layout_data(&self) -> Option<&TextLayout> {
+    pub fn checkbox_input_checked(&self) -> Option<bool> {
         match self.node_specific_data {
-            NodeSpecificData::InlineRoot(ref data) => Some(data),
+            NodeSpecificData::CheckboxInput(checked) => Some(checked),
             _ => None,
         }
     }
 
-    pub fn inline_layout_data_mut(&mut self) -> Option<&mut TextLayout> {
+    pub fn checkbox_input_checked_mut(&mut self) -> Option<&mut bool> {
         match self.node_specific_data {
-            NodeSpecificData::InlineRoot(ref mut data) => Some(data),
+            NodeSpecificData::CheckboxInput(ref mut checked) => Some(checked),
             _ => None,
         }
     }
@@ -497,12 +497,12 @@ pub enum NodeSpecificData {
     Image(ImageData),
     /// The element's image content (\<img\> element's only)
     Svg(usvg::Tree),
-    /// Parley text layout (elements with inline inner display mode only)
-    InlineRoot(Box<TextLayout>),
     /// Pre-computed table layout data
     TableRoot(Arc<TableContext>),
     /// Parley text editor (text inputs)
     TextInput(TextInputData),
+    /// Checkbox checked state
+    CheckboxInput(bool),
     /// No data (for nodes that don't need any node-specific data)
     None,
 }
@@ -512,9 +512,9 @@ impl std::fmt::Debug for NodeSpecificData {
         match self {
             NodeSpecificData::Image(_) => f.write_str("NodeSpecificData::Image"),
             NodeSpecificData::Svg(_) => f.write_str("NodeSpecificData::Svg"),
-            NodeSpecificData::InlineRoot(_) => f.write_str("NodeSpecificData::InlineRoot"),
             NodeSpecificData::TableRoot(_) => f.write_str("NodeSpecificData::TableRoot"),
             NodeSpecificData::TextInput(_) => f.write_str("NodeSpecificData::TextInput"),
+            NodeSpecificData::CheckboxInput(_) => f.write_str("NodeSpecificData::CheckboxInput"),
             NodeSpecificData::None => f.write_str("NodeSpecificData::None"),
         }
     }
