@@ -407,7 +407,11 @@ impl<'a> selectors::Element for BlitzNode<'a> {
                         && elem.attr(local_name!("href")).is_some()
                 })
                 .unwrap_or(false),
-            NonTSPseudoClass::Checked => false,
+            NonTSPseudoClass::Checked => self
+                .raw_dom_data
+                .downcast_element()
+                .and_then(|elem| elem.checkbox_input_checked())
+                .unwrap_or(false),
             NonTSPseudoClass::Valid => false,
             NonTSPseudoClass::Invalid => false,
             NonTSPseudoClass::Defined => false,
