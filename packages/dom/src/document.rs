@@ -588,6 +588,7 @@ impl Document {
         match resource {
             Resource::Css(node_id, css) => {
                 self.append_or_insert_stylesheet(css, node_id);
+                self.resolve();
             }
             Resource::Image(node_id, image) => {
                 let node = self.get_node_mut(node_id).unwrap();
@@ -806,6 +807,11 @@ impl Document {
         resolve_layout_children_recursive(self, root_node_id);
 
         pub fn resolve_layout_children_recursive(doc: &mut Document, node_id: usize) {
+            doc.nodes[node_id].is_inline_root = false;
+            if let Some(element_data) = doc.nodes[node_id].element_data_mut() {
+                element_data.node_specific_data.take_inline_layout();
+            }
+
             doc.ensure_layout_children(node_id);
 
             let children = std::mem::take(&mut doc.nodes[node_id].children);
