@@ -20,8 +20,8 @@ static FONT_DB: OnceLock<Arc<usvg::fontdb::Database>> = OnceLock::new();
 
 #[derive(Clone, Debug)]
 pub enum Resource {
-    Image(usize, DynamicImage),
-    Svg(usize, Tree),
+    Image(usize, Arc<DynamicImage>),
+    Svg(usize, Box<Tree>),
     Css(usize, DocumentStyleSheet),
 }
 pub(crate) struct CssHandler {
@@ -61,7 +61,7 @@ impl RequestHandler<Resource> for ImageHandler {
             .expect("IO errors impossible with Cursor")
             .decode()
         {
-            return Resource::Image(self.0, image);
+            return Resource::Image(self.0, Arc::new(image));
         };
         // Try parse SVG
 
@@ -78,7 +78,7 @@ impl RequestHandler<Resource> for ImageHandler {
         };
 
         let tree = Tree::from_data(bytes, &options).unwrap();
-        Resource::Svg(self.0, tree)
+        Resource::Svg(self.0, Box::new(tree))
     }
 }
 

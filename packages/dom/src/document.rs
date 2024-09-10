@@ -1,5 +1,5 @@
 use crate::events::{EventData, HitResult, RendererEvent};
-use crate::node::{Attribute, ImageData, NodeSpecificData, TextBrush};
+use crate::node::{ImageData, NodeSpecificData, TextBrush};
 use crate::{ElementNodeData, Node, NodeData, TextNodeData, Viewport};
 use app_units::Au;
 use html5ever::{local_name, namespace_url, ns, QualName};
@@ -11,7 +11,6 @@ use selectors::{matching::QuirksMode, Element};
 use slab::Slab;
 use std::any::Any;
 use std::collections::{BTreeMap, Bound, HashMap, HashSet, VecDeque};
-use std::sync::Arc;
 use style::selector_parser::ServoElementSnapshot;
 use style::servo::media_queries::FontMetricsProvider;
 use style::servo_arc::Arc as ServoArc;
@@ -592,12 +591,11 @@ impl Document {
             }
             Resource::Image(node_id, image) => {
                 let node = self.get_node_mut(node_id).unwrap();
-                node.element_data_mut().unwrap().node_specific_data =
-                    NodeSpecificData::Image(ImageData::new(Arc::new(image)))
+                node.element_data_mut().unwrap().node_specific_data = NodeSpecificData::Image(ImageData::new(image))
             }
             Resource::Svg(node_id, tree) => {
                 let node = self.get_node_mut(node_id).unwrap();
-                node.element_data_mut().unwrap().node_specific_data = NodeSpecificData::Svg(tree)
+                node.element_data_mut().unwrap().node_specific_data = NodeSpecificData::Svg(*tree)
             }
         }
     }
