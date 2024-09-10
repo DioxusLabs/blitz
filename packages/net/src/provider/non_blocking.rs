@@ -2,8 +2,6 @@ use crate::{NetProvider, RequestHandler, USER_AGENT};
 use data_url::DataUrl;
 use futures_util::{stream::FuturesUnordered, StreamExt};
 use reqwest::Client;
-use std::any::{Any, TypeId};
-use std::collections::HashMap;
 use std::{sync::Arc, time::Duration};
 use thiserror::Error;
 use tokio::{
@@ -20,7 +18,6 @@ pub struct AsyncProvider<T> {
     rt: Handle,
     client: Client,
     futures: Mutex<FuturesUnordered<TaskHandle<T>>>,
-    special: Mutex<HashMap<TypeId, FuturesUnordered<TaskHandle<T>>>>,
 }
 impl<T: Send + Sync + 'static> AsyncProvider<T> {
     pub fn new(rt: &Runtime) -> Self {
@@ -28,7 +25,6 @@ impl<T: Send + Sync + 'static> AsyncProvider<T> {
             rt: rt.handle().clone(),
             client: Client::new(),
             futures: Mutex::new(FuturesUnordered::new()),
-            special: Mutex::default(),
         }
     }
     pub fn resolve<P: From<(WindowId, T)> + Send>(
@@ -103,37 +99,8 @@ impl<T: Send + 'static> NetProvider<T> for AsyncProvider<T> {
         H: RequestHandler<T>,
     {
         let client = self.client.clone();
-        if let Some(t) = handler.special() {
-            let join = self.rt.spawn(Self::fetch_inner(client, url, handler));
-            self.special
-                .blocking_lock()
-                .entry(t)
-                .or_default()
-                .push(join);
-        } else {
-            let join = self.rt.spawn(Self::fetch_inner(client, url, handler));
-            self.futures.blocking_lock().push(join);
-        }
-    }
-    fn resolve_all<M: Any>(&self, marker: M) -> Option<Vec<T>> {
-        self.rt.block_on(async {
-            let mut futures = self.special.lock().await.remove(&marker.type_id())?;
-            let mut out = vec![];
-            while let Some(ir) = futures.next().await {
-                match ir {
-                    Ok(Ok(t)) => {
-                        out.push(t);
-                    }
-                    Ok(Err(e)) => {
-                        tracing::error!("Fetch failed with {e:?}")
-                    }
-                    Err(e) => {
-                        tracing::error!("Fetch thread failed with {e}")
-                    }
-                }
-            }
-            Some(out)
-        })
+        let join = self.rt.spawn(Self::fetch_inner(client, url, handler));
+        self.futures.blocking_lock().push(join);
     }
 }
 

@@ -1,6 +1,5 @@
 mod provider;
 
-use std::any::{Any, TypeId};
 use std::ops::Deref;
 use url::Url;
 
@@ -15,7 +14,6 @@ pub trait NetProvider<T> {
     fn fetch<H>(&self, url: Url, handler: H)
     where
         H: RequestHandler<T>;
-    fn resolve_all<M: Any>(&self, marker: M) -> Option<Vec<T>>;
 }
 
 impl<T, P, D> NetProvider<T> for D
@@ -29,18 +27,12 @@ where
     {
         self.deref().fetch(url, handler)
     }
-    fn resolve_all<M: Any>(&self, marker: M) -> Option<Vec<T>> {
-        self.deref().resolve_all(marker)
-    }
 }
 
 pub trait RequestHandler<T>: Send + Sync + 'static {
     fn bytes(self, bytes: &[u8]) -> T;
     fn method(&self) -> Method {
         Method::GET
-    }
-    fn special(&self) -> Option<TypeId> {
-        None
     }
 }
 impl<F: Fn(&[u8]) -> T + Sync + Send + 'static, T> RequestHandler<T> for F {
