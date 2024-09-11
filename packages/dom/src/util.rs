@@ -113,7 +113,10 @@ impl RequestHandler for ImageHandler {
             ..Default::default()
         };
 
-        let tree = Tree::from_data(&bytes, &options).unwrap();
+        const DUMMY_SVG : &[u8] = r#"<?xml version="1.0" encoding="UTF-8"?><svg xmlns="http://www.w3.org/2000/svg" width="1" height="1"/>"#.as_bytes();
+
+        let tree = Tree::from_data(&bytes, &options)
+            .unwrap_or_else(|_| Tree::from_data(DUMMY_SVG, &options).unwrap());
         callback.call(Resource::Svg(self.0, Box::new(tree)));
     }
 }
