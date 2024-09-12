@@ -3,7 +3,7 @@ use std::sync::Arc;
 use html5ever::{local_name, namespace_url, ns, QualName};
 use parley::{
     builder::TreeBuilder,
-    style::{FontFamily, FontStack, WhiteSpaceCollapse},
+    style::{FontStack, WhiteSpaceCollapse},
     InlineBox,
 };
 use slab::Slab;
