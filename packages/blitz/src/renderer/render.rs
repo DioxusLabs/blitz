@@ -6,7 +6,9 @@ use crate::{
     devtools::Devtools,
     util::{GradientSlice, StyloGradient, ToVelloColor},
 };
-use blitz_dom::node::{ListItemLayout, NodeData, TextBrush, TextInputData, TextNodeData};
+use blitz_dom::node::{
+    ListItemLayout, ListItemLayoutPosition, NodeData, TextBrush, TextInputData, TextNodeData,
+};
 use blitz_dom::{local_name, Document, Node};
 
 use style::{
@@ -382,12 +384,16 @@ impl<'dom> VelloSceneGenerator<'dom> {
                     &line,
                 );
             }
-        } else if let Some(list_item_layout) = cx.list_item {
+        } else if let Some(ListItemLayout {
+            marker: _,
+            position: ListItemLayoutPosition::Outside(layout),
+        }) = cx.list_item
+        {
             let pos = Point {
                 x: pos.x - 24.0,
                 y: pos.y,
             };
-            cx.stroke_text(scene, &list_item_layout.marker_layout, pos);
+            cx.stroke_text(scene, &layout, pos);
         }
 
         if element.is_inline_root {
@@ -486,7 +492,7 @@ impl<'dom> VelloSceneGenerator<'dom> {
                 .map(|data| &*data.image),
             svg: element.element_data().unwrap().svg_data(),
             text_input: element.element_data().unwrap().text_input_data(),
-            list_item: element.element_data().unwrap().list_item_data(),
+            list_item: element.element_data().unwrap().list_item_data.as_deref(),
             devtools: &self.devtools,
         }
     }

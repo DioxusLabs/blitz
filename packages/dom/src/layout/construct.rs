@@ -5,6 +5,7 @@ use parley::{builder::TreeBuilder, style::WhiteSpaceCollapse, InlineBox};
 use slab::Slab;
 use style::{
     data::ElementData,
+    properties::longhands::list_style_type::computed_value::T as ListStyleType,
     shared_lock::StylesheetGuards,
     values::{
         computed::Display,
@@ -13,7 +14,10 @@ use style::{
 };
 
 use crate::{
-    node::{ListItemLayout, NodeKind, NodeSpecificData, TextBrush, TextInputData, TextLayout},
+    node::{
+        ListItemLayout, ListItemLayoutPosition, NodeKind, NodeSpecificData, TextBrush,
+        TextInputData, TextLayout,
+    },
     stylo_to_parley, Document, ElementNodeData, Node, NodeData,
 };
 
@@ -43,16 +47,31 @@ pub(crate) fn collect_layout_children(
                 create_text_editor(doc, container_node_id, false);
                 return;
             }
-        } else if matches!(tag_name, "ol" | "ul") {
-            let mut start = el.attr_parsed(local_name!("start")).unwrap_or(1);
-            let reversed = el.attr_parsed(local_name!("reversed")).unwrap_or(false);
-            collect_list_item_children(
-                doc,
-                &mut start,
-                reversed,
-                container_node_id,
-                tag_name == "ol",
-            );
+        }
+
+        //Check if we're displaying as a list container based on list-style-type property
+        if let Some(list_style_type) = doc.nodes[container_node_id]
+            .primary_styles()
+            .map(|style| style.get_list().list_style_type)
+        {
+            if list_style_type != ListStyleType::None {
+                //Only ol tags have start and reversed attributes
+                let (mut index, reversed) = if tag_name == "ol" {
+                    (
+                        el.attr_parsed(local_name!("start")).unwrap_or(1),
+                        el.attr_parsed(local_name!("reversed")).unwrap_or(false),
+                    )
+                } else {
+                    (1, false)
+                };
+                collect_list_item_children(
+                    doc,
+                    &mut index,
+                    reversed,
+                    container_node_id,
+                    list_style_type,
+                );
+            }
         }
     }
 
@@ -66,8 +85,6 @@ pub(crate) fn collect_layout_children(
             _ => Display::Inline,
         },
     );
-
-    dbg!(container_display.outside());
 
     match container_display.inside() {
         DisplayInside::None => {}
@@ -198,85 +215,88 @@ pub(crate) fn collect_layout_children(
 }
 
 struct NodeListItemChild {
-    layout: Option<parley::Layout<TextBrush>>,
+    layout: Option<ListItemLayout>,
     is_list_item_container: bool,
 }
 
 fn collect_list_item_children(
     doc: &mut Document,
-    idx: &mut usize,
+    index: &mut usize,
     reversed: bool,
     node_id: usize,
-    ordered: bool,
+    list_style_type: ListStyleType,
 ) {
     let mut children = doc.nodes[node_id].children.clone();
     if reversed {
         children.reverse();
     }
     for child in children.into_iter() {
-        let list_item_child = node_list_item_child(doc, child, idx, ordered);
+        let list_item_child = node_list_item_child(doc, child, *index, list_style_type);
         if let Some(layout) = list_item_child.layout {
             let node = &mut doc.nodes[child];
-            node.element_data_mut().unwrap().node_specific_data =
-                NodeSpecificData::ListItem(ListItemLayout {
-                    marker: Some(*idx),
-                    marker_layout: Box::new(layout),
-                });
-            *idx += 1;
+            node.element_data_mut().unwrap().list_item_data = Some(Box::new(layout));
+            *index += 1;
         }
         if !list_item_child.is_list_item_container {
-            collect_list_item_children(doc, idx, reversed, child, ordered);
+            collect_list_item_children(doc, index, reversed, child, list_style_type);
         }
     }
 }
 
+// Return a child node which is of display: list-item
 fn node_list_item_child(
     doc: &mut Document,
     child: usize,
-    idx: &mut usize,
-    ordered: bool,
+    index: usize,
+    list_style_type: ListStyleType,
 ) -> NodeListItemChild {
     let node = &doc.nodes[child];
 
     let is_list_item_container = node
         .element_data()
         .map(|element_data| {
-            element_data.name.local == local_name!("ol")
-                || element_data.name.local == local_name!("li")
+            matches!(
+                element_data.name.local,
+                local_name!("ol") | local_name!("ul"),
+            )
         })
         .unwrap_or(false);
 
     if node
-        .display_style()
-        .is_some_and(|style| style.is_list_item())
+        .primary_styles()
+        .is_some_and(|style| style.get_box().display.is_list_item())
     {
-        let node_style = node.primary_styles().or_else(|| {
-            node.parent
-                .and_then(|parent_id| doc.nodes[parent_id].primary_styles())
-        });
+        let marker = marker_for_style(list_style_type, index);
+        let position = if node
+            .primary_styles()
+            .unwrap()
+            .get_list()
+            .list_style_position
+            == style::properties::longhands::list_style_position::computed_value::T::Outside
+        {
+            let parley_style = node
+                .primary_styles()
+                .as_ref()
+                .map(|s| stylo_to_parley::style(s))
+                .unwrap_or_default();
 
-        let parley_style = node_style
-            .as_ref()
-            .map(|s| stylo_to_parley::style(s))
-            .unwrap_or_default();
+            // Create a parley tree builder
+            let mut builder =
+                doc.layout_ctx
+                    .tree_builder(&mut doc.font_ctx, doc.viewport.scale(), &parley_style);
 
-        // Create a parley tree builder
-        let mut builder =
-            doc.layout_ctx
-                .tree_builder(&mut doc.font_ctx, doc.viewport.scale(), &parley_style);
+            builder.push_text(&marker);
 
-        builder.push_text(&if ordered {
-            idx.to_string()
+            let mut layout = builder.build().0;
+
+            layout.break_all_lines(Some(0.0));
+
+            ListItemLayoutPosition::Outside(layout)
         } else {
-            "•".to_string()
-        });
-
-        let mut layout = builder.build().0;
-
-        layout.break_all_lines(Some(0.0));
-
+            ListItemLayoutPosition::Inside
+        };
         NodeListItemChild {
-            layout: S.outside()ome(layout),
+            layout: Some(ListItemLayout { marker, position }),
             is_list_item_container,
         }
     } else {
@@ -284,6 +304,17 @@ fn node_list_item_child(
             layout: None,
             is_list_item_container,
         }
+    }
+}
+
+//Determine the marker to render for a given list style type
+fn marker_for_style(list_style_type: ListStyleType, index: usize) -> String {
+    match list_style_type {
+        ListStyleType::Decimal => format!("{}. ", index),
+        ListStyleType::Disc => "•".to_string(),
+        ListStyleType::Circle => "◦".to_string(),
+        ListStyleType::Square => "▪".to_string(),
+        _ => "□".to_string(),
     }
 }
 
@@ -434,6 +465,21 @@ pub(crate) fn build_inline_layout(
         .map(stylo_to_parley::white_space_collapse)
         .unwrap_or(WhiteSpaceCollapse::Collapse);
     builder.set_white_space_mode(collapse_mode);
+
+    //Render position-inside list items
+    dbg!("Rendering text", &root_node.raw_dom_data);
+    match root_node
+        .element_data()
+        .and_then(|el| el.list_item_data.as_deref())
+    {
+        Some(ListItemLayout {
+            marker,
+            position: ListItemLayoutPosition::Inside,
+        }) => {
+            builder.push_text(marker);
+        }
+        _ => {}
+    };
 
     for child_id in root_node.children.iter().copied() {
         build_inline_layout_recursive(

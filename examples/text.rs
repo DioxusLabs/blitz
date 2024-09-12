@@ -16,8 +16,22 @@ fn app() -> Element {
                 "Should connect no space between"
             }
             ol {
-                li { "Item 1 " }
+                li { "Item 1" }
                 li { "Item 2" }
+                li {
+                    ul {
+                        li { "Nested Item 1" }
+                        li { "Nested Item 2" }
+                    }
+                }
+            }
+            ul {
+                class: "square",
+                li { "Square item" }
+            }
+            ul {
+                class: "circle",
+                li { "Circle item" }
             }
         }
     }
@@ -26,7 +40,10 @@ fn app() -> Element {
 const CSS: &str = r#"
 #a {
 }
-ol {
-    list-style-position: inside;
+ul.square {
+    list-style-type: square;
+}
+ul.circle {
+    list-style-type: circle;
 }
 "#;

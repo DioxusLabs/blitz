@@ -307,6 +307,10 @@ pub struct ElementNodeData {
     /// Parley text layout (elements with inline inner display mode only)
     pub inline_layout_data: Option<Box<TextLayout>>,
 
+    //Data associated with display: list-item. Note that this display mode
+    // does not exclude inline_layout_data
+    pub list_item_data: Option<Box<ListItemLayout>>,
+
     /// The element's template contents (\<template\> elements only)
     pub template_contents: Option<usize>,
     // /// Whether the node is a [HTML integration point] (https://html.spec.whatwg.org/multipage/#html-integration-point)
@@ -328,6 +332,7 @@ impl ElementNodeData {
             is_focussable: false,
             style_attribute: Default::default(),
             inline_layout_data: None,
+            list_item_data: None,
             node_specific_data: NodeSpecificData::None,
             template_contents: None,
             // listeners: FxHashSet::default(),
@@ -348,20 +353,6 @@ impl ElementNodeData {
     pub fn attr_parsed<T: FromStr>(&self, name: impl PartialEq<LocalName>) -> Option<T> {
         let attr = self.attrs.iter().find(|attr| name == attr.name.local)?;
         attr.value.parse::<T>().ok()
-    }
-
-    pub fn list_item_data(&self) -> Option<&ListItemLayout> {
-        match self.node_specific_data {
-            NodeSpecificData::ListItem(ref data) => Some(data),
-            _ => None,
-        }
-    }
-
-    pub fn list_item_data_mut(&mut self) -> Option<&mut ListItemLayout> {
-        match self.node_specific_data {
-            NodeSpecificData::ListItem(ref mut data) => Some(data),
-            _ => None,
-        }
     }
 
     pub fn image_data(&self) -> Option<&ImageData> {
@@ -502,8 +493,6 @@ pub enum NodeSpecificData {
     Image(ImageData),
     /// The element's image content (\<img\> element's only)
     Svg(usvg::Tree),
-    /// List Item layouts
-    ListItem(ListItemLayout),
     /// Pre-computed table layout data
     TableRoot(Arc<TableContext>),
     /// Parley text editor (text inputs)
@@ -517,7 +506,6 @@ impl std::fmt::Debug for NodeSpecificData {
         match self {
             NodeSpecificData::Image(_) => f.write_str("NodeSpecificData::Image"),
             NodeSpecificData::Svg(_) => f.write_str("NodeSpecificData::Svg"),
-            NodeSpecificData::ListItem(_) => f.write_str("NodeSpecificData::ListItem"),
             NodeSpecificData::TableRoot(_) => f.write_str("NodeSpecificData::TableRoot"),
             NodeSpecificData::TextInput(_) => f.write_str("NodeSpecificData::TextInput"),
             NodeSpecificData::None => f.write_str("NodeSpecificData::None"),
@@ -533,8 +521,21 @@ impl Default for NodeSpecificData {
 
 #[derive(Clone)]
 pub struct ListItemLayout {
-    pub marker: Option<usize>,
-    pub marker_layout: Box<parley::layout::Layout<TextBrush>>,
+    pub marker: String,
+    pub position: ListItemLayoutPosition,
+}
+
+//Value depends on list-style-position, determining whether a seperate layout is created for it
+#[derive(Clone)]
+pub enum ListItemLayoutPosition {
+    Inside,
+    Outside(parley::Layout<TextBrush>),
+}
+
+impl std::fmt::Debug for ListItemLayout {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "ListItemLayout - marker {}", self.marker)
+    }
 }
 
 pub type TextBrush = parley::editor::TextBrush;
