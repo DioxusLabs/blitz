@@ -16,6 +16,7 @@ fn app() -> Element {
         for _row in 0..3 {
                 div { class: "flex flex-row",
                 div { id: "cool", "h123456789asdjkahskj\nhiiiii" }
+                div { id: "cool-inset", "h123456789asdjkahskj\nhiiiii" }
                 p { class: "cool", "hi" }
                 for x in 1..=9 {
                     div { class: "bg-red-{x}00 border", "{x}" }
@@ -30,6 +31,13 @@ p.cool { background-color: purple; }
 #cool {
     background-color: blue;
     font-size: 32px;
+    box-shadow: 16px 16px 16px rgba(0,0,0,0.6);
+}
+#cool-inset {
+    margin-top: 16px;
+    background-color: purple;
+    font-size: 32px;
+    box-shadow: inset 16px 16px 16px rgba(255,255,255,0.6);
 }
 .bg-red-100	{ background-color: rgb(254 226 226); }
 .bg-red-200	{ background-color: rgb(254 202 202); }

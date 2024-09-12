@@ -11,7 +11,6 @@ use wgpu::rwh::HasWindowHandle;
 
 use std::sync::Arc;
 use std::task::Waker;
-use winit::dpi::LogicalSize;
 use winit::event::{ElementState, MouseButton};
 use winit::event_loop::{ActiveEventLoop, EventLoopProxy};
 use winit::window::{WindowAttributes, WindowId};
@@ -26,10 +25,10 @@ pub struct WindowConfig<Doc: DocumentLike> {
 }
 
 impl<Doc: DocumentLike> WindowConfig<Doc> {
-    pub fn new(doc: Doc, width: f32, height: f32) -> Self {
+    pub fn new(doc: Doc) -> Self {
         WindowConfig {
             doc,
-            attributes: Window::default_attributes().with_inner_size(LogicalSize { width, height }),
+            attributes: Window::default_attributes(),
         }
     }
 
@@ -190,8 +189,9 @@ impl<Doc: DocumentLike> View<Doc> {
     }
 
     pub fn mouse_move(&mut self, x: f32, y: f32) -> bool {
-        let dom_x = x / self.viewport.zoom();
-        let dom_y = (y - self.dom.as_ref().scroll_offset as f32) / self.viewport.zoom();
+        let viewport_scroll = self.dom.as_ref().viewport_scroll();
+        let dom_x = x + viewport_scroll.x as f32 / self.viewport.zoom();
+        let dom_y = y + viewport_scroll.y as f32 / self.viewport.zoom();
 
         // println!("Mouse move: ({}, {})", x, y);
         // println!("Unscaled: ({}, {})",);
@@ -391,14 +391,16 @@ impl<Doc: DocumentLike> View<Doc> {
                 }
             }
             WindowEvent::MouseWheel { delta, .. } => {
-                match delta {
-                    winit::event::MouseScrollDelta::LineDelta(_, y) => {
-                        self.dom.as_mut().scroll_by(y as f64 * 20.0)
-                    }
-                    winit::event::MouseScrollDelta::PixelDelta(offsets) => {
-                        self.dom.as_mut().scroll_by(offsets.y)
-                    }
+                let (scroll_x, scroll_y)= match delta {
+                    winit::event::MouseScrollDelta::LineDelta(x, y) => (x as f64 * 20.0, y as f64 * 20.0),
+                    winit::event::MouseScrollDelta::PixelDelta(offsets) => (offsets.x, offsets.y)
                 };
+
+                if let Some(hover_node_id)= self.dom.as_ref().get_hover_node_id() {
+                    self.dom.as_mut().scroll_node_by(hover_node_id, scroll_x, scroll_y);
+                } else {
+                    self.dom.as_mut().scroll_viewport_by(scroll_x, scroll_y);
+                }
                 self.request_redraw();
             }
 
@@ -409,6 +411,7 @@ impl<Doc: DocumentLike> View<Doc> {
             WindowEvent::Focused(_) => {}
 
             // Touch and motion events
+            // Todo implement touch scrolling
             WindowEvent::Touch(_) => {}
             WindowEvent::TouchpadPressure { .. } => {}
             WindowEvent::AxisMotion { .. } => {}

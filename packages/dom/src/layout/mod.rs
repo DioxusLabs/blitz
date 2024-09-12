@@ -144,10 +144,36 @@ impl LayoutPartialTree for Document {
 
                     // todo: need to handle shadow roots by actually descending into them
                     if *element_data.name.local == *"input" {
-                        // if the input type is hidden, hide it
-                        if let Some("hidden") = element_data.attr(local_name!("type")) {
-                            node.style.display = Display::None;
-                            return taffy::LayoutOutput::HIDDEN;
+                        match element_data.attr(local_name!("type")) {
+                            // if the input type is hidden, hide it
+                            Some("hidden") => {
+                                node.style.display = Display::None;
+                                return taffy::LayoutOutput::HIDDEN;
+                            }
+                            Some("checkbox") => {
+                                return compute_leaf_layout(
+                                    inputs,
+                                    &node.style,
+                                    |_known_size, _available_space| {
+                                        let width = node
+                                            .style
+                                            .size
+                                            .width
+                                            .resolve_or_zero(inputs.parent_size.width);
+                                        let height = node
+                                            .style
+                                            .size
+                                            .height
+                                            .resolve_or_zero(inputs.parent_size.height);
+                                        let min_size = width.min(height);
+                                        taffy::Size {
+                                            width: min_size,
+                                            height: min_size,
+                                        }
+                                    },
+                                );
+                            }
+                            _ => {}
                         }
                     }
 

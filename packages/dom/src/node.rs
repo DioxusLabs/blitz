@@ -1,6 +1,7 @@
 use atomic_refcell::{AtomicRef, AtomicRefCell};
 use html5ever::{local_name, LocalName, QualName};
 use image::DynamicImage;
+use peniko::kurbo;
 use selectors::matching::QuirksMode;
 use slab::Slab;
 use std::cell::RefCell;
@@ -76,6 +77,7 @@ pub struct Node {
     pub unrounded_layout: Layout,
     pub final_layout: Layout,
     pub listeners: Vec<EventListener>,
+    pub scroll_offset: kurbo::Point,
 
     // Flags
     pub is_inline_root: bool,
@@ -108,6 +110,7 @@ impl Node {
             unrounded_layout: Layout::new(),
             final_layout: Layout::new(),
             listeners: Default::default(),
+            scroll_offset: kurbo::Point::ZERO,
             is_inline_root: false,
             is_table_root: false,
         }
@@ -781,11 +784,15 @@ impl Node {
     /// TODO: z-index
     /// (If multiple children are positioned at the position then a random one will be recursed into)
     pub fn hit(&self, x: f32, y: f32) -> Option<HitResult> {
-        let x = x - self.final_layout.location.x;
-        let y = y - self.final_layout.location.y;
+        let x = x - self.final_layout.location.x + self.scroll_offset.x as f32;
+        let y = y - self.final_layout.location.y + self.scroll_offset.y as f32;
 
         let size = self.final_layout.size;
-        if x < 0.0 || x > size.width || y < 0.0 || y > size.height {
+        if x < 0.0
+            || x > size.width + self.scroll_offset.x as f32
+            || y < 0.0
+            || y > size.height + self.scroll_offset.y as f32
+        {
             return None;
         }
 

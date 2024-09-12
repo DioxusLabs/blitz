@@ -39,7 +39,7 @@ fn main() {
                 .tagfilter(false)
                 .table(true)
                 .autolink(true)
-                .tasklist(false)
+                .tasklist(true)
                 .superscript(false)
                 .header_ids(None)
                 .footnotes(false)
@@ -68,6 +68,8 @@ fn main() {
     "#,
         body_html
     );
+
+    println!("{html}");
 
     dioxus_blitz::launch_static_html_cfg(
         &html,

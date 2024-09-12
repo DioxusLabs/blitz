@@ -24,7 +24,6 @@ use style::{
             Percentage,
         },
         generics::{
-            color::Color as StyloColor,
             image::{
                 EndingShape, GenericGradient, GenericGradientItem, GenericImage, GradientFlags,
             },
@@ -41,7 +40,14 @@ use style::{
 
 use image::{imageops::FilterType, DynamicImage};
 use parley::layout::PositionedLayoutItem;
+use style::values::generics::color::GenericColor;
+use style::values::generics::image::{
+    GenericCircle, GenericEllipse, GenericEndingShape, ShapeExtent,
+};
+use style::values::specified::percentage::ToPercentage;
 use taffy::prelude::Layout;
+use vello::kurbo::{BezPath, Cap, Join};
+use vello::peniko::Gradient;
 use vello::{
     kurbo::{Affine, Point, Rect, Shape, Stroke, Vec2},
     peniko::{self, Brush, Color, Fill, Mix},
@@ -73,7 +79,6 @@ pub fn generate_vello_scene(
         dom,
         scale,
         devtools: devtool_config,
-        scroll_offset: dom.scroll_offset,
     };
     generator.generate_vello_scene(scene);
 
@@ -92,7 +97,6 @@ pub struct VelloSceneGenerator<'dom> {
     dom: &'dom Document,
     scale: f64,
     devtools: Devtools,
-    scroll_offset: f64,
 }
 
 impl<'dom> VelloSceneGenerator<'dom> {
@@ -115,12 +119,13 @@ impl<'dom> VelloSceneGenerator<'dom> {
     pub fn generate_vello_scene(&self, scene: &mut Scene) {
         // Simply render the document (the root element (note that this is not the same as the root node)))
         scene.reset();
+        let viewport_scroll = self.dom.as_ref().viewport_scroll();
         self.render_element(
             scene,
             self.dom.as_ref().root_element().id,
             Point {
-                x: 0.0,
-                y: self.scroll_offset,
+                x: -viewport_scroll.x,
+                y: -viewport_scroll.y,
             },
         );
 
@@ -165,8 +170,6 @@ impl<'dom> VelloSceneGenerator<'dom> {
             abs_x += x;
             abs_y += y;
         }
-
-        abs_y += self.scroll_offset as f32;
 
         // Hack: scale factor
         let abs_x = f64::from(abs_x) * scale;
@@ -316,8 +319,10 @@ impl<'dom> VelloSceneGenerator<'dom> {
 
         // TODO: account for overflow_x vs overflow_y
         let styles = &element.primary_styles().unwrap();
-        let overflow = styles.get_box().overflow_x;
-        let should_clip = !matches!(overflow, Overflow::Visible);
+        let overflow_x = styles.get_box().overflow_x;
+        let overflow_y = styles.get_box().overflow_y;
+        let should_clip =
+            !matches!(overflow_x, Overflow::Visible) || !matches!(overflow_y, Overflow::Visible);
         let clips_available = CLIPS_USED.load(atomic::Ordering::SeqCst) <= CLIP_LIMIT;
 
         // Apply padding/border offset to inline root
@@ -356,14 +361,31 @@ impl<'dom> VelloSceneGenerator<'dom> {
             CLIP_DEPTH_USED.fetch_max(depth, atomic::Ordering::SeqCst);
         }
 
-        let cx = self.element_cx(element, location);
+        let mut cx = self.element_cx(element, location);
         cx.stroke_effects(scene);
         cx.stroke_outline(scene);
+        cx.draw_outset_box_shadow(scene);
         cx.stroke_frame(scene);
+        cx.draw_inset_box_shadow(scene);
         cx.stroke_border(scene);
         cx.stroke_devtools(scene);
+
+        // Now that background has been drawn, offset pos and cx in order to draw our contents scrolled
+        let pos = Point {
+            x: pos.x - element.scroll_offset.x,
+            y: pos.y - element.scroll_offset.y,
+        };
+        cx.pos = Point {
+            x: cx.pos.x - element.scroll_offset.x,
+            y: cx.pos.y - element.scroll_offset.y,
+        };
+        cx.transform = cx.transform.then_translate(Vec2 {
+            x: -element.scroll_offset.x,
+            y: -element.scroll_offset.y,
+        });
         cx.draw_image(scene);
         cx.draw_svg(scene);
+        cx.draw_input(scene);
 
         // Render the text in text inputs
         if let Some(input_data) = cx.text_input {
@@ -457,7 +479,7 @@ impl<'dom> VelloSceneGenerator<'dom> {
         }
     }
 
-    fn element_cx<'w>(&'w self, element: &'w Node, location: Point) -> ElementCx {
+    fn element_cx<'w>(&'w self, element: &'w Node, location: Point) -> ElementCx<'w> {
         let style = element
             .stylo_element_data
             .borrow()
@@ -707,8 +729,8 @@ impl ElementCx<'_> {
 
         // Draw background color (if any)
         self.draw_solid_frame(scene);
-
-        for segment in &self.style.get_background().background_image.0 {
+        let segments = &self.style.get_background().background_image.0;
+        for segment in segments.iter().rev() {
             match segment {
                 None => {
                     // Do nothing
@@ -749,10 +771,10 @@ impl ElementCx<'_> {
             GenericGradient::Linear {
                 direction,
                 items,
-                // repeating,
+                flags,
                 // compat_mode,
                 ..
-            } => self.draw_linear_gradient(scene, direction, items),
+            } => self.draw_linear_gradient(scene, direction, items, *flags),
             GenericGradient::Radial {
                 shape,
                 position,
@@ -776,6 +798,7 @@ impl ElementCx<'_> {
         scene: &mut Scene,
         direction: &LineDirection,
         items: &GradientSlice,
+        flags: GradientFlags,
     ) {
         let bb = self.frame.outer_rect.bounding_box();
 
@@ -784,20 +807,11 @@ impl ElementCx<'_> {
         let rect = self.frame.inner_rect;
         let (start, end) = match direction {
             LineDirection::Angle(angle) => {
-                let start = Point::new(
-                    self.frame.inner_rect.x0 + rect.width() / 2.0,
-                    self.frame.inner_rect.y0,
-                );
-                let end = Point::new(
-                    self.frame.inner_rect.x0 + rect.width() / 2.0,
-                    self.frame.inner_rect.y1,
-                );
-
-                // rotate the lind around the center
-                let line = Affine::rotate_about(-angle.radians64(), center)
-                    * vello::kurbo::Line::new(start, end);
-
-                (line.p0, line.p1)
+                let angle = -angle.radians64() + std::f64::consts::PI;
+                let offset_length = rect.width() / 2.0 * angle.sin().abs()
+                    + rect.height() / 2.0 * angle.cos().abs();
+                let offset_vec = Vec2::new(angle.sin(), angle.cos()) * offset_length;
+                (center - offset_vec, center + offset_vec)
             }
             LineDirection::Horizontal(horizontal) => {
                 let start = Point::new(
@@ -847,40 +861,63 @@ impl ElementCx<'_> {
                 (Point::new(start_x, start_y), Point::new(end_x, end_y))
             }
         };
-        let mut gradient = peniko::Gradient {
-            kind: peniko::GradientKind::Linear { start, end },
-            extend: Default::default(),
-            stops: Default::default(),
-        };
 
+        let gradient_length = CSSPixelLength::new((start.distance(end) / self.scale) as f32);
+        let repeating = flags.contains(GradientFlags::REPEATING);
+
+        let mut gradient = peniko::Gradient::new_linear(start, end).with_extend(if repeating {
+            peniko::Extend::Repeat
+        } else {
+            peniko::Extend::Pad
+        });
+
+        let (first_offset, last_offset) =
+            Self::resolve_length_color_stops(items, gradient_length, &mut gradient, repeating);
+        if repeating && gradient.stops.len() > 1 {
+            gradient.kind = peniko::GradientKind::Linear {
+                start: start + (end - start) * first_offset as f64,
+                end: end + (start - end) * (1.0 - last_offset) as f64,
+            };
+        }
+        let brush = peniko::BrushRef::Gradient(&gradient);
+        scene.fill(peniko::Fill::NonZero, self.transform, brush, None, &shape);
+    }
+
+    #[inline]
+    fn resolve_color_stops<T>(
+        items: &OwnedSlice<GenericGradientItem<GenericColor<Percentage>, T>>,
+        gradient_length: CSSPixelLength,
+        gradient: &mut Gradient,
+        repeating: bool,
+        item_resolver: impl Fn(CSSPixelLength, &T) -> Option<f32>,
+    ) -> (f32, f32) {
         let mut hint: Option<f32> = None;
 
         for (idx, item) in items.iter().enumerate() {
             let (color, offset) = match item {
                 GenericGradientItem::SimpleColorStop(color) => {
                     let step = 1.0 / (items.len() as f32 - 1.0);
-                    let offset = step * idx as f32;
-                    let color = color.as_vello();
-                    (color, offset)
+                    (color.as_vello(), step * idx as f32)
                 }
                 GenericGradientItem::ComplexColorStop { color, position } => {
-                    match position.to_percentage().map(|pos| pos.0) {
-                        Some(offset) => {
-                            let color = color.as_vello();
-                            (color, offset)
-                        }
-                        // TODO: implement absolute and calc stops
-                        None => continue,
+                    let offset = item_resolver(gradient_length, position);
+                    if let Some(offset) = offset {
+                        (color.as_vello(), offset)
+                    } else {
+                        continue;
                     }
                 }
                 GenericGradientItem::InterpolationHint(position) => {
-                    hint = match position.to_percentage() {
-                        Some(Percentage(percentage)) => Some(percentage),
-                        _ => None,
-                    };
+                    hint = item_resolver(gradient_length, position);
                     continue;
                 }
             };
+
+            if idx == 0 && !repeating && offset != 0.0 {
+                gradient
+                    .stops
+                    .push(peniko::ColorStop { color, offset: 0.0 });
+            }
 
             match hint {
                 None => gradient.stops.push(peniko::ColorStop { color, offset }),
@@ -917,37 +954,214 @@ impl ElementCx<'_> {
                     } else if hint == (last_stop.offset + offset) / 2.0 {
                         gradient.stops.push(peniko::ColorStop { color, offset });
                     } else {
-                        let mid_offset = last_stop.offset * (1.0 - hint) + offset * hint;
-                        let multiplier = hint.powf(0.5f32.log(mid_offset));
-                        let mid_color = Color::rgba8(
-                            (last_stop.color.r as f32
-                                + multiplier * (color.r as f32 - last_stop.color.r as f32))
-                                as u8,
-                            (last_stop.color.g as f32
-                                + multiplier * (color.g as f32 - last_stop.color.g as f32))
-                                as u8,
-                            (last_stop.color.b as f32
-                                + multiplier * (color.b as f32 - last_stop.color.b as f32))
-                                as u8,
-                            (last_stop.color.a as f32
-                                + multiplier * (color.a as f32 - last_stop.color.a as f32))
-                                as u8,
-                        );
-                        tracing::info!("Gradient stop {:?}", mid_color);
-                        gradient.stops.push(peniko::ColorStop {
-                            color: mid_color,
-                            offset: mid_offset,
-                        });
+                        let mid_point = (hint - last_stop.offset) / (offset - last_stop.offset);
+                        let mut interpolate_stop = |cur_offset: f32| {
+                            let relative_offset =
+                                (cur_offset - last_stop.offset) / (offset - last_stop.offset);
+                            let multiplier = relative_offset.powf(0.5f32.log(mid_point));
+                            let color = Color::rgba8(
+                                (last_stop.color.r as f32
+                                    + multiplier * (color.r as f32 - last_stop.color.r as f32))
+                                    as u8,
+                                (last_stop.color.g as f32
+                                    + multiplier * (color.g as f32 - last_stop.color.g as f32))
+                                    as u8,
+                                (last_stop.color.b as f32
+                                    + multiplier * (color.b as f32 - last_stop.color.b as f32))
+                                    as u8,
+                                (last_stop.color.a as f32
+                                    + multiplier * (color.a as f32 - last_stop.color.a as f32))
+                                    as u8,
+                            );
+                            gradient.stops.push(peniko::ColorStop {
+                                color,
+                                offset: cur_offset,
+                            });
+                        };
+                        if mid_point > 0.5 {
+                            for i in 0..7 {
+                                interpolate_stop(
+                                    last_stop.offset
+                                        + (hint - last_stop.offset) * (7.0 + i as f32) / 13.0,
+                                );
+                            }
+                            interpolate_stop(hint + (offset - hint) / 3.0);
+                            interpolate_stop(hint + (offset - hint) * 2.0 / 3.0);
+                        } else {
+                            interpolate_stop(last_stop.offset + (hint - last_stop.offset) / 3.0);
+                            interpolate_stop(
+                                last_stop.offset + (hint - last_stop.offset) * 2.0 / 3.0,
+                            );
+                            for i in 0..7 {
+                                interpolate_stop(hint + (offset - hint) * (i as f32) / 13.0);
+                            }
+                        }
                         gradient.stops.push(peniko::ColorStop { color, offset });
                     }
                 }
             }
         }
-        let brush = peniko::BrushRef::Gradient(&gradient);
-        scene.fill(peniko::Fill::NonZero, self.transform, brush, None, &shape);
+
+        // Post-process the stops for repeating gradients
+        if repeating && gradient.stops.len() > 1 {
+            let first_offset = gradient.stops.first().unwrap().offset;
+            let last_offset = gradient.stops.last().unwrap().offset;
+            if first_offset != 0.0 || last_offset != 1.0 {
+                let scale_inv = 1e-7_f32.max(1.0 / (last_offset - first_offset));
+                for stop in &mut gradient.stops {
+                    stop.offset = (stop.offset - first_offset) * scale_inv;
+                }
+            }
+            (first_offset, last_offset)
+        } else {
+            (0.0, 1.0)
+        }
+    }
+
+    #[inline]
+    fn resolve_length_color_stops(
+        items: &OwnedSlice<GenericGradientItem<GenericColor<Percentage>, LengthPercentage>>,
+        gradient_length: CSSPixelLength,
+        gradient: &mut Gradient,
+        repeating: bool,
+    ) -> (f32, f32) {
+        Self::resolve_color_stops(
+            items,
+            gradient_length,
+            gradient,
+            repeating,
+            |gradient_length: CSSPixelLength, position: &LengthPercentage| -> Option<f32> {
+                position
+                    .to_percentage_of(gradient_length)
+                    .map(|percentage| percentage.to_percentage())
+            },
+        )
+    }
+
+    #[inline]
+    fn resolve_angle_color_stops(
+        items: &OwnedSlice<GenericGradientItem<GenericColor<Percentage>, AngleOrPercentage>>,
+        gradient_length: CSSPixelLength,
+        gradient: &mut Gradient,
+        repeating: bool,
+    ) -> (f32, f32) {
+        Self::resolve_color_stops(
+            items,
+            gradient_length,
+            gradient,
+            repeating,
+            |_gradient_length: CSSPixelLength, position: &AngleOrPercentage| -> Option<f32> {
+                match position {
+                    AngleOrPercentage::Angle(angle) => {
+                        Some(angle.radians() / (std::f64::consts::PI * 2.0) as f32)
+                    }
+                    AngleOrPercentage::Percentage(percentage) => Some(percentage.to_percentage()),
+                }
+            },
+        )
     }
 
     // fn draw_image_frame(&self, scene: &mut Scene) {}
+
+    fn draw_outset_box_shadow(&self, scene: &mut Scene) {
+        let box_shadow = &self.style.get_effects().box_shadow.0;
+
+        // TODO: Only apply clip if element has transparency
+        let has_outset_shadow = box_shadow.iter().any(|s| !s.inset);
+        if has_outset_shadow {
+            CLIPS_WANTED.fetch_add(1, atomic::Ordering::SeqCst);
+            let clips_available = CLIPS_USED.load(atomic::Ordering::SeqCst) <= CLIP_LIMIT;
+            if clips_available {
+                scene.push_layer(Mix::Clip, 1.0, self.transform, &self.frame.shadow_clip());
+                CLIPS_USED.fetch_add(1, atomic::Ordering::SeqCst);
+                let depth = CLIP_DEPTH.fetch_add(1, atomic::Ordering::SeqCst) + 1;
+                CLIP_DEPTH_USED.fetch_max(depth, atomic::Ordering::SeqCst);
+            }
+        }
+
+        for shadow in box_shadow.iter().filter(|s| !s.inset) {
+            let shadow_color = shadow.base.color.as_vello();
+            if shadow_color != Color::TRANSPARENT {
+                let transform = self.transform.then_translate(Vec2 {
+                    x: shadow.base.horizontal.px() as f64,
+                    y: shadow.base.vertical.px() as f64,
+                });
+
+                //TODO draw shadows with matching individual radii instead of averaging
+                let radius = (self.frame.border_top_left_radius_height
+                    + self.frame.border_bottom_left_radius_width
+                    + self.frame.border_bottom_left_radius_height
+                    + self.frame.border_bottom_left_radius_width
+                    + self.frame.border_bottom_right_radius_height
+                    + self.frame.border_bottom_right_radius_width
+                    + self.frame.border_top_right_radius_height
+                    + self.frame.border_top_right_radius_width)
+                    / 8.0;
+
+                // Fill the color
+                scene.draw_blurred_rounded_rect(
+                    transform,
+                    self.frame.outer_rect,
+                    shadow_color,
+                    radius,
+                    shadow.base.blur.px() as f64,
+                );
+            }
+        }
+
+        if has_outset_shadow {
+            scene.pop_layer();
+            CLIP_DEPTH.fetch_sub(1, atomic::Ordering::SeqCst);
+        }
+    }
+
+    fn draw_inset_box_shadow(&self, scene: &mut Scene) {
+        let box_shadow = &self.style.get_effects().box_shadow.0;
+        let has_inset_shadow = box_shadow.iter().any(|s| s.inset);
+        if has_inset_shadow {
+            CLIPS_WANTED.fetch_add(1, atomic::Ordering::SeqCst);
+            let clips_available = CLIPS_USED.load(atomic::Ordering::SeqCst) <= CLIP_LIMIT;
+            if clips_available {
+                scene.push_layer(Mix::Clip, 1.0, self.transform, &self.frame.frame());
+                CLIPS_USED.fetch_add(1, atomic::Ordering::SeqCst);
+                let depth = CLIP_DEPTH.fetch_add(1, atomic::Ordering::SeqCst) + 1;
+                CLIP_DEPTH_USED.fetch_max(depth, atomic::Ordering::SeqCst);
+            }
+        }
+        for shadow in box_shadow.iter().filter(|s| s.inset) {
+            let shadow_color = shadow.base.color.as_vello();
+            if shadow_color != Color::TRANSPARENT {
+                let transform = self.transform.then_translate(Vec2 {
+                    x: shadow.base.horizontal.px() as f64,
+                    y: shadow.base.vertical.px() as f64,
+                });
+
+                //TODO draw shadows with matching individual radii instead of averaging
+                let radius = (self.frame.border_top_left_radius_height
+                    + self.frame.border_bottom_left_radius_width
+                    + self.frame.border_bottom_left_radius_height
+                    + self.frame.border_bottom_left_radius_width
+                    + self.frame.border_bottom_right_radius_height
+                    + self.frame.border_bottom_right_radius_width
+                    + self.frame.border_top_right_radius_height
+                    + self.frame.border_top_right_radius_width)
+                    / 8.0;
+
+                // Fill the color
+                scene.draw_blurred_rounded_rect(
+                    transform,
+                    self.frame.outer_rect,
+                    shadow_color,
+                    radius,
+                    shadow.base.blur.px() as f64,
+                );
+            }
+        }
+        if has_inset_shadow {
+            scene.pop_layer();
+            CLIP_DEPTH.fetch_sub(1, atomic::Ordering::SeqCst);
+        }
+    }
 
     fn draw_solid_frame(&self, scene: &mut Scene) {
         let background_color = &self.style.get_background().background_color;
@@ -1090,23 +1304,253 @@ impl ElementCx<'_> {
 
     fn draw_radial_gradient(
         &self,
-        _scene: &mut Scene,
-        _shape: &EndingShape<NonNegative<CSSPixelLength>, NonNegative<LengthPercentage>>,
-        _position: &GenericPosition<LengthPercentage, LengthPercentage>,
-        _items: &OwnedSlice<GenericGradientItem<StyloColor<Percentage>, LengthPercentage>>,
-        _flags: GradientFlags,
+        scene: &mut Scene,
+        shape: &EndingShape<NonNegative<CSSPixelLength>, NonNegative<LengthPercentage>>,
+        position: &GenericPosition<LengthPercentage, LengthPercentage>,
+        items: &OwnedSlice<GenericGradientItem<GenericColor<Percentage>, LengthPercentage>>,
+        flags: GradientFlags,
     ) {
-        unimplemented!()
+        let bez_path = self.frame.frame();
+        let rect = self.frame.inner_rect;
+        let repeating = flags.contains(GradientFlags::REPEATING);
+
+        let mut gradient =
+            peniko::Gradient::new_radial((0.0, 0.0), 1.0).with_extend(if repeating {
+                peniko::Extend::Repeat
+            } else {
+                peniko::Extend::Pad
+            });
+
+        let (width_px, height_px) = (
+            position
+                .horizontal
+                .resolve(CSSPixelLength::new(rect.width() as f32))
+                .px() as f64,
+            position
+                .vertical
+                .resolve(CSSPixelLength::new(rect.height() as f32))
+                .px() as f64,
+        );
+
+        let gradient_scale: Option<Vec2> = match shape {
+            GenericEndingShape::Circle(circle) => {
+                let scale = match circle {
+                    GenericCircle::Extent(extent) => match extent {
+                        ShapeExtent::FarthestSide => width_px
+                            .max(rect.width() - width_px)
+                            .max(height_px.max(rect.height() - height_px)),
+                        ShapeExtent::ClosestSide => width_px
+                            .min(rect.width() - width_px)
+                            .min(height_px.min(rect.height() - height_px)),
+                        ShapeExtent::FarthestCorner => {
+                            (width_px.max(rect.width() - width_px)
+                                + height_px.max(rect.height() - height_px))
+                                * 0.5_f64.sqrt()
+                        }
+                        ShapeExtent::ClosestCorner => {
+                            (width_px.min(rect.width() - width_px)
+                                + height_px.min(rect.height() - height_px))
+                                * 0.5_f64.sqrt()
+                        }
+                        _ => 0.0,
+                    },
+                    GenericCircle::Radius(radius) => radius.0.px() as f64,
+                };
+                Some(Vec2::new(scale, scale))
+            }
+            GenericEndingShape::Ellipse(ellipse) => match ellipse {
+                GenericEllipse::Extent(extent) => match extent {
+                    ShapeExtent::FarthestCorner | ShapeExtent::FarthestSide => {
+                        let mut scale = Vec2::new(
+                            width_px.max(rect.width() - width_px),
+                            height_px.max(rect.height() - height_px),
+                        );
+                        if *extent == ShapeExtent::FarthestCorner {
+                            scale *= 2.0_f64.sqrt();
+                        }
+                        Some(scale)
+                    }
+                    ShapeExtent::ClosestCorner | ShapeExtent::ClosestSide => {
+                        let mut scale = Vec2::new(
+                            width_px.min(rect.width() - width_px),
+                            height_px.min(rect.height() - height_px),
+                        );
+                        if *extent == ShapeExtent::ClosestCorner {
+                            scale *= 2.0_f64.sqrt();
+                        }
+                        Some(scale)
+                    }
+                    _ => None,
+                },
+                GenericEllipse::Radii(x, y) => Some(Vec2::new(
+                    x.0.resolve(CSSPixelLength::new(rect.width() as f32)).px() as f64,
+                    y.0.resolve(CSSPixelLength::new(rect.height() as f32)).px() as f64,
+                )),
+            },
+        };
+
+        let gradient_transform = {
+            // If the gradient has no valid scale, we don't need to calculate the color stops
+            if let Some(gradient_scale) = gradient_scale {
+                let (first_offset, last_offset) = Self::resolve_length_color_stops(
+                    items,
+                    CSSPixelLength::new(gradient_scale.x as f32),
+                    &mut gradient,
+                    repeating,
+                );
+                let scale = if repeating && gradient.stops.len() >= 2 {
+                    (last_offset - first_offset) as f64
+                } else {
+                    1.0
+                };
+                Some(
+                    Affine::scale_non_uniform(gradient_scale.x * scale, gradient_scale.y * scale)
+                        .then_translate(self.get_translation(position, rect)),
+                )
+            } else {
+                None
+            }
+        };
+
+        let brush = peniko::BrushRef::Gradient(&gradient);
+        scene.fill(
+            peniko::Fill::NonZero,
+            self.transform,
+            brush,
+            gradient_transform,
+            &bez_path,
+        );
     }
 
     fn draw_conic_gradient(
         &self,
-        _scene: &mut Scene,
-        _angle: &Angle,
-        _position: &GenericPosition<LengthPercentage, LengthPercentage>,
-        _items: &OwnedSlice<GenericGradientItem<StyloColor<Percentage>, AngleOrPercentage>>,
-        _flags: GradientFlags,
+        scene: &mut Scene,
+        angle: &Angle,
+        position: &GenericPosition<LengthPercentage, LengthPercentage>,
+        items: &OwnedSlice<GenericGradientItem<GenericColor<Percentage>, AngleOrPercentage>>,
+        flags: GradientFlags,
     ) {
-        unimplemented!()
+        let bez_path = self.frame.frame();
+        let rect = self.frame.inner_rect;
+
+        let repeating = flags.contains(GradientFlags::REPEATING);
+        let mut gradient = peniko::Gradient::new_sweep((0.0, 0.0), 0.0, std::f32::consts::PI * 2.0)
+            .with_extend(if repeating {
+                peniko::Extend::Repeat
+            } else {
+                peniko::Extend::Pad
+            });
+
+        let (first_offset, last_offset) = Self::resolve_angle_color_stops(
+            items,
+            CSSPixelLength::new(1.0),
+            &mut gradient,
+            repeating,
+        );
+        if repeating && gradient.stops.len() >= 2 {
+            gradient.kind = peniko::GradientKind::Sweep {
+                center: Point::new(0.0, 0.0),
+                start_angle: std::f32::consts::PI * 2.0 * first_offset,
+                end_angle: std::f32::consts::PI * 2.0 * last_offset,
+            };
+        }
+
+        let brush = peniko::BrushRef::Gradient(&gradient);
+
+        scene.fill(
+            peniko::Fill::NonZero,
+            self.transform,
+            brush,
+            Some(
+                Affine::rotate(angle.radians() as f64 - std::f64::consts::PI / 2.0)
+                    .then_translate(self.get_translation(position, rect)),
+            ),
+            &bez_path,
+        );
+    }
+
+    #[inline]
+    fn get_translation(
+        &self,
+        position: &GenericPosition<LengthPercentage, LengthPercentage>,
+        rect: Rect,
+    ) -> Vec2 {
+        Vec2::new(
+            self.frame.inner_rect.x0
+                + position
+                    .horizontal
+                    .resolve(CSSPixelLength::new(rect.width() as f32))
+                    .px() as f64,
+            self.frame.inner_rect.y0
+                + position
+                    .vertical
+                    .resolve(CSSPixelLength::new(rect.height() as f32))
+                    .px() as f64,
+        )
+    }
+
+    fn draw_input(&self, scene: &mut Scene) {
+        if self.element.local_name() == "input"
+            && matches!(self.element.attr(local_name!("type")), Some("checkbox"))
+        {
+            let checked = self.element.attr(local_name!("checked")).is_some();
+            let disabled = self.element.attr(local_name!("disabled")).is_some();
+
+            // TODO this should be coming from css accent-color, but I couldn't find how to retrieve it
+            let accent_color = if disabled {
+                peniko::Color {
+                    r: 209,
+                    g: 209,
+                    b: 209,
+                    a: 255,
+                }
+            } else {
+                self.style.get_inherited_text().color.as_vello()
+            };
+
+            let scale = (self
+                .frame
+                .outer_rect
+                .width()
+                .min(self.frame.outer_rect.height())
+                - 4.0)
+                .max(0.0)
+                / 16.0;
+
+            let frame = self.frame.outer_rect.to_rounded_rect(scale * 2.0);
+
+            if checked {
+                scene.fill(Fill::NonZero, self.transform, accent_color, None, &frame);
+
+                //Tick code derived from masonry
+                let mut path = BezPath::new();
+                path.move_to((2.0, 9.0));
+                path.line_to((6.0, 13.0));
+                path.line_to((14.0, 2.0));
+
+                path.apply_affine(Affine::translate(Vec2 { x: 2.0, y: 1.0 }).then_scale(scale));
+
+                let style = Stroke {
+                    width: 2.0 * scale,
+                    join: Join::Round,
+                    miter_limit: 10.0,
+                    start_cap: Cap::Round,
+                    end_cap: Cap::Round,
+                    dash_pattern: Default::default(),
+                    dash_offset: 0.0,
+                };
+
+                scene.stroke(&style, self.transform, Color::WHITE, None, &path);
+            } else {
+                scene.fill(Fill::NonZero, self.transform, Color::WHITE, None, &frame);
+                scene.stroke(
+                    &Stroke::default(),
+                    self.transform,
+                    accent_color,
+                    None,
+                    &frame,
+                );
+            }
+        }
     }
 }
