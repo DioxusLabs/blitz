@@ -400,6 +400,20 @@ impl ElementNodeData {
         }
     }
 
+    pub fn checkbox_input_checked(&self) -> Option<bool> {
+        match self.node_specific_data {
+            NodeSpecificData::CheckboxInput(checked) => Some(checked),
+            _ => None,
+        }
+    }
+
+    pub fn checkbox_input_checked_mut(&mut self) -> Option<&mut bool> {
+        match self.node_specific_data {
+            NodeSpecificData::CheckboxInput(ref mut checked) => Some(checked),
+            _ => None,
+        }
+    }
+
     pub fn flush_is_focussable(&mut self) {
         let disabled: bool = self.attr_parsed(local_name!("disabled")).unwrap_or(false);
         let tabindex: Option<i32> = self.attr_parsed(local_name!("tabindex"));
@@ -500,6 +514,8 @@ pub enum NodeSpecificData {
     TableRoot(Arc<TableContext>),
     /// Parley text editor (text inputs)
     TextInput(TextInputData),
+    /// Checkbox checked state
+    CheckboxInput(bool),
     /// No data (for nodes that don't need any node-specific data)
     None,
 }
@@ -511,6 +527,7 @@ impl std::fmt::Debug for NodeSpecificData {
             NodeSpecificData::Svg(_) => f.write_str("NodeSpecificData::Svg"),
             NodeSpecificData::TableRoot(_) => f.write_str("NodeSpecificData::TableRoot"),
             NodeSpecificData::TextInput(_) => f.write_str("NodeSpecificData::TextInput"),
+            NodeSpecificData::CheckboxInput(_) => f.write_str("NodeSpecificData::CheckboxInput"),
             NodeSpecificData::None => f.write_str("NodeSpecificData::None"),
         }
     }

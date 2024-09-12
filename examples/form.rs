@@ -20,11 +20,10 @@ fn app() -> Element {
                         id: "check1",
                         name: "check1",
                         value: "check1",
-                        checked: Some("").filter(|_| checkbox_checked()),
-                        oninput: move |ev| {
-                            dbg!(ev);
-                            checkbox_checked.set(!checkbox_checked());
-                        },
+                        checked: checkbox_checked(),
+                        // This works too
+                        // checked: "{checkbox_checked}",
+                        oninput: move |ev| checkbox_checked.set(!ev.checked()),
                     }
                     label {
                         r#for: "check1",
