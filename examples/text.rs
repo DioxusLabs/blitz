@@ -24,6 +24,8 @@ fn app() -> Element {
                         li { "Nested Item 2" }
                     }
                 }
+                li { "Item 3" }
+                li { "Item 4" }
             }
             ul {
                 class: "square",
@@ -39,6 +41,9 @@ fn app() -> Element {
 
 const CSS: &str = r#"
 #a {
+}
+ol {
+    list-style-type: upper-alpha;
 }
 ul.square {
     list-style-type: square;

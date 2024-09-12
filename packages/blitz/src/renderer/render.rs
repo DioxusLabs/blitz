@@ -272,7 +272,7 @@ impl<'dom> VelloSceneGenerator<'dom> {
         //  - background, border, font, margin, outline, padding,
         //
         // Not Implemented:
-        //  - list, position, table, text, ui,
+        //  - position, table, text, ui,
         //  - custom_properties, writing_mode, rules, visited_style, flags,  box_, column, counters, effects,
         //  - inherited_box, inherited_table, inherited_text, inherited_ui,
         let element = &self.dom.as_ref().tree()[node_id];
@@ -389,8 +389,9 @@ impl<'dom> VelloSceneGenerator<'dom> {
             position: ListItemLayoutPosition::Outside(layout),
         }) = cx.list_item
         {
+            //Right align and pad the bullet when rendering outside
             let pos = Point {
-                x: pos.x - 24.0,
+                x: pos.x - ((layout.full_width() + 16.0) / layout.scale()) as f64,
                 y: pos.y,
             };
             cx.stroke_text(scene, &layout, pos);
