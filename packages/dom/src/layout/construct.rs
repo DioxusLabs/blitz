@@ -9,6 +9,7 @@ use parley::{
 use slab::Slab;
 use style::{
     data::ElementData,
+    properties::longhands::list_style_position::computed_value::T as ListStylePosition,
     properties::longhands::list_style_type::computed_value::T as ListStyleType,
     shared_lock::StylesheetGuards,
     values::{
@@ -57,31 +58,19 @@ pub(crate) fn collect_layout_children(
         }
 
         //Check if we're displaying as a list container based on list-style-type property
-        if let Some(list_style_type) = doc.nodes[container_node_id]
-            .primary_styles()
-            .map(|style| style.get_list().list_style_type)
-        {
-            if list_style_type != ListStyleType::None {
-                //Only ol tags have start and reversed attributes
-                let (mut index, reversed) = if tag_name == "ol" {
-                    (
-                        el.attr_parsed(local_name!("start"))
-                            .map(|start: usize| start - 1)
-                            .unwrap_or(0),
-                        el.attr_parsed(local_name!("reversed")).unwrap_or(false),
-                    )
-                } else {
-                    (1, false)
-                };
-                collect_list_item_children(
-                    doc,
-                    &mut index,
-                    reversed,
-                    container_node_id,
-                    list_style_type,
-                );
-            }
-        }
+
+        //Only ol tags have start and reversed attributes
+        let (mut index, reversed) = if tag_name == "ol" {
+            (
+                el.attr_parsed(local_name!("start"))
+                    .map(|start: usize| start - 1)
+                    .unwrap_or(0),
+                el.attr_parsed(local_name!("reversed")).unwrap_or(false),
+            )
+        } else {
+            (1, false)
+        };
+        collect_list_item_children(doc, &mut index, reversed, container_node_id);
     }
 
     if doc.nodes[container_node_id].children.is_empty() {
@@ -233,32 +222,26 @@ fn collect_list_item_children(
     index: &mut usize,
     reversed: bool,
     node_id: usize,
-    list_style_type: ListStyleType,
 ) {
     let mut children = doc.nodes[node_id].children.clone();
     if reversed {
         children.reverse();
     }
     for child in children.into_iter() {
-        let list_item_child = node_list_item_child(doc, child, *index, list_style_type);
+        let list_item_child = node_list_item_child(doc, child, *index);
         if let Some(layout) = list_item_child.layout {
             let node = &mut doc.nodes[child];
             node.element_data_mut().unwrap().list_item_data = Some(Box::new(layout));
             *index += 1;
         }
         if !list_item_child.is_list_item_container {
-            collect_list_item_children(doc, index, reversed, child, list_style_type);
+            collect_list_item_children(doc, index, reversed, child);
         }
     }
 }
 
 // Return a child node which is of display: list-item
-fn node_list_item_child(
-    doc: &mut Document,
-    child: usize,
-    index: usize,
-    list_style_type: ListStyleType,
-) -> NodeListItemChild {
+fn node_list_item_child(doc: &mut Document, child: usize, index: usize) -> NodeListItemChild {
     let node = &doc.nodes[child];
 
     let is_list_item_container = node
@@ -271,58 +254,67 @@ fn node_list_item_child(
         })
         .unwrap_or(false);
 
-    if node
+    if !node
         .primary_styles()
         .is_some_and(|style| style.get_box().display.is_list_item())
     {
-        let marker = marker_for_style(list_style_type, index);
-        let position = if node
-            .primary_styles()
-            .unwrap()
-            .get_list()
-            .list_style_position
-            == style::properties::longhands::list_style_position::computed_value::T::Outside
-        {
-            let mut parley_style = node
-                .primary_styles()
-                .as_ref()
-                .map(|s| stylo_to_parley::style(s))
-                .unwrap_or_default();
-
-            if let Some(font_stack) = font_for_bullet_style(list_style_type) {
-                parley_style.font_stack = font_stack;
-            }
-
-            // Create a parley tree builder
-            let mut builder =
-                doc.layout_ctx
-                    .tree_builder(&mut doc.font_ctx, doc.viewport.scale(), &parley_style);
-
-            builder.push_text(&marker);
-
-            let mut layout = builder.build().0;
-
-            layout.break_all_lines(Some(0.0));
-
-            ListItemLayoutPosition::Outside(layout)
-        } else {
-            ListItemLayoutPosition::Inside
-        };
-        NodeListItemChild {
-            layout: Some(ListItemLayout { marker, position }),
-            is_list_item_container,
-        }
-    } else {
-        NodeListItemChild {
+        return NodeListItemChild {
             layout: None,
             is_list_item_container,
+        };
+    }
+
+    let styles = node.primary_styles().unwrap();
+    let list_style_type = styles.clone_list_style_type();
+    let list_style_position = styles.clone_list_style_position();
+
+    let Some(marker) = marker_for_style(list_style_type, index) else {
+        return NodeListItemChild {
+            layout: None,
+            is_list_item_container,
+        };
+    };
+
+    let position = if list_style_position == ListStylePosition::Outside {
+        let mut parley_style = node
+            .primary_styles()
+            .as_ref()
+            .map(|s| stylo_to_parley::style(s))
+            .unwrap_or_default();
+
+        if let Some(font_stack) = font_for_bullet_style(list_style_type) {
+            parley_style.font_stack = font_stack;
         }
+
+        // Create a parley tree builder
+        let mut builder =
+            doc.layout_ctx
+                .tree_builder(&mut doc.font_ctx, doc.viewport.scale(), &parley_style);
+
+        builder.push_text(&marker);
+
+        let mut layout = builder.build().0;
+
+        layout.break_all_lines(Some(0.0));
+
+        ListItemLayoutPosition::Outside(layout)
+    } else {
+        ListItemLayoutPosition::Inside
+    };
+
+    NodeListItemChild {
+        layout: Some(ListItemLayout { marker, position }),
+        is_list_item_container,
     }
 }
 
 // Determine the marker to render for a given list style type
-fn marker_for_style(list_style_type: ListStyleType, index: usize) -> String {
-    match list_style_type {
+fn marker_for_style(list_style_type: ListStyleType, index: usize) -> Option<String> {
+    if list_style_type == ListStyleType::None {
+        return None;
+    }
+
+    let kind = match list_style_type {
         ListStyleType::LowerAlpha => {
             let mut marker = String::new();
             build_alpha_marker(index, &mut marker);
@@ -338,7 +330,9 @@ fn marker_for_style(list_style_type: ListStyleType, index: usize) -> String {
         ListStyleType::Circle => "◦".to_string(),
         ListStyleType::Square => "▪".to_string(),
         _ => "□".to_string(),
-    }
+    };
+
+    Some(kind)
 }
 
 // Override the font to our specific bullet font when rendering bullets
