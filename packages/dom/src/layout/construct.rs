@@ -43,10 +43,16 @@ pub(crate) fn collect_layout_children(
                 create_text_editor(doc, container_node_id, false);
                 return;
             }
-        } else if tag_name == "ol" {
-            let mut start = el.attr_parsed(local_name!("start")).unwrap_or(0);
+        } else if matches!(tag_name, "ol" | "ul") {
+            let mut start = el.attr_parsed(local_name!("start")).unwrap_or(1);
             let reversed = el.attr_parsed(local_name!("reversed")).unwrap_or(false);
-            collect_list_item_children(doc, &mut start, reversed, container_node_id);
+            collect_list_item_children(
+                doc,
+                &mut start,
+                reversed,
+                container_node_id,
+                tag_name == "ol",
+            );
         }
     }
 
@@ -60,6 +66,8 @@ pub(crate) fn collect_layout_children(
             _ => Display::Inline,
         },
     );
+
+    dbg!(container_display.outside());
 
     match container_display.inside() {
         DisplayInside::None => {}
@@ -189,52 +197,25 @@ pub(crate) fn collect_layout_children(
     }
 }
 
-fn collect_list_item_children(doc: &mut Document, idx: &mut usize, reversed: bool, node_id: usize) {
+struct NodeListItemChild {
+    layout: Option<parley::Layout<TextBrush>>,
+    is_list_item_container: bool,
+}
+
+fn collect_list_item_children(
+    doc: &mut Document,
+    idx: &mut usize,
+    reversed: bool,
+    node_id: usize,
+    ordered: bool,
+) {
     let mut children = doc.nodes[node_id].children.clone();
     if reversed {
         children.reverse();
     }
     for child in children.into_iter() {
-        let (layout, is_list_item_container) = {
-            let node = &doc.nodes[child];
-
-            let is_list_item_container = node
-                .element_data()
-                .map(|element_data| {
-                    element_data.name.local == local_name!("ol")
-                        || element_data.name.local == local_name!("li")
-                })
-                .unwrap_or(false);
-
-            if node
-                .display_style()
-                .is_some_and(|style| style.is_list_item())
-            {
-                let node_style = node.primary_styles().or_else(|| {
-                    node.parent
-                        .and_then(|parent_id| doc.nodes[parent_id].primary_styles())
-                });
-
-                let parley_style = node_style
-                    .as_ref()
-                    .map(|s| stylo_to_parley::style(s))
-                    .unwrap_or_default();
-
-                // Create a parley tree builder
-                let mut builder = doc.layout_ctx.tree_builder(
-                    &mut doc.font_ctx,
-                    doc.viewport.scale(),
-                    &parley_style,
-                );
-
-                builder.push_text(&idx.to_string());
-
-                (Some(builder.build().0), is_list_item_container)
-            } else {
-                (None, is_list_item_container)
-            }
-        };
-        if let Some(layout) = layout {
+        let list_item_child = node_list_item_child(doc, child, idx, ordered);
+        if let Some(layout) = list_item_child.layout {
             let node = &mut doc.nodes[child];
             node.element_data_mut().unwrap().node_specific_data =
                 NodeSpecificData::ListItem(ListItemLayout {
@@ -243,8 +224,65 @@ fn collect_list_item_children(doc: &mut Document, idx: &mut usize, reversed: boo
                 });
             *idx += 1;
         }
-        if !is_list_item_container {
-            collect_list_item_children(doc, idx, reversed, child);
+        if !list_item_child.is_list_item_container {
+            collect_list_item_children(doc, idx, reversed, child, ordered);
+        }
+    }
+}
+
+fn node_list_item_child(
+    doc: &mut Document,
+    child: usize,
+    idx: &mut usize,
+    ordered: bool,
+) -> NodeListItemChild {
+    let node = &doc.nodes[child];
+
+    let is_list_item_container = node
+        .element_data()
+        .map(|element_data| {
+            element_data.name.local == local_name!("ol")
+                || element_data.name.local == local_name!("li")
+        })
+        .unwrap_or(false);
+
+    if node
+        .display_style()
+        .is_some_and(|style| style.is_list_item())
+    {
+        let node_style = node.primary_styles().or_else(|| {
+            node.parent
+                .and_then(|parent_id| doc.nodes[parent_id].primary_styles())
+        });
+
+        let parley_style = node_style
+            .as_ref()
+            .map(|s| stylo_to_parley::style(s))
+            .unwrap_or_default();
+
+        // Create a parley tree builder
+        let mut builder =
+            doc.layout_ctx
+                .tree_builder(&mut doc.font_ctx, doc.viewport.scale(), &parley_style);
+
+        builder.push_text(&if ordered {
+            idx.to_string()
+        } else {
+            "•".to_string()
+        });
+
+        let mut layout = builder.build().0;
+
+        layout.break_all_lines(Some(0.0));
+
+        NodeListItemChild {
+            layout: S.outside()ome(layout),
+            is_list_item_container,
+        }
+    } else {
+        NodeListItemChild {
+            layout: None,
+            is_list_item_container,
         }
     }
 }

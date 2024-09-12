@@ -383,9 +383,11 @@ impl<'dom> VelloSceneGenerator<'dom> {
                 );
             }
         } else if let Some(list_item_layout) = cx.list_item {
-            dbg!("Drawing marker");
+            let pos = Point {
+                x: pos.x - 24.0,
+                y: pos.y,
+            };
             cx.stroke_text(scene, &list_item_layout.marker_layout, pos);
-            // cx.draw_list_item(scene, list_item_layout, pos);
         }
 
         if element.is_inline_root {
@@ -506,8 +508,6 @@ struct ElementCx<'a> {
 }
 
 impl ElementCx<'_> {
-    fn draw_list_item(&self, scene: &mut Scene, list_item_layout: &ListItemLayout, pos: Point) {}
-
     fn stroke_text(&self, scene: &mut Scene, text_layout: &parley::Layout<TextBrush>, pos: Point) {
         let transform = Affine::translate((pos.x * self.scale, pos.y * self.scale));
 

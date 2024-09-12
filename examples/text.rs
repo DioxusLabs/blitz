@@ -26,4 +26,7 @@ fn app() -> Element {
 const CSS: &str = r#"
 #a {
 }
+ol {
+    list-style-position: inside;
+}
 "#;
