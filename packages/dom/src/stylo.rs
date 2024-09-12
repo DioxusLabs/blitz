@@ -418,6 +418,8 @@ impl<'a> selectors::Element for BlitzNode<'a> {
             NonTSPseudoClass::Disabled => false,
             NonTSPseudoClass::Enabled => false,
             NonTSPseudoClass::Focus => self.element_state.contains(ElementState::FOCUS),
+            NonTSPseudoClass::FocusWithin => false,
+            NonTSPseudoClass::FocusVisible => false,
             NonTSPseudoClass::Fullscreen => false,
             NonTSPseudoClass::Hover => self.element_state.contains(ElementState::HOVER),
             NonTSPseudoClass::Indeterminate => false,
@@ -437,6 +439,17 @@ impl<'a> selectors::Element for BlitzNode<'a> {
             NonTSPseudoClass::ServoNonZeroBorder => false,
             NonTSPseudoClass::Target => false,
             NonTSPseudoClass::Visited => false,
+            NonTSPseudoClass::Autofill => false,
+            NonTSPseudoClass::Default => false,
+
+            NonTSPseudoClass::InRange => false,
+            NonTSPseudoClass::Modal => false,
+            NonTSPseudoClass::Optional => false,
+            NonTSPseudoClass::OutOfRange => false,
+            NonTSPseudoClass::PopoverOpen => false,
+            NonTSPseudoClass::Required => false,
+            NonTSPseudoClass::UserInvalid => false,
+            NonTSPseudoClass::UserValid => false,
         }
     }
 
