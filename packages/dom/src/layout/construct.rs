@@ -343,7 +343,7 @@ fn marker_for_style(list_style_type: ListStyleType, index: usize) -> String {
 
 // Override the font to our specific bullet font when rendering bullets
 fn font_for_bullet_style(list_style_type: ListStyleType) -> Option<FontStack<'static>> {
-    let bullet_font = Some(FontStack::Source("monospace"));
+    let bullet_font = Some(FontStack::Source("Bullet, monospace, sans-serif"));
     match list_style_type {
         ListStyleType::Disc => bullet_font,
         ListStyleType::Circle => bullet_font,
