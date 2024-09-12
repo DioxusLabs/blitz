@@ -1,7 +1,11 @@
 use std::sync::Arc;
 
 use html5ever::{local_name, namespace_url, ns, QualName};
-use parley::{builder::TreeBuilder, style::WhiteSpaceCollapse, InlineBox};
+use parley::{
+    builder::TreeBuilder,
+    style::{FontFamily, FontStack, WhiteSpaceCollapse},
+    InlineBox,
+};
 use slab::Slab;
 use style::{
     data::ElementData,
@@ -58,7 +62,9 @@ pub(crate) fn collect_layout_children(
                 //Only ol tags have start and reversed attributes
                 let (mut index, reversed) = if tag_name == "ol" {
                     (
-                        el.attr_parsed(local_name!("start")).unwrap_or(1),
+                        el.attr_parsed(local_name!("start"))
+                            .map(|start: usize| start - 1)
+                            .unwrap_or(0),
                         el.attr_parsed(local_name!("reversed")).unwrap_or(false),
                     )
                 } else {
@@ -274,11 +280,15 @@ fn node_list_item_child(
             .list_style_position
             == style::properties::longhands::list_style_position::computed_value::T::Outside
         {
-            let parley_style = node
+            let mut parley_style = node
                 .primary_styles()
                 .as_ref()
                 .map(|s| stylo_to_parley::style(s))
                 .unwrap_or_default();
+
+            if let Some(font_stack) = font_for_bullet_style(list_style_type) {
+                parley_style.font_stack = font_stack;
+            }
 
             // Create a parley tree builder
             let mut builder =
@@ -307,14 +317,51 @@ fn node_list_item_child(
     }
 }
 
-//Determine the marker to render for a given list style type
+// Determine the marker to render for a given list style type
 fn marker_for_style(list_style_type: ListStyleType, index: usize) -> String {
     match list_style_type {
-        ListStyleType::Decimal => format!("{}. ", index),
+        ListStyleType::LowerAlpha => {
+            let mut marker = String::new();
+            build_alpha_marker(index, &mut marker);
+            format!("{}. ", marker)
+        }
+        ListStyleType::UpperAlpha => {
+            let mut marker = String::new();
+            build_alpha_marker(index, &mut marker);
+            format!("{}. ", marker.to_ascii_uppercase())
+        }
+        ListStyleType::Decimal => format!("{}. ", index + 1),
         ListStyleType::Disc => "•".to_string(),
         ListStyleType::Circle => "◦".to_string(),
         ListStyleType::Square => "▪".to_string(),
         _ => "□".to_string(),
+    }
+}
+
+// Override the font to our specific bullet font when rendering bullets
+fn font_for_bullet_style(list_style_type: ListStyleType) -> Option<FontStack<'static>> {
+    let bullet_font = Some(FontStack::Source("monospace"));
+    match list_style_type {
+        ListStyleType::Disc => bullet_font,
+        ListStyleType::Circle => bullet_font,
+        ListStyleType::Square => bullet_font,
+        _ => None,
+    }
+}
+
+const ALPHABET: [char; 26] = [
+    'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q', 'r', 's',
+    't', 'u', 'v', 'w', 'x', 'y', 'z',
+];
+
+// Construct alphanumeric marker from index, appending characters when index exceeds powers of 26
+fn build_alpha_marker(index: usize, str: &mut String) {
+    let rem = index % 26;
+    let sym = ALPHABET[rem];
+    str.insert(0, sym);
+    let rest = (index - rem) as i64 / 26 - 1;
+    if rest >= 0 {
+        build_alpha_marker(rest as usize, str);
     }
 }
 
@@ -467,7 +514,6 @@ pub(crate) fn build_inline_layout(
     builder.set_white_space_mode(collapse_mode);
 
     //Render position-inside list items
-    dbg!("Rendering text", &root_node.raw_dom_data);
     match root_node
         .element_data()
         .and_then(|el| el.list_item_data.as_deref())
