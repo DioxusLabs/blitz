@@ -57,8 +57,6 @@ pub(crate) fn collect_layout_children(
             }
         }
 
-        //Check if we're displaying as a list container based on list-style-type property
-
         //Only ol tags have start and reversed attributes
         let (mut index, reversed) = if tag_name == "ol" {
             (
@@ -212,11 +210,6 @@ pub(crate) fn collect_layout_children(
     }
 }
 
-struct NodeListItemChild {
-    layout: Option<ListItemLayout>,
-    is_list_item_container: bool,
-}
-
 fn collect_list_item_children(
     doc: &mut Document,
     index: &mut usize,
@@ -228,23 +221,29 @@ fn collect_list_item_children(
         children.reverse();
     }
     for child in children.into_iter() {
-        let list_item_child = node_list_item_child(doc, child, *index);
-        if let Some(layout) = list_item_child.layout {
+        if let Some(layout) = node_list_item_child(doc, child, *index) {
             let node = &mut doc.nodes[child];
             node.element_data_mut().unwrap().list_item_data = Some(Box::new(layout));
             *index += 1;
-        }
-        if !list_item_child.is_list_item_container {
             collect_list_item_children(doc, index, reversed, child);
         }
     }
 }
 
 // Return a child node which is of display: list-item
-fn node_list_item_child(doc: &mut Document, child: usize, index: usize) -> NodeListItemChild {
+fn node_list_item_child(doc: &mut Document, child: usize, index: usize) -> Option<ListItemLayout> {
     let node = &doc.nodes[child];
 
-    let is_list_item_container = node
+    // We only care about elements with display: list-item (li's have this automatically)
+    if !node
+        .primary_styles()
+        .is_some_and(|style| style.get_box().display.is_list_item())
+    {
+        return None;
+    }
+
+    //Break on container elements when already in a list
+    if node
         .element_data()
         .map(|element_data| {
             matches!(
@@ -252,27 +251,17 @@ fn node_list_item_child(doc: &mut Document, child: usize, index: usize) -> NodeL
                 local_name!("ol") | local_name!("ul"),
             )
         })
-        .unwrap_or(false);
-
-    if !node
-        .primary_styles()
-        .is_some_and(|style| style.get_box().display.is_list_item())
+        .unwrap_or(false)
     {
-        return NodeListItemChild {
-            layout: None,
-            is_list_item_container,
-        };
-    }
+        return None;
+    };
 
     let styles = node.primary_styles().unwrap();
     let list_style_type = styles.clone_list_style_type();
     let list_style_position = styles.clone_list_style_position();
 
     let Some(marker) = marker_for_style(list_style_type, index) else {
-        return NodeListItemChild {
-            layout: None,
-            is_list_item_container,
-        };
+        return None;
     };
 
     let position = if list_style_position == ListStylePosition::Outside {
@@ -302,10 +291,7 @@ fn node_list_item_child(doc: &mut Document, child: usize, index: usize) -> NodeL
         ListItemLayoutPosition::Inside
     };
 
-    NodeListItemChild {
-        layout: Some(ListItemLayout { marker, position }),
-        is_list_item_container,
-    }
+    Some(ListItemLayout { marker, position })
 }
 
 // Determine the marker to render for a given list style type

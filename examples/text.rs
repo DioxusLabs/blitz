@@ -26,6 +26,10 @@ fn app() -> Element {
                 }
                 li { "Item 3" }
                 li { "Item 4" }
+                ul {
+                    li { "Sub 1" }
+                    li { "Sub 2" }
+                }
             }
             ul {
                 class: "square",
