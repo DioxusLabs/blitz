@@ -1,15 +1,17 @@
-use crate::node::{Attribute, ElementNodeData, Node, NodeData};
 use crate::util::{CssHandler, ImageHandler, Resource};
+use std::borrow::Cow;
+use std::cell::{Cell, Ref, RefCell, RefMut};
+use std::collections::HashSet;
+
+use crate::node::{Attribute, ElementNodeData, Node, NodeData};
 use crate::Document;
 use blitz_traits::net::SharedProvider;
 use html5ever::local_name;
 use html5ever::{
     tendril::{StrTendril, TendrilSink},
     tree_builder::{ElementFlags, NodeOrText, QuirksMode, TreeSink},
-    ExpandedName, QualName,
+    QualName,
 };
-use std::borrow::Cow;
-use std::collections::HashSet;
 
 /// Convert an html5ever Attribute which uses tendril for its value to a blitz Attribute
 /// which uses String.
@@ -21,15 +23,15 @@ fn html5ever_to_blitz_attr(attr: html5ever::Attribute) -> Attribute {
 }
 
 pub struct DocumentHtmlParser<'a> {
-    doc: &'a mut Document,
+    doc: RefCell<&'a mut Document>,
 
-    style_nodes: Vec<usize>,
+    style_nodes: RefCell<Vec<usize>>,
 
     /// Errors that occurred during parsing.
-    pub errors: Vec<Cow<'static, str>>,
+    pub errors: RefCell<Vec<Cow<'static, str>>>,
 
     /// The document's quirks mode.
-    pub quirks_mode: QuirksMode,
+    pub quirks_mode: Cell<QuirksMode>,
 
     net_provider: SharedProvider<Resource>,
 }
@@ -37,10 +39,10 @@ pub struct DocumentHtmlParser<'a> {
 impl<'a> DocumentHtmlParser<'a> {
     pub fn new(doc: &mut Document, net_provider: SharedProvider<Resource>) -> DocumentHtmlParser {
         DocumentHtmlParser {
-            doc,
-            style_nodes: Vec::new(),
-            errors: Vec::new(),
-            quirks_mode: QuirksMode::NoQuirks,
+            doc: RefCell::new(doc),
+            style_nodes: RefCell::new(Vec::new()),
+            errors: RefCell::new(Vec::new()),
+            quirks_mode: Cell::new(QuirksMode::NoQuirks),
             net_provider,
         }
     }
@@ -57,27 +59,27 @@ impl<'a> DocumentHtmlParser<'a> {
             .unwrap()
     }
 
-    fn create_node(&mut self, node_data: NodeData) -> usize {
-        self.doc.create_node(node_data)
+    fn create_node(&self, node_data: NodeData) -> usize {
+        self.doc.borrow_mut().create_node(node_data)
     }
 
-    fn create_text_node(&mut self, text: &str) -> usize {
-        self.doc.create_text_node(text)
+    fn create_text_node(&self, text: &str) -> usize {
+        self.doc.borrow_mut().create_text_node(text)
     }
 
-    fn node(&self, id: usize) -> &Node {
-        &self.doc.nodes[id]
+    fn node(&self, id: usize) -> Ref<Node> {
+        Ref::map(self.doc.borrow(), |doc| &doc.nodes[id])
     }
 
-    fn node_mut(&mut self, id: usize) -> &mut Node {
-        &mut self.doc.nodes[id]
+    fn node_mut(&self, id: usize) -> RefMut<Node> {
+        RefMut::map(self.doc.borrow_mut(), |doc| &mut doc.nodes[id])
     }
 
-    fn try_append_text_to_text_node(&mut self, node_id: Option<usize>, text: &str) -> bool {
+    fn try_append_text_to_text_node(&self, node_id: Option<usize>, text: &str) -> bool {
         let Some(node_id) = node_id else {
             return false;
         };
-        let node = self.node_mut(node_id);
+        let mut node = self.node_mut(node_id);
 
         match node.text_data_mut() {
             Some(data) => {
@@ -88,41 +90,42 @@ impl<'a> DocumentHtmlParser<'a> {
         }
     }
 
-    fn last_child(&mut self, parent_id: usize) -> Option<usize> {
+    fn last_child(&self, parent_id: usize) -> Option<usize> {
         self.node(parent_id).children.last().copied()
     }
 
-    fn load_linked_stylesheet(&mut self, target_id: usize) {
+    fn load_linked_stylesheet(&self, target_id: usize) {
         let node = self.node(target_id);
 
         let rel_attr = node.attr(local_name!("rel"));
         let href_attr = node.attr(local_name!("href"));
 
         if let (Some("stylesheet"), Some(href)) = (rel_attr, href_attr) {
-            let url = self.doc.resolve_url(href);
+            let url = self.doc.borrow().resolve_url(href);
+            let guard = self.doc.borrow().guard.clone();
             self.net_provider.fetch(
                 url.clone(),
                 Box::new(CssHandler {
                     node: target_id,
                     source_url: url,
-                    guard: self.doc.guard.clone(),
+                    guard,
                 }),
             );
         }
     }
 
-    fn load_image(&mut self, target_id: usize) {
+    fn load_image(&self, target_id: usize) {
         let node = self.node(target_id);
         if let Some(raw_src) = node.attr(local_name!("src")) {
             if !raw_src.is_empty() {
-                let src = self.doc.resolve_url(raw_src);
+                let src = self.doc.borrow().resolve_url(raw_src);
                 self.net_provider
                     .fetch(src, Box::new(ImageHandler::new(target_id)));
             }
         }
     }
 
-    fn process_button_input(&mut self, target_id: usize) {
+    fn process_button_input(&self, target_id: usize) {
         let node = self.node(target_id);
         let Some(data) = node.element_data() else {
             return;
@@ -150,47 +153,52 @@ impl<'b> TreeSink for DocumentHtmlParser<'b> {
     // we use the ID of the nodes in the tree as the handle
     type Handle = usize;
 
+    type ElemName<'a> = Ref<'a, QualName> where Self: 'a;
+
     fn finish(self) -> Self::Output {
+        let doc = self.doc.into_inner();
+
         // Add inline stylesheets (<style> elements)
-        for id in &self.style_nodes {
-            self.doc.process_style_element(*id);
+        for id in self.style_nodes.borrow().iter() {
+            doc.process_style_element(*id);
         }
 
         // Compute child_idx fields.
-        self.doc.flush_child_indexes(0, 0, 0);
+        doc.flush_child_indexes(0, 0, 0);
 
-        for error in self.errors {
+        for error in self.errors.borrow().iter() {
             println!("ERROR: {}", error);
         }
 
-        self.doc
+        doc
     }
 
-    fn parse_error(&mut self, msg: Cow<'static, str>) {
-        self.errors.push(msg);
+    fn parse_error(&self, msg: Cow<'static, str>) {
+        self.errors.borrow_mut().push(msg);
     }
 
-    fn get_document(&mut self) -> Self::Handle {
+    fn get_document(&self) -> Self::Handle {
         0
     }
 
-    fn elem_name<'a>(&'a self, target: &'a Self::Handle) -> ExpandedName<'a> {
-        self.node(*target)
-            .element_data()
-            .expect("TreeSink::elem_name called on a node which is not an element!")
-            .name
-            .expanded()
+    fn elem_name<'a>(&'a self, target: &'a Self::Handle) -> Self::ElemName<'a> {
+        Ref::map(self.doc.borrow(), |doc| {
+            &doc.nodes[*target]
+                .element_data()
+                .expect("TreeSink::elem_name called on a node which is not an element!")
+                .name
+        })
     }
 
     fn create_element(
-        &mut self,
+        &self,
         name: QualName,
         attrs: Vec<html5ever::Attribute>,
         _flags: ElementFlags,
     ) -> Self::Handle {
         let attrs = attrs.into_iter().map(html5ever_to_blitz_attr).collect();
         let mut data = ElementNodeData::new(name.clone(), attrs);
-        data.flush_style_attribute(&self.doc.guard);
+        data.flush_style_attribute(&self.doc.borrow().guard);
 
         let id = self.create_node(NodeData::Element(data));
         let node = self.node(id);
@@ -200,7 +208,10 @@ impl<'b> TreeSink for DocumentHtmlParser<'b> {
 
         // If the node has an "id" attribute, store it in the ID map.
         if let Some(id_attr) = node.attr(local_name!("id")) {
-            self.doc.nodes_to_id.insert(id_attr.to_string(), id);
+            self.doc
+                .borrow_mut()
+                .nodes_to_id
+                .insert(id_attr.to_string(), id);
         }
 
         // Custom post-processing by element tag name
@@ -208,23 +219,23 @@ impl<'b> TreeSink for DocumentHtmlParser<'b> {
             "link" => self.load_linked_stylesheet(id),
             "img" => self.load_image(id),
             "input" => self.process_button_input(id),
-            "style" => self.style_nodes.push(id),
+            "style" => self.style_nodes.borrow_mut().push(id),
             _ => {}
         }
 
         id
     }
 
-    fn create_comment(&mut self, _text: StrTendril) -> Self::Handle {
+    fn create_comment(&self, _text: StrTendril) -> Self::Handle {
         self.create_node(NodeData::Comment)
     }
 
-    fn create_pi(&mut self, _target: StrTendril, _data: StrTendril) -> Self::Handle {
+    fn create_pi(&self, _target: StrTendril, _data: StrTendril) -> Self::Handle {
         // NOTE: html5ever does not call this method (only xml5ever does)
         unimplemented!()
     }
 
-    fn append(&mut self, parent_id: &Self::Handle, child: NodeOrText<Self::Handle>) {
+    fn append(&self, parent_id: &Self::Handle, child: NodeOrText<Self::Handle>) {
         match child {
             NodeOrText::AppendNode(child_id) => {
                 self.node_mut(*parent_id).children.push(child_id);
@@ -243,11 +254,7 @@ impl<'b> TreeSink for DocumentHtmlParser<'b> {
 
     // Note: The tree builder promises we won't have a text node after the insertion point.
     // https://github.com/servo/html5ever/blob/main/rcdom/lib.rs#L338
-    fn append_before_sibling(
-        &mut self,
-        sibling_id: &Self::Handle,
-        new_node: NodeOrText<Self::Handle>,
-    ) {
+    fn append_before_sibling(&self, sibling_id: &Self::Handle, new_node: NodeOrText<Self::Handle>) {
         let sibling = self.node(*sibling_id);
         let parent_id = sibling.parent.expect("Sibling has not parent");
         let parent = self.node(parent_id);
@@ -284,7 +291,7 @@ impl<'b> TreeSink for DocumentHtmlParser<'b> {
     }
 
     fn append_based_on_parent_node(
-        &mut self,
+        &self,
         element: &Self::Handle,
         prev_element: &Self::Handle,
         child: NodeOrText<Self::Handle>,
@@ -298,7 +305,7 @@ impl<'b> TreeSink for DocumentHtmlParser<'b> {
     }
 
     fn append_doctype_to_document(
-        &mut self,
+        &self,
         _name: StrTendril,
         _public_id: StrTendril,
         _system_id: StrTendril,
@@ -306,7 +313,7 @@ impl<'b> TreeSink for DocumentHtmlParser<'b> {
         // Ignore. We don't care about the DOCTYPE for now.
     }
 
-    fn get_template_contents(&mut self, target: &Self::Handle) -> Self::Handle {
+    fn get_template_contents(&self, target: &Self::Handle) -> Self::Handle {
         // TODO: implement templates properly. This should allow to function like regular elements.
         *target
     }
@@ -315,15 +322,13 @@ impl<'b> TreeSink for DocumentHtmlParser<'b> {
         x == y
     }
 
-    fn set_quirks_mode(&mut self, mode: QuirksMode) {
-        self.quirks_mode = mode;
+    fn set_quirks_mode(&self, mode: QuirksMode) {
+        self.quirks_mode.set(mode);
     }
 
-    fn add_attrs_if_missing(&mut self, target: &Self::Handle, attrs: Vec<html5ever::Attribute>) {
-        let element_data = self
-            .node_mut(*target)
-            .element_data_mut()
-            .expect("Not an element");
+    fn add_attrs_if_missing(&self, target: &Self::Handle, attrs: Vec<html5ever::Attribute>) {
+        let mut node = self.node_mut(*target);
+        let element_data = node.element_data_mut().expect("Not an element");
 
         let existing_names = element_data
             .attrs
@@ -339,18 +344,17 @@ impl<'b> TreeSink for DocumentHtmlParser<'b> {
         );
     }
 
-    fn remove_from_parent(&mut self, target: &Self::Handle) {
-        let node = self.node_mut(*target);
+    fn remove_from_parent(&self, target: &Self::Handle) {
+        let mut node = self.node_mut(*target);
         let parent_id = node.parent.take().expect("Node has no parent");
         self.node_mut(parent_id)
             .children
             .retain(|child_id| child_id != target);
     }
 
-    fn reparent_children(&mut self, node_id: &Self::Handle, new_parent_id: &Self::Handle) {
+    fn reparent_children(&self, node_id: &Self::Handle, new_parent_id: &Self::Handle) {
         // Take children array from old parent
-        let node = self.node_mut(*node_id);
-        let children = std::mem::take(&mut node.children);
+        let children = std::mem::take(&mut self.node_mut(*node_id).children);
 
         // Update parent reference of children
         for child_id in children.iter() {
