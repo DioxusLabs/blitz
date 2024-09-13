@@ -15,21 +15,10 @@ fn app() -> Element {
                 em { "Another block of text" }
                 "Should connect no space between"
             }
+            h1 { "ul" }
             ul {
                 li { "Item 1" }
                 li { "Item 2" }
-                li {
-                    ul {
-                        li { "Nested Item 1" }
-                        li { "Nested Item 2" }
-                    }
-                }
-                li { "Item 3" }
-                li { "Item 4" }
-                ul {
-                    li { "Sub 1" }
-                    li { "Sub 2" }
-                }
                 li {
                     class: "square",
                     "Square item"
@@ -47,6 +36,29 @@ fn app() -> Element {
                     "Disclosure closed item"
                 }
             }
+            h1 { "ol - decimal" }
+            ol {
+                li { "Item 1" }
+                li { "Item 2" }
+                li {
+                    ul {
+                        li { "Nested Item 1" }
+                        li { "Nested Item 2" }
+                    }
+                }
+                li { "Item 3" }
+                li { "Item 4" }
+                ol {
+                    li { "Sub 1" }
+                    li { "Sub 2" }
+                }
+            }
+            h1 { "ol - alpha" }
+            ol { class: "alpha",
+                li { "Item 1" }
+                li { "Item 2" }
+                li { "Item 3" }
+            }
         }
     }
 }
@@ -54,8 +66,11 @@ fn app() -> Element {
 const CSS: &str = r#"
 #a {
 }
-ol {
-    list-style-type: upper-alpha;
+h1 {
+    font-size: 20px;
+}
+ol.alpha {
+    list-style-type: lower-alpha;
 }
 li.square {
     list-style-type: square;
