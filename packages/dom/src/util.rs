@@ -1,5 +1,4 @@
 use crate::node::{Node, NodeData};
-use blitz_net::RequestHandler;
 use image::DynamicImage;
 use selectors::context::QuirksMode;
 use std::{
@@ -29,8 +28,9 @@ pub(crate) struct CssHandler {
     pub source_url: Url,
     pub guard: SharedRwLock,
 }
-impl RequestHandler<Resource> for CssHandler {
-    fn bytes(self, bytes: &[u8]) -> Resource {
+impl RequestHandler for CssHandler {
+    type Data = Resource;
+    fn bytes(self: Box<Self>, bytes: &[u8], callback: SharedCallback<Self::Data>) {
         let css = String::from_utf8(bytes.into()).expect("Invalid UTF8");
         let escaped_css = html_escape::decode_html_entities(&css);
         let sheet = Stylesheet::from_str(
@@ -44,7 +44,10 @@ impl RequestHandler<Resource> for CssHandler {
             QuirksMode::NoQuirks,
             AllowImportRules::Yes,
         );
-        Resource::Css(self.node, DocumentStyleSheet(ServoArc::new(sheet)))
+        callback.call(Resource::Css(
+            self.node,
+            DocumentStyleSheet(ServoArc::new(sheet)),
+        ))
     }
 }
 pub(crate) struct ImageHandler(usize);
@@ -53,15 +56,17 @@ impl ImageHandler {
         Self(node_id)
     }
 }
-impl RequestHandler<Resource> for ImageHandler {
-    fn bytes(self, bytes: &[u8]) -> Resource {
+impl RequestHandler for ImageHandler {
+    type Data = Resource;
+    fn bytes(self: Box<Self>, bytes: &[u8], callback: SharedCallback<Self::Data>) {
         // Try parse image
         if let Ok(image) = image::ImageReader::new(Cursor::new(bytes))
             .with_guessed_format()
             .expect("IO errors impossible with Cursor")
             .decode()
         {
-            return Resource::Image(self.0, Arc::new(image));
+            callback.call(Resource::Image(self.0, Arc::new(image)));
+            return;
         };
         // Try parse SVG
 
@@ -78,7 +83,7 @@ impl RequestHandler<Resource> for ImageHandler {
         };
 
         let tree = Tree::from_data(bytes, &options).unwrap();
-        Resource::Svg(self.0, Box::new(tree))
+        callback.call(Resource::Svg(self.0, Box::new(tree)));
     }
 }
 
@@ -147,6 +152,7 @@ pub fn walk_tree(indent: usize, node: &Node) {
     }
 }
 
+use blitz_traits::net::{RequestHandler, SharedCallback};
 use peniko::Color as PenikoColor;
 
 pub trait ToPenikoColor {

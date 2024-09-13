@@ -3,7 +3,7 @@
 # members = ["packages/dom"]
 # members = ["packages/blitz", "packages/dom", "packages/dioxus-blitz"]
 # exclude = ["packages/blitz", "packages/dioxus-blitz"]
-members = ["packages/blitz", "packages/dom", "packages/dioxus-blitz", "packages/net"]
+members = ["packages/blitz", "packages/dom", "packages/dioxus-blitz", "packages/net", "packages/traits"]
 resolver = "2"
 
 [workspace.dependencies]
@@ -55,7 +55,8 @@ incremental = false
 # mozbuild = "0.1.0"
 blitz = { path = "./packages/blitz" }
 blitz-dom = { path = "./packages/dom" }
-blitz-net = { path = "./packages/net", features = ["blocking"]}
+blitz-net = { path = "./packages/net" }
+blitz-traits = { path = "./packages/traits" }
 comrak = { version = "0.21.0", default-features = false, features = ["syntect"] }
 png = { version = "0.17" }
 dioxus-blitz = { path = "./packages/dioxus-blitz" }

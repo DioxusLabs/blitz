@@ -1,7 +1,7 @@
 use crate::node::{Attribute, ElementNodeData, Node, NodeData};
 use crate::util::{CssHandler, ImageHandler, Resource};
 use crate::Document;
-use blitz_net::NetProvider;
+use blitz_traits::net::SharedProvider;
 use html5ever::local_name;
 use html5ever::{
     tendril::{StrTendril, TendrilSink},
@@ -20,7 +20,7 @@ fn html5ever_to_blitz_attr(attr: html5ever::Attribute) -> Attribute {
     }
 }
 
-pub struct DocumentHtmlParser<'a, N> {
+pub struct DocumentHtmlParser<'a> {
     doc: &'a mut Document,
 
     style_nodes: Vec<usize>,
@@ -31,11 +31,11 @@ pub struct DocumentHtmlParser<'a, N> {
     /// The document's quirks mode.
     pub quirks_mode: QuirksMode,
 
-    net_provider: N,
+    net_provider: SharedProvider<Resource>,
 }
 
-impl<'a, N: NetProvider<Resource>> DocumentHtmlParser<'a, N> {
-    pub fn new(doc: &mut Document, net_provider: N) -> DocumentHtmlParser<N> {
+impl<'a> DocumentHtmlParser<'a> {
+    pub fn new(doc: &mut Document, net_provider: SharedProvider<Resource>) -> DocumentHtmlParser {
         DocumentHtmlParser {
             doc,
             style_nodes: Vec::new(),
@@ -45,7 +45,11 @@ impl<'a, N: NetProvider<Resource>> DocumentHtmlParser<'a, N> {
         }
     }
 
-    pub fn parse_into_doc<'d>(doc: &'d mut Document, net: N, html: &str) -> &'d mut Document {
+    pub fn parse_into_doc<'d>(
+        doc: &'d mut Document,
+        net: SharedProvider<Resource>,
+        html: &str,
+    ) -> &'d mut Document {
         let sink = Self::new(doc, net);
         html5ever::parse_document(sink, Default::default())
             .from_utf8()
@@ -98,11 +102,11 @@ impl<'a, N: NetProvider<Resource>> DocumentHtmlParser<'a, N> {
             let url = self.doc.resolve_url(href);
             self.net_provider.fetch(
                 url.clone(),
-                CssHandler {
+                Box::new(CssHandler {
                     node: target_id,
                     source_url: url,
                     guard: self.doc.guard.clone(),
-                },
+                }),
             );
         }
     }
@@ -112,7 +116,8 @@ impl<'a, N: NetProvider<Resource>> DocumentHtmlParser<'a, N> {
         if let Some(raw_src) = node.attr(local_name!("src")) {
             if !raw_src.is_empty() {
                 let src = self.doc.resolve_url(raw_src);
-                self.net_provider.fetch(src, ImageHandler::new(target_id));
+                self.net_provider
+                    .fetch(src, Box::new(ImageHandler::new(target_id)));
             }
         }
     }
@@ -139,7 +144,7 @@ impl<'a, N: NetProvider<Resource>> DocumentHtmlParser<'a, N> {
     }
 }
 
-impl<'b, N: NetProvider<Resource>> TreeSink for DocumentHtmlParser<'b, N> {
+impl<'b> TreeSink for DocumentHtmlParser<'b> {
     type Output = &'b mut Document;
 
     // we use the ID of the nodes in the tree as the handle
@@ -360,12 +365,16 @@ impl<'b, N: NetProvider<Resource>> TreeSink for DocumentHtmlParser<'b, N> {
 #[test]
 fn parses_some_html() {
     use crate::Viewport;
-    use blitz_net::DummyProvider;
+    use blitz_traits::net::DummyProvider;
+    use std::sync::Arc;
 
     let html = "<!DOCTYPE html><html><body><h1>hello world</h1></body></html>";
     let viewport = Viewport::new(800, 600, 1.0);
     let mut doc = Document::new(viewport);
-    let sink = DocumentHtmlParser::new(&mut doc, DummyProvider);
+    let sink = DocumentHtmlParser::new(
+        &mut doc,
+        Arc::new(DummyProvider::default()) as SharedProvider<Resource>,
+    );
 
     html5ever::parse_document(sink, Default::default())
         .from_utf8()

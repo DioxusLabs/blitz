@@ -1,15 +1,19 @@
 //! Load first CLI argument as a url. Fallback to google.com if no CLI argument is provided.
 
 use blitz::render_to_buffer;
+use blitz_dom::util::Resource;
 use blitz_dom::{HtmlDocument, Viewport};
-use blitz_net::SyncProvider;
+use blitz_net::{MpscCallback, Provider};
+use blitz_traits::net::{SharedCallback, SharedProvider};
 use reqwest::Url;
+use std::sync::Arc;
 use std::{
     fs::File,
     io::Write,
     path::{Path, PathBuf},
     time::Instant,
 };
+use tokio::runtime::Handle;
 
 const USER_AGENT: &str = "Mozilla/5.0 (X11; Linux x86_64; rv:60.0) Gecko/20100101 Firefox/81.0";
 
@@ -47,20 +51,36 @@ async fn main() {
         .and_then(|arg| arg.parse().ok())
         .unwrap_or(1200);
 
-    let net = SyncProvider::new();
+    let (mut recv, callback) = MpscCallback::new();
+    let net = Arc::new(Provider::new(
+        Handle::current(),
+        Arc::new(callback) as SharedCallback<Resource>,
+    ));
+
+    timer.time("Setup document prerequsits");
 
     // Create HtmlDocument
-    let mut document = HtmlDocument::from_html(&html, Some(url.clone()), Vec::new(), &net);
+    let mut document = HtmlDocument::from_html(
+        &html,
+        Some(url.clone()),
+        Vec::new(),
+        Arc::clone(&net) as SharedProvider<Resource>,
+    );
+
+    timer.time("Parsed document");
 
     document
         .as_mut()
         .set_viewport(Viewport::new(width * scale, height * scale, scale as f32));
 
-    for resource in net.0.into_inner().drain(..) {
-        document.as_mut().load_resource(resource)
+    while let Some(res) = recv.recv().await {
+        document.as_mut().load_resource(res);
+        if net.is_empty() {
+            break;
+        }
     }
 
-    timer.time("Created document (+ fetched assets)");
+    timer.time("Fetched assets");
 
     // Compute style, layout, etc for HtmlDocument
     document.as_mut().resolve();

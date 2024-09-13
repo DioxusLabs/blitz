@@ -4,19 +4,8 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-tokio = { workspace = true, optional = true }
-reqwest = { version = "0.12.7", optional = true }
-winit = { version = "0.30.5", optional = true }
-futures-util = { version = "0.3.30", optional = true }
-ureq = { version = "2.10.1", optional = true }
-
-http = "1.1.0"
-url = "2.5.2"
+blitz-traits = { path = "../traits" }
+tokio = { workspace = true }
+reqwest = { version = "0.12.7" }
 data-url = "0.3.1"
-tracing = "0.1.40"
 thiserror = "1.0.63"
-
-[features]
-default = []
-blocking = ["dep:ureq"]
-non_blocking = ["dep:tokio", "dep:winit", "dep:futures-util", "dep:reqwest"]

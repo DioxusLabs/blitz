@@ -551,6 +551,7 @@ impl Document {
             self.stylist.remove_stylesheet(old, &self.guard.read())
         }
 
+        // TODO: Nodes could potentially get reused so ordering by node_id might be wrong.
         let insertion_point = self
             .nodes_to_stylesheet
             .range((Bound::Excluded(node_id), Bound::Unbounded))
@@ -573,7 +574,6 @@ impl Document {
         match resource {
             Resource::Css(node_id, css) => {
                 self.append_or_insert_stylesheet(css, node_id);
-                self.resolve();
             }
             Resource::Image(node_id, image) => {
                 let node = self.get_node_mut(node_id).unwrap();

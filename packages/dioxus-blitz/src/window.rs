@@ -1,6 +1,6 @@
 use crate::accessibility::AccessibilityState;
-use crate::stylo_to_winit;
 use crate::waker::{create_waker, BlitzEvent, BlitzWindowEvent};
+use crate::{stylo_to_winit, Callback};
 use blitz::{Devtools, Renderer};
 use blitz_dom::events::{EventData, RendererEvent};
 use blitz_dom::{DocumentLike, Viewport};
@@ -9,8 +9,6 @@ use winit::keyboard::PhysicalKey;
 #[allow(unused)]
 use wgpu::rwh::HasWindowHandle;
 
-use blitz_dom::util::Resource;
-use blitz_net::AsyncProvider;
 use std::sync::Arc;
 use std::task::Waker;
 use winit::event::{ElementState, MouseButton};
@@ -24,27 +22,27 @@ use crate::menu::init_menu;
 pub struct WindowConfig<Doc: DocumentLike> {
     doc: Doc,
     attributes: WindowAttributes,
-    net: Option<Arc<AsyncProvider<Resource>>>,
+    callback: Option<Arc<Callback>>,
 }
 
 impl<Doc: DocumentLike> WindowConfig<Doc> {
-    pub fn new(doc: Doc, net: Option<Arc<AsyncProvider<Resource>>>) -> Self {
+    pub fn new(doc: Doc, callback: Option<Arc<Callback>>) -> Self {
         WindowConfig {
             doc,
             attributes: Window::default_attributes(),
-            net,
+            callback,
         }
     }
 
     pub fn with_attributes(
         doc: Doc,
         attributes: WindowAttributes,
-        net: Option<Arc<AsyncProvider<Resource>>>,
+        callback: Option<Arc<Callback>>,
     ) -> Self {
         WindowConfig {
             doc,
             attributes,
-            net,
+            callback,
         }
     }
 }
@@ -87,8 +85,8 @@ impl<Doc: DocumentLike> View<Doc> {
     ) -> Self {
         let winit_window = Arc::from(event_loop.create_window(config.attributes).unwrap());
 
-        if let Some(net) = config.net {
-            net.resolve(proxy.clone(), winit_window.id());
+        if let Some(callback) = config.callback {
+            callback.init(winit_window.id(), proxy);
         }
 
         // TODO: make this conditional on text input focus
