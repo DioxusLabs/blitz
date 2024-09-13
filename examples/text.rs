@@ -15,7 +15,7 @@ fn app() -> Element {
                 em { "Another block of text" }
                 "Should connect no space between"
             }
-            ol {
+            ul {
                 li { "Item 1" }
                 li { "Item 2" }
                 li {
@@ -30,14 +30,22 @@ fn app() -> Element {
                     li { "Sub 1" }
                     li { "Sub 2" }
                 }
-            }
-            ul {
-                class: "square",
-                li { "Square item" }
-            }
-            ul {
-                class: "circle",
-                li { "Circle item" }
+                li {
+                    class: "square",
+                    "Square item"
+                }
+                li {
+                    class: "circle",
+                    "Circle item"
+                }
+                li {
+                    class: "disclosure-open",
+                    "Disclosure open item"
+                }
+                li {
+                    class: "disclosure-closed",
+                    "Disclosure closed item"
+                }
             }
         }
     }
@@ -49,14 +57,16 @@ const CSS: &str = r#"
 ol {
     list-style-type: upper-alpha;
 }
-ul.square {
+li.square {
     list-style-type: square;
 }
-ul.circle {
+li.circle {
     list-style-type: circle;
 }
-li::marker {
-    content: "hihi";
-    color: blue;
+li.disclosure-open {
+    list-style-type: disclosure-open;
+}
+li.disclosure-closed {
+    list-style-type: disclosure-closed;
 }
 "#;

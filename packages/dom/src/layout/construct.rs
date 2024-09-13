@@ -313,8 +313,8 @@ fn marker_for_style(list_style_type: ListStyleType, index: usize) -> Option<Stri
         ListStyleType::Disc => "• ".to_string(),
         ListStyleType::Circle => "◦ ".to_string(),
         ListStyleType::Square => "▪ ".to_string(),
-        ListStyleType::DisclosureOpen => "▼ ".to_string(),
-        ListStyleType::DisclosureClosed => "▶ ".to_string(),
+        ListStyleType::DisclosureOpen => "▾ ".to_string(),
+        ListStyleType::DisclosureClosed => "▸ ".to_string(),
         _ => "□".to_string(),
     };
 
