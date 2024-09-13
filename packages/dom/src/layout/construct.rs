@@ -260,9 +260,7 @@ fn node_list_item_child(doc: &mut Document, child: usize, index: usize) -> Optio
     let list_style_type = styles.clone_list_style_type();
     let list_style_position = styles.clone_list_style_position();
 
-    let Some(marker) = marker_for_style(list_style_type, index) else {
-        return None;
-    };
+    let marker = marker_for_style(list_style_type, index)?;
 
     let position = if list_style_position == ListStylePosition::Outside {
         let mut parley_style = node
@@ -286,7 +284,7 @@ fn node_list_item_child(doc: &mut Document, child: usize, index: usize) -> Optio
 
         layout.break_all_lines(Some(0.0));
 
-        ListItemLayoutPosition::Outside(layout)
+        ListItemLayoutPosition::Outside(Box::new(layout))
     } else {
         ListItemLayoutPosition::Inside
     };
@@ -511,17 +509,14 @@ pub(crate) fn build_inline_layout(
     builder.set_white_space_mode(collapse_mode);
 
     //Render position-inside list items
-    match root_node
+    if let Some(ListItemLayout {
+        marker,
+        position: ListItemLayoutPosition::Inside,
+    }) = root_node
         .element_data()
         .and_then(|el| el.list_item_data.as_deref())
     {
-        Some(ListItemLayout {
-            marker,
-            position: ListItemLayoutPosition::Inside,
-        }) => {
-            builder.push_text(marker);
-        }
-        _ => {}
+        builder.push_text(marker);
     };
 
     for child_id in root_node.children.iter().copied() {

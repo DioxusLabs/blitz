@@ -549,7 +549,7 @@ pub struct ListItemLayout {
 #[derive(Clone)]
 pub enum ListItemLayoutPosition {
     Inside,
-    Outside(parley::Layout<TextBrush>),
+    Outside(Box<parley::Layout<TextBrush>>),
 }
 
 impl std::fmt::Debug for ListItemLayout {

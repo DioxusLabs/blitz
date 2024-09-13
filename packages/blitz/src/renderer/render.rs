@@ -416,7 +416,7 @@ impl<'dom> VelloSceneGenerator<'dom> {
                 x: pos.x - ((layout.full_width() + 16.0) / layout.scale()) as f64,
                 y: pos.y,
             };
-            cx.stroke_text(scene, &layout, pos);
+            cx.stroke_text(scene, layout, pos);
         }
 
         if element.is_inline_root {

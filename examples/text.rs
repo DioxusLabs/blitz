@@ -55,4 +55,8 @@ ul.square {
 ul.circle {
     list-style-type: circle;
 }
+li::marker {
+    content: "hihi";
+    color: blue;
+}
 "#;
