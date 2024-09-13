@@ -413,7 +413,7 @@ impl<'dom> VelloSceneGenerator<'dom> {
         {
             //Right align and pad the bullet when rendering outside
             let pos = Point {
-                x: pos.x - ((layout.full_width() + 16.0) / layout.scale()) as f64,
+                x: pos.x - (layout.full_width() / layout.scale()) as f64,
                 y: pos.y,
             };
             cx.stroke_text(scene, layout, pos);

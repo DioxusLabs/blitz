@@ -310,9 +310,11 @@ fn marker_for_style(list_style_type: ListStyleType, index: usize) -> Option<Stri
             format!("{}. ", marker.to_ascii_uppercase())
         }
         ListStyleType::Decimal => format!("{}. ", index + 1),
-        ListStyleType::Disc => "•".to_string(),
-        ListStyleType::Circle => "◦".to_string(),
-        ListStyleType::Square => "▪".to_string(),
+        ListStyleType::Disc => "• ".to_string(),
+        ListStyleType::Circle => "◦ ".to_string(),
+        ListStyleType::Square => "▪ ".to_string(),
+        ListStyleType::DisclosureOpen => "▼ ".to_string(),
+        ListStyleType::DisclosureClosed => "▶ ".to_string(),
         _ => "□".to_string(),
     };
 
@@ -323,9 +325,11 @@ fn marker_for_style(list_style_type: ListStyleType, index: usize) -> Option<Stri
 fn font_for_bullet_style(list_style_type: ListStyleType) -> Option<FontStack<'static>> {
     let bullet_font = Some(FontStack::Source("Bullet, monospace, sans-serif"));
     match list_style_type {
-        ListStyleType::Disc => bullet_font,
-        ListStyleType::Circle => bullet_font,
-        ListStyleType::Square => bullet_font,
+        ListStyleType::Disc
+        | ListStyleType::Circle
+        | ListStyleType::Square
+        | ListStyleType::DisclosureOpen
+        | ListStyleType::DisclosureClosed => bullet_font,
         _ => None,
     }
 }
@@ -344,6 +348,44 @@ fn build_alpha_marker(index: usize, str: &mut String) {
     if rest >= 0 {
         build_alpha_marker(rest as usize, str);
     }
+}
+
+#[test]
+fn test_marker_for_disc() {
+    let result = marker_for_style(ListStyleType::Disc, 0);
+    assert_eq!(result.as_deref(), Some("• "));
+}
+
+#[test]
+fn test_marker_for_decimal() {
+    let result_1 = marker_for_style(ListStyleType::Decimal, 0);
+    let result_2 = marker_for_style(ListStyleType::Decimal, 1);
+    assert_eq!(result_1.as_deref(), Some("1. "));
+    assert_eq!(result_2.as_deref(), Some("2. "));
+}
+
+#[test]
+fn test_marker_for_lower_alpha() {
+    let result_1 = marker_for_style(ListStyleType::LowerAlpha, 0);
+    let result_2 = marker_for_style(ListStyleType::LowerAlpha, 1);
+    let result_extended_1 = marker_for_style(ListStyleType::LowerAlpha, 26);
+    let result_extended_2 = marker_for_style(ListStyleType::LowerAlpha, 27);
+    assert_eq!(result_1.as_deref(), Some("a. "));
+    assert_eq!(result_2.as_deref(), Some("b. "));
+    assert_eq!(result_extended_1.as_deref(), Some("aa. "));
+    assert_eq!(result_extended_2.as_deref(), Some("ab. "));
+}
+
+#[test]
+fn test_marker_for_upper_alpha() {
+    let result_1 = marker_for_style(ListStyleType::UpperAlpha, 0);
+    let result_2 = marker_for_style(ListStyleType::UpperAlpha, 1);
+    let result_extended_1 = marker_for_style(ListStyleType::UpperAlpha, 26);
+    let result_extended_2 = marker_for_style(ListStyleType::UpperAlpha, 27);
+    assert_eq!(result_1.as_deref(), Some("A. "));
+    assert_eq!(result_2.as_deref(), Some("B. "));
+    assert_eq!(result_extended_1.as_deref(), Some("AA. "));
+    assert_eq!(result_extended_2.as_deref(), Some("AB. "));
 }
 
 /// Handles the cases where there are text nodes or inline nodes that need to be wrapped in an anonymous block node
