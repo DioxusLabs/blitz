@@ -46,8 +46,12 @@ use style::values::generics::image::{
 };
 use style::values::specified::percentage::ToPercentage;
 use taffy::prelude::Layout;
+use vello::glyph::skrifa::prelude::{NormalizedCoord, Size};
+use vello::glyph::skrifa::{FontRef, GlyphId};
+use vello::glyph::Glyph;
 use vello::kurbo::{BezPath, Cap, Join};
 use vello::peniko::Gradient;
+use vello::skrifa::MetadataProvider;
 use vello::{
     kurbo::{Affine, Point, Rect, Shape, Stroke, Vec2},
     peniko::{self, Brush, Color, Fill, Mix},
@@ -406,17 +410,46 @@ impl<'dom> VelloSceneGenerator<'dom> {
                     &line,
                 );
             }
-        } else if let Some(ListItemLayout {
-            marker: _,
-            position: ListItemLayoutPosition::Outside(layout),
-        }) = cx.list_item
-        {
-            //Right align and pad the bullet when rendering outside
-            let pos = Point {
-                x: pos.x - (layout.full_width() / layout.scale()) as f64,
-                y: pos.y,
-            };
-            cx.stroke_text(scene, layout, pos);
+        } else if let Some(ListItemLayout { marker, position }) = cx.list_item {
+            match position {
+                ListItemLayoutPosition::OutsideGlyph {
+                    font,
+                    glyph_id,
+                    font_size_px,
+                    color,
+                } => {
+                    let font_ref = FontRef::from_index(font.data.data(), font.index).unwrap();
+                    let variations: &[(&str, f32)] = &[];
+                    let location = font_ref.axes().location(variations);
+                    let glyph_width = font_ref
+                        .glyph_metrics(Size::new(*font_size_px), &location)
+                        .advance_width(GlyphId::new(*glyph_id))
+                        .unwrap();
+                    let coords = location.coords();
+                    let pos = Point {
+                        x: pos.x - glyph_width as f64,
+                        y: pos.y,
+                    };
+                    cx.stroke_glyph(
+                        scene,
+                        *glyph_id,
+                        *font_size_px,
+                        font,
+                        coords,
+                        &Brush::Solid(*color),
+                        pos,
+                    );
+                }
+                ListItemLayoutPosition::OutsideString { layout } => {
+                    //Right align and pad the bullet when rendering outside
+                    let pos = Point {
+                        x: pos.x - (layout.full_width() / layout.scale()) as f64,
+                        y: pos.y,
+                    };
+                    cx.stroke_text(scene, layout, pos);
+                }
+                ListItemLayoutPosition::Inside => {}
+            }
         }
 
         if element.is_inline_root {
@@ -537,6 +570,33 @@ struct ElementCx<'a> {
 }
 
 impl ElementCx<'_> {
+    fn stroke_glyph(
+        &self,
+        scene: &mut Scene,
+        glyph_id: u16,
+        size: f32,
+        font: &parley::Font,
+        coords: &[NormalizedCoord],
+        brush: &Brush,
+        pos: Point,
+    ) {
+        let transform = Affine::translate((pos.x * self.scale, pos.y * self.scale));
+        scene
+            .draw_glyphs(font)
+            .font_size(size)
+            .normalized_coords(coords)
+            .brush(brush)
+            .transform(transform)
+            .draw(
+                Fill::NonZero,
+                std::iter::once(Glyph {
+                    id: glyph_id as u32,
+                    x: 0.0,
+                    y: 0.0,
+                }),
+            )
+    }
+
     fn stroke_text(&self, scene: &mut Scene, text_layout: &parley::Layout<TextBrush>, pos: Point) {
         let transform = Affine::translate((pos.x * self.scale, pos.y * self.scale));
 

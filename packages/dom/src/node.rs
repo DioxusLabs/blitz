@@ -1,7 +1,7 @@
 use atomic_refcell::{AtomicRef, AtomicRefCell};
 use html5ever::{local_name, LocalName, QualName};
 use image::DynamicImage;
-use peniko::kurbo;
+use peniko::{kurbo, Font};
 use selectors::matching::QuirksMode;
 use slab::Slab;
 use std::cell::RefCell;
@@ -541,20 +541,36 @@ impl Default for NodeSpecificData {
 
 #[derive(Clone)]
 pub struct ListItemLayout {
-    pub marker: String,
+    pub marker: Marker,
     pub position: ListItemLayoutPosition,
+}
+
+//We seperate chars from strings in order to optimise rendering - ie not needing to
+//construct a whole parley layout for simple char markers
+#[derive(Debug, PartialEq, Clone)]
+pub enum Marker {
+    Char(char),
+    String(String),
 }
 
 //Value depends on list-style-position, determining whether a seperate layout is created for it
 #[derive(Clone)]
 pub enum ListItemLayoutPosition {
     Inside,
-    Outside(Box<parley::Layout<TextBrush>>),
+    OutsideGlyph {
+        font: Font,
+        glyph_id: parley::swash::GlyphId,
+        font_size_px: f32,
+        color: peniko::Color,
+    },
+    OutsideString {
+        layout: Box<parley::Layout<TextBrush>>,
+    },
 }
 
 impl std::fmt::Debug for ListItemLayout {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "ListItemLayout - marker {}", self.marker)
+        write!(f, "ListItemLayout - marker {:?}", self.marker)
     }
 }
 

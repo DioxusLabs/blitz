@@ -1,11 +1,14 @@
+use core::str;
 use std::sync::Arc;
 
 use html5ever::{local_name, namespace_url, ns, QualName};
 use parley::{
     builder::TreeBuilder,
     style::{FontStack, WhiteSpaceCollapse},
+    swash::FontRef,
     InlineBox,
 };
+use peniko::Font;
 use slab::Slab;
 use style::{
     data::ElementData,
@@ -20,10 +23,12 @@ use style::{
 
 use crate::{
     node::{
-        ListItemLayout, ListItemLayoutPosition, NodeKind, NodeSpecificData, TextBrush,
+        ListItemLayout, ListItemLayoutPosition, Marker, NodeKind, NodeSpecificData, TextBrush,
         TextInputData, TextLayout,
     },
-    stylo_to_parley, Document, ElementNodeData, Node, NodeData,
+    stylo_to_parley,
+    util::ToPenikoColor,
+    Document, ElementNodeData, Node, NodeData,
 };
 
 use super::table::build_table_context;
@@ -256,69 +261,85 @@ fn node_list_item_child(doc: &mut Document, child: usize, index: usize) -> Optio
         return None;
     };
 
-    let styles = node.primary_styles().unwrap();
+    let styles = node.primary_styles().unwrap().to_arc();
     let list_style_type = styles.clone_list_style_type();
     let list_style_position = styles.clone_list_style_position();
 
     let marker = marker_for_style(list_style_type, index)?;
 
-    let position = if list_style_position == ListStylePosition::Outside {
-        let mut parley_style = node
-            .primary_styles()
-            .as_ref()
-            .map(|s| stylo_to_parley::style(s))
-            .unwrap_or_default();
-
-        if let Some(font_stack) = font_for_bullet_style(list_style_type) {
-            parley_style.font_stack = font_stack;
+    let position = match (list_style_position, &marker) {
+        (ListStylePosition::Inside, _) => ListItemLayoutPosition::Inside,
+        (ListStylePosition::Outside, Marker::Char(char)) => {
+            let family_info = doc.font_ctx.collection.family(doc.bullet_font_id).unwrap();
+            let bullet_font = doc
+                .font_ctx
+                .source_cache
+                .get(family_info.default_font().unwrap().source())
+                .unwrap();
+            let font_ref =
+                FontRef::from_index(bullet_font.data(), family_info.default_font_index()).unwrap();
+            let font_size_px = styles.get_font().font_size.used_size.px();
+            let color = styles.get_inherited_text().color.as_peniko();
+            let glyph_id = font_ref.charmap().map(char.clone());
+            ListItemLayoutPosition::OutsideGlyph {
+                font: Font::new(bullet_font, family_info.default_font().unwrap().index()),
+                glyph_id,
+                font_size_px,
+                color,
+            }
         }
+        (ListStylePosition::Outside, Marker::String(str)) => {
+            let mut parley_style = stylo_to_parley::style(styles.as_ref());
 
-        // Create a parley tree builder
-        let mut builder =
-            doc.layout_ctx
-                .tree_builder(&mut doc.font_ctx, doc.viewport.scale(), &parley_style);
+            if let Some(font_stack) = font_for_bullet_style(list_style_type) {
+                parley_style.font_stack = font_stack;
+            }
 
-        builder.push_text(&marker);
+            // Create a parley tree builder
+            let mut builder =
+                doc.layout_ctx
+                    .tree_builder(&mut doc.font_ctx, doc.viewport.scale(), &parley_style);
 
-        let mut layout = builder.build().0;
+            builder.push_text(&str);
 
-        layout.break_all_lines(Some(0.0));
+            let mut layout = builder.build().0;
 
-        ListItemLayoutPosition::Outside(Box::new(layout))
-    } else {
-        ListItemLayoutPosition::Inside
+            layout.break_all_lines(Some(0.0));
+
+            ListItemLayoutPosition::OutsideString {
+                layout: Box::new(layout),
+            }
+        }
     };
 
     Some(ListItemLayout { marker, position })
 }
 
 // Determine the marker to render for a given list style type
-fn marker_for_style(list_style_type: ListStyleType, index: usize) -> Option<String> {
+fn marker_for_style(list_style_type: ListStyleType, index: usize) -> Option<Marker> {
     if list_style_type == ListStyleType::None {
         return None;
     }
 
-    let kind = match list_style_type {
+    Some(match list_style_type {
         ListStyleType::LowerAlpha => {
             let mut marker = String::new();
             build_alpha_marker(index, &mut marker);
-            format!("{}. ", marker)
+            Marker::String(format!("{}. ", marker))
         }
         ListStyleType::UpperAlpha => {
             let mut marker = String::new();
             build_alpha_marker(index, &mut marker);
-            format!("{}. ", marker.to_ascii_uppercase())
+            Marker::String(format!("{}. ", marker.to_ascii_uppercase()))
         }
-        ListStyleType::Decimal => format!("{}. ", index + 1),
-        ListStyleType::Disc => "• ".to_string(),
-        ListStyleType::Circle => "◦ ".to_string(),
-        ListStyleType::Square => "▪ ".to_string(),
-        ListStyleType::DisclosureOpen => "▾ ".to_string(),
-        ListStyleType::DisclosureClosed => "▸ ".to_string(),
-        _ => "□".to_string(),
-    };
-
-    Some(kind)
+        ListStyleType::Decimal => Marker::String(format!("{}. ", index + 1)),
+        ListStyleType::Disc => Marker::Char('•'),
+        ListStyleType::Circle => Marker::Char('◦'),
+        ListStyleType::Square => Marker::Char('▪'),
+        ListStyleType::DisclosureOpen => Marker::Char('▾'),
+        ListStyleType::DisclosureClosed => Marker::Char('▸'),
+        _ => Marker::Char('□'),
+    })
 }
 
 // Override the font to our specific bullet font when rendering bullets
@@ -353,15 +374,15 @@ fn build_alpha_marker(index: usize, str: &mut String) {
 #[test]
 fn test_marker_for_disc() {
     let result = marker_for_style(ListStyleType::Disc, 0);
-    assert_eq!(result.as_deref(), Some("• "));
+    assert_eq!(result, Some(Marker::Char('•')));
 }
 
 #[test]
 fn test_marker_for_decimal() {
     let result_1 = marker_for_style(ListStyleType::Decimal, 0);
     let result_2 = marker_for_style(ListStyleType::Decimal, 1);
-    assert_eq!(result_1.as_deref(), Some("1. "));
-    assert_eq!(result_2.as_deref(), Some("2. "));
+    assert_eq!(result_1, Some(Marker::String("1. ".to_string())));
+    assert_eq!(result_2, Some(Marker::String("2. ".to_string())));
 }
 
 #[test]
@@ -370,10 +391,10 @@ fn test_marker_for_lower_alpha() {
     let result_2 = marker_for_style(ListStyleType::LowerAlpha, 1);
     let result_extended_1 = marker_for_style(ListStyleType::LowerAlpha, 26);
     let result_extended_2 = marker_for_style(ListStyleType::LowerAlpha, 27);
-    assert_eq!(result_1.as_deref(), Some("a. "));
-    assert_eq!(result_2.as_deref(), Some("b. "));
-    assert_eq!(result_extended_1.as_deref(), Some("aa. "));
-    assert_eq!(result_extended_2.as_deref(), Some("ab. "));
+    assert_eq!(result_1, Some(Marker::String("a. ".to_string())));
+    assert_eq!(result_2, Some(Marker::String("b. ".to_string())));
+    assert_eq!(result_extended_1, Some(Marker::String("aa. ".to_string())));
+    assert_eq!(result_extended_2, Some(Marker::String("ab. ".to_string())));
 }
 
 #[test]
@@ -382,10 +403,10 @@ fn test_marker_for_upper_alpha() {
     let result_2 = marker_for_style(ListStyleType::UpperAlpha, 1);
     let result_extended_1 = marker_for_style(ListStyleType::UpperAlpha, 26);
     let result_extended_2 = marker_for_style(ListStyleType::UpperAlpha, 27);
-    assert_eq!(result_1.as_deref(), Some("A. "));
-    assert_eq!(result_2.as_deref(), Some("B. "));
-    assert_eq!(result_extended_1.as_deref(), Some("AA. "));
-    assert_eq!(result_extended_2.as_deref(), Some("AB. "));
+    assert_eq!(result_1, Some(Marker::String("A. ".to_string())));
+    assert_eq!(result_2, Some(Marker::String("B. ".to_string())));
+    assert_eq!(result_extended_1, Some(Marker::String("AA. ".to_string())));
+    assert_eq!(result_extended_2, Some(Marker::String("AB. ".to_string())));
 }
 
 /// Handles the cases where there are text nodes or inline nodes that need to be wrapped in an anonymous block node
@@ -558,7 +579,10 @@ pub(crate) fn build_inline_layout(
         .element_data()
         .and_then(|el| el.list_item_data.as_deref())
     {
-        builder.push_text(marker);
+        match marker {
+            Marker::Char(char) => builder.push_text(&format!("{} ", char)),
+            Marker::String(str) => builder.push_text(str),
+        }
     };
 
     for child_id in root_node.children.iter().copied() {
