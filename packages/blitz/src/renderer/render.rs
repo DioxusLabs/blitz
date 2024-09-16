@@ -583,7 +583,7 @@ impl ElementCx<'_> {
         let transform = Affine::translate((pos.x * self.scale, pos.y * self.scale));
         scene
             .draw_glyphs(font)
-            .font_size(size)
+            .font_size(size * self.scale as f32)
             .normalized_coords(coords)
             .brush(brush)
             .transform(transform)
