@@ -433,8 +433,9 @@ impl<'dom> VelloSceneGenerator<'dom> {
                     let metrics = font_ref.metrics(Size::new(*font_size_px), &location);
                     let coords = location.coords();
                     let pos = Point {
+                        // Right align the glyph, and add some gap between the glyph and the following list item text
                         x: pos.x - glyph_width as f64 - 8.0,
-                        //Center the glyph on the line
+                        // Center the glyph on the line
                         y: pos.y
                             + (*line_height_px as f64 + metrics.ascent as f64
                                 - metrics.descent as f64)
