@@ -60,10 +60,12 @@ impl<'a> DocumentHtmlParser<'a> {
         self.doc.borrow_mut().create_text_node(text)
     }
 
+    #[track_caller]
     fn node(&self, id: usize) -> Ref<Node> {
         Ref::map(self.doc.borrow(), |doc| &doc.nodes[id])
     }
 
+    #[track_caller]
     fn node_mut(&self, id: usize) -> RefMut<Node> {
         RefMut::map(self.doc.borrow_mut(), |doc| &mut doc.nodes[id])
     }
@@ -217,12 +219,12 @@ impl<'b> TreeSink for DocumentHtmlParser<'b> {
         // Initialise style data
         *node.stylo_element_data.borrow_mut() = Some(Default::default());
 
+        let id_attr = node.attr(local_name!("id")).map(|id| id.to_string());
+        drop(node);
+
         // If the node has an "id" attribute, store it in the ID map.
-        if let Some(id_attr) = node.attr(local_name!("id")) {
-            self.doc
-                .borrow_mut()
-                .nodes_to_id
-                .insert(id_attr.to_string(), id);
+        if let Some(id_attr) = id_attr {
+            self.doc.borrow_mut().nodes_to_id.insert(id_attr, id);
         }
 
         // Custom post-processing by element tag name
