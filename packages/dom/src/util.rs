@@ -30,9 +30,9 @@ pub(crate) struct CssHandler {
 }
 impl RequestHandler for CssHandler {
     type Data = Resource;
-    fn bytes(self: Box<Self>, bytes: &[u8], callback: SharedCallback<Self::Data>) {
-        let css = String::from_utf8(bytes.into()).expect("Invalid UTF8");
-        let escaped_css = html_escape::decode_html_entities(&css);
+    fn bytes(self: Box<Self>, bytes: Bytes, callback: SharedCallback<Self::Data>) {
+        let css = std::str::from_utf8(&bytes).expect("Invalid UTF8");
+        let escaped_css = html_escape::decode_html_entities(css);
         let sheet = Stylesheet::from_str(
             &escaped_css,
             self.source_url.into(),
@@ -58,9 +58,9 @@ impl ImageHandler {
 }
 impl RequestHandler for ImageHandler {
     type Data = Resource;
-    fn bytes(self: Box<Self>, bytes: &[u8], callback: SharedCallback<Self::Data>) {
+    fn bytes(self: Box<Self>, bytes: Bytes, callback: SharedCallback<Self::Data>) {
         // Try parse image
-        if let Ok(image) = image::ImageReader::new(Cursor::new(bytes))
+        if let Ok(image) = image::ImageReader::new(Cursor::new(&bytes))
             .with_guessed_format()
             .expect("IO errors impossible with Cursor")
             .decode()
@@ -82,7 +82,7 @@ impl RequestHandler for ImageHandler {
             ..Default::default()
         };
 
-        let tree = Tree::from_data(bytes, &options).unwrap();
+        let tree = Tree::from_data(&bytes, &options).unwrap();
         callback.call(Resource::Svg(self.0, Box::new(tree)));
     }
 }
@@ -152,7 +152,7 @@ pub fn walk_tree(indent: usize, node: &Node) {
     }
 }
 
-use blitz_traits::net::{RequestHandler, SharedCallback};
+use blitz_traits::net::{Bytes, RequestHandler, SharedCallback};
 use peniko::Color as PenikoColor;
 
 pub trait ToPenikoColor {

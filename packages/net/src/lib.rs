@@ -1,4 +1,4 @@
-use blitz_traits::net::{BoxedHandler, Callback, NetProvider, SharedCallback, Url};
+use blitz_traits::net::{BoxedHandler, Bytes, Callback, NetProvider, SharedCallback, Url};
 use data_url::DataUrl;
 use reqwest::Client;
 use std::sync::Arc;
@@ -35,11 +35,11 @@ impl<D: 'static> Provider<D> {
             "data" => {
                 let data_url = DataUrl::process(url.as_str())?;
                 let decoded = data_url.decode_to_vec()?;
-                handler.bytes(&decoded.0, callback);
+                handler.bytes(Bytes::from(decoded.0), callback);
             }
             "file" => {
                 let file_content = std::fs::read(url.path())?;
-                handler.bytes(&file_content, callback);
+                handler.bytes(Bytes::from(file_content), callback);
             }
             _ => {
                 let response = client
@@ -47,7 +47,7 @@ impl<D: 'static> Provider<D> {
                     .header("User-Agent", USER_AGENT)
                     .send()
                     .await?;
-                handler.bytes(&response.bytes().await?, callback);
+                handler.bytes(response.bytes().await?, callback);
             }
         }
         Ok(())

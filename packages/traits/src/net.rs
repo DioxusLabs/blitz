@@ -1,3 +1,4 @@
+pub use bytes::Bytes;
 pub use http::Method;
 use std::marker::PhantomData;
 use std::sync::Arc;
@@ -7,14 +8,14 @@ pub type BoxedHandler<D> = Box<dyn RequestHandler<Data = D>>;
 pub type SharedCallback<D> = Arc<dyn Callback<Data = D>>;
 pub type SharedProvider<D> = Arc<dyn NetProvider<Data = D>>;
 
-pub trait NetProvider {
+pub trait NetProvider: Send + Sync + 'static {
     type Data;
     fn fetch(&self, url: Url, handler: BoxedHandler<Self::Data>);
 }
 
 pub trait RequestHandler: Send + Sync + 'static {
     type Data;
-    fn bytes(self: Box<Self>, bytes: &[u8], callback: SharedCallback<Self::Data>);
+    fn bytes(self: Box<Self>, bytes: Bytes, callback: SharedCallback<Self::Data>);
     fn method(&self) -> Method {
         Method::GET
     }
@@ -31,7 +32,7 @@ impl<D> Default for DummyProvider<D> {
         Self(PhantomData)
     }
 }
-impl<D> NetProvider for DummyProvider<D> {
+impl<D: Sync + Send + 'static> NetProvider for DummyProvider<D> {
     type Data = D;
     fn fetch(&self, _url: Url, _handler: BoxedHandler<Self::Data>) {}
 }
