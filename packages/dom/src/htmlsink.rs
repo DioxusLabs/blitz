@@ -207,11 +207,9 @@ impl<'b> TreeSink for DocumentHtmlParser<'b> {
         *node.stylo_element_data.borrow_mut() = Some(Default::default());
 
         // If the node has an "id" attribute, store it in the ID map.
-        if let Some(id_attr) = node.attr(local_name!("id")) {
-            self.doc
-                .borrow_mut()
-                .nodes_to_id
-                .insert(id_attr.to_string(), id);
+        if let Some(id_attr) = node.attr(local_name!("id")).map(String::from) {
+            drop(node);
+            self.doc.borrow_mut().nodes_to_id.insert(id_attr, id);
         }
 
         // Custom post-processing by element tag name
