@@ -561,6 +561,7 @@ pub enum ListItemLayoutPosition {
         font: Font,
         glyph_id: parley::swash::GlyphId,
         font_size_px: f32,
+        line_height_px: f32,
         color: peniko::Color,
     },
     OutsideString {

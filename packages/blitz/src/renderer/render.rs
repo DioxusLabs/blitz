@@ -410,25 +410,35 @@ impl<'dom> VelloSceneGenerator<'dom> {
                     &line,
                 );
             }
-        } else if let Some(ListItemLayout { marker, position }) = cx.list_item {
+        } else if let Some(ListItemLayout {
+            marker: _,
+            position,
+        }) = cx.list_item
+        {
             match position {
                 ListItemLayoutPosition::OutsideGlyph {
                     font,
                     glyph_id,
                     font_size_px,
+                    line_height_px,
                     color,
                 } => {
                     let font_ref = FontRef::from_index(font.data.data(), font.index).unwrap();
                     let variations: &[(&str, f32)] = &[];
                     let location = font_ref.axes().location(variations);
-                    let glyph_width = font_ref
-                        .glyph_metrics(Size::new(*font_size_px), &location)
+                    let glyph_metrics = font_ref.glyph_metrics(Size::new(*font_size_px), &location);
+                    let glyph_width = glyph_metrics
                         .advance_width(GlyphId::new(*glyph_id))
                         .unwrap();
+                    let metrics = font_ref.metrics(Size::new(*font_size_px), &location);
                     let coords = location.coords();
                     let pos = Point {
-                        x: pos.x - glyph_width as f64,
-                        y: pos.y,
+                        x: pos.x - glyph_width as f64 - 8.0,
+                        //Center the glyph on the line
+                        y: pos.y
+                            + (*line_height_px as f64 + metrics.ascent as f64
+                                - metrics.descent as f64)
+                                / 2.0,
                     };
                     cx.stroke_glyph(
                         scene,

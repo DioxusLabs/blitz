@@ -12,11 +12,13 @@ use peniko::Font;
 use slab::Slab;
 use style::{
     data::ElementData,
-    properties::longhands::list_style_position::computed_value::T as ListStylePosition,
-    properties::longhands::list_style_type::computed_value::T as ListStyleType,
+    properties::longhands::{
+        list_style_position::computed_value::T as ListStylePosition,
+        list_style_type::computed_value::T as ListStyleType,
+    },
     shared_lock::StylesheetGuards,
     values::{
-        computed::Display,
+        computed::{Display, LineHeight},
         specified::box_::{DisplayInside, DisplayOutside},
     },
 };
@@ -261,7 +263,7 @@ fn node_list_item_child(doc: &mut Document, child: usize, index: usize) -> Optio
         return None;
     };
 
-    let styles = node.primary_styles().unwrap().to_arc();
+    let styles = node.primary_styles().unwrap();
     let list_style_type = styles.clone_list_style_type();
     let list_style_position = styles.clone_list_style_position();
 
@@ -281,15 +283,22 @@ fn node_list_item_child(doc: &mut Document, child: usize, index: usize) -> Optio
             let font_size_px = styles.get_font().font_size.used_size.px();
             let color = styles.get_inherited_text().color.as_peniko();
             let glyph_id = font_ref.charmap().map(char.clone());
+
+            let line_height_px: f32 = match styles.clone_line_height() {
+                LineHeight::Normal => font_size_px * 1.2,
+                LineHeight::Number(num) => font_size_px * num.0,
+                LineHeight::Length(value) => value.0.px(),
+            };
             ListItemLayoutPosition::OutsideGlyph {
                 font: Font::new(bullet_font, family_info.default_font().unwrap().index()),
                 glyph_id,
                 font_size_px,
+                line_height_px,
                 color,
             }
         }
         (ListStylePosition::Outside, Marker::String(str)) => {
-            let mut parley_style = stylo_to_parley::style(styles.as_ref());
+            let mut parley_style = stylo_to_parley::style(&styles);
 
             if let Some(font_stack) = font_for_bullet_style(list_style_type) {
                 parley_style.font_stack = font_stack;
