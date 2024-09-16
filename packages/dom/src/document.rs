@@ -3,6 +3,7 @@ use crate::node::{NodeSpecificData, TextBrush};
 use crate::{ElementNodeData, Node, NodeData, TextNodeData, Viewport};
 use app_units::Au;
 use html5ever::local_name;
+use parley::fontique::FamilyId;
 use peniko::kurbo;
 // use quadtree_rs::Quadtree;
 use parley::editor::{PointerButton, TextEvent};
@@ -103,6 +104,9 @@ pub struct Document {
 
     /// A Parley font context
     pub(crate) font_ctx: parley::FontContext,
+
+    pub(crate) bullet_font_id: FamilyId,
+
     /// A Parley layout context
     pub(crate) layout_ctx: parley::LayoutContext<TextBrush>,
 
@@ -219,6 +223,8 @@ impl Document {
         style_config::set_bool("layout.legacy_layout", true);
         style_config::set_bool("layout.columns.enabled", true);
 
+        let (font_ctx, bullet_font_id) = Self::create_font_context();
+
         let mut doc = Self {
             guard,
             nodes,
@@ -230,7 +236,8 @@ impl Document {
             base_url: None,
             // quadtree: Quadtree::new(20),
             stylesheets: HashMap::new(),
-            font_ctx: parley::FontContext::default(),
+            font_ctx,
+            bullet_font_id,
             layout_ctx: parley::LayoutContext::new(),
 
             hover_node_id: None,
@@ -242,6 +249,14 @@ impl Document {
         doc.create_node(NodeData::Document);
 
         doc
+    }
+
+    fn create_font_context() -> (parley::FontContext, FamilyId) {
+        let mut ctx = parley::FontContext::default();
+        let names = ctx
+            .collection
+            .register_fonts(include_bytes!("moz-bullet-font.otf").to_vec());
+        (ctx, names[0].0)
     }
 
     /// Set base url for resolving linked resources (stylesheets, images, fonts, etc)
