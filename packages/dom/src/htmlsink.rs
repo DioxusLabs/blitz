@@ -109,6 +109,7 @@ impl<'a> DocumentHtmlParser<'a> {
                     node: target_id,
                     source_url: url,
                     guard,
+                    provider: self.net_provider.clone()
                 }),
             );
         }

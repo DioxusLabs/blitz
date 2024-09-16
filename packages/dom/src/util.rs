@@ -1,6 +1,7 @@
 use crate::node::{Node, NodeData};
 use image::DynamicImage;
 use selectors::context::QuirksMode;
+use std::str::FromStr;
 use std::{
     io::Cursor,
     sync::{Arc, OnceLock},
@@ -22,11 +23,13 @@ pub enum Resource {
     Image(usize, Arc<DynamicImage>),
     Svg(usize, Box<Tree>),
     Css(usize, DocumentStyleSheet),
+    Font(Bytes),
 }
 pub(crate) struct CssHandler {
     pub node: usize,
     pub source_url: Url,
     pub guard: SharedRwLock,
+    pub provider: SharedProvider<Resource>
 }
 impl RequestHandler for CssHandler {
     type Data = Resource;
@@ -38,16 +41,41 @@ impl RequestHandler for CssHandler {
             self.source_url.into(),
             Origin::Author,
             ServoArc::new(self.guard.wrap(MediaList::empty())),
-            self.guard,
+            self.guard.clone(),
             None,
             None,
             QuirksMode::NoQuirks,
             AllowImportRules::Yes,
         );
+        let read_guard = self.guard.read();
+
+        sheet.rules(&read_guard)
+            .iter()
+            .filter_map(|rule| match rule {
+                CssRule::FontFace(font_face) => font_face.read_with(&read_guard).sources.as_ref(),
+                _ => None
+            })
+            .map(|source_list| &source_list.0)
+            .flatten()
+            .filter_map(|source| match source {
+                Source::Url(url_source) => Some(url_source),
+                _ => None
+            })
+            .for_each(|url_source| {
+                self.provider.fetch(Url::from_str(url_source.url.as_str()).unwrap(), Box::new(FontFaceHandler))
+            });
+        
         callback.call(Resource::Css(
             self.node,
             DocumentStyleSheet(ServoArc::new(sheet)),
         ))
+    }
+}
+struct FontFaceHandler;
+impl RequestHandler for FontFaceHandler {
+    type Data = Resource;
+    fn bytes(self: Box<Self>, bytes: Bytes, callback: SharedCallback<Self::Data>) {
+        callback.call(Resource::Font(bytes))
     }
 }
 pub(crate) struct ImageHandler(usize);
@@ -152,8 +180,10 @@ pub fn walk_tree(indent: usize, node: &Node) {
     }
 }
 
-use blitz_traits::net::{Bytes, RequestHandler, SharedCallback};
+use blitz_traits::net::{Bytes, RequestHandler, SharedCallback, SharedProvider};
 use peniko::Color as PenikoColor;
+use style::font_face::{FontFaceSourceFormat, FontFaceSourceFormatKeyword, Source};
+use style::stylesheets::{CssRule, StylesheetInDocument};
 
 pub trait ToPenikoColor {
     fn as_peniko(&self) -> PenikoColor;

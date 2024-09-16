@@ -61,7 +61,12 @@ impl<D: 'static> NetProvider for Provider<D> {
         let callback = Arc::clone(&self.callback);
         drop(
             self.rt
-                .spawn(Self::fetch_inner(client, url, callback, handler)),
+                .spawn(async {
+                    let res = Self::fetch_inner(client, url, callback, handler).await;
+                    if let Err(e) = res {
+                        eprintln!("{e}");
+                    }
+                }),
         );
     }
 }

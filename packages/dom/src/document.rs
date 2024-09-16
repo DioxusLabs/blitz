@@ -584,6 +584,9 @@ impl Document {
                 let node = self.get_node_mut(node_id).unwrap();
                 node.element_data_mut().unwrap().node_specific_data = NodeSpecificData::Svg(*tree)
             }
+            Resource::Font(bytes) => {
+                self.font_ctx.collection.register_fonts(bytes.to_vec());
+            }
         }
     }
 
