@@ -52,10 +52,12 @@ impl<'a> DocumentHtmlParser<'a> {
             .unwrap()
     }
 
+    #[track_caller]
     fn create_node(&self, node_data: NodeData) -> usize {
         self.doc.borrow_mut().create_node(node_data)
     }
 
+    #[track_caller]
     fn create_text_node(&self, text: &str) -> usize {
         self.doc.borrow_mut().create_text_node(text)
     }
@@ -100,6 +102,8 @@ impl<'a> DocumentHtmlParser<'a> {
             match crate::util::fetch_string(url.as_str()) {
                 Ok(css) => {
                     let css = html_escape::decode_html_entities(&css);
+                    drop(url);
+                    drop(node);
                     self.doc.borrow_mut().add_stylesheet(&css);
                 }
                 Err(_) => eprintln!("Error fetching stylesheet {}", url),
@@ -154,6 +158,7 @@ impl<'a> DocumentHtmlParser<'a> {
             (tagname, type_attr, value)
         {
             let value = value.to_string();
+            drop(node);
             let id = self.create_text_node(&value);
             self.append(&target_id, NodeOrText::AppendNode(id));
         }
