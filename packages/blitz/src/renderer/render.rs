@@ -48,7 +48,6 @@ use style::values::specified::percentage::ToPercentage;
 use taffy::prelude::Layout;
 use vello::glyph::skrifa::prelude::{NormalizedCoord, Size};
 use vello::glyph::skrifa::{FontRef, GlyphId};
-use vello::glyph::Glyph;
 use vello::kurbo::{BezPath, Cap, Join};
 use vello::peniko::Gradient;
 use vello::skrifa::MetadataProvider;
@@ -443,11 +442,13 @@ impl<'dom> VelloSceneGenerator<'dom> {
                     };
                     cx.stroke_glyph(
                         scene,
-                        *glyph_id,
-                        *font_size_px,
-                        font,
-                        coords,
-                        &Brush::Solid(*color),
+                        Glyph {
+                            glyph_id: *glyph_id,
+                            font,
+                            font_size: *font_size_px,
+                            coords,
+                            brush: &Brush::Solid(*color),
+                        },
                         pos,
                     );
                 }
@@ -565,6 +566,16 @@ impl<'dom> VelloSceneGenerator<'dom> {
     }
 }
 
+/// A glyph to be rendered by an ELementCx
+#[derive(Debug)]
+struct Glyph<'a> {
+    glyph_id: u16,
+    font: &'a parley::Font,
+    font_size: f32,
+    coords: &'a [NormalizedCoord],
+    brush: &'a Brush,
+}
+
 /// A context of loaded and hot data to draw the element from
 struct ElementCx<'a> {
     frame: ElementFrame,
@@ -581,27 +592,18 @@ struct ElementCx<'a> {
 }
 
 impl ElementCx<'_> {
-    fn stroke_glyph(
-        &self,
-        scene: &mut Scene,
-        glyph_id: u16,
-        size: f32,
-        font: &parley::Font,
-        coords: &[NormalizedCoord],
-        brush: &Brush,
-        pos: Point,
-    ) {
+    fn stroke_glyph(&self, scene: &mut Scene, glyph: Glyph, pos: Point) {
         let transform = Affine::translate((pos.x * self.scale, pos.y * self.scale));
         scene
-            .draw_glyphs(font)
-            .font_size(size * self.scale as f32)
-            .normalized_coords(coords)
-            .brush(brush)
+            .draw_glyphs(glyph.font)
+            .font_size(glyph.font_size * self.scale as f32)
+            .normalized_coords(glyph.coords)
+            .brush(glyph.brush)
             .transform(transform)
             .draw(
                 Fill::NonZero,
-                std::iter::once(Glyph {
-                    id: glyph_id as u32,
+                std::iter::once(vello::glyph::Glyph {
+                    id: glyph.glyph_id as u32,
                     x: 0.0,
                     y: 0.0,
                 }),

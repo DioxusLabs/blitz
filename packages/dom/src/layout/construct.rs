@@ -282,7 +282,7 @@ fn node_list_item_child(doc: &mut Document, child: usize, index: usize) -> Optio
                 FontRef::from_index(bullet_font.data(), family_info.default_font_index()).unwrap();
             let font_size_px = styles.get_font().font_size.used_size.px();
             let color = styles.get_inherited_text().color.as_peniko();
-            let glyph_id = font_ref.charmap().map(char.clone());
+            let glyph_id = font_ref.charmap().map(*char);
 
             let line_height_px: f32 = match styles.clone_line_height() {
                 LineHeight::Normal => font_size_px * 1.2,
@@ -309,7 +309,7 @@ fn node_list_item_child(doc: &mut Document, child: usize, index: usize) -> Optio
                 doc.layout_ctx
                     .tree_builder(&mut doc.font_ctx, doc.viewport.scale(), &parley_style);
 
-            builder.push_text(&str);
+            builder.push_text(str);
 
             let mut layout = builder.build().0;
 
