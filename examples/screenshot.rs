@@ -60,12 +60,8 @@ async fn main() {
     timer.time("Setup document prerequsits");
 
     // Create HtmlDocument
-    let mut document = HtmlDocument::from_html(
-        &html,
-        Some(url.clone()),
-        Vec::new(),
-        Arc::clone(&net),
-    );
+    let mut document =
+        HtmlDocument::from_html(&html, Some(url.clone()), Vec::new(), Arc::clone(&net));
 
     timer.time("Parsed document");
 

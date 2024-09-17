@@ -9,14 +9,3 @@ tokio = { workspace = true }
 reqwest = { version = "0.12.7" }
 data-url = "0.3.1"
 thiserror = "1.0.63"
-[package]
-name = "blitz-net"
-version = "0.1.0"
-edition = "2021"
-
-[dependencies]
-blitz-traits = { path = "../traits" }
-tokio = { workspace = true }
-reqwest = { version = "0.12.7" }
-data-url = "0.3.1"
-thiserror = "1.0.63"

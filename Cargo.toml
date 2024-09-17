@@ -57,7 +57,7 @@ blitz = { path = "./packages/blitz" }
 blitz-dom = { path = "./packages/dom" }
 blitz-net = { path = "./packages/net" }
 blitz-traits = { path = "./packages/traits" }
-comrak = { version = "0.21.0", default-features = false, features = ["syntect"] }
+comrak = { git = "https://github.com/nicoburns/comrak", branch = "tasklist-class", default-features = false, features = ["syntect"] }
 png = { version = "0.17" }
 dioxus-blitz = { path = "./packages/dioxus-blitz" }
 dioxus = { workspace = true }

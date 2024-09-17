@@ -108,6 +108,7 @@ pub struct Document {
 
     /// A Parley font context
     pub(crate) font_ctx: parley::FontContext,
+
     /// A Parley layout context
     pub(crate) layout_ctx: parley::LayoutContext<TextBrush>,
 
@@ -224,6 +225,8 @@ impl Document {
         style_config::set_bool("layout.legacy_layout", true);
         style_config::set_bool("layout.columns.enabled", true);
 
+        let font_ctx = Self::create_font_context();
+
         let mut doc = Self {
             guard,
             nodes,
@@ -236,7 +239,7 @@ impl Document {
             // quadtree: Quadtree::new(20),
             ua_stylesheets: HashMap::new(),
             nodes_to_stylesheet: BTreeMap::new(),
-            font_ctx: parley::FontContext::default(),
+            font_ctx,
             layout_ctx: parley::LayoutContext::new(),
 
             hover_node_id: None,
@@ -248,6 +251,13 @@ impl Document {
         doc.create_node(NodeData::Document);
 
         doc
+    }
+
+    fn create_font_context() -> parley::FontContext {
+        let mut ctx = parley::FontContext::default();
+        ctx.collection
+            .register_fonts(include_bytes!("moz-bullet-font.otf").to_vec());
+        ctx
     }
 
     /// Set base url for resolving linked resources (stylesheets, images, fonts, etc)
@@ -801,7 +811,7 @@ impl Document {
         pub fn resolve_layout_children_recursive(doc: &mut Document, node_id: usize) {
             doc.nodes[node_id].is_inline_root = false;
             if let Some(element_data) = doc.nodes[node_id].element_data_mut() {
-                element_data.node_specific_data.take_inline_layout();
+                element_data.take_inline_layout();
             }
 
             doc.ensure_layout_children(node_id);
