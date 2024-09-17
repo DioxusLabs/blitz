@@ -1,150 +1,121 @@
-use std::{
-    io::{Cursor, Read},
-    sync::{Arc, OnceLock},
-    time::Instant,
-};
-
 use crate::node::{Node, NodeData};
 use image::DynamicImage;
-
-const USER_AGENT: &str = "Mozilla/5.0 (X11; Linux x86_64; rv:60.0) Gecko/20100101 Firefox/81.0";
-const FILE_SIZE_LIMIT: u64 = 1_000_000_000; // 1GB
+use selectors::context::QuirksMode;
+use std::str::FromStr;
+use std::{
+    io::Cursor,
+    sync::{Arc, OnceLock},
+};
+use style::{
+    color::AbsoluteColor,
+    media_queries::MediaList,
+    servo_arc::Arc as ServoArc,
+    shared_lock::SharedRwLock,
+    stylesheets::{AllowImportRules, DocumentStyleSheet, Origin, Stylesheet},
+};
+use url::Url;
+use usvg::Tree;
 
 static FONT_DB: OnceLock<Arc<usvg::fontdb::Database>> = OnceLock::new();
 
-pub(crate) enum FetchErr {
-    UrlParse(url::ParseError),
-    Ureq(Box<ureq::Error>),
-    FileIo(std::io::Error),
+#[derive(Clone, Debug)]
+pub enum Resource {
+    Image(usize, Arc<DynamicImage>),
+    Svg(usize, Box<Tree>),
+    Css(usize, DocumentStyleSheet),
+    Font(Bytes),
 }
-impl From<url::ParseError> for FetchErr {
-    fn from(value: url::ParseError) -> Self {
-        Self::UrlParse(value)
+pub(crate) struct CssHandler {
+    pub node: usize,
+    pub source_url: Url,
+    pub guard: SharedRwLock,
+    pub provider: SharedProvider<Resource>,
+}
+impl RequestHandler for CssHandler {
+    type Data = Resource;
+    fn bytes(self: Box<Self>, bytes: Bytes, callback: SharedCallback<Self::Data>) {
+        let css = std::str::from_utf8(&bytes).expect("Invalid UTF8");
+        let escaped_css = html_escape::decode_html_entities(css);
+        let sheet = Stylesheet::from_str(
+            &escaped_css,
+            self.source_url.into(),
+            Origin::Author,
+            ServoArc::new(self.guard.wrap(MediaList::empty())),
+            self.guard.clone(),
+            None,
+            None,
+            QuirksMode::NoQuirks,
+            AllowImportRules::Yes,
+        );
+        let read_guard = self.guard.read();
+
+        sheet
+            .rules(&read_guard)
+            .iter()
+            .filter_map(|rule| match rule {
+                CssRule::FontFace(font_face) => font_face.read_with(&read_guard).sources.as_ref(),
+                _ => None,
+            })
+            .flat_map(|source_list| &source_list.0)
+            .filter_map(|source| match source {
+                Source::Url(url_source) => Some(url_source),
+                _ => None,
+            })
+            .for_each(|url_source| {
+                self.provider.fetch(
+                    Url::from_str(url_source.url.as_str()).unwrap(),
+                    Box::new(FontFaceHandler),
+                )
+            });
+
+        callback.call(Resource::Css(
+            self.node,
+            DocumentStyleSheet(ServoArc::new(sheet)),
+        ))
     }
 }
-impl From<Box<ureq::Error>> for FetchErr {
-    fn from(value: Box<ureq::Error>) -> Self {
-        Self::Ureq(value)
+struct FontFaceHandler;
+impl RequestHandler for FontFaceHandler {
+    type Data = Resource;
+    fn bytes(self: Box<Self>, bytes: Bytes, callback: SharedCallback<Self::Data>) {
+        callback.call(Resource::Font(bytes))
     }
 }
-impl From<std::io::Error> for FetchErr {
-    fn from(value: std::io::Error) -> Self {
-        Self::FileIo(value)
+pub(crate) struct ImageHandler(usize);
+impl ImageHandler {
+    pub(crate) fn new(node_id: usize) -> Self {
+        Self(node_id)
     }
 }
+impl RequestHandler for ImageHandler {
+    type Data = Resource;
+    fn bytes(self: Box<Self>, bytes: Bytes, callback: SharedCallback<Self::Data>) {
+        // Try parse image
+        if let Ok(image) = image::ImageReader::new(Cursor::new(&bytes))
+            .with_guessed_format()
+            .expect("IO errors impossible with Cursor")
+            .decode()
+        {
+            callback.call(Resource::Image(self.0, Arc::new(image)));
+            return;
+        };
+        // Try parse SVG
 
-pub(crate) fn fetch_blob(url: &str) -> Result<Vec<u8>, FetchErr> {
-    let start = Instant::now();
+        // TODO: Use fontique
+        let fontdb = FONT_DB.get_or_init(|| {
+            let mut fontdb = usvg::fontdb::Database::new();
+            fontdb.load_system_fonts();
+            Arc::new(fontdb)
+        });
 
-    // Handle data URIs
-    if url.starts_with("data:") {
-        let data_url = data_url::DataUrl::process(url).unwrap();
-        let decoded = data_url.decode_to_vec().expect("Invalid data url");
-        return Ok(decoded.0);
+        let options = usvg::Options {
+            fontdb: fontdb.clone(),
+            ..Default::default()
+        };
+
+        let tree = Tree::from_data(&bytes, &options).unwrap();
+        callback.call(Resource::Svg(self.0, Box::new(tree)));
     }
-
-    // Handle file:// URLs
-    let parsed_url = Url::parse(url)?;
-    if parsed_url.scheme() == "file" {
-        let file_content = std::fs::read(parsed_url.path())?;
-        return Ok(file_content);
-    }
-
-    let resp = ureq::get(url)
-        .set("User-Agent", USER_AGENT)
-        .call()
-        .map_err(Box::new)?;
-
-    let len: usize = resp
-        .header("Content-Length")
-        .and_then(|c| c.parse().ok())
-        .unwrap_or(0);
-    let mut bytes: Vec<u8> = Vec::with_capacity(len);
-
-    resp.into_reader()
-        .take(FILE_SIZE_LIMIT)
-        .read_to_end(&mut bytes)
-        .unwrap();
-
-    let time = (Instant::now() - start).as_millis();
-    println!("Fetched {} in {}ms", url, time);
-
-    Ok(bytes)
-}
-
-pub(crate) fn fetch_string(url: &str) -> Result<String, FetchErr> {
-    fetch_blob(url).map(|vec| String::from_utf8(vec).expect("Invalid UTF8"))
-}
-
-// pub(crate) fn fetch_buffered_stream(
-//     url: &str,
-// ) -> Result<impl BufRead + Read + Send + Sync, ureq::Error> {
-//     let resp = ureq::get(url).set("User-Agent", USER_AGENT).call()?;
-//     Ok(BufReader::new(resp.into_reader().take(FILE_SIZE_LIMIT)))
-// }
-
-pub(crate) enum ImageOrSvg {
-    Image(DynamicImage),
-    Svg(usvg::Tree),
-}
-
-#[allow(unused)]
-pub(crate) enum ImageFetchErr {
-    UrlParse(url::ParseError),
-    Ureq(Box<ureq::Error>),
-    FileIo(std::io::Error),
-    ImageParse(image::error::ImageError),
-    SvgParse(usvg::Error),
-}
-
-impl From<FetchErr> for ImageFetchErr {
-    fn from(value: FetchErr) -> Self {
-        match value {
-            FetchErr::UrlParse(err) => Self::UrlParse(err),
-            FetchErr::Ureq(err) => Self::Ureq(err),
-            FetchErr::FileIo(err) => Self::FileIo(err),
-        }
-    }
-}
-impl From<image::error::ImageError> for ImageFetchErr {
-    fn from(value: image::error::ImageError) -> Self {
-        Self::ImageParse(value)
-    }
-}
-impl From<usvg::Error> for ImageFetchErr {
-    fn from(value: usvg::Error) -> Self {
-        Self::SvgParse(value)
-    }
-}
-
-pub(crate) fn fetch_image(url: &str) -> Result<ImageOrSvg, ImageFetchErr> {
-    let blob = crate::util::fetch_blob(url)?;
-
-    // Try parse image
-    if let Ok(image) = image::ImageReader::new(Cursor::new(&blob))
-        .with_guessed_format()
-        .expect("IO errors impossible with Cursor")
-        .decode()
-    {
-        return Ok(ImageOrSvg::Image(image));
-    };
-
-    // Try parse SVG
-
-    // TODO: Use fontique
-    let fontdb = FONT_DB.get_or_init(|| {
-        let mut fontdb = usvg::fontdb::Database::new();
-        fontdb.load_system_fonts();
-        Arc::new(fontdb)
-    });
-
-    let options = usvg::Options {
-        fontdb: fontdb.clone(),
-        ..Default::default()
-    };
-
-    let tree = usvg::Tree::from_data(&blob, &options)?;
-    Ok(ImageOrSvg::Svg(tree))
 }
 
 // Debug print an RcDom
@@ -212,9 +183,10 @@ pub fn walk_tree(indent: usize, node: &Node) {
     }
 }
 
+use blitz_traits::net::{Bytes, RequestHandler, SharedCallback, SharedProvider};
 use peniko::Color as PenikoColor;
-use style::color::AbsoluteColor;
-use url::Url;
+use style::font_face::Source;
+use style::stylesheets::{CssRule, StylesheetInDocument};
 
 pub trait ToPenikoColor {
     fn as_peniko(&self) -> PenikoColor;

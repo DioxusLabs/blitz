@@ -26,6 +26,8 @@ style = { workspace = true }
 tracing = { workspace = true, optional = true }
 blitz = { path = "../blitz" }
 blitz-dom = { path = "../dom" }
+blitz-net = { path = "../net" }
+blitz-traits = { path = "../traits" }
 url = { version = "2.5.0", features = ["serde"] }
 ureq = "2.9"
 rustc-hash = "1.1.0"

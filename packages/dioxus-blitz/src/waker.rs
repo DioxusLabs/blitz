@@ -5,6 +5,7 @@ use winit::{event_loop::EventLoopProxy, window::WindowId};
 #[cfg(feature = "accessibility")]
 use accesskit_winit::Event as AccessibilityEvent;
 use accesskit_winit::WindowEvent as AccessibilityWindowEvent;
+use blitz_dom::util::Resource;
 
 #[derive(Debug, Clone)]
 pub enum BlitzEvent {
@@ -12,7 +13,6 @@ pub enum BlitzEvent {
         window_id: WindowId,
         data: BlitzWindowEvent,
     },
-
     /// A hotreload event, basically telling us to update our templates.
     #[cfg(all(
         feature = "hot-reload",
@@ -21,6 +21,14 @@ pub enum BlitzEvent {
         not(target_os = "ios")
     ))]
     HotReloadEvent(dioxus_hot_reload::HotReloadMsg),
+}
+impl From<(WindowId, Resource)> for BlitzEvent {
+    fn from((window_id, resource): (WindowId, Resource)) -> Self {
+        BlitzEvent::Window {
+            window_id,
+            data: BlitzWindowEvent::ResourceLoad(resource),
+        }
+    }
 }
 
 #[cfg(feature = "accessibility")]
@@ -37,7 +45,7 @@ impl From<AccessibilityEvent> for BlitzEvent {
 #[derive(Debug, Clone)]
 pub enum BlitzWindowEvent {
     Poll,
-
+    ResourceLoad(Resource),
     /// An accessibility event from `accesskit`.
     #[cfg(feature = "accessibility")]
     Accessibility(Arc<AccessibilityWindowEvent>),

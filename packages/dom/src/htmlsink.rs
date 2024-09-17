@@ -1,11 +1,11 @@
+use crate::util::{CssHandler, ImageHandler, Resource};
 use std::borrow::Cow;
 use std::cell::{Cell, Ref, RefCell, RefMut};
 use std::collections::HashSet;
-use std::sync::Arc;
 
-use crate::node::{Attribute, ElementNodeData, ImageData, Node, NodeData, NodeSpecificData};
-use crate::util::ImageOrSvg;
+use crate::node::{Attribute, ElementNodeData, Node, NodeData};
 use crate::Document;
+use blitz_traits::net::SharedProvider;
 use html5ever::local_name;
 use html5ever::{
     tendril::{StrTendril, TendrilSink},
@@ -32,20 +32,27 @@ pub struct DocumentHtmlParser<'a> {
 
     /// The document's quirks mode.
     pub quirks_mode: Cell<QuirksMode>,
+
+    pub net_provider: SharedProvider<Resource>,
 }
 
 impl<'a> DocumentHtmlParser<'a> {
-    pub fn new(doc: &mut Document) -> DocumentHtmlParser {
+    pub fn new(doc: &mut Document, net_provider: SharedProvider<Resource>) -> DocumentHtmlParser {
         DocumentHtmlParser {
             doc: RefCell::new(doc),
             style_nodes: RefCell::new(Vec::new()),
             errors: RefCell::new(Vec::new()),
             quirks_mode: Cell::new(QuirksMode::NoQuirks),
+            net_provider,
         }
     }
 
-    pub fn parse_into_doc<'d>(doc: &'d mut Document, html: &str) -> &'d mut Document {
-        let sink = Self::new(doc);
+    pub fn parse_into_doc<'d>(
+        doc: &'d mut Document,
+        net: SharedProvider<Resource>,
+        html: &str,
+    ) -> &'d mut Document {
+        let sink = Self::new(doc, net);
         html5ever::parse_document(sink, Default::default())
             .from_utf8()
             .read_from(&mut html.as_bytes())
@@ -99,15 +106,16 @@ impl<'a> DocumentHtmlParser<'a> {
 
         if let (Some("stylesheet"), Some(href)) = (rel_attr, href_attr) {
             let url = self.doc.borrow().resolve_url(href);
-            match crate::util::fetch_string(url.as_str()) {
-                Ok(css) => {
-                    let css = html_escape::decode_html_entities(&css);
-                    drop(url);
-                    drop(node);
-                    self.doc.borrow_mut().add_stylesheet(&css);
-                }
-                Err(_) => eprintln!("Error fetching stylesheet {}", url),
-            }
+            let guard = self.doc.borrow().guard.clone();
+            self.net_provider.fetch(
+                url.clone(),
+                Box::new(CssHandler {
+                    node: target_id,
+                    source_url: url,
+                    guard,
+                    provider: self.net_provider.clone(),
+                }),
+            );
         }
     }
 
@@ -116,28 +124,8 @@ impl<'a> DocumentHtmlParser<'a> {
         if let Some(raw_src) = node.attr(local_name!("src")) {
             if !raw_src.is_empty() {
                 let src = self.doc.borrow().resolve_url(raw_src);
-                drop(node);
-
-                // FIXME: Image fetching should not be a synchronous network request during parsing
-                let image_result = crate::util::fetch_image(src.as_str());
-                match image_result {
-                    Ok(ImageOrSvg::Image(image)) => {
-                        self.node_mut(target_id)
-                            .element_data_mut()
-                            .unwrap()
-                            .node_specific_data =
-                            NodeSpecificData::Image(ImageData::new(Arc::new(image)));
-                    }
-                    Ok(ImageOrSvg::Svg(svg)) => {
-                        self.node_mut(target_id)
-                            .element_data_mut()
-                            .unwrap()
-                            .node_specific_data = NodeSpecificData::Svg(svg);
-                    }
-                    Err(_) => {
-                        eprintln!("Error fetching image {}", src);
-                    }
-                }
+                self.net_provider
+                    .fetch(src, Box::new(ImageHandler::new(target_id)));
             }
         }
     }
@@ -387,11 +375,13 @@ impl<'b> TreeSink for DocumentHtmlParser<'b> {
 #[test]
 fn parses_some_html() {
     use crate::Viewport;
+    use blitz_traits::net::DummyProvider;
+    use std::sync::Arc;
 
     let html = "<!DOCTYPE html><html><body><h1>hello world</h1></body></html>";
     let viewport = Viewport::new(800, 600, 1.0);
     let mut doc = Document::new(viewport);
-    let sink = DocumentHtmlParser::new(&mut doc);
+    let sink = DocumentHtmlParser::new(&mut doc, Arc::new(DummyProvider::default()));
 
     html5ever::parse_document(sink, Default::default())
         .from_utf8()

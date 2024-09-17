@@ -21,21 +21,28 @@ mod menu;
 #[cfg(feature = "accessibility")]
 mod accessibility;
 
+use crate::application::Application;
+pub use crate::documents::DioxusDocument;
+pub use crate::waker::BlitzEvent;
+use crate::waker::BlitzWindowEvent;
+use crate::window::View;
+pub use crate::window::WindowConfig;
+use blitz_dom::util::Resource;
 use blitz_dom::{DocumentLike, HtmlDocument};
+use blitz_net::Provider;
+use blitz_traits::net::SharedCallback;
 use dioxus::prelude::{ComponentFunction, Element, VirtualDom};
+use std::ops::DerefMut;
+use std::sync::{Arc, Mutex};
+use tokio::runtime::Runtime;
 use url::Url;
+use winit::event_loop::EventLoopProxy;
+use winit::window::WindowId;
 use winit::{
     dpi::LogicalSize,
     event_loop::{ControlFlow, EventLoop},
     window::Window,
 };
-
-use crate::application::Application;
-use crate::window::View;
-
-pub use crate::documents::DioxusDocument;
-pub use crate::waker::BlitzEvent;
-pub use crate::window::WindowConfig;
 
 pub mod exports {
     pub use dioxus;
@@ -67,7 +74,14 @@ pub fn launch_cfg_with_props<P: Clone + 'static, M: 'static>(
     let vdom = VirtualDom::new_with_props(root, props);
     let document = DioxusDocument::new(vdom);
 
-    launch_with_document(document)
+    // Turn on the runtime and enter it
+    let rt = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+
+    let _guard = rt.enter();
+    launch_with_document(document, rt, None)
 }
 
 pub fn launch_url(url: &str) {
@@ -99,11 +113,25 @@ pub fn launch_static_html(html: &str) {
 }
 
 pub fn launch_static_html_cfg(html: &str, cfg: Config) {
-    let document = HtmlDocument::from_html(html, cfg.base_url, cfg.stylesheets);
-    launch_with_document(document)
+    // Turn on the runtime and enter it
+    let rt = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+
+    let _guard = rt.enter();
+
+    let net_callback = Arc::new(Callback::new());
+    let net = Provider::new(
+        rt.handle().clone(),
+        Arc::clone(&net_callback) as SharedCallback<Resource>,
+    );
+
+    let document = HtmlDocument::from_html(html, cfg.base_url, cfg.stylesheets, Arc::new(net));
+    launch_with_document(document, rt, Some(net_callback));
 }
 
-fn launch_with_document(doc: impl DocumentLike) {
+fn launch_with_document(doc: impl DocumentLike, rt: Runtime, net_callback: Option<Arc<Callback>>) {
     let mut window_attrs = Window::default_attributes();
     if !cfg!(all(target_os = "android", target_os = "ios")) {
         window_attrs.inner_size = Some(
@@ -114,20 +142,12 @@ fn launch_with_document(doc: impl DocumentLike) {
             .into(),
         );
     }
-    let window = WindowConfig::new(doc);
+    let window = WindowConfig::new(doc, net_callback);
 
-    launch_with_window(window)
+    launch_with_window(window, rt)
 }
 
-fn launch_with_window<Doc: DocumentLike + 'static>(window: WindowConfig<Doc>) {
-    // Turn on the runtime and enter it
-    let rt = tokio::runtime::Builder::new_multi_thread()
-        .enable_all()
-        .build()
-        .unwrap();
-
-    let _guard = rt.enter();
-
+fn launch_with_window<Doc: DocumentLike + 'static>(window: WindowConfig<Doc>, rt: Runtime) {
     // Build an event loop for the application
     let mut ev_builder = EventLoop::<BlitzEvent>::with_user_event();
     #[cfg(target_os = "android")]
@@ -181,4 +201,44 @@ pub fn set_android_app(app: android_activity::AndroidApp) {
 /// This will panic if the android activity has not been setup with [`set_android_app`].
 pub fn current_android_app(app: android_activity::AndroidApp) -> AndroidApp {
     ANDROID_APP.get().unwrap().clone()
+}
+
+pub struct Callback(Mutex<CallbackInner>);
+enum CallbackInner {
+    Window(WindowId, EventLoopProxy<BlitzEvent>),
+    Queue(Vec<Resource>),
+}
+impl Callback {
+    fn new() -> Self {
+        Self(Mutex::new(CallbackInner::Queue(Vec::new())))
+    }
+    fn init(self: Arc<Self>, window_id: WindowId, proxy: &EventLoopProxy<BlitzEvent>) {
+        let old = std::mem::replace(
+            self.0.lock().unwrap().deref_mut(),
+            CallbackInner::Window(window_id, proxy.clone()),
+        );
+        match old {
+            CallbackInner::Window(..) => {}
+            CallbackInner::Queue(mut queue) => queue
+                .drain(..)
+                .for_each(|res| Self::send_event(&window_id, proxy, res)),
+        }
+    }
+    fn send_event(window_id: &WindowId, proxy: &EventLoopProxy<BlitzEvent>, data: Resource) {
+        proxy
+            .send_event(BlitzEvent::Window {
+                window_id: *window_id,
+                data: BlitzWindowEvent::ResourceLoad(data),
+            })
+            .unwrap()
+    }
+}
+impl blitz_traits::net::Callback for Callback {
+    type Data = Resource;
+    fn call(self: Arc<Self>, data: Self::Data) {
+        match self.0.lock().unwrap().deref_mut() {
+            CallbackInner::Window(wid, proxy) => Self::send_event(wid, proxy, data),
+            CallbackInner::Queue(queue) => queue.push(data),
+        }
+    }
 }

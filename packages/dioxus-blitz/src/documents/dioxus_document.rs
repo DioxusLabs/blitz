@@ -23,6 +23,7 @@ use rustc_hash::FxHashMap;
 use style::{
     data::{ElementData, ElementStyles},
     properties::{style_structs::Font, ComputedValues},
+    stylesheets::Origin,
 };
 
 use super::event_handler::{NativeClickData, NativeConverter, NativeFormData};
@@ -269,7 +270,7 @@ impl DioxusDocument {
         root_node.children.push(html_element_id);
 
         // Include default and user-specified stylesheets
-        doc.add_stylesheet(DEFAULT_CSS);
+        doc.add_user_agent_stylesheet(DEFAULT_CSS);
 
         let state = DioxusState::create(&mut doc);
         let mut doc = Self {
@@ -492,7 +493,8 @@ impl WriteMutations for MutationWriter<'_> {
             let parent = self.doc.get_node(parent).unwrap();
             if let NodeData::Element(ref element) = parent.raw_dom_data {
                 if element.name.local.as_ref() == "style" {
-                    self.doc.add_stylesheet(value);
+                    let sheet = self.doc.make_stylesheet(value, Origin::Author);
+                    self.doc.add_stylesheet_for_node(sheet, parent.id);
                 }
             }
         }
@@ -617,7 +619,6 @@ impl WriteMutations for MutationWriter<'_> {
         // todo: this is very inefficient for inline styles - lots of string cloning going on
         let changed = text.content != value;
         text.content = value.to_string();
-        let contents = text.content.clone();
 
         if let Some(parent) = node.parent {
             // if the text is the child of a style element, we want to put the style into the stylesheet cache
@@ -625,8 +626,8 @@ impl WriteMutations for MutationWriter<'_> {
             if let NodeData::Element(ref element) = parent.raw_dom_data {
                 // Only set stylsheets if the text content has *changed* - we need to unload
                 if changed && element.name.local.as_ref() == "style" {
-                    self.doc.add_stylesheet(value);
-                    self.doc.remove_stylehsheet(&contents);
+                    let sheet = self.doc.make_stylesheet(value, Origin::Author);
+                    self.doc.add_stylesheet_for_node(sheet, parent.id);
                 }
             }
         }

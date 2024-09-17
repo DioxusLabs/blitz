@@ -1,15 +1,16 @@
 use crate::events::{EventData, HitResult, RendererEvent};
-use crate::node::{NodeSpecificData, TextBrush};
+use crate::node::{ImageData, NodeSpecificData, TextBrush};
 use crate::{ElementNodeData, Node, NodeData, TextNodeData, Viewport};
 use app_units::Au;
 use html5ever::local_name;
 use peniko::kurbo;
 // use quadtree_rs::Quadtree;
+use crate::util::Resource;
 use parley::editor::{PointerButton, TextEvent};
 use selectors::{matching::QuirksMode, Element};
 use slab::Slab;
 use std::any::Any;
-use std::collections::{HashMap, HashSet, VecDeque};
+use std::collections::{BTreeMap, Bound, HashMap, HashSet, VecDeque};
 use style::selector_parser::ServoElementSnapshot;
 use style::servo::media_queries::FontMetricsProvider;
 use style::servo_arc::Arc as ServoArc;
@@ -99,7 +100,11 @@ pub struct Document {
     // Scroll within our viewport
     pub(crate) viewport_scroll: kurbo::Point,
 
-    pub(crate) stylesheets: HashMap<String, DocumentStyleSheet>,
+    /// Stylesheets added by the useragent
+    /// where the key is the hashed CSS
+    pub(crate) ua_stylesheets: HashMap<String, DocumentStyleSheet>,
+
+    pub(crate) nodes_to_stylesheet: BTreeMap<usize, DocumentStyleSheet>,
 
     /// A Parley font context
     pub(crate) font_ctx: parley::FontContext,
@@ -232,7 +237,8 @@ impl Document {
             viewport_scroll: kurbo::Point::ZERO,
             base_url: None,
             // quadtree: Quadtree::new(20),
-            stylesheets: HashMap::new(),
+            ua_stylesheets: HashMap::new(),
+            nodes_to_stylesheet: BTreeMap::new(),
             font_ctx,
             layout_ctx: parley::LayoutContext::new(),
 
@@ -516,24 +522,31 @@ impl Document {
     pub fn process_style_element(&mut self, target_id: usize) {
         let css = self.nodes[target_id].text_content();
         let css = html_escape::decode_html_entities(&css);
-        self.add_stylesheet(&css);
+        let sheet = self.make_stylesheet(&css, Origin::Author);
+        self.add_stylesheet_for_node(sheet, target_id);
     }
 
-    pub fn remove_stylehsheet(&mut self, contents: &str) {
-        if let Some(sheet) = self.stylesheets.remove(contents) {
+    pub fn remove_user_agent_stylesheet(&mut self, contents: &str) {
+        if let Some(sheet) = self.ua_stylesheets.remove(contents) {
             self.stylist.remove_stylesheet(sheet, &self.guard.read());
         }
     }
 
-    pub fn add_stylesheet(&mut self, css: &str) {
+    pub fn add_user_agent_stylesheet(&mut self, css: &str) {
+        let sheet = self.make_stylesheet(css, Origin::UserAgent);
+        self.ua_stylesheets.insert(css.to_string(), sheet.clone());
+        self.stylist.append_stylesheet(sheet, &self.guard.read());
+    }
+
+    pub fn make_stylesheet(&self, css: impl AsRef<str>, origin: Origin) -> DocumentStyleSheet {
         let data = Stylesheet::from_str(
-            css,
+            css.as_ref(),
             UrlExtraData::from(
                 "data:text/css;charset=utf-8;base64,"
                     .parse::<Url>()
                     .unwrap(),
             ),
-            Origin::UserAgent,
+            origin,
             ServoArc::new(self.guard.wrap(MediaList::empty())),
             self.guard.clone(),
             None,
@@ -542,14 +555,53 @@ impl Document {
             AllowImportRules::Yes,
         );
 
-        let sheet = DocumentStyleSheet(ServoArc::new(data));
+        DocumentStyleSheet(ServoArc::new(data))
+    }
 
-        self.stylesheets.insert(css.to_string(), sheet.clone());
+    pub fn add_stylesheet_for_node(&mut self, stylesheet: DocumentStyleSheet, node_id: usize) {
+        let old = self.nodes_to_stylesheet.insert(node_id, stylesheet.clone());
 
-        self.stylist.append_stylesheet(sheet, &self.guard.read());
+        if let Some(old) = old {
+            self.stylist.remove_stylesheet(old, &self.guard.read())
+        }
 
-        self.stylist
-            .force_stylesheet_origins_dirty(Origin::Author.into());
+        // TODO: Nodes could potentially get reused so ordering by node_id might be wrong.
+        let insertion_point = self
+            .nodes_to_stylesheet
+            .range((Bound::Excluded(node_id), Bound::Unbounded))
+            .next()
+            .map(|(_, sheet)| sheet);
+
+        if let Some(insertion_point) = insertion_point {
+            self.stylist.insert_stylesheet_before(
+                stylesheet,
+                insertion_point.clone(),
+                &self.guard.read(),
+            )
+        } else {
+            self.stylist
+                .append_stylesheet(stylesheet, &self.guard.read())
+        }
+    }
+
+    pub fn load_resource(&mut self, resource: Resource) {
+        match resource {
+            Resource::Css(node_id, css) => {
+                self.add_stylesheet_for_node(css, node_id);
+            }
+            Resource::Image(node_id, image) => {
+                let node = self.get_node_mut(node_id).unwrap();
+                node.element_data_mut().unwrap().node_specific_data =
+                    NodeSpecificData::Image(ImageData::new(image))
+            }
+            Resource::Svg(node_id, tree) => {
+                let node = self.get_node_mut(node_id).unwrap();
+                node.element_data_mut().unwrap().node_specific_data = NodeSpecificData::Svg(*tree)
+            }
+            Resource::Font(bytes) => {
+                self.font_ctx.collection.register_fonts(bytes.to_vec());
+            }
+        }
     }
 
     pub fn snapshot_node(&mut self, node_id: usize) {
@@ -757,6 +809,11 @@ impl Document {
         resolve_layout_children_recursive(self, root_node_id);
 
         pub fn resolve_layout_children_recursive(doc: &mut Document, node_id: usize) {
+            doc.nodes[node_id].is_inline_root = false;
+            if let Some(element_data) = doc.nodes[node_id].element_data_mut() {
+                element_data.take_inline_layout();
+            }
+
             doc.ensure_layout_children(node_id);
 
             let children = std::mem::take(&mut doc.nodes[node_id].children);

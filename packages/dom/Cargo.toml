@@ -8,6 +8,7 @@ default = ["tracing"]
 tracing = ["dep:tracing"]
 
 [dependencies]
+blitz-traits = { path = "../traits" }
 style = { workspace = true, features = ["servo"] }
 selectors = { workspace = true }
 style_config = { workspace = true }
@@ -26,7 +27,6 @@ string_cache = "0.8.7"
 html-escape = "0.2.13"
 url = { version = "2.5.0", features = ["serde"] }
 data-url = "0.3.1"
-ureq = "2.9"
 image = "0.25.2"
 winit = { version = "0.30.4", default-features = false }
 usvg = "0.42.0"

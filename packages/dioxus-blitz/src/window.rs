@@ -1,6 +1,6 @@
 use crate::accessibility::AccessibilityState;
-use crate::stylo_to_winit;
 use crate::waker::{create_waker, BlitzEvent, BlitzWindowEvent};
+use crate::{stylo_to_winit, Callback};
 use blitz::{Devtools, Renderer};
 use blitz_dom::events::{EventData, RendererEvent};
 use blitz_dom::{DocumentLike, Viewport};
@@ -22,18 +22,28 @@ use crate::menu::init_menu;
 pub struct WindowConfig<Doc: DocumentLike> {
     doc: Doc,
     attributes: WindowAttributes,
+    callback: Option<Arc<Callback>>,
 }
 
 impl<Doc: DocumentLike> WindowConfig<Doc> {
-    pub fn new(doc: Doc) -> Self {
+    pub fn new(doc: Doc, callback: Option<Arc<Callback>>) -> Self {
         WindowConfig {
             doc,
             attributes: Window::default_attributes(),
+            callback,
         }
     }
 
-    pub fn with_attributes(doc: Doc, attributes: WindowAttributes) -> Self {
-        WindowConfig { doc, attributes }
+    pub fn with_attributes(
+        doc: Doc,
+        attributes: WindowAttributes,
+        callback: Option<Arc<Callback>>,
+    ) -> Self {
+        WindowConfig {
+            doc,
+            attributes,
+            callback,
+        }
     }
 }
 
@@ -74,6 +84,10 @@ impl<Doc: DocumentLike> View<Doc> {
         proxy: &EventLoopProxy<BlitzEvent>,
     ) -> Self {
         let winit_window = Arc::from(event_loop.create_window(config.attributes).unwrap());
+
+        if let Some(callback) = config.callback {
+            callback.init(winit_window.id(), proxy);
+        }
 
         // TODO: make this conditional on text input focus
         winit_window.set_ime_allowed(true);
@@ -236,6 +250,10 @@ impl<Doc: DocumentLike> View<Doc> {
         match event {
             BlitzWindowEvent::Poll => {
                 self.poll();
+            }
+            BlitzWindowEvent::ResourceLoad(resource) => {
+                self.dom.as_mut().load_resource(resource);
+                self.request_redraw();
             }
             #[cfg(feature = "accessibility")]
             BlitzWindowEvent::Accessibility(accessibility_event) => {
