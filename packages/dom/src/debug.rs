@@ -22,6 +22,7 @@ impl Document {
                 .as_ref()
                 .unwrap();
 
+            println!("Size: {}x{}", inline_layout.layout.width(), inline_layout.layout.height());
             println!("Text content: {:?}", inline_layout.text);
             println!("Inline Boxes:");
             for ibox in inline_layout.layout.inline_boxes() {
