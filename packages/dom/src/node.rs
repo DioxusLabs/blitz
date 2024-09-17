@@ -557,16 +557,7 @@ pub enum Marker {
 #[derive(Clone)]
 pub enum ListItemLayoutPosition {
     Inside,
-    OutsideGlyph {
-        font: Font,
-        glyph_id: parley::swash::GlyphId,
-        font_size_px: f32,
-        line_height_px: f32,
-        color: peniko::Color,
-    },
-    OutsideString {
-        layout: Box<parley::Layout<TextBrush>>,
-    },
+    Outside(Box<parley::Layout<TextBrush>>),
 }
 
 impl std::fmt::Debug for ListItemLayout {

@@ -5,10 +5,8 @@ use html5ever::{local_name, namespace_url, ns, QualName};
 use parley::{
     builder::TreeBuilder,
     style::{FontStack, WhiteSpaceCollapse},
-    swash::FontRef,
     InlineBox,
 };
-use peniko::Font;
 use slab::Slab;
 use style::{
     data::ElementData,
@@ -18,7 +16,7 @@ use style::{
     },
     shared_lock::StylesheetGuards,
     values::{
-        computed::{Display, LineHeight},
+        computed::Display,
         specified::box_::{DisplayInside, DisplayOutside},
     },
 };
@@ -28,9 +26,7 @@ use crate::{
         ListItemLayout, ListItemLayoutPosition, Marker, NodeKind, NodeSpecificData, TextBrush,
         TextInputData, TextLayout,
     },
-    stylo_to_parley,
-    util::ToPenikoColor,
-    Document, ElementNodeData, Node, NodeData,
+    stylo_to_parley, Document, ElementNodeData, Node, NodeData,
 };
 
 use super::table::build_table_context;
@@ -269,35 +265,9 @@ fn node_list_item_child(doc: &mut Document, child: usize, index: usize) -> Optio
 
     let marker = marker_for_style(list_style_type, index)?;
 
-    let position = match (list_style_position, &marker) {
-        (ListStylePosition::Inside, _) => ListItemLayoutPosition::Inside,
-        (ListStylePosition::Outside, Marker::Char(char)) => {
-            let family_info = doc.font_ctx.collection.family(doc.bullet_font_id).unwrap();
-            let bullet_font = doc
-                .font_ctx
-                .source_cache
-                .get(family_info.default_font().unwrap().source())
-                .unwrap();
-            let font_ref =
-                FontRef::from_index(bullet_font.data(), family_info.default_font_index()).unwrap();
-            let font_size_px = styles.get_font().font_size.used_size.px();
-            let color = styles.get_inherited_text().color.as_peniko();
-            let glyph_id = font_ref.charmap().map(*char);
-
-            let line_height_px: f32 = match styles.clone_line_height() {
-                LineHeight::Normal => font_size_px * 1.2,
-                LineHeight::Number(num) => font_size_px * num.0,
-                LineHeight::Length(value) => value.0.px(),
-            };
-            ListItemLayoutPosition::OutsideGlyph {
-                font: Font::new(bullet_font, family_info.default_font().unwrap().index()),
-                glyph_id,
-                font_size_px,
-                line_height_px,
-                color,
-            }
-        }
-        (ListStylePosition::Outside, Marker::String(str)) => {
+    let position = match list_style_position {
+        ListStylePosition::Inside => ListItemLayoutPosition::Inside,
+        ListStylePosition::Outside => {
             let mut parley_style = stylo_to_parley::style(&styles);
 
             if let Some(font_stack) = font_for_bullet_style(list_style_type) {
@@ -309,15 +279,16 @@ fn node_list_item_child(doc: &mut Document, child: usize, index: usize) -> Optio
                 doc.layout_ctx
                     .tree_builder(&mut doc.font_ctx, doc.viewport.scale(), &parley_style);
 
-            builder.push_text(str);
+            match &marker {
+                Marker::Char(char) => builder.push_text(&char.to_string()),
+                Marker::String(str) => builder.push_text(str),
+            };
 
             let mut layout = builder.build().0;
 
             layout.break_all_lines(Some(0.0));
 
-            ListItemLayoutPosition::OutsideString {
-                layout: Box::new(layout),
-            }
+            ListItemLayoutPosition::Outside(Box::new(layout))
         }
     };
 
