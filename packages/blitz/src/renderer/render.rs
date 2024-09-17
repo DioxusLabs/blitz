@@ -6,7 +6,10 @@ use crate::{
     devtools::Devtools,
     util::{GradientSlice, StyloGradient, ToVelloColor},
 };
-use blitz_dom::node::{NodeData, TextBrush, TextInputData, TextNodeData};
+use blitz_dom::node::{
+    ListItemLayout, ListItemLayoutPosition, Marker, NodeData, TextBrush, TextInputData,
+    TextNodeData,
+};
 use blitz_dom::{local_name, Document, Node};
 
 use style::{
@@ -273,7 +276,7 @@ impl<'dom> VelloSceneGenerator<'dom> {
         //  - background, border, font, margin, outline, padding,
         //
         // Not Implemented:
-        //  - list, position, table, text, ui,
+        //  - position, table, text, ui,
         //  - custom_properties, writing_mode, rules, visited_style, flags,  box_, column, counters, effects,
         //  - inherited_box, inherited_table, inherited_text, inherited_ui,
         let element = &self.dom.as_ref().tree()[node_id];
@@ -404,12 +407,47 @@ impl<'dom> VelloSceneGenerator<'dom> {
                     &line,
                 );
             }
-        } else if element.is_inline_root {
+        } else if let Some(ListItemLayout {
+            marker,
+            position: ListItemLayoutPosition::Outside(layout),
+        }) = cx.list_item
+        {
+            //Right align and pad the bullet when rendering outside
+            let x_padding = match marker {
+                Marker::Char(_) => 8.0,
+                Marker::String(_) => 0.0,
+            };
+            let x_offset = -(layout.full_width() / layout.scale() + x_padding);
+            //Align the marker with the baseline of the first line of text in the list item
+            let y_offset = if let Some(text_layout) = &element
+                .raw_dom_data
+                .downcast_element()
+                .and_then(|el| el.inline_layout_data.as_ref())
+            {
+                if let Some(first_text_line) = text_layout.layout.lines().next() {
+                    (first_text_line.metrics().baseline
+                        - layout.lines().next().unwrap().metrics().baseline)
+                        / layout.scale()
+                } else {
+                    0.0
+                }
+            } else {
+                0.0
+            };
+            let pos = Point {
+                x: pos.x + x_offset as f64,
+                y: pos.y + y_offset as f64,
+            };
+            cx.stroke_text(scene, layout, pos);
+        }
+
+        if element.is_inline_root {
             let text_layout = &element
                 .raw_dom_data
                 .downcast_element()
                 .unwrap()
-                .inline_layout_data()
+                .inline_layout_data
+                .as_ref()
                 .unwrap_or_else(|| {
                     panic!("Tried to render node marked as inline root that does not have an inline layout: {:?}", element);
                 });
@@ -499,6 +537,7 @@ impl<'dom> VelloSceneGenerator<'dom> {
                 .map(|data| &*data.image),
             svg: element.element_data().unwrap().svg_data(),
             text_input: element.element_data().unwrap().text_input_data(),
+            list_item: element.element_data().unwrap().list_item_data.as_deref(),
             devtools: &self.devtools,
         }
     }
@@ -515,6 +554,7 @@ struct ElementCx<'a> {
     image: Option<&'a DynamicImage>,
     svg: Option<&'a usvg::Tree>,
     text_input: Option<&'a TextInputData>,
+    list_item: Option<&'a ListItemLayout>,
     devtools: &'a Devtools,
 }
 

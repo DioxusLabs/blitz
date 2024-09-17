@@ -345,7 +345,6 @@ impl Document {
             .raw_dom_data
             .downcast_element_mut()
             .unwrap()
-            .node_specific_data
             .take_inline_layout()
             .unwrap();
 
@@ -541,7 +540,7 @@ impl Document {
             .raw_dom_data
             .downcast_element_mut()
             .unwrap()
-            .node_specific_data = NodeSpecificData::InlineRoot(inline_layout);
+            .inline_layout_data = Some(inline_layout);
 
         output
     }

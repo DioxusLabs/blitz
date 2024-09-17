@@ -307,6 +307,13 @@ pub struct ElementNodeData {
     ///   - The text editor for input/textarea elements
     pub node_specific_data: NodeSpecificData,
 
+    /// Parley text layout (elements with inline inner display mode only)
+    pub inline_layout_data: Option<Box<TextLayout>>,
+
+    //Data associated with display: list-item. Note that this display mode
+    // does not exclude inline_layout_data
+    pub list_item_data: Option<Box<ListItemLayout>>,
+
     /// The element's template contents (\<template\> elements only)
     pub template_contents: Option<usize>,
     // /// Whether the node is a [HTML integration point] (https://html.spec.whatwg.org/multipage/#html-integration-point)
@@ -327,6 +334,8 @@ impl ElementNodeData {
             attrs,
             is_focussable: false,
             style_attribute: Default::default(),
+            inline_layout_data: None,
+            list_item_data: None,
             node_specific_data: NodeSpecificData::None,
             template_contents: None,
             // listeners: FxHashSet::default(),
@@ -405,20 +414,6 @@ impl ElementNodeData {
         }
     }
 
-    pub fn inline_layout_data(&self) -> Option<&TextLayout> {
-        match self.node_specific_data {
-            NodeSpecificData::InlineRoot(ref data) => Some(data),
-            _ => None,
-        }
-    }
-
-    pub fn inline_layout_data_mut(&mut self) -> Option<&mut TextLayout> {
-        match self.node_specific_data {
-            NodeSpecificData::InlineRoot(ref mut data) => Some(data),
-            _ => None,
-        }
-    }
-
     pub fn flush_is_focussable(&mut self) {
         let disabled: bool = self.attr_parsed(local_name!("disabled")).unwrap_or(false);
         let tabindex: Option<i32> = self.attr_parsed(local_name!("tabindex"));
@@ -467,6 +462,10 @@ impl ElementNodeData {
             )))
         });
     }
+
+    pub fn take_inline_layout(&mut self) -> Option<Box<TextLayout>> {
+        std::mem::take(&mut self.inline_layout_data)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Default)]
@@ -511,8 +510,6 @@ pub enum NodeSpecificData {
     Image(ImageData),
     /// The element's image content (\<img\> element's only)
     Svg(usvg::Tree),
-    /// Parley text layout (elements with inline inner display mode only)
-    InlineRoot(Box<TextLayout>),
     /// Pre-computed table layout data
     TableRoot(Arc<TableContext>),
     /// Parley text editor (text inputs)
@@ -528,7 +525,6 @@ impl std::fmt::Debug for NodeSpecificData {
         match self {
             NodeSpecificData::Image(_) => f.write_str("NodeSpecificData::Image"),
             NodeSpecificData::Svg(_) => f.write_str("NodeSpecificData::Svg"),
-            NodeSpecificData::InlineRoot(_) => f.write_str("NodeSpecificData::InlineRoot"),
             NodeSpecificData::TableRoot(_) => f.write_str("NodeSpecificData::TableRoot"),
             NodeSpecificData::TextInput(_) => f.write_str("NodeSpecificData::TextInput"),
             NodeSpecificData::CheckboxInput(_) => f.write_str("NodeSpecificData::CheckboxInput"),
@@ -537,22 +533,36 @@ impl std::fmt::Debug for NodeSpecificData {
     }
 }
 
-impl NodeSpecificData {
-    pub fn take_inline_layout(&mut self) -> Option<Box<TextLayout>> {
-        let taken = std::mem::take(self);
-        match taken {
-            Self::InlineRoot(data) => Some(data),
-            _ => {
-                *self = taken;
-                None
-            }
-        }
-    }
-}
-
 impl Default for NodeSpecificData {
     fn default() -> Self {
         Self::None
+    }
+}
+
+#[derive(Clone)]
+pub struct ListItemLayout {
+    pub marker: Marker,
+    pub position: ListItemLayoutPosition,
+}
+
+//We seperate chars from strings in order to optimise rendering - ie not needing to
+//construct a whole parley layout for simple char markers
+#[derive(Debug, PartialEq, Clone)]
+pub enum Marker {
+    Char(char),
+    String(String),
+}
+
+//Value depends on list-style-position, determining whether a seperate layout is created for it
+#[derive(Clone)]
+pub enum ListItemLayoutPosition {
+    Inside,
+    Outside(Box<parley::Layout<TextBrush>>),
+}
+
+impl std::fmt::Debug for ListItemLayout {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "ListItemLayout - marker {:?}", self.marker)
     }
 }
 
