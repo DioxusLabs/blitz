@@ -64,7 +64,7 @@ async fn main() {
         &html,
         Some(url.clone()),
         Vec::new(),
-        Arc::clone(&net) as SharedProvider<Resource>,
+        Arc::clone(&net),
     );
 
     timer.time("Parsed document");

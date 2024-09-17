@@ -100,7 +100,10 @@ pub struct Document {
     // Scroll within our viewport
     pub(crate) viewport_scroll: kurbo::Point,
 
+    /// Stylesheets added by the useragent
+    /// where the key is the hashed CSS
     pub(crate) ua_stylesheets: HashMap<String, DocumentStyleSheet>,
+
     pub(crate) nodes_to_stylesheet: BTreeMap<usize, DocumentStyleSheet>,
 
     /// A Parley font context
@@ -510,7 +513,7 @@ impl Document {
         let css = self.nodes[target_id].text_content();
         let css = html_escape::decode_html_entities(&css);
         let sheet = self.make_stylesheet(&css, Origin::Author);
-        self.append_or_insert_stylesheet(sheet, target_id);
+        self.add_stylesheet_for_node(sheet, target_id);
     }
 
     pub fn remove_user_agent_stylesheet(&mut self, contents: &str) {
@@ -544,7 +547,8 @@ impl Document {
 
         DocumentStyleSheet(ServoArc::new(data))
     }
-    pub fn append_or_insert_stylesheet(&mut self, stylesheet: DocumentStyleSheet, node_id: usize) {
+
+    pub fn add_stylesheet_for_node(&mut self, stylesheet: DocumentStyleSheet, node_id: usize) {
         let old = self.nodes_to_stylesheet.insert(node_id, stylesheet.clone());
 
         if let Some(old) = old {
@@ -573,7 +577,7 @@ impl Document {
     pub fn load_resource(&mut self, resource: Resource) {
         match resource {
             Resource::Css(node_id, css) => {
-                self.append_or_insert_stylesheet(css, node_id);
+                self.add_stylesheet_for_node(css, node_id);
             }
             Resource::Image(node_id, image) => {
                 let node = self.get_node_mut(node_id).unwrap();

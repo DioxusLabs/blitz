@@ -3,7 +3,10 @@ use data_url::DataUrl;
 use reqwest::Client;
 use std::sync::Arc;
 use thiserror::Error;
-use tokio::runtime::Handle;
+use tokio::{
+    runtime::Handle,
+    sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender},
+};
 
 const USER_AGENT: &str = "Mozilla/5.0 (X11; Linux x86_64; rv:60.0) Gecko/20100101 Firefox/81.0";
 
@@ -59,15 +62,12 @@ impl<D: 'static> NetProvider for Provider<D> {
     fn fetch(&self, url: Url, handler: BoxedHandler<Self::Data>) {
         let client = self.client.clone();
         let callback = Arc::clone(&self.callback);
-        drop(
-            self.rt
-                .spawn(async {
-                    let res = Self::fetch_inner(client, url, callback, handler).await;
-                    if let Err(e) = res {
-                        eprintln!("{e}");
-                    }
-                }),
-        );
+        drop(self.rt.spawn(async {
+            let res = Self::fetch_inner(client, url, callback, handler).await;
+            if let Err(e) = res {
+                eprintln!("{e}");
+            }
+        }));
     }
 }
 
@@ -83,7 +83,6 @@ enum ProviderError {
     ReqwestError(#[from] reqwest::Error),
 }
 
-use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender};
 pub struct MpscCallback<T>(UnboundedSender<T>);
 impl<T> MpscCallback<T> {
     pub fn new() -> (UnboundedReceiver<T>, Self) {

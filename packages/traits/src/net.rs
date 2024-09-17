@@ -36,8 +36,3 @@ impl<D: Sync + Send + 'static> NetProvider for DummyProvider<D> {
     type Data = D;
     fn fetch(&self, _url: Url, _handler: BoxedHandler<Self::Data>) {}
 }
-pub struct DummyCallback<T>(PhantomData<T>);
-impl<T: Sync + Send + 'static> Callback for DummyCallback<T> {
-    type Data = T;
-    fn call(self: Arc<Self>, _data: Self::Data) {}
-}

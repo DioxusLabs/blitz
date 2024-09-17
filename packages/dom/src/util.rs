@@ -29,7 +29,7 @@ pub(crate) struct CssHandler {
     pub node: usize,
     pub source_url: Url,
     pub guard: SharedRwLock,
-    pub provider: SharedProvider<Resource>
+    pub provider: SharedProvider<Resource>,
 }
 impl RequestHandler for CssHandler {
     type Data = Resource;
@@ -49,22 +49,25 @@ impl RequestHandler for CssHandler {
         );
         let read_guard = self.guard.read();
 
-        sheet.rules(&read_guard)
+        sheet
+            .rules(&read_guard)
             .iter()
             .filter_map(|rule| match rule {
                 CssRule::FontFace(font_face) => font_face.read_with(&read_guard).sources.as_ref(),
-                _ => None
+                _ => None,
             })
-            .map(|source_list| &source_list.0)
-            .flatten()
+            .flat_map(|source_list| &source_list.0)
             .filter_map(|source| match source {
                 Source::Url(url_source) => Some(url_source),
-                _ => None
+                _ => None,
             })
             .for_each(|url_source| {
-                self.provider.fetch(Url::from_str(url_source.url.as_str()).unwrap(), Box::new(FontFaceHandler))
+                self.provider.fetch(
+                    Url::from_str(url_source.url.as_str()).unwrap(),
+                    Box::new(FontFaceHandler),
+                )
             });
-        
+
         callback.call(Resource::Css(
             self.node,
             DocumentStyleSheet(ServoArc::new(sheet)),
@@ -182,7 +185,7 @@ pub fn walk_tree(indent: usize, node: &Node) {
 
 use blitz_traits::net::{Bytes, RequestHandler, SharedCallback, SharedProvider};
 use peniko::Color as PenikoColor;
-use style::font_face::{FontFaceSourceFormat, FontFaceSourceFormatKeyword, Source};
+use style::font_face::Source;
 use style::stylesheets::{CssRule, StylesheetInDocument};
 
 pub trait ToPenikoColor {

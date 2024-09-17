@@ -494,7 +494,7 @@ impl WriteMutations for MutationWriter<'_> {
             if let NodeData::Element(ref element) = parent.raw_dom_data {
                 if element.name.local.as_ref() == "style" {
                     let sheet = self.doc.make_stylesheet(value, Origin::Author);
-                    self.doc.append_or_insert_stylesheet(sheet, parent.id);
+                    self.doc.add_stylesheet_for_node(sheet, parent.id);
                 }
             }
         }
@@ -627,7 +627,7 @@ impl WriteMutations for MutationWriter<'_> {
                 // Only set stylsheets if the text content has *changed* - we need to unload
                 if changed && element.name.local.as_ref() == "style" {
                     let sheet = self.doc.make_stylesheet(value, Origin::Author);
-                    self.doc.append_or_insert_stylesheet(sheet, parent.id);
+                    self.doc.add_stylesheet_for_node(sheet, parent.id);
                 }
             }
         }

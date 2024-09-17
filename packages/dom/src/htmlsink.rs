@@ -109,7 +109,7 @@ impl<'a> DocumentHtmlParser<'a> {
                     node: target_id,
                     source_url: url,
                     guard,
-                    provider: self.net_provider.clone()
+                    provider: self.net_provider.clone(),
                 }),
             );
         }
@@ -376,7 +376,7 @@ fn parses_some_html() {
     let mut doc = Document::new(viewport);
     let sink = DocumentHtmlParser::new(
         &mut doc,
-        Arc::new(DummyProvider::default()) as SharedProvider<Resource>,
+        Arc::new(DummyProvider::default()),
     );
 
     html5ever::parse_document(sink, Default::default())
