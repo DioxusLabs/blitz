@@ -6,6 +6,7 @@ use html5ever::local_name;
 use peniko::kurbo;
 use string_cache::Atom;
 use style::attr::{AttrIdentifier, AttrValue};
+use style::values::computed::Overflow;
 use style::values::GenericAtomIdent;
 // use quadtree_rs::Quadtree;
 use crate::util::Resource;
@@ -921,6 +922,16 @@ impl Document {
             return;
         };
 
+        let (can_x_scroll, can_y_scroll) = node
+            .primary_styles()
+            .map(|styles| {
+                (
+                    matches!(styles.clone_overflow_x(), Overflow::Scroll | Overflow::Auto),
+                    matches!(styles.clone_overflow_y(), Overflow::Scroll | Overflow::Auto),
+                )
+            })
+            .unwrap_or((false, false));
+
         let new_x = node.scroll_offset.x - x;
         let new_y = node.scroll_offset.y - y;
 
@@ -931,7 +942,9 @@ impl Document {
         let scroll_height = node.final_layout.scroll_height() as f64;
 
         // If we're past our scroll bounds, transfer remainder of scrolling to parent/viewport
-        if new_x < 0.0 {
+        if !can_x_scroll {
+            bubble_x = x
+        } else if new_x < 0.0 {
             bubble_x = -new_x;
             node.scroll_offset.x = 0.0;
         } else if new_x > scroll_width {
@@ -941,7 +954,9 @@ impl Document {
             node.scroll_offset.x = new_x;
         }
 
-        if new_y < 0.0 {
+        if !can_y_scroll {
+            bubble_y = y
+        } else if new_y < 0.0 {
             bubble_y = -new_y;
             node.scroll_offset.y = 0.0;
         } else if new_y > scroll_height {
