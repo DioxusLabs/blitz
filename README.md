@@ -2,7 +2,7 @@
 
 Blitz is a "native" HTML/CSS renderer built to support the "Dioxus Native" project. It is effectively a lightweight webview except that the JavaScript engine is replaced with a native Rust API which allows Rust reactivity / state management libraries like Dioxus to interface with it directly.
 
-Talk to us in: the #native channel in the [Dioxus Discord](https://discord.gg/v4mwT25E)
+Talk to us in: the #native channel in the [Dioxus Discord](https://discord.gg/AnNPqT95pu)
 
 #### It currenly has two frontends:
 
