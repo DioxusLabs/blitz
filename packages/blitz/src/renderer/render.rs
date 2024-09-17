@@ -143,6 +143,7 @@ impl<'dom> VelloSceneGenerator<'dom> {
     fn render_debug_overlay(&self, scene: &mut Scene, node_id: usize) {
         let scale = self.scale;
 
+        let viewport_scroll = self.dom.as_ref().viewport_scroll();
         let mut node = &self.dom.as_ref().tree()[node_id];
 
         let taffy::Layout {
@@ -171,6 +172,9 @@ impl<'dom> VelloSceneGenerator<'dom> {
             abs_x += x;
             abs_y += y;
         }
+
+        abs_x -= viewport_scroll.x as f32;
+        abs_y -= viewport_scroll.y as f32;
 
         // Hack: scale factor
         let abs_x = f64::from(abs_x) * scale;
