@@ -47,10 +47,8 @@ use style::values::generics::image::{
 };
 use style::values::specified::percentage::ToPercentage;
 use taffy::prelude::Layout;
-use vello::glyph::skrifa::prelude::NormalizedCoord;
 use vello::kurbo::{BezPath, Cap, Join};
 use vello::peniko::Gradient;
-use vello::skrifa::MetadataProvider;
 use vello::{
     kurbo::{Affine, Point, Rect, Shape, Stroke, Vec2},
     peniko::{self, Brush, Color, Fill, Mix},
@@ -414,14 +412,31 @@ impl<'dom> VelloSceneGenerator<'dom> {
             position: ListItemLayoutPosition::Outside(layout),
         }) = cx.list_item
         {
-            let x_margin = match marker {
+            //Right align and pad the bullet when rendering outside
+            let x_padding = match marker {
                 Marker::Char(_) => 8.0,
                 Marker::String(_) => 0.0,
             };
-            //Right align and pad the bullet when rendering outside
+            let x_offset = -(layout.full_width() / layout.scale() + x_padding);
+            //Align the marker with the baseline of the first line of text in the list item
+            let y_offset = if let Some(text_layout) = &element
+                .raw_dom_data
+                .downcast_element()
+                .and_then(|el| el.inline_layout_data.as_ref())
+            {
+                if let Some(first_text_line) = text_layout.layout.lines().next() {
+                    (first_text_line.metrics().baseline
+                        - layout.lines().next().unwrap().metrics().baseline)
+                        / layout.scale()
+                } else {
+                    0.0
+                }
+            } else {
+                0.0
+            };
             let pos = Point {
-                x: pos.x - (layout.full_width() / layout.scale() + x_margin) as f64,
-                y: pos.y,
+                x: pos.x + x_offset as f64,
+                y: pos.y + y_offset as f64,
             };
             cx.stroke_text(scene, layout, pos);
         }

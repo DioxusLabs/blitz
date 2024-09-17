@@ -1,7 +1,7 @@
 use atomic_refcell::{AtomicRef, AtomicRefCell};
 use html5ever::{local_name, LocalName, QualName};
 use image::DynamicImage;
-use peniko::{kurbo, Font};
+use peniko::kurbo;
 use selectors::matching::QuirksMode;
 use slab::Slab;
 use std::cell::RefCell;
