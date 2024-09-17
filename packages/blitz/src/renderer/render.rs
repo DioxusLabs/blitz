@@ -7,7 +7,8 @@ use crate::{
     util::{GradientSlice, StyloGradient, ToVelloColor},
 };
 use blitz_dom::node::{
-    ListItemLayout, ListItemLayoutPosition, NodeData, TextBrush, TextInputData, TextNodeData,
+    ListItemLayout, ListItemLayoutPosition, Marker, NodeData, TextBrush, TextInputData,
+    TextNodeData,
 };
 use blitz_dom::{local_name, Document, Node};
 
@@ -46,11 +47,8 @@ use style::values::generics::image::{
 };
 use style::values::specified::percentage::ToPercentage;
 use taffy::prelude::Layout;
-use vello::glyph::skrifa::prelude::{NormalizedCoord, Size};
-use vello::glyph::skrifa::{FontRef, GlyphId};
 use vello::kurbo::{BezPath, Cap, Join};
 use vello::peniko::Gradient;
-use vello::skrifa::MetadataProvider;
 use vello::{
     kurbo::{Affine, Point, Rect, Shape, Stroke, Vec2},
     peniko::{self, Brush, Color, Fill, Mix},
@@ -410,58 +408,37 @@ impl<'dom> VelloSceneGenerator<'dom> {
                 );
             }
         } else if let Some(ListItemLayout {
-            marker: _,
-            position,
+            marker,
+            position: ListItemLayoutPosition::Outside(layout),
         }) = cx.list_item
         {
-            match position {
-                ListItemLayoutPosition::OutsideGlyph {
-                    font,
-                    glyph_id,
-                    font_size_px,
-                    line_height_px,
-                    color,
-                } => {
-                    let font_ref = FontRef::from_index(font.data.data(), font.index).unwrap();
-                    let variations: &[(&str, f32)] = &[];
-                    let location = font_ref.axes().location(variations);
-                    let glyph_metrics = font_ref.glyph_metrics(Size::new(*font_size_px), &location);
-                    let glyph_width = glyph_metrics
-                        .advance_width(GlyphId::new(*glyph_id))
-                        .unwrap();
-                    let metrics = font_ref.metrics(Size::new(*font_size_px), &location);
-                    let coords = location.coords();
-                    let pos = Point {
-                        // Right align the glyph, and add some gap between the glyph and the following list item text
-                        x: pos.x - glyph_width as f64 - 8.0,
-                        // Center the glyph on the line
-                        y: pos.y
-                            + (*line_height_px as f64 + metrics.ascent as f64
-                                - metrics.descent as f64)
-                                / 2.0,
-                    };
-                    cx.stroke_glyph(
-                        scene,
-                        Glyph {
-                            glyph_id: *glyph_id,
-                            font,
-                            font_size: *font_size_px,
-                            coords,
-                            brush: &Brush::Solid(*color),
-                        },
-                        pos,
-                    );
+            //Right align and pad the bullet when rendering outside
+            let x_padding = match marker {
+                Marker::Char(_) => 8.0,
+                Marker::String(_) => 0.0,
+            };
+            let x_offset = -(layout.full_width() / layout.scale() + x_padding);
+            //Align the marker with the baseline of the first line of text in the list item
+            let y_offset = if let Some(text_layout) = &element
+                .raw_dom_data
+                .downcast_element()
+                .and_then(|el| el.inline_layout_data.as_ref())
+            {
+                if let Some(first_text_line) = text_layout.layout.lines().next() {
+                    (first_text_line.metrics().baseline
+                        - layout.lines().next().unwrap().metrics().baseline)
+                        / layout.scale()
+                } else {
+                    0.0
                 }
-                ListItemLayoutPosition::OutsideString { layout } => {
-                    //Right align and pad the bullet when rendering outside
-                    let pos = Point {
-                        x: pos.x - (layout.full_width() / layout.scale()) as f64,
-                        y: pos.y,
-                    };
-                    cx.stroke_text(scene, layout, pos);
-                }
-                ListItemLayoutPosition::Inside => {}
-            }
+            } else {
+                0.0
+            };
+            let pos = Point {
+                x: pos.x + x_offset as f64,
+                y: pos.y + y_offset as f64,
+            };
+            cx.stroke_text(scene, layout, pos);
         }
 
         if element.is_inline_root {
@@ -566,16 +543,6 @@ impl<'dom> VelloSceneGenerator<'dom> {
     }
 }
 
-/// A glyph to be rendered by an ELementCx
-#[derive(Debug)]
-struct Glyph<'a> {
-    glyph_id: u16,
-    font: &'a parley::Font,
-    font_size: f32,
-    coords: &'a [NormalizedCoord],
-    brush: &'a Brush,
-}
-
 /// A context of loaded and hot data to draw the element from
 struct ElementCx<'a> {
     frame: ElementFrame,
@@ -592,24 +559,6 @@ struct ElementCx<'a> {
 }
 
 impl ElementCx<'_> {
-    fn stroke_glyph(&self, scene: &mut Scene, glyph: Glyph, pos: Point) {
-        let transform = Affine::translate((pos.x * self.scale, pos.y * self.scale));
-        scene
-            .draw_glyphs(glyph.font)
-            .font_size(glyph.font_size * self.scale as f32)
-            .normalized_coords(glyph.coords)
-            .brush(glyph.brush)
-            .transform(transform)
-            .draw(
-                Fill::NonZero,
-                std::iter::once(vello::glyph::Glyph {
-                    id: glyph.glyph_id as u32,
-                    x: 0.0,
-                    y: 0.0,
-                }),
-            )
-    }
-
     fn stroke_text(&self, scene: &mut Scene, text_layout: &parley::Layout<TextBrush>, pos: Point) {
         let transform = Affine::translate((pos.x * self.scale, pos.y * self.scale));
 
