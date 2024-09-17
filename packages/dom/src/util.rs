@@ -63,7 +63,7 @@ impl RequestHandler for CssHandler {
             })
             .for_each(|url_source| {
                 let mut format = match &url_source.format_hint {
-                    Some(FontFaceSourceFormat::Keyword(fmt)) => fmt.clone(),
+                    Some(FontFaceSourceFormat::Keyword(fmt)) => *fmt,
                     Some(FontFaceSourceFormat::String(str)) => match str.as_str() {
                         "woff2" => FontFaceSourceFormatKeyword::Woff2,
                         "ttf" => FontFaceSourceFormatKeyword::Truetype,
@@ -86,7 +86,10 @@ impl RequestHandler for CssHandler {
                         _ => FontFaceSourceFormatKeyword::None,
                     }
                 }
-                if let font_format @ (FontFaceSourceFormatKeyword::Svg | FontFaceSourceFormatKeyword::EmbeddedOpentype | FontFaceSourceFormatKeyword::Woff) = format {
+                if let font_format @ (FontFaceSourceFormatKeyword::Svg
+                | FontFaceSourceFormatKeyword::EmbeddedOpentype
+                | FontFaceSourceFormatKeyword::Woff) = format
+                {
                     tracing::warn!("Skipping unsupported font of type {:?}", font_format);
                     return;
                 }
@@ -108,9 +111,14 @@ impl RequestHandler for FontFaceHandler {
     fn bytes(mut self: Box<Self>, mut bytes: Bytes, callback: SharedCallback<Self::Data>) {
         if self.0 == FontFaceSourceFormatKeyword::None {
             self.0 = match bytes.as_ref() {
+                // https://w3c.github.io/woff/woff2/#woff20Header
                 [0x77, 0x4F, 0x46, 0x32, ..] => FontFaceSourceFormatKeyword::Woff2,
+                // https://learn.microsoft.com/en-us/typography/opentype/spec/otff#organization-of-an-opentype-font
                 [0x4F, 0x54, 0x54, 0x4F, ..] => FontFaceSourceFormatKeyword::Opentype,
-                [0x00, 0x01, 0x00, 0x00, 0x00, ..] => FontFaceSourceFormatKeyword::Truetype,
+                // https://developer.apple.com/fonts/TrueType-Reference-Manual/RM06/Chap6.html#ScalerTypeNote
+                [0x00, 0x01, 0x00, 0x00, ..] | [0x74, 0x72, 0x75, 0x65, ..] => {
+                    FontFaceSourceFormatKeyword::Truetype
+                }
                 _ => FontFaceSourceFormatKeyword::None,
             }
         }
