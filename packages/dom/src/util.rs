@@ -62,9 +62,37 @@ impl RequestHandler for CssHandler {
                 _ => None,
             })
             .for_each(|url_source| {
+                let mut format = match &url_source.format_hint {
+                    Some(FontFaceSourceFormat::Keyword(fmt)) => fmt.clone(),
+                    Some(FontFaceSourceFormat::String(str)) => match str.as_str() {
+                        "woff2" => FontFaceSourceFormatKeyword::Woff2,
+                        "ttf" => FontFaceSourceFormatKeyword::Truetype,
+                        "otf" => FontFaceSourceFormatKeyword::Opentype,
+                        _ => FontFaceSourceFormatKeyword::None,
+                    },
+                    _ => FontFaceSourceFormatKeyword::None,
+                };
+                if format == FontFaceSourceFormatKeyword::None {
+                    let Some((_, end)) = url_source.url.as_str().rsplit_once('.') else {
+                        return;
+                    };
+                    format = match end {
+                        "woff2" => FontFaceSourceFormatKeyword::Woff2,
+                        "woff" => FontFaceSourceFormatKeyword::Woff,
+                        "ttf" => FontFaceSourceFormatKeyword::Truetype,
+                        "otf" => FontFaceSourceFormatKeyword::Opentype,
+                        "svg" => FontFaceSourceFormatKeyword::Svg,
+                        "eot" => FontFaceSourceFormatKeyword::EmbeddedOpentype,
+                        _ => FontFaceSourceFormatKeyword::None,
+                    }
+                }
+                if let font_format @ (FontFaceSourceFormatKeyword::Svg | FontFaceSourceFormatKeyword::EmbeddedOpentype | FontFaceSourceFormatKeyword::Woff) = format {
+                    tracing::warn!("Skipping unsupported font of type {:?}", font_format);
+                    return;
+                }
                 self.provider.fetch(
                     Url::from_str(url_source.url.as_str()).unwrap(),
-                    Box::new(FontFaceHandler),
+                    Box::new(FontFaceHandler(format)),
                 )
             });
 
@@ -74,10 +102,34 @@ impl RequestHandler for CssHandler {
         ))
     }
 }
-struct FontFaceHandler;
+struct FontFaceHandler(FontFaceSourceFormatKeyword);
 impl RequestHandler for FontFaceHandler {
     type Data = Resource;
-    fn bytes(self: Box<Self>, bytes: Bytes, callback: SharedCallback<Self::Data>) {
+    fn bytes(mut self: Box<Self>, mut bytes: Bytes, callback: SharedCallback<Self::Data>) {
+        if self.0 == FontFaceSourceFormatKeyword::None {
+            self.0 = match bytes.as_ref() {
+                [0x77, 0x4F, 0x46, 0x32, ..] => FontFaceSourceFormatKeyword::Woff2,
+                [0x4F, 0x54, 0x54, 0x4F, ..] => FontFaceSourceFormatKeyword::Opentype,
+                [0x00, 0x01, 0x00, 0x00, 0x00, ..] => FontFaceSourceFormatKeyword::Truetype,
+                _ => FontFaceSourceFormatKeyword::None,
+            }
+        }
+        match self.0 {
+            FontFaceSourceFormatKeyword::Woff2 => {
+                tracing::info!("Decompressing woff2 font");
+                let decompressed = woff::version2::decompress(&bytes);
+                if let Some(decompressed) = decompressed {
+                    bytes = Bytes::from(decompressed);
+                } else {
+                    tracing::warn!("Failed to decompress woff2 font");
+                }
+            }
+            FontFaceSourceFormatKeyword::None => {
+                return;
+            }
+            _ => {}
+        }
+
         callback.call(Resource::Font(bytes))
     }
 }
@@ -188,7 +240,7 @@ pub fn walk_tree(indent: usize, node: &Node) {
 
 use blitz_traits::net::{Bytes, RequestHandler, SharedCallback, SharedProvider};
 use peniko::Color as PenikoColor;
-use style::font_face::Source;
+use style::font_face::{FontFaceSourceFormat, FontFaceSourceFormatKeyword, Source};
 use style::stylesheets::{CssRule, StylesheetInDocument};
 
 pub trait ToPenikoColor {
