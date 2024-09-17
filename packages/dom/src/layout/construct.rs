@@ -229,6 +229,12 @@ fn collect_list_item_children(
             node.element_data_mut().unwrap().list_item_data = Some(Box::new(layout));
             *index += 1;
             collect_list_item_children(doc, index, reversed, child);
+        } else {
+            // Unset marker in case it was previously set
+            let node = &mut doc.nodes[child];
+            if let Some(element_data) = node.element_data_mut() {
+                element_data.list_item_data = None;
+            }
         }
     }
 }
@@ -262,7 +268,6 @@ fn node_list_item_child(doc: &mut Document, child: usize, index: usize) -> Optio
     let styles = node.primary_styles().unwrap();
     let list_style_type = styles.clone_list_style_type();
     let list_style_position = styles.clone_list_style_position();
-
     let marker = marker_for_style(list_style_type, index)?;
 
     let position = match list_style_position {
