@@ -57,7 +57,7 @@ async fn main() {
         Arc::new(callback) as SharedCallback<Resource>,
     ));
 
-    timer.time("Setup document prerequsits");
+    timer.time("Setup document prerequisites");
 
     // Create HtmlDocument
     let mut document =
