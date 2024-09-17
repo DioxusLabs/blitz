@@ -1,11 +1,11 @@
-use crate::util::{CssHandler, ImageHandler, Resource};
+use crate::util::{CssHandler, ImageHandler};
 use std::borrow::Cow;
 use std::cell::{Cell, Ref, RefCell, RefMut};
 use std::collections::HashSet;
 
 use crate::node::{Attribute, ElementNodeData, Node, NodeData};
 use crate::Document;
-use blitz_traits::net::SharedProvider;
+use blitz_traits::net::fetch;
 use html5ever::local_name;
 use html5ever::{
     tendril::{StrTendril, TendrilSink},
@@ -32,27 +32,23 @@ pub struct DocumentHtmlParser<'a> {
 
     /// The document's quirks mode.
     pub quirks_mode: Cell<QuirksMode>,
-
-    pub net_provider: SharedProvider<Resource>,
 }
 
 impl<'a> DocumentHtmlParser<'a> {
-    pub fn new(doc: &mut Document, net_provider: SharedProvider<Resource>) -> DocumentHtmlParser {
+    pub fn new(doc: &mut Document) -> DocumentHtmlParser {
         DocumentHtmlParser {
             doc: RefCell::new(doc),
             style_nodes: RefCell::new(Vec::new()),
             errors: RefCell::new(Vec::new()),
             quirks_mode: Cell::new(QuirksMode::NoQuirks),
-            net_provider,
         }
     }
 
     pub fn parse_into_doc<'d>(
         doc: &'d mut Document,
-        net: SharedProvider<Resource>,
         html: &str,
     ) -> &'d mut Document {
-        let sink = Self::new(doc, net);
+        let sink = Self::new(doc);
         html5ever::parse_document(sink, Default::default())
             .from_utf8()
             .read_from(&mut html.as_bytes())
@@ -106,15 +102,14 @@ impl<'a> DocumentHtmlParser<'a> {
 
         if let (Some("stylesheet"), Some(href)) = (rel_attr, href_attr) {
             let url = self.doc.borrow().resolve_url(href);
-            let guard = self.doc.borrow().guard.clone();
-            self.net_provider.fetch(
+            fetch(
                 url.clone(),
-                Box::new(CssHandler {
+                CssHandler {
                     node: target_id,
                     source_url: url,
-                    guard,
-                    provider: self.net_provider.clone(),
-                }),
+                    guard: self.doc.borrow().guard.clone(),
+                    callback: self.doc.borrow().resource_callback.clone(),
+                },
             );
         }
     }
@@ -124,8 +119,13 @@ impl<'a> DocumentHtmlParser<'a> {
         if let Some(raw_src) = node.attr(local_name!("src")) {
             if !raw_src.is_empty() {
                 let src = self.doc.borrow().resolve_url(raw_src);
-                self.net_provider
-                    .fetch(src, Box::new(ImageHandler::new(target_id)));
+                fetch(
+                    src,
+                    ImageHandler(
+                        target_id,
+                        self.doc.borrow().resource_callback.clone(),
+                    ),
+                );
             }
         }
     }
@@ -380,8 +380,8 @@ fn parses_some_html() {
 
     let html = "<!DOCTYPE html><html><body><h1>hello world</h1></body></html>";
     let viewport = Viewport::new(800, 600, 1.0);
-    let mut doc = Document::new(viewport);
-    let sink = DocumentHtmlParser::new(&mut doc, Arc::new(DummyProvider::default()));
+    let mut doc = Document::new(viewport, None);
+    let sink = DocumentHtmlParser::new(&mut doc, Arc::new(DummyProvider));
 
     html5ever::parse_document(sink, Default::default())
         .from_utf8()

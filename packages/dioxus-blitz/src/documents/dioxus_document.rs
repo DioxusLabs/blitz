@@ -243,7 +243,7 @@ impl DioxusDocument {
 
     pub fn new(vdom: VirtualDom) -> Self {
         let viewport = Viewport::new(0, 0, 1.0);
-        let mut doc = Document::new(viewport);
+        let mut doc = Document::new(viewport, None);
 
         // Create a virtual "html" element to act as the root element, as we won't necessarily
         // have a single root otherwise, while the rest of blitz requires that we do

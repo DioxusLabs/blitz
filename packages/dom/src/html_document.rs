@@ -3,7 +3,7 @@ use crate::{Document, DocumentHtmlParser, DocumentLike, Viewport};
 
 use crate::util::Resource;
 use crate::DEFAULT_CSS;
-use blitz_traits::net::SharedProvider;
+use blitz_traits::net::SharedCallback;
 
 pub struct HtmlDocument {
     inner: Document,
@@ -37,11 +37,11 @@ impl HtmlDocument {
         html: &str,
         base_url: Option<String>,
         stylesheets: Vec<String>,
-        net: SharedProvider<Resource>,
+        shared_callback: SharedCallback<Resource>,
     ) -> Self {
         // Spin up the virtualdom and include the default stylesheet
         let viewport = Viewport::new(0, 0, 1.0);
-        let mut dom = Document::new(viewport);
+        let mut dom = Document::new(viewport, Some(shared_callback));
 
         // Set base url if configured
         if let Some(url) = &base_url {
@@ -55,7 +55,7 @@ impl HtmlDocument {
         }
 
         // Parse HTML string into document
-        DocumentHtmlParser::parse_into_doc(&mut dom, net, html);
+        DocumentHtmlParser::parse_into_doc(&mut dom, html);
 
         HtmlDocument { inner: dom }
     }

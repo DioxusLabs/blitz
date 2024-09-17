@@ -1,4 +1,4 @@
-use blitz_traits::net::{BoxedHandler, Bytes, Callback, NetProvider, SharedCallback, Url};
+use blitz_traits::net::{BoxedHandler, Bytes, Callback, NetProvider, Url};
 use data_url::DataUrl;
 use reqwest::Client;
 use std::sync::Arc;
@@ -6,43 +6,38 @@ use thiserror::Error;
 use tokio::{
     runtime::Handle,
     sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender},
+    sync::oneshot::{ Receiver as OsReceiver, Sender as OsSender, channel as os_channel},
 };
 
 const USER_AGENT: &str = "Mozilla/5.0 (X11; Linux x86_64; rv:60.0) Gecko/20100101 Firefox/81.0";
 
-pub struct Provider<D> {
+pub struct Provider {
     rt: Handle,
     client: Client,
-    callback: SharedCallback<D>,
 }
-impl<D> Provider<D> {
-    pub fn new(rt_handle: Handle, callback: SharedCallback<D>) -> Self {
+impl Provider {
+    pub fn new(rt_handle: Handle) -> Self {
         Self {
             rt: rt_handle,
             client: Client::new(),
-            callback,
         }
     }
 }
-impl<D: 'static> Provider<D> {
-    pub fn is_empty(&self) -> bool {
-        Arc::strong_count(&self.callback) == 1
-    }
+impl Provider {
     async fn fetch_inner(
         client: Client,
         url: Url,
-        callback: SharedCallback<D>,
-        handler: BoxedHandler<D>,
+        handler: BoxedHandler,
     ) -> Result<(), ProviderError> {
         match url.scheme() {
             "data" => {
                 let data_url = DataUrl::process(url.as_str())?;
                 let decoded = data_url.decode_to_vec()?;
-                handler.bytes(Bytes::from(decoded.0), callback);
+                handler.bytes(Bytes::from(decoded.0));
             }
             "file" => {
                 let file_content = std::fs::read(url.path())?;
-                handler.bytes(Bytes::from(file_content), callback);
+                handler.bytes(Bytes::from(file_content));
             }
             _ => {
                 let response = client
@@ -50,20 +45,18 @@ impl<D: 'static> Provider<D> {
                     .header("User-Agent", USER_AGENT)
                     .send()
                     .await?;
-                handler.bytes(response.bytes().await?, callback);
+                handler.bytes(response.bytes().await?);
             }
         }
         Ok(())
     }
 }
 
-impl<D: 'static> NetProvider for Provider<D> {
-    type Data = D;
-    fn fetch(&self, url: Url, handler: BoxedHandler<Self::Data>) {
+impl NetProvider for Provider {
+    fn fetch(&self, url: Url, handler: BoxedHandler) {
         let client = self.client.clone();
-        let callback = Arc::clone(&self.callback);
         drop(self.rt.spawn(async {
-            let res = Self::fetch_inner(client, url, callback, handler).await;
+            let res = Self::fetch_inner(client, url, handler).await;
             if let Err(e) = res {
                 eprintln!("{e}");
             }

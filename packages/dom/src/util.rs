@@ -29,11 +29,10 @@ pub(crate) struct CssHandler {
     pub node: usize,
     pub source_url: Url,
     pub guard: SharedRwLock,
-    pub provider: SharedProvider<Resource>,
+    pub callback: SharedCallback<Resource>,
 }
 impl RequestHandler for CssHandler {
-    type Data = Resource;
-    fn bytes(self: Box<Self>, bytes: Bytes, callback: SharedCallback<Self::Data>) {
+    fn bytes(self: Box<Self>, bytes: Bytes) {
         let css = std::str::from_utf8(&bytes).expect("Invalid UTF8");
         let escaped_css = html_escape::decode_html_entities(css);
         let sheet = Stylesheet::from_str(
@@ -93,22 +92,21 @@ impl RequestHandler for CssHandler {
                     tracing::warn!("Skipping unsupported font of type {:?}", font_format);
                     return;
                 }
-                self.provider.fetch(
+                fetch(
                     Url::from_str(url_source.url.as_str()).unwrap(),
-                    Box::new(FontFaceHandler(format)),
+                    FontFaceHandler(format, self.callback.clone()),
                 )
             });
 
-        callback.call(Resource::Css(
+        self.callback.call(Resource::Css(
             self.node,
             DocumentStyleSheet(ServoArc::new(sheet)),
         ))
     }
 }
-struct FontFaceHandler(FontFaceSourceFormatKeyword);
+struct FontFaceHandler(FontFaceSourceFormatKeyword, SharedCallback<Resource>);
 impl RequestHandler for FontFaceHandler {
-    type Data = Resource;
-    fn bytes(mut self: Box<Self>, mut bytes: Bytes, callback: SharedCallback<Self::Data>) {
+    fn bytes(mut self: Box<Self>, mut bytes: Bytes) {
         if self.0 == FontFaceSourceFormatKeyword::None {
             self.0 = match bytes.as_ref() {
                 // https://w3c.github.io/woff/woff2/#woff20Header
@@ -138,25 +136,19 @@ impl RequestHandler for FontFaceHandler {
             _ => {}
         }
 
-        callback.call(Resource::Font(bytes))
+        self.1.call(Resource::Font(bytes))
     }
 }
-pub(crate) struct ImageHandler(usize);
-impl ImageHandler {
-    pub(crate) fn new(node_id: usize) -> Self {
-        Self(node_id)
-    }
-}
+pub(crate) struct ImageHandler(pub usize, pub SharedCallback<Resource>);
 impl RequestHandler for ImageHandler {
-    type Data = Resource;
-    fn bytes(self: Box<Self>, bytes: Bytes, callback: SharedCallback<Self::Data>) {
+    fn bytes(self: Box<Self>, bytes: Bytes) {
         // Try parse image
         if let Ok(image) = image::ImageReader::new(Cursor::new(&bytes))
             .with_guessed_format()
             .expect("IO errors impossible with Cursor")
             .decode()
         {
-            callback.call(Resource::Image(self.0, Arc::new(image)));
+            self.1.call(Resource::Image(self.0, Arc::new(image)));
             return;
         };
         // Try parse SVG
@@ -177,7 +169,7 @@ impl RequestHandler for ImageHandler {
 
         let tree = Tree::from_data(&bytes, &options)
             .unwrap_or_else(|_| Tree::from_data(DUMMY_SVG, &options).unwrap());
-        callback.call(Resource::Svg(self.0, Box::new(tree)));
+        self.1.call(Resource::Svg(self.0, Box::new(tree)));
     }
 }
 
@@ -246,7 +238,7 @@ pub fn walk_tree(indent: usize, node: &Node) {
     }
 }
 
-use blitz_traits::net::{Bytes, RequestHandler, SharedCallback, SharedProvider};
+use blitz_traits::net::{fetch, Bytes, RequestHandler, SharedCallback};
 use peniko::Color as PenikoColor;
 use style::font_face::{FontFaceSourceFormat, FontFaceSourceFormatKeyword, Source};
 use style::stylesheets::{CssRule, StylesheetInDocument};

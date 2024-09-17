@@ -30,7 +30,7 @@ pub use crate::window::WindowConfig;
 use blitz_dom::util::Resource;
 use blitz_dom::{DocumentLike, HtmlDocument};
 use blitz_net::Provider;
-use blitz_traits::net::SharedCallback;
+use blitz_traits::net::{set_provider, SharedCallback};
 use dioxus::prelude::{ComponentFunction, Element, VirtualDom};
 use std::ops::DerefMut;
 use std::sync::{Arc, Mutex};
@@ -122,12 +122,15 @@ pub fn launch_static_html_cfg(html: &str, cfg: Config) {
     let _guard = rt.enter();
 
     let net_callback = Arc::new(Callback::new());
-    let net = Provider::new(
-        rt.handle().clone(),
+    let net = Provider::new(rt.handle().clone());
+    set_provider(net);
+
+    let document = HtmlDocument::from_html(
+        html,
+        cfg.base_url,
+        cfg.stylesheets,
         Arc::clone(&net_callback) as SharedCallback<Resource>,
     );
-
-    let document = HtmlDocument::from_html(html, cfg.base_url, cfg.stylesheets, Arc::new(net));
     launch_with_document(document, rt, Some(net_callback));
 }
 
