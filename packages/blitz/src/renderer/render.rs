@@ -150,6 +150,7 @@ impl<'dom> VelloSceneGenerator<'dom> {
             size,
             border,
             padding,
+            margin,
             ..
         } = node.final_layout;
         let taffy::Size { width, height } = size;
@@ -158,6 +159,7 @@ impl<'dom> VelloSceneGenerator<'dom> {
         let scaled_pb = padding_border.map(|v| f64::from(v) * scale);
         let scaled_padding = padding.map(|v| f64::from(v) * scale);
         let scaled_border = border.map(|v| f64::from(v) * scale);
+        let scaled_margin = margin.map(|v| f64::from(v) * scale);
 
         let content_width = width - padding_border.left - padding_border.right;
         let content_height = height - padding_border.top - padding_border.bottom;
@@ -255,6 +257,18 @@ impl<'dom> VelloSceneGenerator<'dom> {
             Vec2::new(width, height),
             scaled_border.map(f64::from),
             border_color,
+        );
+
+        let margin_color = Color::rgba(249.0 / 255.0, 204.0 / 245.0, 157.0 / 255.0, 0.5); // orange
+        draw_cutout_rect(
+            scene,
+            base_translation - Vec2::new(scaled_margin.left, scaled_margin.top),
+            Vec2::new(
+                width + scaled_margin.left + scaled_margin.right,
+                height + scaled_margin.top + scaled_margin.bottom,
+            ),
+            scaled_margin.map(f64::from),
+            margin_color,
         );
     }
 
