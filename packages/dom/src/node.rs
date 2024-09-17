@@ -824,8 +824,10 @@ impl Node {
         }
 
         // Call `.hit()` on each child in turn. If any return `Some` then return that value. Else return `Some(self.id).
-        self.children
+        self.layout_children
+            .borrow()
             .iter()
+            .flatten()
             .find_map(|&i| self.with(i).hit(x, y))
             .or(Some(HitResult {
                 node_id: self.id,
