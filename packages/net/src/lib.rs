@@ -6,7 +6,6 @@ use thiserror::Error;
 use tokio::{
     runtime::Handle,
     sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender},
-    sync::oneshot::{ Receiver as OsReceiver, Sender as OsSender, channel as os_channel},
 };
 
 const USER_AGENT: &str = "Mozilla/5.0 (X11; Linux x86_64; rv:60.0) Gecko/20100101 Firefox/81.0";

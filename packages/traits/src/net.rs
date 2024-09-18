@@ -48,7 +48,7 @@ impl<D: Send + Sync + 'static> Callback for DummyCallback<D> {
     fn call(self: Arc<Self>, _data: Self::Data) {}
 }
 
-impl<F: Fn(Bytes) + Send + Sync + 'static> RequestHandler for F {
+impl<F: FnOnce(Bytes) + Send + Sync + 'static> RequestHandler for F {
     fn bytes(self: Box<Self>, bytes: Bytes) {
         self(bytes)
     }

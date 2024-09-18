@@ -6,12 +6,13 @@ use std::{
     io::Cursor,
     sync::{Arc, OnceLock},
 };
+use std::sync::atomic::AtomicBool;
 use style::{
     color::AbsoluteColor,
     media_queries::MediaList,
     servo_arc::Arc as ServoArc,
     shared_lock::SharedRwLock,
-    stylesheets::{AllowImportRules, DocumentStyleSheet, Origin, Stylesheet},
+    stylesheets::{AllowImportRules, DocumentStyleSheet, Origin, Stylesheet, StylesheetLoader as ServoStylesheetLoader},
 };
 use url::Url;
 use usvg::Tree;
@@ -31,6 +32,62 @@ pub(crate) struct CssHandler {
     pub guard: SharedRwLock,
     pub callback: SharedCallback<Resource>,
 }
+
+#[derive(Clone)]
+struct StylesheetLoader(SharedCallback<Resource>);
+impl ServoStylesheetLoader for StylesheetLoader {
+    fn request_stylesheet(&self, url: CssUrl, location: SourceLocation, context: &ParserContext, lock: &SharedRwLock, media: ServoArc<Locked<MediaList>>, supports: Option<ImportSupportsCondition>, layer: ImportLayer) -> ServoArc<Locked<ImportRule>> {
+        if !supports.as_ref().map_or(true, |s| s.enabled) {
+            return ServoArc::new(lock.wrap(ImportRule {
+                url,
+                stylesheet: ImportSheet::new_refused(),
+                supports,
+                layer,
+                source_location: location,
+            }));
+        }
+
+        let sheet = ServoArc::new(Stylesheet {
+            contents: StylesheetContents::from_data(
+                CssRules::new(Vec::new(), lock),
+                context.stylesheet_origin,
+                context.url_data.clone(),
+                context.quirks_mode,
+            ),
+            media,
+            shared_lock: lock.clone(),
+            disabled: AtomicBool::new(false),
+        });
+
+        let stylesheet = ImportSheet::new(sheet.clone());
+        let import = ImportRule {
+            url,
+            stylesheet,
+            supports,
+            layer,
+            source_location: location,
+        };
+        
+        let url = import.url.url().unwrap().clone();
+        let this = self.clone();
+        let read_lock = lock.clone();
+        fetch(url.as_ref().clone(), move|bytes: Bytes| {
+            let css = std::str::from_utf8(&bytes).expect("Invalid UTF8");
+            let escaped_css = html_escape::decode_html_entities(css);
+            Stylesheet::update_from_str(
+                sheet.as_ref(),
+                &escaped_css,
+                UrlExtraData(url),
+                Some(&this),
+                None,
+                AllowImportRules::Yes,
+            );
+            fetch_font_face(sheet.as_ref(), &this.0, &read_lock.read())
+        });
+
+        ServoArc::new(lock.wrap(import))
+    }
+}
 impl RequestHandler for CssHandler {
     fn bytes(self: Box<Self>, bytes: Bytes) {
         let css = std::str::from_utf8(&bytes).expect("Invalid UTF8");
@@ -41,62 +98,13 @@ impl RequestHandler for CssHandler {
             Origin::Author,
             ServoArc::new(self.guard.wrap(MediaList::empty())),
             self.guard.clone(),
-            None,
+            Some(&StylesheetLoader(self.callback.clone())),
             None,
             QuirksMode::NoQuirks,
             AllowImportRules::Yes,
         );
         let read_guard = self.guard.read();
-
-        sheet
-            .rules(&read_guard)
-            .iter()
-            .filter_map(|rule| match rule {
-                CssRule::FontFace(font_face) => font_face.read_with(&read_guard).sources.as_ref(),
-                _ => None,
-            })
-            .flat_map(|source_list| &source_list.0)
-            .filter_map(|source| match source {
-                Source::Url(url_source) => Some(url_source),
-                _ => None,
-            })
-            .for_each(|url_source| {
-                let mut format = match &url_source.format_hint {
-                    Some(FontFaceSourceFormat::Keyword(fmt)) => *fmt,
-                    Some(FontFaceSourceFormat::String(str)) => match str.as_str() {
-                        "woff2" => FontFaceSourceFormatKeyword::Woff2,
-                        "ttf" => FontFaceSourceFormatKeyword::Truetype,
-                        "otf" => FontFaceSourceFormatKeyword::Opentype,
-                        _ => FontFaceSourceFormatKeyword::None,
-                    },
-                    _ => FontFaceSourceFormatKeyword::None,
-                };
-                if format == FontFaceSourceFormatKeyword::None {
-                    let Some((_, end)) = url_source.url.as_str().rsplit_once('.') else {
-                        return;
-                    };
-                    format = match end {
-                        "woff2" => FontFaceSourceFormatKeyword::Woff2,
-                        "woff" => FontFaceSourceFormatKeyword::Woff,
-                        "ttf" => FontFaceSourceFormatKeyword::Truetype,
-                        "otf" => FontFaceSourceFormatKeyword::Opentype,
-                        "svg" => FontFaceSourceFormatKeyword::Svg,
-                        "eot" => FontFaceSourceFormatKeyword::EmbeddedOpentype,
-                        _ => FontFaceSourceFormatKeyword::None,
-                    }
-                }
-                if let font_format @ (FontFaceSourceFormatKeyword::Svg
-                | FontFaceSourceFormatKeyword::EmbeddedOpentype
-                | FontFaceSourceFormatKeyword::Woff) = format
-                {
-                    tracing::warn!("Skipping unsupported font of type {:?}", font_format);
-                    return;
-                }
-                fetch(
-                    Url::from_str(url_source.url.as_str()).unwrap(),
-                    FontFaceHandler(format, self.callback.clone()),
-                )
-            });
+        fetch_font_face(&sheet, &self.callback, &read_guard);
 
         self.callback.call(Resource::Css(
             self.node,
@@ -139,6 +147,59 @@ impl RequestHandler for FontFaceHandler {
         self.1.call(Resource::Font(bytes))
     }
 }
+
+fn fetch_font_face(sheet: &Stylesheet, resource_callback: &SharedCallback<Resource>, read_guard: &SharedRwLockReadGuard) {
+    sheet
+        .rules(read_guard)
+        .iter()
+        .filter_map(|rule| match rule {
+            CssRule::FontFace(font_face) => font_face.read_with(&read_guard).sources.as_ref(),
+            _ => None,
+        })
+        .flat_map(|source_list| &source_list.0)
+        .filter_map(|source| match source {
+            Source::Url(url_source) => Some(url_source),
+            _ => None,
+        })
+        .for_each(|url_source| {
+            let mut format = match &url_source.format_hint {
+                Some(FontFaceSourceFormat::Keyword(fmt)) => *fmt,
+                Some(FontFaceSourceFormat::String(str)) => match str.as_str() {
+                    "woff2" => FontFaceSourceFormatKeyword::Woff2,
+                    "ttf" => FontFaceSourceFormatKeyword::Truetype,
+                    "otf" => FontFaceSourceFormatKeyword::Opentype,
+                    _ => FontFaceSourceFormatKeyword::None,
+                },
+                _ => FontFaceSourceFormatKeyword::None,
+            };
+            if format == FontFaceSourceFormatKeyword::None {
+                let Some((_, end)) = url_source.url.as_str().rsplit_once('.') else {
+                    return;
+                };
+                format = match end {
+                    "woff2" => FontFaceSourceFormatKeyword::Woff2,
+                    "woff" => FontFaceSourceFormatKeyword::Woff,
+                    "ttf" => FontFaceSourceFormatKeyword::Truetype,
+                    "otf" => FontFaceSourceFormatKeyword::Opentype,
+                    "svg" => FontFaceSourceFormatKeyword::Svg,
+                    "eot" => FontFaceSourceFormatKeyword::EmbeddedOpentype,
+                    _ => FontFaceSourceFormatKeyword::None,
+                }
+            }
+            if let font_format @ (FontFaceSourceFormatKeyword::Svg
+            | FontFaceSourceFormatKeyword::EmbeddedOpentype
+            | FontFaceSourceFormatKeyword::Woff) = format
+            {
+                tracing::warn!("Skipping unsupported font of type {:?}", font_format);
+                return;
+            }
+            fetch(
+                Url::from_str(url_source.url.as_str()).unwrap(),
+                FontFaceHandler(format, resource_callback.clone()),
+            )
+        });
+} 
+
 pub(crate) struct ImageHandler(pub usize, pub SharedCallback<Resource>);
 impl RequestHandler for ImageHandler {
     fn bytes(self: Box<Self>, bytes: Bytes) {
@@ -241,7 +302,11 @@ pub fn walk_tree(indent: usize, node: &Node) {
 use blitz_traits::net::{fetch, Bytes, RequestHandler, SharedCallback};
 use peniko::Color as PenikoColor;
 use style::font_face::{FontFaceSourceFormat, FontFaceSourceFormatKeyword, Source};
-use style::stylesheets::{CssRule, StylesheetInDocument};
+use style::parser::ParserContext;
+use style::shared_lock::{Locked, SharedRwLockReadGuard};
+use style::stylesheets::{CssRule, CssRules, ImportRule, StylesheetContents, StylesheetInDocument, UrlExtraData};
+use style::stylesheets::import_rule::{ImportLayer, ImportSheet, ImportSupportsCondition};
+use style::values::{CssUrl, SourceLocation};
 
 pub trait ToPenikoColor {
     fn as_peniko(&self) -> PenikoColor;
