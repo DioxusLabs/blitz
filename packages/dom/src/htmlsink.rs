@@ -375,7 +375,7 @@ fn parses_some_html() {
     let html = "<!DOCTYPE html><html><body><h1>hello world</h1></body></html>";
     let viewport = Viewport::new(800, 600, 1.0);
     let mut doc = Document::new(viewport, None);
-    let sink = DocumentHtmlParser::new(&mut doc, Arc::new(DummyProvider));
+    let sink = DocumentHtmlParser::new(&mut doc);
 
     html5ever::parse_document(sink, Default::default())
         .from_utf8()
