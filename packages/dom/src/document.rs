@@ -9,7 +9,7 @@ use style::attr::{AttrIdentifier, AttrValue};
 use style::values::computed::Overflow;
 use style::values::GenericAtomIdent;
 // use quadtree_rs::Quadtree;
-use crate::util::Resource;
+use crate::net::Resource;
 use blitz_traits::net::{DummyCallback, SharedCallback};
 use parley::editor::{PointerButton, TextEvent};
 use selectors::{matching::QuirksMode, Element};

@@ -1,4 +1,4 @@
-use crate::util::{CssHandler, ImageHandler};
+use crate::net::{CssHandler, ImageHandler};
 use std::borrow::Cow;
 use std::cell::{Cell, Ref, RefCell, RefMut};
 use std::collections::HashSet;
@@ -44,10 +44,7 @@ impl<'a> DocumentHtmlParser<'a> {
         }
     }
 
-    pub fn parse_into_doc<'d>(
-        doc: &'d mut Document,
-        html: &str,
-    ) -> &'d mut Document {
+    pub fn parse_into_doc<'d>(doc: &'d mut Document, html: &str) -> &'d mut Document {
         let sink = Self::new(doc);
         html5ever::parse_document(sink, Default::default())
             .from_utf8()
@@ -121,10 +118,7 @@ impl<'a> DocumentHtmlParser<'a> {
                 let src = self.doc.borrow().resolve_url(raw_src);
                 fetch(
                     src,
-                    ImageHandler(
-                        target_id,
-                        self.doc.borrow().resource_callback.clone(),
-                    ),
+                    ImageHandler(target_id, self.doc.borrow().resource_callback.clone()),
                 );
             }
         }

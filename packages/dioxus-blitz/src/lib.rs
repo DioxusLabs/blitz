@@ -27,7 +27,7 @@ pub use crate::waker::BlitzEvent;
 use crate::waker::BlitzWindowEvent;
 use crate::window::View;
 pub use crate::window::WindowConfig;
-use blitz_dom::util::Resource;
+use blitz_dom::net::Resource;
 use blitz_dom::{DocumentLike, HtmlDocument};
 use blitz_net::Provider;
 use blitz_traits::net::{set_provider, SharedCallback};

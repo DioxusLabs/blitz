@@ -1,7 +1,7 @@
 use crate::events::RendererEvent;
 use crate::{Document, DocumentHtmlParser, DocumentLike, Viewport};
 
-use crate::util::Resource;
+use crate::net::Resource;
 use crate::DEFAULT_CSS;
 use blitz_traits::net::SharedCallback;
 

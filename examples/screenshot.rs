@@ -63,7 +63,7 @@ async fn main() {
         &html,
         Some(url.clone()),
         Vec::new(),
-        Arc::clone(&callback) as SharedCallback<Resource>
+        Arc::clone(&callback) as SharedCallback<Resource>,
     );
 
     timer.time("Parsed document");

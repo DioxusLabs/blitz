@@ -5,9 +5,13 @@ use std::ops::DerefMut;
 use std::sync::{Arc, LazyLock, RwLock};
 pub use url::Url;
 
-static GLOBAL_PROVIDER: LazyLock<RwLock<Box<dyn NetProvider>>> = LazyLock::new(|| RwLock::new(Box::new(DummyProvider)));
+static GLOBAL_PROVIDER: LazyLock<RwLock<Box<dyn NetProvider>>> =
+    LazyLock::new(|| RwLock::new(Box::new(DummyProvider)));
 pub fn fetch<H: RequestHandler>(url: Url, handler: H) {
-    GLOBAL_PROVIDER.read().unwrap().fetch(url, Box::new(handler))
+    GLOBAL_PROVIDER
+        .read()
+        .unwrap()
+        .fetch(url, Box::new(handler))
 }
 pub fn set_provider<P: NetProvider>(provider: P) {
     *GLOBAL_PROVIDER.write().unwrap().deref_mut() = Box::new(provider);

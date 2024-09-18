@@ -45,6 +45,8 @@ pub mod debug;
 
 pub mod events;
 
+pub mod net;
+
 pub mod viewport;
 
 pub use document::{Document, DocumentLike};
