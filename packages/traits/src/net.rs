@@ -1,20 +1,17 @@
 pub use bytes::Bytes;
 pub use http::Method;
 use std::marker::PhantomData;
-use std::ops::DerefMut;
-use std::sync::{Arc, LazyLock, RwLock};
+use std::sync::{Arc, OnceLock};
 pub use url::Url;
 
-static GLOBAL_PROVIDER: LazyLock<RwLock<Box<dyn NetProvider>>> =
-    LazyLock::new(|| RwLock::new(Box::new(DummyProvider)));
+static GLOBAL_PROVIDER: OnceLock<Box<dyn NetProvider>> = OnceLock::new();
 pub fn fetch<H: RequestHandler>(url: Url, handler: H) {
     GLOBAL_PROVIDER
-        .read()
-        .unwrap()
+        .get_or_init(|| Box::new(DummyProvider))
         .fetch(url, Box::new(handler))
 }
 pub fn set_provider<P: NetProvider>(provider: P) {
-    *GLOBAL_PROVIDER.write().unwrap().deref_mut() = Box::new(provider);
+    let _ = GLOBAL_PROVIDER.set(Box::new(provider));
 }
 
 pub type BoxedHandler = Box<dyn RequestHandler>;
