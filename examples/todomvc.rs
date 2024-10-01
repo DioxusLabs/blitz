@@ -133,6 +133,7 @@ fn TodoHeader(mut todos: Signal<HashMap<u32, TodoItem>>) -> Element {
             h1 { "todos" }
             input {
                 class: "new-todo",
+                r#type: "text",
                 placeholder: "What needs to be done?",
                 value: "{draft}",
                 autofocus: "true",
@@ -191,6 +192,7 @@ fn TodoEntry(mut todos: Signal<HashMap<u32, TodoItem>>, id: u32) -> Element {
             if is_editing() {
                 input {
                     class: "edit",
+                    r#type: "text",
                     value: "{contents}",
                     oninput: move |evt| todos.write().get_mut(&id).unwrap().contents = evt.value(),
                     autofocus: "true",
