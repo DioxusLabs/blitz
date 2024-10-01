@@ -132,8 +132,14 @@ impl<Doc: DocumentLike> View<Doc> {
         };
 
         // Render
-        self.renderer
-            .render(self.dom.as_ref(), self.viewport.scale_f64(), self.devtools);
+        let (width, height) = self.viewport.window_size;
+        self.renderer.render(
+            self.dom.as_ref(),
+            self.viewport.scale_f64(),
+            width,
+            height,
+            self.devtools,
+        );
 
         // Set waker
         self.waker = Some(create_waker(&self.event_loop_proxy, self.window_id()));
@@ -173,8 +179,14 @@ impl<Doc: DocumentLike> View<Doc> {
 
     pub fn redraw(&mut self) {
         self.dom.as_mut().resolve();
-        self.renderer
-            .render(self.dom.as_ref(), self.viewport.scale_f64(), self.devtools);
+        let (width, height) = self.viewport.window_size;
+        self.renderer.render(
+            self.dom.as_ref(),
+            self.viewport.scale_f64(),
+            width,
+            height,
+            self.devtools,
+        );
     }
 
     pub fn window_id(&self) -> WindowId {
