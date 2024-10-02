@@ -101,6 +101,8 @@ impl DocumentLike for DioxusDocument {
 
         set_event_converter(Box::new(NativeConverter {}));
 
+        let mut handled = false;
+
         if matches!(event.data, EventData::Click { .. }) {
             // look for the data-dioxus-id attribute on the element
             // todo: we might need to walk upwards to find the first element with a data-dioxus-id attribute
@@ -127,7 +129,8 @@ impl DocumentLike for DioxusDocument {
                         let form_data = self.input_event_form_data(&chain, element);
                         self.vdom.handle_event("input", form_data, id, true);
                     }
-                    return true;
+                    handled = true;
+                    // return true;
                 }
 
                 //Clicking labels triggers click, and possibly input event, of bound input
@@ -150,7 +153,8 @@ impl DocumentLike for DioxusDocument {
                             let form_data = self.input_event_form_data(&chain, element_data);
                             self.vdom.handle_event("input", form_data, dioxus_id, true);
                         }
-                        return true;
+                        handled = true;
+                        // return true;
                     }
                 }
             }
@@ -158,7 +162,7 @@ impl DocumentLike for DioxusDocument {
 
         self.inner.as_mut().handle_event(event);
 
-        false
+        handled
     }
 }
 
