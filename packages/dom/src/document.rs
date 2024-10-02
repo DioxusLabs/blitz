@@ -135,6 +135,10 @@ impl DocumentLike for Document {
                     assert!(hit.node_id == event.target);
 
                     let node = &mut self.nodes[hit.node_id];
+                    let content_box_offset = taffy::Point {
+                        x: node.final_layout.padding.left + node.final_layout.border.left,
+                        y: node.final_layout.padding.top + node.final_layout.border.top,
+                    };
                     let Some(el) = node.raw_dom_data.downcast_element_mut() else {
                         return true;
                     };
@@ -147,8 +151,8 @@ impl DocumentLike for Document {
                     if let NodeSpecificData::TextInput(ref mut text_input_data) =
                         el.node_specific_data
                     {
-                        let x = hit.x as f64 * self.viewport.scale_f64();
-                        let y = hit.y as f64 * self.viewport.scale_f64();
+                        let x = (hit.x - content_box_offset.x) as f64 * self.viewport.scale_f64();
+                        let y = (hit.y - content_box_offset.y) as f64 * self.viewport.scale_f64();
                         text_input_data.editor.pointer_down(
                             kurbo::Point { x, y },
                             mods,
