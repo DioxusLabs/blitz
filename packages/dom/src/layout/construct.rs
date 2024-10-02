@@ -506,6 +506,9 @@ fn create_text_editor(doc: &mut Document, input_element_id: usize, is_multiline:
         text_input_data
             .editor
             .set_text_size(parley_style.font_size * doc.viewport.scale());
+        text_input_data
+            .editor
+            .set_line_height(parley_style.line_height);
         text_input_data.editor.set_brush(parley_style.brush);
         element.node_specific_data = NodeSpecificData::TextInput(text_input_data);
     }
