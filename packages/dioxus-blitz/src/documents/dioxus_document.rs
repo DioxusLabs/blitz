@@ -1,6 +1,10 @@
 //! Integration between Dioxus and Blitz
 
-use std::{any::Any, collections::HashMap, rc::Rc};
+use std::{
+    any::Any,
+    collections::{HashMap, HashSet},
+    rc::Rc,
+};
 
 use blitz_dom::{
     events::EventData,
@@ -23,7 +27,6 @@ use rustc_hash::FxHashMap;
 use style::{
     data::{ElementData, ElementStyles},
     properties::{style_structs::Font, ComputedValues},
-    stylesheets::Origin,
 };
 
 use super::event_handler::{NativeClickData, NativeConverter, NativeFormData};
@@ -73,10 +76,8 @@ impl DocumentLike for DioxusDocument {
             }
         }
 
-        self.vdom.render_immediate(&mut MutationWriter {
-            doc: &mut self.inner,
-            state: &mut self.vdom_state,
-        });
+        let mut writer = MutationWriter::new(&mut self.inner, &mut self.vdom_state);
+        self.vdom.render_immediate(&mut writer);
 
         true
     }
@@ -297,10 +298,7 @@ impl DioxusDocument {
     }
 
     pub fn initial_build(&mut self) {
-        let mut writer = MutationWriter {
-            doc: &mut self.inner,
-            state: &mut self.vdom_state,
-        };
+        let mut writer = MutationWriter::new(&mut self.inner, &mut self.vdom_state);
         self.vdom.rebuild(&mut writer);
         // dbg!(self.vdom.rebuild_to_vec());
         // std::process::exit(0);
@@ -350,6 +348,49 @@ pub struct MutationWriter<'a> {
 
     /// The state associated with this writer
     pub state: &'a mut DioxusState,
+
+    pub style_nodes: HashSet<usize>,
+}
+
+impl<'a> MutationWriter<'a> {
+    fn new(doc: &'a mut Document, state: &'a mut DioxusState) -> Self {
+        MutationWriter {
+            doc,
+            state,
+            style_nodes: HashSet::new(),
+        }
+    }
+
+    fn is_style_node(&self, node_id: NodeId) -> bool {
+        self.doc
+            .get_node(node_id)
+            .unwrap()
+            .raw_dom_data
+            .is_element_with_tag_name(&local_name!("style"))
+    }
+
+    fn maybe_push_style_node(&mut self, node_id: impl Into<Option<NodeId>>) {
+        if let Some(node_id) = node_id.into() {
+            if self.is_style_node(node_id) {
+                self.style_nodes.insert(node_id);
+            }
+        }
+    }
+
+    #[track_caller]
+    fn maybe_push_parent_style_node(&mut self, node_id: NodeId) {
+        let parent_id = self.doc.get_node(node_id).unwrap().parent;
+        self.maybe_push_style_node(parent_id);
+    }
+}
+
+impl<'a> Drop for MutationWriter<'a> {
+    fn drop(&mut self) {
+        // Add/Update inline stylesheets (<style> elements)
+        for &id in &self.style_nodes {
+            self.doc.upsert_stylesheet_for_node(id);
+        }
+    }
 }
 
 impl DioxusState {
@@ -444,6 +485,8 @@ impl WriteMutations for MutationWriter<'_> {
             self.doc.get_node_mut(parent).unwrap().children.push(child);
             self.doc.get_node_mut(child).unwrap().parent = Some(parent);
         }
+
+        self.maybe_push_style_node(parent);
     }
 
     fn assign_node_id(&mut self, path: &'static [u8], id: ElementId) {
@@ -496,9 +539,7 @@ impl WriteMutations for MutationWriter<'_> {
     //         node.raw_dom_data = NodeData::Text(TextNodeData::new(value.to_string()));
     //     }
 
-    //     let parent = node.parent;
-
-    //     if let Some(parent) = parent {
+    //     if let Some(parent) = node.parent {
     //         // if the text is the child of a style element, we want to put the style into the stylesheet cache
     //         let parent = self.doc.get_node(parent).unwrap();
     //         if let NodeData::Element(ref element) = parent.raw_dom_data {
@@ -535,6 +576,8 @@ impl WriteMutations for MutationWriter<'_> {
         let anchor_node_id = self.state.element_to_node_id(id);
         self.doc.insert_before(anchor_node_id, &new_nodes);
         self.doc.remove_node(anchor_node_id);
+
+        self.maybe_push_parent_style_node(anchor_node_id);
     }
 
     fn replace_placeholder_with_nodes(&mut self, path: &'static [u8], m: usize) {
@@ -543,6 +586,7 @@ impl WriteMutations for MutationWriter<'_> {
 
         let new_nodes = self.state.stack.split_off(self.state.stack.len() - m);
         let anchor_node_id = self.load_child(path);
+        self.maybe_push_parent_style_node(anchor_node_id);
         self.doc.insert_before(anchor_node_id, &new_nodes);
         self.doc.remove_node(anchor_node_id);
     }
@@ -566,6 +610,8 @@ impl WriteMutations for MutationWriter<'_> {
             }
             None => self.doc.append(anchor_node_id, &new_nodes),
         }
+
+        self.maybe_push_parent_style_node(anchor_node_id);
     }
 
     fn insert_nodes_before(&mut self, id: ElementId, m: usize) {
@@ -575,6 +621,8 @@ impl WriteMutations for MutationWriter<'_> {
         let new_nodes = self.state.stack.split_off(self.state.stack.len() - m);
         let anchor_node_id = self.state.element_to_node_id(id);
         self.doc.insert_before(anchor_node_id, &new_nodes);
+
+        self.maybe_push_parent_style_node(anchor_node_id);
     }
 
     fn set_attribute(
@@ -633,20 +681,10 @@ impl WriteMutations for MutationWriter<'_> {
             _ => return,
         };
 
-        // todo: this is very inefficient for inline styles - lots of string cloning going on
         let changed = text.content != value;
-        text.content = value.to_string();
-
-        if let Some(parent) = node.parent {
-            // if the text is the child of a style element, we want to put the style into the stylesheet cache
-            let parent = self.doc.get_node(parent).unwrap();
-            if let NodeData::Element(ref element) = parent.raw_dom_data {
-                // Only set stylsheets if the text content has *changed* - we need to unload
-                if changed && element.name.local.as_ref() == "style" {
-                    let sheet = self.doc.make_stylesheet(value, Origin::Author);
-                    self.doc.add_stylesheet_for_node(sheet, parent.id);
-                }
-            }
+        if changed {
+            let parent = node.parent;
+            self.maybe_push_style_node(parent);
         }
     }
 

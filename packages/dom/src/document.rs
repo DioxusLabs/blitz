@@ -566,6 +566,12 @@ impl Document {
         DocumentStyleSheet(ServoArc::new(data))
     }
 
+    pub fn upsert_stylesheet_for_node(&mut self, node_id: usize) {
+        let raw_styles = self.nodes[node_id].text_content();
+        let sheet = self.make_stylesheet(raw_styles, Origin::Author);
+        self.add_stylesheet_for_node(sheet, node_id);
+    }
+
     pub fn add_stylesheet_for_node(&mut self, stylesheet: DocumentStyleSheet, node_id: usize) {
         let old = self.nodes_to_stylesheet.insert(node_id, stylesheet.clone());
 
