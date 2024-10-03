@@ -1,22 +1,22 @@
 //! Integration between Dioxus and Blitz
 
-use std::{collections::HashMap, rc::Rc};
+use std::{any::Any, collections::HashMap, rc::Rc};
 
 use blitz_dom::{
     events::EventData,
     local_name, namespace_url,
     node::{Attribute, NodeSpecificData},
-    ns, Atom, Document, DocumentLike, ElementNodeData, Node, NodeData, QualName, TextNodeData,
-    Viewport, DEFAULT_CSS,
+    ns, Atom, Document, DocumentLike, ElementNodeData, Node, NodeData, QualName, Viewport,
+    DEFAULT_CSS,
 };
 
 use dioxus::{
     dioxus_core::{
-        AttributeValue, ElementId, Template, TemplateAttribute, TemplateNode, VirtualDom,
+        AttributeValue, ElementId, Event, Template, TemplateAttribute, TemplateNode, VirtualDom,
         WriteMutations,
     },
     html::FormValue,
-    prelude::{set_event_converter, PlatformEventData},
+    prelude::set_event_converter,
 };
 use futures_util::{pin_mut, FutureExt};
 use rustc_hash::FxHashMap;
@@ -120,14 +120,15 @@ impl DocumentLike for DioxusDocument {
 
                 if let Some(id) = DioxusDocument::dioxus_id(element) {
                     // let data = dioxus::html::EventData::Mouse()
-                    self.vdom
-                        .handle_event("click", self.click_event_data(), id, true);
+                    let click_event = Event::new(self.click_event_data(), true);
+                    self.vdom.runtime().handle_event("click", click_event, id);
                     //TODO Check for other inputs which trigger input event on click here, eg radio
                     let triggers_input_event = element.name.local == local_name!("input")
                         && element.attr(local_name!("type")) == Some("checkbox");
                     if triggers_input_event {
                         let form_data = self.input_event_form_data(&chain, element);
-                        self.vdom.handle_event("input", form_data, id, true);
+                        let input_event = Event::new(form_data, true);
+                        self.vdom.runtime().handle_event("input", input_event, id);
                     }
                     handled = true;
                     // return true;
@@ -144,14 +145,19 @@ impl DocumentLike for DioxusDocument {
                             Some((target_element_data, dioxus_id))
                         })
                     {
+                        let click_event = Event::new(self.click_event_data(), true);
                         self.vdom
-                            .handle_event("click", self.click_event_data(), dioxus_id, true);
+                            .runtime()
+                            .handle_event("click", click_event, dioxus_id);
                         //TODO Check for other inputs which trigger input event on click here, eg radio
                         let triggers_input_event =
                             element_data.attr(local_name!("type")) == Some("checkbox");
                         if triggers_input_event {
                             let form_data = self.input_event_form_data(&chain, element_data);
-                            self.vdom.handle_event("input", form_data, dioxus_id, true);
+                            let input_event = Event::new(form_data, true);
+                            self.vdom
+                                .runtime()
+                                .handle_event("input", input_event, dioxus_id);
                         }
                         handled = true;
                         // return true;
@@ -167,8 +173,8 @@ impl DocumentLike for DioxusDocument {
 }
 
 impl DioxusDocument {
-    pub fn click_event_data(&self) -> Rc<PlatformEventData> {
-        Rc::new(PlatformEventData::new(Box::new(NativeClickData {})))
+    pub fn click_event_data(&self) -> Rc<dyn Any> {
+        Rc::new(NativeClickData {})
     }
 
     /// Generate the FormData from an input event
@@ -177,7 +183,7 @@ impl DioxusDocument {
         &self,
         parent_chain: &[usize],
         element_node_data: &ElementNodeData,
-    ) -> Rc<PlatformEventData> {
+    ) -> Rc<dyn Any> {
         let parent_form = parent_chain.iter().find_map(|id| {
             let node = self.inner.get_node(*id)?;
             let element_data = node.element_data()?;
@@ -221,7 +227,7 @@ impl DioxusDocument {
                 .to_string(),
         };
         let form_data = NativeFormData { value, values };
-        Rc::new(PlatformEventData::new(Box::new(form_data)))
+        Rc::new(form_data)
     }
 
     /// Collect all the inputs which are descendents of a given node
@@ -330,7 +336,7 @@ impl DioxusDocument {
 #[derive(Debug)]
 pub struct DioxusState {
     /// Store of templates keyed by unique name
-    templates: FxHashMap<String, Vec<NodeId>>,
+    templates: FxHashMap<Template, Vec<NodeId>>,
     /// Stack machine state for applying dioxus mutations
     stack: Vec<NodeId>,
     /// Mapping from vdom ElementId -> rdom NodeId
@@ -409,24 +415,24 @@ impl MutationWriter<'_> {
 }
 
 impl WriteMutations for MutationWriter<'_> {
-    fn register_template(&mut self, template: Template) {
-        let template_root_ids: Vec<NodeId> = template
-            .roots
-            .iter()
-            .map(|root| create_template_node(self.doc, root))
-            .collect();
+    // fn register_template(&mut self, template: Template) {
+    //     let template_root_ids: Vec<NodeId> = template
+    //         .roots
+    //         .iter()
+    //         .map(|root| create_template_node(self.doc, root))
+    //         .collect();
 
-        #[cfg(feature = "tracing")]
-        tracing::info!(
-            "Registered template: {:?} with root IDs {:?}",
-            &template.name,
-            &template_root_ids
-        );
+    //     #[cfg(feature = "tracing")]
+    //     tracing::info!(
+    //         "Registered template: {:?} with root IDs {:?}",
+    //         &template.name,
+    //         &template_root_ids
+    //     );
 
-        self.state
-            .templates
-            .insert(template.name.to_string(), template_root_ids);
-    }
+    //     self.state
+    //         .templates
+    //         .insert(template.name.to_string(), template_root_ids);
+    // }
 
     fn append_children(&mut self, id: ElementId, m: usize) {
         #[cfg(feature = "tracing")]
@@ -466,49 +472,56 @@ impl WriteMutations for MutationWriter<'_> {
         self.state.stack.push(node_id);
     }
 
-    fn hydrate_text_node(&mut self, path: &'static [u8], value: &str, id: ElementId) {
-        let value_trunc = if value.len() > 20 {
-            &value[0..20]
-        } else {
-            value
-        };
+    // fn hydrate_text_node(&mut self, path: &'static [u8], value: &str, id: ElementId) {
+    //     let value_trunc = if value.len() > 20 {
+    //         &value[0..20]
+    //     } else {
+    //         value
+    //     };
 
-        #[cfg(feature = "tracing")]
-        tracing::info!(
-            "hydrate_text_node id:{} path: {:?} text:{}",
-            id.0,
-            path,
-            value_trunc
-        );
+    //     #[cfg(feature = "tracing")]
+    //     tracing::info!(
+    //         "hydrate_text_node id:{} path: {:?} text:{}",
+    //         id.0,
+    //         path,
+    //         value_trunc
+    //     );
 
-        let node_id = self.load_child(path);
-        self.set_id_mapping(node_id, id);
-        let node = self.doc.get_node_mut(node_id).unwrap();
-        if let NodeData::Text(ref mut text) = node.raw_dom_data {
-            text.content = value.to_string();
-        } else {
-            node.raw_dom_data = NodeData::Text(TextNodeData::new(value.to_string()));
-        }
+    //     let node_id = self.load_child(path);
+    //     self.set_id_mapping(node_id, id);
+    //     let node = self.doc.get_node_mut(node_id).unwrap();
+    //     if let NodeData::Text(ref mut text) = node.raw_dom_data {
+    //         text.content = value.to_string();
+    //     } else {
+    //         node.raw_dom_data = NodeData::Text(TextNodeData::new(value.to_string()));
+    //     }
 
-        let parent = node.parent;
+    //     let parent = node.parent;
 
-        if let Some(parent) = parent {
-            // if the text is the child of a style element, we want to put the style into the stylesheet cache
-            let parent = self.doc.get_node(parent).unwrap();
-            if let NodeData::Element(ref element) = parent.raw_dom_data {
-                if element.name.local.as_ref() == "style" {
-                    let sheet = self.doc.make_stylesheet(value, Origin::Author);
-                    self.doc.add_stylesheet_for_node(sheet, parent.id);
-                }
-            }
-        }
-    }
+    //     if let Some(parent) = parent {
+    //         // if the text is the child of a style element, we want to put the style into the stylesheet cache
+    //         let parent = self.doc.get_node(parent).unwrap();
+    //         if let NodeData::Element(ref element) = parent.raw_dom_data {
+    //             if element.name.local.as_ref() == "style" {
+    //                 let sheet = self.doc.make_stylesheet(value, Origin::Author);
+    //                 self.doc.add_stylesheet_for_node(sheet, parent.id);
+    //             }
+    //         }
+    //     }
+    // }
 
-    fn load_template(&mut self, name: &'static str, index: usize, id: ElementId) {
-        #[cfg(feature = "tracing")]
-        tracing::info!("load_template name:{} index: {} id:{}", name, index, id.0);
+    fn load_template(&mut self, template: Template, index: usize, id: ElementId) {
+        let template_entry = self.state.templates.entry(template).or_insert_with(|| {
+            let template_root_ids: Vec<NodeId> = template
+                .roots
+                .iter()
+                .map(|root| create_template_node(self.doc, root))
+                .collect();
 
-        let template_node_id = self.state.templates[name][index];
+            template_root_ids
+        });
+
+        let template_node_id = template_entry[index];
         let clone_id = self.doc.deep_clone_node(template_node_id);
         self.set_id_mapping(clone_id, id);
         self.state.stack.push(clone_id);
@@ -771,6 +784,5 @@ fn create_template_node(doc: &mut Document, node: &TemplateNode) -> NodeId {
         }
         TemplateNode::Text { text } => doc.create_text_node(text),
         TemplateNode::Dynamic { .. } => doc.create_node(NodeData::Comment),
-        TemplateNode::DynamicText { .. } => doc.create_text_node(""),
     }
 }

@@ -15,8 +15,8 @@ selectors = { git = "https://github.com/dioxuslabs/stylo", branch = "blitz" }
 html5ever = "0.29" # needs to match stylo markup5ever version
 taffy = { git = "https://github.com/dioxuslabs/taffy", rev = "950a0eb1322f15e5d1083f4793b55d52061718de" }
 parley = { git = "https://github.com/nicoburns/parley", rev = "186b6e991d08731c0588dc0b247564cbba1c0435" }
-dioxus = { git = "https://github.com/dioxuslabs/dioxus", rev = "a3aa6ae771a2d0a4d8cb6055c41efc0193b817ef" }
-dioxus-ssr = { git = "https://github.com/dioxuslabs/dioxus", rev = "a3aa6ae771a2d0a4d8cb6055c41efc0193b817ef" }
+dioxus = { git = "https://github.com/dioxuslabs/dioxus", rev = "d0c9b6712d22e8fced9f0b0ac253e266d73eb3d1" }
+dioxus-ssr = { git = "https://github.com/dioxuslabs/dioxus", rev = "d0c9b6712d22e8fced9f0b0ac253e266d73eb3d1" }
 tokio = { version = "1.25.0", features = ["full"] }
 tracing = "0.1.40"
 vello = { git = "https://github.com/linebender/vello", rev = "aaa9f5f2d0f21f3d038501ea0cf32c989d97aab3", package = "vello", features = [ "wgpu" ] }
