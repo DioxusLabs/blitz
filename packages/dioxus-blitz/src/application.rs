@@ -111,22 +111,22 @@ impl<Doc: DocumentLike> ApplicationHandler<BlitzEvent> for Application<Doc> {
                 not(target_os = "android"),
                 not(target_os = "ios")
             ))]
-            BlitzEvent::HotReloadEvent(msg) => match msg {
-                dioxus_hot_reload::HotReloadMsg::UpdateTemplate(template) => {
+            BlitzEvent::DevserverEvent(event) => match event {
+                dioxus_devtools::DevserverMsg::HotReload(hotreload_message) => {
                     for window in self.windows.values_mut() {
                         use crate::documents::DioxusDocument;
                         if let Some(dx_doc) =
                             window.dom.as_any_mut().downcast_mut::<DioxusDocument>()
                         {
-                            dx_doc.vdom.replace_template(template);
+                            dioxus_devtools::apply_changes(&dx_doc.vdom, &hotreload_message);
                             window.handle_blitz_event(BlitzWindowEvent::Poll);
                         }
                     }
                 }
-                dioxus_hot_reload::HotReloadMsg::Shutdown => event_loop.exit(),
-                dioxus_hot_reload::HotReloadMsg::UpdateAsset(_asset) => {
-                    // TODO dioxus-desktop seems to handle this by forcing a reload of all stylesheets.
-                }
+                dioxus_devtools::DevserverMsg::Shutdown => event_loop.exit(),
+                dioxus_devtools::DevserverMsg::FullReloadStart => todo!(),
+                dioxus_devtools::DevserverMsg::FullReloadFailed => todo!(),
+                dioxus_devtools::DevserverMsg::FullReloadCommand => todo!(),
             },
         }
     }

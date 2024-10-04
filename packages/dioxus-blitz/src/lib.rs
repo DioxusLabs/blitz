@@ -167,12 +167,10 @@ fn launch_with_window<Doc: DocumentLike + 'static>(window: WindowConfig<Doc>, rt
         not(target_os = "ios")
     ))]
     {
-        if let Ok(cfg) = dioxus_cli_config::CURRENT_CONFIG.as_ref() {
-            dioxus_hot_reload::connect_at(cfg.target_dir.join("dioxusin"), {
-                let proxy = proxy.clone();
-                move |template| {
-                    let _ = proxy.send_event(BlitzEvent::HotReloadEvent(template));
-                }
+        if let Some(endpoint) = dioxus_cli_config::devserver_ws_endpoint() {
+            let proxy = proxy.clone();
+            dioxus_devtools::connect(endpoint, move |event| {
+                let _ = proxy.send_event(BlitzEvent::DevserverEvent(event));
             })
         }
     }

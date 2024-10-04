@@ -20,7 +20,7 @@ pub enum BlitzEvent {
         not(target_os = "android"),
         not(target_os = "ios")
     ))]
-    HotReloadEvent(dioxus_hot_reload::HotReloadMsg),
+    DevserverEvent(dioxus_devtools::DevserverMsg),
 }
 impl From<(WindowId, Resource)> for BlitzEvent {
     fn from((window_id, resource): (WindowId, Resource)) -> Self {
