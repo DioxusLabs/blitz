@@ -519,10 +519,9 @@ impl WriteMutations for MutationWriter<'_> {
 
         let new_nodes = self.state.stack.split_off(self.state.stack.len() - m);
         let anchor_node_id = self.state.element_to_node_id(id);
+        self.maybe_push_parent_style_node(anchor_node_id);
         self.doc.insert_before(anchor_node_id, &new_nodes);
         self.doc.remove_node(anchor_node_id);
-
-        self.maybe_push_parent_style_node(anchor_node_id);
     }
 
     fn replace_placeholder_with_nodes(&mut self, path: &'static [u8], m: usize) {
