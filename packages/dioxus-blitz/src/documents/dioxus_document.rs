@@ -19,7 +19,7 @@ use dioxus::{
         AttributeValue, ElementId, Event, Template, TemplateAttribute, TemplateNode, VirtualDom,
         WriteMutations,
     },
-    html::FormValue,
+    html::{FormValue, PlatformEventData},
     prelude::set_event_converter,
 };
 use futures_util::{pin_mut, FutureExt};
@@ -175,7 +175,7 @@ impl DocumentLike for DioxusDocument {
 
 impl DioxusDocument {
     pub fn click_event_data(&self) -> Rc<dyn Any> {
-        Rc::new(NativeClickData {})
+        Rc::new(PlatformEventData::new(Box::new(NativeClickData {})))
     }
 
     /// Generate the FormData from an input event
@@ -228,7 +228,7 @@ impl DioxusDocument {
                 .to_string(),
         };
         let form_data = NativeFormData { value, values };
-        Rc::new(form_data)
+        Rc::new(PlatformEventData::new(Box::new(form_data)))
     }
 
     /// Collect all the inputs which are descendents of a given node
