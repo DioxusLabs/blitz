@@ -456,25 +456,6 @@ impl MutationWriter<'_> {
 }
 
 impl WriteMutations for MutationWriter<'_> {
-    // fn register_template(&mut self, template: Template) {
-    //     let template_root_ids: Vec<NodeId> = template
-    //         .roots
-    //         .iter()
-    //         .map(|root| create_template_node(self.doc, root))
-    //         .collect();
-
-    //     #[cfg(feature = "tracing")]
-    //     tracing::info!(
-    //         "Registered template: {:?} with root IDs {:?}",
-    //         &template.name,
-    //         &template_root_ids
-    //     );
-
-    //     self.state
-    //         .templates
-    //         .insert(template.name.to_string(), template_root_ids);
-    // }
-
     fn append_children(&mut self, id: ElementId, m: usize) {
         #[cfg(feature = "tracing")]
         tracing::info!("append_children id:{} m:{}", id.0, m);
@@ -514,42 +495,6 @@ impl WriteMutations for MutationWriter<'_> {
         self.set_id_mapping(node_id, id);
         self.state.stack.push(node_id);
     }
-
-    // fn hydrate_text_node(&mut self, path: &'static [u8], value: &str, id: ElementId) {
-    //     let value_trunc = if value.len() > 20 {
-    //         &value[0..20]
-    //     } else {
-    //         value
-    //     };
-
-    //     #[cfg(feature = "tracing")]
-    //     tracing::info!(
-    //         "hydrate_text_node id:{} path: {:?} text:{}",
-    //         id.0,
-    //         path,
-    //         value_trunc
-    //     );
-
-    //     let node_id = self.load_child(path);
-    //     self.set_id_mapping(node_id, id);
-    //     let node = self.doc.get_node_mut(node_id).unwrap();
-    //     if let NodeData::Text(ref mut text) = node.raw_dom_data {
-    //         text.content = value.to_string();
-    //     } else {
-    //         node.raw_dom_data = NodeData::Text(TextNodeData::new(value.to_string()));
-    //     }
-
-    //     if let Some(parent) = node.parent {
-    //         // if the text is the child of a style element, we want to put the style into the stylesheet cache
-    //         let parent = self.doc.get_node(parent).unwrap();
-    //         if let NodeData::Element(ref element) = parent.raw_dom_data {
-    //             if element.name.local.as_ref() == "style" {
-    //                 let sheet = self.doc.make_stylesheet(value, Origin::Author);
-    //                 self.doc.add_stylesheet_for_node(sheet, parent.id);
-    //             }
-    //         }
-    //     }
-    // }
 
     fn load_template(&mut self, template: Template, index: usize, id: ElementId) {
         let template_entry = self.state.templates.entry(template).or_insert_with(|| {
