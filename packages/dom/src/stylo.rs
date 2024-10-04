@@ -180,7 +180,7 @@ impl<'a> TDocument for BlitzNode<'a> {
     }
 }
 
-impl<'a> NodeInfo for BlitzNode<'a> {
+impl NodeInfo for BlitzNode<'_> {
     fn is_element(&self) -> bool {
         Node::is_element(self)
     }
@@ -278,7 +278,7 @@ impl<'a> TNode for BlitzNode<'a> {
     }
 }
 
-impl<'a> selectors::Element for BlitzNode<'a> {
+impl selectors::Element for BlitzNode<'_> {
     type Impl = SelectorImpl;
 
     fn opaque(&self) -> selectors::OpaqueElement {
@@ -372,7 +372,7 @@ impl<'a> selectors::Element for BlitzNode<'a> {
                 let value = value.as_ref();
 
                 // TODO: case sensitivity
-                return match operator {
+                match operator {
                     AttrSelectorOperator::Equal => attr_value == value,
                     AttrSelectorOperator::Includes => attr_value
                         .split_ascii_whitespace()
@@ -387,7 +387,7 @@ impl<'a> selectors::Element for BlitzNode<'a> {
                     AttrSelectorOperator::Prefix => attr_value.starts_with(value),
                     AttrSelectorOperator::Substring => attr_value.contains(value),
                     AttrSelectorOperator::Suffix => attr_value.ends_with(value),
-                };
+                }
             }
         }
     }
@@ -990,10 +990,9 @@ impl<'a> RecalcStyle<'a> {
 }
 
 #[allow(unsafe_code)]
-impl<'a, 'dom, E> DomTraversal<E> for RecalcStyle<'a>
+impl<E> DomTraversal<E> for RecalcStyle<'_>
 where
     E: TElement,
-    E::ConcreteNode: 'dom,
 {
     fn process_preorder<F: FnMut(E::ConcreteNode)>(
         &self,

@@ -15,8 +15,10 @@ selectors = { git = "https://github.com/dioxuslabs/stylo", branch = "blitz" }
 html5ever = "0.29" # needs to match stylo markup5ever version
 taffy = { git = "https://github.com/dioxuslabs/taffy", rev = "950a0eb1322f15e5d1083f4793b55d52061718de" }
 parley = { git = "https://github.com/nicoburns/parley", rev = "186b6e991d08731c0588dc0b247564cbba1c0435" }
-dioxus = { git = "https://github.com/dioxuslabs/dioxus", rev = "a3aa6ae771a2d0a4d8cb6055c41efc0193b817ef" }
-dioxus-ssr = { git = "https://github.com/dioxuslabs/dioxus", rev = "a3aa6ae771a2d0a4d8cb6055c41efc0193b817ef" }
+dioxus = { git = "https://github.com/dioxuslabs/dioxus", rev = "9ffd4b816b8ce291b6ca66cb5c871e107a964f6b" }
+dioxus-ssr = { git = "https://github.com/dioxuslabs/dioxus", rev = "9ffd4b816b8ce291b6ca66cb5c871e107a964f6b" }
+dioxus-cli-config = { git = "https://github.com/dioxuslabs/dioxus", rev = "9ffd4b816b8ce291b6ca66cb5c871e107a964f6b" }
+dioxus-devtools = { git = "https://github.com/dioxuslabs/dioxus", rev = "9ffd4b816b8ce291b6ca66cb5c871e107a964f6b" }
 tokio = { version = "1.25.0", features = ["full"] }
 tracing = "0.1.40"
 vello = { git = "https://github.com/linebender/vello", rev = "aaa9f5f2d0f21f3d038501ea0cf32c989d97aab3", package = "vello", features = [ "wgpu" ] }
@@ -59,7 +61,7 @@ blitz-net = { path = "./packages/net" }
 blitz-traits = { path = "./packages/traits" }
 comrak = { git = "https://github.com/nicoburns/comrak", branch = "tasklist-class", default-features = false, features = ["syntect"] }
 png = { version = "0.17" }
-dioxus-blitz = { path = "./packages/dioxus-blitz" }
+dioxus-blitz = { path = "./packages/dioxus-blitz", features = ["tracing"] }
 dioxus = { workspace = true }
 euclid = { version = "0.22", features = ["serde"] }
 reqwest = "0.11.24"

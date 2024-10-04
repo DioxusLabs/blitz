@@ -129,6 +129,10 @@ impl HtmlEventConverter for NativeConverter {
     fn convert_wheel_data(&self, _event: &PlatformEventData) -> dioxus::prelude::WheelData {
         todo!()
     }
+
+    fn convert_resize_data(&self, _event: &PlatformEventData) -> dioxus::prelude::ResizeData {
+        todo!()
+    }
 }
 
 #[derive(Clone, Debug)]

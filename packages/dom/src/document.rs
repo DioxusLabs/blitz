@@ -95,7 +95,7 @@ pub struct Document {
     /// Base url for resolving linked resources (stylesheets, images, fonts, etc)
     pub(crate) base_url: Option<url::Url>,
 
-    /// The quadtree we use for hit-testing
+    // /// The quadtree we use for hit-testing
     // pub(crate) quadtree: Quadtree<u64, usize>,
 
     // Viewport details such as the dimensions, HiDPI scale, and zoom factor,
@@ -416,10 +416,14 @@ impl Document {
         // self.print_tree();
 
         let node = &self.nodes[node_id];
-        let node_child_idx = node.child_idx;
 
         let parent_id = node.parent.unwrap();
         let parent = &mut self.nodes[parent_id];
+        let node_child_idx = parent
+            .children
+            .iter()
+            .position(|id| *id == node_id)
+            .unwrap();
 
         // Mark the node's parent as changed.
         self.changed.insert(parent_id);
@@ -527,6 +531,10 @@ impl Document {
         crate::util::walk_tree(0, self.root_node());
     }
 
+    pub fn print_subtree(&self, node_id: usize) {
+        crate::util::walk_tree(0, &self.nodes[node_id]);
+    }
+
     pub fn process_style_element(&mut self, target_id: usize) {
         let css = self.nodes[target_id].text_content();
         let css = html_escape::decode_html_entities(&css);
@@ -564,6 +572,12 @@ impl Document {
         );
 
         DocumentStyleSheet(ServoArc::new(data))
+    }
+
+    pub fn upsert_stylesheet_for_node(&mut self, node_id: usize) {
+        let raw_styles = self.nodes[node_id].text_content();
+        let sheet = self.make_stylesheet(raw_styles, Origin::Author);
+        self.add_stylesheet_for_node(sheet, node_id);
     }
 
     pub fn add_stylesheet_for_node(&mut self, stylesheet: DocumentStyleSheet, node_id: usize) {

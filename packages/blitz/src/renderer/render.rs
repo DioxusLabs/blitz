@@ -106,7 +106,7 @@ pub struct VelloSceneGenerator<'dom> {
     devtools: Devtools,
 }
 
-impl<'dom> VelloSceneGenerator<'dom> {
+impl VelloSceneGenerator<'_> {
     fn node_position(&self, node: usize, location: Point) -> (Layout, Point) {
         let layout = self.layout(node);
         let pos = location + Vec2::new(layout.location.x as f64, layout.location.y as f64);

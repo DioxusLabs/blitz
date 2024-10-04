@@ -13,6 +13,13 @@ impl Document {
         }
 
         println!("Node {} {}", node.id, node.node_debug_str());
+
+        println!("Attrs:");
+
+        for attr in node.attrs().into_iter().flatten() {
+            println!("    {}: {}", attr.name.local, attr.value);
+        }
+
         if node.is_inline_root {
             let inline_layout = &node
                 .raw_dom_data

@@ -629,7 +629,7 @@ impl<'a> RefCellChildIter<'a> {
     }
 }
 
-impl<'a> Iterator for RefCellChildIter<'a> {
+impl Iterator for RefCellChildIter<'_> {
     type Item = NodeId;
     fn next(&mut self) -> Option<Self::Item> {
         self.items.get(self.idx).map(|id| {

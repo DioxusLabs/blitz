@@ -36,7 +36,7 @@ pub struct DocumentHtmlParser<'a> {
     pub net_provider: SharedProvider<Resource>,
 }
 
-impl<'a> DocumentHtmlParser<'a> {
+impl DocumentHtmlParser<'_> {
     pub fn new(doc: &mut Document, net_provider: SharedProvider<Resource>) -> DocumentHtmlParser {
         DocumentHtmlParser {
             doc: RefCell::new(doc),

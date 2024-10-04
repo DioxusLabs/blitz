@@ -4,6 +4,7 @@ use dioxus::prelude::*;
 use std::collections::HashMap;
 
 fn main() {
+    tracing_subscriber::fmt::init();
     dioxus_blitz::launch(app)
 }
 
