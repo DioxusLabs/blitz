@@ -621,20 +621,21 @@ impl WriteMutations for MutationWriter<'_> {
 
     fn set_node_text(&mut self, value: &str, id: ElementId) {
         #[cfg(feature = "tracing")]
-        tracing::info!("set_attribute id:{} value:{}", id.0, value);
+        tracing::info!("set_node_text id:{} value:{}", id.0, value);
 
         let node_id = self.state.element_to_node_id(id);
         let node = self.doc.get_node_mut(node_id).unwrap();
 
         let text = match node.raw_dom_data {
             NodeData::Text(ref mut text) => text,
-
             // todo: otherwise this is basically element.textContent which is a bit different - need to parse as html
             _ => return,
         };
 
         let changed = text.content != value;
         if changed {
+            text.content.clear();
+            text.content.push_str(value);
             let parent = node.parent;
             self.maybe_push_style_node(parent);
         }
