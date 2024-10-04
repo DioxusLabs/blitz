@@ -95,7 +95,7 @@ pub struct Document {
     /// Base url for resolving linked resources (stylesheets, images, fonts, etc)
     pub(crate) base_url: Option<url::Url>,
 
-    /// The quadtree we use for hit-testing
+    // /// The quadtree we use for hit-testing
     // pub(crate) quadtree: Quadtree<u64, usize>,
 
     // Viewport details such as the dimensions, HiDPI scale, and zoom factor,

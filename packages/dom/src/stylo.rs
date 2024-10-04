@@ -372,7 +372,7 @@ impl<'a> selectors::Element for BlitzNode<'a> {
                 let value = value.as_ref();
 
                 // TODO: case sensitivity
-                return match operator {
+                match operator {
                     AttrSelectorOperator::Equal => attr_value == value,
                     AttrSelectorOperator::Includes => attr_value
                         .split_ascii_whitespace()
@@ -387,7 +387,7 @@ impl<'a> selectors::Element for BlitzNode<'a> {
                     AttrSelectorOperator::Prefix => attr_value.starts_with(value),
                     AttrSelectorOperator::Substring => attr_value.contains(value),
                     AttrSelectorOperator::Suffix => attr_value.ends_with(value),
-                };
+                }
             }
         }
     }
