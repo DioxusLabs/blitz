@@ -384,7 +384,7 @@ impl<'a> MutationWriter<'a> {
     }
 }
 
-impl<'a> Drop for MutationWriter<'a> {
+impl Drop for MutationWriter<'_> {
     fn drop(&mut self) {
         // Add/Update inline stylesheets (<style> elements)
         for &id in &self.style_nodes {
