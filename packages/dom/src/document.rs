@@ -527,6 +527,10 @@ impl Document {
         crate::util::walk_tree(0, self.root_node());
     }
 
+    pub fn print_subtree(&self, node_id: usize) {
+        crate::util::walk_tree(0, &self.nodes[node_id]);
+    }
+
     pub fn process_style_element(&mut self, target_id: usize) {
         let css = self.nodes[target_id].text_content();
         let css = html_escape::decode_html_entities(&css);
