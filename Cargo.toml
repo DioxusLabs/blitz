@@ -59,7 +59,7 @@ blitz-net = { path = "./packages/net" }
 blitz-traits = { path = "./packages/traits" }
 comrak = { git = "https://github.com/nicoburns/comrak", branch = "tasklist-class", default-features = false, features = ["syntect"] }
 png = { version = "0.17" }
-dioxus-blitz = { path = "./packages/dioxus-blitz" }
+dioxus-blitz = { path = "./packages/dioxus-blitz", features = ["tracing"] }
 dioxus = { workspace = true }
 euclid = { version = "0.22", features = ["serde"] }
 reqwest = "0.11.24"
