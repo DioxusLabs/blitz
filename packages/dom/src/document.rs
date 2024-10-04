@@ -419,7 +419,11 @@ impl Document {
 
         let parent_id = node.parent.unwrap();
         let parent = &mut self.nodes[parent_id];
-        let node_child_idx = parent.children.iter().position(|id| *id == node_id).unwrap();
+        let node_child_idx = parent
+            .children
+            .iter()
+            .position(|id| *id == node_id)
+            .unwrap();
 
         // Mark the node's parent as changed.
         self.changed.insert(parent_id);
