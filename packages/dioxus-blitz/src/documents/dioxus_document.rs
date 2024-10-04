@@ -595,7 +595,8 @@ impl WriteMutations for MutationWriter<'_> {
                     .find(|attr| attr.name.local == *name);
 
                 if let Some(existing_attr) = existing_attr {
-                    existing_attr.value = val.to_string();
+                    existing_attr.value.clear();
+                    existing_attr.value.push_str(val);
                 } else {
                     // we have overloaded the style namespace to accumulate style attributes without a `style` block
                     if ns == Some("style") {
