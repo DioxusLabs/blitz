@@ -27,7 +27,36 @@ pub(crate) fn white_space_collapse(input: stylo::WhiteSpaceCollapse) -> parley::
     }
 }
 
-pub(crate) fn style(style: &stylo::ComputedValues) -> parley::TextStyle<'static, TextBrush> {
+// TextStyle struct that owns all the data that need a lifetime
+// Should not be constructed externally since it is a self-referencing struct and extra care has to be taken to keep it safe
+#[derive(Default)]
+pub(crate) struct OwnedTextStyle {
+    #[allow(unused)]
+    fonts: Vec<String>,
+    #[allow(unused)]
+    font_stack: Box<[parley::FontFamily<'static>]>,
+    text_style: parley::TextStyle<'static, TextBrush>,
+}
+
+// Not safe as of right now and therefore commented out. Needs to to have a non-static lifetime that is bound to the `self` argument
+/*
+impl Deref for OwnedTextStyle {
+    type Target = parley::TextStyle<'static, TextBrush>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.text_style
+    }
+}
+*/
+
+impl OwnedTextStyle {
+    #[allow(clippy::needless_lifetimes)]
+    pub(crate) fn take_style<'a>(&'a mut self) -> parley::TextStyle<'a, TextBrush> {
+        std::mem::take(&mut self.text_style)
+    }
+}
+
+pub(crate) fn style(style: &stylo::ComputedValues) -> OwnedTextStyle {
     let font_styles = style.get_font();
     // let text_styles = style.get_text();
     let itext_styles = style.get_inherited_text();
@@ -51,7 +80,8 @@ pub(crate) fn style(style: &stylo::ComputedValues) -> parley::TextStyle<'static,
     };
 
     // Convert font family
-    let families: Vec<_> = font_styles
+    let mut fonts = Vec::new();
+    let families: Box<[_]> = font_styles
         .font_family
         .families
         .list
@@ -71,8 +101,15 @@ pub(crate) fn style(style: &stylo::ComputedValues) -> parley::TextStyle<'static,
                         break 'ret parley::FontFamily::Generic(parley::GenericFamily::SystemUi);
                     }
 
-                    // TODO: fix leak!
-                    break 'ret parley::FontFamily::Named(name.to_string().leak());
+                    let name = name.to_string();
+                    fonts.push(name);
+                    let name = fonts.last().unwrap() as &str;
+                    let name = name as *const str;
+                    // this is safe since the string won't be reallocated
+                    // and gets deallocated when the self-referencing struct
+                    // it's being part of gets dropped
+                    let name = unsafe { &*name };
+                    break 'ret parley::FontFamily::Named(name);
                 }
             }
             stylo::SingleFontFamily::Generic(generic) => {
@@ -89,8 +126,11 @@ pub(crate) fn style(style: &stylo::ComputedValues) -> parley::TextStyle<'static,
         })
         .collect();
 
-    // TODO: fix leak!
-    let families = Box::leak(families.into_boxed_slice());
+    let families_ptr = &*families as *const [parley::FontFamily<'static>];
+    // this is safe since the array won't be reallocated
+    // and gets deallocated when the self-referencing struct
+    // it's being part of gets dropped
+    let families_ref = unsafe { &*families_ptr };
 
     // Convert text colour
     let color = itext_styles.color.as_peniko();
@@ -102,27 +142,30 @@ pub(crate) fn style(style: &stylo::ComputedValues) -> parley::TextStyle<'static,
         .map(ToPenikoColor::as_peniko)
         .map(|color| TextBrush::Normal(peniko::Brush::Solid(color)));
 
-    parley::TextStyle {
-        // font_stack: parley::FontStack::Single(FontFamily::Generic(GenericFamily::SystemUi)),
-        font_stack: parley::FontStack::List(families),
-        font_size,
-        font_stretch: Default::default(),
-        font_style,
-        font_weight,
-        font_variations: parley::FontSettings::List(&[]),
-        font_features: parley::FontSettings::List(&[]),
-        locale: Default::default(),
-        brush: TextBrush::Normal(peniko::Brush::Solid(color)),
-        has_underline: itext_styles.text_decorations_in_effect.underline,
-        underline_offset: Default::default(),
-        underline_size: Default::default(),
-        underline_brush: decoration_brush.clone(),
-        has_strikethrough: itext_styles.text_decorations_in_effect.line_through,
-        strikethrough_offset: Default::default(),
-        strikethrough_size: Default::default(),
-        strikethrough_brush: decoration_brush,
-        line_height,
-        word_spacing: Default::default(),
-        letter_spacing: itext_styles.letter_spacing.0.px(),
+    OwnedTextStyle {
+        fonts,
+        font_stack: families,
+        text_style: parley::TextStyle {
+            font_stack: parley::FontStack::List(families_ref),
+            font_size,
+            font_stretch: Default::default(),
+            font_style,
+            font_weight,
+            font_variations: parley::FontSettings::List(&[]),
+            font_features: parley::FontSettings::List(&[]),
+            locale: Default::default(),
+            brush: TextBrush::Normal(peniko::Brush::Solid(color)),
+            has_underline: itext_styles.text_decorations_in_effect.underline,
+            underline_offset: Default::default(),
+            underline_size: Default::default(),
+            underline_brush: decoration_brush.clone(),
+            has_strikethrough: itext_styles.text_decorations_in_effect.line_through,
+            strikethrough_offset: Default::default(),
+            strikethrough_size: Default::default(),
+            strikethrough_brush: decoration_brush,
+            line_height,
+            word_spacing: Default::default(),
+            letter_spacing: itext_styles.letter_spacing.0.px(),
+        },
     }
 }
