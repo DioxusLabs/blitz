@@ -1,9 +1,12 @@
 
 [workspace]
-# members = ["packages/dom"]
-# members = ["packages/blitz", "packages/dom", "packages/dioxus-blitz"]
-# exclude = ["packages/blitz", "packages/dioxus-blitz"]
-members = ["packages/blitz", "packages/dom", "packages/dioxus-blitz", "packages/net", "packages/traits"]
+members = [
+  "packages/blitz-traits",
+  "packages/blitz-dom", 
+  "packages/blitz-net",
+  "packages/blitz-renderer-vello",
+  "packages/dioxus-blitz"
+]
 resolver = "2"
 
 [workspace.dependencies]
@@ -62,13 +65,13 @@ incremental = false
 [dev-dependencies]
 # webrender = "0.61.0"
 # mozbuild = "0.1.0"
-blitz = { path = "./packages/blitz" }
-blitz-dom = { path = "./packages/dom" }
-blitz-net = { path = "./packages/net" }
-blitz-traits = { path = "./packages/traits" }
+blitz-dom = { path = "./packages/blitz-dom" }
+blitz-net = { path = "./packages/blitz-net" }
+blitz-traits = { path = "./packages/blitz-traits" }
+blitz-renderer-vello = { path = "./packages/blitz-renderer-vello" }
+dioxus-blitz = { path = "./packages/dioxus-blitz", features = ["tracing"] }
 comrak = { git = "https://github.com/nicoburns/comrak", branch = "tasklist-class", default-features = false, features = ["syntect"] }
 png = { version = "0.17" }
-dioxus-blitz = { path = "./packages/dioxus-blitz", features = ["tracing"] }
 dioxus = { workspace = true }
 euclid = { version = "0.22", features = ["serde"] }
 reqwest = "0.11.24"

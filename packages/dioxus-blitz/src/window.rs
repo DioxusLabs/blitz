@@ -1,9 +1,9 @@
 use crate::accessibility::AccessibilityState;
 use crate::waker::{create_waker, BlitzEvent, BlitzWindowEvent};
 use crate::{stylo_to_winit, Callback};
-use blitz::{Devtools, Renderer};
 use blitz_dom::events::{EventData, RendererEvent};
 use blitz_dom::{DocumentLike, Viewport};
+use blitz_renderer_vello::{Devtools, Renderer};
 use winit::keyboard::PhysicalKey;
 
 #[allow(unused)]

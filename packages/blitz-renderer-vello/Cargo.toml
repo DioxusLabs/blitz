@@ -1,5 +1,5 @@
 [package]
-name = "blitz"
+name = "blitz-renderer-vello"
 version = "0.1.0"
 edition = "2021"
 
@@ -8,7 +8,7 @@ default = ["tracing"]
 tracing = ["dep:tracing"]
 
 [dependencies]
-blitz-dom = { path = "../dom" }
+blitz-dom = { path = "../blitz-dom" }
 style = { workspace = true, features = ["servo"] }
 taffy = { workspace = true }
 parley = { workspace = true }
