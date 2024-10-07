@@ -176,16 +176,18 @@ fn TodoEntry(mut todos: Signal<HashMap<u32, TodoItem>>, id: u32) -> Element {
                 }
                 label {
                     r#for: "cbg-{id}",
-                    ondoubleclick: move |_| is_editing.set(true),
-                    prevent_default: "onclick",
+                    onclick: move |evt| {
+                        is_editing.set(true);
+                        evt.prevent_default()
+                    },
                     "{contents}"
                 }
                 button {
                     class: "destroy",
-                    onclick: move |_| {
+                    onclick: move |evt| {
                         todos.write().remove(&id);
+                        evt.prevent_default();
                     },
-                    prevent_default: "onclick"
                 }
             }
 
@@ -242,8 +244,10 @@ fn ListFooter(
                             a {
                                 href: url,
                                 class: if filter() == state { "selected" },
-                                onclick: move |_| filter.set(state),
-                                prevent_default: "onclick",
+                                onclick: move |evt| {
+                                    filter.set(state)
+                                    evt.prevent_default()
+                                },
                                 {state_text}
                             }
                         }
