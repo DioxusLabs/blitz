@@ -31,6 +31,7 @@ tracing = { workspace = true, optional = true }
 url = { version = "2.5.0", features = ["serde"] }
 ureq = "2.9"
 rustc-hash = "1.1.0"
+keyboard-types = "0.7"
 
 [target.'cfg(target_os = "android")'.dependencies]
 android-activity = { version = "0.6.0", features = ["native-activity"] }

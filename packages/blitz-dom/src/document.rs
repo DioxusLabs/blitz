@@ -63,9 +63,8 @@ pub trait DocumentLike: AsRef<Document> + AsMut<Document> + Into<Document> + 'st
         false
     }
 
-    fn handle_event(&mut self, _event: RendererEvent) -> bool {
+    fn handle_event(&mut self, _event: RendererEvent) {
         // Default implementation does nothing
-        false
     }
 
     fn as_any_mut(&mut self) -> &mut dyn Any {
@@ -125,8 +124,10 @@ pub struct Document {
 }
 
 impl DocumentLike for Document {
-    fn handle_event(&mut self, event: RendererEvent) -> bool {
-        // let node_id = event.target;
+    fn handle_event(&mut self, event: RendererEvent) {
+        let target_node_id = event.target;
+
+        let event = dbg!(event);
 
         match event.data {
             EventData::Click { x, y, mods } => {
@@ -140,12 +141,12 @@ impl DocumentLike for Document {
                         y: node.final_layout.padding.top + node.final_layout.border.top,
                     };
                     let Some(el) = node.raw_dom_data.downcast_element_mut() else {
-                        return true;
+                        return;
                     };
 
                     let disabled = el.attr(local_name!("disabled")).is_some();
                     if disabled {
-                        return true;
+                        return;
                     }
 
                     if let NodeSpecificData::TextInput(ref mut text_input_data) =
@@ -185,6 +186,10 @@ impl DocumentLike for Document {
             }
             EventData::KeyPress { event, mods } => {
                 if let Some(node_id) = self.focus_node_id {
+                    if target_node_id != node_id {
+                        return;
+                    }
+
                     let node = &mut self.nodes[node_id];
                     let text_input_data = node
                         .raw_dom_data
@@ -213,8 +218,6 @@ impl DocumentLike for Document {
             }
             EventData::Hover => {}
         }
-
-        true
     }
 }
 
