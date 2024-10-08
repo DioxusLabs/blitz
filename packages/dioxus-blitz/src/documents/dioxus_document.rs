@@ -685,6 +685,8 @@ impl WriteMutations for MutationWriter<'_> {
             value
         );
 
+        self.doc.snapshot_node(node_id);
+
         let node = self.doc.get_node_mut(node_id).unwrap();
         if let NodeData::Element(ref mut element) = node.raw_dom_data {
             if element.name.local == local_name!("input") && name == "checked" {
