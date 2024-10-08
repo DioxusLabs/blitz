@@ -126,6 +126,7 @@ fn TodoHeader(mut todos: Signal<HashMap<u32, TodoItem>>) -> Element {
             todos.write().insert(id, todo);
             todo_id += 1;
             draft.set("".to_string());
+            evt.prevent_default();
         }
     };
 
