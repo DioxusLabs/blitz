@@ -26,6 +26,7 @@ use futures_util::{pin_mut, FutureExt};
 use rustc_hash::FxHashMap;
 use style::{
     data::{ElementData, ElementStyles},
+    invalidation::element::restyle_hints::RestyleHint,
     properties::{style_structs::Font, ComputedValues},
 };
 
@@ -688,6 +689,12 @@ impl WriteMutations for MutationWriter<'_> {
         self.doc.snapshot_node(node_id);
 
         let node = self.doc.get_node_mut(node_id).unwrap();
+
+        let stylo_element_data = &mut *node.stylo_element_data.borrow_mut();
+        if let Some(data) = stylo_element_data {
+            data.hint |= RestyleHint::restyle_subtree();
+        }
+
         if let NodeData::Element(ref mut element) = node.raw_dom_data {
             if element.name.local == local_name!("input") && name == "checked" {
                 set_input_checked_state(element, value);
