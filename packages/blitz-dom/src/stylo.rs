@@ -18,6 +18,7 @@ use selectors::{
 };
 use style::applicable_declarations::ApplicableDeclarationBlock;
 use style::color::AbsoluteColor;
+use style::invalidation::element::restyle_hints::RestyleHint;
 use style::properties::{Importance, PropertyDeclaration};
 use style::rule_tree::CascadeLevel;
 use style::selector_parser::PseudoElement;
@@ -122,6 +123,15 @@ impl crate::document::Document {
             .unwrap()
             .as_element()
             .unwrap();
+
+        // Force restyle all nodes
+        // TODO: finer grained style invalidation
+        let mut stylo_element_data = root.stylo_element_data.borrow_mut();
+        if let Some(data) = &mut *stylo_element_data {
+            data.hint |= RestyleHint::restyle_subtree();
+            data.hint |= RestyleHint::recascade_subtree();
+        }
+        drop(stylo_element_data);
 
         self.stylist
             .flush(&guards, Some(root), Some(&self.snapshots));
