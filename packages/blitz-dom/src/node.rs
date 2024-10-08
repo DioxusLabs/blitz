@@ -620,6 +620,7 @@ impl Node {
         unsafe { &*self.tree }
     }
 
+    #[track_caller]
     pub fn with(&self, id: usize) -> &Node {
         self.tree().get(id).unwrap()
     }

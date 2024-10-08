@@ -526,11 +526,6 @@ impl MutationWriter<'_> {
         if self.state.node_id_mapping.len() <= element_id {
             self.state.node_id_mapping.resize(element_id + 1, None);
         }
-        // If element_id is already mapping to a node, remove that node from the document
-        else if let Some(mapped_node_id) = self.state.node_id_mapping[element_id] {
-            // todo: we should mark these as needing garbage collection?
-            self.doc.remove_node(mapped_node_id);
-        }
 
         // Set the new mapping
         self.state.node_id_mapping[element_id] = Some(node_id);
@@ -568,6 +563,14 @@ impl WriteMutations for MutationWriter<'_> {
     fn assign_node_id(&mut self, path: &'static [u8], id: ElementId) {
         #[cfg(feature = "tracing")]
         tracing::info!("assign_node_id path:{:?} id:{}", path, id.0);
+
+        // If there is an existing node already mapped to that ID and
+        // it has no parent, then drop it
+        if let Some(node_id) = self.state.try_element_to_node_id(id) {
+            if self.doc.get_node(node_id).unwrap().parent.is_none() {
+                self.doc.remove_and_drop_node(node_id);
+            }
+        }
 
         let node_id = self.load_child(path);
         self.set_id_mapping(node_id, id);

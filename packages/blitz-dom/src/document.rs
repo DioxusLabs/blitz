@@ -452,7 +452,9 @@ impl Document {
     pub fn append(&mut self, node_id: usize, appended_node_ids: &[usize]) {
         let node = &self.nodes[node_id];
         let parent_id = node.parent.unwrap();
-        self.nodes[parent_id].children.extend_from_slice(appended_node_ids);
+        self.nodes[parent_id]
+            .children
+            .extend_from_slice(appended_node_ids);
 
         // Update parent values
         for &child_id in appended_node_ids {
@@ -460,7 +462,18 @@ impl Document {
         }
     }
 
-    pub fn remove_node(&mut self, node_id: usize) -> Option<Node> {
+    /// Remove the node from it's parent but don't drop it
+    pub fn remove_node(&mut self, node_id: usize) {
+        let node = &mut self.nodes[node_id];
+
+        // Update child_idx values
+        if let Some(parent_id) = node.parent.take() {
+            let parent = &mut self.nodes[parent_id];
+            parent.children.retain(|id| *id != node_id);
+        }
+    }
+
+    pub fn remove_and_drop_node(&mut self, node_id: usize) -> Option<Node> {
         fn remove_node_ignoring_parent(doc: &mut Document, node_id: usize) -> Option<Node> {
             let node = doc.nodes.try_remove(node_id);
             if let Some(node) = &node {
@@ -474,8 +487,7 @@ impl Document {
         let node = remove_node_ignoring_parent(self, node_id);
 
         // Update child_idx values
-        if let Some(parent_id) = node.as_ref().and_then(|node| node.parent)
-        {
+        if let Some(parent_id) = node.as_ref().and_then(|node| node.parent) {
             let parent = &mut self.nodes[parent_id];
             parent.children.retain(|id| *id != node_id);
         }

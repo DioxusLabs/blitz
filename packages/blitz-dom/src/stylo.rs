@@ -951,9 +951,8 @@ impl<'a> Iterator for Traverser<'a> {
     type Item = BlitzNode<'a>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let node = self.parent.children.get(self.child_index)?;
-
-        let node = self.parent.with(*node);
+        let node_id = self.parent.children.get(self.child_index)?;
+        let node = self.parent.with(*node_id);
 
         self.child_index += 1;
 
