@@ -451,24 +451,13 @@ impl Document {
 
     pub fn append(&mut self, node_id: usize, appended_node_ids: &[usize]) {
         let node = &self.nodes[node_id];
-        // let node_child_idx = node.child_idx;
         let parent_id = node.parent.unwrap();
-        let parent = &mut self.nodes[parent_id];
-
-        let mut children = std::mem::take(&mut parent.children);
-        let old_len = children.len();
-        children.extend_from_slice(appended_node_ids);
+        self.nodes[parent_id].children.extend_from_slice(appended_node_ids);
 
         // Update parent values
-        let mut child_idx = old_len;
-        while child_idx < children.len() {
-            let child_id = children[child_idx];
-            let node = &mut self.nodes[child_id];
-            node.parent = Some(parent_id);
-            child_idx += 1;
+        for &child_id in appended_node_ids {
+            self.nodes[child_id].parent = Some(parent_id);
         }
-
-        self.nodes[parent_id].children = children;
     }
 
     pub fn remove_node(&mut self, node_id: usize) -> Option<Node> {
