@@ -50,8 +50,6 @@ pub struct Node {
     pub parent: Option<usize>,
     /// Our Id
     pub id: usize,
-    // Which child are we in our parent?
-    pub child_idx: usize,
     // What are our children?
     pub children: Vec<usize>,
     /// A separate child list that includes anonymous collections of inline elements
@@ -94,7 +92,6 @@ impl Node {
             parent: None,
             children: vec![],
             layout_children: RefCell::new(None),
-            child_idx: 0,
 
             raw_dom_data: data,
             stylo_element_data: Default::default(),
@@ -629,11 +626,10 @@ impl Node {
 
     pub fn print_tree(&self, level: usize) {
         println!(
-            "{} {} {:?} {} {} {:?}",
+            "{} {} {:?} {} {:?}",
             "  ".repeat(level),
             self.id,
             self.parent,
-            self.child_idx,
             self.node_debug_str().replace('\n', ""),
             self.children
         );
@@ -644,22 +640,32 @@ impl Node {
         }
     }
 
-    // Get the nth node in the parents child list
-    pub fn forward(&self, n: usize) -> Option<&Node> {
+    // Get the index of the current node in the parents child list
+    pub fn child_index(&self) -> Option<usize> {
         self.tree()[self.parent?]
             .children
-            .get(self.child_idx + n)
+            .iter()
+            .position(|id| *id == self.id)
+    }
+
+    // Get the nth node in the parents child list
+    pub fn forward(&self, n: usize) -> Option<&Node> {
+        let child_idx = self.child_index().unwrap_or(0);
+        self.tree()[self.parent?]
+            .children
+            .get(child_idx + n)
             .map(|id| self.with(*id))
     }
 
     pub fn backward(&self, n: usize) -> Option<&Node> {
-        if self.child_idx < n {
+        let child_idx = self.child_index().unwrap_or(0);
+        if child_idx < n {
             return None;
         }
 
         self.tree()[self.parent?]
             .children
-            .get(self.child_idx - n)
+            .get(child_idx - n)
             .map(|id| self.with(*id))
     }
 
@@ -853,7 +859,6 @@ impl std::fmt::Debug for Node {
             .field("parent", &self.parent)
             .field("id", &self.id)
             .field("is_inline_root", &self.is_inline_root)
-            .field("child_idx", &self.child_idx)
             .field("children", &self.children)
             .field("layout_children", &self.layout_children.borrow())
             // .field("style", &self.style)

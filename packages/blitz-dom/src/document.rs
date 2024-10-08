@@ -437,12 +437,11 @@ impl Document {
             inserted_node_ids.iter().copied(),
         );
 
-        // Update child_idx and parent values
+        // Update parent values
         let mut child_idx = node_child_idx;
         while child_idx < children.len() {
             let child_id = children[child_idx];
             let node = &mut self.nodes[child_id];
-            node.child_idx = child_idx;
             node.parent = Some(parent_id);
             child_idx += 1;
         }
@@ -460,12 +459,11 @@ impl Document {
         let old_len = children.len();
         children.extend_from_slice(appended_node_ids);
 
-        // Update child_idx and parent values
+        // Update parent values
         let mut child_idx = old_len;
         while child_idx < children.len() {
             let child_id = children[child_idx];
             let node = &mut self.nodes[child_id];
-            node.child_idx = child_idx;
             node.parent = Some(parent_id);
             child_idx += 1;
         }
@@ -487,26 +485,10 @@ impl Document {
         let node = remove_node_ignoring_parent(self, node_id);
 
         // Update child_idx values
-        if let Some(Node {
-            mut child_idx,
-            parent: Some(parent_id),
-            ..
-        }) = node
+        if let Some(parent_id) = node.as_ref().and_then(|node| node.parent)
         {
             let parent = &mut self.nodes[parent_id];
-
-            let mut children = std::mem::take(&mut parent.children);
-            children.remove(child_idx);
-
-            // Update child_idx and parent values
-            while child_idx < children.len() {
-                let child_id = children[child_idx];
-                let node = &mut self.nodes[child_id];
-                node.child_idx = child_idx;
-                child_idx += 1;
-            }
-
-            self.nodes[parent_id].children = children;
+            parent.children.retain(|id| *id != node_id);
         }
 
         node
@@ -516,17 +498,6 @@ impl Document {
         match &self.base_url {
             Some(base_url) => base_url.join(raw).unwrap(),
             None => url::Url::parse(raw).unwrap(),
-        }
-    }
-
-    pub fn flush_child_indexes(&mut self, target_id: usize, child_idx: usize, _level: usize) {
-        let node = &mut self.nodes[target_id];
-        node.child_idx = child_idx;
-
-        // println!("{} {} {:?} {:?}", "  ".repeat(level), target_id, node.parent, node.children);
-
-        for (i, child_id) in node.children.clone().iter().enumerate() {
-            self.flush_child_indexes(*child_id, i, _level + 1)
         }
     }
 

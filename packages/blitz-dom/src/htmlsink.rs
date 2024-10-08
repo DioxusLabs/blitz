@@ -169,9 +169,6 @@ impl<'b> TreeSink for DocumentHtmlParser<'b> {
             doc.process_style_element(*id);
         }
 
-        // Compute child_idx fields.
-        doc.flush_child_indexes(0, 0, 0);
-
         for error in self.errors.borrow().iter() {
             println!("ERROR: {}", error);
         }
