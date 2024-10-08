@@ -642,15 +642,20 @@ impl Document {
                     .collect()
             });
 
+            let changed_attrs = attrs
+                .as_ref()
+                .map(|attrs| attrs.iter().map(|attr| attr.0.name.clone()).collect())
+                .unwrap_or_default();
+
             self.snapshots.insert(
                 opaque_node_id,
                 ServoElementSnapshot {
                     state: Some(node.element_state),
                     attrs,
-                    changed_attrs: Vec::new(),
-                    class_changed: false,
-                    id_changed: false,
-                    other_attributes_changed: false,
+                    changed_attrs,
+                    class_changed: true,
+                    id_changed: true,
+                    other_attributes_changed: true,
                 },
             );
         }
