@@ -46,7 +46,7 @@ use style::values::generics::image::{
     GenericCircle, GenericEllipse, GenericEndingShape, ShapeExtent,
 };
 use style::values::specified::percentage::ToPercentage;
-use taffy::prelude::Layout;
+use taffy::Layout;
 use vello::kurbo::{BezPath, Cap, Join};
 use vello::peniko::Gradient;
 use vello::{
@@ -340,7 +340,7 @@ impl VelloSceneGenerator<'_> {
         let element = &self.dom.as_ref().tree()[node_id];
 
         // Early return if the element is hidden
-        if matches!(element.style.display, taffy::prelude::Display::None) {
+        if matches!(element.style.display, taffy::Display::None) {
             return;
         }
 
@@ -786,10 +786,10 @@ impl ElementCx<'_> {
             let stroke = Stroke::new(self.scale);
 
             let stroke_color = match self.element.style.display {
-                taffy::prelude::Display::Block => Color::rgb(1.0, 0.0, 0.0),
-                taffy::prelude::Display::Flex => Color::rgb(0.0, 1.0, 0.0),
-                taffy::prelude::Display::Grid => Color::rgb(0.0, 0.0, 1.0),
-                taffy::prelude::Display::None => Color::rgb(0.0, 0.0, 1.0),
+                taffy::Display::Block => Color::rgb(1.0, 0.0, 0.0),
+                taffy::Display::Flex => Color::rgb(0.0, 1.0, 0.0),
+                taffy::Display::Grid => Color::rgb(0.0, 0.0, 1.0),
+                taffy::Display::None => Color::rgb(0.0, 0.0, 1.0),
             };
 
             scene.stroke(&stroke, self.transform, stroke_color, None, &shape);
