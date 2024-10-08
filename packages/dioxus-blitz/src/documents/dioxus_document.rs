@@ -674,10 +674,17 @@ impl WriteMutations for MutationWriter<'_> {
         value: &AttributeValue,
         id: ElementId,
     ) {
-        #[cfg(feature = "tracing")]
-        tracing::info!("set_attribute id:{} ns: {:?} name:{}", id.0, ns, name);
-
         let node_id = self.state.element_to_node_id(id);
+
+        #[cfg(feature = "tracing")]
+        tracing::info!(
+            "set_attribute node_id:{} ns: {:?} name:{}, value:{:?}",
+            node_id,
+            ns,
+            name,
+            value
+        );
+
         let node = self.doc.get_node_mut(node_id).unwrap();
         if let NodeData::Element(ref mut element) = node.raw_dom_data {
             if element.name.local == local_name!("input") && name == "checked" {
