@@ -202,9 +202,9 @@ fn TodoEntry(mut todos: Signal<HashMap<u32, TodoItem>>, id: u32) -> Element {
                     autofocus: "true",
                     onfocusout: move |_| is_editing.set(false),
                     onkeydown: move |evt| {
-                        match evt.key() {
-                            Key::Enter | Key::Escape | Key::Tab => is_editing.set(false),
-                            _ => {}
+                        if matches!(evt.key(), Key::Enter | Key::Escape | Key::Tab) {
+                            evt.prevent_default();
+                            is_editing.set(false);
                         }
                     }
                 }
@@ -224,43 +224,43 @@ fn ListFooter(
     let show_clear_completed = use_memo(move || todos.read().values().any(|todo| todo.checked));
 
     rsx! {
-            footer { class: "footer",
-                span { class: "todo-count",
-                    strong { "{active_todo_count} " }
-                    span {
-                        match active_todo_count() {
-                            1 => "item",
-                            _ => "items",
-                        },
-                        " left"
-                    }
+        footer { class: "footer",
+            span { class: "todo-count",
+                strong { "{active_todo_count} " }
+                span {
+                    match active_todo_count() {
+                        1 => "item",
+                        _ => "items",
+                    },
+                    " left"
                 }
-                ul { class: "filters",
-                    for (state , state_text , url) in [
-        (FilterState::All, "All", "#/"),
-        (FilterState::Active, "Active", "#/active"),
-        (FilterState::Completed, "Completed", "#/completed"),
-    ] {
-                        li {
-                            a {
-                                href: url,
-                                class: if filter() == state { "selected" },
-                                onclick: move |evt| {
-                                    filter.set(state);
-                                    evt.prevent_default();
-                                },
-                                {state_text}
-                            }
+            }
+            ul { class: "filters",
+                for (state , state_text , url) in [
+                    (FilterState::All, "All", "#/"),
+                    (FilterState::Active, "Active", "#/active"),
+                    (FilterState::Completed, "Completed", "#/completed"),
+                ] {
+                    li {
+                        a {
+                            href: url,
+                            class: if filter() == state { "selected" },
+                            onclick: move |evt| {
+                                filter.set(state);
+                                evt.prevent_default();
+                            },
+                            {state_text}
                         }
                     }
                 }
-                if show_clear_completed() {
-                    button {
-                        class: "clear-completed",
-                        onclick: move |_| todos.write().retain(|_, todo| !todo.checked),
-                        "Clear completed"
-                    }
+            }
+            if show_clear_completed() {
+                button {
+                    class: "clear-completed",
+                    onclick: move |_| todos.write().retain(|_, todo| !todo.checked),
+                    "Clear completed"
                 }
             }
         }
+    }
 }
