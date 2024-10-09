@@ -613,8 +613,10 @@ impl WriteMutations for MutationWriter<'_> {
         // If there is an existing node already mapped to that ID and
         // it has no parent, then drop it
         if let Some(node_id) = self.state.try_element_to_node_id(id) {
-            if self.doc.get_node(node_id).unwrap().parent.is_none() {
-                self.doc.remove_and_drop_node(node_id);
+            if let Some(node) = self.doc.get_node(node_id) {
+                if node.parent.is_none() {
+                    self.doc.remove_and_drop_node(node_id);
+                }
             }
         }
 
@@ -665,7 +667,7 @@ impl WriteMutations for MutationWriter<'_> {
         let anchor_node_id = self.state.element_to_node_id(id);
         self.maybe_push_parent_style_node(anchor_node_id);
         self.doc.insert_before(anchor_node_id, &new_nodes);
-        self.doc.remove_and_drop_node(anchor_node_id);
+        self.doc.remove_node(anchor_node_id);
     }
 
     fn replace_placeholder_with_nodes(&mut self, path: &'static [u8], m: usize) {
@@ -676,7 +678,7 @@ impl WriteMutations for MutationWriter<'_> {
         let anchor_node_id = self.load_child(path);
         self.maybe_push_parent_style_node(anchor_node_id);
         self.doc.insert_before(anchor_node_id, &new_nodes);
-        self.doc.remove_and_drop_node(anchor_node_id);
+        self.doc.remove_node(anchor_node_id);
     }
 
     fn insert_nodes_after(&mut self, id: ElementId, m: usize) {
