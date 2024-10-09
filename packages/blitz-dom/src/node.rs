@@ -10,13 +10,10 @@ use std::str::FromStr;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 use style::invalidation::element::restyle_hints::RestyleHint;
-use style::values::computed::Display;
-use style::values::specified::box_::{DisplayInside, DisplayOutside};
-use style_dom::ElementState;
-use winit::event::Modifiers;
-use parley;
 use style::properties::ComputedValues;
 use style::stylesheets::UrlExtraData;
+use style::values::computed::Display;
+use style::values::specified::box_::{DisplayInside, DisplayOutside};
 use style::Atom;
 use style::{
     data::ElementData,
@@ -25,11 +22,13 @@ use style::{
     shared_lock::{Locked, SharedRwLock},
     stylesheets::CssRuleType,
 };
+use style_dom::ElementState;
 use taffy::{
     prelude::{Layout, Style},
     Cache,
 };
 use url::Url;
+use winit::event::Modifiers;
 
 use crate::events::{EventData, EventListener, HitResult};
 use crate::layout::table::TableContext;
