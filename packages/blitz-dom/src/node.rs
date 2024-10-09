@@ -4,7 +4,7 @@ use image::DynamicImage;
 use peniko::kurbo;
 use selectors::matching::{ElementSelectorFlags, QuirksMode};
 use slab::Slab;
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::fmt::Write;
 use std::str::FromStr;
 use std::sync::atomic::AtomicBool;
@@ -46,12 +46,14 @@ pub struct Node {
     // The actual tree we belong to. This is unsafe!!
     pub tree: *mut Slab<Node>,
 
-    /// Our parent's ID
-    pub parent: Option<usize>,
     /// Our Id
     pub id: usize,
+    /// Our parent's ID
+    pub parent: Option<usize>,
     // What are our children?
     pub children: Vec<usize>,
+    /// Our parent in the layout hierachy: a separate list that includes anonymous collections of inline elements
+    pub layout_parent: Cell<Option<usize>>,
     /// A separate child list that includes anonymous collections of inline elements
     pub layout_children: RefCell<Option<Vec<usize>>>,
 
@@ -91,6 +93,7 @@ impl Node {
             id,
             parent: None,
             children: vec![],
+            layout_parent: Cell::new(None),
             layout_children: RefCell::new(None),
 
             raw_dom_data: data,

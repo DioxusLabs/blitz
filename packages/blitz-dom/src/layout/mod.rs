@@ -46,6 +46,9 @@ impl Document {
             }
         }
 
+        for &node_id in &layout_children {
+            self.nodes[node_id].layout_parent.set(Some(node_id));
+        }
         *self.nodes[node_id].layout_children.borrow_mut() = Some(layout_children);
         // }
     }
