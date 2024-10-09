@@ -128,7 +128,7 @@ impl DocumentLike for DioxusDocument {
                 let click_event_data = wrap_event_data(NativeClickData);
 
                 for &DxNodeIds { node_id, dioxus_id } in chain.iter() {
-                    let element = self.inner.tree()[node_id].element_data().unwrap();
+                    let mut trigger_label = false;
 
                     if let Some(id) = dioxus_id {
                         // Trigger click event
@@ -139,47 +139,80 @@ impl DocumentLike for DioxusDocument {
                         prevent_default |= !click_event.default_action_enabled();
                         stop_propagation |= !click_event.propagates();
 
-                        //TODO Check for other inputs which trigger input event on click here, eg radio
-                        let triggers_input_event = element.name.local == local_name!("input")
-                            && element.attr(local_name!("type")) == Some("checkbox");
-                        if triggers_input_event {
-                            let form_data =
-                                wrap_event_data(self.input_event_form_data(&chain, element));
-                            let input_event = Event::new(form_data, true);
-                            self.vdom.runtime().handle_event("input", input_event, id);
+                        if !prevent_default {
+                            let default_event = RendererEvent {
+                                target: node_id,
+                                data: renderer_event.data.clone(),
+                            };
+                            self.inner.as_mut().handle_event(default_event);
+                            prevent_default = true;
+
+                            let element = self.inner.tree()[node_id].element_data().unwrap();
+                            trigger_label = element.name.local == *"label";
+
+                            //TODO Check for other inputs which trigger input event on click here, eg radio
+                            let triggers_input_event = element.name.local == local_name!("input")
+                                && element.attr(local_name!("type")) == Some("checkbox");
+                            if triggers_input_event {
+                                let form_data =
+                                    wrap_event_data(self.input_event_form_data(&chain, element));
+                                let input_event = Event::new(form_data, true);
+                                self.vdom.runtime().handle_event("input", input_event, id);
+                            }
                         }
                     }
 
                     //Clicking labels triggers click, and possibly input event, of bound input
-                    if *element.name.local == *"label" {
-                        let bound_input_elements = self.inner.label_bound_input_elements(node_id);
-                        //Filter down bound elements to those which have dioxus id
-                        if let Some((element_data, dioxus_id)) =
-                            bound_input_elements.into_iter().find_map(|n| {
-                                let target_element_data = n.element_data()?;
-                                let dioxus_id = DioxusDocument::dioxus_id(target_element_data)?;
-                                Some((target_element_data, dioxus_id))
-                            })
+                    if trigger_label {
+                        if let Some((dioxus_id, node_id)) = self.label_bound_input_element(node_id)
                         {
                             let click_event = Event::new(click_event_data.clone(), true);
-                            self.vdom
-                                .runtime()
-                                .handle_event("click", click_event, dioxus_id);
+                            self.vdom.runtime().handle_event(
+                                "click",
+                                click_event.clone(),
+                                dioxus_id,
+                            );
 
-                            // TODO: Generated click events should bubble separatedly
-                            // prevent_default |= !click_event.default_action_enabled();
+                            // Handle default DOM event
+                            if click_event.default_action_enabled() {
+                                let &EventData::Click { mods, .. } = &renderer_event.data else {
+                                    unreachable!();
+                                };
+                                let input_click_data = self
+                                    .inner
+                                    .get_node(node_id)
+                                    .unwrap()
+                                    .synthetic_click_event(mods);
+                                let default_event = RendererEvent {
+                                    target: node_id,
+                                    data: input_click_data,
+                                };
+                                self.inner.as_mut().handle_event(default_event);
+                                prevent_default = true;
 
-                            //TODO Check for other inputs which trigger input event on click here, eg radio
-                            let triggers_input_event =
-                                element_data.attr(local_name!("type")) == Some("checkbox");
-                            if triggers_input_event {
+                                // TODO: Generated click events should bubble separatedly
+                                // prevent_default |= !click_event.default_action_enabled();
+
+                                //TODO Check for other inputs which trigger input event on click here, eg radio
+                                let element_data = self
+                                    .inner
+                                    .get_node(node_id)
+                                    .unwrap()
+                                    .element_data()
+                                    .unwrap();
+                                let triggers_input_event =
+                                    element_data.attr(local_name!("type")) == Some("checkbox");
                                 let form_data = wrap_event_data(
                                     self.input_event_form_data(&chain, element_data),
                                 );
-                                let input_event = Event::new(form_data, true);
-                                self.vdom
-                                    .runtime()
-                                    .handle_event("input", input_event, dioxus_id);
+                                if triggers_input_event {
+                                    let input_event = Event::new(form_data, true);
+                                    self.vdom.runtime().handle_event(
+                                        "input",
+                                        input_event,
+                                        dioxus_id,
+                                    );
+                                }
                             }
                         }
                     }
@@ -399,6 +432,18 @@ impl DioxusDocument {
         // dbg!(self.vdom.rebuild_to_vec());
         // std::process::exit(0);
         // dbg!(writer.state);
+    }
+
+    pub fn label_bound_input_element(&self, label_node_id: NodeId) -> Option<(ElementId, NodeId)> {
+        let bound_input_elements = self.inner.label_bound_input_elements(label_node_id);
+
+        // Filter down bound elements to those which have dioxus id
+        bound_input_elements.into_iter().find_map(|n| {
+            let target_element_data = n.element_data()?;
+            let node_id = n.id;
+            let dioxus_id = DioxusDocument::dioxus_id(target_element_data)?;
+            Some((dioxus_id, node_id))
+        })
     }
 
     fn dioxus_id(element_node_data: &ElementNodeData) -> Option<ElementId> {
