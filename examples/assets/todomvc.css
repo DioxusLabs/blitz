@@ -260,6 +260,9 @@ body {
     height: 20px;
     text-align: center;
     border-top: 1px solid #e6e6e6;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
 }
 
 .footer:before {
@@ -293,10 +296,11 @@ body {
 }
 
 .filters li {
-    display: inline;
+    display: inline-block;
 }
 
 .filters li a {
+    display: inline-block;
     color: inherit;
     margin: 3px;
     padding: 3px 7px;
@@ -320,6 +324,7 @@ html .clear-completed:active {
     line-height: 20px;
     text-decoration: none;
     cursor: pointer;
+    display: inline-block;
 }
 
 .clear-completed:hover {
