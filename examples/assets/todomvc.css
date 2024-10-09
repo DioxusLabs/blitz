@@ -276,6 +276,7 @@ body {
 .todo-count {
     float: left;
     text-align: left;
+    white-space-collapse: preserve;
 }
 
 .todo-count strong {
