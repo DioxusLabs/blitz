@@ -2,11 +2,7 @@ use core::str;
 use std::sync::Arc;
 
 use html5ever::{local_name, namespace_url, ns, QualName};
-use parley::{
-    builder::TreeBuilder,
-    style::{FontStack, WhiteSpaceCollapse},
-    InlineBox,
-};
+use parley::{FontStack, InlineBox, PlainEditorOp, StyleProperty, TreeBuilder, WhiteSpaceCollapse};
 use slab::Slab;
 use style::{
     data::ElementData,
@@ -329,7 +325,7 @@ fn marker_for_style(list_style_type: ListStyleType, index: usize) -> Option<Mark
 
 // Override the font to our specific bullet font when rendering bullets
 fn font_for_bullet_style(list_style_type: ListStyleType) -> Option<FontStack<'static>> {
-    let bullet_font = Some(FontStack::Source("Bullet, monospace, sans-serif"));
+    let bullet_font = Some("Bullet, monospace, sans-serif".into());
     match list_style_type {
         ListStyleType::Disc
         | ListStyleType::Circle
@@ -497,19 +493,23 @@ fn create_text_editor(doc: &mut Document, input_element_id: usize, is_multiline:
 
     let element = &mut node.raw_dom_data.downcast_element_mut().unwrap();
     if !matches!(element.node_specific_data, NodeSpecificData::TextInput(_)) {
-        let initial_value = element
-            .attr(local_name!("value"))
-            .unwrap_or(" ")
-            .to_string();
-
-        let mut text_input_data = TextInputData::new(initial_value, 16.0, is_multiline);
-        text_input_data
-            .editor
-            .set_text_size(parley_style.font_size * doc.viewport.scale());
-        text_input_data
-            .editor
-            .set_line_height(parley_style.line_height);
-        text_input_data.editor.set_brush(parley_style.brush);
+        let mut text_input_data = TextInputData::new(is_multiline);
+        let text: Arc<str> = Arc::from(element.attr(local_name!("value")).unwrap_or(" "));
+        let styles: Arc<[_]> = Arc::from([
+            StyleProperty::FontSize(parley_style.font_size),
+            StyleProperty::LineHeight(parley_style.line_height),
+            StyleProperty::Brush(parley_style.brush),
+        ]);
+        text_input_data.editor.transact(
+            &mut doc.font_ctx,
+            &mut doc.layout_ctx,
+            [
+                PlainEditorOp::SetText(text),
+                PlainEditorOp::SetScale(doc.viewport.scale_f64() as f32),
+                PlainEditorOp::SetWidth(10000.0),
+                PlainEditorOp::SetDefaultStyle(styles),
+            ],
+        );
         element.node_specific_data = NodeSpecificData::TextInput(text_input_data);
     }
 }

@@ -3,14 +3,15 @@ use crate::node::{ImageData, NodeSpecificData, TextBrush};
 use crate::{ElementNodeData, Node, NodeData, TextNodeData, Viewport};
 use app_units::Au;
 use html5ever::local_name;
+use parley::PlainEditorOp;
 use peniko::kurbo;
 use string_cache::Atom;
 use style::attr::{AttrIdentifier, AttrValue};
 use style::values::computed::Overflow;
 use style::values::GenericAtomIdent;
+use winit::keyboard::{Key, NamedKey};
 // use quadtree_rs::Quadtree;
 use crate::util::Resource;
-use parley::editor::{PointerButton, TextEvent};
 use selectors::{matching::QuirksMode, Element};
 use slab::Slab;
 use std::any::Any;
@@ -79,7 +80,7 @@ pub struct Document {
     /// We pin the tree to a guarantee to the nodes it creates that the tree is stable in memory.
     ///
     /// There is no way to create the tree - publicly or privately - that would invalidate that invariant.
-    pub(crate) nodes: Box<Slab<Node>>,
+    pub nodes: Box<Slab<Node>>,
 
     pub(crate) guard: SharedRwLock,
 
@@ -110,10 +111,10 @@ pub struct Document {
     pub(crate) nodes_to_stylesheet: BTreeMap<usize, DocumentStyleSheet>,
 
     /// A Parley font context
-    pub(crate) font_ctx: parley::FontContext,
+    pub font_ctx: parley::FontContext,
 
     /// A Parley layout context
-    pub(crate) layout_ctx: parley::LayoutContext<TextBrush>,
+    pub layout_ctx: parley::LayoutContext<TextBrush>,
 
     /// The node which is currently hovered (if any)
     pub(crate) hover_node_id: Option<usize>,
@@ -130,7 +131,7 @@ impl DocumentLike for Document {
         let event = dbg!(event);
 
         match event.data {
-            EventData::Click { x, y, mods } => {
+            EventData::Click { x, y, .. } => {
                 let hit = self.hit(x, y);
                 if let Some(hit) = hit {
                     assert!(hit.node_id == event.target);
@@ -154,10 +155,10 @@ impl DocumentLike for Document {
                     {
                         let x = (hit.x - content_box_offset.x) as f64 * self.viewport.scale_f64();
                         let y = (hit.y - content_box_offset.y) as f64 * self.viewport.scale_f64();
-                        text_input_data.editor.pointer_down(
-                            kurbo::Point { x, y },
-                            mods,
-                            PointerButton::Primary,
+                        text_input_data.editor.transact(
+                            &mut self.font_ctx,
+                            &mut self.layout_ctx,
+                            [PlainEditorOp::MoveToPoint(x as f32, y as f32)],
                         );
 
                         self.set_focus_to(hit.node_id);
@@ -190,31 +191,191 @@ impl DocumentLike for Document {
                         return;
                     }
 
+                    if !event.state.is_pressed() {
+                        return;
+                    }
+                    #[allow(unused)]
+                    let shift = mods.state().shift_key();
+                    #[allow(unused)]
+                    let action_mod = {
+                        if cfg!(target_os = "macos") {
+                            mods.state().super_key()
+                        } else {
+                            mods.state().control_key()
+                        }
+                    };
+
                     let node = &mut self.nodes[node_id];
                     let text_input_data = node
                         .raw_dom_data
                         .downcast_element_mut()
                         .and_then(|el| el.text_input_data_mut());
+
                     if let Some(input_data) = text_input_data {
-                        let text_event = TextEvent::KeyboardKey(event, mods.state());
-                        input_data.editor.text_event(&text_event);
+                        macro_rules! transact {
+                            ($op:expr) => {{
+                                input_data.editor.transact(
+                                    &mut self.font_ctx,
+                                    &mut self.layout_ctx,
+                                    [$op],
+                                );
+                            }};
+                        }
+
+                        match event.logical_key {
+                            #[cfg(not(target_os = "android"))]
+                            Key::Character(c)
+                                if action_mod && matches!(c.as_str(), "c" | "x" | "v") =>
+                            {
+                                use clipboard_rs::{Clipboard, ClipboardContext};
+                                use parley::layout::editor::ActiveText;
+
+                                match c.to_lowercase().as_str() {
+                                    "c" => {
+                                        if let ActiveText::Selection(text) =
+                                            input_data.editor.active_text()
+                                        {
+                                            let cb = ClipboardContext::new().unwrap();
+                                            cb.set_text(text.to_owned()).ok();
+                                        }
+                                    }
+                                    "x" => {
+                                        if let ActiveText::Selection(text) =
+                                            input_data.editor.active_text()
+                                        {
+                                            let cb = ClipboardContext::new().unwrap();
+                                            cb.set_text(text.to_owned()).ok();
+                                            transact!(PlainEditorOp::DeleteSelection)
+                                        }
+                                    }
+                                    "v" => {
+                                        let cb = ClipboardContext::new().unwrap();
+                                        let text = cb.get_text().unwrap_or_default();
+                                        transact!(PlainEditorOp::InsertOrReplaceSelection(
+                                            text.into(),
+                                        ))
+                                    }
+                                    _ => unreachable!(),
+                                }
+                            }
+                            Key::Character(c)
+                                if action_mod && matches!(c.to_lowercase().as_str(), "a") =>
+                            {
+                                if shift {
+                                    transact!(PlainEditorOp::CollapseSelection)
+                                } else {
+                                    transact!(PlainEditorOp::SelectAll)
+                                }
+                            }
+                            Key::Named(NamedKey::ArrowLeft) => {
+                                if action_mod {
+                                    if shift {
+                                        transact!(PlainEditorOp::SelectWordLeft)
+                                    } else {
+                                        transact!(PlainEditorOp::MoveWordLeft)
+                                    }
+                                } else if shift {
+                                    transact!(PlainEditorOp::SelectLeft)
+                                } else {
+                                    transact!(PlainEditorOp::MoveLeft)
+                                }
+                            }
+                            Key::Named(NamedKey::ArrowRight) => {
+                                if action_mod {
+                                    if shift {
+                                        transact!(PlainEditorOp::SelectWordRight)
+                                    } else {
+                                        transact!(PlainEditorOp::MoveWordRight)
+                                    }
+                                } else if shift {
+                                    transact!(PlainEditorOp::SelectRight)
+                                } else {
+                                    transact!(PlainEditorOp::MoveRight)
+                                }
+                            }
+                            Key::Named(NamedKey::ArrowUp) => {
+                                if shift {
+                                    transact!(PlainEditorOp::SelectUp)
+                                } else {
+                                    transact!(PlainEditorOp::MoveUp)
+                                }
+                            }
+                            Key::Named(NamedKey::ArrowDown) => {
+                                if shift {
+                                    transact!(PlainEditorOp::SelectDown)
+                                } else {
+                                    transact!(PlainEditorOp::MoveDown)
+                                }
+                            }
+                            Key::Named(NamedKey::Home) => {
+                                if action_mod {
+                                    if shift {
+                                        transact!(PlainEditorOp::SelectToTextStart)
+                                    } else {
+                                        transact!(PlainEditorOp::MoveToTextStart)
+                                    }
+                                } else if shift {
+                                    transact!(PlainEditorOp::SelectToLineStart)
+                                } else {
+                                    transact!(PlainEditorOp::MoveToLineStart)
+                                }
+                            }
+                            Key::Named(NamedKey::End) => {
+                                if action_mod {
+                                    if shift {
+                                        transact!(PlainEditorOp::SelectToTextEnd)
+                                    } else {
+                                        transact!(PlainEditorOp::MoveToTextEnd)
+                                    }
+                                } else if shift {
+                                    transact!(PlainEditorOp::SelectToLineEnd)
+                                } else {
+                                    transact!(PlainEditorOp::MoveToLineEnd)
+                                }
+                            }
+                            Key::Named(NamedKey::Delete) => {
+                                if action_mod {
+                                    transact!(PlainEditorOp::DeleteWord)
+                                } else {
+                                    transact!(PlainEditorOp::Delete)
+                                }
+                            }
+                            Key::Named(NamedKey::Backspace) => {
+                                if action_mod {
+                                    transact!(PlainEditorOp::BackdeleteWord)
+                                } else {
+                                    transact!(PlainEditorOp::Backdelete)
+                                }
+                            }
+                            Key::Named(NamedKey::Enter) => {
+                                transact!(PlainEditorOp::InsertOrReplaceSelection("\n".into()))
+                            }
+                            Key::Named(NamedKey::Space) => {
+                                transact!(PlainEditorOp::InsertOrReplaceSelection(" ".into()))
+                            }
+                            Key::Character(s) => {
+                                transact!(PlainEditorOp::InsertOrReplaceSelection(s.into()))
+                            }
+                            _ => {}
+                        };
                         println!("Sent text event to {}", node_id);
                     }
                 }
             }
-            EventData::Ime(ime_event) => {
-                if let Some(node_id) = self.focus_node_id {
-                    let node = &mut self.nodes[node_id];
-                    let text_input_data = node
-                        .raw_dom_data
-                        .downcast_element_mut()
-                        .and_then(|el| el.text_input_data_mut());
-                    if let Some(input_data) = text_input_data {
-                        let text_event = TextEvent::Ime(ime_event);
-                        input_data.editor.text_event(&text_event);
-                        println!("Sent ime event to {}", node_id);
-                    }
-                }
+            EventData::Ime(_ime_event) => {
+                // FIXME: Implement IME events on top of PlainEditor
+                // if let Some(node_id) = self.focus_node_id {
+                //     let node = &mut self.nodes[node_id];
+                //     let text_input_data = node
+                //         .raw_dom_data
+                //         .downcast_element_mut()
+                //         .and_then(|el| el.text_input_data_mut());
+                //     if let Some(input_data) = text_input_data {
+                //         let text_event = TextEvent::Ime(ime_event);
+                //         input_data.editor.text_event(&text_event);
+                //         println!("Sent ime event to {}", node_id);
+                //     }
+                // }
             }
             EventData::Hover => {}
         }

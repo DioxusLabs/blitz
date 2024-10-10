@@ -25,6 +25,7 @@ dioxus-cli-config = { workspace = true, optional = true }
 dioxus-devtools = { workspace = true, optional = true }
 futures-util = "0.3.30"
 vello = { workspace = true }
+parley = { workspace = true }
 wgpu = { workspace = true }
 style = { workspace = true }
 tracing = { workspace = true, optional = true }

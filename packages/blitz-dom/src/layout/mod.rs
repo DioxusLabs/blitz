@@ -156,15 +156,6 @@ impl LayoutPartialTree for Document {
                         return taffy::LayoutOutput::HIDDEN;
                     }
 
-                    // Perform text layout for text inputs
-                    if inputs.run_mode == taffy::RunMode::PerformLayout {
-                        if let Some(input_data) = element_data.text_input_data_mut() {
-                            input_data
-                                .editor
-                                .rebuild(&mut tree.font_ctx, &mut tree.layout_ctx);
-                        }
-                    }
-
                     // todo: need to handle shadow roots by actually descending into them
                     if *element_data.name.local == *"input" {
                         match element_data.attr(local_name!("type")) {
