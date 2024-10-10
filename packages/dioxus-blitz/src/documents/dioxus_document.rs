@@ -1,30 +1,36 @@
 //! Integration between Dioxus and Blitz
 
-use std::{collections::HashMap, rc::Rc};
+use std::{
+    any::Any,
+    collections::{HashMap, HashSet},
+    rc::Rc,
+};
 
 use blitz_dom::{
-    events::EventData,
+    events::{EventData, RendererEvent},
     local_name, namespace_url,
     node::{Attribute, NodeSpecificData},
-    ns, Atom, Document, DocumentLike, ElementNodeData, Node, NodeData, QualName, TextNodeData,
-    Viewport, DEFAULT_CSS,
+    ns, Atom, Document, DocumentLike, ElementNodeData, Node, NodeData, QualName, Viewport,
+    DEFAULT_CSS,
 };
 
 use dioxus::{
     dioxus_core::{
-        AttributeValue, ElementId, Template, TemplateAttribute, TemplateNode, VirtualDom,
+        AttributeValue, ElementId, Event, Template, TemplateAttribute, TemplateNode, VirtualDom,
         WriteMutations,
     },
-    html::FormValue,
-    prelude::{set_event_converter, PlatformEventData},
+    html::{FormValue, PlatformEventData},
+    prelude::set_event_converter,
 };
 use futures_util::{pin_mut, FutureExt};
 use rustc_hash::FxHashMap;
 use style::{
     data::{ElementData, ElementStyles},
+    invalidation::element::restyle_hints::RestyleHint,
     properties::{style_structs::Font, ComputedValues},
-    stylesheets::Origin,
 };
+
+use crate::documents::keyboard_event::BlitzKeyboardData;
 
 use super::event_handler::{NativeClickData, NativeConverter, NativeFormData};
 
@@ -45,6 +51,11 @@ pub struct DioxusDocument {
 }
 
 // Implement DocumentLike and required traits for DioxusDocument
+
+pub struct DxNodeIds {
+    node_id: usize,
+    dioxus_id: Option<ElementId>,
+}
 
 impl AsRef<Document> for DioxusDocument {
     fn as_ref(&self) -> &Document {
@@ -73,20 +84,17 @@ impl DocumentLike for DioxusDocument {
             }
         }
 
-        self.vdom.render_immediate(&mut MutationWriter {
-            doc: &mut self.inner,
-            state: &mut self.vdom_state,
-        });
+        let mut writer = MutationWriter::new(&mut self.inner, &mut self.vdom_state);
+        self.vdom.render_immediate(&mut writer);
 
         true
     }
 
-    fn handle_event(&mut self, event: blitz_dom::events::RendererEvent) -> bool {
+    fn handle_event(&mut self, event: blitz_dom::events::RendererEvent) {
         // Collect the nodes into a chain by traversing upwards
         // This is important so the "capture" phase can be implemented
-        let mut node_id = event.target;
+        let mut next_node_id = Some(event.target);
         let mut chain = Vec::with_capacity(16);
-        chain.push(node_id);
 
         // if it's a capturing event, we want to fill in the chain with the parent nodes
         // until we reach the root - that way we can call the listeners in the correct order
@@ -94,88 +102,219 @@ impl DocumentLike for DioxusDocument {
         //
         // todo: this is harcoded for "click" events - eventually we actually need to handle proper propagation
         // if event.name == "click" {
-        while let Some(parent) = self.inner.tree()[node_id].parent {
-            chain.push(parent);
-            node_id = parent;
+        while let Some(node_id) = next_node_id {
+            let node = &self.inner.tree()[node_id];
+
+            if let Some(element) = node.element_data() {
+                let dioxus_id = DioxusDocument::dioxus_id(element);
+                chain.push(DxNodeIds { node_id, dioxus_id })
+            }
+
+            next_node_id = node.parent;
         }
 
         set_event_converter(Box::new(NativeConverter {}));
 
-        if matches!(event.data, EventData::Click { .. }) {
-            // look for the data-dioxus-id attribute on the element
-            // todo: we might need to walk upwards to find the first element with a data-dioxus-id attribute
-            for node in chain.iter() {
-                let Some(element) = self.inner.tree()[*node].element_data() else {
-                    #[cfg(feature = "tracing")]
-                    tracing::info!(
-                        "No element data found for node {}: {:?}",
-                        node,
-                        self.inner.tree()[*node]
-                    );
+        let renderer_event = event.clone();
 
-                    continue;
-                };
+        let mut prevent_default = false;
+        let mut stop_propagation = false;
 
-                if let Some(id) = DioxusDocument::dioxus_id(element) {
-                    // let data = dioxus::html::EventData::Mouse()
-                    self.vdom
-                        .handle_event("click", self.click_event_data(), id, true);
-                    //TODO Check for other inputs which trigger input event on click here, eg radio
-                    let triggers_input_event = element.name.local == local_name!("input")
-                        && element.attr(local_name!("type")) == Some("checkbox");
-                    if triggers_input_event {
-                        let form_data = self.input_event_form_data(&chain, element);
-                        self.vdom.handle_event("input", form_data, id, true);
-                    }
-                    return true;
-                }
+        match &event.data {
+            EventData::Click { .. } => {
+                // look for the data-dioxus-id attribute on the element
+                // todo: we might need to walk upwards to find the first element with a data-dioxus-id attribute
 
-                //Clicking labels triggers click, and possibly input event, of bound input
-                if *element.name.local == *"label" {
-                    let bound_input_elements = self.inner.label_bound_input_elements(*node);
-                    //Filter down bound elements to those which have dioxus id
-                    if let Some((element_data, dioxus_id)) =
-                        bound_input_elements.into_iter().find_map(|n| {
-                            let target_element_data = n.element_data()?;
-                            let dioxus_id = DioxusDocument::dioxus_id(target_element_data)?;
-                            Some((target_element_data, dioxus_id))
-                        })
-                    {
+                let click_event_data = wrap_event_data(NativeClickData);
+
+                for &DxNodeIds { node_id, dioxus_id } in chain.iter() {
+                    let mut trigger_label = false;
+
+                    if let Some(id) = dioxus_id {
+                        // Trigger click event
+                        let click_event = Event::new(click_event_data.clone(), true);
                         self.vdom
-                            .handle_event("click", self.click_event_data(), dioxus_id, true);
-                        //TODO Check for other inputs which trigger input event on click here, eg radio
-                        let triggers_input_event =
-                            element_data.attr(local_name!("type")) == Some("checkbox");
-                        if triggers_input_event {
-                            let form_data = self.input_event_form_data(&chain, element_data);
-                            self.vdom.handle_event("input", form_data, dioxus_id, true);
+                            .runtime()
+                            .handle_event("click", click_event.clone(), id);
+                        prevent_default |= !click_event.default_action_enabled();
+                        stop_propagation |= !click_event.propagates();
+
+                        if !prevent_default {
+                            let default_event = RendererEvent {
+                                target: node_id,
+                                data: renderer_event.data.clone(),
+                            };
+                            self.inner.as_mut().handle_event(default_event);
+                            prevent_default = true;
+
+                            let element = self.inner.tree()[node_id].element_data().unwrap();
+                            trigger_label = element.name.local == *"label";
+
+                            //TODO Check for other inputs which trigger input event on click here, eg radio
+                            let triggers_input_event = element.name.local == local_name!("input")
+                                && element.attr(local_name!("type")) == Some("checkbox");
+                            if triggers_input_event {
+                                let form_data =
+                                    wrap_event_data(self.input_event_form_data(&chain, element));
+                                let input_event = Event::new(form_data, true);
+                                self.vdom.runtime().handle_event("input", input_event, id);
+                            }
                         }
-                        return true;
+                    }
+
+                    //Clicking labels triggers click, and possibly input event, of bound input
+                    if trigger_label {
+                        if let Some((dioxus_id, node_id)) = self.label_bound_input_element(node_id)
+                        {
+                            let click_event = Event::new(click_event_data.clone(), true);
+                            self.vdom.runtime().handle_event(
+                                "click",
+                                click_event.clone(),
+                                dioxus_id,
+                            );
+
+                            // Handle default DOM event
+                            if click_event.default_action_enabled() {
+                                let &EventData::Click { mods, .. } = &renderer_event.data else {
+                                    unreachable!();
+                                };
+                                let input_click_data = self
+                                    .inner
+                                    .get_node(node_id)
+                                    .unwrap()
+                                    .synthetic_click_event(mods);
+                                let default_event = RendererEvent {
+                                    target: node_id,
+                                    data: input_click_data,
+                                };
+                                self.inner.as_mut().handle_event(default_event);
+                                prevent_default = true;
+
+                                // TODO: Generated click events should bubble separatedly
+                                // prevent_default |= !click_event.default_action_enabled();
+
+                                //TODO Check for other inputs which trigger input event on click here, eg radio
+                                let element_data = self
+                                    .inner
+                                    .get_node(node_id)
+                                    .unwrap()
+                                    .element_data()
+                                    .unwrap();
+                                let triggers_input_event =
+                                    element_data.attr(local_name!("type")) == Some("checkbox");
+                                let form_data = wrap_event_data(
+                                    self.input_event_form_data(&chain, element_data),
+                                );
+                                if triggers_input_event {
+                                    let input_event = Event::new(form_data, true);
+                                    self.vdom.runtime().handle_event(
+                                        "input",
+                                        input_event,
+                                        dioxus_id,
+                                    );
+                                }
+                            }
+                        }
+                    }
+
+                    if stop_propagation {
+                        break;
                     }
                 }
             }
+            EventData::KeyPress {
+                event: wevent,
+                mods,
+            } => {
+                let key_event_data =
+                    wrap_event_data(BlitzKeyboardData::from_winit(wevent, mods.state()));
+
+                for &DxNodeIds { node_id, dioxus_id } in chain.iter() {
+                    println!("{} {:?}", node_id, dioxus_id);
+
+                    if let Some(id) = dioxus_id {
+                        if wevent.state.is_pressed() {
+                            // Handle keydown event
+                            let event = Event::new(key_event_data.clone(), true);
+                            self.vdom
+                                .runtime()
+                                .handle_event("keydown", event.clone(), id);
+                            prevent_default |= !event.default_action_enabled();
+                            stop_propagation |= !event.propagates();
+
+                            if !prevent_default && wevent.text.is_some() {
+                                // Handle keypress event
+                                let event = Event::new(key_event_data.clone(), true);
+                                self.vdom
+                                    .runtime()
+                                    .handle_event("keypress", event.clone(), id);
+                                prevent_default |= !event.default_action_enabled();
+                                stop_propagation |= !event.propagates();
+
+                                if !prevent_default {
+                                    // Handle default DOM event
+                                    let default_event = RendererEvent {
+                                        target: node_id,
+                                        data: renderer_event.data.clone(),
+                                    };
+                                    self.inner.as_mut().handle_event(default_event);
+                                    prevent_default = true;
+
+                                    // Handle input event
+                                    let element =
+                                        self.inner.tree()[node_id].element_data().unwrap();
+                                    let triggers_input_event = &element.name.local == "input"
+                                        && matches!(
+                                            element.attr(local_name!("type")),
+                                            None | Some("text" | "password" | "email" | "search")
+                                        );
+                                    if triggers_input_event {
+                                        let form_data = wrap_event_data(dbg!(
+                                            self.input_event_form_data(&chain, element)
+                                        ));
+                                        let input_event = Event::new(form_data, true);
+                                        self.vdom.runtime().handle_event("input", input_event, id);
+                                    }
+                                }
+                            }
+                        } else {
+                            // Handle keyup event
+                            let event = Event::new(key_event_data.clone(), true);
+                            self.vdom.runtime().handle_event("keyup", event.clone(), id);
+                            prevent_default |= !event.default_action_enabled();
+                            stop_propagation |= !event.propagates();
+                        }
+                    }
+
+                    if stop_propagation {
+                        break;
+                    }
+                }
+            }
+            EventData::Ime(_) => todo!(),
+            EventData::Hover => todo!(),
         }
 
-        self.inner.as_mut().handle_event(event);
-
-        false
+        if !prevent_default {
+            self.inner.as_mut().handle_event(event);
+        }
     }
 }
 
-impl DioxusDocument {
-    pub fn click_event_data(&self) -> Rc<PlatformEventData> {
-        Rc::new(PlatformEventData::new(Box::new(NativeClickData {})))
-    }
+fn wrap_event_data<T: Any>(value: T) -> Rc<dyn Any> {
+    Rc::new(PlatformEventData::new(Box::new(value)))
+}
 
+impl DioxusDocument {
     /// Generate the FormData from an input event
     /// Currently only cares about input checkboxes
     pub fn input_event_form_data(
         &self,
-        parent_chain: &[usize],
+        parent_chain: &[DxNodeIds],
         element_node_data: &ElementNodeData,
-    ) -> Rc<PlatformEventData> {
-        let parent_form = parent_chain.iter().find_map(|id| {
-            let node = self.inner.get_node(*id)?;
+    ) -> NativeFormData {
+        let parent_form = parent_chain.iter().map(|ids| ids.node_id).find_map(|id| {
+            let node = self.inner.get_node(id)?;
             let element_data = node.element_data()?;
             if element_data.name.local == local_name!("form") {
                 Some(node)
@@ -209,15 +348,16 @@ impl DioxusDocument {
         } else {
             Default::default()
         };
-        let value = match element_node_data.node_specific_data {
+        let value = match &element_node_data.node_specific_data {
             NodeSpecificData::CheckboxInput(checked) => checked.to_string(),
+            NodeSpecificData::TextInput(input_data) => input_data.editor.layout.text().clone(),
             _ => element_node_data
                 .attr(local_name!("value"))
                 .unwrap_or_default()
                 .to_string(),
         };
-        let form_data = NativeFormData { value, values };
-        Rc::new(PlatformEventData::new(Box::new(form_data)))
+
+        NativeFormData { value, values }
     }
 
     /// Collect all the inputs which are descendents of a given node
@@ -287,14 +427,23 @@ impl DioxusDocument {
     }
 
     pub fn initial_build(&mut self) {
-        let mut writer = MutationWriter {
-            doc: &mut self.inner,
-            state: &mut self.vdom_state,
-        };
+        let mut writer = MutationWriter::new(&mut self.inner, &mut self.vdom_state);
         self.vdom.rebuild(&mut writer);
         // dbg!(self.vdom.rebuild_to_vec());
         // std::process::exit(0);
         // dbg!(writer.state);
+    }
+
+    pub fn label_bound_input_element(&self, label_node_id: NodeId) -> Option<(ElementId, NodeId)> {
+        let bound_input_elements = self.inner.label_bound_input_elements(label_node_id);
+
+        // Filter down bound elements to those which have dioxus id
+        bound_input_elements.into_iter().find_map(|n| {
+            let target_element_data = n.element_data()?;
+            let node_id = n.id;
+            let dioxus_id = DioxusDocument::dioxus_id(target_element_data)?;
+            Some((dioxus_id, node_id))
+        })
     }
 
     fn dioxus_id(element_node_data: &ElementNodeData) -> Option<ElementId> {
@@ -326,7 +475,7 @@ impl DioxusDocument {
 #[derive(Debug)]
 pub struct DioxusState {
     /// Store of templates keyed by unique name
-    templates: FxHashMap<String, Vec<NodeId>>,
+    templates: FxHashMap<Template, Vec<NodeId>>,
     /// Stack machine state for applying dioxus mutations
     stack: Vec<NodeId>,
     /// Mapping from vdom ElementId -> rdom NodeId
@@ -340,6 +489,49 @@ pub struct MutationWriter<'a> {
 
     /// The state associated with this writer
     pub state: &'a mut DioxusState,
+
+    pub style_nodes: HashSet<usize>,
+}
+
+impl<'a> MutationWriter<'a> {
+    fn new(doc: &'a mut Document, state: &'a mut DioxusState) -> Self {
+        MutationWriter {
+            doc,
+            state,
+            style_nodes: HashSet::new(),
+        }
+    }
+
+    fn is_style_node(&self, node_id: NodeId) -> bool {
+        self.doc
+            .get_node(node_id)
+            .unwrap()
+            .raw_dom_data
+            .is_element_with_tag_name(&local_name!("style"))
+    }
+
+    fn maybe_push_style_node(&mut self, node_id: impl Into<Option<NodeId>>) {
+        if let Some(node_id) = node_id.into() {
+            if self.is_style_node(node_id) {
+                self.style_nodes.insert(node_id);
+            }
+        }
+    }
+
+    #[track_caller]
+    fn maybe_push_parent_style_node(&mut self, node_id: NodeId) {
+        let parent_id = self.doc.get_node(node_id).unwrap().parent;
+        self.maybe_push_style_node(parent_id);
+    }
+}
+
+impl Drop for MutationWriter<'_> {
+    fn drop(&mut self) {
+        // Add/Update inline stylesheets (<style> elements)
+        for &id in &self.style_nodes {
+            self.doc.upsert_stylesheet_for_node(id);
+        }
+    }
 }
 
 impl DioxusState {
@@ -380,11 +572,6 @@ impl MutationWriter<'_> {
         if self.state.node_id_mapping.len() <= element_id {
             self.state.node_id_mapping.resize(element_id + 1, None);
         }
-        // If element_id is already mapping to a node, remove that node from the document
-        else if let Some(mapped_node_id) = self.state.node_id_mapping[element_id] {
-            // todo: we should mark these as needing garbage collection?
-            self.doc.remove_node(mapped_node_id);
-        }
 
         // Set the new mapping
         self.state.node_id_mapping[element_id] = Some(node_id);
@@ -405,25 +592,6 @@ impl MutationWriter<'_> {
 }
 
 impl WriteMutations for MutationWriter<'_> {
-    fn register_template(&mut self, template: Template) {
-        let template_root_ids: Vec<NodeId> = template
-            .roots
-            .iter()
-            .map(|root| create_template_node(self.doc, root))
-            .collect();
-
-        #[cfg(feature = "tracing")]
-        tracing::info!(
-            "Registered template: {:?} with root IDs {:?}",
-            &template.name,
-            &template_root_ids
-        );
-
-        self.state
-            .templates
-            .insert(template.name.to_string(), template_root_ids);
-    }
-
     fn append_children(&mut self, id: ElementId, m: usize) {
         #[cfg(feature = "tracing")]
         tracing::info!("append_children id:{} m:{}", id.0, m);
@@ -434,11 +602,23 @@ impl WriteMutations for MutationWriter<'_> {
             self.doc.get_node_mut(parent).unwrap().children.push(child);
             self.doc.get_node_mut(child).unwrap().parent = Some(parent);
         }
+
+        self.maybe_push_style_node(parent);
     }
 
     fn assign_node_id(&mut self, path: &'static [u8], id: ElementId) {
         #[cfg(feature = "tracing")]
         tracing::info!("assign_node_id path:{:?} id:{}", path, id.0);
+
+        // If there is an existing node already mapped to that ID and
+        // it has no parent, then drop it
+        if let Some(node_id) = self.state.try_element_to_node_id(id) {
+            if let Some(node) = self.doc.get_node(node_id) {
+                if node.parent.is_none() {
+                    self.doc.remove_and_drop_node(node_id);
+                }
+            }
+        }
 
         let node_id = self.load_child(path);
         self.set_id_mapping(node_id, id);
@@ -462,49 +642,18 @@ impl WriteMutations for MutationWriter<'_> {
         self.state.stack.push(node_id);
     }
 
-    fn hydrate_text_node(&mut self, path: &'static [u8], value: &str, id: ElementId) {
-        let value_trunc = if value.len() > 20 {
-            &value[0..20]
-        } else {
-            value
-        };
+    fn load_template(&mut self, template: Template, index: usize, id: ElementId) {
+        let template_entry = self.state.templates.entry(template).or_insert_with(|| {
+            let template_root_ids: Vec<NodeId> = template
+                .roots
+                .iter()
+                .map(|root| create_template_node(self.doc, root))
+                .collect();
 
-        #[cfg(feature = "tracing")]
-        tracing::info!(
-            "hydrate_text_node id:{} path: {:?} text:{}",
-            id.0,
-            path,
-            value_trunc
-        );
+            template_root_ids
+        });
 
-        let node_id = self.load_child(path);
-        self.set_id_mapping(node_id, id);
-        let node = self.doc.get_node_mut(node_id).unwrap();
-        if let NodeData::Text(ref mut text) = node.raw_dom_data {
-            text.content = value.to_string();
-        } else {
-            node.raw_dom_data = NodeData::Text(TextNodeData::new(value.to_string()));
-        }
-
-        let parent = node.parent;
-
-        if let Some(parent) = parent {
-            // if the text is the child of a style element, we want to put the style into the stylesheet cache
-            let parent = self.doc.get_node(parent).unwrap();
-            if let NodeData::Element(ref element) = parent.raw_dom_data {
-                if element.name.local.as_ref() == "style" {
-                    let sheet = self.doc.make_stylesheet(value, Origin::Author);
-                    self.doc.add_stylesheet_for_node(sheet, parent.id);
-                }
-            }
-        }
-    }
-
-    fn load_template(&mut self, name: &'static str, index: usize, id: ElementId) {
-        #[cfg(feature = "tracing")]
-        tracing::info!("load_template name:{} index: {} id:{}", name, index, id.0);
-
-        let template_node_id = self.state.templates[name][index];
+        let template_node_id = template_entry[index];
         let clone_id = self.doc.deep_clone_node(template_node_id);
         self.set_id_mapping(clone_id, id);
         self.state.stack.push(clone_id);
@@ -516,6 +665,7 @@ impl WriteMutations for MutationWriter<'_> {
 
         let new_nodes = self.state.stack.split_off(self.state.stack.len() - m);
         let anchor_node_id = self.state.element_to_node_id(id);
+        self.maybe_push_parent_style_node(anchor_node_id);
         self.doc.insert_before(anchor_node_id, &new_nodes);
         self.doc.remove_node(anchor_node_id);
     }
@@ -526,6 +676,7 @@ impl WriteMutations for MutationWriter<'_> {
 
         let new_nodes = self.state.stack.split_off(self.state.stack.len() - m);
         let anchor_node_id = self.load_child(path);
+        self.maybe_push_parent_style_node(anchor_node_id);
         self.doc.insert_before(anchor_node_id, &new_nodes);
         self.doc.remove_node(anchor_node_id);
     }
@@ -549,6 +700,8 @@ impl WriteMutations for MutationWriter<'_> {
             }
             None => self.doc.append(anchor_node_id, &new_nodes),
         }
+
+        self.maybe_push_parent_style_node(anchor_node_id);
     }
 
     fn insert_nodes_before(&mut self, id: ElementId, m: usize) {
@@ -558,6 +711,8 @@ impl WriteMutations for MutationWriter<'_> {
         let new_nodes = self.state.stack.split_off(self.state.stack.len() - m);
         let anchor_node_id = self.state.element_to_node_id(id);
         self.doc.insert_before(anchor_node_id, &new_nodes);
+
+        self.maybe_push_parent_style_node(anchor_node_id);
     }
 
     fn set_attribute(
@@ -568,13 +723,38 @@ impl WriteMutations for MutationWriter<'_> {
         id: ElementId,
     ) {
         let node_id = self.state.element_to_node_id(id);
+
+        #[cfg(feature = "tracing")]
+        tracing::info!(
+            "set_attribute node_id:{} ns: {:?} name:{}, value:{:?}",
+            node_id,
+            ns,
+            name,
+            value
+        );
+
+        self.doc.snapshot_node(node_id);
+
         let node = self.doc.get_node_mut(node_id).unwrap();
+
+        let stylo_element_data = &mut *node.stylo_element_data.borrow_mut();
+        if let Some(data) = stylo_element_data {
+            data.hint |= RestyleHint::restyle_subtree();
+        }
+
         if let NodeData::Element(ref mut element) = node.raw_dom_data {
             if element.name.local == local_name!("input") && name == "checked" {
                 set_input_checked_state(element, value);
             }
             // FIXME: support other non-text attributes
             else if let AttributeValue::Text(val) = value {
+                // Update text input value
+                if let Some(input_data) = element.text_input_data_mut() {
+                    if input_data.editor.text() != val {
+                        input_data.editor.set_text(val.clone());
+                    }
+                }
+
                 // FIXME check namespace
                 let existing_attr = element
                     .attrs
@@ -582,7 +762,8 @@ impl WriteMutations for MutationWriter<'_> {
                     .find(|attr| attr.name.local == *name);
 
                 if let Some(existing_attr) = existing_attr {
-                    existing_attr.value = val.to_string();
+                    existing_attr.value.clear();
+                    existing_attr.value.push_str(val);
                 } else {
                     // we have overloaded the style namespace to accumulate style attributes without a `style` block
                     if ns == Some("style") {
@@ -599,6 +780,11 @@ impl WriteMutations for MutationWriter<'_> {
             }
 
             if let AttributeValue::None = value {
+                // Update text input value
+                if let Some(input_data) = element.text_input_data_mut() {
+                    input_data.editor.set_text("".to_string());
+                }
+
                 // FIXME: check namespace
                 element.attrs.retain(|attr| attr.name.local != *name);
             }
@@ -606,30 +792,24 @@ impl WriteMutations for MutationWriter<'_> {
     }
 
     fn set_node_text(&mut self, value: &str, id: ElementId) {
+        #[cfg(feature = "tracing")]
+        tracing::info!("set_node_text id:{} value:{}", id.0, value);
+
         let node_id = self.state.element_to_node_id(id);
         let node = self.doc.get_node_mut(node_id).unwrap();
 
         let text = match node.raw_dom_data {
             NodeData::Text(ref mut text) => text,
-
             // todo: otherwise this is basically element.textContent which is a bit different - need to parse as html
             _ => return,
         };
 
-        // todo: this is very inefficient for inline styles - lots of string cloning going on
         let changed = text.content != value;
-        text.content = value.to_string();
-
-        if let Some(parent) = node.parent {
-            // if the text is the child of a style element, we want to put the style into the stylesheet cache
-            let parent = self.doc.get_node(parent).unwrap();
-            if let NodeData::Element(ref element) = parent.raw_dom_data {
-                // Only set stylsheets if the text content has *changed* - we need to unload
-                if changed && element.name.local.as_ref() == "style" {
-                    let sheet = self.doc.make_stylesheet(value, Origin::Author);
-                    self.doc.add_stylesheet_for_node(sheet, parent.id);
-                }
-            }
+        if changed {
+            text.content.clear();
+            text.content.push_str(value);
+            let parent = node.parent;
+            self.maybe_push_style_node(parent);
         }
     }
 
@@ -767,6 +947,5 @@ fn create_template_node(doc: &mut Document, node: &TemplateNode) -> NodeId {
         }
         TemplateNode::Text { text } => doc.create_text_node(text),
         TemplateNode::Dynamic { .. } => doc.create_node(NodeData::Comment),
-        TemplateNode::DynamicText { .. } => doc.create_text_node(""),
     }
 }

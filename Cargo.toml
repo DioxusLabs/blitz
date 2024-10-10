@@ -1,27 +1,39 @@
 
 [workspace]
-# members = ["packages/dom"]
-# members = ["packages/blitz", "packages/dom", "packages/dioxus-blitz"]
-# exclude = ["packages/blitz", "packages/dioxus-blitz"]
-members = ["packages/blitz", "packages/dom", "packages/dioxus-blitz", "packages/net", "packages/traits"]
+members = [
+  "packages/blitz-traits",
+  "packages/blitz-dom", 
+  "packages/blitz-net",
+  "packages/blitz-renderer-vello",
+  "packages/dioxus-blitz"
+]
 resolver = "2"
 
 [workspace.dependencies]
+# Servo dependencies
 style = { git = "https://github.com/dioxuslabs/stylo", branch = "blitz" }
 style_config = { git = "https://github.com/dioxuslabs/stylo", branch = "blitz" }
 style_traits = { git = "https://github.com/dioxuslabs/stylo", branch = "blitz" }
 style_dom = { git = "https://github.com/dioxuslabs/stylo", package = "dom", branch = "blitz" }
 selectors = { git = "https://github.com/dioxuslabs/stylo", branch = "blitz" }
 html5ever = "0.29" # needs to match stylo markup5ever version
+
+# DioxusLabs dependencies
+dioxus = { git = "https://github.com/dioxuslabs/dioxus", rev = "9ffd4b816b8ce291b6ca66cb5c871e107a964f6b" }
+dioxus-ssr = { git = "https://github.com/dioxuslabs/dioxus", rev = "9ffd4b816b8ce291b6ca66cb5c871e107a964f6b" }
+dioxus-cli-config = { git = "https://github.com/dioxuslabs/dioxus", rev = "9ffd4b816b8ce291b6ca66cb5c871e107a964f6b" }
+dioxus-devtools = { git = "https://github.com/dioxuslabs/dioxus", rev = "9ffd4b816b8ce291b6ca66cb5c871e107a964f6b" }
 taffy = { git = "https://github.com/dioxuslabs/taffy", rev = "950a0eb1322f15e5d1083f4793b55d52061718de" }
-parley = { git = "https://github.com/nicoburns/parley", rev = "029bf1df3e1829935fa6d25b875d3138f79a62c1" }
-dioxus = { git = "https://github.com/dioxuslabs/dioxus", rev = "a3aa6ae771a2d0a4d8cb6055c41efc0193b817ef" }
-dioxus-ssr = { git = "https://github.com/dioxuslabs/dioxus", rev = "a3aa6ae771a2d0a4d8cb6055c41efc0193b817ef" }
+
+# Linebender dependencies
+peniko = { version = "0.1" }
+vello = { git = "https://github.com/linebender/vello", rev = "aaa9f5f2d0f21f3d038501ea0cf32c989d97aab3", package = "vello", features = [ "wgpu" ] }
+vello_svg = { git = "https://github.com/cfraz89/vello_svg", rev = "fc29d4ebf8d6aaee980b203f39ef2c73fe43c017" }
+parley = { git = "https://github.com/nicoburns/parley", rev = "186b6e991d08731c0588dc0b247564cbba1c0435" }
+
+# Other dependencies
 tokio = { version = "1.25.0", features = ["full"] }
 tracing = "0.1.40"
-vello = { git = "https://github.com/linebender/vello", rev = "aaa9f5f2d0f21f3d038501ea0cf32c989d97aab3", package = "vello", features = [ "wgpu" ] }
-peniko = { version = "0.1" }
-# fello = { git = "https://github.com/linebender/vello" }
 wgpu = "22.1.0"
 
 # This is a "virtual package"
@@ -53,13 +65,13 @@ incremental = false
 [dev-dependencies]
 # webrender = "0.61.0"
 # mozbuild = "0.1.0"
-blitz = { path = "./packages/blitz" }
-blitz-dom = { path = "./packages/dom" }
-blitz-net = { path = "./packages/net" }
-blitz-traits = { path = "./packages/traits" }
+blitz-dom = { path = "./packages/blitz-dom" }
+blitz-net = { path = "./packages/blitz-net" }
+blitz-traits = { path = "./packages/blitz-traits" }
+blitz-renderer-vello = { path = "./packages/blitz-renderer-vello" }
+dioxus-blitz = { path = "./packages/dioxus-blitz", features = ["tracing"] }
 comrak = { git = "https://github.com/nicoburns/comrak", branch = "tasklist-class", default-features = false, features = ["syntect"] }
 png = { version = "0.17" }
-dioxus-blitz = { path = "./packages/dioxus-blitz" }
 dioxus = { workspace = true }
 euclid = { version = "0.22", features = ["serde"] }
 reqwest = "0.11.24"

@@ -5,8 +5,10 @@ use dioxus::{
     prelude::{HtmlEventConverter, PlatformEventData},
 };
 
+use super::keyboard_event::BlitzKeyboardData;
+
 #[derive(Clone)]
-pub struct NativeClickData {}
+pub struct NativeClickData;
 
 impl dioxus::html::point_interaction::InteractionLocation for NativeClickData {
     fn client_coordinates(&self) -> dioxus::prelude::dioxus_elements::geometry::ClientPoint {
@@ -82,8 +84,9 @@ impl HtmlEventConverter for NativeConverter {
         todo!()
     }
 
-    fn convert_keyboard_data(&self, _event: &PlatformEventData) -> dioxus::prelude::KeyboardData {
-        todo!()
+    fn convert_keyboard_data(&self, event: &PlatformEventData) -> dioxus::prelude::KeyboardData {
+        let data = event.downcast::<BlitzKeyboardData>().unwrap().clone();
+        dioxus::prelude::KeyboardData::from(data)
     }
 
     fn convert_media_data(&self, _event: &PlatformEventData) -> dioxus::prelude::MediaData {
@@ -127,6 +130,10 @@ impl HtmlEventConverter for NativeConverter {
     }
 
     fn convert_wheel_data(&self, _event: &PlatformEventData) -> dioxus::prelude::WheelData {
+        todo!()
+    }
+
+    fn convert_resize_data(&self, _event: &PlatformEventData) -> dioxus::prelude::ResizeData {
         todo!()
     }
 }

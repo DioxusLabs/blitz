@@ -12,34 +12,35 @@ pub fn walk_tree(indent: usize, node: &Node) {
     }
 
     print!("{}", " ".repeat(indent));
+    let id = node.id;
     match &node.raw_dom_data {
-        NodeData::Document => println!("#Document"),
+        NodeData::Document => println!("#Document {id}"),
 
         NodeData::Text(data) => {
             if data.content.chars().all(|c| c.is_ascii_whitespace()) {
-                println!("#text: <whitespace>");
+                println!("{id} #text: <whitespace>");
             } else {
                 let content = data.content.trim();
                 if content.len() > 10 {
                     println!(
-                        "#text: {}...",
+                        "#text {id}: {}...",
                         content
                             .split_at(content.char_indices().take(10).last().unwrap().0)
                             .0
                             .escape_default()
                     )
                 } else {
-                    println!("#text: {}", data.content.trim().escape_default())
+                    println!("#text {id}: {}", data.content.trim().escape_default())
                 }
             }
         }
 
-        NodeData::Comment => println!("<!-- COMMENT -->"),
+        NodeData::Comment => println!("<!-- COMMENT {id} -->"),
 
-        NodeData::AnonymousBlock(_) => println!("AnonymousBlock"),
+        NodeData::AnonymousBlock(_) => println!("{id} AnonymousBlock"),
 
         NodeData::Element(data) => {
-            print!("<{}", data.name.local);
+            print!("<{} {id}", data.name.local);
             for attr in data.attrs.iter() {
                 print!(" {}=\"{}\"", attr.name.local, attr.value);
             }

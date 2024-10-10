@@ -1,5 +1,5 @@
 [package]
-name = "blitz"
+name = "blitz-renderer-vello"
 version = "0.1.0"
 edition = "2021"
 
@@ -8,14 +8,14 @@ default = ["tracing"]
 tracing = ["dep:tracing"]
 
 [dependencies]
-blitz-dom = { path = "../dom" }
+blitz-dom = { path = "../blitz-dom" }
 style = { workspace = true, features = ["servo"] }
 taffy = { workspace = true }
 parley = { workspace = true }
 tracing = { workspace = true, optional = true }
 vello = { workspace = true }
+vello_svg = { workspace = true }
 wgpu = { workspace = true }
 raw-window-handle = "0.6.0"
 image = "0.25"
-vello_svg = { git = "https://github.com/cfraz89/vello_svg", rev = "fc29d4ebf8d6aaee980b203f39ef2c73fe43c017" }
 futures-intrusive = "0.5.0"

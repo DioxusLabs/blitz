@@ -4,19 +4,16 @@ use image::DynamicImage;
 use peniko::kurbo;
 use selectors::matching::{ElementSelectorFlags, QuirksMode};
 use slab::Slab;
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::fmt::Write;
 use std::str::FromStr;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 use style::invalidation::element::restyle_hints::RestyleHint;
-use style::values::computed::Display;
-use style::values::specified::box_::{DisplayInside, DisplayOutside};
-use style_dom::ElementState;
-// use string_cache::Atom;
-use parley;
 use style::properties::ComputedValues;
 use style::stylesheets::UrlExtraData;
+use style::values::computed::Display;
+use style::values::specified::box_::{DisplayInside, DisplayOutside};
 use style::Atom;
 use style::{
     data::ElementData,
@@ -25,13 +22,15 @@ use style::{
     shared_lock::{Locked, SharedRwLock},
     stylesheets::CssRuleType,
 };
+use style_dom::ElementState;
 use taffy::{
     prelude::{Layout, Style},
     Cache,
 };
 use url::Url;
+use winit::event::Modifiers;
 
-use crate::events::{EventListener, HitResult};
+use crate::events::{EventData, EventListener, HitResult};
 use crate::layout::table::TableContext;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -46,14 +45,14 @@ pub struct Node {
     // The actual tree we belong to. This is unsafe!!
     pub tree: *mut Slab<Node>,
 
-    /// Our parent's ID
-    pub parent: Option<usize>,
     /// Our Id
     pub id: usize,
-    // Which child are we in our parent?
-    pub child_idx: usize,
+    /// Our parent's ID
+    pub parent: Option<usize>,
     // What are our children?
     pub children: Vec<usize>,
+    /// Our parent in the layout hierachy: a separate list that includes anonymous collections of inline elements
+    pub layout_parent: Cell<Option<usize>>,
     /// A separate child list that includes anonymous collections of inline elements
     pub layout_children: RefCell<Option<Vec<usize>>>,
 
@@ -93,8 +92,8 @@ impl Node {
             id,
             parent: None,
             children: vec![],
+            layout_parent: Cell::new(None),
             layout_children: RefCell::new(None),
-            child_idx: 0,
 
             raw_dom_data: data,
             stylo_element_data: Default::default(),
@@ -623,17 +622,17 @@ impl Node {
         unsafe { &*self.tree }
     }
 
+    #[track_caller]
     pub fn with(&self, id: usize) -> &Node {
         self.tree().get(id).unwrap()
     }
 
     pub fn print_tree(&self, level: usize) {
         println!(
-            "{} {} {:?} {} {} {:?}",
+            "{} {} {:?} {} {:?}",
             "  ".repeat(level),
             self.id,
             self.parent,
-            self.child_idx,
             self.node_debug_str().replace('\n', ""),
             self.children
         );
@@ -644,22 +643,32 @@ impl Node {
         }
     }
 
-    // Get the nth node in the parents child list
-    pub fn forward(&self, n: usize) -> Option<&Node> {
+    // Get the index of the current node in the parents child list
+    pub fn child_index(&self) -> Option<usize> {
         self.tree()[self.parent?]
             .children
-            .get(self.child_idx + n)
+            .iter()
+            .position(|id| *id == self.id)
+    }
+
+    // Get the nth node in the parents child list
+    pub fn forward(&self, n: usize) -> Option<&Node> {
+        let child_idx = self.child_index().unwrap_or(0);
+        self.tree()[self.parent?]
+            .children
+            .get(child_idx + n)
             .map(|id| self.with(*id))
     }
 
     pub fn backward(&self, n: usize) -> Option<&Node> {
-        if self.child_idx < n {
+        let child_idx = self.child_index().unwrap_or(0);
+        if child_idx < n {
             return None;
         }
 
         self.tree()[self.parent?]
             .children
-            .get(self.child_idx - n)
+            .get(child_idx - n)
             .map(|id| self.with(*id))
     }
 
@@ -835,6 +844,27 @@ impl Node {
                 y,
             }))
     }
+
+    /// Computes the Document-relative coordinates of the Node
+    pub fn absolute_position(&self, x: f32, y: f32) -> taffy::Point<f32> {
+        let x = x + self.final_layout.location.x - self.scroll_offset.x as f32;
+        let y = y + self.final_layout.location.y - self.scroll_offset.y as f32;
+
+        // Recurse up the layout hierarchy
+        self.layout_parent
+            .get()
+            .map(|i| self.with(i).absolute_position(x, y))
+            .unwrap_or(taffy::Point { x, y })
+    }
+
+    /// Creates a synteh
+    pub fn synthetic_click_event(&self, mods: Modifiers) -> EventData {
+        let absolute_position = self.absolute_position(0.0, 0.0);
+        let x = absolute_position.x + (self.final_layout.size.width / 2.0);
+        let y = absolute_position.y + (self.final_layout.size.height / 2.0);
+
+        EventData::Click { x, y, mods }
+    }
 }
 
 /// It might be wrong to expose this since what does *equality* mean outside the dom?
@@ -853,7 +883,6 @@ impl std::fmt::Debug for Node {
             .field("parent", &self.parent)
             .field("id", &self.id)
             .field("is_inline_root", &self.is_inline_root)
-            .field("child_idx", &self.child_idx)
             .field("children", &self.children)
             .field("layout_children", &self.layout_children.borrow())
             // .field("style", &self.style)

@@ -27,8 +27,8 @@ impl From<HtmlDocument> for Document {
     }
 }
 impl DocumentLike for HtmlDocument {
-    fn handle_event(&mut self, event: RendererEvent) -> bool {
-        self.inner.as_mut().handle_event(event)
+    fn handle_event(&mut self, event: RendererEvent) {
+        self.inner.as_mut().handle_event(event);
     }
 }
 

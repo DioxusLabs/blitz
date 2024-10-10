@@ -122,7 +122,14 @@ where
         };
     }
 
-    pub fn render(&mut self, doc: &Document, scale: f64, devtools: Devtools) {
+    pub fn render(
+        &mut self,
+        doc: &Document,
+        scale: f64,
+        width: u32,
+        height: u32,
+        devtools: Devtools,
+    ) {
         let RenderState::Active(state) = &mut self.render_state else {
             return;
         };
@@ -144,7 +151,7 @@ where
         };
 
         // Regenerate the vello scene
-        render::generate_vello_scene(&mut self.scene, doc, scale, devtools);
+        render::generate_vello_scene(&mut self.scene, doc, scale, width, height, devtools);
 
         state
             .renderer
@@ -191,9 +198,15 @@ pub async fn render_to_buffer(dom: &Document, viewport: Viewport) -> Vec<u8> {
     .expect("Got non-Send/Sync error from creating renderer");
 
     let mut scene = Scene::new();
-    generate_vello_scene(&mut scene, dom, viewport.scale_f64(), Devtools::default());
-
     let (width, height) = viewport.window_size;
+    generate_vello_scene(
+        &mut scene,
+        dom,
+        viewport.scale_f64(),
+        width,
+        height,
+        Devtools::default(),
+    );
 
     let size = Extent3d {
         width,

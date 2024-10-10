@@ -46,6 +46,9 @@ impl Document {
             }
         }
 
+        for &node_id in &layout_children {
+            self.nodes[node_id].layout_parent.set(Some(node_id));
+        }
         *self.nodes[node_id].layout_children.borrow_mut() = Some(layout_children);
         // }
     }
@@ -106,6 +109,17 @@ impl LayoutPartialTree for Document {
         compute_cached_layout(self, node_id, inputs, |tree, node_id, inputs| {
             let node = &mut tree.nodes[node_id.into()];
 
+            let resolved_line_height = node.primary_styles().map(|style| {
+                use style::values::computed::font::LineHeight;
+
+                let font_size = style.clone_font_size().used_size().px();
+                match style.clone_line_height() {
+                    LineHeight::Normal => font_size * 1.2,
+                    LineHeight::Number(num) => font_size * num.0,
+                    LineHeight::Length(value) => value.0.px(),
+                }
+            });
+
             match &mut node.raw_dom_data {
                 NodeData::Text(data) => {
                     // With the new "inline context" architecture all text nodes should be wrapped in an "inline layout context"
@@ -142,6 +156,15 @@ impl LayoutPartialTree for Document {
                         return taffy::LayoutOutput::HIDDEN;
                     }
 
+                    // Perform text layout for text inputs
+                    if inputs.run_mode == taffy::RunMode::PerformLayout {
+                        if let Some(input_data) = element_data.text_input_data_mut() {
+                            input_data
+                                .editor
+                                .rebuild(&mut tree.font_ctx, &mut tree.layout_ctx);
+                        }
+                    }
+
                     // todo: need to handle shadow roots by actually descending into them
                     if *element_data.name.local == *"input" {
                         match element_data.attr(local_name!("type")) {
@@ -173,14 +196,18 @@ impl LayoutPartialTree for Document {
                                     },
                                 );
                             }
+                            None | Some("text" | "password" | "email") => {
+                                return compute_leaf_layout(
+                                    inputs,
+                                    &node.style,
+                                    |_known_size, _available_space| taffy::Size {
+                                        width: 300.0,
+                                        height: resolved_line_height.unwrap_or(16.0),
+                                    },
+                                );
+                            }
                             _ => {}
                         }
-                    }
-
-                    if let Some(input_data) = element_data.text_input_data_mut() {
-                        input_data
-                            .editor
-                            .rebuild(&mut tree.font_ctx, &mut tree.layout_ctx);
                     }
 
                     if *element_data.name.local == *"img" {
@@ -605,7 +632,7 @@ impl<'a> RefCellChildIter<'a> {
     }
 }
 
-impl<'a> Iterator for RefCellChildIter<'a> {
+impl Iterator for RefCellChildIter<'_> {
     type Item = NodeId;
     fn next(&mut self) -> Option<Self::Item> {
         self.items.get(self.idx).map(|id| {

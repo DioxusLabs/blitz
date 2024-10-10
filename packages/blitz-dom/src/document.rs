@@ -65,9 +65,8 @@ pub trait DocumentLike: AsRef<Document> + AsMut<Document> + Into<Document> + 'st
         false
     }
 
-    fn handle_event(&mut self, _event: RendererEvent) -> bool {
+    fn handle_event(&mut self, _event: RendererEvent) {
         // Default implementation does nothing
-        false
     }
 
     fn as_any_mut(&mut self) -> &mut dyn Any {
@@ -97,7 +96,7 @@ pub struct Document {
     /// Base url for resolving linked resources (stylesheets, images, fonts, etc)
     pub(crate) base_url: Option<url::Url>,
 
-    /// The quadtree we use for hit-testing
+    // /// The quadtree we use for hit-testing
     // pub(crate) quadtree: Quadtree<u64, usize>,
 
     // Viewport details such as the dimensions, HiDPI scale, and zoom factor,
@@ -129,8 +128,10 @@ pub struct Document {
 }
 
 impl DocumentLike for Document {
-    fn handle_event(&mut self, event: RendererEvent) -> bool {
-        // let node_id = event.target;
+    fn handle_event(&mut self, event: RendererEvent) {
+        let target_node_id = event.target;
+
+        let event = dbg!(event);
 
         match event.data {
             EventData::Click { x, y, mods } => {
@@ -139,20 +140,24 @@ impl DocumentLike for Document {
                     assert!(hit.node_id == event.target);
 
                     let node = &mut self.nodes[hit.node_id];
+                    let content_box_offset = taffy::Point {
+                        x: node.final_layout.padding.left + node.final_layout.border.left,
+                        y: node.final_layout.padding.top + node.final_layout.border.top,
+                    };
                     let Some(el) = node.raw_dom_data.downcast_element_mut() else {
-                        return true;
+                        return;
                     };
 
                     let disabled = el.attr(local_name!("disabled")).is_some();
                     if disabled {
-                        return true;
+                        return;
                     }
 
                     if let NodeSpecificData::TextInput(ref mut text_input_data) =
                         el.node_specific_data
                     {
-                        let x = hit.x as f64 * self.viewport.scale_f64();
-                        let y = hit.y as f64 * self.viewport.scale_f64();
+                        let x = (hit.x - content_box_offset.x) as f64 * self.viewport.scale_f64();
+                        let y = (hit.y - content_box_offset.y) as f64 * self.viewport.scale_f64();
                         text_input_data.editor.pointer_down(
                             kurbo::Point { x, y },
                             mods,
@@ -185,6 +190,10 @@ impl DocumentLike for Document {
             }
             EventData::KeyPress { event, mods } => {
                 if let Some(node_id) = self.focus_node_id {
+                    if target_node_id != node_id {
+                        return;
+                    }
+
                     let node = &mut self.nodes[node_id];
                     let text_input_data = node
                         .raw_dom_data
@@ -213,8 +222,6 @@ impl DocumentLike for Document {
             }
             EventData::Hover => {}
         }
-
-        true
     }
 }
 
@@ -417,10 +424,14 @@ impl Document {
         // self.print_tree();
 
         let node = &self.nodes[node_id];
-        let node_child_idx = node.child_idx;
 
         let parent_id = node.parent.unwrap();
         let parent = &mut self.nodes[parent_id];
+        let node_child_idx = parent
+            .children
+            .iter()
+            .position(|id| *id == node_id)
+            .unwrap();
 
         // Mark the node's parent as changed.
         self.changed.insert(parent_id);
@@ -431,12 +442,11 @@ impl Document {
             inserted_node_ids.iter().copied(),
         );
 
-        // Update child_idx and parent values
+        // Update parent values
         let mut child_idx = node_child_idx;
         while child_idx < children.len() {
             let child_id = children[child_idx];
             let node = &mut self.nodes[child_id];
-            node.child_idx = child_idx;
             node.parent = Some(parent_id);
             child_idx += 1;
         }
@@ -446,28 +456,29 @@ impl Document {
 
     pub fn append(&mut self, node_id: usize, appended_node_ids: &[usize]) {
         let node = &self.nodes[node_id];
-        // let node_child_idx = node.child_idx;
         let parent_id = node.parent.unwrap();
-        let parent = &mut self.nodes[parent_id];
+        self.nodes[parent_id]
+            .children
+            .extend_from_slice(appended_node_ids);
 
-        let mut children = std::mem::take(&mut parent.children);
-        let old_len = children.len();
-        children.extend_from_slice(appended_node_ids);
-
-        // Update child_idx and parent values
-        let mut child_idx = old_len;
-        while child_idx < children.len() {
-            let child_id = children[child_idx];
-            let node = &mut self.nodes[child_id];
-            node.child_idx = child_idx;
-            node.parent = Some(parent_id);
-            child_idx += 1;
+        // Update parent values
+        for &child_id in appended_node_ids {
+            self.nodes[child_id].parent = Some(parent_id);
         }
-
-        self.nodes[parent_id].children = children;
     }
 
-    pub fn remove_node(&mut self, node_id: usize) -> Option<Node> {
+    /// Remove the node from it's parent but don't drop it
+    pub fn remove_node(&mut self, node_id: usize) {
+        let node = &mut self.nodes[node_id];
+
+        // Update child_idx values
+        if let Some(parent_id) = node.parent.take() {
+            let parent = &mut self.nodes[parent_id];
+            parent.children.retain(|id| *id != node_id);
+        }
+    }
+
+    pub fn remove_and_drop_node(&mut self, node_id: usize) -> Option<Node> {
         fn remove_node_ignoring_parent(doc: &mut Document, node_id: usize) -> Option<Node> {
             let node = doc.nodes.try_remove(node_id);
             if let Some(node) = &node {
@@ -481,26 +492,9 @@ impl Document {
         let node = remove_node_ignoring_parent(self, node_id);
 
         // Update child_idx values
-        if let Some(Node {
-            mut child_idx,
-            parent: Some(parent_id),
-            ..
-        }) = node
-        {
+        if let Some(parent_id) = node.as_ref().and_then(|node| node.parent) {
             let parent = &mut self.nodes[parent_id];
-
-            let mut children = std::mem::take(&mut parent.children);
-            children.remove(child_idx);
-
-            // Update child_idx and parent values
-            while child_idx < children.len() {
-                let child_id = children[child_idx];
-                let node = &mut self.nodes[child_id];
-                node.child_idx = child_idx;
-                child_idx += 1;
-            }
-
-            self.nodes[parent_id].children = children;
+            parent.children.retain(|id| *id != node_id);
         }
 
         node
@@ -513,19 +507,12 @@ impl Document {
         }
     }
 
-    pub fn flush_child_indexes(&mut self, target_id: usize, child_idx: usize, _level: usize) {
-        let node = &mut self.nodes[target_id];
-        node.child_idx = child_idx;
-
-        // println!("{} {} {:?} {:?}", "  ".repeat(level), target_id, node.parent, node.children);
-
-        for (i, child_id) in node.children.clone().iter().enumerate() {
-            self.flush_child_indexes(*child_id, i, _level + 1)
-        }
-    }
-
     pub fn print_tree(&self) {
         crate::util::walk_tree(0, self.root_node());
+    }
+
+    pub fn print_subtree(&self, node_id: usize) {
+        crate::util::walk_tree(0, &self.nodes[node_id]);
     }
 
     pub fn process_style_element(&mut self, target_id: usize) {
@@ -565,6 +552,12 @@ impl Document {
         );
 
         DocumentStyleSheet(ServoArc::new(data))
+    }
+
+    pub fn upsert_stylesheet_for_node(&mut self, node_id: usize) {
+        let raw_styles = self.nodes[node_id].text_content();
+        let sheet = self.make_stylesheet(raw_styles, Origin::Author);
+        self.add_stylesheet_for_node(sheet, node_id);
     }
 
     pub fn add_stylesheet_for_node(&mut self, stylesheet: DocumentStyleSheet, node_id: usize) {
@@ -654,15 +647,20 @@ impl Document {
                     .collect()
             });
 
+            let changed_attrs = attrs
+                .as_ref()
+                .map(|attrs| attrs.iter().map(|attr| attr.0.name.clone()).collect())
+                .unwrap_or_default();
+
             self.snapshots.insert(
                 opaque_node_id,
                 ServoElementSnapshot {
                     state: Some(node.element_state),
                     attrs,
-                    changed_attrs: Vec::new(),
-                    class_changed: false,
-                    id_changed: false,
-                    other_attributes_changed: false,
+                    changed_attrs,
+                    class_changed: true,
+                    id_changed: true,
+                    other_attributes_changed: true,
                 },
             );
         }

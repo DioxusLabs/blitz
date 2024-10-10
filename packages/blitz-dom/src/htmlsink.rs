@@ -34,7 +34,7 @@ pub struct DocumentHtmlParser<'a> {
     pub quirks_mode: Cell<QuirksMode>,
 }
 
-impl<'a> DocumentHtmlParser<'a> {
+impl DocumentHtmlParser<'_> {
     pub fn new(doc: &mut Document) -> DocumentHtmlParser {
         DocumentHtmlParser {
             doc: RefCell::new(doc),
@@ -162,9 +162,6 @@ impl<'b> TreeSink for DocumentHtmlParser<'b> {
         for id in self.style_nodes.borrow().iter() {
             doc.process_style_element(*id);
         }
-
-        // Compute child_idx fields.
-        doc.flush_child_indexes(0, 0, 0);
 
         for error in self.errors.borrow().iter() {
             println!("ERROR: {}", error);

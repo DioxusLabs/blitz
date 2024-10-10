@@ -46,7 +46,7 @@ use style::values::generics::image::{
     GenericCircle, GenericEllipse, GenericEndingShape, ShapeExtent,
 };
 use style::values::specified::percentage::ToPercentage;
-use taffy::prelude::Layout;
+use taffy::Layout;
 use vello::kurbo::{BezPath, Cap, Join};
 use vello::peniko::Gradient;
 use vello::{
@@ -71,6 +71,8 @@ pub fn generate_vello_scene(
     scene: &mut Scene,
     dom: &Document,
     scale: f64,
+    width: u32,
+    height: u32,
     devtool_config: Devtools,
 ) {
     CLIPS_USED.store(0, atomic::Ordering::SeqCst);
@@ -79,6 +81,8 @@ pub fn generate_vello_scene(
     let generator = VelloSceneGenerator {
         dom,
         scale,
+        width,
+        height,
         devtools: devtool_config,
     };
     generator.generate_vello_scene(scene);
@@ -97,10 +101,12 @@ pub struct VelloSceneGenerator<'dom> {
     /// Input parameters (read only) for generating the Scene
     dom: &'dom Document,
     scale: f64,
+    width: u32,
+    height: u32,
     devtools: Devtools,
 }
 
-impl<'dom> VelloSceneGenerator<'dom> {
+impl VelloSceneGenerator<'_> {
     fn node_position(&self, node: usize, location: Point) -> (Layout, Point) {
         let layout = self.layout(node);
         let pos = location + Vec2::new(layout.location.x as f64, layout.location.y as f64);
@@ -121,9 +127,43 @@ impl<'dom> VelloSceneGenerator<'dom> {
         // Simply render the document (the root element (note that this is not the same as the root node)))
         scene.reset();
         let viewport_scroll = self.dom.as_ref().viewport_scroll();
+
+        let root_element = self.dom.as_ref().root_element();
+        let root_id = root_element.id;
+        let bg_width = (self.width as f32).max(root_element.final_layout.size.width);
+        let bg_height = (self.height as f32).max(root_element.final_layout.size.height);
+
+        let background_color = {
+            let html_color = root_element
+                .primary_styles()
+                .unwrap()
+                .clone_background_color();
+            if html_color == GenericColor::TRANSPARENT_BLACK {
+                root_element
+                    .children
+                    .iter()
+                    .find_map(|id| {
+                        self.dom.as_ref().get_node(*id).filter(|node| {
+                            node.raw_dom_data
+                                .is_element_with_tag_name(&local_name!("body"))
+                        })
+                    })
+                    .and_then(|body| body.primary_styles())
+                    .map(|style| style.clone_background_color())
+            } else {
+                Some(html_color)
+            }
+        };
+
+        if let Some(bg_color) = background_color {
+            let bg_color = bg_color.as_vello();
+            let rect = Rect::from_origin_size((0.0, 0.0), (bg_width as f64, bg_height as f64));
+            scene.fill(Fill::NonZero, Affine::IDENTITY, bg_color, None, &rect);
+        }
+
         self.render_element(
             scene,
-            self.dom.as_ref().root_element().id,
+            root_id,
             Point {
                 x: -viewport_scroll.x,
                 y: -viewport_scroll.y,
@@ -300,7 +340,7 @@ impl<'dom> VelloSceneGenerator<'dom> {
         let element = &self.dom.as_ref().tree()[node_id];
 
         // Early return if the element is hidden
-        if matches!(element.style.display, taffy::prelude::Display::None) {
+        if matches!(element.style.display, taffy::Display::None) {
             return;
         }
 
@@ -746,10 +786,10 @@ impl ElementCx<'_> {
             let stroke = Stroke::new(self.scale);
 
             let stroke_color = match self.element.style.display {
-                taffy::prelude::Display::Block => Color::rgb(1.0, 0.0, 0.0),
-                taffy::prelude::Display::Flex => Color::rgb(0.0, 1.0, 0.0),
-                taffy::prelude::Display::Grid => Color::rgb(0.0, 0.0, 1.0),
-                taffy::prelude::Display::None => Color::rgb(0.0, 0.0, 1.0),
+                taffy::Display::Block => Color::rgb(1.0, 0.0, 0.0),
+                taffy::Display::Flex => Color::rgb(0.0, 1.0, 0.0),
+                taffy::Display::Grid => Color::rgb(0.0, 0.0, 1.0),
+                taffy::Display::None => Color::rgb(0.0, 0.0, 1.0),
             };
 
             scene.stroke(&stroke, self.transform, stroke_color, None, &shape);
