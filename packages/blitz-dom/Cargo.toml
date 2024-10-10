@@ -17,6 +17,7 @@ style_dom = { workspace = true }
 taffy = { workspace = true }
 parley = { workspace = true }
 peniko = { workspace = true }
+clipboard-rs = { workspace = true }
 tracing = { workspace = true, optional = true }
 slab = "0.4.9"
 app_units = "0.7.5"
@@ -29,5 +30,5 @@ url = { version = "2.5.0", features = ["serde"] }
 data-url = "0.3.1"
 image = "0.25.2"
 winit = { version = "0.30.4", default-features = false }
-usvg = "0.42.0"
+usvg = "0.43.0"
 woff = "0.3.3"

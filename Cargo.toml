@@ -26,13 +26,14 @@ dioxus-devtools = { git = "https://github.com/dioxuslabs/dioxus", rev = "9ffd4b8
 taffy = { git = "https://github.com/dioxuslabs/taffy", rev = "950a0eb1322f15e5d1083f4793b55d52061718de" }
 
 # Linebender dependencies
-peniko = { version = "0.1" }
-vello = { git = "https://github.com/linebender/vello", rev = "aaa9f5f2d0f21f3d038501ea0cf32c989d97aab3", package = "vello", features = [ "wgpu" ] }
-vello_svg = { git = "https://github.com/cfraz89/vello_svg", rev = "fc29d4ebf8d6aaee980b203f39ef2c73fe43c017" }
-parley = { git = "https://github.com/nicoburns/parley", rev = "186b6e991d08731c0588dc0b247564cbba1c0435" }
+peniko = { version = "0.2" }
+vello = { version = "0.3", features = [ "wgpu" ] }
+vello_svg = { version = "0.4" }
+parley = { version = "0.2" }
 
 # Other dependencies
 tokio = { version = "1.25.0", features = ["full"] }
+clipboard-rs = { version = "0.2.1" }
 tracing = "0.1.40"
 wgpu = "22.1.0"
 

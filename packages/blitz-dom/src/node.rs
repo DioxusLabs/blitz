@@ -486,17 +486,23 @@ impl ImageData {
     }
 }
 
-#[derive(Clone)]
 pub struct TextInputData {
     /// A parley TextEditor instance
-    pub editor: Box<parley::editor::TextEditor<String>>,
+    pub editor: Box<parley::PlainEditor<TextBrush>>,
     /// Whether the input is a singleline or multiline input
     pub is_multiline: bool,
 }
 
+// FIXME: Implement Clone for PlainEditor
+impl Clone for TextInputData {
+    fn clone(&self) -> Self {
+        TextInputData::new(self.is_multiline)
+    }
+}
+
 impl TextInputData {
-    pub fn new(text: String, text_size: f32, is_multiline: bool) -> Self {
-        let editor = Box::new(parley::editor::TextEditor::new(text, text_size));
+    pub fn new(is_multiline: bool) -> Self {
+        let editor = Box::new(parley::PlainEditor::default());
         Self {
             editor,
             is_multiline,
@@ -567,7 +573,7 @@ impl std::fmt::Debug for ListItemLayout {
     }
 }
 
-pub type TextBrush = parley::editor::TextBrush;
+pub type TextBrush = peniko::Brush;
 
 #[derive(Clone)]
 pub struct TextLayout {

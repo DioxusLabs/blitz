@@ -6,9 +6,8 @@ use blitz_dom::{Document, Viewport};
 use std::num::NonZeroUsize;
 use std::sync::Arc;
 use vello::{
-    block_on_wgpu,
     peniko::Color,
-    util::{RenderContext, RenderSurface},
+    util::{block_on_wgpu, RenderContext, RenderSurface},
     AaSupport, RenderParams, Renderer as VelloRenderer, RendererOptions, Scene,
 };
 use wgpu::{
@@ -147,7 +146,6 @@ where
             width: state.surface.config.width,
             height: state.surface.config.height,
             antialiasing_method: vello::AaConfig::Msaa16,
-            debug: vello::DebugLayers::none(),
         };
 
         // Regenerate the vello scene
@@ -229,7 +227,6 @@ pub async fn render_to_buffer(dom: &Document, viewport: Viewport) -> Vec<u8> {
         width,
         height,
         antialiasing_method: vello::AaConfig::Area,
-        debug: vello::DebugLayers::none(),
     };
     renderer
         .render_to_texture(device, queue, &scene, &view, &render_params)
