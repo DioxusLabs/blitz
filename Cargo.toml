@@ -11,11 +11,11 @@ resolver = "2"
 
 [workspace.dependencies]
 # Servo dependencies
-style = { git = "https://github.com/dioxuslabs/stylo", branch = "blitz" }
-style_config = { git = "https://github.com/dioxuslabs/stylo", branch = "blitz" }
-style_traits = { git = "https://github.com/dioxuslabs/stylo", branch = "blitz" }
-style_dom = { git = "https://github.com/dioxuslabs/stylo", package = "dom", branch = "blitz" }
-selectors = { git = "https://github.com/dioxuslabs/stylo", branch = "blitz" }
+style = { git = "https://github.com/dioxuslabs/stylo", rev = "8f9898c7766b8f8abe14ab81051fda057f9fcda3" } # Branch: blitz
+style_config = { git = "https://github.com/dioxuslabs/stylo", rev = "8f9898c7766b8f8abe14ab81051fda057f9fcda3" } # Branch: blitz
+style_traits = { git = "https://github.com/dioxuslabs/stylo", rev = "8f9898c7766b8f8abe14ab81051fda057f9fcda3" } # Branch: blitz
+style_dom = { git = "https://github.com/dioxuslabs/stylo", package = "dom", rev = "8f9898c7766b8f8abe14ab81051fda057f9fcda3" } # Branch: blitz
+selectors = { git = "https://github.com/dioxuslabs/stylo", rev = "8f9898c7766b8f8abe14ab81051fda057f9fcda3" } # Branch: blitz
 html5ever = "0.29" # needs to match stylo markup5ever version
 
 # DioxusLabs dependencies

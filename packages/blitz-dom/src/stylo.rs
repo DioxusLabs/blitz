@@ -571,6 +571,12 @@ impl<'a> TElement for BlitzNode<'a> {
         self
     }
 
+    fn unopaque(opaque: OpaqueElement) -> Self {
+        // FIXME: this is wrong in the case where pushing new elements casuses reallocations.
+        // We should see if selectors will accept a PR that allows creation from a usize
+        unsafe { &*opaque.as_const_ptr() }
+    }
+
     fn traversal_children(&self) -> style::dom::LayoutIterator<Self::TraversalChildrenIterator> {
         LayoutIterator(Traverser {
             // dom: self.tree(),
