@@ -23,7 +23,7 @@ dioxus = { git = "https://github.com/dioxuslabs/dioxus", rev = "9ffd4b816b8ce291
 dioxus-ssr = { git = "https://github.com/dioxuslabs/dioxus", rev = "9ffd4b816b8ce291b6ca66cb5c871e107a964f6b" }
 dioxus-cli-config = { git = "https://github.com/dioxuslabs/dioxus", rev = "9ffd4b816b8ce291b6ca66cb5c871e107a964f6b" }
 dioxus-devtools = { git = "https://github.com/dioxuslabs/dioxus", rev = "9ffd4b816b8ce291b6ca66cb5c871e107a964f6b" }
-taffy = { git = "https://github.com/dioxuslabs/taffy", rev = "950a0eb1322f15e5d1083f4793b55d52061718de" }
+taffy = { version = "0.6" }
 
 # Linebender dependencies
 peniko = { version = "0.2" }
