@@ -4,7 +4,6 @@ use std::{
     any::Any,
     collections::{HashMap, HashSet},
     rc::Rc,
-    sync::Arc,
 };
 
 use blitz_dom::{
@@ -24,7 +23,6 @@ use dioxus::{
     prelude::set_event_converter,
 };
 use futures_util::{pin_mut, FutureExt};
-use parley::PlainEditorOp;
 use rustc_hash::FxHashMap;
 use style::{
     data::{ElementData, ElementStyles},
@@ -752,14 +750,7 @@ impl WriteMutations for MutationWriter<'_> {
             else if let AttributeValue::Text(val) = value {
                 // Update text input value
                 if let Some(input_data) = element.text_input_data_mut() {
-                    let val: &str = val;
-                    if &*input_data.editor.text() != val {
-                        input_data.editor.transact(
-                            &mut self.doc.font_ctx,
-                            &mut self.doc.layout_ctx,
-                            [PlainEditorOp::SetText(Arc::from(val))],
-                        );
-                    }
+                    input_data.set_text(&mut self.doc.font_ctx, &mut self.doc.layout_ctx, val);
                 }
 
                 // FIXME check namespace
@@ -789,11 +780,7 @@ impl WriteMutations for MutationWriter<'_> {
             if let AttributeValue::None = value {
                 // Update text input value
                 if let Some(input_data) = element.text_input_data_mut() {
-                    input_data.editor.transact(
-                        &mut self.doc.font_ctx,
-                        &mut self.doc.layout_ctx,
-                        [PlainEditorOp::SetText(Arc::from(""))],
-                    );
+                    input_data.set_text(&mut self.doc.font_ctx, &mut self.doc.layout_ctx, "");
                 }
 
                 // FIXME: check namespace

@@ -25,9 +25,6 @@ dioxus = { workspace = true }
 dioxus-cli-config = { workspace = true, optional = true }
 dioxus-devtools = { workspace = true, optional = true }
 
-# Linebender dependencies
-parley = { workspace = true }
-
 # Windowing & Input
 winit = { workspace = true }
 muda = { workspace = true, features = ["serde"], optional = true }

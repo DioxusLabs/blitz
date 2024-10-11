@@ -1,6 +1,7 @@
 use atomic_refcell::{AtomicRef, AtomicRefCell};
 use html5ever::{local_name, LocalName, QualName};
 use image::DynamicImage;
+use parley::{FontContext, LayoutContext, PlainEditorOp};
 use peniko::kurbo;
 use selectors::matching::{ElementSelectorFlags, QuirksMode};
 use slab::Slab;
@@ -506,6 +507,19 @@ impl TextInputData {
         Self {
             editor,
             is_multiline,
+        }
+    }
+
+    pub fn set_text(
+        &mut self,
+        font_ctx: &mut FontContext,
+        layout_ctx: &mut LayoutContext<TextBrush>,
+        text: &str,
+    ) {
+        let text = Arc::from(text);
+        if *self.editor.text() != *text {
+            self.editor
+                .transact(font_ctx, layout_ctx, [PlainEditorOp::SetText(text)]);
         }
     }
 }
