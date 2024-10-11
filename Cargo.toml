@@ -17,6 +17,10 @@ style_traits = { git = "https://github.com/dioxuslabs/stylo", rev = "8f9898c7766
 style_dom = { git = "https://github.com/dioxuslabs/stylo", package = "dom", rev = "8f9898c7766b8f8abe14ab81051fda057f9fcda3" } # Branch: blitz
 selectors = { git = "https://github.com/dioxuslabs/stylo", rev = "8f9898c7766b8f8abe14ab81051fda057f9fcda3" } # Branch: blitz
 html5ever = "0.29" # needs to match stylo markup5ever version
+euclid = "0.22"
+string_cache = "0.8.7"
+atomic_refcell = "0.1.13"
+app_units = "0.7.5"
 
 # DioxusLabs dependencies
 dioxus = { git = "https://github.com/dioxuslabs/dioxus", rev = "9ffd4b816b8ce291b6ca66cb5c871e107a964f6b" }
@@ -25,17 +29,45 @@ dioxus-cli-config = { git = "https://github.com/dioxuslabs/dioxus", rev = "9ffd4
 dioxus-devtools = { git = "https://github.com/dioxuslabs/dioxus", rev = "9ffd4b816b8ce291b6ca66cb5c871e107a964f6b" }
 taffy = { version = "0.6" }
 
-# Linebender dependencies
-peniko = { version = "0.2" }
+# Linebender + WGPU + SVG dependencies
+peniko = "0.2"
 vello = { version = "0.3", features = [ "wgpu" ] }
-vello_svg = { version = "0.4" }
-parley = { version = "0.2" }
+vello_svg = "0.4"
+parley = "0.2"
+wgpu = "22.1.0"
+usvg = "0.43.0"
+
+# Windowing & Input
+raw-window-handle = "0.6.0"
+winit = { version = "0.30.2", features = ["rwh_06"] }
+accesskit_winit = "0.21.1"
+accesskit = "0.15.0"
+muda = "0.11.5"
+clipboard-rs = "0.2.1"
+keyboard-types = "0.7"
+
+# IO & Networking
+url = "2.5.0"
+http = "1.1.0"
+data-url = "0.3.1"
+tokio = "1.25.0"
+reqwest = "0.12.7"
+ureq = "2.9"
+
+# Media & Decoding
+image = "0.25"
+woff = "0.3.3"
+html-escape = "0.2.13"
 
 # Other dependencies
-tokio = { version = "1.25.0", features = ["full"] }
-clipboard-rs = { version = "0.2.1" }
+rustc-hash = "1.1.0"
+bytes = "1.7.1"
+slab = "0.4.9"
 tracing = "0.1.40"
-wgpu = "22.1.0"
+futures-util = "0.3.30"
+futures-intrusive = "0.5.0"
+thiserror = "1.0.63"
+
 
 # This is a "virtual package"
 # It is not meant to be published, but is used so "cargo run --example XYZ" works properly

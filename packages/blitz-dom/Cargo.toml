@@ -8,27 +8,40 @@ default = ["tracing"]
 tracing = ["dep:tracing"]
 
 [dependencies]
+# Blitz dependencies
 blitz-traits = { path = "../blitz-traits" }
+
+# Servo dependencies
 style = { workspace = true, features = ["servo"] }
 selectors = { workspace = true }
 style_config = { workspace = true }
 style_traits = { workspace = true }
 style_dom = { workspace = true }
+app_units = { workspace = true }
+euclid = { workspace = true, features = ["serde"] }
+atomic_refcell = { workspace = true, features = ["serde"] }
+html5ever = { workspace = true }
+string_cache ={ workspace = true }
+
+# DioxusLabs dependencies
 taffy = { workspace = true }
+
+# Linebender dependencies
 parley = { workspace = true }
 peniko = { workspace = true }
 clipboard-rs = { workspace = true }
 tracing = { workspace = true, optional = true }
-slab = "0.4.9"
-app_units = "0.7.5"
-euclid = { version = "0.22", features = ["serde"] }
-atomic_refcell = { version = "0.1.13", features = ["serde"] }
-html5ever = { workspace = true }
-string_cache = "0.8.7"
-html-escape = "0.2.13"
-url = { version = "2.5.0", features = ["serde"] }
-data-url = "0.3.1"
-image = "0.25.2"
-winit = { version = "0.30.4", default-features = false }
-usvg = "0.43.0"
-woff = "0.3.3"
+slab = { workspace = true }
+
+# Media & Decoding
+image = { workspace = true }
+usvg = { workspace = true }
+woff = { workspace = true }
+html-escape = { workspace = true }
+
+# IO & Networking
+url = { workspace = true, features = ["serde"] }
+data-url = { workspace = true }
+
+# Input
+winit = { workspace = true }
