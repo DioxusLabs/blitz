@@ -3,9 +3,12 @@
 
 use std::sync::atomic::Ordering;
 
+use crate::node::BackgroundImageData;
 use crate::node::Node;
 
+use crate::net::ImageHandler;
 use crate::node::NodeData;
+use crate::util::ImageType;
 use atomic_refcell::{AtomicRef, AtomicRefMut};
 use html5ever::LocalNameStaticSet;
 use html5ever::NamespaceStaticSet;
@@ -22,8 +25,10 @@ use style::invalidation::element::restyle_hints::RestyleHint;
 use style::properties::{Importance, PropertyDeclaration};
 use style::rule_tree::CascadeLevel;
 use style::selector_parser::PseudoElement;
+use style::servo::url::ComputedUrl;
 use style::stylesheets::layer_rule::LayerOrder;
 use style::values::computed::Percentage;
+use style::values::generics::image::Image as StyloImage;
 use style::values::specified::box_::DisplayOutside;
 use style::values::AtomString;
 use style::CaseSensitivityExt;
@@ -53,33 +58,68 @@ use style::values::computed::text::TextAlign as StyloTextAlign;
 impl crate::document::Document {
     /// Walk the whole tree, converting styles to layout
     pub fn flush_styles_to_layout(&mut self, node_id: usize) {
-        let display = {
-            let node = self.nodes.get_mut(node_id).unwrap();
-            let stylo_element_data = node.stylo_element_data.borrow();
-            let primary_styles = stylo_element_data
-                .as_ref()
-                .and_then(|data| data.styles.get_primary());
+        let display =
+            {
+                let node = self.nodes.get_mut(node_id).unwrap();
+                let stylo_element_data = node.stylo_element_data.borrow();
+                let primary_styles = stylo_element_data
+                    .as_ref()
+                    .and_then(|data| data.styles.get_primary());
 
-            let Some(style) = primary_styles else {
-                return;
+                let Some(style) = primary_styles else {
+                    return;
+                };
+
+                node.style = stylo_to_taffy::entire_style(style);
+
+                node.display_outer = match style.clone_display().outside() {
+                    DisplayOutside::None => crate::node::DisplayOuter::None,
+                    DisplayOutside::Inline => crate::node::DisplayOuter::Inline,
+                    DisplayOutside::Block => crate::node::DisplayOuter::Block,
+                    DisplayOutside::TableCaption => crate::node::DisplayOuter::Block,
+                    DisplayOutside::InternalTable => crate::node::DisplayOuter::Block,
+                };
+
+                // Flush background image from style to dedicated storage on the node
+                // TODO: handle multiple background images
+                let elem = node.raw_dom_data.downcast_element_mut();
+
+                let background_image = style.get_background().background_image.0.first().and_then(
+                    |background_image| match background_image {
+                        StyloImage::Url(ComputedUrl::Valid(new_url)) => {
+                            let old_bg_image = elem
+                                .as_ref()
+                                .and_then(|el| el.background_image.as_ref())
+                                .map(|data| &*data.url);
+
+                            if let Some(old_url) = old_bg_image {
+                                if **new_url == *old_url {
+                                    return None;
+                                }
+                            }
+
+                            self.net_provider.fetch(
+                                (**new_url).clone(),
+                                Box::new(ImageHandler::new(node_id, ImageType::Background)),
+                            );
+
+                            let bg_image_data = BackgroundImageData::new(new_url.clone());
+                            Some(Some(Box::new(bg_image_data)))
+                        }
+                        _ => Some(None),
+                    },
+                );
+
+                if let (Some(elem), Some(bg_image)) = (elem, background_image) {
+                    elem.background_image = bg_image;
+                }
+
+                // Clear Taffy cache
+                // TODO: smarter cache invalidation
+                node.cache.clear();
+
+                node.style.display
             };
-
-            node.style = stylo_to_taffy::entire_style(style);
-
-            node.display_outer = match style.clone_display().outside() {
-                DisplayOutside::None => crate::node::DisplayOuter::None,
-                DisplayOutside::Inline => crate::node::DisplayOuter::Inline,
-                DisplayOutside::Block => crate::node::DisplayOuter::Block,
-                DisplayOutside::TableCaption => crate::node::DisplayOuter::Block,
-                DisplayOutside::InternalTable => crate::node::DisplayOuter::Block,
-            };
-
-            // Clear Taffy cache
-            // TODO: smarter cache invalidation
-            node.cache.clear();
-
-            node.style.display
-        };
 
         // If the node has children, then take those children and...
         let children = self.nodes[node_id].layout_children.borrow_mut().take();

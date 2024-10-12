@@ -22,12 +22,12 @@ use blitz_traits::net::{Bytes, RequestHandler, SharedCallback, SharedProvider};
 use url::Url;
 use usvg::Tree;
 
-use crate::util::parse_svg;
+use crate::util::{parse_svg, ImageType};
 
 #[derive(Clone, Debug)]
 pub enum Resource {
-    Image(usize, Arc<DynamicImage>),
-    Svg(usize, Box<Tree>),
+    Image(usize, ImageType, Arc<DynamicImage>),
+    Svg(usize, ImageType, Box<Tree>),
     Css(usize, DocumentStyleSheet),
     Font(Bytes),
 }
@@ -238,7 +238,12 @@ fn fetch_font_face(
         });
 }
 
-pub(crate) struct ImageHandler(pub usize);
+pub(crate) struct ImageHandler(usize, ImageType);
+impl ImageHandler {
+    pub(crate) fn new(node_id: usize, kind: ImageType) -> Self {
+        Self(node_id, kind)
+    }
+}
 impl RequestHandler for ImageHandler {
     type Data = Resource;
     fn bytes(self: Box<Self>, bytes: Bytes, callback: SharedCallback<Resource>) {
@@ -248,13 +253,13 @@ impl RequestHandler for ImageHandler {
             .expect("IO errors impossible with Cursor")
             .decode()
         {
-            callback.call(Resource::Image(self.0, Arc::new(image)));
+            callback.call(Resource::Image(self.0, self.1, Arc::new(image)));
             return;
         };
 
         // Try parse SVG
         const DUMMY_SVG : &[u8] = r#"<?xml version="1.0" encoding="UTF-8"?><svg xmlns="http://www.w3.org/2000/svg" width="1" height="1"/>"#.as_bytes();
         let tree = parse_svg(&bytes).unwrap_or(parse_svg(DUMMY_SVG).unwrap());
-        callback.call(Resource::Svg(self.0, Box::new(tree)));
+        callback.call(Resource::Svg(self.0, self.1, Box::new(tree)));
     }
 }

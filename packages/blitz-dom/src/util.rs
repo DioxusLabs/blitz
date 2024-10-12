@@ -11,6 +11,12 @@ pub(crate) static FONT_DB: LazyLock<Arc<fontdb::Database>> = LazyLock::new(|| {
     Arc::new(db)
 });
 
+#[derive(Clone, Debug)]
+pub enum ImageType {
+    Image,
+    Background,
+}
+
 // Debug print an RcDom
 pub fn walk_tree(indent: usize, node: &Node) {
     // Skip all-whitespace text nodes entirely

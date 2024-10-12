@@ -1,7 +1,9 @@
 use crate::events::{EventData, HitResult, RendererEvent};
-use crate::node::{ImageData, NodeSpecificData, TextBrush};
+use crate::node::{ImageData, NodeSpecificData, Status, TextBrush};
+use crate::util::ImageType;
 use crate::{ElementNodeData, Node, NodeData, TextNodeData, Viewport};
 use app_units::Au;
+use blitz_traits::net::{DummyProvider, SharedProvider};
 use html5ever::local_name;
 use parley::{FontContext, PlainEditorOp};
 use peniko::kurbo;
@@ -17,6 +19,7 @@ use slab::Slab;
 use std::any::Any;
 use std::collections::{BTreeMap, Bound, HashMap, HashSet, VecDeque};
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Arc;
 use style::selector_parser::ServoElementSnapshot;
 use style::servo::media_queries::FontMetricsProvider;
 use style::servo_arc::Arc as ServoArc;
@@ -125,6 +128,9 @@ pub struct Document {
     pub(crate) focus_node_id: Option<usize>,
 
     pub changed: HashSet<usize>,
+
+    /// Network provider. Can be used to fetch assets.
+    pub net_provider: SharedProvider<Resource>,
 }
 
 impl DocumentLike for Document {
@@ -428,12 +434,18 @@ impl Document {
             hover_node_id: None,
             focus_node_id: None,
             changed: HashSet::new(),
+            net_provider: Arc::new(DummyProvider::default()),
         };
 
         // Initialise document with root Document node
         doc.create_node(NodeData::Document);
 
         doc
+    }
+
+    /// Set the Document's networking provider
+    pub fn set_net_provider(&mut self, net_provider: SharedProvider<Resource>) {
+        self.net_provider = net_provider;
     }
 
     /// Set base url for resolving linked resources (stylesheets, images, fonts, etc)
@@ -755,14 +767,37 @@ impl Document {
             Resource::Css(node_id, css) => {
                 self.add_stylesheet_for_node(css, node_id);
             }
-            Resource::Image(node_id, image) => {
+            Resource::Image(node_id, kind, image) => {
                 let node = self.get_node_mut(node_id).unwrap();
-                node.element_data_mut().unwrap().node_specific_data =
-                    NodeSpecificData::Image(ImageData::new(image))
+
+                match kind {
+                    ImageType::Image => {
+                        node.element_data_mut().unwrap().node_specific_data =
+                            NodeSpecificData::Image(ImageData::new(image))
+                    }
+                    ImageType::Background => {
+                        if let Some(bg_image) = node
+                            .element_data_mut()
+                            .and_then(|el| el.background_image.as_mut())
+                        {
+                            bg_image.status = Status::Ok;
+                            bg_image.image = Some(image);
+                        }
+                    }
+                }
             }
-            Resource::Svg(node_id, tree) => {
+            Resource::Svg(node_id, kind, tree) => {
                 let node = self.get_node_mut(node_id).unwrap();
-                node.element_data_mut().unwrap().node_specific_data = NodeSpecificData::Svg(*tree)
+
+                match kind {
+                    ImageType::Image => {
+                        node.element_data_mut().unwrap().node_specific_data =
+                            NodeSpecificData::Svg(*tree)
+                    }
+                    ImageType::Background => {
+                        eprintln!("TODO: implement SVG background images");
+                    }
+                }
             }
             Resource::Font(bytes) => {
                 self.font_ctx.collection.register_fonts(bytes.to_vec());
