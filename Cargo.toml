@@ -11,11 +11,11 @@ resolver = "2"
 
 [workspace.dependencies]
 # Servo dependencies
-style = { git = "https://github.com/dioxuslabs/stylo", rev = "8f9898c7766b8f8abe14ab81051fda057f9fcda3" } # Branch: blitz
-style_config = { git = "https://github.com/dioxuslabs/stylo", rev = "8f9898c7766b8f8abe14ab81051fda057f9fcda3" } # Branch: blitz
-style_traits = { git = "https://github.com/dioxuslabs/stylo", rev = "8f9898c7766b8f8abe14ab81051fda057f9fcda3" } # Branch: blitz
-style_dom = { git = "https://github.com/dioxuslabs/stylo", package = "dom", rev = "8f9898c7766b8f8abe14ab81051fda057f9fcda3" } # Branch: blitz
-selectors = { git = "https://github.com/dioxuslabs/stylo", rev = "8f9898c7766b8f8abe14ab81051fda057f9fcda3" } # Branch: blitz
+style = { version = "0.1", package = "stylo" }
+style_config = { version = "0.1", package = "stylo_config" }
+style_traits = { version = "0.1", package = "stylo_traits" }
+style_dom = { version = "0.1", package = "stylo_dom" }
+selectors = { version = "0.26", package = "stylo_selectors" }
 html5ever = "0.29" # needs to match stylo markup5ever version
 euclid = "0.22"
 string_cache = "0.8.7"
