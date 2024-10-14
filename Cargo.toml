@@ -9,6 +9,9 @@ members = [
 ]
 resolver = "2"
 
+[workspace.package]
+license = "MIT OR APACHE-2.0"
+
 [workspace.dependencies]
 # Servo dependencies
 style = { version = "0.1", package = "stylo" }
