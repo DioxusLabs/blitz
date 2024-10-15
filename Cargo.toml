@@ -26,10 +26,10 @@ atomic_refcell = "0.1.13"
 app_units = "0.7.5"
 
 # DioxusLabs dependencies
-dioxus = { git = "https://github.com/dioxuslabs/dioxus", rev = "9ffd4b816b8ce291b6ca66cb5c871e107a964f6b" }
-dioxus-ssr = { git = "https://github.com/dioxuslabs/dioxus", rev = "9ffd4b816b8ce291b6ca66cb5c871e107a964f6b" }
-dioxus-cli-config = { git = "https://github.com/dioxuslabs/dioxus", rev = "9ffd4b816b8ce291b6ca66cb5c871e107a964f6b" }
-dioxus-devtools = { git = "https://github.com/dioxuslabs/dioxus", rev = "9ffd4b816b8ce291b6ca66cb5c871e107a964f6b" }
+dioxus = { version = "0.6.0-alpha.3" }
+dioxus-ssr = { version = "0.6.0-alpha.3" }
+dioxus-cli-config = { version = "0.6.0-alpha.3" }
+dioxus-devtools = { version = "0.6.0-alpha.3" }
 taffy = { version = "0.6" }
 
 # Linebender + WGPU + SVG dependencies
