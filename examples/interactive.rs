@@ -4,7 +4,7 @@ use dioxus::prelude::*;
 
 fn main() {
     tracing_subscriber::fmt::init();
-    dioxus_blitz::launch(app);
+    dioxus_native::launch(app);
 }
 
 fn app() -> Element {

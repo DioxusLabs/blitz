@@ -3,7 +3,7 @@
 use dioxus::prelude::*;
 
 fn main() {
-    dioxus_blitz::launch(app);
+    dioxus_native::launch(app);
 }
 
 fn app() -> Element {

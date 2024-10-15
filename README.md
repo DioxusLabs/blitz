@@ -63,7 +63,7 @@ We don't yet have Blitz bindings for other languages (JavaScript, Python, etc) b
 Blitz is split into several pieces:
 - `blitz-dom`: The core DOM abstraction that includes style resolution and layout but not drawing/painting. Combines the best of Stylo and Taffy that allows you to build extendable dom-like structures.
 - `blitz`: Adds a Vello/WGPU based renderer to `blitz-dom`
-- `dioxus-blitz`: A dioxus integration layer for blitz. Render your Dioxus app using Blitz. Currently `dioxus-blitz` also contains the HTML renderer but this will likely be split out into it's own package in future.
+- `dioxus-native`: A dioxus integration layer for blitz. Render your Dioxus app using Blitz. Currently `dioxus-native` also contains the HTML renderer but this will likely be split out into it's own package in future.
 
 ## Status
 

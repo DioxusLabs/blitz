@@ -33,7 +33,7 @@ fn root() -> Element {
 }
 
 fn main() {
-    dioxus_blitz::launch(root);
+    dioxus_native::launch(root);
 
     // let document = blitz_dom::Document::new();
 

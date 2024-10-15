@@ -7,7 +7,7 @@ use comrak::{
     plugins::syntect::SyntectAdapter, ExtensionOptionsBuilder, Options, Plugins,
     RenderOptionsBuilder,
 };
-use dioxus_blitz::Config;
+use dioxus_native::Config;
 
 fn main() {
     let (base_url, contents) = std::env::args()
@@ -72,7 +72,7 @@ fn main() {
 
     println!("{html}");
 
-    dioxus_blitz::launch_static_html_cfg(
+    dioxus_native::launch_static_html_cfg(
         &html,
         Config {
             stylesheets: vec![String::from(stylesheet)],
