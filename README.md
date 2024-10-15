@@ -60,10 +60,24 @@ We don't yet have Blitz bindings for other languages (JavaScript, Python, etc) b
 
 ## Architecture
 
-Blitz is split into several pieces:
+Blitz consists of a core DOM abstraction (`blitz-dom`), and several modular pieces which provide functionality like networking, rendering, windows, and state management. These pieces can be combined together to make a cohesive web engine.
+
+### Crates
+
+**Core:**
+
+- `blitz-traits`: Minimal crate containing types and traits to allow the other crates to interoperate without depending on each other
 - `blitz-dom`: The core DOM abstraction that includes style resolution and layout but not drawing/painting. Combines the best of Stylo and Taffy that allows you to build extendable dom-like structures.
-- `blitz`: Adds a Vello/WGPU based renderer to `blitz-dom`
-- `dioxus-native`: A dioxus integration layer for blitz. Render your Dioxus app using Blitz. Currently `dioxus-native` also contains the HTML renderer but this will likely be split out into it's own package in future.
+
+**Modules**:
+- `blitz-renderer-vello`: Adds a Vello/WGPU based renderer to `blitz-dom`
+- `blitz-net`: Networking that can fetch resources over http, from the file-system or from encoded data URIs.
+- `dioxus-native`: This crate should contain just a dioxus integration layer for Blitz. However, it currently contains all of the following functionality:
+  - `DioxusDocument` - A dioxus integration layer for Blitz
+  - `HtmlDocument` - An HTML rendering layer for Blitz
+  - `Window` - A winit-based "shell" for running Blitz applications in a window.
+
+  These different parts will be split into separate crates in future.
 
 ## Status
 
