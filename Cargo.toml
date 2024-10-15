@@ -106,7 +106,7 @@ blitz-net = { path = "./packages/blitz-net" }
 blitz-traits = { path = "./packages/blitz-traits" }
 blitz-renderer-vello = { path = "./packages/blitz-renderer-vello" }
 dioxus-blitz = { path = "./packages/dioxus-blitz", features = ["tracing"] }
-comrak = { git = "https://github.com/nicoburns/comrak", branch = "tasklist-class", default-features = false, features = ["syntect"] }
+comrak = { git = "https://github.com/kivikakk/comrak", rev = "96a64d1befcaa8715098bf617e836c2ef70cb692", default-features = false, features = ["syntect"] }
 png = { version = "0.17" }
 dioxus = { workspace = true }
 euclid = { version = "0.22", features = ["serde"] }

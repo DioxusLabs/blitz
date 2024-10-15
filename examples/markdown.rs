@@ -50,6 +50,7 @@ fn main() {
                 .unwrap(),
             render: RenderOptionsBuilder::default()
                 .unsafe_(true)
+                .tasklist_classes(true)
                 .build()
                 .unwrap(),
             ..Default::default()
