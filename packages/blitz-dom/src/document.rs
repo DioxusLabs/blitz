@@ -948,7 +948,7 @@ impl Document {
         while let Some(id) = maybe_id {
             self.snapshot_node_and(id, |node| {
                 node.unhover();
-                maybe_id = node.parent;
+                maybe_id = node.layout_parent.get();
             });
         }
 
@@ -956,7 +956,7 @@ impl Document {
         while let Some(id) = maybe_id {
             self.snapshot_node_and(id, |node| {
                 node.hover();
-                maybe_id = node.parent;
+                maybe_id = node.layout_parent.get();
             });
         }
 

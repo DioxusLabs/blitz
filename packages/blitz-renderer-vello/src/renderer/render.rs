@@ -209,7 +209,7 @@ impl VelloSceneGenerator<'_> {
 
         let mut abs_x = x;
         let mut abs_y = y;
-        while let Some(parent_id) = node.parent {
+        while let Some(parent_id) = node.layout_parent.get() {
             node = &self.dom.as_ref().tree()[parent_id];
             let taffy::Point { x, y } = node.final_layout.location;
             abs_x += x;
