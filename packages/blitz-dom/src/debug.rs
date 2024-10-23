@@ -71,14 +71,17 @@ impl Document {
             }
         }
 
+        println!("Parent: {:?}", node.parent);
+
         let children: Vec<_> = node
             .children
             .iter()
             .map(|id| &self.nodes[*id])
             .map(|node| (node.id, node.order(), node.node_debug_str()))
             .collect();
-
         println!("Children: {:?}", children);
+
+        println!("Layout Parent: {:?}", node.layout_parent.get());
 
         let layout_children: Vec<_> = node
             .layout_children
@@ -89,7 +92,6 @@ impl Document {
             .map(|id| &self.nodes[*id])
             .map(|node| (node.id, node.order(), node.node_debug_str()))
             .collect();
-
         println!("Layout Children: {:?}", layout_children);
         // taffy::print_tree(&self.dom, node_id.into());
     }
