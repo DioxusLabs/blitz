@@ -827,7 +827,7 @@ impl Node {
             .borrow()
             .as_ref()
             .and_then(|data| data.styles.get_primary())
-            .map(|s| s.get_position().order)
+            .map(|s| s.clone_order())
             .unwrap_or(0)
     }
 
