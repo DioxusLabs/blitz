@@ -3,6 +3,10 @@ use parley::layout::PositionedLayoutItem;
 use crate::Document;
 
 impl Document {
+    pub fn print_taffy_tree(&self) {
+        taffy::print_tree(self, taffy::NodeId::from(0usize));
+    }
+
     pub fn debug_log_node(&self, node_id: usize) {
         let node = &self.nodes[node_id];
 

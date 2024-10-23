@@ -1046,10 +1046,6 @@ impl Document {
 
     pub fn add_element(&mut self) {}
 
-    pub fn print_taffy_tree(&self) {
-        taffy::print_tree(self, taffy::NodeId::from(0usize));
-    }
-
     pub fn get_cursor(&self) -> Option<CursorKind> {
         // todo: cache this on the node itself
         let node = &self.nodes[self.get_hover_node_id()?];
