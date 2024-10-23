@@ -842,7 +842,7 @@ impl Document {
         self.resolve_layout_children();
 
         // Merge stylo into taffy
-        self.flush_styles_to_layout(vec![self.root_element().id]);
+        self.flush_styles_to_layout(self.root_element().id);
 
         // Next we resolve layout with the data resolved by stlist
         self.resolve_layout();

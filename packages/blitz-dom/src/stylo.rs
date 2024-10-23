@@ -52,60 +52,56 @@ use style::values::computed::text::TextAlign as StyloTextAlign;
 
 impl crate::document::Document {
     /// Walk the whole tree, converting styles to layout
-    pub fn flush_styles_to_layout(&mut self, children: Vec<usize>) {
-        // make a floating element
-        for child in children.iter() {
-            let (display, mut children) = {
-                let node = self.nodes.get_mut(*child).unwrap();
-                let stylo_element_data = node.stylo_element_data.borrow();
-                let primary_styles = stylo_element_data
-                    .as_ref()
-                    .and_then(|data| data.styles.get_primary());
+    pub fn flush_styles_to_layout(&mut self, node_id: usize) {
 
-                let Some(style) = primary_styles else {
-                    continue;
-                };
+        let display = {
+            let node = self.nodes.get_mut(node_id).unwrap();
+            let stylo_element_data = node.stylo_element_data.borrow();
+            let primary_styles = stylo_element_data
+                .as_ref()
+                .and_then(|data| data.styles.get_primary());
 
-                node.style = stylo_to_taffy::entire_style(style);
-
-                node.display_outer = match style.clone_display().outside() {
-                    DisplayOutside::None => crate::node::DisplayOuter::None,
-                    DisplayOutside::Inline => crate::node::DisplayOuter::Inline,
-                    DisplayOutside::Block => crate::node::DisplayOuter::Block,
-                    DisplayOutside::TableCaption => crate::node::DisplayOuter::Block,
-                    DisplayOutside::InternalTable => crate::node::DisplayOuter::Block,
-                };
-
-                // Clear Taffy cache
-                // TODO: smarter cache invalidation
-                node.cache.clear();
-
-                // would like to change this not require a clone, but requires some refactoring
-                (
-                    node.style.display,
-                    node.layout_children.borrow().as_ref().unwrap().clone(),
-                )
+            let Some(style) = primary_styles else {
+                return;
             };
 
+            node.style = stylo_to_taffy::entire_style(style);
+
+            node.display_outer = match style.clone_display().outside() {
+                DisplayOutside::None => crate::node::DisplayOuter::None,
+                DisplayOutside::Inline => crate::node::DisplayOuter::Inline,
+                DisplayOutside::Block => crate::node::DisplayOuter::Block,
+                DisplayOutside::TableCaption => crate::node::DisplayOuter::Block,
+                DisplayOutside::InternalTable => crate::node::DisplayOuter::Block,
+            };
+
+            // Clear Taffy cache
+            // TODO: smarter cache invalidation
+            node.cache.clear();
+
+            node.style.display
+        };
+
+        // If the node has children, then take those children and...
+        let children = self.nodes[node_id].layout_children.borrow_mut().take();
+        if let Some(mut children) = children {
+
+            // Recursively call flush_styles_to_layout on each child
+            for child in children.iter() {
+                self.flush_styles_to_layout(*child);
+            }
+
+            // If the node is a Flexbox or Grid node then sort by css order property
             if matches!(display, taffy::Display::Flex | taffy::Display::Grid) {
-                // Reorder the children based on their flex order
-                // Would like to not have to
                 children.sort_by(|left, right| {
                     let left_node = self.nodes.get(*left).unwrap();
                     let right_node = self.nodes.get(*right).unwrap();
                     left_node.order().cmp(&right_node.order())
                 });
-
-                // Mutate source child array
-                *self
-                    .nodes
-                    .get_mut(*child)
-                    .unwrap()
-                    .layout_children
-                    .borrow_mut() = Some(children.clone());
             }
 
-            self.flush_styles_to_layout(children);
+            // Put children back
+            *self.nodes[node_id].layout_children.borrow_mut() = Some(children);
         }
     }
 
