@@ -128,8 +128,6 @@ impl DocumentLike for Document {
     fn handle_event(&mut self, event: RendererEvent) {
         let target_node_id = event.target;
 
-        let event = dbg!(event);
-
         match event.data {
             EventData::Click { x, y, .. } => {
                 let hit = self.hit(x, y);
