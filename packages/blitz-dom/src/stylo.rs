@@ -6,19 +6,27 @@ use std::sync::atomic::Ordering;
 use crate::node::Node;
 
 use crate::node::NodeData;
+use crate::node::TextLayout;
+use crate::stylo_to_parley;
+use crate::ElementNodeData;
 use atomic_refcell::{AtomicRef, AtomicRefMut};
 use html5ever::LocalNameStaticSet;
 use html5ever::NamespaceStaticSet;
-use html5ever::{local_name, LocalName, Namespace};
+use html5ever::QualName;
+use html5ever::{local_name, ns, namespace_url, LocalName, Namespace};
 use selectors::{
     attr::{AttrSelectorOperation, AttrSelectorOperator, NamespaceConstraint},
     matching::{ElementSelectorFlags, MatchingContext, VisitedHandlingMode},
     sink::Push,
     Element, OpaqueElement,
 };
+use style::values::computed::ContentItem;
+use style::values::generics::counters::Content;
 use style::applicable_declarations::ApplicableDeclarationBlock;
 use style::color::AbsoluteColor;
+use style::data::ElementData;
 use style::invalidation::element::restyle_hints::RestyleHint;
+use style::properties::ComputedValues;
 use style::properties::{Importance, PropertyDeclaration};
 use style::rule_tree::CascadeLevel;
 use style::selector_parser::PseudoElement;
@@ -50,10 +58,119 @@ use style_dom::ElementState;
 use super::stylo_to_taffy;
 use style::values::computed::text::TextAlign as StyloTextAlign;
 
+fn flush_before_or_after_pseudo_element(style: Option<&Arc<ComputedValues>>, pe_node: &mut Node) {}
+
 impl crate::document::Document {
+    fn flush_pseudo_elements(&mut self, node_id: usize) {
+        let (before_style, after_style, before_node_id, after_node_id) = {
+            let node = &self.nodes[node_id];
+
+            let before_node_id = node.before.clone();
+            let after_node_id = node.after.clone();
+
+            // Note: yes these are kinda backwards
+            let style_data = node.stylo_element_data.borrow();
+            let before_style = style_data
+                .as_ref()
+                .and_then(|d| d.styles.pseudos.as_array()[1].clone());
+            let after_style = style_data
+                .as_ref()
+                .and_then(|d| d.styles.pseudos.as_array()[0].clone());
+
+            (before_style, after_style, before_node_id, after_node_id)
+        };
+
+        for (idx, pe_style, pe_node_id) in [
+            (1, before_style, before_node_id),
+            (0, after_style, after_node_id),
+        ] {
+            // Drop pseudo element node if style no longer exists
+            if pe_node_id.is_some() && pe_style.is_none() {
+                self.remove_and_drop_node(pe_node_id.unwrap());
+                self.nodes[node_id].set_pe_by_index(idx, pe_node_id);
+                self.nodes[node_id]
+                    .layout_children
+                    .borrow_mut()
+                    .as_mut()
+                    .unwrap()
+                    .retain(|id| *id != node_id);
+            }
+
+            // Create pseudo element node if it doesn't exist but should
+            if pe_node_id.is_none() && pe_style.is_some() {
+                const NAME: QualName = QualName {
+                    prefix: None,
+                    ns: ns!(html),
+                    local: local_name!("div"),
+                };
+                let new_node_id = self.create_node(NodeData::AnonymousBlock(ElementNodeData::new(
+                    NAME,
+                    Vec::new(),
+                )));
+
+                let content = &pe_style.as_ref().unwrap().get_counters().content;
+                if let Content::Items(item_data) = content {
+                    let items = &item_data.items[0..item_data.alt_start];
+                    match &items[0] {
+                        ContentItem::String(owned_str) => {
+                            dbg!(&owned_str);
+                            let text_node_id = self.create_text_node(&owned_str);
+                            self.nodes[new_node_id].children.push(text_node_id);
+                            *self.nodes[new_node_id].layout_children.borrow_mut() = Some(vec![text_node_id]);
+                            // let parley_style = stylo_to_parley::style(&*pe_style.as_ref().unwrap());
+
+                            // // Create a parley tree builder
+                            // let mut builder =
+                            //     self.layout_ctx
+                            //         .tree_builder(&mut self.font_ctx, self.viewport.scale(), &parley_style);
+
+                            // // Set whitespace collapsing mode
+                            // let collapse_mode = stylo_to_parley::white_space_collapse(pe_style.as_ref().unwrap().clone_white_space_collapse());
+                            // builder.set_white_space_mode(collapse_mode);
+
+                            // builder.push_text(&owned_str);
+
+                            // let (layout, text) = builder.build();
+                            // let text_layout = Box::new(TextLayout { text, layout });
+
+                            // self.nodes[new_node_id]
+                            //     .raw_dom_data
+                            //     .downcast_element_mut()
+                            //     .unwrap()
+                            //     .inline_layout_data = Some(text_layout);
+                        },
+                        ContentItem::Counter(_custom_ident, _t) => { /* todo */ },
+                        ContentItem::Counters(_custom_ident, _owned_str, _t) => { /* todo */ },
+                        ContentItem::OpenQuote => { /* todo */ },
+                        ContentItem::CloseQuote => { /* todo */ },
+                        ContentItem::NoOpenQuote => { /* todo */ },
+                        ContentItem::NoCloseQuote => { /* todo */ },
+                        ContentItem::Attr(_attr) => { /* todo */ },
+                        ContentItem::Image(_) => { /* todo */ },
+                    }
+                }
+
+                self.nodes[node_id].set_pe_by_index(idx, Some(new_node_id));
+                self.nodes[node_id]
+                    .layout_children
+                    .borrow_mut()
+                    .as_mut()
+                    .unwrap()
+                    .push(new_node_id);
+            }
+
+            // Sync style to pseudo element
+            if let Some(pe_style) = pe_style {
+                let mut element_data = ElementData::default();
+                element_data.styles.primary = Some(pe_style);
+                element_data.set_restyled();
+                *self.nodes[node_id].stylo_element_data.borrow_mut() = Some(element_data);
+            }
+        }
+    }
+
     /// Walk the whole tree, converting styles to layout
     pub fn flush_styles_to_layout(&mut self, node_id: usize) {
-
         let display = {
             let node = self.nodes.get_mut(node_id).unwrap();
             let stylo_element_data = node.stylo_element_data.borrow();
@@ -81,6 +198,8 @@ impl crate::document::Document {
 
             node.style.display
         };
+
+        self.flush_pseudo_elements(node_id);
 
         // If the node has children, then take those children and...
         let children = self.nodes[node_id].layout_children.borrow_mut().take();
