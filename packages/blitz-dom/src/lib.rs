@@ -15,6 +15,7 @@
 /// This is the primary entry point for this crate.
 pub mod document;
 
+/// HTML document data structure.
 pub mod html_document;
 /// An implementation for Html5ever's sink trait, allowing us to parse HTML into a DOM.
 pub mod htmlsink;
@@ -37,14 +38,19 @@ pub mod stylo_to_parley;
 /// Conversions from Stylo types to Taffy and Parley types
 pub mod stylo_to_taffy;
 
+/// Image layout.
 pub mod image;
 
+/// Utility functions.
 pub mod util;
 
+/// Debugging.
 pub mod debug;
 
+/// Events.
 pub mod events;
 
+/// Window viewport.
 pub mod viewport;
 
 pub use document::{Document, DocumentLike};

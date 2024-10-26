@@ -464,7 +464,7 @@ impl ElementNodeData {
         }
     }
 
-    pub fn flush_is_focussable(&mut self) {
+    pub(crate) fn flush_is_focussable(&mut self) {
         let disabled: bool = self.attr_parsed(local_name!("disabled")).unwrap_or(false);
         let tabindex: Option<i32> = self.attr_parsed(local_name!("tabindex"));
 
@@ -513,6 +513,7 @@ impl ElementNodeData {
         });
     }
 
+    /// Take the current cached inline text layout.
     pub fn take_inline_layout(&mut self) -> Option<Box<TextLayout>> {
         std::mem::take(&mut self.inline_layout_data)
     }
