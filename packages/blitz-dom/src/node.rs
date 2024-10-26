@@ -41,51 +41,92 @@ pub enum DisplayOuter {
     None,
 }
 
-// todo: might be faster to migrate this to ecs and split apart at a different boundary
+/// A node in a [`Document`](crate::Document).
 pub struct Node {
-    // The actual tree we belong to. This is unsafe!!
+    /// The tree of nodes containing this node.
+    ///
+    /// # Safety
+    /// This is a raw pointer to the slab containing this node.
+    /// By using this pointer you must gurantee that this node outlives the tree.
     pub tree: *mut Slab<Node>,
 
-    /// Our Id
+    /// This node's ID.
     pub id: usize,
-    /// Our parent's ID
+
+    /// This node's parent ID.
     pub parent: Option<usize>,
-    // What are our children?
+
+    /// This node's child IDs.
     pub children: Vec<usize>,
-    /// Our parent in the layout hierachy: a separate list that includes anonymous collections of inline elements
+
+    /// This node's parent ID in the layout hierachy: a separate list that includes anonymous collections of inline elements.
     pub layout_parent: Cell<Option<usize>>,
-    /// A separate child list that includes anonymous collections of inline elements
+
+    /// This node's child IDs in the layout hierachy: a separate list that includes anonymous collections of inline elements.
     pub layout_children: RefCell<Option<Vec<usize>>>,
 
-    /// Node type (Element, TextNode, etc) specific data
+    /// Data specific to this node's type.
     pub raw_dom_data: NodeData,
 
     // This little bundle of joy is our style data from stylo and a lock guard that allows access to it
     // TODO: See if guard can be hoisted to a higher level
+    /// The (optional) stylo data for this node.
     pub stylo_element_data: AtomicRefCell<Option<ElementData>>,
+
+    /// The selector flags for this node.
     pub selector_flags: AtomicRefCell<ElementSelectorFlags>,
+
+    /// Lock guard for this node's stylo data.
     pub guard: SharedRwLock,
+
+    /// The state of the element, represented as a bitfield.
     pub element_state: ElementState,
 
     // Taffy layout data:
     pub style: Style,
+
+    /// Flag indicating whether this node is hidden.
     pub hidden: bool,
+
+    /// Flag indicating whether this node is hovered.
     pub is_hovered: bool,
+
+    /// Flag indicating whether this node has a stylo snapshot.
     pub has_snapshot: bool,
+
+    /// Flag indicating whether the current snapshot has been handled.
     pub snapshot_handled: AtomicBool,
+
+    /// Outer display type of this node.
     pub display_outer: DisplayOuter,
+
+    /// Cached layout for this node.
     pub cache: Cache,
+
+    /// Cached layout before rounding for this node.
     pub unrounded_layout: Layout,
+
+    /// Cached final layout for this node.
     pub final_layout: Layout,
+
+    /// Registered event listeners for this node.
     pub listeners: Vec<EventListener>,
+
+    /// Current scroll offset for this node.
     pub scroll_offset: kurbo::Point,
 
-    // Flags
+    /// Flag indicating whether this node is the root element of an inline layout.
     pub is_inline_root: bool,
+
+    /// Flag indicating whether this node is the root element of a table.
     pub is_table_root: bool,
 }
 
 impl Node {
+    /// Create a new node in a tree.
+    ///
+    /// # Safety
+    /// `tree` must outlive this `Node`.
     pub fn new(tree: *mut Slab<Node>, id: usize, guard: SharedRwLock, data: NodeData) -> Self {
         Self {
             tree,
@@ -135,6 +176,7 @@ impl Node {
         )
     }
 
+    /// Returns true if this node, or any of its children, is a block.
     pub fn is_or_contains_block(&self) -> bool {
         let display = self.display_style().unwrap_or(Display::inline());
 
@@ -154,6 +196,7 @@ impl Node {
         }
     }
 
+    /// Returns true if this node is able to focused.
     pub fn is_focussable(&self) -> bool {
         self.raw_dom_data
             .downcast_element()
@@ -167,24 +210,28 @@ impl Node {
         }
     }
 
+    /// Flag this node as hovered.
     pub fn hover(&mut self) {
         self.is_hovered = true;
         self.element_state.insert(ElementState::HOVER);
         self.set_restyle_hint(RestyleHint::RESTYLE_SELF);
     }
 
+    /// Un-flag this node as hovered.
     pub fn unhover(&mut self) {
         self.is_hovered = false;
         self.element_state.remove(ElementState::HOVER);
         self.set_restyle_hint(RestyleHint::RESTYLE_SELF);
     }
 
+    /// Flag this node as focused.
     pub fn focus(&mut self) {
         self.element_state
             .insert(ElementState::FOCUS | ElementState::FOCUSRING);
         self.set_restyle_hint(RestyleHint::RESTYLE_SELF);
     }
 
+    /// Un-flag this node as focused.
     pub fn blur(&mut self) {
         self.element_state
             .remove(ElementState::FOCUS | ElementState::FOCUSRING);
@@ -192,6 +239,7 @@ impl Node {
     }
 }
 
+/// The kind of a [`Node`].
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum NodeKind {
     Document,
