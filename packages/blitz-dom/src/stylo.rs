@@ -53,7 +53,6 @@ use style::values::computed::text::TextAlign as StyloTextAlign;
 impl crate::document::Document {
     /// Walk the whole tree, converting styles to layout
     pub fn flush_styles_to_layout(&mut self, node_id: usize) {
-
         let display = {
             let node = self.nodes.get_mut(node_id).unwrap();
             let stylo_element_data = node.stylo_element_data.borrow();
@@ -85,7 +84,6 @@ impl crate::document::Document {
         // If the node has children, then take those children and...
         let children = self.nodes[node_id].layout_children.borrow_mut().take();
         if let Some(mut children) = children {
-
             // Recursively call flush_styles_to_layout on each child
             for child in children.iter() {
                 self.flush_styles_to_layout(*child);
