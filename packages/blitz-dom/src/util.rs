@@ -238,7 +238,8 @@ pub fn walk_tree(indent: usize, node: &Node) {
 
     if !node.children.is_empty() {
         for child_id in node.children.iter() {
-            walk_tree(indent + 2, node.with(*child_id));
+            //walk_tree(indent + 2, node.with(*child_id));
+            todo!()
         }
 
         if let NodeData::Element(data) = &node.raw_dom_data {

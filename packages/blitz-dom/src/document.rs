@@ -1,5 +1,6 @@
 use crate::events::{EventData, HitResult, RendererEvent};
 use crate::node::{ImageData, NodeSpecificData, TextBrush};
+use crate::stylo::BlitzNode;
 use crate::{ElementNodeData, Node, NodeData, TextNodeData, Viewport};
 use app_units::Au;
 use html5ever::local_name;
@@ -510,24 +511,32 @@ impl Document {
     }
 
     pub fn try_root_element(&self) -> Option<&Node> {
-        TDocument::as_node(&self.root_node()).first_element_child()
+        TDocument::as_node(&BlitzNode {
+            node: self.root_node(),
+            tree: self.tree(),
+        })
+        .first_element_child()
+        .map(|blitz_node| blitz_node.node)
     }
 
     pub fn root_element(&self) -> &Node {
-        TDocument::as_node(&self.root_node())
-            .first_element_child()
-            .unwrap()
-            .as_element()
-            .unwrap()
+        TDocument::as_node(&BlitzNode {
+            node: self.root_node(),
+            tree: self.tree(),
+        })
+        .first_element_child()
+        .unwrap()
+        .as_element()
+        .unwrap()
+        .node
     }
 
     pub fn create_node(&mut self, node_data: NodeData) -> usize {
-        let slab_ptr = self.nodes.as_mut() as *mut Slab<Node>;
         let entry = self.nodes.vacant_entry();
         let id = entry.key();
         let guard = self.guard.clone();
 
-        entry.insert(Node::new(slab_ptr, id, guard, node_data));
+        entry.insert(Node::new(id, guard, node_data));
 
         // self.quadtree.insert(
         //     AreaBuilder::default()
@@ -761,8 +770,13 @@ impl Document {
     }
 
     pub fn snapshot_node(&mut self, node_id: usize) {
+        let node = &self.nodes[node_id];
+        let opaque_node_id = TNode::opaque(&BlitzNode {
+            node,
+            tree: &self.nodes,
+        });
+
         let node = &mut self.nodes[node_id];
-        let opaque_node_id = TNode::opaque(&&*node);
         node.has_snapshot = true;
         node.snapshot_handled
             .store(false, std::sync::atomic::Ordering::SeqCst);
@@ -827,9 +841,12 @@ impl Document {
 
     /// Restyle the tree and then relayout it
     pub fn resolve(&mut self) {
-        if TDocument::as_node(&&self.nodes[0])
-            .first_element_child()
-            .is_none()
+        if TDocument::as_node(&BlitzNode {
+            node: &self.nodes[0],
+            tree: self.tree(),
+        })
+        .first_element_child()
+        .is_none()
         {
             println!("No DOM - not resolving");
             return;
@@ -850,9 +867,12 @@ impl Document {
 
     // Takes (x, y) co-ordinates (relative to the )
     pub fn hit(&self, x: f32, y: f32) -> Option<HitResult> {
-        if TDocument::as_node(&&self.nodes[0])
-            .first_element_child()
-            .is_none()
+        if TDocument::as_node(&BlitzNode {
+            node: &self.nodes[0],
+            tree: self.tree(),
+        })
+        .first_element_child()
+        .is_none()
         {
             println!("No DOM - not resolving");
             return None;
@@ -872,21 +892,27 @@ impl Document {
                 &self.nodes[node_id]
             }
             // Next is next sibling or parent
-            else if let Some(parent) = node.parent_node() {
+            else if let Some(parent) = (BlitzNode {
+                node,
+                tree: self.tree(),
+            })
+            .parent_node()
+            {
                 let self_idx = parent
+                    .node
                     .children
                     .iter()
                     .position(|id| *id == node.id)
                     .unwrap();
                 // Next is next sibling
-                if let Some(sibling_id) = parent.children.get(self_idx + 1) {
+                if let Some(sibling_id) = parent.node.children.get(self_idx + 1) {
                     look_in_children = true;
                     &self.nodes[*sibling_id]
                 }
                 // Next is parent
                 else {
                     look_in_children = false;
-                    node = parent;
+                    node = parent.node;
                     continue;
                 }
             }

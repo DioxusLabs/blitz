@@ -16,6 +16,7 @@ use selectors::{
     sink::Push,
     Element, OpaqueElement,
 };
+use slab::Slab;
 use style::applicable_declarations::ApplicableDeclarationBlock;
 use style::color::AbsoluteColor;
 use style::invalidation::element::restyle_hints::RestyleHint;
@@ -112,15 +113,18 @@ impl crate::document::Document {
             ua_or_user: &guard.read(),
         };
 
-        let root = TDocument::as_node(&&self.nodes[0])
-            .first_element_child()
-            .unwrap()
-            .as_element()
-            .unwrap();
+        let root = TDocument::as_node(&BlitzNode {
+            node: &self.nodes[0],
+            tree: &self.nodes,
+        })
+        .first_element_child()
+        .unwrap()
+        .as_element()
+        .unwrap();
 
         // Force restyle all nodes
         // TODO: finer grained style invalidation
-        let mut stylo_element_data = root.stylo_element_data.borrow_mut();
+        let mut stylo_element_data = root.node.stylo_element_data.borrow_mut();
         if let Some(data) = &mut *stylo_element_data {
             data.hint |= RestyleHint::restyle_subtree();
             data.hint |= RestyleHint::recascade_subtree();
@@ -146,7 +150,13 @@ impl crate::document::Document {
         // components/layout_2020/lib.rs:983
         let root = self.root_element();
         // dbg!(root);
-        let token = RecalcStyle::pre_traverse(root, &context);
+        let token = RecalcStyle::pre_traverse(
+            BlitzNode {
+                node: root,
+                tree: self.tree(),
+            },
+            &context,
+        );
 
         if token.should_traverse() {
             // Style the elements, resolving their data
@@ -162,13 +172,50 @@ impl crate::document::Document {
 ///
 /// Since BlitzNodes are not persistent (IE we don't keep the pointers around between frames), we choose to just implement
 /// the tree structure in the nodes themselves, and temporarily give out pointers during the layout phase.
-type BlitzNode<'a> = &'a Node;
+#[derive(Clone, Copy, Debug)]
+pub struct BlitzNode<'a> {
+    pub node: &'a Node,
+    pub tree: &'a Slab<Node>,
+}
+
+impl BlitzNode<'_> {
+    pub fn forward(&self, n: usize) -> Option<Self> {
+        let child_idx = self.node.child_index().unwrap_or(0);
+        self.tree[self.node.parent?]
+            .children
+            .get(child_idx + n)
+            .map(|id| Self {
+                node: &self.tree[*id],
+                tree: self.tree,
+            })
+    }
+
+    pub fn backward(&self, n: usize) -> Option<Self> {
+        let child_idx = self.node.child_index().unwrap_or(0);
+        self.tree[self.node.parent?]
+            .children
+            .get(child_idx - n)
+            .map(|id| Self {
+                node: &self.tree[*id],
+                tree: self.tree,
+            })
+    }
+}
+
+impl PartialEq for BlitzNode<'_> {
+    fn eq(&self, other: &Self) -> bool {
+        self.node == other.node
+    }
+}
+
+// TODO (Matt)
+impl Eq for BlitzNode<'_> {}
 
 impl<'a> TDocument for BlitzNode<'a> {
-    type ConcreteNode = BlitzNode<'a>;
+    type ConcreteNode = Self;
 
     fn as_node(&self) -> Self::ConcreteNode {
-        self
+        *self
     }
 
     fn is_html_document(&self) -> bool {
@@ -180,25 +227,25 @@ impl<'a> TDocument for BlitzNode<'a> {
     }
 
     fn shared_lock(&self) -> &SharedRwLock {
-        &self.guard
+        &self.node.guard
     }
 }
 
 impl NodeInfo for BlitzNode<'_> {
     fn is_element(&self) -> bool {
-        Node::is_element(self)
+        self.node.is_element()
     }
 
     fn is_text_node(&self) -> bool {
-        Node::is_text_node(self)
+        self.node.is_text_node()
     }
 }
 
 impl<'a> TShadowRoot for BlitzNode<'a> {
-    type ConcreteNode = BlitzNode<'a>;
+    type ConcreteNode = Self;
 
     fn as_node(&self) -> Self::ConcreteNode {
-        self
+        *self
     }
 
     fn host(&self) -> <Self::ConcreteNode as TNode>::ConcreteElement {
@@ -220,27 +267,33 @@ impl<'a> TNode for BlitzNode<'a> {
     type ConcreteShadowRoot = BlitzNode<'a>;
 
     fn parent_node(&self) -> Option<Self> {
-        self.parent.map(|id| self.with(id))
+        //self.parent.map(|id| self.with(id))
+        todo!()
     }
 
     fn first_child(&self) -> Option<Self> {
-        self.children.first().map(|id| self.with(*id))
+        //self.children.first().map(|id| self.with(*id))
+        todo!()
     }
 
     fn last_child(&self) -> Option<Self> {
-        self.children.last().map(|id| self.with(*id))
+        //self.children.last().map(|id| self.with(*id))
+        todo!()
     }
 
     fn prev_sibling(&self) -> Option<Self> {
-        self.backward(1)
+        //self.backward(1)
+        todo!()
     }
 
     fn next_sibling(&self) -> Option<Self> {
-        self.forward(1)
+        //self.forward(1)
+        todo!()
     }
 
     fn owner_doc(&self) -> Self::ConcreteDocument {
-        self.with(1)
+        //self.with(1)
+        todo!()
     }
 
     fn is_in_document(&self) -> bool {
@@ -256,23 +309,23 @@ impl<'a> TNode for BlitzNode<'a> {
     }
 
     fn opaque(&self) -> OpaqueNode {
-        OpaqueNode(self.id)
+        OpaqueNode(self.node.id)
     }
 
     fn debug_id(self) -> usize {
-        self.id
+        self.node.id
     }
 
     fn as_element(&self) -> Option<Self::ConcreteElement> {
-        match self.raw_dom_data {
-            NodeData::Element { .. } => Some(self),
+        match self.node.raw_dom_data {
+            NodeData::Element { .. } => Some(*self),
             _ => None,
         }
     }
 
     fn as_document(&self) -> Option<Self::ConcreteDocument> {
-        match self.raw_dom_data {
-            NodeData::Document { .. } => Some(self),
+        match self.node.raw_dom_data {
+            NodeData::Document { .. } => Some(*self),
             _ => None,
         }
     }
@@ -304,7 +357,7 @@ impl selectors::Element for BlitzNode<'_> {
     }
 
     fn is_pseudo_element(&self) -> bool {
-        matches!(self.raw_dom_data, NodeData::AnonymousBlock(_))
+        matches!(self.node.raw_dom_data, NodeData::AnonymousBlock(_))
     }
 
     // These methods are implemented naively since we only threaded real nodes and not fake nodes
@@ -343,11 +396,11 @@ impl selectors::Element for BlitzNode<'_> {
     }
 
     fn has_local_name(&self, local_name: &LocalName) -> bool {
-        self.raw_dom_data.is_element_with_tag_name(local_name)
+        self.node.raw_dom_data.is_element_with_tag_name(local_name)
     }
 
     fn has_namespace(&self, ns: &Namespace) -> bool {
-        self.element_data().expect("Not an element").name.ns == *ns
+        self.node.element_data().expect("Not an element").name.ns == *ns
     }
 
     fn is_same_type(&self, _other: &Self) -> bool {
@@ -362,7 +415,7 @@ impl selectors::Element for BlitzNode<'_> {
         local_name: &GenericAtomIdent<LocalNameStaticSet>,
         operation: &AttrSelectorOperation<&AtomString>,
     ) -> bool {
-        let Some(attr_value) = self.raw_dom_data.attr(local_name.0.clone()) else {
+        let Some(attr_value) = self.node.raw_dom_data.attr(local_name.0.clone()) else {
             return false;
         };
 
@@ -404,6 +457,7 @@ impl selectors::Element for BlitzNode<'_> {
         match *pseudo_class {
             NonTSPseudoClass::Active => false,
             NonTSPseudoClass::AnyLink => self
+                .node
                 .raw_dom_data
                 .downcast_element()
                 .map(|elem| {
@@ -412,6 +466,7 @@ impl selectors::Element for BlitzNode<'_> {
                 })
                 .unwrap_or(false),
             NonTSPseudoClass::Checked => self
+                .node
                 .raw_dom_data
                 .downcast_element()
                 .and_then(|elem| elem.checkbox_input_checked())
@@ -421,15 +476,16 @@ impl selectors::Element for BlitzNode<'_> {
             NonTSPseudoClass::Defined => false,
             NonTSPseudoClass::Disabled => false,
             NonTSPseudoClass::Enabled => false,
-            NonTSPseudoClass::Focus => self.element_state.contains(ElementState::FOCUS),
+            NonTSPseudoClass::Focus => self.node.element_state.contains(ElementState::FOCUS),
             NonTSPseudoClass::FocusWithin => false,
             NonTSPseudoClass::FocusVisible => false,
             NonTSPseudoClass::Fullscreen => false,
-            NonTSPseudoClass::Hover => self.element_state.contains(ElementState::HOVER),
+            NonTSPseudoClass::Hover => self.node.element_state.contains(ElementState::HOVER),
             NonTSPseudoClass::Indeterminate => false,
             NonTSPseudoClass::Lang(_) => false,
             NonTSPseudoClass::CustomState(_) => false,
             NonTSPseudoClass::Link => self
+                .node
                 .raw_dom_data
                 .downcast_element()
                 .map(|elem| {
@@ -462,7 +518,7 @@ impl selectors::Element for BlitzNode<'_> {
         pe: &PseudoElement,
         _context: &mut MatchingContext<Self::Impl>,
     ) -> bool {
-        match self.raw_dom_data {
+        match self.node.raw_dom_data {
             NodeData::AnonymousBlock(_) => *pe == PseudoElement::ServoAnonymousBox,
             _ => false,
         }
@@ -472,20 +528,21 @@ impl selectors::Element for BlitzNode<'_> {
         // Handle flags that apply to the element.
         let self_flags = flags.for_self();
         if !self_flags.is_empty() {
-            *self.selector_flags.borrow_mut() |= self_flags;
+            *self.node.selector_flags.borrow_mut() |= self_flags;
         }
 
         // Handle flags that apply to the parent.
         let parent_flags = flags.for_parent();
         if !parent_flags.is_empty() {
             if let Some(parent) = self.parent_node() {
-                *parent.selector_flags.borrow_mut() |= self_flags;
+                *parent.node.selector_flags.borrow_mut() |= self_flags;
             }
         }
     }
 
     fn is_link(&self) -> bool {
-        self.raw_dom_data
+        self.node
+            .raw_dom_data
             .is_element_with_tag_name(&local_name!("a"))
     }
 
@@ -498,7 +555,8 @@ impl selectors::Element for BlitzNode<'_> {
         id: &<Self::Impl as selectors::SelectorImpl>::Identifier,
         case_sensitivity: selectors::attr::CaseSensitivity,
     ) -> bool {
-        self.element_data()
+        self.node
+            .element_data()
             .and_then(|data| data.id.as_ref())
             .map(|id_attr| case_sensitivity.eq_atom(id_attr, id))
             .unwrap_or(false)
@@ -509,7 +567,7 @@ impl selectors::Element for BlitzNode<'_> {
         search_name: &<Self::Impl as selectors::SelectorImpl>::Identifier,
         case_sensitivity: selectors::attr::CaseSensitivity,
     ) -> bool {
-        let class_attr = self.raw_dom_data.attr(local_name!("class"));
+        let class_attr = self.node.raw_dom_data.attr(local_name!("class"));
         if let Some(class_attr) = class_attr {
             // split the class attribute
             for pheme in class_attr.split_ascii_whitespace() {
@@ -562,19 +620,19 @@ impl<'a> TElement for BlitzNode<'a> {
     type TraversalChildrenIterator = Traverser<'a>;
 
     fn as_node(&self) -> Self::ConcreteNode {
-        self
+        *self
     }
 
     fn unopaque(opaque: OpaqueElement) -> Self {
         // FIXME: this is wrong in the case where pushing new elements casuses reallocations.
         // We should see if selectors will accept a PR that allows creation from a usize
-        unsafe { &*opaque.as_const_ptr() }
+        unsafe { *opaque.as_const_ptr() }
     }
 
     fn traversal_children(&self) -> style::dom::LayoutIterator<Self::TraversalChildrenIterator> {
         LayoutIterator(Traverser {
             // dom: self.tree(),
-            parent: self,
+            parent: *self,
             child_index: 0,
         })
     }
@@ -594,7 +652,8 @@ impl<'a> TElement for BlitzNode<'a> {
     }
 
     fn style_attribute(&self) -> Option<ArcBorrow<Locked<PropertyDeclarationBlock>>> {
-        self.element_data()
+        self.node
+            .element_data()
             .expect("Not an element")
             .style_attribute
             .as_ref()
@@ -616,7 +675,7 @@ impl<'a> TElement for BlitzNode<'a> {
     }
 
     fn state(&self) -> ElementState {
-        self.element_state
+        self.node.element_state
     }
 
     fn has_part_attr(&self) -> bool {
@@ -628,14 +687,14 @@ impl<'a> TElement for BlitzNode<'a> {
     }
 
     fn id(&self) -> Option<&style::Atom> {
-        self.element_data().and_then(|data| data.id.as_ref())
+        self.node.element_data().and_then(|data| data.id.as_ref())
     }
 
     fn each_class<F>(&self, mut callback: F)
     where
         F: FnMut(&style::values::AtomIdent),
     {
-        let class_attr = self.raw_dom_data.attr(local_name!("class"));
+        let class_attr = self.node.raw_dom_data.attr(local_name!("class"));
         if let Some(class_attr) = class_attr {
             // split the class attribute
             for pheme in class_attr.split_ascii_whitespace() {
@@ -649,7 +708,7 @@ impl<'a> TElement for BlitzNode<'a> {
     where
         F: FnMut(&style::LocalName),
     {
-        if let Some(attrs) = self.raw_dom_data.attrs() {
+        if let Some(attrs) = self.node.raw_dom_data.attrs() {
             for attr in attrs.iter() {
                 callback(&GenericAtomIdent(attr.name.local.clone()));
             }
@@ -661,15 +720,15 @@ impl<'a> TElement for BlitzNode<'a> {
     }
 
     fn has_snapshot(&self) -> bool {
-        self.has_snapshot
+        self.node.has_snapshot
     }
 
     fn handled_snapshot(&self) -> bool {
-        self.snapshot_handled.load(Ordering::SeqCst)
+        self.node.snapshot_handled.load(Ordering::SeqCst)
     }
 
     unsafe fn set_handled_snapshot(&self) {
-        self.snapshot_handled.store(true, Ordering::SeqCst);
+        self.node.snapshot_handled.store(true, Ordering::SeqCst);
     }
 
     unsafe fn set_dirty_descendants(&self) {}
@@ -685,7 +744,7 @@ impl<'a> TElement for BlitzNode<'a> {
     }
 
     unsafe fn ensure_data(&self) -> AtomicRefMut<style::data::ElementData> {
-        let mut stylo_data = self.stylo_element_data.borrow_mut();
+        let mut stylo_data = self.node.stylo_element_data.borrow_mut();
         if stylo_data.is_none() {
             *stylo_data = Some(Default::default());
         }
@@ -693,15 +752,15 @@ impl<'a> TElement for BlitzNode<'a> {
     }
 
     unsafe fn clear_data(&self) {
-        *self.stylo_element_data.borrow_mut() = None;
+        *self.node.stylo_element_data.borrow_mut() = None;
     }
 
     fn has_data(&self) -> bool {
-        self.stylo_element_data.borrow().is_some()
+        self.node.stylo_element_data.borrow().is_some()
     }
 
     fn borrow_data(&self) -> Option<AtomicRef<style::data::ElementData>> {
-        let stylo_data = self.stylo_element_data.borrow();
+        let stylo_data = self.node.stylo_element_data.borrow();
         if stylo_data.is_some() {
             Some(AtomicRef::map(stylo_data, |sd| sd.as_ref().unwrap()))
         } else {
@@ -710,7 +769,7 @@ impl<'a> TElement for BlitzNode<'a> {
     }
 
     fn mutate_data(&self) -> Option<AtomicRefMut<style::data::ElementData>> {
-        let stylo_data = self.stylo_element_data.borrow_mut();
+        let stylo_data = self.node.stylo_element_data.borrow_mut();
         if stylo_data.is_some() {
             Some(AtomicRefMut::map(stylo_data, |sd| sd.as_mut().unwrap()))
         } else {
@@ -769,6 +828,7 @@ impl<'a> TElement for BlitzNode<'a> {
     fn is_html_document_body_element(&self) -> bool {
         // Check node is a <body> element
         let is_body_element = self
+            .node
             .raw_dom_data
             .is_element_with_tag_name(&local_name!("body"));
 
@@ -777,12 +837,15 @@ impl<'a> TElement for BlitzNode<'a> {
             return false;
         }
 
+        /*
         // If it is then check if it is a child of the root (<html>) element
         let root_node = &self.tree()[0];
         let root_element = TDocument::as_node(&root_node)
             .first_element_child()
             .unwrap();
         root_element.children.contains(&self.id)
+         */
+        todo!()
     }
 
     fn synthesize_presentational_hints_for_legacy_attributes<V>(
@@ -792,14 +855,15 @@ impl<'a> TElement for BlitzNode<'a> {
     ) where
         V: Push<style::applicable_declarations::ApplicableDeclarationBlock>,
     {
-        let Some(elem) = self.raw_dom_data.downcast_element() else {
+        let Some(elem) = self.node.raw_dom_data.downcast_element() else {
             return;
         };
 
         let mut push_style = |decl: PropertyDeclaration| {
             hints.push(ApplicableDeclarationBlock::from_declarations(
                 Arc::new(
-                    self.guard
+                    self.node
+                        .guard
                         .wrap(PropertyDeclarationBlock::with_one(decl, Importance::Normal)),
                 ),
                 CascadeLevel::PresHints,
@@ -898,11 +962,11 @@ impl<'a> TElement for BlitzNode<'a> {
     }
 
     fn local_name(&self) -> &LocalName {
-        &self.element_data().expect("Not an element").name.local
+        &self.node.element_data().expect("Not an element").name.local
     }
 
     fn namespace(&self) -> &Namespace {
-        &self.element_data().expect("Not an element").name.ns
+        &self.node.element_data().expect("Not an element").name.ns
     }
 
     fn query_container_size(
@@ -921,11 +985,12 @@ impl<'a> TElement for BlitzNode<'a> {
     }
 
     fn has_selector_flags(&self, flags: ElementSelectorFlags) -> bool {
-        self.selector_flags.borrow().contains(flags)
+        self.node.selector_flags.borrow().contains(flags)
     }
 
     fn relative_selector_search_direction(&self) -> ElementSelectorFlags {
-        self.selector_flags
+        self.node
+            .selector_flags
             .borrow()
             .intersection(ElementSelectorFlags::RELATIVE_SELECTOR_SEARCH_DIRECTION_ANCESTOR_SIBLING)
     }
@@ -961,18 +1026,21 @@ impl<'a> Iterator for Traverser<'a> {
     type Item = BlitzNode<'a>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let node_id = self.parent.children.get(self.child_index)?;
-        let node = self.parent.with(*node_id);
+        let node_id = self.parent.node.children.get(self.child_index)?;
+        let node = self.parent.tree.get(*node_id)?;
 
         self.child_index += 1;
 
-        Some(node)
+        Some(BlitzNode {
+            node,
+            tree: self.parent.tree,
+        })
     }
 }
 
 impl std::hash::Hash for BlitzNode<'_> {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        state.write_usize(self.id)
+        state.write_usize(self.node.id)
     }
 }
 

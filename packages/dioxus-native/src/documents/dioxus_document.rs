@@ -10,8 +10,9 @@ use blitz_dom::{
     events::{EventData, RendererEvent},
     local_name, namespace_url,
     node::{Attribute, NodeSpecificData},
-    ns, Atom, Document, DocumentLike, ElementNodeData, Node, NodeData, QualName, Viewport,
-    DEFAULT_CSS,
+    ns,
+    stylo::BlitzNode,
+    Atom, Document, DocumentLike, ElementNodeData, Node, NodeData, QualName, Viewport, DEFAULT_CSS,
 };
 
 use dioxus::{
@@ -687,12 +688,12 @@ impl WriteMutations for MutationWriter<'_> {
 
         let new_nodes = self.state.stack.split_off(self.state.stack.len() - m);
         let anchor_node_id = self.state.element_to_node_id(id);
-        let next_sibling_id = self
-            .doc
-            .get_node(anchor_node_id)
-            .unwrap()
-            .forward(1)
-            .map(|node| node.id);
+        let next_sibling_id = BlitzNode {
+            node: self.doc.get_node(anchor_node_id).unwrap(),
+            tree: self.doc.as_ref().tree(),
+        }
+        .forward(1)
+        .map(|blitz_node| blitz_node.node.id);
 
         match next_sibling_id {
             Some(anchor_node_id) => {

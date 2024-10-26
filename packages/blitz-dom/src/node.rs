@@ -48,7 +48,7 @@ pub struct Node {
     /// # Safety
     /// This is a raw pointer to the slab containing this node.
     /// By using this pointer you must gurantee that this node outlives the tree.
-    pub tree: *mut Slab<Node>,
+    //pub tree: *mut Slab<Node>,
 
     /// This node's ID.
     pub id: usize,
@@ -127,10 +127,8 @@ impl Node {
     ///
     /// # Safety
     /// `tree` must outlive this `Node`.
-    pub fn new(tree: *mut Slab<Node>, id: usize, guard: SharedRwLock, data: NodeData) -> Self {
+    pub fn new(id: usize, guard: SharedRwLock, data: NodeData) -> Self {
         Self {
-            tree,
-
             id,
             parent: None,
             children: vec![],
@@ -185,10 +183,11 @@ impl Node {
             DisplayOutside::Block => true,
             _ => {
                 if display.inside() == DisplayInside::Flow {
-                    self.children
-                        .iter()
-                        .copied()
-                        .any(|child_id| self.tree()[child_id].is_or_contains_block())
+                    /*self.children
+                    .iter()
+                    .copied()
+                    .any(|child_id| self.tree()[child_id].is_or_contains_block())*/
+                    todo!()
                 } else {
                     false
                 }
@@ -687,15 +686,6 @@ impl TextNodeData {
 // }
 
 impl Node {
-    pub fn tree(&self) -> &Slab<Node> {
-        unsafe { &*self.tree }
-    }
-
-    #[track_caller]
-    pub fn with(&self, id: usize) -> &Node {
-        self.tree().get(id).unwrap()
-    }
-
     pub fn print_tree(&self, level: usize) {
         println!(
             "{} {} {:?} {} {:?}",
@@ -707,38 +697,19 @@ impl Node {
         );
         // println!("{} {:?}", "  ".repeat(level), self.children);
         for child_id in self.children.iter() {
-            let child = self.with(*child_id);
-            child.print_tree(level + 1)
+            //let child = self.with(*child_id);
+            todo!();
+            //child.print_tree(level + 1)
         }
     }
 
     // Get the index of the current node in the parents child list
     pub fn child_index(&self) -> Option<usize> {
-        self.tree()[self.parent?]
-            .children
-            .iter()
-            .position(|id| *id == self.id)
-    }
-
-    // Get the nth node in the parents child list
-    pub fn forward(&self, n: usize) -> Option<&Node> {
-        let child_idx = self.child_index().unwrap_or(0);
-        self.tree()[self.parent?]
-            .children
-            .get(child_idx + n)
-            .map(|id| self.with(*id))
-    }
-
-    pub fn backward(&self, n: usize) -> Option<&Node> {
-        let child_idx = self.child_index().unwrap_or(0);
-        if child_idx < n {
-            return None;
-        }
-
-        self.tree()[self.parent?]
-            .children
-            .get(child_idx - n)
-            .map(|id| self.with(*id))
+        /*self.tree()[self.parent?]
+        .children
+        .iter()
+        .position(|id| *id == self.id)*/
+        todo!()
     }
 
     pub fn is_element(&self) -> bool {
@@ -858,7 +829,8 @@ impl Node {
             }
             NodeData::Element(..) | NodeData::AnonymousBlock(..) => {
                 for child_id in self.children.iter() {
-                    self.with(*child_id).write_text_content(out);
+                    // self.with(*child_id).write_text_content(out);
+                    todo!()
                 }
             }
             _ => {}
@@ -893,6 +865,7 @@ impl Node {
         let y = y - self.final_layout.location.y + self.scroll_offset.y as f32;
 
         let size = self.final_layout.size;
+        /*
         if x < 0.0
             || x > size.width + self.scroll_offset.x as f32
             || y < 0.0
@@ -900,18 +873,20 @@ impl Node {
         {
             return None;
         }
+         */
+        todo!()
 
         // Call `.hit()` on each child in turn. If any return `Some` then return that value. Else return `Some(self.id).
-        self.layout_children
-            .borrow()
-            .iter()
-            .flatten()
-            .find_map(|&i| self.with(i).hit(x, y))
-            .or(Some(HitResult {
-                node_id: self.id,
-                x,
-                y,
-            }))
+        /*self.layout_children
+        .borrow()
+        .iter()
+        .flatten()
+        .find_map(|&i| self.with(i).hit(x, y))
+        .or(Some(HitResult {
+            node_id: self.id,
+            x,
+            y,
+        }))*/
     }
 
     /// Computes the Document-relative coordinates of the Node
@@ -919,11 +894,14 @@ impl Node {
         let x = x + self.final_layout.location.x - self.scroll_offset.x as f32;
         let y = y + self.final_layout.location.y - self.scroll_offset.y as f32;
 
+        /*
         // Recurse up the layout hierarchy
         self.layout_parent
             .get()
             .map(|i| self.with(i).absolute_position(x, y))
             .unwrap_or(taffy::Point { x, y })
+        */
+        todo!()
     }
 
     /// Creates a synteh
