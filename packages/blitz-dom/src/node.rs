@@ -40,13 +40,6 @@ pub enum DisplayOuter {
 
 /// A node in a [`Document`](crate::Document).
 pub struct Node {
-    /// The tree of nodes containing this node.
-    ///
-    /// # Safety
-    /// This is a raw pointer to the slab containing this node.
-    /// By using this pointer you must gurantee that this node outlives the tree.
-    //pub tree: *mut Slab<Node>,
-
     /// This node's ID.
     pub id: usize,
 

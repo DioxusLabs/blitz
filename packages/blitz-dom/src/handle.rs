@@ -227,7 +227,7 @@ impl PartialEq for Handle<'_> {
 // TODO (Matt)
 impl Eq for Handle<'_> {}
 
-impl<'a> TDocument for Handle<'a> {
+impl TDocument for Handle<'_> {
     type ConcreteNode = Self;
 
     fn as_node(&self) -> Self::ConcreteNode {
@@ -257,7 +257,7 @@ impl NodeInfo for Handle<'_> {
     }
 }
 
-impl<'a> TShadowRoot for Handle<'a> {
+impl TShadowRoot for Handle<'_> {
     type ConcreteNode = Self;
 
     fn as_node(&self) -> Self::ConcreteNode {
@@ -277,10 +277,10 @@ impl<'a> TShadowRoot for Handle<'a> {
 }
 
 // components/styleaapper.rs:
-impl<'a> TNode for Handle<'a> {
-    type ConcreteElement = Handle<'a>;
-    type ConcreteDocument = Handle<'a>;
-    type ConcreteShadowRoot = Handle<'a>;
+impl TNode for Handle<'_> {
+    type ConcreteElement = Self;
+    type ConcreteDocument = Self;
+    type ConcreteShadowRoot = Self;
 
     fn parent_node(&self) -> Option<Self> {
         self.node.parent.map(|id| self.get(id))
