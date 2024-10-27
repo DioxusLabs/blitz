@@ -391,7 +391,7 @@ impl DioxusDocument {
             qual_name("html", None),
             Vec::new(),
         )));
-        let root_node_id = doc.root_node().id;
+        let root_node_id = doc.root_node().node.id;
         let html_element = doc.get_node_mut(html_element_id).unwrap();
         html_element.parent = Some(root_node_id);
         let root_node = doc.get_node_mut(root_node_id).unwrap();

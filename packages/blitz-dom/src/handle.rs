@@ -1,7 +1,6 @@
 //! Enable the dom to participate in styling by servo
 //!
 
-use super::stylo_to_taffy;
 use crate::events::EventData;
 use crate::events::HitResult;
 use crate::node::Node;
@@ -20,31 +19,28 @@ use slab::Slab;
 use std::sync::atomic::Ordering;
 use style::applicable_declarations::ApplicableDeclarationBlock;
 use style::color::AbsoluteColor;
-use style::invalidation::element::restyle_hints::RestyleHint;
 use style::properties::{Importance, PropertyDeclaration};
 use style::rule_tree::CascadeLevel;
 use style::selector_parser::PseudoElement;
 use style::stylesheets::layer_rule::LayerOrder;
 use style::values::computed::text::TextAlign as StyloTextAlign;
+use style::values::computed::Display;
 use style::values::computed::Percentage;
+use style::values::specified::box_::DisplayInside;
 use style::values::specified::box_::DisplayOutside;
 use style::values::AtomString;
 use style::CaseSensitivityExt;
 use style::{
-    animation::DocumentAnimationSet,
     context::{
         QuirksMode, RegisteredSpeculativePainter, RegisteredSpeculativePainters,
         SharedStyleContext, StyleContext,
     },
     dom::{LayoutIterator, NodeInfo, OpaqueNode, TDocument, TElement, TNode, TShadowRoot},
-    global_style_data::GLOBAL_STYLE_DATA,
     properties::PropertyDeclarationBlock,
     selector_parser::{NonTSPseudoClass, SelectorImpl},
     servo_arc::{Arc, ArcBorrow},
-    shared_lock::{Locked, SharedRwLock, StylesheetGuards},
-    thread_state::ThreadState,
+    shared_lock::{Locked, SharedRwLock},
     traversal::{DomTraversal, PerLevelTraversalData},
-    traversal_flags::TraversalFlags,
     values::{AtomIdent, GenericAtomIdent},
     Atom,
 };
@@ -69,8 +65,18 @@ impl Handle<'_> {
         }
     }
 
+    // Get the index of the current node in the parents child list
+    pub fn child_index(&self) -> Option<usize> {
+        self.node.parent.and_then(|parent_id| {
+            self.tree[parent_id]
+                .children
+                .iter()
+                .position(|id| *id == self.node.id)
+        })
+    }
+
     pub fn forward(&self, n: usize) -> Option<Self> {
-        let child_idx = self.node.child_index().unwrap_or(0);
+        let child_idx = self.child_index().unwrap_or(0);
         self.tree[self.node.parent?]
             .children
             .get(child_idx + n)
@@ -81,7 +87,7 @@ impl Handle<'_> {
     }
 
     pub fn backward(&self, n: usize) -> Option<Self> {
-        let child_idx = self.node.child_index().unwrap_or(0);
+        let child_idx = self.child_index().unwrap_or(0);
         self.tree[self.node.parent?]
             .children
             .get(child_idx - n)
@@ -173,6 +179,43 @@ impl Handle<'_> {
             _ => {}
         }
     }
+
+    /// Returns true if this node, or any of its children, is a block.
+    pub fn is_or_contains_block(&self) -> bool {
+        let display = self.node.display_style().unwrap_or(Display::inline());
+
+        match display.outside() {
+            DisplayOutside::None => false,
+            DisplayOutside::Block => true,
+            _ => {
+                if display.inside() == DisplayInside::Flow {
+                    self.node
+                        .children
+                        .iter()
+                        .copied()
+                        .any(|child_id| self.get(child_id).is_or_contains_block())
+                } else {
+                    false
+                }
+            }
+        }
+    }
+
+    pub fn print_tree(&self, level: usize) {
+        println!(
+            "{} {} {:?} {} {:?}",
+            "  ".repeat(level),
+            self.node.id,
+            self.node.parent,
+            self.node.node_debug_str().replace('\n', ""),
+            self.node.children
+        );
+
+        for child_id in &self.node.children {
+            let child = self.get(*child_id);
+            child.print_tree(level + 1)
+        }
+    }
 }
 
 impl PartialEq for Handle<'_> {
@@ -240,33 +283,27 @@ impl<'a> TNode for Handle<'a> {
     type ConcreteShadowRoot = Handle<'a>;
 
     fn parent_node(&self) -> Option<Self> {
-        //self.parent.map(|id| self.with(id))
-        todo!()
+        self.node.parent.map(|id| self.get(id))
     }
 
     fn first_child(&self) -> Option<Self> {
-        //self.children.first().map(|id| self.with(*id))
-        todo!()
+        self.node.children.first().map(|id| self.get(*id))
     }
 
     fn last_child(&self) -> Option<Self> {
-        //self.children.last().map(|id| self.with(*id))
-        todo!()
+        self.node.children.last().map(|id| self.get(*id))
     }
 
     fn prev_sibling(&self) -> Option<Self> {
-        //self.backward(1)
-        todo!()
+        self.backward(1)
     }
 
     fn next_sibling(&self) -> Option<Self> {
-        //self.forward(1)
-        todo!()
+        self.forward(1)
     }
 
     fn owner_doc(&self) -> Self::ConcreteDocument {
-        //self.with(1)
-        todo!()
+        self.get(1)
     }
 
     fn is_in_document(&self) -> bool {
@@ -810,15 +847,10 @@ impl<'a> TElement for Handle<'a> {
             return false;
         }
 
-        /*
         // If it is then check if it is a child of the root (<html>) element
-        let root_node = &self.tree()[0];
-        let root_element = TDocument::as_node(&root_node)
-            .first_element_child()
-            .unwrap();
-        root_element.children.contains(&self.id)
-         */
-        todo!()
+        let root_node = &self.get(0);
+        let root_element = TDocument::as_node(root_node).first_element_child().unwrap();
+        root_element.node.children.contains(&self.node.id)
     }
 
     fn synthesize_presentational_hints_for_legacy_attributes<V>(

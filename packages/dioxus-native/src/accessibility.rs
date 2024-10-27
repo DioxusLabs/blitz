@@ -1,6 +1,6 @@
 use crate::waker::BlitzEvent;
 use accesskit::{NodeBuilder, NodeId, Role, Tree, TreeUpdate};
-use blitz_dom::{local_name, Document, Handle, Node};
+use blitz_dom::{local_name, Document, Handle};
 use winit::{event_loop::EventLoopProxy, window::Window};
 
 /// State of the accessibility node tree and platform adapter.

@@ -2,57 +2,22 @@
 //!
 
 use super::stylo_to_taffy;
-use crate::events::EventData;
-use crate::events::HitResult;
 use crate::handle::RecalcStyle;
 use crate::handle::RegisteredPaintersImpl;
-use crate::node::Node;
-use crate::node::NodeData;
 use crate::Handle;
-use atomic_refcell::{AtomicRef, AtomicRefMut};
-use html5ever::LocalNameStaticSet;
-use html5ever::NamespaceStaticSet;
-use html5ever::{local_name, LocalName, Namespace};
-use selectors::{
-    attr::{AttrSelectorOperation, AttrSelectorOperator, NamespaceConstraint},
-    matching::{ElementSelectorFlags, MatchingContext, VisitedHandlingMode},
-    sink::Push,
-    Element, OpaqueElement,
-};
-use slab::Slab;
-use std::sync::atomic::Ordering;
-use style::applicable_declarations::ApplicableDeclarationBlock;
-use style::color::AbsoluteColor;
+use selectors::Element;
 use style::invalidation::element::restyle_hints::RestyleHint;
-use style::properties::{Importance, PropertyDeclaration};
-use style::rule_tree::CascadeLevel;
-use style::selector_parser::PseudoElement;
-use style::stylesheets::layer_rule::LayerOrder;
-use style::values::computed::text::TextAlign as StyloTextAlign;
-use style::values::computed::Percentage;
 use style::values::specified::box_::DisplayOutside;
-use style::values::AtomString;
-use style::CaseSensitivityExt;
 use style::{
     animation::DocumentAnimationSet,
-    context::{
-        QuirksMode, RegisteredSpeculativePainter, RegisteredSpeculativePainters,
-        SharedStyleContext, StyleContext,
-    },
-    dom::{LayoutIterator, NodeInfo, OpaqueNode, TDocument, TElement, TNode, TShadowRoot},
+    context::SharedStyleContext,
+    dom::{TDocument, TNode},
     global_style_data::GLOBAL_STYLE_DATA,
-    properties::PropertyDeclarationBlock,
-    selector_parser::{NonTSPseudoClass, SelectorImpl},
-    servo_arc::{Arc, ArcBorrow},
-    shared_lock::{Locked, SharedRwLock, StylesheetGuards},
+    shared_lock::StylesheetGuards,
     thread_state::ThreadState,
-    traversal::{DomTraversal, PerLevelTraversalData},
+    traversal::DomTraversal,
     traversal_flags::TraversalFlags,
-    values::{AtomIdent, GenericAtomIdent},
-    Atom,
 };
-use style_dom::ElementState;
-use winit::event::Modifiers;
 
 impl crate::document::Document {
     /// Walk the whole tree, converting styles to layout

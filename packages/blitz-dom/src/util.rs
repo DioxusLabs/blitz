@@ -1,4 +1,5 @@
-use crate::node::{Node, NodeData};
+use crate::node::NodeData;
+use crate::Handle;
 use image::DynamicImage;
 use selectors::context::QuirksMode;
 use std::str::FromStr;
@@ -182,17 +183,17 @@ impl RequestHandler for ImageHandler {
 }
 
 // Debug print an RcDom
-pub fn walk_tree(indent: usize, node: &Node) {
+pub fn walk_tree(indent: usize, handle: Handle) {
     // Skip all-whitespace text nodes entirely
-    if let NodeData::Text(data) = &node.raw_dom_data {
+    if let NodeData::Text(data) = &handle.node.raw_dom_data {
         if data.content.chars().all(|c| c.is_ascii_whitespace()) {
             return;
         }
     }
 
     print!("{}", " ".repeat(indent));
-    let id = node.id;
-    match &node.raw_dom_data {
+    let id = handle.node.id;
+    match &handle.node.raw_dom_data {
         NodeData::Document => println!("#Document {id}"),
 
         NodeData::Text(data) => {
@@ -223,7 +224,7 @@ pub fn walk_tree(indent: usize, node: &Node) {
             for attr in data.attrs.iter() {
                 print!(" {}=\"{}\"", attr.name.local, attr.value);
             }
-            if !node.children.is_empty() {
+            if !handle.node.children.is_empty() {
                 println!(">");
             } else {
                 println!("/>");
@@ -236,13 +237,12 @@ pub fn walk_tree(indent: usize, node: &Node) {
           // NodeData::ProcessingInstruction { .. } => unreachable!(),
     }
 
-    if !node.children.is_empty() {
-        for child_id in node.children.iter() {
-            //walk_tree(indent + 2, node.with(*child_id));
-            todo!()
+    if !handle.node.children.is_empty() {
+        for child_id in handle.node.children.iter() {
+            walk_tree(indent + 2, handle.get(*child_id));
         }
 
-        if let NodeData::Element(data) = &node.raw_dom_data {
+        if let NodeData::Element(data) = &handle.node.raw_dom_data {
             println!("{}</{}>", " ".repeat(indent), data.name.local);
         }
     }

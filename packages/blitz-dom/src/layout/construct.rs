@@ -116,7 +116,12 @@ pub(crate) fn collect_layout_children(
                             all_block = false;
 
                             // We need the "complex" tree fixing when an inline contains a block
-                            if child.is_or_contains_block() {
+                            if (Handle {
+                                node: child,
+                                tree: doc.tree(),
+                            })
+                            .is_or_contains_block()
+                            {
                                 all_inline = false;
                             }
                         }
@@ -404,7 +409,7 @@ fn collect_complex_layout_children(
         let child_node_kind = doc.nodes[child_id].raw_dom_data.kind();
 
         // Get Display style. Default to inline because nodes without styles are probably text nodes
-        let contains_block = doc.nodes[child_id].is_or_contains_block();
+        let contains_block = doc.get(child_id).unwrap().is_or_contains_block();
         let child_display = &doc.nodes[child_id]
             .display_style()
             .unwrap_or(Display::inline());

@@ -13,7 +13,6 @@ use style::invalidation::element::restyle_hints::RestyleHint;
 use style::properties::ComputedValues;
 use style::stylesheets::UrlExtraData;
 use style::values::computed::Display;
-use style::values::specified::box_::{DisplayInside, DisplayOutside};
 use style::Atom;
 use style::{
     data::ElementData,
@@ -170,27 +169,6 @@ impl Node {
                 .get_box()
                 .display,
         )
-    }
-
-    /// Returns true if this node, or any of its children, is a block.
-    pub fn is_or_contains_block(&self) -> bool {
-        let display = self.display_style().unwrap_or(Display::inline());
-
-        match display.outside() {
-            DisplayOutside::None => false,
-            DisplayOutside::Block => true,
-            _ => {
-                if display.inside() == DisplayInside::Flow {
-                    /*self.children
-                    .iter()
-                    .copied()
-                    .any(|child_id| self.tree()[child_id].is_or_contains_block())*/
-                    todo!()
-                } else {
-                    false
-                }
-            }
-        }
     }
 
     /// Returns true if this node is able to focused.
@@ -684,32 +662,6 @@ impl TextNodeData {
 // }
 
 impl Node {
-    pub fn print_tree(&self, level: usize) {
-        println!(
-            "{} {} {:?} {} {:?}",
-            "  ".repeat(level),
-            self.id,
-            self.parent,
-            self.node_debug_str().replace('\n', ""),
-            self.children
-        );
-        // println!("{} {:?}", "  ".repeat(level), self.children);
-        for child_id in self.children.iter() {
-            //let child = self.with(*child_id);
-            todo!();
-            //child.print_tree(level + 1)
-        }
-    }
-
-    // Get the index of the current node in the parents child list
-    pub fn child_index(&self) -> Option<usize> {
-        /*self.tree()[self.parent?]
-        .children
-        .iter()
-        .position(|id| *id == self.id)*/
-        todo!()
-    }
-
     pub fn is_element(&self) -> bool {
         matches!(self.raw_dom_data, NodeData::Element { .. })
     }

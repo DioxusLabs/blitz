@@ -512,29 +512,23 @@ impl Document {
         *is_checked = !*is_checked;
     }
 
-    pub fn root_node(&self) -> &Node {
-        &self.nodes[0]
+    pub fn root_node(&self) -> Handle {
+        self.get(0).unwrap()
     }
 
     pub fn try_root_element(&self) -> Option<&Node> {
-        TDocument::as_node(&Handle {
-            node: self.root_node(),
-            tree: self.tree(),
-        })
-        .first_element_child()
-        .map(|blitz_node| blitz_node.node)
+        TDocument::as_node(&self.root_node())
+            .first_element_child()
+            .map(|blitz_node| blitz_node.node)
     }
 
     pub fn root_element(&self) -> &Node {
-        TDocument::as_node(&Handle {
-            node: self.root_node(),
-            tree: self.tree(),
-        })
-        .first_element_child()
-        .unwrap()
-        .as_element()
-        .unwrap()
-        .node
+        TDocument::as_node(&self.root_node())
+            .first_element_child()
+            .unwrap()
+            .as_element()
+            .unwrap()
+            .node
     }
 
     pub fn create_node(&mut self, node_data: NodeData) -> usize {
@@ -681,7 +675,7 @@ impl Document {
     }
 
     pub fn print_subtree(&self, node_id: usize) {
-        crate::util::walk_tree(0, &self.nodes[node_id]);
+        crate::util::walk_tree(0, self.get(node_id).unwrap());
     }
 
     pub fn process_style_element(&mut self, target_id: usize) {
@@ -929,7 +923,7 @@ impl Document {
             // Continue search from the root
             else {
                 look_in_children = true;
-                self.root_node()
+                self.root_node().node
             };
 
             if filter(next) {
@@ -1031,7 +1025,7 @@ impl Document {
 
     /// Ensure that the layout_children field is populated for all nodes
     pub fn resolve_layout_children(&mut self) {
-        let root_node_id = self.root_node().id;
+        let root_node_id = self.root_node().node.id;
         resolve_layout_children_recursive(self, root_node_id);
 
         pub fn resolve_layout_children_recursive(doc: &mut Document, node_id: usize) {
