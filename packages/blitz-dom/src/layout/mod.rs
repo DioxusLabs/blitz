@@ -7,7 +7,7 @@
 use crate::node::{NodeData, NodeKind, NodeSpecificData};
 use crate::{
     document::Document,
-    image::{image_measure_function, ImageContext},
+    image::{measure_image, ImageContext},
     node::Node,
 };
 use html5ever::local_name;
@@ -245,7 +245,7 @@ impl LayoutPartialTree for Document {
                             inputs,
                             &node.style,
                             |known_dimensions, _available_space| {
-                                image_measure_function(
+                                measure_image(
                                     known_dimensions,
                                     inputs.parent_size,
                                     &image_context,

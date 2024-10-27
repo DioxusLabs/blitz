@@ -1,6 +1,6 @@
 use crate::waker::BlitzEvent;
 use accesskit::{NodeBuilder, NodeId, Role, Tree, TreeUpdate};
-use blitz_dom::{local_name, Document, Node};
+use blitz_dom::{local_name, Document, Handle};
 use winit::{event_loop::EventLoopProxy, window::Window};
 
 /// State of the accessibility node tree and platform adapter.
@@ -29,7 +29,13 @@ impl AccessibilityState {
                 .and_then(|parent_id| nodes.get_mut(&parent_id))
                 .map(|(_, parent)| parent)
                 .unwrap_or(&mut window);
-            let (id, node_builder) = self.build_node(node, parent);
+            let (id, node_builder) = self.build_node(
+                Handle {
+                    node,
+                    tree: doc.tree(),
+                },
+                parent,
+            );
 
             nodes.insert(node_id, (id, node_builder));
         });
@@ -50,13 +56,13 @@ impl AccessibilityState {
         self.adapter.update_if_active(|| tree_update)
     }
 
-    fn build_node(&mut self, node: &Node, parent: &mut NodeBuilder) -> (NodeId, NodeBuilder) {
+    fn build_node(&mut self, handle: Handle, parent: &mut NodeBuilder) -> (NodeId, NodeBuilder) {
         let mut node_builder = NodeBuilder::default();
 
         let id = NodeId(self.next_id);
         self.next_id += 1;
 
-        if let Some(element_data) = node.element_data() {
+        if let Some(element_data) = handle.node.element_data() {
             let name = element_data.name.local.to_string();
 
             // TODO match more roles
@@ -80,9 +86,9 @@ impl AccessibilityState {
 
             node_builder.set_role(role);
             node_builder.set_html_tag(name);
-        } else if node.is_text_node() {
+        } else if handle.node.is_text_node() {
             node_builder.set_role(Role::StaticText);
-            node_builder.set_name(node.text_content());
+            node_builder.set_name(handle.text_content());
             parent.push_labelled_by(id)
         }
 

@@ -1,6 +1,6 @@
 use crate::events::{EventData, HitResult, RendererEvent};
 use crate::node::{ImageData, NodeSpecificData, TextBrush};
-use crate::{ElementNodeData, Node, NodeData, TextNodeData, Viewport};
+use crate::{ElementNodeData, Handle, Node, NodeData, TextNodeData, Viewport};
 use app_units::Au;
 use html5ever::local_name;
 use parley::PlainEditorOp;
@@ -430,6 +430,13 @@ impl Document {
         ctx
     }
 
+    pub fn get(&self, id: usize) -> Option<Handle> {
+        self.nodes.get(id).map(|node| Handle {
+            node,
+            tree: &self.nodes,
+        })
+    }
+
     /// Set base url for resolving linked resources (stylesheets, images, fonts, etc)
     pub fn set_base_url(&mut self, url: &str) {
         self.base_url = Url::parse(url).ok();
@@ -505,12 +512,14 @@ impl Document {
         *is_checked = !*is_checked;
     }
 
-    pub fn root_node(&self) -> &Node {
-        &self.nodes[0]
+    pub fn root_node(&self) -> Handle {
+        self.get(0).unwrap()
     }
 
     pub fn try_root_element(&self) -> Option<&Node> {
-        TDocument::as_node(&self.root_node()).first_element_child()
+        TDocument::as_node(&self.root_node())
+            .first_element_child()
+            .map(|blitz_node| blitz_node.node)
     }
 
     pub fn root_element(&self) -> &Node {
@@ -519,15 +528,15 @@ impl Document {
             .unwrap()
             .as_element()
             .unwrap()
+            .node
     }
 
     pub fn create_node(&mut self, node_data: NodeData) -> usize {
-        let slab_ptr = self.nodes.as_mut() as *mut Slab<Node>;
         let entry = self.nodes.vacant_entry();
         let id = entry.key();
         let guard = self.guard.clone();
 
-        entry.insert(Node::new(slab_ptr, id, guard, node_data));
+        entry.insert(Node::new(id, guard, node_data));
 
         // self.quadtree.insert(
         //     AreaBuilder::default()
@@ -666,11 +675,11 @@ impl Document {
     }
 
     pub fn print_subtree(&self, node_id: usize) {
-        crate::util::walk_tree(0, &self.nodes[node_id]);
+        crate::util::walk_tree(0, self.get(node_id).unwrap());
     }
 
     pub fn process_style_element(&mut self, target_id: usize) {
-        let css = self.nodes[target_id].text_content();
+        let css = self.get(target_id).unwrap().text_content();
         let css = html_escape::decode_html_entities(&css);
         let sheet = self.make_stylesheet(&css, Origin::Author);
         self.add_stylesheet_for_node(sheet, target_id);
@@ -709,7 +718,7 @@ impl Document {
     }
 
     pub fn upsert_stylesheet_for_node(&mut self, node_id: usize) {
-        let raw_styles = self.nodes[node_id].text_content();
+        let raw_styles = self.get(node_id).unwrap().text_content();
         let sheet = self.make_stylesheet(raw_styles, Origin::Author);
         self.add_stylesheet_for_node(sheet, node_id);
     }
@@ -761,8 +770,13 @@ impl Document {
     }
 
     pub fn snapshot_node(&mut self, node_id: usize) {
+        let node = &self.nodes[node_id];
+        let opaque_node_id = TNode::opaque(&Handle {
+            node,
+            tree: &self.nodes,
+        });
+
         let node = &mut self.nodes[node_id];
-        let opaque_node_id = TNode::opaque(&&*node);
         node.has_snapshot = true;
         node.snapshot_handled
             .store(false, std::sync::atomic::Ordering::SeqCst);
@@ -827,9 +841,12 @@ impl Document {
 
     /// Restyle the tree and then relayout it
     pub fn resolve(&mut self) {
-        if TDocument::as_node(&&self.nodes[0])
-            .first_element_child()
-            .is_none()
+        if TDocument::as_node(&Handle {
+            node: &self.nodes[0],
+            tree: self.tree(),
+        })
+        .first_element_child()
+        .is_none()
         {
             println!("No DOM - not resolving");
             return;
@@ -850,15 +867,22 @@ impl Document {
 
     // Takes (x, y) co-ordinates (relative to the )
     pub fn hit(&self, x: f32, y: f32) -> Option<HitResult> {
-        if TDocument::as_node(&&self.nodes[0])
-            .first_element_child()
-            .is_none()
+        if TDocument::as_node(&Handle {
+            node: &self.nodes[0],
+            tree: self.tree(),
+        })
+        .first_element_child()
+        .is_none()
         {
             println!("No DOM - not resolving");
             return None;
         }
 
-        self.root_element().hit(x, y)
+        Handle {
+            node: self.root_element(),
+            tree: self.tree(),
+        }
+        .hit(x, y)
     }
 
     pub fn next_node(&self, start: &Node, mut filter: impl FnMut(&Node) -> bool) -> Option<usize> {
@@ -872,28 +896,34 @@ impl Document {
                 &self.nodes[node_id]
             }
             // Next is next sibling or parent
-            else if let Some(parent) = node.parent_node() {
+            else if let Some(parent) = (Handle {
+                node,
+                tree: self.tree(),
+            })
+            .parent_node()
+            {
                 let self_idx = parent
+                    .node
                     .children
                     .iter()
                     .position(|id| *id == node.id)
                     .unwrap();
                 // Next is next sibling
-                if let Some(sibling_id) = parent.children.get(self_idx + 1) {
+                if let Some(sibling_id) = parent.node.children.get(self_idx + 1) {
                     look_in_children = true;
                     &self.nodes[*sibling_id]
                 }
                 // Next is parent
                 else {
                     look_in_children = false;
-                    node = parent;
+                    node = parent.node;
                     continue;
                 }
             }
             // Continue search from the root
             else {
                 look_in_children = true;
-                self.root_node()
+                self.root_node().node
             };
 
             if filter(next) {
@@ -995,7 +1025,7 @@ impl Document {
 
     /// Ensure that the layout_children field is populated for all nodes
     pub fn resolve_layout_children(&mut self) {
-        let root_node_id = self.root_node().id;
+        let root_node_id = self.root_node().node.id;
         resolve_layout_children_recursive(self, root_node_id);
 
         pub fn resolve_layout_children_recursive(doc: &mut Document, node_id: usize) {

@@ -1,9 +1,16 @@
+use super::table::build_table_context;
+use crate::{
+    node::{
+        ListItemLayout, ListItemLayoutPosition, Marker, NodeKind, NodeSpecificData, TextBrush,
+        TextInputData, TextLayout,
+    },
+    stylo_to_parley, Document, ElementNodeData, Handle, Node, NodeData,
+};
 use core::str;
-use std::sync::Arc;
-
 use html5ever::{local_name, namespace_url, ns, QualName};
 use parley::{FontStack, InlineBox, PlainEditorOp, StyleProperty, TreeBuilder, WhiteSpaceCollapse};
 use slab::Slab;
+use std::sync::Arc;
 use style::{
     data::ElementData,
     properties::longhands::{
@@ -16,16 +23,6 @@ use style::{
         specified::box_::{DisplayInside, DisplayOutside},
     },
 };
-
-use crate::{
-    node::{
-        ListItemLayout, ListItemLayoutPosition, Marker, NodeKind, NodeSpecificData, TextBrush,
-        TextInputData, TextLayout,
-    },
-    stylo_to_parley, Document, ElementNodeData, Node, NodeData,
-};
-
-use super::table::build_table_context;
 
 pub(crate) fn collect_layout_children(
     doc: &mut Document,
@@ -119,7 +116,12 @@ pub(crate) fn collect_layout_children(
                             all_block = false;
 
                             // We need the "complex" tree fixing when an inline contains a block
-                            if child.is_or_contains_block() {
+                            if (Handle {
+                                node: child,
+                                tree: doc.tree(),
+                            })
+                            .is_or_contains_block()
+                            {
                                 all_inline = false;
                             }
                         }
@@ -407,7 +409,7 @@ fn collect_complex_layout_children(
         let child_node_kind = doc.nodes[child_id].raw_dom_data.kind();
 
         // Get Display style. Default to inline because nodes without styles are probably text nodes
-        let contains_block = doc.nodes[child_id].is_or_contains_block();
+        let contains_block = doc.get(child_id).unwrap().is_or_contains_block();
         let child_display = &doc.nodes[child_id]
             .display_style()
             .unwrap_or(Display::inline());
@@ -454,7 +456,7 @@ fn collect_complex_layout_children(
                 let parent_style = doc.nodes[container_node_id].primary_styles().unwrap();
                 let read_guard = doc.guard.read();
                 let guards = StylesheetGuards::same(&read_guard);
-                let style = doc.stylist.style_for_anonymous::<&Node>(
+                let style = doc.stylist.style_for_anonymous::<Handle>(
                     &guards,
                     &PseudoElement::ServoAnonymousBox,
                     &parent_style,

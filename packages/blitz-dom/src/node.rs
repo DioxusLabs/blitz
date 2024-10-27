@@ -4,7 +4,6 @@ use image::DynamicImage;
 use parley::{FontContext, LayoutContext, PlainEditorOp};
 use peniko::kurbo;
 use selectors::matching::{ElementSelectorFlags, QuirksMode};
-use slab::Slab;
 use std::cell::{Cell, RefCell};
 use std::fmt::Write;
 use std::str::FromStr;
@@ -14,7 +13,6 @@ use style::invalidation::element::restyle_hints::RestyleHint;
 use style::properties::ComputedValues;
 use style::stylesheets::UrlExtraData;
 use style::values::computed::Display;
-use style::values::specified::box_::{DisplayInside, DisplayOutside};
 use style::Atom;
 use style::{
     data::ElementData,
@@ -29,9 +27,8 @@ use taffy::{
     Cache,
 };
 use url::Url;
-use winit::event::Modifiers;
 
-use crate::events::{EventData, EventListener, HitResult};
+use crate::events::EventListener;
 use crate::layout::table::TableContext;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -41,55 +38,87 @@ pub enum DisplayOuter {
     None,
 }
 
-// todo: might be faster to migrate this to ecs and split apart at a different boundary
+/// A node in a [`Document`](crate::Document).
 pub struct Node {
-    // The actual tree we belong to. This is unsafe!!
-    pub tree: *mut Slab<Node>,
-
-    /// Our Id
+    /// This node's ID.
     pub id: usize,
-    /// Our parent's ID
+
+    /// This node's parent ID.
     pub parent: Option<usize>,
-    // What are our children?
+
+    /// This node's child IDs.
     pub children: Vec<usize>,
-    /// Our parent in the layout hierachy: a separate list that includes anonymous collections of inline elements
+
+    /// This node's parent ID in the layout hierachy: a separate list that includes anonymous collections of inline elements.
     pub layout_parent: Cell<Option<usize>>,
-    /// A separate child list that includes anonymous collections of inline elements
+
+    /// This node's child IDs in the layout hierachy: a separate list that includes anonymous collections of inline elements.
     pub layout_children: RefCell<Option<Vec<usize>>>,
 
-    /// Node type (Element, TextNode, etc) specific data
+    /// Data specific to this node's type.
     pub raw_dom_data: NodeData,
 
     // This little bundle of joy is our style data from stylo and a lock guard that allows access to it
     // TODO: See if guard can be hoisted to a higher level
+    /// The (optional) stylo data for this node.
     pub stylo_element_data: AtomicRefCell<Option<ElementData>>,
+
+    /// The selector flags for this node.
     pub selector_flags: AtomicRefCell<ElementSelectorFlags>,
+
+    /// Lock guard for this node's stylo data.
     pub guard: SharedRwLock,
+
+    /// The state of the element, represented as a bitfield.
     pub element_state: ElementState,
 
     // Taffy layout data:
     pub style: Style,
+
+    /// Flag indicating whether this node is hidden.
     pub hidden: bool,
+
+    /// Flag indicating whether this node is hovered.
     pub is_hovered: bool,
+
+    /// Flag indicating whether this node has a stylo snapshot.
     pub has_snapshot: bool,
+
+    /// Flag indicating whether the current snapshot has been handled.
     pub snapshot_handled: AtomicBool,
+
+    /// Outer display type of this node.
     pub display_outer: DisplayOuter,
+
+    /// Cached layout for this node.
     pub cache: Cache,
+
+    /// Cached layout before rounding for this node.
     pub unrounded_layout: Layout,
+
+    /// Cached final layout for this node.
     pub final_layout: Layout,
+
+    /// Registered event listeners for this node.
     pub listeners: Vec<EventListener>,
+
+    /// Current scroll offset for this node.
     pub scroll_offset: kurbo::Point,
 
-    // Flags
+    /// Flag indicating whether this node is the root element of an inline layout.
     pub is_inline_root: bool,
+
+    /// Flag indicating whether this node is the root element of a table.
     pub is_table_root: bool,
 }
 
 impl Node {
-    pub fn new(tree: *mut Slab<Node>, id: usize, guard: SharedRwLock, data: NodeData) -> Self {
+    /// Create a new node in a tree.
+    ///
+    /// # Safety
+    /// `tree` must outlive this `Node`.
+    pub fn new(id: usize, guard: SharedRwLock, data: NodeData) -> Self {
         Self {
-            tree,
-
             id,
             parent: None,
             children: vec![],
@@ -135,25 +164,7 @@ impl Node {
         )
     }
 
-    pub fn is_or_contains_block(&self) -> bool {
-        let display = self.display_style().unwrap_or(Display::inline());
-
-        match display.outside() {
-            DisplayOutside::None => false,
-            DisplayOutside::Block => true,
-            _ => {
-                if display.inside() == DisplayInside::Flow {
-                    self.children
-                        .iter()
-                        .copied()
-                        .any(|child_id| self.tree()[child_id].is_or_contains_block())
-                } else {
-                    false
-                }
-            }
-        }
-    }
-
+    /// Returns true if this node is able to focused.
     pub fn is_focussable(&self) -> bool {
         self.raw_dom_data
             .downcast_element()
@@ -167,24 +178,28 @@ impl Node {
         }
     }
 
+    /// Flag this node as hovered.
     pub fn hover(&mut self) {
         self.is_hovered = true;
         self.element_state.insert(ElementState::HOVER);
         self.set_restyle_hint(RestyleHint::RESTYLE_SELF);
     }
 
+    /// Un-flag this node as hovered.
     pub fn unhover(&mut self) {
         self.is_hovered = false;
         self.element_state.remove(ElementState::HOVER);
         self.set_restyle_hint(RestyleHint::RESTYLE_SELF);
     }
 
+    /// Flag this node as focused.
     pub fn focus(&mut self) {
         self.element_state
             .insert(ElementState::FOCUS | ElementState::FOCUSRING);
         self.set_restyle_hint(RestyleHint::RESTYLE_SELF);
     }
 
+    /// Un-flag this node as focused.
     pub fn blur(&mut self) {
         self.element_state
             .remove(ElementState::FOCUS | ElementState::FOCUSRING);
@@ -192,6 +207,7 @@ impl Node {
     }
 }
 
+/// The kind of a [`Node`].
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum NodeKind {
     Document,
@@ -416,7 +432,7 @@ impl ElementNodeData {
         }
     }
 
-    pub fn flush_is_focussable(&mut self) {
+    pub(crate) fn flush_is_focussable(&mut self) {
         let disabled: bool = self.attr_parsed(local_name!("disabled")).unwrap_or(false);
         let tabindex: Option<i32> = self.attr_parsed(local_name!("tabindex"));
 
@@ -465,6 +481,7 @@ impl ElementNodeData {
         });
     }
 
+    /// Take the current cached inline text layout.
     pub fn take_inline_layout(&mut self) -> Option<Box<TextLayout>> {
         std::mem::take(&mut self.inline_layout_data)
     }
@@ -638,60 +655,6 @@ impl TextNodeData {
 // }
 
 impl Node {
-    pub fn tree(&self) -> &Slab<Node> {
-        unsafe { &*self.tree }
-    }
-
-    #[track_caller]
-    pub fn with(&self, id: usize) -> &Node {
-        self.tree().get(id).unwrap()
-    }
-
-    pub fn print_tree(&self, level: usize) {
-        println!(
-            "{} {} {:?} {} {:?}",
-            "  ".repeat(level),
-            self.id,
-            self.parent,
-            self.node_debug_str().replace('\n', ""),
-            self.children
-        );
-        // println!("{} {:?}", "  ".repeat(level), self.children);
-        for child_id in self.children.iter() {
-            let child = self.with(*child_id);
-            child.print_tree(level + 1)
-        }
-    }
-
-    // Get the index of the current node in the parents child list
-    pub fn child_index(&self) -> Option<usize> {
-        self.tree()[self.parent?]
-            .children
-            .iter()
-            .position(|id| *id == self.id)
-    }
-
-    // Get the nth node in the parents child list
-    pub fn forward(&self, n: usize) -> Option<&Node> {
-        let child_idx = self.child_index().unwrap_or(0);
-        self.tree()[self.parent?]
-            .children
-            .get(child_idx + n)
-            .map(|id| self.with(*id))
-    }
-
-    pub fn backward(&self, n: usize) -> Option<&Node> {
-        let child_idx = self.child_index().unwrap_or(0);
-        if child_idx < n {
-            return None;
-        }
-
-        self.tree()[self.parent?]
-            .children
-            .get(child_idx - n)
-            .map(|id| self.with(*id))
-    }
-
     pub fn is_element(&self) -> bool {
         matches!(self.raw_dom_data, NodeData::Element { .. })
     }
@@ -796,26 +759,6 @@ impl Node {
         }
     }
 
-    pub fn text_content(&self) -> String {
-        let mut out = String::new();
-        self.write_text_content(&mut out);
-        out
-    }
-
-    fn write_text_content(&self, out: &mut String) {
-        match &self.raw_dom_data {
-            NodeData::Text(data) => {
-                out.push_str(&data.content);
-            }
-            NodeData::Element(..) | NodeData::AnonymousBlock(..) => {
-                for child_id in self.children.iter() {
-                    self.with(*child_id).write_text_content(out);
-                }
-            }
-            _ => {}
-        }
-    }
-
     pub fn flush_style_attribute(&mut self) {
         if let NodeData::Element(ref mut elem_data) = self.raw_dom_data {
             elem_data.flush_style_attribute(&self.guard);
@@ -829,61 +772,6 @@ impl Node {
             .and_then(|data| data.styles.get_primary())
             .map(|s| s.clone_order())
             .unwrap_or(0)
-    }
-
-    /// Takes an (x, y) position (relative to the *parent's* top-left corner) and returns:
-    ///    - None if the position is outside of this node's bounds
-    ///    - Some(HitResult) if the position is within the node but doesn't match any children
-    ///    - The result of recursively calling child.hit() on the the child element that is
-    ///      positioned at that position if there is one.
-    ///
-    /// TODO: z-index
-    /// (If multiple children are positioned at the position then a random one will be recursed into)
-    pub fn hit(&self, x: f32, y: f32) -> Option<HitResult> {
-        let x = x - self.final_layout.location.x + self.scroll_offset.x as f32;
-        let y = y - self.final_layout.location.y + self.scroll_offset.y as f32;
-
-        let size = self.final_layout.size;
-        if x < 0.0
-            || x > size.width + self.scroll_offset.x as f32
-            || y < 0.0
-            || y > size.height + self.scroll_offset.y as f32
-        {
-            return None;
-        }
-
-        // Call `.hit()` on each child in turn. If any return `Some` then return that value. Else return `Some(self.id).
-        self.layout_children
-            .borrow()
-            .iter()
-            .flatten()
-            .find_map(|&i| self.with(i).hit(x, y))
-            .or(Some(HitResult {
-                node_id: self.id,
-                x,
-                y,
-            }))
-    }
-
-    /// Computes the Document-relative coordinates of the Node
-    pub fn absolute_position(&self, x: f32, y: f32) -> taffy::Point<f32> {
-        let x = x + self.final_layout.location.x - self.scroll_offset.x as f32;
-        let y = y + self.final_layout.location.y - self.scroll_offset.y as f32;
-
-        // Recurse up the layout hierarchy
-        self.layout_parent
-            .get()
-            .map(|i| self.with(i).absolute_position(x, y))
-            .unwrap_or(taffy::Point { x, y })
-    }
-
-    /// Creates a synteh
-    pub fn synthetic_click_event(&self, mods: Modifiers) -> EventData {
-        let absolute_position = self.absolute_position(0.0, 0.0);
-        let x = absolute_position.x + (self.final_layout.size.width / 2.0);
-        let y = absolute_position.y + (self.final_layout.size.height / 2.0);
-
-        EventData::Click { x, y, mods }
     }
 }
 

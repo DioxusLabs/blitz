@@ -10,7 +10,7 @@ use blitz_dom::{
     events::{EventData, RendererEvent},
     local_name, namespace_url,
     node::{Attribute, NodeSpecificData},
-    ns, Atom, Document, DocumentLike, ElementNodeData, Node, NodeData, QualName, Viewport,
+    ns, Atom, Document, DocumentLike, ElementNodeData, Handle, Node, NodeData, QualName, Viewport,
     DEFAULT_CSS,
 };
 
@@ -178,11 +178,11 @@ impl DocumentLike for DioxusDocument {
                                 let &EventData::Click { mods, .. } = &renderer_event.data else {
                                     unreachable!();
                                 };
-                                let input_click_data = self
-                                    .inner
-                                    .get_node(node_id)
-                                    .unwrap()
-                                    .synthetic_click_event(mods);
+                                let input_click_data = Handle {
+                                    node: self.inner.get_node(node_id).unwrap(),
+                                    tree: self.inner.tree(),
+                                }
+                                .synthetic_click_event(mods);
                                 let default_event = RendererEvent {
                                     target: node_id,
                                     data: input_click_data,
@@ -391,7 +391,7 @@ impl DioxusDocument {
             qual_name("html", None),
             Vec::new(),
         )));
-        let root_node_id = doc.root_node().id;
+        let root_node_id = doc.root_node().node.id;
         let html_element = doc.get_node_mut(html_element_id).unwrap();
         html_element.parent = Some(root_node_id);
         let root_node = doc.get_node_mut(root_node_id).unwrap();
@@ -687,12 +687,12 @@ impl WriteMutations for MutationWriter<'_> {
 
         let new_nodes = self.state.stack.split_off(self.state.stack.len() - m);
         let anchor_node_id = self.state.element_to_node_id(id);
-        let next_sibling_id = self
-            .doc
-            .get_node(anchor_node_id)
-            .unwrap()
-            .forward(1)
-            .map(|node| node.id);
+        let next_sibling_id = Handle {
+            node: self.doc.get_node(anchor_node_id).unwrap(),
+            tree: self.doc.as_ref().tree(),
+        }
+        .forward(1)
+        .map(|blitz_node| blitz_node.node.id);
 
         match next_sibling_id {
             Some(anchor_node_id) => {

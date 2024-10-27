@@ -1,12 +1,17 @@
 use taffy::{MaybeMath, MaybeResolve};
 
+/// Layout context for an image.
 #[derive(Debug, Clone, Copy)]
 pub struct ImageContext {
+    /// Inherent size of the image.
     pub inherent_size: taffy::Size<f32>,
+
+    /// Specified size of the image.
     pub attr_size: taffy::Size<Option<f32>>,
 }
 
-pub fn image_measure_function(
+/// Measure an image.
+pub fn measure_image(
     known_dimensions: taffy::Size<Option<f32>>,
     parent_size: taffy::Size<Option<f32>>,
     image_context: &ImageContext,
