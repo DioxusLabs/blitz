@@ -10,7 +10,7 @@ use blitz_dom::node::{
     ListItemLayout, ListItemLayoutPosition, Marker, NodeData, TextBrush, TextInputData,
     TextNodeData,
 };
-use blitz_dom::stylo::BlitzNode;
+use blitz_dom::stylo::Handle;
 use blitz_dom::{local_name, Document, Node};
 
 use parley::Line;
@@ -339,7 +339,7 @@ impl VelloSceneGenerator<'_> {
         //  - position, table, text, ui,
         //  - custom_properties, writing_mode, rules, visited_style, flags,  box_, column, counters, effects,
         //  - inherited_box, inherited_table, inherited_text, inherited_ui,
-        let element = BlitzNode {
+        let element = Handle {
             node: &self.dom.as_ref().tree()[node_id],
             tree: self.dom.as_ref().tree(),
         };
@@ -567,7 +567,7 @@ impl VelloSceneGenerator<'_> {
         }
     }
 
-    fn element_cx<'w>(&'w self, element: BlitzNode<'w>, location: Point) -> ElementCx<'w> {
+    fn element_cx<'w>(&'w self, element: Handle<'w>, location: Point) -> ElementCx<'w> {
         let style = element
             .node
             .stylo_element_data
@@ -622,7 +622,7 @@ struct ElementCx<'a> {
     style: style::servo_arc::Arc<ComputedValues>,
     pos: Point,
     scale: f64,
-    element: BlitzNode<'a>,
+    element: Handle<'a>,
     transform: Affine,
     image: Option<&'a DynamicImage>,
     svg: Option<&'a usvg::Tree>,

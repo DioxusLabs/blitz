@@ -22,7 +22,7 @@ use crate::{
         ListItemLayout, ListItemLayoutPosition, Marker, NodeKind, NodeSpecificData, TextBrush,
         TextInputData, TextLayout,
     },
-    stylo::BlitzNode,
+    stylo::Handle,
     stylo_to_parley, Document, ElementNodeData, Node, NodeData,
 };
 
@@ -455,7 +455,7 @@ fn collect_complex_layout_children(
                 let parent_style = doc.nodes[container_node_id].primary_styles().unwrap();
                 let read_guard = doc.guard.read();
                 let guards = StylesheetGuards::same(&read_guard);
-                let style = doc.stylist.style_for_anonymous::<BlitzNode>(
+                let style = doc.stylist.style_for_anonymous::<Handle>(
                     &guards,
                     &PseudoElement::ServoAnonymousBox,
                     &parent_style,

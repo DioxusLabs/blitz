@@ -4,7 +4,6 @@ use image::DynamicImage;
 use parley::{FontContext, LayoutContext, PlainEditorOp};
 use peniko::kurbo;
 use selectors::matching::{ElementSelectorFlags, QuirksMode};
-use slab::Slab;
 use std::cell::{Cell, RefCell};
 use std::fmt::Write;
 use std::str::FromStr;
@@ -29,9 +28,8 @@ use taffy::{
     Cache,
 };
 use url::Url;
-use winit::event::Modifiers;
 
-use crate::events::{EventData, EventListener, HitResult};
+use crate::events::EventListener;
 use crate::layout::table::TableContext;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -850,67 +848,6 @@ impl Node {
             .and_then(|data| data.styles.get_primary())
             .map(|s| s.clone_order())
             .unwrap_or(0)
-    }
-
-    /// Takes an (x, y) position (relative to the *parent's* top-left corner) and returns:
-    ///    - None if the position is outside of this node's bounds
-    ///    - Some(HitResult) if the position is within the node but doesn't match any children
-    ///    - The result of recursively calling child.hit() on the the child element that is
-    ///      positioned at that position if there is one.
-    ///
-    /// TODO: z-index
-    /// (If multiple children are positioned at the position then a random one will be recursed into)
-    pub fn hit(&self, x: f32, y: f32) -> Option<HitResult> {
-        let x = x - self.final_layout.location.x + self.scroll_offset.x as f32;
-        let y = y - self.final_layout.location.y + self.scroll_offset.y as f32;
-
-        let size = self.final_layout.size;
-        /*
-        if x < 0.0
-            || x > size.width + self.scroll_offset.x as f32
-            || y < 0.0
-            || y > size.height + self.scroll_offset.y as f32
-        {
-            return None;
-        }
-         */
-        todo!()
-
-        // Call `.hit()` on each child in turn. If any return `Some` then return that value. Else return `Some(self.id).
-        /*self.layout_children
-        .borrow()
-        .iter()
-        .flatten()
-        .find_map(|&i| self.with(i).hit(x, y))
-        .or(Some(HitResult {
-            node_id: self.id,
-            x,
-            y,
-        }))*/
-    }
-
-    /// Computes the Document-relative coordinates of the Node
-    pub fn absolute_position(&self, x: f32, y: f32) -> taffy::Point<f32> {
-        let x = x + self.final_layout.location.x - self.scroll_offset.x as f32;
-        let y = y + self.final_layout.location.y - self.scroll_offset.y as f32;
-
-        /*
-        // Recurse up the layout hierarchy
-        self.layout_parent
-            .get()
-            .map(|i| self.with(i).absolute_position(x, y))
-            .unwrap_or(taffy::Point { x, y })
-        */
-        todo!()
-    }
-
-    /// Creates a synteh
-    pub fn synthetic_click_event(&self, mods: Modifiers) -> EventData {
-        let absolute_position = self.absolute_position(0.0, 0.0);
-        let x = absolute_position.x + (self.final_layout.size.width / 2.0);
-        let y = absolute_position.y + (self.final_layout.size.height / 2.0);
-
-        EventData::Click { x, y, mods }
     }
 }
 

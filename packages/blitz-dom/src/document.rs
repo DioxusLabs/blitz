@@ -1,6 +1,6 @@
 use crate::events::{EventData, HitResult, RendererEvent};
 use crate::node::{ImageData, NodeSpecificData, TextBrush};
-use crate::stylo::BlitzNode;
+use crate::stylo::Handle;
 use crate::{ElementNodeData, Node, NodeData, TextNodeData, Viewport};
 use app_units::Au;
 use html5ever::local_name;
@@ -511,7 +511,7 @@ impl Document {
     }
 
     pub fn try_root_element(&self) -> Option<&Node> {
-        TDocument::as_node(&BlitzNode {
+        TDocument::as_node(&Handle {
             node: self.root_node(),
             tree: self.tree(),
         })
@@ -520,7 +520,7 @@ impl Document {
     }
 
     pub fn root_element(&self) -> &Node {
-        TDocument::as_node(&BlitzNode {
+        TDocument::as_node(&Handle {
             node: self.root_node(),
             tree: self.tree(),
         })
@@ -771,7 +771,7 @@ impl Document {
 
     pub fn snapshot_node(&mut self, node_id: usize) {
         let node = &self.nodes[node_id];
-        let opaque_node_id = TNode::opaque(&BlitzNode {
+        let opaque_node_id = TNode::opaque(&Handle {
             node,
             tree: &self.nodes,
         });
@@ -841,7 +841,7 @@ impl Document {
 
     /// Restyle the tree and then relayout it
     pub fn resolve(&mut self) {
-        if TDocument::as_node(&BlitzNode {
+        if TDocument::as_node(&Handle {
             node: &self.nodes[0],
             tree: self.tree(),
         })
@@ -867,7 +867,7 @@ impl Document {
 
     // Takes (x, y) co-ordinates (relative to the )
     pub fn hit(&self, x: f32, y: f32) -> Option<HitResult> {
-        if TDocument::as_node(&BlitzNode {
+        if TDocument::as_node(&Handle {
             node: &self.nodes[0],
             tree: self.tree(),
         })
@@ -878,7 +878,11 @@ impl Document {
             return None;
         }
 
-        self.root_element().hit(x, y)
+        Handle {
+            node: self.root_element(),
+            tree: self.tree(),
+        }
+        .hit(x, y)
     }
 
     pub fn next_node(&self, start: &Node, mut filter: impl FnMut(&Node) -> bool) -> Option<usize> {
@@ -892,7 +896,7 @@ impl Document {
                 &self.nodes[node_id]
             }
             // Next is next sibling or parent
-            else if let Some(parent) = (BlitzNode {
+            else if let Some(parent) = (Handle {
                 node,
                 tree: self.tree(),
             })

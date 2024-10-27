@@ -11,7 +11,7 @@ use blitz_dom::{
     local_name, namespace_url,
     node::{Attribute, NodeSpecificData},
     ns,
-    stylo::BlitzNode,
+    stylo::Handle,
     Atom, Document, DocumentLike, ElementNodeData, Node, NodeData, QualName, Viewport, DEFAULT_CSS,
 };
 
@@ -179,11 +179,11 @@ impl DocumentLike for DioxusDocument {
                                 let &EventData::Click { mods, .. } = &renderer_event.data else {
                                     unreachable!();
                                 };
-                                let input_click_data = self
-                                    .inner
-                                    .get_node(node_id)
-                                    .unwrap()
-                                    .synthetic_click_event(mods);
+                                let input_click_data = Handle {
+                                    node: self.inner.get_node(node_id).unwrap(),
+                                    tree: self.inner.tree(),
+                                }
+                                .synthetic_click_event(mods);
                                 let default_event = RendererEvent {
                                     target: node_id,
                                     data: input_click_data,
@@ -688,7 +688,7 @@ impl WriteMutations for MutationWriter<'_> {
 
         let new_nodes = self.state.stack.split_off(self.state.stack.len() - m);
         let anchor_node_id = self.state.element_to_node_id(id);
-        let next_sibling_id = BlitzNode {
+        let next_sibling_id = Handle {
             node: self.doc.get_node(anchor_node_id).unwrap(),
             tree: self.doc.as_ref().tree(),
         }

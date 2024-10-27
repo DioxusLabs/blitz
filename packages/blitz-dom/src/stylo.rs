@@ -1,10 +1,10 @@
 //! Enable the dom to participate in styling by servo
 //!
 
-use std::sync::atomic::Ordering;
-
+use super::stylo_to_taffy;
+use crate::events::EventData;
+use crate::events::HitResult;
 use crate::node::Node;
-
 use crate::node::NodeData;
 use atomic_refcell::{AtomicRef, AtomicRefMut};
 use html5ever::LocalNameStaticSet;
@@ -17,6 +17,7 @@ use selectors::{
     Element, OpaqueElement,
 };
 use slab::Slab;
+use std::sync::atomic::Ordering;
 use style::applicable_declarations::ApplicableDeclarationBlock;
 use style::color::AbsoluteColor;
 use style::invalidation::element::restyle_hints::RestyleHint;
@@ -24,6 +25,7 @@ use style::properties::{Importance, PropertyDeclaration};
 use style::rule_tree::CascadeLevel;
 use style::selector_parser::PseudoElement;
 use style::stylesheets::layer_rule::LayerOrder;
+use style::values::computed::text::TextAlign as StyloTextAlign;
 use style::values::computed::Percentage;
 use style::values::specified::box_::DisplayOutside;
 use style::values::AtomString;
@@ -47,9 +49,7 @@ use style::{
     Atom,
 };
 use style_dom::ElementState;
-
-use super::stylo_to_taffy;
-use style::values::computed::text::TextAlign as StyloTextAlign;
+use winit::event::Modifiers;
 
 impl crate::document::Document {
     /// Walk the whole tree, converting styles to layout
@@ -113,7 +113,7 @@ impl crate::document::Document {
             ua_or_user: &guard.read(),
         };
 
-        let root = TDocument::as_node(&BlitzNode {
+        let root = TDocument::as_node(&Handle {
             node: &self.nodes[0],
             tree: &self.nodes,
         })
@@ -151,7 +151,7 @@ impl crate::document::Document {
         let root = self.root_element();
         // dbg!(root);
         let token = RecalcStyle::pre_traverse(
-            BlitzNode {
+            Handle {
                 node: root,
                 tree: self.tree(),
             },
@@ -173,12 +173,19 @@ impl crate::document::Document {
 /// Since BlitzNodes are not persistent (IE we don't keep the pointers around between frames), we choose to just implement
 /// the tree structure in the nodes themselves, and temporarily give out pointers during the layout phase.
 #[derive(Clone, Copy, Debug)]
-pub struct BlitzNode<'a> {
+pub struct Handle<'a> {
     pub node: &'a Node,
     pub tree: &'a Slab<Node>,
 }
 
-impl BlitzNode<'_> {
+impl Handle<'_> {
+    pub fn get(&self, id: usize) -> Self {
+        Self {
+            node: &self.tree[id],
+            tree: self.tree,
+        }
+    }
+
     pub fn forward(&self, n: usize) -> Option<Self> {
         let child_idx = self.node.child_index().unwrap_or(0);
         self.tree[self.node.parent?]
@@ -200,18 +207,81 @@ impl BlitzNode<'_> {
                 tree: self.tree,
             })
     }
+
+    /// Computes the Document-relative coordinates of the Node
+    pub fn absolute_position(&self, x: f32, y: f32) -> taffy::Point<f32> {
+        let x = x + self.node.final_layout.location.x - self.node.scroll_offset.x as f32;
+        let y = y + self.node.final_layout.location.y - self.node.scroll_offset.y as f32;
+
+        self.node
+            .layout_parent
+            .get()
+            .map(|i| {
+                Self {
+                    node: &self.tree[i],
+                    tree: self.tree,
+                }
+                .absolute_position(x, y)
+            })
+            .unwrap_or(taffy::Point { x, y })
+    }
+
+    /// Creates a synteh
+    pub fn synthetic_click_event(&self, mods: Modifiers) -> EventData {
+        let absolute_position = self.absolute_position(0.0, 0.0);
+        let x = absolute_position.x + (self.node.final_layout.size.width / 2.0);
+        let y = absolute_position.y + (self.node.final_layout.size.height / 2.0);
+
+        EventData::Click { x, y, mods }
+    }
+
+    /// Takes an (x, y) position (relative to the *parent's* top-left corner) and returns:
+    ///    - None if the position is outside of this node's bounds
+    ///    - Some(HitResult) if the position is within the node but doesn't match any children
+    ///    - The result of recursively calling child.hit() on the the child element that is
+    ///      positioned at that position if there is one.
+    ///
+    /// TODO: z-index
+    /// (If multiple children are positioned at the position then a random one will be recursed into)
+    pub fn hit(&self, x: f32, y: f32) -> Option<HitResult> {
+        let x = x - self.node.final_layout.location.x + self.node.scroll_offset.x as f32;
+        let y = y - self.node.final_layout.location.y + self.node.scroll_offset.y as f32;
+
+        let size = self.node.final_layout.size;
+
+        if x < 0.0
+            || x > size.width + self.node.scroll_offset.x as f32
+            || y < 0.0
+            || y > size.height + self.node.scroll_offset.y as f32
+        {
+            return None;
+        }
+
+        // Call `.hit()` on each child in turn. If any return `Some` then return that value. Else return `Some(self.id).
+        self.node
+            .layout_children
+            .borrow()
+            .iter()
+            .flatten()
+            .find_map(|&id| self.get(id).hit(x, y))
+            .or(Some(HitResult {
+                node_id: self.node.id,
+                x,
+                y,
+            }))
+    }
 }
 
-impl PartialEq for BlitzNode<'_> {
+impl PartialEq for Handle<'_> {
     fn eq(&self, other: &Self) -> bool {
         self.node == other.node
     }
 }
 
 // TODO (Matt)
-impl Eq for BlitzNode<'_> {}
+impl Eq for Handle<'_> {}
 
-impl<'a> TDocument for BlitzNode<'a> {
+impl<'a> TDocument for Handle<'a> {
     type ConcreteNode = Self;
 
     fn as_node(&self) -> Self::ConcreteNode {
@@ -231,7 +301,7 @@ impl<'a> TDocument for BlitzNode<'a> {
     }
 }
 
-impl NodeInfo for BlitzNode<'_> {
+impl NodeInfo for Handle<'_> {
     fn is_element(&self) -> bool {
         self.node.is_element()
     }
@@ -241,7 +311,7 @@ impl NodeInfo for BlitzNode<'_> {
     }
 }
 
-impl<'a> TShadowRoot for BlitzNode<'a> {
+impl<'a> TShadowRoot for Handle<'a> {
     type ConcreteNode = Self;
 
     fn as_node(&self) -> Self::ConcreteNode {
@@ -261,10 +331,10 @@ impl<'a> TShadowRoot for BlitzNode<'a> {
 }
 
 // components/styleaapper.rs:
-impl<'a> TNode for BlitzNode<'a> {
-    type ConcreteElement = BlitzNode<'a>;
-    type ConcreteDocument = BlitzNode<'a>;
-    type ConcreteShadowRoot = BlitzNode<'a>;
+impl<'a> TNode for Handle<'a> {
+    type ConcreteElement = Handle<'a>;
+    type ConcreteDocument = Handle<'a>;
+    type ConcreteShadowRoot = Handle<'a>;
 
     fn parent_node(&self) -> Option<Self> {
         //self.parent.map(|id| self.with(id))
@@ -335,7 +405,7 @@ impl<'a> TNode for BlitzNode<'a> {
     }
 }
 
-impl selectors::Element for BlitzNode<'_> {
+impl selectors::Element for Handle<'_> {
     type Impl = SelectorImpl;
 
     fn opaque(&self) -> selectors::OpaqueElement {
@@ -614,8 +684,8 @@ impl selectors::Element for BlitzNode<'_> {
     }
 }
 
-impl<'a> TElement for BlitzNode<'a> {
-    type ConcreteNode = BlitzNode<'a>;
+impl<'a> TElement for Handle<'a> {
+    type ConcreteNode = Handle<'a>;
 
     type TraversalChildrenIterator = Traverser<'a>;
 
@@ -1018,12 +1088,12 @@ impl<'a> TElement for BlitzNode<'a> {
 
 pub struct Traverser<'a> {
     // dom: &'a Slab<Node>,
-    parent: BlitzNode<'a>,
+    parent: Handle<'a>,
     child_index: usize,
 }
 
 impl<'a> Iterator for Traverser<'a> {
-    type Item = BlitzNode<'a>;
+    type Item = Handle<'a>;
 
     fn next(&mut self) -> Option<Self::Item> {
         let node_id = self.parent.node.children.get(self.child_index)?;
@@ -1031,14 +1101,14 @@ impl<'a> Iterator for Traverser<'a> {
 
         self.child_index += 1;
 
-        Some(BlitzNode {
+        Some(Handle {
             node,
             tree: self.parent.tree,
         })
     }
 }
 
-impl std::hash::Hash for BlitzNode<'_> {
+impl std::hash::Hash for Handle<'_> {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         state.write_usize(self.node.id)
     }
