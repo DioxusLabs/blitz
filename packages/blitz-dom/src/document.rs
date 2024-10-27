@@ -151,8 +151,10 @@ impl DocumentLike for Document {
                     if let NodeSpecificData::TextInput(ref mut text_input_data) =
                         el.node_specific_data
                     {
-                        let x = (hit.x - content_box_offset.x) as f64 * self.viewport.scale_f64();
-                        let y = (hit.y - content_box_offset.y) as f64 * self.viewport.scale_f64();
+                        let x =
+                            (hit.x - content_box_offset.x) as f64 * self.viewport.scale() as f64;
+                        let y =
+                            (hit.y - content_box_offset.y) as f64 * self.viewport.scale() as f64;
                         text_input_data.editor.transact(
                             &mut self.font_ctx,
                             &mut self.layout_ctx,
@@ -1132,8 +1134,8 @@ impl Document {
     pub fn scroll_viewport_by(&mut self, x: f64, y: f64) {
         let content_size = self.root_element().final_layout.size;
         let new_scroll = (self.viewport_scroll.x - x, self.viewport_scroll.y - y);
-        let window_width = self.viewport.window_size.0 as f64 / self.viewport.scale() as f64;
-        let window_height = self.viewport.window_size.1 as f64 / self.viewport.scale() as f64;
+        let window_width = self.viewport.window_size.0 as f64 / self.viewport.hidpi_scale as f64;
+        let window_height = self.viewport.window_size.1 as f64 / self.viewport.hidpi_scale as f64;
         self.viewport_scroll.x = f64::max(
             0.0,
             f64::min(new_scroll.0, content_size.width as f64 - window_width),

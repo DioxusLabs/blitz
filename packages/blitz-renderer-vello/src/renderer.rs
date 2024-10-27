@@ -200,7 +200,7 @@ pub async fn render_to_buffer(dom: &Document, viewport: Viewport) -> Vec<u8> {
     generate_vello_scene(
         &mut scene,
         dom,
-        viewport.scale_f64(),
+        viewport.scale() as _,
         width,
         height,
         Devtools::default(),
