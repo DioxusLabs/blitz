@@ -814,27 +814,6 @@ impl Node {
         }
     }
 
-    pub fn text_content(&self) -> String {
-        let mut out = String::new();
-        self.write_text_content(&mut out);
-        out
-    }
-
-    fn write_text_content(&self, out: &mut String) {
-        match &self.raw_dom_data {
-            NodeData::Text(data) => {
-                out.push_str(&data.content);
-            }
-            NodeData::Element(..) | NodeData::AnonymousBlock(..) => {
-                for child_id in self.children.iter() {
-                    // self.with(*child_id).write_text_content(out);
-                    todo!()
-                }
-            }
-            _ => {}
-        }
-    }
-
     pub fn flush_style_attribute(&mut self) {
         if let NodeData::Element(ref mut elem_data) = self.raw_dom_data {
             elem_data.flush_style_attribute(&self.guard);

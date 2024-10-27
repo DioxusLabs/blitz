@@ -1,7 +1,6 @@
 use crate::events::{EventData, HitResult, RendererEvent};
 use crate::node::{ImageData, NodeSpecificData, TextBrush};
-use crate::stylo::Handle;
-use crate::{ElementNodeData, Node, NodeData, TextNodeData, Viewport};
+use crate::{ElementNodeData, Handle, Node, NodeData, TextNodeData, Viewport};
 use app_units::Au;
 use html5ever::local_name;
 use parley::PlainEditorOp;
@@ -431,6 +430,13 @@ impl Document {
         ctx
     }
 
+    pub fn get(&self, id: usize) -> Option<Handle> {
+        self.nodes.get(id).map(|node| Handle {
+            node,
+            tree: &self.nodes,
+        })
+    }
+
     /// Set base url for resolving linked resources (stylesheets, images, fonts, etc)
     pub fn set_base_url(&mut self, url: &str) {
         self.base_url = Url::parse(url).ok();
@@ -679,7 +685,7 @@ impl Document {
     }
 
     pub fn process_style_element(&mut self, target_id: usize) {
-        let css = self.nodes[target_id].text_content();
+        let css = self.get(target_id).unwrap().text_content();
         let css = html_escape::decode_html_entities(&css);
         let sheet = self.make_stylesheet(&css, Origin::Author);
         self.add_stylesheet_for_node(sheet, target_id);
@@ -718,7 +724,7 @@ impl Document {
     }
 
     pub fn upsert_stylesheet_for_node(&mut self, node_id: usize) {
-        let raw_styles = self.nodes[node_id].text_content();
+        let raw_styles = self.get(node_id).unwrap().text_content();
         let sheet = self.make_stylesheet(raw_styles, Origin::Author);
         self.add_stylesheet_for_node(sheet, node_id);
     }

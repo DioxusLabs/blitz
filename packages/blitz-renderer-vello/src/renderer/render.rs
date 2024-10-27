@@ -10,8 +10,7 @@ use blitz_dom::node::{
     ListItemLayout, ListItemLayoutPosition, Marker, NodeData, TextBrush, TextInputData,
     TextNodeData,
 };
-use blitz_dom::stylo::Handle;
-use blitz_dom::{local_name, Document, Node};
+use blitz_dom::{local_name, Document, Handle};
 
 use parley::Line;
 use style::{

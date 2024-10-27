@@ -1,9 +1,16 @@
+use super::table::build_table_context;
+use crate::{
+    node::{
+        ListItemLayout, ListItemLayoutPosition, Marker, NodeKind, NodeSpecificData, TextBrush,
+        TextInputData, TextLayout,
+    },
+    stylo_to_parley, Document, ElementNodeData, Handle, Node, NodeData,
+};
 use core::str;
-use std::sync::Arc;
-
 use html5ever::{local_name, namespace_url, ns, QualName};
 use parley::{FontStack, InlineBox, PlainEditorOp, StyleProperty, TreeBuilder, WhiteSpaceCollapse};
 use slab::Slab;
+use std::sync::Arc;
 use style::{
     data::ElementData,
     properties::longhands::{
@@ -16,17 +23,6 @@ use style::{
         specified::box_::{DisplayInside, DisplayOutside},
     },
 };
-
-use crate::{
-    node::{
-        ListItemLayout, ListItemLayoutPosition, Marker, NodeKind, NodeSpecificData, TextBrush,
-        TextInputData, TextLayout,
-    },
-    stylo::Handle,
-    stylo_to_parley, Document, ElementNodeData, Node, NodeData,
-};
-
-use super::table::build_table_context;
 
 pub(crate) fn collect_layout_children(
     doc: &mut Document,

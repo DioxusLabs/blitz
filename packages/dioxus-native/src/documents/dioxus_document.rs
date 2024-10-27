@@ -10,9 +10,8 @@ use blitz_dom::{
     events::{EventData, RendererEvent},
     local_name, namespace_url,
     node::{Attribute, NodeSpecificData},
-    ns,
-    stylo::Handle,
-    Atom, Document, DocumentLike, ElementNodeData, Node, NodeData, QualName, Viewport, DEFAULT_CSS,
+    ns, Atom, Document, DocumentLike, ElementNodeData, Handle, Node, NodeData, QualName, Viewport,
+    DEFAULT_CSS,
 };
 
 use dioxus::{

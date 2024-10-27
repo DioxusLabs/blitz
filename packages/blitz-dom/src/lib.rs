@@ -15,6 +15,10 @@
 /// This is the primary entry point for this crate.
 pub mod document;
 
+/// Node handle.
+pub mod handle;
+pub use self::handle::Handle;
+
 /// HTML document data structure.
 pub mod html_document;
 /// An implementation for Html5ever's sink trait, allowing us to parse HTML into a DOM.
