@@ -690,6 +690,8 @@ pub(crate) fn build_inline_layout(
     doc: &mut Document,
     inline_context_root_node_id: usize,
 ) -> (TextLayout, Vec<usize>) {
+    flush_inline_pseudos_recursive(doc, inline_context_root_node_id);
+
     // Get the inline context's root node's text styles
     let root_node = &doc.nodes[inline_context_root_node_id];
     let root_node_style = root_node.primary_styles().or_else(|| {
@@ -775,6 +777,23 @@ pub(crate) fn build_inline_layout(
     }
 
     return (TextLayout { text, layout }, layout_children);
+
+    fn flush_inline_pseudos_recursive(doc: &mut Document, node_id: usize) {
+        doc.iter_children_mut(node_id, |child_id, doc| {
+            flush_pseudo_elements(doc, child_id);
+            let display = doc.nodes[node_id]
+                .display_style()
+                .unwrap_or(Display::inline());
+            let do_recurse = match (display.outside(), display.inside()) {
+                (DisplayOutside::None, DisplayInside::Contents) => true,
+                (DisplayOutside::Inline, DisplayInside::Flow) => true,
+                (_, _) => false,
+            };
+            if do_recurse {
+                flush_inline_pseudos_recursive(doc, child_id);
+            }
+        });
+    }
 
     fn build_inline_layout_recursive(
         builder: &mut TreeBuilder<TextBrush>,
