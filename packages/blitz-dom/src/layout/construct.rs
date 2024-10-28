@@ -240,7 +240,6 @@ fn flush_pseudo_elements(doc: &mut Document, node_id: usize) {
         (1, before_style, before_node_id),
         (0, after_style, after_node_id),
     ] {
-
         // // Drop pseudo element node if style no longer exists
         // if pe_node_id.is_some() && pe_style.is_none() {
         //     doc.remove_and_drop_node(pe_node_id.unwrap());
@@ -338,7 +337,6 @@ fn flush_pseudo_elements(doc: &mut Document, node_id: usize) {
 
         // Sync style to pseudo element
         if let Some(pe_style) = pe_style {
-
             const NAME: QualName = QualName {
                 prefix: None,
                 ns: ns!(html),
@@ -349,7 +347,6 @@ fn flush_pseudo_elements(doc: &mut Document, node_id: usize) {
                 Vec::new(),
             )));
 
-
             let content = &pe_style.as_ref().get_counters().content;
             if let Content::Items(item_data) = content {
                 let items = &item_data.items[0..item_data.alt_start];
@@ -357,7 +354,7 @@ fn flush_pseudo_elements(doc: &mut Document, node_id: usize) {
                     ContentItem::String(owned_str) => {
                         let text_node_id = doc.create_text_node(&owned_str);
                         doc.nodes[new_node_id].children.push(text_node_id);
-                    },
+                    }
                     _ => {}
                 }
             }
@@ -368,7 +365,6 @@ fn flush_pseudo_elements(doc: &mut Document, node_id: usize) {
             *doc.nodes[new_node_id].stylo_element_data.borrow_mut() = Some(element_data);
 
             doc.nodes[node_id].set_pe_by_index(idx, Some(new_node_id));
-
         }
     }
 }
@@ -690,6 +686,8 @@ pub(crate) fn build_inline_layout(
     doc: &mut Document,
     inline_context_root_node_id: usize,
 ) -> (TextLayout, Vec<usize>) {
+    println!("Inline context {}", inline_context_root_node_id);
+
     flush_inline_pseudos_recursive(doc, inline_context_root_node_id);
 
     // Get the inline context's root node's text styles
@@ -704,6 +702,8 @@ pub(crate) fn build_inline_layout(
         .as_ref()
         .map(|s| stylo_to_parley::style(s))
         .unwrap_or_default();
+
+    // dbg!(&parley_style);
 
     let root_line_height = parley_style.line_height;
 
@@ -734,7 +734,6 @@ pub(crate) fn build_inline_layout(
     };
 
     if let Some(before_id) = root_node.before.clone() {
-        dbg!(before_id);
         build_inline_layout_recursive(
             &mut builder,
             &doc.nodes,
@@ -865,6 +864,8 @@ pub(crate) fn build_inline_layout(
                                 .map(|s| stylo_to_parley::style(&s))
                                 .unwrap_or_default();
 
+                            // dbg!(&style);
+
                             // style.brush = peniko::Brush::Solid(peniko::Color::WHITE);
 
                             // Floor the line-height of the span by the line-height of the inline context
@@ -922,7 +923,7 @@ pub(crate) fn build_inline_layout(
                 };
             }
             NodeData::Text(data) => {
-                // dbg!(&data.content);
+                dbg!(&data.content);
                 builder.push_text(&data.content);
             }
             NodeData::Comment => {}

@@ -51,8 +51,6 @@ use super::stylo_to_taffy;
 use style::values::computed::text::TextAlign as StyloTextAlign;
 
 impl crate::document::Document {
-
-
     /// Walk the whole tree, converting styles to layout
     pub fn flush_styles_to_layout(&mut self, node_id: usize) {
         let display = {
@@ -86,7 +84,6 @@ impl crate::document::Document {
         // If the node has children, then take those children and...
         let children = self.nodes[node_id].layout_children.borrow_mut().take();
         if let Some(mut children) = children {
-
             // Recursively call flush_styles_to_layout on each child
             for child in children.iter() {
                 self.flush_styles_to_layout(*child);
@@ -109,6 +106,17 @@ impl crate::document::Document {
     pub fn resolve_stylist(&mut self) {
         style::thread_state::enter(ThreadState::LAYOUT);
 
+        self.iter_subtree_mut(self.root_node().id, |node_id, doc| {
+            doc.snapshot_node(node_id);
+            let node = &doc.nodes[node_id];
+            let mut stylo_element_data = node.stylo_element_data.borrow_mut();
+            if let Some(data) = &mut *stylo_element_data {
+                data.hint |= RestyleHint::restyle_subtree();
+                data.hint |= RestyleHint::recascade_subtree();
+                data.hint |= RestyleHint::RESTYLE_PSEUDOS;
+            }
+        });
+
         let guard = &self.guard;
         let guards = StylesheetGuards {
             author: &guard.read(),
@@ -127,6 +135,7 @@ impl crate::document::Document {
         if let Some(data) = &mut *stylo_element_data {
             data.hint |= RestyleHint::restyle_subtree();
             data.hint |= RestyleHint::recascade_subtree();
+            data.hint |= RestyleHint::RESTYLE_PSEUDOS;
         }
         drop(stylo_element_data);
 
