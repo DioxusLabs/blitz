@@ -686,7 +686,7 @@ pub(crate) fn build_inline_layout(
     doc: &mut Document,
     inline_context_root_node_id: usize,
 ) -> (TextLayout, Vec<usize>) {
-    println!("Inline context {}", inline_context_root_node_id);
+    // println!("Inline context {}", inline_context_root_node_id);
 
     flush_inline_pseudos_recursive(doc, inline_context_root_node_id);
 
@@ -923,7 +923,7 @@ pub(crate) fn build_inline_layout(
                 };
             }
             NodeData::Text(data) => {
-                dbg!(&data.content);
+                // dbg!(&data.content);
                 builder.push_text(&data.content);
             }
             NodeData::Comment => {}
