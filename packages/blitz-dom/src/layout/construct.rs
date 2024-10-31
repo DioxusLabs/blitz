@@ -27,6 +27,12 @@ use crate::{
 
 use super::table::build_table_context;
 
+const DUMMY_NAME: QualName = QualName {
+    prefix: None,
+    ns: ns!(html),
+    local: local_name!("div"),
+};
+
 pub(crate) fn collect_layout_children(
     doc: &mut Document,
     container_node_id: usize,
@@ -236,114 +242,22 @@ fn flush_pseudo_elements(doc: &mut Document, node_id: usize) {
         (before_style, after_style, before_node_id, after_node_id)
     };
 
+    // Sync pseudo element
+    // TODO: Make incremental
     for (idx, pe_style, pe_node_id) in [
         (1, before_style, before_node_id),
         (0, after_style, after_node_id),
     ] {
-        // // Drop pseudo element node if style no longer exists
-        // if pe_node_id.is_some() && pe_style.is_none() {
-        //     doc.remove_and_drop_node(pe_node_id.unwrap());
-        //     doc.nodes[node_id].set_pe_by_index(idx, None);
-        //     // doc.nodes[node_id]
-        //     //     .layout_children
-        //     //     .borrow_mut()
-        //     //     .as_mut()
-        //     //     .unwrap()
-        //     //     .retain(|id| *id != node_id);
-        // }
-
-        // // Create pseudo element node if it doesn't exist but should
-        // let new_node_id = if pe_node_id.is_none() && pe_style.is_some() {
-        //     const NAME: QualName = QualName {
-        //         prefix: None,
-        //         ns: ns!(html),
-        //         local: local_name!("div"),
-        //     };
-        //     let new_node_id = doc.create_node(NodeData::AnonymousBlock(ElementNodeData::new(
-        //         NAME,
-        //         Vec::new(),
-        //     )));
-
-        //     let content = &pe_style.as_ref().unwrap().get_counters().content;
-        //     if let Content::Items(item_data) = content {
-        //         let items = &item_data.items[0..item_data.alt_start];
-        //         match &items[0] {
-        //             ContentItem::String(owned_str) => {
-        //                 dbg!(&owned_str);
-        //                 let text_node_id = doc.create_text_node(&owned_str);
-        //                 doc.nodes[new_node_id].children.push(text_node_id);
-        //                 // *doc.nodes[new_node_id].layout_children.borrow_mut() = Some(vec![text_node_id]);
-        //                 // let parley_style = stylo_to_parley::style(&*pe_style.as_ref().unwrap());
-
-        //                 // // Create a parley tree builder
-        //                 // let mut builder =
-        //                 //     doc.layout_ctx
-        //                 //         .tree_builder(&mut doc.font_ctx, doc.viewport.scale(), &parley_style);
-
-        //                 // // Set whitespace collapsing mode
-        //                 // let collapse_mode = stylo_to_parley::white_space_collapse(pe_style.as_ref().unwrap().clone_white_space_collapse());
-        //                 // builder.set_white_space_mode(collapse_mode);
-
-        //                 // builder.push_text(&owned_str);
-
-        //                 // let (layout, text) = builder.build();
-        //                 // let text_layout = Box::new(TextLayout { text, layout });
-
-        //                 // doc.nodes[new_node_id]
-        //                 //     .raw_dom_data
-        //                 //     .downcast_element_mut()
-        //                 //     .unwrap()
-        //                 //     .inline_layout_data = Some(text_layout);
-        //             },
-        //             ContentItem::Counter(_custom_ident, _t) => { /* todo */ },
-        //             ContentItem::Counters(_custom_ident, _owned_str, _t) => { /* todo */ },
-        //             ContentItem::OpenQuote => { /* todo */ },
-        //             ContentItem::CloseQuote => { /* todo */ },
-        //             ContentItem::NoOpenQuote => { /* todo */ },
-        //             ContentItem::NoCloseQuote => { /* todo */ },
-        //             ContentItem::Attr(_attr) => { /* todo */ },
-        //             ContentItem::Image(_) => { /* todo */ },
-        //         }
-        //     }
-
-        //     doc.nodes[node_id].set_pe_by_index(idx, Some(new_node_id));
-        //     // doc.nodes[node_id]
-        //     //     .layout_children
-        //     //     .borrow_mut()
-        //     //     .as_mut()
-        //     //     .unwrap()
-        //     //     .push(new_node_id);
-
-        //     Some(new_node_id)
-        // } else {
-        //     None
-        // };
-
-        // if let Some(pe_style) = pe_style {
-        //     let mut element_data = ElementData::default();
-        //     element_data.styles.primary = Some(pe_style);
-        //     element_data.set_restyled();
-        //     *doc.nodes[pe_node_id.or(new_node_id).unwrap()].stylo_element_data.borrow_mut() = Some(element_data);
-        // }
-
-        // ------------------------------------------------------------------------------------------------------
-        // ------------------------------------------------------------------------------------------------------
-        // ------------------------------------------------------------------------------------------------------
-
+        // Delete psuedo element if it exists
         if let Some(pe_node_id) = pe_node_id {
             doc.remove_and_drop_node(pe_node_id);
             doc.nodes[node_id].set_pe_by_index(idx, None);
         }
 
-        // Sync style to pseudo element
+        // (Re)create pseudo element if it should exist
         if let Some(pe_style) = pe_style {
-            const NAME: QualName = QualName {
-                prefix: None,
-                ns: ns!(html),
-                local: local_name!("div"),
-            };
             let new_node_id = doc.create_node(NodeData::AnonymousBlock(ElementNodeData::new(
-                NAME,
+                DUMMY_NAME,
                 Vec::new(),
             )));
 
