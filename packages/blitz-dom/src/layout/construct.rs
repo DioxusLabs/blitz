@@ -206,11 +206,11 @@ pub(crate) fn collect_layout_children(
         }
 
         _ => {
-            if let Some(before) = doc.nodes[container_node_id].before.clone() {
+            if let Some(before) = doc.nodes[container_node_id].before {
                 layout_children.push(before);
             }
             layout_children.extend_from_slice(&doc.nodes[container_node_id].children);
-            if let Some(after) = doc.nodes[container_node_id].after.clone() {
+            if let Some(after) = doc.nodes[container_node_id].after {
                 layout_children.push(after);
             }
         }
@@ -221,8 +221,8 @@ fn flush_pseudo_elements(doc: &mut Document, node_id: usize) {
     let (before_style, after_style, before_node_id, after_node_id) = {
         let node = &doc.nodes[node_id];
 
-        let before_node_id = node.before.clone();
-        let after_node_id = node.after.clone();
+        let before_node_id = node.before;
+        let after_node_id = node.after;
 
         // Note: yes these are kinda backwards
         let style_data = node.stylo_element_data.borrow();
@@ -352,10 +352,12 @@ fn flush_pseudo_elements(doc: &mut Document, node_id: usize) {
                 let items = &item_data.items[0..item_data.alt_start];
                 match &items[0] {
                     ContentItem::String(owned_str) => {
-                        let text_node_id = doc.create_text_node(&owned_str);
+                        let text_node_id = doc.create_text_node(owned_str);
                         doc.nodes[new_node_id].children.push(text_node_id);
                     }
-                    _ => {}
+                    _ => {
+                        // TODO: other types of content
+                    }
                 }
             }
 
@@ -585,7 +587,7 @@ fn collect_complex_layout_children(
         //
         // Also hide all-whitespace flexbox children as these should be ignored
         if child_node_kind == NodeKind::Comment || (hide_whitespace && is_whitespace_node) {
-            return;
+            // return;
         }
         // Recurse into `Display::Contents` nodes
         else if display_inside == DisplayInside::Contents {
@@ -733,7 +735,7 @@ pub(crate) fn build_inline_layout(
         }
     };
 
-    if let Some(before_id) = root_node.before.clone() {
+    if let Some(before_id) = root_node.before {
         build_inline_layout_recursive(
             &mut builder,
             &doc.nodes,
@@ -751,7 +753,7 @@ pub(crate) fn build_inline_layout(
             root_line_height,
         );
     }
-    if let Some(after_id) = root_node.after.clone() {
+    if let Some(after_id) = root_node.after {
         build_inline_layout_recursive(
             &mut builder,
             &doc.nodes,
@@ -877,7 +879,7 @@ pub(crate) fn build_inline_layout(
 
                             builder.push_style_span(style);
 
-                            if let Some(before_id) = node.before.clone() {
+                            if let Some(before_id) = node.before {
                                 build_inline_layout_recursive(
                                     builder,
                                     nodes,
@@ -896,7 +898,7 @@ pub(crate) fn build_inline_layout(
                                     root_line_height,
                                 );
                             }
-                            if let Some(after_id) = node.after.clone() {
+                            if let Some(after_id) = node.after {
                                 build_inline_layout_recursive(
                                     builder,
                                     nodes,

@@ -128,8 +128,8 @@ impl Node {
 
     pub fn pe_by_index(&self, index: usize) -> Option<usize> {
         match index {
-            0 => self.after.clone(),
-            1 => self.before.clone(),
+            0 => self.after,
+            1 => self.before,
             _ => panic!("Invalid pseudo element index"),
         }
     }
