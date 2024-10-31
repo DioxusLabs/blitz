@@ -12,6 +12,7 @@ use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 use style::invalidation::element::restyle_hints::RestyleHint;
 use style::properties::ComputedValues;
+use style::selector_parser::PseudoElement;
 use style::stylesheets::UrlExtraData;
 use style::values::computed::Display;
 use style::values::specified::box_::{DisplayInside, DisplayOutside};
@@ -67,6 +68,10 @@ pub struct Node {
     pub guard: SharedRwLock,
     pub element_state: ElementState,
 
+    // Pseudo element nodes
+    pub before: Option<usize>,
+    pub after: Option<usize>,
+
     // Taffy layout data:
     pub style: Style,
     pub hidden: bool,
@@ -102,6 +107,9 @@ impl Node {
             guard,
             element_state: ElementState::empty(),
 
+            before: None,
+            after: None,
+
             style: Default::default(),
             hidden: false,
             is_hovered: false,
@@ -115,6 +123,22 @@ impl Node {
             scroll_offset: kurbo::Point::ZERO,
             is_inline_root: false,
             is_table_root: false,
+        }
+    }
+
+    pub fn pe_by_index(&self, index: usize) -> Option<usize> {
+        match index {
+            0 => self.after,
+            1 => self.before,
+            _ => panic!("Invalid pseudo element index"),
+        }
+    }
+
+    pub fn set_pe_by_index(&mut self, index: usize, value: Option<usize>) {
+        match index {
+            0 => self.after = value,
+            1 => self.before = value,
+            _ => panic!("Invalid pseudo element index"),
         }
     }
 
@@ -827,7 +851,11 @@ impl Node {
             .borrow()
             .as_ref()
             .and_then(|data| data.styles.get_primary())
-            .map(|s| s.clone_order())
+            .map(|s| match s.pseudo() {
+                Some(PseudoElement::Before) => i32::MIN,
+                Some(PseudoElement::After) => i32::MAX,
+                _ => s.clone_order(),
+            })
             .unwrap_or(0)
     }
 

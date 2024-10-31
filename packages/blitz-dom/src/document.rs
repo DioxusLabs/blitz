@@ -861,6 +861,50 @@ impl Document {
         self.root_element().hit(x, y)
     }
 
+    pub fn iter_children_mut(&mut self, node_id: usize, mut cb: impl FnMut(usize, &mut Document)) {
+        let children = std::mem::take(&mut self.nodes[node_id].children);
+        for child_id in children.iter().cloned() {
+            cb(child_id, self);
+        }
+        self.nodes[node_id].children = children;
+    }
+
+    pub fn iter_subtree_mut(&mut self, node_id: usize, mut cb: impl FnMut(usize, &mut Document)) {
+        iter_subtree_mut_inner(self, node_id, &mut cb);
+        fn iter_subtree_mut_inner(
+            doc: &mut Document,
+            node_id: usize,
+            cb: &mut impl FnMut(usize, &mut Document),
+        ) {
+            let children = std::mem::take(&mut doc.nodes[node_id].children);
+            for child_id in children.iter().cloned() {
+                cb(child_id, doc);
+                iter_subtree_mut_inner(doc, child_id, cb);
+            }
+            doc.nodes[node_id].children = children;
+        }
+    }
+
+    pub fn iter_children_and_pseudos_mut(
+        &mut self,
+        node_id: usize,
+        mut cb: impl FnMut(usize, &mut Document),
+    ) {
+        let before = self.nodes[node_id].before.take();
+        if let Some(before_node_id) = before {
+            cb(before_node_id, self)
+        }
+        self.nodes[node_id].before = before;
+
+        self.iter_children_mut(node_id, &mut cb);
+
+        let after = self.nodes[node_id].after.take();
+        if let Some(after_node_id) = after {
+            cb(after_node_id, self)
+        }
+        self.nodes[node_id].after = after;
+    }
+
     pub fn next_node(&self, start: &Node, mut filter: impl FnMut(&Node) -> bool) -> Option<usize> {
         let start_id = start.id;
         let mut node = start;

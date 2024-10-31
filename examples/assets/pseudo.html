@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <link rel="stylesheet" href="https://use.fontawesome.com/releases/v6.6.0/css/all.css" />
+    <!--<link rel="stylesheet" href="file:///Users/nico/code/oss/blitz/examples/assets/fa5.css" />-->
+    <style type="text/css">
+
+      @font-face {
+        font-family: 'Font Awesome 6 Brands';
+        font-style: normal;
+        font-weight: 400;
+        font-display: block;
+        src: url("https://use.fontawesome.com/releases/v6.6.0/webfonts/fa-brands-400.woff2") format("woff2"), url("https://use.fontawesome.com/releases/v6.6.0/webfonts/fa-brands-400.ttf") format("truetype");
+      }
+
+      .pseudo::before {
+        content: "A";
+        font-style: normal;
+      }
+
+      .qqq {
+        font-family: "Font Awesome 6 Brands";
+        font-style: normal;
+        font-size: 32px;
+      }
+
+      .fa-solid,
+      .fa-regular,
+      .fa-brands,
+      .fas,
+      .far,
+      .fab,
+      .fa-sharp-solid,
+      .fa-classic,
+      .fa {
+        -moz-osx-font-smoothing: grayscale;
+        -webkit-font-smoothing: antialiased;
+        display: var(--fa-display, inline-block);
+        font-style: normal;
+        font-variant: normal;
+        line-height: 1;
+        text-rendering: auto;
+      }
+
+      .fab,
+      .fa-brands {
+        font-family: 'Font Awesome 6 Brands';
+      }
+
+      .fab,
+      .fa-brands {
+        font-weight: 400;
+      }
+
+      .fa-github:before {
+        content: "\f09b";
+      }
+
+      .gh:before {
+        content: "\f09b";
+        font-family: 'Font Awesome 6 Brands';
+        font-style: normal;
+        -moz-osx-font-smoothing: grayscale;
+        -webkit-font-smoothing: antialiased;
+      }
+
+
+    </style>
+  </head>
+  <body>
+    <div><span class="icon"><i class="gh"></i></span>Hello</div>
+    <!--<div><span class="icon"><i class="pseudo"></i></span>Hello</div>-->
+    <div><span class="icon"><i class="fab fa-github"></i></span>Hello</div>
+    <!--<p>
+      <span class="icon"><i class="fab fa-github"></i></span>
+      <span class="icon"><i class="fab fa-twitter"></i></span>
+      <span class="icon"><i class="fab fa-mastodon"></i></span>
+      <span class="icon"><i class="psuedo"></i>Hello</span>
+    </p>-->
+    <div class="qqq">&#xf09b; &#xf099; &#xf4f6;</div>
+  </body>
+</html>
