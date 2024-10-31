@@ -83,16 +83,15 @@ impl Document {
 
         println!("Layout Parent: {:?}", node.layout_parent.get());
 
-        let layout_children: Vec<_> = node
-            .layout_children
-            .borrow()
-            .as_ref()
-            .unwrap()
-            .iter()
-            .map(|id| &self.nodes[*id])
-            .map(|node| (node.id, node.order(), node.node_debug_str()))
-            .collect();
-        println!("Layout Children: {:?}", layout_children);
+        let layout_children: Option<Vec<_>> = node.layout_children.borrow().as_ref().map(|lc| {
+            lc.iter()
+                .map(|id| &self.nodes[*id])
+                .map(|node| (node.id, node.order(), node.node_debug_str()))
+                .collect()
+        });
+        if let Some(layout_children) = layout_children {
+            println!("Layout Children: {:?}", layout_children);
+        }
         // taffy::print_tree(&self.dom, node_id.into());
     }
 }
