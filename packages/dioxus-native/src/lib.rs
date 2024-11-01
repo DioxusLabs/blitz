@@ -30,7 +30,7 @@ pub use crate::window::WindowConfig;
 use blitz_dom::net::Resource;
 use blitz_dom::{DocumentLike, HtmlDocument};
 use blitz_net::Provider;
-use blitz_traits::net::{set_provider, SharedCallback};
+use blitz_traits::net::SharedCallback;
 use dioxus::prelude::{ComponentFunction, Element, VirtualDom};
 use std::ops::DerefMut;
 use std::sync::{Arc, Mutex};
@@ -122,13 +122,13 @@ pub fn launch_static_html_cfg(html: &str, cfg: Config) {
     let _guard = rt.enter();
 
     let net_callback = Arc::new(Callback::new());
-    let net = Provider::new(rt.handle().clone());
-    set_provider(net);
+    let net_provider = Arc::new(Provider::new(rt.handle().clone()));
 
     let document = HtmlDocument::from_html(
         html,
         cfg.base_url,
         cfg.stylesheets,
+        net_provider,
         Arc::clone(&net_callback) as SharedCallback<Resource>,
     );
     launch_with_document(document, rt, Some(net_callback));
@@ -236,7 +236,7 @@ impl Callback {
 }
 impl blitz_traits::net::Callback for Callback {
     type Data = Resource;
-    fn call(self: Arc<Self>, data: Self::Data) {
+    fn call(&self, data: Self::Data) {
         match self.0.lock().unwrap().deref_mut() {
             CallbackInner::Window(wid, proxy) => Self::send_event(wid, proxy, data),
             CallbackInner::Queue(queue) => queue.push(data),
