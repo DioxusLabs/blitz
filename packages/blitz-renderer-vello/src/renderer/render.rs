@@ -12,6 +12,7 @@ use blitz_dom::node::{
 };
 use blitz_dom::{local_name, Document, Node};
 
+use parley::Line;
 use style::{
     dom::TElement,
     properties::{
@@ -51,7 +52,7 @@ use vello::kurbo::{BezPath, Cap, Join};
 use vello::peniko::Gradient;
 use vello::{
     kurbo::{Affine, Point, Rect, Shape, Stroke, Vec2},
-    peniko::{self, Brush, Color, Fill, Mix},
+    peniko::{self, Color, Fill, Mix},
     Scene,
 };
 use vello_svg::usvg;
@@ -208,7 +209,7 @@ impl VelloSceneGenerator<'_> {
 
         let mut abs_x = x;
         let mut abs_y = y;
-        while let Some(parent_id) = node.parent {
+        while let Some(parent_id) = node.layout_parent.get() {
             node = &self.dom.as_ref().tree()[parent_id];
             let taffy::Point { x, y } = node.final_layout.location;
             abs_x += x;
@@ -448,23 +449,21 @@ impl VelloSceneGenerator<'_> {
 
         // Render the text in text inputs
         if let Some(input_data) = cx.text_input {
-            let text_layout = input_data.editor.layout();
+            let transform = Affine::translate((pos.x * self.scale, pos.y * self.scale));
+
+            // Render selection/caret
+            for rect in input_data.editor.selection_geometry().iter() {
+                scene.fill(Fill::NonZero, transform, Color::STEEL_BLUE, None, &rect);
+            }
+            if let Some(cursor) = input_data.editor.selection_strong_geometry(1.5) {
+                scene.fill(Fill::NonZero, transform, Color::BLACK, None, &cursor);
+            };
+            if let Some(cursor) = input_data.editor.selection_weak_geometry(1.5) {
+                scene.fill(Fill::NonZero, transform, Color::DARK_GRAY, None, &cursor);
+            };
 
             // Render text
-            cx.stroke_text(scene, text_layout, pos);
-
-            // Render caret
-            let cursor_line = input_data.editor.get_cursor_line();
-            let transform = Affine::translate((pos.x * self.scale, pos.y * self.scale));
-            if let Some(line) = cursor_line {
-                scene.stroke(
-                    &Stroke::new(2.),
-                    transform,
-                    &Brush::Solid(Color::BLACK),
-                    None,
-                    &line,
-                );
-            }
+            cx.stroke_text(scene, input_data.editor.lines(), pos);
         } else if let Some(ListItemLayout {
             marker,
             position: ListItemLayoutPosition::Outside(layout),
@@ -496,7 +495,7 @@ impl VelloSceneGenerator<'_> {
                 x: pos.x + x_offset as f64,
                 y: pos.y + y_offset as f64,
             };
-            cx.stroke_text(scene, layout, pos);
+            cx.stroke_text(scene, layout.lines(), pos);
         }
 
         if element.is_inline_root {
@@ -511,7 +510,7 @@ impl VelloSceneGenerator<'_> {
                 });
 
             // Render text
-            cx.stroke_text(scene, &text_layout.layout, pos);
+            cx.stroke_text(scene, text_layout.layout.lines(), pos);
 
             // Render inline boxes
             for line in text_layout.layout.lines() {
@@ -617,14 +616,20 @@ struct ElementCx<'a> {
 }
 
 impl ElementCx<'_> {
-    fn stroke_text(&self, scene: &mut Scene, text_layout: &parley::Layout<TextBrush>, pos: Point) {
+    fn stroke_text<'a>(
+        &self,
+        scene: &mut Scene,
+        lines: impl Iterator<Item = Line<'a, TextBrush>>,
+        pos: Point,
+    ) {
         let transform = Affine::translate((pos.x * self.scale, pos.y * self.scale));
 
-        for line in text_layout.lines() {
+        for line in lines {
             for item in line.items() {
                 if let PositionedLayoutItem::GlyphRun(glyph_run) = item {
                     let mut x = glyph_run.offset();
                     let y = glyph_run.baseline();
+
                     let run = glyph_run.run();
                     let font = run.font();
                     let font_size = run.font_size();
@@ -640,35 +645,10 @@ impl ElementCx<'_> {
                         .map(|coord| vello::skrifa::instance::NormalizedCoord::from_bits(*coord))
                         .collect::<Vec<_>>();
 
-                    let text_brush = match &style.brush {
-                        TextBrush::Normal(text_brush) => text_brush,
-                        TextBrush::Highlight { text, fill } => {
-                            scene.fill(
-                                Fill::EvenOdd,
-                                transform,
-                                fill,
-                                None,
-                                &Rect::from_origin_size(
-                                    (
-                                        glyph_run.offset() as f64,
-                                        // The y coordinate is on the baseline. We want to draw from the top of the line
-                                        // (Note that we are in a y-down coordinate system)
-                                        (y - metrics.ascent - metrics.leading) as f64,
-                                    ),
-                                    (
-                                        glyph_run.advance() as f64,
-                                        (metrics.ascent + metrics.descent + metrics.leading) as f64,
-                                    ),
-                                ),
-                            );
-
-                            text
-                        }
-                    };
-
                     scene
                         .draw_glyphs(font)
-                        .brush(text_brush)
+                        .brush(&style.brush)
+                        .hint(true)
                         .transform(transform)
                         .glyph_transform(glyph_xform)
                         .font_size(font_size)
@@ -679,7 +659,8 @@ impl ElementCx<'_> {
                                 let gx = x + glyph.x;
                                 let gy = y - glyph.y;
                                 x += glyph.advance;
-                                vello::glyph::Glyph {
+
+                                vello::Glyph {
                                     id: glyph.id as _,
                                     x: gx,
                                     y: gy,
@@ -692,13 +673,7 @@ impl ElementCx<'_> {
                         let w = glyph_run.advance() as f64;
                         let y = (glyph_run.baseline() - offset + size / 2.0) as f64;
                         let line = vello::kurbo::Line::new((x, y), (x + w, y));
-                        scene.stroke(
-                            &Stroke::new(size as f64),
-                            transform,
-                            brush.text_brush(),
-                            None,
-                            &line,
-                        )
+                        scene.stroke(&Stroke::new(size as f64), transform, brush, None, &line)
                     };
 
                     if let Some(underline) = &style.underline {
@@ -770,6 +745,7 @@ impl ElementCx<'_> {
                     format: peniko::Format::Rgba8,
                     width,
                     height,
+                    alpha: 255,
                     extend: peniko::Extend::Pad,
                 };
 

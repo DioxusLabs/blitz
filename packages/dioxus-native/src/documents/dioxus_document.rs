@@ -350,7 +350,7 @@ impl DioxusDocument {
         };
         let value = match &element_node_data.node_specific_data {
             NodeSpecificData::CheckboxInput(checked) => checked.to_string(),
-            NodeSpecificData::TextInput(input_data) => input_data.editor.layout.text().clone(),
+            NodeSpecificData::TextInput(input_data) => input_data.editor.text().to_string(),
             _ => element_node_data
                 .attr(local_name!("value"))
                 .unwrap_or_default()
@@ -735,7 +735,7 @@ impl WriteMutations for MutationWriter<'_> {
 
         self.doc.snapshot_node(node_id);
 
-        let node = self.doc.get_node_mut(node_id).unwrap();
+        let node = &mut self.doc.nodes[node_id];
 
         let stylo_element_data = &mut *node.stylo_element_data.borrow_mut();
         if let Some(data) = stylo_element_data {
@@ -750,9 +750,7 @@ impl WriteMutations for MutationWriter<'_> {
             else if let AttributeValue::Text(val) = value {
                 // Update text input value
                 if let Some(input_data) = element.text_input_data_mut() {
-                    if input_data.editor.text() != val {
-                        input_data.editor.set_text(val.clone());
-                    }
+                    input_data.set_text(&mut self.doc.font_ctx, &mut self.doc.layout_ctx, val);
                 }
 
                 // FIXME check namespace
@@ -782,7 +780,7 @@ impl WriteMutations for MutationWriter<'_> {
             if let AttributeValue::None = value {
                 // Update text input value
                 if let Some(input_data) = element.text_input_data_mut() {
-                    input_data.editor.set_text("".to_string());
+                    input_data.set_text(&mut self.doc.font_ctx, &mut self.doc.layout_ctx, "");
                 }
 
                 // FIXME: check namespace

@@ -1,11 +1,12 @@
 [package]
 name = "blitz-net"
 version = "0.1.0"
+license.workspace = true
 edition = "2021"
 
 [dependencies]
 blitz-traits = { path = "../blitz-traits" }
 tokio = { workspace = true }
-reqwest = { version = "0.12.7" }
-data-url = "0.3.1"
-thiserror = "1.0.63"
+reqwest = { workspace = true }
+data-url = { workspace = true }
+thiserror = { workspace = true }

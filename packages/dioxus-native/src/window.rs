@@ -6,9 +6,6 @@ use blitz_dom::{DocumentLike, Viewport};
 use blitz_renderer_vello::{Devtools, Renderer};
 use winit::keyboard::PhysicalKey;
 
-#[allow(unused)]
-use wgpu::rwh::HasWindowHandle;
-
 use std::sync::Arc;
 use std::task::Waker;
 use winit::event::{ElementState, MouseButton};

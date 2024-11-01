@@ -2,11 +2,7 @@ use core::str;
 use std::sync::Arc;
 
 use html5ever::{local_name, namespace_url, ns, QualName};
-use parley::{
-    builder::TreeBuilder,
-    style::{FontStack, WhiteSpaceCollapse},
-    InlineBox,
-};
+use parley::{FontStack, InlineBox, PlainEditorOp, StyleProperty, TreeBuilder, WhiteSpaceCollapse};
 use slab::Slab;
 use style::{
     data::ElementData,
@@ -16,7 +12,7 @@ use style::{
     },
     shared_lock::StylesheetGuards,
     values::{
-        computed::Display,
+        computed::{Content, ContentItem, Display},
         specified::box_::{DisplayInside, DisplayOutside},
     },
 };
@@ -31,12 +27,20 @@ use crate::{
 
 use super::table::build_table_context;
 
+const DUMMY_NAME: QualName = QualName {
+    prefix: None,
+    ns: ns!(html),
+    local: local_name!("div"),
+};
+
 pub(crate) fn collect_layout_children(
     doc: &mut Document,
     container_node_id: usize,
     layout_children: &mut Vec<usize>,
     anonymous_block_id: &mut Option<usize>,
 ) {
+    flush_pseudo_elements(doc, container_node_id);
+
     if let Some(el) = doc.nodes[container_node_id].raw_dom_data.downcast_element() {
         // Handle text inputs
         let tag_name = el.name.local.as_ref();
@@ -208,7 +212,75 @@ pub(crate) fn collect_layout_children(
         }
 
         _ => {
+            if let Some(before) = doc.nodes[container_node_id].before {
+                layout_children.push(before);
+            }
             layout_children.extend_from_slice(&doc.nodes[container_node_id].children);
+            if let Some(after) = doc.nodes[container_node_id].after {
+                layout_children.push(after);
+            }
+        }
+    }
+}
+
+fn flush_pseudo_elements(doc: &mut Document, node_id: usize) {
+    let (before_style, after_style, before_node_id, after_node_id) = {
+        let node = &doc.nodes[node_id];
+
+        let before_node_id = node.before;
+        let after_node_id = node.after;
+
+        // Note: yes these are kinda backwards
+        let style_data = node.stylo_element_data.borrow();
+        let before_style = style_data
+            .as_ref()
+            .and_then(|d| d.styles.pseudos.as_array()[1].clone());
+        let after_style = style_data
+            .as_ref()
+            .and_then(|d| d.styles.pseudos.as_array()[0].clone());
+
+        (before_style, after_style, before_node_id, after_node_id)
+    };
+
+    // Sync pseudo element
+    // TODO: Make incremental
+    for (idx, pe_style, pe_node_id) in [
+        (1, before_style, before_node_id),
+        (0, after_style, after_node_id),
+    ] {
+        // Delete psuedo element if it exists
+        if let Some(pe_node_id) = pe_node_id {
+            doc.remove_and_drop_node(pe_node_id);
+            doc.nodes[node_id].set_pe_by_index(idx, None);
+        }
+
+        // (Re)create pseudo element if it should exist
+        if let Some(pe_style) = pe_style {
+            let new_node_id = doc.create_node(NodeData::AnonymousBlock(ElementNodeData::new(
+                DUMMY_NAME,
+                Vec::new(),
+            )));
+
+            let content = &pe_style.as_ref().get_counters().content;
+            if let Content::Items(item_data) = content {
+                let items = &item_data.items[0..item_data.alt_start];
+                match &items[0] {
+                    ContentItem::String(owned_str) => {
+                        let text_node_id = doc.create_text_node(owned_str);
+                        doc.nodes[new_node_id].children.push(text_node_id);
+                    }
+                    _ => {
+                        // TODO: other types of content
+                    }
+                }
+            }
+
+            let mut element_data = ElementData::default();
+            element_data.styles.primary = Some(pe_style);
+            element_data.set_restyled();
+            *doc.nodes[new_node_id].stylo_element_data.borrow_mut() = Some(element_data);
+
+            doc.nodes[node_id].set_pe_by_index(idx, Some(new_node_id));
         }
     }
 }
@@ -329,7 +401,7 @@ fn marker_for_style(list_style_type: ListStyleType, index: usize) -> Option<Mark
 
 // Override the font to our specific bullet font when rendering bullets
 fn font_for_bullet_style(list_style_type: ListStyleType) -> Option<FontStack<'static>> {
-    let bullet_font = Some(FontStack::Source("Bullet, monospace, sans-serif"));
+    let bullet_font = Some("Bullet, monospace, sans-serif".into());
     match list_style_type {
         ListStyleType::Disc
         | ListStyleType::Circle
@@ -403,10 +475,7 @@ fn collect_complex_layout_children(
     hide_whitespace: bool,
     needs_wrap: impl Fn(NodeKind, DisplayOutside) -> bool,
 ) {
-    // Take children array from node to avoid borrow checker issues.
-    let children = std::mem::take(&mut doc.nodes[container_node_id].children);
-
-    for child_id in children.iter().copied() {
+    doc.iter_children_and_pseudos_mut(container_node_id, |child_id, doc| {
         // Get node kind (text, element, comment, etc)
         let child_node_kind = doc.nodes[child_id].raw_dom_data.kind();
 
@@ -432,7 +501,7 @@ fn collect_complex_layout_children(
         //
         // Also hide all-whitespace flexbox children as these should be ignored
         if child_node_kind == NodeKind::Comment || (hide_whitespace && is_whitespace_node) {
-            continue;
+            // return;
         }
         // Recurse into `Display::Contents` nodes
         else if display_inside == DisplayInside::Contents {
@@ -481,10 +550,7 @@ fn collect_complex_layout_children(
             *anonymous_block_id = None;
             layout_children.push(child_id);
         }
-    }
-
-    // Put children array back
-    doc.nodes[container_node_id].children = children;
+    });
 }
 
 fn create_text_editor(doc: &mut Document, input_element_id: usize, is_multiline: bool) {
@@ -497,19 +563,23 @@ fn create_text_editor(doc: &mut Document, input_element_id: usize, is_multiline:
 
     let element = &mut node.raw_dom_data.downcast_element_mut().unwrap();
     if !matches!(element.node_specific_data, NodeSpecificData::TextInput(_)) {
-        let initial_value = element
-            .attr(local_name!("value"))
-            .unwrap_or(" ")
-            .to_string();
-
-        let mut text_input_data = TextInputData::new(initial_value, 16.0, is_multiline);
-        text_input_data
-            .editor
-            .set_text_size(parley_style.font_size * doc.viewport.scale());
-        text_input_data
-            .editor
-            .set_line_height(parley_style.line_height);
-        text_input_data.editor.set_brush(parley_style.brush);
+        let mut text_input_data = TextInputData::new(is_multiline);
+        let text: Arc<str> = Arc::from(element.attr(local_name!("value")).unwrap_or(" "));
+        let styles: Arc<[_]> = Arc::from([
+            StyleProperty::FontSize(parley_style.font_size),
+            StyleProperty::LineHeight(parley_style.line_height),
+            StyleProperty::Brush(parley_style.brush),
+        ]);
+        text_input_data.editor.transact(
+            &mut doc.font_ctx,
+            &mut doc.layout_ctx,
+            [
+                PlainEditorOp::SetText(text),
+                PlainEditorOp::SetScale(doc.viewport.scale_f64() as f32),
+                PlainEditorOp::SetWidth(10000.0),
+                PlainEditorOp::SetDefaultStyle(styles),
+            ],
+        );
         element.node_specific_data = NodeSpecificData::TextInput(text_input_data);
     }
 }
@@ -532,6 +602,10 @@ pub(crate) fn build_inline_layout(
     doc: &mut Document,
     inline_context_root_node_id: usize,
 ) -> (TextLayout, Vec<usize>) {
+    // println!("Inline context {}", inline_context_root_node_id);
+
+    flush_inline_pseudos_recursive(doc, inline_context_root_node_id);
+
     // Get the inline context's root node's text styles
     let root_node = &doc.nodes[inline_context_root_node_id];
     let root_node_style = root_node.primary_styles().or_else(|| {
@@ -544,6 +618,8 @@ pub(crate) fn build_inline_layout(
         .as_ref()
         .map(|s| stylo_to_parley::style(s))
         .unwrap_or_default();
+
+    // dbg!(&parley_style);
 
     let root_line_height = parley_style.line_height;
 
@@ -559,7 +635,7 @@ pub(crate) fn build_inline_layout(
         .unwrap_or(WhiteSpaceCollapse::Collapse);
     builder.set_white_space_mode(collapse_mode);
 
-    //Render position-inside list items
+    // Render position-inside list items
     if let Some(ListItemLayout {
         marker,
         position: ListItemLayoutPosition::Inside,
@@ -573,11 +649,29 @@ pub(crate) fn build_inline_layout(
         }
     };
 
+    if let Some(before_id) = root_node.before {
+        build_inline_layout_recursive(
+            &mut builder,
+            &doc.nodes,
+            before_id,
+            collapse_mode,
+            root_line_height,
+        );
+    }
     for child_id in root_node.children.iter().copied() {
         build_inline_layout_recursive(
             &mut builder,
             &doc.nodes,
             child_id,
+            collapse_mode,
+            root_line_height,
+        );
+    }
+    if let Some(after_id) = root_node.after {
+        build_inline_layout_recursive(
+            &mut builder,
+            &doc.nodes,
+            after_id,
             collapse_mode,
             root_line_height,
         );
@@ -598,6 +692,23 @@ pub(crate) fn build_inline_layout(
     }
 
     return (TextLayout { text, layout }, layout_children);
+
+    fn flush_inline_pseudos_recursive(doc: &mut Document, node_id: usize) {
+        doc.iter_children_mut(node_id, |child_id, doc| {
+            flush_pseudo_elements(doc, child_id);
+            let display = doc.nodes[node_id]
+                .display_style()
+                .unwrap_or(Display::inline());
+            let do_recurse = match (display.outside(), display.inside()) {
+                (DisplayOutside::None, DisplayInside::Contents) => true,
+                (DisplayOutside::Inline, DisplayInside::Flow) => true,
+                (_, _) => false,
+            };
+            if do_recurse {
+                flush_inline_pseudos_recursive(doc, child_id);
+            }
+        });
+    }
 
     fn build_inline_layout_recursive(
         builder: &mut TreeBuilder<TextBrush>,
@@ -669,17 +780,43 @@ pub(crate) fn build_inline_layout(
                                 .map(|s| stylo_to_parley::style(&s))
                                 .unwrap_or_default();
 
+                            // dbg!(&style);
+
+                            // style.brush = peniko::Brush::Solid(peniko::Color::WHITE);
+
                             // Floor the line-height of the span by the line-height of the inline context
                             // See https://www.w3.org/TR/CSS21/visudet.html#line-height
                             style.line_height = style.line_height.max(root_line_height);
 
+                            // dbg!(node_id);
+                            // dbg!(&style);
+
                             builder.push_style_span(style);
+
+                            if let Some(before_id) = node.before {
+                                build_inline_layout_recursive(
+                                    builder,
+                                    nodes,
+                                    before_id,
+                                    collapse_mode,
+                                    root_line_height,
+                                );
+                            }
 
                             for child_id in node.children.iter().copied() {
                                 build_inline_layout_recursive(
                                     builder,
                                     nodes,
                                     child_id,
+                                    collapse_mode,
+                                    root_line_height,
+                                );
+                            }
+                            if let Some(after_id) = node.after {
+                                build_inline_layout_recursive(
+                                    builder,
+                                    nodes,
+                                    after_id,
                                     collapse_mode,
                                     root_line_height,
                                 );
@@ -702,6 +839,7 @@ pub(crate) fn build_inline_layout(
                 };
             }
             NodeData::Text(data) => {
+                // dbg!(&data.content);
                 builder.push_text(&data.content);
             }
             NodeData::Comment => {}

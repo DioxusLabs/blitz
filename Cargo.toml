@@ -5,36 +5,72 @@ members = [
   "packages/blitz-dom", 
   "packages/blitz-net",
   "packages/blitz-renderer-vello",
-  "packages/dioxus-blitz"
+  "packages/dioxus-native"
 ]
 resolver = "2"
 
+[workspace.package]
+license = "MIT OR APACHE-2.0"
+
 [workspace.dependencies]
 # Servo dependencies
-style = { git = "https://github.com/dioxuslabs/stylo", branch = "blitz" }
-style_config = { git = "https://github.com/dioxuslabs/stylo", branch = "blitz" }
-style_traits = { git = "https://github.com/dioxuslabs/stylo", branch = "blitz" }
-style_dom = { git = "https://github.com/dioxuslabs/stylo", package = "dom", branch = "blitz" }
-selectors = { git = "https://github.com/dioxuslabs/stylo", branch = "blitz" }
+style = { version = "0.1", package = "stylo" }
+style_config = { version = "0.1", package = "stylo_config" }
+style_traits = { version = "0.1", package = "stylo_traits" }
+style_dom = { version = "0.1", package = "stylo_dom" }
+selectors = { version = "0.26", package = "stylo_selectors" }
 html5ever = "0.29" # needs to match stylo markup5ever version
+euclid = "0.22"
+string_cache = "0.8.7"
+atomic_refcell = "0.1.13"
+app_units = "0.7.5"
 
 # DioxusLabs dependencies
-dioxus = { git = "https://github.com/dioxuslabs/dioxus", rev = "9ffd4b816b8ce291b6ca66cb5c871e107a964f6b" }
-dioxus-ssr = { git = "https://github.com/dioxuslabs/dioxus", rev = "9ffd4b816b8ce291b6ca66cb5c871e107a964f6b" }
-dioxus-cli-config = { git = "https://github.com/dioxuslabs/dioxus", rev = "9ffd4b816b8ce291b6ca66cb5c871e107a964f6b" }
-dioxus-devtools = { git = "https://github.com/dioxuslabs/dioxus", rev = "9ffd4b816b8ce291b6ca66cb5c871e107a964f6b" }
-taffy = { git = "https://github.com/dioxuslabs/taffy", rev = "950a0eb1322f15e5d1083f4793b55d52061718de" }
+dioxus = { version = "0.6.0-alpha.3" }
+dioxus-ssr = { version = "0.6.0-alpha.3" }
+dioxus-cli-config = { version = "0.6.0-alpha.3" }
+dioxus-devtools = { version = "0.6.0-alpha.3" }
+taffy = { version = "0.6" }
 
-# Linebender dependencies
-peniko = { version = "0.1" }
-vello = { git = "https://github.com/linebender/vello", rev = "aaa9f5f2d0f21f3d038501ea0cf32c989d97aab3", package = "vello", features = [ "wgpu" ] }
-vello_svg = { git = "https://github.com/cfraz89/vello_svg", rev = "fc29d4ebf8d6aaee980b203f39ef2c73fe43c017" }
-parley = { git = "https://github.com/nicoburns/parley", rev = "186b6e991d08731c0588dc0b247564cbba1c0435" }
+# Linebender + WGPU + SVG dependencies
+peniko = "0.2"
+vello = { version = "0.3", features = [ "wgpu" ] }
+vello_svg = "0.4"
+parley = "0.2"
+wgpu = "22.1.0"
+usvg = "0.43.0"
+
+# Windowing & Input
+raw-window-handle = "0.6.0"
+winit = { version = "0.30.2", features = ["rwh_06"] }
+accesskit_winit = "0.21.1"
+accesskit = "0.15.0"
+muda = "0.11.5"
+clipboard-rs = "0.2.1"
+keyboard-types = "0.7"
+
+# IO & Networking
+url = "2.5.0"
+http = "1.1.0"
+data-url = "0.3.1"
+tokio = "1.25.0"
+reqwest = "0.12.7"
+ureq = "2.9"
+
+# Media & Decoding
+image = "0.25"
+woff = "0.3.3"
+html-escape = "0.2.13"
 
 # Other dependencies
-tokio = { version = "1.25.0", features = ["full"] }
+rustc-hash = "1.1.0"
+bytes = "1.7.1"
+slab = "0.4.9"
 tracing = "0.1.40"
-wgpu = "22.1.0"
+futures-util = "0.3.30"
+futures-intrusive = "0.5.0"
+thiserror = "1.0.63"
+
 
 # This is a "virtual package"
 # It is not meant to be published, but is used so "cargo run --example XYZ" works properly
@@ -69,8 +105,8 @@ blitz-dom = { path = "./packages/blitz-dom" }
 blitz-net = { path = "./packages/blitz-net" }
 blitz-traits = { path = "./packages/blitz-traits" }
 blitz-renderer-vello = { path = "./packages/blitz-renderer-vello" }
-dioxus-blitz = { path = "./packages/dioxus-blitz", features = ["tracing"] }
-comrak = { git = "https://github.com/nicoburns/comrak", branch = "tasklist-class", default-features = false, features = ["syntect"] }
+dioxus-native = { path = "./packages/dioxus-native", features = ["tracing"] }
+comrak = { git = "https://github.com/kivikakk/comrak", rev = "96a64d1befcaa8715098bf617e836c2ef70cb692", default-features = false, features = ["syntect"] }
 png = { version = "0.17" }
 dioxus = { workspace = true }
 euclid = { version = "0.22", features = ["serde"] }

@@ -1,6 +1,7 @@
 use atomic_refcell::{AtomicRef, AtomicRefCell};
 use html5ever::{local_name, LocalName, QualName};
 use image::DynamicImage;
+use parley::{FontContext, LayoutContext, PlainEditorOp};
 use peniko::kurbo;
 use selectors::matching::{ElementSelectorFlags, QuirksMode};
 use slab::Slab;
@@ -11,6 +12,7 @@ use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 use style::invalidation::element::restyle_hints::RestyleHint;
 use style::properties::ComputedValues;
+use style::selector_parser::PseudoElement;
 use style::stylesheets::UrlExtraData;
 use style::values::computed::Display;
 use style::values::specified::box_::{DisplayInside, DisplayOutside};
@@ -66,6 +68,10 @@ pub struct Node {
     pub guard: SharedRwLock,
     pub element_state: ElementState,
 
+    // Pseudo element nodes
+    pub before: Option<usize>,
+    pub after: Option<usize>,
+
     // Taffy layout data:
     pub style: Style,
     pub hidden: bool,
@@ -101,6 +107,9 @@ impl Node {
             guard,
             element_state: ElementState::empty(),
 
+            before: None,
+            after: None,
+
             style: Default::default(),
             hidden: false,
             is_hovered: false,
@@ -114,6 +123,22 @@ impl Node {
             scroll_offset: kurbo::Point::ZERO,
             is_inline_root: false,
             is_table_root: false,
+        }
+    }
+
+    pub fn pe_by_index(&self, index: usize) -> Option<usize> {
+        match index {
+            0 => self.after,
+            1 => self.before,
+            _ => panic!("Invalid pseudo element index"),
+        }
+    }
+
+    pub fn set_pe_by_index(&mut self, index: usize, value: Option<usize>) {
+        match index {
+            0 => self.after = value,
+            1 => self.before = value,
+            _ => panic!("Invalid pseudo element index"),
         }
     }
 
@@ -486,20 +511,39 @@ impl ImageData {
     }
 }
 
-#[derive(Clone)]
 pub struct TextInputData {
     /// A parley TextEditor instance
-    pub editor: Box<parley::editor::TextEditor<String>>,
+    pub editor: Box<parley::PlainEditor<TextBrush>>,
     /// Whether the input is a singleline or multiline input
     pub is_multiline: bool,
 }
 
+// FIXME: Implement Clone for PlainEditor
+impl Clone for TextInputData {
+    fn clone(&self) -> Self {
+        TextInputData::new(self.is_multiline)
+    }
+}
+
 impl TextInputData {
-    pub fn new(text: String, text_size: f32, is_multiline: bool) -> Self {
-        let editor = Box::new(parley::editor::TextEditor::new(text, text_size));
+    pub fn new(is_multiline: bool) -> Self {
+        let editor = Box::new(parley::PlainEditor::default());
         Self {
             editor,
             is_multiline,
+        }
+    }
+
+    pub fn set_text(
+        &mut self,
+        font_ctx: &mut FontContext,
+        layout_ctx: &mut LayoutContext<TextBrush>,
+        text: &str,
+    ) {
+        let text = Arc::from(text);
+        if *self.editor.text() != *text {
+            self.editor
+                .transact(font_ctx, layout_ctx, [PlainEditorOp::SetText(text)]);
         }
     }
 }
@@ -567,7 +611,7 @@ impl std::fmt::Debug for ListItemLayout {
     }
 }
 
-pub type TextBrush = parley::editor::TextBrush;
+pub type TextBrush = peniko::Brush;
 
 #[derive(Clone)]
 pub struct TextLayout {
@@ -807,7 +851,11 @@ impl Node {
             .borrow()
             .as_ref()
             .and_then(|data| data.styles.get_primary())
-            .map(|s| s.get_position().order)
+            .map(|s| match s.pseudo() {
+                Some(PseudoElement::Before) => i32::MIN,
+                Some(PseudoElement::After) => i32::MAX,
+                _ => s.clone_order(),
+            })
             .unwrap_or(0)
     }
 

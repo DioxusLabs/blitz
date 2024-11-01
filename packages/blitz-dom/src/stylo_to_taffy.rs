@@ -15,15 +15,19 @@ mod stylo {
     pub(crate) use style::values::computed::GridTemplateComponent;
     pub(crate) use style::values::computed::ImplicitGridTracks;
     pub(crate) use style::values::computed::LengthPercentage;
+    pub(crate) use style::values::computed::Percentage;
     pub(crate) use style::values::generics::flex::GenericFlexBasis;
     pub(crate) use style::values::generics::grid::RepeatCount;
     pub(crate) use style::values::generics::grid::TrackBreadth;
     pub(crate) use style::values::generics::grid::TrackListValue;
     pub(crate) use style::values::generics::grid::TrackSize;
-    pub(crate) use style::values::generics::length::GenericLengthPercentageOrAuto;
+    // pub(crate) use style::values::generics::length::GenericLengthPercentageOrAuto;
+    // pub(crate) type LengthPercentageAuto = GenericLengthPercentageOrAuto<LengthPercentage>;
     pub(crate) use style::values::generics::length::GenericLengthPercentageOrNormal;
+    pub(crate) use style::values::generics::length::GenericMargin;
     pub(crate) use style::values::generics::length::GenericMaxSize;
     pub(crate) use style::values::generics::length::GenericSize;
+    pub(crate) use style::values::generics::position::GenericInset;
     pub(crate) use style::values::generics::position::PreferredRatio;
     pub(crate) use style::values::generics::NonNegative;
     pub(crate) use style::values::specified::align::AlignFlags;
@@ -33,7 +37,8 @@ mod stylo {
     pub(crate) use style::values::specified::box_::DisplayOutside;
     pub(crate) use style::values::specified::box_::Overflow;
     pub(crate) use style::values::specified::GenericGridTemplateComponent;
-    pub(crate) type LengthPercentageAuto = GenericLengthPercentageOrAuto<LengthPercentage>;
+    pub(crate) type MarginVal = GenericMargin<LengthPercentage>;
+    pub(crate) type InsetVal = GenericInset<Percentage, LengthPercentage>;
     pub(crate) type Size = GenericSize<NonNegative<LengthPercentage>>;
     pub(crate) type MaxSize = GenericMaxSize<NonNegative<LengthPercentage>>;
     pub(crate) type FlexBasis = GenericFlexBasis<Size>;
@@ -51,10 +56,10 @@ pub(crate) fn entire_style(style: &stylo::ComputedValues) -> taffy::Style {
 
     let position = self::position(box_styles.position);
     let inset = taffy::Rect {
-        left: self::length_percentage_auto(&pos.left),
-        right: self::length_percentage_auto(&pos.right),
-        top: self::length_percentage_auto(&pos.top),
-        bottom: self::length_percentage_auto(&pos.bottom),
+        left: self::inset(&pos.left),
+        right: self::inset(&pos.right),
+        top: self::inset(&pos.top),
+        bottom: self::inset(&pos.bottom),
     };
 
     // HACK: Emulate float with 'position: absolute'
@@ -97,7 +102,7 @@ pub(crate) fn entire_style(style: &stylo::ComputedValues) -> taffy::Style {
         },
         aspect_ratio: self::aspect_ratio(pos.aspect_ratio),
 
-        margin: self::margin(margin),
+        margin: self::margin_rect(margin),
         padding: self::padding(padding),
         border: self::border(border),
         inset,
@@ -152,12 +157,33 @@ pub(crate) fn length_percentage(val: &stylo::LengthPercentage) -> taffy::LengthP
     }
 }
 
-pub(crate) fn length_percentage_auto(
-    val: &stylo::LengthPercentageAuto,
-) -> taffy::LengthPercentageAuto {
+// pub(crate) fn length_percentage_auto(
+//     val: &stylo::LengthPercentageAuto,
+// ) -> taffy::LengthPercentageAuto {
+//     match val {
+//         stylo::LengthPercentageAuto::Auto => taffy::LengthPercentageAuto::Auto,
+//         stylo::LengthPercentageAuto::LengthPercentage(val) => length_percentage(val).into(),
+//     }
+// }
+
+pub(crate) fn margin(val: &stylo::MarginVal) -> taffy::LengthPercentageAuto {
     match val {
-        stylo::LengthPercentageAuto::Auto => taffy::LengthPercentageAuto::Auto,
-        stylo::LengthPercentageAuto::LengthPercentage(val) => length_percentage(val).into(),
+        stylo::MarginVal::Auto => taffy::LengthPercentageAuto::Auto,
+        stylo::MarginVal::LengthPercentage(val) => length_percentage(val).into(),
+
+        // Anchor positioning will be flagged off for time being
+        stylo::MarginVal::AnchorSizeFunction(_) => unreachable!(),
+    }
+}
+
+pub(crate) fn inset(val: &stylo::InsetVal) -> taffy::LengthPercentageAuto {
+    match val {
+        stylo::InsetVal::Auto => taffy::LengthPercentageAuto::Auto,
+        stylo::InsetVal::LengthPercentage(val) => length_percentage(val).into(),
+
+        // Anchor positioning will be flagged off for time being
+        stylo::InsetVal::AnchorSizeFunction(_) => unreachable!(),
+        stylo::InsetVal::AnchorFunction(_) => unreachable!(),
     }
 }
 
@@ -165,8 +191,15 @@ pub(crate) fn dimension(val: &stylo::Size) -> taffy::Dimension {
     match val {
         stylo::Size::LengthPercentage(val) => length_percentage(&val.0).into(),
         stylo::Size::Auto => taffy::Dimension::Auto,
-        // TODO: implement other values in Taffy (and servo configuration of stylo)
-        // _ => taffy::Dimension::Auto,
+
+        // TODO: implement other values in Taffy
+        stylo::Size::MaxContent => taffy::Dimension::Auto,
+        stylo::Size::MinContent => taffy::Dimension::Auto,
+        stylo::Size::FitContent => taffy::Dimension::Auto,
+        stylo::Size::Stretch => taffy::Dimension::Auto,
+
+        // Anchor positioning will be flagged off for time being
+        stylo::Size::AnchorSizeFunction(_) => unreachable!(),
     }
 }
 
@@ -174,17 +207,24 @@ pub(crate) fn max_size_dimension(val: &stylo::MaxSize) -> taffy::Dimension {
     match val {
         stylo::MaxSize::LengthPercentage(val) => length_percentage(&val.0).into(),
         stylo::MaxSize::None => taffy::Dimension::Auto,
-        // TODO: implement other values in Taffy (and servo configuration of stylo)
-        // _ => taffy::Dimension::Auto,
+
+        // TODO: implement other values in Taffy
+        stylo::MaxSize::MaxContent => taffy::Dimension::Auto,
+        stylo::MaxSize::MinContent => taffy::Dimension::Auto,
+        stylo::MaxSize::FitContent => taffy::Dimension::Auto,
+        stylo::MaxSize::Stretch => taffy::Dimension::Auto,
+
+        // Anchor positioning will be flagged off for time being
+        stylo::MaxSize::AnchorSizeFunction(_) => unreachable!(),
     }
 }
 
-pub(crate) fn margin(margin: &stylo::Margin) -> taffy::Rect<taffy::LengthPercentageAuto> {
+pub(crate) fn margin_rect(margin: &stylo::Margin) -> taffy::Rect<taffy::LengthPercentageAuto> {
     taffy::Rect {
-        left: length_percentage_auto(&margin.margin_left),
-        right: length_percentage_auto(&margin.margin_right),
-        top: length_percentage_auto(&margin.margin_top),
-        bottom: length_percentage_auto(&margin.margin_bottom),
+        left: self::margin(&margin.margin_left),
+        right: self::margin(&margin.margin_right),
+        top: self::margin(&margin.margin_top),
+        bottom: self::margin(&margin.margin_bottom),
     }
 }
 

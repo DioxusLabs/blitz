@@ -1,4 +1,4 @@
-use dioxus_blitz::Config;
+use dioxus_native::Config;
 
 fn main() {
     let local_file_path = std::env::args()
@@ -8,7 +8,7 @@ fn main() {
 
     let file_content = std::fs::read_to_string(local_file_path).unwrap();
 
-    dioxus_blitz::launch_static_html_cfg(
+    dioxus_native::launch_static_html_cfg(
         &file_content,
         Config {
             stylesheets: Vec::new(),

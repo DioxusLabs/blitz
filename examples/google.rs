@@ -1,9 +1,9 @@
 //! Render google.com!
 
-use dioxus_blitz::Config;
+use dioxus_native::Config;
 
 fn main() {
-    dioxus_blitz::launch_static_html_cfg(
+    dioxus_native::launch_static_html_cfg(
         &get_html(),
         Config {
             stylesheets: Vec::new(),

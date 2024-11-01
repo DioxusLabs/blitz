@@ -1,4 +1,6 @@
 //! Conversion functions from Stylo types to Parley types
+use std::borrow::Cow;
+
 use crate::node::TextBrush;
 use crate::util::ToPenikoColor;
 
@@ -72,7 +74,7 @@ pub(crate) fn style(style: &stylo::ComputedValues) -> parley::TextStyle<'static,
                     }
 
                     // TODO: fix leak!
-                    break 'ret parley::FontFamily::Named(name.to_string().leak());
+                    break 'ret parley::FontFamily::Named(Cow::Owned(name.to_string()));
                 }
             }
             stylo::SingleFontFamily::Generic(generic) => {
@@ -89,9 +91,6 @@ pub(crate) fn style(style: &stylo::ComputedValues) -> parley::TextStyle<'static,
         })
         .collect();
 
-    // TODO: fix leak!
-    let families = Box::leak(families.into_boxed_slice());
-
     // Convert text colour
     let color = itext_styles.color.as_peniko();
 
@@ -100,19 +99,19 @@ pub(crate) fn style(style: &stylo::ComputedValues) -> parley::TextStyle<'static,
         .text_decoration_color
         .as_absolute()
         .map(ToPenikoColor::as_peniko)
-        .map(|color| TextBrush::Normal(peniko::Brush::Solid(color)));
+        .map(peniko::Brush::Solid);
 
     parley::TextStyle {
         // font_stack: parley::FontStack::Single(FontFamily::Generic(GenericFamily::SystemUi)),
-        font_stack: parley::FontStack::List(families),
+        font_stack: parley::FontStack::List(Cow::Owned(families)),
         font_size,
         font_stretch: Default::default(),
         font_style,
         font_weight,
-        font_variations: parley::FontSettings::List(&[]),
-        font_features: parley::FontSettings::List(&[]),
+        font_variations: parley::FontSettings::List(Cow::Borrowed(&[])),
+        font_features: parley::FontSettings::List(Cow::Borrowed(&[])),
         locale: Default::default(),
-        brush: TextBrush::Normal(peniko::Brush::Solid(color)),
+        brush: peniko::Brush::Solid(color),
         has_underline: itext_styles.text_decorations_in_effect.underline,
         underline_offset: Default::default(),
         underline_size: Default::default(),

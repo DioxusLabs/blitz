@@ -46,8 +46,8 @@ impl Document {
             }
         }
 
-        for &node_id in &layout_children {
-            self.nodes[node_id].layout_parent.set(Some(node_id));
+        for &child_id in &layout_children {
+            self.nodes[child_id].layout_parent.set(Some(node_id));
         }
         *self.nodes[node_id].layout_children.borrow_mut() = Some(layout_children);
         // }
@@ -154,15 +154,6 @@ impl LayoutPartialTree for Document {
                     if let Some("hidden" | "") = element_data.attr(local_name!("hidden")) {
                         node.style.display = Display::None;
                         return taffy::LayoutOutput::HIDDEN;
-                    }
-
-                    // Perform text layout for text inputs
-                    if inputs.run_mode == taffy::RunMode::PerformLayout {
-                        if let Some(input_data) = element_data.text_input_data_mut() {
-                            input_data
-                                .editor
-                                .rebuild(&mut tree.font_ctx, &mut tree.layout_ctx);
-                        }
                     }
 
                     // todo: need to handle shadow roots by actually descending into them

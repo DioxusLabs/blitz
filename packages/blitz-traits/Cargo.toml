@@ -1,9 +1,10 @@
 [package]
 name = "blitz-traits"
 version = "0.1.0"
+license.workspace = true
 edition = "2021"
 
 [dependencies]
-http = "1.1.0"
-url = "2.5.2"
-bytes = "1.7.1"
+http = { workspace = true }
+url = { workspace = true }
+bytes = { workspace = true }
