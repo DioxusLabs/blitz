@@ -1,11 +1,11 @@
-use crate::net::{CssHandler, ImageHandler};
+use crate::net::{CssHandler, ImageHandler, Resource};
 use std::borrow::Cow;
 use std::cell::{Cell, Ref, RefCell, RefMut};
 use std::collections::HashSet;
 
 use crate::node::{Attribute, ElementNodeData, Node, NodeData};
 use crate::Document;
-use blitz_traits::net::fetch;
+use blitz_traits::net::{SharedCallback, SharedProvider};
 use html5ever::local_name;
 use html5ever::{
     tendril::{StrTendril, TendrilSink},
@@ -32,20 +32,34 @@ pub struct DocumentHtmlParser<'a> {
 
     /// The document's quirks mode.
     pub quirks_mode: Cell<QuirksMode>,
+
+    net_provider: SharedProvider,
+    res_callback: SharedCallback<Resource>,
 }
 
 impl DocumentHtmlParser<'_> {
-    pub fn new(doc: &mut Document) -> DocumentHtmlParser {
+    pub fn new(
+        doc: &mut Document,
+        net_provider: SharedProvider,
+        res_callback: SharedCallback<Resource>,
+    ) -> DocumentHtmlParser {
         DocumentHtmlParser {
             doc: RefCell::new(doc),
             style_nodes: RefCell::new(Vec::new()),
             errors: RefCell::new(Vec::new()),
             quirks_mode: Cell::new(QuirksMode::NoQuirks),
+            net_provider,
+            res_callback,
         }
     }
 
-    pub fn parse_into_doc<'d>(doc: &'d mut Document, html: &str) -> &'d mut Document {
-        let sink = Self::new(doc);
+    pub fn parse_into_doc<'d>(
+        doc: &'d mut Document,
+        html: &str,
+        net_provider: SharedProvider,
+        res_callback: SharedCallback<Resource>,
+    ) -> &'d mut Document {
+        let sink = Self::new(doc, net_provider, res_callback);
         html5ever::parse_document(sink, Default::default())
             .from_utf8()
             .read_from(&mut html.as_bytes())
@@ -99,14 +113,15 @@ impl DocumentHtmlParser<'_> {
 
         if let (Some("stylesheet"), Some(href)) = (rel_attr, href_attr) {
             let url = self.doc.borrow().resolve_url(href);
-            fetch(
+            self.net_provider.fetch(
                 url.clone(),
-                CssHandler {
+                Box::new(CssHandler {
                     node: target_id,
                     source_url: url,
                     guard: self.doc.borrow().guard.clone(),
-                    callback: self.doc.borrow().resource_callback.clone(),
-                },
+                    provider: self.net_provider.clone(),
+                    callback: self.res_callback.clone(),
+                }),
             );
         }
     }
@@ -116,9 +131,9 @@ impl DocumentHtmlParser<'_> {
         if let Some(raw_src) = node.attr(local_name!("src")) {
             if !raw_src.is_empty() {
                 let src = self.doc.borrow().resolve_url(raw_src);
-                fetch(
+                self.net_provider.fetch(
                     src,
-                    ImageHandler(target_id, self.doc.borrow().resource_callback.clone()),
+                    Box::new(ImageHandler(target_id, self.res_callback.clone())),
                 );
             }
         }
@@ -153,7 +168,10 @@ impl<'b> TreeSink for DocumentHtmlParser<'b> {
     // we use the ID of the nodes in the tree as the handle
     type Handle = usize;
 
-    type ElemName<'a> = Ref<'a, QualName> where Self: 'a;
+    type ElemName<'a>
+        = Ref<'a, QualName>
+    where
+        Self: 'a;
 
     fn finish(self) -> Self::Output {
         let doc = self.doc.into_inner();
@@ -366,13 +384,17 @@ impl<'b> TreeSink for DocumentHtmlParser<'b> {
 #[test]
 fn parses_some_html() {
     use crate::Viewport;
-    use blitz_traits::net::DummyProvider;
+    use blitz_traits::net::{DummyCallback, DummyProvider};
     use std::sync::Arc;
 
     let html = "<!DOCTYPE html><html><body><h1>hello world</h1></body></html>";
     let viewport = Viewport::new(800, 600, 1.0);
-    let mut doc = Document::new(viewport, None);
-    let sink = DocumentHtmlParser::new(&mut doc);
+    let mut doc = Document::new(viewport);
+    let sink = DocumentHtmlParser::new(
+        &mut doc,
+        Arc::new(DummyProvider),
+        Arc::new(DummyCallback::default()),
+    );
 
     html5ever::parse_document(sink, Default::default())
         .from_utf8()

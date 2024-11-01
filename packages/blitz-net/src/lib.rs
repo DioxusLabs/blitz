@@ -1,7 +1,6 @@
 use blitz_traits::net::{BoxedHandler, Bytes, Callback, NetProvider, Url};
 use data_url::DataUrl;
 use reqwest::Client;
-use std::sync::Arc;
 use thiserror::Error;
 use tokio::{
     runtime::Handle,
@@ -84,7 +83,7 @@ impl<T> MpscCallback<T> {
 }
 impl<T: Send + Sync + 'static> Callback for MpscCallback<T> {
     type Data = T;
-    fn call(self: Arc<Self>, data: Self::Data) {
+    fn call(&self, data: Self::Data) {
         let _ = self.0.send(data);
     }
 }

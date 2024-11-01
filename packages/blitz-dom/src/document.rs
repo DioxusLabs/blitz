@@ -10,13 +10,11 @@ use style::values::computed::Overflow;
 use style::values::GenericAtomIdent;
 // use quadtree_rs::Quadtree;
 use crate::net::Resource;
-use blitz_traits::net::{DummyCallback, SharedCallback};
 use parley::editor::{PointerButton, TextEvent};
 use selectors::{matching::QuirksMode, Element};
 use slab::Slab;
 use std::any::Any;
 use std::collections::{BTreeMap, Bound, HashMap, HashSet, VecDeque};
-use std::sync::Arc;
 use style::selector_parser::ServoElementSnapshot;
 use style::servo::media_queries::FontMetricsProvider;
 use style::servo_arc::Arc as ServoArc;
@@ -123,8 +121,6 @@ pub struct Document {
     pub(crate) focus_node_id: Option<usize>,
 
     pub changed: HashSet<usize>,
-
-    pub resource_callback: SharedCallback<Resource>,
 }
 
 impl DocumentLike for Document {
@@ -226,7 +222,7 @@ impl DocumentLike for Document {
 }
 
 impl Document {
-    pub fn new(viewport: Viewport, resource_callback: Option<SharedCallback<Resource>>) -> Self {
+    pub fn new(viewport: Viewport) -> Self {
         let device = viewport.make_device();
         let stylist = Stylist::new(device, QuirksMode::NoQuirks);
         let snapshots = SnapshotMap::new();
@@ -260,7 +256,6 @@ impl Document {
             hover_node_id: None,
             focus_node_id: None,
             changed: HashSet::new(),
-            resource_callback: resource_callback.unwrap_or(Arc::new(DummyCallback::default())),
         };
 
         // Initialise document with root Document node
