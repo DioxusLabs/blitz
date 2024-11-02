@@ -40,12 +40,11 @@ pub(crate) struct CssHandler {
     pub node: usize,
     pub source_url: Url,
     pub guard: SharedRwLock,
-    pub provider: SharedProvider,
-    pub callback: SharedCallback<Resource>,
+    pub provider: SharedProvider<Resource>,
 }
 
 #[derive(Clone)]
-struct StylesheetLoader(SharedCallback<Resource>, SharedProvider);
+struct StylesheetLoader(SharedProvider<Resource>);
 impl ServoStylesheetLoader for StylesheetLoader {
     fn request_stylesheet(
         &self,
@@ -88,24 +87,38 @@ impl ServoStylesheetLoader for StylesheetLoader {
             source_location: location,
         };
 
-        let url = import.url.url().unwrap().clone();
-        let this = self.clone();
-        let read_lock = lock.clone();
-
-        self.1.fetch(
-            url.as_ref().clone(),
-            Box::new(move |bytes: Bytes| {
+        struct StylesheetLoaderInner {
+            loader: StylesheetLoader,
+            read_lock: SharedRwLock,
+            url: ServoArc<Url>,
+            sheet: ServoArc<Stylesheet>,
+            provider: SharedProvider<Resource>,
+        }
+        impl RequestHandler for StylesheetLoaderInner {
+            type Data = Resource;
+            fn bytes(self: Box<Self>, bytes: Bytes, _callback: SharedCallback<Self::Data>) {
                 let css = std::str::from_utf8(&bytes).expect("Invalid UTF8");
                 let escaped_css = html_escape::decode_html_entities(css);
                 Stylesheet::update_from_str(
-                    sheet.as_ref(),
+                    &self.sheet,
                     &escaped_css,
-                    UrlExtraData(url),
-                    Some(&this),
+                    UrlExtraData(self.url),
+                    Some(&self.loader),
                     None,
                     AllowImportRules::Yes,
                 );
-                fetch_font_face(sheet.as_ref(), &this.1, &this.0, &read_lock.read())
+                fetch_font_face(&self.sheet, &self.provider, &self.read_lock.read())
+            }
+        }
+        let url = import.url.url().unwrap();
+        self.0.fetch(
+            url.as_ref().clone(),
+            Box::new(StylesheetLoaderInner {
+                url: url.clone(),
+                loader: self.clone(),
+                read_lock: lock.clone(),
+                sheet: sheet.clone(),
+                provider: self.0.clone(),
             }),
         );
 
@@ -113,7 +126,8 @@ impl ServoStylesheetLoader for StylesheetLoader {
     }
 }
 impl RequestHandler for CssHandler {
-    fn bytes(self: Box<Self>, bytes: Bytes) {
+    type Data = Resource;
+    fn bytes(self: Box<Self>, bytes: Bytes, callback: SharedCallback<Resource>) {
         let css = std::str::from_utf8(&bytes).expect("Invalid UTF8");
         let escaped_css = html_escape::decode_html_entities(css);
         let sheet = Stylesheet::from_str(
@@ -122,26 +136,24 @@ impl RequestHandler for CssHandler {
             Origin::Author,
             ServoArc::new(self.guard.wrap(MediaList::empty())),
             self.guard.clone(),
-            Some(&StylesheetLoader(
-                self.callback.clone(),
-                self.provider.clone(),
-            )),
+            Some(&StylesheetLoader(self.provider.clone())),
             None,
             QuirksMode::NoQuirks,
             AllowImportRules::Yes,
         );
         let read_guard = self.guard.read();
-        fetch_font_face(&sheet, &self.provider, &self.callback, &read_guard);
+        fetch_font_face(&sheet, &self.provider, &read_guard);
 
-        self.callback.call(Resource::Css(
+        callback.call(Resource::Css(
             self.node,
             DocumentStyleSheet(ServoArc::new(sheet)),
         ))
     }
 }
-struct FontFaceHandler(FontFaceSourceFormatKeyword, SharedCallback<Resource>);
+struct FontFaceHandler(FontFaceSourceFormatKeyword);
 impl RequestHandler for FontFaceHandler {
-    fn bytes(mut self: Box<Self>, mut bytes: Bytes) {
+    type Data = Resource;
+    fn bytes(mut self: Box<Self>, mut bytes: Bytes, callback: SharedCallback<Resource>) {
         if self.0 == FontFaceSourceFormatKeyword::None {
             self.0 = match bytes.as_ref() {
                 // https://w3c.github.io/woff/woff2/#woff20Header
@@ -171,14 +183,13 @@ impl RequestHandler for FontFaceHandler {
             _ => {}
         }
 
-        self.1.call(Resource::Font(bytes))
+        callback.call(Resource::Font(bytes))
     }
 }
 
 fn fetch_font_face(
     sheet: &Stylesheet,
-    network_provider: &SharedProvider,
-    resource_callback: &SharedCallback<Resource>,
+    network_provider: &SharedProvider<Resource>,
     read_guard: &SharedRwLockReadGuard,
 ) {
     sheet
@@ -227,21 +238,22 @@ fn fetch_font_face(
             }
             network_provider.fetch(
                 Url::from_str(url_source.url.as_str()).unwrap(),
-                Box::new(FontFaceHandler(format, resource_callback.clone())),
+                Box::new(FontFaceHandler(format)),
             )
         });
 }
 
-pub(crate) struct ImageHandler(pub usize, pub SharedCallback<Resource>);
+pub(crate) struct ImageHandler(pub usize);
 impl RequestHandler for ImageHandler {
-    fn bytes(self: Box<Self>, bytes: Bytes) {
+    type Data = Resource;
+    fn bytes(self: Box<Self>, bytes: Bytes, callback: SharedCallback<Resource>) {
         // Try parse image
         if let Ok(image) = image::ImageReader::new(Cursor::new(&bytes))
             .with_guessed_format()
             .expect("IO errors impossible with Cursor")
             .decode()
         {
-            self.1.call(Resource::Image(self.0, Arc::new(image)));
+            callback.call(Resource::Image(self.0, Arc::new(image)));
             return;
         };
         // Try parse SVG
@@ -262,6 +274,6 @@ impl RequestHandler for ImageHandler {
 
         let tree = Tree::from_data(&bytes, &options)
             .unwrap_or_else(|_| Tree::from_data(DUMMY_SVG, &options).unwrap());
-        self.1.call(Resource::Svg(self.0, Box::new(tree)));
+        callback.call(Resource::Svg(self.0, Box::new(tree)));
     }
 }

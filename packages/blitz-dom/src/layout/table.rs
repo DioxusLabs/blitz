@@ -166,7 +166,10 @@ impl Iterator for RangeIter {
 }
 
 impl taffy::TraversePartialTree for TableTreeWrapper<'_> {
-    type ChildIter<'a> = RangeIter where Self : 'a;
+    type ChildIter<'a>
+        = RangeIter
+    where
+        Self: 'a;
 
     #[inline(always)]
     fn child_ids(&self, _node_id: taffy::NodeId) -> Self::ChildIter<'_> {
@@ -186,8 +189,14 @@ impl taffy::TraversePartialTree for TableTreeWrapper<'_> {
 impl taffy::TraverseTree for TableTreeWrapper<'_> {}
 
 impl taffy::LayoutPartialTree for TableTreeWrapper<'_> {
-    type CoreContainerStyle<'a> = &'a taffy::Style where Self : 'a;
-    type CacheMut<'b> = &'b mut taffy::Cache where Self: 'b;
+    type CoreContainerStyle<'a>
+        = &'a taffy::Style
+    where
+        Self: 'a;
+    type CacheMut<'b>
+        = &'b mut taffy::Cache
+    where
+        Self: 'b;
 
     fn get_core_container_style(&self, _node_id: taffy::NodeId) -> &taffy::Style {
         &self.ctx.style
@@ -222,11 +231,13 @@ impl taffy::LayoutPartialTree for TableTreeWrapper<'_> {
 }
 
 impl taffy::LayoutGridContainer for TableTreeWrapper<'_> {
-    type GridContainerStyle<'a> = &'a taffy::Style
+    type GridContainerStyle<'a>
+        = &'a taffy::Style
     where
         Self: 'a;
 
-    type GridItemStyle<'a> = &'a taffy::Style
+    type GridItemStyle<'a>
+        = &'a taffy::Style
     where
         Self: 'a;
 

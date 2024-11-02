@@ -86,8 +86,14 @@ impl TraversePartialTree for Document {
 impl TraverseTree for Document {}
 
 impl LayoutPartialTree for Document {
-    type CoreContainerStyle<'a> = &'a taffy::Style where Self : 'a;
-    type CacheMut<'b> = &'b mut Cache where Self: 'b;
+    type CoreContainerStyle<'a>
+        = &'a taffy::Style
+    where
+        Self: 'a;
+    type CacheMut<'b>
+        = &'b mut Cache
+    where
+        Self: 'b;
 
     fn get_core_container_style(&self, node_id: NodeId) -> &Style {
         &self.node_from_id(node_id).style
@@ -297,11 +303,13 @@ impl LayoutPartialTree for Document {
 }
 
 impl taffy::LayoutBlockContainer for Document {
-    type BlockContainerStyle<'a> = &'a Style
+    type BlockContainerStyle<'a>
+        = &'a Style
     where
         Self: 'a;
 
-    type BlockItemStyle<'a> = &'a Style
+    type BlockItemStyle<'a>
+        = &'a Style
     where
         Self: 'a;
 
@@ -315,11 +323,13 @@ impl taffy::LayoutBlockContainer for Document {
 }
 
 impl taffy::LayoutFlexboxContainer for Document {
-    type FlexboxContainerStyle<'a> = &'a Style
+    type FlexboxContainerStyle<'a>
+        = &'a Style
     where
         Self: 'a;
 
-    type FlexboxItemStyle<'a> = &'a Style
+    type FlexboxItemStyle<'a>
+        = &'a Style
     where
         Self: 'a;
 
@@ -333,11 +343,13 @@ impl taffy::LayoutFlexboxContainer for Document {
 }
 
 impl taffy::LayoutGridContainer for Document {
-    type GridContainerStyle<'a> = &'a Style
+    type GridContainerStyle<'a>
+        = &'a Style
     where
         Self: 'a;
 
-    type GridItemStyle<'a> = &'a Style
+    type GridItemStyle<'a>
+        = &'a Style
     where
         Self: 'a;
 

@@ -5,7 +5,7 @@ use std::collections::HashSet;
 
 use crate::node::{Attribute, ElementNodeData, Node, NodeData};
 use crate::Document;
-use blitz_traits::net::{SharedCallback, SharedProvider};
+use blitz_traits::net::SharedProvider;
 use html5ever::local_name;
 use html5ever::{
     tendril::{StrTendril, TendrilSink},
@@ -33,33 +33,26 @@ pub struct DocumentHtmlParser<'a> {
     /// The document's quirks mode.
     pub quirks_mode: Cell<QuirksMode>,
 
-    net_provider: SharedProvider,
-    res_callback: SharedCallback<Resource>,
+    net_provider: SharedProvider<Resource>,
 }
 
 impl DocumentHtmlParser<'_> {
-    pub fn new(
-        doc: &mut Document,
-        net_provider: SharedProvider,
-        res_callback: SharedCallback<Resource>,
-    ) -> DocumentHtmlParser {
+    pub fn new(doc: &mut Document, net_provider: SharedProvider<Resource>) -> DocumentHtmlParser {
         DocumentHtmlParser {
             doc: RefCell::new(doc),
             style_nodes: RefCell::new(Vec::new()),
             errors: RefCell::new(Vec::new()),
             quirks_mode: Cell::new(QuirksMode::NoQuirks),
             net_provider,
-            res_callback,
         }
     }
 
     pub fn parse_into_doc<'d>(
         doc: &'d mut Document,
         html: &str,
-        net_provider: SharedProvider,
-        res_callback: SharedCallback<Resource>,
+        net_provider: SharedProvider<Resource>,
     ) -> &'d mut Document {
-        let sink = Self::new(doc, net_provider, res_callback);
+        let sink = Self::new(doc, net_provider);
         html5ever::parse_document(sink, Default::default())
             .from_utf8()
             .read_from(&mut html.as_bytes())
@@ -120,7 +113,6 @@ impl DocumentHtmlParser<'_> {
                     source_url: url,
                     guard: self.doc.borrow().guard.clone(),
                     provider: self.net_provider.clone(),
-                    callback: self.res_callback.clone(),
                 }),
             );
         }
@@ -131,10 +123,8 @@ impl DocumentHtmlParser<'_> {
         if let Some(raw_src) = node.attr(local_name!("src")) {
             if !raw_src.is_empty() {
                 let src = self.doc.borrow().resolve_url(raw_src);
-                self.net_provider.fetch(
-                    src,
-                    Box::new(ImageHandler(target_id, self.res_callback.clone())),
-                );
+                self.net_provider
+                    .fetch(src, Box::new(ImageHandler(target_id)));
             }
         }
     }
@@ -390,11 +380,7 @@ fn parses_some_html() {
     let html = "<!DOCTYPE html><html><body><h1>hello world</h1></body></html>";
     let viewport = Viewport::new(800, 600, 1.0);
     let mut doc = Document::new(viewport);
-    let sink = DocumentHtmlParser::new(
-        &mut doc,
-        Arc::new(DummyProvider),
-        Arc::new(DummyCallback::default()),
-    );
+    let sink = DocumentHtmlParser::new(&mut doc, Arc::new(DummyProvider::default()));
 
     html5ever::parse_document(sink, Default::default())
         .from_utf8()

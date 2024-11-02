@@ -4,7 +4,7 @@ use blitz_dom::net::Resource;
 use blitz_dom::{HtmlDocument, Viewport};
 use blitz_net::{MpscCallback, Provider};
 use blitz_renderer_vello::render_to_buffer;
-use blitz_traits::net::SharedCallback;
+use blitz_traits::net::SharedProvider;
 use reqwest::Url;
 use std::sync::Arc;
 use std::{
@@ -53,7 +53,7 @@ async fn main() {
 
     let (mut recv, callback) = MpscCallback::new();
     let callback = Arc::new(callback);
-    let net = Arc::new(Provider::new(Handle::current()));
+    let net = Arc::new(Provider::new(Handle::current(), callback));
 
     timer.time("Setup document prerequisites");
 
@@ -62,8 +62,7 @@ async fn main() {
         &html,
         Some(url.clone()),
         Vec::new(),
-        net,
-        Arc::clone(&callback) as SharedCallback<Resource>,
+        Arc::clone(&net) as SharedProvider<Resource>,
     );
 
     timer.time("Parsed document");
@@ -74,7 +73,7 @@ async fn main() {
 
     while let Some(res) = recv.recv().await {
         document.as_mut().load_resource(res);
-        if Arc::strong_count(&callback) == 1 {
+        if net.is_empty() {
             break;
         }
     }
