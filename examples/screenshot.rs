@@ -71,11 +71,11 @@ async fn main() {
         .as_mut()
         .set_viewport(Viewport::new(width * scale, height * scale, scale as f32));
 
-    while let Some(res) = recv.recv().await {
-        document.as_mut().load_resource(res);
-        if net.is_empty() {
+    while !net.is_empty() {
+        let Some(res) = recv.recv().await else {
             break;
-        }
+        };
+        document.as_mut().load_resource(res);
     }
 
     timer.time("Fetched assets");
