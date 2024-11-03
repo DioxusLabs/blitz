@@ -6,3 +6,4 @@ experiments
 /examples/output/*.png
 /examples/output/*.jpg
 /examples/output/*.jpeg
+/out
