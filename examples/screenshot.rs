@@ -21,24 +21,33 @@ const USER_AGENT: &str = "Mozilla/5.0 (X11; Linux x86_64; rv:60.0) Gecko/2010010
 async fn main() {
     let mut timer = Timer::init();
 
-    let url = std::env::args()
+    let url_string = std::env::args()
         .skip(1)
         .next()
         .unwrap_or_else(|| "https://www.google.com".into());
 
-    println!("{}", url);
+    println!("{}", url_string);
 
     // Assert that url is valid
-    let url = url.to_owned();
-    Url::parse(&url).expect("Invalid url");
+    let url = Url::parse(&url_string).expect("Invalid url");
 
     // Fetch HTML from URL
-    let html = ureq::get(&url)
-        .set("User-Agent", USER_AGENT)
-        .call()
-        .unwrap()
-        .into_string()
-        .unwrap();
+    let html = match url.scheme() {
+        "file" => {
+            let file_content = std::fs::read(url.path()).unwrap();
+            String::from_utf8(file_content).unwrap()
+        }
+        _ => {
+            let client = reqwest::Client::new();
+            let response = client
+                .get(url)
+                .header("User-Agent", USER_AGENT)
+                .send()
+                .await
+                .unwrap();
+            response.text().await.unwrap()
+        }
+    };
 
     timer.time("Fetched HTML");
 
@@ -60,7 +69,7 @@ async fn main() {
     // Create HtmlDocument
     let mut document = HtmlDocument::from_html(
         &html,
-        Some(url.clone()),
+        Some(url_string.clone()),
         Vec::new(),
         Arc::clone(&net) as SharedProvider<Resource>,
     );
@@ -99,7 +108,7 @@ async fn main() {
     timer.time("Rendered to buffer");
 
     // Determine output path, and open a file at that path. TODO: make configurable.
-    let out_path = compute_filename(&url);
+    let out_path = compute_filename(&url_string);
     let mut file = File::create(&out_path).unwrap();
 
     // Encode buffer as PNG and write it to a file
