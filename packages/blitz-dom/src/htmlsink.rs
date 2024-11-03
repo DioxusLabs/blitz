@@ -1,4 +1,4 @@
-use crate::util::{CssHandler, ImageHandler, Resource};
+use crate::net::{CssHandler, ImageHandler, Resource};
 use std::borrow::Cow;
 use std::cell::{Cell, Ref, RefCell, RefMut};
 use std::collections::HashSet;
@@ -33,7 +33,7 @@ pub struct DocumentHtmlParser<'a> {
     /// The document's quirks mode.
     pub quirks_mode: Cell<QuirksMode>,
 
-    pub net_provider: SharedProvider<Resource>,
+    net_provider: SharedProvider<Resource>,
 }
 
 impl DocumentHtmlParser<'_> {
@@ -49,10 +49,10 @@ impl DocumentHtmlParser<'_> {
 
     pub fn parse_into_doc<'d>(
         doc: &'d mut Document,
-        net: SharedProvider<Resource>,
         html: &str,
+        net_provider: SharedProvider<Resource>,
     ) -> &'d mut Document {
-        let sink = Self::new(doc, net);
+        let sink = Self::new(doc, net_provider);
         html5ever::parse_document(sink, Default::default())
             .from_utf8()
             .read_from(&mut html.as_bytes())
@@ -106,13 +106,12 @@ impl DocumentHtmlParser<'_> {
 
         if let (Some("stylesheet"), Some(href)) = (rel_attr, href_attr) {
             let url = self.doc.borrow().resolve_url(href);
-            let guard = self.doc.borrow().guard.clone();
             self.net_provider.fetch(
                 url.clone(),
                 Box::new(CssHandler {
                     node: target_id,
                     source_url: url,
-                    guard,
+                    guard: self.doc.borrow().guard.clone(),
                     provider: self.net_provider.clone(),
                 }),
             );
@@ -125,7 +124,7 @@ impl DocumentHtmlParser<'_> {
             if !raw_src.is_empty() {
                 let src = self.doc.borrow().resolve_url(raw_src);
                 self.net_provider
-                    .fetch(src, Box::new(ImageHandler::new(target_id)));
+                    .fetch(src, Box::new(ImageHandler(target_id)));
             }
         }
     }
@@ -159,7 +158,10 @@ impl<'b> TreeSink for DocumentHtmlParser<'b> {
     // we use the ID of the nodes in the tree as the handle
     type Handle = usize;
 
-    type ElemName<'a> = Ref<'a, QualName> where Self: 'a;
+    type ElemName<'a>
+        = Ref<'a, QualName>
+    where
+        Self: 'a;
 
     fn finish(self) -> Self::Output {
         let doc = self.doc.into_inner();
@@ -372,7 +374,7 @@ impl<'b> TreeSink for DocumentHtmlParser<'b> {
 #[test]
 fn parses_some_html() {
     use crate::Viewport;
-    use blitz_traits::net::DummyProvider;
+    use blitz_traits::net::{DummyCallback, DummyProvider};
     use std::sync::Arc;
 
     let html = "<!DOCTYPE html><html><body><h1>hello world</h1></body></html>";

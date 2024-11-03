@@ -1,10 +1,10 @@
 //! Load first CLI argument as a url. Fallback to google.com if no CLI argument is provided.
 
-use blitz_dom::util::Resource;
+use blitz_dom::net::Resource;
 use blitz_dom::{HtmlDocument, Viewport};
 use blitz_net::{MpscCallback, Provider};
 use blitz_renderer_vello::render_to_buffer;
-use blitz_traits::net::{SharedCallback, SharedProvider};
+use blitz_traits::net::SharedProvider;
 use reqwest::Url;
 use std::sync::Arc;
 use std::{
@@ -52,10 +52,8 @@ async fn main() {
         .unwrap_or(1200);
 
     let (mut recv, callback) = MpscCallback::new();
-    let net = Arc::new(Provider::new(
-        Handle::current(),
-        Arc::new(callback) as SharedCallback<Resource>,
-    ));
+    let callback = Arc::new(callback);
+    let net = Arc::new(Provider::new(Handle::current(), callback));
 
     timer.time("Setup document prerequisites");
 

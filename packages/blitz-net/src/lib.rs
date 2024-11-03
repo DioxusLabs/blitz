@@ -13,36 +13,36 @@ const USER_AGENT: &str = "Mozilla/5.0 (X11; Linux x86_64; rv:60.0) Gecko/2010010
 pub struct Provider<D> {
     rt: Handle,
     client: Client,
-    callback: SharedCallback<D>,
+    resource_callback: SharedCallback<D>,
 }
 impl<D> Provider<D> {
-    pub fn new(rt_handle: Handle, callback: SharedCallback<D>) -> Self {
+    pub fn new(rt_handle: Handle, res_callback: SharedCallback<D>) -> Self {
         Self {
             rt: rt_handle,
             client: Client::new(),
-            callback,
+            resource_callback: res_callback,
         }
+    }
+    pub fn is_empty(&self) -> bool {
+        Arc::strong_count(&self.resource_callback) == 1
     }
 }
 impl<D: 'static> Provider<D> {
-    pub fn is_empty(&self) -> bool {
-        Arc::strong_count(&self.callback) == 1
-    }
     async fn fetch_inner(
         client: Client,
         url: Url,
-        callback: SharedCallback<D>,
         handler: BoxedHandler<D>,
+        res_callback: SharedCallback<D>,
     ) -> Result<(), ProviderError> {
         match url.scheme() {
             "data" => {
                 let data_url = DataUrl::process(url.as_str())?;
                 let decoded = data_url.decode_to_vec()?;
-                handler.bytes(Bytes::from(decoded.0), callback);
+                handler.bytes(Bytes::from(decoded.0), res_callback);
             }
             "file" => {
                 let file_content = std::fs::read(url.path())?;
-                handler.bytes(Bytes::from(file_content), callback);
+                handler.bytes(Bytes::from(file_content), res_callback);
             }
             _ => {
                 let response = client
@@ -50,7 +50,7 @@ impl<D: 'static> Provider<D> {
                     .header("User-Agent", USER_AGENT)
                     .send()
                     .await?;
-                handler.bytes(response.bytes().await?, callback);
+                handler.bytes(response.bytes().await?, res_callback);
             }
         }
         Ok(())
@@ -59,11 +59,11 @@ impl<D: 'static> Provider<D> {
 
 impl<D: 'static> NetProvider for Provider<D> {
     type Data = D;
-    fn fetch(&self, url: Url, handler: BoxedHandler<Self::Data>) {
+    fn fetch(&self, url: Url, handler: BoxedHandler<D>) {
         let client = self.client.clone();
-        let callback = Arc::clone(&self.callback);
+        let callback = Arc::clone(&self.resource_callback);
         drop(self.rt.spawn(async {
-            let res = Self::fetch_inner(client, url, callback, handler).await;
+            let res = Self::fetch_inner(client, url, handler, callback).await;
             if let Err(e) = res {
                 eprintln!("{e}");
             }
@@ -92,7 +92,7 @@ impl<T> MpscCallback<T> {
 }
 impl<T: Send + Sync + 'static> Callback for MpscCallback<T> {
     type Data = T;
-    fn call(self: Arc<Self>, data: Self::Data) {
+    fn call(&self, data: Self::Data) {
         let _ = self.0.send(data);
     }
 }

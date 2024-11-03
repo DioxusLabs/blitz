@@ -11,7 +11,7 @@ use style::values::computed::Overflow;
 use style::values::GenericAtomIdent;
 use winit::keyboard::{Key, NamedKey};
 // use quadtree_rs::Quadtree;
-use crate::util::Resource;
+use crate::net::Resource;
 use selectors::{matching::QuirksMode, Element};
 use slab::Slab;
 use std::any::Any;

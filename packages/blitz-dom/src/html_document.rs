@@ -1,7 +1,7 @@
 use crate::events::RendererEvent;
 use crate::{Document, DocumentHtmlParser, DocumentLike, Viewport};
 
-use crate::util::Resource;
+use crate::net::Resource;
 use crate::DEFAULT_CSS;
 use blitz_traits::net::SharedProvider;
 
@@ -37,7 +37,7 @@ impl HtmlDocument {
         html: &str,
         base_url: Option<String>,
         stylesheets: Vec<String>,
-        net: SharedProvider<Resource>,
+        net_provider: SharedProvider<Resource>,
     ) -> Self {
         // Spin up the virtualdom and include the default stylesheet
         let viewport = Viewport::new(0, 0, 1.0);
@@ -55,7 +55,7 @@ impl HtmlDocument {
         }
 
         // Parse HTML string into document
-        DocumentHtmlParser::parse_into_doc(&mut dom, net, html);
+        DocumentHtmlParser::parse_into_doc(&mut dom, html, net_provider);
 
         HtmlDocument { inner: dom }
     }
