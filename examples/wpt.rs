@@ -199,7 +199,7 @@ async fn process_test_file_with_ref(
     let (actual_buffer, actual_width, actual_height) = {
         let mut document = HtmlDocument::from_html(
             &actual_file_contents,
-            Some(actual_base_url),
+            Some(format!("file://{}", actual_base_url)),
             Vec::new(),
             Arc::clone(&blitz_context.net) as SharedProvider<Resource>,
         );
@@ -247,7 +247,7 @@ async fn process_test_file_with_ref(
     let (ref_buffer, ref_width, ref_height) = {
         let mut document = HtmlDocument::from_html(
             &reference_file_contents,
-            Some(ref_base_url),
+            Some(format!("file://{}", ref_base_url)),
             Vec::new(),
             Arc::clone(&blitz_context.net) as SharedProvider<Resource>,
         );
