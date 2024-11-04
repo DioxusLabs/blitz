@@ -1,5 +1,5 @@
-use blitz_dom::{HtmlDocument, Viewport};
 use blitz_dom::net::Resource;
+use blitz_dom::{HtmlDocument, Viewport};
 use blitz_net::{MpscCallback, Provider};
 use blitz_renderer_vello::render_to_buffer;
 use blitz_traits::net::SharedProvider;
@@ -8,15 +8,15 @@ use regex::Regex;
 
 use tokio::runtime::Handle;
 
-use std::{env, fs};
+use dify::diff::RunParams;
+use image::{ImageBuffer, ImageFormat, RgbaImage};
+use log::{error, info};
 use std::fs::File;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
-use dify::diff::RunParams;
-use image::{ImageBuffer, ImageFormat, RgbaImage};
-use log::{error, info};
+use std::{env, fs};
 use tokio::sync::mpsc::UnboundedReceiver;
 use tokio::time::timeout;
 
@@ -27,31 +27,37 @@ const HEIGHT: u32 = 600;
 const SCALE: u32 = 2;
 
 fn collect_tests(wpt_dir: &Path) -> Vec<PathBuf> {
-    let pattern = format!("{}/css/css-flexbox/**/*.html", wpt_dir.display().to_string().as_str());
+    let pattern = format!(
+        "{}/css/css-flexbox/**/*.html",
+        wpt_dir.display().to_string().as_str()
+    );
     let glob_results = glob::glob(&pattern).expect("Invalid glob pattern.");
 
-    glob_results.filter_map(|glob_result| {
-        if let Ok(path_buf) = glob_result {
-            let is_tentative = path_buf.ends_with("tentative.html");
-            let is_ref = path_buf.ends_with("-ref.html") || path_contains_directory(&path_buf, "reference");
-            let is_support_file = path_contains_directory(&path_buf, "support");
+    glob_results
+        .filter_map(|glob_result| {
+            if let Ok(path_buf) = glob_result {
+                let is_tentative = path_buf.ends_with("tentative.html");
+                let is_ref = path_buf.ends_with("-ref.html")
+                    || path_contains_directory(&path_buf, "reference");
+                let is_support_file = path_contains_directory(&path_buf, "support");
 
-            if !is_tentative && !is_ref && !is_support_file {
-                Some(path_buf)
+                if !is_tentative && !is_ref && !is_support_file {
+                    Some(path_buf)
+                } else {
+                    None
+                }
             } else {
-                None
+                error!("Failure during glob.");
+                panic!("Failure during glob");
             }
-        } else {
-            error!("Failure during glob.");
-            panic!("Failure during glob");
-        }
-    }).collect()
+        })
+        .collect()
 }
 
 struct BlitzContext {
     receiver: UnboundedReceiver<Resource>,
     viewport: Viewport,
-    net: Arc<Provider<Resource>>
+    net: Arc<Provider<Resource>>,
 }
 
 fn setup_blitz() -> BlitzContext {
@@ -64,7 +70,7 @@ fn setup_blitz() -> BlitzContext {
     BlitzContext {
         receiver,
         viewport,
-        net
+        net,
     }
 }
 
@@ -75,7 +81,8 @@ fn main() {
         .build()
         .expect("Failed to create tokio runtime");
 
-    let reference_file_re = Regex::new(r#"<link\s+rel="match"\s+href="([^"]+)""#).expect("Failed to compile regex for match re");
+    let reference_file_re = Regex::new(r#"<link\s+rel="match"\s+href="([^"]+)""#)
+        .expect("Failed to compile regex for match re");
 
     let wpt_dir = env::var("WPT_DIR").expect("WPT_DIR is not set");
     info!("WPT_DIR: {}", wpt_dir);
@@ -90,13 +97,18 @@ fn main() {
 
     let test_paths = collect_tests(&wpt_dir);
 
-    let mut blitz_context = rt.block_on(async {
-        setup_blitz()
-    });
+    let mut blitz_context = rt.block_on(async { setup_blitz() });
 
     for path in test_paths {
         rt.block_on(async {
-            process_test_file(&path, &reference_file_re, &wpt_dir, &mut blitz_context, &out_dir).await;
+            process_test_file(
+                &path,
+                &reference_file_re,
+                &wpt_dir,
+                &mut blitz_context,
+                &out_dir,
+            )
+            .await;
         });
     }
 }
@@ -106,20 +118,31 @@ async fn process_test_file(
     reference_file_re: &Regex,
     wpt_dir: &Path,
     blitz_context: &mut BlitzContext,
-    out_dir: &PathBuf
+    out_dir: &PathBuf,
 ) {
     info!("Processing test file: {}", path.display());
 
     let file_contents = std::fs::read_to_string(path).expect("Could not read file.");
 
-    let reference = reference_file_re.captures(file_contents.as_str()).and_then(|captures| {
-        captures.get(1).map(|href| href.as_str().to_string())
-    });
+    let reference = reference_file_re
+        .captures(file_contents.as_str())
+        .and_then(|captures| captures.get(1).map(|href| href.as_str().to_string()));
 
     if let Some(reference) = reference {
-        process_test_file_with_ref(path, file_contents.as_str(), reference.as_str(), wpt_dir, blitz_context, &out_dir).await;
+        process_test_file_with_ref(
+            path,
+            file_contents.as_str(),
+            reference.as_str(),
+            wpt_dir,
+            blitz_context,
+            &out_dir,
+        )
+        .await;
     } else {
-        info!("Skipping test file: {}. No reference found.", path.display());
+        info!(
+            "Skipping test file: {}. No reference found.",
+            path.display()
+        );
 
         // Todo: Handle other test formats.
     }
@@ -131,7 +154,7 @@ async fn process_test_file_with_ref(
     ref_file: &str,
     wpt_dir: &Path,
     blitz_context: &mut BlitzContext,
-    out_dir: &PathBuf
+    out_dir: &PathBuf,
 ) {
     if !ref_file.ends_with(".html") {
         return;
@@ -145,18 +168,31 @@ async fn process_test_file_with_ref(
     let reference_file_contents = fs::read_to_string(&ref_file);
 
     if reference_file_contents.is_err() {
-        error!("Skipping test file: {}. Reference file missing {}", actual_path.display(), ref_file.display());
-        panic!("Skipping test file: {}. No reference found.", ref_file.display());
+        error!(
+            "Skipping test file: {}. Reference file missing {}",
+            actual_path.display(),
+            ref_file.display()
+        );
+        panic!(
+            "Skipping test file: {}. No reference found.",
+            ref_file.display()
+        );
     }
 
     let reference_file_contents = reference_file_contents.unwrap();
 
     // Resolve .. and such and remove any canonical syntax that we don't care about.
-    let actual_base_url = fs::canonicalize(actual_path).unwrap().display().to_string()
+    let actual_base_url = fs::canonicalize(actual_path)
+        .unwrap()
+        .display()
+        .to_string()
         .replace("\\\\?\\", "")
         .replace("\\", "/");
 
-    let ref_base_url = fs::canonicalize(&ref_file).unwrap().display().to_string()
+    let ref_base_url = fs::canonicalize(&ref_file)
+        .unwrap()
+        .display()
+        .to_string()
         .replace("\\\\?\\", "")
         .replace("\\", "/");
 
@@ -168,10 +204,14 @@ async fn process_test_file_with_ref(
             Arc::clone(&blitz_context.net) as SharedProvider<Resource>,
         );
 
-        document.as_mut().set_viewport(blitz_context.viewport.clone());
+        document
+            .as_mut()
+            .set_viewport(blitz_context.viewport.clone());
 
         while !blitz_context.net.is_empty() {
-            let Ok(Some(res)) = timeout(Duration::from_secs(5), blitz_context.receiver.recv()).await else {
+            let Ok(Some(res)) =
+                timeout(Duration::from_secs(5), blitz_context.receiver.recv()).await
+            else {
                 break;
             };
             document.as_mut().load_resource(res);
@@ -188,10 +228,17 @@ async fn process_test_file_with_ref(
         let buffer = render_to_buffer(
             document.as_ref(),
             Viewport::new(WIDTH * SCALE, render_height * SCALE, SCALE as f32),
-        ).await;
+        )
+        .await;
 
-        let name = actual_path.strip_prefix(wpt_dir).unwrap().display().to_string()
-            .replace("/", "_").replace("\\", "_") + "-actual.png";
+        let name = actual_path
+            .strip_prefix(wpt_dir)
+            .unwrap()
+            .display()
+            .to_string()
+            .replace("/", "_")
+            .replace("\\", "_")
+            + "-actual.png";
         let mut file = File::create(&out_dir.join(name)).unwrap();
         write_png(&mut file, &buffer, WIDTH * SCALE, render_height * SCALE);
         (buffer, WIDTH * SCALE, render_height * SCALE)
@@ -205,10 +252,14 @@ async fn process_test_file_with_ref(
             Arc::clone(&blitz_context.net) as SharedProvider<Resource>,
         );
 
-        document.as_mut().set_viewport(blitz_context.viewport.clone());
+        document
+            .as_mut()
+            .set_viewport(blitz_context.viewport.clone());
 
         while !blitz_context.net.is_empty() {
-            let Ok(Some(res)) = timeout(Duration::from_secs(5), blitz_context.receiver.recv()).await else {
+            let Ok(Some(res)) =
+                timeout(Duration::from_secs(5), blitz_context.receiver.recv()).await
+            else {
                 break;
             };
             document.as_mut().load_resource(res);
@@ -225,10 +276,17 @@ async fn process_test_file_with_ref(
         let buffer = render_to_buffer(
             document.as_ref(),
             Viewport::new(WIDTH * SCALE, render_height * SCALE, SCALE as f32),
-        ).await;
+        )
+        .await;
 
-        let name = ref_file.strip_prefix(wpt_dir).unwrap().display().to_string()
-            .replace("/", "_").replace("\\", "_") + "-reference.png";
+        let name = ref_file
+            .strip_prefix(wpt_dir)
+            .unwrap()
+            .display()
+            .to_string()
+            .replace("/", "_")
+            .replace("\\", "_")
+            + "-reference.png";
 
         let mut file = File::create(&out_dir.join(name)).unwrap();
         write_png(&mut file, &buffer, WIDTH * SCALE, render_height * SCALE);
@@ -240,31 +298,30 @@ async fn process_test_file_with_ref(
 
     let x = None;
     let y = None;
-    let diff = dify::diff::get_results(
-        actual_image,
-        ref_image,
-        0.1f32,
-        true,
-        None,
-        &x,
-        &y
-    );
+    let diff = dify::diff::get_results(actual_image, ref_image, 0.1f32, true, None, &x, &y);
 
     if let Some(diff) = diff {
-        let name = actual_path.strip_prefix(wpt_dir).unwrap().display().to_string()
-            .replace("/", "_").replace("\\", "_") + "-diff.png";
-        diff.1.save_with_format(&out_dir.join(name), ImageFormat::Png).unwrap();
+        let name = actual_path
+            .strip_prefix(wpt_dir)
+            .unwrap()
+            .display()
+            .to_string()
+            .replace("/", "_")
+            .replace("\\", "_")
+            + "-diff.png";
+        diff.1
+            .save_with_format(&out_dir.join(name), ImageFormat::Png)
+            .unwrap();
         error!("FAIL: {}", actual_path.display());
     } else {
         info!("PASS: {}", actual_path.display());
     }
-
 }
 
 fn path_contains_directory(path: &PathBuf, dir_name: &str) -> bool {
-    path.components().any(|component| component.as_os_str() == dir_name)
+    path.components()
+        .any(|component| component.as_os_str() == dir_name)
 }
-
 
 // Copied from screenshot.rs
 fn write_png<W: Write>(writer: W, buffer: &[u8], width: u32, height: u32) {
