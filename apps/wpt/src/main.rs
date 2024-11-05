@@ -172,22 +172,22 @@ fn main() {
                 match result {
                     TestResult::Pass => {
                         pass_count.fetch_add(1, Ordering::SeqCst);
-                        println!("[{}/{}] {}: {}", num, count, "PASS".green(), &url);
+                        println!("[{}/{}] {}: {}", num, count, "PASS".green(), &relative_path);
                     }
                     TestResult::Fail => {
                         fail_count.fetch_add(1, Ordering::SeqCst);
-                        println!("[{}/{}] {}: {}", num, count, "FAIL".red(), &url);
+                        println!("[{}/{}] {}: {}", num, count, "FAIL".red(), &relative_path);
                     }
                     TestResult::Skip => {
                         skip_count.fetch_add(1, Ordering::SeqCst);
-                        println!("[{}/{}] {}: {}", num, count, "SKIP".blue(), &url);
+                        println!("[{}/{}] {}: {}", num, count, "SKIP".blue(), &relative_path);
                     }
                 }
             }));
 
             if result.is_err() {
                 crash_count.fetch_add(1, Ordering::SeqCst);
-                println!("[{}/{}] {}: {}", num, count, "CRASH".red(), url);
+                println!("[{}/{}] {}: {}", num, count, "CRASH".red(), relative_path);
             }
         },
     );
