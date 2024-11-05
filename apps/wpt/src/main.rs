@@ -3,22 +3,26 @@ use blitz_dom::{HtmlDocument, Viewport};
 use blitz_net::{MpscCallback, Provider};
 use blitz_renderer_vello::render_to_buffer;
 use blitz_traits::net::SharedProvider;
+use reqwest::Url;
+use tower_http::services::ServeDir;
 
 use regex::Regex;
 
 use tokio::runtime::Handle;
+use tokio::sync::mpsc::UnboundedReceiver;
+use tokio::time::timeout;
 
+use axum::Router;
 use image::{ImageBuffer, ImageFormat};
 use log::{error, info};
 use owo_colors::OwoColorize;
 use std::fs::File;
 use std::io::Write;
+use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 use std::{env, fs};
-use tokio::sync::mpsc::UnboundedReceiver;
-use tokio::time::timeout;
 
 const WIDTH: u32 = 800;
 const HEIGHT: u32 = 600;
@@ -84,7 +88,8 @@ fn main() {
 
     let wpt_dir = env::var("WPT_DIR").expect("WPT_DIR is not set");
     info!("WPT_DIR: {}", wpt_dir);
-    let wpt_dir = Path::new(&wpt_dir);
+    let wpt_dir2 = wpt_dir.clone();
+    let wpt_dir = Path::new(wpt_dir.as_str());
     if !wpt_dir.exists() {
         error!("WPT_DIR does not exist. This should be set to a local copy of https://github.com/web-platform-tests/wpt.");
     }
@@ -99,12 +104,28 @@ fn main() {
 
     let mut blitz_context = rt.block_on(async { setup_blitz() });
 
+    rt.spawn(async move {
+        let router = Router::new().nest_service("/", ServeDir::new(&wpt_dir2));
+        serve(router, 3000).await;
+    });
+
+    let base_url = Url::parse("http://localhost:3000").unwrap();
+
     for path in test_paths {
+        let relative_path = path
+            .strip_prefix(wpt_dir)
+            .unwrap()
+            .display()
+            .to_string()
+            .replace("\\", "/");
+
+        let url = base_url.join(relative_path.as_str()).unwrap();
+        
         rt.block_on(async {
             process_test_file(
-                &path,
+                &url,
                 &reference_file_re,
-                wpt_dir,
+                &base_url,
                 &mut blitz_context,
                 &out_dir,
             )
@@ -113,16 +134,29 @@ fn main() {
     }
 }
 
+async fn serve(app: Router, port: u16) {
+    let addr = SocketAddr::from(([127, 0, 0, 1], port));
+    let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
+    axum::serve(listener, app)
+        .await
+        .expect("Failed to create http server.");
+}
+
 async fn process_test_file(
-    path: &PathBuf,
+    path: &Url,
     reference_file_re: &Regex,
-    wpt_dir: &Path,
+    base_url: &Url,
     blitz_context: &mut BlitzContext,
     out_dir: &Path,
 ) {
-    info!("Processing test file: {}", path.display());
+    info!("Processing test file: {}", path);
 
-    let file_contents = std::fs::read_to_string(path).expect("Could not read file.");
+    let file_contents = reqwest::get(path.clone())
+        .await
+        .expect("Could not read file.")
+        .text()
+        .await
+        .unwrap();
 
     let reference = reference_file_re
         .captures(file_contents.as_str())
@@ -133,73 +167,53 @@ async fn process_test_file(
             path,
             file_contents.as_str(),
             reference.as_str(),
-            wpt_dir,
+            base_url,
             blitz_context,
             out_dir,
         )
         .await;
     } else {
-        info!(
-            "Skipping test file: {}. No reference found.",
-            path.display()
-        );
+        info!("Skipping test file: {}. No reference found.", path);
 
         // Todo: Handle other test formats.
     }
 }
 
 async fn process_test_file_with_ref(
-    test_path: &PathBuf,
+    test_url: &Url,
     test_file_contents: &str,
     ref_file: &str,
-    wpt_dir: &Path,
+    base_url: &Url,
     blitz_context: &mut BlitzContext,
     out_dir: &Path,
 ) {
     if !ref_file.ends_with(".html") {
         return;
     }
-    let ref_file: PathBuf = if let Some(stripped) = ref_file.strip_prefix("/") {
-        wpt_dir.to_path_buf().join(stripped)
-    } else {
-        test_path.parent().unwrap().to_path_buf().join(ref_file)
-    };
+    let ref_url: Url = test_url.join(".").unwrap().join(ref_file).unwrap();
 
-    let reference_file_contents = fs::read_to_string(&ref_file);
+    let reference_file_contents = reqwest::get(ref_url.clone())
+        .await
+        .expect("Could not read file.")
+        .text()
+        .await;
 
     if reference_file_contents.is_err() {
         error!(
             "Skipping test file: {}. Reference file missing {}",
-            test_path.display(),
-            ref_file.display()
+            test_url, ref_url
         );
-        panic!(
-            "Skipping test file: {}. No reference found.",
-            ref_file.display()
-        );
+        panic!("Skipping test file: {}. No reference found.", ref_url);
     }
 
     let reference_file_contents = reference_file_contents.unwrap();
 
-    // Resolve .. and such and remove any canonical syntax that we don't care about.
-    let test_base_url = fs::canonicalize(test_path)
-        .unwrap()
-        .display()
-        .to_string()
-        .replace("\\\\?\\", "")
-        .replace("\\", "/");
-
-    let ref_base_url = fs::canonicalize(&ref_file)
-        .unwrap()
-        .display()
-        .to_string()
-        .replace("\\\\?\\", "")
-        .replace("\\", "/");
+    let test_base_url = test_url.to_string().replace(base_url.as_str(), "");
 
     let (test_buffer, test_width, test_height) = {
         let mut document = HtmlDocument::from_html(
             test_file_contents,
-            Some(format!("file://{}", test_base_url)),
+            Some(test_url.to_string()),
             Vec::new(),
             Arc::clone(&blitz_context.net) as SharedProvider<Resource>,
         );
@@ -230,12 +244,12 @@ async fn process_test_file_with_ref(
             Viewport::new(WIDTH * SCALE, render_height * SCALE, SCALE as f32),
         )
         .await;
+        let path = format!("{}{}", test_base_url, "-test.png");
 
-        let path = PathBuf::from(&test_base_url);
-        let path = path.strip_prefix(wpt_dir).unwrap();
-        let name = path.display().to_string() + "-test.png";
-        fs::create_dir_all(out_dir.join(path.parent().unwrap())).unwrap();
-        let mut file = File::create(out_dir.join(name)).unwrap();
+        let out_file = out_dir.join(path);
+        info!("Out file: {}", out_file.display());
+        fs::create_dir_all(out_file.parent().unwrap()).unwrap();
+        let mut file = File::create(out_file).unwrap();
         write_png(&mut file, &buffer, WIDTH * SCALE, render_height * SCALE);
         (buffer, WIDTH * SCALE, render_height * SCALE)
     };
@@ -243,7 +257,7 @@ async fn process_test_file_with_ref(
     let (ref_buffer, ref_width, ref_height) = {
         let mut document = HtmlDocument::from_html(
             &reference_file_contents,
-            Some(format!("file://{}", ref_base_url)),
+            Some(ref_url.to_string()),
             Vec::new(),
             Arc::clone(&blitz_context.net) as SharedProvider<Resource>,
         );
@@ -275,11 +289,11 @@ async fn process_test_file_with_ref(
         )
         .await;
 
-        let path = PathBuf::from(&test_base_url);
-        let path = path.strip_prefix(wpt_dir).unwrap();
-        let name = path.display().to_string() + "-reference.png";
-        fs::create_dir_all(out_dir.join(path.parent().unwrap())).unwrap();
-        let mut file = File::create(out_dir.join(name)).unwrap();
+        let path = format!("{}{}", test_base_url, "-ref.png");
+
+        let out_file = out_dir.join(path);
+        fs::create_dir_all(out_file.parent().unwrap()).unwrap();
+        let mut file = File::create(out_file).unwrap();
         write_png(&mut file, &buffer, WIDTH * SCALE, render_height * SCALE);
         (buffer, WIDTH * SCALE, render_height * SCALE)
     };
@@ -292,16 +306,13 @@ async fn process_test_file_with_ref(
     let diff = dify::diff::get_results(test_image, ref_image, 0.1f32, true, None, &x, &y);
 
     if let Some(diff) = diff {
-        let path = PathBuf::from(&test_base_url);
-        let path = path.strip_prefix(wpt_dir).unwrap();
-        let name = path.display().to_string() + "-diff.png";
-        fs::create_dir_all(out_dir.join(path.parent().unwrap())).unwrap();
-        diff.1
-            .save_with_format(&out_dir.join(name), ImageFormat::Png)
-            .unwrap();
-        println!("{}: {}", "FAIL".red(), test_path.display());
+        let path = out_dir.join(format!("{}{}", test_base_url, "-diff.png"));
+        let parent = path.parent().unwrap();
+        fs::create_dir_all(parent).unwrap();
+        diff.1.save_with_format(path, ImageFormat::Png).unwrap();
+        println!("{}: {}", "FAIL".red(), test_url);
     } else {
-        println!("{}: {}", "PASS".green(), test_path.display());
+        println!("{}: {}", "PASS".green(), test_url);
     }
 }
 
