@@ -8,8 +8,7 @@ use regex::Regex;
 
 use tokio::runtime::Handle;
 
-use dify::diff::RunParams;
-use image::{ImageBuffer, ImageFormat, RgbaImage};
+use image::{ImageBuffer, ImageFormat};
 use log::{error, info};
 use owo_colors::OwoColorize;
 use std::fs::File;
@@ -20,8 +19,6 @@ use std::time::Duration;
 use std::{env, fs};
 use tokio::sync::mpsc::UnboundedReceiver;
 use tokio::time::timeout;
-
-const USER_AGENT: &str = "Mozilla/5.0 (X11; Linux x86_64; rv:60.0) Gecko/20100101 Firefox/81.0";
 
 const WIDTH: u32 = 800;
 const HEIGHT: u32 = 600;
