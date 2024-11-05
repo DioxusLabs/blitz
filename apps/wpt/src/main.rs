@@ -55,7 +55,7 @@ fn collect_tests(wpt_dir: &Path) -> Vec<PathBuf> {
         test_paths.extend(glob_results.filter_map(|glob_result| {
             if let Ok(path_buf) = glob_result {
                 let is_tentative = path_buf.ends_with("tentative.html");
-                let is_ref = path_buf.ends_with("-ref.html")
+                let is_ref = path_buf.to_string_lossy().ends_with("-ref.html")
                     || path_contains_directory(&path_buf, "reference");
                 let is_support_file = path_contains_directory(&path_buf, "support");
 
