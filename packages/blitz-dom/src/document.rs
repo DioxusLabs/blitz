@@ -432,7 +432,7 @@ impl Document {
 
     /// Set base url for resolving linked resources (stylesheets, images, fonts, etc)
     pub fn set_base_url(&mut self, url: &str) {
-        self.base_url = Url::parse(url).ok();
+        self.base_url = Some(Url::parse(url).unwrap());
     }
 
     pub fn guard(&self) -> &SharedRwLock {

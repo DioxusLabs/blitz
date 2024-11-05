@@ -62,10 +62,10 @@ impl<D: 'static> NetProvider for Provider<D> {
     fn fetch(&self, url: Url, handler: BoxedHandler<D>) {
         let client = self.client.clone();
         let callback = Arc::clone(&self.resource_callback);
-        drop(self.rt.spawn(async {
-            let res = Self::fetch_inner(client, url, handler, callback).await;
+        drop(self.rt.spawn(async move {
+            let res = Self::fetch_inner(client, url.clone(), handler, callback).await;
             if let Err(e) = res {
-                eprintln!("{e}");
+                eprintln!("Error fetching {}: {e}", url);
             }
         }));
     }
