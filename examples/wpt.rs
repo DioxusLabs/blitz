@@ -61,7 +61,7 @@ struct BlitzContext {
 fn setup_blitz() -> BlitzContext {
     let viewport = Viewport::new(WIDTH * SCALE, HEIGHT * SCALE, SCALE as f32);
 
-    let (mut receiver, callback) = MpscCallback::new();
+    let (receiver, callback) = MpscCallback::new();
     let callback = Arc::new(callback);
     let net = Arc::new(Provider::new(Handle::current(), callback));
 
