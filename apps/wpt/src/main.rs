@@ -19,14 +19,23 @@ use owo_colors::OwoColorize;
 use std::fs::File;
 use std::io::Write;
 use std::net::SocketAddr;
+use std::panic::catch_unwind;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::AtomicU32;
+use std::sync::atomic::Ordering;
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use std::{env, fs};
 
 const WIDTH: u32 = 800;
 const HEIGHT: u32 = 600;
 const SCALE: u32 = 2;
+
+enum TestResult {
+    Pass,
+    Fail,
+    Skip,
+}
 
 fn collect_tests(wpt_dir: &Path) -> Vec<PathBuf> {
     let pattern = format!(
@@ -82,6 +91,7 @@ fn main() {
         .enable_all()
         .build()
         .expect("Failed to create tokio runtime");
+    let _guard = rt.enter();
 
     let reference_file_re = Regex::new(r#"<link\s+rel="match"\s+href="([^"]+)""#)
         .expect("Failed to compile regex for match re");
@@ -94,7 +104,7 @@ fn main() {
         error!("WPT_DIR does not exist. This should be set to a local copy of https://github.com/web-platform-tests/wpt.");
     }
     let test_paths = collect_tests(wpt_dir);
-    let test_count = test_paths.len();
+    let count = test_paths.len();
 
     let cargo_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
     let out_dir = cargo_dir.join("output");
@@ -103,8 +113,6 @@ fn main() {
     }
     fs::create_dir(&out_dir).unwrap();
 
-    let mut blitz_context = rt.block_on(async { setup_blitz() });
-
     rt.spawn(async move {
         let router = Router::new().nest_service("/", ServeDir::new(&wpt_dir2));
         serve(router, 3000).await;
@@ -112,7 +120,15 @@ fn main() {
 
     let base_url = Url::parse("http://localhost:3000").unwrap();
 
+    let pass_count = AtomicU32::new(0);
+    let fail_count = AtomicU32::new(0);
+    let skip_count = AtomicU32::new(0);
+    let mut crash_count = 0;
+    let start = Instant::now();
+
     for (index, path) in test_paths.into_iter().enumerate() {
+        let num = index + 1;
+
         let relative_path = path
             .strip_prefix(wpt_dir)
             .unwrap()
@@ -122,19 +138,43 @@ fn main() {
 
         let url = base_url.join(relative_path.as_str()).unwrap();
 
-        rt.block_on(async {
-            process_test_file(
-                index + 1,
-                test_count,
+        let result = catch_unwind(|| {
+            let mut blitz_context = setup_blitz();
+            let result = rt.block_on(process_test_file(
                 &url,
                 &reference_file_re,
                 &base_url,
                 &mut blitz_context,
                 &out_dir,
-            )
-            .await;
+            ));
+            match result {
+                TestResult::Pass => {
+                    pass_count.fetch_add(1, Ordering::SeqCst);
+                    println!("[{}/{}] {}: {}", num, count, "PASS".green(), &url);
+                }
+                TestResult::Fail => {
+                    fail_count.fetch_add(1, Ordering::SeqCst);
+                    println!("[{}/{}] {}: {}", num, count, "FAIL".red(), &url);
+                }
+                TestResult::Skip => {
+                    skip_count.fetch_add(1, Ordering::SeqCst);
+                    println!("[{}/{}] {}: {}", num, count, "SKIP".blue(), &url);
+                }
+            }
         });
+
+        if result.is_err() {
+            crash_count += 1;
+            println!("[{}/{}] {}: {}", num, count, "CRASH".red(), url);
+        }
     }
+
+    println!("---");
+    println!("Done in {}s", (Instant::now() - start).as_secs());
+    println!("{} tests PASSED.", pass_count.load(Ordering::SeqCst));
+    println!("{} tests FAILED.", fail_count.load(Ordering::SeqCst));
+    println!("{} tests CRASHED.", crash_count);
+    println!("{} tests SKIPPED.", skip_count.load(Ordering::SeqCst));
 }
 
 async fn serve(app: Router, port: u16) {
@@ -146,14 +186,12 @@ async fn serve(app: Router, port: u16) {
 }
 
 async fn process_test_file(
-    test_num: usize,
-    test_count: usize,
     path: &Url,
     reference_file_re: &Regex,
     base_url: &Url,
     blitz_context: &mut BlitzContext,
     out_dir: &Path,
-) {
+) -> TestResult {
     info!("Processing test file: {}", path);
 
     let file_contents = reqwest::get(path.clone())
@@ -169,8 +207,6 @@ async fn process_test_file(
 
     if let Some(reference) = reference {
         process_test_file_with_ref(
-            test_num,
-            test_count,
             path,
             file_contents.as_str(),
             reference.as_str(),
@@ -178,27 +214,21 @@ async fn process_test_file(
             blitz_context,
             out_dir,
         )
-        .await;
+        .await
     } else {
-        info!(
-            "[{}/{}] Skipping test file: {}. No reference found.",
-            test_num, test_count, path
-        );
-
         // Todo: Handle other test formats.
+        TestResult::Skip
     }
 }
 
 async fn process_test_file_with_ref(
-    test_num: usize,
-    test_count: usize,
     test_url: &Url,
     test_file_contents: &str,
     ref_file: &str,
     base_url: &Url,
     blitz_context: &mut BlitzContext,
     out_dir: &Path,
-) {
+) -> TestResult {
     let ref_url: Url = test_url.join(".").unwrap().join(ref_file).unwrap();
 
     let reference_file_contents = reqwest::get(ref_url.clone())
@@ -320,21 +350,9 @@ async fn process_test_file_with_ref(
         let parent = path.parent().unwrap();
         fs::create_dir_all(parent).unwrap();
         diff.1.save_with_format(path, ImageFormat::Png).unwrap();
-        println!(
-            "[{}/{}] {}: {}",
-            test_num,
-            test_count,
-            "FAIL".red(),
-            test_url
-        );
+        TestResult::Pass
     } else {
-        println!(
-            "[{}/{}] {}: {}",
-            test_num,
-            test_count,
-            "PASS".green(),
-            test_url
-        );
+        TestResult::Fail
     }
 }
 
