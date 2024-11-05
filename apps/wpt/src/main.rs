@@ -1,7 +1,7 @@
 use blitz_dom::net::Resource;
 use blitz_dom::{HtmlDocument, Viewport};
 use blitz_net::{MpscCallback, Provider};
-use blitz_renderer_vello::render_to_buffer;
+use blitz_renderer_vello::VelloImageRenderer;
 use blitz_traits::net::SharedProvider;
 use reqwest::Url;
 use tower_http::services::ServeDir;
@@ -19,7 +19,7 @@ use owo_colors::OwoColorize;
 use std::fs::File;
 use std::io::Write;
 use std::net::SocketAddr;
-use std::panic::catch_unwind;
+use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicU32;
 use std::sync::atomic::Ordering;
@@ -29,7 +29,7 @@ use std::{env, fs};
 
 const WIDTH: u32 = 800;
 const HEIGHT: u32 = 600;
-const SCALE: u32 = 2;
+const SCALE: f64 = 1.0;
 
 enum TestResult {
     Pass,
@@ -72,7 +72,11 @@ struct BlitzContext {
 }
 
 fn setup_blitz() -> BlitzContext {
-    let viewport = Viewport::new(WIDTH * SCALE, HEIGHT * SCALE, SCALE as f32);
+    let viewport = Viewport::new(
+        (WIDTH as f64 * SCALE).floor() as u32,
+        (HEIGHT as f64 * SCALE).floor() as u32,
+        SCALE as f32,
+    );
 
     let (receiver, callback) = MpscCallback::new();
     let callback = Arc::new(callback);
@@ -118,12 +122,16 @@ fn main() {
         serve(router, 3000).await;
     });
 
+    let mut renderer = rt.block_on(VelloImageRenderer::new(WIDTH, HEIGHT, SCALE));
+    let mut test_buffer = Vec::with_capacity((WIDTH * HEIGHT * 4) as usize);
+    let mut ref_buffer = Vec::with_capacity((WIDTH * HEIGHT * 4) as usize);
+
     let base_url = Url::parse("http://localhost:3000").unwrap();
 
     let pass_count = AtomicU32::new(0);
     let fail_count = AtomicU32::new(0);
     let skip_count = AtomicU32::new(0);
-    let mut crash_count = 0;
+    let crash_count = AtomicU32::new(0);
     let start = Instant::now();
 
     for (index, path) in test_paths.into_iter().enumerate() {
@@ -138,9 +146,12 @@ fn main() {
 
         let url = base_url.join(relative_path.as_str()).unwrap();
 
-        let result = catch_unwind(|| {
+        let result = catch_unwind(AssertUnwindSafe(|| {
             let mut blitz_context = setup_blitz();
             let result = rt.block_on(process_test_file(
+                &mut renderer,
+                &mut test_buffer,
+                &mut ref_buffer,
                 &url,
                 &reference_file_re,
                 &base_url,
@@ -161,10 +172,10 @@ fn main() {
                     println!("[{}/{}] {}: {}", num, count, "SKIP".blue(), &url);
                 }
             }
-        });
+        }));
 
         if result.is_err() {
-            crash_count += 1;
+            crash_count.fetch_add(1, Ordering::SeqCst);
             println!("[{}/{}] {}: {}", num, count, "CRASH".red(), url);
         }
     }
@@ -173,7 +184,7 @@ fn main() {
     println!("Done in {}s", (Instant::now() - start).as_secs());
     println!("{} tests PASSED.", pass_count.load(Ordering::SeqCst));
     println!("{} tests FAILED.", fail_count.load(Ordering::SeqCst));
-    println!("{} tests CRASHED.", crash_count);
+    println!("{} tests CRASHED.", crash_count.load(Ordering::SeqCst));
     println!("{} tests SKIPPED.", skip_count.load(Ordering::SeqCst));
 }
 
@@ -185,7 +196,11 @@ async fn serve(app: Router, port: u16) {
         .expect("Failed to create http server.");
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn process_test_file(
+    renderer: &mut VelloImageRenderer,
+    test_buffer: &mut Vec<u8>,
+    ref_buffer: &mut Vec<u8>,
     path: &Url,
     reference_file_re: &Regex,
     base_url: &Url,
@@ -207,6 +222,9 @@ async fn process_test_file(
 
     if let Some(reference) = reference {
         process_test_file_with_ref(
+            renderer,
+            test_buffer,
+            ref_buffer,
             path,
             file_contents.as_str(),
             reference.as_str(),
@@ -221,7 +239,11 @@ async fn process_test_file(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn process_test_file_with_ref(
+    renderer: &mut VelloImageRenderer,
+    test_buffer: &mut Vec<u8>,
+    ref_buffer: &mut Vec<u8>,
     test_url: &Url,
     test_file_contents: &str,
     ref_file: &str,
@@ -249,7 +271,7 @@ async fn process_test_file_with_ref(
 
     let test_base_url = test_url.to_string().replace(base_url.as_str(), "");
 
-    let (test_buffer, test_width, test_height) = {
+    {
         let mut document = HtmlDocument::from_html(
             test_file_contents,
             Some(test_url.to_string()),
@@ -279,21 +301,16 @@ async fn process_test_file_with_ref(
         let render_height = HEIGHT;
 
         // Render document to RGBA buffer
-        let buffer = render_to_buffer(
-            document.as_ref(),
-            Viewport::new(WIDTH * SCALE, render_height * SCALE, SCALE as f32),
-        )
-        .await;
+        renderer.render_document(document.as_ref(), test_buffer);
         let path = format!("{}{}", test_base_url, "-test.png");
 
         let out_file = out_dir.join(path);
         fs::create_dir_all(out_file.parent().unwrap()).unwrap();
         let mut file = File::create(out_file).unwrap();
-        write_png(&mut file, &buffer, WIDTH * SCALE, render_height * SCALE);
-        (buffer, WIDTH * SCALE, render_height * SCALE)
+        write_png(&mut file, test_buffer, WIDTH, render_height);
     };
 
-    let (ref_buffer, ref_width, ref_height) = {
+    {
         let mut document = HtmlDocument::from_html(
             &reference_file_contents,
             Some(ref_url.to_string()),
@@ -323,23 +340,18 @@ async fn process_test_file_with_ref(
         let render_height = HEIGHT;
 
         // Render document to RGBA buffer
-        let buffer = render_to_buffer(
-            document.as_ref(),
-            Viewport::new(WIDTH * SCALE, render_height * SCALE, SCALE as f32),
-        )
-        .await;
+        renderer.render_document(document.as_ref(), ref_buffer);
 
         let path = format!("{}{}", test_base_url, "-ref.png");
 
         let out_file = out_dir.join(path);
         fs::create_dir_all(out_file.parent().unwrap()).unwrap();
         let mut file = File::create(out_file).unwrap();
-        write_png(&mut file, &buffer, WIDTH * SCALE, render_height * SCALE);
-        (buffer, WIDTH * SCALE, render_height * SCALE)
+        write_png(&mut file, ref_buffer, WIDTH, render_height);
     };
 
-    let test_image = ImageBuffer::from_raw(test_width, test_height, test_buffer).unwrap();
-    let ref_image = ImageBuffer::from_raw(ref_width, ref_height, ref_buffer).unwrap();
+    let test_image = ImageBuffer::from_raw(WIDTH, HEIGHT, test_buffer.clone()).unwrap();
+    let ref_image = ImageBuffer::from_raw(WIDTH, HEIGHT, ref_buffer.clone()).unwrap();
 
     let x = None;
     let y = None;
