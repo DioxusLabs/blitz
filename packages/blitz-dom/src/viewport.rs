@@ -4,18 +4,24 @@ use style::{
     properties::{style_structs::Font, ComputedValues},
 };
 
+/// Window viewport.
 #[derive(Default, Debug, Clone)]
 pub struct Viewport {
+    /// Size of the window.
     pub window_size: (u32, u32),
 
-    hidpi_scale: f32,
-
-    zoom: f32,
-
+    /// Font size.
     pub font_size: f32,
+
+    /// Zoom level.
+    pub zoom: f32,
+
+    /// HiDPI (High Dots Per Inch) scaling factor.
+    pub hidpi_scale: f32,
 }
 
 impl Viewport {
+    /// Create a new viewport from a window's physical size and scale factor.
     pub fn new(physical_width: u32, physical_height: u32, scale_factor: f32) -> Self {
         Self {
             window_size: (physical_width, physical_height),
@@ -25,29 +31,9 @@ impl Viewport {
         }
     }
 
-    // Total scaling, the product of the zoom and hdpi scale
+    /// Calculate the total scaling, the product of the zoom and hdpi scale.
     pub fn scale(&self) -> f32 {
         self.hidpi_scale * self.zoom
-    }
-    // Total scaling, the product of the zoom and hdpi scale
-    pub fn scale_f64(&self) -> f64 {
-        self.scale() as f64
-    }
-
-    pub fn set_hidpi_scale(&mut self, scale: f32) {
-        self.hidpi_scale = scale;
-    }
-
-    pub fn zoom(&self) -> f32 {
-        self.zoom
-    }
-
-    pub fn set_zoom(&mut self, zoom: f32) {
-        self.zoom = zoom;
-    }
-
-    pub fn zoom_mut(&mut self) -> &mut f32 {
-        &mut self.zoom
     }
 
     pub(crate) fn make_device(&self) -> Device {

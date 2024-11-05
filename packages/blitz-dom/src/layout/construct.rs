@@ -575,7 +575,7 @@ fn create_text_editor(doc: &mut Document, input_element_id: usize, is_multiline:
             &mut doc.layout_ctx,
             [
                 PlainEditorOp::SetText(text),
-                PlainEditorOp::SetScale(doc.viewport.scale_f64() as f32),
+                PlainEditorOp::SetScale(doc.viewport.scale()),
                 PlainEditorOp::SetWidth(10000.0),
                 PlainEditorOp::SetDefaultStyle(styles),
             ],

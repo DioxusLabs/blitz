@@ -132,7 +132,7 @@ impl<Doc: DocumentLike> View<Doc> {
         let (width, height) = self.viewport.window_size;
         self.renderer.render(
             self.dom.as_ref(),
-            self.viewport.scale_f64(),
+            self.viewport.scale() as _,
             width,
             height,
             self.devtools,
@@ -179,7 +179,7 @@ impl<Doc: DocumentLike> View<Doc> {
         let (width, height) = self.viewport.window_size;
         self.renderer.render(
             self.dom.as_ref(),
-            self.viewport.scale_f64(),
+            self.viewport.scale() as _,
             width,
             height,
             self.devtools,
@@ -213,8 +213,8 @@ impl<Doc: DocumentLike> View<Doc> {
 
     pub fn mouse_move(&mut self, x: f32, y: f32) -> bool {
         let viewport_scroll = self.dom.as_ref().viewport_scroll();
-        let dom_x = x + viewport_scroll.x as f32 / self.viewport.zoom();
-        let dom_y = y + viewport_scroll.y as f32 / self.viewport.zoom();
+        let dom_x = x + viewport_scroll.x as f32 / self.viewport.zoom;
+        let dom_y = y + viewport_scroll.y as f32 / self.viewport.zoom;
 
         // println!("Mouse move: ({}, {})", x, y);
         // println!("Unscaled: ({}, {})",);
@@ -338,15 +338,15 @@ impl<Doc: DocumentLike> View<Doc> {
                 if ctrl | meta {
                     match key_code {
                         KeyCode::Equal => {
-                            *self.viewport.zoom_mut() += 0.1;
+                            self.viewport.zoom += 0.1;
                             self.kick_dom_viewport();
                         }
                         KeyCode::Minus => {
-                            *self.viewport.zoom_mut() -= 0.1;
+                            self.viewport.zoom -= 0.1;
                             self.kick_dom_viewport();
                         }
                         KeyCode::Digit0 => {
-                            *self.viewport.zoom_mut() = 1.0;
+                            self.viewport.zoom = 1.0;
                             self.kick_dom_viewport();
                         }
                         _ => {}
