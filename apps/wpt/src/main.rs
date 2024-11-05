@@ -187,9 +187,6 @@ async fn process_test_file_with_ref(
     blitz_context: &mut BlitzContext,
     out_dir: &Path,
 ) {
-    if !ref_file.ends_with(".html") {
-        return;
-    }
     let ref_url: Url = test_url.join(".").unwrap().join(ref_file).unwrap();
 
     let reference_file_contents = reqwest::get(ref_url.clone())
