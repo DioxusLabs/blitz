@@ -88,11 +88,13 @@ fn main() {
     if !wpt_dir.exists() {
         error!("WPT_DIR does not exist. This should be set to a local copy of https://github.com/web-platform-tests/wpt.");
     }
-    let test_paths = collect_tests(&wpt_dir);
+    let test_paths = collect_tests(wpt_dir);
 
     let cargo_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
-    let out_dir = cargo_dir.join("examples").join("output").join("wpt");
-    fs::remove_dir_all(&out_dir).unwrap();
+    let out_dir = cargo_dir.join("output");
+    if fs::exists(&out_dir).unwrap() {
+        fs::remove_dir_all(&out_dir).unwrap();
+    }
     fs::create_dir(&out_dir).unwrap();
 
     let mut blitz_context = rt.block_on(async { setup_blitz() });
@@ -102,7 +104,7 @@ fn main() {
             process_test_file(
                 &path,
                 &reference_file_re,
-                &wpt_dir,
+                wpt_dir,
                 &mut blitz_context,
                 &out_dir,
             )
@@ -116,7 +118,7 @@ async fn process_test_file(
     reference_file_re: &Regex,
     wpt_dir: &Path,
     blitz_context: &mut BlitzContext,
-    out_dir: &PathBuf,
+    out_dir: &Path,
 ) {
     info!("Processing test file: {}", path.display());
 
@@ -133,7 +135,7 @@ async fn process_test_file(
             reference.as_str(),
             wpt_dir,
             blitz_context,
-            &out_dir,
+            out_dir,
         )
         .await;
     } else {
@@ -152,13 +154,13 @@ async fn process_test_file_with_ref(
     ref_file: &str,
     wpt_dir: &Path,
     blitz_context: &mut BlitzContext,
-    out_dir: &PathBuf,
+    out_dir: &Path,
 ) {
     if !ref_file.ends_with(".html") {
         return;
     }
-    let ref_file: PathBuf = if ref_file.starts_with("/") {
-        wpt_dir.to_path_buf().join(&ref_file[1..])
+    let ref_file: PathBuf = if let Some(stripped) = ref_file.strip_prefix("/") {
+        wpt_dir.to_path_buf().join(stripped)
     } else {
         test_path.parent().unwrap().to_path_buf().join(ref_file)
     };
@@ -196,7 +198,7 @@ async fn process_test_file_with_ref(
 
     let (test_buffer, test_width, test_height) = {
         let mut document = HtmlDocument::from_html(
-            &test_file_contents,
+            test_file_contents,
             Some(format!("file://{}", test_base_url)),
             Vec::new(),
             Arc::clone(&blitz_context.net) as SharedProvider<Resource>,
@@ -220,7 +222,7 @@ async fn process_test_file_with_ref(
 
         // Determine height to render
         let computed_height = document.as_ref().root_element().final_layout.size.height;
-        let render_height = (computed_height as u32).max(HEIGHT).min(4000);
+        let render_height = (computed_height as u32).clamp(HEIGHT, 4000);
 
         // Render document to RGBA buffer
         let buffer = render_to_buffer(
@@ -233,7 +235,7 @@ async fn process_test_file_with_ref(
         let path = path.strip_prefix(wpt_dir).unwrap();
         let name = path.display().to_string() + "-test.png";
         fs::create_dir_all(out_dir.join(path.parent().unwrap())).unwrap();
-        let mut file = File::create(&out_dir.join(name)).unwrap();
+        let mut file = File::create(out_dir.join(name)).unwrap();
         write_png(&mut file, &buffer, WIDTH * SCALE, render_height * SCALE);
         (buffer, WIDTH * SCALE, render_height * SCALE)
     };
@@ -264,7 +266,7 @@ async fn process_test_file_with_ref(
 
         // Determine height to render
         let computed_height = document.as_ref().root_element().final_layout.size.height;
-        let render_height = (computed_height as u32).max(HEIGHT).min(4000);
+        let render_height = (computed_height as u32).clamp(HEIGHT, 4000);
 
         // Render document to RGBA buffer
         let buffer = render_to_buffer(
@@ -277,7 +279,7 @@ async fn process_test_file_with_ref(
         let path = path.strip_prefix(wpt_dir).unwrap();
         let name = path.display().to_string() + "-reference.png";
         fs::create_dir_all(out_dir.join(path.parent().unwrap())).unwrap();
-        let mut file = File::create(&out_dir.join(name)).unwrap();
+        let mut file = File::create(out_dir.join(name)).unwrap();
         write_png(&mut file, &buffer, WIDTH * SCALE, render_height * SCALE);
         (buffer, WIDTH * SCALE, render_height * SCALE)
     };
@@ -303,7 +305,7 @@ async fn process_test_file_with_ref(
     }
 }
 
-fn path_contains_directory(path: &PathBuf, dir_name: &str) -> bool {
+fn path_contains_directory(path: &Path, dir_name: &str) -> bool {
     path.components()
         .any(|component| component.as_os_str() == dir_name)
 }
@@ -325,6 +327,6 @@ fn write_png<W: Write>(writer: W, buffer: &[u8], width: u32, height: u32) {
 
     // Write PNG data to writer
     let mut writer = encoder.write_header().unwrap();
-    writer.write_image_data(&buffer).unwrap();
+    writer.write_image_data(buffer).unwrap();
     writer.finish().unwrap();
 }

@@ -7,3 +7,4 @@ experiments
 /examples/output/**/*.jpg
 /examples/output/**/*.jpeg
 /out
+/apps/wpt/output
