@@ -1,36 +1,20 @@
 //! Render the readme.md using the gpu renderer
 
-use std::{collections::HashMap, path::Path};
+use std::collections::HashMap;
 
 use comrak::{
     adapters::SyntaxHighlighterAdapter, markdown_to_html_with_plugins,
     plugins::syntect::SyntectAdapter, ExtensionOptionsBuilder, Options, Plugins,
     RenderOptionsBuilder,
 };
-use dioxus_native::Config;
 
-fn main() {
-    let (base_url, contents) = std::env::args()
-        .skip(1)
-        .next()
-        .map(|path| {
-            let base_path = std::path::absolute(Path::new(&path)).unwrap();
-            let base_path = base_path.parent().unwrap().to_string_lossy();
-            let base_url = format!("file://{}/", base_path);
-            let contents = std::fs::read_to_string(path).unwrap();
-            (base_url, contents)
-        })
-        .unwrap_or({
-            let base_url = "https://raw.githubusercontent.com/DioxusLabs/blitz/main/".to_string();
-            let contents = include_str!("../README.md").to_string();
-            (base_url, contents)
-        });
+pub(crate) const MARKDOWN_STYLESHEET: &str = include_str!("../assets/github-markdown-light.css");
 
+pub(crate) fn markdown_to_html(contents: String) -> String {
     let plugins = Plugins::default();
     // let syntax_highligher = CustomSyntectAdapter(SyntectAdapter::new(Some("InspiredGitHub")));
     // plugins.render.codefence_syntax_highlighter = Some(&syntax_highligher as _);
 
-    let stylesheet = include_str!("./assets/github-markdown-light.css");
     let body_html = markdown_to_html_with_plugins(
         &contents,
         &Options {
@@ -58,7 +42,7 @@ fn main() {
         &plugins,
     );
 
-    let html = format!(
+    format!(
         r#"
         <!DOCTYPE html>
         <html>
@@ -68,17 +52,7 @@ fn main() {
         </html>
     "#,
         body_html
-    );
-
-    println!("{html}");
-
-    dioxus_native::launch_static_html_cfg(
-        &html,
-        Config {
-            stylesheets: vec![String::from(stylesheet)],
-            base_url: Some(base_url),
-        },
-    );
+    )
 }
 
 #[allow(unused)]

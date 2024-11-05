@@ -6,7 +6,9 @@ members = [
   "packages/blitz-net",
   "packages/blitz-renderer-vello",
   "packages/dioxus-native",
-  "apps/wpt"]
+  "apps/wpt",
+  "apps/readme",
+]
 resolver = "2"
 
 [workspace.package]
@@ -106,7 +108,6 @@ blitz-net = { path = "./packages/blitz-net" }
 blitz-traits = { path = "./packages/blitz-traits" }
 blitz-renderer-vello = { path = "./packages/blitz-renderer-vello" }
 dioxus-native = { path = "./packages/dioxus-native", features = ["tracing"] }
-comrak = { git = "https://github.com/kivikakk/comrak", rev = "96a64d1befcaa8715098bf617e836c2ef70cb692", default-features = false, features = ["syntect"] }
 png = { version = "0.17" }
 dioxus = { workspace = true }
 euclid = { version = "0.22", features = ["serde"] }
