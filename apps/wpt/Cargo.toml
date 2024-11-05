@@ -24,3 +24,4 @@ tower-http = {version = "0.6.1", features = ["fs"]}
 tower = {version = "0.5.1"}
 url = "2.5.3"
 reqwest = "0.12.9"
+rayon = "1.10.0"

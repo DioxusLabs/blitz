@@ -8,6 +8,7 @@ use tower_http::services::ServeDir;
 
 use regex::Regex;
 
+use rayon::prelude::*;
 use tokio::runtime::Handle;
 use tokio::sync::mpsc::UnboundedReceiver;
 use tokio::time::timeout;
@@ -122,10 +123,6 @@ fn main() {
         serve(router, 3000).await;
     });
 
-    let mut renderer = rt.block_on(VelloImageRenderer::new(WIDTH, HEIGHT, SCALE));
-    let mut test_buffer = Vec::with_capacity((WIDTH * HEIGHT * 4) as usize);
-    let mut ref_buffer = Vec::with_capacity((WIDTH * HEIGHT * 4) as usize);
-
     let base_url = Url::parse("http://localhost:3000").unwrap();
 
     let pass_count = AtomicU32::new(0);
@@ -134,51 +131,66 @@ fn main() {
     let crash_count = AtomicU32::new(0);
     let start = Instant::now();
 
-    for (index, path) in test_paths.into_iter().enumerate() {
-        let num = index + 1;
+    let num = AtomicU32::new(0);
 
-        let relative_path = path
-            .strip_prefix(wpt_dir)
-            .unwrap()
-            .display()
-            .to_string()
-            .replace("\\", "/");
+    test_paths.into_par_iter().for_each_init(
+        || {
+            let renderer = rt.block_on(VelloImageRenderer::new(WIDTH, HEIGHT, SCALE));
+            let test_buffer = Vec::with_capacity((WIDTH * HEIGHT * 4) as usize);
+            let ref_buffer = Vec::with_capacity((WIDTH * HEIGHT * 4) as usize);
+            let guard = rt.enter();
+            (renderer, test_buffer, ref_buffer, guard)
+        },
+        |state, path| {
+            let num = num.fetch_add(1, Ordering::SeqCst) + 1;
 
-        let url = base_url.join(relative_path.as_str()).unwrap();
+            let relative_path = path
+                .strip_prefix(wpt_dir)
+                .unwrap()
+                .display()
+                .to_string()
+                .replace("\\", "/");
 
-        let result = catch_unwind(AssertUnwindSafe(|| {
-            let mut blitz_context = setup_blitz();
-            let result = rt.block_on(process_test_file(
-                &mut renderer,
-                &mut test_buffer,
-                &mut ref_buffer,
-                &url,
-                &reference_file_re,
-                &base_url,
-                &mut blitz_context,
-                &out_dir,
-            ));
-            match result {
-                TestResult::Pass => {
-                    pass_count.fetch_add(1, Ordering::SeqCst);
-                    println!("[{}/{}] {}: {}", num, count, "PASS".green(), &url);
+            let url = base_url.join(relative_path.as_str()).unwrap();
+
+            let renderer = &mut state.0;
+            let test_buffer = &mut state.1;
+            let ref_buffer = &mut state.2;
+
+            let result = catch_unwind(AssertUnwindSafe(|| {
+                let mut blitz_context = setup_blitz();
+                let result = rt.block_on(process_test_file(
+                    renderer,
+                    test_buffer,
+                    ref_buffer,
+                    &url,
+                    &reference_file_re,
+                    &base_url,
+                    &mut blitz_context,
+                    &out_dir,
+                ));
+                match result {
+                    TestResult::Pass => {
+                        pass_count.fetch_add(1, Ordering::SeqCst);
+                        println!("[{}/{}] {}: {}", num, count, "PASS".green(), &url);
+                    }
+                    TestResult::Fail => {
+                        fail_count.fetch_add(1, Ordering::SeqCst);
+                        println!("[{}/{}] {}: {}", num, count, "FAIL".red(), &url);
+                    }
+                    TestResult::Skip => {
+                        skip_count.fetch_add(1, Ordering::SeqCst);
+                        println!("[{}/{}] {}: {}", num, count, "SKIP".blue(), &url);
+                    }
                 }
-                TestResult::Fail => {
-                    fail_count.fetch_add(1, Ordering::SeqCst);
-                    println!("[{}/{}] {}: {}", num, count, "FAIL".red(), &url);
-                }
-                TestResult::Skip => {
-                    skip_count.fetch_add(1, Ordering::SeqCst);
-                    println!("[{}/{}] {}: {}", num, count, "SKIP".blue(), &url);
-                }
+            }));
+
+            if result.is_err() {
+                crash_count.fetch_add(1, Ordering::SeqCst);
+                println!("[{}/{}] {}: {}", num, count, "CRASH".red(), url);
             }
-        }));
-
-        if result.is_err() {
-            crash_count.fetch_add(1, Ordering::SeqCst);
-            println!("[{}/{}] {}: {}", num, count, "CRASH".red(), url);
-        }
-    }
+        },
+    );
 
     println!("---");
     println!("Done in {}s", (Instant::now() - start).as_secs());
