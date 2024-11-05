@@ -39,14 +39,20 @@ enum TestResult {
 }
 
 fn collect_tests(wpt_dir: &Path) -> Vec<PathBuf> {
-    let pattern = format!(
-        "{}/css/css-flexbox/**/*.html",
-        wpt_dir.display().to_string().as_str()
-    );
-    let glob_results = glob::glob(&pattern).expect("Invalid glob pattern.");
+    let mut test_paths = Vec::new();
 
-    glob_results
-        .filter_map(|glob_result| {
+    let mut suites: Vec<_> = std::env::args().collect();
+    if suites.is_empty() {
+        suites.push("css/css-flexbox".to_string());
+        suites.push("css/css-grid".to_string());
+    }
+
+    for suite in suites {
+        let pattern = format!("{}/{}/**/*.html", wpt_dir.display(), suite);
+
+        let glob_results = glob::glob(&pattern).expect("Invalid glob pattern.");
+
+        test_paths.extend(glob_results.filter_map(|glob_result| {
             if let Ok(path_buf) = glob_result {
                 let is_tentative = path_buf.ends_with("tentative.html");
                 let is_ref = path_buf.ends_with("-ref.html")
@@ -62,8 +68,10 @@ fn collect_tests(wpt_dir: &Path) -> Vec<PathBuf> {
                 error!("Failure during glob.");
                 panic!("Failure during glob");
             }
-        })
-        .collect()
+        }));
+    }
+
+    test_paths
 }
 
 struct BlitzContext {
