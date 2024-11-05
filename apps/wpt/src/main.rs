@@ -94,6 +94,7 @@ fn main() {
         error!("WPT_DIR does not exist. This should be set to a local copy of https://github.com/web-platform-tests/wpt.");
     }
     let test_paths = collect_tests(wpt_dir);
+    let test_count = test_paths.len();
 
     let cargo_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
     let out_dir = cargo_dir.join("output");
@@ -111,7 +112,7 @@ fn main() {
 
     let base_url = Url::parse("http://localhost:3000").unwrap();
 
-    for path in test_paths {
+    for (index, path) in test_paths.into_iter().enumerate() {
         let relative_path = path
             .strip_prefix(wpt_dir)
             .unwrap()
@@ -123,6 +124,8 @@ fn main() {
 
         rt.block_on(async {
             process_test_file(
+                index + 1,
+                test_count,
                 &url,
                 &reference_file_re,
                 &base_url,
@@ -143,6 +146,8 @@ async fn serve(app: Router, port: u16) {
 }
 
 async fn process_test_file(
+    test_num: usize,
+    test_count: usize,
     path: &Url,
     reference_file_re: &Regex,
     base_url: &Url,
@@ -164,6 +169,8 @@ async fn process_test_file(
 
     if let Some(reference) = reference {
         process_test_file_with_ref(
+            test_num,
+            test_count,
             path,
             file_contents.as_str(),
             reference.as_str(),
@@ -173,13 +180,18 @@ async fn process_test_file(
         )
         .await;
     } else {
-        info!("Skipping test file: {}. No reference found.", path);
+        info!(
+            "[{}/{}] Skipping test file: {}. No reference found.",
+            test_num, test_count, path
+        );
 
         // Todo: Handle other test formats.
     }
 }
 
 async fn process_test_file_with_ref(
+    test_num: usize,
+    test_count: usize,
     test_url: &Url,
     test_file_contents: &str,
     ref_file: &str,
@@ -308,9 +320,21 @@ async fn process_test_file_with_ref(
         let parent = path.parent().unwrap();
         fs::create_dir_all(parent).unwrap();
         diff.1.save_with_format(path, ImageFormat::Png).unwrap();
-        println!("{}: {}", "FAIL".red(), test_url);
+        println!(
+            "[{}/{}] {}: {}",
+            test_num,
+            test_count,
+            "FAIL".red(),
+            test_url
+        );
     } else {
-        println!("{}: {}", "PASS".green(), test_url);
+        println!(
+            "[{}/{}] {}: {}",
+            test_num,
+            test_count,
+            "PASS".green(),
+            test_url
+        );
     }
 }
 
