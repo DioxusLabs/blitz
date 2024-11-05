@@ -270,85 +270,27 @@ async fn process_test_file_with_ref(
     let reference_file_contents = reference_file_contents.unwrap();
 
     let test_base_url = test_url.to_string().replace(base_url.as_str(), "");
+    let test_out_path = out_dir.join(format!("{}{}", test_base_url, "-test.png"));
+    render_html_to_buffer(
+        blitz_context,
+        renderer,
+        test_file_contents,
+        test_url,
+        test_buffer,
+        &test_out_path,
+    )
+    .await;
 
-    {
-        let mut document = HtmlDocument::from_html(
-            test_file_contents,
-            Some(test_url.to_string()),
-            Vec::new(),
-            Arc::clone(&blitz_context.net) as SharedProvider<Resource>,
-        );
-
-        document
-            .as_mut()
-            .set_viewport(blitz_context.viewport.clone());
-
-        while !blitz_context.net.is_empty() {
-            let Ok(Some(res)) =
-                timeout(Duration::from_millis(500), blitz_context.receiver.recv()).await
-            else {
-                break;
-            };
-            document.as_mut().load_resource(res);
-        }
-
-        // Compute style, layout, etc for HtmlDocument
-        document.as_mut().resolve();
-
-        // Determine height to render
-        // let computed_height = document.as_ref().root_element().final_layout.size.height;
-        // let render_height = (computed_height as u32).clamp(HEIGHT, 4000);
-        let render_height = HEIGHT;
-
-        // Render document to RGBA buffer
-        renderer.render_document(document.as_ref(), test_buffer);
-        let path = format!("{}{}", test_base_url, "-test.png");
-
-        let out_file = out_dir.join(path);
-        fs::create_dir_all(out_file.parent().unwrap()).unwrap();
-        let mut file = File::create(out_file).unwrap();
-        write_png(&mut file, test_buffer, WIDTH, render_height);
-    };
-
-    {
-        let mut document = HtmlDocument::from_html(
-            &reference_file_contents,
-            Some(ref_url.to_string()),
-            Vec::new(),
-            Arc::clone(&blitz_context.net) as SharedProvider<Resource>,
-        );
-
-        document
-            .as_mut()
-            .set_viewport(blitz_context.viewport.clone());
-
-        while !blitz_context.net.is_empty() {
-            let Ok(Some(res)) =
-                timeout(Duration::from_millis(500), blitz_context.receiver.recv()).await
-            else {
-                break;
-            };
-            document.as_mut().load_resource(res);
-        }
-
-        // Compute style, layout, etc for HtmlDocument
-        document.as_mut().resolve();
-
-        // Determine height to render
-        // let computed_height = document.as_ref().root_element().final_layout.size.height;
-        // let render_height = (computed_height as u32).clamp(HEIGHT, 4000);
-        let render_height = HEIGHT;
-
-        // Render document to RGBA buffer
-        renderer.render_document(document.as_ref(), ref_buffer);
-
-        let path = format!("{}{}", test_base_url, "-ref.png");
-
-        let out_file = out_dir.join(path);
-        fs::create_dir_all(out_file.parent().unwrap()).unwrap();
-        let mut file = File::create(out_file).unwrap();
-        write_png(&mut file, ref_buffer, WIDTH, render_height);
-    };
+    let ref_out_path = out_dir.join(format!("{}{}", test_base_url, "-ref.png"));
+    render_html_to_buffer(
+        blitz_context,
+        renderer,
+        &reference_file_contents,
+        &ref_url,
+        ref_buffer,
+        &ref_out_path,
+    )
+    .await;
 
     let test_image = ImageBuffer::from_raw(WIDTH, HEIGHT, test_buffer.clone()).unwrap();
     let ref_image = ImageBuffer::from_raw(WIDTH, HEIGHT, ref_buffer.clone()).unwrap();
@@ -366,6 +308,50 @@ async fn process_test_file_with_ref(
     } else {
         TestResult::Fail
     }
+}
+
+async fn render_html_to_buffer(
+    blitz_context: &mut BlitzContext,
+    renderer: &mut VelloImageRenderer,
+    html: &str,
+    base_url: &Url,
+    buf: &mut Vec<u8>,
+    out_path: &Path,
+) {
+    let mut document = HtmlDocument::from_html(
+        html,
+        Some(base_url.to_string()),
+        Vec::new(),
+        Arc::clone(&blitz_context.net) as SharedProvider<Resource>,
+    );
+
+    document
+        .as_mut()
+        .set_viewport(blitz_context.viewport.clone());
+
+    while !blitz_context.net.is_empty() {
+        let Ok(Some(res)) =
+            timeout(Duration::from_millis(500), blitz_context.receiver.recv()).await
+        else {
+            break;
+        };
+        document.as_mut().load_resource(res);
+    }
+
+    // Compute style, layout, etc for HtmlDocument
+    document.as_mut().resolve();
+
+    // Determine height to render
+    // let computed_height = document.as_ref().root_element().final_layout.size.height;
+    // let render_height = (computed_height as u32).clamp(HEIGHT, 4000);
+    let render_height = HEIGHT;
+
+    // Render document to RGBA buffer
+    renderer.render_document(document.as_ref(), buf);
+
+    fs::create_dir_all(out_path.parent().unwrap()).unwrap();
+    let mut file = File::create(out_path).unwrap();
+    write_png(&mut file, buf, WIDTH, render_height);
 }
 
 fn path_contains_directory(path: &Path, dir_name: &str) -> bool {
