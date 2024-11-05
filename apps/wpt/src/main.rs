@@ -120,7 +120,7 @@ fn main() {
             .replace("\\", "/");
 
         let url = base_url.join(relative_path.as_str()).unwrap();
-        
+
         rt.block_on(async {
             process_test_file(
                 &url,
@@ -247,7 +247,6 @@ async fn process_test_file_with_ref(
         let path = format!("{}{}", test_base_url, "-test.png");
 
         let out_file = out_dir.join(path);
-        info!("Out file: {}", out_file.display());
         fs::create_dir_all(out_file.parent().unwrap()).unwrap();
         let mut file = File::create(out_file).unwrap();
         write_png(&mut file, &buffer, WIDTH * SCALE, render_height * SCALE);
