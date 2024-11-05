@@ -200,12 +200,24 @@ fn main() {
         },
     );
 
+    let pass_count = pass_count.load(Ordering::SeqCst);
+    let fail_count = fail_count.load(Ordering::SeqCst);
+    let crash_count = crash_count.load(Ordering::SeqCst);
+    let skip_count = skip_count.load(Ordering::SeqCst);
+
+    let run_count = pass_count + fail_count + crash_count;
+
     println!("---");
     println!("Done in {}s", (Instant::now() - start).as_secs());
-    println!("{} tests PASSED.", pass_count.load(Ordering::SeqCst));
-    println!("{} tests FAILED.", fail_count.load(Ordering::SeqCst));
-    println!("{} tests CRASHED.", crash_count.load(Ordering::SeqCst));
-    println!("{} tests SKIPPED.", skip_count.load(Ordering::SeqCst));
+    println!("{pass_count} tests PASSED.");
+    println!("{fail_count} tests FAILED.");
+    println!("{crash_count} tests CRASHED.");
+    println!("{skip_count} tests SKIPPED.");
+    println!("---");
+    let pessimistic_percent = (pass_count as f32 / count as f32) * 100.0;
+    let optimistic_percent = (pass_count as f32 / run_count as f32) * 100.0;
+    println!("Percent of total: {pessimistic_percent:.2}%");
+    println!("Percent of run: {optimistic_percent:.2}%");
 }
 
 async fn serve(app: Router, port: u16) {
