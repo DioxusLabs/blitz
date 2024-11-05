@@ -149,8 +149,8 @@ async fn process_test_file(
 }
 
 async fn process_test_file_with_ref(
-    actual_path: &PathBuf,
-    actual_file_contents: &str,
+    test_path: &PathBuf,
+    test_file_contents: &str,
     ref_file: &str,
     wpt_dir: &Path,
     blitz_context: &mut BlitzContext,
@@ -162,7 +162,7 @@ async fn process_test_file_with_ref(
     let ref_file: PathBuf = if ref_file.starts_with("/") {
         wpt_dir.to_path_buf().join(&ref_file[1..])
     } else {
-        actual_path.parent().unwrap().to_path_buf().join(ref_file)
+        test_path.parent().unwrap().to_path_buf().join(ref_file)
     };
 
     let reference_file_contents = fs::read_to_string(&ref_file);
@@ -170,7 +170,7 @@ async fn process_test_file_with_ref(
     if reference_file_contents.is_err() {
         error!(
             "Skipping test file: {}. Reference file missing {}",
-            actual_path.display(),
+            test_path.display(),
             ref_file.display()
         );
         panic!(
@@ -182,7 +182,7 @@ async fn process_test_file_with_ref(
     let reference_file_contents = reference_file_contents.unwrap();
 
     // Resolve .. and such and remove any canonical syntax that we don't care about.
-    let actual_base_url = fs::canonicalize(actual_path)
+    let test_base_url = fs::canonicalize(test_path)
         .unwrap()
         .display()
         .to_string()
@@ -196,10 +196,10 @@ async fn process_test_file_with_ref(
         .replace("\\\\?\\", "")
         .replace("\\", "/");
 
-    let (actual_buffer, actual_width, actual_height) = {
+    let (test_buffer, test_width, test_height) = {
         let mut document = HtmlDocument::from_html(
-            &actual_file_contents,
-            Some(format!("file://{}", actual_base_url)),
+            &test_file_contents,
+            Some(format!("file://{}", test_base_url)),
             Vec::new(),
             Arc::clone(&blitz_context.net) as SharedProvider<Resource>,
         );
@@ -231,9 +231,9 @@ async fn process_test_file_with_ref(
         )
         .await;
 
-        let path = PathBuf::from(&actual_base_url);
+        let path = PathBuf::from(&test_base_url);
         let path = path.strip_prefix(wpt_dir).unwrap();
-        let name = path.display().to_string() + "-actual.png";
+        let name = path.display().to_string() + "-test.png";
         fs::create_dir_all(out_dir.join(path.parent().unwrap())).unwrap();
         let mut file = File::create(&out_dir.join(name)).unwrap();
         write_png(&mut file, &buffer, WIDTH * SCALE, render_height * SCALE);
@@ -275,7 +275,7 @@ async fn process_test_file_with_ref(
         )
         .await;
 
-        let path = PathBuf::from(&actual_base_url);
+        let path = PathBuf::from(&test_base_url);
         let path = path.strip_prefix(wpt_dir).unwrap();
         let name = path.display().to_string() + "-reference.png";
         fs::create_dir_all(out_dir.join(path.parent().unwrap())).unwrap();
@@ -284,24 +284,24 @@ async fn process_test_file_with_ref(
         (buffer, WIDTH * SCALE, render_height * SCALE)
     };
 
-    let actual_image = ImageBuffer::from_raw(actual_width, actual_height, actual_buffer).unwrap();
+    let test_image = ImageBuffer::from_raw(test_width, test_height, test_buffer).unwrap();
     let ref_image = ImageBuffer::from_raw(ref_width, ref_height, ref_buffer).unwrap();
 
     let x = None;
     let y = None;
-    let diff = dify::diff::get_results(actual_image, ref_image, 0.1f32, true, None, &x, &y);
+    let diff = dify::diff::get_results(test_image, ref_image, 0.1f32, true, None, &x, &y);
 
     if let Some(diff) = diff {
-        let path = PathBuf::from(&actual_base_url);
+        let path = PathBuf::from(&test_base_url);
         let path = path.strip_prefix(wpt_dir).unwrap();
         let name = path.display().to_string() + "-diff.png";
         fs::create_dir_all(out_dir.join(path.parent().unwrap())).unwrap();
         diff.1
             .save_with_format(&out_dir.join(name), ImageFormat::Png)
             .unwrap();
-        error!("FAIL: {}", actual_path.display());
+        error!("FAIL: {}", test_path.display());
     } else {
-        info!("PASS: {}", actual_path.display());
+        info!("PASS: {}", test_path.display());
     }
 }
 
