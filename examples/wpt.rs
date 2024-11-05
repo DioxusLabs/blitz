@@ -211,7 +211,7 @@ async fn process_test_file_with_ref(
 
         while !blitz_context.net.is_empty() {
             let Ok(Some(res)) =
-                timeout(Duration::from_secs(5), blitz_context.receiver.recv()).await
+                timeout(Duration::from_millis(500), blitz_context.receiver.recv()).await
             else {
                 break;
             };
@@ -255,7 +255,7 @@ async fn process_test_file_with_ref(
 
         while !blitz_context.net.is_empty() {
             let Ok(Some(res)) =
-                timeout(Duration::from_secs(5), blitz_context.receiver.recv()).await
+                timeout(Duration::from_millis(500), blitz_context.receiver.recv()).await
             else {
                 break;
             };
