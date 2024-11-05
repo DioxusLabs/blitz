@@ -1,0 +1,16 @@
+[package]
+name = "readme"
+version = "0.1.0"
+edition = "2021"
+license.workspace = true
+
+[dependencies]
+blitz-dom = { path = "../../packages/blitz-dom" }
+blitz-net = { path = "../../packages/blitz-net" }
+blitz-traits = { path = "../../packages/blitz-traits" }
+blitz-renderer-vello = { path = "../../packages/blitz-renderer-vello" }
+dioxus-native = { path = "../../packages/dioxus-native", features = ["tracing"] }
+tokio = { workspace = true }
+reqwest = { workspace = true }
+url = { workspace = true }
+comrak = { git = "https://github.com/kivikakk/comrak", rev = "96a64d1befcaa8715098bf617e836c2ef70cb692", default-features = false, features = ["syntect"] }
