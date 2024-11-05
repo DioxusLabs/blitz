@@ -44,7 +44,7 @@ fn main() {
         Arc::clone(&net_callback) as SharedCallback<Resource>,
     ));
 
-    let document = HtmlDocument::from_html(&html, Some(base_url), stylesheets, net_provider);
+    let document = HtmlDocument::from_html(&html, Some(base_url), stylesheets, net_provider, None);
     dioxus_native::launch_with_document(document, rt, Some(net_callback));
 }
 

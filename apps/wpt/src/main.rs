@@ -3,6 +3,7 @@ use blitz_dom::{HtmlDocument, Viewport};
 use blitz_net::{MpscCallback, Provider};
 use blitz_renderer_vello::VelloImageRenderer;
 use blitz_traits::net::SharedProvider;
+use parley::FontContext;
 use reqwest::Url;
 use tower_http::services::ServeDir;
 
@@ -98,6 +99,13 @@ fn setup_blitz() -> BlitzContext {
     }
 }
 
+fn clone_font_ctx(ctx: &FontContext) -> FontContext {
+    FontContext {
+        collection: ctx.collection.clone(),
+        source_cache: ctx.source_cache.clone(),
+    }
+}
+
 fn main() {
     env_logger::init();
     let rt = tokio::runtime::Builder::new_current_thread()
@@ -141,13 +149,16 @@ fn main() {
 
     let num = AtomicU32::new(0);
 
+    let base_font_context = parley::FontContext::default();
+
     test_paths.into_par_iter().for_each_init(
         || {
             let renderer = rt.block_on(VelloImageRenderer::new(WIDTH, HEIGHT, SCALE));
+            let font_ctx = clone_font_ctx(&base_font_context);
             let test_buffer = Vec::with_capacity((WIDTH * HEIGHT * 4) as usize);
             let ref_buffer = Vec::with_capacity((WIDTH * HEIGHT * 4) as usize);
             let guard = rt.enter();
-            (renderer, test_buffer, ref_buffer, guard)
+            (renderer, font_ctx, test_buffer, ref_buffer, guard)
         },
         |state, path| {
             let num = num.fetch_add(1, Ordering::SeqCst) + 1;
@@ -162,13 +173,15 @@ fn main() {
             let url = base_url.join(relative_path.as_str()).unwrap();
 
             let renderer = &mut state.0;
-            let test_buffer = &mut state.1;
-            let ref_buffer = &mut state.2;
+            let font_ctx = &state.1;
+            let test_buffer = &mut state.2;
+            let ref_buffer = &mut state.3;
 
             let result = catch_unwind(AssertUnwindSafe(|| {
                 let mut blitz_context = setup_blitz();
                 let result = rt.block_on(process_test_file(
                     renderer,
+                    font_ctx,
                     test_buffer,
                     ref_buffer,
                     &url,
@@ -231,6 +244,7 @@ async fn serve(app: Router, port: u16) {
 #[allow(clippy::too_many_arguments)]
 async fn process_test_file(
     renderer: &mut VelloImageRenderer,
+    font_ctx: &FontContext,
     test_buffer: &mut Vec<u8>,
     ref_buffer: &mut Vec<u8>,
     path: &Url,
@@ -255,6 +269,7 @@ async fn process_test_file(
     if let Some(reference) = reference {
         process_test_file_with_ref(
             renderer,
+            font_ctx,
             test_buffer,
             ref_buffer,
             path,
@@ -274,6 +289,7 @@ async fn process_test_file(
 #[allow(clippy::too_many_arguments)]
 async fn process_test_file_with_ref(
     renderer: &mut VelloImageRenderer,
+    font_ctx: &FontContext,
     test_buffer: &mut Vec<u8>,
     ref_buffer: &mut Vec<u8>,
     test_url: &Url,
@@ -306,6 +322,7 @@ async fn process_test_file_with_ref(
     render_html_to_buffer(
         blitz_context,
         renderer,
+        font_ctx,
         test_file_contents,
         test_url,
         test_buffer,
@@ -317,6 +334,7 @@ async fn process_test_file_with_ref(
     render_html_to_buffer(
         blitz_context,
         renderer,
+        font_ctx,
         &reference_file_contents,
         &ref_url,
         ref_buffer,
@@ -345,6 +363,7 @@ async fn process_test_file_with_ref(
 async fn render_html_to_buffer(
     blitz_context: &mut BlitzContext,
     renderer: &mut VelloImageRenderer,
+    font_ctx: &FontContext,
     html: &str,
     base_url: &Url,
     buf: &mut Vec<u8>,
@@ -355,6 +374,7 @@ async fn render_html_to_buffer(
         Some(base_url.to_string()),
         Vec::new(),
         Arc::clone(&blitz_context.net) as SharedProvider<Resource>,
+        Some(clone_font_ctx(font_ctx)),
     );
 
     document

@@ -4,6 +4,7 @@ use crate::{Document, DocumentHtmlParser, DocumentLike, Viewport};
 use crate::net::Resource;
 use crate::DEFAULT_CSS;
 use blitz_traits::net::SharedProvider;
+use parley::FontContext;
 
 pub struct HtmlDocument {
     inner: Document,
@@ -38,10 +39,14 @@ impl HtmlDocument {
         base_url: Option<String>,
         stylesheets: Vec<String>,
         net_provider: SharedProvider<Resource>,
+        font_ctx: Option<FontContext>,
     ) -> Self {
         // Spin up the virtualdom and include the default stylesheet
         let viewport = Viewport::new(0, 0, 1.0);
-        let mut dom = Document::new(viewport);
+        let mut dom = match font_ctx {
+            Some(font_ctx) => Document::with_font_ctx(viewport, font_ctx),
+            None => Document::new(viewport),
+        };
 
         // Set base url if configured
         if let Some(url) = &base_url {

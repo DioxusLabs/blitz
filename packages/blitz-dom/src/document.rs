@@ -3,7 +3,7 @@ use crate::node::{ImageData, NodeSpecificData, TextBrush};
 use crate::{ElementNodeData, Node, NodeData, TextNodeData, Viewport};
 use app_units::Au;
 use html5ever::local_name;
-use parley::PlainEditorOp;
+use parley::{FontContext, PlainEditorOp};
 use peniko::kurbo;
 use string_cache::Atom;
 use style::attr::{AttrIdentifier, AttrValue};
@@ -382,6 +382,10 @@ impl DocumentLike for Document {
 
 impl Document {
     pub fn new(viewport: Viewport) -> Self {
+        Self::with_font_ctx(viewport, parley::FontContext::default())
+    }
+
+    pub fn with_font_ctx(viewport: Viewport, mut font_ctx: FontContext) -> Self {
         let device = viewport.make_device();
         let stylist = Stylist::new(device, QuirksMode::NoQuirks);
         let snapshots = SnapshotMap::new();
@@ -395,7 +399,9 @@ impl Document {
         style_config::set_bool("layout.legacy_layout", true);
         style_config::set_bool("layout.columns.enabled", true);
 
-        let font_ctx = Self::create_font_context();
+        font_ctx
+            .collection
+            .register_fonts(include_bytes!("moz-bullet-font.otf").to_vec());
 
         let mut doc = Self {
             guard,
@@ -421,13 +427,6 @@ impl Document {
         doc.create_node(NodeData::Document);
 
         doc
-    }
-
-    fn create_font_context() -> parley::FontContext {
-        let mut ctx = parley::FontContext::default();
-        ctx.collection
-            .register_fonts(include_bytes!("moz-bullet-font.otf").to_vec());
-        ctx
     }
 
     /// Set base url for resolving linked resources (stylesheets, images, fonts, etc)

@@ -10,6 +10,7 @@ blitz-net = { path = "../../packages/blitz-net" }
 blitz-traits = { path = "../../packages/blitz-traits" }
 blitz-renderer-vello = { path = "../../packages/blitz-renderer-vello" }
 dioxus-native = { path = "../../packages/dioxus-native", features = ["tracing"] }
+parley = { workspace = true }
 tokio = { workspace = true }
 png = { version = "0.17" }
 glob = {version = "0.3.1"}
