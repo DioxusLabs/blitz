@@ -336,9 +336,9 @@ async fn process_test_file_with_ref(
         let parent = path.parent().unwrap();
         fs::create_dir_all(parent).unwrap();
         diff.1.save_with_format(path, ImageFormat::Png).unwrap();
-        TestResult::Pass
-    } else {
         TestResult::Fail
+    } else {
+        TestResult::Pass
     }
 }
 
