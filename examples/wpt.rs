@@ -11,6 +11,7 @@ use tokio::runtime::Handle;
 use dify::diff::RunParams;
 use image::{ImageBuffer, ImageFormat, RgbaImage};
 use log::{error, info};
+use owo_colors::OwoColorize;
 use std::fs::File;
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -299,9 +300,9 @@ async fn process_test_file_with_ref(
         diff.1
             .save_with_format(&out_dir.join(name), ImageFormat::Png)
             .unwrap();
-        error!("FAIL: {}", test_path.display());
+        println!("{}: {}", "FAIL".red(), test_path.display());
     } else {
-        info!("PASS: {}", test_path.display());
+        println!("{}: {}", "PASS".green(), test_path.display());
     }
 }
 
