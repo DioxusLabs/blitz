@@ -36,7 +36,7 @@ fn main() {
         stylesheets.push(String::from(MARKDOWN_STYLESHEET));
     }
 
-    println!("{html}");
+    // println!("{html}");
 
     let net_callback = Arc::new(Callback::new());
     let net_provider = Arc::new(Provider::new(
