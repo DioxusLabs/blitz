@@ -86,16 +86,16 @@ fn main() {
 
     let wpt_dir = env::var("WPT_DIR").expect("WPT_DIR is not set");
     info!("WPT_DIR: {}", wpt_dir);
-
-    let cargo_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
-    let out_dir = cargo_dir.join("examples").join("output").join("wpt");
-
     let wpt_dir = Path::new(&wpt_dir);
     if !wpt_dir.exists() {
         error!("WPT_DIR does not exist. This should be set to a local copy of https://github.com/web-platform-tests/wpt.");
     }
-
     let test_paths = collect_tests(&wpt_dir);
+
+    let cargo_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let out_dir = cargo_dir.join("examples").join("output").join("wpt");
+    fs::remove_dir_all(&out_dir).unwrap();
+    fs::create_dir(&out_dir).unwrap();
 
     let mut blitz_context = rt.block_on(async { setup_blitz() });
 
@@ -231,14 +231,10 @@ async fn process_test_file_with_ref(
         )
         .await;
 
-        let name = actual_path
-            .strip_prefix(wpt_dir)
-            .unwrap()
-            .display()
-            .to_string()
-            .replace("/", "_")
-            .replace("\\", "_")
-            + "-actual.png";
+        let path = PathBuf::from(&actual_base_url);
+        let path = path.strip_prefix(wpt_dir).unwrap();
+        let name = path.display().to_string() + "-actual.png";
+        fs::create_dir_all(out_dir.join(path.parent().unwrap())).unwrap();
         let mut file = File::create(&out_dir.join(name)).unwrap();
         write_png(&mut file, &buffer, WIDTH * SCALE, render_height * SCALE);
         (buffer, WIDTH * SCALE, render_height * SCALE)
@@ -279,15 +275,10 @@ async fn process_test_file_with_ref(
         )
         .await;
 
-        let name = ref_file
-            .strip_prefix(wpt_dir)
-            .unwrap()
-            .display()
-            .to_string()
-            .replace("/", "_")
-            .replace("\\", "_")
-            + "-reference.png";
-
+        let path = PathBuf::from(&actual_base_url);
+        let path = path.strip_prefix(wpt_dir).unwrap();
+        let name = path.display().to_string() + "-reference.png";
+        fs::create_dir_all(out_dir.join(path.parent().unwrap())).unwrap();
         let mut file = File::create(&out_dir.join(name)).unwrap();
         write_png(&mut file, &buffer, WIDTH * SCALE, render_height * SCALE);
         (buffer, WIDTH * SCALE, render_height * SCALE)
@@ -301,14 +292,10 @@ async fn process_test_file_with_ref(
     let diff = dify::diff::get_results(actual_image, ref_image, 0.1f32, true, None, &x, &y);
 
     if let Some(diff) = diff {
-        let name = actual_path
-            .strip_prefix(wpt_dir)
-            .unwrap()
-            .display()
-            .to_string()
-            .replace("/", "_")
-            .replace("\\", "_")
-            + "-diff.png";
+        let path = PathBuf::from(&actual_base_url);
+        let path = path.strip_prefix(wpt_dir).unwrap();
+        let name = path.display().to_string() + "-diff.png";
+        fs::create_dir_all(out_dir.join(path.parent().unwrap())).unwrap();
         diff.1
             .save_with_format(&out_dir.join(name), ImageFormat::Png)
             .unwrap();
