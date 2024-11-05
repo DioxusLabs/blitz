@@ -232,8 +232,9 @@ async fn process_test_file_with_ref(
         document.as_mut().resolve();
 
         // Determine height to render
-        let computed_height = document.as_ref().root_element().final_layout.size.height;
-        let render_height = (computed_height as u32).clamp(HEIGHT, 4000);
+        // let computed_height = document.as_ref().root_element().final_layout.size.height;
+        // let render_height = (computed_height as u32).clamp(HEIGHT, 4000);
+        let render_height = HEIGHT;
 
         // Render document to RGBA buffer
         let buffer = render_to_buffer(
@@ -275,8 +276,9 @@ async fn process_test_file_with_ref(
         document.as_mut().resolve();
 
         // Determine height to render
-        let computed_height = document.as_ref().root_element().final_layout.size.height;
-        let render_height = (computed_height as u32).clamp(HEIGHT, 4000);
+        // let computed_height = document.as_ref().root_element().final_layout.size.height;
+        // let render_height = (computed_height as u32).clamp(HEIGHT, 4000);
+        let render_height = HEIGHT;
 
         // Render document to RGBA buffer
         let buffer = render_to_buffer(
