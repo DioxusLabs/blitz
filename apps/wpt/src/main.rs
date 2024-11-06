@@ -42,7 +42,7 @@ enum TestResult {
 fn collect_tests(wpt_dir: &Path) -> Vec<PathBuf> {
     let mut test_paths = Vec::new();
 
-    let mut suites: Vec<_> = std::env::args().collect();
+    let mut suites: Vec<_> = std::env::args().skip(1).collect();
     if suites.is_empty() {
         suites.push("css/css-flexbox".to_string());
         suites.push("css/css-grid".to_string());
