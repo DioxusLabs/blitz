@@ -5,6 +5,7 @@ use blitz_renderer_vello::VelloImageRenderer;
 use blitz_traits::net::SharedProvider;
 use parley::FontContext;
 use reqwest::Url;
+use thread_local::ThreadLocal;
 use tower_http::services::ServeDir;
 
 use regex::Regex;
@@ -18,6 +19,7 @@ use axum::Router;
 use image::{ImageBuffer, ImageFormat};
 use log::{error, info};
 use owo_colors::OwoColorize;
+use std::cell::RefCell;
 use std::fs::File;
 use std::io::Write;
 use std::net::SocketAddr;
@@ -106,6 +108,13 @@ fn clone_font_ctx(ctx: &FontContext) -> FontContext {
     }
 }
 
+struct ThreadState {
+    renderer: VelloImageRenderer,
+    font_ctx: FontContext,
+    test_buffer: Vec<u8>,
+    ref_buffer: Vec<u8>,
+}
+
 fn main() {
     env_logger::init();
     let rt = tokio::runtime::Builder::new_current_thread()
@@ -151,16 +160,28 @@ fn main() {
 
     let base_font_context = parley::FontContext::default();
 
+    let thread_state: ThreadLocal<RefCell<ThreadState>> = ThreadLocal::new();
+
     test_paths.into_par_iter().for_each_init(
-        || {
-            let renderer = rt.block_on(VelloImageRenderer::new(WIDTH, HEIGHT, SCALE));
-            let font_ctx = clone_font_ctx(&base_font_context);
-            let test_buffer = Vec::with_capacity((WIDTH * HEIGHT * 4) as usize);
-            let ref_buffer = Vec::with_capacity((WIDTH * HEIGHT * 4) as usize);
-            let guard = rt.enter();
-            (renderer, font_ctx, test_buffer, ref_buffer, guard)
-        },
-        |state, path| {
+        || rt.enter(),
+        |_guard, path| {
+            let mut state = thread_state
+                .get_or(|| {
+                    let renderer = rt.block_on(VelloImageRenderer::new(WIDTH, HEIGHT, SCALE));
+                    let font_ctx = clone_font_ctx(&base_font_context);
+                    let test_buffer = Vec::with_capacity((WIDTH * HEIGHT * 4) as usize);
+                    let ref_buffer = Vec::with_capacity((WIDTH * HEIGHT * 4) as usize);
+
+                    RefCell::new(ThreadState {
+                        renderer,
+                        font_ctx,
+                        test_buffer,
+                        ref_buffer,
+                    })
+                })
+                .borrow_mut();
+            let state = &mut *state;
+
             let num = num.fetch_add(1, Ordering::SeqCst) + 1;
 
             let relative_path = path
@@ -172,10 +193,10 @@ fn main() {
 
             let url = base_url.join(relative_path.as_str()).unwrap();
 
-            let renderer = &mut state.0;
-            let font_ctx = &state.1;
-            let test_buffer = &mut state.2;
-            let ref_buffer = &mut state.3;
+            let renderer = &mut state.renderer;
+            let font_ctx = &state.font_ctx;
+            let test_buffer = &mut state.test_buffer;
+            let ref_buffer = &mut state.ref_buffer;
 
             let result = catch_unwind(AssertUnwindSafe(|| {
                 let mut blitz_context = setup_blitz();
