@@ -401,7 +401,7 @@ impl Document {
 
         font_ctx
             .collection
-            .register_fonts(include_bytes!("moz-bullet-font.otf").to_vec());
+            .register_fonts(crate::BULLET_FONT.to_vec());
 
         let mut doc = Self {
             guard,

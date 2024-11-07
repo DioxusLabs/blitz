@@ -10,6 +10,9 @@
 //!  - `default`: Enables the features listed below.
 //!  - `tracing`: Enables tracing support.
 
+pub const DEFAULT_CSS: &str = include_str!("../assets/default.css");
+pub(crate) const BULLET_FONT: &[u8] = include_bytes!("../assets/moz-bullet-font.otf");
+
 /// The DOM implementation.
 ///
 /// This is the primary entry point for this crate.
@@ -56,5 +59,3 @@ pub use htmlsink::DocumentHtmlParser;
 pub use node::{ElementNodeData, Node, NodeData, TextNodeData};
 pub use string_cache::Atom;
 pub use viewport::Viewport;
-
-pub const DEFAULT_CSS: &str = include_str!("./default.css");
