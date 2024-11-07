@@ -51,27 +51,29 @@ fn collect_tests(wpt_dir: &Path) -> Vec<PathBuf> {
     }
 
     for suite in suites {
-        let pattern = format!("{}/{}/**/*.html", wpt_dir.display(), suite);
+        for ext in ["htm", "html" /*, "xht", "xhtml"*/] {
+            let pattern = format!("{}/{}/**/*.{}", wpt_dir.display(), suite, ext);
 
-        let glob_results = glob::glob(&pattern).expect("Invalid glob pattern.");
+            let glob_results = glob::glob(&pattern).expect("Invalid glob pattern.");
 
-        test_paths.extend(glob_results.filter_map(|glob_result| {
-            if let Ok(path_buf) = glob_result {
-                let is_tentative = path_buf.ends_with("tentative.html");
-                let is_ref = path_buf.to_string_lossy().ends_with("-ref.html")
-                    || path_contains_directory(&path_buf, "reference");
-                let is_support_file = path_contains_directory(&path_buf, "support");
+            test_paths.extend(glob_results.filter_map(|glob_result| {
+                if let Ok(path_buf) = glob_result {
+                    // let is_tentative = path_buf.ends_with("tentative.html");
+                    let is_ref = path_buf.to_string_lossy().ends_with("-ref.html")
+                        || path_contains_directory(&path_buf, "reference");
+                    let is_support_file = path_contains_directory(&path_buf, "support");
 
-                if !is_tentative && !is_ref && !is_support_file {
-                    Some(path_buf)
+                    if !is_ref && !is_support_file {
+                        Some(path_buf)
+                    } else {
+                        None
+                    }
                 } else {
-                    None
+                    error!("Failure during glob.");
+                    panic!("Failure during glob");
                 }
-            } else {
-                error!("Failure during glob.");
-                panic!("Failure during glob");
-            }
-        }));
+            }));
+        }
     }
 
     test_paths
