@@ -22,9 +22,6 @@ pub mod htmlsink;
 /// Integration of taffy and the DOM.
 pub mod layout;
 
-/// A collection of methods for manipulating the DOM.
-pub mod mutation;
-
 /// The nodes themsleves, and their data.
 ///
 /// todo: we want this to use ECS, but we're not done with the design yet.
