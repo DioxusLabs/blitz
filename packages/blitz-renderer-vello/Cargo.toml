@@ -9,6 +9,7 @@ default = ["tracing"]
 tracing = ["dep:tracing"]
 
 [dependencies]
+blitz-traits = { path = "../blitz-traits" }
 blitz-dom = { path = "../blitz-dom" }
 style = { workspace = true, features = ["servo"] }
 taffy = { workspace = true }

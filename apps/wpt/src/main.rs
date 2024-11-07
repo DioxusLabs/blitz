@@ -363,12 +363,14 @@ async fn process_test_file_with_ref(
     )
     .await;
 
+    if test_buffer == ref_buffer {
+        return TestResult::Pass;
+    }
+
     let test_image = ImageBuffer::from_raw(WIDTH, HEIGHT, test_buffer.clone()).unwrap();
     let ref_image = ImageBuffer::from_raw(WIDTH, HEIGHT, ref_buffer.clone()).unwrap();
 
-    let x = None;
-    let y = None;
-    let diff = dify::diff::get_results(test_image, ref_image, 0.1f32, true, None, &x, &y);
+    let diff = dify::diff::get_results(test_image, ref_image, 0.1f32, true, None, &None, &None);
 
     if let Some(diff) = diff {
         let path = out_dir.join(format!("{}{}", test_base_url, "-diff.png"));

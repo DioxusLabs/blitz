@@ -2,15 +2,13 @@ use std::sync::atomic::{self, AtomicUsize};
 use std::sync::Arc;
 
 use super::multicolor_rounded_rect::{Edge, ElementFrame};
-use crate::{
-    devtools::Devtools,
-    util::{GradientSlice, StyloGradient, ToVelloColor},
-};
+use crate::util::{GradientSlice, StyloGradient, ToVelloColor};
 use blitz_dom::node::{
     ListItemLayout, ListItemLayoutPosition, Marker, NodeData, TextBrush, TextInputData,
     TextNodeData,
 };
 use blitz_dom::{local_name, Document, Node};
+use blitz_traits::Devtools;
 
 use parley::Line;
 use style::{
