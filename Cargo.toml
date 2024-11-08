@@ -22,6 +22,7 @@ style_traits = { version = "0.1", package = "stylo_traits" }
 style_dom = { version = "0.1", package = "stylo_dom" }
 selectors = { version = "0.26", package = "stylo_selectors" }
 html5ever = "0.29" # needs to match stylo markup5ever version
+xml5ever = "0.20" # needs to match stylo markup5ever version
 euclid = "0.22"
 string_cache = "0.8.7"
 atomic_refcell = "0.1.13"

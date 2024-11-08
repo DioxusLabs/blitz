@@ -22,6 +22,7 @@ app_units = { workspace = true }
 euclid = { workspace = true, features = ["serde"] }
 atomic_refcell = { workspace = true, features = ["serde"] }
 html5ever = { workspace = true }
+xml5ever = { workspace = true }
 string_cache ={ workspace = true }
 
 # DioxusLabs dependencies

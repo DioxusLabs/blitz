@@ -57,7 +57,7 @@ fn collect_tests(wpt_dir: &Path) -> Vec<PathBuf> {
     }
 
     for suite in suites {
-        for ext in ["htm", "html" /*, "xht", "xhtml"*/] {
+        for ext in ["htm", "html", "xht", "xhtml"] {
             let pattern = format!("{}/{}/**/*.{}", wpt_dir.display(), suite, ext);
 
             let glob_results = glob::glob(&pattern).expect("Invalid glob pattern.");

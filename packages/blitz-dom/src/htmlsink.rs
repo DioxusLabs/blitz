@@ -53,10 +53,19 @@ impl DocumentHtmlParser<'_> {
         net_provider: SharedProvider<Resource>,
     ) -> &'d mut Document {
         let sink = Self::new(doc, net_provider);
-        html5ever::parse_document(sink, Default::default())
-            .from_utf8()
-            .read_from(&mut html.as_bytes())
-            .unwrap()
+        if html.starts_with("<?xml")
+            || html.starts_with("<!DOCTYPE html PUBLIC \"-//W3C//DTD//XHTML")
+        {
+            xml5ever::driver::parse_document(sink, Default::default())
+                .from_utf8()
+                .read_from(&mut html.as_bytes())
+                .unwrap()
+        } else {
+            html5ever::parse_document(sink, Default::default())
+                .from_utf8()
+                .read_from(&mut html.as_bytes())
+                .unwrap()
+        }
     }
 
     #[track_caller]
