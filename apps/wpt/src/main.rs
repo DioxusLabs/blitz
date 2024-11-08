@@ -90,7 +90,9 @@ fn collect_tests(wpt_dir: &Path) -> Vec<PathBuf> {
                     // let is_tentative = path_buf.ends_with("tentative.html");
                     let path_str = path_buf.to_string_lossy();
                     let is_ref = path_str.ends_with("-ref.html")
+                        || path_str.ends_with("-ref.htm")
                         || path_str.ends_with("-ref.xhtml")
+                        || path_str.ends_with("-ref.xht")
                         || path_contains_directory(&path_buf, "reference");
                     let is_support_file = path_contains_directory(&path_buf, "support");
 
