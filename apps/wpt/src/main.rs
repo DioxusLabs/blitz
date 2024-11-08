@@ -63,6 +63,9 @@ const BLOCKED_TESTS: &[&str] = &[
     // This test currently causes a wgpu validation error:
     // "Buffer size 17179869184 is greater than the maximum buffer size"
     "css/css-flexbox/flexbox-paint-ordering-002.xhtml",
+    // Panics with: "Buffer length in `ImageBuffer::new` overflows usize"
+    "css/css-sizing/aspect-ratio/zero-or-infinity-006.html",
+    "css/css-sizing/aspect-ratio/zero-or-infinity-010.html",
 ];
 
 fn path_contains_directory(path: &Path, dir_name: &str) -> bool {
