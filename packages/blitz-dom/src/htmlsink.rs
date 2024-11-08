@@ -245,8 +245,7 @@ impl<'b> TreeSink for DocumentHtmlParser<'b> {
     }
 
     fn create_pi(&self, _target: StrTendril, _data: StrTendril) -> Self::Handle {
-        // NOTE: html5ever does not call this method (only xml5ever does)
-        unimplemented!()
+        self.create_node(NodeData::Comment)
     }
 
     fn append(&self, parent_id: &Self::Handle, child: NodeOrText<Self::Handle>) {
