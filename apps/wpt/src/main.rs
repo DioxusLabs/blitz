@@ -18,6 +18,7 @@ use axum::Router;
 use log::{error, info};
 use owo_colors::OwoColorize;
 use std::cell::RefCell;
+use std::fmt::Display;
 use std::net::SocketAddr;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::path::{Path, PathBuf};
@@ -35,6 +36,22 @@ use ref_test::process_ref_test;
 const WIDTH: u32 = 800;
 const HEIGHT: u32 = 600;
 const SCALE: f64 = 1.0;
+
+enum TestKind {
+    Ref,
+    Attr,
+    Unknown,
+}
+
+impl Display for TestKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            TestKind::Ref => f.write_str("ref"),
+            TestKind::Attr => f.write_str("attr"),
+            TestKind::Unknown => f.write_str("unknown"),
+        }
+    }
+}
 
 enum TestResult {
     Pass,
@@ -223,7 +240,7 @@ fn main() {
 
             let result = catch_unwind(AssertUnwindSafe(|| {
                 let mut blitz_context = setup_blitz();
-                let result = rt.block_on(process_test_file(
+                let (kind, result) = rt.block_on(process_test_file(
                     renderer,
                     font_ctx,
                     test_buffer,
@@ -238,22 +255,50 @@ fn main() {
                 match result {
                     TestResult::Pass => {
                         pass_count.fetch_add(1, Ordering::SeqCst);
-                        println!("[{}/{}] {}: {}", num, count, "PASS".green(), &relative_path);
+                        println!(
+                            "[{}/{}] {} {} ({})",
+                            num,
+                            count,
+                            "PASS".green(),
+                            &relative_path,
+                            kind,
+                        );
                     }
                     TestResult::Fail => {
                         fail_count.fetch_add(1, Ordering::SeqCst);
-                        println!("[{}/{}] {}: {}", num, count, "FAIL".red(), &relative_path);
+                        println!(
+                            "[{}/{}] {} {} ({})",
+                            num,
+                            count,
+                            "FAIL".red(),
+                            &relative_path,
+                            kind,
+                        );
                     }
                     TestResult::Skip => {
                         skip_count.fetch_add(1, Ordering::SeqCst);
-                        println!("[{}/{}] {}: {}", num, count, "SKIP".blue(), &relative_path);
+                        println!(
+                            "[{}/{}] {} {} ({})",
+                            num,
+                            count,
+                            "SKIP".blue(),
+                            &relative_path,
+                            kind,
+                        );
                     }
                 }
             }));
 
             if result.is_err() {
                 crash_count.fetch_add(1, Ordering::SeqCst);
-                println!("[{}/{}] {}: {}", num, count, "CRASH".red(), relative_path);
+                println!(
+                    "[{}/{}] {} {} ({})",
+                    num,
+                    count,
+                    "CRASH".red(),
+                    relative_path,
+                    TestKind::Unknown,
+                );
             }
         },
     );
@@ -298,7 +343,7 @@ async fn process_test_file(
     base_url: &Url,
     blitz_context: &mut BlitzContext,
     out_dir: &Path,
-) -> TestResult {
+) -> (TestKind, TestResult) {
     info!("Processing test file: {}", path);
 
     let file_contents = reqwest::get(path.clone())
@@ -313,7 +358,7 @@ async fn process_test_file(
         .captures(&file_contents)
         .and_then(|captures| captures.get(1).map(|href| href.as_str().to_string()));
     if let Some(reference) = reference {
-        return process_ref_test(
+        let result = process_ref_test(
             renderer,
             font_ctx,
             test_buffer,
@@ -326,6 +371,8 @@ async fn process_test_file(
             out_dir,
         )
         .await;
+
+        return (TestKind::Ref, result);
     }
 
     // Attr Test
@@ -337,7 +384,7 @@ async fn process_test_file(
         let captures = first.unwrap();
         let selector = captures.get(1).unwrap().as_str().to_string();
 
-        return process_attr_test(
+        let result = process_attr_test(
             font_ctx,
             path,
             &selector,
@@ -346,8 +393,10 @@ async fn process_test_file(
             blitz_context,
         )
         .await;
+
+        return (TestKind::Attr, result);
     }
 
     // TODO: Handle other test formats.
-    TestResult::Skip
+    (TestKind::Unknown, TestResult::Skip)
 }
