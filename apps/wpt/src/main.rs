@@ -1,8 +1,8 @@
+use attr_test::process_attr_test;
 use blitz_dom::net::Resource;
-use blitz_dom::{HtmlDocument, Viewport};
+use blitz_dom::Viewport;
 use blitz_net::{MpscCallback, Provider};
 use blitz_renderer_vello::VelloImageRenderer;
-use blitz_traits::net::SharedProvider;
 use parley::FontContext;
 use reqwest::Url;
 use thread_local::ThreadLocal;
@@ -13,23 +13,24 @@ use regex::Regex;
 use rayon::prelude::*;
 use tokio::runtime::Handle;
 use tokio::sync::mpsc::UnboundedReceiver;
-use tokio::time::timeout;
 
 use axum::Router;
-use image::{ImageBuffer, ImageFormat};
 use log::{error, info};
 use owo_colors::OwoColorize;
 use std::cell::RefCell;
-use std::fs::File;
-use std::io::Write;
 use std::net::SocketAddr;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicU32;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 use std::{env, fs};
+
+mod attr_test;
+mod ref_test;
+
+use ref_test::process_ref_test;
 
 const WIDTH: u32 = 800;
 const HEIGHT: u32 = 600;
@@ -46,6 +47,11 @@ const BLOCKED_TESTS: &[&str] = &[
     // "Buffer size 17179869184 is greater than the maximum buffer size"
     "css/css-flexbox/flexbox-paint-ordering-002.xhtml",
 ];
+
+fn path_contains_directory(path: &Path, dir_name: &str) -> bool {
+    path.components()
+        .any(|component| component.as_os_str() == dir_name)
+}
 
 fn collect_tests(wpt_dir: &Path) -> Vec<PathBuf> {
     let mut test_paths = Vec::new();
@@ -137,8 +143,11 @@ fn main() {
         .expect("Failed to create tokio runtime");
     let _guard = rt.enter();
 
-    let reference_file_re = Regex::new(r#"<link\s+rel="match"\s+href="([^"]+)""#)
-        .expect("Failed to compile regex for match re");
+    let reftest_re = Regex::new(r#"<link\s+rel="match"\s+href="([^"]+)""#)
+        .expect("Failed to compile reftest regex");
+
+    let attrtest_re = Regex::new(r#"checkLayout\(\s*['"]([^'"]*)['"]\s*(,\s*(true|false))?\)"#)
+        .expect("Failed to compile attrtest regex");
 
     let wpt_dir = env::var("WPT_DIR").expect("WPT_DIR is not set");
     info!("WPT_DIR: {}", wpt_dir);
@@ -220,7 +229,8 @@ fn main() {
                     test_buffer,
                     ref_buffer,
                     &url,
-                    &reference_file_re,
+                    &reftest_re,
+                    &attrtest_re,
                     &base_url,
                     &mut blitz_context,
                     &out_dir,
@@ -283,7 +293,8 @@ async fn process_test_file(
     test_buffer: &mut Vec<u8>,
     ref_buffer: &mut Vec<u8>,
     path: &Url,
-    reference_file_re: &Regex,
+    reftest_re: &Regex,
+    attrtest_re: &Regex,
     base_url: &Url,
     blitz_context: &mut BlitzContext,
     out_dir: &Path,
@@ -297,12 +308,12 @@ async fn process_test_file(
         .await
         .unwrap();
 
-    let reference = reference_file_re
-        .captures(file_contents.as_str())
+    // Ref Test
+    let reference = reftest_re
+        .captures(&file_contents)
         .and_then(|captures| captures.get(1).map(|href| href.as_str().to_string()));
-
     if let Some(reference) = reference {
-        process_test_file_with_ref(
+        return process_ref_test(
             renderer,
             font_ctx,
             test_buffer,
@@ -314,157 +325,29 @@ async fn process_test_file(
             blitz_context,
             out_dir,
         )
-        .await
-    } else {
-        // Todo: Handle other test formats.
-        TestResult::Skip
-    }
-}
-
-#[allow(clippy::too_many_arguments)]
-async fn process_test_file_with_ref(
-    renderer: &mut VelloImageRenderer,
-    font_ctx: &FontContext,
-    test_buffer: &mut Vec<u8>,
-    ref_buffer: &mut Vec<u8>,
-    test_url: &Url,
-    test_file_contents: &str,
-    ref_file: &str,
-    base_url: &Url,
-    blitz_context: &mut BlitzContext,
-    out_dir: &Path,
-) -> TestResult {
-    let ref_url: Url = test_url.join(".").unwrap().join(ref_file).unwrap();
-
-    let reference_file_contents = reqwest::get(ref_url.clone())
-        .await
-        .expect("Could not read file.")
-        .text()
         .await;
-
-    if reference_file_contents.is_err() {
-        error!(
-            "Skipping test file: {}. Reference file missing {}",
-            test_url, ref_url
-        );
-        panic!("Skipping test file: {}. No reference found.", ref_url);
     }
 
-    let reference_file_contents = reference_file_contents.unwrap();
+    // Attr Test
+    let mut matches = attrtest_re.captures_iter(&file_contents);
+    let first = matches.next();
+    let second = matches.next();
+    if first.is_some() && second.is_none() {
+        // TODO: handle tests with multiple calls to checkLayout.
+        let captures = first.unwrap();
+        let selector = captures.get(1).unwrap().as_str().to_string();
 
-    let test_base_url = test_url.to_string().replace(base_url.as_str(), "");
-    let test_out_path = out_dir.join(format!("{}{}", test_base_url, "-test.png"));
-    render_html_to_buffer(
-        blitz_context,
-        renderer,
-        font_ctx,
-        test_file_contents,
-        test_url,
-        test_buffer,
-        &test_out_path,
-    )
-    .await;
-
-    let ref_out_path = out_dir.join(format!("{}{}", test_base_url, "-ref.png"));
-    render_html_to_buffer(
-        blitz_context,
-        renderer,
-        font_ctx,
-        &reference_file_contents,
-        &ref_url,
-        ref_buffer,
-        &ref_out_path,
-    )
-    .await;
-
-    if test_buffer == ref_buffer {
-        return TestResult::Pass;
+        return process_attr_test(
+            font_ctx,
+            path,
+            &selector,
+            &file_contents,
+            base_url,
+            blitz_context,
+        )
+        .await;
     }
 
-    let test_image = ImageBuffer::from_raw(WIDTH, HEIGHT, test_buffer.clone()).unwrap();
-    let ref_image = ImageBuffer::from_raw(WIDTH, HEIGHT, ref_buffer.clone()).unwrap();
-
-    let diff = dify::diff::get_results(test_image, ref_image, 0.1f32, true, None, &None, &None);
-
-    if let Some(diff) = diff {
-        let path = out_dir.join(format!("{}{}", test_base_url, "-diff.png"));
-        let parent = path.parent().unwrap();
-        fs::create_dir_all(parent).unwrap();
-        diff.1.save_with_format(path, ImageFormat::Png).unwrap();
-        TestResult::Fail
-    } else {
-        TestResult::Pass
-    }
-}
-
-async fn render_html_to_buffer(
-    blitz_context: &mut BlitzContext,
-    renderer: &mut VelloImageRenderer,
-    font_ctx: &FontContext,
-    html: &str,
-    base_url: &Url,
-    buf: &mut Vec<u8>,
-    out_path: &Path,
-) {
-    let mut document = HtmlDocument::from_html(
-        html,
-        Some(base_url.to_string()),
-        Vec::new(),
-        Arc::clone(&blitz_context.net) as SharedProvider<Resource>,
-        Some(clone_font_ctx(font_ctx)),
-    );
-
-    document
-        .as_mut()
-        .set_viewport(blitz_context.viewport.clone());
-
-    while !blitz_context.net.is_empty() {
-        let Ok(Some(res)) =
-            timeout(Duration::from_millis(500), blitz_context.receiver.recv()).await
-        else {
-            break;
-        };
-        document.as_mut().load_resource(res);
-    }
-
-    // Compute style, layout, etc for HtmlDocument
-    document.as_mut().resolve();
-
-    // Determine height to render
-    // let computed_height = document.as_ref().root_element().final_layout.size.height;
-    // let render_height = (computed_height as u32).clamp(HEIGHT, 4000);
-    let render_height = HEIGHT;
-
-    // Render document to RGBA buffer
-    renderer.render_document(document.as_ref(), buf);
-
-    fs::create_dir_all(out_path.parent().unwrap()).unwrap();
-    let mut file = File::create(out_path).unwrap();
-    write_png(&mut file, buf, WIDTH, render_height);
-}
-
-fn path_contains_directory(path: &Path, dir_name: &str) -> bool {
-    path.components()
-        .any(|component| component.as_os_str() == dir_name)
-}
-
-// Copied from screenshot.rs
-fn write_png<W: Write>(writer: W, buffer: &[u8], width: u32, height: u32) {
-    // Set pixels-per-meter. TODO: make configurable.
-    const PPM: u32 = (144.0 * 39.3701) as u32;
-
-    // Create PNG encoder
-    let mut encoder = png::Encoder::new(writer, width, height);
-    encoder.set_color(png::ColorType::Rgba);
-    encoder.set_depth(png::BitDepth::Eight);
-    encoder.set_pixel_dims(Some(png::PixelDimensions {
-        xppu: PPM,
-        yppu: PPM,
-        unit: png::Unit::Meter,
-    }));
-
-    // Write PNG data to writer
-    let mut writer = encoder.write_header().unwrap();
-    writer.write_image_data(buffer).unwrap();
-    writer.finish().unwrap();
+    // TODO: Handle other test formats.
+    TestResult::Skip
 }
