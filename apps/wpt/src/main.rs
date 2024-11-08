@@ -41,6 +41,12 @@ enum TestResult {
     Skip,
 }
 
+const BLOCKED_TESTS: &[&str] = &[
+    // This test currently causes a wgpu validation error:
+    // "Buffer size 17179869184 is greater than the maximum buffer size"
+    "css/css-flexbox/flexbox-paint-ordering-002.xhtml",
+];
+
 fn collect_tests(wpt_dir: &Path) -> Vec<PathBuf> {
     let mut test_paths = Vec::new();
 
@@ -59,14 +65,19 @@ fn collect_tests(wpt_dir: &Path) -> Vec<PathBuf> {
             test_paths.extend(glob_results.filter_map(|glob_result| {
                 if let Ok(path_buf) = glob_result {
                     // let is_tentative = path_buf.ends_with("tentative.html");
-                    let is_ref = path_buf.to_string_lossy().ends_with("-ref.html")
+                    let path_str = path_buf.to_string_lossy();
+                    let is_ref = path_str.ends_with("-ref.html")
                         || path_contains_directory(&path_buf, "reference");
                     let is_support_file = path_contains_directory(&path_buf, "support");
 
-                    if !is_ref && !is_support_file {
-                        Some(path_buf)
-                    } else {
+                    let is_blocked = BLOCKED_TESTS
+                        .iter()
+                        .any(|suffix| path_str.ends_with(suffix));
+
+                    if is_ref | is_support_file | is_blocked {
                         None
+                    } else {
+                        Some(path_buf)
                     }
                 } else {
                     error!("Failure during glob.");
