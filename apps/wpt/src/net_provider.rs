@@ -34,9 +34,8 @@ impl<D: Send + Sync + 'static> WptNetProvider<D> {
             _ => {
                 let relative_path = url.path().strip_prefix('/').unwrap();
                 let path = self.base_path.join(relative_path);
-                let file_content = std::fs::read(&path).map_err(|err| {
+                let file_content = std::fs::read(&path).inspect_err(|err| {
                     eprintln!("Error loading {}: {}", path.display(), &err);
-                    err
                 })?;
                 handler.bytes(Bytes::from(file_content), callback);
             }
