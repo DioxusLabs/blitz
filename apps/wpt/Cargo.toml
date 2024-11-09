@@ -27,3 +27,5 @@ url = "2.5.3"
 reqwest = "0.12.9"
 rayon = "1.10.0"
 thread_local = "1.1.8"
+data-url = { workspace = true }
+thiserror = { workspace = true }

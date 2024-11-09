@@ -1,23 +1,17 @@
-use std::{sync::Arc, time::Duration};
+use std::sync::Arc;
 
 use blitz_dom::{net::Resource, Document, HtmlDocument, Node};
 use blitz_traits::net::SharedProvider;
-use parley::FontContext;
-use tokio::time::timeout;
-use url::Url;
 
-use crate::{clone_font_ctx, BlitzContext, TestResult};
+use crate::{clone_font_ctx, TestResult, ThreadCtx};
 
 pub async fn process_attr_test(
-    font_ctx: &FontContext,
-    _test_url: &Url,
+    ctx: &mut ThreadCtx,
     _subtest_selector: &str,
-    test_file_contents: &str,
-    base_url: &Url,
-    blitz_context: &mut BlitzContext,
+    html: &str,
+    relative_path: &str,
 ) -> TestResult {
-    let mut document =
-        parse_and_resolve_document(font_ctx, test_file_contents, base_url, blitz_context).await;
+    let mut document = parse_and_resolve_document(ctx, html, relative_path).await;
 
     let mut has_error = false;
     let root_id = document.root_node().id;
@@ -35,31 +29,23 @@ pub async fn process_attr_test(
 }
 
 pub async fn parse_and_resolve_document(
-    font_ctx: &FontContext,
-    test_file_contents: &str,
-    base_url: &Url,
-    blitz_context: &mut BlitzContext,
+    ctx: &mut ThreadCtx,
+    html: &str,
+    relative_path: &str,
 ) -> Document {
     let mut document = HtmlDocument::from_html(
-        test_file_contents,
-        Some(base_url.to_string()),
+        html,
+        Some(ctx.dummy_base_url.join(relative_path).unwrap().to_string()),
         Vec::new(),
-        Arc::clone(&blitz_context.net) as SharedProvider<Resource>,
-        Some(clone_font_ctx(font_ctx)),
+        Arc::clone(&ctx.net_provider) as SharedProvider<Resource>,
+        Some(clone_font_ctx(&ctx.font_ctx)),
     );
 
-    document
-        .as_mut()
-        .set_viewport(blitz_context.viewport.clone());
+    document.as_mut().set_viewport(ctx.viewport.clone());
 
-    while !blitz_context.net.is_empty() {
-        let Ok(Some(res)) =
-            timeout(Duration::from_millis(500), blitz_context.receiver.recv()).await
-        else {
-            break;
-        };
-        document.as_mut().load_resource(res);
-    }
+    // Load resources
+    ctx.net_provider
+        .for_each(|res| document.as_mut().load_resource(res));
 
     // Compute style, layout, etc for HtmlDocument
     document.as_mut().resolve();

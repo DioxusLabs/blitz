@@ -1,18 +1,13 @@
-use attr_test::process_attr_test;
 use blitz_dom::net::Resource;
 use blitz_dom::Viewport;
-use blitz_net::{MpscCallback, Provider};
 use blitz_renderer_vello::VelloImageRenderer;
 use parley::FontContext;
 use reqwest::Url;
 use thread_local::ThreadLocal;
 use tower_http::services::ServeDir;
 
-use regex::Regex;
-
 use rayon::prelude::*;
-use tokio::runtime::Handle;
-use tokio::sync::mpsc::UnboundedReceiver;
+use regex::Regex;
 
 use axum::Router;
 use log::{error, info};
@@ -21,7 +16,7 @@ use std::cell::RefCell;
 use std::fmt::Display;
 use std::net::SocketAddr;
 use std::panic::{catch_unwind, AssertUnwindSafe};
-use std::path::{Path, PathBuf};
+use std::path::{self, Path, PathBuf};
 use std::sync::atomic::AtomicU32;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
@@ -29,8 +24,11 @@ use std::time::Instant;
 use std::{env, fs};
 
 mod attr_test;
+mod net_provider;
 mod ref_test;
 
+use attr_test::process_attr_test;
+use net_provider::WptNetProvider;
 use ref_test::process_ref_test;
 
 const WIDTH: u32 = 800;
@@ -119,30 +117,6 @@ fn collect_tests(wpt_dir: &Path) -> Vec<PathBuf> {
     test_paths
 }
 
-struct BlitzContext {
-    receiver: UnboundedReceiver<Resource>,
-    viewport: Viewport,
-    net: Arc<Provider<Resource>>,
-}
-
-fn setup_blitz() -> BlitzContext {
-    let viewport = Viewport::new(
-        (WIDTH as f64 * SCALE).floor() as u32,
-        (HEIGHT as f64 * SCALE).floor() as u32,
-        SCALE as f32,
-    );
-
-    let (receiver, callback) = MpscCallback::new();
-    let callback = Arc::new(callback);
-    let net = Arc::new(Provider::new(Handle::current(), callback));
-
-    BlitzContext {
-        receiver,
-        viewport,
-        net,
-    }
-}
-
 fn clone_font_ctx(ctx: &FontContext) -> FontContext {
     FontContext {
         collection: ctx.collection.clone(),
@@ -150,11 +124,35 @@ fn clone_font_ctx(ctx: &FontContext) -> FontContext {
     }
 }
 
-struct ThreadState {
+enum BufferKind {
+    Test,
+    Ref,
+}
+struct Buffers {
+    pub test_buffer: Vec<u8>,
+    pub ref_buffer: Vec<u8>,
+}
+impl Buffers {
+    fn get_mut(&mut self, kind: BufferKind) -> &mut Vec<u8> {
+        match kind {
+            BufferKind::Test => &mut self.test_buffer,
+            BufferKind::Ref => &mut self.ref_buffer,
+        }
+    }
+}
+struct ThreadCtx {
+    viewport: Viewport,
+    net_provider: Arc<WptNetProvider<Resource>>,
     renderer: VelloImageRenderer,
     font_ctx: FontContext,
-    test_buffer: Vec<u8>,
-    ref_buffer: Vec<u8>,
+    buffers: Buffers,
+
+    // Things that aren't really thread-specifc, but are convenient to store here
+    reftest_re: Regex,
+    attrtest_re: Regex,
+    out_dir: PathBuf,
+    wpt_dir: PathBuf,
+    dummy_base_url: Url,
 }
 
 fn main() {
@@ -165,20 +163,12 @@ fn main() {
         .expect("Failed to create tokio runtime");
     let _guard = rt.enter();
 
-    let reftest_re = Regex::new(r#"<link\s+rel="match"\s+href="([^"]+)""#)
-        .expect("Failed to compile reftest regex");
-
-    let attrtest_re = Regex::new(r#"checkLayout\(\s*['"]([^'"]*)['"]\s*(,\s*(true|false))?\)"#)
-        .expect("Failed to compile attrtest regex");
-
-    let wpt_dir = env::var("WPT_DIR").expect("WPT_DIR is not set");
-    info!("WPT_DIR: {}", wpt_dir);
-    let wpt_dir2 = wpt_dir.clone();
-    let wpt_dir = Path::new(wpt_dir.as_str());
+    let wpt_dir = path::absolute(env::var("WPT_DIR").expect("WPT_DIR is not set")).unwrap();
+    info!("WPT_DIR: {}", wpt_dir.display());
     if !wpt_dir.exists() {
         error!("WPT_DIR does not exist. This should be set to a local copy of https://github.com/web-platform-tests/wpt.");
     }
-    let test_paths = collect_tests(wpt_dir);
+    let test_paths = collect_tests(&wpt_dir);
     let count = test_paths.len();
 
     let cargo_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
@@ -188,12 +178,13 @@ fn main() {
     }
     fs::create_dir(&out_dir).unwrap();
 
-    rt.spawn(async move {
-        let router = Router::new().nest_service("/", ServeDir::new(&wpt_dir2));
-        serve(router, 3000).await;
+    rt.spawn({
+        let wpt_dir_clone = wpt_dir.clone();
+        async move {
+            let router = Router::new().nest_service("/", ServeDir::new(&wpt_dir_clone));
+            serve(router, 3000).await;
+        }
     });
-
-    let base_url = Url::parse("http://localhost:3000").unwrap();
 
     let pass_count = AtomicU32::new(0);
     let fail_count = AtomicU32::new(0);
@@ -205,58 +196,60 @@ fn main() {
 
     let base_font_context = parley::FontContext::default();
 
-    let thread_state: ThreadLocal<RefCell<ThreadState>> = ThreadLocal::new();
+    let thread_state: ThreadLocal<RefCell<ThreadCtx>> = ThreadLocal::new();
 
     test_paths.into_par_iter().for_each_init(
         || rt.enter(),
         |_guard, path| {
-            let mut state = thread_state
+            let mut ctx = thread_state
                 .get_or(|| {
                     let renderer = rt.block_on(VelloImageRenderer::new(WIDTH, HEIGHT, SCALE));
                     let font_ctx = clone_font_ctx(&base_font_context);
                     let test_buffer = Vec::with_capacity((WIDTH * HEIGHT * 4) as usize);
                     let ref_buffer = Vec::with_capacity((WIDTH * HEIGHT * 4) as usize);
+                    let viewport = Viewport::new(
+                        (WIDTH as f64 * SCALE).floor() as u32,
+                        (HEIGHT as f64 * SCALE).floor() as u32,
+                        SCALE as f32,
+                    );
+                    let net_provider = Arc::new(WptNetProvider::new(&wpt_dir));
+                    let reftest_re = Regex::new(r#"<link\s+rel="match"\s+href="([^"]+)""#)
+                        .expect("Failed to compile reftest regex");
 
-                    RefCell::new(ThreadState {
+                    let attrtest_re =
+                        Regex::new(r#"checkLayout\(\s*['"]([^'"]*)['"]\s*(,\s*(true|false))?\)"#)
+                            .expect("Failed to compile attrtest regex");
+
+                    let dummy_base_url = Url::parse("http://dummy.local").unwrap();
+
+                    RefCell::new(ThreadCtx {
+                        viewport,
+                        net_provider,
                         renderer,
                         font_ctx,
-                        test_buffer,
-                        ref_buffer,
+                        buffers: Buffers {
+                            test_buffer,
+                            ref_buffer,
+                        },
+                        reftest_re,
+                        attrtest_re,
+                        out_dir: out_dir.clone(),
+                        wpt_dir: wpt_dir.clone(),
+                        dummy_base_url,
                     })
                 })
                 .borrow_mut();
-            let state = &mut *state;
 
             let num = num.fetch_add(1, Ordering::SeqCst) + 1;
 
             let relative_path = path
-                .strip_prefix(wpt_dir)
+                .strip_prefix(&ctx.wpt_dir)
                 .unwrap()
-                .display()
-                .to_string()
+                .to_string_lossy()
                 .replace("\\", "/");
 
-            let url = base_url.join(relative_path.as_str()).unwrap();
-
-            let renderer = &mut state.renderer;
-            let font_ctx = &state.font_ctx;
-            let test_buffer = &mut state.test_buffer;
-            let ref_buffer = &mut state.ref_buffer;
-
             let result = catch_unwind(AssertUnwindSafe(|| {
-                let mut blitz_context = setup_blitz();
-                let (kind, result) = rt.block_on(process_test_file(
-                    renderer,
-                    font_ctx,
-                    test_buffer,
-                    ref_buffer,
-                    &url,
-                    &reftest_re,
-                    &attrtest_re,
-                    &base_url,
-                    &mut blitz_context,
-                    &out_dir,
-                ));
+                let (kind, result) = rt.block_on(process_test_file(&mut ctx, &relative_path));
                 match result {
                     TestResult::Pass => {
                         pass_count.fetch_add(1, Ordering::SeqCst);
@@ -314,6 +307,7 @@ fn main() {
     let skip_count = skip_count.load(Ordering::SeqCst);
 
     let run_count = pass_count + fail_count + crash_count;
+    let run_percent = (run_count as f32 / count as f32) * 100.0;
 
     println!("---");
     println!("Done in {}s", (Instant::now() - start).as_secs());
@@ -321,6 +315,7 @@ fn main() {
     println!("{fail_count} tests FAILED.");
     println!("{crash_count} tests CRASHED.");
     println!("{skip_count} tests SKIPPED.");
+    println!("{run_count} or {count} ({run_percent:.2}%) tests run.");
     println!("---");
     let pessimistic_percent = (pass_count as f32 / count as f32) * 100.0;
     let optimistic_percent = (pass_count as f32 / run_count as f32) * 100.0;
@@ -337,43 +332,22 @@ async fn serve(app: Router, port: u16) {
 }
 
 #[allow(clippy::too_many_arguments)]
-async fn process_test_file(
-    renderer: &mut VelloImageRenderer,
-    font_ctx: &FontContext,
-    test_buffer: &mut Vec<u8>,
-    ref_buffer: &mut Vec<u8>,
-    path: &Url,
-    reftest_re: &Regex,
-    attrtest_re: &Regex,
-    base_url: &Url,
-    blitz_context: &mut BlitzContext,
-    out_dir: &Path,
-) -> (TestKind, TestResult) {
-    info!("Processing test file: {}", path);
+async fn process_test_file(ctx: &mut ThreadCtx, relative_path: &str) -> (TestKind, TestResult) {
+    info!("Processing test file: {}", relative_path);
 
-    let file_contents = reqwest::get(path.clone())
-        .await
-        .expect("Could not read file.")
-        .text()
-        .await
-        .unwrap();
+    let file_contents = fs::read_to_string(ctx.wpt_dir.join(relative_path)).unwrap();
 
     // Ref Test
-    let reference = reftest_re
+    let reference = ctx
+        .reftest_re
         .captures(&file_contents)
         .and_then(|captures| captures.get(1).map(|href| href.as_str().to_string()));
     if let Some(reference) = reference {
         let result = process_ref_test(
-            renderer,
-            font_ctx,
-            test_buffer,
-            ref_buffer,
-            path,
+            ctx,
+            relative_path,
             file_contents.as_str(),
             reference.as_str(),
-            base_url,
-            blitz_context,
-            out_dir,
         )
         .await;
 
@@ -381,23 +355,16 @@ async fn process_test_file(
     }
 
     // Attr Test
-    let mut matches = attrtest_re.captures_iter(&file_contents);
+    let mut matches = ctx.attrtest_re.captures_iter(&file_contents);
     let first = matches.next();
     let second = matches.next();
     if first.is_some() && second.is_none() {
         // TODO: handle tests with multiple calls to checkLayout.
         let captures = first.unwrap();
         let selector = captures.get(1).unwrap().as_str().to_string();
+        drop(matches);
 
-        let result = process_attr_test(
-            font_ctx,
-            path,
-            &selector,
-            &file_contents,
-            base_url,
-            blitz_context,
-        )
-        .await;
+        let result = process_attr_test(ctx, &selector, &file_contents, relative_path).await;
 
         return (TestKind::Attr, result);
     }
