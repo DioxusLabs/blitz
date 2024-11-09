@@ -1,23 +1,20 @@
 use blitz_traits::net::{BoxedHandler, Bytes, Callback, NetProvider, Url};
 use data_url::DataUrl;
 use std::{
-    path::Path,
+    path::{Path, PathBuf},
     sync::{Arc, Mutex},
 };
 use thiserror::Error;
 
 pub struct WptNetProvider<D: Send + Sync + 'static> {
-    dummy_base_url: Url,
+    base_path: PathBuf,
     callback: Arc<VecCallback<D>>,
 }
 impl<D: Send + Sync + 'static> WptNetProvider<D> {
     pub fn new(base_path: &Path) -> Self {
-        let dummy_base_url = Url::parse("http://dummy.local")
-            .unwrap()
-            .join(base_path.to_string_lossy().as_ref())
-            .unwrap();
+        let base_path = base_path.to_path_buf();
         Self {
-            dummy_base_url,
+            base_path,
             callback: Arc::new(VecCallback::new()),
         }
     }
@@ -35,10 +32,12 @@ impl<D: Send + Sync + 'static> WptNetProvider<D> {
                 handler.bytes(Bytes::from(decoded.0), callback);
             }
             _ => {
-                let temp_url = self.dummy_base_url.join(url.path()).unwrap();
-                let path = temp_url.path();
-                println!("Loading file @ {path}");
-                let file_content = std::fs::read(path)?;
+                let relative_path = url.path().strip_prefix('/').unwrap();
+                let path = self.base_path.join(relative_path);
+                let file_content = std::fs::read(&path).map_err(|err| {
+                    eprintln!("Error loading {}: {}", path.display(), &err);
+                    err
+                })?;
                 handler.bytes(Bytes::from(file_content), callback);
             }
         }
@@ -50,7 +49,9 @@ impl<D: Send + Sync + 'static> NetProvider for WptNetProvider<D> {
     fn fetch(&self, url: Url, handler: BoxedHandler<D>) {
         let res = self.fetch_inner(url.clone(), handler);
         if let Err(e) = res {
-            eprintln!("Error fetching {}: {e}", url);
+            if !matches!(e, WptNetProviderError::Io(_)) {
+                eprintln!("Error loading {}: {e}", url);
+            }
         }
     }
 }
