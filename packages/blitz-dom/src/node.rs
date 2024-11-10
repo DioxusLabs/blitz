@@ -944,6 +944,7 @@ impl Node {
         self.layout_children
             .borrow()
             .iter()
+            .rev()
             .flatten()
             .find_map(|&i| self.with(i).hit(x, y))
             .or(Some(HitResult {
