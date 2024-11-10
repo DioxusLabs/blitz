@@ -428,6 +428,12 @@ impl VelloSceneGenerator<'_> {
         cx.stroke_border(scene);
         cx.stroke_devtools(scene);
 
+        // Render inline SVG elements
+        if element.local_name() == "svg" {
+            cx.draw_svg(scene);
+            return;
+        }
+
         // Now that background has been drawn, offset pos and cx in order to draw our contents scrolled
         let pos = Point {
             x: pos.x - element.scroll_offset.x,

@@ -1,6 +1,15 @@
+use std::sync::{Arc, LazyLock};
+
 use crate::node::{Node, NodeData};
 use peniko::Color as PenikoColor;
 use style::color::AbsoluteColor;
+use usvg::fontdb;
+
+pub(crate) static FONT_DB: LazyLock<Arc<fontdb::Database>> = LazyLock::new(|| {
+    let mut db = fontdb::Database::new();
+    db.load_system_fonts();
+    Arc::new(db)
+});
 
 // Debug print an RcDom
 pub fn walk_tree(indent: usize, node: &Node) {
@@ -66,6 +75,16 @@ pub fn walk_tree(indent: usize, node: &Node) {
             println!("{}</{}>", " ".repeat(indent), data.name.local);
         }
     }
+}
+
+pub(crate) fn parse_svg(source: &[u8]) -> Result<usvg::Tree, usvg::Error> {
+    let options = usvg::Options {
+        fontdb: Arc::clone(&*FONT_DB),
+        ..Default::default()
+    };
+
+    let tree = usvg::Tree::from_data(source, &options)?;
+    Ok(tree)
 }
 
 pub trait ToPenikoColor {

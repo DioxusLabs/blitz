@@ -25,6 +25,7 @@ use style::{
     stylesheets::CssRuleType,
 };
 use style_dom::ElementState;
+use style_traits::values::ToCss;
 use taffy::{
     prelude::{Layout, Style},
     Cache,
@@ -791,6 +792,65 @@ impl Node {
         }
         .unwrap();
         s
+    }
+
+    pub fn outer_html(&self) -> String {
+        let mut output = String::new();
+        self.write_outer_html(&mut output);
+        output
+    }
+
+    pub fn write_outer_html(&self, writer: &mut String) {
+        let has_children = !self.children.is_empty();
+        let current_color = self
+            .primary_styles()
+            .map(|style| style.clone_color())
+            .map(|color| color.to_css_string());
+
+        match &self.raw_dom_data {
+            NodeData::Document => {}
+            NodeData::Comment => {}
+            NodeData::AnonymousBlock(_) => {}
+            // NodeData::Doctype { name, .. } => write!(s, "DOCTYPE {name}"),
+            NodeData::Text(data) => {
+                writer.push_str(data.content.as_str());
+            }
+            NodeData::Element(data) => {
+                writer.push('<');
+                writer.push_str(&data.name.local);
+
+                for attr in data.attrs() {
+                    writer.push(' ');
+                    writer.push_str(&attr.name.local);
+                    writer.push_str("=\"");
+                    #[allow(clippy::unnecessary_unwrap)] // Convert to if-let chain once stabilised
+                    if current_color.is_some() && attr.value.contains("currentColor") {
+                        writer.push_str(
+                            &attr
+                                .value
+                                .replace("currentColor", current_color.as_ref().unwrap()),
+                        );
+                    } else {
+                        writer.push_str(&attr.value);
+                    }
+                    writer.push('"');
+                }
+                if !has_children {
+                    writer.push_str(" /");
+                }
+                writer.push('>');
+
+                if has_children {
+                    for &child_id in &self.children {
+                        self.tree()[child_id].write_outer_html(writer);
+                    }
+
+                    writer.push_str("</");
+                    writer.push_str(&data.name.local);
+                    writer.push('>');
+                }
+            }
+        }
     }
 
     pub fn attrs(&self) -> Option<&[Attribute]> {

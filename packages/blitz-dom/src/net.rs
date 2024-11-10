@@ -1,11 +1,6 @@
 use image::DynamicImage;
 use selectors::context::QuirksMode;
-use std::{
-    io::Cursor,
-    str::FromStr,
-    sync::atomic::AtomicBool,
-    sync::{Arc, OnceLock},
-};
+use std::{io::Cursor, str::FromStr, sync::atomic::AtomicBool, sync::Arc};
 use style::{
     font_face::{FontFaceSourceFormat, FontFaceSourceFormatKeyword, Source},
     media_queries::MediaList,
@@ -27,7 +22,7 @@ use blitz_traits::net::{Bytes, RequestHandler, SharedCallback, SharedProvider};
 use url::Url;
 use usvg::Tree;
 
-static FONT_DB: OnceLock<Arc<usvg::fontdb::Database>> = OnceLock::new();
+use crate::util::parse_svg;
 
 #[derive(Clone, Debug)]
 pub enum Resource {
@@ -256,24 +251,10 @@ impl RequestHandler for ImageHandler {
             callback.call(Resource::Image(self.0, Arc::new(image)));
             return;
         };
+
         // Try parse SVG
-
-        // TODO: Use fontique
-        let fontdb = FONT_DB.get_or_init(|| {
-            let mut fontdb = usvg::fontdb::Database::new();
-            fontdb.load_system_fonts();
-            Arc::new(fontdb)
-        });
-
-        let options = usvg::Options {
-            fontdb: fontdb.clone(),
-            ..Default::default()
-        };
-
         const DUMMY_SVG : &[u8] = r#"<?xml version="1.0" encoding="UTF-8"?><svg xmlns="http://www.w3.org/2000/svg" width="1" height="1"/>"#.as_bytes();
-
-        let tree = Tree::from_data(&bytes, &options)
-            .unwrap_or_else(|_| Tree::from_data(DUMMY_SVG, &options).unwrap());
+        let tree = parse_svg(&bytes).unwrap_or(parse_svg(DUMMY_SVG).unwrap());
         callback.call(Resource::Svg(self.0, Box::new(tree)));
     }
 }
