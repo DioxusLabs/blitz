@@ -1118,6 +1118,8 @@ impl Document {
                 // this will need to be more comprehensive in the future to handle line breaks, shaping, etc.
                 if node.is_text_node() {
                     CursorKind::Text
+                } else if node.is_link() {
+                    CursorKind::Pointer
                 } else {
                     CursorKind::Auto
                 }
