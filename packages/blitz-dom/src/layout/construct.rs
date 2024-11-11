@@ -22,7 +22,9 @@ use crate::{
         ListItemLayout, ListItemLayoutPosition, Marker, NodeKind, NodeSpecificData, TextBrush,
         TextInputData, TextLayout,
     },
-    stylo_to_parley, Document, ElementNodeData, Node, NodeData,
+    stylo_to_parley,
+    util::parse_svg,
+    Document, ElementNodeData, Node, NodeData,
 };
 
 use super::table::build_table_context;
@@ -62,6 +64,23 @@ pub(crate) fn collect_layout_children(
                 create_checkbox_input(doc, container_node_id);
                 return;
             }
+        }
+
+        if matches!(tag_name, "svg") {
+            let outer_html = doc.get_node(container_node_id).unwrap().outer_html();
+            match parse_svg(outer_html.as_bytes()) {
+                Ok(svg) => {
+                    doc.get_node_mut(container_node_id)
+                        .unwrap()
+                        .element_data_mut()
+                        .unwrap()
+                        .node_specific_data = NodeSpecificData::Svg(svg);
+                }
+                Err(err) => {
+                    dbg!(err);
+                }
+            };
+            return;
         }
 
         //Only ol tags have start and reversed attributes
@@ -759,7 +778,10 @@ pub(crate) fn build_inline_layout(
                     (DisplayOutside::Inline, DisplayInside::Flow) => {
                         let tag_name = &element_data.name.local;
 
-                        if *tag_name == local_name!("img") || *tag_name == local_name!("input") {
+                        if *tag_name == local_name!("img")
+                            || *tag_name == local_name!("svg")
+                            || *tag_name == local_name!("input")
+                        {
                             builder.push_inline_box(InlineBox {
                                 id: node_id as u64,
                                 // Overridden by push_inline_box method

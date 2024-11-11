@@ -25,7 +25,6 @@ fn html5ever_to_blitz_attr(attr: html5ever::Attribute) -> Attribute {
 pub struct DocumentHtmlParser<'a> {
     doc: RefCell<&'a mut Document>,
     style_nodes: RefCell<Vec<usize>>,
-    svg_nodes: RefCell<Vec<usize>>,
 
     /// Errors that occurred during parsing.
     pub errors: RefCell<Vec<Cow<'static, str>>>,
@@ -41,7 +40,6 @@ impl DocumentHtmlParser<'_> {
         DocumentHtmlParser {
             doc: RefCell::new(doc),
             style_nodes: RefCell::new(Vec::new()),
-            svg_nodes: RefCell::new(Vec::new()),
             errors: RefCell::new(Vec::new()),
             quirks_mode: Cell::new(QuirksMode::NoQuirks),
             net_provider,
@@ -181,11 +179,6 @@ impl<'b> TreeSink for DocumentHtmlParser<'b> {
             doc.process_style_element(*id);
         }
 
-        // Parse inline SVGs (<svg> elements)
-        for id in self.svg_nodes.borrow().iter() {
-            doc.process_svg_element(*id);
-        }
-
         for error in self.errors.borrow().iter() {
             println!("ERROR: {}", error);
         }
@@ -240,7 +233,6 @@ impl<'b> TreeSink for DocumentHtmlParser<'b> {
             "img" => self.load_image(id),
             "input" => self.process_button_input(id),
             "style" => self.style_nodes.borrow_mut().push(id),
-            "svg" => self.svg_nodes.borrow_mut().push(id),
             _ => {}
         }
 
