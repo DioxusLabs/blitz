@@ -67,7 +67,15 @@ pub(crate) fn collect_layout_children(
         }
 
         if matches!(tag_name, "svg") {
-            let outer_html = doc.get_node(container_node_id).unwrap().outer_html();
+            let mut outer_html = doc.get_node(container_node_id).unwrap().outer_html();
+
+            // HACK: usvg fails to parse SVGs that don't have the SVG xmlns set. So inject it
+            // if the generated source doesn't have it.
+            if !outer_html.contains("xmlns") {
+                outer_html =
+                    outer_html.replace("<svg", "<svg xmlns=\"http://www.w3.org/2000/svg\"");
+            }
+
             match parse_svg(outer_html.as_bytes()) {
                 Ok(svg) => {
                     doc.get_node_mut(container_node_id)
@@ -77,6 +85,8 @@ pub(crate) fn collect_layout_children(
                         .node_specific_data = NodeSpecificData::Svg(svg);
                 }
                 Err(err) => {
+                    println!("{} SVG parse failed", container_node_id);
+                    println!("{}", outer_html);
                     dbg!(err);
                 }
             };

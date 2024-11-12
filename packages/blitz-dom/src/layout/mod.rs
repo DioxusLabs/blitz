@@ -207,7 +207,7 @@ impl LayoutPartialTree for Document {
                         }
                     }
 
-                    if *element_data.name.local == *"img" {
+                    if *element_data.name.local == *"img" || *element_data.name.local == *"svg" {
                         // Get width and height attributes on image element
                         //
                         // TODO: smarter sizing using these (depending on object-fit, they shouldn't
