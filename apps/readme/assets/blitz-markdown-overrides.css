@@ -3,3 +3,7 @@
   padding: 32px;
   margin: 0 auto;
 }
+
+.markdown-body table {
+  display: table;
+}
