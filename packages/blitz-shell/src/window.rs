@@ -1,6 +1,6 @@
 use crate::accessibility::AccessibilityState;
 use crate::event::{create_waker, BlitzEvent};
-use crate::stylo_to_winit;
+use crate::stylo_to_winit::{self, theme_to_color_scheme};
 use blitz_dom::events::{EventData, RendererEvent};
 use blitz_dom::{DocumentLike, Viewport};
 use blitz_renderer_vello::Renderer;
@@ -11,7 +11,7 @@ use std::sync::Arc;
 use std::task::Waker;
 use winit::event::{ElementState, MouseButton};
 use winit::event_loop::{ActiveEventLoop, EventLoopProxy};
-use winit::window::{WindowAttributes, WindowId};
+use winit::window::{Theme, WindowAttributes, WindowId};
 use winit::{event::Modifiers, event::WindowEvent, keyboard::KeyCode, window::Window};
 
 #[cfg(all(feature = "menu", not(any(target_os = "android", target_os = "ios"))))]
@@ -80,7 +80,9 @@ impl<Doc: DocumentLike> View<Doc> {
         // Create viewport
         let size = winit_window.inner_size();
         let scale = winit_window.scale_factor() as f32;
-        let viewport = Viewport::new(size.width, size.height, scale);
+        let theme = winit_window.theme().unwrap_or(Theme::Light);
+        let color_scheme = theme_to_color_scheme(theme);
+        let viewport = Viewport::new(size.width, size.height, scale, color_scheme);
 
         Self {
             renderer: Renderer::new(winit_window.clone()),
@@ -273,8 +275,9 @@ impl<Doc: DocumentLike> View<Doc> {
             }
 
             // Theme events
-            WindowEvent::ThemeChanged(_) => {
-                // TODO: dark mode / light mode support
+            WindowEvent::ThemeChanged(theme) => {
+                self.viewport.color_scheme = theme_to_color_scheme(theme);
+                self.kick_viewport();
             }
 
             // Text / keyboard events

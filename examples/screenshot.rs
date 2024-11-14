@@ -1,7 +1,7 @@
 //! Load first CLI argument as a url. Fallback to google.com if no CLI argument is provided.
 
 use blitz_dom::net::Resource;
-use blitz_dom::Viewport;
+use blitz_dom::{ColorScheme, Viewport};
 use blitz_html::HtmlDocument;
 use blitz_net::{MpscCallback, Provider};
 use blitz_renderer_vello::render_to_buffer;
@@ -78,9 +78,12 @@ async fn main() {
 
     timer.time("Parsed document");
 
-    document
-        .as_mut()
-        .set_viewport(Viewport::new(width * scale, height * scale, scale as f32));
+    document.as_mut().set_viewport(Viewport::new(
+        width * scale,
+        height * scale,
+        scale as f32,
+        ColorScheme::Light,
+    ));
 
     while !net.is_empty() {
         let Some((_, res)) = recv.recv().await else {
@@ -103,7 +106,12 @@ async fn main() {
     // Render document to RGBA buffer
     let buffer = render_to_buffer(
         document.as_ref(),
-        Viewport::new(width * scale, render_height * scale, scale as f32),
+        Viewport::new(
+            width * scale,
+            render_height * scale,
+            scale as f32,
+            ColorScheme::Light,
+        ),
     )
     .await;
 

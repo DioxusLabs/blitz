@@ -1,5 +1,5 @@
 use blitz_dom::net::Resource;
-use blitz_dom::Viewport;
+use blitz_dom::{ColorScheme, Viewport};
 use blitz_renderer_vello::VelloImageRenderer;
 use parley::FontContext;
 use thread_local::ThreadLocal;
@@ -247,6 +247,7 @@ fn main() {
                             (WIDTH as f64 * SCALE).floor() as u32,
                             (HEIGHT as f64 * SCALE).floor() as u32,
                             SCALE as f32,
+                            ColorScheme::Light,
                         );
                         let net_provider = Arc::new(WptNetProvider::new(&wpt_dir));
                         let reftest_re = Regex::new(r#"<link\s+rel="match"\s+href="([^"]+)""#)

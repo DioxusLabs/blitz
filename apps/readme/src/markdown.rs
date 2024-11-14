@@ -7,7 +7,7 @@ use comrak::{
     plugins::syntect::SyntectAdapter, ExtensionOptions, Options, Plugins, RenderOptions,
 };
 
-pub(crate) const GITHUB_MD_STYLES: &str = include_str!("../assets/github-markdown-light.css");
+pub(crate) const GITHUB_MD_STYLES: &str = include_str!("../assets/github-markdown.css");
 pub(crate) const BLITZ_MD_STYLES: &str = include_str!("../assets/blitz-markdown-overrides.css");
 
 pub(crate) fn markdown_to_html(contents: String) -> String {

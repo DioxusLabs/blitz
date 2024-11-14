@@ -52,4 +52,4 @@ pub use node::{ElementNodeData, Node, NodeData, TextNodeData};
 pub use parley::FontContext;
 pub use string_cache::Atom;
 pub use style::invalidation::element::restyle_hints::RestyleHint;
-pub use viewport::Viewport;
+pub use viewport::{ColorScheme, Viewport};

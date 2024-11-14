@@ -1,8 +1,8 @@
 use crate::DocumentHtmlParser;
 
 use blitz_dom::{
-    events::RendererEvent, net::Resource, Document, DocumentLike, FontContext, Viewport,
-    DEFAULT_CSS,
+    events::RendererEvent, net::Resource, ColorScheme, Document, DocumentLike, FontContext,
+    Viewport, DEFAULT_CSS,
 };
 use blitz_traits::net::SharedProvider;
 
@@ -42,7 +42,7 @@ impl HtmlDocument {
         font_ctx: Option<FontContext>,
     ) -> Self {
         // Spin up the virtualdom and include the default stylesheet
-        let viewport = Viewport::new(0, 0, 1.0);
+        let viewport = Viewport::new(0, 0, 1.0, ColorScheme::Light);
         let mut doc = match font_ctx {
             Some(font_ctx) => Document::with_font_ctx(viewport, font_ctx),
             None => Document::new(viewport),

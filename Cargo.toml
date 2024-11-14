@@ -19,11 +19,11 @@ license = "MIT OR Apache-2.0"
 
 [workspace.dependencies]
 # Servo dependencies
-style = { git = "https://github.com/servo/stylo", rev = "4eb9da3b639baab6b16a43b8512b5c11c087fc2c", package = "style" }
-style_config = { git = "https://github.com/servo/stylo", rev = "4eb9da3b639baab6b16a43b8512b5c11c087fc2c", package = "style_config" }
-style_traits = { git = "https://github.com/servo/stylo", rev = "4eb9da3b639baab6b16a43b8512b5c11c087fc2c", package = "style_traits" }
-style_dom = { git = "https://github.com/servo/stylo", rev = "4eb9da3b639baab6b16a43b8512b5c11c087fc2c", package = "dom" }
-selectors = { git = "https://github.com/servo/stylo", rev = "4eb9da3b639baab6b16a43b8512b5c11c087fc2c", package = "selectors" }
+style = { git = "https://github.com/servo/stylo", rev = "0c76ba6f8", package = "style" } # prefers-color-scheme
+style_config = { git = "https://github.com/servo/stylo", rev = "0c76ba6f8", package = "style_config" } # prefers-color-scheme
+style_traits = { git = "https://github.com/servo/stylo", rev = "0c76ba6f8", package = "style_traits" } # prefers-color-scheme
+style_dom = { git = "https://github.com/servo/stylo", rev = "0c76ba6f8", package = "dom" } # prefers-color-scheme
+selectors = { git = "https://github.com/servo/stylo", rev = "0c76ba6f8", package = "selectors" } # prefers-color-scheme
 markup5ever = "0.14" # needs to match stylo markup5ever version
 html5ever = "0.29" # needs to match stylo markup5ever version
 xml5ever = "0.20" # needs to match stylo markup5ever version

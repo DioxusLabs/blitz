@@ -2,7 +2,24 @@ use crate::document::DummyFontMetricsProvider;
 use style::{
     media_queries::{Device, MediaType},
     properties::{style_structs::Font, ComputedValues},
+    queries::values::PrefersColorScheme,
 };
+
+#[derive(Default, Debug, Clone, Copy)]
+pub enum ColorScheme {
+    #[default]
+    Light,
+    Dark,
+}
+
+impl From<ColorScheme> for PrefersColorScheme {
+    fn from(value: ColorScheme) -> Self {
+        match value {
+            ColorScheme::Light => PrefersColorScheme::Light,
+            ColorScheme::Dark => PrefersColorScheme::Dark,
+        }
+    }
+}
 
 #[derive(Default, Debug, Clone)]
 pub struct Viewport {
@@ -13,15 +30,23 @@ pub struct Viewport {
     zoom: f32,
 
     pub font_size: f32,
+
+    pub color_scheme: ColorScheme,
 }
 
 impl Viewport {
-    pub fn new(physical_width: u32, physical_height: u32, scale_factor: f32) -> Self {
+    pub fn new(
+        physical_width: u32,
+        physical_height: u32,
+        scale_factor: f32,
+        color_scheme: ColorScheme,
+    ) -> Self {
         Self {
             window_size: (physical_width, physical_height),
             hidpi_scale: scale_factor,
             zoom: 1.0,
             font_size: 16.0,
+            color_scheme,
         }
     }
 
@@ -63,6 +88,7 @@ impl Viewport {
             device_pixel_ratio,
             Box::new(DummyFontMetricsProvider),
             ComputedValues::initial_values_with_font_override(Font::initial_values()),
+            self.color_scheme.into(),
         )
     }
 }

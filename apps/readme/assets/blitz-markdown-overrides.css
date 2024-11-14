@@ -7,3 +7,9 @@
 .markdown-body table {
   display: table;
 }
+
+@media (prefers-color-scheme: dark) {
+  html, body {
+    background-color: #0d1117;
+  }
+}

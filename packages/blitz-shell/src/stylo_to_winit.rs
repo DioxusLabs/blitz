@@ -1,5 +1,6 @@
+use blitz_dom::ColorScheme;
 use style::values::computed::ui::CursorKind as StyloCursorKind;
-use winit::window::CursorIcon as WinitCursor;
+use winit::window::{CursorIcon as WinitCursor, Theme};
 
 pub(crate) fn cursor(cursor: StyloCursorKind) -> WinitCursor {
     match cursor {
@@ -44,5 +45,12 @@ pub(crate) fn cursor(cursor: StyloCursorKind) -> WinitCursor {
 
             WinitCursor::Default
         }
+    }
+}
+
+pub(crate) fn theme_to_color_scheme(theme: Theme) -> ColorScheme {
+    match theme {
+        Theme::Light => ColorScheme::Light,
+        Theme::Dark => ColorScheme::Dark,
     }
 }
