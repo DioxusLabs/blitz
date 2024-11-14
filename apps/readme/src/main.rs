@@ -3,7 +3,7 @@ use blitz_dom::net::Resource;
 use blitz_dom::HtmlDocument;
 use blitz_net::Provider;
 use blitz_traits::net::SharedCallback;
-use markdown::{markdown_to_html, MARKDOWN_STYLESHEET};
+use markdown::{markdown_to_html, BLITZ_MD_STYLES, GITHUB_MD_STYLES};
 use reqwest::header::HeaderName;
 
 use dioxus_native::Callback;
@@ -33,7 +33,8 @@ fn main() {
     let mut stylesheets = Vec::new();
     if is_md {
         html = markdown_to_html(html);
-        stylesheets.push(String::from(MARKDOWN_STYLESHEET));
+        stylesheets.push(String::from(GITHUB_MD_STYLES));
+        stylesheets.push(String::from(BLITZ_MD_STYLES));
     }
 
     // println!("{html}");
