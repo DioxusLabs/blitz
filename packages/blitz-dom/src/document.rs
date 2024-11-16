@@ -16,6 +16,7 @@ use selectors::{matching::QuirksMode, Element};
 use slab::Slab;
 use std::any::Any;
 use std::collections::{BTreeMap, Bound, HashMap, HashSet, VecDeque};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use style::selector_parser::ServoElementSnapshot;
 use style::servo::media_queries::FontMetricsProvider;
 use style::servo_arc::Arc as ServoArc;
@@ -74,6 +75,8 @@ pub trait DocumentLike: AsRef<Document> + AsMut<Document> + Into<Document> + 'st
 }
 
 pub struct Document {
+    id: usize,
+
     /// A bump-backed tree
     ///
     /// Both taffy and stylo traits are implemented for this.
@@ -386,6 +389,9 @@ impl Document {
     }
 
     pub fn with_font_ctx(viewport: Viewport, mut font_ctx: FontContext) -> Self {
+        static ID_GENERATOR: AtomicUsize = AtomicUsize::new(1);
+
+        let id = ID_GENERATOR.fetch_add(1, Ordering::SeqCst);
         let device = viewport.make_device();
         let stylist = Stylist::new(device, QuirksMode::NoQuirks);
         let snapshots = SnapshotMap::new();
@@ -404,6 +410,7 @@ impl Document {
             .register_fonts(crate::BULLET_FONT.to_vec());
 
         let mut doc = Self {
+            id,
             guard,
             nodes,
             stylist,
@@ -440,6 +447,10 @@ impl Document {
 
     pub fn tree(&self) -> &Slab<Node> {
         &self.nodes
+    }
+
+    pub fn id(&self) -> usize {
+        self.id
     }
 
     pub fn get_node(&self, node_id: usize) -> Option<&Node> {
