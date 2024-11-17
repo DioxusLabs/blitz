@@ -228,7 +228,7 @@ impl DocumentLike for Document {
                             Key::Character(c)
                                 if action_mod && matches!(c.as_str(), "c" | "x" | "v") =>
                             {
-                                use clipboard_rs::{Clipboard, ClipboardContext};
+                                use arboard::Clipboard;
                                 use parley::layout::editor::ActiveText;
 
                                 match c.to_lowercase().as_str() {
@@ -236,7 +236,7 @@ impl DocumentLike for Document {
                                         if let ActiveText::Selection(text) =
                                             input_data.editor.active_text()
                                         {
-                                            let cb = ClipboardContext::new().unwrap();
+                                            let mut cb = Clipboard::new().unwrap();
                                             cb.set_text(text.to_owned()).ok();
                                         }
                                     }
@@ -244,13 +244,13 @@ impl DocumentLike for Document {
                                         if let ActiveText::Selection(text) =
                                             input_data.editor.active_text()
                                         {
-                                            let cb = ClipboardContext::new().unwrap();
+                                            let mut cb = Clipboard::new().unwrap();
                                             cb.set_text(text.to_owned()).ok();
                                             transact!(PlainEditorOp::DeleteSelection)
                                         }
                                     }
                                     "v" => {
-                                        let cb = ClipboardContext::new().unwrap();
+                                        let mut cb = Clipboard::new().unwrap();
                                         let text = cb.get_text().unwrap_or_default();
                                         transact!(PlainEditorOp::InsertOrReplaceSelection(
                                             text.into(),

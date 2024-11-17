@@ -31,7 +31,7 @@ taffy = { workspace = true }
 # Linebender dependencies
 parley = { workspace = true }
 peniko = { workspace = true }
-clipboard-rs = { workspace = true }
+arboard = { workspace = true }
 tracing = { workspace = true, optional = true }
 slab = { workspace = true }
 
