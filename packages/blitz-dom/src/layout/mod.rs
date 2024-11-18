@@ -4,7 +4,7 @@
 //! However, in Blitz, we do a style pass then a layout pass.
 //! This is slower, yes, but happens fast enough that it's not a huge issue.
 
-use crate::node::{NodeData, NodeKind, NodeSpecificData};
+use crate::node::{ImageData, NodeData, NodeKind, NodeSpecificData};
 use crate::{
     document::Document,
     image::{image_measure_function, ImageContext},
@@ -223,11 +223,11 @@ impl LayoutPartialTree for Document {
 
                         // Get image's native size
                         let inherent_size = match &element_data.node_specific_data {
-                            NodeSpecificData::Image(data) => taffy::Size {
+                            NodeSpecificData::Image(ImageData::Raster(data)) => taffy::Size {
                                 width: data.image.width() as f32,
                                 height: data.image.height() as f32,
                             },
-                            NodeSpecificData::Svg(svg) => {
+                            NodeSpecificData::Image(ImageData::Svg(svg)) => {
                                 let size = svg.size();
                                 taffy::Size {
                                     width: size.width(),
@@ -238,7 +238,6 @@ impl LayoutPartialTree for Document {
                                 width: 0.0,
                                 height: 0.0,
                             },
-
                             _ => unreachable!(),
                         };
 

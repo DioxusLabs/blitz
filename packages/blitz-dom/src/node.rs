@@ -388,30 +388,30 @@ impl ElementNodeData {
         attr.value.parse::<T>().ok()
     }
 
-    pub fn image_data(&self) -> Option<&ImageData> {
+    pub fn raster_image_data(&self) -> Option<&RasterImageData> {
         match self.node_specific_data {
-            NodeSpecificData::Image(ref data) => Some(data),
+            NodeSpecificData::Image(ImageData::Raster(ref data)) => Some(data),
             _ => None,
         }
     }
 
-    pub fn image_data_mut(&mut self) -> Option<&mut ImageData> {
+    pub fn raster_image_data_mut(&mut self) -> Option<&mut RasterImageData> {
         match self.node_specific_data {
-            NodeSpecificData::Image(ref mut data) => Some(data),
+            NodeSpecificData::Image(ImageData::Raster(ref mut data)) => Some(data),
             _ => None,
         }
     }
 
     pub fn svg_data(&self) -> Option<&usvg::Tree> {
         match self.node_specific_data {
-            NodeSpecificData::Svg(ref data) => Some(data),
+            NodeSpecificData::Image(ImageData::Svg(ref data)) => Some(data),
             _ => None,
         }
     }
 
     pub fn svg_data_mut(&mut self) -> Option<&mut usvg::Tree> {
         match self.node_specific_data {
-            NodeSpecificData::Svg(ref mut data) => Some(data),
+            NodeSpecificData::Image(ImageData::Svg(ref mut data)) => Some(data),
             _ => None,
         }
     }
@@ -499,19 +499,35 @@ impl ElementNodeData {
 }
 
 #[derive(Debug, Clone, PartialEq, Default)]
-pub struct ImageData {
+pub struct RasterImageData {
     /// The raw image data
     pub image: Arc<DynamicImage>,
     /// The resized image data (for the most recent size it's been displayed at)
     pub resized_image: RefCell<Option<Arc<peniko::Image>>>,
 }
-
-impl ImageData {
+impl RasterImageData {
     pub fn new(image: Arc<DynamicImage>) -> Self {
         Self {
             image,
             resized_image: RefCell::new(None),
         }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub enum ImageData {
+    Raster(RasterImageData),
+    Svg(usvg::Tree),
+    None,
+}
+impl From<Arc<DynamicImage>> for ImageData {
+    fn from(value: Arc<DynamicImage>) -> Self {
+        Self::Raster(RasterImageData::new(value))
+    }
+}
+impl From<usvg::Tree> for ImageData {
+    fn from(value: usvg::Tree) -> Self {
+        Self::Svg(value)
     }
 }
 
@@ -522,16 +538,14 @@ pub enum Status {
     Loading,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone)]
 pub struct BackgroundImageData {
     /// The url of the background image
     pub url: ServoArc<Url>,
     /// The loading status of the background image
     pub status: Status,
-    /// The raw image data
-    pub image: Option<Arc<DynamicImage>>,
-    /// The resized image data (for the most recent size it's been displayed at)
-    pub resized_image: RefCell<Option<Arc<peniko::Image>>>,
+    /// The image data
+    pub image: ImageData,
 }
 
 impl BackgroundImageData {
@@ -539,8 +553,7 @@ impl BackgroundImageData {
         Self {
             url,
             status: Status::Loading,
-            image: None,
-            resized_image: RefCell::new(None),
+            image: ImageData::None,
         }
     }
 }
@@ -587,8 +600,6 @@ impl TextInputData {
 pub enum NodeSpecificData {
     /// The element's image content (\<img\> element's only)
     Image(ImageData),
-    /// The element's image content (\<img\> element's only)
-    Svg(usvg::Tree),
     /// Pre-computed table layout data
     TableRoot(Arc<TableContext>),
     /// Parley text editor (text inputs)
@@ -602,8 +613,11 @@ pub enum NodeSpecificData {
 impl std::fmt::Debug for NodeSpecificData {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            NodeSpecificData::Image(_) => f.write_str("NodeSpecificData::Image"),
-            NodeSpecificData::Svg(_) => f.write_str("NodeSpecificData::Svg"),
+            NodeSpecificData::Image(data) => match data {
+                ImageData::Raster(_) => f.write_str("NodeSpecificData::Image(Raster)"),
+                ImageData::Svg(_) => f.write_str("NodeSpecificData::Image(Svg)"),
+                ImageData::None => f.write_str("NodeSpecificData::Image(None)"),
+            },
             NodeSpecificData::TableRoot(_) => f.write_str("NodeSpecificData::TableRoot"),
             NodeSpecificData::TextInput(_) => f.write_str("NodeSpecificData::TextInput"),
             NodeSpecificData::CheckboxInput(_) => f.write_str("NodeSpecificData::CheckboxInput"),

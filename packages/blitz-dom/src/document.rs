@@ -773,7 +773,7 @@ impl Document {
                 match kind {
                     ImageType::Image => {
                         node.element_data_mut().unwrap().node_specific_data =
-                            NodeSpecificData::Image(ImageData::new(image))
+                            NodeSpecificData::Image(ImageData::from(image))
                     }
                     ImageType::Background => {
                         if let Some(bg_image) = node
@@ -781,7 +781,7 @@ impl Document {
                             .and_then(|el| el.background_image.as_mut())
                         {
                             bg_image.status = Status::Ok;
-                            bg_image.image = Some(image);
+                            bg_image.image = ImageData::from(image);
                         }
                     }
                 }
@@ -792,10 +792,16 @@ impl Document {
                 match kind {
                     ImageType::Image => {
                         node.element_data_mut().unwrap().node_specific_data =
-                            NodeSpecificData::Svg(*tree)
+                            NodeSpecificData::Image(ImageData::Svg(*tree));
                     }
                     ImageType::Background => {
-                        eprintln!("TODO: implement SVG background images");
+                        if let Some(bg_image) = node
+                            .element_data_mut()
+                            .and_then(|el| el.background_image.as_mut())
+                        {
+                            bg_image.status = Status::Ok;
+                            bg_image.image = ImageData::Svg(*tree);
+                        }
                     }
                 }
             }

@@ -588,7 +588,7 @@ impl VelloSceneGenerator<'_> {
             image: element
                 .element_data()
                 .unwrap()
-                .image_data()
+                .raster_image_data()
                 .map(|data| &*data.image),
             svg: element.element_data().unwrap().svg_data(),
             text_input: element.element_data().unwrap().text_input_data(),
@@ -722,7 +722,7 @@ impl ElementCx<'_> {
                 .element
                 .element_data()
                 .unwrap()
-                .image_data()
+                .raster_image_data()
                 .unwrap()
                 .resized_image
                 .borrow_mut();
