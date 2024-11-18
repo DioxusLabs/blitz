@@ -277,14 +277,14 @@ fn flush_pseudo_elements(doc: &mut Document, node_id: usize) {
         (1, before_style, before_node_id),
         (0, after_style, after_node_id),
     ] {
-        // Delete psuedo element if it exists
-        if let Some(pe_node_id) = pe_node_id {
+        // Delete psuedo element if it exists but shouldn't
+        if let (Some(pe_node_id), None) = (pe_node_id, &pe_style) {
             doc.remove_and_drop_node(pe_node_id);
             doc.nodes[node_id].set_pe_by_index(idx, None);
         }
 
-        // (Re)create pseudo element if it should exist
-        if let Some(pe_style) = pe_style {
+        // Create pseudo element if it should exist but doesn't
+        if let (None, Some(pe_style)) = (pe_node_id, &pe_style) {
             let new_node_id = doc.create_node(NodeData::AnonymousBlock(ElementNodeData::new(
                 DUMMY_NAME,
                 Vec::new(),
@@ -305,11 +305,33 @@ fn flush_pseudo_elements(doc: &mut Document, node_id: usize) {
             }
 
             let mut element_data = ElementData::default();
-            element_data.styles.primary = Some(pe_style);
+            element_data.styles.primary = Some(pe_style.clone());
             element_data.set_restyled();
             *doc.nodes[new_node_id].stylo_element_data.borrow_mut() = Some(element_data);
 
             doc.nodes[node_id].set_pe_by_index(idx, Some(new_node_id));
+        }
+
+        // Else: Update psuedo element
+        if let (Some(pe_node_id), Some(pe_style)) = (pe_node_id, pe_style) {
+            // TODO: Update content
+
+            let mut node_styles = doc.nodes[pe_node_id].stylo_element_data.borrow_mut();
+
+            if &**(*node_styles)
+                .as_ref()
+                .unwrap()
+                .styles
+                .primary
+                .as_ref()
+                .unwrap() as *const _
+                != &*pe_style as *const _
+            {
+                let mut element_data = ElementData::default();
+                element_data.styles.primary = Some(pe_style);
+                element_data.set_restyled();
+                *node_styles = Some(element_data);
+            }
         }
     }
 }
