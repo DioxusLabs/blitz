@@ -35,6 +35,16 @@ const DUMMY_NAME: QualName = QualName {
     local: local_name!("div"),
 };
 
+fn push_children_and_pseudos(layout_children: &mut Vec<usize>, node: &Node) {
+    if let Some(before) = node.before {
+        layout_children.push(before);
+    }
+    layout_children.extend_from_slice(&node.children);
+    if let Some(after) = node.after {
+        layout_children.push(after);
+    }
+}
+
 pub(crate) fn collect_layout_children(
     doc: &mut Document,
     container_node_id: usize,
@@ -173,13 +183,20 @@ pub(crate) fn collect_layout_children(
                     .downcast_element_mut()
                     .unwrap()
                     .inline_layout_data = Some(Box::new(inline_layout));
-                return layout_children.extend_from_slice(&ilayout_children);
+                if let Some(before) = doc.nodes[container_node_id].before {
+                    layout_children.push(before);
+                }
+                layout_children.extend_from_slice(&ilayout_children);
+                if let Some(after) = doc.nodes[container_node_id].after {
+                    layout_children.push(after);
+                }
+                return;
             }
 
             // If the children are either all inline or all block then simply return the regular children
             // as the layout children
             if (all_block | all_inline) & !has_contents {
-                return layout_children.extend_from_slice(&doc.nodes[container_node_id].children);
+                return push_children_and_pseudos(layout_children, &doc.nodes[container_node_id]);
             }
 
             fn block_item_needs_wrap(
@@ -210,7 +227,7 @@ pub(crate) fn collect_layout_children(
                 });
 
             if !has_text_node_or_contents {
-                return layout_children.extend_from_slice(&doc.nodes[container_node_id].children);
+                return push_children_and_pseudos(layout_children, &doc.nodes[container_node_id]);
             }
 
             fn flex_or_grid_item_needs_wrap(
@@ -237,17 +254,17 @@ pub(crate) fn collect_layout_children(
                 .downcast_element_mut()
                 .unwrap()
                 .node_specific_data = NodeSpecificData::TableRoot(Arc::new(table_context));
-            layout_children.extend_from_slice(&tlayout_children);
-        }
-
-        _ => {
             if let Some(before) = doc.nodes[container_node_id].before {
                 layout_children.push(before);
             }
-            layout_children.extend_from_slice(&doc.nodes[container_node_id].children);
+            layout_children.extend_from_slice(&tlayout_children);
             if let Some(after) = doc.nodes[container_node_id].after {
                 layout_children.push(after);
             }
+        }
+
+        _ => {
+            push_children_and_pseudos(layout_children, &doc.nodes[container_node_id]);
         }
     }
 }

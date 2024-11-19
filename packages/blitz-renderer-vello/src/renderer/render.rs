@@ -627,8 +627,8 @@ fn compute_background_size(
             }
         }
         BackgroundSize::Cover => {
-            let x_ratio = container_w as f32 / bg_w as f32;
-            let y_ratio = container_h as f32 / bg_h as f32;
+            let x_ratio = container_w / bg_w;
+            let y_ratio = container_h / bg_h;
 
             let ratio = if x_ratio < 1.0 || y_ratio < 1.0 {
                 x_ratio.min(y_ratio)
@@ -639,8 +639,8 @@ fn compute_background_size(
             (bg_w * ratio, bg_h * ratio)
         }
         BackgroundSize::Contain => {
-            let x_ratio = container_w as f32 / bg_w as f32;
-            let y_ratio = container_h as f32 / bg_h as f32;
+            let x_ratio = container_w / bg_w;
+            let y_ratio = container_h / bg_h;
 
             let ratio = if x_ratio < 1.0 || y_ratio < 1.0 {
                 x_ratio.max(y_ratio)
