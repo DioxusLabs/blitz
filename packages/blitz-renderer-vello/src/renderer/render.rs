@@ -11,6 +11,7 @@ use blitz_dom::{local_name, Document, Node};
 use blitz_traits::Devtools;
 
 use parley::Line;
+use style::values::computed::{BackgroundSize, Length};
 use style::{
     dom::TElement,
     properties::{
@@ -46,7 +47,7 @@ use style::values::generics::image::{
 };
 use style::values::specified::percentage::ToPercentage;
 use taffy::Layout;
-use vello::kurbo::{BezPath, Cap, Join};
+use vello::kurbo::{BezPath, Cap, Join, Size};
 use vello::peniko::Gradient;
 use vello::{
     kurbo::{Affine, Point, Rect, Shape, Stroke, Vec2},
@@ -593,6 +594,70 @@ impl VelloSceneGenerator<'_> {
     }
 }
 
+fn compute_background_size(
+    style: &ComputedValues,
+    container_w: f32,
+    container_h: f32,
+    bg_idx: usize,
+    bg_w: f32,
+    bg_h: f32,
+    scale: f32,
+) -> vello::kurbo::Size {
+    use style::values::generics::length::GenericLengthPercentageOrAuto as Lpa;
+    let bg_size = &style.get_background().background_size.0[bg_idx];
+
+    let (width, height): (f32, f32) = match bg_size {
+        BackgroundSize::ExplicitSize { width, height } => {
+            let width = width.map(|w| w.0.resolve(Length::new(container_w)));
+            let height = height.map(|h| h.0.resolve(Length::new(container_h)));
+
+            match (width, height) {
+                (Lpa::LengthPercentage(width), Lpa::LengthPercentage(height)) => {
+                    (width.px(), height.px())
+                }
+                (Lpa::LengthPercentage(width), Lpa::Auto) => {
+                    let height = (width.px() / bg_w) * bg_h;
+                    (width.px(), height)
+                }
+                (Lpa::Auto, Lpa::LengthPercentage(height)) => {
+                    let width = (height.px() / bg_h) * bg_w;
+                    (width, height.px())
+                }
+                (Lpa::Auto, Lpa::Auto) => (bg_w * scale, bg_h * scale),
+            }
+        }
+        BackgroundSize::Cover => {
+            let x_ratio = container_w as f32 / bg_w as f32;
+            let y_ratio = container_h as f32 / bg_h as f32;
+
+            let ratio = if x_ratio < 1.0 || y_ratio < 1.0 {
+                x_ratio.min(y_ratio)
+            } else {
+                x_ratio.max(y_ratio)
+            };
+
+            (bg_w * ratio, bg_h * ratio)
+        }
+        BackgroundSize::Contain => {
+            let x_ratio = container_w as f32 / bg_w as f32;
+            let y_ratio = container_h as f32 / bg_h as f32;
+
+            let ratio = if x_ratio < 1.0 || y_ratio < 1.0 {
+                x_ratio.max(y_ratio)
+            } else {
+                x_ratio.min(y_ratio)
+            };
+
+            (bg_w * ratio, bg_h * ratio)
+        }
+    };
+
+    Size {
+        width: width as f64,
+        height: height as f64,
+    }
+}
+
 /// Ensure that the `resized_image` field has a correctly sized image
 fn ensure_resized_image(data: &RasterImageData, width: u32, height: u32) {
     let mut resized_image = data.resized_image.borrow_mut();
@@ -774,21 +839,41 @@ impl ElementCx<'_> {
             return;
         };
 
-        let width = self.frame.inner_rect.width() as u32;
-        let height = self.frame.inner_rect.height() as u32;
+        let frame_w = self.frame.inner_rect.width() as f32;
+        let frame_h = self.frame.inner_rect.height() as f32;
+
         let svg_size = svg.size();
+        let bg_size = compute_background_size(
+            &self.style,
+            frame_w,
+            frame_h,
+            idx,
+            svg_size.width(),
+            svg_size.height(),
+            self.scale as f32,
+        );
 
-        let x_ratio = width as f64 / svg_size.width() as f64;
-        let y_ratio = height as f64 / svg_size.height() as f64;
+        let x_ratio = bg_size.width as f64 / svg_size.width() as f64;
+        let y_ratio = bg_size.height as f64 / svg_size.height() as f64;
 
-        let ratio = if x_ratio < 1.0 || y_ratio < 1.0 {
-            x_ratio.min(y_ratio)
-        } else {
-            x_ratio.max(y_ratio)
-        };
+        let padding = self.element.final_layout.padding;
 
-        let transform = Affine::translate((self.pos.x * self.scale, self.pos.y * self.scale))
-            .pre_scale_non_uniform(ratio, ratio);
+        let bg_pos_x = self.style.get_background().background_position_x.0[idx]
+            .resolve(Length::new(
+                frame_w - svg_size.width() - padding.left - padding.right,
+            ))
+            .px() as f64;
+        let bg_pos_y = self.style.get_background().background_position_y.0[idx]
+            .resolve(Length::new(
+                frame_h - svg_size.height() - padding.top - padding.bottom,
+            ))
+            .px() as f64;
+
+        let transform = Affine::translate((
+            (self.pos.x * self.scale) + bg_pos_x,
+            (self.pos.y * self.scale) + bg_pos_y,
+        ))
+        .pre_scale_non_uniform(x_ratio, y_ratio);
 
         let fragment = vello_svg::render_tree(svg);
         scene.append(&fragment, Some(transform));
