@@ -117,8 +117,12 @@ pub(crate) fn collect_layout_children(
         collect_list_item_children(doc, &mut index, reversed, container_node_id);
     }
 
-    if doc.nodes[container_node_id].children.is_empty() {
-        return;
+    // Skip further construction if the node has no children or psuedo-children
+    {
+        let node = &doc.nodes[container_node_id];
+        if node.children.is_empty() && node.before.is_none() && node.after.is_none() {
+            return;
+        }
     }
 
     let container_display = doc.nodes[container_node_id].display_style().unwrap_or(
