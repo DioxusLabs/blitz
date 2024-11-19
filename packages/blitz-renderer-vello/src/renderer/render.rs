@@ -572,7 +572,24 @@ impl VelloSceneGenerator<'_> {
 
         // the bezpaths for every element are (potentially) cached (not yet, tbd)
         // By performing the transform, we prevent the cache from becoming invalid when the page shifts around
-        let transform = Affine::translate((pos.x * scale, pos.y * scale));
+        let mut transform = Affine::translate((pos.x * scale, pos.y * scale));
+
+        // Apply CSS transform property (where transforms are 2d)
+        //
+        // TODO: Handle hit testing correctly for transformed nodes
+        // TODO: Implement nested transforms
+        let (t, has_3d) = &style
+            .get_box()
+            .transform
+            .to_transform_3d_matrix(None)
+            .unwrap();
+        if !has_3d {
+            // See: https://drafts.csswg.org/css-transforms-2/#two-dimensional-subset
+            // And https://docs.rs/kurbo/latest/kurbo/struct.Affine.html#method.new
+            let kurbo_transform =
+                Affine::new([t.m11, t.m12, t.m21, t.m22, t.m41, t.m42].map(|v| v as f64));
+            transform *= kurbo_transform;
+        }
 
         // todo: maybe cache this so we don't need to constantly be figuring it out
         // It is quite a bit of math to calculate during render/traverse
