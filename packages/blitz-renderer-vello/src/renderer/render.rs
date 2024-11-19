@@ -765,31 +765,34 @@ impl ElementCx<'_> {
 
     fn draw_svg_bg_image(&self, scene: &mut Scene) {
         let elem_data = self.element.element_data().unwrap();
-        let Some(bg_image) = elem_data.background_image.as_ref() else {
-            return;
-        };
-        let ImageData::Svg(svg) = &bg_image.image else {
-            return;
-        };
 
-        let width = self.frame.inner_rect.width() as u32;
-        let height = self.frame.inner_rect.height() as u32;
-        let svg_size = svg.size();
+        for bg_image in &elem_data.background_images {
+            let Some(bg_image) = bg_image.as_ref() else {
+                break;
+            };
+            let ImageData::Svg(svg) = &bg_image.image else {
+                break;
+            };
 
-        let x_ratio = width as f64 / svg_size.width() as f64;
-        let y_ratio = height as f64 / svg_size.height() as f64;
+            let width = self.frame.inner_rect.width() as u32;
+            let height = self.frame.inner_rect.height() as u32;
+            let svg_size = svg.size();
 
-        let ratio = if x_ratio < 1.0 || y_ratio < 1.0 {
-            x_ratio.min(y_ratio)
-        } else {
-            x_ratio.max(y_ratio)
-        };
+            let x_ratio = width as f64 / svg_size.width() as f64;
+            let y_ratio = height as f64 / svg_size.height() as f64;
 
-        let transform = Affine::translate((self.pos.x * self.scale, self.pos.y * self.scale))
-            .pre_scale_non_uniform(ratio, ratio);
+            let ratio = if x_ratio < 1.0 || y_ratio < 1.0 {
+                x_ratio.min(y_ratio)
+            } else {
+                x_ratio.max(y_ratio)
+            };
 
-        let fragment = vello_svg::render_tree(svg);
-        scene.append(&fragment, Some(transform));
+            let transform = Affine::translate((self.pos.x * self.scale, self.pos.y * self.scale))
+                .pre_scale_non_uniform(ratio, ratio);
+
+            let fragment = vello_svg::render_tree(svg);
+            scene.append(&fragment, Some(transform));
+        }
     }
 
     fn draw_image(&self, scene: &mut Scene) {
@@ -811,11 +814,13 @@ impl ElementCx<'_> {
 
         let elem_data = self.element.element_data().unwrap();
 
-        if let Some(bg_image) = elem_data.background_image.as_ref() {
-            if let ImageData::Raster(image_data) = &bg_image.image {
-                ensure_resized_image(image_data, width, height);
-                let resized_image = image_data.resized_image.borrow();
-                scene.draw_image(resized_image.as_ref().unwrap(), self.transform);
+        for bg_image in &elem_data.background_images {
+            if let Some(bg_image) = bg_image.as_ref() {
+                if let ImageData::Raster(image_data) = &bg_image.image {
+                    ensure_resized_image(image_data, width, height);
+                    let resized_image = image_data.resized_image.borrow();
+                    scene.draw_image(resized_image.as_ref().unwrap(), self.transform);
+                }
             }
         }
     }

@@ -775,10 +775,10 @@ impl Document {
                         node.element_data_mut().unwrap().node_specific_data =
                             NodeSpecificData::Image(ImageData::from(image))
                     }
-                    ImageType::Background => {
-                        if let Some(bg_image) = node
+                    ImageType::Background(idx) => {
+                        if let Some(Some(bg_image)) = node
                             .element_data_mut()
-                            .and_then(|el| el.background_image.as_mut())
+                            .and_then(|el| el.background_images.get_mut(idx))
                         {
                             bg_image.status = Status::Ok;
                             bg_image.image = ImageData::from(image);
@@ -794,10 +794,10 @@ impl Document {
                         node.element_data_mut().unwrap().node_specific_data =
                             NodeSpecificData::Image(ImageData::Svg(*tree));
                     }
-                    ImageType::Background => {
-                        if let Some(bg_image) = node
+                    ImageType::Background(idx) => {
+                        if let Some(Some(bg_image)) = node
                             .element_data_mut()
-                            .and_then(|el| el.background_image.as_mut())
+                            .and_then(|el| el.background_images.get_mut(idx))
                         {
                             bg_image.status = Status::Ok;
                             bg_image.image = ImageData::Svg(*tree);

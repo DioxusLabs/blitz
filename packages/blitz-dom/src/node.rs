@@ -334,7 +334,7 @@ pub struct ElementNodeData {
     ///   - The text editor for input/textarea elements
     pub node_specific_data: NodeSpecificData,
 
-    pub background_image: Option<Box<BackgroundImageData>>,
+    pub background_images: Vec<Option<BackgroundImageData>>,
 
     /// Parley text layout (elements with inline inner display mode only)
     pub inline_layout_data: Option<Box<TextLayout>>,
@@ -367,7 +367,7 @@ impl ElementNodeData {
             list_item_data: None,
             node_specific_data: NodeSpecificData::None,
             template_contents: None,
-            background_image: None,
+            background_images: Vec::new(),
             // listeners: FxHashSet::default(),
         };
         data.flush_is_focussable();
