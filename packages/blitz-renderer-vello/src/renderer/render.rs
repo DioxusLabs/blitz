@@ -4,8 +4,8 @@ use std::sync::Arc;
 use super::multicolor_rounded_rect::{Edge, ElementFrame};
 use crate::util::{GradientSlice, StyloGradient, ToVelloColor};
 use blitz_dom::node::{
-    ListItemLayout, ListItemLayoutPosition, Marker, NodeData, TextBrush, TextInputData,
-    TextNodeData,
+    ImageData, ListItemLayout, ListItemLayoutPosition, Marker, NodeData, RasterImageData,
+    TextBrush, TextInputData, TextNodeData,
 };
 use blitz_dom::{local_name, Document, Node};
 use blitz_traits::Devtools;
@@ -38,7 +38,7 @@ use style::{
     OwnedSlice,
 };
 
-use image::{imageops::FilterType, DynamicImage};
+use image::imageops::FilterType;
 use parley::layout::PositionedLayoutItem;
 use style::values::generics::color::GenericColor;
 use style::values::generics::image::{
@@ -423,7 +423,7 @@ impl VelloSceneGenerator<'_> {
         cx.stroke_effects(scene);
         cx.stroke_outline(scene);
         cx.draw_outset_box_shadow(scene);
-        cx.stroke_frame(scene);
+        cx.draw_background(scene);
         cx.draw_inset_box_shadow(scene);
         cx.stroke_border(scene);
         cx.stroke_devtools(scene);
@@ -585,16 +585,40 @@ impl VelloSceneGenerator<'_> {
             pos,
             element,
             transform,
-            image: element
-                .element_data()
-                .unwrap()
-                .raster_image_data()
-                .map(|data| &*data.image),
             svg: element.element_data().unwrap().svg_data(),
             text_input: element.element_data().unwrap().text_input_data(),
             list_item: element.element_data().unwrap().list_item_data.as_deref(),
             devtools: &self.devtools,
         }
+    }
+}
+
+/// Ensure that the `resized_image` field has a correctly sized image
+fn ensure_resized_image(data: &RasterImageData, width: u32, height: u32) {
+    let mut resized_image = data.resized_image.borrow_mut();
+
+    if resized_image.is_none()
+        || resized_image
+            .as_ref()
+            .is_some_and(|img| img.width != width || img.height != height)
+    {
+        let image_data = data
+            .image
+            .clone()
+            .resize_to_fill(width, height, FilterType::Lanczos3)
+            .into_rgba8()
+            .into_raw();
+
+        let peniko_image = peniko::Image {
+            data: peniko::Blob::new(Arc::new(image_data)),
+            format: peniko::Format::Rgba8,
+            width,
+            height,
+            alpha: 255,
+            extend: peniko::Extend::Pad,
+        };
+
+        *resized_image = Some(Arc::new(peniko_image));
     }
 }
 
@@ -606,7 +630,6 @@ struct ElementCx<'a> {
     scale: f64,
     element: &'a Node,
     transform: Affine,
-    image: Option<&'a DynamicImage>,
     svg: Option<&'a usvg::Tree>,
     text_input: Option<&'a TextInputData>,
     list_item: Option<&'a ListItemLayout>,
@@ -614,6 +637,35 @@ struct ElementCx<'a> {
 }
 
 impl ElementCx<'_> {
+    fn with_maybe_clip(
+        &self,
+        scene: &mut Scene,
+        mut condition: impl FnMut() -> bool,
+        mut cb: impl FnMut(&ElementCx<'_>, &mut Scene),
+    ) {
+        let clip_wanted = condition();
+        let mut clips_available = false;
+        if clip_wanted {
+            CLIPS_WANTED.fetch_add(1, atomic::Ordering::SeqCst);
+            clips_available = CLIPS_USED.load(atomic::Ordering::SeqCst) <= CLIP_LIMIT;
+        }
+        let do_clip = clip_wanted & clips_available;
+
+        if do_clip {
+            scene.push_layer(Mix::Clip, 1.0, self.transform, &self.frame.shadow_clip());
+            CLIPS_USED.fetch_add(1, atomic::Ordering::SeqCst);
+            let depth = CLIP_DEPTH.fetch_add(1, atomic::Ordering::SeqCst) + 1;
+            CLIP_DEPTH_USED.fetch_max(depth, atomic::Ordering::SeqCst);
+        }
+
+        cb(self, scene);
+
+        if do_clip {
+            scene.pop_layer();
+            CLIP_DEPTH.fetch_sub(1, atomic::Ordering::SeqCst);
+        }
+    }
+
     fn stroke_text<'a>(
         &self,
         scene: &mut Scene,
@@ -711,46 +763,60 @@ impl ElementCx<'_> {
         scene.append(&fragment, Some(transform));
     }
 
-    fn draw_image(&self, scene: &mut Scene) {
-        let transform = Affine::translate((self.pos.x * self.scale, self.pos.y * self.scale));
+    fn draw_svg_bg_image(&self, scene: &mut Scene) {
+        let elem_data = self.element.element_data().unwrap();
+        let Some(bg_image) = elem_data.background_image.as_ref() else {
+            return;
+        };
+        let ImageData::Svg(svg) = &bg_image.image else {
+            return;
+        };
 
         let width = self.frame.inner_rect.width() as u32;
         let height = self.frame.inner_rect.height() as u32;
+        let svg_size = svg.size();
 
-        if let Some(image) = self.image {
-            let mut resized_image = self
-                .element
-                .element_data()
-                .unwrap()
-                .raster_image_data()
-                .unwrap()
-                .resized_image
-                .borrow_mut();
+        let x_ratio = width as f64 / svg_size.width() as f64;
+        let y_ratio = height as f64 / svg_size.height() as f64;
 
-            if resized_image.is_none()
-                || resized_image
-                    .as_ref()
-                    .is_some_and(|img| img.width != width || img.height != height)
-            {
-                let image_data = image
-                    .clone()
-                    .resize_to_fill(width, height, FilterType::Lanczos3)
-                    .into_rgba8()
-                    .into_raw();
+        let ratio = if x_ratio < 1.0 || y_ratio < 1.0 {
+            x_ratio.min(y_ratio)
+        } else {
+            x_ratio.max(y_ratio)
+        };
 
-                let peniko_image = peniko::Image {
-                    data: peniko::Blob::new(Arc::new(image_data)),
-                    format: peniko::Format::Rgba8,
-                    width,
-                    height,
-                    alpha: 255,
-                    extend: peniko::Extend::Pad,
-                };
+        let transform = Affine::translate((self.pos.x * self.scale, self.pos.y * self.scale))
+            .pre_scale_non_uniform(ratio, ratio);
 
-                *resized_image = Some(Arc::new(peniko_image));
+        let fragment = vello_svg::render_tree(svg);
+        scene.append(&fragment, Some(transform));
+    }
+
+    fn draw_image(&self, scene: &mut Scene) {
+        let width = self.frame.inner_rect.width() as u32;
+        let height = self.frame.inner_rect.height() as u32;
+
+        let elem_data = self.element.element_data().unwrap();
+
+        if let Some(image_data) = elem_data.raster_image_data() {
+            ensure_resized_image(image_data, width, height);
+            let resized_image = image_data.resized_image.borrow();
+            scene.draw_image(resized_image.as_ref().unwrap(), self.transform);
+        }
+    }
+
+    fn draw_raster_bg_image(&self, scene: &mut Scene) {
+        let width = self.frame.inner_rect.width() as u32;
+        let height = self.frame.inner_rect.height() as u32;
+
+        let elem_data = self.element.element_data().unwrap();
+
+        if let Some(bg_image) = elem_data.background_image.as_ref() {
+            if let ImageData::Raster(image_data) = &bg_image.image {
+                ensure_resized_image(image_data, width, height);
+                let resized_image = image_data.resized_image.borrow();
+                scene.draw_image(resized_image.as_ref().unwrap(), self.transform);
             }
-
-            scene.draw_image(resized_image.as_ref().unwrap(), transform);
         }
     }
 
@@ -778,7 +844,7 @@ impl ElementCx<'_> {
         // }
     }
 
-    fn stroke_frame(&self, scene: &mut Scene) {
+    fn draw_background(&self, scene: &mut Scene) {
         use GenericImage::*;
 
         // Draw background color (if any)
@@ -791,26 +857,8 @@ impl ElementCx<'_> {
                 }
                 Gradient(gradient) => self.draw_gradient_frame(scene, gradient),
                 Url(_) => {
-                    //
-                    // todo!("Implement background drawing for Image::Url")
-                    println!("Implement background drawing for Image::Url");
-                    // let background = self.style.get_background();
-
-                    // todo: handle non-absolute colors
-                    // let bg_color = background.background_color.clone();
-                    // let bg_color = bg_color.as_absolute().unwrap();
-                    // let bg_color = Color::RED;
-                    // let shape = self.frame.outer_rect;
-
-                    // // Fill the color
-                    // scene.fill(
-                    //     Fill::NonZero,
-                    //     self.transform,
-                    //     Color::RED,
-                    //     // bg_color.as_vello(),
-                    //     Option::None,
-                    //     &shape,
-                    // );
+                    self.draw_raster_bg_image(scene);
+                    self.draw_svg_bg_image(scene);
                 }
                 PaintWorklet(_) => todo!("Implement background drawing for Image::PaintWorklet"),
                 CrossFade(_) => todo!("Implement background drawing for Image::CrossFade"),
@@ -1122,51 +1170,41 @@ impl ElementCx<'_> {
 
         // TODO: Only apply clip if element has transparency
         let has_outset_shadow = box_shadow.iter().any(|s| !s.inset);
-        if has_outset_shadow {
-            CLIPS_WANTED.fetch_add(1, atomic::Ordering::SeqCst);
-            let clips_available = CLIPS_USED.load(atomic::Ordering::SeqCst) <= CLIP_LIMIT;
-            if clips_available {
-                scene.push_layer(Mix::Clip, 1.0, self.transform, &self.frame.shadow_clip());
-                CLIPS_USED.fetch_add(1, atomic::Ordering::SeqCst);
-                let depth = CLIP_DEPTH.fetch_add(1, atomic::Ordering::SeqCst) + 1;
-                CLIP_DEPTH_USED.fetch_max(depth, atomic::Ordering::SeqCst);
-            }
-        }
+        self.with_maybe_clip(
+            scene,
+            || has_outset_shadow,
+            |elem_cx, scene| {
+                for shadow in box_shadow.iter().filter(|s| !s.inset) {
+                    let shadow_color = shadow.base.color.as_vello();
+                    if shadow_color != Color::TRANSPARENT {
+                        let transform = elem_cx.transform.then_translate(Vec2 {
+                            x: shadow.base.horizontal.px() as f64,
+                            y: shadow.base.vertical.px() as f64,
+                        });
 
-        for shadow in box_shadow.iter().filter(|s| !s.inset) {
-            let shadow_color = shadow.base.color.as_vello();
-            if shadow_color != Color::TRANSPARENT {
-                let transform = self.transform.then_translate(Vec2 {
-                    x: shadow.base.horizontal.px() as f64,
-                    y: shadow.base.vertical.px() as f64,
-                });
+                        //TODO draw shadows with matching individual radii instead of averaging
+                        let radius = (elem_cx.frame.border_top_left_radius_height
+                            + elem_cx.frame.border_bottom_left_radius_width
+                            + elem_cx.frame.border_bottom_left_radius_height
+                            + elem_cx.frame.border_bottom_left_radius_width
+                            + elem_cx.frame.border_bottom_right_radius_height
+                            + elem_cx.frame.border_bottom_right_radius_width
+                            + elem_cx.frame.border_top_right_radius_height
+                            + elem_cx.frame.border_top_right_radius_width)
+                            / 8.0;
 
-                //TODO draw shadows with matching individual radii instead of averaging
-                let radius = (self.frame.border_top_left_radius_height
-                    + self.frame.border_bottom_left_radius_width
-                    + self.frame.border_bottom_left_radius_height
-                    + self.frame.border_bottom_left_radius_width
-                    + self.frame.border_bottom_right_radius_height
-                    + self.frame.border_bottom_right_radius_width
-                    + self.frame.border_top_right_radius_height
-                    + self.frame.border_top_right_radius_width)
-                    / 8.0;
-
-                // Fill the color
-                scene.draw_blurred_rounded_rect(
-                    transform,
-                    self.frame.outer_rect,
-                    shadow_color,
-                    radius,
-                    shadow.base.blur.px() as f64,
-                );
-            }
-        }
-
-        if has_outset_shadow {
-            scene.pop_layer();
-            CLIP_DEPTH.fetch_sub(1, atomic::Ordering::SeqCst);
-        }
+                        // Fill the color
+                        scene.draw_blurred_rounded_rect(
+                            transform,
+                            elem_cx.frame.outer_rect,
+                            shadow_color,
+                            radius,
+                            shadow.base.blur.px() as f64,
+                        );
+                    }
+                }
+            },
+        )
     }
 
     fn draw_inset_box_shadow(&self, scene: &mut Scene) {

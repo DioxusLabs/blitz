@@ -19,7 +19,8 @@ use style::{
 
 use crate::{
     node::{
-        ImageData, ListItemLayout, ListItemLayoutPosition, Marker, NodeKind, NodeSpecificData, TextBrush, TextInputData, TextLayout
+        ImageData, ListItemLayout, ListItemLayoutPosition, Marker, NodeKind, NodeSpecificData,
+        TextBrush, TextInputData, TextLayout,
     },
     stylo_to_parley,
     util::parse_svg,
