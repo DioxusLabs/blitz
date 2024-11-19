@@ -3,9 +3,12 @@
 
 use std::sync::atomic::Ordering;
 
+use crate::node::BackgroundImageData;
 use crate::node::Node;
 
+use crate::net::ImageHandler;
 use crate::node::NodeData;
+use crate::util::ImageType;
 use atomic_refcell::{AtomicRef, AtomicRefMut};
 use html5ever::LocalNameStaticSet;
 use html5ever::NamespaceStaticSet;
@@ -22,8 +25,10 @@ use style::invalidation::element::restyle_hints::RestyleHint;
 use style::properties::{Importance, PropertyDeclaration};
 use style::rule_tree::CascadeLevel;
 use style::selector_parser::PseudoElement;
+use style::servo::url::ComputedUrl;
 use style::stylesheets::layer_rule::LayerOrder;
 use style::values::computed::Percentage;
+use style::values::generics::image::Image as StyloImage;
 use style::values::specified::box_::DisplayOutside;
 use style::values::AtomString;
 use style::CaseSensitivityExt;
@@ -73,6 +78,41 @@ impl crate::document::Document {
                 DisplayOutside::TableCaption => crate::node::DisplayOuter::Block,
                 DisplayOutside::InternalTable => crate::node::DisplayOuter::Block,
             };
+
+            // Flush background image from style to dedicated storage on the node
+            // TODO: handle multiple background images
+            if let Some(elem) = node.raw_dom_data.downcast_element_mut() {
+                let style_bgs = &style.get_background().background_image.0;
+                let elem_bgs = &mut elem.background_images;
+
+                let len = style_bgs.len();
+                elem_bgs.resize_with(len, || None);
+
+                for idx in 0..len {
+                    let background_image = &style_bgs[idx];
+                    let new_bg_image = match background_image {
+                        StyloImage::Url(ComputedUrl::Valid(new_url)) => {
+                            let old_bg_image = elem_bgs[idx].as_ref();
+                            let old_bg_image_url = old_bg_image.map(|data| &data.url);
+                            if old_bg_image_url.is_some_and(|old_url| **new_url == **old_url) {
+                                break;
+                            }
+
+                            self.net_provider.fetch(
+                                (**new_url).clone(),
+                                Box::new(ImageHandler::new(node_id, ImageType::Background(idx))),
+                            );
+
+                            let bg_image_data = BackgroundImageData::new(new_url.clone());
+                            Some(bg_image_data)
+                        }
+                        _ => None,
+                    };
+
+                    // Element will always exist due to resize_with above
+                    elem_bgs[idx] = new_bg_image;
+                }
+            }
 
             // Clear Taffy cache
             // TODO: smarter cache invalidation

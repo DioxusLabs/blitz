@@ -19,8 +19,8 @@ use style::{
 
 use crate::{
     node::{
-        ListItemLayout, ListItemLayoutPosition, Marker, NodeKind, NodeSpecificData, TextBrush,
-        TextInputData, TextLayout,
+        ImageData, ListItemLayout, ListItemLayoutPosition, Marker, NodeKind, NodeSpecificData,
+        TextBrush, TextInputData, TextLayout,
     },
     stylo_to_parley,
     util::parse_svg,
@@ -34,6 +34,16 @@ const DUMMY_NAME: QualName = QualName {
     ns: ns!(html),
     local: local_name!("div"),
 };
+
+fn push_children_and_pseudos(layout_children: &mut Vec<usize>, node: &Node) {
+    if let Some(before) = node.before {
+        layout_children.push(before);
+    }
+    layout_children.extend_from_slice(&node.children);
+    if let Some(after) = node.after {
+        layout_children.push(after);
+    }
+}
 
 pub(crate) fn collect_layout_children(
     doc: &mut Document,
@@ -82,7 +92,7 @@ pub(crate) fn collect_layout_children(
                         .unwrap()
                         .element_data_mut()
                         .unwrap()
-                        .node_specific_data = NodeSpecificData::Svg(svg);
+                        .node_specific_data = NodeSpecificData::Image(ImageData::Svg(svg));
                 }
                 Err(err) => {
                     println!("{} SVG parse failed", container_node_id);
@@ -173,13 +183,20 @@ pub(crate) fn collect_layout_children(
                     .downcast_element_mut()
                     .unwrap()
                     .inline_layout_data = Some(Box::new(inline_layout));
-                return layout_children.extend_from_slice(&ilayout_children);
+                if let Some(before) = doc.nodes[container_node_id].before {
+                    layout_children.push(before);
+                }
+                layout_children.extend_from_slice(&ilayout_children);
+                if let Some(after) = doc.nodes[container_node_id].after {
+                    layout_children.push(after);
+                }
+                return;
             }
 
             // If the children are either all inline or all block then simply return the regular children
             // as the layout children
             if (all_block | all_inline) & !has_contents {
-                return layout_children.extend_from_slice(&doc.nodes[container_node_id].children);
+                return push_children_and_pseudos(layout_children, &doc.nodes[container_node_id]);
             }
 
             fn block_item_needs_wrap(
@@ -210,7 +227,7 @@ pub(crate) fn collect_layout_children(
                 });
 
             if !has_text_node_or_contents {
-                return layout_children.extend_from_slice(&doc.nodes[container_node_id].children);
+                return push_children_and_pseudos(layout_children, &doc.nodes[container_node_id]);
             }
 
             fn flex_or_grid_item_needs_wrap(
@@ -237,17 +254,17 @@ pub(crate) fn collect_layout_children(
                 .downcast_element_mut()
                 .unwrap()
                 .node_specific_data = NodeSpecificData::TableRoot(Arc::new(table_context));
-            layout_children.extend_from_slice(&tlayout_children);
-        }
-
-        _ => {
             if let Some(before) = doc.nodes[container_node_id].before {
                 layout_children.push(before);
             }
-            layout_children.extend_from_slice(&doc.nodes[container_node_id].children);
+            layout_children.extend_from_slice(&tlayout_children);
             if let Some(after) = doc.nodes[container_node_id].after {
                 layout_children.push(after);
             }
+        }
+
+        _ => {
+            push_children_and_pseudos(layout_children, &doc.nodes[container_node_id]);
         }
     }
 }
@@ -277,14 +294,14 @@ fn flush_pseudo_elements(doc: &mut Document, node_id: usize) {
         (1, before_style, before_node_id),
         (0, after_style, after_node_id),
     ] {
-        // Delete psuedo element if it exists
-        if let Some(pe_node_id) = pe_node_id {
+        // Delete psuedo element if it exists but shouldn't
+        if let (Some(pe_node_id), None) = (pe_node_id, &pe_style) {
             doc.remove_and_drop_node(pe_node_id);
             doc.nodes[node_id].set_pe_by_index(idx, None);
         }
 
-        // (Re)create pseudo element if it should exist
-        if let Some(pe_style) = pe_style {
+        // Create pseudo element if it should exist but doesn't
+        if let (None, Some(pe_style)) = (pe_node_id, &pe_style) {
             let new_node_id = doc.create_node(NodeData::AnonymousBlock(ElementNodeData::new(
                 DUMMY_NAME,
                 Vec::new(),
@@ -305,11 +322,33 @@ fn flush_pseudo_elements(doc: &mut Document, node_id: usize) {
             }
 
             let mut element_data = ElementData::default();
-            element_data.styles.primary = Some(pe_style);
+            element_data.styles.primary = Some(pe_style.clone());
             element_data.set_restyled();
             *doc.nodes[new_node_id].stylo_element_data.borrow_mut() = Some(element_data);
 
             doc.nodes[node_id].set_pe_by_index(idx, Some(new_node_id));
+        }
+
+        // Else: Update psuedo element
+        if let (Some(pe_node_id), Some(pe_style)) = (pe_node_id, pe_style) {
+            // TODO: Update content
+
+            let mut node_styles = doc.nodes[pe_node_id].stylo_element_data.borrow_mut();
+
+            if &**(*node_styles)
+                .as_ref()
+                .unwrap()
+                .styles
+                .primary
+                .as_ref()
+                .unwrap() as *const _
+                != &*pe_style as *const _
+            {
+                let mut element_data = ElementData::default();
+                element_data.styles.primary = Some(pe_style);
+                element_data.set_restyled();
+                *node_styles = Some(element_data);
+            }
         }
     }
 }

@@ -1,4 +1,5 @@
 use crate::net::{CssHandler, ImageHandler, Resource};
+use crate::util::ImageType;
 use std::borrow::Cow;
 use std::cell::{Cell, Ref, RefCell, RefMut};
 use std::collections::HashSet;
@@ -131,8 +132,10 @@ impl DocumentHtmlParser<'_> {
         if let Some(raw_src) = node.attr(local_name!("src")) {
             if !raw_src.is_empty() {
                 let src = self.doc.borrow().resolve_url(raw_src);
-                self.net_provider
-                    .fetch(src, Box::new(ImageHandler(target_id)));
+                self.net_provider.fetch(
+                    src,
+                    Box::new(ImageHandler::new(target_id, ImageType::Image)),
+                );
             }
         }
     }
