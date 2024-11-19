@@ -763,36 +763,35 @@ impl ElementCx<'_> {
         scene.append(&fragment, Some(transform));
     }
 
-    fn draw_svg_bg_image(&self, scene: &mut Scene) {
+    fn draw_svg_bg_image(&self, scene: &mut Scene, idx: usize) {
         let elem_data = self.element.element_data().unwrap();
+        let bg_image = elem_data.background_images.get(idx);
 
-        for bg_image in &elem_data.background_images {
-            let Some(bg_image) = bg_image.as_ref() else {
-                break;
-            };
-            let ImageData::Svg(svg) = &bg_image.image else {
-                break;
-            };
+        let Some(Some(bg_image)) = bg_image.as_ref() else {
+            return;
+        };
+        let ImageData::Svg(svg) = &bg_image.image else {
+            return;
+        };
 
-            let width = self.frame.inner_rect.width() as u32;
-            let height = self.frame.inner_rect.height() as u32;
-            let svg_size = svg.size();
+        let width = self.frame.inner_rect.width() as u32;
+        let height = self.frame.inner_rect.height() as u32;
+        let svg_size = svg.size();
 
-            let x_ratio = width as f64 / svg_size.width() as f64;
-            let y_ratio = height as f64 / svg_size.height() as f64;
+        let x_ratio = width as f64 / svg_size.width() as f64;
+        let y_ratio = height as f64 / svg_size.height() as f64;
 
-            let ratio = if x_ratio < 1.0 || y_ratio < 1.0 {
-                x_ratio.min(y_ratio)
-            } else {
-                x_ratio.max(y_ratio)
-            };
+        let ratio = if x_ratio < 1.0 || y_ratio < 1.0 {
+            x_ratio.min(y_ratio)
+        } else {
+            x_ratio.max(y_ratio)
+        };
 
-            let transform = Affine::translate((self.pos.x * self.scale, self.pos.y * self.scale))
-                .pre_scale_non_uniform(ratio, ratio);
+        let transform = Affine::translate((self.pos.x * self.scale, self.pos.y * self.scale))
+            .pre_scale_non_uniform(ratio, ratio);
 
-            let fragment = vello_svg::render_tree(svg);
-            scene.append(&fragment, Some(transform));
-        }
+        let fragment = vello_svg::render_tree(svg);
+        scene.append(&fragment, Some(transform));
     }
 
     fn draw_image(&self, scene: &mut Scene) {
@@ -808,19 +807,18 @@ impl ElementCx<'_> {
         }
     }
 
-    fn draw_raster_bg_image(&self, scene: &mut Scene) {
+    fn draw_raster_bg_image(&self, scene: &mut Scene, idx: usize) {
         let width = self.frame.inner_rect.width() as u32;
         let height = self.frame.inner_rect.height() as u32;
 
         let elem_data = self.element.element_data().unwrap();
+        let bg_image = elem_data.background_images.get(idx);
 
-        for bg_image in &elem_data.background_images {
-            if let Some(bg_image) = bg_image.as_ref() {
-                if let ImageData::Raster(image_data) = &bg_image.image {
-                    ensure_resized_image(image_data, width, height);
-                    let resized_image = image_data.resized_image.borrow();
-                    scene.draw_image(resized_image.as_ref().unwrap(), self.transform);
-                }
+        if let Some(Some(bg_image)) = bg_image.as_ref() {
+            if let ImageData::Raster(image_data) = &bg_image.image {
+                ensure_resized_image(image_data, width, height);
+                let resized_image = image_data.resized_image.borrow();
+                scene.draw_image(resized_image.as_ref().unwrap(), self.transform);
             }
         }
     }
@@ -855,15 +853,15 @@ impl ElementCx<'_> {
         // Draw background color (if any)
         self.draw_solid_frame(scene);
         let segments = &self.style.get_background().background_image.0;
-        for segment in segments.iter().rev() {
+        for (idx, segment) in segments.iter().enumerate().rev() {
             match segment {
                 None => {
                     // Do nothing
                 }
                 Gradient(gradient) => self.draw_gradient_frame(scene, gradient),
                 Url(_) => {
-                    self.draw_raster_bg_image(scene);
-                    self.draw_svg_bg_image(scene);
+                    self.draw_raster_bg_image(scene, idx);
+                    self.draw_svg_bg_image(scene, idx);
                 }
                 PaintWorklet(_) => todo!("Implement background drawing for Image::PaintWorklet"),
                 CrossFade(_) => todo!("Implement background drawing for Image::CrossFade"),
