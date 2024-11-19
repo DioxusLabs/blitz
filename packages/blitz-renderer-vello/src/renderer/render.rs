@@ -873,17 +873,11 @@ impl ElementCx<'_> {
         let x_ratio = bg_size.width as f64 / svg_size.width() as f64;
         let y_ratio = bg_size.height as f64 / svg_size.height() as f64;
 
-        let padding = self.element.final_layout.padding;
-
         let bg_pos_x = self.style.get_background().background_position_x.0[idx]
-            .resolve(Length::new(
-                frame_w - svg_size.width() - padding.left - padding.right,
-            ))
+            .resolve(Length::new(frame_w - (bg_size.width as f32)))
             .px() as f64;
         let bg_pos_y = self.style.get_background().background_position_y.0[idx]
-            .resolve(Length::new(
-                frame_h - svg_size.height() - padding.top - padding.bottom,
-            ))
+            .resolve(Length::new(frame_h - bg_size.height as f32))
             .px() as f64;
 
         let transform = Affine::translate((
