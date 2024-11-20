@@ -72,7 +72,11 @@ impl<T> VecCallback<T> {
     }
 
     pub fn for_each(&self, mut cb: impl FnMut(T)) {
-        let mut data = self.0.lock().unwrap();
+        // Note: we use std::mem::take here so that the mutex is unlocked prior to any of the callbacks being called.
+        // This prevents the mutex from being poisoned if any of the callbacks panic, allowing it to be reused for further tests.
+        //
+        // TODO: Cleanup still-in-flight requests in case of panic.
+        let mut data = std::mem::take(&mut *self.0.lock().unwrap());
         for item in data.drain(0..) {
             cb(item)
         }
@@ -81,6 +85,9 @@ impl<T> VecCallback<T> {
 impl<T: Send + Sync + 'static> Callback for VecCallback<T> {
     type Data = T;
     fn call(&self, data: Self::Data) {
-        self.0.lock().unwrap().push(data)
+        self.0
+            .lock()
+            .unwrap_or_else(|err| err.into_inner())
+            .push(data)
     }
 }
