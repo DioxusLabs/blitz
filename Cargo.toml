@@ -35,13 +35,15 @@ dioxus-cli-config = { version = "0.6.0-alpha.3" }
 dioxus-devtools = { version = "0.6.0-alpha.3" }
 taffy = { version = "0.6" }
 
-# Linebender + WGPU + SVG dependencies
+# Linebender + WGPU
 peniko = "0.2"
 vello = { version = "0.3", features = [ "wgpu" ] }
-vello_svg = "0.4"
 parley = "0.2"
 wgpu = "22.1.0"
-usvg = "0.43.0"
+
+# SVG dependencies
+vello_svg = "0.5"
+usvg = "0.44.0"
 
 # Windowing & Input
 raw-window-handle = "0.6.0"
