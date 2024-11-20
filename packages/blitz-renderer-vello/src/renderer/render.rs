@@ -337,31 +337,31 @@ impl VelloSceneGenerator<'_> {
         //  - position, table, text, ui,
         //  - custom_properties, writing_mode, rules, visited_style, flags,  box_, column, counters, effects,
         //  - inherited_box, inherited_table, inherited_text, inherited_ui,
-        let element = &self.dom.as_ref().tree()[node_id];
+        let node = &self.dom.as_ref().tree()[node_id];
 
         // Early return if the element is hidden
-        if matches!(element.style.display, taffy::Display::None) {
+        if matches!(node.style.display, taffy::Display::None) {
             return;
         }
 
         // Only draw elements with a style
-        if element.primary_styles().is_none() {
+        if node.primary_styles().is_none() {
             return;
         }
 
         // Hide elements with "hidden" attribute
-        if let Some("true" | "") = element.attr(local_name!("hidden")) {
+        if let Some("true" | "") = node.attr(local_name!("hidden")) {
             return;
         }
 
         // Hide inputs with type=hidden
         // Implemented here rather than using the style engine for performance reasons
-        if element.local_name() == "input" && element.attr(local_name!("type")) == Some("hidden") {
+        if node.local_name() == "input" && node.attr(local_name!("type")) == Some("hidden") {
             return;
         }
 
         // Hide elements with a visibility style other than visible
-        if element
+        if node
             .primary_styles()
             .unwrap()
             .get_inherited_box()
@@ -372,12 +372,12 @@ impl VelloSceneGenerator<'_> {
         }
 
         // We can't fully support opacity yet, but we can hide elements with opacity 0
-        if element.primary_styles().unwrap().get_effects().opacity == 0.0 {
+        if node.primary_styles().unwrap().get_effects().opacity == 0.0 {
             return;
         }
 
         // TODO: account for overflow_x vs overflow_y
-        let styles = &element.primary_styles().unwrap();
+        let styles = &node.primary_styles().unwrap();
         let overflow_x = styles.get_box().overflow_x;
         let overflow_y = styles.get_box().overflow_y;
         let should_clip =
@@ -391,7 +391,7 @@ impl VelloSceneGenerator<'_> {
             border,
             padding,
             ..
-        } = element.final_layout;
+        } = node.final_layout;
         let scaled_pb = (padding + border).map(f64::from);
         let pos = vello::kurbo::Point {
             x: pos.x + scaled_pb.left,
@@ -420,7 +420,7 @@ impl VelloSceneGenerator<'_> {
             CLIP_DEPTH_USED.fetch_max(depth, atomic::Ordering::SeqCst);
         }
 
-        let mut cx = self.element_cx(element, location);
+        let mut cx = self.element_cx(node, location);
         cx.stroke_effects(scene);
         cx.stroke_outline(scene);
         cx.draw_outset_box_shadow(scene);
@@ -431,16 +431,16 @@ impl VelloSceneGenerator<'_> {
 
         // Now that background has been drawn, offset pos and cx in order to draw our contents scrolled
         let pos = Point {
-            x: pos.x - element.scroll_offset.x,
-            y: pos.y - element.scroll_offset.y,
+            x: pos.x - node.scroll_offset.x,
+            y: pos.y - node.scroll_offset.y,
         };
         cx.pos = Point {
-            x: cx.pos.x - element.scroll_offset.x,
-            y: cx.pos.y - element.scroll_offset.y,
+            x: cx.pos.x - node.scroll_offset.x,
+            y: cx.pos.y - node.scroll_offset.y,
         };
         cx.transform = cx.transform.then_translate(Vec2 {
-            x: -element.scroll_offset.x,
-            y: -element.scroll_offset.y,
+            x: -node.scroll_offset.x,
+            y: -node.scroll_offset.y,
         });
         cx.draw_image(scene);
         cx.draw_svg(scene);
@@ -475,7 +475,7 @@ impl VelloSceneGenerator<'_> {
             };
             let x_offset = -(layout.full_width() / layout.scale() + x_padding);
             //Align the marker with the baseline of the first line of text in the list item
-            let y_offset = if let Some(text_layout) = &element
+            let y_offset = if let Some(text_layout) = &node
                 .raw_dom_data
                 .downcast_element()
                 .and_then(|el| el.inline_layout_data.as_ref())
@@ -497,15 +497,15 @@ impl VelloSceneGenerator<'_> {
             cx.stroke_text(scene, layout.lines(), pos);
         }
 
-        if element.is_inline_root {
-            let text_layout = &element
+        if node.is_inline_root {
+            let text_layout = &node
                 .raw_dom_data
                 .downcast_element()
                 .unwrap()
                 .inline_layout_data
                 .as_ref()
                 .unwrap_or_else(|| {
-                    panic!("Tried to render node marked as inline root that does not have an inline layout: {:?}", element);
+                    panic!("Tried to render node marked as inline root that does not have an inline layout: {:?}", node);
                 });
 
             // Render text
