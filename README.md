@@ -1,15 +1,29 @@
-# Blitz: A lightweight, modular, extensible web renderer
+# Blitz
 
-Blitz is a "native" HTML/CSS renderer built to support the "Dioxus Native" project. It is effectively a lightweight webview except that the JavaScript engine is replaced with a native Rust API which allows Rust reactivity / state management libraries like Dioxus to interface with it directly.
+**A modular HTML/CSS renderer with a native Rust API**
 
-Talk to us in: the #native channel in the [Dioxus Discord](https://discord.gg/AnNPqT95pu)
 
-#### It currenly has two frontends:
+[![Discord](https://img.shields.io/discord/899851952891002890.svg?logo=discord&style=flat-square&label=discord)](https://discord.gg/XgGxMSkvUM)
+[![dependency status](https://deps.rs/repo/github/dioxuslabs/blitz/status.svg)](https://deps.rs/repo/github/dioxuslabs/blitz)
+![Crates.io License](https://img.shields.io/crates/l/blitz)
+[![Build Status](https://github.com/dioxuslabs/blitz/actions/workflows/ci.yml/badge.svg)](https://github.com/dioxuslabs/blitz/actions)
+[![Crates.io](https://img.shields.io/crates/v/blitz.svg)](https://crates.io/crates/blitz)
+[![Docs](https://docs.rs/blitz/badge.svg)](https://docs.rs/blitz)
 
-- An HTML/markdown frontend that can render an HTML string. This is useful for previewing HTML and/or markdown files but currently lacks interactivity.
-- A Dioxus frontend that can render a Dioxus VirtualDom. This has full interactivity support via Dioxus's event handling.
+Talk to us in: the [#native](https://discord.gg/AnNPqT95pu) channel in the [Dioxus Discord](https://discord.gg/AnNPqT95pu)
 
-#### Blitz builds upon:
+## Status
+
+Blitz is currently in a **pre-alpha** state. It already has a very capable renderer, but there are also still many bugs and missing features. We are actively working on bringing into a usable state but we would not yet recommend building apps with it.
+
+Check out the [roadmap issue](https://github.com/DioxusLabs/blitz/issues/119) for more details. 
+
+## Screenshot
+
+![screenshot](https://raw.githubusercontent.com/DioxusLabs/screenshots/main/blitz/counter-example.png)
+
+
+## Blitz builds upon:
 
 - [Stylo](https://github.com/servo/stylo) (Firefox's parallel browser-grade CSS engine) for CSS resolution
 - [Vello](https://github.com/linebender/vello) + [WGPU](https://github.com/gfx-rs/wgpu) for rendering
@@ -18,29 +32,20 @@ Talk to us in: the #native channel in the [Dioxus Discord](https://discord.gg/An
 - [AccessKit](https://github.com/AccessKit/accesskit) for accessibility
 - [Winit](https://github.com/rust-windowing/winit) for windowing and input handling
 
-> Note: This repo contains a new version of Blitz which uses Stylo. The source code for the old version is still available on the [legacy](https://github.com/DioxusLabs/blitz/tree/legacy) branch but is not under active development.
-
-## Screenshots
-
-The Dioxus renderer:
-
-![screenshot](examples/screenshot.png)
-
-The HTML renderer (rendering google.com):
-
-![screenshot](examples/google.png)
+> Note: This repo contains a new version of Blitz (v0.2+) which uses Stylo. The source code for the old version (v0.1) is still available on the [legacy](https://github.com/DioxusLabs/blitz/tree/legacy) branch but is not under active development.
 
 
 ## Trying it out
 
 1. Clone this repo
 2. Run an example:
-    - `cargo run --example google`
-    - `cargo run --example url https://myurl.com`
-    - Other example available
-    - Add `--release` for better runtime performance
-3. Press `Ctrl/Cmd + +` / `Ctrl/Cmd + -` to change the scaling, press F1 to show layout rectangles
+    - `cargo run --release --example todomvc`
+    - `cargo run --release --example google`
+3. Or our "browser" package:
+    - `cargo run --release --package readme ./README.md`
+    - `cargo run --release --package readme https://news.ycombinator.com`
 
+Other examples available.
 
 ## Goals
 
@@ -62,6 +67,10 @@ We don't yet have Blitz bindings for other languages (JavaScript, Python, etc) b
 
 Blitz consists of a core DOM abstraction (`blitz-dom`), and several modular pieces which provide functionality like networking, rendering, windows, and state management. These pieces can be combined together to make a cohesive web engine.
 
+### Entry points
+- An HTML/markdown frontend that can render an HTML string. This is useful for previewing HTML and/or markdown files but currently lacks interactivity.
+- A Dioxus frontend that can render a Dioxus VirtualDom. This has full interactivity support via Dioxus's event handling.
+
 ### Crates
 
 **Core:**
@@ -79,95 +88,9 @@ Blitz consists of a core DOM abstraction (`blitz-dom`), and several modular piec
 
   These different parts will be split into separate crates in future.
 
-## Status
-
-Blitz is currently **experimental**. We are actively working on bringing into a usable state but we would not yet recommend building apps with it.
-
-### TODO
-
-- [x] Core DOM tree abstraction
-- [x] Parse styles using html5ever
-- [x] Compute styles for html5ever document
-- [x] Compute layout with Taffy
-- [x] Render using WGPU
-
-### Rendering
-
-- [x] Render to window
-- [x] Render to image
-- [x] Gradients
-- [x] Border/Outline
-- [x] Raster images (png, jpeg, etc)
-- [x] Zoom
-- [x] SVG
-  - [x] External SVGs (basic support)
-  - [x] Inline SVGs
-- [x] Shadows
-- [ ] Animations/Transitions
-- [ ] Standard form controls (Checkbox/Dropdown/slider/etc)
-- [ ] Custom widgets
-- [ ] Shadow elements
-
-### Layout
-
-- [x] Inline (partial support - implementation still immature)
-- [x] Block
-- [x] Flexbox
-- [x] Grid
-  - [ ] Named grid lines
-  - [ ] Subgrid
-- [x] Table (emulated using CSS Grid)
-- [ ] Z-index
-- [ ] Additional CSS features
-   - [x] `box-sizing: content-box`
-   - [ ] `calc()`
-   - [ ] `position: static`
-   - [ ] `direction: rtl`
-   - [ ] `transform`
-
-### Text
-
-- [x] Font loading
-  - [x] System font loading
-  - [x] Web font loading
-- [x] Text
-  - [x] Shaping / Bidi
-  - [x] Layout / line breaking
-  - [x] Font size / line height
-  - [x] Text color
-  - [x] Bold / Italic
-  - [x] Underline / Strikethrough
-- [ ] Text selection
-
-### Input
-
-- [x] Scrolling
-  - [x] The root view
-  - [x] Any `overflow: scroll` element
-- [x] Hover detection
-- [x] Click handling
-- [x] Text input
-
-### Performance
-
-- [x] Hot reloading
-- [ ] Scrolling without re-resolving style and layout
-- [ ] Style caching
-- [ ] Layout caching
-
-
-### Other
-
-- [x] Multiwindow
-- [x] Accessibility tree
-- [x] Focus
-- [ ] Devtools
-- [ ] Hooks for context menu
-- [ ] use_wgpu_context() to grab an element as an arbitrary render surface
-
 
 ## License
 
 This project is dual licensed under the Apache 2.0 and MIT licenses
 
-Unless you explicitly state otherwise, any contribution intentionally submitted for inclusion in stylo-dioxus by you, shall be licensed as MIT, without any additional terms or conditions.
+Unless you explicitly state otherwise, any contribution intentionally submitted for inclusion in stylo-dioxus by you, shall be dual licensed as Apache 2.0 and MIT, without any additional terms or conditions.
