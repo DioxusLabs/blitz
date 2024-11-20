@@ -385,7 +385,7 @@ impl VelloSceneGenerator<'_> {
         let clips_available = CLIPS_USED.load(atomic::Ordering::SeqCst) <= CLIP_LIMIT;
 
         // Apply padding/border offset to inline root
-        let (_layout, pos) = self.node_position(node_id, location);
+        let (layout, box_position) = self.node_position(node_id, location);
         let taffy::Layout {
             size,
             border,
@@ -393,17 +393,17 @@ impl VelloSceneGenerator<'_> {
             ..
         } = node.final_layout;
         let scaled_pb = (padding + border).map(f64::from);
-        let pos = vello::kurbo::Point {
-            x: pos.x + scaled_pb.left,
-            y: pos.y + scaled_pb.top,
+        let content_position = vello::kurbo::Point {
+            x: box_position.x + scaled_pb.left,
+            y: box_position.y + scaled_pb.top,
         };
-        let size = vello::kurbo::Size {
+        let content_size = vello::kurbo::Size {
             width: (size.width as f64 - scaled_pb.left - scaled_pb.right) * self.scale,
             height: (size.height as f64 - scaled_pb.top - scaled_pb.bottom) * self.scale,
         };
-        let transform = Affine::translate((pos.x * self.scale, pos.y * self.scale));
+        let transform = Affine::translate(content_position.to_vec2() * self.scale);
         let origin = vello::kurbo::Point { x: 0.0, y: 0.0 };
-        let clip = Rect::from_origin_size(origin, size);
+        let clip = Rect::from_origin_size(origin, content_size);
 
         // Optimise zero-area (/very small area) clips by not rendering at all
         if should_clip && clip.area() < 0.01 {
@@ -420,7 +420,7 @@ impl VelloSceneGenerator<'_> {
             CLIP_DEPTH_USED.fetch_max(depth, atomic::Ordering::SeqCst);
         }
 
-        let mut cx = self.element_cx(node, location);
+        let mut cx = self.element_cx(node, layout, box_position);
         cx.stroke_effects(scene);
         cx.stroke_outline(scene);
         cx.draw_outset_box_shadow(scene);
@@ -430,9 +430,9 @@ impl VelloSceneGenerator<'_> {
         cx.stroke_devtools(scene);
 
         // Now that background has been drawn, offset pos and cx in order to draw our contents scrolled
-        let pos = Point {
-            x: pos.x - node.scroll_offset.x,
-            y: pos.y - node.scroll_offset.y,
+        let content_position = Point {
+            x: content_position.x - node.scroll_offset.x,
+            y: content_position.y - node.scroll_offset.y,
         };
         cx.pos = Point {
             x: cx.pos.x - node.scroll_offset.x,
@@ -446,9 +446,9 @@ impl VelloSceneGenerator<'_> {
         cx.draw_svg(scene);
         cx.draw_input(scene);
 
-        cx.draw_text_input_text(scene, pos);
-        cx.draw_marker(scene, pos);
-        cx.draw_children(scene, pos);
+        cx.draw_text_input_text(scene, content_position);
+        cx.draw_marker(scene, content_position);
+        cx.draw_children(scene, content_position);
 
         if should_clip {
             scene.pop_layer();
@@ -474,7 +474,12 @@ impl VelloSceneGenerator<'_> {
         }
     }
 
-    fn element_cx<'w>(&'w self, node: &'w Node, location: Point) -> ElementCx<'w> {
+    fn element_cx<'w>(
+        &'w self,
+        node: &'w Node,
+        layout: Layout,
+        box_position: Point,
+    ) -> ElementCx<'w> {
         let style = node
             .stylo_element_data
             .borrow()
@@ -484,12 +489,11 @@ impl VelloSceneGenerator<'_> {
                 ComputedValues::initial_values_with_font_override(Font::initial_values()).to_arc(),
             );
 
-        let (layout, pos) = self.node_position(node.id, location);
         let scale = self.scale;
 
         // the bezpaths for every element are (potentially) cached (not yet, tbd)
         // By performing the transform, we prevent the cache from becoming invalid when the page shifts around
-        let mut transform = Affine::translate((pos.x * scale, pos.y * scale));
+        let mut transform = Affine::translate(box_position.to_vec2() * scale);
 
         // Apply CSS transform property (where transforms are 2d)
         //
@@ -520,7 +524,7 @@ impl VelloSceneGenerator<'_> {
             frame,
             scale,
             style,
-            pos,
+            pos: box_position,
             node,
             element,
             transform,
