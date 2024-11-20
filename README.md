@@ -99,10 +99,10 @@ Blitz is currently **experimental**. We are actively working on bringing into a 
 - [x] Border/Outline
 - [x] Raster images (png, jpeg, etc)
 - [x] Zoom
-- [ ] SVG
+- [x] SVG
   - [x] External SVGs (basic support)
-  - [ ] Inline SVGs
-- [ ] Shadows
+  - [x] Inline SVGs
+- [x] Shadows
 - [ ] Animations/Transitions
 - [ ] Standard form controls (Checkbox/Dropdown/slider/etc)
 - [ ] Custom widgets
@@ -116,7 +116,7 @@ Blitz is currently **experimental**. We are actively working on bringing into a 
 - [x] Grid
   - [ ] Named grid lines
   - [ ] Subgrid
-- [ ] Table
+- [x] Table (emulated using CSS Grid)
 - [ ] Z-index
 - [ ] Additional CSS features
    - [x] `box-sizing: content-box`
@@ -127,9 +127,9 @@ Blitz is currently **experimental**. We are actively working on bringing into a 
 
 ### Text
 
-- [ ] Font loading
+- [x] Font loading
   - [x] System font loading
-  - [ ] Web font loading
+  - [x] Web font loading
 - [x] Text
   - [x] Shaping / Bidi
   - [x] Layout / line breaking
@@ -141,9 +141,9 @@ Blitz is currently **experimental**. We are actively working on bringing into a 
 
 ### Input
 
-- [ ] Scrolling
+- [x] Scrolling
   - [x] The root view
-  - [ ] Any `overflow: scroll` element
+  - [x] Any `overflow: scroll` element
 - [x] Hover detection
 - [x] Click handling
 - [x] Text input
