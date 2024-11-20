@@ -6,6 +6,7 @@ members = [
   "packages/blitz-net",
   "packages/blitz-renderer-vello",
   "packages/dioxus-native",
+  "packages/stylo_taffy",
   "apps/wpt",
   "apps/readme",
 ]

@@ -4,7 +4,7 @@ use html5ever::local_name;
 use style::values::specified::box_::DisplayInside;
 use taffy::{compute_leaf_layout, style_helpers, LayoutPartialTree as _};
 
-use crate::{stylo_to_taffy, Document};
+use crate::Document;
 
 pub struct TableTreeWrapper<'doc> {
     pub(crate) doc: &'doc mut Document,
@@ -46,7 +46,7 @@ pub(crate) fn build_table_context(
         panic!("Ignoring table because it has no styles");
     };
 
-    let mut style = stylo_to_taffy::entire_style(&stylo_styles);
+    let mut style = stylo_taffy::to_taffy_style(&stylo_styles);
     style.grid_auto_columns = Vec::new();
     style.grid_auto_rows = Vec::new();
 
@@ -105,7 +105,7 @@ pub(crate) fn collect_table_cells(
 
             {
                 let stylo_style = &node.primary_styles().unwrap();
-                let mut style = stylo_to_taffy::entire_style(stylo_style);
+                let mut style = stylo_taffy::to_taffy_style(stylo_style);
                 style.grid_column = taffy::Line {
                     start: style_helpers::line(0),
                     end: style_helpers::line(-1),
@@ -133,7 +133,7 @@ pub(crate) fn collect_table_cells(
                 .attr(local_name!("colspan"))
                 .and_then(|val| val.parse().ok())
                 .unwrap_or(1);
-            let mut style = stylo_to_taffy::entire_style(stylo_style);
+            let mut style = stylo_taffy::to_taffy_style(stylo_style);
             style.grid_column = taffy::Line {
                 start: style_helpers::line((*col + 1) as i16),
                 end: style_helpers::span(colspan),

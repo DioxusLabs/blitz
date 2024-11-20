@@ -11,6 +11,7 @@ tracing = ["dep:tracing"]
 [dependencies]
 # Blitz dependencies
 blitz-traits = { path = "../blitz-traits" }
+stylo_taffy = { path = "../stylo_taffy" }
 
 # Servo dependencies
 style = { workspace = true, features = ["servo"] }

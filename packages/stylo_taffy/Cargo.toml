@@ -1,0 +1,20 @@
+[package]
+name = "stylo_taffy"
+version = "0.1.0"
+license = "MIT OR Apache-2.0 OR MPL-2.0"
+description = "Interop crate for the stylo and taffy crates"
+keywords = ["css", "layout"]
+categories = ["gui"]
+edition = "2021"
+repository = "https://github.com/dioxuslabs/taffy"
+
+[dependencies]
+taffy = { workspace = true }
+style = { workspace = true }
+
+[features]
+default = ["std", "block", "flexbox", "grid"]
+std = ["taffy/std"]
+block = ["taffy/block_layout"]
+flexbox = ["taffy/flexbox"]
+grid = ["taffy/grid"]

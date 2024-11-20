@@ -34,8 +34,6 @@ pub mod node;
 pub mod stylo;
 
 pub mod stylo_to_parley;
-/// Conversions from Stylo types to Taffy and Parley types
-pub mod stylo_to_taffy;
 
 pub mod image;
 

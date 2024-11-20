@@ -91,6 +91,8 @@ Blitz consists of a core DOM abstraction (`blitz-dom`), and several modular piec
 
 ## License
 
-This project is dual licensed under the Apache 2.0 and MIT licenses
+This project is dual licensed under the Apache 2.0 and MIT licenses.
 
-Unless you explicitly state otherwise, any contribution intentionally submitted for inclusion in stylo-dioxus by you, shall be dual licensed as Apache 2.0 and MIT, without any additional terms or conditions.
+The `stylo_taffy` crate is ADDITIONALLY licensed under MPL 2.0 (so it is triple licensed under Apache 2.0, MIT, and MPL 2.0 licenses) for easier interop with the Servo project.
+
+Unless you explicitly state otherwise, any contribution intentionally submitted for inclusion in Blitz by you, shall be dual licensed as Apache 2.0 and MIT (and MPL 2.0 if submitted to the `stylo_taffy` crate), without any additional terms or conditions.

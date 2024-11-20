@@ -52,7 +52,6 @@ use style::{
 };
 use style_dom::ElementState;
 
-use super::stylo_to_taffy;
 use style::values::computed::text::TextAlign as StyloTextAlign;
 
 impl crate::document::Document {
@@ -69,7 +68,7 @@ impl crate::document::Document {
                 return;
             };
 
-            node.style = stylo_to_taffy::entire_style(style);
+            node.style = stylo_taffy::to_taffy_style(style);
 
             node.display_outer = match style.clone_display().outside() {
                 DisplayOutside::None => crate::node::DisplayOuter::None,
