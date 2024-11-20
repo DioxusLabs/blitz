@@ -446,92 +446,9 @@ impl VelloSceneGenerator<'_> {
         cx.draw_svg(scene);
         cx.draw_input(scene);
 
-        // Render the text in text inputs
-        if let Some(input_data) = cx.text_input {
-            let transform = Affine::translate((pos.x * self.scale, pos.y * self.scale));
-
-            // Render selection/caret
-            for rect in input_data.editor.selection_geometry().iter() {
-                scene.fill(Fill::NonZero, transform, Color::STEEL_BLUE, None, &rect);
-            }
-            if let Some(cursor) = input_data.editor.selection_strong_geometry(1.5) {
-                scene.fill(Fill::NonZero, transform, Color::BLACK, None, &cursor);
-            };
-            if let Some(cursor) = input_data.editor.selection_weak_geometry(1.5) {
-                scene.fill(Fill::NonZero, transform, Color::DARK_GRAY, None, &cursor);
-            };
-
-            // Render text
-            cx.stroke_text(scene, input_data.editor.lines(), pos);
-        } else if let Some(ListItemLayout {
-            marker,
-            position: ListItemLayoutPosition::Outside(layout),
-        }) = cx.list_item
-        {
-            //Right align and pad the bullet when rendering outside
-            let x_padding = match marker {
-                Marker::Char(_) => 8.0,
-                Marker::String(_) => 0.0,
-            };
-            let x_offset = -(layout.full_width() / layout.scale() + x_padding);
-            //Align the marker with the baseline of the first line of text in the list item
-            let y_offset = if let Some(text_layout) = &node
-                .raw_dom_data
-                .downcast_element()
-                .and_then(|el| el.inline_layout_data.as_ref())
-            {
-                if let Some(first_text_line) = text_layout.layout.lines().next() {
-                    (first_text_line.metrics().baseline
-                        - layout.lines().next().unwrap().metrics().baseline)
-                        / layout.scale()
-                } else {
-                    0.0
-                }
-            } else {
-                0.0
-            };
-            let pos = Point {
-                x: pos.x + x_offset as f64,
-                y: pos.y + y_offset as f64,
-            };
-            cx.stroke_text(scene, layout.lines(), pos);
-        }
-
-        if node.is_inline_root {
-            let text_layout = &node
-                .raw_dom_data
-                .downcast_element()
-                .unwrap()
-                .inline_layout_data
-                .as_ref()
-                .unwrap_or_else(|| {
-                    panic!("Tried to render node marked as inline root that does not have an inline layout: {:?}", node);
-                });
-
-            // Render text
-            cx.stroke_text(scene, text_layout.layout.lines(), pos);
-
-            // Render inline boxes
-            for line in text_layout.layout.lines() {
-                for item in line.items() {
-                    if let PositionedLayoutItem::InlineBox(ibox) = item {
-                        self.render_node(scene, ibox.id as usize, pos);
-                    }
-                }
-            }
-        } else {
-            for child_id in cx
-                .node
-                .layout_children
-                .borrow()
-                .as_ref()
-                .unwrap()
-                .iter()
-                .copied()
-            {
-                self.render_node(scene, child_id, cx.pos);
-            }
-        }
+        cx.draw_text_input_text(scene, pos);
+        cx.draw_marker(scene, pos);
+        cx.draw_children(scene, pos);
 
         if should_clip {
             scene.pop_layer();
@@ -599,6 +516,7 @@ impl VelloSceneGenerator<'_> {
         let element = node.element_data().unwrap();
 
         ElementCx {
+            context: self,
             frame,
             scale,
             style,
@@ -709,6 +627,7 @@ fn ensure_resized_image(data: &RasterImageData, width: u32, height: u32) {
 
 /// A context of loaded and hot data to draw the element from
 struct ElementCx<'a> {
+    context: &'a VelloSceneGenerator<'a>,
     frame: ElementFrame,
     style: style::servo_arc::Arc<ComputedValues>,
     pos: Point,
@@ -749,6 +668,92 @@ impl ElementCx<'_> {
         if do_clip {
             scene.pop_layer();
             CLIP_DEPTH.fetch_sub(1, atomic::Ordering::SeqCst);
+        }
+    }
+
+    fn draw_text_input_text(&self, scene: &mut Scene, pos: Point) {
+        // Render the text in text inputs
+        if let Some(input_data) = self.text_input {
+            let transform = Affine::translate((pos.x * self.scale, pos.y * self.scale));
+
+            // Render selection/caret
+            for rect in input_data.editor.selection_geometry().iter() {
+                scene.fill(Fill::NonZero, transform, Color::STEEL_BLUE, None, &rect);
+            }
+            if let Some(cursor) = input_data.editor.selection_strong_geometry(1.5) {
+                scene.fill(Fill::NonZero, transform, Color::BLACK, None, &cursor);
+            };
+            if let Some(cursor) = input_data.editor.selection_weak_geometry(1.5) {
+                scene.fill(Fill::NonZero, transform, Color::DARK_GRAY, None, &cursor);
+            };
+
+            // Render text
+            self.stroke_text(scene, input_data.editor.lines(), pos);
+        }
+    }
+    fn draw_marker(&self, scene: &mut Scene, pos: Point) {
+        if let Some(ListItemLayout {
+            marker,
+            position: ListItemLayoutPosition::Outside(layout),
+        }) = self.list_item
+        {
+            //Right align and pad the bullet when rendering outside
+            let x_padding = match marker {
+                Marker::Char(_) => 8.0,
+                Marker::String(_) => 0.0,
+            };
+            let x_offset = -(layout.full_width() / layout.scale() + x_padding);
+            //Align the marker with the baseline of the first line of text in the list item
+            let y_offset = if let Some(text_layout) = &self.element.inline_layout_data {
+                if let Some(first_text_line) = text_layout.layout.lines().next() {
+                    (first_text_line.metrics().baseline
+                        - layout.lines().next().unwrap().metrics().baseline)
+                        / layout.scale()
+                } else {
+                    0.0
+                }
+            } else {
+                0.0
+            };
+            let pos = Point {
+                x: pos.x + x_offset as f64,
+                y: pos.y + y_offset as f64,
+            };
+            self.stroke_text(scene, layout.lines(), pos);
+        }
+    }
+    fn draw_children(&self, scene: &mut Scene, pos: Point) {
+        if self.node.is_inline_root {
+            let text_layout = self.element
+                .inline_layout_data
+                .as_ref()
+                .unwrap_or_else(|| {
+                    panic!("Tried to render node marked as inline root that does not have an inline layout: {:?}", self.node);
+                });
+
+            // Render text
+            self.stroke_text(scene, text_layout.layout.lines(), pos);
+
+            // Render inline boxes
+            for line in text_layout.layout.lines() {
+                for item in line.items() {
+                    if let PositionedLayoutItem::InlineBox(ibox) = item {
+                        self.render_node(scene, ibox.id as usize, pos);
+                    }
+                }
+            }
+        } else {
+            for child_id in self
+                .node
+                .layout_children
+                .borrow()
+                .as_ref()
+                .unwrap()
+                .iter()
+                .copied()
+            {
+                self.render_node(scene, child_id, self.pos);
+            }
         }
     }
 
@@ -1745,5 +1750,11 @@ impl ElementCx<'_> {
                 );
             }
         }
+    }
+}
+impl<'a> std::ops::Deref for ElementCx<'a> {
+    type Target = VelloSceneGenerator<'a>;
+    fn deref(&self) -> &Self::Target {
+        self.context
     }
 }
