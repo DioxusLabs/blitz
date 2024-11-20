@@ -7,7 +7,7 @@ use blitz_dom::node::{
     ImageData, ListItemLayout, ListItemLayoutPosition, Marker, NodeData, RasterImageData,
     TextBrush, TextInputData, TextNodeData,
 };
-use blitz_dom::{local_name, Document, Node};
+use blitz_dom::{local_name, Document, ElementNodeData, Node};
 use blitz_traits::Devtools;
 
 use parley::Line;
@@ -521,7 +521,7 @@ impl VelloSceneGenerator<'_> {
             }
         } else {
             for child_id in cx
-                .element
+                .node
                 .layout_children
                 .borrow()
                 .as_ref()
@@ -557,8 +557,8 @@ impl VelloSceneGenerator<'_> {
         }
     }
 
-    fn element_cx<'w>(&'w self, element: &'w Node, location: Point) -> ElementCx<'w> {
-        let style = element
+    fn element_cx<'w>(&'w self, node: &'w Node, location: Point) -> ElementCx<'w> {
+        let style = node
             .stylo_element_data
             .borrow()
             .as_ref()
@@ -567,7 +567,7 @@ impl VelloSceneGenerator<'_> {
                 ComputedValues::initial_values_with_font_override(Font::initial_values()).to_arc(),
             );
 
-        let (layout, pos) = self.node_position(element.id, location);
+        let (layout, pos) = self.node_position(node.id, location);
         let scale = self.scale;
 
         // the bezpaths for every element are (potentially) cached (not yet, tbd)
@@ -596,16 +596,19 @@ impl VelloSceneGenerator<'_> {
         // Also! we can cache the bezpaths themselves, saving us a bunch of work
         let frame = ElementFrame::new(&style, &layout, scale);
 
+        let element = node.element_data().unwrap();
+
         ElementCx {
             frame,
             scale,
             style,
             pos,
+            node,
             element,
             transform,
-            svg: element.element_data().unwrap().svg_data(),
-            text_input: element.element_data().unwrap().text_input_data(),
-            list_item: element.element_data().unwrap().list_item_data.as_deref(),
+            svg: element.svg_data(),
+            text_input: element.text_input_data(),
+            list_item: element.list_item_data.as_deref(),
             devtools: &self.devtools,
         }
     }
@@ -710,7 +713,8 @@ struct ElementCx<'a> {
     style: style::servo_arc::Arc<ComputedValues>,
     pos: Point,
     scale: f64,
-    element: &'a Node,
+    node: &'a Node,
+    element: &'a ElementNodeData,
     transform: Affine,
     svg: Option<&'a usvg::Tree>,
     text_input: Option<&'a TextInputData>,
@@ -846,8 +850,7 @@ impl ElementCx<'_> {
     }
 
     fn draw_svg_bg_image(&self, scene: &mut Scene, idx: usize) {
-        let elem_data = self.element.element_data().unwrap();
-        let bg_image = elem_data.background_images.get(idx);
+        let bg_image = self.element.background_images.get(idx);
 
         let Some(Some(bg_image)) = bg_image.as_ref() else {
             return;
@@ -894,9 +897,7 @@ impl ElementCx<'_> {
         let width = self.frame.inner_rect.width() as u32;
         let height = self.frame.inner_rect.height() as u32;
 
-        let elem_data = self.element.element_data().unwrap();
-
-        if let Some(image_data) = elem_data.raster_image_data() {
+        if let Some(image_data) = self.element.raster_image_data() {
             ensure_resized_image(image_data, width, height);
             let resized_image = image_data.resized_image.borrow();
             scene.draw_image(resized_image.as_ref().unwrap(), self.transform);
@@ -907,8 +908,7 @@ impl ElementCx<'_> {
         let width = self.frame.inner_rect.width() as u32;
         let height = self.frame.inner_rect.height() as u32;
 
-        let elem_data = self.element.element_data().unwrap();
-        let bg_image = elem_data.background_images.get(idx);
+        let bg_image = self.element.background_images.get(idx);
 
         if let Some(Some(bg_image)) = bg_image.as_ref() {
             if let ImageData::Raster(image_data) = &bg_image.image {
@@ -924,7 +924,7 @@ impl ElementCx<'_> {
             let shape = &self.frame.outer_rect;
             let stroke = Stroke::new(self.scale);
 
-            let stroke_color = match self.element.style.display {
+            let stroke_color = match self.node.style.display {
                 taffy::Display::Block => Color::rgb(1.0, 0.0, 0.0),
                 taffy::Display::Flex => Color::rgb(0.0, 1.0, 0.0),
                 taffy::Display::Grid => Color::rgb(0.0, 0.0, 1.0),
@@ -1681,17 +1681,13 @@ impl ElementCx<'_> {
     }
 
     fn draw_input(&self, scene: &mut Scene) {
-        if self.element.local_name() == "input"
-            && matches!(self.element.attr(local_name!("type")), Some("checkbox"))
+        if self.node.local_name() == "input"
+            && matches!(self.node.attr(local_name!("type")), Some("checkbox"))
         {
-            let Some(checked) = self
-                .element
-                .element_data()
-                .and_then(|data| data.checkbox_input_checked())
-            else {
+            let Some(checked) = self.element.checkbox_input_checked() else {
                 return;
             };
-            let disabled = self.element.attr(local_name!("disabled")).is_some();
+            let disabled = self.node.attr(local_name!("disabled")).is_some();
 
             // TODO this should be coming from css accent-color, but I couldn't find how to retrieve it
             let accent_color = if disabled {
