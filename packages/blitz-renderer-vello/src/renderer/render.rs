@@ -739,12 +739,8 @@ impl ElementCx<'_> {
             self.stroke_text(scene, text_layout.layout.lines(), pos);
 
             // Render inline boxes
-            for line in text_layout.layout.lines() {
-                for item in line.items() {
-                    if let PositionedLayoutItem::InlineBox(ibox) = item {
-                        self.render_node(scene, ibox.id as usize, pos);
-                    }
-                }
+            for inline_box in text_layout.layout.inline_boxes() {
+                self.render_node(scene, inline_box.id as usize, pos);
             }
         } else {
             for child_id in self
