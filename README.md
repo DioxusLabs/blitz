@@ -1,6 +1,6 @@
 # Blitz
 
-**A radically modular HTML/CSS rendering engine with a native Rust API**
+**A [radically modular](https://github.com/DioxusLabs/blitz?tab=readme-ov-file#architecture) HTML/CSS rendering engine**
 
 
 [![Discord](https://img.shields.io/discord/899851952891002890.svg?logo=discord&style=flat-square&label=discord)](https://discord.gg/XgGxMSkvUM)
