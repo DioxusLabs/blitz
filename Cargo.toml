@@ -5,6 +5,7 @@ members = [
   "packages/blitz-dom", 
   "packages/blitz-net",
   "packages/blitz-renderer-vello",
+  "packages/blitz-shell",
   "packages/dioxus-native",
   "packages/stylo_taffy",
   "apps/wpt",
@@ -111,6 +112,7 @@ blitz-dom = { path = "./packages/blitz-dom" }
 blitz-net = { path = "./packages/blitz-net" }
 blitz-traits = { path = "./packages/blitz-traits" }
 blitz-renderer-vello = { path = "./packages/blitz-renderer-vello" }
+blitz-shell = { path = "./packages/blitz-shell", features = ["tracing"] }
 dioxus-native = { path = "./packages/dioxus-native", features = ["tracing"] }
 png = { version = "0.17" }
 dioxus = { workspace = true }

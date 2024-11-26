@@ -9,7 +9,7 @@ blitz-dom = { path = "../../packages/blitz-dom" }
 blitz-net = { path = "../../packages/blitz-net" }
 blitz-traits = { path = "../../packages/blitz-traits" }
 blitz-renderer-vello = { path = "../../packages/blitz-renderer-vello" }
-dioxus-native = { path = "../../packages/dioxus-native", features = ["tracing"] }
+blitz-shell = { path = "../../packages/blitz-shell", features = ["tracing"] }
 tokio = { workspace = true }
 reqwest = { workspace = true }
 url = { workspace = true }

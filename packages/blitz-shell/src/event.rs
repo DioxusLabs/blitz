@@ -1,5 +1,5 @@
 use futures_util::task::ArcWake;
-use std::sync::Arc;
+use std::{any::Any, sync::Arc};
 use winit::{event_loop::EventLoopProxy, window::WindowId};
 
 #[cfg(feature = "accessibility")]
@@ -25,16 +25,14 @@ pub enum BlitzEvent {
         data: Arc<AccessibilityWindowEvent>,
     },
 
-    /// A hotreload event, basically telling us to update our templates.
-    #[cfg(all(
-        feature = "hot-reload",
-        debug_assertions,
-        not(target_os = "android"),
-        not(target_os = "ios")
-    ))]
-    DevserverEvent(dioxus_devtools::DevserverMsg),
-    // NewWindow,
-    // CloseWindow,
+    /// An arbitary event from the Blitz embedder
+    Embedder(Arc<dyn Any + Send + Sync>),
+}
+impl BlitzEvent {
+    pub fn embedder_event<T: Any + Send + Sync>(value: T) -> Self {
+        let boxed = Arc::new(value) as Arc<dyn Any + Send + Sync>;
+        Self::Embedder(boxed)
+    }
 }
 impl From<(usize, Resource)> for BlitzEvent {
     fn from((doc_id, data): (usize, Resource)) -> Self {

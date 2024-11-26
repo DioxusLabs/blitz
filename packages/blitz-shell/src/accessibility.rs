@@ -1,4 +1,4 @@
-use crate::waker::BlitzEvent;
+use crate::event::BlitzEvent;
 use accesskit::{NodeBuilder, NodeId, Role, Tree, TreeUpdate};
 use blitz_dom::{local_name, Document, Node};
 use winit::{event_loop::EventLoopProxy, window::Window};

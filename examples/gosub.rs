@@ -1,7 +1,7 @@
-use dioxus_native::Config;
+use blitz_shell::Config;
 
 fn main() {
-    dioxus_native::launch_static_html_cfg(
+    blitz_shell::launch_static_html_cfg(
         include_str!("./assets/gosub_reduced.html"),
         Config {
             stylesheets: Vec::new(),
