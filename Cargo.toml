@@ -15,7 +15,7 @@ members = [
 resolver = "2"
 
 [workspace.package]
-license = "MIT OR APACHE-2.0"
+license = "MIT OR Apache-2.0"
 
 [workspace.dependencies]
 # Servo dependencies
