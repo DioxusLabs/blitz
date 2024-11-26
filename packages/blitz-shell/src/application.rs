@@ -37,7 +37,7 @@ impl<Doc: DocumentLike> BlitzApplication<Doc> {
     }
 
     fn window_mut_by_doc_id(&mut self, doc_id: usize) -> Option<&mut View<Doc>> {
-        self.windows.values_mut().find(|w| w.dom.id() == doc_id)
+        self.windows.values_mut().find(|w| w.doc.id() == doc_id)
     }
 }
 
@@ -109,7 +109,7 @@ impl<Doc: DocumentLike> ApplicationHandler<BlitzEvent> for BlitzApplication<Doc>
             BlitzEvent::ResourceLoad { doc_id, data } => {
                 // TODO: Handle multiple documents per window
                 if let Some(window) = self.window_mut_by_doc_id(doc_id) {
-                    window.dom.as_mut().load_resource(data);
+                    window.doc.as_mut().load_resource(data);
                     window.request_redraw();
                 }
             }

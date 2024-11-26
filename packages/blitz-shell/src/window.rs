@@ -36,7 +36,7 @@ impl<Doc: DocumentLike> WindowConfig<Doc> {
 }
 
 pub struct View<Doc: DocumentLike> {
-    pub dom: Doc,
+    pub doc: Doc,
 
     pub(crate) renderer: Renderer<'static, Window>,
     pub(crate) waker: Option<Waker>,
@@ -89,7 +89,7 @@ impl<Doc: DocumentLike> View<Doc> {
 
             event_loop_proxy: proxy.clone(),
             window: winit_window.clone(),
-            dom: config.doc,
+            doc: config.doc,
             viewport,
             devtools: Default::default(),
             mouse_pos: Default::default(),
@@ -107,8 +107,8 @@ impl<Doc: DocumentLike> View<Doc> {
 impl<Doc: DocumentLike> View<Doc> {
     pub fn resume(&mut self, rt: &tokio::runtime::Runtime) {
         // Resolve dom
-        self.dom.as_mut().set_viewport(self.viewport.clone());
-        self.dom.as_mut().resolve();
+        self.doc.as_mut().set_viewport(self.viewport.clone());
+        self.doc.as_mut().resolve();
 
         // Resume renderer
         rt.block_on(self.renderer.resume(&self.viewport));
@@ -119,7 +119,7 @@ impl<Doc: DocumentLike> View<Doc> {
         // Render
         let (width, height) = self.viewport.window_size;
         self.renderer.render(
-            self.dom.as_ref(),
+            self.doc.as_ref(),
             self.viewport.scale_f64(),
             width,
             height,
@@ -138,13 +138,13 @@ impl<Doc: DocumentLike> View<Doc> {
     pub fn poll(&mut self) -> bool {
         if let Some(waker) = &self.waker {
             let cx = std::task::Context::from_waker(waker);
-            if self.dom.poll(cx) {
+            if self.doc.poll(cx) {
                 #[cfg(feature = "accessibility")]
                 {
                     // TODO send fine grained accessibility tree updates.
-                    let changed = std::mem::take(&mut self.dom.as_mut().changed);
+                    let changed = std::mem::take(&mut self.doc.as_mut().changed);
                     if !changed.is_empty() {
-                        self.accessibility.build_tree(self.dom.as_ref());
+                        self.accessibility.build_tree(self.doc.as_ref());
                     }
                 }
 
@@ -163,10 +163,10 @@ impl<Doc: DocumentLike> View<Doc> {
     }
 
     pub fn redraw(&mut self) {
-        self.dom.as_mut().resolve();
+        self.doc.as_mut().resolve();
         let (width, height) = self.viewport.window_size;
         self.renderer.render(
-            self.dom.as_ref(),
+            self.doc.as_ref(),
             self.viewport.scale_f64(),
             width,
             height,
@@ -186,7 +186,7 @@ impl<Doc: DocumentLike> View<Doc> {
     pub fn kick_dom_viewport(&mut self) {
         let (width, height) = self.viewport.window_size;
         if width > 0 && height > 0 {
-            self.dom.as_mut().set_viewport(self.viewport.clone());
+            self.doc.as_mut().set_viewport(self.viewport.clone());
             self.request_redraw();
         }
     }
@@ -200,7 +200,7 @@ impl<Doc: DocumentLike> View<Doc> {
     }
 
     pub fn mouse_move(&mut self, x: f32, y: f32) -> bool {
-        let viewport_scroll = self.dom.as_ref().viewport_scroll();
+        let viewport_scroll = self.doc.as_ref().viewport_scroll();
         let dom_x = x + viewport_scroll.x as f32 / self.viewport.zoom();
         let dom_y = y + viewport_scroll.y as f32 / self.viewport.zoom();
 
@@ -209,29 +209,29 @@ impl<Doc: DocumentLike> View<Doc> {
 
         self.mouse_pos = (x, y);
         self.dom_mouse_pos = (dom_x, dom_y);
-        self.dom.as_mut().set_hover_to(dom_x, dom_y)
+        self.doc.as_mut().set_hover_to(dom_x, dom_y)
     }
 
     pub fn click(&mut self, button: &str) {
-        let Some(node_id) = self.dom.as_ref().get_hover_node_id() else {
+        let Some(node_id) = self.doc.as_ref().get_hover_node_id() else {
             return;
         };
 
         if self.devtools.highlight_hover {
-            let mut node = self.dom.as_ref().get_node(node_id).unwrap();
+            let mut node = self.doc.as_ref().get_node(node_id).unwrap();
             if button == "right" {
                 if let Some(parent_id) = node.parent {
-                    node = self.dom.as_ref().get_node(parent_id).unwrap();
+                    node = self.doc.as_ref().get_node(parent_id).unwrap();
                 }
             }
-            self.dom.as_ref().debug_log_node(node.id);
+            self.doc.as_ref().debug_log_node(node.id);
             self.devtools.highlight_hover = false;
         } else {
             // Not debug mode. Handle click as usual
             if button == "left" {
                 // If we hit a node, then we collect the node to its parents, check for listeners, and then
                 // call those listeners
-                self.dom.handle_event(RendererEvent {
+                self.doc.handle_event(RendererEvent {
                     target: node_id,
                     data: EventData::Click {
                         x: self.dom_mouse_pos.0,
@@ -245,7 +245,7 @@ impl<Doc: DocumentLike> View<Doc> {
 
     #[cfg(feature = "accessibility")]
     pub fn build_accessibility_tree(&mut self) {
-        self.accessibility.build_tree(self.dom.as_ref());
+        self.accessibility.build_tree(self.doc.as_ref());
     }
 
     pub fn handle_winit_event(&mut self, event: WindowEvent) {
@@ -280,8 +280,8 @@ impl<Doc: DocumentLike> View<Doc> {
 
             // Text / keyboard events
             WindowEvent::Ime(ime_event) => {
-                if let Some(target) = self.dom.as_ref().get_focussed_node_id() {
-                    self.dom.handle_event(RendererEvent { target, data: EventData::Ime(ime_event) });
+                if let Some(target) = self.doc.as_ref().get_focussed_node_id() {
+                    self.doc.handle_event(RendererEvent { target, data: EventData::Ime(ime_event) });
                     self.request_redraw();
                 }
             },
@@ -332,7 +332,7 @@ impl<Doc: DocumentLike> View<Doc> {
                             self.request_redraw();
                         }
                         KeyCode::KeyT => {
-                            self.dom.as_ref().print_taffy_tree();
+                            self.doc.as_ref().print_taffy_tree();
                         }
                         _ => {}
                     };
@@ -341,12 +341,12 @@ impl<Doc: DocumentLike> View<Doc> {
                 // Unmodified keypresses
                 match key_code {
                     KeyCode::Tab if event.state.is_pressed() => {
-                        self.dom.as_mut().focus_next_node();
+                        self.doc.as_mut().focus_next_node();
                         self.request_redraw();
                     }
                     _ => {
-                        if let Some(focus_node_id) = self.dom.as_ref().get_focussed_node_id() {
-                            self.dom.handle_event(RendererEvent {
+                        if let Some(focus_node_id) = self.doc.as_ref().get_focussed_node_id() {
+                            self.doc.handle_event(RendererEvent {
                                 target: focus_node_id,
                                 data: EventData::KeyPress { event, mods: self.keyboard_modifiers }
                             });
@@ -365,7 +365,7 @@ impl<Doc: DocumentLike> View<Doc> {
                 let changed = self.mouse_move(x, y);
 
                 if changed {
-                    let cursor = self.dom.as_ref().get_cursor();
+                    let cursor = self.doc.as_ref().get_cursor();
                     if let Some(cursor) = cursor {
                             self.window.set_cursor(stylo_to_winit::cursor(cursor));
                             self.request_redraw();
@@ -390,10 +390,10 @@ impl<Doc: DocumentLike> View<Doc> {
                     winit::event::MouseScrollDelta::PixelDelta(offsets) => (offsets.x, offsets.y)
                 };
 
-                if let Some(hover_node_id)= self.dom.as_ref().get_hover_node_id() {
-                    self.dom.as_mut().scroll_node_by(hover_node_id, scroll_x, scroll_y);
+                if let Some(hover_node_id)= self.doc.as_ref().get_hover_node_id() {
+                    self.doc.as_mut().scroll_node_by(hover_node_id, scroll_x, scroll_y);
                 } else {
-                    self.dom.as_mut().scroll_viewport_by(scroll_x, scroll_y);
+                    self.doc.as_mut().scroll_viewport_by(scroll_x, scroll_y);
                 }
                 self.request_redraw();
             }
