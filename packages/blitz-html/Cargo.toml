@@ -1,0 +1,15 @@
+[package]
+name = "blitz-html"
+version = "0.1.0"
+license.workspace = true
+edition = "2021"
+
+[dependencies]
+# Blitz dependencies
+blitz-dom = { path = "../blitz-dom" }
+blitz-net = { path = "../blitz-net" }
+blitz-traits = { path = "../blitz-traits" }
+
+# Servo dependencies
+html5ever = { workspace = true }
+xml5ever = { workspace = true }

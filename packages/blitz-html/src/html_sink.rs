@@ -1,14 +1,16 @@
-use crate::net::{CssHandler, ImageHandler, Resource};
-use crate::util::ImageType;
+//! An implementation for Html5ever's sink trait, allowing us to parse HTML into a DOM.
+
+use blitz_dom::net::{CssHandler, ImageHandler, Resource};
+use blitz_dom::util::ImageType;
 use std::borrow::Cow;
 use std::cell::{Cell, Ref, RefCell, RefMut};
 use std::collections::HashSet;
 
-use crate::node::{Attribute, ElementNodeData, Node, NodeData};
-use crate::Document;
+use blitz_dom::node::{Attribute, ElementNodeData, Node, NodeData};
+use blitz_dom::Document;
 use blitz_traits::net::SharedProvider;
-use html5ever::local_name;
 use html5ever::{
+    local_name,
     tendril::{StrTendril, TendrilSink},
     tree_builder::{ElementFlags, NodeOrText, QuirksMode, TreeSink},
     QualName,

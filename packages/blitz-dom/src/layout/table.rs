@@ -1,6 +1,6 @@
 use std::{ops::Range, sync::Arc};
 
-use html5ever::local_name;
+use markup5ever::local_name;
 use style::values::specified::box_::DisplayInside;
 use taffy::{compute_leaf_layout, style_helpers, LayoutPartialTree as _};
 

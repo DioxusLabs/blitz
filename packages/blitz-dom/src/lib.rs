@@ -18,10 +18,6 @@ pub(crate) const BULLET_FONT: &[u8] = include_bytes!("../assets/moz-bullet-font.
 /// This is the primary entry point for this crate.
 pub mod document;
 
-pub mod html_document;
-/// An implementation for Html5ever's sink trait, allowing us to parse HTML into a DOM.
-pub mod htmlsink;
-
 /// Integration of taffy and the DOM.
 pub mod layout;
 
@@ -48,13 +44,12 @@ pub mod net;
 pub mod viewport;
 
 pub use document::{Document, DocumentLike};
-pub use html5ever::{
+pub use markup5ever::{
     local_name, namespace_prefix, namespace_url, ns, Namespace, NamespaceStaticSet, Prefix,
     PrefixStaticSet, QualName,
 };
-pub use html_document::HtmlDocument;
-pub use htmlsink::DocumentHtmlParser;
 pub use node::{ElementNodeData, Node, NodeData, TextNodeData};
+pub use parley::FontContext;
 pub use string_cache::Atom;
 pub use style::invalidation::element::restyle_hints::RestyleHint;
 pub use viewport::Viewport;

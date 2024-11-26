@@ -4,7 +4,7 @@ use crate::util::ImageType;
 use crate::{ElementNodeData, Node, NodeData, TextNodeData, Viewport};
 use app_units::Au;
 use blitz_traits::net::{DummyNetProvider, SharedProvider};
-use html5ever::local_name;
+use markup5ever::local_name;
 use parley::{FontContext, PlainEditorOp};
 use peniko::kurbo;
 use string_cache::Atom;
@@ -95,7 +95,8 @@ pub struct Document {
     /// There is no way to create the tree - publicly or privately - that would invalidate that invariant.
     pub nodes: Box<Slab<Node>>,
 
-    pub(crate) guard: SharedRwLock,
+    // TODO: encapsulate and make private again
+    pub guard: SharedRwLock,
 
     /// The styling engine of firefox
     pub(crate) stylist: Stylist,
@@ -103,7 +104,8 @@ pub struct Document {
     // caching for the stylist
     pub(crate) snapshots: SnapshotMap,
 
-    pub(crate) nodes_to_id: HashMap<String, usize>,
+    // TODO: encapsulate and make private again
+    pub nodes_to_id: HashMap<String, usize>,
 
     /// Base url for resolving linked resources (stylesheets, images, fonts, etc)
     pub(crate) base_url: Option<url::Url>,

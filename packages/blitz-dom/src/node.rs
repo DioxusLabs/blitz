@@ -1,6 +1,6 @@
 use atomic_refcell::{AtomicRef, AtomicRefCell};
-use html5ever::{local_name, LocalName, QualName};
 use image::DynamicImage;
+use markup5ever::{local_name, LocalName, QualName};
 use parley::{FontContext, LayoutContext, PlainEditorOp};
 use peniko::kurbo;
 use selectors::matching::{ElementSelectorFlags, QuirksMode};

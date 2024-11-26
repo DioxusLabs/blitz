@@ -14,6 +14,7 @@ default = ["accessibility", "menu", "tracing"]
 # Blitz dependencies
 blitz-renderer-vello = { path = "../blitz-renderer-vello" }
 blitz-dom = { path = "../blitz-dom" }
+blitz-html = { path = "../blitz-html" }
 blitz-net = { path = "../blitz-net" }
 blitz-traits = { path = "../blitz-traits" }
 

@@ -10,7 +10,7 @@ use crate::{
     image::{image_measure_function, ImageContext},
     node::Node,
 };
-use html5ever::local_name;
+use markup5ever::local_name;
 use std::cell::Ref;
 use std::sync::Arc;
 use taffy::{

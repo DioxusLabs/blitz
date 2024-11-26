@@ -1,6 +1,6 @@
 mod markdown;
 use blitz_dom::net::Resource;
-use blitz_dom::HtmlDocument;
+use blitz_html::HtmlDocument;
 use blitz_net::Provider;
 use blitz_traits::net::SharedCallback;
 use markdown::{markdown_to_html, BLITZ_MD_STYLES, GITHUB_MD_STYLES};

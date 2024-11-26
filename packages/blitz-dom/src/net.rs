@@ -31,7 +31,7 @@ pub enum Resource {
     Css(usize, DocumentStyleSheet),
     Font(Bytes),
 }
-pub(crate) struct CssHandler {
+pub struct CssHandler {
     pub node: usize,
     pub source_url: Url,
     pub guard: SharedRwLock,
@@ -251,9 +251,9 @@ fn fetch_font_face(
         });
 }
 
-pub(crate) struct ImageHandler(usize, ImageType);
+pub struct ImageHandler(usize, ImageType);
 impl ImageHandler {
-    pub(crate) fn new(node_id: usize, kind: ImageType) -> Self {
+    pub fn new(node_id: usize, kind: ImageType) -> Self {
         Self(node_id, kind)
     }
 }

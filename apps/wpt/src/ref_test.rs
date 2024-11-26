@@ -1,5 +1,5 @@
 use blitz_dom::net::Resource;
-use blitz_dom::HtmlDocument;
+use blitz_html::HtmlDocument;
 use blitz_traits::net::SharedProvider;
 use reqwest::Url;
 

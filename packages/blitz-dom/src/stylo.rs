@@ -10,9 +10,7 @@ use crate::net::ImageHandler;
 use crate::node::NodeData;
 use crate::util::ImageType;
 use atomic_refcell::{AtomicRef, AtomicRefMut};
-use html5ever::LocalNameStaticSet;
-use html5ever::NamespaceStaticSet;
-use html5ever::{local_name, LocalName, Namespace};
+use markup5ever::{local_name, LocalName, LocalNameStaticSet, Namespace, NamespaceStaticSet};
 use selectors::{
     attr::{AttrSelectorOperation, AttrSelectorOperator, NamespaceConstraint},
     matching::{ElementSelectorFlags, MatchingContext, VisitedHandlingMode},

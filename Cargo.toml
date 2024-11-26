@@ -3,6 +3,7 @@
 members = [
   "packages/blitz-traits",
   "packages/blitz-dom", 
+  "packages/blitz-html",
   "packages/blitz-net",
   "packages/blitz-renderer-vello",
   "packages/blitz-shell",
@@ -23,6 +24,7 @@ style_config = { version = "0.1", package = "stylo_config" }
 style_traits = { version = "0.1", package = "stylo_traits" }
 style_dom = { version = "0.1", package = "stylo_dom" }
 selectors = { version = "0.26", package = "stylo_selectors" }
+markup5ever = "0.14" # needs to match stylo markup5ever version
 html5ever = "0.29" # needs to match stylo markup5ever version
 xml5ever = "0.20" # needs to match stylo markup5ever version
 euclid = "0.22"
@@ -109,6 +111,7 @@ incremental = false
 # webrender = "0.61.0"
 # mozbuild = "0.1.0"
 blitz-dom = { path = "./packages/blitz-dom" }
+blitz-html = { path = "./packages/blitz-html" }
 blitz-net = { path = "./packages/blitz-net" }
 blitz-traits = { path = "./packages/blitz-traits" }
 blitz-renderer-vello = { path = "./packages/blitz-renderer-vello" }

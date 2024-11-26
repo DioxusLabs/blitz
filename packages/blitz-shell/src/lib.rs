@@ -25,7 +25,7 @@ pub use crate::event::BlitzEvent;
 pub use crate::window::{View, WindowConfig};
 
 use blitz_dom::net::Resource;
-use blitz_dom::HtmlDocument;
+use blitz_html::HtmlDocument;
 use blitz_net::Provider;
 use blitz_traits::net::{NetCallback, SharedCallback};
 use std::sync::Arc;

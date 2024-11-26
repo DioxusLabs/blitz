@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
-use blitz_dom::{net::Resource, Document, HtmlDocument, Node};
+use blitz_dom::{net::Resource, Document, Node};
+use blitz_html::HtmlDocument;
 use blitz_traits::net::SharedProvider;
 
 use crate::{clone_font_ctx, TestResult, ThreadCtx};
