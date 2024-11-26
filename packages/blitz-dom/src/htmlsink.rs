@@ -24,6 +24,7 @@ fn html5ever_to_blitz_attr(attr: html5ever::Attribute) -> Attribute {
 }
 
 pub struct DocumentHtmlParser<'a> {
+    doc_id: usize,
     doc: RefCell<&'a mut Document>,
     style_nodes: RefCell<Vec<usize>>,
 
@@ -39,6 +40,7 @@ pub struct DocumentHtmlParser<'a> {
 impl DocumentHtmlParser<'_> {
     pub fn new(doc: &mut Document, net_provider: SharedProvider<Resource>) -> DocumentHtmlParser {
         DocumentHtmlParser {
+            doc_id: doc.id(),
             doc: RefCell::new(doc),
             style_nodes: RefCell::new(Vec::new()),
             errors: RefCell::new(Vec::new()),
@@ -116,6 +118,7 @@ impl DocumentHtmlParser<'_> {
         if let (Some("stylesheet"), Some(href)) = (rel_attr, href_attr) {
             let url = self.doc.borrow().resolve_url(href);
             self.net_provider.fetch(
+                self.doc_id,
                 url.clone(),
                 Box::new(CssHandler {
                     node: target_id,
@@ -133,6 +136,7 @@ impl DocumentHtmlParser<'_> {
             if !raw_src.is_empty() {
                 let src = self.doc.borrow().resolve_url(raw_src);
                 self.net_provider.fetch(
+                    self.doc.borrow().id(),
                     src,
                     Box::new(ImageHandler::new(target_id, ImageType::Image)),
                 );

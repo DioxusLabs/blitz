@@ -39,7 +39,7 @@ pub(crate) struct CssHandler {
 }
 
 #[derive(Clone)]
-struct StylesheetLoader(SharedProvider<Resource>);
+struct StylesheetLoader(usize, SharedProvider<Resource>);
 impl ServoStylesheetLoader for StylesheetLoader {
     fn request_stylesheet(
         &self,
@@ -91,7 +91,12 @@ impl ServoStylesheetLoader for StylesheetLoader {
         }
         impl RequestHandler for StylesheetLoaderInner {
             type Data = Resource;
-            fn bytes(self: Box<Self>, bytes: Bytes, _callback: SharedCallback<Self::Data>) {
+            fn bytes(
+                self: Box<Self>,
+                doc_id: usize,
+                bytes: Bytes,
+                _callback: SharedCallback<Self::Data>,
+            ) {
                 let css = std::str::from_utf8(&bytes).expect("Invalid UTF8");
                 let escaped_css = html_escape::decode_html_entities(css);
                 Stylesheet::update_from_str(
@@ -102,18 +107,19 @@ impl ServoStylesheetLoader for StylesheetLoader {
                     None,
                     AllowImportRules::Yes,
                 );
-                fetch_font_face(&self.sheet, &self.provider, &self.read_lock.read())
+                fetch_font_face(doc_id, &self.sheet, &self.provider, &self.read_lock.read())
             }
         }
         let url = import.url.url().unwrap();
-        self.0.fetch(
+        self.1.fetch(
+            self.0,
             url.as_ref().clone(),
             Box::new(StylesheetLoaderInner {
                 url: url.clone(),
                 loader: self.clone(),
                 read_lock: lock.clone(),
                 sheet: sheet.clone(),
-                provider: self.0.clone(),
+                provider: self.1.clone(),
             }),
         );
 
@@ -122,7 +128,7 @@ impl ServoStylesheetLoader for StylesheetLoader {
 }
 impl RequestHandler for CssHandler {
     type Data = Resource;
-    fn bytes(self: Box<Self>, bytes: Bytes, callback: SharedCallback<Resource>) {
+    fn bytes(self: Box<Self>, doc_id: usize, bytes: Bytes, callback: SharedCallback<Resource>) {
         let css = std::str::from_utf8(&bytes).expect("Invalid UTF8");
         let escaped_css = html_escape::decode_html_entities(css);
         let sheet = Stylesheet::from_str(
@@ -131,24 +137,29 @@ impl RequestHandler for CssHandler {
             Origin::Author,
             ServoArc::new(self.guard.wrap(MediaList::empty())),
             self.guard.clone(),
-            Some(&StylesheetLoader(self.provider.clone())),
+            Some(&StylesheetLoader(doc_id, self.provider.clone())),
             None,
             QuirksMode::NoQuirks,
             AllowImportRules::Yes,
         );
         let read_guard = self.guard.read();
-        fetch_font_face(&sheet, &self.provider, &read_guard);
+        fetch_font_face(doc_id, &sheet, &self.provider, &read_guard);
 
-        callback.call(Resource::Css(
-            self.node,
-            DocumentStyleSheet(ServoArc::new(sheet)),
-        ))
+        callback.call(
+            doc_id,
+            Resource::Css(self.node, DocumentStyleSheet(ServoArc::new(sheet))),
+        )
     }
 }
 struct FontFaceHandler(FontFaceSourceFormatKeyword);
 impl RequestHandler for FontFaceHandler {
     type Data = Resource;
-    fn bytes(mut self: Box<Self>, mut bytes: Bytes, callback: SharedCallback<Resource>) {
+    fn bytes(
+        mut self: Box<Self>,
+        doc_id: usize,
+        mut bytes: Bytes,
+        callback: SharedCallback<Resource>,
+    ) {
         if self.0 == FontFaceSourceFormatKeyword::None {
             self.0 = match bytes.as_ref() {
                 // https://w3c.github.io/woff/woff2/#woff20Header
@@ -178,11 +189,12 @@ impl RequestHandler for FontFaceHandler {
             _ => {}
         }
 
-        callback.call(Resource::Font(bytes))
+        callback.call(doc_id, Resource::Font(bytes))
     }
 }
 
 fn fetch_font_face(
+    doc_id: usize,
     sheet: &Stylesheet,
     network_provider: &SharedProvider<Resource>,
     read_guard: &SharedRwLockReadGuard,
@@ -232,6 +244,7 @@ fn fetch_font_face(
                 return;
             }
             network_provider.fetch(
+                doc_id,
                 Url::from_str(url_source.url.as_str()).unwrap(),
                 Box::new(FontFaceHandler(format)),
             )
@@ -246,20 +259,20 @@ impl ImageHandler {
 }
 impl RequestHandler for ImageHandler {
     type Data = Resource;
-    fn bytes(self: Box<Self>, bytes: Bytes, callback: SharedCallback<Resource>) {
+    fn bytes(self: Box<Self>, doc_id: usize, bytes: Bytes, callback: SharedCallback<Resource>) {
         // Try parse image
         if let Ok(image) = image::ImageReader::new(Cursor::new(&bytes))
             .with_guessed_format()
             .expect("IO errors impossible with Cursor")
             .decode()
         {
-            callback.call(Resource::Image(self.0, self.1, Arc::new(image)));
+            callback.call(doc_id, Resource::Image(self.0, self.1, Arc::new(image)));
             return;
         };
 
         // Try parse SVG
         const DUMMY_SVG : &[u8] = r#"<?xml version="1.0" encoding="UTF-8"?><svg xmlns="http://www.w3.org/2000/svg" width="1" height="1"/>"#.as_bytes();
         let tree = parse_svg(&bytes).unwrap_or(parse_svg(DUMMY_SVG).unwrap());
-        callback.call(Resource::Svg(self.0, self.1, Box::new(tree)));
+        callback.call(doc_id, Resource::Svg(self.0, self.1, Box::new(tree)));
     }
 }

@@ -57,6 +57,8 @@ use style::values::computed::text::TextAlign as StyloTextAlign;
 impl crate::document::Document {
     /// Walk the whole tree, converting styles to layout
     pub fn flush_styles_to_layout(&mut self, node_id: usize) {
+        let doc_id = self.id();
+
         let display = {
             let node = self.nodes.get_mut(node_id).unwrap();
             let stylo_element_data = node.stylo_element_data.borrow();
@@ -98,6 +100,7 @@ impl crate::document::Document {
                             }
 
                             self.net_provider.fetch(
+                                doc_id,
                                 (**new_url).clone(),
                                 Box::new(ImageHandler::new(node_id, ImageType::Background(idx))),
                             );

@@ -30,6 +30,7 @@ impl<D> Provider<D> {
 impl<D: 'static> Provider<D> {
     async fn fetch_inner(
         client: Client,
+        doc_id: usize,
         url: Url,
         handler: BoxedHandler<D>,
         res_callback: SharedCallback<D>,
@@ -38,11 +39,11 @@ impl<D: 'static> Provider<D> {
             "data" => {
                 let data_url = DataUrl::process(url.as_str())?;
                 let decoded = data_url.decode_to_vec()?;
-                handler.bytes(Bytes::from(decoded.0), res_callback);
+                handler.bytes(doc_id, Bytes::from(decoded.0), res_callback);
             }
             "file" => {
                 let file_content = std::fs::read(url.path())?;
-                handler.bytes(Bytes::from(file_content), res_callback);
+                handler.bytes(doc_id, Bytes::from(file_content), res_callback);
             }
             _ => {
                 let response = client
@@ -50,7 +51,7 @@ impl<D: 'static> Provider<D> {
                     .header("User-Agent", USER_AGENT)
                     .send()
                     .await?;
-                handler.bytes(response.bytes().await?, res_callback);
+                handler.bytes(doc_id, response.bytes().await?, res_callback);
             }
         }
         Ok(())
@@ -59,11 +60,11 @@ impl<D: 'static> Provider<D> {
 
 impl<D: 'static> NetProvider for Provider<D> {
     type Data = D;
-    fn fetch(&self, url: Url, handler: BoxedHandler<D>) {
+    fn fetch(&self, doc_id: usize, url: Url, handler: BoxedHandler<D>) {
         let client = self.client.clone();
         let callback = Arc::clone(&self.resource_callback);
         drop(self.rt.spawn(async move {
-            let res = Self::fetch_inner(client, url.clone(), handler, callback).await;
+            let res = Self::fetch_inner(client, doc_id, url.clone(), handler, callback).await;
             if let Err(e) = res {
                 eprintln!("Error fetching {}: {e}", url);
             }
@@ -83,16 +84,16 @@ enum ProviderError {
     ReqwestError(#[from] reqwest::Error),
 }
 
-pub struct MpscCallback<T>(UnboundedSender<T>);
+pub struct MpscCallback<T>(UnboundedSender<(usize, T)>);
 impl<T> MpscCallback<T> {
-    pub fn new() -> (UnboundedReceiver<T>, Self) {
+    pub fn new() -> (UnboundedReceiver<(usize, T)>, Self) {
         let (send, recv) = unbounded_channel();
         (recv, Self(send))
     }
 }
 impl<T: Send + Sync + 'static> Callback for MpscCallback<T> {
     type Data = T;
-    fn call(&self, data: Self::Data) {
-        let _ = self.0.send(data);
+    fn call(&self, doc_id: usize, data: Self::Data) {
+        let _ = self.0.send((doc_id, data));
     }
 }

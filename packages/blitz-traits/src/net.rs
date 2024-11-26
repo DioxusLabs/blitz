@@ -10,12 +10,12 @@ pub type SharedCallback<D> = Arc<dyn Callback<Data = D>>;
 
 pub trait NetProvider: Send + Sync + 'static {
     type Data;
-    fn fetch(&self, url: Url, handler: BoxedHandler<Self::Data>);
+    fn fetch(&self, doc_id: usize, url: Url, handler: BoxedHandler<Self::Data>);
 }
 
 pub trait RequestHandler: Send + Sync + 'static {
     type Data;
-    fn bytes(self: Box<Self>, bytes: Bytes, callback: SharedCallback<Self::Data>);
+    fn bytes(self: Box<Self>, doc_id: usize, bytes: Bytes, callback: SharedCallback<Self::Data>);
     fn method(&self) -> Method {
         Method::GET
     }
@@ -23,7 +23,7 @@ pub trait RequestHandler: Send + Sync + 'static {
 
 pub trait Callback: Send + Sync + 'static {
     type Data;
-    fn call(&self, data: Self::Data);
+    fn call(&self, doc_id: usize, data: Self::Data);
 }
 
 pub struct DummyProvider<D>(PhantomData<D>);
@@ -34,7 +34,7 @@ impl<D> Default for DummyProvider<D> {
 }
 impl<D: Send + Sync + 'static> NetProvider for DummyProvider<D> {
     type Data = D;
-    fn fetch(&self, _url: Url, _handler: BoxedHandler<D>) {}
+    fn fetch(&self, _doc_id: usize, _url: Url, _handler: BoxedHandler<D>) {}
 }
 
 pub struct DummyCallback<D>(PhantomData<D>);
@@ -45,5 +45,5 @@ impl<D: Send + Sync + 'static> Default for DummyCallback<D> {
 }
 impl<D: Send + Sync + 'static> Callback for DummyCallback<D> {
     type Data = D;
-    fn call(&self, _data: Self::Data) {}
+    fn call(&self, _doc_id: usize, _data: Self::Data) {}
 }

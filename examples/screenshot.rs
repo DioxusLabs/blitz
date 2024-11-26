@@ -82,7 +82,7 @@ async fn main() {
         .set_viewport(Viewport::new(width * scale, height * scale, scale as f32));
 
     while !net.is_empty() {
-        let Some(res) = recv.recv().await else {
+        let Some((_, res)) = recv.recv().await else {
             break;
         };
         document.as_mut().load_resource(res);

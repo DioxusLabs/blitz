@@ -75,6 +75,10 @@ pub trait DocumentLike: AsRef<Document> + AsMut<Document> + Into<Document> + 'st
     fn as_any_mut(&mut self) -> &mut dyn Any {
         self
     }
+
+    fn id(&self) -> usize {
+        self.as_ref().id
+    }
 }
 
 pub struct Document {

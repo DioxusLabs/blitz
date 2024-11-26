@@ -6,7 +6,7 @@ use blitz_traits::net::SharedCallback;
 use markdown::{markdown_to_html, BLITZ_MD_STYLES, GITHUB_MD_STYLES};
 use reqwest::header::HeaderName;
 
-use dioxus_native::Callback;
+use dioxus_native::{create_default_event_loop, Callback};
 use std::env::current_dir;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -26,6 +26,9 @@ fn main() {
 
     let _guard = rt.enter();
 
+    let event_loop = create_default_event_loop();
+    let proxy = event_loop.create_proxy();
+
     let (base_url, contents, is_md) = rt.block_on(fetch(raw_url));
 
     // Process markdown if necessary
@@ -39,14 +42,14 @@ fn main() {
 
     // println!("{html}");
 
-    let net_callback = Arc::new(Callback::new());
+    let net_callback = Arc::new(Callback::new(proxy));
     let net_provider = Arc::new(Provider::new(
         Handle::current(),
         Arc::clone(&net_callback) as SharedCallback<Resource>,
     ));
 
     let document = HtmlDocument::from_html(&html, Some(base_url), stylesheets, net_provider, None);
-    dioxus_native::launch_with_document(document, rt, Some(net_callback));
+    dioxus_native::launch_with_document(document, rt, event_loop);
 }
 
 async fn fetch(raw_url: Option<String>) -> (String, String, bool) {
