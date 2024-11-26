@@ -13,7 +13,7 @@ use vello::{
 };
 use wgpu::{
     BufferDescriptor, BufferUsages, CommandEncoderDescriptor, Extent3d, ImageCopyBuffer,
-    PresentMode, SurfaceError, TextureDescriptor, TextureFormat, TextureUsages, WasmNotSend,
+    PresentMode, SurfaceError, TextureDescriptor, TextureFormat, TextureUsages, WasmNotSendSync,
 };
 
 const DEFAULT_THREADS: Option<NonZeroUsize> = {
@@ -42,14 +42,13 @@ pub struct Renderer<'s, W>
 where
     W: raw_window_handle::HasWindowHandle
         + raw_window_handle::HasDisplayHandle
-        + Sync
-        + WasmNotSend
+        + WasmNotSendSync
         + 's,
 {
     // The fields MUST be in this order, so that the surface is dropped before the window
     // Window is cached even when suspended so that it can be reused when the app is resumed after being suspended
     pub render_state: RenderState<'s>,
-    pub window: Arc<W>,
+    pub window_handle: Arc<W>,
 
     // Vello
     pub(crate) render_context: RenderContext,
@@ -60,8 +59,7 @@ impl<'a, W> Renderer<'a, W>
 where
     W: raw_window_handle::HasWindowHandle
         + raw_window_handle::HasDisplayHandle
-        + Sync
-        + WasmNotSend
+        + WasmNotSendSync
         + 'a,
 {
     pub fn new(window: Arc<W>) -> Self {
@@ -75,7 +73,7 @@ where
         Self {
             render_context,
             render_state: RenderState::Suspended,
-            window,
+            window_handle: window,
             scene: Scene::new(),
         }
     }
@@ -88,7 +86,7 @@ where
         let surface = self
             .render_context
             .create_surface(
-                self.window.clone(),
+                self.window_handle.clone(),
                 viewport.window_size.0,
                 viewport.window_size.1,
                 PresentMode::AutoVsync,
