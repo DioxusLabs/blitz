@@ -4,6 +4,7 @@ mod render;
 use crate::renderer::render::generate_vello_scene;
 use blitz_dom::{Document, Viewport};
 use blitz_traits::Devtools;
+use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
 use std::num::NonZeroUsize;
 use std::sync::Arc;
 use vello::{
@@ -40,10 +41,7 @@ pub enum RenderState<'s> {
 
 pub struct Renderer<'s, W>
 where
-    W: raw_window_handle::HasWindowHandle
-        + raw_window_handle::HasDisplayHandle
-        + WasmNotSendSync
-        + 's,
+    W: HasWindowHandle + HasDisplayHandle + WasmNotSendSync + 's,
 {
     // The fields MUST be in this order, so that the surface is dropped before the window
     // Window is cached even when suspended so that it can be reused when the app is resumed after being suspended
@@ -57,10 +55,7 @@ where
 
 impl<'a, W> Renderer<'a, W>
 where
-    W: raw_window_handle::HasWindowHandle
-        + raw_window_handle::HasDisplayHandle
-        + WasmNotSendSync
-        + 'a,
+    W: HasWindowHandle + HasDisplayHandle + WasmNotSendSync + 'a,
 {
     pub fn new(window: Arc<W>) -> Self {
         // 1. Set up renderer-specific stuff
