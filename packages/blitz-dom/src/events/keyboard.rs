@@ -149,7 +149,8 @@ pub(crate) fn apply_keypress_event(
             }
         }
         Key::Named(NamedKey::Enter) => {
-            transact!(PlainEditorOp::InsertOrReplaceSelection("\n".into()))
+            // TODO: support multi-line text inputs
+            // transact!(PlainEditorOp::InsertOrReplaceSelection("\n".into()))
         }
         Key::Named(NamedKey::Space) => {
             transact!(PlainEditorOp::InsertOrReplaceSelection(" ".into()))
