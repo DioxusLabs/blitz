@@ -6,7 +6,7 @@ use blitz_traits::net::SharedCallback;
 use markdown::{markdown_to_html, BLITZ_MD_STYLES, GITHUB_MD_STYLES};
 use reqwest::header::HeaderName;
 
-use dioxus_native::{create_default_event_loop, Callback};
+use dioxus_native::{create_default_event_loop, WinitNetCallback};
 use std::env::current_dir;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -42,7 +42,7 @@ fn main() {
 
     // println!("{html}");
 
-    let net_callback = Arc::new(Callback::new(proxy));
+    let net_callback = Arc::new(WinitNetCallback::new(proxy));
     let net_provider = Arc::new(Provider::new(
         Handle::current(),
         Arc::clone(&net_callback) as SharedCallback<Resource>,

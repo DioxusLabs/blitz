@@ -3,7 +3,7 @@ use crate::node::{ImageData, NodeSpecificData, Status, TextBrush};
 use crate::util::ImageType;
 use crate::{ElementNodeData, Node, NodeData, TextNodeData, Viewport};
 use app_units::Au;
-use blitz_traits::net::{DummyProvider, SharedProvider};
+use blitz_traits::net::{DummyNetProvider, SharedProvider};
 use html5ever::local_name;
 use parley::{FontContext, PlainEditorOp};
 use peniko::kurbo;
@@ -438,7 +438,7 @@ impl Document {
             hover_node_id: None,
             focus_node_id: None,
             changed: HashSet::new(),
-            net_provider: Arc::new(DummyProvider::default()),
+            net_provider: Arc::new(DummyNetProvider::default()),
         };
 
         // Initialise document with root Document node

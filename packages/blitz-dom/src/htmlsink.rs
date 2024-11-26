@@ -388,13 +388,13 @@ impl<'b> TreeSink for DocumentHtmlParser<'b> {
 #[test]
 fn parses_some_html() {
     use crate::Viewport;
-    use blitz_traits::net::{DummyCallback, DummyProvider};
+    use blitz_traits::net::DummyNetProvider;
     use std::sync::Arc;
 
     let html = "<!DOCTYPE html><html><body><h1>hello world</h1></body></html>";
     let viewport = Viewport::new(800, 600, 1.0);
     let mut doc = Document::new(viewport);
-    let sink = DocumentHtmlParser::new(&mut doc, Arc::new(DummyProvider::default()));
+    let sink = DocumentHtmlParser::new(&mut doc, Arc::new(DummyNetProvider::default()));
 
     html5ever::parse_document(sink, Default::default())
         .from_utf8()

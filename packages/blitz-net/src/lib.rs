@@ -1,4 +1,4 @@
-use blitz_traits::net::{BoxedHandler, Bytes, Callback, NetProvider, SharedCallback, Url};
+use blitz_traits::net::{BoxedHandler, Bytes, NetCallback, NetProvider, SharedCallback, Url};
 use data_url::DataUrl;
 use reqwest::Client;
 use std::sync::Arc;
@@ -91,7 +91,7 @@ impl<T> MpscCallback<T> {
         (recv, Self(send))
     }
 }
-impl<T: Send + Sync + 'static> Callback for MpscCallback<T> {
+impl<T: Send + Sync + 'static> NetCallback for MpscCallback<T> {
     type Data = T;
     fn call(&self, doc_id: usize, data: Self::Data) {
         let _ = self.0.send((doc_id, data));

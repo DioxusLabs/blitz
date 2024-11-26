@@ -17,7 +17,7 @@ use style::{
     values::{CssUrl, SourceLocation},
 };
 
-use blitz_traits::net::{Bytes, RequestHandler, SharedCallback, SharedProvider};
+use blitz_traits::net::{Bytes, NetHandler, SharedCallback, SharedProvider};
 
 use url::Url;
 use usvg::Tree;
@@ -89,7 +89,7 @@ impl ServoStylesheetLoader for StylesheetLoader {
             sheet: ServoArc<Stylesheet>,
             provider: SharedProvider<Resource>,
         }
-        impl RequestHandler for StylesheetLoaderInner {
+        impl NetHandler for StylesheetLoaderInner {
             type Data = Resource;
             fn bytes(
                 self: Box<Self>,
@@ -126,7 +126,7 @@ impl ServoStylesheetLoader for StylesheetLoader {
         ServoArc::new(lock.wrap(import))
     }
 }
-impl RequestHandler for CssHandler {
+impl NetHandler for CssHandler {
     type Data = Resource;
     fn bytes(self: Box<Self>, doc_id: usize, bytes: Bytes, callback: SharedCallback<Resource>) {
         let css = std::str::from_utf8(&bytes).expect("Invalid UTF8");
@@ -152,7 +152,7 @@ impl RequestHandler for CssHandler {
     }
 }
 struct FontFaceHandler(FontFaceSourceFormatKeyword);
-impl RequestHandler for FontFaceHandler {
+impl NetHandler for FontFaceHandler {
     type Data = Resource;
     fn bytes(
         mut self: Box<Self>,
@@ -257,7 +257,7 @@ impl ImageHandler {
         Self(node_id, kind)
     }
 }
-impl RequestHandler for ImageHandler {
+impl NetHandler for ImageHandler {
     type Data = Resource;
     fn bytes(self: Box<Self>, doc_id: usize, bytes: Bytes, callback: SharedCallback<Resource>) {
         // Try parse image

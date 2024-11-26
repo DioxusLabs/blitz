@@ -1,4 +1,4 @@
-use blitz_traits::net::{BoxedHandler, Bytes, Callback, NetProvider, Url};
+use blitz_traits::net::{BoxedHandler, Bytes, NetCallback, NetProvider, Url};
 use data_url::DataUrl;
 use std::{
     path::{Path, PathBuf},
@@ -87,7 +87,7 @@ impl<T> VecCallback<T> {
         }
     }
 }
-impl<T: Send + Sync + 'static> Callback for VecCallback<T> {
+impl<T: Send + Sync + 'static> NetCallback for VecCallback<T> {
     type Data = T;
     fn call(&self, _doc_id: usize, data: Self::Data) {
         self.0
