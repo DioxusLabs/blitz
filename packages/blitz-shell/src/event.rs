@@ -7,18 +7,6 @@ use accesskit_winit::Event as AccessibilityEvent;
 use accesskit_winit::WindowEvent as AccessibilityWindowEvent;
 use blitz_dom::net::Resource;
 
-/// Dioxus-native specific event type
-pub enum DioxusNativeEvent {
-    /// A hotreload event, basically telling us to update our templates.
-    #[cfg(all(
-        feature = "hot-reload",
-        debug_assertions,
-        not(target_os = "android"),
-        not(target_os = "ios")
-    ))]
-    DevserverEvent(dioxus_devtools::DevserverMsg),
-}
-
 #[derive(Debug, Clone)]
 pub enum BlitzEvent {
     Poll {

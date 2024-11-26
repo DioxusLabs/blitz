@@ -7,7 +7,7 @@
 use dioxus::prelude::*;
 
 fn main() {
-    blitz_shell::launch(app);
+    dioxus_native::launch(app);
 }
 
 fn app() -> Element {

@@ -1,11 +1,10 @@
-use crate::application::BlitzApplication;
-use crate::event::DioxusNativeEvent;
+use blitz_shell::BlitzApplication;
 use winit::application::ApplicationHandler;
 use winit::event::{StartCause, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, EventLoopProxy};
 use winit::window::WindowId;
 
-use crate::{BlitzEvent, DioxusDocument, WindowConfig};
+use crate::{BlitzEvent, DioxusDocument, DioxusNativeEvent, WindowConfig};
 
 pub struct DioxusNativeApplication {
     inner: BlitzApplication<DioxusDocument>,

@@ -10,8 +10,6 @@
 //!  - `tracing`: Enables tracing support.
 
 mod application;
-mod dioxus_application;
-mod documents;
 mod event;
 mod stylo_to_winit;
 mod window;
@@ -23,7 +21,6 @@ mod menu;
 mod accessibility;
 
 pub use crate::application::BlitzApplication;
-pub use crate::documents::DioxusDocument;
 pub use crate::event::BlitzEvent;
 pub use crate::window::{View, WindowConfig};
 
@@ -31,16 +28,10 @@ use blitz_dom::net::Resource;
 use blitz_dom::HtmlDocument;
 use blitz_net::Provider;
 use blitz_traits::net::{NetCallback, SharedCallback};
-use dioxus::prelude::{ComponentFunction, Element, VirtualDom};
-use dioxus_application::DioxusNativeApplication;
 use std::sync::Arc;
 use url::Url;
 use winit::event_loop::EventLoopProxy;
 use winit::event_loop::{ControlFlow, EventLoop};
-
-pub mod exports {
-    pub use dioxus;
-}
 
 #[derive(Default)]
 pub struct Config {
@@ -61,69 +52,6 @@ pub fn create_default_event_loop<Event>() -> EventLoop<Event> {
     event_loop.set_control_flow(ControlFlow::Wait);
 
     event_loop
-}
-
-/// Launch an interactive HTML/CSS renderer driven by the Dioxus virtualdom
-pub fn launch(root: fn() -> Element) {
-    launch_cfg(root, Config::default())
-}
-
-pub fn launch_cfg(root: fn() -> Element, cfg: Config) {
-    launch_cfg_with_props(root, (), cfg)
-}
-
-// todo: props shouldn't have the clone bound - should try and match dioxus-desktop behavior
-pub fn launch_cfg_with_props<P: Clone + 'static, M: 'static>(
-    root: impl ComponentFunction<P, M>,
-    props: P,
-    _cfg: Config,
-) {
-    // Turn on the runtime and enter it
-    let rt = tokio::runtime::Builder::new_multi_thread()
-        .enable_all()
-        .build()
-        .unwrap();
-    let _guard = rt.enter();
-
-    let event_loop = create_default_event_loop::<BlitzEvent>();
-    let proxy = event_loop.create_proxy();
-
-    let net_callback = Arc::new(WinitNetCallback(proxy));
-    let net_provider = Arc::new(Provider::new(
-        rt.handle().clone(),
-        Arc::clone(&net_callback) as SharedCallback<Resource>,
-    ));
-
-    // Spin up the virtualdom
-    // We're going to need to hit it with a special waker
-    let vdom = VirtualDom::new_with_props(root, props);
-    let doc = DioxusDocument::new(vdom, Some(net_provider));
-    let window = WindowConfig::new(doc);
-
-    // Setup hot-reloading if enabled.
-    #[cfg(all(
-        feature = "hot-reload",
-        debug_assertions,
-        not(target_os = "android"),
-        not(target_os = "ios")
-    ))]
-    {
-        use crate::event::DioxusNativeEvent;
-        if let Some(endpoint) = dioxus_cli_config::devserver_ws_endpoint() {
-            let proxy = event_loop.create_proxy();
-            dioxus_devtools::connect(endpoint, move |event| {
-                let dxn_event = DioxusNativeEvent::DevserverEvent(event);
-                let _ = proxy.send_event(BlitzEvent::embedder_event(dxn_event));
-            })
-        }
-    }
-
-    // Create application
-    let mut application = DioxusNativeApplication::new(rt, event_loop.create_proxy());
-    application.add_window(window);
-
-    // Run event loop
-    event_loop.run_app(&mut application).unwrap();
 }
 
 pub fn launch_url(url: &str) {
@@ -165,7 +93,7 @@ pub fn launch_static_html_cfg(html: &str, cfg: Config) {
     let event_loop = create_default_event_loop::<BlitzEvent>();
     let proxy = event_loop.create_proxy();
 
-    let net_callback = Arc::new(WinitNetCallback(proxy));
+    let net_callback = Arc::new(BlitzShellNetCallback(proxy));
     let net_provider = Arc::new(Provider::new(
         rt.handle().clone(),
         Arc::clone(&net_callback) as SharedCallback<Resource>,
@@ -201,14 +129,14 @@ pub fn current_android_app(app: android_activity::AndroidApp) -> AndroidApp {
 }
 
 /// A NetCallback that injects the fetched Resource into our winit event loop
-pub struct WinitNetCallback(EventLoopProxy<BlitzEvent>);
+pub struct BlitzShellNetCallback(EventLoopProxy<BlitzEvent>);
 
-impl WinitNetCallback {
+impl BlitzShellNetCallback {
     pub fn new(proxy: EventLoopProxy<BlitzEvent>) -> Self {
         Self(proxy)
     }
 }
-impl NetCallback for WinitNetCallback {
+impl NetCallback for BlitzShellNetCallback {
     type Data = Resource;
     fn call(&self, doc_id: usize, data: Self::Data) {
         self.0

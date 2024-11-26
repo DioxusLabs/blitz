@@ -51,5 +51,5 @@ fn root() -> Element {
 }
 
 fn main() {
-    blitz_shell::launch(root);
+    dioxus_native::launch(root);
 }

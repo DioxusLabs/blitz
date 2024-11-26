@@ -36,8 +36,9 @@ impl<Doc: DocumentLike> WindowConfig<Doc> {
 }
 
 pub struct View<Doc: DocumentLike> {
+    pub dom: Doc,
+
     pub(crate) renderer: Renderer<'static, Window>,
-    pub(crate) dom: Doc,
     pub(crate) waker: Option<Waker>,
 
     event_loop_proxy: EventLoopProxy<BlitzEvent>,
@@ -50,8 +51,8 @@ pub struct View<Doc: DocumentLike> {
 
     /// The state of the keyboard modifiers (ctrl, shift, etc). Winit/Tao don't track these for us so we
     /// need to store them in order to have access to them when processing keypress events
-    keyboard_modifiers: Modifiers,
     pub devtools: Devtools,
+    keyboard_modifiers: Modifiers,
     mouse_pos: (f32, f32),
     dom_mouse_pos: (f32, f32),
 
@@ -134,7 +135,7 @@ impl<Doc: DocumentLike> View<Doc> {
         self.renderer.suspend();
     }
 
-    pub(crate) fn poll(&mut self) -> bool {
+    pub fn poll(&mut self) -> bool {
         if let Some(waker) = &self.waker {
             let cx = std::task::Context::from_waker(waker);
             if self.dom.poll(cx) {
