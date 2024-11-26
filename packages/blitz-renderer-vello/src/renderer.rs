@@ -45,12 +45,12 @@ where
 {
     // The fields MUST be in this order, so that the surface is dropped before the window
     // Window is cached even when suspended so that it can be reused when the app is resumed after being suspended
-    pub render_state: RenderState<'s>,
-    pub window_handle: Arc<W>,
+    render_state: RenderState<'s>,
+    window_handle: Arc<W>,
 
     // Vello
-    pub(crate) render_context: RenderContext,
-    pub(crate) scene: Scene,
+    render_context: RenderContext,
+    scene: Scene,
 }
 
 impl<'a, W> Renderer<'a, W>
