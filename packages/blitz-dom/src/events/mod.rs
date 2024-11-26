@@ -1,3 +1,7 @@
+mod keyboard;
+
+pub(crate) use keyboard::apply_keypress_event;
+
 use winit::event::{Ime, KeyEvent, Modifiers};
 
 pub struct EventListener {
