@@ -56,4 +56,5 @@ pub use html_document::HtmlDocument;
 pub use htmlsink::DocumentHtmlParser;
 pub use node::{ElementNodeData, Node, NodeData, TextNodeData};
 pub use string_cache::Atom;
+pub use style::invalidation::element::restyle_hints::RestyleHint;
 pub use viewport::Viewport;

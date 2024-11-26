@@ -9,6 +9,9 @@ use parley::{FontContext, PlainEditorOp};
 use peniko::kurbo;
 use string_cache::Atom;
 use style::attr::{AttrIdentifier, AttrValue};
+use style::data::{ElementData, ElementStyles};
+use style::properties::style_structs::Font;
+use style::properties::ComputedValues;
 use style::values::computed::Overflow;
 use style::values::GenericAtomIdent;
 use winit::keyboard::{Key, NamedKey};
@@ -443,6 +446,19 @@ impl Document {
 
         // Initialise document with root Document node
         doc.create_node(NodeData::Document);
+
+        // Stylo data on the root node container is needed to render the node
+        let stylo_element_data = ElementData {
+            styles: ElementStyles {
+                primary: Some(
+                    ComputedValues::initial_values_with_font_override(Font::initial_values())
+                        .to_arc(),
+                ),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        *doc.root_node().stylo_element_data.borrow_mut() = Some(stylo_element_data);
 
         doc
     }

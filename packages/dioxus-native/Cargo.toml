@@ -19,9 +19,6 @@ blitz-net = { path = "../blitz-net" }
 blitz-traits = { path = "../blitz-traits" }
 blitz-shell = { path = "../blitz-shell" }
 
-# Servo dependencies
-style = { workspace = true }
-
 # DioxusLabs dependencies
 dioxus = { workspace = true }
 dioxus-cli-config = { workspace = true, optional = true }
