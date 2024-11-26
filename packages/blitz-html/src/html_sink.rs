@@ -389,7 +389,7 @@ impl<'b> TreeSink for DocumentHtmlParser<'b> {
 
 #[test]
 fn parses_some_html() {
-    use crate::Viewport;
+    use blitz_dom::Viewport;
     use blitz_traits::net::DummyNetProvider;
     use std::sync::Arc;
 
