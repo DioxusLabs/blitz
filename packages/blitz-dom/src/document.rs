@@ -15,7 +15,7 @@ use style::properties::ComputedValues;
 use style::values::computed::Overflow;
 use style::values::GenericAtomIdent;
 // use quadtree_rs::Quadtree;
-use crate::net::Resource;
+use crate::net::{Resource, StylesheetLoader};
 use selectors::{matching::QuirksMode, Element};
 use slab::Slab;
 use std::any::Any;
@@ -581,15 +581,15 @@ impl Document {
     pub fn make_stylesheet(&self, css: impl AsRef<str>, origin: Origin) -> DocumentStyleSheet {
         let data = Stylesheet::from_str(
             css.as_ref(),
-            UrlExtraData::from(
+            UrlExtraData::from(self.base_url.clone().unwrap_or_else(|| {
                 "data:text/css;charset=utf-8;base64,"
                     .parse::<Url>()
-                    .unwrap(),
-            ),
+                    .unwrap()
+            })),
             origin,
             ServoArc::new(self.guard.wrap(MediaList::empty())),
             self.guard.clone(),
-            None,
+            Some(&StylesheetLoader(self.id, self.net_provider.clone())),
             None,
             QuirksMode::NoQuirks,
             AllowImportRules::Yes,

@@ -39,7 +39,7 @@ pub struct CssHandler {
 }
 
 #[derive(Clone)]
-struct StylesheetLoader(usize, SharedProvider<Resource>);
+pub(crate) struct StylesheetLoader(pub(crate) usize, pub(crate) SharedProvider<Resource>);
 impl ServoStylesheetLoader for StylesheetLoader {
     fn request_stylesheet(
         &self,
