@@ -14,4 +14,4 @@ blitz-shell = { path = "../../packages/blitz-shell", features = ["tracing"] }
 tokio = { workspace = true }
 reqwest = { workspace = true }
 url = { workspace = true }
-comrak = { git = "https://github.com/kivikakk/comrak", rev = "96a64d1befcaa8715098bf617e836c2ef70cb692", default-features = false, features = ["syntect"] }
+comrak = { version = "0.30", default-features = false, features = ["syntect"] }

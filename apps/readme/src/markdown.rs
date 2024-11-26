@@ -4,8 +4,7 @@ use std::collections::HashMap;
 
 use comrak::{
     adapters::SyntaxHighlighterAdapter, markdown_to_html_with_plugins,
-    plugins::syntect::SyntectAdapter, ExtensionOptionsBuilder, Options, Plugins,
-    RenderOptionsBuilder,
+    plugins::syntect::SyntectAdapter, ExtensionOptions, Options, Plugins, RenderOptions,
 };
 
 pub(crate) const GITHUB_MD_STYLES: &str = include_str!("../assets/github-markdown-light.css");
@@ -19,25 +18,23 @@ pub(crate) fn markdown_to_html(contents: String) -> String {
     let body_html = markdown_to_html_with_plugins(
         &contents,
         &Options {
-            extension: ExtensionOptionsBuilder::default()
+            extension: ExtensionOptions::builder()
                 .strikethrough(true)
                 .tagfilter(false)
                 .table(true)
                 .autolink(true)
                 .tasklist(true)
                 .superscript(false)
-                .header_ids(None)
+                .maybe_header_ids(None)
                 .footnotes(false)
                 .description_lists(false)
-                .front_matter_delimiter(None)
+                .maybe_front_matter_delimiter(None)
                 .multiline_block_quotes(false)
-                .build()
-                .unwrap(),
-            render: RenderOptionsBuilder::default()
+                .build(),
+            render: RenderOptions::builder()
                 .unsafe_(true)
                 .tasklist_classes(true)
-                .build()
-                .unwrap(),
+                .build(),
             ..Default::default()
         },
         &plugins,
