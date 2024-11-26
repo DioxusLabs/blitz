@@ -1,6 +1,6 @@
 # Blitz
 
-**A modular HTML/CSS renderer with a native Rust API**
+**A radically modular HTML/CSS rendering engine with a native Rust API**
 
 
 [![Discord](https://img.shields.io/discord/899851952891002890.svg?logo=discord&style=flat-square&label=discord)](https://discord.gg/XgGxMSkvUM)
@@ -22,15 +22,6 @@ Check out the [roadmap issue](https://github.com/DioxusLabs/blitz/issues/119) fo
 
 ![screenshot](https://raw.githubusercontent.com/DioxusLabs/screenshots/main/blitz/counter-example.png)
 
-
-## Blitz builds upon:
-
-- [Stylo](https://github.com/servo/stylo) (Firefox's parallel browser-grade CSS engine) for CSS resolution
-- [Vello](https://github.com/linebender/vello) + [WGPU](https://github.com/gfx-rs/wgpu) for rendering
-- [Taffy](https://github.com/DioxusLabs/taffy) for box-level layout
-- [Parley](https://github.com/linebender/parley) for text/inline-level layout
-- [AccessKit](https://github.com/AccessKit/accesskit) for accessibility
-- [Winit](https://github.com/rust-windowing/winit) for windowing and input handling
 
 > Note: This repo contains a new version of Blitz (v0.2+) which uses Stylo. The source code for the old version (v0.1) is still available on the [legacy](https://github.com/DioxusLabs/blitz/tree/legacy) branch but is not under active development.
 
@@ -65,29 +56,38 @@ We don't yet have Blitz bindings for other languages (JavaScript, Python, etc) b
 
 ## Architecture
 
-Blitz consists of a core DOM abstraction (`blitz-dom`), and several modular pieces which provide functionality like networking, rendering, windows, and state management. These pieces can be combined together to make a cohesive web engine.
+Blitz consists of a core DOM abstraction; several modular pieces which provide additional functionality like networking, rendering, windows, and state management; and two high-level wrappers that support rendering either a Dioxus application or HTML.
 
-### Entry points
-- An HTML/markdown frontend that can render an HTML string. This is useful for previewing HTML and/or markdown files but currently lacks interactivity.
-- A Dioxus frontend that can render a Dioxus VirtualDom. This has full interactivity support via Dioxus's event handling.
+These pieces can be combined together to make a cohesive web engine.
 
-### Crates
+### Notable 3rd-party dependencies
 
-**Core:**
+Blitz builds upon the following libraries:
 
-- `blitz-traits`: Minimal crate containing types and traits to allow the other crates to interoperate without depending on each other
-- `blitz-dom`: The core DOM abstraction that includes style resolution and layout but not drawing/painting. Combines the best of Stylo and Taffy that allows you to build extendable dom-like structures.
+- [Stylo](https://github.com/servo/stylo) (Firefox's parallel browser-grade CSS engine) for CSS resolution
+- [Vello](https://github.com/linebender/vello) + [WGPU](https://github.com/gfx-rs/wgpu) for rendering
+- [Taffy](https://github.com/DioxusLabs/taffy) for box-level layout
+- [Parley](https://github.com/linebender/parley) for text/inline-level layout
+- [AccessKit](https://github.com/AccessKit/accesskit) for accessibility
+- [Winit](https://github.com/rust-windowing/winit) for windowing and input handling
 
-**Modules**:
-- `blitz-renderer-vello`: Adds a Vello/WGPU based renderer to `blitz-dom`
-- `blitz-net`: Networking that can fetch resources over http, from the file-system or from encoded data URIs.
-- `blitz-shell`: This crate should contain just a dioxus integration layer for Blitz. However, it currently contains all of the following functionality:
-  - `DioxusDocument` - A dioxus integration layer for Blitz
-  - `HtmlDocument` - An HTML rendering layer for Blitz
-  - `Window` - A winit-based "shell" for running Blitz applications in a window.
+### 1st-party modules
 
-  These different parts will be split into separate crates in future.
+#### Core crates
 
+- **`blitz-traits`** - Minimal crate containing types and traits to allow the other crates to interoperate without depending on each other
+- **`blitz-dom`** - The core DOM abstraction that includes style resolution and layout but not drawing/painting. Combines the best of Stylo and Taffy that allows you to build extendable dom-like structures. This crate currently also includes the `HtmlDocument` (an HTML parsing layer).
+
+#### Optional Modules
+
+- **`blitz-renderer-vello`** - Adds a Vello/WGPU based renderer to `blitz-dom`
+- **`blitz-net`** -  Networking that can fetch resources over http, from the file-system or from encoded data URIs.
+- **`blitz-html`** -  Adds HTML (and XHTML) parsing to `blitz-dom`
+- **`blitz-shell`** - A shell that allows Blitz to render to a window (integrates a Winit event loop, AccessKit, Muda etc). This crate currently hardcodes `blitz-renderer-vello`, but is expected to be generic over renderers in future.
+
+#### High-level Entry points
+- **`blitz-shell`** - An HTML/markdown frontend that can render an HTML string. This is useful for previewing HTML and/or markdown files but currently lacks interactivity.
+- **`dioxus-native`** - A Dioxus frontend that can render a Dioxus VirtualDom. This has full interactivity support via Dioxus's event handling.
 
 ## License
 
