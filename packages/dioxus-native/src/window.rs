@@ -1,6 +1,6 @@
 use crate::accessibility::AccessibilityState;
+use crate::event::{create_waker, BlitzEvent};
 use crate::stylo_to_winit;
-use crate::waker::{create_waker, BlitzEvent};
 use blitz_dom::events::{EventData, RendererEvent};
 use blitz_dom::{DocumentLike, Viewport};
 use blitz_renderer_vello::Renderer;

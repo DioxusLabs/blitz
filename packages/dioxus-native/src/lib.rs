@@ -11,8 +11,8 @@
 
 mod application;
 mod documents;
+mod event;
 mod stylo_to_winit;
-mod waker;
 mod window;
 
 #[cfg(all(feature = "menu", not(any(target_os = "android", target_os = "ios"))))]
@@ -23,7 +23,7 @@ mod accessibility;
 
 use crate::application::Application;
 pub use crate::documents::DioxusDocument;
-pub use crate::waker::BlitzEvent;
+pub use crate::event::BlitzEvent;
 use crate::window::View;
 pub use crate::window::WindowConfig;
 use blitz_dom::net::Resource;

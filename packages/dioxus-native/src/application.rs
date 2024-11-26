@@ -1,4 +1,4 @@
-use crate::waker::BlitzEvent;
+use crate::event::BlitzEvent;
 
 use blitz_dom::DocumentLike;
 use std::collections::HashMap;
