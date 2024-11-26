@@ -1,5 +1,5 @@
 [package]
-name = "dioxus-native"
+name = "blitz-shell"
 version = "0.0.0"
 license.workspace = true
 edition = "2021"

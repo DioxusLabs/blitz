@@ -5,5 +5,5 @@ fn main() {
         .skip(1)
         .next()
         .unwrap_or_else(|| "https://www.google.com".into());
-    dioxus_native::launch_url(&url);
+    blitz_shell::launch_url(&url);
 }

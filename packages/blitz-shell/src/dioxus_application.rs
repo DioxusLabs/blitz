@@ -22,7 +22,7 @@ impl DioxusNativeApplication {
         self.inner.add_window(window_config);
     }
 
-    fn handle_dioxus_native_event(
+    fn handle_blitz_shell_event(
         &mut self,
         event_loop: &ActiveEventLoop,
         event: &DioxusNativeEvent,
@@ -88,7 +88,7 @@ impl ApplicationHandler<BlitzEvent> for DioxusNativeApplication {
         match event {
             BlitzEvent::Embedder(event) => {
                 if let Some(event) = event.downcast_ref::<DioxusNativeEvent>() {
-                    self.handle_dioxus_native_event(event_loop, event);
+                    self.handle_blitz_shell_event(event_loop, event);
                 }
             }
             event => self.inner.user_event(event_loop, event),

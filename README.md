@@ -81,7 +81,7 @@ Blitz consists of a core DOM abstraction (`blitz-dom`), and several modular piec
 **Modules**:
 - `blitz-renderer-vello`: Adds a Vello/WGPU based renderer to `blitz-dom`
 - `blitz-net`: Networking that can fetch resources over http, from the file-system or from encoded data URIs.
-- `dioxus-native`: This crate should contain just a dioxus integration layer for Blitz. However, it currently contains all of the following functionality:
+- `blitz-shell`: This crate should contain just a dioxus integration layer for Blitz. However, it currently contains all of the following functionality:
   - `DioxusDocument` - A dioxus integration layer for Blitz
   - `HtmlDocument` - An HTML rendering layer for Blitz
   - `Window` - A winit-based "shell" for running Blitz applications in a window.

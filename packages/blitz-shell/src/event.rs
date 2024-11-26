@@ -7,7 +7,7 @@ use accesskit_winit::Event as AccessibilityEvent;
 use accesskit_winit::WindowEvent as AccessibilityWindowEvent;
 use blitz_dom::net::Resource;
 
-/// Wraps a BlitzEvent to provice dioxus-native specific functionality (hot-reloading)
+/// Dioxus-native specific event type
 pub enum DioxusNativeEvent {
     /// A hotreload event, basically telling us to update our templates.
     #[cfg(all(

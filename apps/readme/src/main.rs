@@ -6,7 +6,7 @@ use blitz_traits::net::SharedCallback;
 use markdown::{markdown_to_html, BLITZ_MD_STYLES, GITHUB_MD_STYLES};
 use reqwest::header::HeaderName;
 
-use dioxus_native::{create_default_event_loop, BlitzApplication, WindowConfig, WinitNetCallback};
+use blitz_shell::{create_default_event_loop, BlitzApplication, WindowConfig, WinitNetCallback};
 use std::env::current_dir;
 use std::fs;
 use std::path::{Path, PathBuf};

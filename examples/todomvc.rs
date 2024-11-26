@@ -5,7 +5,7 @@ use std::collections::HashMap;
 
 fn main() {
     tracing_subscriber::fmt::init();
-    dioxus_native::launch(app)
+    blitz_shell::launch(app)
 }
 
 #[derive(PartialEq, Eq, Clone, Copy)]
