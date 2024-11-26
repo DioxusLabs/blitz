@@ -9,9 +9,9 @@ use winit::window::WindowId;
 
 use crate::{View, WindowConfig};
 
-pub struct Application<Doc: DocumentLike> {
+pub struct BlitzApplication<Doc: DocumentLike> {
     rt: tokio::runtime::Runtime,
-    windows: HashMap<WindowId, View<Doc>>,
+    pub windows: HashMap<WindowId, View<Doc>>,
     pending_windows: Vec<WindowConfig<Doc>>,
     proxy: EventLoopProxy<BlitzEvent>,
 
@@ -19,9 +19,9 @@ pub struct Application<Doc: DocumentLike> {
     menu_channel: muda::MenuEventReceiver,
 }
 
-impl<Doc: DocumentLike> Application<Doc> {
+impl<Doc: DocumentLike> BlitzApplication<Doc> {
     pub fn new(rt: tokio::runtime::Runtime, proxy: EventLoopProxy<BlitzEvent>) -> Self {
-        Application {
+        BlitzApplication {
             windows: HashMap::new(),
             pending_windows: Vec::new(),
             rt,
@@ -41,7 +41,7 @@ impl<Doc: DocumentLike> Application<Doc> {
     }
 }
 
-impl<Doc: DocumentLike> ApplicationHandler<BlitzEvent> for Application<Doc> {
+impl<Doc: DocumentLike> ApplicationHandler<BlitzEvent> for BlitzApplication<Doc> {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
         // Resume existing windows
         for (_, view) in self.windows.iter_mut() {
@@ -98,16 +98,7 @@ impl<Doc: DocumentLike> ApplicationHandler<BlitzEvent> for Application<Doc> {
         }
     }
 
-    fn user_event(&mut self, event_loop: &ActiveEventLoop, event: BlitzEvent) {
-        // Suppress unused variable warning
-        #[cfg(not(all(
-            feature = "hot-reload",
-            debug_assertions,
-            not(target_os = "android"),
-            not(target_os = "ios")
-        )))]
-        let _ = event_loop;
-
+    fn user_event(&mut self, _event_loop: &ActiveEventLoop, event: BlitzEvent) {
         match event {
             BlitzEvent::Poll { window_id } => {
                 if let Some(window) = self.windows.get_mut(&window_id) {
@@ -140,29 +131,9 @@ impl<Doc: DocumentLike> ApplicationHandler<BlitzEvent> for Application<Doc> {
                 }
             }
 
-            #[cfg(all(
-                feature = "hot-reload",
-                debug_assertions,
-                not(target_os = "android"),
-                not(target_os = "ios")
-            ))]
-            BlitzEvent::DevserverEvent(event) => match event {
-                dioxus_devtools::DevserverMsg::HotReload(hotreload_message) => {
-                    for window in self.windows.values_mut() {
-                        use crate::documents::DioxusDocument;
-                        if let Some(dx_doc) =
-                            window.dom.as_any_mut().downcast_mut::<DioxusDocument>()
-                        {
-                            dioxus_devtools::apply_changes(&dx_doc.vdom, &hotreload_message);
-                            window.poll();
-                        }
-                    }
-                }
-                dioxus_devtools::DevserverMsg::Shutdown => event_loop.exit(),
-                dioxus_devtools::DevserverMsg::FullReloadStart => todo!(),
-                dioxus_devtools::DevserverMsg::FullReloadFailed => todo!(),
-                dioxus_devtools::DevserverMsg::FullReloadCommand => todo!(),
-            },
+            BlitzEvent::Embedder(_) => {
+                // Do nothing. Should be handled by embedders (if required).
+            }
         }
     }
 }

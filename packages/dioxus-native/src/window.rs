@@ -35,7 +35,7 @@ impl<Doc: DocumentLike> WindowConfig<Doc> {
     }
 }
 
-pub(crate) struct View<Doc: DocumentLike> {
+pub struct View<Doc: DocumentLike> {
     pub(crate) renderer: Renderer<'static, Window>,
     pub(crate) dom: Doc,
     pub(crate) waker: Option<Waker>,

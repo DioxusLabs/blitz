@@ -6,7 +6,7 @@ use blitz_traits::net::SharedCallback;
 use markdown::{markdown_to_html, BLITZ_MD_STYLES, GITHUB_MD_STYLES};
 use reqwest::header::HeaderName;
 
-use dioxus_native::{create_default_event_loop, WinitNetCallback};
+use dioxus_native::{create_default_event_loop, BlitzApplication, WindowConfig, WinitNetCallback};
 use std::env::current_dir;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -48,8 +48,15 @@ fn main() {
         Arc::clone(&net_callback) as SharedCallback<Resource>,
     ));
 
-    let document = HtmlDocument::from_html(&html, Some(base_url), stylesheets, net_provider, None);
-    dioxus_native::launch_with_document(document, rt, event_loop);
+    let doc = HtmlDocument::from_html(&html, Some(base_url), stylesheets, net_provider, None);
+    let window = WindowConfig::new(doc);
+
+    // Create application
+    let mut application = BlitzApplication::new(rt, event_loop.create_proxy());
+    application.add_window(window);
+
+    // Run event loop
+    event_loop.run_app(&mut application).unwrap()
 }
 
 async fn fetch(raw_url: Option<String>) -> (String, String, bool) {

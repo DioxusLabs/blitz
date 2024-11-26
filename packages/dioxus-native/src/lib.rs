@@ -10,6 +10,7 @@
 //!  - `tracing`: Enables tracing support.
 
 mod application;
+mod dioxus_application;
 mod documents;
 mod event;
 mod stylo_to_winit;
@@ -21,25 +22,21 @@ mod menu;
 #[cfg(feature = "accessibility")]
 mod accessibility;
 
-use crate::application::Application;
+pub use crate::application::BlitzApplication;
 pub use crate::documents::DioxusDocument;
 pub use crate::event::BlitzEvent;
-use crate::window::View;
-pub use crate::window::WindowConfig;
+pub use crate::window::{View, WindowConfig};
+
 use blitz_dom::net::Resource;
-use blitz_dom::{DocumentLike, HtmlDocument};
+use blitz_dom::HtmlDocument;
 use blitz_net::Provider;
 use blitz_traits::net::{NetCallback, SharedCallback};
 use dioxus::prelude::{ComponentFunction, Element, VirtualDom};
+use dioxus_application::DioxusNativeApplication;
 use std::sync::Arc;
-use tokio::runtime::Runtime;
 use url::Url;
 use winit::event_loop::EventLoopProxy;
-use winit::{
-    dpi::LogicalSize,
-    event_loop::{ControlFlow, EventLoop},
-    window::Window,
-};
+use winit::event_loop::{ControlFlow, EventLoop};
 
 pub mod exports {
     pub use dioxus;
@@ -100,9 +97,33 @@ pub fn launch_cfg_with_props<P: Clone + 'static, M: 'static>(
     // Spin up the virtualdom
     // We're going to need to hit it with a special waker
     let vdom = VirtualDom::new_with_props(root, props);
-    let document = DioxusDocument::new(vdom, Some(net_provider));
+    let doc = DioxusDocument::new(vdom, Some(net_provider));
+    let window = WindowConfig::new(doc);
 
-    launch_with_document(document, rt, event_loop)
+    // Setup hot-reloading if enabled.
+    #[cfg(all(
+        feature = "hot-reload",
+        debug_assertions,
+        not(target_os = "android"),
+        not(target_os = "ios")
+    ))]
+    {
+        use crate::event::DioxusNativeEvent;
+        if let Some(endpoint) = dioxus_cli_config::devserver_ws_endpoint() {
+            let proxy = event_loop.create_proxy();
+            dioxus_devtools::connect(endpoint, move |event| {
+                let dxn_event = DioxusNativeEvent::DevserverEvent(event);
+                let _ = proxy.send_event(BlitzEvent::embedder_event(dxn_event));
+            })
+        }
+    }
+
+    // Create application
+    let mut application = DioxusNativeApplication::new(rt, event_loop.create_proxy());
+    application.add_window(window);
+
+    // Run event loop
+    event_loop.run_app(&mut application).unwrap();
 }
 
 pub fn launch_url(url: &str) {
@@ -150,53 +171,11 @@ pub fn launch_static_html_cfg(html: &str, cfg: Config) {
         Arc::clone(&net_callback) as SharedCallback<Resource>,
     ));
 
-    let document = HtmlDocument::from_html(html, cfg.base_url, cfg.stylesheets, net_provider, None);
-    launch_with_document(document, rt, event_loop);
-}
-
-pub fn launch_with_document(
-    doc: impl DocumentLike,
-    rt: Runtime,
-    event_loop: EventLoop<BlitzEvent>,
-) {
-    let mut window_attrs = Window::default_attributes();
-    if !cfg!(all(target_os = "android", target_os = "ios")) {
-        window_attrs.inner_size = Some(
-            LogicalSize {
-                width: 800.,
-                height: 600.,
-            }
-            .into(),
-        );
-    }
+    let doc = HtmlDocument::from_html(html, cfg.base_url, cfg.stylesheets, net_provider, None);
     let window = WindowConfig::new(doc);
 
-    launch_with_window(window, rt, event_loop)
-}
-
-fn launch_with_window<Doc: DocumentLike + 'static>(
-    window: WindowConfig<Doc>,
-    rt: Runtime,
-    event_loop: EventLoop<BlitzEvent>,
-) {
-    // Setup hot-reloading if enabled.
-    #[cfg(all(
-        feature = "hot-reload",
-        debug_assertions,
-        not(target_os = "android"),
-        not(target_os = "ios")
-    ))]
-    {
-        if let Some(endpoint) = dioxus_cli_config::devserver_ws_endpoint() {
-            let proxy = event_loop.create_proxy();
-            dioxus_devtools::connect(endpoint, move |event| {
-                let _ = proxy.send_event(BlitzEvent::DevserverEvent(event));
-            })
-        }
-    }
-
     // Create application
-    let mut application = Application::new(rt, event_loop.create_proxy());
+    let mut application = BlitzApplication::new(rt, event_loop.create_proxy());
     application.add_window(window);
 
     // Run event loop
