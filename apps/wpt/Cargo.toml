@@ -9,6 +9,7 @@ blitz-dom = { path = "../../packages/blitz-dom" }
 blitz-html = { path = "../../packages/blitz-html" }
 blitz-traits = { path = "../../packages/blitz-traits" }
 blitz-renderer-vello = { path = "../../packages/blitz-renderer-vello" }
+taffy = { workspace = true }
 parley = { workspace = true }
 tokio = { workspace = true }
 image = { workspace = true }
