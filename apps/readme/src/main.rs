@@ -15,6 +15,7 @@ use std::path::Path;
 use std::sync::Arc;
 use tokio::runtime::Handle;
 use url::Url;
+use winit::window::WindowAttributes;
 
 const USER_AGENT: &str = "Mozilla/5.0 (X11; Linux x86_64; rv:60.0) Gecko/20100101 Firefox/81.0";
 fn main() {
@@ -37,12 +38,17 @@ fn main() {
     let (base_url, contents, is_md) = rt.block_on(fetch(raw_url));
 
     // Process markdown if necessary
+    let mut title = base_url.clone();
     let mut html = contents;
     let mut stylesheets = Vec::new();
     if is_md {
         html = markdown_to_html(html);
         stylesheets.push(String::from(GITHUB_MD_STYLES));
         stylesheets.push(String::from(BLITZ_MD_STYLES));
+        title = format!(
+            "README for {}",
+            base_url.rsplit("/").find(|s| !s.is_empty()).unwrap()
+        );
     }
 
     // println!("{html}");
@@ -54,7 +60,8 @@ fn main() {
     ));
 
     let doc = HtmlDocument::from_html(&html, Some(base_url), stylesheets, net_provider, None);
-    let window = WindowConfig::new(doc);
+    let attrs = WindowAttributes::default().with_title(title);
+    let window = WindowConfig::with_attributes(doc, attrs);
 
     // Create application
     let mut application = BlitzApplication::new(rt, event_loop.create_proxy());
