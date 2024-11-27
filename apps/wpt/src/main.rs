@@ -12,12 +12,13 @@ use log::{error, info};
 use owo_colors::OwoColorize;
 use std::cell::RefCell;
 use std::fmt::Display;
+use std::io::{stdout, Write};
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::path::{self, Path, PathBuf};
 use std::sync::atomic::AtomicU32;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 use std::{env, fs};
 
 mod attr_test;
@@ -32,6 +33,7 @@ const WIDTH: u32 = 800;
 const HEIGHT: u32 = 600;
 const SCALE: f64 = 1.0;
 
+#[derive(Copy, Clone)]
 enum TestKind {
     Ref,
     Attr,
@@ -48,10 +50,23 @@ impl Display for TestKind {
     }
 }
 
-enum TestResult {
+#[derive(Copy, Clone)]
+enum TestStatus {
     Pass,
     Fail,
     Skip,
+    Crash,
+}
+
+impl TestStatus {
+    fn as_str(&self) -> &'static str {
+        match self {
+            TestStatus::Pass => "PASS ",
+            TestStatus::Fail => "FAIL ",
+            TestStatus::Skip => "SKIP ",
+            TestStatus::Crash => "CRASH",
+        }
+    }
 }
 
 const BLOCKED_TESTS: &[&str] = &[
@@ -152,6 +167,35 @@ struct ThreadCtx {
     dummy_base_url: Url,
 }
 
+struct TestResult {
+    name: String,
+    kind: TestKind,
+    status: TestStatus,
+    duration: Duration,
+    panic_msg: Option<String>,
+}
+
+impl TestResult {
+    fn print_to(&self, mut out: impl Write) {
+        let result_str = format!(
+            "{} {} ({}) ({}ms)",
+            self.status.as_str(),
+            &self.name,
+            self.kind,
+            self.duration.as_millis()
+        );
+        match self.status {
+            TestStatus::Pass => writeln!(out, "{}", result_str.green()).unwrap(),
+            TestStatus::Fail => writeln!(out, "{}", result_str.red()).unwrap(),
+            TestStatus::Skip => writeln!(out, "{}", result_str.bright_black()).unwrap(),
+            TestStatus::Crash => writeln!(out, "{}", result_str.bright_magenta()).unwrap(),
+        };
+        if let Some(panic_msg) = &self.panic_msg {
+            writeln!(out, "{}", panic_msg).unwrap();
+        }
+    }
+}
+
 fn main() {
     env_logger::init();
     let rt = tokio::runtime::Builder::new_current_thread()
@@ -187,108 +231,112 @@ fn main() {
 
     let thread_state: ThreadLocal<RefCell<ThreadCtx>> = ThreadLocal::new();
 
-    test_paths.into_par_iter().for_each_init(
-        || rt.enter(),
-        |_guard, path| {
-            let mut ctx = thread_state
-                .get_or(|| {
-                    let renderer = rt.block_on(VelloImageRenderer::new(WIDTH, HEIGHT, SCALE));
-                    let font_ctx = clone_font_ctx(&base_font_context);
-                    let test_buffer = Vec::with_capacity((WIDTH * HEIGHT * 4) as usize);
-                    let ref_buffer = Vec::with_capacity((WIDTH * HEIGHT * 4) as usize);
-                    let viewport = Viewport::new(
-                        (WIDTH as f64 * SCALE).floor() as u32,
-                        (HEIGHT as f64 * SCALE).floor() as u32,
-                        SCALE as f32,
-                    );
-                    let net_provider = Arc::new(WptNetProvider::new(&wpt_dir));
-                    let reftest_re = Regex::new(r#"<link\s+rel="match"\s+href="([^"]+)""#)
-                        .expect("Failed to compile reftest regex");
+    let mut results: Vec<TestResult> = test_paths
+        .into_par_iter()
+        .map_init(
+            || rt.enter(),
+            |_guard, path| {
+                let mut ctx = thread_state
+                    .get_or(|| {
+                        let renderer = rt.block_on(VelloImageRenderer::new(WIDTH, HEIGHT, SCALE));
+                        let font_ctx = clone_font_ctx(&base_font_context);
+                        let test_buffer = Vec::with_capacity((WIDTH * HEIGHT * 4) as usize);
+                        let ref_buffer = Vec::with_capacity((WIDTH * HEIGHT * 4) as usize);
+                        let viewport = Viewport::new(
+                            (WIDTH as f64 * SCALE).floor() as u32,
+                            (HEIGHT as f64 * SCALE).floor() as u32,
+                            SCALE as f32,
+                        );
+                        let net_provider = Arc::new(WptNetProvider::new(&wpt_dir));
+                        let reftest_re = Regex::new(r#"<link\s+rel="match"\s+href="([^"]+)""#)
+                            .expect("Failed to compile reftest regex");
 
-                    let attrtest_re =
-                        Regex::new(r#"checkLayout\(\s*['"]([^'"]*)['"]\s*(,\s*(true|false))?\)"#)
-                            .expect("Failed to compile attrtest regex");
+                        let attrtest_re = Regex::new(
+                            r#"checkLayout\(\s*['"]([^'"]*)['"]\s*(,\s*(true|false))?\)"#,
+                        )
+                        .expect("Failed to compile attrtest regex");
 
-                    let dummy_base_url = Url::parse("http://dummy.local").unwrap();
+                        let dummy_base_url = Url::parse("http://dummy.local").unwrap();
 
-                    RefCell::new(ThreadCtx {
-                        viewport,
-                        net_provider,
-                        renderer,
-                        font_ctx,
-                        buffers: Buffers {
-                            test_buffer,
-                            ref_buffer,
-                        },
-                        reftest_re,
-                        attrtest_re,
-                        out_dir: out_dir.clone(),
-                        wpt_dir: wpt_dir.clone(),
-                        dummy_base_url,
+                        RefCell::new(ThreadCtx {
+                            viewport,
+                            net_provider,
+                            renderer,
+                            font_ctx,
+                            buffers: Buffers {
+                                test_buffer,
+                                ref_buffer,
+                            },
+                            reftest_re,
+                            attrtest_re,
+                            out_dir: out_dir.clone(),
+                            wpt_dir: wpt_dir.clone(),
+                            dummy_base_url,
+                        })
                     })
-                })
-                .borrow_mut();
+                    .borrow_mut();
 
-            let num = num.fetch_add(1, Ordering::SeqCst) + 1;
+                let num = num.fetch_add(1, Ordering::SeqCst) + 1;
 
-            let relative_path = path
-                .strip_prefix(&ctx.wpt_dir)
-                .unwrap()
-                .to_string_lossy()
-                .replace("\\", "/");
+                let relative_path = path
+                    .strip_prefix(&ctx.wpt_dir)
+                    .unwrap()
+                    .to_string_lossy()
+                    .replace("\\", "/");
 
-            let result = catch_unwind(AssertUnwindSafe(|| {
-                let (kind, result) = rt.block_on(process_test_file(&mut ctx, &relative_path));
-                match result {
-                    TestResult::Pass => {
-                        pass_count.fetch_add(1, Ordering::SeqCst);
-                        println!(
-                            "[{}/{}] {} {} ({})",
-                            num,
-                            count,
-                            "PASS".green(),
-                            &relative_path,
-                            kind,
-                        );
+                let start = Instant::now();
+
+                let result = catch_unwind(AssertUnwindSafe(|| {
+                    rt.block_on(process_test_file(&mut ctx, &relative_path))
+                }));
+                let (kind, status, panic_msg) = match result {
+                    Ok((kind, status)) => (kind, status, None),
+                    Err(err) => {
+                        let str_msg = err.downcast_ref::<&str>().map(|s| s.to_string());
+                        let string_msg = err.downcast_ref::<String>().map(|s| s.to_string());
+                        let panic_msg = str_msg.or(string_msg);
+
+                        (TestKind::Unknown, TestStatus::Crash, panic_msg)
                     }
-                    TestResult::Fail => {
-                        fail_count.fetch_add(1, Ordering::SeqCst);
-                        println!(
-                            "[{}/{}] {} {} ({})",
-                            num,
-                            count,
-                            "FAIL".red(),
-                            &relative_path,
-                            kind,
-                        );
-                    }
-                    TestResult::Skip => {
-                        skip_count.fetch_add(1, Ordering::SeqCst);
-                        println!(
-                            "[{}/{}] {} {} ({})",
-                            num,
-                            count,
-                            "SKIP".blue(),
-                            &relative_path,
-                            kind,
-                        );
-                    }
-                }
-            }));
+                };
 
-            if result.is_err() {
-                crash_count.fetch_add(1, Ordering::SeqCst);
-                println!(
-                    "[{}/{}] {} {} ({})",
-                    num,
-                    count,
-                    "CRASH".red(),
-                    relative_path,
-                    TestKind::Unknown,
-                );
-            }
-        },
-    );
+                // Bump counts
+                match status {
+                    TestStatus::Pass => pass_count.fetch_add(1, Ordering::SeqCst),
+                    TestStatus::Fail => fail_count.fetch_add(1, Ordering::SeqCst),
+                    TestStatus::Skip => skip_count.fetch_add(1, Ordering::SeqCst),
+                    TestStatus::Crash => crash_count.fetch_add(1, Ordering::SeqCst),
+                };
+
+                let result = TestResult {
+                    name: relative_path,
+                    kind,
+                    status,
+                    duration: start.elapsed(),
+                    panic_msg,
+                };
+
+                // Print status line
+                let mut out = stdout().lock();
+                write!(out, "[{num}/{count}] ").unwrap();
+                result.print_to(out);
+
+                result
+            },
+        )
+        .collect();
+
+    // Sort results alphabetically
+    results.sort_unstable_by(|a, b| a.name.cmp(&b.name));
+
+    println!("\n\n\n\n\nOrdered Results\n===============\n");
+
+    let mut out = stdout().lock();
+    for (num, test) in results.iter().enumerate() {
+        write!(out, "[{num:0>4}/{count}] ").unwrap();
+        test.print_to(&mut out);
+    }
+    drop(out);
 
     let pass_count = pass_count.load(Ordering::SeqCst);
     let fail_count = fail_count.load(Ordering::SeqCst);
@@ -313,7 +361,7 @@ fn main() {
 }
 
 #[allow(clippy::too_many_arguments)]
-async fn process_test_file(ctx: &mut ThreadCtx, relative_path: &str) -> (TestKind, TestResult) {
+async fn process_test_file(ctx: &mut ThreadCtx, relative_path: &str) -> (TestKind, TestStatus) {
     info!("Processing test file: {}", relative_path);
 
     let file_contents = fs::read_to_string(ctx.wpt_dir.join(relative_path)).unwrap();
@@ -351,5 +399,5 @@ async fn process_test_file(ctx: &mut ThreadCtx, relative_path: &str) -> (TestKin
     }
 
     // TODO: Handle other test formats.
-    (TestKind::Unknown, TestResult::Skip)
+    (TestKind::Unknown, TestStatus::Skip)
 }

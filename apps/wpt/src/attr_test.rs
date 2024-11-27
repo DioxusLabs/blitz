@@ -4,14 +4,14 @@ use blitz_dom::{net::Resource, Document, Node};
 use blitz_html::HtmlDocument;
 use blitz_traits::net::SharedProvider;
 
-use crate::{clone_font_ctx, TestResult, ThreadCtx};
+use crate::{clone_font_ctx, TestStatus, ThreadCtx};
 
 pub async fn process_attr_test(
     ctx: &mut ThreadCtx,
     _subtest_selector: &str,
     html: &str,
     relative_path: &str,
-) -> TestResult {
+) -> TestStatus {
     let mut document = parse_and_resolve_document(ctx, html, relative_path).await;
 
     let mut has_error = false;
@@ -23,9 +23,9 @@ pub async fn process_attr_test(
     });
 
     if has_error {
-        TestResult::Fail
+        TestStatus::Fail
     } else {
-        TestResult::Pass
+        TestStatus::Pass
     }
 }
 
