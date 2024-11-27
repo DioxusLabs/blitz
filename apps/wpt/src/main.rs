@@ -2,19 +2,16 @@ use blitz_dom::net::Resource;
 use blitz_dom::Viewport;
 use blitz_renderer_vello::VelloImageRenderer;
 use parley::FontContext;
-use reqwest::Url;
 use thread_local::ThreadLocal;
-use tower_http::services::ServeDir;
+use url::Url;
 
 use rayon::prelude::*;
 use regex::Regex;
 
-use axum::Router;
 use log::{error, info};
 use owo_colors::OwoColorize;
 use std::cell::RefCell;
 use std::fmt::Display;
-use std::net::SocketAddr;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::path::{self, Path, PathBuf};
 use std::sync::atomic::AtomicU32;
@@ -178,14 +175,6 @@ fn main() {
     }
     fs::create_dir(&out_dir).unwrap();
 
-    rt.spawn({
-        let wpt_dir_clone = wpt_dir.clone();
-        async move {
-            let router = Router::new().nest_service("/", ServeDir::new(&wpt_dir_clone));
-            serve(router, 3000).await;
-        }
-    });
-
     let pass_count = AtomicU32::new(0);
     let fail_count = AtomicU32::new(0);
     let skip_count = AtomicU32::new(0);
@@ -321,14 +310,6 @@ fn main() {
     let optimistic_percent = (pass_count as f32 / run_count as f32) * 100.0;
     println!("Percent of total: {pessimistic_percent:.2}%");
     println!("Percent of run: {optimistic_percent:.2}%");
-}
-
-async fn serve(app: Router, port: u16) {
-    let addr = SocketAddr::from(([127, 0, 0, 1], port));
-    let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
-    axum::serve(listener, app)
-        .await
-        .expect("Failed to create http server.");
 }
 
 #[allow(clippy::too_many_arguments)]

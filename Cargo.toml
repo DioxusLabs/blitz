@@ -112,10 +112,8 @@ incremental = false
 # mozbuild = "0.1.0"
 blitz-dom = { path = "./packages/blitz-dom" }
 blitz-html = { path = "./packages/blitz-html" }
-blitz-net = { path = "./packages/blitz-net" }
 blitz-traits = { path = "./packages/blitz-traits" }
 blitz-renderer-vello = { path = "./packages/blitz-renderer-vello" }
-blitz-shell = { path = "./packages/blitz-shell", features = ["tracing"] }
 dioxus-native = { path = "./packages/dioxus-native", features = ["tracing"] }
 png = { version = "0.17" }
 dioxus = { workspace = true }

@@ -1,7 +1,7 @@
 use blitz_dom::net::Resource;
 use blitz_html::HtmlDocument;
 use blitz_traits::net::SharedProvider;
-use reqwest::Url;
+use url::Url;
 
 use image::{ImageBuffer, ImageFormat};
 use std::fs;
