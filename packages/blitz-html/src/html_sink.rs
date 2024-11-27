@@ -35,6 +35,7 @@ pub struct DocumentHtmlParser<'a> {
 
     /// The document's quirks mode.
     pub quirks_mode: Cell<QuirksMode>,
+    pub is_xml: bool,
 
     net_provider: SharedProvider<Resource>,
 }
@@ -48,6 +49,7 @@ impl DocumentHtmlParser<'_> {
             errors: RefCell::new(Vec::new()),
             quirks_mode: Cell::new(QuirksMode::NoQuirks),
             net_provider,
+            is_xml: false,
         }
     }
 
@@ -56,15 +58,20 @@ impl DocumentHtmlParser<'_> {
         html: &str,
         net_provider: SharedProvider<Resource>,
     ) -> &'d mut Document {
-        let sink = Self::new(doc, net_provider);
+        let mut sink = Self::new(doc, net_provider);
         if html.starts_with("<?xml")
-            || html.starts_with("<!DOCTYPE html PUBLIC \"-//W3C//DTD//XHTML")
+            || html.starts_with("<!DOCTYPE") && {
+                let first_line = html.lines().next().unwrap();
+                first_line.contains("XHTML") || first_line.contains("xhtml")
+            }
         {
+            sink.is_xml = true;
             xml5ever::driver::parse_document(sink, Default::default())
                 .from_utf8()
                 .read_from(&mut html.as_bytes())
                 .unwrap()
         } else {
+            sink.is_xml = false;
             html5ever::parse_document(sink, Default::default())
                 .from_utf8()
                 .read_from(&mut html.as_bytes())
