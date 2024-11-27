@@ -4,7 +4,7 @@ clippy:
 fmt:
   cargo fmt --all
 
-wpt target="css/css-flebox css/css-grid css/css-align":
+wpt target="css/css-flexbox css/css-grid css/css-align":
   cargo run --release --package wpt {{target}}
 
 screenshot target:
