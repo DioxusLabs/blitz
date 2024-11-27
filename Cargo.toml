@@ -42,7 +42,7 @@ taffy = { version = "0.6", default-features = false, features = ["std", "flexbox
 # Linebender + WGPU
 peniko = "0.2"
 vello = { version = "0.3", features = [ "wgpu" ] }
-parley = { version = "0.2", git = "https://github.com/linebender/parley", branch = "cursor2" }
+parley = { version = "0.2", git = "https://github.com/linebender/parley", rev = "c0d158b5d77c5726ed33fd3f2cbfcde95df374ef" }
 
 wgpu = "22.1.0"
 
