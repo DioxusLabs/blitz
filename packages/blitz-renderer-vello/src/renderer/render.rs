@@ -684,11 +684,8 @@ impl ElementCx<'_> {
             for rect in input_data.editor.selection_geometry().iter() {
                 scene.fill(Fill::NonZero, transform, Color::STEEL_BLUE, None, &rect);
             }
-            if let Some(cursor) = input_data.editor.selection_strong_geometry(1.5) {
+            if let Some(cursor) = input_data.editor.cursor_geometry(1.5) {
                 scene.fill(Fill::NonZero, transform, Color::BLACK, None, &cursor);
-            };
-            if let Some(cursor) = input_data.editor.selection_weak_geometry(1.5) {
-                scene.fill(Fill::NonZero, transform, Color::DARK_GRAY, None, &cursor);
             };
 
             // Render text

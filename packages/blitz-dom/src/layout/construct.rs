@@ -2,7 +2,7 @@ use core::str;
 use std::sync::Arc;
 
 use markup5ever::{local_name, namespace_url, ns, QualName};
-use parley::{FontStack, InlineBox, PlainEditorOp, StyleProperty, TreeBuilder, WhiteSpaceCollapse};
+use parley::{FontStack, InlineBox, StyleProperty, TreeBuilder, WhiteSpaceCollapse};
 use slab::Slab;
 use style::{
     data::ElementData,
@@ -636,22 +636,20 @@ fn create_text_editor(doc: &mut Document, input_element_id: usize, is_multiline:
     let element = &mut node.raw_dom_data.downcast_element_mut().unwrap();
     if !matches!(element.node_specific_data, NodeSpecificData::TextInput(_)) {
         let mut text_input_data = TextInputData::new(is_multiline);
-        let text: Arc<str> = Arc::from(element.attr(local_name!("value")).unwrap_or(" "));
+        let text = element.attr(local_name!("value")).unwrap_or(" ");
         let styles: Arc<[_]> = Arc::from([
             StyleProperty::FontSize(parley_style.font_size),
             StyleProperty::LineHeight(parley_style.line_height),
             StyleProperty::Brush(parley_style.brush),
         ]);
-        text_input_data.editor.transact(
-            &mut doc.font_ctx,
-            &mut doc.layout_ctx,
-            [
-                PlainEditorOp::SetText(text),
-                PlainEditorOp::SetScale(doc.viewport.scale_f64() as f32),
-                PlainEditorOp::SetWidth(10000.0),
-                PlainEditorOp::SetDefaultStyle(styles),
-            ],
-        );
+        text_input_data
+            .editor
+            .transact(&mut doc.font_ctx, &mut doc.layout_ctx, |txn| {
+                txn.set_text(text);
+                txn.set_scale(doc.viewport.scale_f64() as f32);
+                txn.set_width(None);
+                txn.set_default_style(styles);
+            });
         element.node_specific_data = NodeSpecificData::TextInput(text_input_data);
     }
 }

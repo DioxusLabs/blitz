@@ -5,7 +5,7 @@ use crate::{ElementNodeData, Node, NodeData, TextNodeData, Viewport};
 use app_units::Au;
 use blitz_traits::net::{DummyNetProvider, SharedProvider};
 use markup5ever::local_name;
-use parley::{FontContext, PlainEditorOp};
+use parley::FontContext;
 use peniko::kurbo;
 use string_cache::Atom;
 use style::attr::{AttrIdentifier, AttrValue};
@@ -173,7 +173,7 @@ impl DocumentLike for Document {
                         text_input_data.editor.transact(
                             &mut self.font_ctx,
                             &mut self.layout_ctx,
-                            [PlainEditorOp::MoveToPoint(x as f32, y as f32)],
+                            |txn| txn.move_to_point(x as f32, y as f32),
                         );
 
                         self.set_focus_to(hit.node_id);

@@ -1,7 +1,7 @@
 use atomic_refcell::{AtomicRef, AtomicRefCell};
 use image::DynamicImage;
 use markup5ever::{local_name, LocalName, QualName};
-use parley::{FontContext, LayoutContext, PlainEditorOp};
+use parley::{FontContext, LayoutContext};
 use peniko::kurbo;
 use selectors::matching::{ElementSelectorFlags, QuirksMode};
 use slab::Slab;
@@ -587,10 +587,9 @@ impl TextInputData {
         layout_ctx: &mut LayoutContext<TextBrush>,
         text: &str,
     ) {
-        let text = Arc::from(text);
         if *self.editor.text() != *text {
             self.editor
-                .transact(font_ctx, layout_ctx, [PlainEditorOp::SetText(text)]);
+                .transact(font_ctx, layout_ctx, |txn| txn.set_text(text));
         }
     }
 }

@@ -1,5 +1,5 @@
 use crate::node::TextBrush;
-use parley::{FontContext, LayoutContext, PlainEditor, PlainEditorOp};
+use parley::{FontContext, LayoutContext, PlainEditor};
 use winit::{
     event::{KeyEvent, Modifiers},
     keyboard::{Key, NamedKey},
@@ -29,7 +29,7 @@ pub(crate) fn apply_keypress_event(
     // Small macro to reduce boilerplate
     macro_rules! transact {
         ($op:expr) => {{
-            editor.transact(font_ctx, layout_ctx, [$op]);
+            editor.transact(font_ctx, layout_ctx, $op);
         }};
     }
 
@@ -37,126 +37,125 @@ pub(crate) fn apply_keypress_event(
         #[cfg(not(target_os = "android"))]
         Key::Character(c) if action_mod && matches!(c.as_str(), "c" | "x" | "v") => {
             use arboard::Clipboard;
-            use parley::layout::editor::ActiveText;
 
             match c.to_lowercase().as_str() {
                 "c" => {
-                    if let ActiveText::Selection(text) = editor.active_text() {
+                    if let Some(text) = editor.selected_text() {
                         let mut cb = Clipboard::new().unwrap();
                         cb.set_text(text.to_owned()).ok();
                     }
                 }
                 "x" => {
-                    if let ActiveText::Selection(text) = editor.active_text() {
+                    if let Some(text) = editor.selected_text() {
                         let mut cb = Clipboard::new().unwrap();
                         cb.set_text(text.to_owned()).ok();
-                        transact!(PlainEditorOp::DeleteSelection)
+                        transact!(|txn| txn.delete_selection())
                     }
                 }
                 "v" => {
                     let mut cb = Clipboard::new().unwrap();
                     let text = cb.get_text().unwrap_or_default();
-                    transact!(PlainEditorOp::InsertOrReplaceSelection(text.into(),))
+                    transact!(|txn| txn.insert_or_replace_selection(&text))
                 }
                 _ => unreachable!(),
             }
         }
         Key::Character(c) if action_mod && matches!(c.to_lowercase().as_str(), "a") => {
             if shift {
-                transact!(PlainEditorOp::CollapseSelection)
+                transact!(|txn| txn.collapse_selection())
             } else {
-                transact!(PlainEditorOp::SelectAll)
+                transact!(|txn| txn.select_all())
             }
         }
         Key::Named(NamedKey::ArrowLeft) => {
             if action_mod {
                 if shift {
-                    transact!(PlainEditorOp::SelectWordLeft)
+                    transact!(|txn| txn.select_word_left())
                 } else {
-                    transact!(PlainEditorOp::MoveWordLeft)
+                    transact!(|txn| txn.move_word_left())
                 }
             } else if shift {
-                transact!(PlainEditorOp::SelectLeft)
+                transact!(|txn| txn.select_left())
             } else {
-                transact!(PlainEditorOp::MoveLeft)
+                transact!(|txn| txn.move_left())
             }
         }
         Key::Named(NamedKey::ArrowRight) => {
             if action_mod {
                 if shift {
-                    transact!(PlainEditorOp::SelectWordRight)
+                    transact!(|txn| txn.select_word_right())
                 } else {
-                    transact!(PlainEditorOp::MoveWordRight)
+                    transact!(|txn| txn.move_word_right())
                 }
             } else if shift {
-                transact!(PlainEditorOp::SelectRight)
+                transact!(|txn| txn.select_right())
             } else {
-                transact!(PlainEditorOp::MoveRight)
+                transact!(|txn| txn.move_right())
             }
         }
         Key::Named(NamedKey::ArrowUp) => {
             if shift {
-                transact!(PlainEditorOp::SelectUp)
+                transact!(|txn| txn.select_up())
             } else {
-                transact!(PlainEditorOp::MoveUp)
+                transact!(|txn| txn.move_up())
             }
         }
         Key::Named(NamedKey::ArrowDown) => {
             if shift {
-                transact!(PlainEditorOp::SelectDown)
+                transact!(|txn| txn.select_down())
             } else {
-                transact!(PlainEditorOp::MoveDown)
+                transact!(|txn| txn.move_down())
             }
         }
         Key::Named(NamedKey::Home) => {
             if action_mod {
                 if shift {
-                    transact!(PlainEditorOp::SelectToTextStart)
+                    transact!(|txn| txn.select_to_text_start())
                 } else {
-                    transact!(PlainEditorOp::MoveToTextStart)
+                    transact!(|txn| txn.move_to_text_start())
                 }
             } else if shift {
-                transact!(PlainEditorOp::SelectToLineStart)
+                transact!(|txn| txn.select_to_line_start())
             } else {
-                transact!(PlainEditorOp::MoveToLineStart)
+                transact!(|txn| txn.move_to_line_start())
             }
         }
         Key::Named(NamedKey::End) => {
             if action_mod {
                 if shift {
-                    transact!(PlainEditorOp::SelectToTextEnd)
+                    transact!(|txn| txn.select_to_text_end())
                 } else {
-                    transact!(PlainEditorOp::MoveToTextEnd)
+                    transact!(|txn| txn.move_to_text_end())
                 }
             } else if shift {
-                transact!(PlainEditorOp::SelectToLineEnd)
+                transact!(|txn| txn.select_to_line_end())
             } else {
-                transact!(PlainEditorOp::MoveToLineEnd)
+                transact!(|txn| txn.move_to_line_end())
             }
         }
         Key::Named(NamedKey::Delete) => {
             if action_mod {
-                transact!(PlainEditorOp::DeleteWord)
+                transact!(|txn| txn.delete_word())
             } else {
-                transact!(PlainEditorOp::Delete)
+                transact!(|txn| txn.delete())
             }
         }
         Key::Named(NamedKey::Backspace) => {
             if action_mod {
-                transact!(PlainEditorOp::BackdeleteWord)
+                transact!(|txn| txn.backdelete_word())
             } else {
-                transact!(PlainEditorOp::Backdelete)
+                transact!(|txn| txn.backdelete())
             }
         }
         Key::Named(NamedKey::Enter) => {
             // TODO: support multi-line text inputs
-            // transact!(PlainEditorOp::InsertOrReplaceSelection("\n".into()))
+            // transact!(|txn| txn.insert_or_replace_selection("\n"))
         }
         Key::Named(NamedKey::Space) => {
-            transact!(PlainEditorOp::InsertOrReplaceSelection(" ".into()))
+            transact!(|txn| txn.insert_or_replace_selection(" "))
         }
         Key::Character(s) => {
-            transact!(PlainEditorOp::InsertOrReplaceSelection(s.into()))
+            transact!(|txn| txn.insert_or_replace_selection(&s))
         }
         _ => {}
     };
