@@ -16,7 +16,7 @@ impl Document {
             tracing::info!("Style: {:?}", &node.style);
         }
 
-        println!("Node {} {}", node.id, node.node_debug_str());
+        println!("\nNode {} {}", node.id, node.node_debug_str());
 
         println!("Attrs:");
 
@@ -71,6 +71,38 @@ impl Document {
             }
         }
 
+        let layout = &node.final_layout;
+        println!("Layout:");
+        println!(
+                "  x: {x} y: {y} w: {width} h: {height} content_w: {content_width} content_h: {content_height}",
+                x = layout.location.x,
+                y = layout.location.y,
+                width = layout.size.width,
+                height = layout.size.height,
+                content_width = layout.content_size.width,
+                content_height = layout.content_size.height,
+        );
+        println!(
+            "  border: l:{l} r:{r} t:{t} b:{b}",
+            l = layout.border.left,
+            r = layout.border.right,
+            t = layout.border.top,
+            b = layout.border.bottom,
+        );
+        println!(
+            "  padding: l:{l} r:{r} t:{t} b:{b}",
+            l = layout.padding.left,
+            r = layout.padding.right,
+            t = layout.padding.top,
+            b = layout.padding.bottom,
+        );
+        println!(
+            "  margin: l:{l} r:{r} t:{t} b:{b}",
+            l = layout.margin.left,
+            r = layout.margin.right,
+            t = layout.margin.top,
+            b = layout.margin.bottom,
+        );
         println!("Parent: {:?}", node.parent);
 
         let children: Vec<_> = node
