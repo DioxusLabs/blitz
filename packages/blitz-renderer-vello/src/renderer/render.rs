@@ -743,7 +743,6 @@ impl ElementCx<'_> {
                 self.render_node(scene, inline_box.id as usize, pos);
             }
         } else {
-
             // Sort children by z-index
             let mut children = self.node.layout_children.borrow().as_ref().unwrap().clone();
             children.sort_by_key(|id| {

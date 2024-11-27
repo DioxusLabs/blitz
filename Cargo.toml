@@ -115,6 +115,7 @@ blitz-html = { path = "./packages/blitz-html" }
 blitz-traits = { path = "./packages/blitz-traits" }
 blitz-renderer-vello = { path = "./packages/blitz-renderer-vello" }
 blitz-shell = { path = "./packages/blitz-shell" }
+blitz-net = { path = "./packages/blitz-net" }
 dioxus-native = { path = "./packages/dioxus-native", features = ["tracing"] }
 png = { version = "0.17" }
 dioxus = { workspace = true }
