@@ -56,6 +56,12 @@ pub async fn parse_and_resolve_document(
 
 pub fn check_node_layout(node: &Node) -> bool {
     let layout = &node.final_layout;
+    let parent_border = if let Some(parent_id) = node.parent {
+        node.with(parent_id).final_layout.border
+    } else {
+        taffy::Rect::ZERO
+    };
+
     node.attrs()
         .map(|attrs| {
             attrs.iter().all(|attr| {
@@ -85,8 +91,12 @@ pub fn check_node_layout(node: &Node) -> bool {
 
                     // TODO: Implement proper offset-x/offset-y computation
                     // (don't assume that offset is relative to immediate parent)
-                    "data-offset-x" => assert_with_tolerance(value, layout.location.x),
-                    "data-offset-y" => assert_with_tolerance(value, layout.location.y),
+                    "data-offset-x" => {
+                        assert_with_tolerance(value, layout.location.x - parent_border.left)
+                    }
+                    "data-offset-y" => {
+                        assert_with_tolerance(value, layout.location.y - parent_border.top)
+                    }
 
                     // TODO: other check types
                     "data-expected-client-width" => false,
