@@ -75,6 +75,7 @@ const BLOCKED_TESTS: &[&str] = &[
     "css/css-flexbox/flexbox-paint-ordering-002.xhtml",
     // Panics with: "Buffer length in `ImageBuffer::new` overflows usize"
     "css/css-sizing/aspect-ratio/zero-or-infinity-006.html",
+    "css/css-sizing/aspect-ratio/zero-or-infinity-009.html",
     "css/css-sizing/aspect-ratio/zero-or-infinity-010.html",
 ];
 
