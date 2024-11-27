@@ -37,7 +37,7 @@ dioxus = { version = "0.6.0-alpha.3" }
 dioxus-ssr = { version = "0.6.0-alpha.3" }
 dioxus-cli-config = { version = "0.6.0-alpha.3" }
 dioxus-devtools = { version = "0.6.0-alpha.3" }
-taffy = { version = "0.6" }
+taffy = { version = "0.6", default-features = false, features = ["std", "flexbox", "grid", "block_layout", "content_size"] }
 
 # Linebender + WGPU
 peniko = "0.2"
