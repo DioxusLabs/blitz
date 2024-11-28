@@ -54,3 +54,10 @@ pub(crate) fn theme_to_color_scheme(theme: Theme) -> ColorScheme {
         Theme::Dark => ColorScheme::Dark,
     }
 }
+
+pub(crate) fn color_scheme_to_theme(scheme: ColorScheme) -> Theme {
+    match scheme {
+        ColorScheme::Light => Theme::Light,
+        ColorScheme::Dark => Theme::Dark,
+    }
+}

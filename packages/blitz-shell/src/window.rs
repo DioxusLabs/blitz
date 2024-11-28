@@ -1,6 +1,6 @@
 use crate::accessibility::AccessibilityState;
 use crate::event::{create_waker, BlitzEvent};
-use crate::stylo_to_winit::{self, theme_to_color_scheme};
+use crate::stylo_to_winit::{self, color_scheme_to_theme, theme_to_color_scheme};
 use blitz_dom::events::{EventData, RendererEvent};
 use blitz_dom::{DocumentLike, Viewport};
 use blitz_renderer_vello::Renderer;
@@ -52,6 +52,7 @@ pub struct View<Doc: DocumentLike> {
     /// The state of the keyboard modifiers (ctrl, shift, etc). Winit/Tao don't track these for us so we
     /// need to store them in order to have access to them when processing keypress events
     pub devtools: Devtools,
+    theme_override: Option<Theme>,
     keyboard_modifiers: Modifiers,
     mouse_pos: (f32, f32),
     dom_mouse_pos: (f32, f32),
@@ -94,6 +95,7 @@ impl<Doc: DocumentLike> View<Doc> {
             doc: config.doc,
             viewport,
             devtools: Default::default(),
+            theme_override: None,
             mouse_pos: Default::default(),
             dom_mouse_pos: Default::default(),
 
@@ -111,6 +113,22 @@ impl<Doc: DocumentLike> View<Doc> {
         self.doc = new_doc;
         self.kick_viewport();
         self.poll();
+        self.request_redraw();
+    }
+
+    pub fn theme_override(&self) -> Option<Theme> {
+        self.theme_override
+    }
+
+    pub fn current_theme(&self) -> Theme {
+        color_scheme_to_theme(self.viewport.color_scheme)
+    }
+
+    pub fn set_theme_override(&mut self, theme: Option<Theme>) {
+        self.theme_override = theme;
+        let theme = theme.or(self.window.theme()).unwrap_or(Theme::Light);
+        self.viewport.color_scheme = theme_to_color_scheme(theme);
+        self.kick_viewport();
         self.request_redraw();
     }
 }
@@ -285,7 +303,7 @@ impl<Doc: DocumentLike> View<Doc> {
 
             // Theme events
             WindowEvent::ThemeChanged(theme) => {
-                self.viewport.color_scheme = theme_to_color_scheme(theme);
+                self.viewport.color_scheme = theme_to_color_scheme(self.theme_override.unwrap_or(theme));
                 self.kick_viewport();
             }
 

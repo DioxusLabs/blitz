@@ -2,13 +2,13 @@ use std::sync::Arc;
 
 use blitz_dom::net::Resource;
 use blitz_html::HtmlDocument;
-use blitz_shell::{BlitzApplication, BlitzEvent, WindowConfig};
+use blitz_shell::{BlitzApplication, BlitzEvent, View, WindowConfig};
 use blitz_traits::net::NetProvider;
 use winit::application::ApplicationHandler;
 use winit::event::{StartCause, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, EventLoopProxy};
 use winit::keyboard::{KeyCode, PhysicalKey};
-use winit::window::WindowId;
+use winit::window::{Theme, WindowId};
 
 use crate::fetch;
 use crate::markdown::{markdown_to_html, BLITZ_MD_STYLES, GITHUB_MD_STYLES};
@@ -42,6 +42,10 @@ impl ReadmeApplication {
         self.inner.add_window(window_config);
     }
 
+    fn window_mut(&mut self) -> &mut View<HtmlDocument> {
+        self.inner.windows.values_mut().next().unwrap()
+    }
+
     fn reload_document(&mut self) {
         let (base_url, contents, is_md, _) = self.handle.block_on(fetch(&self.raw_url));
 
@@ -60,8 +64,16 @@ impl ReadmeApplication {
             self.net_provider.clone(),
             None,
         );
-        let window = self.inner.windows.values_mut().next().unwrap();
-        window.replace_document(doc);
+        self.window_mut().replace_document(doc);
+    }
+
+    fn toggle_theme(&mut self) {
+        let window = self.window_mut();
+        let new_theme = match window.current_theme() {
+            Theme::Light => Theme::Dark,
+            Theme::Dark => Theme::Light,
+        };
+        window.set_theme_override(Some(new_theme));
     }
 }
 
@@ -85,10 +97,12 @@ impl ApplicationHandler<BlitzEvent> for ReadmeApplication {
         event: WindowEvent,
     ) {
         if let WindowEvent::KeyboardInput { event, .. } = &event {
-            if event.state.is_pressed()
-                && matches!(event.physical_key, PhysicalKey::Code(KeyCode::KeyR))
-            {
-                self.reload_document();
+            if !event.state.is_pressed() {
+                match event.physical_key {
+                    PhysicalKey::Code(KeyCode::KeyR) => self.reload_document(),
+                    PhysicalKey::Code(KeyCode::KeyT) => self.toggle_theme(),
+                    _ => {}
+                }
             }
         }
 
