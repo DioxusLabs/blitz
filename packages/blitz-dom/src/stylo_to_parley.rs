@@ -1,6 +1,8 @@
 //! Conversion functions from Stylo types to Parley types
 use std::borrow::Cow;
 
+use style::values::computed::Length;
+
 use crate::node::TextBrush;
 use crate::util::ToPenikoColor;
 
@@ -43,6 +45,12 @@ pub(crate) fn style(style: &stylo::ComputedValues) -> parley::TextStyle<'static,
     };
     // Parley expects line height as a multiple of font size!
     let line_height = line_height / font_size;
+
+    let letter_spacing = itext_styles
+        .letter_spacing
+        .0
+        .resolve(Length::new(font_size))
+        .px();
 
     // Convert Bold/Italic
     let font_weight = parley::FontWeight::new(font_styles.font_weight.value());
@@ -122,6 +130,6 @@ pub(crate) fn style(style: &stylo::ComputedValues) -> parley::TextStyle<'static,
         strikethrough_brush: decoration_brush,
         line_height,
         word_spacing: Default::default(),
-        letter_spacing: itext_styles.letter_spacing.0.px(),
+        letter_spacing,
     }
 }
