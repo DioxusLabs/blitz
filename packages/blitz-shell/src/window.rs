@@ -267,11 +267,10 @@ impl<Doc: DocumentLike> View<Doc> {
                 self.viewport.window_size = (physical_size.width, physical_size.height);
                 self.kick_viewport();
             }
-            WindowEvent::ScaleFactorChanged {
-                // scale_factor,
-                // new_inner_size,
-                ..
-            } => {}
+            WindowEvent::ScaleFactorChanged { scale_factor, .. } => {
+                self.viewport.set_hidpi_scale(scale_factor as f32);
+                self.kick_viewport();
+            }
 
             // Theme events
             WindowEvent::ThemeChanged(_) => {
