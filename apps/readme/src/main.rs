@@ -6,13 +6,14 @@ use blitz_html::HtmlDocument;
 use blitz_net::Provider;
 use blitz_traits::net::SharedCallback;
 use markdown::{markdown_to_html, BLITZ_MD_STYLES, GITHUB_MD_STYLES};
-use readme_application::ReadmeApplication;
+use notify::{Error as NotifyError, Event as NotifyEvent, RecursiveMode, Watcher as _};
+use readme_application::{ReadmeApplication, ReadmeEvent};
 use reqwest::header::HeaderName;
 
-use blitz_shell::{create_default_event_loop, BlitzShellNetCallback, WindowConfig};
+use blitz_shell::{create_default_event_loop, BlitzEvent, BlitzShellNetCallback, WindowConfig};
 use std::env::current_dir;
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tokio::runtime::Handle;
 use url::Url;
@@ -36,7 +37,7 @@ fn main() {
     let event_loop = create_default_event_loop();
     let proxy = event_loop.create_proxy();
 
-    let (base_url, contents, is_md) = rt.block_on(fetch(&raw_url));
+    let (base_url, contents, is_md, file_path) = rt.block_on(fetch(&raw_url));
 
     // Process markdown if necessary
     let mut title = base_url.clone();
@@ -54,7 +55,7 @@ fn main() {
 
     // println!("{html}");
 
-    let net_callback = Arc::new(BlitzShellNetCallback::new(proxy));
+    let net_callback = Arc::new(BlitzShellNetCallback::new(proxy.clone()));
     let net_provider = Arc::new(Provider::new(
         Handle::current(),
         Arc::clone(&net_callback) as SharedCallback<Resource>,
@@ -75,11 +76,28 @@ fn main() {
         ReadmeApplication::new(rt, event_loop.create_proxy(), raw_url.clone(), net_provider);
     application.add_window(window);
 
+    if let Some(path) = file_path {
+        let mut watcher =
+            notify::recommended_watcher(move |_: Result<NotifyEvent, NotifyError>| {
+                let event = BlitzEvent::Embedder(Arc::new(ReadmeEvent));
+                proxy.send_event(event).unwrap();
+            })
+            .unwrap();
+
+        // Add a path to be watched. All files and directories at that path and
+        // below will be monitored for changes.
+        watcher.watch(&path, RecursiveMode::NonRecursive).unwrap();
+
+        // Leak watcher to ensure it continues watching. Leaking is unproblematic here as we only create
+        // one and we want it to last the entire duration of the program
+        Box::leak(Box::new(watcher));
+    }
+
     // Run event loop
     event_loop.run_app(&mut application).unwrap()
 }
 
-async fn fetch(raw_url: &str) -> (String, String, bool) {
+async fn fetch(raw_url: &str) -> (String, String, bool, Option<PathBuf>) {
     if let Ok(url) = Url::parse(raw_url) {
         match url.scheme() {
             "file" => fetch_file_path(url.path()),
@@ -100,7 +118,7 @@ async fn fetch(raw_url: &str) -> (String, String, bool) {
                     });
                 let file_content = response.text().await.unwrap();
 
-                (raw_url.to_string(), file_content, is_md)
+                (raw_url.to_string(), file_content, is_md, None)
             }
         }
     } else if fs::exists(raw_url).unwrap() {
@@ -111,7 +129,7 @@ async fn fetch(raw_url: &str) -> (String, String, bool) {
     }
 }
 
-fn fetch_file_path(raw_path: &str) -> (String, String, bool) {
+fn fetch_file_path(raw_path: &str) -> (String, String, bool, Option<PathBuf>) {
     let path = std::path::absolute(Path::new(&raw_path)).unwrap();
 
     // If path is a directory, search for README.md in that directory or any parent directories
@@ -145,5 +163,5 @@ fn fetch_file_path(raw_path: &str) -> (String, String, bool) {
     // Read file
     let file_content = std::fs::read_to_string(&path).unwrap();
 
-    (base_url, file_content, is_md)
+    (base_url, file_content, is_md, Some(path))
 }

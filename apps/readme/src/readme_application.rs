@@ -13,7 +13,7 @@ use winit::window::WindowId;
 use crate::fetch;
 use crate::markdown::{markdown_to_html, BLITZ_MD_STYLES, GITHUB_MD_STYLES};
 
-struct ReadmeEvent;
+pub struct ReadmeEvent;
 
 pub struct ReadmeApplication {
     inner: BlitzApplication<HtmlDocument>,
@@ -43,7 +43,7 @@ impl ReadmeApplication {
     }
 
     fn reload_document(&mut self) {
-        let (base_url, contents, is_md) = self.handle.block_on(fetch(&self.raw_url));
+        let (base_url, contents, is_md, _) = self.handle.block_on(fetch(&self.raw_url));
 
         let mut html = contents;
         let mut stylesheets = Vec::new();

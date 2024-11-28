@@ -16,3 +16,4 @@ reqwest = { workspace = true }
 url = { workspace = true }
 winit = { workspace = true }
 comrak = { version = "0.31", default-features = false, features = ["syntect"] }
+notify = "7.0.0"
