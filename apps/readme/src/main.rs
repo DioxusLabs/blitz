@@ -1,14 +1,15 @@
 mod markdown;
+mod readme_application;
+
 use blitz_dom::net::Resource;
 use blitz_html::HtmlDocument;
 use blitz_net::Provider;
 use blitz_traits::net::SharedCallback;
 use markdown::{markdown_to_html, BLITZ_MD_STYLES, GITHUB_MD_STYLES};
+use readme_application::ReadmeApplication;
 use reqwest::header::HeaderName;
 
-use blitz_shell::{
-    create_default_event_loop, BlitzApplication, BlitzShellNetCallback, WindowConfig,
-};
+use blitz_shell::{create_default_event_loop, BlitzShellNetCallback, WindowConfig};
 use std::env::current_dir;
 use std::fs;
 use std::path::Path;
@@ -35,7 +36,7 @@ fn main() {
     let event_loop = create_default_event_loop();
     let proxy = event_loop.create_proxy();
 
-    let (base_url, contents, is_md) = rt.block_on(fetch(raw_url));
+    let (base_url, contents, is_md) = rt.block_on(fetch(&raw_url));
 
     // Process markdown if necessary
     let mut title = base_url.clone();
@@ -59,20 +60,27 @@ fn main() {
         Arc::clone(&net_callback) as SharedCallback<Resource>,
     ));
 
-    let doc = HtmlDocument::from_html(&html, Some(base_url), stylesheets, net_provider, None);
+    let doc = HtmlDocument::from_html(
+        &html,
+        Some(base_url),
+        stylesheets,
+        net_provider.clone(),
+        None,
+    );
     let attrs = WindowAttributes::default().with_title(title);
     let window = WindowConfig::with_attributes(doc, attrs);
 
     // Create application
-    let mut application = BlitzApplication::new(rt, event_loop.create_proxy());
+    let mut application =
+        ReadmeApplication::new(rt, event_loop.create_proxy(), raw_url.clone(), net_provider);
     application.add_window(window);
 
     // Run event loop
     event_loop.run_app(&mut application).unwrap()
 }
 
-async fn fetch(raw_url: String) -> (String, String, bool) {
-    if let Ok(url) = Url::parse(&raw_url) {
+async fn fetch(raw_url: &str) -> (String, String, bool) {
+    if let Ok(url) = Url::parse(raw_url) {
         match url.scheme() {
             "file" => fetch_file_path(url.path()),
             _ => {
@@ -92,11 +100,11 @@ async fn fetch(raw_url: String) -> (String, String, bool) {
                     });
                 let file_content = response.text().await.unwrap();
 
-                (raw_url, file_content, is_md)
+                (raw_url.to_string(), file_content, is_md)
             }
         }
-    } else if fs::exists(&raw_url).unwrap() {
-        fetch_file_path(&raw_url)
+    } else if fs::exists(raw_url).unwrap() {
+        fetch_file_path(raw_url)
     } else {
         eprintln!("Cannot parse {} as url or find it as a file", raw_url);
         std::process::exit(1);

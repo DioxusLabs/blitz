@@ -1113,6 +1113,10 @@ impl Document {
         self.viewport_scroll
     }
 
+    pub fn set_viewport_scroll(&mut self, scroll: kurbo::Point) {
+        self.viewport_scroll = scroll;
+    }
+
     pub fn visit<F>(&self, mut visit: F)
     where
         F: FnMut(usize, &Node),

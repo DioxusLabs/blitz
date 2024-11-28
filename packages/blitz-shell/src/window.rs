@@ -104,6 +104,15 @@ impl<Doc: DocumentLike> View<Doc> {
             _menu: init_menu(&winit_window),
         }
     }
+
+    pub fn replace_document(&mut self, mut new_doc: Doc) {
+        let scroll = self.doc.as_ref().viewport_scroll();
+        new_doc.as_mut().set_viewport_scroll(scroll);
+        self.doc = new_doc;
+        self.kick_viewport();
+        self.poll();
+        self.request_redraw();
+    }
 }
 
 impl<Doc: DocumentLike> View<Doc> {
