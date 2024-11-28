@@ -130,7 +130,9 @@ fn fetch_file_path(raw_path: &str) -> (String, String, bool) {
 
     let base_url_path = path.parent().unwrap().to_string_lossy();
     let base_url = format!("file://{}/", base_url_path);
-    let is_md = path.extension() == Some("md".as_ref());
+    let is_md = path
+        .extension()
+        .is_some_and(|ext| ext.eq_ignore_ascii_case("md"));
 
     // Read file
     let file_content = std::fs::read_to_string(&path).unwrap();
