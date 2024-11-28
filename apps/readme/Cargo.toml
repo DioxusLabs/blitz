@@ -15,4 +15,4 @@ tokio = { workspace = true }
 reqwest = { workspace = true }
 url = { workspace = true }
 winit = { workspace = true }
-comrak = { version = "0.30", default-features = false, features = ["syntect"] }
+comrak = { version = "0.31", default-features = false, features = ["syntect"] }
