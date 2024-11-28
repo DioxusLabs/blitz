@@ -396,12 +396,12 @@ impl<'b> TreeSink for DocumentHtmlParser<'b> {
 
 #[test]
 fn parses_some_html() {
-    use blitz_dom::Viewport;
+    use blitz_dom::{ColorScheme, Viewport};
     use blitz_traits::net::DummyNetProvider;
     use std::sync::Arc;
 
     let html = "<!DOCTYPE html><html><body><h1>hello world</h1></body></html>";
-    let viewport = Viewport::new(800, 600, 1.0);
+    let viewport = Viewport::new(800, 600, 1.0, ColorScheme::Light);
     let mut doc = Document::new(viewport);
     let sink = DocumentHtmlParser::new(&mut doc, Arc::new(DummyNetProvider::default()));
 
