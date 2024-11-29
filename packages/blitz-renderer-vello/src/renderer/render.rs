@@ -707,6 +707,7 @@ impl ElementCx<'_> {
             self.stroke_text(scene, input_data.editor.lines(), pos);
         }
     }
+
     fn draw_marker(&self, scene: &mut Scene, pos: Point) {
         if let Some(ListItemLayout {
             marker,
@@ -741,9 +742,9 @@ impl ElementCx<'_> {
             self.stroke_text(scene, layout.lines(), pos);
         }
     }
+
     fn draw_children(&self, scene: &mut Scene) {
-        let paint_children = self.node.paint_children.borrow();
-        if let Some(children) = &*paint_children {
+        if let Some(children) = &*self.node.paint_children.borrow() {
             for child_id in children {
                 self.render_node(scene, *child_id, self.pos);
             }
