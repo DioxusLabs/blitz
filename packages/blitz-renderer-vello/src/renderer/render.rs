@@ -447,8 +447,9 @@ impl VelloSceneGenerator<'_> {
         cx.draw_input(scene);
 
         cx.draw_text_input_text(scene, content_position);
+        cx.draw_inline_layout(scene, content_position);
         cx.draw_marker(scene, content_position);
-        cx.draw_children(scene, content_position);
+        cx.draw_children(scene);
 
         if should_clip {
             scene.pop_layer();
@@ -675,6 +676,20 @@ impl ElementCx<'_> {
         }
     }
 
+    fn draw_inline_layout(&self, scene: &mut Scene, pos: Point) {
+        if self.node.is_inline_root {
+            let text_layout = self.element
+                .inline_layout_data
+                .as_ref()
+                .unwrap_or_else(|| {
+                    panic!("Tried to render node marked as inline root that does not have an inline layout: {:?}", self.node);
+                });
+
+            // Render text
+            self.stroke_text(scene, text_layout.layout.lines(), pos);
+        }
+    }
+
     fn draw_text_input_text(&self, scene: &mut Scene, pos: Point) {
         // Render the text in text inputs
         if let Some(input_data) = self.text_input {
@@ -698,24 +713,27 @@ impl ElementCx<'_> {
             position: ListItemLayoutPosition::Outside(layout),
         }) = self.list_item
         {
-            //Right align and pad the bullet when rendering outside
+            // Right align and pad the bullet when rendering outside
             let x_padding = match marker {
                 Marker::Char(_) => 8.0,
                 Marker::String(_) => 0.0,
             };
             let x_offset = -(layout.full_width() / layout.scale() + x_padding);
-            //Align the marker with the baseline of the first line of text in the list item
-            let y_offset = if let Some(text_layout) = &self.element.inline_layout_data {
-                if let Some(first_text_line) = text_layout.layout.lines().next() {
-                    (first_text_line.metrics().baseline
-                        - layout.lines().next().unwrap().metrics().baseline)
-                        / layout.scale()
-                } else {
-                    0.0
-                }
+
+            // Align the marker with the baseline of the first line of text in the list item
+            let y_offset = if let Some(first_text_line) = &self
+                .element
+                .inline_layout_data
+                .as_ref()
+                .and_then(|text_layout| text_layout.layout.lines().next())
+            {
+                (first_text_line.metrics().baseline
+                    - layout.lines().next().unwrap().metrics().baseline)
+                    / layout.scale()
             } else {
                 0.0
             };
+
             let pos = Point {
                 x: pos.x + x_offset as f64,
                 y: pos.y + y_offset as f64,
@@ -723,37 +741,20 @@ impl ElementCx<'_> {
             self.stroke_text(scene, layout.lines(), pos);
         }
     }
-    fn draw_children(&self, scene: &mut Scene, pos: Point) {
-        if self.node.is_inline_root {
-            let text_layout = self.element
-                .inline_layout_data
-                .as_ref()
-                .unwrap_or_else(|| {
-                    panic!("Tried to render node marked as inline root that does not have an inline layout: {:?}", self.node);
-                });
+    fn draw_children(&self, scene: &mut Scene) {
+        // Sort children by z-index
+        let mut children = self.node.layout_children.borrow().as_ref().unwrap().clone();
+        children.sort_by_key(|id| {
+            self.dom
+                .get_node(*id)
+                .unwrap()
+                .primary_styles()
+                .map(|s| s.clone_z_index().integer_or(0))
+                .unwrap_or(0)
+        });
 
-            // Render text
-            self.stroke_text(scene, text_layout.layout.lines(), pos);
-
-            // Render inline boxes
-            for inline_box in text_layout.layout.inline_boxes() {
-                self.render_node(scene, inline_box.id as usize, pos);
-            }
-        } else {
-            // Sort children by z-index
-            let mut children = self.node.layout_children.borrow().as_ref().unwrap().clone();
-            children.sort_by_key(|id| {
-                self.dom
-                    .get_node(*id)
-                    .unwrap()
-                    .primary_styles()
-                    .map(|s| s.clone_z_index().integer_or(0))
-                    .unwrap_or(0)
-            });
-
-            for child_id in children {
-                self.render_node(scene, child_id, self.pos);
-            }
+        for child_id in children {
+            self.render_node(scene, child_id, self.pos);
         }
     }
 

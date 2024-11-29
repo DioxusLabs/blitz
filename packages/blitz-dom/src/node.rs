@@ -953,10 +953,7 @@ impl Node {
     }
 
     pub fn order(&self) -> i32 {
-        self.stylo_element_data
-            .borrow()
-            .as_ref()
-            .and_then(|data| data.styles.get_primary())
+        self.primary_styles()
             .map(|s| match s.pseudo() {
                 Some(PseudoElement::Before) => i32::MIN,
                 Some(PseudoElement::After) => i32::MAX,

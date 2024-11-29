@@ -415,16 +415,11 @@ impl Document {
 
             inline_layout.layout.break_all_lines(max_advance);
 
-            let padding = style
-                .padding
-                .resolve_or_zero(inputs.parent_size)
-                .map(|w| w * scale);
-            let border = style
-                .border
-                .resolve_or_zero(inputs.parent_size)
-                .map(|w| w * scale);
+            let padding = style.padding.resolve_or_zero(inputs.parent_size);
+            let border = style.border.resolve_or_zero(inputs.parent_size);
 
-            let pbw = (padding + border).horizontal_components().sum() * scale;
+            let container_pb = padding + border;
+            let pbw = container_pb.horizontal_components().sum() * scale;
 
             // Align layout
             let alignment_width = inputs
@@ -522,8 +517,8 @@ impl Document {
                             let layout = &mut node.unrounded_layout;
                             layout.size.width = (ibox.width / scale) - margin.left - margin.right;
                             layout.size.height = (ibox.height / scale) - margin.top - margin.bottom;
-                            layout.location.x = (ibox.x / scale) + margin.left;
-                            layout.location.y = (ibox.y / scale) + margin.top;
+                            layout.location.x = (ibox.x / scale) + margin.left + container_pb.left;
+                            layout.location.y = (ibox.y / scale) + margin.top + container_pb.top;
                             layout.padding = padding; //.map(|p| p / scale);
                             layout.border = border; //.map(|p| p / scale);
                         }
