@@ -51,6 +51,13 @@ pub(crate) fn collect_layout_children(
     layout_children: &mut Vec<usize>,
     anonymous_block_id: &mut Option<usize>,
 ) {
+    // Reset inline layout
+    // TODO: make incremental and only remove this if the element is no longer an inline root
+    doc.nodes[container_node_id].is_inline_root = false;
+    if let Some(element_data) = doc.nodes[container_node_id].element_data_mut() {
+        element_data.take_inline_layout();
+    }
+
     flush_pseudo_elements(doc, container_node_id);
 
     if let Some(el) = doc.nodes[container_node_id].raw_dom_data.downcast_element() {
@@ -755,11 +762,6 @@ pub(crate) fn build_inline_layout(
         .iter()
         .map(|ibox| ibox.id as usize)
         .collect();
-
-    // Recurse into inline boxes within layout
-    for child_id in layout_children.iter().copied() {
-        doc.ensure_layout_children(child_id);
-    }
 
     return (TextLayout { text, layout }, layout_children);
 

@@ -4,7 +4,7 @@
 //! However, in Blitz, we do a style pass then a layout pass.
 //! This is slower, yes, but happens fast enough that it's not a huge issue.
 
-use crate::node::{ImageData, NodeData, NodeKind, NodeSpecificData};
+use crate::node::{ImageData, NodeData, NodeSpecificData};
 use crate::{
     document::Document,
     image::{image_measure_function, ImageContext},
@@ -21,7 +21,6 @@ use taffy::{
 
 pub(crate) mod construct;
 pub(crate) mod table;
-pub(crate) use construct::collect_layout_children;
 
 use self::table::TableTreeWrapper;
 
@@ -31,26 +30,6 @@ impl Document {
     }
     fn node_from_id_mut(&mut self, node_id: taffy::prelude::NodeId) -> &mut Node {
         &mut self.nodes[node_id.into()]
-    }
-
-    pub(crate) fn ensure_layout_children(&mut self, node_id: usize) {
-        // if self.nodes[node_id].layout_children.borrow().is_none() {
-        let mut layout_children = Vec::new();
-        let mut anonymous_block: Option<usize> = None;
-        collect_layout_children(self, node_id, &mut layout_children, &mut anonymous_block);
-
-        // Recurse into newly created anonymous nodes
-        for child_id in layout_children.iter().copied() {
-            if self.nodes[child_id].raw_dom_data.kind() == NodeKind::AnonymousBlock {
-                self.ensure_layout_children(child_id);
-            }
-        }
-
-        for &child_id in &layout_children {
-            self.nodes[child_id].layout_parent.set(Some(node_id));
-        }
-        *self.nodes[node_id].layout_children.borrow_mut() = Some(layout_children);
-        // }
     }
 }
 

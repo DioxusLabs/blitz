@@ -1,4 +1,5 @@
 use crate::events::{apply_keypress_event, EventData, HitResult, RendererEvent};
+use crate::layout::construct::collect_layout_children;
 use crate::node::{ImageData, NodeSpecificData, Status, TextBrush};
 use crate::util::ImageType;
 use crate::{ElementNodeData, Node, NodeData, TextNodeData, Viewport};
@@ -958,24 +959,22 @@ impl Document {
 
     /// Ensure that the layout_children field is populated for all nodes
     pub fn resolve_layout_children(&mut self) {
-        let root_node_id = self.root_node().id;
-        resolve_layout_children_recursive(self, root_node_id);
+        resolve_layout_children_recursive(self, self.root_node().id);
 
-        pub fn resolve_layout_children_recursive(doc: &mut Document, node_id: usize) {
-            doc.nodes[node_id].is_inline_root = false;
-            if let Some(element_data) = doc.nodes[node_id].element_data_mut() {
-                element_data.take_inline_layout();
-            }
+        fn resolve_layout_children_recursive(doc: &mut Document, node_id: usize) {
+            // if doc.nodes[node_id].layout_children.borrow().is_none() {
+            let mut layout_children = Vec::new();
+            let mut anonymous_block: Option<usize> = None;
+            collect_layout_children(doc, node_id, &mut layout_children, &mut anonymous_block);
 
-            doc.ensure_layout_children(node_id);
-
-            let children = std::mem::take(&mut doc.nodes[node_id].children);
-
-            for child_id in children.iter().copied() {
+            // Recurse into newly collected layout children
+            for child_id in layout_children.iter().copied() {
                 resolve_layout_children_recursive(doc, child_id);
+                doc.nodes[child_id].layout_parent.set(Some(node_id));
             }
 
-            doc.nodes[node_id].children = children;
+            *doc.nodes[node_id].layout_children.borrow_mut() = Some(layout_children);
+            // }
         }
     }
 
