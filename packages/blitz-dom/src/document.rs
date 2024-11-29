@@ -973,7 +973,8 @@ impl Document {
                 doc.nodes[child_id].layout_parent.set(Some(node_id));
             }
 
-            *doc.nodes[node_id].layout_children.borrow_mut() = Some(layout_children);
+            *doc.nodes[node_id].layout_children.borrow_mut() = Some(layout_children.clone());
+            *doc.nodes[node_id].paint_children.borrow_mut() = Some(layout_children);
             // }
         }
     }

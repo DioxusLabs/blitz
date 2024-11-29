@@ -140,6 +140,18 @@ impl crate::document::Document {
 
             // Put children back
             *self.nodes[node_id].layout_children.borrow_mut() = Some(children);
+
+            // Sort paint_children in place
+            self.nodes[node_id]
+                .paint_children
+                .borrow_mut()
+                .as_mut()
+                .unwrap()
+                .sort_by(|left, right| {
+                    let left_node = self.nodes.get(*left).unwrap();
+                    let right_node = self.nodes.get(*right).unwrap();
+                    left_node.z_index().cmp(&right_node.z_index())
+                })
         }
     }
 

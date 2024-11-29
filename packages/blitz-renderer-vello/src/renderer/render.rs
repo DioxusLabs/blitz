@@ -742,19 +742,11 @@ impl ElementCx<'_> {
         }
     }
     fn draw_children(&self, scene: &mut Scene) {
-        // Sort children by z-index
-        let mut children = self.node.layout_children.borrow().as_ref().unwrap().clone();
-        children.sort_by_key(|id| {
-            self.dom
-                .get_node(*id)
-                .unwrap()
-                .primary_styles()
-                .map(|s| s.clone_z_index().integer_or(0))
-                .unwrap_or(0)
-        });
-
-        for child_id in children {
-            self.render_node(scene, child_id, self.pos);
+        let paint_children = self.node.paint_children.borrow();
+        if let Some(children) = &*paint_children {
+            for child_id in children {
+                self.render_node(scene, *child_id, self.pos);
+            }
         }
     }
 

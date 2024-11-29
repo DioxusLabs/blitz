@@ -58,6 +58,8 @@ pub struct Node {
     pub layout_parent: Cell<Option<usize>>,
     /// A separate child list that includes anonymous collections of inline elements
     pub layout_children: RefCell<Option<Vec<usize>>>,
+    /// The same as layout_children, but sorted by z-index
+    pub paint_children: RefCell<Option<Vec<usize>>>,
 
     /// Node type (Element, TextNode, etc) specific data
     pub raw_dom_data: NodeData,
@@ -101,6 +103,7 @@ impl Node {
             children: vec![],
             layout_parent: Cell::new(None),
             layout_children: RefCell::new(None),
+            paint_children: RefCell::new(None),
 
             raw_dom_data: data,
             stylo_element_data: Default::default(),
@@ -962,6 +965,12 @@ impl Node {
             .unwrap_or(0)
     }
 
+    pub fn z_index(&self) -> i32 {
+        self.primary_styles()
+            .map(|s| s.clone_z_index().integer_or(0))
+            .unwrap_or(0)
+    }
+
     /// Takes an (x, y) position (relative to the *parent's* top-left corner) and returns:
     ///    - None if the position is outside of this node's bounds
     ///    - Some(HitResult) if the position is within the node but doesn't match any children
@@ -984,7 +993,7 @@ impl Node {
         }
 
         // Call `.hit()` on each child in turn. If any return `Some` then return that value. Else return `Some(self.id).
-        self.layout_children
+        self.paint_children
             .borrow()
             .iter()
             .rev()
