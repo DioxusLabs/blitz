@@ -66,10 +66,6 @@ impl<Doc: DocumentLike> ApplicationHandler<BlitzEvent> for BlitzApplication<Doc>
     }
 
     fn new_events(&mut self, _event_loop: &ActiveEventLoop, _cause: winit::event::StartCause) {
-        for window_id in self.windows.keys().copied() {
-            _ = self.proxy.send_event(BlitzEvent::Poll { window_id });
-        }
-
         #[cfg(all(feature = "menu", not(any(target_os = "android", target_os = "ios"))))]
         if let Ok(event) = self.menu_channel.try_recv() {
             if event.id == muda::MenuId::new("dev.show_layout") {
@@ -96,6 +92,8 @@ impl<Doc: DocumentLike> ApplicationHandler<BlitzEvent> for BlitzApplication<Doc>
         if let Some(window) = self.windows.get_mut(&window_id) {
             window.handle_winit_event(event);
         }
+
+        let _ = self.proxy.send_event(BlitzEvent::Poll { window_id });
     }
 
     fn user_event(&mut self, _event_loop: &ActiveEventLoop, event: BlitzEvent) {
