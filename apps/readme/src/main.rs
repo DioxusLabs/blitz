@@ -109,6 +109,8 @@ async fn fetch(raw_url: &str) -> (String, String, bool, Option<PathBuf>) {
                     .send()
                     .await
                     .unwrap();
+
+                // Detect markdown file
                 let content_type = response
                     .headers()
                     .get(HeaderName::from_static("content-type"));
@@ -116,9 +118,15 @@ async fn fetch(raw_url: &str) -> (String, String, bool, Option<PathBuf>) {
                     || content_type.is_some_and(|ct| {
                         ct.to_str().is_ok_and(|ct| ct.starts_with("text/markdown"))
                     });
+
+                // Get the final url
+                // Note: this may be different to the initial url if there was a redirect
+                let final_url = response.url().to_string();
+
+                // Get the file content
                 let file_content = response.text().await.unwrap();
 
-                (raw_url.to_string(), file_content, is_md, None)
+                (final_url, file_content, is_md, None)
             }
         }
     } else if fs::exists(raw_url).unwrap() {
