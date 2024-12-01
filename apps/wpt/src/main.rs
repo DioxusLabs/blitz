@@ -8,6 +8,7 @@ use url::Url;
 use rayon::prelude::*;
 use regex::Regex;
 
+use bitflags::bitflags;
 use log::{error, info};
 use owo_colors::OwoColorize;
 use std::cell::RefCell;
@@ -33,6 +34,14 @@ const WIDTH: u32 = 800;
 const HEIGHT: u32 = 600;
 const SCALE: f64 = 1.0;
 
+bitflags! {
+    pub struct TestFlags : u32 {
+        const USES_FLOAT = 0b00000001;
+        const USES_DIRECTION = 0b00000010;
+        const USES_WRITING_MODE = 0b00000100;
+    }
+}
+
 #[derive(Copy, Clone)]
 enum TestKind {
     Ref,
@@ -44,8 +53,8 @@ impl Display for TestKind {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             TestKind::Ref => f.write_str("REF"),
-            TestKind::Attr => f.write_str("ATTR"),
-            TestKind::Unknown => f.write_str("UNKNOWN"),
+            TestKind::Attr => f.write_str("ATT"),
+            TestKind::Unknown => f.write_str("UNK"),
         }
     }
 }
@@ -163,6 +172,9 @@ struct ThreadCtx {
     // Things that aren't really thread-specifc, but are convenient to store here
     reftest_re: Regex,
     attrtest_re: Regex,
+    float_re: Regex,
+    direction_re: Regex,
+    writing_mode_re: Regex,
     out_dir: PathBuf,
     wpt_dir: PathBuf,
     dummy_base_url: Url,
@@ -171,6 +183,7 @@ struct ThreadCtx {
 struct TestResult {
     name: String,
     kind: TestKind,
+    flags: TestFlags,
     status: TestStatus,
     duration: Duration,
     panic_msg: Option<String>,
@@ -178,8 +191,9 @@ struct TestResult {
 
 impl TestResult {
     fn print_to(&self, mut out: impl Write) {
+
         let result_str = format!(
-            "{} {} ({}ms)",
+            "{} {} ({}ms) ",
             self.status.as_str(),
             &self.name,
             self.duration.as_millis(),
@@ -190,7 +204,30 @@ impl TestResult {
             TestStatus::Skip => write!(out, "{}", result_str.bright_black()).unwrap(),
             TestStatus::Crash => write!(out, "{}", result_str.bright_magenta()).unwrap(),
         };
-        write!(out, "{}", format_args!(" {}", self.kind).bright_black()).unwrap();
+
+        // Write test kind
+        write!(out, "{}", format_args!("{}", self.kind).bright_black()).unwrap();
+
+        // Write flag markers
+        if !self.flags.is_empty() {
+            write!(out, " {}", "(".bright_black()).unwrap();
+
+            if self.flags.contains(TestFlags::USES_FLOAT) {
+                write!(out, "{}", "F".bright_black()).unwrap();
+            }
+            if self.flags.contains(TestFlags::USES_DIRECTION) {
+                write!(out, "{}", "D".bright_black()).unwrap();
+            }
+            if self.flags.contains(TestFlags::USES_WRITING_MODE) {
+                write!(out, "{}", "W".bright_black()).unwrap();
+            }
+
+            write!(out, "{}", ")".bright_black()).unwrap();
+        }
+
+        // Newline
+        writeln!(out).unwrap();
+
         if let Some(panic_msg) = &self.panic_msg {
             writeln!(out, "{}", panic_msg).unwrap();
         }
@@ -250,13 +287,17 @@ fn main() {
                             ColorScheme::Light,
                         );
                         let net_provider = Arc::new(WptNetProvider::new(&wpt_dir));
-                        let reftest_re = Regex::new(r#"<link\s+rel="match"\s+href="([^"]+)""#)
-                            .expect("Failed to compile reftest regex");
+                        let reftest_re =
+                            Regex::new(r#"<link\s+rel="match"\s+href="([^"]+)""#).unwrap();
+
+                        let float_re = Regex::new(r#"float:"#).unwrap();
+                        let direction_re = Regex::new(r#"direction:"#).unwrap();
+                        let writing_mode_re = Regex::new(r#"writing-mode:"#).unwrap();
 
                         let attrtest_re = Regex::new(
                             r#"checkLayout\(\s*['"]([^'"]*)['"]\s*(,\s*(true|false))?\)"#,
                         )
-                        .expect("Failed to compile attrtest regex");
+                        .unwrap();
 
                         let dummy_base_url = Url::parse("http://dummy.local").unwrap();
 
@@ -271,6 +312,9 @@ fn main() {
                             },
                             reftest_re,
                             attrtest_re,
+                            float_re,
+                            direction_re,
+                            writing_mode_re,
                             out_dir: out_dir.clone(),
                             wpt_dir: wpt_dir.clone(),
                             dummy_base_url,
@@ -291,14 +335,19 @@ fn main() {
                 let result = catch_unwind(AssertUnwindSafe(|| {
                     rt.block_on(process_test_file(&mut ctx, &relative_path))
                 }));
-                let (kind, status, panic_msg) = match result {
-                    Ok((kind, status)) => (kind, status, None),
+                let (kind, flags, status, panic_msg) = match result {
+                    Ok((kind, flags, status)) => (kind, flags, status, None),
                     Err(err) => {
                         let str_msg = err.downcast_ref::<&str>().map(|s| s.to_string());
                         let string_msg = err.downcast_ref::<String>().map(|s| s.to_string());
                         let panic_msg = str_msg.or(string_msg);
 
-                        (TestKind::Unknown, TestStatus::Crash, panic_msg)
+                        (
+                            TestKind::Unknown,
+                            TestFlags::empty(),
+                            TestStatus::Crash,
+                            panic_msg,
+                        )
                     }
                 };
 
@@ -313,6 +362,7 @@ fn main() {
                 let result = TestResult {
                     name: relative_path,
                     kind,
+                    flags,
                     status,
                     duration: start.elapsed(),
                     panic_msg,
@@ -363,10 +413,25 @@ fn main() {
 }
 
 #[allow(clippy::too_many_arguments)]
-async fn process_test_file(ctx: &mut ThreadCtx, relative_path: &str) -> (TestKind, TestStatus) {
+async fn process_test_file(
+    ctx: &mut ThreadCtx,
+    relative_path: &str,
+) -> (TestKind, TestFlags, TestStatus) {
     info!("Processing test file: {}", relative_path);
 
     let file_contents = fs::read_to_string(ctx.wpt_dir.join(relative_path)).unwrap();
+
+    // Compute flags
+    let mut flags = TestFlags::empty();
+    if ctx.float_re.is_match(&file_contents) {
+        flags |= TestFlags::USES_FLOAT;
+    }
+    if ctx.direction_re.is_match(&file_contents) {
+        flags |= TestFlags::USES_DIRECTION;
+    }
+    if ctx.writing_mode_re.is_match(&file_contents) {
+        flags |= TestFlags::USES_WRITING_MODE;
+    }
 
     // Ref Test
     let reference = ctx
@@ -382,7 +447,7 @@ async fn process_test_file(ctx: &mut ThreadCtx, relative_path: &str) -> (TestKin
         )
         .await;
 
-        return (TestKind::Ref, result);
+        return (TestKind::Ref, flags, result);
     }
 
     // Attr Test
@@ -397,9 +462,9 @@ async fn process_test_file(ctx: &mut ThreadCtx, relative_path: &str) -> (TestKin
 
         let result = process_attr_test(ctx, &selector, &file_contents, relative_path).await;
 
-        return (TestKind::Attr, result);
+        return (TestKind::Attr, flags, result);
     }
 
     // TODO: Handle other test formats.
-    (TestKind::Unknown, TestStatus::Skip)
+    (TestKind::Unknown, flags, TestStatus::Skip)
 }
