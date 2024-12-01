@@ -198,7 +198,7 @@ impl Document {
             // println!("\n");
 
             inputs.known_dimensions.unwrap_or(taffy::Size {
-                width: inline_layout.layout.width() / scale,
+                width: alignment_width / scale,
                 height: inline_layout.layout.height() / scale,
             })
         });
