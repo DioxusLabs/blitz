@@ -1013,23 +1013,33 @@ impl Document {
 
         let style = node.primary_styles()?;
         let keyword = style.clone_cursor().keyword;
-        let cursor = match keyword {
-            CursorKind::Auto => {
-                // if the target is text, it's text cursor
-                // todo: our "hit" function doesn't return text, only elements
-                // this will need to be more comprehensive in the future to handle line breaks, shaping, etc.
-                if node.is_text_node() {
-                    CursorKind::Text
-                } else if node.is_link() {
-                    CursorKind::Pointer
-                } else {
-                    CursorKind::Auto
-                }
-            }
-            cusor => cusor,
-        };
 
-        Some(cursor)
+        // Return cursor from style if it is non-auto
+        if keyword != CursorKind::Auto {
+            return Some(keyword);
+        }
+
+        // Return text cursor for text nodes and text inputs
+        if node.is_text_node()
+            || node
+                .element_data()
+                .is_some_and(|e| e.text_input_data().is_some())
+        {
+            return Some(CursorKind::Text);
+        }
+
+        // Use "pointer" cursor if any ancestor is a link
+        let mut maybe_node = Some(node);
+        while let Some(node) = maybe_node {
+            if node.is_link() {
+                return Some(CursorKind::Pointer);
+            }
+
+            maybe_node = node.parent_node();
+        }
+
+        // Else fallback to auto cursor
+        Some(CursorKind::Auto)
     }
 
     /// Scroll a node by given x and y
