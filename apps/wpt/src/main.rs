@@ -191,7 +191,6 @@ struct TestResult {
 
 impl TestResult {
     fn print_to(&self, mut out: impl Write) {
-
         let result_str = format!(
             "{} {} ({}ms) ",
             self.status.as_str(),
@@ -200,6 +199,9 @@ impl TestResult {
         );
         match self.status {
             TestStatus::Pass => write!(out, "{}", result_str.green()).unwrap(),
+            TestStatus::Fail if !self.flags.is_empty() => {
+                write!(out, "{}", result_str.yellow()).unwrap()
+            }
             TestStatus::Fail => write!(out, "{}", result_str.red()).unwrap(),
             TestStatus::Skip => write!(out, "{}", result_str.bright_black()).unwrap(),
             TestStatus::Crash => write!(out, "{}", result_str.bright_magenta()).unwrap(),
