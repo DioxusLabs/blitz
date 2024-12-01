@@ -5,7 +5,7 @@ use blitz_html::HtmlDocument;
 use blitz_shell::{BlitzApplication, BlitzEvent, View, WindowConfig};
 use blitz_traits::net::NetProvider;
 use winit::application::ApplicationHandler;
-use winit::event::{StartCause, WindowEvent};
+use winit::event::{Modifiers, StartCause, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, EventLoopProxy};
 use winit::keyboard::{KeyCode, PhysicalKey};
 use winit::window::{Theme, WindowId};
@@ -20,6 +20,7 @@ pub struct ReadmeApplication {
     handle: tokio::runtime::Handle,
     net_provider: Arc<dyn NetProvider<Data = Resource>>,
     raw_url: String,
+    keyboard_modifiers: Modifiers,
 }
 
 impl ReadmeApplication {
@@ -35,6 +36,7 @@ impl ReadmeApplication {
             handle,
             raw_url,
             net_provider,
+            keyboard_modifiers: Default::default(),
         }
     }
 
@@ -96,8 +98,13 @@ impl ApplicationHandler<BlitzEvent> for ReadmeApplication {
         window_id: WindowId,
         event: WindowEvent,
     ) {
+        if let WindowEvent::ModifiersChanged(new_state) = &event {
+            self.keyboard_modifiers = *new_state;
+        }
+
         if let WindowEvent::KeyboardInput { event, .. } = &event {
-            if !event.state.is_pressed() {
+            let mods = self.keyboard_modifiers.state();
+            if !event.state.is_pressed() && (mods.control_key() || mods.super_key()) {
                 match event.physical_key {
                     PhysicalKey::Code(KeyCode::KeyR) => self.reload_document(),
                     PhysicalKey::Code(KeyCode::KeyT) => self.toggle_theme(),
