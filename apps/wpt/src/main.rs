@@ -43,9 +43,9 @@ enum TestKind {
 impl Display for TestKind {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            TestKind::Ref => f.write_str("ref"),
-            TestKind::Attr => f.write_str("attr"),
-            TestKind::Unknown => f.write_str("unknown"),
+            TestKind::Ref => f.write_str("REF"),
+            TestKind::Attr => f.write_str("ATTR"),
+            TestKind::Unknown => f.write_str("UNKNOWN"),
         }
     }
 }
@@ -61,9 +61,9 @@ enum TestStatus {
 impl TestStatus {
     fn as_str(&self) -> &'static str {
         match self {
-            TestStatus::Pass => "PASS ",
-            TestStatus::Fail => "FAIL ",
-            TestStatus::Skip => "SKIP ",
+            TestStatus::Pass => "PASS",
+            TestStatus::Fail => "FAIL",
+            TestStatus::Skip => "SKIP",
             TestStatus::Crash => "CRASH",
         }
     }
@@ -179,18 +179,18 @@ struct TestResult {
 impl TestResult {
     fn print_to(&self, mut out: impl Write) {
         let result_str = format!(
-            "{} {} ({}) ({}ms)",
+            "{} {} ({}ms)",
             self.status.as_str(),
             &self.name,
-            self.kind,
-            self.duration.as_millis()
+            self.duration.as_millis(),
         );
         match self.status {
-            TestStatus::Pass => writeln!(out, "{}", result_str.green()).unwrap(),
-            TestStatus::Fail => writeln!(out, "{}", result_str.red()).unwrap(),
-            TestStatus::Skip => writeln!(out, "{}", result_str.bright_black()).unwrap(),
-            TestStatus::Crash => writeln!(out, "{}", result_str.bright_magenta()).unwrap(),
+            TestStatus::Pass => write!(out, "{}", result_str.green()).unwrap(),
+            TestStatus::Fail => write!(out, "{}", result_str.red()).unwrap(),
+            TestStatus::Skip => write!(out, "{}", result_str.bright_black()).unwrap(),
+            TestStatus::Crash => write!(out, "{}", result_str.bright_magenta()).unwrap(),
         };
+        write!(out, "{}", format_args!(" {}", self.kind).bright_black()).unwrap();
         if let Some(panic_msg) = &self.panic_msg {
             writeln!(out, "{}", panic_msg).unwrap();
         }
