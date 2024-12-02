@@ -10,8 +10,10 @@ use blitz_dom::node::{
 use blitz_dom::{local_name, Document, ElementNodeData, Node};
 use blitz_traits::Devtools;
 
+use euclid::Transform3D;
 use parley::Line;
 use style::values::computed::{BackgroundSize, Length};
+use style::Zero;
 use style::{
     dom::TElement,
     properties::{
@@ -504,7 +506,7 @@ impl VelloSceneGenerator<'_> {
             .get_box()
             .transform
             .to_transform_3d_matrix(None)
-            .unwrap();
+            .unwrap_or((Transform3D::default(), false));
         if !has_3d {
             // See: https://drafts.csswg.org/css-transforms-2/#two-dimensional-subset
             // And https://docs.rs/kurbo/latest/kurbo/struct.Affine.html#method.new
@@ -547,7 +549,13 @@ fn compute_background_size(
     scale: f32,
 ) -> vello::kurbo::Size {
     use style::values::generics::length::GenericLengthPercentageOrAuto as Lpa;
-    let bg_size = &style.get_background().background_size.0[bg_idx];
+    let bg_size = style
+        .get_background()
+        .background_size
+        .0
+        .get(bg_idx)
+        .cloned()
+        .unwrap_or(BackgroundSize::auto());
 
     let (width, height): (f32, f32) = match bg_size {
         BackgroundSize::ExplicitSize { width, height } => {
@@ -875,10 +883,24 @@ impl ElementCx<'_> {
         let x_ratio = bg_size.width as f64 / svg_size.width() as f64;
         let y_ratio = bg_size.height as f64 / svg_size.height() as f64;
 
-        let bg_pos_x = self.style.get_background().background_position_x.0[idx]
+        let bg_pos_x = self
+            .style
+            .get_background()
+            .background_position_x
+            .0
+            .get(idx)
+            .cloned()
+            .unwrap_or(LengthPercentage::zero())
             .resolve(Length::new(frame_w - (bg_size.width as f32)))
             .px() as f64;
-        let bg_pos_y = self.style.get_background().background_position_y.0[idx]
+        let bg_pos_y = self
+            .style
+            .get_background()
+            .background_position_y
+            .0
+            .get(idx)
+            .cloned()
+            .unwrap_or(LengthPercentage::zero())
             .resolve(Length::new(frame_h - bg_size.height as f32))
             .px() as f64;
 
