@@ -345,20 +345,12 @@ fn flush_pseudo_elements(doc: &mut Document, node_id: usize) {
             // TODO: Update content
 
             let mut node_styles = doc.nodes[pe_node_id].stylo_element_data.borrow_mut();
+            let node_styles = &mut node_styles.as_mut().unwrap();
+            let primary_styles = &mut node_styles.styles.primary;
 
-            if &**(*node_styles)
-                .as_ref()
-                .unwrap()
-                .styles
-                .primary
-                .as_ref()
-                .unwrap() as *const _
-                != &*pe_style as *const _
-            {
-                let mut element_data = ElementData::default();
-                element_data.styles.primary = Some(pe_style);
-                element_data.set_restyled();
-                *node_styles = Some(element_data);
+            if &**primary_styles.as_ref().unwrap() as *const _ != &*pe_style as *const _ {
+                *primary_styles = Some(pe_style);
+                node_styles.set_restyled();
             }
         }
     }
