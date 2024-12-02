@@ -554,6 +554,20 @@ fn collect_complex_layout_children(
     hide_whitespace: bool,
     needs_wrap: impl Fn(NodeKind, DisplayOutside) -> bool,
 ) {
+    fn block_is_only_whitespace(doc: &Document, node_id: usize) -> bool {
+        for child_id in doc.nodes[node_id].children.iter().copied() {
+            let child = &doc.nodes[child_id];
+            if child
+                .text_data()
+                .is_none_or(|text_data| !text_data.content.chars().all(|c| c.is_ascii_whitespace()))
+            {
+                return false;
+            }
+        }
+
+        true
+    }
+
     doc.iter_children_and_pseudos_mut(container_node_id, |child_id, doc| {
         // Get node kind (text, element, comment, etc)
         let child_node_kind = doc.nodes[child_id].raw_dom_data.kind();
@@ -626,10 +640,26 @@ fn collect_complex_layout_children(
         }
         // Else push the child directly (and close any open "anonymous block container")
         else {
+            // If anonymous block node only contains whitespace then delete it
+            if let Some(anon_id) = *anonymous_block_id {
+                if block_is_only_whitespace(doc, anon_id) {
+                    layout_children.pop();
+                    doc.nodes.remove(anon_id);
+                }
+            }
+
             *anonymous_block_id = None;
             layout_children.push(child_id);
         }
     });
+
+    // If anonymous block node only contains whitespace then delete it
+    if let Some(anon_id) = *anonymous_block_id {
+        if block_is_only_whitespace(doc, anon_id) {
+            layout_children.pop();
+            doc.nodes.remove(anon_id);
+        }
+    }
 }
 
 fn create_text_editor(doc: &mut Document, input_element_id: usize, is_multiline: bool) {
