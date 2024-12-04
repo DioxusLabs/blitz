@@ -41,6 +41,8 @@ bitflags! {
         const USES_CALC = 0b00000100;
         const USES_DIRECTION = 0b00001000;
         const USES_WRITING_MODE = 0b00010000;
+        const USES_SUBGRID = 0b00100000;
+        const USES_MASONRY = 0b01000000;
     }
 }
 
@@ -179,6 +181,8 @@ struct ThreadCtx {
     calc_re: Regex,
     direction_re: Regex,
     writing_mode_re: Regex,
+    subgrid_re: Regex,
+    masonry_re: Regex,
     out_dir: PathBuf,
     wpt_dir: PathBuf,
     dummy_base_url: Url,
@@ -233,6 +237,12 @@ impl TestResult {
             if self.flags.contains(TestFlags::USES_WRITING_MODE) {
                 write!(out, "{}", "W".bright_black()).unwrap();
             }
+            if self.flags.contains(TestFlags::USES_SUBGRID) {
+                write!(out, "{}", "S".bright_black()).unwrap();
+            }
+            if self.flags.contains(TestFlags::USES_MASONRY) {
+                write!(out, "{}", "M".bright_black()).unwrap();
+            }
 
             write!(out, "{}", ")".bright_black()).unwrap();
         }
@@ -271,6 +281,8 @@ fn main() {
 
     let pass_count = AtomicU32::new(0);
     let fail_count = AtomicU32::new(0);
+    let masonry_fail_count = AtomicU32::new(0);
+    let subgrid_fail_count = AtomicU32::new(0);
     let writing_mode_fail_count = AtomicU32::new(0);
     let direction_fail_count = AtomicU32::new(0);
     let float_fail_count = AtomicU32::new(0);
@@ -315,6 +327,8 @@ fn main() {
                         let direction_re = Regex::new(r#"direction:|directionRTL"#).unwrap();
                         let writing_mode_re =
                             Regex::new(r#"writing-mode:|vertical(RL|LR)"#).unwrap();
+                        let subgrid_re = Regex::new(r#"subgrid"#).unwrap();
+                        let masonry_re = Regex::new(r#"masonry"#).unwrap();
 
                         let attrtest_re = Regex::new(
                             r#"checkLayout\(\s*['"]([^'"]*)['"]\s*(,\s*(true|false))?\)"#,
@@ -339,6 +353,8 @@ fn main() {
                             calc_re,
                             direction_re,
                             writing_mode_re,
+                            subgrid_re,
+                            masonry_re,
                             out_dir: out_dir.clone(),
                             wpt_dir: wpt_dir.clone(),
                             dummy_base_url,
@@ -379,7 +395,11 @@ fn main() {
                 match status {
                     TestStatus::Pass => pass_count.fetch_add(1, Ordering::SeqCst),
                     TestStatus::Fail => {
-                        if flags.contains(TestFlags::USES_WRITING_MODE) {
+                        if flags.contains(TestFlags::USES_MASONRY) {
+                            masonry_fail_count.fetch_add(1, Ordering::SeqCst);
+                        } else if flags.contains(TestFlags::USES_SUBGRID) {
+                            subgrid_fail_count.fetch_add(1, Ordering::SeqCst);
+                        } else if flags.contains(TestFlags::USES_WRITING_MODE) {
                             writing_mode_fail_count.fetch_add(1, Ordering::SeqCst);
                         } else if flags.contains(TestFlags::USES_DIRECTION) {
                             direction_fail_count.fetch_add(1, Ordering::SeqCst);
@@ -431,6 +451,8 @@ fn main() {
 
     let pass_count = pass_count.load(Ordering::SeqCst);
     let fail_count = fail_count.load(Ordering::SeqCst);
+    let subgrid_fail_count = subgrid_fail_count.load(Ordering::SeqCst);
+    let masonry_fail_count = masonry_fail_count.load(Ordering::SeqCst);
     let writing_mode_fail_count = writing_mode_fail_count.load(Ordering::SeqCst);
     let direction_fail_count = direction_fail_count.load(Ordering::SeqCst);
     let float_fail_count = float_fail_count.load(Ordering::SeqCst);
@@ -468,6 +490,12 @@ fn main() {
     println!("{fail_count:>4} tests FAILED ({fail_percent_run:.2}% of run; {fail_percent_total:.2}% of found)");
 
     println!("{}", "\nOf those which failed:".bright_black());
+    if subgrid_fail_count > 0 {
+        println!("{subgrid_fail_count:>4} use subgrid");
+    }
+    if masonry_fail_count > 0 {
+        println!("{masonry_fail_count:>4} use masonry");
+    }
     println!("{writing_mode_fail_count:>4} use writing_mode");
     println!("{direction_fail_count:>4} use direction");
     println!("{calc_fail_count:>4} use calc");
@@ -501,6 +529,12 @@ async fn process_test_file(
     }
     if ctx.writing_mode_re.is_match(&file_contents) {
         flags |= TestFlags::USES_WRITING_MODE;
+    }
+    if ctx.subgrid_re.is_match(&file_contents) {
+        flags |= TestFlags::USES_SUBGRID;
+    }
+    if ctx.masonry_re.is_match(&file_contents) {
+        flags |= TestFlags::USES_MASONRY;
     }
 
     // Ref Test
