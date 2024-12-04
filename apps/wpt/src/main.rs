@@ -37,8 +37,9 @@ const SCALE: f64 = 1.0;
 bitflags! {
     pub struct TestFlags : u32 {
         const USES_FLOAT = 0b00000001;
-        const USES_DIRECTION = 0b00000010;
-        const USES_WRITING_MODE = 0b00000100;
+        const USES_INTRINSIC_SIZE = 0b00000010;
+        const USES_DIRECTION = 0b00000100;
+        const USES_WRITING_MODE = 0b00001000;
     }
 }
 
@@ -173,6 +174,7 @@ struct ThreadCtx {
     reftest_re: Regex,
     attrtest_re: Regex,
     float_re: Regex,
+    intrinsic_re: Regex,
     direction_re: Regex,
     writing_mode_re: Regex,
     out_dir: PathBuf,
@@ -216,6 +218,9 @@ impl TestResult {
 
             if self.flags.contains(TestFlags::USES_FLOAT) {
                 write!(out, "{}", "F".bright_black()).unwrap();
+            }
+            if self.flags.contains(TestFlags::USES_INTRINSIC_SIZE) {
+                write!(out, "{}", "I".bright_black()).unwrap();
             }
             if self.flags.contains(TestFlags::USES_DIRECTION) {
                 write!(out, "{}", "D".bright_black()).unwrap();
@@ -293,6 +298,8 @@ fn main() {
                             Regex::new(r#"<link\s+rel="match"\s+href="([^"]+)""#).unwrap();
 
                         let float_re = Regex::new(r#"float:"#).unwrap();
+                        let intrinsic_re =
+                            Regex::new(r#"(width|height): ?(min|max|fit)-content"#).unwrap();
                         let direction_re = Regex::new(r#"direction:"#).unwrap();
                         let writing_mode_re = Regex::new(r#"writing-mode:"#).unwrap();
 
@@ -315,6 +322,7 @@ fn main() {
                             reftest_re,
                             attrtest_re,
                             float_re,
+                            intrinsic_re,
                             direction_re,
                             writing_mode_re,
                             out_dir: out_dir.clone(),
@@ -427,6 +435,9 @@ async fn process_test_file(
     let mut flags = TestFlags::empty();
     if ctx.float_re.is_match(&file_contents) {
         flags |= TestFlags::USES_FLOAT;
+    }
+    if ctx.intrinsic_re.is_match(&file_contents) {
+        flags |= TestFlags::USES_INTRINSIC_SIZE;
     }
     if ctx.direction_re.is_match(&file_contents) {
         flags |= TestFlags::USES_DIRECTION;
