@@ -312,8 +312,9 @@ fn main() {
                         let intrinsic_re =
                             Regex::new(r#"(width|height): ?(min|max|fit)-content"#).unwrap();
                         let calc_re = Regex::new(r#"calc\("#).unwrap();
-                        let direction_re = Regex::new(r#"direction:"#).unwrap();
-                        let writing_mode_re = Regex::new(r#"writing-mode:"#).unwrap();
+                        let direction_re = Regex::new(r#"direction:|directionRTL"#).unwrap();
+                        let writing_mode_re =
+                            Regex::new(r#"writing-mode:|vertical(RL|LR)"#).unwrap();
 
                         let attrtest_re = Regex::new(
                             r#"checkLayout\(\s*['"]([^'"]*)['"]\s*(,\s*(true|false))?\)"#,
