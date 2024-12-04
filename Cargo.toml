@@ -19,11 +19,11 @@ license = "MIT OR Apache-2.0"
 
 [workspace.dependencies]
 # Servo dependencies
-style = { git = "https://github.com/servo/stylo", rev = "16c1b685", package = "style" } # prefers-color-scheme
-style_config = { git = "https://github.com/servo/stylo", rev = "16c1b685", package = "style_config" } # prefers-color-scheme
-style_traits = { git = "https://github.com/servo/stylo", rev = "16c1b685", package = "style_traits" } # prefers-color-scheme
-style_dom = { git = "https://github.com/servo/stylo", rev = "16c1b685", package = "dom" } # prefers-color-scheme
-selectors = { git = "https://github.com/servo/stylo", rev = "16c1b685", package = "selectors" } # prefers-color-scheme
+style = { git = "https://github.com/servo/stylo", rev = "274e6531", package = "style" } # u64-opaque-element
+style_config = { git = "https://github.com/servo/stylo", rev = "274e6531", package = "style_config" } # u64-opaque-element
+style_traits = { git = "https://github.com/servo/stylo", rev = "274e6531", package = "style_traits" } # u64-opaque-element
+style_dom = { git = "https://github.com/servo/stylo", rev = "274e6531", package = "dom" } # u64-opaque-element
+selectors = { git = "https://github.com/servo/stylo", rev = "274e6531", package = "selectors" } # u64-opaque-element
 markup5ever = "0.14" # needs to match stylo markup5ever version
 html5ever = "0.29" # needs to match stylo markup5ever version
 xml5ever = "0.20" # needs to match stylo markup5ever version

@@ -330,7 +330,7 @@ impl selectors::Element for BlitzNode<'_> {
     fn opaque(&self) -> selectors::OpaqueElement {
         // FIXME: this is wrong in the case where pushing new elements casuses reallocations.
         // We should see if selectors will accept a PR that allows creation from a usize
-        OpaqueElement::new(self)
+        OpaqueElement::new(self.id as u64)
     }
 
     fn parent_element(&self) -> Option<Self> {
@@ -392,10 +392,8 @@ impl selectors::Element for BlitzNode<'_> {
         self.element_data().expect("Not an element").name.ns == *ns
     }
 
-    fn is_same_type(&self, _other: &Self) -> bool {
-        // FIXME: implementing this correctly currently triggers a debug_assert ("Invalid cache") in selectors
-        //self.local_name() == other.local_name() && self.namespace() == other.namespace()
-        false
+    fn is_same_type(&self, other: &Self) -> bool {
+        self.local_name() == other.local_name() && self.namespace() == other.namespace()
     }
 
     fn attr_matches(
@@ -607,10 +605,12 @@ impl<'a> TElement for BlitzNode<'a> {
         self
     }
 
-    fn unopaque(opaque: OpaqueElement) -> Self {
-        // FIXME: this is wrong in the case where pushing new elements casuses reallocations.
-        // We should see if selectors will accept a PR that allows creation from a usize
-        unsafe { &*opaque.as_const_ptr() }
+    fn unopaque(_opaque: OpaqueElement) -> Self {
+        // We cannot currently implement this as we are using the NodeId as the OpaqueElement,
+        // and need a reference to the Slab to convert it back into an Element
+        //
+        // Luckily it is only needed for shadow dom.
+        todo!();
     }
 
     fn traversal_children(&self) -> style::dom::LayoutIterator<Self::TraversalChildrenIterator> {
