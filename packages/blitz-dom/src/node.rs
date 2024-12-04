@@ -198,25 +198,25 @@ impl Node {
     pub fn hover(&mut self) {
         self.is_hovered = true;
         self.element_state.insert(ElementState::HOVER);
-        self.set_restyle_hint(RestyleHint::RESTYLE_SELF);
+        self.set_restyle_hint(RestyleHint::restyle_subtree());
     }
 
     pub fn unhover(&mut self) {
         self.is_hovered = false;
         self.element_state.remove(ElementState::HOVER);
-        self.set_restyle_hint(RestyleHint::RESTYLE_SELF);
+        self.set_restyle_hint(RestyleHint::restyle_subtree());
     }
 
     pub fn focus(&mut self) {
         self.element_state
             .insert(ElementState::FOCUS | ElementState::FOCUSRING);
-        self.set_restyle_hint(RestyleHint::RESTYLE_SELF);
+        self.set_restyle_hint(RestyleHint::restyle_subtree());
     }
 
     pub fn blur(&mut self) {
         self.element_state
             .remove(ElementState::FOCUS | ElementState::FOCUSRING);
-        self.set_restyle_hint(RestyleHint::RESTYLE_SELF);
+        self.set_restyle_hint(RestyleHint::restyle_subtree());
     }
 }
 
