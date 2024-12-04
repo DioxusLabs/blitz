@@ -271,6 +271,12 @@ fn main() {
 
     let pass_count = AtomicU32::new(0);
     let fail_count = AtomicU32::new(0);
+    let writing_mode_fail_count = AtomicU32::new(0);
+    let direction_fail_count = AtomicU32::new(0);
+    let float_fail_count = AtomicU32::new(0);
+    let calc_fail_count = AtomicU32::new(0);
+    let intrinsic_size_fail_count = AtomicU32::new(0);
+    let other_fail_count = AtomicU32::new(0);
     let skip_count = AtomicU32::new(0);
     let crash_count = AtomicU32::new(0);
     let start = Instant::now();
@@ -371,7 +377,22 @@ fn main() {
                 // Bump counts
                 match status {
                     TestStatus::Pass => pass_count.fetch_add(1, Ordering::SeqCst),
-                    TestStatus::Fail => fail_count.fetch_add(1, Ordering::SeqCst),
+                    TestStatus::Fail => {
+                        if flags.contains(TestFlags::USES_WRITING_MODE) {
+                            writing_mode_fail_count.fetch_add(1, Ordering::SeqCst);
+                        } else if flags.contains(TestFlags::USES_DIRECTION) {
+                            direction_fail_count.fetch_add(1, Ordering::SeqCst);
+                        } else if flags.contains(TestFlags::USES_INTRINSIC_SIZE) {
+                            intrinsic_size_fail_count.fetch_add(1, Ordering::SeqCst);
+                        } else if flags.contains(TestFlags::USES_CALC) {
+                            calc_fail_count.fetch_add(1, Ordering::SeqCst);
+                        } else if flags.contains(TestFlags::USES_FLOAT) {
+                            float_fail_count.fetch_add(1, Ordering::SeqCst);
+                        } else {
+                            other_fail_count.fetch_add(1, Ordering::SeqCst);
+                        }
+                        fail_count.fetch_add(1, Ordering::SeqCst)
+                    }
                     TestStatus::Skip => skip_count.fetch_add(1, Ordering::SeqCst),
                     TestStatus::Crash => crash_count.fetch_add(1, Ordering::SeqCst),
                 };
@@ -409,24 +430,49 @@ fn main() {
 
     let pass_count = pass_count.load(Ordering::SeqCst);
     let fail_count = fail_count.load(Ordering::SeqCst);
+    let writing_mode_fail_count = writing_mode_fail_count.load(Ordering::SeqCst);
+    let direction_fail_count = direction_fail_count.load(Ordering::SeqCst);
+    let float_fail_count = float_fail_count.load(Ordering::SeqCst);
+    let calc_fail_count = calc_fail_count.load(Ordering::SeqCst);
+    let intrinsic_size_fail_count = intrinsic_size_fail_count.load(Ordering::SeqCst);
+    let other_fail_count = other_fail_count.load(Ordering::SeqCst);
     let crash_count = crash_count.load(Ordering::SeqCst);
     let skip_count = skip_count.load(Ordering::SeqCst);
-
     let run_count = pass_count + fail_count + crash_count;
-    let run_percent = (run_count as f32 / count as f32) * 100.0;
+    let count = count as u32;
 
-    println!("---");
+    fn as_percent(amount: u32, out_of: u32) -> f32 {
+        (amount as f32 / out_of as f32) * 100.0
+    }
+
+    let run_percent = as_percent(run_count, count);
+    let skip_percent = as_percent(skip_count, count);
+    let pass_percent_run = as_percent(pass_count, run_count);
+    let pass_percent_total = as_percent(pass_count, count);
+    let fail_percent_run = as_percent(fail_count, run_count);
+    let fail_percent_total = as_percent(fail_count, count);
+    let crash_percent_run = as_percent(crash_count, run_count);
+    let crash_percent_total = as_percent(crash_count, count);
+
     println!("Done in {}s", (Instant::now() - start).as_secs());
-    println!("{pass_count} tests PASSED.");
-    println!("{fail_count} tests FAILED.");
-    println!("{crash_count} tests CRASHED.");
-    println!("{skip_count} tests SKIPPED.");
-    println!("{run_count} or {count} ({run_percent:.2}%) tests run.");
-    println!("---");
-    let pessimistic_percent = (pass_count as f32 / count as f32) * 100.0;
-    let optimistic_percent = (pass_count as f32 / run_count as f32) * 100.0;
-    println!("Percent of total: {pessimistic_percent:.2}%");
-    println!("Percent of run: {optimistic_percent:.2}%");
+    println!("---\n");
+
+    println!("{count:>4} tests FOUND");
+    println!("{run_count:>4} tests RUN ({run_percent:.2}%)");
+    println!("{skip_count:>4} tests SKIPPED ({skip_percent:.2}%)");
+
+    println!("{}", "\nOf those run:".bright_black());
+    println!("{crash_count:>4} tests CRASHED ({crash_percent_run:.2}% of run; {crash_percent_total:.2}% of found)");
+    println!("{pass_count:>4} tests PASSED ({pass_percent_run:.2}% of run; {pass_percent_total:.2}% of found)");
+    println!("{fail_count:>4} tests FAILED ({fail_percent_run:.2}% of run; {fail_percent_total:.2}% of found)");
+
+    println!("{}", "\nOf those which failed:".bright_black());
+    println!("{writing_mode_fail_count:>4} use writing_mode");
+    println!("{direction_fail_count:>4} use direction");
+    println!("{calc_fail_count:>4} use calc");
+    println!("{intrinsic_size_fail_count:>4} use intrinsic size keywords");
+    println!("{float_fail_count:>4} use floats");
+    println!("{other_fail_count:>4} do not use unsupported features");
 }
 
 #[allow(clippy::too_many_arguments)]
