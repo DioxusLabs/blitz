@@ -870,6 +870,23 @@ impl Document {
         }
     }
 
+    pub fn node_layout_ancestors(&self, node_id: usize) -> Vec<usize> {
+        let mut ancestors = Vec::with_capacity(12);
+        let mut maybe_id = Some(node_id);
+        while let Some(id) = maybe_id {
+            ancestors.push(id);
+            maybe_id = self.nodes[id].layout_parent.get();
+        }
+        ancestors.reverse();
+        ancestors
+    }
+
+    pub fn maybe_node_layout_ancestors(&self, node_id: Option<usize>) -> Vec<usize> {
+        node_id
+            .map(|id| self.node_layout_ancestors(id))
+            .unwrap_or_default()
+    }
+
     pub fn focus_next_node(&mut self) -> Option<usize> {
         let focussed_node_id = self.get_focussed_node_id()?;
         let id = self.next_node(&self.nodes[focussed_node_id], |node| node.is_focussable())?;
@@ -906,20 +923,18 @@ impl Document {
             return false;
         }
 
-        let mut maybe_id = self.hover_node_id;
-        while let Some(id) = maybe_id {
-            self.snapshot_node_and(id, |node| {
-                node.unhover();
-                maybe_id = node.layout_parent.get();
-            });
+        let old_node_path = self.maybe_node_layout_ancestors(self.hover_node_id);
+        let new_node_path = self.maybe_node_layout_ancestors(hover_node_id);
+        let same_count = old_node_path
+            .iter()
+            .zip(&new_node_path)
+            .take_while(|(o, n)| o == n)
+            .count();
+        for &id in old_node_path.iter().skip(same_count) {
+            self.snapshot_node_and(id, |node| node.unhover());
         }
-
-        let mut maybe_id = hover_node_id;
-        while let Some(id) = maybe_id {
-            self.snapshot_node_and(id, |node| {
-                node.hover();
-                maybe_id = node.layout_parent.get();
-            });
+        for &id in new_node_path.iter().skip(same_count) {
+            self.snapshot_node_and(id, |node| node.hover());
         }
 
         self.hover_node_id = hover_node_id;
