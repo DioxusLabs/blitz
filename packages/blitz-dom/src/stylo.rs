@@ -521,7 +521,7 @@ impl selectors::Element for BlitzNode<'_> {
         let parent_flags = flags.for_parent();
         if !parent_flags.is_empty() {
             if let Some(parent) = self.parent_node() {
-                *parent.selector_flags.borrow_mut() |= self_flags;
+                *parent.selector_flags.borrow_mut() |= parent_flags;
             }
         }
     }
