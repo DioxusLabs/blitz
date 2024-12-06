@@ -415,17 +415,20 @@ impl VelloSceneGenerator<'_> {
         if should_clip {
             CLIPS_WANTED.fetch_add(1, atomic::Ordering::SeqCst);
         }
-        if should_clip && clips_available {
-            scene.push_layer(Mix::Clip, 1.0, transform, &clip);
-            CLIPS_USED.fetch_add(1, atomic::Ordering::SeqCst);
-            let depth = CLIP_DEPTH.fetch_add(1, atomic::Ordering::SeqCst) + 1;
-            CLIP_DEPTH_USED.fetch_max(depth, atomic::Ordering::SeqCst);
-        }
+
 
         let mut cx = self.element_cx(node, layout, box_position);
         cx.stroke_effects(scene);
         cx.stroke_outline(scene);
         cx.draw_outset_box_shadow(scene);
+
+        if should_clip && clips_available {
+            scene.push_layer(Mix::Clip, 1.0, transform, &cx.frame.frame());
+            CLIPS_USED.fetch_add(1, atomic::Ordering::SeqCst);
+            let depth = CLIP_DEPTH.fetch_add(1, atomic::Ordering::SeqCst) + 1;
+            CLIP_DEPTH_USED.fetch_max(depth, atomic::Ordering::SeqCst);
+        }
+
         cx.draw_background(scene);
         cx.draw_inset_box_shadow(scene);
         cx.stroke_border(scene);
