@@ -579,7 +579,7 @@ impl Clone for TextInputData {
 
 impl TextInputData {
     pub fn new(is_multiline: bool) -> Self {
-        let editor = Box::new(parley::PlainEditor::default());
+        let editor = Box::new(parley::PlainEditor::new(16.0));
         Self {
             editor,
             is_multiline,
@@ -592,9 +592,9 @@ impl TextInputData {
         layout_ctx: &mut LayoutContext<TextBrush>,
         text: &str,
     ) {
-        if *self.editor.text() != *text {
-            self.editor
-                .transact(font_ctx, layout_ctx, |txn| txn.set_text(text));
+        if self.editor.text() != text {
+            self.editor.set_text(text);
+            self.editor.driver(font_ctx, layout_ctx).refresh_layout();
         }
     }
 }

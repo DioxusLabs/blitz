@@ -665,20 +665,19 @@ fn create_text_editor(doc: &mut Document, input_element_id: usize, is_multiline:
     let element = &mut node.raw_dom_data.downcast_element_mut().unwrap();
     if !matches!(element.node_specific_data, NodeSpecificData::TextInput(_)) {
         let mut text_input_data = TextInputData::new(is_multiline);
-        let text = element.attr(local_name!("value")).unwrap_or(" ");
-        let styles: Arc<[_]> = Arc::from([
-            StyleProperty::FontSize(parley_style.font_size),
-            StyleProperty::LineHeight(parley_style.line_height),
-            StyleProperty::Brush(parley_style.brush),
-        ]);
-        text_input_data
-            .editor
-            .transact(&mut doc.font_ctx, &mut doc.layout_ctx, |txn| {
-                txn.set_text(text);
-                txn.set_scale(doc.viewport.scale_f64() as f32);
-                txn.set_width(None);
-                txn.set_default_style(styles);
-            });
+        let editor = &mut text_input_data.editor;
+
+        editor.set_text(element.attr(local_name!("value")).unwrap_or(" "));
+        editor.set_scale(doc.viewport.scale_f64() as f32);
+        editor.set_width(None);
+
+        let styles = editor.edit_styles();
+        styles.insert(StyleProperty::FontSize(parley_style.font_size));
+        styles.insert(StyleProperty::LineHeight(parley_style.line_height));
+        styles.insert(StyleProperty::Brush(parley_style.brush));
+
+        editor.refresh_layout(&mut doc.font_ctx, &mut doc.layout_ctx);
+
         element.node_specific_data = NodeSpecificData::TextInput(text_input_data);
     }
 }

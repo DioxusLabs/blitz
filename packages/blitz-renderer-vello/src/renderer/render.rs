@@ -714,7 +714,7 @@ impl ElementCx<'_> {
             };
 
             // Render text
-            self.stroke_text(scene, input_data.editor.lines(), pos);
+            self.stroke_text(scene, input_data.editor.try_layout().unwrap().lines(), pos);
         }
     }
 

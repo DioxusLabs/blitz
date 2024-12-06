@@ -171,11 +171,10 @@ impl DocumentLike for Document {
                     {
                         let x = (hit.x - content_box_offset.x) as f64 * self.viewport.scale_f64();
                         let y = (hit.y - content_box_offset.y) as f64 * self.viewport.scale_f64();
-                        text_input_data.editor.transact(
-                            &mut self.font_ctx,
-                            &mut self.layout_ctx,
-                            |txn| txn.move_to_point(x as f32, y as f32),
-                        );
+                        text_input_data
+                            .editor
+                            .driver(&mut self.font_ctx, &mut self.layout_ctx)
+                            .move_to_point(x as f32, y as f32);
 
                         self.set_focus_to(hit.node_id);
                     } else if el.name.local == local_name!("input")

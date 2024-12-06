@@ -26,13 +26,7 @@ pub(crate) fn apply_keypress_event(
         }
     };
 
-    // Small macro to reduce boilerplate
-    macro_rules! transact {
-        ($op:expr) => {{
-            editor.transact(font_ctx, layout_ctx, $op);
-        }};
-    }
-
+    let mut driver = editor.driver(font_ctx, layout_ctx);
     match event.logical_key {
         #[cfg(not(target_os = "android"))]
         Key::Character(c) if action_mod && matches!(c.as_str(), "c" | "x" | "v") => {
@@ -40,123 +34,119 @@ pub(crate) fn apply_keypress_event(
 
             match c.to_lowercase().as_str() {
                 "c" => {
-                    if let Some(text) = editor.selected_text() {
+                    if let Some(text) = driver.editor.selected_text() {
                         let mut cb = Clipboard::new().unwrap();
                         cb.set_text(text.to_owned()).ok();
                     }
                 }
                 "x" => {
-                    if let Some(text) = editor.selected_text() {
+                    if let Some(text) = driver.editor.selected_text() {
                         let mut cb = Clipboard::new().unwrap();
                         cb.set_text(text.to_owned()).ok();
-                        transact!(|txn| txn.delete_selection())
+                        driver.delete_selection()
                     }
                 }
                 "v" => {
                     let mut cb = Clipboard::new().unwrap();
                     let text = cb.get_text().unwrap_or_default();
-                    transact!(|txn| txn.insert_or_replace_selection(&text))
+                    driver.insert_or_replace_selection(&text)
                 }
                 _ => unreachable!(),
             }
         }
         Key::Character(c) if action_mod && matches!(c.to_lowercase().as_str(), "a") => {
             if shift {
-                transact!(|txn| txn.collapse_selection())
+                driver.collapse_selection()
             } else {
-                transact!(|txn| txn.select_all())
+                driver.select_all()
             }
         }
         Key::Named(NamedKey::ArrowLeft) => {
             if action_mod {
                 if shift {
-                    transact!(|txn| txn.select_word_left())
+                    driver.select_word_left()
                 } else {
-                    transact!(|txn| txn.move_word_left())
+                    driver.move_word_left()
                 }
             } else if shift {
-                transact!(|txn| txn.select_left())
+                driver.select_left()
             } else {
-                transact!(|txn| txn.move_left())
+                driver.move_left()
             }
         }
         Key::Named(NamedKey::ArrowRight) => {
             if action_mod {
                 if shift {
-                    transact!(|txn| txn.select_word_right())
+                    driver.select_word_right()
                 } else {
-                    transact!(|txn| txn.move_word_right())
+                    driver.move_word_right()
                 }
             } else if shift {
-                transact!(|txn| txn.select_right())
+                driver.select_right()
             } else {
-                transact!(|txn| txn.move_right())
+                driver.move_right()
             }
         }
         Key::Named(NamedKey::ArrowUp) => {
             if shift {
-                transact!(|txn| txn.select_up())
+                driver.select_up()
             } else {
-                transact!(|txn| txn.move_up())
+                driver.move_up()
             }
         }
         Key::Named(NamedKey::ArrowDown) => {
             if shift {
-                transact!(|txn| txn.select_down())
+                driver.select_down()
             } else {
-                transact!(|txn| txn.move_down())
+                driver.move_down()
             }
         }
         Key::Named(NamedKey::Home) => {
             if action_mod {
                 if shift {
-                    transact!(|txn| txn.select_to_text_start())
+                    driver.select_to_text_start()
                 } else {
-                    transact!(|txn| txn.move_to_text_start())
+                    driver.move_to_text_start()
                 }
             } else if shift {
-                transact!(|txn| txn.select_to_line_start())
+                driver.select_to_line_start()
             } else {
-                transact!(|txn| txn.move_to_line_start())
+                driver.move_to_line_start()
             }
         }
         Key::Named(NamedKey::End) => {
             if action_mod {
                 if shift {
-                    transact!(|txn| txn.select_to_text_end())
+                    driver.select_to_text_end()
                 } else {
-                    transact!(|txn| txn.move_to_text_end())
+                    driver.move_to_text_end()
                 }
             } else if shift {
-                transact!(|txn| txn.select_to_line_end())
+                driver.select_to_line_end()
             } else {
-                transact!(|txn| txn.move_to_line_end())
+                driver.move_to_line_end()
             }
         }
         Key::Named(NamedKey::Delete) => {
             if action_mod {
-                transact!(|txn| txn.delete_word())
+                driver.delete_word()
             } else {
-                transact!(|txn| txn.delete())
+                driver.delete()
             }
         }
         Key::Named(NamedKey::Backspace) => {
             if action_mod {
-                transact!(|txn| txn.backdelete_word())
+                driver.backdelete_word()
             } else {
-                transact!(|txn| txn.backdelete())
+                driver.backdelete()
             }
         }
         Key::Named(NamedKey::Enter) => {
             // TODO: support multi-line text inputs
-            // transact!(|txn| txn.insert_or_replace_selection("\n"))
+            // driver.insert_or_replace_selection("\n")
         }
-        Key::Named(NamedKey::Space) => {
-            transact!(|txn| txn.insert_or_replace_selection(" "))
-        }
-        Key::Character(s) => {
-            transact!(|txn| txn.insert_or_replace_selection(&s))
-        }
+        Key::Named(NamedKey::Space) => driver.insert_or_replace_selection(" "),
+        Key::Character(s) => driver.insert_or_replace_selection(&s),
         _ => {}
     };
 }
