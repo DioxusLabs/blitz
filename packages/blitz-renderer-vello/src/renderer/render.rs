@@ -416,7 +416,6 @@ impl VelloSceneGenerator<'_> {
             CLIPS_WANTED.fetch_add(1, atomic::Ordering::SeqCst);
         }
 
-
         let mut cx = self.element_cx(node, layout, box_position);
         cx.stroke_effects(scene);
         cx.stroke_outline(scene);
