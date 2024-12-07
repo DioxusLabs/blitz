@@ -10,7 +10,7 @@ use std::io::Write;
 use std::path::Path;
 use std::sync::Arc;
 
-use crate::{clone_font_ctx, BufferKind, TestStatus, ThreadCtx, HEIGHT, WIDTH};
+use crate::{clone_font_ctx, BufferKind, TestFlags, TestStatus, ThreadCtx, HEIGHT, WIDTH};
 
 #[allow(clippy::too_many_arguments)]
 pub async fn process_ref_test(
@@ -18,6 +18,7 @@ pub async fn process_ref_test(
     test_relative_path: &str,
     test_html: &str,
     ref_file: &str,
+    flags: &mut TestFlags,
 ) -> TestStatus {
     let ref_url: Url = ctx
         .dummy_base_url
@@ -28,6 +29,28 @@ pub async fn process_ref_test(
     let ref_relative_path = ref_url.path().strip_prefix('/').unwrap().to_string();
     let ref_path = ctx.wpt_dir.join(&ref_relative_path);
     let ref_html = fs::read_to_string(ref_path).expect("Ref file not found.");
+
+    if ctx.float_re.is_match(&ref_html) {
+        *flags |= TestFlags::USES_FLOAT;
+    }
+    if ctx.intrinsic_re.is_match(&ref_html) {
+        *flags |= TestFlags::USES_INTRINSIC_SIZE;
+    }
+    if ctx.calc_re.is_match(&ref_html) {
+        *flags |= TestFlags::USES_CALC;
+    }
+    if ctx.direction_re.is_match(&ref_html) {
+        *flags |= TestFlags::USES_DIRECTION;
+    }
+    if ctx.writing_mode_re.is_match(&ref_html) {
+        *flags |= TestFlags::USES_WRITING_MODE;
+    }
+    if ctx.subgrid_re.is_match(&ref_html) {
+        *flags |= TestFlags::USES_SUBGRID;
+    }
+    if ctx.masonry_re.is_match(&ref_html) {
+        *flags |= TestFlags::USES_MASONRY;
+    }
 
     let test_out_path = ctx
         .out_dir

@@ -490,18 +490,18 @@ fn main() {
     println!("{fail_count:>4} tests FAILED ({fail_percent_run:.2}% of run; {fail_percent_total:.2}% of found)");
 
     println!("{}", "\nOf those which failed:".bright_black());
+    println!("{other_fail_count:>4} do not use unsupported features");
+    println!("{writing_mode_fail_count:>4} use writing-mode");
+    println!("{direction_fail_count:>4} use direction");
+    println!("{float_fail_count:>4} use floats");
+    println!("{intrinsic_size_fail_count:>4} use intrinsic size keywords");
+    println!("{calc_fail_count:>4} use calc");
     if subgrid_fail_count > 0 {
         println!("{subgrid_fail_count:>4} use subgrid");
     }
     if masonry_fail_count > 0 {
         println!("{masonry_fail_count:>4} use masonry");
     }
-    println!("{writing_mode_fail_count:>4} use writing_mode");
-    println!("{direction_fail_count:>4} use direction");
-    println!("{calc_fail_count:>4} use calc");
-    println!("{intrinsic_size_fail_count:>4} use intrinsic size keywords");
-    println!("{float_fail_count:>4} use floats");
-    println!("{other_fail_count:>4} do not use unsupported features");
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -548,6 +548,7 @@ async fn process_test_file(
             relative_path,
             file_contents.as_str(),
             reference.as_str(),
+            &mut flags,
         )
         .await;
 
