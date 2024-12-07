@@ -42,7 +42,7 @@ taffy = { version = "0.6", default-features = false, features = ["std", "flexbox
 # Linebender + WGPU
 peniko = "0.2"
 vello = { version = "0.3", features = [ "wgpu" ] }
-parley = { version = "0.2", git = "https://github.com/linebender/parley", rev = "3ff5ba0945aa726e9effa50b93944f365c58312d" }
+parley = { version = "0.2", git = "https://github.com/linebender/parley", rev = "4ef147da7909f44827c78aa31b76f184152ab382" }
 wgpu = "22.1.0"
 
 # SVG dependencies
