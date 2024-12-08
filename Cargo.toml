@@ -33,10 +33,10 @@ atomic_refcell = "0.1.13"
 app_units = "0.7.5"
 
 # DioxusLabs dependencies
-dioxus = { version = "=0.6.0-rc.0" }
-dioxus-ssr = { version = "=0.6.0-rc.0" }
-dioxus-cli-config = { version = "=0.6.0-rc.0" }
-dioxus-devtools = { version = "=0.6.0-rc.0" }
+dioxus = { version = "0.6" }
+dioxus-ssr = { version = "0.6" }
+dioxus-cli-config = { version = "0.6" }
+dioxus-devtools = { version = "0.6" }
 taffy = { version = "0.6", default-features = false, features = ["std", "flexbox", "grid", "block_layout", "content_size"] }
 
 # Linebender + WGPU
