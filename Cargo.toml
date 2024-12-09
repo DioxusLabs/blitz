@@ -118,15 +118,15 @@ blitz-renderer-vello = { path = "./packages/blitz-renderer-vello" }
 blitz-shell = { path = "./packages/blitz-shell" }
 blitz-net = { path = "./packages/blitz-net" }
 dioxus-native = { path = "./packages/dioxus-native", features = ["tracing"] }
-png = { version = "0.17" }
 dioxus = { workspace = true }
-euclid = { version = "0.22", features = ["serde"] }
-reqwest = "0.11.24"
-tokio = { version = "1.36.0", features = ["full"] }
-tracing-subscriber = "0.3"
-ureq = "2.9"
+euclid = { workspace = true }
+reqwest = { workspace = true }
+tokio = { workspace = true }
+ureq = { workspace = true }
 image = { workspace = true }
-env_logger = {version = "0.11.5"}
+png = "0.17"
+env_logger = "0.11"
+tracing-subscriber = "0.3"
 
 # [patch.crates-io]
 # [patch."https://github.com/dioxuslabs/taffy"]
@@ -158,6 +158,3 @@ env_logger = {version = "0.11.5"}
 # [patch.crates-io]
 # webrender_api = { path = "../servo/third_party/webrender/webrender_api" }
 # webrender = { path = "../servo/third_party/webrender/webrender" }
-[dependencies]
-log = "0.4.22"
-regex = "1.11.1"
