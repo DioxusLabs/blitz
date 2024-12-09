@@ -43,7 +43,6 @@ html-escape = { workspace = true }
 
 # IO & Networking
 url = { workspace = true, features = ["serde"] }
-data-url = { workspace = true }
 
 # Input
 winit = { workspace = true }
