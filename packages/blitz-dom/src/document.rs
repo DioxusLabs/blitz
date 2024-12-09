@@ -15,6 +15,7 @@ use style::properties::style_structs::Font;
 use style::properties::ComputedValues;
 use style::values::computed::Overflow;
 use style::values::GenericAtomIdent;
+use winit::event::Ime;
 // use quadtree_rs::Quadtree;
 use crate::net::{Resource, StylesheetLoader};
 use selectors::{matching::QuirksMode, Element};
@@ -224,20 +225,36 @@ impl DocumentLike for Document {
                     }
                 }
             }
-            EventData::Ime(_ime_event) => {
-                // FIXME: Implement IME events on top of PlainEditor
-                // if let Some(node_id) = self.focus_node_id {
-                //     let node = &mut self.nodes[node_id];
-                //     let text_input_data = node
-                //         .raw_dom_data
-                //         .downcast_element_mut()
-                //         .and_then(|el| el.text_input_data_mut());
-                //     if let Some(input_data) = text_input_data {
-                //         let text_event = TextEvent::Ime(ime_event);
-                //         input_data.editor.text_event(&text_event);
-                //         println!("Sent ime event to {}", node_id);
-                //     }
-                // }
+            EventData::Ime(ime_event) => {
+                if let Some(node_id) = self.focus_node_id {
+                    let node = &mut self.nodes[node_id];
+                    let text_input_data = node
+                        .raw_dom_data
+                        .downcast_element_mut()
+                        .and_then(|el| el.text_input_data_mut());
+                    if let Some(input_data) = text_input_data {
+                        let editor = &mut input_data.editor;
+                        let mut driver = editor.driver(&mut self.font_ctx, &mut self.layout_ctx);
+
+                        match ime_event {
+                            Ime::Enabled => { /* Do nothing */ }
+                            Ime::Disabled => {
+                                driver.clear_compose();
+                            }
+                            Ime::Commit(text) => {
+                                driver.insert_or_replace_selection(&text);
+                            }
+                            Ime::Preedit(text, cursor) => {
+                                if text.is_empty() {
+                                    driver.clear_compose();
+                                } else {
+                                    driver.set_compose(&text, cursor);
+                                }
+                            }
+                        }
+                        println!("Sent ime event to {}", node_id);
+                    }
+                }
             }
             EventData::Hover => {}
         }
