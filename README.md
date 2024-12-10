@@ -28,6 +28,11 @@ Check out the [roadmap issue](https://github.com/DioxusLabs/blitz/issues/119) fo
 
 ## Trying it out
 
+### Prerequisites
+#### Linux
+
+You need xdo-tools installed, e.g. on Arch: https://man.archlinux.org/man/xdotool.1.en
+
 1. Clone this repo
 2. Run an example:
     - `cargo run --release --example todomvc`
