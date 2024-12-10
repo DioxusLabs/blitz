@@ -46,7 +46,7 @@ pub enum DisplayOuter {
 // todo: might be faster to migrate this to ecs and split apart at a different boundary
 pub struct Node {
     // The actual tree we belong to. This is unsafe!!
-    pub tree: *mut Slab<Node>,
+    tree: *mut Slab<Node>,
 
     /// Our Id
     pub id: usize,
