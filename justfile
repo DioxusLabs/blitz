@@ -12,3 +12,6 @@ screenshot target:
 
 open target:
   cargo run --release --package readme {{target}}
+
+todomvc:
+  cargo run --release --example todomvc
