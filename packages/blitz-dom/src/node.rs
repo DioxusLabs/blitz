@@ -94,7 +94,12 @@ pub struct Node {
 }
 
 impl Node {
-    pub (crate) fn new(tree: *mut Slab<Node>, id: usize, guard: SharedRwLock, data: NodeData) -> Self {
+    pub(crate) fn new(
+        tree: *mut Slab<Node>,
+        id: usize,
+        guard: SharedRwLock,
+        data: NodeData,
+    ) -> Self {
         Self {
             tree,
 
