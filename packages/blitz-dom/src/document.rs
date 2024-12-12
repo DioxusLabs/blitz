@@ -1087,12 +1087,18 @@ impl Document {
             return;
         };
 
+        let is_html_or_body = node.raw_dom_data.downcast_element().is_some_and(|e| {
+            let tag = &e.name.local;
+            tag == "html" || tag == "body"
+        });
+
         let (can_x_scroll, can_y_scroll) = node
             .primary_styles()
             .map(|styles| {
                 (
                     matches!(styles.clone_overflow_x(), Overflow::Scroll | Overflow::Auto),
-                    matches!(styles.clone_overflow_y(), Overflow::Scroll | Overflow::Auto),
+                    matches!(styles.clone_overflow_y(), Overflow::Scroll | Overflow::Auto)
+                        || (styles.clone_overflow_y() == Overflow::Visible && is_html_or_body),
                 )
             })
             .unwrap_or((false, false));
