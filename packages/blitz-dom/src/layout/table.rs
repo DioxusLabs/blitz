@@ -193,10 +193,6 @@ impl taffy::LayoutPartialTree for TableTreeWrapper<'_> {
         = &'a taffy::Style
     where
         Self: 'a;
-    type CacheMut<'b>
-        = &'b mut taffy::Cache
-    where
-        Self: 'b;
 
     fn get_core_container_style(&self, _node_id: taffy::NodeId) -> &taffy::Style {
         &self.ctx.style
@@ -205,11 +201,6 @@ impl taffy::LayoutPartialTree for TableTreeWrapper<'_> {
     fn set_unrounded_layout(&mut self, node_id: taffy::NodeId, layout: &taffy::Layout) {
         let node_id = taffy::NodeId::from(self.ctx.items[usize::from(node_id)].node_id);
         self.doc.set_unrounded_layout(node_id, layout)
-    }
-
-    fn get_cache_mut(&mut self, node_id: taffy::NodeId) -> &mut taffy::Cache {
-        let node_id = taffy::NodeId::from(self.ctx.items[usize::from(node_id)].node_id);
-        &mut self.doc.node_from_id_mut(node_id).cache
     }
 
     fn compute_child_layout(

@@ -15,8 +15,8 @@ use std::cell::Ref;
 use std::sync::Arc;
 use taffy::{
     compute_block_layout, compute_cached_layout, compute_flexbox_layout, compute_grid_layout,
-    compute_leaf_layout, prelude::*, Cache, FlexDirection, LayoutPartialTree, NodeId,
-    ResolveOrZero, RoundTree, Style, TraversePartialTree, TraverseTree,
+    compute_leaf_layout, prelude::*, FlexDirection, LayoutPartialTree, NodeId, ResolveOrZero,
+    RoundTree, Style, TraversePartialTree, TraverseTree,
 };
 
 pub(crate) mod construct;
@@ -70,10 +70,6 @@ impl LayoutPartialTree for Document {
         = &'a taffy::Style
     where
         Self: 'a;
-    type CacheMut<'b>
-        = &'b mut Cache
-    where
-        Self: 'b;
 
     fn get_core_container_style(&self, node_id: NodeId) -> &Style {
         &self.node_from_id(node_id).style
@@ -81,10 +77,6 @@ impl LayoutPartialTree for Document {
 
     fn set_unrounded_layout(&mut self, node_id: NodeId, layout: &Layout) {
         self.node_from_id_mut(node_id).unrounded_layout = *layout;
-    }
-
-    fn get_cache_mut(&mut self, node_id: NodeId) -> &mut Cache {
-        &mut self.node_from_id_mut(node_id).cache
     }
 
     fn compute_child_layout(
@@ -278,6 +270,43 @@ impl LayoutPartialTree for Document {
                 _ => taffy::LayoutOutput::HIDDEN,
             }
         })
+    }
+}
+
+impl taffy::CacheTree for Document {
+    #[inline]
+    fn cache_get(
+        &self,
+        node_id: NodeId,
+        known_dimensions: Size<Option<f32>>,
+        available_space: Size<AvailableSpace>,
+        run_mode: taffy::RunMode,
+    ) -> Option<taffy::LayoutOutput> {
+        self.node_from_id(node_id)
+            .cache
+            .get(known_dimensions, available_space, run_mode)
+    }
+
+    #[inline]
+    fn cache_store(
+        &mut self,
+        node_id: NodeId,
+        known_dimensions: Size<Option<f32>>,
+        available_space: Size<AvailableSpace>,
+        run_mode: taffy::RunMode,
+        layout_output: taffy::LayoutOutput,
+    ) {
+        self.node_from_id_mut(node_id).cache.store(
+            known_dimensions,
+            available_space,
+            run_mode,
+            layout_output,
+        );
+    }
+
+    #[inline]
+    fn cache_clear(&mut self, node_id: NodeId) {
+        self.node_from_id_mut(node_id).cache.clear();
     }
 }
 
