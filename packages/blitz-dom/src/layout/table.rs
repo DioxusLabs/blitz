@@ -1,8 +1,9 @@
 use std::{ops::Range, sync::Arc};
 
 use markup5ever::local_name;
+use style::computed_values::table_layout::T as TableLayout;
 use style::values::specified::box_::DisplayInside;
-use taffy::{compute_leaf_layout, style_helpers, LayoutPartialTree as _};
+use taffy::{compute_leaf_layout, style_helpers, LayoutPartialTree as _, TrackSizingFunction};
 
 use crate::Document;
 
@@ -50,13 +51,28 @@ pub(crate) fn build_table_context(
     style.grid_auto_columns = Vec::new();
     style.grid_auto_rows = Vec::new();
 
+    let is_fixed = match stylo_styles.clone_table_layout() {
+        TableLayout::Fixed => true,
+        TableLayout::Auto => false,
+    };
+
     drop(stylo_styles);
 
+    let mut grid_template_columns = Vec::new();
     for child_id in children.iter().copied() {
-        collect_table_cells(doc, child_id, &mut row, &mut col, &mut items);
+        collect_table_cells(
+            doc,
+            child_id,
+            is_fixed,
+            &mut row,
+            &mut col,
+            &mut items,
+            &mut grid_template_columns,
+        );
     }
+    grid_template_columns.resize(col as usize, style_helpers::auto());
 
-    style.grid_template_columns = vec![style_helpers::auto(); col as usize];
+    style.grid_template_columns = grid_template_columns;
     style.grid_template_rows = vec![style_helpers::auto(); row as usize];
 
     let layout_children = items
@@ -73,9 +89,11 @@ pub(crate) fn build_table_context(
 pub(crate) fn collect_table_cells(
     doc: &mut Document,
     node_id: usize,
+    is_fixed: bool,
     row: &mut u16,
     col: &mut u16,
     cells: &mut Vec<TableItem>,
+    columns: &mut Vec<TrackSizingFunction>,
 ) {
     let node = &doc.nodes[node_id];
 
@@ -95,7 +113,7 @@ pub(crate) fn collect_table_cells(
         | DisplayInside::Contents => {
             let children = std::mem::take(&mut doc.nodes[node_id].children);
             for child_id in children.iter().copied() {
-                collect_table_cells(doc, child_id, row, col, cells);
+                collect_table_cells(doc, child_id, is_fixed, row, col, cells, columns);
             }
             doc.nodes[node_id].children = children;
         }
@@ -123,7 +141,7 @@ pub(crate) fn collect_table_cells(
 
             let children = std::mem::take(&mut doc.nodes[node_id].children);
             for child_id in children.iter().copied() {
-                collect_table_cells(doc, child_id, row, col, cells);
+                collect_table_cells(doc, child_id, is_fixed, row, col, cells, columns);
             }
             doc.nodes[node_id].children = children;
         }
@@ -134,6 +152,16 @@ pub(crate) fn collect_table_cells(
                 .and_then(|val| val.parse().ok())
                 .unwrap_or(1);
             let mut style = stylo_taffy::to_taffy_style(stylo_style);
+
+            if is_fixed && *row == 1 {
+                let column = match &style.size.width {
+                    taffy::Dimension::Length(len) => style_helpers::length(*len),
+                    taffy::Dimension::Percent(percent) => style_helpers::percent(*percent),
+                    taffy::Dimension::Auto => style_helpers::flex(1.0),
+                };
+                columns.push(column);
+            }
+
             style.grid_column = taffy::Line {
                 start: style_helpers::line((*col + 1) as i16),
                 end: style_helpers::span(colspan),
@@ -147,6 +175,7 @@ pub(crate) fn collect_table_cells(
                 node_id,
                 style,
             });
+
             *col += colspan;
         }
         _ => {
