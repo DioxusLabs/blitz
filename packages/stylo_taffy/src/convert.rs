@@ -137,6 +137,8 @@ pub fn display(input: stylo::Display) -> taffy::Display {
         stylo::DisplayInside::Flow => taffy::Display::Block,
         #[cfg(feature = "block")]
         stylo::DisplayInside::FlowRoot => taffy::Display::Block,
+        #[cfg(feature = "block")]
+        stylo::DisplayInside::TableCell => taffy::Display::Block,
         // TODO: Support display:contents in Taffy
         // TODO: Support table layout in Taffy
         #[cfg(feature = "grid")]
