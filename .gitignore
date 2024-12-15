@@ -8,3 +8,4 @@ experiments
 /examples/output/**/*.jpeg
 /out
 /apps/wpt/output
+/sites
