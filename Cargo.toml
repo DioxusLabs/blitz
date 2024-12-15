@@ -121,7 +121,7 @@ dioxus-native = { path = "./packages/dioxus-native", features = ["tracing"] }
 dioxus = { workspace = true }
 euclid = { workspace = true }
 reqwest = { workspace = true }
-tokio = { workspace = true }
+tokio = { workspace = true, features = ["macros"] }
 ureq = { workspace = true }
 image = { workspace = true }
 png = "0.17"
