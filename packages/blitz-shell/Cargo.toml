@@ -29,7 +29,7 @@ accesskit_winit = {workspace = true, optional = true }
 
 # IO & Networking
 url = { workspace = true, features = ["serde"] }
-tokio = { workspace = true, features = ["full"] }
+tokio = { workspace = true, features = ["rt-multi-thread"] }
 ureq = { workspace = true }
 
 # Other dependencies
