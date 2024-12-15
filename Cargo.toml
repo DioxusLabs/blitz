@@ -63,8 +63,8 @@ keyboard-types = "0.7"
 url = "2.5.0"
 http = "1.1.0"
 data-url = "0.3.1"
-tokio = "1.25.0"
-reqwest = "0.12.7"
+tokio = "1.42"
+reqwest = "0.12"
 ureq = "2.9"
 
 # Media & Decoding
