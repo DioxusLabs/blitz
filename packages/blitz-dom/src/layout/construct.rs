@@ -317,6 +317,7 @@ fn flush_pseudo_elements(doc: &mut Document, node_id: usize) {
                 DUMMY_NAME,
                 Vec::new(),
             )));
+            doc.nodes[new_node_id].parent = Some(node_id);
 
             let content = &pe_style.as_ref().get_counters().content;
             if let Content::Items(item_data) = content {
