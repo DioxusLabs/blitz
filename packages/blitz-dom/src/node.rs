@@ -988,14 +988,21 @@ impl Node {
         let x = x - self.final_layout.location.x + self.scroll_offset.x as f32;
         let y = y - self.final_layout.location.y + self.scroll_offset.y as f32;
 
-        let size = self.final_layout.size;
-        if x < 0.0
-            || x > size.width + self.scroll_offset.x as f32
+        let content_size = self.final_layout.content_size;
+        let matches_content = !(x < 0.0
+            || x > content_size.width + self.scroll_offset.x as f32
             || y < 0.0
-            || y > size.height + self.scroll_offset.y as f32
-        {
+            || y > content_size.height + self.scroll_offset.y as f32);
+
+        if !matches_content {
             return None;
         }
+
+        let size = self.final_layout.size;
+        let matches_self = !(x < 0.0
+            || x > size.width + self.scroll_offset.x as f32
+            || y < 0.0
+            || y > size.height + self.scroll_offset.y as f32);
 
         // Call `.hit()` on each child in turn. If any return `Some` then return that value. Else return `Some(self.id).
         self.paint_children
@@ -1008,7 +1015,8 @@ impl Node {
                 node_id: self.id,
                 x,
                 y,
-            }))
+            })
+            .filter(|_| matches_self))
     }
 
     /// Computes the Document-relative coordinates of the Node
