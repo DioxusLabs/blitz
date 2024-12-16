@@ -101,40 +101,43 @@ async fn fetch(raw_url: &str) -> (String, String, bool, Option<PathBuf>) {
     if let Ok(url) = Url::parse(raw_url) {
         match url.scheme() {
             "file" => fetch_file_path(url.path()),
-            _ => {
-                let client = reqwest::Client::new();
-                let response = client
-                    .get(url)
-                    .header("User-Agent", USER_AGENT)
-                    .send()
-                    .await
-                    .unwrap();
-
-                // Detect markdown file
-                let content_type = response
-                    .headers()
-                    .get(HeaderName::from_static("content-type"));
-                let is_md = raw_url.ends_with(".md")
-                    || content_type.is_some_and(|ct| {
-                        ct.to_str().is_ok_and(|ct| ct.starts_with("text/markdown"))
-                    });
-
-                // Get the final url
-                // Note: this may be different to the initial url if there was a redirect
-                let final_url = response.url().to_string();
-
-                // Get the file content
-                let file_content = response.text().await.unwrap();
-
-                (final_url, file_content, is_md, None)
-            }
+            _ => fetch_url(url).await,
         }
     } else if fs::exists(raw_url).unwrap() {
         fetch_file_path(raw_url)
+    } else if let Ok(url) = Url::parse(&format!("https://{raw_url}")) {
+        fetch_url(url).await
     } else {
         eprintln!("Cannot parse {} as url or find it as a file", raw_url);
         std::process::exit(1);
     }
+}
+
+async fn fetch_url(url: Url) -> (String, String, bool, Option<PathBuf>) {
+    let client = reqwest::Client::new();
+    let response = client
+        .get(url.clone())
+        .header("User-Agent", USER_AGENT)
+        .send()
+        .await
+        .unwrap();
+
+    // Detect markdown file
+    let content_type = response
+        .headers()
+        .get(HeaderName::from_static("content-type"));
+    let is_md = url.path().ends_with(".md")
+        || content_type
+            .is_some_and(|ct| ct.to_str().is_ok_and(|ct| ct.starts_with("text/markdown")));
+
+    // Get the final url
+    // Note: this may be different to the initial url if there was a redirect
+    let final_url = response.url().to_string();
+
+    // Get the file content
+    let file_content = response.text().await.unwrap();
+
+    (final_url, file_content, is_md, None)
 }
 
 fn fetch_file_path(raw_path: &str) -> (String, String, bool, Option<PathBuf>) {
