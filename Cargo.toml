@@ -65,7 +65,6 @@ http = "1.1.0"
 data-url = "0.3.1"
 tokio = "1.42"
 reqwest = "0.12"
-ureq = "2.9"
 
 # Media & Decoding
 image = { version = "0.25", default-features = false, features = ["jpeg", "png", "gif", "webp"] }
@@ -122,7 +121,6 @@ dioxus = { workspace = true }
 euclid = { workspace = true }
 reqwest = { workspace = true }
 tokio = { workspace = true, features = ["macros"] }
-ureq = { workspace = true }
 image = { workspace = true }
 png = "0.17"
 env_logger = "0.11"

@@ -28,7 +28,9 @@ use blitz_dom::net::Resource;
 use blitz_html::HtmlDocument;
 use blitz_net::Provider;
 use blitz_traits::net::{NetCallback, SharedCallback};
+use reqwest::Client;
 use std::sync::Arc;
+use tokio::runtime::Runtime;
 use url::Url;
 use winit::event_loop::EventLoopProxy;
 use winit::event_loop::{ControlFlow, EventLoop};
@@ -62,15 +64,29 @@ pub fn launch_url(url: &str) {
     let url = url.to_owned();
     Url::parse(&url).expect("Invalid url");
 
-    let html = ureq::get(&url)
-        .set("User-Agent", USER_AGENT)
-        .call()
-        .unwrap()
-        .into_string()
+    // Turn on the runtime and enter it
+    let rt = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
         .unwrap();
+    let _guard = rt.enter();
 
-    launch_static_html_cfg(
+    let client = Client::new();
+    let html = rt.block_on(async {
+        client
+            .get(&url)
+            .header("User-Agent", USER_AGENT)
+            .send()
+            .await
+            .unwrap()
+            .text()
+            .await
+            .unwrap()
+    });
+
+    launch_internal(
         &html,
+        rt,
         Config {
             stylesheets: Vec::new(),
             base_url: Some(url),
@@ -90,6 +106,10 @@ pub fn launch_static_html_cfg(html: &str, cfg: Config) {
         .unwrap();
     let _guard = rt.enter();
 
+    launch_internal(html, rt, cfg)
+}
+
+fn launch_internal(html: &str, rt: Runtime, cfg: Config) {
     let event_loop = create_default_event_loop::<BlitzEvent>();
     let proxy = event_loop.create_proxy();
 
