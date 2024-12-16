@@ -1001,8 +1001,8 @@ impl Node {
         self.paint_children
             .borrow()
             .iter()
-            .rev()
             .flatten()
+            .rev()
             .find_map(|&i| self.with(i).hit(x, y))
             .or(Some(HitResult {
                 node_id: self.id,
