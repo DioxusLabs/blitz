@@ -124,6 +124,16 @@ impl Document {
         if let Some(layout_children) = layout_children {
             println!("Layout Children: {:?}", layout_children);
         }
+
+        let paint_children: Option<Vec<_>> = node.paint_children.borrow().as_ref().map(|lc| {
+            lc.iter()
+                .map(|id| &self.nodes[*id])
+                .map(|node| (node.id, node.order(), node.node_debug_str()))
+                .collect()
+        });
+        if let Some(paint_children) = paint_children {
+            println!("Paint Children: {:?}", paint_children);
+        }
         // taffy::print_tree(&self.dom, node_id.into());
     }
 }
