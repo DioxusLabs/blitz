@@ -7,7 +7,6 @@ edition = "2021"
 [dependencies]
 # Blitz dependencies
 blitz-dom = { path = "../blitz-dom" }
-blitz-net = { path = "../blitz-net" }
 blitz-traits = { path = "../blitz-traits" }
 
 # Servo dependencies

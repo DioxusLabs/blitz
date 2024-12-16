@@ -11,7 +11,7 @@ blitz-traits = { path = "../../packages/blitz-traits" }
 blitz-renderer-vello = { path = "../../packages/blitz-renderer-vello" }
 taffy = { workspace = true }
 parley = { workspace = true }
-tokio = { workspace = true }
+tokio = { workspace = true, features = ["rt"] }
 image = { workspace = true }
 url = { workspace = true }
 data-url = { workspace = true }
