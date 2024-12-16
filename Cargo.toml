@@ -43,7 +43,7 @@ taffy = { git = "https://github.com/dioxuslabs/taffy", rev = "c86f9223e8", defau
 # Linebender + WGPU
 peniko = "0.2"
 vello = { version = "0.3", features = [ "wgpu" ] }
-parley = { version = "0.2", git = "https://github.com/linebender/parley", rev = "f9d83552b1e16cdd9e507dee3af4566cd03ff9ae" }
+parley = { version = "0.2", git = "https://github.com/linebender/parley", rev = "4efc335cc2bf8aa30d746b42a5907a476c85553f" }
 wgpu = "22.1.0"
 
 # SVG dependencies

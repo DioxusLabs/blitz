@@ -1,7 +1,7 @@
 use atomic_refcell::{AtomicRef, AtomicRefCell};
 use image::DynamicImage;
 use markup5ever::{local_name, LocalName, QualName};
-use parley::{FontContext, LayoutContext};
+use parley::{Cluster, FontContext, LayoutContext};
 use peniko::kurbo;
 use selectors::matching::{ElementSelectorFlags, QuirksMode};
 use slab::Slab;
@@ -985,8 +985,8 @@ impl Node {
     /// TODO: z-index
     /// (If multiple children are positioned at the position then a random one will be recursed into)
     pub fn hit(&self, x: f32, y: f32) -> Option<HitResult> {
-        let x = x - self.final_layout.location.x + self.scroll_offset.x as f32;
-        let y = y - self.final_layout.location.y + self.scroll_offset.y as f32;
+        let mut x = x - self.final_layout.location.x + self.scroll_offset.x as f32;
+        let mut y = y - self.final_layout.location.y + self.scroll_offset.y as f32;
 
         let size = self.final_layout.size;
         let matches_self = !(x < 0.0
@@ -1004,6 +1004,15 @@ impl Node {
             return None;
         }
 
+        if self.is_inline_root {
+            let content_box_offset = taffy::Point {
+                x: self.final_layout.padding.left + self.final_layout.border.left,
+                y: self.final_layout.padding.top + self.final_layout.border.top,
+            };
+            x -= content_box_offset.x;
+            y -= content_box_offset.y;
+        }
+
         // Call `.hit()` on each child in turn. If any return `Some` then return that value. Else return `Some(self.id).
         self.paint_children
             .borrow()
@@ -1011,6 +1020,20 @@ impl Node {
             .flatten()
             .rev()
             .find_map(|&i| self.with(i).hit(x, y))
+            .or_else(|| {
+                if self.is_inline_root {
+                    let element_data = &self.element_data().unwrap();
+                    let layout = &element_data.inline_layout_data.as_ref().unwrap().layout;
+                    let scale = layout.scale();
+
+                    Cluster::from_point(layout, x * scale, y * scale).map(|(cluster, _)| {
+                        let node_id = cluster.external_span_id() as usize;
+                        HitResult { node_id, x, y }
+                    })
+                } else {
+                    None
+                }
+            })
             .or(Some(HitResult {
                 node_id: self.id,
                 x,

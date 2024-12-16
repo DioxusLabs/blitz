@@ -383,8 +383,12 @@ fn collect_list_item_children(
 }
 
 // Return a child node which is of display: list-item
-fn node_list_item_child(doc: &mut Document, child: usize, index: usize) -> Option<ListItemLayout> {
-    let node = &doc.nodes[child];
+fn node_list_item_child(
+    doc: &mut Document,
+    child_id: usize,
+    index: usize,
+) -> Option<ListItemLayout> {
+    let node = &doc.nodes[child_id];
 
     // We only care about elements with display: list-item (li's have this automatically)
     if !node
@@ -423,9 +427,12 @@ fn node_list_item_child(doc: &mut Document, child: usize, index: usize) -> Optio
             }
 
             // Create a parley tree builder
-            let mut builder =
-                doc.layout_ctx
-                    .tree_builder(&mut doc.font_ctx, doc.viewport.scale(), &parley_style);
+            let mut builder = doc.layout_ctx.tree_builder(
+                &mut doc.font_ctx,
+                doc.viewport.scale(),
+                child_id as u64,
+                &parley_style,
+            );
 
             match &marker {
                 Marker::Char(char) => builder.push_text(&char.to_string()),
@@ -722,9 +729,12 @@ pub(crate) fn build_inline_layout(
     let root_line_height = parley_style.line_height;
 
     // Create a parley tree builder
-    let mut builder =
-        doc.layout_ctx
-            .tree_builder(&mut doc.font_ctx, doc.viewport.scale(), &parley_style);
+    let mut builder = doc.layout_ctx.tree_builder(
+        &mut doc.font_ctx,
+        doc.viewport.scale(),
+        inline_context_root_node_id as u64,
+        &parley_style,
+    );
 
     // Set whitespace collapsing mode
     let collapse_mode = root_node_style
@@ -751,6 +761,7 @@ pub(crate) fn build_inline_layout(
         build_inline_layout_recursive(
             &mut builder,
             &doc.nodes,
+            inline_context_root_node_id,
             before_id,
             collapse_mode,
             root_line_height,
@@ -760,6 +771,7 @@ pub(crate) fn build_inline_layout(
         build_inline_layout_recursive(
             &mut builder,
             &doc.nodes,
+            inline_context_root_node_id,
             child_id,
             collapse_mode,
             root_line_height,
@@ -769,6 +781,7 @@ pub(crate) fn build_inline_layout(
         build_inline_layout_recursive(
             &mut builder,
             &doc.nodes,
+            inline_context_root_node_id,
             after_id,
             collapse_mode,
             root_line_height,
@@ -806,11 +819,15 @@ pub(crate) fn build_inline_layout(
     fn build_inline_layout_recursive(
         builder: &mut TreeBuilder<TextBrush>,
         nodes: &Slab<Node>,
+        parent_id: usize,
         node_id: usize,
         collapse_mode: WhiteSpaceCollapse,
         root_line_height: f32,
     ) {
         let node = &nodes[node_id];
+
+        // Set layout_parent for node.
+        node.layout_parent.set(Some(parent_id));
 
         // Set whitespace collapsing mode
         let collapse_mode = node
@@ -843,6 +860,7 @@ pub(crate) fn build_inline_layout(
                             build_inline_layout_recursive(
                                 builder,
                                 nodes,
+                                parent_id,
                                 child_id,
                                 collapse_mode,
                                 root_line_height,
@@ -865,7 +883,7 @@ pub(crate) fn build_inline_layout(
                                 height: 0.0,
                             });
                         } else if *tag_name == local_name!("br") {
-                            builder.push_style_modification_span(&[]);
+                            builder.push_style_modification_span(node_id as u64, &[]);
                             builder.set_white_space_mode(WhiteSpaceCollapse::Preserve);
                             builder.push_text("\n");
                             builder.pop_style_span();
@@ -887,12 +905,13 @@ pub(crate) fn build_inline_layout(
                             // dbg!(node_id);
                             // dbg!(&style);
 
-                            builder.push_style_span(style);
+                            builder.push_style_span(node_id as u64, style);
 
                             if let Some(before_id) = node.before {
                                 build_inline_layout_recursive(
                                     builder,
                                     nodes,
+                                    node_id,
                                     before_id,
                                     collapse_mode,
                                     root_line_height,
@@ -903,6 +922,7 @@ pub(crate) fn build_inline_layout(
                                 build_inline_layout_recursive(
                                     builder,
                                     nodes,
+                                    node_id,
                                     child_id,
                                     collapse_mode,
                                     root_line_height,
@@ -912,6 +932,7 @@ pub(crate) fn build_inline_layout(
                                 build_inline_layout_recursive(
                                     builder,
                                     nodes,
+                                    node_id,
                                     after_id,
                                     collapse_mode,
                                     root_line_height,
