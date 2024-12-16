@@ -68,7 +68,7 @@ reqwest = "0.12"
 
 # Media & Decoding
 image = { version = "0.25", default-features = false }
-woff = "0.3.3"
+woff2 = "0.3"
 html-escape = "0.2.13"
 
 # Other dependencies

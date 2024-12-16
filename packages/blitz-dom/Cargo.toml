@@ -38,7 +38,7 @@ slab = { workspace = true }
 # Media & Decoding
 image = { workspace = true }
 usvg = { workspace = true }
-woff = { workspace = true }
+woff2 = { workspace = true }
 html-escape = { workspace = true }
 
 # IO & Networking

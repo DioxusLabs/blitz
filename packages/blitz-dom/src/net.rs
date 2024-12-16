@@ -176,8 +176,8 @@ impl NetHandler for FontFaceHandler {
         match self.0 {
             FontFaceSourceFormatKeyword::Woff2 => {
                 tracing::info!("Decompressing woff2 font");
-                let decompressed = woff::version2::decompress(&bytes);
-                if let Some(decompressed) = decompressed {
+                let decompressed = woff2::decode::convert_woff2_to_ttf(&mut bytes);
+                if let Ok(decompressed) = decompressed {
                     bytes = Bytes::from(decompressed);
                 } else {
                     tracing::warn!("Failed to decompress woff2 font");
