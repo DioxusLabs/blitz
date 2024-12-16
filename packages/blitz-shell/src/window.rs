@@ -249,7 +249,7 @@ impl<Doc: DocumentLike> View<Doc> {
         if self.devtools.highlight_hover {
             let mut node = self.doc.as_ref().get_node(node_id).unwrap();
             if button == "right" {
-                if let Some(parent_id) = node.parent {
+                if let Some(parent_id) = node.layout_parent.get() {
                     node = self.doc.as_ref().get_node(parent_id).unwrap();
                 }
             }
