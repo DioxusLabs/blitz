@@ -165,7 +165,7 @@ impl Document {
                                         .zip(right)
                                         .map(|(w, r)| w - r)
                                 })
-                                .unwrap_or(0.0);
+                                .unwrap_or((ibox.x / scale) + margin.left + container_pb.left);
                             layout.location.y = top
                                 .or_else(|| {
                                     child_inputs
@@ -174,7 +174,7 @@ impl Document {
                                         .zip(bottom)
                                         .map(|(w, r)| w - r)
                                 })
-                                .unwrap_or(0.0);
+                                .unwrap_or((ibox.y / scale) + margin.top + container_pb.top);
 
                             layout.padding = padding; //.map(|p| p / scale);
                             layout.border = border; //.map(|p| p / scale);
