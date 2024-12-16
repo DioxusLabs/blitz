@@ -37,6 +37,7 @@ use style::{
     },
     dom::{LayoutIterator, NodeInfo, OpaqueNode, TDocument, TElement, TNode, TShadowRoot},
     global_style_data::GLOBAL_STYLE_DATA,
+    properties::generated::longhands::position::computed_value::T as Position,
     properties::PropertyDeclarationBlock,
     selector_parser::{NonTSPseudoClass, SelectorImpl},
     servo_arc::{Arc, ArcBorrow},
@@ -149,7 +150,27 @@ impl crate::document::Document {
                 .sort_by(|left, right| {
                     let left_node = self.nodes.get(*left).unwrap();
                     let right_node = self.nodes.get(*right).unwrap();
-                    left_node.z_index().cmp(&right_node.z_index())
+                    left_node
+                        .z_index()
+                        .cmp(&right_node.z_index())
+                        .then_with(|| {
+                            fn position_to_order(pos: Position) -> u8 {
+                                match pos {
+                                    Position::Static | Position::Relative | Position::Sticky => 0,
+                                    Position::Absolute | Position::Fixed => 1,
+                                }
+                            }
+                            let left_position = left_node
+                                .primary_styles()
+                                .map(|s| position_to_order(s.clone_position()))
+                                .unwrap_or(0);
+                            let right_position = right_node
+                                .primary_styles()
+                                .map(|s| position_to_order(s.clone_position()))
+                                .unwrap_or(0);
+
+                            left_position.cmp(&right_position)
+                        })
                 })
         }
     }
