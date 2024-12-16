@@ -59,6 +59,7 @@ pub(crate) fn style(style: &stylo::ComputedValues) -> parley::TextStyle<'static,
         stylo::FontStyle::ITALIC => parley::FontStyle::Italic,
         val => parley::FontStyle::Oblique(Some(val.oblique_degrees())),
     };
+    let font_width = parley::FontWidth::from_percentage(font_styles.font_stretch.0.to_float());
 
     // Convert font family
     let families: Vec<_> = font_styles
@@ -113,7 +114,7 @@ pub(crate) fn style(style: &stylo::ComputedValues) -> parley::TextStyle<'static,
         // font_stack: parley::FontStack::Single(FontFamily::Generic(GenericFamily::SystemUi)),
         font_stack: parley::FontStack::List(Cow::Owned(families)),
         font_size,
-        font_width: Default::default(),
+        font_width,
         font_style,
         font_weight,
         font_variations: parley::FontSettings::List(Cow::Borrowed(&[])),
