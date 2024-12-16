@@ -56,7 +56,7 @@ winit = { version = "0.30.2", features = ["rwh_06"] }
 accesskit_winit = "0.21.1"
 accesskit = "0.15.0"
 muda = "0.11.5"
-arboard = "3.4.1"
+arboard = { version = "3.4.1", default-features = false }
 keyboard-types = "0.7"
 
 # IO & Networking
@@ -67,7 +67,7 @@ tokio = "1.42"
 reqwest = "0.12"
 
 # Media & Decoding
-image = { version = "0.25", default-features = false, features = ["jpeg", "png", "gif", "webp"] }
+image = { version = "0.25", default-features = false }
 woff = "0.3.3"
 html-escape = "0.2.13"
 
