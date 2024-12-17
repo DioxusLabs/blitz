@@ -41,8 +41,6 @@ pub mod events;
 
 pub mod net;
 
-pub mod viewport;
-
 pub use document::{Document, DocumentLike};
 pub use markup5ever::{
     local_name, namespace_prefix, namespace_url, ns, Namespace, NamespaceStaticSet, Prefix,
@@ -52,4 +50,3 @@ pub use node::{ElementNodeData, Node, NodeData, TextNodeData};
 pub use parley::FontContext;
 pub use string_cache::Atom;
 pub use style::invalidation::element::restyle_hints::RestyleHint;
-pub use viewport::{ColorScheme, Viewport};

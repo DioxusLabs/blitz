@@ -1,10 +1,9 @@
 use crate::DocumentHtmlParser;
 
 use blitz_dom::{
-    events::RendererEvent, net::Resource, ColorScheme, Document, DocumentLike, FontContext,
-    Viewport, DEFAULT_CSS,
+    events::RendererEvent, net::Resource, Document, DocumentLike, FontContext, DEFAULT_CSS,
 };
-use blitz_traits::net::SharedProvider;
+use blitz_traits::{net::SharedProvider, ColorScheme, Viewport};
 
 pub struct HtmlDocument {
     inner: Document,

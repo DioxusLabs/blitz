@@ -2,9 +2,10 @@ use crate::events::{apply_keypress_event, EventData, HitResult, RendererEvent};
 use crate::layout::construct::collect_layout_children;
 use crate::node::{ImageData, NodeSpecificData, Status, TextBrush};
 use crate::util::ImageType;
-use crate::{ElementNodeData, Node, NodeData, TextNodeData, Viewport};
+use crate::{ElementNodeData, Node, NodeData, TextNodeData};
 use app_units::Au;
 use blitz_traits::net::{DummyNetProvider, SharedProvider};
+use blitz_traits::{ColorScheme, Viewport};
 use markup5ever::local_name;
 use parley::FontContext;
 use peniko::kurbo;
@@ -24,6 +25,8 @@ use std::any::Any;
 use std::collections::{BTreeMap, Bound, HashMap, HashSet, VecDeque};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
+use style::media_queries::MediaType;
+use style::queries::values::PrefersColorScheme;
 use style::selector_parser::ServoElementSnapshot;
 use style::servo::media_queries::FontMetricsProvider;
 use style::servo_arc::Arc as ServoArc;
@@ -141,6 +144,26 @@ pub struct Document {
 
     /// Network provider. Can be used to fetch assets.
     pub net_provider: SharedProvider<Resource>,
+}
+
+fn make_device(viewport: &Viewport) -> Device {
+    let width = viewport.window_size.0 as f32 / viewport.scale();
+    let height = viewport.window_size.1 as f32 / viewport.scale();
+    let viewport_size = euclid::Size2D::new(width, height);
+    let device_pixel_ratio = euclid::Scale::new(viewport.scale());
+
+    Device::new(
+        MediaType::screen(),
+        selectors::matching::QuirksMode::NoQuirks,
+        viewport_size,
+        device_pixel_ratio,
+        Box::new(DummyFontMetricsProvider),
+        ComputedValues::initial_values_with_font_override(Font::initial_values()),
+        match viewport.color_scheme {
+            ColorScheme::Light => PrefersColorScheme::Light,
+            ColorScheme::Dark => PrefersColorScheme::Dark,
+        },
+    )
 }
 
 impl DocumentLike for Document {
@@ -270,7 +293,7 @@ impl Document {
         static ID_GENERATOR: AtomicUsize = AtomicUsize::new(1);
 
         let id = ID_GENERATOR.fetch_add(1, Ordering::SeqCst);
-        let device = viewport.make_device();
+        let device = make_device(&viewport);
         let stylist = Stylist::new(device, QuirksMode::NoQuirks);
         let snapshots = SnapshotMap::new();
         let nodes = Box::new(Slab::new());
@@ -970,7 +993,7 @@ impl Document {
 
     pub fn set_viewport(&mut self, viewport: Viewport) {
         self.viewport = viewport;
-        self.set_stylist_device(self.viewport.make_device());
+        self.set_stylist_device(make_device(&self.viewport));
     }
 
     pub fn get_viewport(&self) -> Viewport {

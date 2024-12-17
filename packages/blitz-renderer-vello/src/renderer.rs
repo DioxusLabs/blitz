@@ -2,8 +2,8 @@ mod multicolor_rounded_rect;
 mod render;
 
 use crate::renderer::render::generate_vello_scene;
-use blitz_dom::{Document, Viewport};
-use blitz_traits::Devtools;
+use blitz_dom::Document;
+use blitz_traits::{Devtools, Viewport};
 use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
 use std::num::NonZeroUsize;
 use std::sync::Arc;

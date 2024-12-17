@@ -1,4 +1,4 @@
-use blitz_dom::ColorScheme;
+use blitz_traits::ColorScheme;
 use style::values::computed::ui::CursorKind as StyloCursorKind;
 use winit::window::{CursorIcon as WinitCursor, Theme};
 

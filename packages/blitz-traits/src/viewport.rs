@@ -1,24 +1,8 @@
-use crate::document::DummyFontMetricsProvider;
-use style::{
-    media_queries::{Device, MediaType},
-    properties::{style_structs::Font, ComputedValues},
-    queries::values::PrefersColorScheme,
-};
-
 #[derive(Default, Debug, Clone, Copy)]
 pub enum ColorScheme {
     #[default]
     Light,
     Dark,
-}
-
-impl From<ColorScheme> for PrefersColorScheme {
-    fn from(value: ColorScheme) -> Self {
-        match value {
-            ColorScheme::Light => PrefersColorScheme::Light,
-            ColorScheme::Dark => PrefersColorScheme::Dark,
-        }
-    }
 }
 
 #[derive(Default, Debug, Clone)]
@@ -73,22 +57,5 @@ impl Viewport {
 
     pub fn zoom_mut(&mut self) -> &mut f32 {
         &mut self.zoom
-    }
-
-    pub(crate) fn make_device(&self) -> Device {
-        let width = self.window_size.0 as f32 / self.scale();
-        let height = self.window_size.1 as f32 / self.scale();
-        let viewport_size = euclid::Size2D::new(width, height);
-        let device_pixel_ratio = euclid::Scale::new(self.scale());
-
-        Device::new(
-            MediaType::screen(),
-            selectors::matching::QuirksMode::NoQuirks,
-            viewport_size,
-            device_pixel_ratio,
-            Box::new(DummyFontMetricsProvider),
-            ComputedValues::initial_values_with_font_override(Font::initial_values()),
-            self.color_scheme.into(),
-        )
     }
 }

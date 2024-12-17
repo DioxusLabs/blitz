@@ -1,11 +1,11 @@
 //! Load first CLI argument as a url. Fallback to google.com if no CLI argument is provided.
 
 use blitz_dom::net::Resource;
-use blitz_dom::{ColorScheme, Viewport};
 use blitz_html::HtmlDocument;
 use blitz_net::{MpscCallback, Provider};
 use blitz_renderer_vello::render_to_buffer;
 use blitz_traits::net::SharedProvider;
+use blitz_traits::{ColorScheme, Viewport};
 use reqwest::Url;
 use std::sync::Arc;
 use std::{

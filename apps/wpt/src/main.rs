@@ -1,6 +1,6 @@
 use blitz_dom::net::Resource;
-use blitz_dom::{ColorScheme, Viewport};
 use blitz_renderer_vello::VelloImageRenderer;
+use blitz_traits::{ColorScheme, Viewport};
 use parley::FontContext;
 use thread_local::ThreadLocal;
 use url::Url;

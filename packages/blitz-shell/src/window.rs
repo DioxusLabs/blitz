@@ -2,9 +2,9 @@ use crate::accessibility::AccessibilityState;
 use crate::event::{create_waker, BlitzEvent};
 use crate::stylo_to_winit::{self, color_scheme_to_theme, theme_to_color_scheme};
 use blitz_dom::events::{EventData, RendererEvent};
-use blitz_dom::{DocumentLike, Viewport};
+use blitz_dom::DocumentLike;
 use blitz_renderer_vello::Renderer;
-use blitz_traits::Devtools;
+use blitz_traits::{Devtools, Viewport};
 use winit::keyboard::PhysicalKey;
 
 use std::sync::Arc;
