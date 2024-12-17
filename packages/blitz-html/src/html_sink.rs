@@ -396,8 +396,7 @@ impl<'b> TreeSink for DocumentHtmlParser<'b> {
 
 #[test]
 fn parses_some_html() {
-    use blitz_dom::{ColorScheme, Viewport};
-    use blitz_traits::net::DummyNetProvider;
+    use blitz_traits::{net::DummyNetProvider, ColorScheme, Viewport};
     use std::sync::Arc;
 
     let html = "<!DOCTYPE html><html><body><h1>hello world</h1></body></html>";
