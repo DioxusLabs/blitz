@@ -2,6 +2,7 @@ use blitz_dom::net::Resource;
 use blitz_renderer_vello::VelloImageRenderer;
 use blitz_traits::{ColorScheme, Viewport};
 use parley::FontContext;
+use pollster::FutureExt as _;
 use thread_local::ThreadLocal;
 use url::Url;
 
@@ -258,11 +259,6 @@ impl TestResult {
 
 fn main() {
     env_logger::init();
-    let rt = tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()
-        .expect("Failed to create tokio runtime");
-    let _guard = rt.enter();
 
     let wpt_dir = path::absolute(env::var("WPT_DIR").expect("WPT_DIR is not set")).unwrap();
     info!("WPT_DIR: {}", wpt_dir.display());
@@ -301,140 +297,134 @@ fn main() {
 
     let mut results: Vec<TestResult> = test_paths
         .into_par_iter()
-        .map_init(
-            || rt.enter(),
-            |_guard, path| {
-                let mut ctx = thread_state
-                    .get_or(|| {
-                        let renderer = rt.block_on(VelloImageRenderer::new(WIDTH, HEIGHT, SCALE));
-                        let font_ctx = clone_font_ctx(&base_font_context);
-                        let test_buffer = Vec::with_capacity((WIDTH * HEIGHT * 4) as usize);
-                        let ref_buffer = Vec::with_capacity((WIDTH * HEIGHT * 4) as usize);
-                        let viewport = Viewport::new(
-                            (WIDTH as f64 * SCALE).floor() as u32,
-                            (HEIGHT as f64 * SCALE).floor() as u32,
-                            SCALE as f32,
-                            ColorScheme::Light,
-                        );
-                        let net_provider = Arc::new(WptNetProvider::new(&wpt_dir));
-                        let reftest_re =
-                            Regex::new(r#"<link\s+rel="match"\s+href="([^"]+)""#).unwrap();
+        .map(|path| {
+            let mut ctx = thread_state
+                .get_or(|| {
+                    let renderer = VelloImageRenderer::new(WIDTH, HEIGHT, SCALE).block_on();
+                    let font_ctx = clone_font_ctx(&base_font_context);
+                    let test_buffer = Vec::with_capacity((WIDTH * HEIGHT * 4) as usize);
+                    let ref_buffer = Vec::with_capacity((WIDTH * HEIGHT * 4) as usize);
+                    let viewport = Viewport::new(
+                        (WIDTH as f64 * SCALE).floor() as u32,
+                        (HEIGHT as f64 * SCALE).floor() as u32,
+                        SCALE as f32,
+                        ColorScheme::Light,
+                    );
+                    let net_provider = Arc::new(WptNetProvider::new(&wpt_dir));
+                    let reftest_re = Regex::new(r#"<link\s+rel="match"\s+href="([^"]+)""#).unwrap();
 
-                        let float_re = Regex::new(r#"float:"#).unwrap();
-                        let intrinsic_re =
-                            Regex::new(r#"(width|height): ?(min|max|fit)-content"#).unwrap();
-                        let calc_re = Regex::new(r#"calc\("#).unwrap();
-                        let direction_re = Regex::new(r#"direction:|directionRTL"#).unwrap();
-                        let writing_mode_re =
-                            Regex::new(r#"writing-mode:|vertical(RL|LR)"#).unwrap();
-                        let subgrid_re = Regex::new(r#"subgrid"#).unwrap();
-                        let masonry_re = Regex::new(r#"masonry"#).unwrap();
+                    let float_re = Regex::new(r#"float:"#).unwrap();
+                    let intrinsic_re =
+                        Regex::new(r#"(width|height): ?(min|max|fit)-content"#).unwrap();
+                    let calc_re = Regex::new(r#"calc\("#).unwrap();
+                    let direction_re = Regex::new(r#"direction:|directionRTL"#).unwrap();
+                    let writing_mode_re = Regex::new(r#"writing-mode:|vertical(RL|LR)"#).unwrap();
+                    let subgrid_re = Regex::new(r#"subgrid"#).unwrap();
+                    let masonry_re = Regex::new(r#"masonry"#).unwrap();
 
-                        let attrtest_re = Regex::new(
-                            r#"checkLayout\(\s*['"]([^'"]*)['"]\s*(,\s*(true|false))?\)"#,
-                        )
-                        .unwrap();
+                    let attrtest_re =
+                        Regex::new(r#"checkLayout\(\s*['"]([^'"]*)['"]\s*(,\s*(true|false))?\)"#)
+                            .unwrap();
 
-                        let dummy_base_url = Url::parse("http://dummy.local").unwrap();
+                    let dummy_base_url = Url::parse("http://dummy.local").unwrap();
 
-                        RefCell::new(ThreadCtx {
-                            viewport,
-                            net_provider,
-                            renderer,
-                            font_ctx,
-                            buffers: Buffers {
-                                test_buffer,
-                                ref_buffer,
-                            },
-                            reftest_re,
-                            attrtest_re,
-                            float_re,
-                            intrinsic_re,
-                            calc_re,
-                            direction_re,
-                            writing_mode_re,
-                            subgrid_re,
-                            masonry_re,
-                            out_dir: out_dir.clone(),
-                            wpt_dir: wpt_dir.clone(),
-                            dummy_base_url,
-                        })
+                    RefCell::new(ThreadCtx {
+                        viewport,
+                        net_provider,
+                        renderer,
+                        font_ctx,
+                        buffers: Buffers {
+                            test_buffer,
+                            ref_buffer,
+                        },
+                        reftest_re,
+                        attrtest_re,
+                        float_re,
+                        intrinsic_re,
+                        calc_re,
+                        direction_re,
+                        writing_mode_re,
+                        subgrid_re,
+                        masonry_re,
+                        out_dir: out_dir.clone(),
+                        wpt_dir: wpt_dir.clone(),
+                        dummy_base_url,
                     })
-                    .borrow_mut();
+                })
+                .borrow_mut();
 
-                let num = num.fetch_add(1, Ordering::SeqCst) + 1;
+            let num = num.fetch_add(1, Ordering::SeqCst) + 1;
 
-                let relative_path = path
-                    .strip_prefix(&ctx.wpt_dir)
-                    .unwrap()
-                    .to_string_lossy()
-                    .replace("\\", "/");
+            let relative_path = path
+                .strip_prefix(&ctx.wpt_dir)
+                .unwrap()
+                .to_string_lossy()
+                .replace("\\", "/");
 
-                let start = Instant::now();
+            let start = Instant::now();
 
-                let result = catch_unwind(AssertUnwindSafe(|| {
-                    rt.block_on(process_test_file(&mut ctx, &relative_path))
-                }));
-                let (kind, flags, status, panic_msg) = match result {
-                    Ok((kind, flags, status)) => (kind, flags, status, None),
-                    Err(err) => {
-                        let str_msg = err.downcast_ref::<&str>().map(|s| s.to_string());
-                        let string_msg = err.downcast_ref::<String>().map(|s| s.to_string());
-                        let panic_msg = str_msg.or(string_msg);
+            let result = catch_unwind(AssertUnwindSafe(|| {
+                process_test_file(&mut ctx, &relative_path).block_on()
+            }));
+            let (kind, flags, status, panic_msg) = match result {
+                Ok((kind, flags, status)) => (kind, flags, status, None),
+                Err(err) => {
+                    let str_msg = err.downcast_ref::<&str>().map(|s| s.to_string());
+                    let string_msg = err.downcast_ref::<String>().map(|s| s.to_string());
+                    let panic_msg = str_msg.or(string_msg);
 
-                        (
-                            TestKind::Unknown,
-                            TestFlags::empty(),
-                            TestStatus::Crash,
-                            panic_msg,
-                        )
+                    (
+                        TestKind::Unknown,
+                        TestFlags::empty(),
+                        TestStatus::Crash,
+                        panic_msg,
+                    )
+                }
+            };
+
+            // Bump counts
+            match status {
+                TestStatus::Pass => pass_count.fetch_add(1, Ordering::SeqCst),
+                TestStatus::Fail => {
+                    if flags.contains(TestFlags::USES_MASONRY) {
+                        masonry_fail_count.fetch_add(1, Ordering::SeqCst);
+                    } else if flags.contains(TestFlags::USES_SUBGRID) {
+                        subgrid_fail_count.fetch_add(1, Ordering::SeqCst);
+                    } else if flags.contains(TestFlags::USES_WRITING_MODE) {
+                        writing_mode_fail_count.fetch_add(1, Ordering::SeqCst);
+                    } else if flags.contains(TestFlags::USES_DIRECTION) {
+                        direction_fail_count.fetch_add(1, Ordering::SeqCst);
+                    } else if flags.contains(TestFlags::USES_INTRINSIC_SIZE) {
+                        intrinsic_size_fail_count.fetch_add(1, Ordering::SeqCst);
+                    } else if flags.contains(TestFlags::USES_CALC) {
+                        calc_fail_count.fetch_add(1, Ordering::SeqCst);
+                    } else if flags.contains(TestFlags::USES_FLOAT) {
+                        float_fail_count.fetch_add(1, Ordering::SeqCst);
+                    } else {
+                        other_fail_count.fetch_add(1, Ordering::SeqCst);
                     }
-                };
+                    fail_count.fetch_add(1, Ordering::SeqCst)
+                }
+                TestStatus::Skip => skip_count.fetch_add(1, Ordering::SeqCst),
+                TestStatus::Crash => crash_count.fetch_add(1, Ordering::SeqCst),
+            };
 
-                // Bump counts
-                match status {
-                    TestStatus::Pass => pass_count.fetch_add(1, Ordering::SeqCst),
-                    TestStatus::Fail => {
-                        if flags.contains(TestFlags::USES_MASONRY) {
-                            masonry_fail_count.fetch_add(1, Ordering::SeqCst);
-                        } else if flags.contains(TestFlags::USES_SUBGRID) {
-                            subgrid_fail_count.fetch_add(1, Ordering::SeqCst);
-                        } else if flags.contains(TestFlags::USES_WRITING_MODE) {
-                            writing_mode_fail_count.fetch_add(1, Ordering::SeqCst);
-                        } else if flags.contains(TestFlags::USES_DIRECTION) {
-                            direction_fail_count.fetch_add(1, Ordering::SeqCst);
-                        } else if flags.contains(TestFlags::USES_INTRINSIC_SIZE) {
-                            intrinsic_size_fail_count.fetch_add(1, Ordering::SeqCst);
-                        } else if flags.contains(TestFlags::USES_CALC) {
-                            calc_fail_count.fetch_add(1, Ordering::SeqCst);
-                        } else if flags.contains(TestFlags::USES_FLOAT) {
-                            float_fail_count.fetch_add(1, Ordering::SeqCst);
-                        } else {
-                            other_fail_count.fetch_add(1, Ordering::SeqCst);
-                        }
-                        fail_count.fetch_add(1, Ordering::SeqCst)
-                    }
-                    TestStatus::Skip => skip_count.fetch_add(1, Ordering::SeqCst),
-                    TestStatus::Crash => crash_count.fetch_add(1, Ordering::SeqCst),
-                };
+            let result = TestResult {
+                name: relative_path,
+                kind,
+                flags,
+                status,
+                duration: start.elapsed(),
+                panic_msg,
+            };
 
-                let result = TestResult {
-                    name: relative_path,
-                    kind,
-                    flags,
-                    status,
-                    duration: start.elapsed(),
-                    panic_msg,
-                };
+            // Print status line
+            let mut out = stdout().lock();
+            write!(out, "[{num}/{count}] ").unwrap();
+            result.print_to(out);
 
-                // Print status line
-                let mut out = stdout().lock();
-                write!(out, "[{num}/{count}] ").unwrap();
-                result.print_to(out);
-
-                result
-            },
-        )
+            result
+        })
         .collect();
 
     // Sort results alphabetically
@@ -550,7 +540,7 @@ async fn process_test_file(
             reference.as_str(),
             &mut flags,
         )
-        .await;
+        .block_on();
 
         return (TestKind::Ref, flags, result);
     }
@@ -565,7 +555,7 @@ async fn process_test_file(
         let selector = captures.get(1).unwrap().as_str().to_string();
         drop(matches);
 
-        let result = process_attr_test(ctx, &selector, &file_contents, relative_path).await;
+        let result = process_attr_test(ctx, &selector, &file_contents, relative_path).block_on();
 
         return (TestKind::Attr, flags, result);
     }

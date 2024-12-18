@@ -11,7 +11,6 @@ blitz-traits = { path = "../../packages/blitz-traits" }
 blitz-renderer-vello = { path = "../../packages/blitz-renderer-vello" }
 taffy = { workspace = true }
 parley = { workspace = true }
-tokio = { workspace = true, features = ["rt"] }
 image = { workspace = true }
 url = { workspace = true }
 data-url = { workspace = true }
@@ -26,3 +25,4 @@ regex = "1.11.1"
 rayon = "1.10.0"
 thread_local = "1.1.8"
 bitflags = "2.6.0"
+pollster = "0.4.0"
