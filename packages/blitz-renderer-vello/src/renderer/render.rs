@@ -12,8 +12,6 @@ use blitz_traits::Devtools;
 
 use euclid::Transform3D;
 use parley::Line;
-use style::values::computed::{BackgroundSize, Length};
-use style::Zero;
 use style::{
     dom::TElement,
     properties::{
@@ -49,13 +47,14 @@ use style::values::generics::image::{
 };
 use style::values::specified::percentage::ToPercentage;
 use taffy::Layout;
-use vello::kurbo::{BezPath, Cap, Join, Size};
+use vello::kurbo::{self, BezPath, Cap, Join};
 use vello::peniko::Gradient;
 use vello::{
     kurbo::{Affine, Point, Rect, Shape, Stroke, Vec2},
     peniko::{self, Color, Fill, Mix},
     Scene,
 };
+#[cfg(feature = "svg")]
 use vello_svg::usvg;
 
 const CLIP_LIMIT: usize = 1024;
@@ -395,16 +394,16 @@ impl VelloSceneGenerator<'_> {
             ..
         } = node.final_layout;
         let scaled_pb = (padding + border).map(f64::from);
-        let content_position = vello::kurbo::Point {
+        let content_position = kurbo::Point {
             x: box_position.x + scaled_pb.left,
             y: box_position.y + scaled_pb.top,
         };
-        let content_size = vello::kurbo::Size {
+        let content_size = kurbo::Size {
             width: (size.width as f64 - scaled_pb.left - scaled_pb.right) * self.scale,
             height: (size.height as f64 - scaled_pb.top - scaled_pb.bottom) * self.scale,
         };
         let transform = Affine::translate(content_position.to_vec2() * self.scale);
-        let origin = vello::kurbo::Point { x: 0.0, y: 0.0 };
+        let origin = kurbo::Point { x: 0.0, y: 0.0 };
         let clip = Rect::from_origin_size(origin, content_size);
 
         // Optimise zero-area (/very small area) clips by not rendering at all
@@ -447,6 +446,7 @@ impl VelloSceneGenerator<'_> {
             y: -node.scroll_offset.y,
         });
         cx.draw_image(scene);
+        #[cfg(feature = "svg")]
         cx.draw_svg(scene);
         cx.draw_input(scene);
 
@@ -533,6 +533,7 @@ impl VelloSceneGenerator<'_> {
             node,
             element,
             transform,
+            #[cfg(feature = "svg")]
             svg: element.svg_data(),
             text_input: element.text_input_data(),
             list_item: element.list_item_data.as_deref(),
@@ -541,6 +542,7 @@ impl VelloSceneGenerator<'_> {
     }
 }
 
+#[cfg(feature = "svg")]
 fn compute_background_size(
     style: &ComputedValues,
     container_w: f32,
@@ -549,8 +551,10 @@ fn compute_background_size(
     bg_w: f32,
     bg_h: f32,
     scale: f32,
-) -> vello::kurbo::Size {
+) -> kurbo::Size {
+    use style::values::computed::{BackgroundSize, Length};
     use style::values::generics::length::GenericLengthPercentageOrAuto as Lpa;
+
     let bg_size = style
         .get_background()
         .background_size
@@ -605,7 +609,7 @@ fn compute_background_size(
         }
     };
 
-    Size {
+    kurbo::Size {
         width: width as f64,
         height: height as f64,
     }
@@ -650,6 +654,7 @@ struct ElementCx<'a> {
     node: &'a Node,
     element: &'a ElementNodeData,
     transform: Affine,
+    #[cfg(feature = "svg")]
     svg: Option<&'a usvg::Tree>,
     text_input: Option<&'a TextInputData>,
     list_item: Option<&'a ListItemLayout>,
@@ -817,7 +822,7 @@ impl ElementCx<'_> {
                         let x = glyph_run.offset() as f64;
                         let w = glyph_run.advance() as f64;
                         let y = (glyph_run.baseline() - offset + size / 2.0) as f64;
-                        let line = vello::kurbo::Line::new((x, y), (x + w, y));
+                        let line = kurbo::Line::new((x, y), (x + w, y));
                         scene.stroke(&Stroke::new(size as f64), transform, brush, None, &line)
                     };
 
@@ -839,6 +844,7 @@ impl ElementCx<'_> {
         }
     }
 
+    #[cfg(feature = "svg")]
     fn draw_svg(&self, scene: &mut Scene) {
         let Some(svg) = self.svg else {
             return;
@@ -858,7 +864,10 @@ impl ElementCx<'_> {
         scene.append(&fragment, Some(transform));
     }
 
+    #[cfg(feature = "svg")]
     fn draw_svg_bg_image(&self, scene: &mut Scene, idx: usize) {
+        use style::{values::computed::Length, Zero as _};
+
         let bg_image = self.element.background_images.get(idx);
 
         let Some(Some(bg_image)) = bg_image.as_ref() else {
@@ -980,6 +989,7 @@ impl ElementCx<'_> {
                 Gradient(gradient) => self.draw_gradient_frame(scene, gradient),
                 Url(_) => {
                     self.draw_raster_bg_image(scene, idx);
+                    #[cfg(feature = "svg")]
                     self.draw_svg_bg_image(scene, idx);
                 }
                 PaintWorklet(_) => todo!("Implement background drawing for Image::PaintWorklet"),

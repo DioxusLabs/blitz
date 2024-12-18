@@ -19,12 +19,10 @@ use style::{
 
 use crate::{
     node::{
-        ImageData, ListItemLayout, ListItemLayoutPosition, Marker, NodeKind, NodeSpecificData,
-        TextBrush, TextInputData, TextLayout,
+        ListItemLayout, ListItemLayoutPosition, Marker, NodeKind, NodeSpecificData, TextBrush,
+        TextInputData, TextLayout,
     },
-    stylo_to_parley,
-    util::parse_svg,
-    Document, ElementNodeData, Node, NodeData,
+    stylo_to_parley, Document, ElementNodeData, Node, NodeData,
 };
 
 use super::table::build_table_context;
@@ -83,7 +81,10 @@ pub(crate) fn collect_layout_children(
             }
         }
 
+        #[cfg(feature = "svg")]
         if matches!(tag_name, "svg") {
+            use crate::node::ImageData;
+
             let mut outer_html = doc.get_node(container_node_id).unwrap().outer_html();
 
             // HACK: usvg fails to parse SVGs that don't have the SVG xmlns set. So inject it
@@ -93,7 +94,7 @@ pub(crate) fn collect_layout_children(
                     outer_html.replace("<svg", "<svg xmlns=\"http://www.w3.org/2000/svg\"");
             }
 
-            match parse_svg(outer_html.as_bytes()) {
+            match crate::util::parse_svg(outer_html.as_bytes()) {
                 Ok(svg) => {
                     doc.get_node_mut(container_node_id)
                         .unwrap()

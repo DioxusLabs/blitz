@@ -697,6 +697,7 @@ impl Document {
                     }
                 }
             }
+            #[cfg(feature = "svg")]
             Resource::Svg(node_id, kind, tree) => {
                 let node = self.get_node_mut(node_id).unwrap();
 

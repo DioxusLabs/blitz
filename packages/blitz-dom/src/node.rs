@@ -410,6 +410,7 @@ impl ElementNodeData {
         }
     }
 
+    #[cfg(feature = "svg")]
     pub fn svg_data(&self) -> Option<&usvg::Tree> {
         match self.node_specific_data {
             NodeSpecificData::Image(ImageData::Svg(ref data)) => Some(data),
@@ -417,6 +418,7 @@ impl ElementNodeData {
         }
     }
 
+    #[cfg(feature = "svg")]
     pub fn svg_data_mut(&mut self) -> Option<&mut usvg::Tree> {
         match self.node_specific_data {
             NodeSpecificData::Image(ImageData::Svg(ref mut data)) => Some(data),
@@ -525,6 +527,7 @@ impl RasterImageData {
 #[derive(Debug, Clone)]
 pub enum ImageData {
     Raster(RasterImageData),
+    #[cfg(feature = "svg")]
     Svg(usvg::Tree),
     None,
 }
@@ -533,6 +536,7 @@ impl From<Arc<DynamicImage>> for ImageData {
         Self::Raster(RasterImageData::new(value))
     }
 }
+#[cfg(feature = "svg")]
 impl From<usvg::Tree> for ImageData {
     fn from(value: usvg::Tree) -> Self {
         Self::Svg(value)
@@ -622,6 +626,7 @@ impl std::fmt::Debug for NodeSpecificData {
         match self {
             NodeSpecificData::Image(data) => match data {
                 ImageData::Raster(_) => f.write_str("NodeSpecificData::Image(Raster)"),
+                #[cfg(feature = "svg")]
                 ImageData::Svg(_) => f.write_str("NodeSpecificData::Image(Svg)"),
                 ImageData::None => f.write_str("NodeSpecificData::Image(None)"),
             },

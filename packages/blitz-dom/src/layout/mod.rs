@@ -179,7 +179,9 @@ impl LayoutPartialTree for Document {
                         }
                     }
 
-                    if *element_data.name.local == *"img" || *element_data.name.local == *"svg" {
+                    if *element_data.name.local == *"img"
+                        || (cfg!(feature = "svg") && *element_data.name.local == *"svg")
+                    {
                         // Get width and height attributes on image element
                         //
                         // TODO: smarter sizing using these (depending on object-fit, they shouldn't
@@ -199,6 +201,7 @@ impl LayoutPartialTree for Document {
                                 width: data.image.width() as f32,
                                 height: data.image.height() as f32,
                             },
+                            #[cfg(feature = "svg")]
                             NodeSpecificData::Image(ImageData::Svg(svg)) => {
                                 let size = svg.size();
                                 taffy::Size {

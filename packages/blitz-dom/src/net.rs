@@ -20,14 +20,14 @@ use style::{
 use blitz_traits::net::{Bytes, NetHandler, SharedCallback, SharedProvider};
 
 use url::Url;
-use usvg::Tree;
 
-use crate::util::{parse_svg, ImageType};
+use crate::util::ImageType;
 
 #[derive(Clone, Debug)]
 pub enum Resource {
     Image(usize, ImageType, Arc<DynamicImage>),
-    Svg(usize, ImageType, Box<Tree>),
+    #[cfg(feature = "svg")]
+    Svg(usize, ImageType, Box<usvg::Tree>),
     Css(usize, DocumentStyleSheet),
     Font(Bytes),
 }
@@ -175,11 +175,13 @@ impl NetHandler for FontFaceHandler {
         }
         match self.0 {
             FontFaceSourceFormatKeyword::Woff2 => {
+                #[cfg(feature = "tracing")]
                 tracing::info!("Decompressing woff2 font");
                 let decompressed = woff2::decode::convert_woff2_to_ttf(&mut bytes);
                 if let Ok(decompressed) = decompressed {
                     bytes = Bytes::from(decompressed);
                 } else {
+                    #[cfg(feature = "tracing")]
                     tracing::warn!("Failed to decompress woff2 font");
                 }
             }
@@ -236,11 +238,12 @@ fn fetch_font_face(
                     _ => FontFaceSourceFormatKeyword::None,
                 }
             }
-            if let font_format @ (FontFaceSourceFormatKeyword::Svg
+            if let _font_format @ (FontFaceSourceFormatKeyword::Svg
             | FontFaceSourceFormatKeyword::EmbeddedOpentype
             | FontFaceSourceFormatKeyword::Woff) = format
             {
-                tracing::warn!("Skipping unsupported font of type {:?}", font_format);
+                #[cfg(feature = "tracing")]
+                tracing::warn!("Skipping unsupported font of type {:?}", _font_format);
                 return;
             }
             network_provider.fetch(
@@ -270,9 +273,14 @@ impl NetHandler for ImageHandler {
             return;
         };
 
-        // Try parse SVG
-        const DUMMY_SVG : &[u8] = r#"<?xml version="1.0" encoding="UTF-8"?><svg xmlns="http://www.w3.org/2000/svg" width="1" height="1"/>"#.as_bytes();
-        let tree = parse_svg(&bytes).unwrap_or(parse_svg(DUMMY_SVG).unwrap());
-        callback.call(doc_id, Resource::Svg(self.0, self.1, Box::new(tree)));
+        #[cfg(feature = "svg")]
+        {
+            use crate::util::parse_svg;
+
+            // Try parse SVG
+            const DUMMY_SVG : &[u8] = r#"<?xml version="1.0" encoding="UTF-8"?><svg xmlns="http://www.w3.org/2000/svg" width="1" height="1"/>"#.as_bytes();
+            let tree = parse_svg(&bytes).unwrap_or(parse_svg(DUMMY_SVG).unwrap());
+            callback.call(doc_id, Resource::Svg(self.0, self.1, Box::new(tree)));
+        }
     }
 }

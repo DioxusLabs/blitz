@@ -1,10 +1,12 @@
-use std::sync::{Arc, LazyLock};
-
 use crate::node::{Node, NodeData};
 use peniko::Color as PenikoColor;
 use style::color::AbsoluteColor;
-use usvg::fontdb;
 
+#[cfg(feature = "svg")]
+use std::sync::{Arc, LazyLock};
+#[cfg(feature = "svg")]
+use usvg::fontdb;
+#[cfg(feature = "svg")]
 pub(crate) static FONT_DB: LazyLock<Arc<fontdb::Database>> = LazyLock::new(|| {
     let mut db = fontdb::Database::new();
     db.load_system_fonts();
@@ -83,6 +85,7 @@ pub fn walk_tree(indent: usize, node: &Node) {
     }
 }
 
+#[cfg(feature = "svg")]
 pub(crate) fn parse_svg(source: &[u8]) -> Result<usvg::Tree, usvg::Error> {
     let options = usvg::Options {
         fontdb: Arc::clone(&*FONT_DB),

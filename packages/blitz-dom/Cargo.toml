@@ -5,8 +5,9 @@ license.workspace = true
 edition = "2021"
 
 [features]
-default = ["tracing"]
+default = ["tracing", "svg"]
 tracing = ["dep:tracing"]
+svg = ["dep:usvg"]
 
 [dependencies]
 # Blitz dependencies
@@ -37,7 +38,7 @@ slab = { workspace = true }
 
 # Media & Decoding
 image = { workspace = true }
-usvg = { workspace = true }
+usvg = { workspace = true, optional = true }
 woff2 = { workspace = true }
 html-escape = { workspace = true }
 

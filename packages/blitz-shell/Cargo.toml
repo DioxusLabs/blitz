@@ -5,16 +5,17 @@ license.workspace = true
 edition = "2021"
 
 [features]
-default = ["net", "accessibility", "menu", "tracing"]
+default = ["net", "accessibility", "menu", "tracing", "svg"]
+svg = ["blitz-renderer-vello/svg"]
 net = ["dep:tokio", "dep:reqwest", "dep:url", "dep:blitz-net"]
 accessibility = ["dep:accesskit", "dep:accesskit_winit"]
 menu = ["dep:muda"]
-tracing = ["dep:tracing"]
+tracing = ["dep:tracing", "blitz-dom/tracing"]
 
 [dependencies]
 # Blitz dependencies
 blitz-renderer-vello = { path = "../blitz-renderer-vello" }
-blitz-dom = { path = "../blitz-dom" }
+blitz-dom = { path = "../blitz-dom", default-features = false }
 blitz-html = { path = "../blitz-html" }
 blitz-net = { path = "../blitz-net", optional = true }
 blitz-traits = { path = "../blitz-traits" }
