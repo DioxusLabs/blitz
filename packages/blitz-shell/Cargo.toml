@@ -25,7 +25,7 @@ style = { workspace = true }
 
 # Windowing & Input
 winit = { workspace = true }
-muda = { workspace = true, features = ["serde"], optional = true }
+muda = { workspace = true, default-features = false, features = ["serde"], optional = true }
 accesskit = { workspace = true, optional = true }
 accesskit_winit = {workspace = true, optional = true }
 
