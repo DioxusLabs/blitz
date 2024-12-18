@@ -15,13 +15,16 @@ pub struct Provider<D> {
     client: Client,
     resource_callback: SharedCallback<D>,
 }
-impl<D> Provider<D> {
-    pub fn new(rt_handle: Handle, res_callback: SharedCallback<D>) -> Self {
+impl<D: 'static> Provider<D> {
+    pub fn new(res_callback: SharedCallback<D>) -> Self {
         Self {
-            rt: rt_handle,
+            rt: Handle::current(),
             client: Client::new(),
             resource_callback: res_callback,
         }
+    }
+    pub fn shared(res_callback: SharedCallback<D>) -> Arc<dyn NetProvider<Data = D>> {
+        Arc::new(Self::new(res_callback))
     }
     pub fn is_empty(&self) -> bool {
         Arc::strong_count(&self.resource_callback) == 1

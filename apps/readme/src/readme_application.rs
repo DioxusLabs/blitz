@@ -4,6 +4,7 @@ use blitz_dom::net::Resource;
 use blitz_html::HtmlDocument;
 use blitz_shell::{BlitzApplication, BlitzEvent, View, WindowConfig};
 use blitz_traits::net::NetProvider;
+use tokio::runtime::Handle;
 use winit::application::ApplicationHandler;
 use winit::event::{Modifiers, StartCause, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, EventLoopProxy};
@@ -25,14 +26,13 @@ pub struct ReadmeApplication {
 
 impl ReadmeApplication {
     pub fn new(
-        rt: tokio::runtime::Runtime,
         proxy: EventLoopProxy<BlitzEvent>,
         raw_url: String,
         net_provider: Arc<dyn NetProvider<Data = Resource>>,
     ) -> Self {
-        let handle = rt.handle().clone();
+        let handle = Handle::current();
         Self {
-            inner: BlitzApplication::new(rt, proxy.clone()),
+            inner: BlitzApplication::new(proxy.clone()),
             handle,
             raw_url,
             net_provider,

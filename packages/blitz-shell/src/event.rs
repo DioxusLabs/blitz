@@ -3,8 +3,7 @@ use std::{any::Any, sync::Arc};
 use winit::{event_loop::EventLoopProxy, window::WindowId};
 
 #[cfg(feature = "accessibility")]
-use accesskit_winit::Event as AccessibilityEvent;
-use accesskit_winit::WindowEvent as AccessibilityWindowEvent;
+use accesskit_winit::{Event as AccessKitEvent, WindowEvent as AccessKitWindowEvent};
 use blitz_dom::net::Resource;
 
 #[derive(Debug, Clone)]
@@ -22,7 +21,7 @@ pub enum BlitzEvent {
     #[cfg(feature = "accessibility")]
     Accessibility {
         window_id: WindowId,
-        data: Arc<AccessibilityWindowEvent>,
+        data: Arc<AccessKitWindowEvent>,
     },
 
     /// An arbitary event from the Blitz embedder
@@ -41,8 +40,8 @@ impl From<(usize, Resource)> for BlitzEvent {
 }
 
 #[cfg(feature = "accessibility")]
-impl From<AccessibilityEvent> for BlitzEvent {
-    fn from(value: AccessibilityEvent) -> Self {
+impl From<AccessKitEvent> for BlitzEvent {
+    fn from(value: AccessKitEvent) -> Self {
         Self::Accessibility {
             window_id: value.window_id,
             data: Arc::new(value.window_event),

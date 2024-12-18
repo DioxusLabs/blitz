@@ -1,10 +1,8 @@
 mod markdown;
 mod readme_application;
 
-use blitz_dom::net::Resource;
 use blitz_html::HtmlDocument;
 use blitz_net::Provider;
-use blitz_traits::net::SharedCallback;
 use markdown::{markdown_to_html, BLITZ_MD_STYLES, GITHUB_MD_STYLES};
 use notify::{Error as NotifyError, Event as NotifyEvent, RecursiveMode, Watcher as _};
 use readme_application::{ReadmeApplication, ReadmeEvent};
@@ -15,7 +13,6 @@ use std::env::current_dir;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use tokio::runtime::Handle;
 use url::Url;
 use winit::window::WindowAttributes;
 
@@ -55,11 +52,8 @@ fn main() {
 
     // println!("{html}");
 
-    let net_callback = Arc::new(BlitzShellNetCallback::new(proxy.clone()));
-    let net_provider = Arc::new(Provider::new(
-        Handle::current(),
-        Arc::clone(&net_callback) as SharedCallback<Resource>,
-    ));
+    let net_callback = BlitzShellNetCallback::shared(proxy.clone());
+    let net_provider = Provider::shared(net_callback);
 
     let doc = HtmlDocument::from_html(
         &html,
@@ -73,7 +67,7 @@ fn main() {
 
     // Create application
     let mut application =
-        ReadmeApplication::new(rt, event_loop.create_proxy(), raw_url.clone(), net_provider);
+        ReadmeApplication::new(event_loop.create_proxy(), raw_url.clone(), net_provider);
     application.add_window(window);
 
     if let Some(path) = file_path {

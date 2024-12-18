@@ -1,0 +1,9 @@
+[package]
+name = "interactive"
+version = "0.1.0"
+edition = "2021"
+license.workspace = true
+
+[dependencies]
+dioxus-native = { path = "../../packages/dioxus-native", default-features = false }
+dioxus = { version = "0.6", default-features = false, features = ["html", "hooks", "macro", "signals"] }

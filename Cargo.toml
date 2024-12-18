@@ -11,6 +11,7 @@ members = [
   "packages/stylo_taffy",
   "apps/wpt",
   "apps/readme",
+  "examples/interactive",
 ]
 resolver = "2"
 

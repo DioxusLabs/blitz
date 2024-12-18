@@ -1,4 +1,3 @@
-use crate::accessibility::AccessibilityState;
 use crate::event::{create_waker, BlitzEvent};
 use crate::stylo_to_winit::{self, color_scheme_to_theme, theme_to_color_scheme};
 use blitz_dom::events::{EventData, RendererEvent};
@@ -16,6 +15,9 @@ use winit::{event::Modifiers, event::WindowEvent, keyboard::KeyCode, window::Win
 
 #[cfg(all(feature = "menu", not(any(target_os = "android", target_os = "ios"))))]
 use crate::menu::init_menu;
+
+#[cfg(feature = "accessibility")]
+use crate::accessibility::AccessibilityState;
 
 pub struct WindowConfig<Doc: DocumentLike> {
     doc: Doc,
@@ -134,13 +136,13 @@ impl<Doc: DocumentLike> View<Doc> {
 }
 
 impl<Doc: DocumentLike> View<Doc> {
-    pub fn resume(&mut self, rt: &tokio::runtime::Runtime) {
+    pub fn resume(&mut self) {
         // Resolve dom
         self.doc.as_mut().set_viewport(self.viewport.clone());
         self.doc.as_mut().resolve();
 
         // Resume renderer
-        rt.block_on(self.renderer.resume(&self.viewport));
+        pollster::block_on(self.renderer.resume(&self.viewport));
         if !self.renderer.is_active() {
             panic!("Renderer failed to resume");
         };

@@ -10,7 +10,6 @@ use winit::window::WindowId;
 use crate::{View, WindowConfig};
 
 pub struct BlitzApplication<Doc: DocumentLike> {
-    rt: tokio::runtime::Runtime,
     pub windows: HashMap<WindowId, View<Doc>>,
     pending_windows: Vec<WindowConfig<Doc>>,
     proxy: EventLoopProxy<BlitzEvent>,
@@ -20,11 +19,10 @@ pub struct BlitzApplication<Doc: DocumentLike> {
 }
 
 impl<Doc: DocumentLike> BlitzApplication<Doc> {
-    pub fn new(rt: tokio::runtime::Runtime, proxy: EventLoopProxy<BlitzEvent>) -> Self {
+    pub fn new(proxy: EventLoopProxy<BlitzEvent>) -> Self {
         BlitzApplication {
             windows: HashMap::new(),
             pending_windows: Vec::new(),
-            rt,
             proxy,
 
             #[cfg(all(feature = "menu", not(any(target_os = "android", target_os = "ios"))))]
@@ -45,13 +43,13 @@ impl<Doc: DocumentLike> ApplicationHandler<BlitzEvent> for BlitzApplication<Doc>
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
         // Resume existing windows
         for (_, view) in self.windows.iter_mut() {
-            view.resume(&self.rt);
+            view.resume();
         }
 
         // Initialise pending windows
         for window_config in self.pending_windows.drain(..) {
             let mut view = View::init(window_config, event_loop, &self.proxy);
-            view.resume(&self.rt);
+            view.resume();
             if !view.renderer.is_active() {
                 continue;
             }

@@ -14,7 +14,6 @@ use std::{
     path::{Path, PathBuf},
     time::Instant,
 };
-use tokio::runtime::Handle;
 
 const USER_AGENT: &str = "Mozilla/5.0 (X11; Linux x86_64; rv:60.0) Gecko/20100101 Firefox/81.0";
 
@@ -63,7 +62,7 @@ async fn main() {
 
     let (mut recv, callback) = MpscCallback::new();
     let callback = Arc::new(callback);
-    let net = Arc::new(Provider::new(Handle::current(), callback));
+    let net = Arc::new(Provider::new(callback));
 
     timer.time("Setup document prerequisites");
 
