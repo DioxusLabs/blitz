@@ -3,9 +3,7 @@ use std::{ops::Range, sync::Arc};
 use markup5ever::local_name;
 use style::computed_values::table_layout::T as TableLayout;
 use style::values::specified::box_::DisplayInside;
-use taffy::{
-    compute_leaf_layout, style_helpers, Dimension, LayoutPartialTree as _,
-};
+use taffy::{compute_leaf_layout, style_helpers, Dimension, LayoutPartialTree as _, ResolveOrZero};
 
 use crate::Document;
 
@@ -165,7 +163,10 @@ pub(crate) fn collect_table_cells(
             // TODO: account for padding/border/margin
             if *row == 1 {
                 let column = match &style.size.width {
-                    taffy::Dimension::Length(len) => style_helpers::length(*len),
+                    taffy::Dimension::Length(len) => {
+                        let padding = style.padding.resolve_or_zero(None);
+                        style_helpers::length(*len + padding.left + padding.right)
+                    }
                     taffy::Dimension::Percent(percent) => style_helpers::percent(*percent),
                     taffy::Dimension::Auto => style_helpers::auto(),
                 };
