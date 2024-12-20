@@ -4,7 +4,7 @@ use markup5ever::local_name;
 use style::computed_values::table_layout::T as TableLayout;
 use style::values::specified::box_::DisplayInside;
 use taffy::{
-    compute_leaf_layout, style_helpers, Dimension, LayoutPartialTree as _, TrackSizingFunction,
+    compute_leaf_layout, style_helpers, Dimension, LayoutPartialTree as _,
 };
 
 use crate::Document;
