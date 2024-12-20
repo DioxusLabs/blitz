@@ -95,14 +95,19 @@ keywords = ["dom", "ui", "gui", "react", "wasm"]
 rust-version = "1.70.0"
 publish = false
 
-[profile.sizeopt]
+[profile.production]
 inherits = "release"
-opt-level = "z"
+opt-level = 3
 debug = false
 lto = true
 codegen-units = 1
 strip = true
 incremental = false
+
+[profile.sizeopt]
+inherits = "production"
+opt-level = "z"
+panic = "abort"
 
 # Need to force specific versions of these dependencies
 [dev-dependencies]
