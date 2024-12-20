@@ -113,7 +113,7 @@ blitz-dom = { path = "./packages/blitz-dom" }
 blitz-html = { path = "./packages/blitz-html" }
 blitz-traits = { path = "./packages/blitz-traits" }
 blitz-renderer-vello = { path = "./packages/blitz-renderer-vello" }
-blitz-shell = { path = "./packages/blitz-shell" }
+blitz-shell = { path = "./packages/blitz-shell", features = ["net"] }
 blitz-net = { path = "./packages/blitz-net" }
 dioxus-native = { path = "./packages/dioxus-native", features = ["tracing"] }
 dioxus = { workspace = true }
