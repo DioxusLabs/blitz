@@ -857,8 +857,12 @@ impl ElementCx<'_> {
         let x_scale = width as f64 / svg_size.width() as f64;
         let y_scale = height as f64 / svg_size.height() as f64;
 
-        let transform = Affine::translate((self.pos.x * self.scale, self.pos.y * self.scale))
-            .pre_scale_non_uniform(x_scale, y_scale);
+        let box_inset = self.frame.inner_rect.origin();
+        let transform = Affine::translate((
+            self.pos.x * self.scale + box_inset.x,
+            self.pos.y * self.scale + box_inset.y,
+        ))
+        .pre_scale_non_uniform(x_scale, y_scale);
 
         let fragment = vello_svg::render_tree(svg);
         scene.append(&fragment, Some(transform));
