@@ -163,6 +163,7 @@ impl NetHandler for FontFaceHandler {
         if self.0 == FontFaceSourceFormatKeyword::None {
             self.0 = match bytes.as_ref() {
                 // https://w3c.github.io/woff/woff2/#woff20Header
+                #[cfg(feature = "woff")]
                 [0x77, 0x4F, 0x46, 0x32, ..] => FontFaceSourceFormatKeyword::Woff2,
                 // https://learn.microsoft.com/en-us/typography/opentype/spec/otff#organization-of-an-opentype-font
                 [0x4F, 0x54, 0x54, 0x4F, ..] => FontFaceSourceFormatKeyword::Opentype,
@@ -174,6 +175,7 @@ impl NetHandler for FontFaceHandler {
             }
         }
         match self.0 {
+            #[cfg(feature = "woff")]
             FontFaceSourceFormatKeyword::Woff2 => {
                 #[cfg(feature = "tracing")]
                 tracing::info!("Decompressing woff2 font");
