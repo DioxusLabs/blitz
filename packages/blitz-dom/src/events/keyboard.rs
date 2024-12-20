@@ -28,7 +28,7 @@ pub(crate) fn apply_keypress_event(
 
     let mut driver = editor.driver(font_ctx, layout_ctx);
     match event.logical_key {
-        #[cfg(not(target_os = "android"))]
+        #[cfg(all(feature = "clipboard", not(target_os = "android")))]
         Key::Character(c) if action_mod && matches!(c.as_str(), "c" | "x" | "v") => {
             use arboard::Clipboard;
 
