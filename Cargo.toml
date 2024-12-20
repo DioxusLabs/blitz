@@ -80,20 +80,6 @@ futures-util = "0.3.30"
 futures-intrusive = "0.5.0"
 thiserror = "1.0.63"
 
-
-# This is a "virtual package"
-# It is not meant to be published, but is used so "cargo run --example XYZ" works properly
-[package]
-name = "blitz-examples"
-version = "0.0.1"
-authors = ["Jonathan Kelley"]
-edition = "2021"
-description = "Top level crate for Blitz"
-license = "MIT OR Apache-2.0"
-keywords = ["dom", "ui", "gui", "react", "wasm"]
-rust-version = "1.70.0"
-publish = false
-
 [profile.production]
 inherits = "release"
 opt-level = 3
@@ -107,6 +93,19 @@ incremental = false
 inherits = "production"
 opt-level = "z"
 panic = "abort"
+
+# This is a "virtual package"
+# It is not meant to be published, but is used so "cargo run --example XYZ" works properly
+[package]
+name = "blitz-examples"
+version = "0.0.1"
+authors = ["Jonathan Kelley"]
+edition = "2021"
+description = "Top level crate for Blitz"
+license = "MIT OR Apache-2.0"
+keywords = ["dom", "ui", "gui", "react", "wasm"]
+rust-version = "1.70.0"
+publish = false
 
 [dev-dependencies]
 blitz-dom = { path = "./packages/blitz-dom" }
