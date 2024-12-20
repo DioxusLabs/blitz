@@ -3,7 +3,9 @@ use std::{ops::Range, sync::Arc};
 use markup5ever::local_name;
 use style::computed_values::table_layout::T as TableLayout;
 use style::values::specified::box_::DisplayInside;
-use taffy::{compute_leaf_layout, style_helpers, LayoutPartialTree as _, TrackSizingFunction};
+use taffy::{
+    compute_leaf_layout, style_helpers, Dimension, LayoutPartialTree as _, TrackSizingFunction,
+};
 
 use crate::Document;
 
@@ -58,7 +60,7 @@ pub(crate) fn build_table_context(
 
     drop(stylo_styles);
 
-    let mut grid_template_columns = Vec::new();
+    let mut column_sizes: Vec<taffy::Dimension> = Vec::new();
     for child_id in children.iter().copied() {
         collect_table_cells(
             doc,
@@ -67,12 +69,19 @@ pub(crate) fn build_table_context(
             &mut row,
             &mut col,
             &mut items,
-            &mut grid_template_columns,
+            &mut column_sizes,
         );
     }
-    grid_template_columns.resize(col as usize, style_helpers::auto());
+    column_sizes.resize(col as usize, style_helpers::auto());
 
-    style.grid_template_columns = grid_template_columns;
+    style.grid_template_columns = column_sizes
+        .into_iter()
+        .map(|size| match size {
+            taffy::Dimension::Length(len) => style_helpers::length(len),
+            taffy::Dimension::Percent(percent) => style_helpers::percent(percent),
+            taffy::Dimension::Auto => style_helpers::auto(),
+        })
+        .collect();
     style.grid_template_rows = vec![style_helpers::auto(); row as usize];
 
     let layout_children = items
@@ -93,7 +102,7 @@ pub(crate) fn collect_table_cells(
     row: &mut u16,
     col: &mut u16,
     cells: &mut Vec<TableItem>,
-    columns: &mut Vec<TrackSizingFunction>,
+    columns: &mut Vec<Dimension>,
 ) {
     let node = &doc.nodes[node_id];
 
@@ -153,13 +162,24 @@ pub(crate) fn collect_table_cells(
                 .unwrap_or(1);
             let mut style = stylo_taffy::to_taffy_style(stylo_style);
 
-            if is_fixed && *row == 1 {
+            // TODO: account for padding/border/margin
+            if *row == 1 {
                 let column = match &style.size.width {
                     taffy::Dimension::Length(len) => style_helpers::length(*len),
                     taffy::Dimension::Percent(percent) => style_helpers::percent(*percent),
-                    taffy::Dimension::Auto => style_helpers::flex(1.0),
+                    taffy::Dimension::Auto => style_helpers::auto(),
                 };
                 columns.push(column);
+            } else if !is_fixed && (*col as usize) <= columns.len() {
+                if let taffy::Dimension::Length(new_len) = &style.size.width {
+                    columns[(*col as usize) - 1] = match columns[(*col as usize) - 1] {
+                        taffy::Dimension::Length(len) => {
+                            taffy::Dimension::Length(len.max(*new_len))
+                        }
+                        taffy::Dimension::Auto => taffy::Dimension::Length(*new_len),
+                        taffy::Dimension::Percent(percent) => taffy::Dimension::Percent(percent),
+                    }
+                }
             }
 
             style.grid_column = taffy::Line {
