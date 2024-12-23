@@ -171,9 +171,9 @@ pub(crate) fn collect_table_cells(
                     taffy::Dimension::Auto => style_helpers::auto(),
                 };
                 columns.push(column);
-            } else if !is_fixed && (*col as usize) <= columns.len() {
+            } else if !is_fixed && (*col as usize) < columns.len() {
                 if let taffy::Dimension::Length(new_len) = &style.size.width {
-                    columns[(*col as usize) - 1] = match columns[(*col as usize) - 1] {
+                    columns[*col as usize] = match columns[*col as usize] {
                         taffy::Dimension::Length(len) => {
                             taffy::Dimension::Length(len.max(*new_len))
                         }
