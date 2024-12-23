@@ -7,7 +7,7 @@ edition = "2021"
 [features]
 default = ["net", "accessibility", "menu", "tracing", "svg"]
 svg = ["blitz-renderer-vello/svg"]
-net = ["dep:tokio", "dep:reqwest", "dep:url", "dep:blitz-net"]
+net = ["dep:tokio", "dep:url", "dep:blitz-net"]
 accessibility = ["blitz-shell/accessibility"]
 menu = ["blitz-shell/menu"]
 tracing = ["blitz-shell/tracing"]
@@ -22,7 +22,6 @@ blitz-net = { path = "../blitz-net", optional = true }
 # IO & Networking
 url = { workspace = true, features = ["serde"], optional = true }
 tokio = { workspace = true, features = ["rt-multi-thread"], optional = true }
-reqwest = { workspace = true, optional = true }
 
 [package.metadata.docs.rs]
 all-features = true

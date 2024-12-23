@@ -10,6 +10,18 @@ use tokio::{
 
 const USER_AGENT: &str = "Mozilla/5.0 (X11; Linux x86_64; rv:60.0) Gecko/20100101 Firefox/81.0";
 
+pub async fn get_text(url: &str) -> String {
+    Client::new()
+        .get(url)
+        .header("User-Agent", USER_AGENT)
+        .send()
+        .await
+        .unwrap()
+        .text()
+        .await
+        .unwrap()
+}
+
 pub struct Provider<D> {
     rt: Handle,
     client: Client,

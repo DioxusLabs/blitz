@@ -18,15 +18,10 @@ use blitz_shell::{
 
 #[cfg(feature = "net")]
 pub fn launch_url(url: &str) {
-    use reqwest::Client;
-    use url::Url;
-
-    const USER_AGENT: &str = "Mozilla/5.0 (X11; Linux x86_64; rv:60.0) Gecko/20100101 Firefox/81.0";
-    println!("{}", url);
-
     // Assert that url is valid
+    println!("{}", url);
     let url = url.to_owned();
-    Url::parse(&url).expect("Invalid url");
+    url::Url::parse(&url).expect("Invalid url");
 
     // Turn on the runtime and enter it
     let rt = tokio::runtime::Builder::new_multi_thread()
@@ -35,18 +30,7 @@ pub fn launch_url(url: &str) {
         .unwrap();
     let _guard = rt.enter();
 
-    let client = Client::new();
-    let html = rt.block_on(async {
-        client
-            .get(&url)
-            .header("User-Agent", USER_AGENT)
-            .send()
-            .await
-            .unwrap()
-            .text()
-            .await
-            .unwrap()
-    });
+    let html = rt.block_on(blitz_net::get_text(&url));
 
     launch_internal(
         &html,
