@@ -15,9 +15,6 @@ tracing = ["dep:tracing", "blitz-dom/tracing"]
 blitz-traits = { path = "../blitz-traits" }
 blitz-dom = { path = "../blitz-dom", default-features = false }
 
-# Servo dependencies
-style = { workspace = true }
-
 # Windowing & Input
 winit = { workspace = true }
 muda = { workspace = true, default-features = false, features = ["serde"], optional = true }

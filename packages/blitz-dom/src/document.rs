@@ -1,11 +1,13 @@
 use crate::events::{apply_keypress_event, EventData, HitResult, RendererEvent};
 use crate::layout::construct::collect_layout_children;
 use crate::node::{ImageData, NodeSpecificData, Status, TextBrush};
+use crate::stylo_to_cursor_icon::stylo_to_cursor_icon;
 use crate::util::ImageType;
 use crate::{ElementNodeData, Node, NodeData, TextNodeData};
 use app_units::Au;
 use blitz_traits::net::{DummyNetProvider, SharedProvider};
 use blitz_traits::{ColorScheme, Viewport};
+use cursor_icon::CursorIcon;
 use markup5ever::local_name;
 use parley::FontContext;
 use peniko::kurbo;
@@ -30,7 +32,6 @@ use style::queries::values::PrefersColorScheme;
 use style::selector_parser::ServoElementSnapshot;
 use style::servo::media_queries::FontMetricsProvider;
 use style::servo_arc::Arc as ServoArc;
-use style::values::computed::ui::CursorKind;
 use style::{
     dom::{TDocument, TNode},
     media_queries::{Device, MediaList},
@@ -1068,15 +1069,15 @@ impl Document {
 
     pub fn add_element(&mut self) {}
 
-    pub fn get_cursor(&self) -> Option<CursorKind> {
+    pub fn get_cursor(&self) -> Option<CursorIcon> {
         // todo: cache this on the node itself
         let node = &self.nodes[self.get_hover_node_id()?];
 
         let style = node.primary_styles()?;
-        let keyword = style.clone_cursor().keyword;
+        let keyword = stylo_to_cursor_icon(style.clone_cursor().keyword);
 
         // Return cursor from style if it is non-auto
-        if keyword != CursorKind::Auto {
+        if keyword != CursorIcon::Default {
             return Some(keyword);
         }
 
@@ -1086,21 +1087,21 @@ impl Document {
                 .element_data()
                 .is_some_and(|e| e.text_input_data().is_some())
         {
-            return Some(CursorKind::Text);
+            return Some(CursorIcon::Text);
         }
 
         // Use "pointer" cursor if any ancestor is a link
         let mut maybe_node = Some(node);
         while let Some(node) = maybe_node {
             if node.is_link() {
-                return Some(CursorKind::Pointer);
+                return Some(CursorIcon::Pointer);
             }
 
             maybe_node = node.parent_node();
         }
 
-        // Else fallback to auto cursor
-        Some(CursorKind::Auto)
+        // Else fallback to default cursor
+        Some(CursorIcon::Default)
     }
 
     /// Scroll a node by given x and y

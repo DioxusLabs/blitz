@@ -11,7 +11,6 @@
 
 mod application;
 mod event;
-mod stylo_to_winit;
 mod window;
 
 #[cfg(all(feature = "menu", not(any(target_os = "android", target_os = "ios"))))]

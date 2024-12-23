@@ -1,8 +1,7 @@
 use crate::event::{create_waker, BlitzEvent};
-use crate::stylo_to_winit::{self, color_scheme_to_theme, theme_to_color_scheme};
 use blitz_dom::events::{EventData, RendererEvent};
 use blitz_dom::{DocumentLike, DocumentRenderer};
-use blitz_traits::{Devtools, Viewport};
+use blitz_traits::{ColorScheme, Devtools, Viewport};
 use winit::keyboard::PhysicalKey;
 
 use std::marker::PhantomData;
@@ -400,7 +399,7 @@ impl<Doc: DocumentLike, Rend: DocumentRenderer> View<Doc, Rend> {
                 if changed {
                     let cursor = self.doc.as_ref().get_cursor();
                     if let Some(cursor) = cursor {
-                            self.window.set_cursor(stylo_to_winit::cursor(cursor));
+                            self.window.set_cursor(cursor);
                             self.request_redraw();
                     }
                 }
@@ -447,5 +446,19 @@ impl<Doc: DocumentLike, Rend: DocumentRenderer> View<Doc, Rend> {
             WindowEvent::DoubleTapGesture { .. } => {},
             WindowEvent::RotationGesture { .. } => {},
         }
+    }
+}
+
+fn theme_to_color_scheme(theme: Theme) -> ColorScheme {
+    match theme {
+        Theme::Light => ColorScheme::Light,
+        Theme::Dark => ColorScheme::Dark,
+    }
+}
+
+fn color_scheme_to_theme(scheme: ColorScheme) -> Theme {
+    match scheme {
+        ColorScheme::Light => Theme::Light,
+        ColorScheme::Dark => Theme::Dark,
     }
 }
