@@ -37,7 +37,6 @@ reqwest = { workspace = true, optional = true }
 # Other dependencies
 tracing = { workspace = true, optional = true }
 futures-util = { workspace = true }
-pollster = "0.4.0"
 
 [target.'cfg(target_os = "android")'.dependencies]
 android-activity = { version = "0.6.0", features = ["native-activity"] }

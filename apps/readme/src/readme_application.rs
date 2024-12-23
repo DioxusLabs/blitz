@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use blitz_dom::net::Resource;
 use blitz_html::HtmlDocument;
+use blitz_renderer_vello::BlitzVelloRenderer;
 use blitz_shell::{BlitzApplication, BlitzEvent, View, WindowConfig};
 use blitz_traits::net::NetProvider;
 use tokio::runtime::Handle;
@@ -17,7 +18,7 @@ use crate::markdown::{markdown_to_html, BLITZ_MD_STYLES, GITHUB_MD_STYLES};
 pub struct ReadmeEvent;
 
 pub struct ReadmeApplication {
-    inner: BlitzApplication<HtmlDocument>,
+    inner: BlitzApplication<HtmlDocument, BlitzVelloRenderer>,
     handle: tokio::runtime::Handle,
     net_provider: Arc<dyn NetProvider<Data = Resource>>,
     raw_url: String,
@@ -40,11 +41,11 @@ impl ReadmeApplication {
         }
     }
 
-    pub fn add_window(&mut self, window_config: WindowConfig<HtmlDocument>) {
+    pub fn add_window(&mut self, window_config: WindowConfig<HtmlDocument, BlitzVelloRenderer>) {
         self.inner.add_window(window_config);
     }
 
-    fn window_mut(&mut self) -> &mut View<HtmlDocument> {
+    fn window_mut(&mut self) -> &mut View<HtmlDocument, BlitzVelloRenderer> {
         self.inner.windows.values_mut().next().unwrap()
     }
 

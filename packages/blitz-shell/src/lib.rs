@@ -26,6 +26,7 @@ pub use crate::window::{View, WindowConfig};
 
 use blitz_dom::net::Resource;
 use blitz_html::HtmlDocument;
+use blitz_renderer_vello::BlitzVelloRenderer;
 use blitz_traits::net::NetCallback;
 use std::sync::Arc;
 use winit::event_loop::EventLoopProxy;
@@ -127,7 +128,7 @@ fn launch_internal(html: &str, cfg: Config) {
     };
 
     let doc = HtmlDocument::from_html(html, cfg.base_url, cfg.stylesheets, net_provider, None);
-    let window = WindowConfig::new(doc);
+    let window: WindowConfig<HtmlDocument, BlitzVelloRenderer> = WindowConfig::new(doc);
 
     // Create application
     let mut application = BlitzApplication::new(event_loop.create_proxy());

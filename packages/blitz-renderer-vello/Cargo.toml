@@ -23,3 +23,4 @@ wgpu = { workspace = true }
 raw-window-handle = { workspace = true }
 image = { workspace = true }
 futures-intrusive = { workspace = true }
+pollster = "0.4.0"

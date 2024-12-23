@@ -1,11 +1,11 @@
 use crate::event::{create_waker, BlitzEvent};
 use crate::stylo_to_winit::{self, color_scheme_to_theme, theme_to_color_scheme};
 use blitz_dom::events::{EventData, RendererEvent};
-use blitz_dom::DocumentLike;
-use blitz_renderer_vello::Renderer;
+use blitz_dom::{DocumentLike, DocumentRenderer};
 use blitz_traits::{Devtools, Viewport};
 use winit::keyboard::PhysicalKey;
 
+use std::marker::PhantomData;
 use std::sync::Arc;
 use std::task::Waker;
 use winit::event::{ElementState, MouseButton};
@@ -19,28 +19,30 @@ use crate::menu::init_menu;
 #[cfg(feature = "accessibility")]
 use crate::accessibility::AccessibilityState;
 
-pub struct WindowConfig<Doc: DocumentLike> {
+pub struct WindowConfig<Doc: DocumentLike, Rend: DocumentRenderer> {
     doc: Doc,
     attributes: WindowAttributes,
+    rend: PhantomData<Rend>,
 }
 
-impl<Doc: DocumentLike> WindowConfig<Doc> {
+impl<Doc: DocumentLike, Rend: DocumentRenderer> WindowConfig<Doc, Rend> {
     pub fn new(doc: Doc) -> Self {
-        WindowConfig {
-            doc,
-            attributes: Window::default_attributes(),
-        }
+        Self::with_attributes(doc, Window::default_attributes())
     }
 
     pub fn with_attributes(doc: Doc, attributes: WindowAttributes) -> Self {
-        WindowConfig { doc, attributes }
+        WindowConfig {
+            doc,
+            attributes,
+            rend: PhantomData,
+        }
     }
 }
 
-pub struct View<Doc: DocumentLike> {
+pub struct View<Doc: DocumentLike, Rend: DocumentRenderer> {
     pub doc: Doc,
 
-    pub(crate) renderer: Renderer<'static, Window>,
+    pub(crate) renderer: Rend,
     pub(crate) waker: Option<Waker>,
 
     event_loop_proxy: EventLoopProxy<BlitzEvent>,
@@ -69,9 +71,9 @@ pub struct View<Doc: DocumentLike> {
     _menu: muda::Menu,
 }
 
-impl<Doc: DocumentLike> View<Doc> {
+impl<Doc: DocumentLike, Rend: DocumentRenderer> View<Doc, Rend> {
     pub(crate) fn init(
-        config: WindowConfig<Doc>,
+        config: WindowConfig<Doc, Rend>,
         event_loop: &ActiveEventLoop,
         proxy: &EventLoopProxy<BlitzEvent>,
     ) -> Self {
@@ -88,7 +90,7 @@ impl<Doc: DocumentLike> View<Doc> {
         let viewport = Viewport::new(size.width, size.height, scale, color_scheme);
 
         Self {
-            renderer: Renderer::new(winit_window.clone()),
+            renderer: Rend::new(winit_window.clone()),
             waker: None,
             keyboard_modifiers: Default::default(),
 
@@ -135,14 +137,14 @@ impl<Doc: DocumentLike> View<Doc> {
     }
 }
 
-impl<Doc: DocumentLike> View<Doc> {
+impl<Doc: DocumentLike, Rend: DocumentRenderer> View<Doc, Rend> {
     pub fn resume(&mut self) {
         // Resolve dom
         self.doc.as_mut().set_viewport(self.viewport.clone());
         self.doc.as_mut().resolve();
 
         // Resume renderer
-        pollster::block_on(self.renderer.resume(&self.viewport));
+        self.renderer.resume(&self.viewport);
         if !self.renderer.is_active() {
             panic!("Renderer failed to resume");
         };
