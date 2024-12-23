@@ -154,12 +154,7 @@ impl NetHandler for CssHandler {
 struct FontFaceHandler(FontFaceSourceFormatKeyword);
 impl NetHandler for FontFaceHandler {
     type Data = Resource;
-    fn bytes(
-        mut self: Box<Self>,
-        doc_id: usize,
-        mut bytes: Bytes,
-        callback: SharedCallback<Resource>,
-    ) {
+    fn bytes(mut self: Box<Self>, doc_id: usize, bytes: Bytes, callback: SharedCallback<Resource>) {
         if self.0 == FontFaceSourceFormatKeyword::None {
             self.0 = match bytes.as_ref() {
                 // https://w3c.github.io/woff/woff2/#woff20Header
@@ -174,6 +169,11 @@ impl NetHandler for FontFaceHandler {
                 _ => FontFaceSourceFormatKeyword::None,
             }
         }
+
+        // Satisfy rustc's mutability linting with woff feature both enabled/disabled
+        #[cfg(feature = "woff")]
+        let mut bytes = bytes;
+
         match self.0 {
             #[cfg(feature = "woff")]
             FontFaceSourceFormatKeyword::Woff2 => {
