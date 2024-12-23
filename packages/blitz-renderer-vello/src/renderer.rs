@@ -17,16 +17,10 @@ use wgpu::{
     PresentMode, SurfaceError, TextureDescriptor, TextureFormat, TextureUsages, WasmNotSendSync,
 };
 
-const DEFAULT_THREADS: Option<NonZeroUsize> = {
-    #[cfg(target_os = "macos")]
-    {
-        NonZeroUsize::new(1)
-    }
-    #[cfg(not(target_os = "macos"))]
-    {
-        None
-    }
-};
+#[cfg(target_os = "macos")]
+const DEFAULT_THREADS: Option<NonZeroUsize> = NonZeroUsize::new(1);
+#[cfg(not(target_os = "macos"))]
+const DEFAULT_THREADS: Option<NonZeroUsize> = None;
 
 // Simple struct to hold the state of the renderer
 pub struct ActiveRenderState<'s> {
