@@ -5,5 +5,5 @@ fn main() {
         .skip(1)
         .next()
         .unwrap_or_else(|| "https://www.google.com".into());
-    blitz_shell::launch_url(&url);
+    blitz::launch_url(&url);
 }

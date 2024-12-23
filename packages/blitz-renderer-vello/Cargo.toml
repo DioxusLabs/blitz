@@ -5,7 +5,7 @@ license.workspace = true
 edition = "2021"
 
 [features]
-default = ["tracing"]
+default = ["tracing", "svg"]
 tracing = ["dep:tracing"]
 svg = ["dep:vello_svg", "blitz-dom/svg"]
 
