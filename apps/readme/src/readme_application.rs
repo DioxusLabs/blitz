@@ -124,6 +124,10 @@ impl ApplicationHandler<BlitzEvent> for ReadmeApplication {
                     self.reload_document();
                 }
             }
+            BlitzEvent::Navigate(url) => {
+                self.raw_url = url;
+                self.reload_document();
+            }
             event => self.inner.user_event(event_loop, event),
         }
     }

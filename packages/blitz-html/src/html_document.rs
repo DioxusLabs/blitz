@@ -1,7 +1,8 @@
 use crate::DocumentHtmlParser;
 
 use blitz_dom::{
-    events::RendererEvent, net::Resource, Document, DocumentLike, FontContext, DEFAULT_CSS,
+    document::DocumentEvent, events::RendererEvent, net::Resource, Document, DocumentLike,
+    FontContext, DEFAULT_CSS,
 };
 use blitz_traits::{net::SharedProvider, ColorScheme, Viewport};
 
@@ -27,8 +28,8 @@ impl From<HtmlDocument> for Document {
     }
 }
 impl DocumentLike for HtmlDocument {
-    fn handle_event(&mut self, event: RendererEvent) {
-        self.inner.as_mut().handle_event(event);
+    fn handle_event(&mut self, event: RendererEvent) -> Option<DocumentEvent> {
+        self.inner.as_mut().handle_event(event)
     }
 }
 

@@ -70,14 +70,19 @@ impl FontMetricsProvider for DummyFontMetricsProvider {
     }
 }
 
+pub enum DocumentEvent {
+    ClickedLink(String),
+}
+
 pub trait DocumentLike: AsRef<Document> + AsMut<Document> + Into<Document> + 'static {
     fn poll(&mut self, _cx: std::task::Context) -> bool {
         // Default implementation does nothing
         false
     }
 
-    fn handle_event(&mut self, _event: RendererEvent) {
+    fn handle_event(&mut self, _event: RendererEvent) -> Option<DocumentEvent> {
         // Default implementation does nothing
+        None
     }
 
     fn as_any_mut(&mut self) -> &mut dyn Any {
@@ -168,7 +173,7 @@ fn make_device(viewport: &Viewport) -> Device {
 }
 
 impl DocumentLike for Document {
-    fn handle_event(&mut self, event: RendererEvent) {
+    fn handle_event(&mut self, event: RendererEvent) -> Option<DocumentEvent> {
         let target_node_id = event.target;
 
         match event.data {
@@ -182,13 +187,11 @@ impl DocumentLike for Document {
                         x: node.final_layout.padding.left + node.final_layout.border.left,
                         y: node.final_layout.padding.top + node.final_layout.border.top,
                     };
-                    let Some(el) = node.raw_dom_data.downcast_element_mut() else {
-                        return;
-                    };
+                    let el = node.raw_dom_data.downcast_element_mut()?;
 
                     let disabled = el.attr(local_name!("disabled")).is_some();
                     if disabled {
-                        return;
+                        return None;
                     }
 
                     if let NodeSpecificData::TextInput(ref mut text_input_data) =
@@ -222,13 +225,19 @@ impl DocumentLike for Document {
                             }
                             self.set_focus_to(node_id);
                         }
+                    } else if el.name.local == local_name!("a") {
+                        if let Some(href) = el.attr(local_name!("href")) {
+                            return Some(DocumentEvent::ClickedLink(href.to_owned()));
+                        } else {
+                            println!("Clicked link without href: {:?}", el.attrs());
+                        }
                     }
                 }
             }
             EventData::KeyPress { event, mods } => {
                 if let Some(node_id) = self.focus_node_id {
                     if target_node_id != node_id {
-                        return;
+                        return None;
                     }
 
                     let node = &mut self.nodes[node_id];
@@ -282,6 +291,7 @@ impl DocumentLike for Document {
             }
             EventData::Hover => {}
         }
+        None
     }
 }
 

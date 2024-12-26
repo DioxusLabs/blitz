@@ -26,6 +26,9 @@ pub enum BlitzEvent {
 
     /// An arbitary event from the Blitz embedder
     Embedder(Arc<dyn Any + Send + Sync>),
+
+    /// Navigate to another URL (triggered by e.g. clicking a link)
+    Navigate(String),
 }
 impl BlitzEvent {
     pub fn embedder_event<T: Any + Send + Sync>(value: T) -> Self {

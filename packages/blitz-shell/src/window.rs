@@ -1,4 +1,5 @@
 use crate::event::{create_waker, BlitzEvent};
+use blitz_dom::document::DocumentEvent;
 use blitz_dom::events::{EventData, RendererEvent};
 use blitz_dom::{DocumentLike, DocumentRenderer};
 use blitz_traits::{ColorScheme, Devtools, Viewport};
@@ -263,14 +264,18 @@ impl<Doc: DocumentLike, Rend: DocumentRenderer> View<Doc, Rend> {
             if button == "left" {
                 // If we hit a node, then we collect the node to its parents, check for listeners, and then
                 // call those listeners
-                self.doc.handle_event(RendererEvent {
-                    target: node_id,
-                    data: EventData::Click {
-                        x: self.dom_mouse_pos.0,
-                        y: self.dom_mouse_pos.1,
-                        mods: self.keyboard_modifiers,
-                    },
-                });
+                if let Some(DocumentEvent::ClickedLink(url)) =
+                    self.doc.handle_event(RendererEvent {
+                        target: node_id,
+                        data: EventData::Click {
+                            x: self.dom_mouse_pos.0,
+                            y: self.dom_mouse_pos.1,
+                            mods: self.keyboard_modifiers,
+                        },
+                    })
+                {
+                    let _ = self.event_loop_proxy.send_event(BlitzEvent::Navigate(url));
+                };
             }
         }
     }

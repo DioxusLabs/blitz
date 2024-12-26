@@ -132,6 +132,9 @@ impl<Doc: DocumentLike, Rend: DocumentRenderer> ApplicationHandler<BlitzEvent>
             BlitzEvent::Embedder(_) => {
                 // Do nothing. Should be handled by embedders (if required).
             }
+            BlitzEvent::Navigate(_url) => {
+                // Do nothing. Should be handled by embedders (if required).
+            }
         }
     }
 }
