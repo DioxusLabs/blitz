@@ -23,6 +23,8 @@ impl RendererEvent {
 
 #[derive(Debug, Clone)]
 pub enum EventData {
+    MouseDown { x: f32, y: f32, mods: Modifiers },
+    MouseUp { x: f32, y: f32, mods: Modifiers },
     Click { x: f32, y: f32, mods: Modifiers },
     KeyPress { event: KeyEvent, mods: Modifiers },
     Ime(Ime),
@@ -32,6 +34,8 @@ pub enum EventData {
 impl EventData {
     pub fn name(&self) -> &'static str {
         match self {
+            EventData::MouseDown { .. } => "mousedown",
+            EventData::MouseUp { .. } => "mouseup",
             EventData::Click { .. } => "click",
             EventData::KeyPress { .. } => "keypress",
             EventData::Ime { .. } => "input",

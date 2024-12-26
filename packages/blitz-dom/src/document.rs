@@ -172,6 +172,7 @@ impl DocumentLike for Document {
         let target_node_id = event.target;
 
         match event.data {
+            EventData::MouseDown { .. } | EventData::MouseUp { .. } => {}
             EventData::Click { x, y, .. } => {
                 let hit = self.hit(x, y);
                 if let Some(hit) = hit {

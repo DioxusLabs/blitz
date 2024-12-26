@@ -59,6 +59,7 @@ pub struct View<Doc: DocumentLike, Rend: DocumentRenderer> {
     keyboard_modifiers: Modifiers,
     mouse_pos: (f32, f32),
     dom_mouse_pos: (f32, f32),
+    mouse_down_node: Option<usize>,
 
     #[cfg(feature = "accessibility")]
     /// Accessibility adapter for `accesskit`.
@@ -101,6 +102,7 @@ impl<Doc: DocumentLike, Rend: DocumentRenderer> View<Doc, Rend> {
             theme_override: None,
             mouse_pos: Default::default(),
             dom_mouse_pos: Default::default(),
+            mouse_down_node: None,
 
             #[cfg(feature = "accessibility")]
             accessibility: AccessibilityState::new(&winit_window, proxy.clone()),
@@ -242,6 +244,50 @@ impl<Doc: DocumentLike, Rend: DocumentRenderer> View<Doc, Rend> {
         self.mouse_pos = (x, y);
         self.dom_mouse_pos = (dom_x, dom_y);
         self.doc.as_mut().set_hover_to(dom_x, dom_y)
+    }
+
+    pub fn mouse_down(&mut self, button: &str) {
+        let Some(node_id) = self.doc.as_ref().get_hover_node_id() else {
+            return;
+        };
+
+        // If we hit a node, then we collect the node to its parents, check for listeners, and then
+        // call those listeners
+        self.doc.handle_event(RendererEvent {
+            target: node_id,
+            data: EventData::MouseDown {
+                x: self.dom_mouse_pos.0,
+                y: self.dom_mouse_pos.1,
+                mods: self.keyboard_modifiers,
+            },
+        });
+
+        if button == "left" {
+            self.mouse_down_node = Some(node_id);
+        }
+    }
+
+    pub fn mouse_up(&mut self, button: &str) {
+        let Some(node_id) = self.doc.as_ref().get_hover_node_id() else {
+            return;
+        };
+
+        // If we hit a node, then we collect the node to its parents, check for listeners, and then
+        // call those listeners
+        self.doc.handle_event(RendererEvent {
+            target: node_id,
+            data: EventData::MouseUp {
+                x: self.dom_mouse_pos.0,
+                y: self.dom_mouse_pos.1,
+                mods: self.keyboard_modifiers,
+            },
+        });
+
+        if button == "left" {
+            if self.mouse_down_node == Some(node_id) {
+                self.click(button);
+            }
+        }
     }
 
     pub fn click(&mut self, button: &str) {
@@ -405,13 +451,17 @@ impl<Doc: DocumentLike, Rend: DocumentRenderer> View<Doc, Rend> {
                 }
             }
             WindowEvent::MouseInput { button, state, .. } => {
-                if state == ElementState::Pressed && matches!(button, MouseButton::Left | MouseButton::Right) {
-                    self.click(match button {
+                if matches!(button, MouseButton::Left | MouseButton::Right) {
+                    let button = match button {
                         MouseButton::Left => "left",
                         MouseButton::Right => "right",
                         _ => unreachable!(),
+                    };
 
-                    });
+                    match state {
+                        ElementState::Pressed => self.mouse_down(button),
+                        ElementState::Released => self.mouse_up(button)
+                    }
 
                     self.request_redraw();
                 }
