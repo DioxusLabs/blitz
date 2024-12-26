@@ -5,6 +5,7 @@ use crate::stylo_to_cursor_icon::stylo_to_cursor_icon;
 use crate::util::ImageType;
 use crate::{ElementNodeData, Node, NodeData, TextNodeData};
 use app_units::Au;
+use blitz_traits::navigation::{DummyNavigationProvider, SharedNavigationProvider};
 use blitz_traits::net::{DummyNetProvider, SharedProvider};
 use blitz_traits::{ColorScheme, Viewport};
 use cursor_icon::CursorIcon;
@@ -70,19 +71,14 @@ impl FontMetricsProvider for DummyFontMetricsProvider {
     }
 }
 
-pub enum DocumentEvent {
-    ClickedLink(String),
-}
-
 pub trait DocumentLike: AsRef<Document> + AsMut<Document> + Into<Document> + 'static {
     fn poll(&mut self, _cx: std::task::Context) -> bool {
         // Default implementation does nothing
         false
     }
 
-    fn handle_event(&mut self, _event: RendererEvent) -> Option<DocumentEvent> {
+    fn handle_event(&mut self, _event: RendererEvent) {
         // Default implementation does nothing
-        None
     }
 
     fn as_any_mut(&mut self) -> &mut dyn Any {
@@ -150,6 +146,10 @@ pub struct Document {
 
     /// Network provider. Can be used to fetch assets.
     pub net_provider: SharedProvider<Resource>,
+
+    /// Navigation provider. Can be used to navigate to a new page (bubbles up the event
+    /// on e.g. clicking a Link)
+    pub navigation_provider: SharedNavigationProvider,
 }
 
 fn make_device(viewport: &Viewport) -> Device {
@@ -173,7 +173,7 @@ fn make_device(viewport: &Viewport) -> Device {
 }
 
 impl DocumentLike for Document {
-    fn handle_event(&mut self, event: RendererEvent) -> Option<DocumentEvent> {
+    fn handle_event(&mut self, event: RendererEvent) {
         let target_node_id = event.target;
 
         match event.data {
@@ -187,11 +187,13 @@ impl DocumentLike for Document {
                         x: node.final_layout.padding.left + node.final_layout.border.left,
                         y: node.final_layout.padding.top + node.final_layout.border.top,
                     };
-                    let el = node.raw_dom_data.downcast_element_mut()?;
+                    let Some(el) = node.raw_dom_data.downcast_element_mut() else {
+                        return;
+                    };
 
                     let disabled = el.attr(local_name!("disabled")).is_some();
                     if disabled {
-                        return None;
+                        return;
                     }
 
                     if let NodeSpecificData::TextInput(ref mut text_input_data) =
@@ -227,7 +229,7 @@ impl DocumentLike for Document {
                         }
                     } else if el.name.local == local_name!("a") {
                         if let Some(href) = el.attr(local_name!("href")) {
-                            return Some(DocumentEvent::ClickedLink(href.to_owned()));
+                            self.navigation_provider.navigate_new_page(href.to_owned());
                         } else {
                             println!("Clicked link without href: {:?}", el.attrs());
                         }
@@ -237,7 +239,7 @@ impl DocumentLike for Document {
             EventData::KeyPress { event, mods } => {
                 if let Some(node_id) = self.focus_node_id {
                     if target_node_id != node_id {
-                        return None;
+                        return;
                     }
 
                     let node = &mut self.nodes[node_id];
@@ -291,7 +293,6 @@ impl DocumentLike for Document {
             }
             EventData::Hover => {}
         }
-        None
     }
 }
 
@@ -341,6 +342,7 @@ impl Document {
             focus_node_id: None,
             changed: HashSet::new(),
             net_provider: Arc::new(DummyNetProvider::default()),
+            navigation_provider: Arc::new(DummyNavigationProvider {}),
         };
 
         // Initialise document with root Document node
@@ -365,6 +367,11 @@ impl Document {
     /// Set the Document's networking provider
     pub fn set_net_provider(&mut self, net_provider: SharedProvider<Resource>) {
         self.net_provider = net_provider;
+    }
+
+    /// Set the Document's navigation provider
+    pub fn set_navigation_provider(&mut self, navigation_provider: SharedNavigationProvider) {
+        self.navigation_provider = navigation_provider;
     }
 
     /// Set base url for resolving linked resources (stylesheets, images, fonts, etc)

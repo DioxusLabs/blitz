@@ -1,5 +1,7 @@
 pub mod net;
 
+pub mod navigation;
+
 mod devtools;
 pub use devtools::Devtools;
 
