@@ -251,6 +251,8 @@ impl<Doc: DocumentLike, Rend: DocumentRenderer> View<Doc, Rend> {
             return;
         };
 
+        self.doc.as_mut().active_node();
+
         // If we hit a node, then we collect the node to its parents, check for listeners, and then
         // call those listeners
         self.doc.handle_event(RendererEvent {
@@ -262,15 +264,15 @@ impl<Doc: DocumentLike, Rend: DocumentRenderer> View<Doc, Rend> {
             },
         });
 
-        if button == "left" {
-            self.mouse_down_node = Some(node_id);
-        }
+        self.mouse_down_node = Some(node_id);
     }
 
     pub fn mouse_up(&mut self, button: &str) {
         let Some(node_id) = self.doc.as_ref().get_hover_node_id() else {
             return;
         };
+
+        self.doc.as_mut().unactive_node();
 
         // If we hit a node, then we collect the node to its parents, check for listeners, and then
         // call those listeners
@@ -283,10 +285,8 @@ impl<Doc: DocumentLike, Rend: DocumentRenderer> View<Doc, Rend> {
             },
         });
 
-        if button == "left" {
-            if self.mouse_down_node == Some(node_id) {
-                self.click(button);
-            }
+        if self.mouse_down_node == Some(node_id) {
+            self.click(button);
         }
     }
 

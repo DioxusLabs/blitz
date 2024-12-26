@@ -223,6 +223,16 @@ impl Node {
             .remove(ElementState::FOCUS | ElementState::FOCUSRING);
         self.set_restyle_hint(RestyleHint::restyle_subtree());
     }
+
+    pub fn active(&mut self) {
+        self.element_state.insert(ElementState::ACTIVE);
+        self.set_restyle_hint(RestyleHint::restyle_subtree());
+    }
+
+    pub fn unactive(&mut self) {
+        self.element_state.remove(ElementState::ACTIVE);
+        self.set_restyle_hint(RestyleHint::restyle_subtree());
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
