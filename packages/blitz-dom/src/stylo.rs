@@ -463,7 +463,7 @@ impl selectors::Element for BlitzNode<'_> {
         _context: &mut MatchingContext<Self::Impl>,
     ) -> bool {
         match *pseudo_class {
-            NonTSPseudoClass::Active => false,
+            NonTSPseudoClass::Active => self.element_state.contains(ElementState::ACTIVE),
             NonTSPseudoClass::AnyLink => self
                 .raw_dom_data
                 .downcast_element()

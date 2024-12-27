@@ -246,7 +246,7 @@ impl<Doc: DocumentLike, Rend: DocumentRenderer> View<Doc, Rend> {
         self.doc.as_mut().set_hover_to(dom_x, dom_y)
     }
 
-    pub fn mouse_down(&mut self, button: &str) {
+    pub fn mouse_down(&mut self, _button: &str) {
         let Some(node_id) = self.doc.as_ref().get_hover_node_id() else {
             return;
         };
@@ -268,11 +268,11 @@ impl<Doc: DocumentLike, Rend: DocumentRenderer> View<Doc, Rend> {
     }
 
     pub fn mouse_up(&mut self, button: &str) {
+        self.doc.as_mut().unactive_node();
+
         let Some(node_id) = self.doc.as_ref().get_hover_node_id() else {
             return;
         };
-
-        self.doc.as_mut().unactive_node();
 
         // If we hit a node, then we collect the node to its parents, check for listeners, and then
         // call those listeners
