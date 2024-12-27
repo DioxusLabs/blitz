@@ -1,5 +1,6 @@
 use blitz_dom::net::Resource;
 use blitz_renderer_vello::VelloImageRenderer;
+use blitz_traits::navigation::{DummyNavigationProvider, NavigationProvider};
 use blitz_traits::{ColorScheme, Viewport};
 use parley::FontContext;
 use pollster::FutureExt as _;
@@ -170,6 +171,7 @@ impl Buffers {
 struct ThreadCtx {
     viewport: Viewport,
     net_provider: Arc<WptNetProvider<Resource>>,
+    navigation_provider: Arc<dyn NavigationProvider>,
     renderer: VelloImageRenderer,
     font_ctx: FontContext,
     buffers: Buffers,
@@ -327,6 +329,7 @@ fn main() {
                             .unwrap();
 
                     let dummy_base_url = Url::parse("http://dummy.local").unwrap();
+                    let navigation_provider = Arc::new(DummyNavigationProvider);
 
                     RefCell::new(ThreadCtx {
                         viewport,
@@ -349,6 +352,7 @@ fn main() {
                         out_dir: out_dir.clone(),
                         wpt_dir: wpt_dir.clone(),
                         dummy_base_url,
+                        navigation_provider,
                     })
                 })
                 .borrow_mut();

@@ -5,7 +5,7 @@ use crate::stylo_to_cursor_icon::stylo_to_cursor_icon;
 use crate::util::ImageType;
 use crate::{ElementNodeData, Node, NodeData, TextNodeData};
 use app_units::Au;
-use blitz_traits::navigation::{DummyNavigationProvider, SharedNavigationProvider};
+use blitz_traits::navigation::{DummyNavigationProvider, NavigationProvider};
 use blitz_traits::net::{DummyNetProvider, SharedProvider};
 use blitz_traits::{ColorScheme, Viewport};
 use cursor_icon::CursorIcon;
@@ -149,7 +149,7 @@ pub struct Document {
 
     /// Navigation provider. Can be used to navigate to a new page (bubbles up the event
     /// on e.g. clicking a Link)
-    pub navigation_provider: SharedNavigationProvider,
+    pub navigation_provider: Arc<dyn NavigationProvider>,
 }
 
 fn make_device(viewport: &Viewport) -> Device {
@@ -229,7 +229,8 @@ impl DocumentLike for Document {
                         }
                     } else if el.name.local == local_name!("a") {
                         if let Some(href) = el.attr(local_name!("href")) {
-                            self.navigation_provider.navigate_new_page(href.to_owned());
+                            let url = resolve_url(&self.base_url, href);
+                            self.navigation_provider.navigate_new_page(url.into());
                         } else {
                             println!("Clicked link without href: {:?}", el.attrs());
                         }
@@ -370,7 +371,7 @@ impl Document {
     }
 
     /// Set the Document's navigation provider
-    pub fn set_navigation_provider(&mut self, navigation_provider: SharedNavigationProvider) {
+    pub fn set_navigation_provider(&mut self, navigation_provider: Arc<dyn NavigationProvider>) {
         self.navigation_provider = navigation_provider;
     }
 
@@ -603,10 +604,7 @@ impl Document {
     }
 
     pub fn resolve_url(&self, raw: &str) -> url::Url {
-        match &self.base_url {
-            Some(base_url) => base_url.join(raw).unwrap(),
-            None => url::Url::parse(raw).unwrap(),
-        }
+        resolve_url(&self.base_url, raw)
     }
 
     pub fn print_tree(&self) {
@@ -1239,5 +1237,14 @@ impl AsRef<Document> for Document {
 impl AsMut<Document> for Document {
     fn as_mut(&mut self) -> &mut Document {
         self
+    }
+}
+
+fn resolve_url(base_url: &Option<url::Url>, raw: &str) -> url::Url {
+    // TODO: this will bite use eventually. You can be sure on the www there is a myriad of links that
+    // cannot be parsed.
+    match base_url {
+        Some(base_url) => base_url.join(raw).unwrap(),
+        None => url::Url::parse(raw).unwrap(),
     }
 }

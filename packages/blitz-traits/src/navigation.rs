@@ -1,9 +1,5 @@
-use std::sync::Arc;
-
-pub type SharedNavigationProvider = Arc<dyn NavigationProvider>;
-
 /// A provider to enable a document to bubble up navigation events (e.g. clicking a link)
-pub trait NavigationProvider {
+pub trait NavigationProvider: Send + Sync + 'static {
     fn navigate_new_page(&self, url: String);
 }
 

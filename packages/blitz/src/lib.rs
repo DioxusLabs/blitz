@@ -9,12 +9,15 @@
 //!  - `menu`: Enables the [`muda`] menubar.
 //!  - `tracing`: Enables tracing support.
 
+use std::sync::Arc;
+
 use blitz_html::HtmlDocument;
 use blitz_renderer_vello::BlitzVelloRenderer;
 use blitz_shell::{
     create_default_event_loop, BlitzApplication, BlitzEvent, BlitzShellNetCallback, Config,
     WindowConfig,
 };
+use blitz_traits::navigation::DummyNavigationProvider;
 
 #[cfg(feature = "net")]
 pub fn launch_url(url: &str) {
@@ -74,7 +77,16 @@ fn launch_internal(html: &str, cfg: Config) {
         Arc::new(DummyNetProvider::default())
     };
 
-    let doc = HtmlDocument::from_html(html, cfg.base_url, cfg.stylesheets, net_provider, None);
+    let navigation_provider = Arc::new(DummyNavigationProvider);
+
+    let doc = HtmlDocument::from_html(
+        html,
+        cfg.base_url,
+        cfg.stylesheets,
+        net_provider,
+        None,
+        navigation_provider,
+    );
     let window: WindowConfig<HtmlDocument, BlitzVelloRenderer> = WindowConfig::new(doc);
 
     // Create application

@@ -1,11 +1,11 @@
+use std::sync::Arc;
+
 use crate::DocumentHtmlParser;
 
 use blitz_dom::{
     events::RendererEvent, net::Resource, Document, DocumentLike, FontContext, DEFAULT_CSS,
 };
-use blitz_traits::{
-    navigation::SharedNavigationProvider, net::SharedProvider, ColorScheme, Viewport,
-};
+use blitz_traits::{navigation::NavigationProvider, net::SharedProvider, ColorScheme, Viewport};
 
 pub struct HtmlDocument {
     inner: Document,
@@ -41,7 +41,7 @@ impl HtmlDocument {
         stylesheets: Vec<String>,
         net_provider: SharedProvider<Resource>,
         font_ctx: Option<FontContext>,
-        navigation_provider: SharedNavigationProvider,
+        navigation_provider: Arc<dyn NavigationProvider>,
     ) -> Self {
         // Spin up the virtualdom and include the default stylesheet
         let viewport = Viewport::new(0, 0, 1.0, ColorScheme::Light);

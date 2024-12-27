@@ -270,7 +270,7 @@ impl<Doc: DocumentLike, Rend: DocumentRenderer> View<Doc, Rend> {
                         y: self.dom_mouse_pos.1,
                         mods: self.keyboard_modifiers,
                     },
-                })
+                });
             }
         }
     }
