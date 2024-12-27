@@ -134,7 +134,18 @@ impl LayoutPartialTree for Document {
                         return taffy::LayoutOutput::HIDDEN;
                     }
 
-                    // todo: need to handle shadow roots by actually descending into them
+                    // TODO: deduplicate with single-line text input
+                    if *element_data.name.local == *"textarea" {
+                        return compute_leaf_layout(
+                            inputs,
+                            &node.style,
+                            |_known_size, _available_space| taffy::Size {
+                                width: 300.0,
+                                height: resolved_line_height.unwrap_or(16.0) * 4.0,
+                            },
+                        );
+                    }
+
                     if *element_data.name.local == *"input" {
                         match element_data.attr(local_name!("type")) {
                             // if the input type is hidden, hide it

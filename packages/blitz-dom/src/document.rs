@@ -240,7 +240,7 @@ impl DocumentLike for Document {
                     if let Some(input_data) = text_input_data {
                         println!("Sent text event to {}", node_id);
                         apply_keypress_event(
-                            &mut input_data.editor,
+                            input_data,
                             &mut self.font_ctx,
                             &mut self.layout_ctx,
                             event,

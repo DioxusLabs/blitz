@@ -1,12 +1,12 @@
-use crate::node::TextBrush;
-use parley::{FontContext, LayoutContext, PlainEditor};
+use crate::node::{TextBrush, TextInputData};
+use parley::{FontContext, LayoutContext};
 use winit::{
     event::{KeyEvent, Modifiers},
     keyboard::{Key, NamedKey},
 };
 
 pub(crate) fn apply_keypress_event(
-    editor: &mut PlainEditor<TextBrush>,
+    input_data: &mut TextInputData,
     font_ctx: &mut FontContext,
     layout_ctx: &mut LayoutContext<TextBrush>,
     event: KeyEvent,
@@ -26,6 +26,8 @@ pub(crate) fn apply_keypress_event(
         }
     };
 
+    let is_multiline = input_data.is_multiline;
+    let editor = &mut input_data.editor;
     let mut driver = editor.driver(font_ctx, layout_ctx);
     match event.logical_key {
         #[cfg(all(feature = "clipboard", not(target_os = "android")))]
@@ -142,8 +144,9 @@ pub(crate) fn apply_keypress_event(
             }
         }
         Key::Named(NamedKey::Enter) => {
-            // TODO: support multi-line text inputs
-            // driver.insert_or_replace_selection("\n")
+            if is_multiline {
+                driver.insert_or_replace_selection("\n");
+            }
         }
         Key::Named(NamedKey::Space) => driver.insert_or_replace_selection(" "),
         Key::Character(s) => driver.insert_or_replace_selection(&s),
