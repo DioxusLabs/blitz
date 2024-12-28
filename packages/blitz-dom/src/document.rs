@@ -229,8 +229,14 @@ impl DocumentLike for Document {
                         }
                     } else if el.name.local == local_name!("a") {
                         if let Some(href) = el.attr(local_name!("href")) {
-                            let url = resolve_url(&self.base_url, href);
-                            self.navigation_provider.navigate_new_page(url.into());
+                            if let Some(url) = resolve_url(&self.base_url, href) {
+                                self.navigation_provider.navigate_new_page(url.into());
+                            } else {
+                                println!(
+                                    "{href} is not parseable as a url. : {base_url:?}",
+                                    base_url = self.base_url
+                                )
+                            }
                         } else {
                             println!("Clicked link without href: {:?}", el.attrs());
                         }
@@ -604,7 +610,12 @@ impl Document {
     }
 
     pub fn resolve_url(&self, raw: &str) -> url::Url {
-        resolve_url(&self.base_url, raw)
+        resolve_url(&self.base_url, raw).unwrap_or_else(|| {
+            panic!(
+                "to be able to resolve {raw} with the base_url: {base_url:?}",
+                base_url = self.base_url
+            )
+        })
     }
 
     pub fn print_tree(&self) {
@@ -1240,11 +1251,10 @@ impl AsMut<Document> for Document {
     }
 }
 
-fn resolve_url(base_url: &Option<url::Url>, raw: &str) -> url::Url {
-    // TODO: this will bite use eventually. You can be sure on the www there is a myriad of links that
-    // cannot be parsed.
+fn resolve_url(base_url: &Option<url::Url>, raw: &str) -> Option<url::Url> {
     match base_url {
-        Some(base_url) => base_url.join(raw).unwrap(),
-        None => url::Url::parse(raw).unwrap(),
+        Some(base_url) => base_url.join(raw),
+        None => url::Url::parse(raw),
     }
+    .ok()
 }
