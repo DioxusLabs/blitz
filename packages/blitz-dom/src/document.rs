@@ -141,6 +141,8 @@ pub struct Document {
     pub(crate) hover_node_id: Option<usize>,
     /// The node which is currently focussed (if any)
     pub(crate) focus_node_id: Option<usize>,
+    /// The node which is currently active (if any)
+    pub(crate) active_node_id: Option<usize>,
 
     pub changed: HashSet<usize>,
 
@@ -177,6 +179,7 @@ impl DocumentLike for Document {
         let target_node_id = event.target;
 
         match event.data {
+            EventData::MouseDown { .. } | EventData::MouseUp { .. } => {}
             EventData::Click { x, y, .. } => {
                 let hit = self.hit(x, y);
                 if let Some(hit) = hit {
@@ -347,6 +350,7 @@ impl Document {
 
             hover_node_id: None,
             focus_node_id: None,
+            active_node_id: None,
             changed: HashSet::new(),
             net_provider: Arc::new(DummyNetProvider::default()),
             navigation_provider: Arc::new(DummyNavigationProvider {}),
@@ -983,6 +987,43 @@ impl Document {
         self.snapshot_node_and(focus_node_id, |node| node.focus());
 
         self.focus_node_id = Some(focus_node_id);
+
+        true
+    }
+
+    pub fn active_node(&mut self) -> bool {
+        let Some(hover_node_id) = self.get_hover_node_id() else {
+            return false;
+        };
+
+        if let Some(active_node_id) = self.active_node_id {
+            if active_node_id == hover_node_id {
+                return true;
+            }
+            self.unactive_node();
+        }
+
+        let active_node_id = Some(hover_node_id);
+
+        let node_path = self.maybe_node_layout_ancestors(active_node_id);
+        for &id in node_path.iter() {
+            self.snapshot_node_and(id, |node| node.active());
+        }
+
+        self.active_node_id = active_node_id;
+
+        true
+    }
+
+    pub fn unactive_node(&mut self) -> bool {
+        let Some(active_node_id) = self.active_node_id.take() else {
+            return false;
+        };
+
+        let node_path = self.maybe_node_layout_ancestors(Some(active_node_id));
+        for &id in node_path.iter() {
+            self.snapshot_node_and(id, |node| node.unactive());
+        }
 
         true
     }
