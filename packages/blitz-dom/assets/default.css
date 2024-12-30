@@ -47,6 +47,25 @@ input[type="checkbox"] {
     height: 14px;
     margin: 3px 3px 3px 4px;
 }
+
+input, textarea {
+    border: 1px solid #999;
+    padding: 2px;
+    background-color: white;
+}
+
+input:focus, textarea:focus {
+    outline: 2px #4D90FE;
+}
+
+button, input[type="submit"], input[type="reset"], input[type="button"] {
+    border: 1px solid #999;
+    border-radius: 1px;
+    padding: 1px 6px;
+    color: black;
+    background-color: #EFEFEF;
+}
+
 /* To ensure http://www.w3.org/TR/REC-html40/struct/dirlang.html#style-bidi:
  *
  * "When a block element that does not have a dir attribute is transformed to

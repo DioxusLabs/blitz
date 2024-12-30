@@ -87,16 +87,20 @@ impl LayoutPartialTree for Document {
         compute_cached_layout(self, node_id, inputs, |tree, node_id, inputs| {
             let node = &mut tree.nodes[node_id.into()];
 
-            let resolved_line_height = node.primary_styles().map(|style| {
+            let font_styles = node.primary_styles().map(|style| {
                 use style::values::computed::font::LineHeight;
 
                 let font_size = style.clone_font_size().used_size().px();
-                match style.clone_line_height() {
+                let line_height = match style.clone_line_height() {
                     LineHeight::Normal => font_size * 1.2,
                     LineHeight::Number(num) => font_size * num.0,
                     LineHeight::Length(value) => value.0.px(),
-                }
+                };
+
+                (font_size, line_height)
             });
+            let font_size = font_styles.map(|s| s.0);
+            let resolved_line_height = font_styles.map(|s| s.1);
 
             match &mut node.raw_dom_data {
                 NodeData::Text(data) => {
@@ -141,11 +145,17 @@ impl LayoutPartialTree for Document {
                             .and_then(|val| val.parse::<f32>().ok())
                             .unwrap_or(2.0);
 
+                        let cols = element_data
+                            .attr(local_name!("cols"))
+                            .and_then(|val| val.parse::<f32>().ok());
+
                         return compute_leaf_layout(
                             inputs,
                             &node.style,
                             |_known_size, _available_space| taffy::Size {
-                                width: 300.0,
+                                width: cols
+                                    .map(|cols| cols * font_size.unwrap_or(16.0) * 0.6)
+                                    .unwrap_or(300.0),
                                 height: resolved_line_height.unwrap_or(16.0) * rows,
                             },
                         );
