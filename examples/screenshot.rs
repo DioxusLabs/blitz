@@ -4,6 +4,7 @@ use blitz_dom::net::Resource;
 use blitz_html::HtmlDocument;
 use blitz_net::{MpscCallback, Provider};
 use blitz_renderer_vello::render_to_buffer;
+use blitz_traits::navigation::DummyNavigationProvider;
 use blitz_traits::net::SharedProvider;
 use blitz_traits::{ColorScheme, Viewport};
 use reqwest::Url;
@@ -64,6 +65,8 @@ async fn main() {
     let callback = Arc::new(callback);
     let net = Arc::new(Provider::new(callback));
 
+    let navigation_provider = Arc::new(DummyNavigationProvider);
+
     timer.time("Setup document prerequisites");
 
     // Create HtmlDocument
@@ -73,6 +76,7 @@ async fn main() {
         Vec::new(),
         Arc::clone(&net) as SharedProvider<Resource>,
         None,
+        navigation_provider,
     );
 
     timer.time("Parsed document");

@@ -111,6 +111,7 @@ async fn render_html_to_buffer(
         Vec::new(),
         Arc::clone(&ctx.net_provider) as SharedProvider<Resource>,
         Some(clone_font_ctx(&ctx.font_ctx)),
+        ctx.navigation_provider.clone(),
     );
 
     document.as_mut().set_viewport(ctx.viewport.clone());

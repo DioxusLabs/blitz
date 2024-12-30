@@ -4,6 +4,7 @@ use blitz_dom::net::Resource;
 use blitz_html::HtmlDocument;
 use blitz_renderer_vello::BlitzVelloRenderer;
 use blitz_shell::{BlitzApplication, BlitzEvent, View, WindowConfig};
+use blitz_traits::navigation::NavigationProvider;
 use blitz_traits::net::NetProvider;
 use tokio::runtime::Handle;
 use winit::application::ApplicationHandler;
@@ -23,6 +24,7 @@ pub struct ReadmeApplication {
     net_provider: Arc<dyn NetProvider<Data = Resource>>,
     raw_url: String,
     keyboard_modifiers: Modifiers,
+    navigation_provider: Arc<dyn NavigationProvider>,
 }
 
 impl ReadmeApplication {
@@ -30,6 +32,7 @@ impl ReadmeApplication {
         proxy: EventLoopProxy<BlitzEvent>,
         raw_url: String,
         net_provider: Arc<dyn NetProvider<Data = Resource>>,
+        navigation_provider: Arc<dyn NavigationProvider>,
     ) -> Self {
         let handle = Handle::current();
         Self {
@@ -38,6 +41,7 @@ impl ReadmeApplication {
             raw_url,
             net_provider,
             keyboard_modifiers: Default::default(),
+            navigation_provider,
         }
     }
 
@@ -66,6 +70,7 @@ impl ReadmeApplication {
             stylesheets,
             self.net_provider.clone(),
             None,
+            self.navigation_provider.clone(),
         );
         self.window_mut().replace_document(doc);
     }
@@ -123,6 +128,10 @@ impl ApplicationHandler<BlitzEvent> for ReadmeApplication {
                 if let Some(_event) = event.downcast_ref::<ReadmeEvent>() {
                     self.reload_document();
                 }
+            }
+            BlitzEvent::Navigate(url) => {
+                self.raw_url = url;
+                self.reload_document();
             }
             event => self.inner.user_event(event_loop, event),
         }

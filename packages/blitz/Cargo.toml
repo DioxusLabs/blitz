@@ -18,6 +18,7 @@ blitz-renderer-vello = { path = "../blitz-renderer-vello" }
 blitz-html = { path = "../blitz-html" }
 blitz-shell = { path = "../blitz-shell" }
 blitz-net = { path = "../blitz-net", optional = true }
+blitz-traits = { path = "../blitz-traits" }
 
 # IO & Networking
 url = { workspace = true, features = ["serde"], optional = true }

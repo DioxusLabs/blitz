@@ -3,6 +3,7 @@ mod readme_application;
 
 use blitz_html::HtmlDocument;
 use blitz_net::Provider;
+use blitz_traits::navigation::NavigationProvider;
 use markdown::{markdown_to_html, BLITZ_MD_STYLES, GITHUB_MD_STYLES};
 use notify::{Error as NotifyError, Event as NotifyEvent, RecursiveMode, Watcher as _};
 use readme_application::{ReadmeApplication, ReadmeEvent};
@@ -14,9 +15,21 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use url::Url;
+use winit::event_loop::EventLoopProxy;
 use winit::window::WindowAttributes;
 
 const USER_AGENT: &str = "Mozilla/5.0 (X11; Linux x86_64; rv:60.0) Gecko/20100101 Firefox/81.0";
+
+struct ReadmeNavigationProvider {
+    proxy: EventLoopProxy<BlitzEvent>,
+}
+
+impl NavigationProvider for ReadmeNavigationProvider {
+    fn navigate_new_page(&self, url: String) {
+        let _ = self.proxy.send_event(BlitzEvent::Navigate(url));
+    }
+}
+
 fn main() {
     let raw_url = std::env::args().nth(1).unwrap_or_else(|| {
         let cwd = current_dir().unwrap();
@@ -55,19 +68,30 @@ fn main() {
     let net_callback = BlitzShellNetCallback::shared(proxy.clone());
     let net_provider = Provider::shared(net_callback);
 
+    let proxy = event_loop.create_proxy();
+    let navigation_provider = ReadmeNavigationProvider {
+        proxy: proxy.clone(),
+    };
+    let navigation_provider = Arc::new(navigation_provider);
+
     let doc = HtmlDocument::from_html(
         &html,
         Some(base_url),
         stylesheets,
         net_provider.clone(),
         None,
+        navigation_provider.clone(),
     );
     let attrs = WindowAttributes::default().with_title(title);
     let window = WindowConfig::with_attributes(doc, attrs);
 
     // Create application
-    let mut application =
-        ReadmeApplication::new(event_loop.create_proxy(), raw_url.clone(), net_provider);
+    let mut application = ReadmeApplication::new(
+        proxy.clone(),
+        raw_url.clone(),
+        net_provider,
+        navigation_provider,
+    );
     application.add_window(window);
 
     if let Some(path) = file_path {
