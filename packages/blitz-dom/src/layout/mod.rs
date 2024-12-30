@@ -136,12 +136,17 @@ impl LayoutPartialTree for Document {
 
                     // TODO: deduplicate with single-line text input
                     if *element_data.name.local == *"textarea" {
+                        let rows = element_data
+                            .attr(local_name!("rows"))
+                            .and_then(|val| val.parse::<f32>().ok())
+                            .unwrap_or(2.0);
+
                         return compute_leaf_layout(
                             inputs,
                             &node.style,
                             |_known_size, _available_space| taffy::Size {
                                 width: 300.0,
-                                height: resolved_line_height.unwrap_or(16.0) * 4.0,
+                                height: resolved_line_height.unwrap_or(16.0) * rows,
                             },
                         );
                     }
