@@ -1,6 +1,7 @@
 use crate::convert;
 use std::ops::Deref;
 use style::properties::ComputedValues;
+use taffy::prelude::FromLength;
 
 /// A wrapper struct for anything that Deref's to a [`stylo::ComputedValues`], which implements Taffy's layout traits
 /// and can used with Taffy's layout algorithms.
@@ -125,10 +126,14 @@ impl<T: Deref<Target = ComputedValues>> taffy::CoreStyle for TaffyStyloStyle<T> 
     fn border(&self) -> taffy::Rect<taffy::LengthPercentage> {
         let border_styles = self.0.get_border();
         taffy::Rect {
-            left: taffy::LengthPercentage::Length(border_styles.border_left_width.to_f32_px()),
-            right: taffy::LengthPercentage::Length(border_styles.border_right_width.to_f32_px()),
-            top: taffy::LengthPercentage::Length(border_styles.border_top_width.to_f32_px()),
-            bottom: taffy::LengthPercentage::Length(border_styles.border_bottom_width.to_f32_px()),
+            left: taffy::LengthPercentage::from_length(border_styles.border_left_width.to_f32_px()),
+            right: taffy::LengthPercentage::from_length(
+                border_styles.border_right_width.to_f32_px(),
+            ),
+            top: taffy::LengthPercentage::from_length(border_styles.border_top_width.to_f32_px()),
+            bottom: taffy::LengthPercentage::from_length(
+                border_styles.border_bottom_width.to_f32_px(),
+            ),
         }
     }
 }

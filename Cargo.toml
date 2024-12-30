@@ -20,11 +20,12 @@ license = "MIT OR Apache-2.0"
 
 [workspace.dependencies]
 # Servo dependencies
-style = { git = "https://github.com/nicoburns/stylo", rev = "80741aba", package = "style" } # u64-opaque-element
-style_config = { git = "https://github.com/nicoburns/stylo", rev = "80741aba", package = "style_config" } # u64-opaque-element
-style_traits = { git = "https://github.com/nicoburns/stylo", rev = "80741aba", package = "style_traits" } # u64-opaque-element
-style_dom = { git = "https://github.com/nicoburns/stylo", rev = "80741aba", package = "dom" } # u64-opaque-element
-selectors = { git = "https://github.com/nicoburns/stylo", rev = "80741aba", package = "selectors" } # u64-opaque-element
+style = { git = "https://github.com/dioxuslabs/stylo", rev = "9ceb7369", package = "style" } # blitz
+style_config = { git = "https://github.com/dioxuslabs/stylo", rev = "9ceb7369", package = "style_config" } # blitz
+style_traits = { git = "https://github.com/dioxuslabs/stylo", rev = "9ceb7369", package = "style_traits" } # blitz
+style_dom = { git = "https://github.com/dioxuslabs/stylo", rev = "9ceb7369", package = "dom" } # blitz
+selectors = { git = "https://github.com/dioxuslabs/stylo", rev = "9ceb7369", package = "selectors" } # blitz
+
 markup5ever = "0.14" # needs to match stylo markup5ever version
 html5ever = "0.29" # needs to match stylo markup5ever version
 xml5ever = "0.20" # needs to match stylo markup5ever version
@@ -39,7 +40,7 @@ dioxus-core = { version = "0.6" }
 dioxus-html = { version = "0.6" }
 dioxus-cli-config = { version = "0.6" }
 dioxus-devtools = { version = "0.6" }
-taffy = { version = "0.7.1", default-features = false, features = ["std", "flexbox", "grid", "block_layout", "content_size"] }
+taffy = { git = "https://github.com/dioxuslabs/taffy", rev = "0386dc966a", default-features = false, features = ["std", "flexbox", "grid", "block_layout", "content_size"] }
 
 # Linebender + WGPU
 peniko = "0.2"

@@ -1,5 +1,7 @@
 use taffy::{MaybeMath, MaybeResolve};
 
+use crate::layout::resolve_calc_value;
+
 #[derive(Debug, Clone, Copy)]
 pub struct ImageContext {
     pub inherent_size: taffy::Size<f32>,
@@ -22,15 +24,15 @@ pub fn image_measure_function(
     // Resolve sizes
     let style_size = style
         .size
-        .maybe_resolve(parent_size)
+        .maybe_resolve(parent_size, resolve_calc_value)
         .maybe_apply_aspect_ratio(Some(aspect_ratio));
     let min_size = style
         .min_size
-        .maybe_resolve(parent_size)
+        .maybe_resolve(parent_size, resolve_calc_value)
         .maybe_apply_aspect_ratio(Some(aspect_ratio));
     let max_size = style
         .max_size
-        .maybe_resolve(parent_size)
+        .maybe_resolve(parent_size, resolve_calc_value)
         .maybe_apply_aspect_ratio(Some(aspect_ratio));
     let attr_size = image_context
         .attr_size
