@@ -1,6 +1,7 @@
 //! Enable the dom to participate in styling by servo
 //!
 
+use std::ptr::NonNull;
 use std::sync::atomic::Ordering;
 
 use crate::node::BackgroundImageData;
@@ -351,7 +352,8 @@ impl selectors::Element for BlitzNode<'_> {
     fn opaque(&self) -> selectors::OpaqueElement {
         // FIXME: this is wrong in the case where pushing new elements casuses reallocations.
         // We should see if selectors will accept a PR that allows creation from a usize
-        OpaqueElement::new(self.id as u64)
+        let non_null = NonNull::new((self.id + 1) as *mut ()).unwrap();
+        OpaqueElement::from_non_null_ptr(non_null)
     }
 
     fn parent_element(&self) -> Option<Self> {
