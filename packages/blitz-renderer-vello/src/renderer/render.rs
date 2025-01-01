@@ -2,7 +2,7 @@ use std::sync::atomic::{self, AtomicUsize};
 use std::sync::Arc;
 
 use super::multicolor_rounded_rect::{Edge, ElementFrame};
-use crate::util::{GradientSlice, StyloGradient, ToVelloColor};
+use crate::util::ToVelloColor;
 use blitz_dom::node::{
     ImageData, ListItemLayout, ListItemLayoutPosition, Marker, NodeData, RasterImageData,
     TextBrush, TextInputData, TextNodeData,
@@ -12,6 +12,7 @@ use blitz_traits::Devtools;
 
 use euclid::Transform3D;
 use parley::Line;
+use style::color::AbsoluteColor;
 use style::{
     dom::TElement,
     properties::{
@@ -21,8 +22,8 @@ use style::{
     },
     values::{
         computed::{
-            Angle, AngleOrPercentage, CSSPixelLength, LengthPercentage, LineDirection, Overflow,
-            Percentage,
+            Angle, AngleOrPercentage, CSSPixelLength, Gradient as StyloGradient, LengthPercentage,
+            LineDirection, Overflow, Percentage,
         },
         generics::{
             image::{
@@ -56,6 +57,8 @@ use vello::{
 };
 #[cfg(feature = "svg")]
 use vello_svg::usvg;
+
+type GradientItem<T> = GenericGradientItem<GenericColor<Percentage>, T>;
 
 const CLIP_LIMIT: usize = 1024;
 static CLIPS_USED: AtomicUsize = AtomicUsize::new(0);
@@ -150,9 +153,15 @@ impl VelloSceneGenerator<'_> {
                         })
                     })
                     .and_then(|body| body.primary_styles())
-                    .map(|style| style.clone_background_color())
+                    .map(|style| {
+                        let current_color = style.clone_color();
+                        style
+                            .clone_background_color()
+                            .resolve_to_absolute(&current_color)
+                    })
             } else {
-                Some(html_color)
+                let current_color = root_element.primary_styles().unwrap().clone_color();
+                Some(html_color.resolve_to_absolute(&current_color))
             }
         };
 
@@ -1035,10 +1044,11 @@ impl ElementCx<'_> {
         &self,
         scene: &mut Scene,
         direction: &LineDirection,
-        items: &GradientSlice,
+        items: &[GradientItem<LengthPercentage>],
         flags: GradientFlags,
     ) {
         let bb = self.frame.outer_rect.bounding_box();
+        let current_color = self.style.clone_color();
 
         let shape = self.frame.frame();
         let center = bb.center();
@@ -1109,8 +1119,13 @@ impl ElementCx<'_> {
             peniko::Extend::Pad
         });
 
-        let (first_offset, last_offset) =
-            Self::resolve_length_color_stops(items, gradient_length, &mut gradient, repeating);
+        let (first_offset, last_offset) = Self::resolve_length_color_stops(
+            current_color,
+            items,
+            gradient_length,
+            &mut gradient,
+            repeating,
+        );
         if repeating && gradient.stops.len() > 1 {
             gradient.kind = peniko::GradientKind::Linear {
                 start: start + (end - start) * first_offset as f64,
@@ -1123,7 +1138,8 @@ impl ElementCx<'_> {
 
     #[inline]
     fn resolve_color_stops<T>(
-        items: &OwnedSlice<GenericGradientItem<GenericColor<Percentage>, T>>,
+        current_color: AbsoluteColor,
+        items: &[GradientItem<T>],
         gradient_length: CSSPixelLength,
         gradient: &mut Gradient,
         repeating: bool,
@@ -1135,12 +1151,15 @@ impl ElementCx<'_> {
             let (color, offset) = match item {
                 GenericGradientItem::SimpleColorStop(color) => {
                     let step = 1.0 / (items.len() as f32 - 1.0);
-                    (color.as_vello(), step * idx as f32)
+                    (
+                        color.resolve_to_absolute(&current_color).as_vello(),
+                        step * idx as f32,
+                    )
                 }
                 GenericGradientItem::ComplexColorStop { color, position } => {
                     let offset = item_resolver(gradient_length, position);
                     if let Some(offset) = offset {
-                        (color.as_vello(), offset)
+                        (color.resolve_to_absolute(&current_color).as_vello(), offset)
                     } else {
                         continue;
                     }
@@ -1258,12 +1277,14 @@ impl ElementCx<'_> {
 
     #[inline]
     fn resolve_length_color_stops(
-        items: &OwnedSlice<GenericGradientItem<GenericColor<Percentage>, LengthPercentage>>,
+        current_color: AbsoluteColor,
+        items: &[GradientItem<LengthPercentage>],
         gradient_length: CSSPixelLength,
         gradient: &mut Gradient,
         repeating: bool,
     ) -> (f32, f32) {
         Self::resolve_color_stops(
+            current_color,
             items,
             gradient_length,
             gradient,
@@ -1278,12 +1299,14 @@ impl ElementCx<'_> {
 
     #[inline]
     fn resolve_angle_color_stops(
-        items: &OwnedSlice<GenericGradientItem<GenericColor<Percentage>, AngleOrPercentage>>,
+        current_color: AbsoluteColor,
+        items: &[GradientItem<AngleOrPercentage>],
         gradient_length: CSSPixelLength,
         gradient: &mut Gradient,
         repeating: bool,
     ) -> (f32, f32) {
         Self::resolve_color_stops(
+            current_color,
             items,
             gradient_length,
             gradient,
@@ -1303,6 +1326,7 @@ impl ElementCx<'_> {
 
     fn draw_outset_box_shadow(&self, scene: &mut Scene) {
         let box_shadow = &self.style.get_effects().box_shadow.0;
+        let current_color = self.style.clone_color();
 
         // TODO: Only apply clip if element has transparency
         let has_outset_shadow = box_shadow.iter().any(|s| !s.inset);
@@ -1311,7 +1335,11 @@ impl ElementCx<'_> {
             || has_outset_shadow,
             |elem_cx, scene| {
                 for shadow in box_shadow.iter().filter(|s| !s.inset) {
-                    let shadow_color = shadow.base.color.as_vello();
+                    let shadow_color = shadow
+                        .base
+                        .color
+                        .resolve_to_absolute(&current_color)
+                        .as_vello();
                     if shadow_color != Color::TRANSPARENT {
                         let transform = elem_cx.transform.then_translate(Vec2 {
                             x: shadow.base.horizontal.px() as f64,
@@ -1345,6 +1373,7 @@ impl ElementCx<'_> {
 
     fn draw_inset_box_shadow(&self, scene: &mut Scene) {
         let box_shadow = &self.style.get_effects().box_shadow.0;
+        let current_color = self.style.clone_color();
         let has_inset_shadow = box_shadow.iter().any(|s| s.inset);
         if has_inset_shadow {
             CLIPS_WANTED.fetch_add(1, atomic::Ordering::SeqCst);
@@ -1357,7 +1386,11 @@ impl ElementCx<'_> {
             }
         }
         for shadow in box_shadow.iter().filter(|s| s.inset) {
-            let shadow_color = shadow.base.color.as_vello();
+            let shadow_color = shadow
+                .base
+                .color
+                .resolve_to_absolute(&current_color)
+                .as_vello();
             if shadow_color != Color::TRANSPARENT {
                 let transform = self.transform.then_translate(Vec2 {
                     x: shadow.base.horizontal.px() as f64,
@@ -1392,8 +1425,11 @@ impl ElementCx<'_> {
     }
 
     fn draw_solid_frame(&self, scene: &mut Scene) {
+        let current_color = self.style.clone_color();
         let background_color = &self.style.get_background().background_color;
-        let bg_color = background_color.as_vello();
+        let bg_color = background_color
+            .resolve_to_absolute(&current_color)
+            .as_vello();
 
         if bg_color != Color::TRANSPARENT {
             let shape = self.frame.frame();
@@ -1444,14 +1480,28 @@ impl ElementCx<'_> {
     ///
     /// [*] The effect depends on the border-color value
     fn stroke_border_edge(&self, sb: &mut Scene, edge: Edge) {
-        let border = self.style.get_border();
+        let style = &*self.style;
+        let border = style.get_border();
         let path = self.frame.border(edge);
 
+        let current_color = style.clone_color();
         let color = match edge {
-            Edge::Top => border.border_top_color.as_vello(),
-            Edge::Right => border.border_right_color.as_vello(),
-            Edge::Bottom => border.border_bottom_color.as_vello(),
-            Edge::Left => border.border_left_color.as_vello(),
+            Edge::Top => border
+                .border_top_color
+                .resolve_to_absolute(&current_color)
+                .as_vello(),
+            Edge::Right => border
+                .border_right_color
+                .resolve_to_absolute(&current_color)
+                .as_vello(),
+            Edge::Bottom => border
+                .border_bottom_color
+                .resolve_to_absolute(&current_color)
+                .as_vello(),
+            Edge::Left => border
+                .border_left_color
+                .resolve_to_absolute(&current_color)
+                .as_vello(),
         };
 
         sb.fill(Fill::NonZero, self.transform, color, None, &path);
@@ -1474,10 +1524,8 @@ impl ElementCx<'_> {
             ..
         } = self.style.get_outline();
 
-        let color = outline_color
-            .as_absolute()
-            .map(ToVelloColor::as_vello)
-            .unwrap_or_default();
+        let current_color = self.style.clone_color();
+        let color = outline_color.resolve_to_absolute(&current_color).as_vello();
 
         let style = match outline_style {
             OutlineStyle::Auto => return,
@@ -1541,6 +1589,7 @@ impl ElementCx<'_> {
         let bez_path = self.frame.frame();
         let rect = self.frame.inner_rect;
         let repeating = flags.contains(GradientFlags::REPEATING);
+        let current_color = self.style.clone_color();
 
         let mut gradient =
             peniko::Gradient::new_radial((0.0, 0.0), 1.0).with_extend(if repeating {
@@ -1621,6 +1670,7 @@ impl ElementCx<'_> {
             // If the gradient has no valid scale, we don't need to calculate the color stops
             if let Some(gradient_scale) = gradient_scale {
                 let (first_offset, last_offset) = Self::resolve_length_color_stops(
+                    current_color,
                     items,
                     CSSPixelLength::new(gradient_scale.x as f32),
                     &mut gradient,
@@ -1660,6 +1710,7 @@ impl ElementCx<'_> {
     ) {
         let bez_path = self.frame.frame();
         let rect = self.frame.inner_rect;
+        let current_color = self.style.clone_color();
 
         let repeating = flags.contains(GradientFlags::REPEATING);
         let mut gradient = peniko::Gradient::new_sweep((0.0, 0.0), 0.0, std::f32::consts::PI * 2.0)
@@ -1670,6 +1721,7 @@ impl ElementCx<'_> {
             });
 
         let (first_offset, last_offset) = Self::resolve_angle_color_stops(
+            current_color,
             items,
             CSSPixelLength::new(1.0),
             &mut gradient,
@@ -1735,7 +1787,7 @@ impl ElementCx<'_> {
                     a: 255,
                 }
             } else {
-                self.style.get_inherited_text().color.as_vello()
+                self.style.clone_color().as_vello()
             };
 
             let scale = (self
