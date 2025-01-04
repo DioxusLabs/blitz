@@ -13,24 +13,26 @@ pub(crate) fn markdown_to_html(contents: String) -> String {
     let body_html = markdown_to_html_with_plugins(
         &contents,
         &Options {
-            extension: ExtensionOptions::builder()
-                .strikethrough(true)
-                .tagfilter(false)
-                .table(true)
-                .autolink(true)
-                .tasklist(true)
-                .superscript(false)
-                .maybe_header_ids(None)
-                .footnotes(false)
-                .description_lists(false)
-                .maybe_front_matter_delimiter(None)
-                .multiline_block_quotes(false)
-                .build(),
-            render: RenderOptions::builder()
-                .unsafe_(true)
-                .tasklist_classes(true)
-                .build(),
-            ..Default::default()
+            extension: ExtensionOptions {
+                strikethrough: true,
+                tagfilter: false,
+                table: true,
+                autolink: true,
+                tasklist: true,
+                superscript: false,
+                header_ids: None,
+                footnotes: false,
+                description_lists: false,
+                front_matter_delimiter: None,
+                multiline_block_quotes: false,
+                ..ExtensionOptions::default()
+            },
+            render: RenderOptions {
+                unsafe_: true,
+                tasklist_classes: true,
+                ..RenderOptions::default()
+            },
+            ..Options::default()
         },
         &plugins,
     );

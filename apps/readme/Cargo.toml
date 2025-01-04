@@ -15,5 +15,5 @@ tokio = { workspace = true, features = ["rt", "rt-multi-thread"] }
 reqwest = { workspace = true }
 url = { workspace = true }
 winit = { workspace = true }
-comrak = { version = "0.32", default-features = false }
+comrak = { version = "0.33", default-features = false }
 notify = "7.0.0"
