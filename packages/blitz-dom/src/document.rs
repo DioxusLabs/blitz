@@ -1,8 +1,8 @@
-use crate::events::{apply_keypress_event, EventData, HitResult, RendererEvent};
+use crate::events::{handle_event, HitResult, RendererEvent};
 use crate::layout::construct::collect_layout_children;
 use crate::node::{ImageData, NodeSpecificData, Status, TextBrush};
 use crate::stylo_to_cursor_icon::stylo_to_cursor_icon;
-use crate::util::ImageType;
+use crate::util::{resolve_url, ImageType};
 use crate::{ElementNodeData, Node, NodeData, TextNodeData};
 use app_units::Au;
 use blitz_traits::navigation::{DummyNavigationProvider, NavigationProvider};
@@ -19,7 +19,6 @@ use style::properties::style_structs::Font;
 use style::properties::ComputedValues;
 use style::values::computed::Overflow;
 use style::values::GenericAtomIdent;
-use winit::event::Ime;
 // use quadtree_rs::Quadtree;
 use crate::net::{Resource, StylesheetLoader};
 use selectors::{matching::QuirksMode, Element};
@@ -176,133 +175,7 @@ fn make_device(viewport: &Viewport) -> Device {
 
 impl DocumentLike for Document {
     fn handle_event(&mut self, event: RendererEvent) {
-        let target_node_id = event.target;
-
-        match event.data {
-            EventData::MouseDown { .. } | EventData::MouseUp { .. } => {}
-            EventData::Click { x, y, .. } => {
-                let hit = self.hit(x, y);
-                if let Some(hit) = hit {
-                    assert!(hit.node_id == event.target);
-
-                    let node = &mut self.nodes[hit.node_id];
-                    let content_box_offset = taffy::Point {
-                        x: node.final_layout.padding.left + node.final_layout.border.left,
-                        y: node.final_layout.padding.top + node.final_layout.border.top,
-                    };
-                    let Some(el) = node.raw_dom_data.downcast_element_mut() else {
-                        return;
-                    };
-
-                    let disabled = el.attr(local_name!("disabled")).is_some();
-                    if disabled {
-                        return;
-                    }
-
-                    if let NodeSpecificData::TextInput(ref mut text_input_data) =
-                        el.node_specific_data
-                    {
-                        let x = (hit.x - content_box_offset.x) as f64 * self.viewport.scale_f64();
-                        let y = (hit.y - content_box_offset.y) as f64 * self.viewport.scale_f64();
-                        text_input_data
-                            .editor
-                            .driver(&mut self.font_ctx, &mut self.layout_ctx)
-                            .move_to_point(x as f32, y as f32);
-
-                        self.set_focus_to(hit.node_id);
-                    } else if el.name.local == local_name!("input")
-                        && matches!(el.attr(local_name!("type")), Some("checkbox"))
-                    {
-                        Document::toggle_checkbox(el);
-                        self.set_focus_to(hit.node_id);
-                    }
-                    // Clicking labels triggers click, and possibly input event, of associated input
-                    else if el.name.local == local_name!("label") {
-                        let node_id = node.id;
-                        if let Some(target_node_id) = self
-                            .label_bound_input_elements(node_id)
-                            .first()
-                            .map(|n| n.id)
-                        {
-                            let target_node = self.get_node_mut(target_node_id).unwrap();
-                            if let Some(target_element) = target_node.element_data_mut() {
-                                Document::toggle_checkbox(target_element);
-                            }
-                            self.set_focus_to(node_id);
-                        }
-                    } else if el.name.local == local_name!("a") {
-                        if let Some(href) = el.attr(local_name!("href")) {
-                            if let Some(url) = resolve_url(&self.base_url, href) {
-                                self.navigation_provider.navigate_new_page(url.into());
-                            } else {
-                                println!(
-                                    "{href} is not parseable as a url. : {base_url:?}",
-                                    base_url = self.base_url
-                                )
-                            }
-                        } else {
-                            println!("Clicked link without href: {:?}", el.attrs());
-                        }
-                    }
-                }
-            }
-            EventData::KeyPress { event, mods } => {
-                if let Some(node_id) = self.focus_node_id {
-                    if target_node_id != node_id {
-                        return;
-                    }
-
-                    let node = &mut self.nodes[node_id];
-                    let text_input_data = node
-                        .raw_dom_data
-                        .downcast_element_mut()
-                        .and_then(|el| el.text_input_data_mut());
-
-                    if let Some(input_data) = text_input_data {
-                        println!("Sent text event to {}", node_id);
-                        apply_keypress_event(
-                            input_data,
-                            &mut self.font_ctx,
-                            &mut self.layout_ctx,
-                            event,
-                            mods,
-                        );
-                    }
-                }
-            }
-            EventData::Ime(ime_event) => {
-                if let Some(node_id) = self.focus_node_id {
-                    let node = &mut self.nodes[node_id];
-                    let text_input_data = node
-                        .raw_dom_data
-                        .downcast_element_mut()
-                        .and_then(|el| el.text_input_data_mut());
-                    if let Some(input_data) = text_input_data {
-                        let editor = &mut input_data.editor;
-                        let mut driver = editor.driver(&mut self.font_ctx, &mut self.layout_ctx);
-
-                        match ime_event {
-                            Ime::Enabled => { /* Do nothing */ }
-                            Ime::Disabled => {
-                                driver.clear_compose();
-                            }
-                            Ime::Commit(text) => {
-                                driver.insert_or_replace_selection(&text);
-                            }
-                            Ime::Preedit(text, cursor) => {
-                                if text.is_empty() {
-                                    driver.clear_compose();
-                                } else {
-                                    driver.set_compose(&text, cursor);
-                                }
-                            }
-                        }
-                        println!("Sent ime event to {}", node_id);
-                    }
-                }
-            }
-            EventData::Hover => {}
-        }
+        handle_event(self, event)
     }
 }
 
@@ -1290,12 +1163,4 @@ impl AsMut<Document> for Document {
     fn as_mut(&mut self) -> &mut Document {
         self
     }
-}
-
-fn resolve_url(base_url: &Option<url::Url>, raw: &str) -> Option<url::Url> {
-    match base_url {
-        Some(base_url) => base_url.join(raw),
-        None => url::Url::parse(raw),
-    }
-    .ok()
 }

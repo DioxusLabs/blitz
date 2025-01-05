@@ -19,6 +19,14 @@ pub enum ImageType {
     Background(usize),
 }
 
+pub(crate) fn resolve_url(base_url: &Option<url::Url>, raw: &str) -> Option<url::Url> {
+    match base_url {
+        Some(base_url) => base_url.join(raw),
+        None => url::Url::parse(raw),
+    }
+    .ok()
+}
+
 // Debug print an RcDom
 pub fn walk_tree(indent: usize, node: &Node) {
     // Skip all-whitespace text nodes entirely

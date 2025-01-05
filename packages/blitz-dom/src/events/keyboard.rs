@@ -1,9 +1,37 @@
-use crate::node::{TextBrush, TextInputData};
+use crate::{
+    node::{TextBrush, TextInputData},
+    Document,
+};
 use parley::{FontContext, LayoutContext};
 use winit::{
     event::{KeyEvent, Modifiers},
     keyboard::{Key, NamedKey},
 };
+
+pub(crate) fn handle_keypress(doc: &mut Document, target: usize, event: KeyEvent, mods: Modifiers) {
+    if let Some(node_id) = doc.focus_node_id {
+        if target != node_id {
+            return;
+        }
+
+        let node = &mut doc.nodes[node_id];
+        let text_input_data = node
+            .raw_dom_data
+            .downcast_element_mut()
+            .and_then(|el| el.text_input_data_mut());
+
+        if let Some(input_data) = text_input_data {
+            println!("Sent text event to {}", node_id);
+            apply_keypress_event(
+                input_data,
+                &mut doc.font_ctx,
+                &mut doc.layout_ctx,
+                event,
+                mods,
+            );
+        }
+    }
+}
 
 pub(crate) fn apply_keypress_event(
     input_data: &mut TextInputData,

@@ -1,8 +1,31 @@
+mod ime;
 mod keyboard;
+mod mouse;
 
-pub(crate) use keyboard::apply_keypress_event;
+pub(crate) use ime::handle_ime_event;
+pub(crate) use keyboard::handle_keypress;
+pub(crate) use mouse::handle_click;
 
+use crate::Document;
 use winit::event::{Ime, KeyEvent, Modifiers};
+
+pub(crate) fn handle_event(doc: &mut Document, event: RendererEvent) {
+    let target_node_id = event.target;
+
+    match event.data {
+        EventData::MouseDown { .. } | EventData::MouseUp { .. } => {}
+        EventData::Hover => {}
+        EventData::Click { x, y, .. } => {
+            handle_click(doc, target_node_id, x, y);
+        }
+        EventData::KeyPress { event, mods } => {
+            handle_keypress(doc, target_node_id, event, mods);
+        }
+        EventData::Ime(ime_event) => {
+            handle_ime_event(doc, ime_event);
+        }
+    }
+}
 
 pub struct EventListener {
     pub name: String,
