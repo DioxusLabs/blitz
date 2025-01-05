@@ -1,4 +1,4 @@
-use crate::event::BlitzEvent;
+use crate::event::BlitzShellEvent;
 
 use blitz_dom::BaseDocument;
 use blitz_traits::{Document, DocumentRenderer};
@@ -16,14 +16,14 @@ type D = BaseDocument;
 pub struct BlitzApplication<Doc: Document<Doc = D>, Rend: DocumentRenderer<Doc = D>> {
     pub windows: HashMap<WindowId, View<Doc, Rend>>,
     pending_windows: Vec<WindowConfig<Doc, Rend>>,
-    proxy: EventLoopProxy<BlitzEvent>,
+    proxy: EventLoopProxy<BlitzShellEvent>,
 
     #[cfg(all(feature = "menu", not(any(target_os = "android", target_os = "ios"))))]
     menu_channel: muda::MenuEventReceiver,
 }
 
 impl<Doc: Document<Doc = D>, Rend: DocumentRenderer<Doc = D>> BlitzApplication<Doc, Rend> {
-    pub fn new(proxy: EventLoopProxy<BlitzEvent>) -> Self {
+    pub fn new(proxy: EventLoopProxy<BlitzShellEvent>) -> Self {
         BlitzApplication {
             windows: HashMap::new(),
             pending_windows: Vec::new(),
@@ -43,7 +43,7 @@ impl<Doc: Document<Doc = D>, Rend: DocumentRenderer<Doc = D>> BlitzApplication<D
     }
 }
 
-impl<Doc: Document<Doc = D>, Rend: DocumentRenderer<Doc = D>> ApplicationHandler<BlitzEvent>
+impl<Doc: Document<Doc = D>, Rend: DocumentRenderer<Doc = D>> ApplicationHandler<BlitzShellEvent>
     for BlitzApplication<Doc, Rend>
 {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
@@ -97,18 +97,18 @@ impl<Doc: Document<Doc = D>, Rend: DocumentRenderer<Doc = D>> ApplicationHandler
             window.handle_winit_event(event);
         }
 
-        let _ = self.proxy.send_event(BlitzEvent::Poll { window_id });
+        let _ = self.proxy.send_event(BlitzShellEvent::Poll { window_id });
     }
 
-    fn user_event(&mut self, _event_loop: &ActiveEventLoop, event: BlitzEvent) {
+    fn user_event(&mut self, _event_loop: &ActiveEventLoop, event: BlitzShellEvent) {
         match event {
-            BlitzEvent::Poll { window_id } => {
+            BlitzShellEvent::Poll { window_id } => {
                 if let Some(window) = self.windows.get_mut(&window_id) {
                     window.poll();
                 };
             }
 
-            BlitzEvent::ResourceLoad { doc_id, data } => {
+            BlitzShellEvent::ResourceLoad { doc_id, data } => {
                 // TODO: Handle multiple documents per window
                 if let Some(window) = self.window_mut_by_doc_id(doc_id) {
                     window.doc.as_mut().load_resource(data);
@@ -117,7 +117,7 @@ impl<Doc: Document<Doc = D>, Rend: DocumentRenderer<Doc = D>> ApplicationHandler
             }
 
             #[cfg(feature = "accessibility")]
-            BlitzEvent::Accessibility { window_id, data } => {
+            BlitzShellEvent::Accessibility { window_id, data } => {
                 if let Some(window) = self.windows.get_mut(&window_id) {
                     match &*data {
                         accesskit_winit::WindowEvent::InitialTreeRequested => {
@@ -133,10 +133,10 @@ impl<Doc: Document<Doc = D>, Rend: DocumentRenderer<Doc = D>> ApplicationHandler
                 }
             }
 
-            BlitzEvent::Embedder(_) => {
+            BlitzShellEvent::Embedder(_) => {
                 // Do nothing. Should be handled by embedders (if required).
             }
-            BlitzEvent::Navigate(_url) => {
+            BlitzShellEvent::Navigate(_url) => {
                 // Do nothing. Should be handled by embedders (if required).
             }
         }

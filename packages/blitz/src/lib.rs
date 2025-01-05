@@ -14,7 +14,7 @@ use std::sync::Arc;
 use blitz_html::HtmlDocument;
 use blitz_renderer_vello::BlitzVelloRenderer;
 use blitz_shell::{
-    create_default_event_loop, BlitzApplication, BlitzEvent, BlitzShellNetCallback, Config,
+    create_default_event_loop, BlitzApplication, BlitzShellEvent, BlitzShellNetCallback, Config,
     WindowConfig,
 };
 use blitz_traits::navigation::DummyNavigationProvider;
@@ -63,7 +63,7 @@ pub fn launch_static_html_cfg(html: &str, cfg: Config) {
 }
 
 fn launch_internal(html: &str, cfg: Config) {
-    let event_loop = create_default_event_loop::<BlitzEvent>();
+    let event_loop = create_default_event_loop::<BlitzShellEvent>();
 
     #[cfg(feature = "net")]
     let net_provider = {

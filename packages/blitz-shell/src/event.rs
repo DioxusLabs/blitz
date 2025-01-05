@@ -7,7 +7,7 @@ use accesskit_winit::{Event as AccessKitEvent, WindowEvent as AccessKitWindowEve
 use blitz_dom::net::Resource;
 
 #[derive(Debug, Clone)]
-pub enum BlitzEvent {
+pub enum BlitzShellEvent {
     Poll {
         window_id: WindowId,
     },
@@ -30,20 +30,20 @@ pub enum BlitzEvent {
     /// Navigate to another URL (triggered by e.g. clicking a link)
     Navigate(String),
 }
-impl BlitzEvent {
+impl BlitzShellEvent {
     pub fn embedder_event<T: Any + Send + Sync>(value: T) -> Self {
         let boxed = Arc::new(value) as Arc<dyn Any + Send + Sync>;
         Self::Embedder(boxed)
     }
 }
-impl From<(usize, Resource)> for BlitzEvent {
+impl From<(usize, Resource)> for BlitzShellEvent {
     fn from((doc_id, data): (usize, Resource)) -> Self {
-        BlitzEvent::ResourceLoad { doc_id, data }
+        BlitzShellEvent::ResourceLoad { doc_id, data }
     }
 }
 
 #[cfg(feature = "accessibility")]
-impl From<AccessKitEvent> for BlitzEvent {
+impl From<AccessKitEvent> for BlitzShellEvent {
     fn from(value: AccessKitEvent) -> Self {
         Self::Accessibility {
             window_id: value.window_id,
@@ -57,9 +57,9 @@ impl From<AccessKitEvent> for BlitzEvent {
 /// This lets the VirtualDom "come up for air" and process events while the main thread is blocked by the WebView.
 ///
 /// All other IO lives in the Tokio runtime,
-pub fn create_waker(proxy: &EventLoopProxy<BlitzEvent>, id: WindowId) -> std::task::Waker {
+pub fn create_waker(proxy: &EventLoopProxy<BlitzShellEvent>, id: WindowId) -> std::task::Waker {
     struct DomHandle {
-        proxy: EventLoopProxy<BlitzEvent>,
+        proxy: EventLoopProxy<BlitzShellEvent>,
         id: WindowId,
     }
 
@@ -70,7 +70,7 @@ pub fn create_waker(proxy: &EventLoopProxy<BlitzEvent>, id: WindowId) -> std::ta
 
     impl ArcWake for DomHandle {
         fn wake_by_ref(arc_self: &Arc<Self>) {
-            _ = arc_self.proxy.send_event(BlitzEvent::Poll {
+            _ = arc_self.proxy.send_event(BlitzShellEvent::Poll {
                 window_id: arc_self.id,
             })
         }

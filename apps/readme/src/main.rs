@@ -9,7 +9,9 @@ use notify::{Error as NotifyError, Event as NotifyEvent, RecursiveMode, Watcher 
 use readme_application::{ReadmeApplication, ReadmeEvent};
 use reqwest::header::HeaderName;
 
-use blitz_shell::{create_default_event_loop, BlitzEvent, BlitzShellNetCallback, WindowConfig};
+use blitz_shell::{
+    create_default_event_loop, BlitzShellEvent, BlitzShellNetCallback, WindowConfig,
+};
 use std::env::current_dir;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -21,12 +23,12 @@ use winit::window::WindowAttributes;
 const USER_AGENT: &str = "Mozilla/5.0 (X11; Linux x86_64; rv:60.0) Gecko/20100101 Firefox/81.0";
 
 struct ReadmeNavigationProvider {
-    proxy: EventLoopProxy<BlitzEvent>,
+    proxy: EventLoopProxy<BlitzShellEvent>,
 }
 
 impl NavigationProvider for ReadmeNavigationProvider {
     fn navigate_new_page(&self, url: String) {
-        let _ = self.proxy.send_event(BlitzEvent::Navigate(url));
+        let _ = self.proxy.send_event(BlitzShellEvent::Navigate(url));
     }
 }
 
@@ -97,7 +99,7 @@ fn main() {
     if let Some(path) = file_path {
         let mut watcher =
             notify::recommended_watcher(move |_: Result<NotifyEvent, NotifyError>| {
-                let event = BlitzEvent::Embedder(Arc::new(ReadmeEvent));
+                let event = BlitzShellEvent::Embedder(Arc::new(ReadmeEvent));
                 proxy.send_event(event).unwrap();
             })
             .unwrap();

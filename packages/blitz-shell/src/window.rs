@@ -1,7 +1,7 @@
 use crate::convert_events::{
     winit_ime_to_blitz, winit_key_event_to_blitz, winit_modifiers_to_kbt_modifiers,
 };
-use crate::event::{create_waker, BlitzEvent};
+use crate::event::{create_waker, BlitzShellEvent};
 use blitz_dom::BaseDocument;
 use blitz_traits::{BlitzMouseButtonEvent, ColorScheme, Devtools, Viewport};
 use blitz_traits::{Document, DocumentRenderer, DomEvent, DomEventData};
@@ -53,7 +53,7 @@ pub struct View<Doc: Document<Doc = D>, Rend: DocumentRenderer<Doc = D>> {
     pub(crate) renderer: Rend,
     pub(crate) waker: Option<Waker>,
 
-    event_loop_proxy: EventLoopProxy<BlitzEvent>,
+    event_loop_proxy: EventLoopProxy<BlitzShellEvent>,
     window: Arc<Window>,
 
     /// The actual viewport of the page that we're getting a glimpse of.
@@ -84,7 +84,7 @@ impl<Doc: Document<Doc = D>, Rend: DocumentRenderer<Doc = D>> View<Doc, Rend> {
     pub(crate) fn init(
         config: WindowConfig<Doc, Rend>,
         event_loop: &ActiveEventLoop,
-        proxy: &EventLoopProxy<BlitzEvent>,
+        proxy: &EventLoopProxy<BlitzShellEvent>,
     ) -> Self {
         let winit_window = Arc::from(event_loop.create_window(config.attributes).unwrap());
 

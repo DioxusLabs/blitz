@@ -3,7 +3,7 @@ use std::sync::Arc;
 use blitz_dom::net::Resource;
 use blitz_html::HtmlDocument;
 use blitz_renderer_vello::BlitzVelloRenderer;
-use blitz_shell::{BlitzApplication, BlitzEvent, View, WindowConfig};
+use blitz_shell::{BlitzApplication, BlitzShellEvent, View, WindowConfig};
 use blitz_traits::navigation::NavigationProvider;
 use blitz_traits::net::NetProvider;
 use tokio::runtime::Handle;
@@ -29,7 +29,7 @@ pub struct ReadmeApplication {
 
 impl ReadmeApplication {
     pub fn new(
-        proxy: EventLoopProxy<BlitzEvent>,
+        proxy: EventLoopProxy<BlitzShellEvent>,
         raw_url: String,
         net_provider: Arc<dyn NetProvider<Data = Resource>>,
         navigation_provider: Arc<dyn NavigationProvider>,
@@ -85,7 +85,7 @@ impl ReadmeApplication {
     }
 }
 
-impl ApplicationHandler<BlitzEvent> for ReadmeApplication {
+impl ApplicationHandler<BlitzShellEvent> for ReadmeApplication {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
         self.inner.resumed(event_loop);
     }
@@ -122,14 +122,14 @@ impl ApplicationHandler<BlitzEvent> for ReadmeApplication {
         self.inner.window_event(event_loop, window_id, event);
     }
 
-    fn user_event(&mut self, event_loop: &ActiveEventLoop, event: BlitzEvent) {
+    fn user_event(&mut self, event_loop: &ActiveEventLoop, event: BlitzShellEvent) {
         match event {
-            BlitzEvent::Embedder(event) => {
+            BlitzShellEvent::Embedder(event) => {
                 if let Some(_event) = event.downcast_ref::<ReadmeEvent>() {
                     self.reload_document();
                 }
             }
-            BlitzEvent::Navigate(url) => {
+            BlitzShellEvent::Navigate(url) => {
                 self.raw_url = url;
                 self.reload_document();
             }

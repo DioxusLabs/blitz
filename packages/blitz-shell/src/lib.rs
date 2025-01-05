@@ -21,7 +21,7 @@ mod menu;
 mod accessibility;
 
 pub use crate::application::BlitzApplication;
-pub use crate::event::BlitzEvent;
+pub use crate::event::BlitzShellEvent;
 pub use crate::window::{View, WindowConfig};
 
 use blitz_dom::net::Resource;
@@ -70,14 +70,14 @@ pub fn current_android_app() -> android_activity::AndroidApp {
 }
 
 /// A NetCallback that injects the fetched Resource into our winit event loop
-pub struct BlitzShellNetCallback(EventLoopProxy<BlitzEvent>);
+pub struct BlitzShellNetCallback(EventLoopProxy<BlitzShellEvent>);
 
 impl BlitzShellNetCallback {
-    pub fn new(proxy: EventLoopProxy<BlitzEvent>) -> Self {
+    pub fn new(proxy: EventLoopProxy<BlitzShellEvent>) -> Self {
         Self(proxy)
     }
 
-    pub fn shared(proxy: EventLoopProxy<BlitzEvent>) -> Arc<dyn NetCallback<Data = Resource>> {
+    pub fn shared(proxy: EventLoopProxy<BlitzShellEvent>) -> Arc<dyn NetCallback<Data = Resource>> {
         Arc::new(Self(proxy))
     }
 }
@@ -85,7 +85,7 @@ impl NetCallback for BlitzShellNetCallback {
     type Data = Resource;
     fn call(&self, doc_id: usize, data: Self::Data) {
         self.0
-            .send_event(BlitzEvent::ResourceLoad { doc_id, data })
+            .send_event(BlitzShellEvent::ResourceLoad { doc_id, data })
             .unwrap()
     }
 }
