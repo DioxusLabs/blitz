@@ -67,7 +67,7 @@ pub struct View<Doc: DocumentLike, Rend: DocumentRenderer> {
 
     /// Main menu bar of this view's window.
     /// Field is _ prefixed because it is never read. But it needs to be stored here to prevent it from dropping.
-    #[cfg(feature = "menu")]
+    #[cfg(all(feature = "menu", not(any(target_os = "android", target_os = "ios"))))]
     _menu: muda::Menu,
 }
 
@@ -107,7 +107,7 @@ impl<Doc: DocumentLike, Rend: DocumentRenderer> View<Doc, Rend> {
             #[cfg(feature = "accessibility")]
             accessibility: AccessibilityState::new(&winit_window, proxy.clone()),
 
-            #[cfg(feature = "menu")]
+            #[cfg(all(feature = "menu", not(any(target_os = "android", target_os = "ios"))))]
             _menu: init_menu(&winit_window),
         }
     }
