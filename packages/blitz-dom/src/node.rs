@@ -1,5 +1,6 @@
 use atomic_refcell::{AtomicRef, AtomicRefCell};
 use image::DynamicImage;
+use keyboard_types::Modifiers;
 use markup5ever::{local_name, LocalName, QualName};
 use parley::{Cluster, FontContext, LayoutContext};
 use peniko::kurbo;
@@ -31,10 +32,9 @@ use taffy::{
     Cache,
 };
 use url::Url;
-use winit::event::Modifiers;
 
-use crate::events::{DomEventData, EventListener, HitResult};
 use crate::layout::table::TableContext;
+use blitz_traits::{BlitzMouseButtonEvent, DomEventData, EventListener, HitResult};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum DisplayOuter {
@@ -1069,13 +1069,13 @@ impl Node {
             .unwrap_or(taffy::Point { x, y })
     }
 
-    /// Creates a synteh
+    /// Creates a synthetic click event
     pub fn synthetic_click_event(&self, mods: Modifiers) -> DomEventData {
         let absolute_position = self.absolute_position(0.0, 0.0);
         let x = absolute_position.x + (self.final_layout.size.width / 2.0);
         let y = absolute_position.y + (self.final_layout.size.height / 2.0);
 
-        DomEventData::Click { x, y, mods }
+        DomEventData::Click(BlitzMouseButtonEvent { x, y, mods })
     }
 }
 

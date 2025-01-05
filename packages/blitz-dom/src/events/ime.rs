@@ -1,8 +1,8 @@
-use winit::event::Ime;
+use blitz_traits::BlitzImeEvent;
 
 use crate::BaseDocument;
 
-pub(crate) fn handle_ime_event(doc: &mut BaseDocument, event: Ime) {
+pub(crate) fn handle_ime_event(doc: &mut BaseDocument, event: BlitzImeEvent) {
     if let Some(node_id) = doc.focus_node_id {
         let node = &mut doc.nodes[node_id];
         let text_input_data = node
@@ -14,14 +14,14 @@ pub(crate) fn handle_ime_event(doc: &mut BaseDocument, event: Ime) {
             let mut driver = editor.driver(&mut doc.font_ctx, &mut doc.layout_ctx);
 
             match event {
-                Ime::Enabled => { /* Do nothing */ }
-                Ime::Disabled => {
+                BlitzImeEvent::Enabled => { /* Do nothing */ }
+                BlitzImeEvent::Disabled => {
                     driver.clear_compose();
                 }
-                Ime::Commit(text) => {
+                BlitzImeEvent::Commit(text) => {
                     driver.insert_or_replace_selection(&text);
                 }
-                Ime::Preedit(text, cursor) => {
+                BlitzImeEvent::Preedit(text, cursor) => {
                     if text.is_empty() {
                         driver.clear_compose();
                     } else {

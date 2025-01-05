@@ -2,6 +2,15 @@ pub mod net;
 
 pub mod navigation;
 
+mod events;
+pub use events::{
+    BlitzImeEvent, BlitzKeyEvent, BlitzMouseButtonEvent, DomEvent, DomEventData, EventListener,
+    HitResult, KeyState,
+};
+
+mod document;
+pub use document::{BlitzWindowHandle, Document, DocumentRenderer};
+
 mod devtools;
 pub use devtools::Devtools;
 

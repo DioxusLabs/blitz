@@ -17,6 +17,7 @@ blitz-dom = { path = "../blitz-dom", default-features = false }
 
 # Windowing & Input
 winit = { workspace = true }
+keyboard-types = { workspace = true }
 
 accesskit = { workspace = true, optional = true }
 accesskit_winit = {workspace = true, optional = true }

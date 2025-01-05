@@ -1,7 +1,10 @@
+use crate::convert_events::{
+    winit_ime_to_blitz, winit_key_event_to_blitz, winit_modifiers_to_kbt_modifiers,
+};
 use crate::event::{create_waker, BlitzEvent};
-use blitz_dom::events::{DomEvent, DomEventData};
-use blitz_dom::{DocumentLike, DocumentRenderer};
-use blitz_traits::{ColorScheme, Devtools, Viewport};
+use blitz_dom::BaseDocument;
+use blitz_traits::{BlitzMouseButtonEvent, ColorScheme, Devtools, Viewport};
+use blitz_traits::{Document, DocumentRenderer, DomEvent, DomEventData};
 use winit::keyboard::PhysicalKey;
 
 use std::marker::PhantomData;
@@ -18,13 +21,19 @@ use crate::menu::init_menu;
 #[cfg(feature = "accessibility")]
 use crate::accessibility::AccessibilityState;
 
-pub struct WindowConfig<Doc: DocumentLike, Rend: DocumentRenderer> {
+// TODO: make generic
+type D = BaseDocument;
+
+pub struct WindowConfig<
+    Doc: Document<Doc = BaseDocument>,
+    Rend: DocumentRenderer<Doc = BaseDocument>,
+> {
     doc: Doc,
     attributes: WindowAttributes,
     rend: PhantomData<Rend>,
 }
 
-impl<Doc: DocumentLike, Rend: DocumentRenderer> WindowConfig<Doc, Rend> {
+impl<Doc: Document<Doc = D>, Rend: DocumentRenderer<Doc = D>> WindowConfig<Doc, Rend> {
     pub fn new(doc: Doc) -> Self {
         Self::with_attributes(doc, Window::default_attributes())
     }
@@ -38,7 +47,7 @@ impl<Doc: DocumentLike, Rend: DocumentRenderer> WindowConfig<Doc, Rend> {
     }
 }
 
-pub struct View<Doc: DocumentLike, Rend: DocumentRenderer> {
+pub struct View<Doc: Document<Doc = D>, Rend: DocumentRenderer<Doc = D>> {
     pub doc: Doc,
 
     pub(crate) renderer: Rend,
@@ -71,7 +80,7 @@ pub struct View<Doc: DocumentLike, Rend: DocumentRenderer> {
     _menu: muda::Menu,
 }
 
-impl<Doc: DocumentLike, Rend: DocumentRenderer> View<Doc, Rend> {
+impl<Doc: Document<Doc = D>, Rend: DocumentRenderer<Doc = D>> View<Doc, Rend> {
     pub(crate) fn init(
         config: WindowConfig<Doc, Rend>,
         event_loop: &ActiveEventLoop,
@@ -138,7 +147,7 @@ impl<Doc: DocumentLike, Rend: DocumentRenderer> View<Doc, Rend> {
     }
 }
 
-impl<Doc: DocumentLike, Rend: DocumentRenderer> View<Doc, Rend> {
+impl<Doc: Document<Doc = D>, Rend: DocumentRenderer<Doc = D>> View<Doc, Rend> {
     pub fn resume(&mut self) {
         // Resolve dom
         self.doc.as_mut().set_viewport(self.viewport.clone());
@@ -257,11 +266,11 @@ impl<Doc: DocumentLike, Rend: DocumentRenderer> View<Doc, Rend> {
         // call those listeners
         self.doc.handle_event(DomEvent {
             target: node_id,
-            data: DomEventData::MouseDown {
+            data: DomEventData::MouseDown(BlitzMouseButtonEvent {
                 x: self.dom_mouse_pos.0,
                 y: self.dom_mouse_pos.1,
-                mods: self.keyboard_modifiers,
-            },
+                mods: winit_modifiers_to_kbt_modifiers(self.keyboard_modifiers.state()),
+            }),
         });
 
         self.mouse_down_node = Some(node_id);
@@ -278,11 +287,11 @@ impl<Doc: DocumentLike, Rend: DocumentRenderer> View<Doc, Rend> {
         // call those listeners
         self.doc.handle_event(DomEvent {
             target: node_id,
-            data: DomEventData::MouseUp {
+            data: DomEventData::MouseUp(BlitzMouseButtonEvent {
                 x: self.dom_mouse_pos.0,
                 y: self.dom_mouse_pos.1,
-                mods: self.keyboard_modifiers,
-            },
+                mods: winit_modifiers_to_kbt_modifiers(self.keyboard_modifiers.state()),
+            }),
         });
 
         if self.mouse_down_node == Some(node_id) {
@@ -311,11 +320,11 @@ impl<Doc: DocumentLike, Rend: DocumentRenderer> View<Doc, Rend> {
                 // call those listeners
                 self.doc.handle_event(DomEvent {
                     target: node_id,
-                    data: DomEventData::Click {
+                    data: DomEventData::Click(BlitzMouseButtonEvent {
                         x: self.dom_mouse_pos.0,
                         y: self.dom_mouse_pos.1,
-                        mods: self.keyboard_modifiers,
-                    },
+                        mods: winit_modifiers_to_kbt_modifiers(self.keyboard_modifiers.state()),
+                    }),
                 });
             }
         }
@@ -359,7 +368,7 @@ impl<Doc: DocumentLike, Rend: DocumentRenderer> View<Doc, Rend> {
             // Text / keyboard events
             WindowEvent::Ime(ime_event) => {
                 if let Some(target) = self.doc.as_ref().get_focussed_node_id() {
-                    self.doc.handle_event(DomEvent { target, data: DomEventData::Ime(ime_event) });
+                    self.doc.handle_event(DomEvent { target, data: DomEventData::Ime(winit_ime_to_blitz(ime_event)) });
                     self.request_redraw();
                 }
             },
@@ -426,7 +435,7 @@ impl<Doc: DocumentLike, Rend: DocumentRenderer> View<Doc, Rend> {
                         if let Some(focus_node_id) = self.doc.as_ref().get_focussed_node_id() {
                             self.doc.handle_event(DomEvent {
                                 target: focus_node_id,
-                                data: DomEventData::KeyPress { event, mods: self.keyboard_modifiers }
+                                data: DomEventData::KeyPress(winit_key_event_to_blitz(&event, self.keyboard_modifiers.state()))
                             });
                             self.request_redraw();
                         }

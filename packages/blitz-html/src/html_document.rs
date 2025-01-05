@@ -2,10 +2,10 @@ use std::sync::Arc;
 
 use crate::DocumentHtmlParser;
 
-use blitz_dom::{
-    events::DomEvent, net::Resource, BaseDocument, DocumentLike, FontContext, DEFAULT_CSS,
+use blitz_dom::{net::Resource, BaseDocument, FontContext, DEFAULT_CSS};
+use blitz_traits::{
+    navigation::NavigationProvider, net::SharedProvider, ColorScheme, Document, DomEvent, Viewport,
 };
-use blitz_traits::{navigation::NavigationProvider, net::SharedProvider, ColorScheme, Viewport};
 
 pub struct HtmlDocument {
     inner: BaseDocument,
@@ -28,9 +28,14 @@ impl From<HtmlDocument> for BaseDocument {
         doc.inner
     }
 }
-impl DocumentLike for HtmlDocument {
+impl Document for HtmlDocument {
+    type Doc = BaseDocument;
     fn handle_event(&mut self, event: DomEvent) {
         self.inner.as_mut().handle_event(event)
+    }
+
+    fn id(&self) -> usize {
+        self.inner.id()
     }
 }
 

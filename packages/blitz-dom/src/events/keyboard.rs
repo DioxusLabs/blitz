@@ -2,18 +2,11 @@ use crate::{
     node::{TextBrush, TextInputData},
     BaseDocument,
 };
+use blitz_traits::BlitzKeyEvent;
+use keyboard_types::{Key, Modifiers};
 use parley::{FontContext, LayoutContext};
-use winit::{
-    event::{KeyEvent, Modifiers},
-    keyboard::{Key, NamedKey},
-};
 
-pub(crate) fn handle_keypress(
-    doc: &mut BaseDocument,
-    target: usize,
-    event: KeyEvent,
-    mods: Modifiers,
-) {
+pub(crate) fn handle_keypress(doc: &mut BaseDocument, target: usize, event: BlitzKeyEvent) {
     if let Some(node_id) = doc.focus_node_id {
         if target != node_id {
             return;
@@ -27,42 +20,35 @@ pub(crate) fn handle_keypress(
 
         if let Some(input_data) = text_input_data {
             println!("Sent text event to {}", node_id);
-            apply_keypress_event(
-                input_data,
-                &mut doc.font_ctx,
-                &mut doc.layout_ctx,
-                event,
-                mods,
-            );
+            apply_keypress_event(input_data, &mut doc.font_ctx, &mut doc.layout_ctx, event);
         }
     }
 }
+
+#[cfg(target_os = "macos")]
+const ACTION_MOD: Modifiers = Modifiers::SUPER;
+#[cfg(not(target_os = "macos"))]
+const ACTION_MOD: Modifiers = Modifiers::CONTROL;
 
 pub(crate) fn apply_keypress_event(
     input_data: &mut TextInputData,
     font_ctx: &mut FontContext,
     layout_ctx: &mut LayoutContext<TextBrush>,
-    event: KeyEvent,
-    mods: Modifiers,
+    event: BlitzKeyEvent,
 ) {
     // Do nothing if it is a keyup event
     if !event.state.is_pressed() {
         return;
     }
 
-    let shift = mods.state().shift_key();
-    let action_mod = {
-        if cfg!(target_os = "macos") {
-            mods.state().super_key()
-        } else {
-            mods.state().control_key()
-        }
-    };
+    let mods = event.modifiers;
+    let shift = mods.contains(Modifiers::SHIFT);
+    let action_mod = mods.contains(ACTION_MOD);
 
     let is_multiline = input_data.is_multiline;
     let editor = &mut input_data.editor;
     let mut driver = editor.driver(font_ctx, layout_ctx);
-    match event.logical_key {
+    match event.key {
         #[cfg(all(feature = "clipboard", not(target_os = "android")))]
         Key::Character(c) if action_mod && matches!(c.as_str(), "c" | "x" | "v") => {
             use arboard::Clipboard;
@@ -96,7 +82,7 @@ pub(crate) fn apply_keypress_event(
                 driver.select_all()
             }
         }
-        Key::Named(NamedKey::ArrowLeft) => {
+        Key::ArrowLeft => {
             if action_mod {
                 if shift {
                     driver.select_word_left()
@@ -109,7 +95,7 @@ pub(crate) fn apply_keypress_event(
                 driver.move_left()
             }
         }
-        Key::Named(NamedKey::ArrowRight) => {
+        Key::ArrowRight => {
             if action_mod {
                 if shift {
                     driver.select_word_right()
@@ -122,21 +108,21 @@ pub(crate) fn apply_keypress_event(
                 driver.move_right()
             }
         }
-        Key::Named(NamedKey::ArrowUp) => {
+        Key::ArrowUp => {
             if shift {
                 driver.select_up()
             } else {
                 driver.move_up()
             }
         }
-        Key::Named(NamedKey::ArrowDown) => {
+        Key::ArrowDown => {
             if shift {
                 driver.select_down()
             } else {
                 driver.move_down()
             }
         }
-        Key::Named(NamedKey::Home) => {
+        Key::Home => {
             if action_mod {
                 if shift {
                     driver.select_to_text_start()
@@ -149,7 +135,7 @@ pub(crate) fn apply_keypress_event(
                 driver.move_to_line_start()
             }
         }
-        Key::Named(NamedKey::End) => {
+        Key::End => {
             if action_mod {
                 if shift {
                     driver.select_to_text_end()
@@ -162,26 +148,25 @@ pub(crate) fn apply_keypress_event(
                 driver.move_to_line_end()
             }
         }
-        Key::Named(NamedKey::Delete) => {
+        Key::Delete => {
             if action_mod {
                 driver.delete_word()
             } else {
                 driver.delete()
             }
         }
-        Key::Named(NamedKey::Backspace) => {
+        Key::Backspace => {
             if action_mod {
                 driver.backdelete_word()
             } else {
                 driver.backdelete()
             }
         }
-        Key::Named(NamedKey::Enter) => {
+        Key::Enter => {
             if is_multiline {
                 driver.insert_or_replace_selection("\n");
             }
         }
-        Key::Named(NamedKey::Space) => driver.insert_or_replace_selection(" "),
         Key::Character(s) => driver.insert_or_replace_selection(&s),
         _ => {}
     };

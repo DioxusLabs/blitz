@@ -8,3 +8,6 @@ edition = "2021"
 http = { workspace = true }
 url = { workspace = true }
 bytes = { workspace = true }
+keyboard-types = { workspace = true }
+raw-window-handle = { workspace = true }
+smol_str = { workspace = true }

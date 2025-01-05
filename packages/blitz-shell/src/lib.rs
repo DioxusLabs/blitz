@@ -10,6 +10,7 @@
 //!  - `tracing`: Enables tracing support.
 
 mod application;
+mod convert_events;
 mod event;
 mod window;
 

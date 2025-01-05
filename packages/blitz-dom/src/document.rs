@@ -1,4 +1,4 @@
-use crate::events::{handle_event, DomEvent, HitResult};
+use crate::events::handle_event;
 use crate::layout::construct::collect_layout_children;
 use crate::node::{ImageData, NodeSpecificData, Status, TextBrush};
 use crate::stylo_to_cursor_icon::stylo_to_cursor_icon;
@@ -7,7 +7,8 @@ use crate::{ElementNodeData, Node, NodeData, TextNodeData};
 use app_units::Au;
 use blitz_traits::navigation::{DummyNavigationProvider, NavigationProvider};
 use blitz_traits::net::{DummyNetProvider, SharedProvider};
-use blitz_traits::{ColorScheme, Viewport};
+use blitz_traits::{ColorScheme, Document, Viewport};
+use blitz_traits::{DomEvent, HitResult};
 use cursor_icon::CursorIcon;
 use markup5ever::local_name;
 use parley::FontContext;
@@ -23,7 +24,6 @@ use style::values::GenericAtomIdent;
 use crate::net::{Resource, StylesheetLoader};
 use selectors::{matching::QuirksMode, Element};
 use slab::Slab;
-use std::any::Any;
 use std::collections::{BTreeMap, Bound, HashMap, HashSet, VecDeque};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
@@ -67,27 +67,6 @@ impl FontMetricsProvider for DummyFontMetricsProvider {
             _ => 16.0,
         };
         style::values::computed::Length::from(Au::from_f32_px(size))
-    }
-}
-
-pub trait Document:
-    AsRef<BaseDocument> + AsMut<BaseDocument> + Into<BaseDocument> + 'static
-{
-    fn poll(&mut self, _cx: std::task::Context) -> bool {
-        // Default implementation does nothing
-        false
-    }
-
-    fn handle_event(&mut self, _event: DomEvent) {
-        // Default implementation does nothing
-    }
-
-    fn as_any_mut(&mut self) -> &mut dyn Any {
-        self
-    }
-
-    fn id(&self) -> usize {
-        self.as_ref().id
     }
 }
 
@@ -176,8 +155,13 @@ fn make_device(viewport: &Viewport) -> Device {
 }
 
 impl Document for BaseDocument {
+    type Doc = Self;
     fn handle_event(&mut self, event: DomEvent) {
         handle_event(self, event)
+    }
+
+    fn id(&self) -> usize {
+        self.id
     }
 }
 

@@ -2,8 +2,8 @@ mod multicolor_rounded_rect;
 mod render;
 
 use crate::renderer::render::generate_vello_scene;
-use blitz_dom::{BaseDocument, BlitzWindowHandle, DocumentRenderer};
-use blitz_traits::{Devtools, Viewport};
+use blitz_dom::BaseDocument;
+use blitz_traits::{BlitzWindowHandle, Devtools, DocumentRenderer, Viewport};
 use std::num::NonZeroUsize;
 use std::sync::Arc;
 use vello::{
@@ -44,6 +44,8 @@ pub struct BlitzVelloRenderer {
 }
 
 impl DocumentRenderer for BlitzVelloRenderer {
+    type Doc = BaseDocument;
+
     fn new(window: Arc<dyn BlitzWindowHandle>) -> Self {
         // 1. Set up renderer-specific stuff
         // We build an independent viewport which can be dynamically set later

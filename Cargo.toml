@@ -82,6 +82,7 @@ futures-util = "0.3.30"
 futures-intrusive = "0.5.0"
 thiserror = "1.0.63"
 pollster = "0.4"
+smol_str = "0.2"
 
 [profile.production]
 inherits = "release"
