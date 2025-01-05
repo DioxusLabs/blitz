@@ -33,7 +33,7 @@ use taffy::{
 use url::Url;
 use winit::event::Modifiers;
 
-use crate::events::{EventData, EventListener, HitResult};
+use crate::events::{DomEventData, EventListener, HitResult};
 use crate::layout::table::TableContext;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -1070,12 +1070,12 @@ impl Node {
     }
 
     /// Creates a synteh
-    pub fn synthetic_click_event(&self, mods: Modifiers) -> EventData {
+    pub fn synthetic_click_event(&self, mods: Modifiers) -> DomEventData {
         let absolute_position = self.absolute_position(0.0, 0.0);
         let x = absolute_position.x + (self.final_layout.size.width / 2.0);
         let y = absolute_position.y + (self.final_layout.size.height / 2.0);
 
-        EventData::Click { x, y, mods }
+        DomEventData::Click { x, y, mods }
     }
 }
 

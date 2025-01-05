@@ -1,4 +1,4 @@
-use crate::events::{handle_event, HitResult, RendererEvent};
+use crate::events::{handle_event, DomEvent, HitResult};
 use crate::layout::construct::collect_layout_children;
 use crate::node::{ImageData, NodeSpecificData, Status, TextBrush};
 use crate::stylo_to_cursor_icon::stylo_to_cursor_icon;
@@ -76,7 +76,7 @@ pub trait DocumentLike: AsRef<Document> + AsMut<Document> + Into<Document> + 'st
         false
     }
 
-    fn handle_event(&mut self, _event: RendererEvent) {
+    fn handle_event(&mut self, _event: DomEvent) {
         // Default implementation does nothing
     }
 
@@ -174,7 +174,7 @@ fn make_device(viewport: &Viewport) -> Device {
 }
 
 impl DocumentLike for Document {
-    fn handle_event(&mut self, event: RendererEvent) {
+    fn handle_event(&mut self, event: DomEvent) {
         handle_event(self, event)
     }
 }

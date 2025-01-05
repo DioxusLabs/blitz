@@ -1,5 +1,5 @@
 use crate::event::{create_waker, BlitzEvent};
-use blitz_dom::events::{EventData, RendererEvent};
+use blitz_dom::events::{DomEvent, DomEventData};
 use blitz_dom::{DocumentLike, DocumentRenderer};
 use blitz_traits::{ColorScheme, Devtools, Viewport};
 use winit::keyboard::PhysicalKey;
@@ -255,9 +255,9 @@ impl<Doc: DocumentLike, Rend: DocumentRenderer> View<Doc, Rend> {
 
         // If we hit a node, then we collect the node to its parents, check for listeners, and then
         // call those listeners
-        self.doc.handle_event(RendererEvent {
+        self.doc.handle_event(DomEvent {
             target: node_id,
-            data: EventData::MouseDown {
+            data: DomEventData::MouseDown {
                 x: self.dom_mouse_pos.0,
                 y: self.dom_mouse_pos.1,
                 mods: self.keyboard_modifiers,
@@ -276,9 +276,9 @@ impl<Doc: DocumentLike, Rend: DocumentRenderer> View<Doc, Rend> {
 
         // If we hit a node, then we collect the node to its parents, check for listeners, and then
         // call those listeners
-        self.doc.handle_event(RendererEvent {
+        self.doc.handle_event(DomEvent {
             target: node_id,
-            data: EventData::MouseUp {
+            data: DomEventData::MouseUp {
                 x: self.dom_mouse_pos.0,
                 y: self.dom_mouse_pos.1,
                 mods: self.keyboard_modifiers,
@@ -309,9 +309,9 @@ impl<Doc: DocumentLike, Rend: DocumentRenderer> View<Doc, Rend> {
             if button == "left" {
                 // If we hit a node, then we collect the node to its parents, check for listeners, and then
                 // call those listeners
-                self.doc.handle_event(RendererEvent {
+                self.doc.handle_event(DomEvent {
                     target: node_id,
-                    data: EventData::Click {
+                    data: DomEventData::Click {
                         x: self.dom_mouse_pos.0,
                         y: self.dom_mouse_pos.1,
                         mods: self.keyboard_modifiers,
@@ -359,7 +359,7 @@ impl<Doc: DocumentLike, Rend: DocumentRenderer> View<Doc, Rend> {
             // Text / keyboard events
             WindowEvent::Ime(ime_event) => {
                 if let Some(target) = self.doc.as_ref().get_focussed_node_id() {
-                    self.doc.handle_event(RendererEvent { target, data: EventData::Ime(ime_event) });
+                    self.doc.handle_event(DomEvent { target, data: DomEventData::Ime(ime_event) });
                     self.request_redraw();
                 }
             },
@@ -424,9 +424,9 @@ impl<Doc: DocumentLike, Rend: DocumentRenderer> View<Doc, Rend> {
                     }
                     _ => {
                         if let Some(focus_node_id) = self.doc.as_ref().get_focussed_node_id() {
-                            self.doc.handle_event(RendererEvent {
+                            self.doc.handle_event(DomEvent {
                                 target: focus_node_id,
-                                data: EventData::KeyPress { event, mods: self.keyboard_modifiers }
+                                data: DomEventData::KeyPress { event, mods: self.keyboard_modifiers }
                             });
                             self.request_redraw();
                         }
