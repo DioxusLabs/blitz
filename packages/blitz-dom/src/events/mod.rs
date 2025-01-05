@@ -6,10 +6,10 @@ pub(crate) use ime::handle_ime_event;
 pub(crate) use keyboard::handle_keypress;
 pub(crate) use mouse::handle_click;
 
-use crate::Document;
+use crate::BaseDocument;
 use winit::event::{Ime, KeyEvent, Modifiers};
 
-pub(crate) fn handle_event(doc: &mut Document, event: DomEvent) {
+pub(crate) fn handle_event(doc: &mut BaseDocument, event: DomEvent) {
     let target_node_id = event.target;
 
     match event.data {

@@ -7,7 +7,7 @@ use blitz_dom::node::{
     ImageData, ListItemLayout, ListItemLayoutPosition, Marker, NodeData, RasterImageData,
     TextBrush, TextInputData, TextNodeData,
 };
-use blitz_dom::{local_name, Document, ElementNodeData, Node};
+use blitz_dom::{local_name, BaseDocument, ElementNodeData, Node};
 use blitz_traits::Devtools;
 
 use euclid::Transform3D;
@@ -73,7 +73,7 @@ static CLIPS_WANTED: AtomicUsize = AtomicUsize::new(0);
 /// Make sure you do those before trying to render
 pub fn generate_vello_scene(
     scene: &mut Scene,
-    dom: &Document,
+    dom: &BaseDocument,
     scale: f64,
     width: u32,
     height: u32,
@@ -103,7 +103,7 @@ pub fn generate_vello_scene(
 /// that we don't have to pass them down as parameters
 pub struct VelloSceneGenerator<'dom> {
     /// Input parameters (read only) for generating the Scene
-    dom: &'dom Document,
+    dom: &'dom BaseDocument,
     scale: f64,
     width: u32,
     height: u32,

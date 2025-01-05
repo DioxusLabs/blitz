@@ -1,8 +1,8 @@
 use winit::event::Ime;
 
-use crate::Document;
+use crate::BaseDocument;
 
-pub(crate) fn handle_ime_event(doc: &mut Document, event: Ime) {
+pub(crate) fn handle_ime_event(doc: &mut BaseDocument, event: Ime) {
     if let Some(node_id) = doc.focus_node_id {
         let node = &mut doc.nodes[node_id];
         let text_input_data = node

@@ -6,7 +6,7 @@
 
 use crate::node::{ImageData, NodeData, NodeSpecificData};
 use crate::{
-    document::Document,
+    document::BaseDocument,
     image::{image_measure_function, ImageContext},
     node::Node,
 };
@@ -25,7 +25,7 @@ pub(crate) mod table;
 
 use self::table::TableTreeWrapper;
 
-impl Document {
+impl BaseDocument {
     fn node_from_id(&self, node_id: taffy::prelude::NodeId) -> &Node {
         &self.nodes[node_id.into()]
     }
@@ -34,7 +34,7 @@ impl Document {
     }
 }
 
-impl TraversePartialTree for Document {
+impl TraversePartialTree for BaseDocument {
     type ChildIter<'a> = RefCellChildIter<'a>;
 
     fn child_ids(&self, node_id: NodeId) -> Self::ChildIter<'_> {
@@ -63,9 +63,9 @@ impl TraversePartialTree for Document {
         )
     }
 }
-impl TraverseTree for Document {}
+impl TraverseTree for BaseDocument {}
 
-impl LayoutPartialTree for Document {
+impl LayoutPartialTree for BaseDocument {
     type CoreContainerStyle<'a>
         = &'a taffy::Style
     where
@@ -302,7 +302,7 @@ impl LayoutPartialTree for Document {
     }
 }
 
-impl taffy::CacheTree for Document {
+impl taffy::CacheTree for BaseDocument {
     #[inline]
     fn cache_get(
         &self,
@@ -339,7 +339,7 @@ impl taffy::CacheTree for Document {
     }
 }
 
-impl taffy::LayoutBlockContainer for Document {
+impl taffy::LayoutBlockContainer for BaseDocument {
     type BlockContainerStyle<'a>
         = &'a Style
     where
@@ -359,7 +359,7 @@ impl taffy::LayoutBlockContainer for Document {
     }
 }
 
-impl taffy::LayoutFlexboxContainer for Document {
+impl taffy::LayoutFlexboxContainer for BaseDocument {
     type FlexboxContainerStyle<'a>
         = &'a Style
     where
@@ -379,7 +379,7 @@ impl taffy::LayoutFlexboxContainer for Document {
     }
 }
 
-impl taffy::LayoutGridContainer for Document {
+impl taffy::LayoutGridContainer for BaseDocument {
     type GridContainerStyle<'a>
         = &'a Style
     where
@@ -399,7 +399,7 @@ impl taffy::LayoutGridContainer for Document {
     }
 }
 
-impl RoundTree for Document {
+impl RoundTree for BaseDocument {
     fn get_unrounded_layout(&self, node_id: NodeId) -> &Layout {
         &self.node_from_id(node_id).unrounded_layout
     }
@@ -409,7 +409,7 @@ impl RoundTree for Document {
     }
 }
 
-impl PrintTree for Document {
+impl PrintTree for BaseDocument {
     fn get_debug_label(&self, node_id: NodeId) -> &'static str {
         let node = &self.node_from_id(node_id);
         let style = &node.style;

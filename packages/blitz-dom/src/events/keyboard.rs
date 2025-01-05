@@ -1,6 +1,6 @@
 use crate::{
     node::{TextBrush, TextInputData},
-    Document,
+    BaseDocument,
 };
 use parley::{FontContext, LayoutContext};
 use winit::{
@@ -8,7 +8,12 @@ use winit::{
     keyboard::{Key, NamedKey},
 };
 
-pub(crate) fn handle_keypress(doc: &mut Document, target: usize, event: KeyEvent, mods: Modifiers) {
+pub(crate) fn handle_keypress(
+    doc: &mut BaseDocument,
+    target: usize,
+    event: KeyEvent,
+    mods: Modifiers,
+) {
     if let Some(node_id) = doc.focus_node_id {
         if target != node_id {
             return;

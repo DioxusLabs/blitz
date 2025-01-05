@@ -3,28 +3,28 @@ use std::sync::Arc;
 use crate::DocumentHtmlParser;
 
 use blitz_dom::{
-    events::DomEvent, net::Resource, Document, DocumentLike, FontContext, DEFAULT_CSS,
+    events::DomEvent, net::Resource, BaseDocument, DocumentLike, FontContext, DEFAULT_CSS,
 };
 use blitz_traits::{navigation::NavigationProvider, net::SharedProvider, ColorScheme, Viewport};
 
 pub struct HtmlDocument {
-    inner: Document,
+    inner: BaseDocument,
 }
 
 // Implement DocumentLike and required traits for HtmlDocument
 
-impl AsRef<Document> for HtmlDocument {
-    fn as_ref(&self) -> &Document {
+impl AsRef<BaseDocument> for HtmlDocument {
+    fn as_ref(&self) -> &BaseDocument {
         &self.inner
     }
 }
-impl AsMut<Document> for HtmlDocument {
-    fn as_mut(&mut self) -> &mut Document {
+impl AsMut<BaseDocument> for HtmlDocument {
+    fn as_mut(&mut self) -> &mut BaseDocument {
         &mut self.inner
     }
 }
-impl From<HtmlDocument> for Document {
-    fn from(doc: HtmlDocument) -> Document {
+impl From<HtmlDocument> for BaseDocument {
+    fn from(doc: HtmlDocument) -> BaseDocument {
         doc.inner
     }
 }
@@ -46,8 +46,8 @@ impl HtmlDocument {
         // Spin up the virtualdom and include the default stylesheet
         let viewport = Viewport::new(0, 0, 1.0, ColorScheme::Light);
         let mut doc = match font_ctx {
-            Some(font_ctx) => Document::with_font_ctx(viewport, font_ctx),
-            None => Document::new(viewport),
+            Some(font_ctx) => BaseDocument::with_font_ctx(viewport, font_ctx),
+            None => BaseDocument::new(viewport),
         };
 
         // Set base url if configured

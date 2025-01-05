@@ -7,7 +7,7 @@ use std::cell::{Cell, Ref, RefCell, RefMut};
 use std::collections::HashSet;
 
 use blitz_dom::node::{Attribute, ElementNodeData, Node, NodeData};
-use blitz_dom::Document;
+use blitz_dom::BaseDocument;
 use blitz_traits::net::SharedProvider;
 use html5ever::{
     local_name,
@@ -27,7 +27,7 @@ fn html5ever_to_blitz_attr(attr: html5ever::Attribute) -> Attribute {
 
 pub struct DocumentHtmlParser<'a> {
     doc_id: usize,
-    doc: RefCell<&'a mut Document>,
+    doc: RefCell<&'a mut BaseDocument>,
     style_nodes: RefCell<Vec<usize>>,
 
     /// Errors that occurred during parsing.
@@ -41,7 +41,10 @@ pub struct DocumentHtmlParser<'a> {
 }
 
 impl DocumentHtmlParser<'_> {
-    pub fn new(doc: &mut Document, net_provider: SharedProvider<Resource>) -> DocumentHtmlParser {
+    pub fn new(
+        doc: &mut BaseDocument,
+        net_provider: SharedProvider<Resource>,
+    ) -> DocumentHtmlParser {
         DocumentHtmlParser {
             doc_id: doc.id(),
             doc: RefCell::new(doc),
@@ -54,10 +57,10 @@ impl DocumentHtmlParser<'_> {
     }
 
     pub fn parse_into_doc<'d>(
-        doc: &'d mut Document,
+        doc: &'d mut BaseDocument,
         html: &str,
         net_provider: SharedProvider<Resource>,
-    ) -> &'d mut Document {
+    ) -> &'d mut BaseDocument {
         let mut sink = Self::new(doc, net_provider);
         if html.starts_with("<?xml")
             || html.starts_with("<!DOCTYPE") && {
@@ -177,7 +180,7 @@ impl DocumentHtmlParser<'_> {
 }
 
 impl<'b> TreeSink for DocumentHtmlParser<'b> {
-    type Output = &'b mut Document;
+    type Output = &'b mut BaseDocument;
 
     // we use the ID of the nodes in the tree as the handle
     type Handle = usize;
@@ -401,7 +404,7 @@ fn parses_some_html() {
 
     let html = "<!DOCTYPE html><html><body><h1>hello world</h1></body></html>";
     let viewport = Viewport::new(800, 600, 1.0, ColorScheme::Light);
-    let mut doc = Document::new(viewport);
+    let mut doc = BaseDocument::new(viewport);
     let sink = DocumentHtmlParser::new(&mut doc, Arc::new(DummyNetProvider::default()));
 
     html5ever::parse_document(sink, Default::default())

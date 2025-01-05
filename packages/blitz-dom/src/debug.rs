@@ -1,8 +1,8 @@
 use parley::layout::PositionedLayoutItem;
 
-use crate::Document;
+use crate::BaseDocument;
 
-impl Document {
+impl BaseDocument {
     pub fn print_taffy_tree(&self) {
         taffy::print_tree(self, taffy::NodeId::from(0usize));
     }

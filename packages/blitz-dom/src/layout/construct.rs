@@ -22,7 +22,7 @@ use crate::{
         ListItemLayout, ListItemLayoutPosition, Marker, NodeKind, NodeSpecificData, TextBrush,
         TextInputData, TextLayout,
     },
-    stylo_to_parley, Document, ElementNodeData, Node, NodeData,
+    stylo_to_parley, BaseDocument, ElementNodeData, Node, NodeData,
 };
 
 use super::table::build_table_context;
@@ -44,7 +44,7 @@ fn push_children_and_pseudos(layout_children: &mut Vec<usize>, node: &Node) {
 }
 
 pub(crate) fn collect_layout_children(
-    doc: &mut Document,
+    doc: &mut BaseDocument,
     container_node_id: usize,
     layout_children: &mut Vec<usize>,
     anonymous_block_id: &mut Option<usize>,
@@ -281,7 +281,7 @@ pub(crate) fn collect_layout_children(
     }
 }
 
-fn flush_pseudo_elements(doc: &mut Document, node_id: usize) {
+fn flush_pseudo_elements(doc: &mut BaseDocument, node_id: usize) {
     let (before_style, after_style, before_node_id, after_node_id) = {
         let node = &doc.nodes[node_id];
 
@@ -359,7 +359,7 @@ fn flush_pseudo_elements(doc: &mut Document, node_id: usize) {
 }
 
 fn collect_list_item_children(
-    doc: &mut Document,
+    doc: &mut BaseDocument,
     index: &mut usize,
     reversed: bool,
     node_id: usize,
@@ -386,7 +386,7 @@ fn collect_list_item_children(
 
 // Return a child node which is of display: list-item
 fn node_list_item_child(
-    doc: &mut Document,
+    doc: &mut BaseDocument,
     child_id: usize,
     index: usize,
 ) -> Option<ListItemLayout> {
@@ -548,14 +548,14 @@ fn test_marker_for_upper_alpha() {
 
 /// Handles the cases where there are text nodes or inline nodes that need to be wrapped in an anonymous block node
 fn collect_complex_layout_children(
-    doc: &mut Document,
+    doc: &mut BaseDocument,
     container_node_id: usize,
     layout_children: &mut Vec<usize>,
     anonymous_block_id: &mut Option<usize>,
     hide_whitespace: bool,
     needs_wrap: impl Fn(NodeKind, DisplayOutside) -> bool,
 ) {
-    fn block_is_only_whitespace(doc: &Document, node_id: usize) -> bool {
+    fn block_is_only_whitespace(doc: &BaseDocument, node_id: usize) -> bool {
         for child_id in doc.nodes[node_id].children.iter().copied() {
             let child = &doc.nodes[child_id];
             if child
@@ -663,7 +663,7 @@ fn collect_complex_layout_children(
     }
 }
 
-fn create_text_editor(doc: &mut Document, input_element_id: usize, is_multiline: bool) {
+fn create_text_editor(doc: &mut BaseDocument, input_element_id: usize, is_multiline: bool) {
     let node = &mut doc.nodes[input_element_id];
     let parley_style = node
         .primary_styles()
@@ -691,7 +691,7 @@ fn create_text_editor(doc: &mut Document, input_element_id: usize, is_multiline:
     }
 }
 
-fn create_checkbox_input(doc: &mut Document, input_element_id: usize) {
+fn create_checkbox_input(doc: &mut BaseDocument, input_element_id: usize) {
     let node = &mut doc.nodes[input_element_id];
 
     let element = &mut node.raw_dom_data.downcast_element_mut().unwrap();
@@ -706,7 +706,7 @@ fn create_checkbox_input(doc: &mut Document, input_element_id: usize) {
 }
 
 pub(crate) fn build_inline_layout(
-    doc: &mut Document,
+    doc: &mut BaseDocument,
     inline_context_root_node_id: usize,
 ) -> (TextLayout, Vec<usize>) {
     // println!("Inline context {}", inline_context_root_node_id);
@@ -801,7 +801,7 @@ pub(crate) fn build_inline_layout(
 
     return (TextLayout { text, layout }, layout_children);
 
-    fn flush_inline_pseudos_recursive(doc: &mut Document, node_id: usize) {
+    fn flush_inline_pseudos_recursive(doc: &mut BaseDocument, node_id: usize) {
         doc.iter_children_mut(node_id, |child_id, doc| {
             flush_pseudo_elements(doc, child_id);
             let display = doc.nodes[node_id]

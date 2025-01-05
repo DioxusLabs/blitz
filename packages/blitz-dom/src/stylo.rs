@@ -53,7 +53,7 @@ use style_dom::ElementState;
 
 use style::values::computed::text::TextAlign as StyloTextAlign;
 
-impl crate::document::Document {
+impl crate::document::BaseDocument {
     /// Walk the whole tree, converting styles to layout
     pub fn flush_styles_to_layout(&mut self, node_id: usize) {
         let doc_id = self.id();

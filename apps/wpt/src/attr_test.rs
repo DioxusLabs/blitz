@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use blitz_dom::{net::Resource, Document, Node};
+use blitz_dom::{net::Resource, BaseDocument, Node};
 use blitz_html::HtmlDocument;
 use blitz_traits::net::SharedProvider;
 
@@ -33,7 +33,7 @@ pub async fn parse_and_resolve_document(
     ctx: &mut ThreadCtx,
     html: &str,
     relative_path: &str,
-) -> Document {
+) -> BaseDocument {
     let mut document = HtmlDocument::from_html(
         html,
         Some(ctx.dummy_base_url.join(relative_path).unwrap().to_string()),

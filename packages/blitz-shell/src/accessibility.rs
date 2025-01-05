@@ -1,6 +1,6 @@
 use crate::event::BlitzEvent;
 use accesskit::{NodeBuilder, NodeId, Role, Tree, TreeUpdate};
-use blitz_dom::{local_name, Document, Node};
+use blitz_dom::{local_name, BaseDocument, Node};
 use winit::{event_loop::EventLoopProxy, window::Window};
 
 /// State of the accessibility node tree and platform adapter.
@@ -19,7 +19,7 @@ impl AccessibilityState {
             next_id: 1,
         }
     }
-    pub fn build_tree(&mut self, doc: &Document) {
+    pub fn build_tree(&mut self, doc: &BaseDocument) {
         let mut nodes = std::collections::HashMap::new();
         let mut window = NodeBuilder::new(Role::Window);
 

@@ -1,4 +1,4 @@
-use crate::Document;
+use crate::BaseDocument;
 use blitz_traits::{Devtools, Viewport, WasmNotSendSync};
 use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
 use std::sync::Arc;
@@ -15,5 +15,12 @@ pub trait DocumentRenderer {
     /// Adjust the viewport
     fn set_size(&mut self, physical_width: u32, physical_height: u32);
 
-    fn render(&mut self, doc: &Document, scale: f64, width: u32, height: u32, devtools: Devtools);
+    fn render(
+        &mut self,
+        doc: &BaseDocument,
+        scale: f64,
+        width: u32,
+        height: u32,
+        devtools: Devtools,
+    );
 }

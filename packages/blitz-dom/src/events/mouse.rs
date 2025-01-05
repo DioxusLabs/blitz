@@ -1,8 +1,8 @@
 use markup5ever::local_name;
 
-use crate::{node::NodeSpecificData, util::resolve_url, Document};
+use crate::{node::NodeSpecificData, util::resolve_url, BaseDocument};
 
-pub(crate) fn handle_click(doc: &mut Document, target: usize, x: f32, y: f32) {
+pub(crate) fn handle_click(doc: &mut BaseDocument, target: usize, x: f32, y: f32) {
     let hit = doc.hit(x, y);
     if let Some(hit) = hit {
         assert!(hit.node_id == target);
@@ -33,7 +33,7 @@ pub(crate) fn handle_click(doc: &mut Document, target: usize, x: f32, y: f32) {
         } else if el.name.local == local_name!("input")
             && matches!(el.attr(local_name!("type")), Some("checkbox"))
         {
-            Document::toggle_checkbox(el);
+            BaseDocument::toggle_checkbox(el);
             doc.set_focus_to(hit.node_id);
         }
         // Clicking labels triggers click, and possibly input event, of associated input
@@ -46,7 +46,7 @@ pub(crate) fn handle_click(doc: &mut Document, target: usize, x: f32, y: f32) {
             {
                 let target_node = doc.get_node_mut(target_node_id).unwrap();
                 if let Some(target_element) = target_node.element_data_mut() {
-                    Document::toggle_checkbox(target_element);
+                    BaseDocument::toggle_checkbox(target_element);
                 }
                 doc.set_focus_to(node_id);
             }

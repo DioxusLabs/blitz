@@ -5,10 +5,10 @@ use style::computed_values::table_layout::T as TableLayout;
 use style::values::specified::box_::DisplayInside;
 use taffy::{compute_leaf_layout, style_helpers, Dimension, LayoutPartialTree as _, ResolveOrZero};
 
-use crate::Document;
+use crate::BaseDocument;
 
 pub struct TableTreeWrapper<'doc> {
-    pub(crate) doc: &'doc mut Document,
+    pub(crate) doc: &'doc mut BaseDocument,
     pub(crate) ctx: Arc<TableContext>,
 }
 
@@ -32,7 +32,7 @@ pub struct TableItem {
 }
 
 pub(crate) fn build_table_context(
-    doc: &mut Document,
+    doc: &mut BaseDocument,
     table_root_node_id: usize,
 ) -> (TableContext, Vec<usize>) {
     let mut items: Vec<TableItem> = Vec::new();
@@ -94,7 +94,7 @@ pub(crate) fn build_table_context(
 }
 
 pub(crate) fn collect_table_cells(
-    doc: &mut Document,
+    doc: &mut BaseDocument,
     node_id: usize,
     is_fixed: bool,
     row: &mut u16,

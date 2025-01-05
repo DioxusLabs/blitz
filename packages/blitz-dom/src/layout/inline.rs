@@ -3,9 +3,9 @@ use taffy::{
     NodeId, Position, ResolveOrZero as _, Size,
 };
 
-use crate::Document;
+use crate::BaseDocument;
 
-impl Document {
+impl BaseDocument {
     pub(crate) fn compute_inline_layout(
         &mut self,
         node_id: usize,

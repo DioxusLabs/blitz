@@ -44,7 +44,7 @@ pub mod net;
 
 pub mod renderer;
 
-pub use document::{Document, DocumentLike};
+pub use document::{BaseDocument, DocumentLike};
 pub use markup5ever::{
     local_name, namespace_prefix, namespace_url, ns, Namespace, NamespaceStaticSet, Prefix,
     PrefixStaticSet, QualName,

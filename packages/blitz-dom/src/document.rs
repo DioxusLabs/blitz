@@ -70,7 +70,9 @@ impl FontMetricsProvider for DummyFontMetricsProvider {
     }
 }
 
-pub trait DocumentLike: AsRef<Document> + AsMut<Document> + Into<Document> + 'static {
+pub trait Document:
+    AsRef<BaseDocument> + AsMut<BaseDocument> + Into<BaseDocument> + 'static
+{
     fn poll(&mut self, _cx: std::task::Context) -> bool {
         // Default implementation does nothing
         false
@@ -89,7 +91,7 @@ pub trait DocumentLike: AsRef<Document> + AsMut<Document> + Into<Document> + 'st
     }
 }
 
-pub struct Document {
+pub struct BaseDocument {
     id: usize,
 
     /// A bump-backed tree
@@ -173,13 +175,13 @@ fn make_device(viewport: &Viewport) -> Device {
     )
 }
 
-impl DocumentLike for Document {
+impl Document for BaseDocument {
     fn handle_event(&mut self, event: DomEvent) {
         handle_event(self, event)
     }
 }
 
-impl Document {
+impl BaseDocument {
     pub fn new(viewport: Viewport) -> Self {
         Self::with_font_ctx(viewport, parley::FontContext::default())
     }
@@ -465,7 +467,7 @@ impl Document {
     }
 
     pub fn remove_and_drop_node(&mut self, node_id: usize) -> Option<Node> {
-        fn remove_node_ignoring_parent(doc: &mut Document, node_id: usize) -> Option<Node> {
+        fn remove_node_ignoring_parent(doc: &mut BaseDocument, node_id: usize) -> Option<Node> {
             let node = doc.nodes.try_remove(node_id);
             if let Some(node) = &node {
                 for &child in &node.children {
@@ -731,7 +733,11 @@ impl Document {
         self.root_element().hit(x, y)
     }
 
-    pub fn iter_children_mut(&mut self, node_id: usize, mut cb: impl FnMut(usize, &mut Document)) {
+    pub fn iter_children_mut(
+        &mut self,
+        node_id: usize,
+        mut cb: impl FnMut(usize, &mut BaseDocument),
+    ) {
         let children = std::mem::take(&mut self.nodes[node_id].children);
         for child_id in children.iter().cloned() {
             cb(child_id, self);
@@ -739,12 +745,16 @@ impl Document {
         self.nodes[node_id].children = children;
     }
 
-    pub fn iter_subtree_mut(&mut self, node_id: usize, mut cb: impl FnMut(usize, &mut Document)) {
+    pub fn iter_subtree_mut(
+        &mut self,
+        node_id: usize,
+        mut cb: impl FnMut(usize, &mut BaseDocument),
+    ) {
         iter_subtree_mut_inner(self, node_id, &mut cb);
         fn iter_subtree_mut_inner(
-            doc: &mut Document,
+            doc: &mut BaseDocument,
             node_id: usize,
-            cb: &mut impl FnMut(usize, &mut Document),
+            cb: &mut impl FnMut(usize, &mut BaseDocument),
         ) {
             let children = std::mem::take(&mut doc.nodes[node_id].children);
             for child_id in children.iter().cloned() {
@@ -758,7 +768,7 @@ impl Document {
     pub fn iter_children_and_pseudos_mut(
         &mut self,
         node_id: usize,
-        mut cb: impl FnMut(usize, &mut Document),
+        mut cb: impl FnMut(usize, &mut BaseDocument),
     ) {
         let before = self.nodes[node_id].before.take();
         if let Some(before_node_id) = before {
@@ -963,7 +973,7 @@ impl Document {
     pub fn resolve_layout_children(&mut self) {
         resolve_layout_children_recursive(self, self.root_node().id);
 
-        fn resolve_layout_children_recursive(doc: &mut Document, node_id: usize) {
+        fn resolve_layout_children_recursive(doc: &mut BaseDocument, node_id: usize) {
             // if doc.nodes[node_id].layout_children.borrow().is_none() {
             let mut layout_children = Vec::new();
             let mut anonymous_block: Option<usize> = None;
@@ -1153,14 +1163,14 @@ impl Document {
     }
 }
 
-impl AsRef<Document> for Document {
-    fn as_ref(&self) -> &Document {
+impl AsRef<BaseDocument> for BaseDocument {
+    fn as_ref(&self) -> &BaseDocument {
         self
     }
 }
 
-impl AsMut<Document> for Document {
-    fn as_mut(&mut self) -> &mut Document {
+impl AsMut<BaseDocument> for BaseDocument {
+    fn as_mut(&mut self) -> &mut BaseDocument {
         self
     }
 }

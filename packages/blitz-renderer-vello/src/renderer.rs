@@ -2,7 +2,7 @@ mod multicolor_rounded_rect;
 mod render;
 
 use crate::renderer::render::generate_vello_scene;
-use blitz_dom::{BlitzWindowHandle, Document, DocumentRenderer};
+use blitz_dom::{BaseDocument, BlitzWindowHandle, DocumentRenderer};
 use blitz_traits::{Devtools, Viewport};
 use std::num::NonZeroUsize;
 use std::sync::Arc;
@@ -98,7 +98,14 @@ impl DocumentRenderer for BlitzVelloRenderer {
         };
     }
 
-    fn render(&mut self, doc: &Document, scale: f64, width: u32, height: u32, devtools: Devtools) {
+    fn render(
+        &mut self,
+        doc: &BaseDocument,
+        scale: f64,
+        width: u32,
+        height: u32,
+        devtools: Devtools,
+    ) {
         let RenderState::Active(state) = &mut self.render_state else {
             return;
         };
@@ -220,7 +227,7 @@ impl VelloImageRenderer {
         }
     }
 
-    pub fn render_document(&mut self, doc: &Document, cpu_buffer: &mut Vec<u8>) {
+    pub fn render_document(&mut self, doc: &BaseDocument, cpu_buffer: &mut Vec<u8>) {
         generate_vello_scene(
             &mut self.scene,
             doc,
@@ -301,7 +308,7 @@ impl VelloImageRenderer {
     }
 }
 
-pub async fn render_to_buffer(dom: &Document, viewport: Viewport) -> Vec<u8> {
+pub async fn render_to_buffer(dom: &BaseDocument, viewport: Viewport) -> Vec<u8> {
     let (width, height) = viewport.window_size;
 
     let mut buf = Vec::with_capacity((width * height * 4) as usize);
