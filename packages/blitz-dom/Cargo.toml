@@ -34,7 +34,6 @@ taffy = { workspace = true }
 # Linebender dependencies
 parley = { workspace = true }
 peniko = { workspace = true }
-arboard = { workspace = true, optional = true }
 
 # Other dependencies
 slab = { workspace = true }
@@ -55,3 +54,6 @@ cursor-icon = { workspace = true }
 
 # Rendering
 raw-window-handle = { workspace = true }
+
+[target.'cfg(any(target_os = "windows",target_os = "macos",target_os = "linux",target_os = "dragonfly", target_os = "freebsd", target_os = "netbsd", target_os = "openbsd"))'.dependencies]
+arboard = { workspace = true, optional = true }

@@ -64,7 +64,7 @@ pub fn set_android_app(app: android_activity::AndroidApp) {
 #[cfg_attr(docsrs, doc(cfg(target_os = "android")))]
 /// Get the current [`AndroidApp`](android_activity::AndroidApp).
 /// This will panic if the android activity has not been setup with [`set_android_app`].
-pub fn current_android_app(app: android_activity::AndroidApp) -> AndroidApp {
+pub fn current_android_app() -> android_activity::AndroidApp {
     ANDROID_APP.get().unwrap().clone()
 }
 
