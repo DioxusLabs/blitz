@@ -48,7 +48,7 @@ use style::values::generics::image::{
 };
 use style::values::specified::percentage::ToPercentage;
 use taffy::Layout;
-use vello::kurbo::{self, BezPath, Cap, Join, Circle};
+use vello::kurbo::{self, BezPath, Cap, Circle, Join};
 use vello::peniko::Gradient;
 use vello::{
     kurbo::{Affine, Point, Rect, Shape, Stroke, Vec2},
@@ -1840,11 +1840,29 @@ impl ElementCx<'_> {
                 let inner_circle = Circle::new(center, 4.0 * scale);
 
                 if checked {
-                    scene.fill(Fill::NonZero, self.transform, accent_color, None, &outer_ring);
+                    scene.fill(
+                        Fill::NonZero,
+                        self.transform,
+                        accent_color,
+                        None,
+                        &outer_ring,
+                    );
                     scene.fill(Fill::NonZero, self.transform, Color::WHITE, None, &gap);
-                    scene.fill(Fill::NonZero, self.transform, accent_color, None, &inner_circle);
+                    scene.fill(
+                        Fill::NonZero,
+                        self.transform,
+                        accent_color,
+                        None,
+                        &inner_circle,
+                    );
                 } else {
-                    scene.fill(Fill::NonZero, self.transform, Color::GRAY, None, &outer_ring);
+                    scene.fill(
+                        Fill::NonZero,
+                        self.transform,
+                        Color::GRAY,
+                        None,
+                        &outer_ring,
+                    );
                     scene.fill(Fill::NonZero, self.transform, Color::WHITE, None, &gap);
                 }
             }
