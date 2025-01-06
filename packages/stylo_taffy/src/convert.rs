@@ -229,6 +229,8 @@ pub fn content_alignment(input: stylo::ContentDistribution) -> Option<taffy::Ali
         stylo::AlignFlags::AUTO => None,
         stylo::AlignFlags::START => Some(taffy::AlignContent::Start),
         stylo::AlignFlags::END => Some(taffy::AlignContent::End),
+        stylo::AlignFlags::LEFT => Some(taffy::AlignContent::Start),
+        stylo::AlignFlags::RIGHT => Some(taffy::AlignContent::End),
         stylo::AlignFlags::FLEX_START => Some(taffy::AlignContent::FlexStart),
         stylo::AlignFlags::STRETCH => Some(taffy::AlignContent::Stretch),
         stylo::AlignFlags::FLEX_END => Some(taffy::AlignContent::FlexEnd),
@@ -251,6 +253,8 @@ pub fn item_alignment(input: stylo::AlignFlags) -> Option<taffy::AlignItems> {
         stylo::AlignFlags::FLEX_END => Some(taffy::AlignItems::FlexEnd),
         stylo::AlignFlags::START => Some(taffy::AlignItems::Start),
         stylo::AlignFlags::END => Some(taffy::AlignItems::End),
+        stylo::AlignFlags::LEFT => Some(taffy::AlignItems::Start),
+        stylo::AlignFlags::RIGHT => Some(taffy::AlignItems::End),
         stylo::AlignFlags::CENTER => Some(taffy::AlignItems::Center),
         stylo::AlignFlags::BASELINE => Some(taffy::AlignItems::Baseline),
         // Should never be hit. But no real reason to panic here.
