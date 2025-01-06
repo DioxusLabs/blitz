@@ -40,8 +40,8 @@ pub(crate) fn handle_click(doc: &mut BaseDocument, target: usize, x: f32, y: f32
         {
             let node_id = node.id;
             let radio_set = el.attr(local_name!("name")).unwrap().to_string();
-            self.toggle_radio(radio_set, node_id);
-            self.set_focus_to(hit.node_id);
+            BaseDocument::toggle_radio(doc, radio_set, node_id);
+            BaseDocument::set_focus_to(doc, hit.node_id);
         }
         // Clicking labels triggers click, and possibly input event, of associated input
         else if el.name.local == local_name!("label") {

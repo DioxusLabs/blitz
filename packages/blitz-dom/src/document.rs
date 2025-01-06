@@ -333,7 +333,6 @@ impl BaseDocument {
                         continue;
                     };
                     *is_checked = was_clicked;
-                    println!("{was_clicked}");
                 }
             }
         }
