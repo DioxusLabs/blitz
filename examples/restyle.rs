@@ -12,27 +12,78 @@ fn main() {
     dioxus_native::launch(app);
 }
 
+#[derive(Copy, Clone)]
+enum AnimationState {
+    Increasing,
+    Decreasing,
+}
+
+impl std::ops::Not for AnimationState {
+    type Output = Self;
+    fn not(self) -> Self::Output {
+        match self {
+            AnimationState::Increasing => AnimationState::Decreasing,
+            AnimationState::Decreasing => AnimationState::Increasing,
+        }
+    }
+}
+
+const MIN_SIZE: i32 = 12;
+const MAX_SIZE: i32 = 120;
+
 fn app() -> Element {
-    let mut count = use_signal(|| 0);
+    let mut size = use_signal(|| 12);
+    let mut direction = use_signal(|| AnimationState::Increasing);
     let mut running = use_signal(|| true);
-    // `use_future` will spawn an infinitely running future that can be started and stopped
+
+    // `use_future` will spawn an infinitely direction future that can be started and stopped
     use_future(move || async move {
         loop {
             if running() {
-                count += 1;
+                match direction() {
+                    AnimationState::Increasing => size += 1,
+                    AnimationState::Decreasing => size -= 1,
+                }
+
+                let size = *size.read();
+                if size <= MIN_SIZE {
+                    *direction.write() = AnimationState::Increasing;
+                }
+                if size >= MAX_SIZE {
+                    *direction.write() = AnimationState::Decreasing;
+                }
             }
-            sleep(Duration::from_millis(40)).await;
+
+            sleep(Duration::from_millis(16)).await;
         }
     });
     rsx! {
         div {
-            h1 { "Current count: {count}" }
+            style { { STYLES } }
+            h1 { "Current size: {size}" }
+            div {
+                style: "display: flex",
+                div { class: "button", onclick: move |_| running.toggle(), "Start/Stop"}
+                div { class: "button", onclick: move |_| size.set(12), "Reset the size" }
+            }
             p {
-                style: "font-size: {count}px",
+                style: "font-size: {size}px",
                 "Animate Font Size"
             }
-            button { onclick: move |_| running.toggle(), "Start/Stop the count"}
-            button { onclick: move |_| count.set(0), "Reset the count" }
         }
     }
 }
+
+static STYLES: &str = r#"
+    .button {
+        padding: 6px;
+        border: 1px solid #999;
+        margin-left: 12px;
+        cursor: pointer;
+    }
+
+    .button:hover {
+        background: #999;
+        color: white;
+    }
+"#;
