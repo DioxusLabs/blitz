@@ -75,7 +75,7 @@ pub(crate) fn collect_layout_children(
             ) {
                 create_text_editor(doc, container_node_id, false);
                 return;
-            } else if type_attr == Some("checkbox") {
+            } else if matches!(type_attr, Some("checkbox" | "radio")) {
                 create_checkbox_input(doc, container_node_id);
                 return;
             }

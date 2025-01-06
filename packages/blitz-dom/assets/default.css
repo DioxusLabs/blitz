@@ -48,6 +48,14 @@ input[type="checkbox"] {
     margin: 3px 3px 3px 4px;
 }
 
+input[type="radio"] {
+    width: 14px;
+    height: 14px;
+    border-radius: 14px;
+    border: none;
+    margin: 3px 3px 3px 4px;
+}
+
 input, textarea {
     border: 1px solid #999;
     padding: 2px;
