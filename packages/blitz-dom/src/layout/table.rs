@@ -3,9 +3,14 @@ use std::{ops::Range, sync::Arc};
 use markup5ever::local_name;
 use style::computed_values::table_layout::T as TableLayout;
 use style::values::specified::box_::DisplayInside;
-use taffy::{compute_leaf_layout, style_helpers, Dimension, LayoutPartialTree as _, ResolveOrZero};
+use taffy::{
+    compute_leaf_layout, style_helpers, Dimension, LayoutPartialTree as _,
+    NonRepeatedTrackSizingFunction, ResolveOrZero,
+};
 
 use crate::BaseDocument;
+
+use super::resolve_calc_value;
 
 pub struct TableTreeWrapper<'doc> {
     pub(crate) doc: &'doc mut BaseDocument,
@@ -74,11 +79,7 @@ pub(crate) fn build_table_context(
 
     style.grid_template_columns = column_sizes
         .into_iter()
-        .map(|size| match size {
-            taffy::Dimension::Length(len) => style_helpers::length(len),
-            taffy::Dimension::Percent(percent) => style_helpers::percent(percent),
-            taffy::Dimension::Auto => style_helpers::auto(),
-        })
+        .map(|dim| NonRepeatedTrackSizingFunction::from(dim).into())
         .collect();
     style.grid_template_rows = vec![style_helpers::auto(); row as usize];
 
@@ -162,24 +163,31 @@ pub(crate) fn collect_table_cells(
 
             // TODO: account for padding/border/margin
             if *row == 1 {
-                let column = match &style.size.width {
-                    taffy::Dimension::Length(len) => {
-                        let padding = style.padding.resolve_or_zero(None);
-                        style_helpers::length(*len + padding.left + padding.right)
+                let column = match style.size.width.tag() {
+                    taffy::CompactLength::LENGTH_TAG => {
+                        let len = style.size.width.value();
+                        let padding = style.padding.resolve_or_zero(None, resolve_calc_value);
+                        style_helpers::length(len + padding.left + padding.right)
                     }
-                    taffy::Dimension::Percent(percent) => style_helpers::percent(*percent),
-                    taffy::Dimension::Auto => style_helpers::auto(),
+                    taffy::CompactLength::PERCENT_TAG => {
+                        style_helpers::percent(style.size.width.value())
+                    }
+                    taffy::CompactLength::AUTO_TAG => style_helpers::auto(),
+                    _ => unreachable!(),
                 };
                 columns.push(column);
-            } else if !is_fixed && (*col as usize) < columns.len() {
-                if let taffy::Dimension::Length(new_len) = &style.size.width {
-                    columns[*col as usize] = match columns[*col as usize] {
-                        taffy::Dimension::Length(len) => {
-                            taffy::Dimension::Length(len.max(*new_len))
-                        }
-                        taffy::Dimension::Auto => taffy::Dimension::Length(*new_len),
-                        taffy::Dimension::Percent(percent) => taffy::Dimension::Percent(percent),
-                    }
+            } else if !is_fixed
+                && (*col as usize) < columns.len()
+                && taffy::CompactLength::LENGTH_TAG == style.size.width.tag()
+            {
+                let new_len = style.size.width.value();
+                let tag = columns[*col as usize].tag();
+                let value = columns[*col as usize].value();
+                columns[*col as usize] = match tag {
+                    taffy::CompactLength::LENGTH_TAG => style_helpers::length(value.max(new_len)),
+                    taffy::CompactLength::AUTO_TAG => style_helpers::length(new_len),
+                    taffy::CompactLength::PERCENT_TAG => style_helpers::percent(value),
+                    _ => unreachable!(),
                 }
             }
 
@@ -248,6 +256,10 @@ impl taffy::LayoutPartialTree for TableTreeWrapper<'_> {
         &self.ctx.style
     }
 
+    fn resolve_calc_value(&self, calc_value: u64, parent_size: f32) -> f32 {
+        resolve_calc_value(calc_value, parent_size)
+    }
+
     fn set_unrounded_layout(&mut self, node_id: taffy::NodeId, layout: &taffy::Layout) {
         let node_id = taffy::NodeId::from(self.ctx.items[usize::from(node_id)].node_id);
         self.doc.set_unrounded_layout(node_id, layout)
@@ -261,7 +273,9 @@ impl taffy::LayoutPartialTree for TableTreeWrapper<'_> {
         let cell = &self.ctx.items[usize::from(node_id)];
         match cell.kind {
             TableItemKind::Row => {
-                compute_leaf_layout(inputs, &cell.style, |_, _| taffy::Size::ZERO)
+                compute_leaf_layout(inputs, &cell.style, resolve_calc_value, |_, _| {
+                    taffy::Size::ZERO
+                })
             }
             TableItemKind::Cell => {
                 let node_id = taffy::NodeId::from(cell.node_id);

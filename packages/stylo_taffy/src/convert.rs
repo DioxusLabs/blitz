@@ -4,6 +4,8 @@ mod stylo {
     pub(crate) use style::properties::longhands::aspect_ratio::computed_value::T as AspectRatio;
     pub(crate) use style::properties::longhands::position::computed_value::T as Position;
     pub(crate) use style::properties::ComputedValues;
+    pub(crate) use style::values::computed::length_percentage::CalcLengthPercentage;
+    pub(crate) use style::values::computed::length_percentage::Unpacked as UnpackedLengthPercentage;
     pub(crate) use style::values::computed::{LengthPercentage, Percentage};
     pub(crate) use style::values::generics::length::{
         GenericLengthPercentageOrNormal, GenericMargin, GenericMaxSize, GenericSize,
@@ -42,15 +44,20 @@ mod stylo {
     };
 }
 
+use taffy::style_helpers::*;
+use taffy::CompactLength;
+
 #[inline]
 pub fn length_percentage(val: &stylo::LengthPercentage) -> taffy::LengthPercentage {
-    if let Some(length) = val.to_length() {
-        taffy::LengthPercentage::Length(length.px())
-    } else if let Some(val) = val.to_percentage() {
-        taffy::LengthPercentage::Percent(val.0)
-    } else {
-        // TODO: Support calc
-        taffy::LengthPercentage::Percent(0.0)
+    match val.unpack() {
+        stylo::UnpackedLengthPercentage::Calc(calc_ptr) => {
+            let val =
+                CompactLength::calc(calc_ptr as *const stylo::CalcLengthPercentage as *const ());
+            // SAFETY: calc is a valid value for LengthPercentage
+            unsafe { taffy::LengthPercentage::from_raw(val) }
+        }
+        stylo::UnpackedLengthPercentage::Length(len) => length(len.px()),
+        stylo::UnpackedLengthPercentage::Percentage(percentage) => percent(percentage.0),
     }
 }
 
@@ -58,13 +65,13 @@ pub fn length_percentage(val: &stylo::LengthPercentage) -> taffy::LengthPercenta
 pub fn dimension(val: &stylo::Size) -> taffy::Dimension {
     match val {
         stylo::Size::LengthPercentage(val) => length_percentage(&val.0).into(),
-        stylo::Size::Auto => taffy::Dimension::Auto,
+        stylo::Size::Auto => taffy::Dimension::AUTO,
 
         // TODO: implement other values in Taffy
-        stylo::Size::MaxContent => taffy::Dimension::Auto,
-        stylo::Size::MinContent => taffy::Dimension::Auto,
-        stylo::Size::FitContent => taffy::Dimension::Auto,
-        stylo::Size::Stretch => taffy::Dimension::Auto,
+        stylo::Size::MaxContent => taffy::Dimension::AUTO,
+        stylo::Size::MinContent => taffy::Dimension::AUTO,
+        stylo::Size::FitContent => taffy::Dimension::AUTO,
+        stylo::Size::Stretch => taffy::Dimension::AUTO,
 
         // Anchor positioning will be flagged off for time being
         stylo::Size::AnchorSizeFunction(_) => unreachable!(),
@@ -75,13 +82,13 @@ pub fn dimension(val: &stylo::Size) -> taffy::Dimension {
 pub fn max_size_dimension(val: &stylo::MaxSize) -> taffy::Dimension {
     match val {
         stylo::MaxSize::LengthPercentage(val) => length_percentage(&val.0).into(),
-        stylo::MaxSize::None => taffy::Dimension::Auto,
+        stylo::MaxSize::None => taffy::Dimension::AUTO,
 
         // TODO: implement other values in Taffy
-        stylo::MaxSize::MaxContent => taffy::Dimension::Auto,
-        stylo::MaxSize::MinContent => taffy::Dimension::Auto,
-        stylo::MaxSize::FitContent => taffy::Dimension::Auto,
-        stylo::MaxSize::Stretch => taffy::Dimension::Auto,
+        stylo::MaxSize::MaxContent => taffy::Dimension::AUTO,
+        stylo::MaxSize::MinContent => taffy::Dimension::AUTO,
+        stylo::MaxSize::FitContent => taffy::Dimension::AUTO,
+        stylo::MaxSize::Stretch => taffy::Dimension::AUTO,
 
         // Anchor positioning will be flagged off for time being
         stylo::MaxSize::AnchorSizeFunction(_) => unreachable!(),
@@ -91,7 +98,7 @@ pub fn max_size_dimension(val: &stylo::MaxSize) -> taffy::Dimension {
 #[inline]
 pub fn margin(val: &stylo::MarginVal) -> taffy::LengthPercentageAuto {
     match val {
-        stylo::MarginVal::Auto => taffy::LengthPercentageAuto::Auto,
+        stylo::MarginVal::Auto => taffy::LengthPercentageAuto::AUTO,
         stylo::MarginVal::LengthPercentage(val) => length_percentage(val).into(),
 
         // Anchor positioning will be flagged off for time being
@@ -102,7 +109,7 @@ pub fn margin(val: &stylo::MarginVal) -> taffy::LengthPercentageAuto {
 #[inline]
 pub fn inset(val: &stylo::InsetVal) -> taffy::LengthPercentageAuto {
     match val {
-        stylo::InsetVal::Auto => taffy::LengthPercentageAuto::Auto,
+        stylo::InsetVal::Auto => taffy::LengthPercentageAuto::AUTO,
         stylo::InsetVal::LengthPercentage(val) => length_percentage(val).into(),
 
         // Anchor positioning will be flagged off for time being
@@ -256,7 +263,7 @@ pub fn gap(input: &stylo::Gap) -> taffy::LengthPercentage {
     match input {
         // For Flexbox and CSS Grid the "normal" value is 0px. This may need to be updated
         // if we ever implement multi-column layout.
-        stylo::Gap::Normal => taffy::LengthPercentage::Length(0.0),
+        stylo::Gap::Normal => taffy::LengthPercentage::ZERO,
         stylo::Gap::LengthPercentage(val) => length_percentage(&val.0),
     }
 }
@@ -277,7 +284,7 @@ pub(crate) fn text_align(input: stylo::TextAlign) -> taffy::TextAlign {
 pub fn flex_basis(input: &stylo::FlexBasis) -> taffy::Dimension {
     // TODO: Support flex-basis: content in Taffy
     match input {
-        stylo::FlexBasis::Content => taffy::Dimension::Auto,
+        stylo::FlexBasis::Content => taffy::Dimension::AUTO,
         stylo::FlexBasis::Size(size) => dimension(size),
     }
 }
@@ -386,6 +393,8 @@ pub fn track_repeat(input: stylo::RepeatCount<i32>) -> taffy::GridTrackRepetitio
 pub fn track_size(
     input: &stylo::TrackSize<stylo::LengthPercentage>,
 ) -> taffy::NonRepeatedTrackSizingFunction {
+    use taffy::MaxTrackSizingFunction;
+
     match input {
         stylo::TrackSize::Breadth(breadth) => taffy::MinMax {
             min: min_track(breadth),
@@ -396,16 +405,18 @@ pub fn track_size(
             max: max_track(max),
         },
         stylo::TrackSize::FitContent(limit) => taffy::MinMax {
-            min: taffy::MinTrackSizingFunction::Auto,
-            max: taffy::MaxTrackSizingFunction::FitContent(match limit {
-                stylo::TrackBreadth::Breadth(lp) => length_percentage(lp),
+            min: taffy::MinTrackSizingFunction::AUTO,
+            max: match limit {
+                stylo::TrackBreadth::Breadth(lp) => {
+                    MaxTrackSizingFunction::fit_content(length_percentage(lp))
+                }
 
                 // Are these valid? Taffy doesn't support this in any case
                 stylo::TrackBreadth::Fr(_) => unreachable!(),
                 stylo::TrackBreadth::Auto => unreachable!(),
                 stylo::TrackBreadth::MinContent => unreachable!(),
                 stylo::TrackBreadth::MaxContent => unreachable!(),
-            }),
+            },
         },
     }
 }
@@ -415,14 +426,15 @@ pub fn track_size(
 pub fn min_track(
     input: &stylo::TrackBreadth<stylo::LengthPercentage>,
 ) -> taffy::MinTrackSizingFunction {
+    use taffy::prelude::*;
     match input {
         stylo::TrackBreadth::Breadth(lp) => {
-            taffy::MinTrackSizingFunction::Fixed(length_percentage(lp))
+            taffy::MinTrackSizingFunction::from(length_percentage(lp))
         }
-        stylo::TrackBreadth::Fr(_) => taffy::MinTrackSizingFunction::Auto,
-        stylo::TrackBreadth::Auto => taffy::MinTrackSizingFunction::Auto,
-        stylo::TrackBreadth::MinContent => taffy::MinTrackSizingFunction::MinContent,
-        stylo::TrackBreadth::MaxContent => taffy::MinTrackSizingFunction::MaxContent,
+        stylo::TrackBreadth::Fr(_) => taffy::MinTrackSizingFunction::AUTO,
+        stylo::TrackBreadth::Auto => taffy::MinTrackSizingFunction::AUTO,
+        stylo::TrackBreadth::MinContent => taffy::MinTrackSizingFunction::MIN_CONTENT,
+        stylo::TrackBreadth::MaxContent => taffy::MinTrackSizingFunction::MAX_CONTENT,
     }
 }
 
@@ -431,14 +443,16 @@ pub fn min_track(
 pub fn max_track(
     input: &stylo::TrackBreadth<stylo::LengthPercentage>,
 ) -> taffy::MaxTrackSizingFunction {
+    use taffy::prelude::*;
+
     match input {
         stylo::TrackBreadth::Breadth(lp) => {
-            taffy::MaxTrackSizingFunction::Fixed(length_percentage(lp))
+            taffy::MaxTrackSizingFunction::from(length_percentage(lp))
         }
-        stylo::TrackBreadth::Fr(val) => taffy::MaxTrackSizingFunction::Fraction(*val),
-        stylo::TrackBreadth::Auto => taffy::MaxTrackSizingFunction::Auto,
-        stylo::TrackBreadth::MinContent => taffy::MaxTrackSizingFunction::MinContent,
-        stylo::TrackBreadth::MaxContent => taffy::MaxTrackSizingFunction::MaxContent,
+        stylo::TrackBreadth::Fr(val) => taffy::MaxTrackSizingFunction::from_fr(*val),
+        stylo::TrackBreadth::Auto => taffy::MaxTrackSizingFunction::AUTO,
+        stylo::TrackBreadth::MinContent => taffy::MaxTrackSizingFunction::MIN_CONTENT,
+        stylo::TrackBreadth::MaxContent => taffy::MaxTrackSizingFunction::MAX_CONTENT,
     }
 }
 
@@ -493,10 +507,10 @@ pub fn to_taffy_style(style: &stylo::ComputedValues) -> taffy::Style {
             bottom: self::length_percentage(&padding.padding_bottom.0),
         },
         border: taffy::Rect {
-            left: taffy::LengthPercentage::Length(border.border_left_width.to_f32_px()),
-            right: taffy::LengthPercentage::Length(border.border_right_width.to_f32_px()),
-            top: taffy::LengthPercentage::Length(border.border_top_width.to_f32_px()),
-            bottom: taffy::LengthPercentage::Length(border.border_bottom_width.to_f32_px()),
+            left: taffy::style_helpers::length(border.border_left_width.to_f32_px()),
+            right: taffy::style_helpers::length(border.border_right_width.to_f32_px()),
+            top: taffy::style_helpers::length(border.border_top_width.to_f32_px()),
+            bottom: taffy::style_helpers::length(border.border_bottom_width.to_f32_px()),
         },
 
         // Gap

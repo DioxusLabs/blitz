@@ -13,6 +13,8 @@ use crate::{
 use markup5ever::local_name;
 use std::cell::Ref;
 use std::sync::Arc;
+use style::values::computed::length_percentage::CalcLengthPercentage;
+use style::values::computed::CSSPixelLength;
 use taffy::{
     compute_block_layout, compute_cached_layout, compute_flexbox_layout, compute_grid_layout,
     compute_leaf_layout, prelude::*, FlexDirection, LayoutPartialTree, NodeId, ResolveOrZero,
@@ -24,6 +26,12 @@ pub(crate) mod inline;
 pub(crate) mod table;
 
 use self::table::TableTreeWrapper;
+
+pub(crate) fn resolve_calc_value(calc_value: u64, parent_size: f32) -> f32 {
+    let calc_ptr = calc_value as usize as *const CalcLengthPercentage;
+    let calc = unsafe { &*calc_ptr };
+    calc.resolve(CSSPixelLength::new(parent_size)).px()
+}
 
 impl BaseDocument {
     fn node_from_id(&self, node_id: taffy::prelude::NodeId) -> &Node {
@@ -77,6 +85,10 @@ impl LayoutPartialTree for BaseDocument {
 
     fn set_unrounded_layout(&mut self, node_id: NodeId, layout: &Layout) {
         self.node_from_id_mut(node_id).unrounded_layout = *layout;
+    }
+
+    fn resolve_calc_value(&self, calc_value: u64, parent_size: f32) -> f32 {
+        resolve_calc_value(calc_value, parent_size)
     }
 
     fn compute_child_layout(
@@ -152,6 +164,7 @@ impl LayoutPartialTree for BaseDocument {
                         return compute_leaf_layout(
                             inputs,
                             &node.style,
+                            resolve_calc_value,
                             |_known_size, _available_space| taffy::Size {
                                 width: cols
                                     .map(|cols| cols * font_size.unwrap_or(16.0) * 0.6)
@@ -172,17 +185,16 @@ impl LayoutPartialTree for BaseDocument {
                                 return compute_leaf_layout(
                                     inputs,
                                     &node.style,
+                                    resolve_calc_value,
                                     |_known_size, _available_space| {
-                                        let width = node
-                                            .style
-                                            .size
-                                            .width
-                                            .resolve_or_zero(inputs.parent_size.width);
-                                        let height = node
-                                            .style
-                                            .size
-                                            .height
-                                            .resolve_or_zero(inputs.parent_size.height);
+                                        let width = node.style.size.width.resolve_or_zero(
+                                            inputs.parent_size.width,
+                                            resolve_calc_value,
+                                        );
+                                        let height = node.style.size.height.resolve_or_zero(
+                                            inputs.parent_size.height,
+                                            resolve_calc_value,
+                                        );
                                         let min_size = width.min(height);
                                         taffy::Size {
                                             width: min_size,
@@ -195,6 +207,7 @@ impl LayoutPartialTree for BaseDocument {
                                 return compute_leaf_layout(
                                     inputs,
                                     &node.style,
+                                    resolve_calc_value,
                                     |_known_size, _available_space| taffy::Size {
                                         width: 300.0,
                                         height: resolved_line_height.unwrap_or(16.0),
@@ -250,6 +263,7 @@ impl LayoutPartialTree for BaseDocument {
                         let computed = compute_leaf_layout(
                             inputs,
                             &node.style,
+                            resolve_calc_value,
                             |known_dimensions, _available_space| {
                                 image_measure_function(
                                     known_dimensions,
