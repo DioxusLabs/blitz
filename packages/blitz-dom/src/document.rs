@@ -216,6 +216,15 @@ impl DocumentLike for Document {
                         Document::toggle_checkbox(el);
                         self.set_focus_to(hit.node_id);
                     }
+                    else if el.name.local == local_name!("input")
+                        && matches!(el.attr(local_name!("type")), Some("radio"))
+                    {
+                        let node_id = node.id;
+                        let radio_set = el.attr(local_name!("name")).unwrap().to_string();
+                        let target_radio = el.attr(local_name!("value")).unwrap().to_string();
+                        self.toggle_radio(radio_set, node_id);
+                        self.set_focus_to(hit.node_id);
+                    }
                     // Clicking labels triggers click, and possibly input event, of associated input
                     else if el.name.local == local_name!("label") {
                         let node_id = node.id;
@@ -462,6 +471,22 @@ impl Document {
             return;
         };
         *is_checked = !*is_checked;
+    }
+
+    pub fn toggle_radio(&mut self, radio_set_name: String, target_radio_id: usize) {
+        for i in 0..self.nodes.len() {
+            let node = &mut self.nodes[i];
+            if let Some(node_data) = node.raw_dom_data.downcast_element_mut() {
+                if node_data.attr(local_name!("name")) == Some(&radio_set_name) {
+                    let was_clicked = i == target_radio_id;
+                    let Some(is_checked) = node_data.checkbox_input_checked_mut() else {
+                        continue;
+                    };
+                    *is_checked = was_clicked;
+                    println!("{was_clicked}");
+                }
+            }
+        }
     }
 
     pub fn root_node(&self) -> &Node {

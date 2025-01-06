@@ -30,17 +30,57 @@ fn app() -> Element {
                         "Checkbox 1 (controlled)"
                     }
                 }
-            div {
-                label {
-                    input {
-                        type: "checkbox",
-                        name: "check2",
-                        value: "check2",
+                div {
+                    label {
+                        input {
+                            type: "checkbox",
+                            name: "check2",
+                            value: "check2",
+                        }
+                        "Checkbox 2 (uncontrolled)"
                     }
-                    "Checkbox 2 (uncontrolled)"
+                }
+                div {
+                    label {
+                        r#for: "radio1",
+                        id: "radio1label",
+                        input {
+                            type: "radio",
+                            name: "radiobuttons",
+                            id: "radio1",
+                            value: "radiovalue1",
+                            checked: true,
+                        }
+                        "Radio Button 1"
+                    }
+                }
+                div {
+                    label {
+                        r#for: "radio2",
+                        id: "radio2label",
+                        input {
+                            type: "radio",
+                            name: "radiobuttons",
+                            id: "radio2",
+                            value: "radiovalue2",
+                        }
+                        "Radio Button 2"
+                    }
+                }
+                div {
+                    label {
+                        r#for: "radio3",
+                        id: "radio3label",
+                        input {
+                            type: "radio",
+                            name: "radiobuttons",
+                            id: "radio3",
+                            value: "radiovalue3",
+                        }
+                        "Radio Button 3"
+                    }
                 }
             }
-        }
             div { "Checkbox 1 checked: {checkbox_checked}" }
         }
     }
@@ -74,6 +114,10 @@ label {
 input {
     /* Should be accent-color */
     color: #0000cc;
+}
+
+input[type=radio]:checked {
+    border-color: #0000cc;
 }
 
 "#;
