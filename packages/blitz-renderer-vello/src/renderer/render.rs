@@ -48,7 +48,7 @@ use style::values::generics::image::{
 };
 use style::values::specified::percentage::ToPercentage;
 use taffy::Layout;
-use vello::kurbo::{self, BezPath, Cap, Join};
+use vello::kurbo::{self, BezPath, Cap, Join, Circle};
 use vello::peniko::Gradient;
 use vello::{
     kurbo::{Affine, Point, Rect, Shape, Stroke, Vec2},
@@ -1770,9 +1770,7 @@ impl ElementCx<'_> {
     }
 
     fn draw_input(&self, scene: &mut Scene) {
-        if self.node.local_name() == "input"
-            && matches!(self.node.attr(local_name!("type")), Some("checkbox"))
-        {
+        if self.node.local_name() == "input" {
             let Some(checked) = self.element.checkbox_input_checked() else {
                 return;
             };
@@ -1801,37 +1799,53 @@ impl ElementCx<'_> {
 
             let frame = self.frame.outer_rect.to_rounded_rect(scale * 2.0);
 
-            if checked {
-                scene.fill(Fill::NonZero, self.transform, accent_color, None, &frame);
+            let attr_type = self.node.attr(local_name!("type"));
 
-                //Tick code derived from masonry
-                let mut path = BezPath::new();
-                path.move_to((2.0, 9.0));
-                path.line_to((6.0, 13.0));
-                path.line_to((14.0, 2.0));
+            if attr_type == Some("checkbox") {
+                if checked {
+                    scene.fill(Fill::NonZero, self.transform, accent_color, None, &frame);
+                    //Tick code derived from masonry
+                    let mut path = BezPath::new();
+                    path.move_to((2.0, 9.0));
+                    path.line_to((6.0, 13.0));
+                    path.line_to((14.0, 2.0));
 
-                path.apply_affine(Affine::translate(Vec2 { x: 2.0, y: 1.0 }).then_scale(scale));
+                    path.apply_affine(Affine::translate(Vec2 { x: 2.0, y: 1.0 }).then_scale(scale));
 
-                let style = Stroke {
-                    width: 2.0 * scale,
-                    join: Join::Round,
-                    miter_limit: 10.0,
-                    start_cap: Cap::Round,
-                    end_cap: Cap::Round,
-                    dash_pattern: Default::default(),
-                    dash_offset: 0.0,
-                };
+                    let style = Stroke {
+                        width: 2.0 * scale,
+                        join: Join::Round,
+                        miter_limit: 10.0,
+                        start_cap: Cap::Round,
+                        end_cap: Cap::Round,
+                        dash_pattern: Default::default(),
+                        dash_offset: 0.0,
+                    };
 
-                scene.stroke(&style, self.transform, Color::WHITE, None, &path);
-            } else {
-                scene.fill(Fill::NonZero, self.transform, Color::WHITE, None, &frame);
-                scene.stroke(
-                    &Stroke::default(),
-                    self.transform,
-                    accent_color,
-                    None,
-                    &frame,
-                );
+                    scene.stroke(&style, self.transform, Color::WHITE, None, &path);
+                } else {
+                    scene.fill(Fill::NonZero, self.transform, Color::WHITE, None, &frame);
+                    scene.stroke(
+                        &Stroke::default(),
+                        self.transform,
+                        accent_color,
+                        None,
+                        &frame,
+                    );
+                }
+            } else if attr_type == Some("radio") {
+                let outer_ring = Circle::new((10.0, 10.0), 12.0);
+                let gap = Circle::new((10.0, 10.0), 8.0);
+                let inner_circle = Circle::new((10.0, 10.0), 6.0);
+
+                if checked {
+                    scene.fill(Fill::NonZero, self.transform, accent_color, None, &outer_ring);
+                    scene.fill(Fill::NonZero, self.transform, Color::WHITE, None, &gap);
+                    scene.fill(Fill::NonZero, self.transform, accent_color, None, &inner_circle);
+                } else {
+                    scene.fill(Fill::NonZero, self.transform, Color::GRAY, None, &outer_ring);
+                    scene.fill(Fill::NonZero, self.transform, Color::WHITE, None, &gap);
+                }
             }
         }
     }

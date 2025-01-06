@@ -35,6 +35,13 @@ pub(crate) fn handle_click(doc: &mut BaseDocument, target: usize, x: f32, y: f32
         {
             BaseDocument::toggle_checkbox(el);
             doc.set_focus_to(hit.node_id);
+        } else if el.name.local == local_name!("input")
+            && matches!(el.attr(local_name!("type")), Some("radio"))
+        {
+            let node_id = node.id;
+            let radio_set = el.attr(local_name!("name")).unwrap().to_string();
+            self.toggle_radio(radio_set, node_id);
+            self.set_focus_to(hit.node_id);
         }
         // Clicking labels triggers click, and possibly input event, of associated input
         else if el.name.local == local_name!("label") {
