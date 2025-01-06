@@ -1834,10 +1834,10 @@ impl ElementCx<'_> {
                     );
                 }
             } else if attr_type == Some("radio") {
-                let center = (10.0 * scale, 10.0 * scale);
-                let outer_ring = Circle::new(center, 12.0 * scale);
-                let gap = Circle::new(center, 8.0 * scale);
-                let inner_circle = Circle::new(center, 6.0 * scale);
+                let center = frame.center();
+                let outer_ring = Circle::new(center, 8.0 * scale);
+                let gap = Circle::new(center, 6.0 * scale);
+                let inner_circle = Circle::new(center, 4.0 * scale);
 
                 if checked {
                     scene.fill(Fill::NonZero, self.transform, accent_color, None, &outer_ring);

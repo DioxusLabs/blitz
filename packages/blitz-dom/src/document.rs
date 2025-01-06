@@ -221,7 +221,6 @@ impl DocumentLike for Document {
                     {
                         let node_id = node.id;
                         let radio_set = el.attr(local_name!("name")).unwrap().to_string();
-                        let target_radio = el.attr(local_name!("value")).unwrap().to_string();
                         self.toggle_radio(radio_set, node_id);
                         self.set_focus_to(hit.node_id);
                     }
@@ -483,7 +482,6 @@ impl Document {
                         continue;
                     };
                     *is_checked = was_clicked;
-                    println!("{was_clicked}");
                 }
             }
         }
