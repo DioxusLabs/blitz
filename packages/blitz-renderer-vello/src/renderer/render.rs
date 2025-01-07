@@ -991,6 +991,15 @@ impl ElementCx<'_> {
     fn draw_background(&self, scene: &mut Scene) {
         use GenericImage::*;
 
+        CLIPS_WANTED.fetch_add(1, atomic::Ordering::SeqCst);
+        let clips_available = CLIPS_USED.load(atomic::Ordering::SeqCst) <= CLIP_LIMIT;
+        if clips_available {
+            scene.push_layer(Mix::Clip, 1.0, self.transform, &self.frame.frame());
+            CLIPS_USED.fetch_add(1, atomic::Ordering::SeqCst);
+            let depth = CLIP_DEPTH.fetch_add(1, atomic::Ordering::SeqCst) + 1;
+            CLIP_DEPTH_USED.fetch_max(depth, atomic::Ordering::SeqCst);
+        }
+
         // Draw background color (if any)
         self.draw_solid_frame(scene);
         let segments = &self.style.get_background().background_image.0;
@@ -1010,6 +1019,9 @@ impl ElementCx<'_> {
                 ImageSet(_) => todo!("Implement background drawing for Image::ImageSet"),
             }
         }
+
+        scene.pop_layer();
+        CLIP_DEPTH.fetch_sub(1, atomic::Ordering::SeqCst);
     }
 
     fn draw_gradient_frame(&self, scene: &mut Scene, gradient: &StyloGradient) {
