@@ -33,6 +33,10 @@
     direction: rtl;
 }
 
+[popover]:not(:popover-open):not(dialog[open]) {
+    display: none;
+}
+
 /* https://html.spec.whatwg.org/#bidi-rendering */
 input[type=tel]:dir(ltr) {
     direction: ltr;
