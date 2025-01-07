@@ -64,6 +64,7 @@ impl<D: 'static> Provider<D> {
                 let response = client
                     .request(request.method, request.url)
                     .headers(request.headers)
+                    .header("User-Agent", USER_AGENT)
                     .body(request.body)
                     .send()
                     .await?;
