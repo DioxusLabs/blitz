@@ -67,7 +67,7 @@ impl<D: 'static> Provider<D> {
                 let request = HttpRequest::builder()
                     .uri(url.as_str())
                     .header(http::header::USER_AGENT, USER_AGENT);
-                let request = handler.request(request).try_into()?;
+                let request = handler.request(request)?.try_into()?;
 
                 let response = client.execute(request).await?;
 

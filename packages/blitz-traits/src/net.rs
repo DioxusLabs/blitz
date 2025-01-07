@@ -22,8 +22,8 @@ pub trait NetHandler: Send + Sync + 'static {
     type Data;
     fn bytes(self: Box<Self>, doc_id: usize, bytes: Bytes, callback: SharedCallback<Self::Data>);
     /// Builds the request used to fetch the data
-    fn request(&self, request: Builder) -> Request<Bytes> {
-        request.method(Method::GET).body(Bytes::new()).unwrap()
+    fn request(&self, request: Builder) -> http::Result<Request<Bytes>> {
+        request.method(Method::GET).body(Bytes::new())
     }
 }
 
