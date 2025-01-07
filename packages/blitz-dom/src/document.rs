@@ -732,6 +732,26 @@ impl BaseDocument {
         self.root_element().hit(x, y)
     }
 
+    /// If the node is non-anonymous then returns the node's id
+    /// Else find's the first non-anonymous ancester of the node
+    pub fn non_anon_ancestor_if_anon(&self, mut node_id: usize) -> usize {
+        loop {
+            let node = &self.nodes[node_id];
+
+            if !node.is_anonymous() {
+                return node.id;
+            }
+
+            let Some(parent_id) = node.layout_parent.get() else {
+                // Shouldn't be reachable unless invalid node_id is passed
+                // as root node is always non-anonymous
+                panic!("Node does not exist or does not have a non-anonymous parent");
+            };
+
+            node_id = parent_id;
+        }
+    }
+
     pub fn iter_children_mut(
         &mut self,
         node_id: usize,

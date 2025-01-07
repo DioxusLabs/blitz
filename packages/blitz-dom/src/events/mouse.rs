@@ -3,17 +3,12 @@ use markup5ever::local_name;
 
 use crate::{node::NodeSpecificData, util::resolve_url, BaseDocument, Node};
 
-
 fn parent_hit(node: &Node, x: f32, y: f32) -> Option<HitResult> {
-    if let Some(parent_id) = node.layout_parent.get() {
-        Some(HitResult {
-            node_id: parent_id,
-            x: x + node.final_layout.location.x,
-            y: y + node.final_layout.location.y,
-        })
-    } else {
-        None
-    }
+    node.layout_parent.get().map(|parent_id| HitResult {
+        node_id: parent_id,
+        x: x + node.final_layout.location.x,
+        y: y + node.final_layout.location.y,
+    })
 }
 
 pub(crate) fn handle_click(doc: &mut BaseDocument, _target: usize, x: f32, y: f32) {
@@ -90,7 +85,7 @@ pub(crate) fn handle_click(doc: &mut BaseDocument, _target: usize, x: f32, y: f3
                 println!("Clicked link without href: {:?}", el.attrs());
             }
         }
-        
+
         // No match. Recurse up to parent.
         maybe_hit = parent_hit(&doc.nodes[hit.node_id], x, y)
     }

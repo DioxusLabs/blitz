@@ -793,6 +793,10 @@ impl Node {
         matches!(self.raw_dom_data, NodeData::Element { .. })
     }
 
+    pub fn is_anonymous(&self) -> bool {
+        matches!(self.raw_dom_data, NodeData::AnonymousBlock { .. })
+    }
+
     pub fn is_text_node(&self) -> bool {
         matches!(self.raw_dom_data, NodeData::Text { .. })
     }

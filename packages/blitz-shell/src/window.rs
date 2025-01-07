@@ -262,8 +262,6 @@ impl<Doc: Document<Doc = D>, Rend: DocumentRenderer<Doc = D>> View<Doc, Rend> {
 
         self.doc.as_mut().active_node();
 
-        // If we hit a node, then we collect the node to its parents, check for listeners, and then
-        // call those listeners
         self.doc.handle_event(DomEvent {
             target: node_id,
             data: DomEventData::MouseDown(BlitzMouseButtonEvent {
@@ -283,8 +281,6 @@ impl<Doc: Document<Doc = D>, Rend: DocumentRenderer<Doc = D>> View<Doc, Rend> {
             return;
         };
 
-        // If we hit a node, then we collect the node to its parents, check for listeners, and then
-        // call those listeners
         self.doc.handle_event(DomEvent {
             target: node_id,
             data: DomEventData::MouseUp(BlitzMouseButtonEvent {
@@ -296,6 +292,14 @@ impl<Doc: Document<Doc = D>, Rend: DocumentRenderer<Doc = D>> View<Doc, Rend> {
 
         if self.mouse_down_node == Some(node_id) {
             self.click(button);
+        } else if let Some(mouse_down_id) = self.mouse_down_node {
+            // Anonymous node ids are unstable due to tree reconstruction. So we compare the id
+            // of the first non-anonymous ancestor.
+            if self.doc.as_ref().non_anon_ancestor_if_anon(mouse_down_id)
+                == self.doc.as_ref().non_anon_ancestor_if_anon(node_id)
+            {
+                self.click(button);
+            }
         }
     }
 
