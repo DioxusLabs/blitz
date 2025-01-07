@@ -12,6 +12,7 @@ use std::str::FromStr;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 use style::invalidation::element::restyle_hints::RestyleHint;
+use style::properties::generated::longhands::position::computed_value::T as Position;
 use style::properties::ComputedValues;
 use style::selector_parser::PseudoElement;
 use style::stylesheets::UrlExtraData;
@@ -152,25 +153,27 @@ impl Node {
     }
 
     pub(crate) fn display_style(&self) -> Option<Display> {
-        // if self.is_text_node() {
-        //     return Some(Display::inline())
-        // }
-
-        Some(
-            self.stylo_element_data
-                .borrow()
-                .as_ref()?
-                .styles
-                .primary
-                .as_ref()?
-                .get_box()
-                .display,
-        )
+        Some(self.primary_styles().as_ref()?.clone_display())
     }
 
     pub fn is_or_contains_block(&self) -> bool {
-        let display = self.display_style().unwrap_or(Display::inline());
+        let style = self.primary_styles();
+        let style = style.as_ref();
 
+        // Ignore out-of-flow items
+        let position = style
+            .map(|s| s.clone_position())
+            .unwrap_or(Position::Relative);
+        let is_in_flow = matches!(
+            position,
+            Position::Static | Position::Relative | Position::Sticky
+        );
+        if !is_in_flow {
+            return false;
+        }
+        let display = style
+            .map(|s| s.clone_display())
+            .unwrap_or(Display::inline());
         match display.outside() {
             DisplayOutside::None => false,
             DisplayOutside::Block => true,
