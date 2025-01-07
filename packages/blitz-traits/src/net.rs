@@ -32,6 +32,7 @@ pub trait NetCallback: Send + Sync + 'static {
 
 #[non_exhaustive]
 #[derive(Debug)]
+/// A request type loosely representing https://fetch.spec.whatwg.org/#requests
 pub struct Request {
     pub url: Url,
     pub method: Method,
@@ -39,6 +40,7 @@ pub struct Request {
     pub body: Bytes,
 }
 impl Request {
+    /// A get request to the specified Url and an empty body
     pub fn get(url: Url) -> Self {
         Self {
             url,
