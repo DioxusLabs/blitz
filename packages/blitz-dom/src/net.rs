@@ -171,16 +171,24 @@ impl NetHandler for FontFaceHandler {
         }
 
         // Satisfy rustc's mutability linting with woff feature both enabled/disabled
-        #[cfg(feature = "woff")]
+        #[cfg(any(feature = "woff", feature = "woff2"))]
         let mut bytes = bytes;
 
         match self.0 {
-            #[cfg(feature = "woff")]
+            #[cfg(any(feature = "woff", feature = "woff2"))]
             FontFaceSourceFormatKeyword::Woff2 => {
                 #[cfg(feature = "tracing")]
                 tracing::info!("Decompressing woff2 font");
-                let decompressed = woff2::decode::convert_woff2_to_ttf(&mut bytes);
-                if let Ok(decompressed) = decompressed {
+
+                // Use woff crate to decompress font
+                #[cfg(feature = "woff")]
+                let decompressed = woff::version2::decompress(&bytes);
+
+                // Use woff2 crate to decompress font
+                #[cfg(feature = "woff2")]
+                let decompressed = woff2::decode::convert_woff2_to_ttf(&mut bytes).ok();
+
+                if let Some(decompressed) = decompressed {
                     bytes = Bytes::from(decompressed);
                 } else {
                     #[cfg(feature = "tracing")]
