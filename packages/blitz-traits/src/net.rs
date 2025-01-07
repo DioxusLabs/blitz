@@ -1,5 +1,5 @@
 pub use bytes::Bytes;
-pub use http::Method;
+pub use http::{self, request::Builder, Method, Request};
 use std::marker::PhantomData;
 use std::sync::Arc;
 pub use url::Url;
@@ -21,8 +21,9 @@ pub trait NetProvider: Send + Sync + 'static {
 pub trait NetHandler: Send + Sync + 'static {
     type Data;
     fn bytes(self: Box<Self>, doc_id: usize, bytes: Bytes, callback: SharedCallback<Self::Data>);
-    fn method(&self) -> Method {
-        Method::GET
+    /// Builds the request used to fetch the data
+    fn request(&self, request: Builder) -> Request<Bytes> {
+        request.method(Method::GET).body(Bytes::new()).unwrap()
     }
 }
 

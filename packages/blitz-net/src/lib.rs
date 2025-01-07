@@ -1,4 +1,7 @@
-use blitz_traits::net::{BoxedHandler, Bytes, NetCallback, NetProvider, SharedCallback, Url};
+use blitz_traits::net::{
+    http, BoxedHandler, Bytes, NetCallback, NetProvider, Request as HttpRequest, SharedCallback,
+    Url,
+};
 use data_url::DataUrl;
 use reqwest::Client;
 use std::sync::Arc;
@@ -46,7 +49,7 @@ impl<D: 'static> Provider<D> {
     async fn fetch_inner(
         client: Client,
         doc_id: usize,
-        url: Url,
+        url: &Url,
         handler: BoxedHandler<D>,
         res_callback: SharedCallback<D>,
     ) -> Result<(), ProviderError> {
@@ -61,11 +64,13 @@ impl<D: 'static> Provider<D> {
                 handler.bytes(doc_id, Bytes::from(file_content), res_callback);
             }
             _ => {
-                let response = client
-                    .request(handler.method(), url)
-                    .header("User-Agent", USER_AGENT)
-                    .send()
-                    .await?;
+                let request = HttpRequest::builder()
+                    .uri(url.as_str())
+                    .header(http::header::USER_AGENT, USER_AGENT);
+                let request = handler.request(request).try_into()?;
+
+                let response = client.execute(request).await?;
+
                 handler.bytes(doc_id, response.bytes().await?, res_callback);
             }
         }
@@ -79,7 +84,7 @@ impl<D: 'static> NetProvider for Provider<D> {
         let client = self.client.clone();
         let callback = Arc::clone(&self.resource_callback);
         drop(self.rt.spawn(async move {
-            let res = Self::fetch_inner(client, doc_id, url.clone(), handler, callback).await;
+            let res = Self::fetch_inner(client, doc_id, &url, handler, callback).await;
             if let Err(e) = res {
                 eprintln!("Error fetching {}: {e}", url);
             }
@@ -97,6 +102,8 @@ enum ProviderError {
     DataUrlBas64(#[from] data_url::forgiving_base64::InvalidBase64),
     #[error("{0}")]
     ReqwestError(#[from] reqwest::Error),
+    #[error("{0}")]
+    Http(#[from] blitz_traits::net::http::Error),
 }
 
 pub struct MpscCallback<T>(UnboundedSender<(usize, T)>);
