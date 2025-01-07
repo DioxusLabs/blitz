@@ -1,4 +1,4 @@
-use blitz_traits::net::{BoxedHandler, Bytes, NetCallback, NetProvider, SharedCallback, Url};
+use blitz_traits::net::{BoxedHandler, Bytes, NetCallback, NetProvider, Request, SharedCallback};
 use data_url::DataUrl;
 use reqwest::Client;
 use std::sync::Arc;
@@ -46,26 +46,29 @@ impl<D: 'static> Provider<D> {
     async fn fetch_inner(
         client: Client,
         doc_id: usize,
-        url: Url,
+        request: Request,
         handler: BoxedHandler<D>,
         res_callback: SharedCallback<D>,
     ) -> Result<(), ProviderError> {
-        match url.scheme() {
+        match request.url.scheme() {
             "data" => {
-                let data_url = DataUrl::process(url.as_str())?;
+                let data_url = DataUrl::process(request.url.as_str())?;
                 let decoded = data_url.decode_to_vec()?;
                 handler.bytes(doc_id, Bytes::from(decoded.0), res_callback);
             }
             "file" => {
-                let file_content = std::fs::read(url.path())?;
+                let file_content = std::fs::read(request.url.path())?;
                 handler.bytes(doc_id, Bytes::from(file_content), res_callback);
             }
             _ => {
                 let response = client
-                    .request(handler.method(), url)
+                    .request(request.method, request.url)
+                    .headers(request.headers)
                     .header("User-Agent", USER_AGENT)
+                    .body(request.body)
                     .send()
                     .await?;
+
                 handler.bytes(doc_id, response.bytes().await?, res_callback);
             }
         }
@@ -75,11 +78,12 @@ impl<D: 'static> Provider<D> {
 
 impl<D: 'static> NetProvider for Provider<D> {
     type Data = D;
-    fn fetch(&self, doc_id: usize, url: Url, handler: BoxedHandler<D>) {
+    fn fetch(&self, doc_id: usize, request: Request, handler: BoxedHandler<D>) {
         let client = self.client.clone();
         let callback = Arc::clone(&self.resource_callback);
         drop(self.rt.spawn(async move {
-            let res = Self::fetch_inner(client, doc_id, url.clone(), handler, callback).await;
+            let url = request.url.to_string();
+            let res = Self::fetch_inner(client, doc_id, request, handler, callback).await;
             if let Err(e) = res {
                 eprintln!("Error fetching {}: {e}", url);
             }
