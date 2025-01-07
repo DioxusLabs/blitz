@@ -8,7 +8,7 @@ use std::collections::HashSet;
 
 use blitz_dom::node::{Attribute, ElementNodeData, Node, NodeData};
 use blitz_dom::BaseDocument;
-use blitz_traits::net::SharedProvider;
+use blitz_traits::net::{Request, SharedProvider};
 use html5ever::{
     local_name,
     tendril::{StrTendril, TendrilSink},
@@ -131,7 +131,7 @@ impl DocumentHtmlParser<'_> {
             let url = self.doc.borrow().resolve_url(href);
             self.net_provider.fetch(
                 self.doc_id,
-                url.clone(),
+                Request::get(url.clone()),
                 Box::new(CssHandler {
                     node: target_id,
                     source_url: url,
@@ -149,7 +149,7 @@ impl DocumentHtmlParser<'_> {
                 let src = self.doc.borrow().resolve_url(raw_src);
                 self.net_provider.fetch(
                     self.doc.borrow().id(),
-                    src,
+                    Request::get(src),
                     Box::new(ImageHandler::new(target_id, ImageType::Image)),
                 );
             }

@@ -1,4 +1,4 @@
-use blitz_traits::net::{BoxedHandler, Bytes, NetCallback, NetProvider, Url};
+use blitz_traits::net::{BoxedHandler, Bytes, NetCallback, NetProvider, Request};
 use data_url::DataUrl;
 use std::{
     path::{Path, PathBuf},
@@ -26,18 +26,18 @@ impl<D: Send + Sync + 'static> WptNetProvider<D> {
     fn fetch_inner(
         &self,
         doc_id: usize,
-        url: Url,
+        request: Request,
         handler: BoxedHandler<D>,
     ) -> Result<(), WptNetProviderError> {
         let callback = self.callback.clone();
-        match url.scheme() {
+        match request.url.scheme() {
             "data" => {
-                let data_url = DataUrl::process(url.as_str())?;
+                let data_url = DataUrl::process(request.url.as_str())?;
                 let decoded = data_url.decode_to_vec()?;
                 handler.bytes(doc_id, Bytes::from(decoded.0), callback);
             }
             _ => {
-                let relative_path = url.path().strip_prefix('/').unwrap();
+                let relative_path = request.url.path().strip_prefix('/').unwrap();
                 let path = self.base_path.join(relative_path);
                 let file_content = std::fs::read(&path).inspect_err(|err| {
                     eprintln!("Error loading {}: {}", path.display(), &err);
@@ -50,8 +50,10 @@ impl<D: Send + Sync + 'static> WptNetProvider<D> {
 }
 impl<D: Send + Sync + 'static> NetProvider for WptNetProvider<D> {
     type Data = D;
-    fn fetch(&self, doc_id: usize, url: Url, handler: BoxedHandler<D>) {
-        let res = self.fetch_inner(doc_id, url.clone(), handler);
+    fn fetch(&self, doc_id: usize, request: Request, handler: BoxedHandler<D>) {
+        let url = request.url.to_string();
+
+        let res = self.fetch_inner(doc_id, request, handler);
         if let Err(e) = res {
             if !matches!(e, WptNetProviderError::Io(_)) {
                 eprintln!("Error loading {}: {e}", url);

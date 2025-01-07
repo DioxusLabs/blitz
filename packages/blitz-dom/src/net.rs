@@ -1,6 +1,6 @@
 use image::DynamicImage;
 use selectors::context::QuirksMode;
-use std::{io::Cursor, str::FromStr, sync::atomic::AtomicBool, sync::Arc};
+use std::{io::Cursor, sync::atomic::AtomicBool, sync::Arc};
 use style::{
     font_face::{FontFaceSourceFormat, FontFaceSourceFormatKeyword, Source},
     media_queries::MediaList,
@@ -17,7 +17,7 @@ use style::{
     values::{CssUrl, SourceLocation},
 };
 
-use blitz_traits::net::{Bytes, NetHandler, SharedCallback, SharedProvider};
+use blitz_traits::net::{Bytes, NetHandler, Request, SharedCallback, SharedProvider};
 
 use url::Url;
 
@@ -113,7 +113,7 @@ impl ServoStylesheetLoader for StylesheetLoader {
         let url = import.url.url().unwrap();
         self.1.fetch(
             self.0,
-            url.as_ref().clone(),
+            Request::get(url.as_ref().clone()),
             Box::new(StylesheetLoaderInner {
                 url: url.clone(),
                 loader: self.clone(),
@@ -248,11 +248,8 @@ fn fetch_font_face(
                 tracing::warn!("Skipping unsupported font of type {:?}", _font_format);
                 return;
             }
-            network_provider.fetch(
-                doc_id,
-                Url::from_str(url_source.url.as_str()).unwrap(),
-                Box::new(FontFaceHandler(format)),
-            )
+            let url = url_source.url.url().unwrap().as_ref().clone();
+            network_provider.fetch(doc_id, Request::get(url), Box::new(FontFaceHandler(format)))
         });
 }
 

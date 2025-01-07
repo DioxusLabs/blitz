@@ -100,7 +100,7 @@ impl crate::document::BaseDocument {
 
                             self.net_provider.fetch(
                                 doc_id,
-                                (**new_url).clone(),
+                                Request::get((**new_url).clone()),
                                 Box::new(ImageHandler::new(node_id, ImageType::Background(idx))),
                             );
 
@@ -1072,6 +1072,7 @@ impl RegisteredSpeculativePainters for RegisteredPaintersImpl {
     }
 }
 
+use blitz_traits::net::Request;
 use style::traversal::recalc_style_at;
 
 pub struct RecalcStyle<'a> {

@@ -1,7 +1,4 @@
-use blitz_traits::net::{
-    http, BoxedHandler, Bytes, NetCallback, NetProvider, Request as HttpRequest, SharedCallback,
-    Url,
-};
+use blitz_traits::net::{BoxedHandler, Bytes, NetCallback, NetProvider, Request, SharedCallback};
 use data_url::DataUrl;
 use reqwest::Client;
 use std::sync::Arc;
@@ -49,27 +46,27 @@ impl<D: 'static> Provider<D> {
     async fn fetch_inner(
         client: Client,
         doc_id: usize,
-        url: &Url,
+        request: Request,
         handler: BoxedHandler<D>,
         res_callback: SharedCallback<D>,
     ) -> Result<(), ProviderError> {
-        match url.scheme() {
+        match request.url.scheme() {
             "data" => {
-                let data_url = DataUrl::process(url.as_str())?;
+                let data_url = DataUrl::process(request.url.as_str())?;
                 let decoded = data_url.decode_to_vec()?;
                 handler.bytes(doc_id, Bytes::from(decoded.0), res_callback);
             }
             "file" => {
-                let file_content = std::fs::read(url.path())?;
+                let file_content = std::fs::read(request.url.path())?;
                 handler.bytes(doc_id, Bytes::from(file_content), res_callback);
             }
             _ => {
-                let request = HttpRequest::builder()
-                    .uri(url.as_str())
-                    .header(http::header::USER_AGENT, USER_AGENT);
-                let request = handler.request(request)?.try_into()?;
-
-                let response = client.execute(request).await?;
+                let response = client
+                    .request(request.method, request.url)
+                    .headers(request.headers)
+                    .body(request.body)
+                    .send()
+                    .await?;
 
                 handler.bytes(doc_id, response.bytes().await?, res_callback);
             }
@@ -80,11 +77,12 @@ impl<D: 'static> Provider<D> {
 
 impl<D: 'static> NetProvider for Provider<D> {
     type Data = D;
-    fn fetch(&self, doc_id: usize, url: Url, handler: BoxedHandler<D>) {
+    fn fetch(&self, doc_id: usize, request: Request, handler: BoxedHandler<D>) {
         let client = self.client.clone();
         let callback = Arc::clone(&self.resource_callback);
         drop(self.rt.spawn(async move {
-            let res = Self::fetch_inner(client, doc_id, &url, handler, callback).await;
+            let url = request.url.to_string();
+            let res = Self::fetch_inner(client, doc_id, request, handler, callback).await;
             if let Err(e) = res {
                 eprintln!("Error fetching {}: {e}", url);
             }
@@ -102,8 +100,6 @@ enum ProviderError {
     DataUrlBas64(#[from] data_url::forgiving_base64::InvalidBase64),
     #[error("{0}")]
     ReqwestError(#[from] reqwest::Error),
-    #[error("{0}")]
-    Http(#[from] blitz_traits::net::http::Error),
 }
 
 pub struct MpscCallback<T>(UnboundedSender<(usize, T)>);
