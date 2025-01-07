@@ -53,7 +53,7 @@ impl ReadmeApplication {
         self.inner.windows.values_mut().next().unwrap()
     }
 
-    fn reload_document(&mut self) {
+    fn reload_document(&mut self, retain_scroll_position: bool) {
         let (base_url, contents, is_md, _) = self.handle.block_on(fetch(&self.raw_url));
 
         let mut html = contents;
@@ -72,7 +72,8 @@ impl ReadmeApplication {
             None,
             self.navigation_provider.clone(),
         );
-        self.window_mut().replace_document(doc);
+        self.window_mut()
+            .replace_document(doc, retain_scroll_position);
     }
 
     fn toggle_theme(&mut self) {
@@ -112,7 +113,7 @@ impl ApplicationHandler<BlitzShellEvent> for ReadmeApplication {
             let mods = self.keyboard_modifiers.state();
             if !event.state.is_pressed() && (mods.control_key() || mods.super_key()) {
                 match event.physical_key {
-                    PhysicalKey::Code(KeyCode::KeyR) => self.reload_document(),
+                    PhysicalKey::Code(KeyCode::KeyR) => self.reload_document(true),
                     PhysicalKey::Code(KeyCode::KeyT) => self.toggle_theme(),
                     _ => {}
                 }
@@ -126,12 +127,12 @@ impl ApplicationHandler<BlitzShellEvent> for ReadmeApplication {
         match event {
             BlitzShellEvent::Embedder(event) => {
                 if let Some(_event) = event.downcast_ref::<ReadmeEvent>() {
-                    self.reload_document();
+                    self.reload_document(true);
                 }
             }
             BlitzShellEvent::Navigate(url) => {
                 self.raw_url = url;
-                self.reload_document();
+                self.reload_document(false);
             }
             event => self.inner.user_event(event_loop, event),
         }

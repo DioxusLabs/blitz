@@ -121,9 +121,11 @@ impl<Doc: Document<Doc = D>, Rend: DocumentRenderer<Doc = D>> View<Doc, Rend> {
         }
     }
 
-    pub fn replace_document(&mut self, mut new_doc: Doc) {
-        let scroll = self.doc.as_ref().viewport_scroll();
-        new_doc.as_mut().set_viewport_scroll(scroll);
+    pub fn replace_document(&mut self, mut new_doc: Doc, retain_scroll_position: bool) {
+        if retain_scroll_position {
+            let scroll = self.doc.as_ref().viewport_scroll();
+            new_doc.as_mut().set_viewport_scroll(scroll);
+        }
         self.doc = new_doc;
         self.kick_viewport();
         self.poll();
