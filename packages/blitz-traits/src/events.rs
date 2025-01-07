@@ -41,7 +41,7 @@ impl DomEventData {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub struct HitResult {
     /// The node_id of the node identified as the hit target
     pub node_id: usize,

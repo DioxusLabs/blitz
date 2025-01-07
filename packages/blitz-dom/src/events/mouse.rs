@@ -1,19 +1,33 @@
+use blitz_traits::HitResult;
 use markup5ever::local_name;
 
-use crate::{node::NodeSpecificData, util::resolve_url, BaseDocument};
+use crate::{node::NodeSpecificData, util::resolve_url, BaseDocument, Node};
 
-pub(crate) fn handle_click(doc: &mut BaseDocument, target: usize, x: f32, y: f32) {
-    let hit = doc.hit(x, y);
-    if let Some(hit) = hit {
-        assert!(hit.node_id == target);
 
+fn parent_hit(node: &Node, x: f32, y: f32) -> Option<HitResult> {
+    if let Some(parent_id) = node.layout_parent.get() {
+        Some(HitResult {
+            node_id: parent_id,
+            x: x + node.final_layout.location.x,
+            y: y + node.final_layout.location.y,
+        })
+    } else {
+        None
+    }
+}
+
+pub(crate) fn handle_click(doc: &mut BaseDocument, _target: usize, x: f32, y: f32) {
+    let mut maybe_hit = doc.hit(x, y);
+
+    while let Some(hit) = maybe_hit {
         let node = &mut doc.nodes[hit.node_id];
         let content_box_offset = taffy::Point {
             x: node.final_layout.padding.left + node.final_layout.border.left,
             y: node.final_layout.padding.top + node.final_layout.border.top,
         };
         let Some(el) = node.raw_dom_data.downcast_element_mut() else {
-            return;
+            maybe_hit = parent_hit(node, x, y);
+            continue;
         };
 
         let disabled = el.attr(local_name!("disabled")).is_some();
@@ -30,11 +44,13 @@ pub(crate) fn handle_click(doc: &mut BaseDocument, target: usize, x: f32, y: f32
                 .move_to_point(x as f32, y as f32);
 
             doc.set_focus_to(hit.node_id);
+            return;
         } else if el.name.local == local_name!("input")
             && matches!(el.attr(local_name!("type")), Some("checkbox"))
         {
             BaseDocument::toggle_checkbox(el);
             doc.set_focus_to(hit.node_id);
+            return;
         } else if el.name.local == local_name!("input")
             && matches!(el.attr(local_name!("type")), Some("radio"))
         {
@@ -42,6 +58,7 @@ pub(crate) fn handle_click(doc: &mut BaseDocument, target: usize, x: f32, y: f32
             let radio_set = el.attr(local_name!("name")).unwrap().to_string();
             BaseDocument::toggle_radio(doc, radio_set, node_id);
             BaseDocument::set_focus_to(doc, hit.node_id);
+            return;
         }
         // Clicking labels triggers click, and possibly input event, of associated input
         else if el.name.local == local_name!("label") {
@@ -56,6 +73,7 @@ pub(crate) fn handle_click(doc: &mut BaseDocument, target: usize, x: f32, y: f32
                     BaseDocument::toggle_checkbox(target_element);
                 }
                 doc.set_focus_to(node_id);
+                return;
             }
         } else if el.name.local == local_name!("a") {
             if let Some(href) = el.attr(local_name!("href")) {
@@ -67,9 +85,13 @@ pub(crate) fn handle_click(doc: &mut BaseDocument, target: usize, x: f32, y: f32
                         base_url = doc.base_url
                     )
                 }
+                return;
             } else {
                 println!("Clicked link without href: {:?}", el.attrs());
             }
         }
+        
+        // No match. Recurse up to parent.
+        maybe_hit = parent_hit(&doc.nodes[hit.node_id], x, y)
     }
 }
