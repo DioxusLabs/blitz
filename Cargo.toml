@@ -40,7 +40,7 @@ dioxus-core = { version = "0.6" }
 dioxus-html = { version = "0.6" }
 dioxus-cli-config = { version = "0.6" }
 dioxus-devtools = { version = "0.6" }
-taffy = { git = "https://github.com/dioxuslabs/taffy", rev = "0386dc966a", default-features = false, features = ["std", "flexbox", "grid", "block_layout", "content_size"] }
+taffy = { git = "https://github.com/dioxuslabs/taffy", rev = "e353c141", default-features = false, features = ["std", "flexbox", "grid", "block_layout", "content_size"] }
 
 # Linebender + WGPU
 peniko = "0.2"
