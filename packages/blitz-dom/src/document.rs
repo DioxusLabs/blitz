@@ -878,8 +878,6 @@ impl BaseDocument {
             return false;
         }
 
-        println!("Focussed node {}", focus_node_id);
-
         // Remove focus from the old node
         if let Some(id) = self.focus_node_id {
             self.snapshot_node_and(id, |node| node.blur());
