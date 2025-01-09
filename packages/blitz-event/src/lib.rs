@@ -104,6 +104,9 @@ impl<Doc: Document<Doc = D>> Event<Doc> {
             let chain = self.call_node_chain(node_id, DomEventData::Click(event_data.clone()));
 
             if let Some(chain) = chain {
+                let element = self.doc.as_ref().tree()[node_id].element_data().unwrap();
+                let root_input = element.name.local == local_name!("input");
+
                 for target in chain.iter() {
                     let element = self.doc.as_ref().tree()[*target].element_data().unwrap();
 
@@ -116,7 +119,7 @@ impl<Doc: Document<Doc = D>> Event<Doc> {
 
                     if triggers_input_event {
                         self.input();
-                    } else if trigger_label {
+                    } else if trigger_label && !root_input {
                         if let Some(input_id) = self.label_bound_input_element(*target) {
                             self.click(event_data.clone(), input_id, "left");
                         }
@@ -167,8 +170,24 @@ impl<Doc: Document<Doc = D>> Event<Doc> {
     fn label_bound_input_element(&self, label_node_id: usize) -> Option<usize> {
         let bound_input_elements = self.doc.as_ref().label_bound_input_elements(label_node_id);
 
-        // Filter down bound elements to those which have dioxus id
-        bound_input_elements.into_iter().map(|n| n.id).next()
+        // Find the first node that is not uninstalled.
+        let root_node_id = self.doc.as_ref().root_node().id;
+        bound_input_elements.into_iter().find_map(|n| {
+            let mut next_node_id = n.id;
+            loop {
+                let node = &self.doc.as_ref().tree()[next_node_id];
+                if let Some(node_id) = node.parent {
+                    next_node_id = node_id;
+                } else {
+                    break;
+                }
+            }
+            if next_node_id == root_node_id {
+                Some(n.id)
+            } else {
+                None
+            }
+        })
     }
 
     fn call_node_chain(&mut self, target: usize, event_data: DomEventData) -> Option<Vec<usize>> {

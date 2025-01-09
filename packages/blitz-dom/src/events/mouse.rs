@@ -34,7 +34,27 @@ pub(crate) fn handle_mousedown(doc: &mut BaseDocument, target: usize, x: f32, y:
     }
 }
 
-pub(crate) fn handle_click(doc: &mut BaseDocument, _target: usize, x: f32, y: f32) {
+pub(crate) fn handle_click(doc: &mut BaseDocument, target: usize, x: f32, y: f32) {
+    let node = &mut doc.nodes[target];
+    let Some(el) = node.raw_dom_data.downcast_element_mut() else {
+        return;
+    };
+
+    let disabled = el.attr(local_name!("disabled")).is_some();
+    if disabled {
+        return;
+    }
+
+    if el.name.local == local_name!("input")
+        && matches!(el.attr(local_name!("type")), Some("checkbox"))
+    {
+        BaseDocument::toggle_checkbox(el);
+        // doc.set_focus_to(hit.node_id);
+        // return;
+    }
+}
+
+pub(crate) fn old_handle_click(doc: &mut BaseDocument, _target: usize, x: f32, y: f32) {
     let mut maybe_hit = doc.hit(x, y);
 
     while let Some(hit) = maybe_hit {
