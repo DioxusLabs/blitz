@@ -1,7 +1,7 @@
+use crate::{node::NodeSpecificData, util::resolve_url, BaseDocument, Node};
+use blitz_traits::navigation::NavigationOptions;
 use blitz_traits::HitResult;
 use markup5ever::local_name;
-
-use crate::{node::NodeSpecificData, util::resolve_url, BaseDocument, Node};
 
 fn parent_hit(node: &Node, x: f32, y: f32) -> Option<HitResult> {
     node.layout_parent.get().map(|parent_id| HitResult {
@@ -73,7 +73,8 @@ pub(crate) fn handle_click(doc: &mut BaseDocument, _target: usize, x: f32, y: f3
         } else if el.name.local == local_name!("a") {
             if let Some(href) = el.attr(local_name!("href")) {
                 if let Some(url) = resolve_url(&doc.base_url, href) {
-                    doc.navigation_provider.navigate_new_page(url.into());
+                    doc.navigation_provider
+                        .navigate_new_page(NavigationOptions::new(url, doc.id()));
                 } else {
                     println!(
                         "{href} is not parseable as a url. : {base_url:?}",

@@ -5,6 +5,7 @@ use winit::{event_loop::EventLoopProxy, window::WindowId};
 #[cfg(feature = "accessibility")]
 use accesskit_winit::{Event as AccessKitEvent, WindowEvent as AccessKitWindowEvent};
 use blitz_dom::net::Resource;
+use blitz_traits::navigation::NavigationOptions;
 
 #[derive(Debug, Clone)]
 pub enum BlitzShellEvent {
@@ -28,7 +29,7 @@ pub enum BlitzShellEvent {
     Embedder(Arc<dyn Any + Send + Sync>),
 
     /// Navigate to another URL (triggered by e.g. clicking a link)
-    Navigate(String),
+    Navigate(Box<NavigationOptions>),
 }
 impl BlitzShellEvent {
     pub fn embedder_event<T: Any + Send + Sync>(value: T) -> Self {

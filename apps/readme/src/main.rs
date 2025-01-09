@@ -3,7 +3,7 @@ mod readme_application;
 
 use blitz_html::HtmlDocument;
 use blitz_net::Provider;
-use blitz_traits::navigation::NavigationProvider;
+use blitz_traits::navigation::{NavigationOptions, NavigationProvider};
 use markdown::{markdown_to_html, BLITZ_MD_STYLES, GITHUB_MD_STYLES};
 use notify::{Error as NotifyError, Event as NotifyEvent, RecursiveMode, Watcher as _};
 use readme_application::{ReadmeApplication, ReadmeEvent};
@@ -27,8 +27,10 @@ struct ReadmeNavigationProvider {
 }
 
 impl NavigationProvider for ReadmeNavigationProvider {
-    fn navigate_new_page(&self, url: String) {
-        let _ = self.proxy.send_event(BlitzShellEvent::Navigate(url));
+    fn navigate_new_page(&self, navigation: NavigationOptions) {
+        let _ = self
+            .proxy
+            .send_event(BlitzShellEvent::Navigate(Box::new(navigation)));
     }
 }
 

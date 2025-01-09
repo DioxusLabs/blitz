@@ -130,8 +130,8 @@ impl ApplicationHandler<BlitzShellEvent> for ReadmeApplication {
                     self.reload_document(true);
                 }
             }
-            BlitzShellEvent::Navigate(url) => {
-                self.raw_url = url;
+            BlitzShellEvent::Navigate(opts) => {
+                self.raw_url = opts.url.into();
                 self.reload_document(false);
             }
             event => self.inner.user_event(event_loop, event),
