@@ -719,13 +719,15 @@ impl ElementCx<'_> {
         if let Some(input_data) = self.text_input {
             let transform = Affine::translate((pos.x * self.scale, pos.y * self.scale));
 
-            // Render selection/caret
-            for rect in input_data.editor.selection_geometry().iter() {
-                scene.fill(Fill::NonZero, transform, Color::STEEL_BLUE, None, &rect);
+            if self.node.is_focussed() {
+                // Render selection/caret
+                for rect in input_data.editor.selection_geometry().iter() {
+                    scene.fill(Fill::NonZero, transform, Color::STEEL_BLUE, None, &rect);
+                }
+                if let Some(cursor) = input_data.editor.cursor_geometry(1.5) {
+                    scene.fill(Fill::NonZero, transform, Color::BLACK, None, &cursor);
+                };
             }
-            if let Some(cursor) = input_data.editor.cursor_geometry(1.5) {
-                scene.fill(Fill::NonZero, transform, Color::BLACK, None, &cursor);
-            };
 
             // Render text
             self.stroke_text(scene, input_data.editor.try_layout().unwrap().lines(), pos);

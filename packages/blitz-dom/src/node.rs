@@ -215,6 +215,10 @@ impl Node {
         self.set_restyle_hint(RestyleHint::restyle_subtree());
     }
 
+    pub fn is_hovered(&self) -> bool {
+        self.element_state.contains(ElementState::HOVER)
+    }
+
     pub fn focus(&mut self) {
         self.element_state
             .insert(ElementState::FOCUS | ElementState::FOCUSRING);
@@ -227,6 +231,10 @@ impl Node {
         self.set_restyle_hint(RestyleHint::restyle_subtree());
     }
 
+    pub fn is_focussed(&self) -> bool {
+        self.element_state.contains(ElementState::FOCUS)
+    }
+
     pub fn active(&mut self) {
         self.element_state.insert(ElementState::ACTIVE);
         self.set_restyle_hint(RestyleHint::restyle_subtree());
@@ -235,6 +243,10 @@ impl Node {
     pub fn unactive(&mut self) {
         self.element_state.remove(ElementState::ACTIVE);
         self.set_restyle_hint(RestyleHint::restyle_subtree());
+    }
+
+    pub fn is_active(&self) -> bool {
+        self.element_state.contains(ElementState::ACTIVE)
     }
 }
 
