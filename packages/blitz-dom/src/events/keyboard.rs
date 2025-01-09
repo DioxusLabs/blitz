@@ -6,7 +6,7 @@ use blitz_traits::BlitzKeyEvent;
 use keyboard_types::{Key, Modifiers};
 use parley::{FontContext, LayoutContext};
 
-pub(crate) fn handle_keypress(doc: &mut BaseDocument, target: usize, event: BlitzKeyEvent) {
+pub(crate) fn handle_keydown(doc: &mut BaseDocument, target: usize, event: BlitzKeyEvent) {
     if let Some(node_id) = doc.focus_node_id {
         if target != node_id {
             return;

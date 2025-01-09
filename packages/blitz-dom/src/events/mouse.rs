@@ -11,6 +11,30 @@ fn parent_hit(node: &Node, x: f32, y: f32) -> Option<HitResult> {
     })
 }
 
+pub(crate) fn handle_mousedown(doc: &mut BaseDocument, target: usize, x: f32, y: f32) {
+    let node = &mut doc.nodes[target];
+    let Some(el) = node.raw_dom_data.downcast_element_mut() else {
+        return;
+    };
+
+    if let NodeSpecificData::TextInput(ref mut text_input_data) = el.node_specific_data {
+        let content_box_offset = taffy::Point {
+            x: node.final_layout.padding.left + node.final_layout.border.left,
+            y: node.final_layout.padding.top + node.final_layout.border.top,
+        };
+
+        let x = (x - content_box_offset.x) as f64 * doc.viewport.scale_f64();
+        let y = (y - content_box_offset.y) as f64 * doc.viewport.scale_f64();
+        text_input_data
+            .editor
+            .driver(&mut doc.font_ctx, &mut doc.layout_ctx)
+            .move_to_point(x as f32, y as f32);
+
+        doc.set_focus_to(target);
+        return;
+    }
+}
+
 pub(crate) fn handle_click(doc: &mut BaseDocument, _target: usize, x: f32, y: f32) {
     let mut maybe_hit = doc.hit(x, y);
 

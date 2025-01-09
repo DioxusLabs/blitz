@@ -33,11 +33,6 @@ pub struct DioxusDocument {
 
 // Implement DocumentLike and required traits for DioxusDocument
 
-pub struct DxNodeIds {
-    node_id: usize,
-    dioxus_id: Option<ElementId>,
-}
-
 impl AsRef<BaseDocument> for DioxusDocument {
     fn as_ref(&self) -> &BaseDocument {
         &self.inner
@@ -77,265 +72,96 @@ impl Document for DioxusDocument {
         self.inner.id()
     }
 
-    fn handle_event(&mut self, event: DomEvent) {
-        // Collect the nodes into a chain by traversing upwards
-        // This is important so the "capture" phase can be implemented
-        let mut next_node_id = Some(event.target);
-        let mut chain = Vec::with_capacity(16);
-
-        // if it's a capturing event, we want to fill in the chain with the parent nodes
-        // until we reach the root - that way we can call the listeners in the correct order
-        // otherwise, we just want to call the listeners on the target
-        //
-        // todo: this is harcoded for "click" events - eventually we actually need to handle proper propagation
-        // if event.name == "click" {
-        while let Some(node_id) = next_node_id {
-            let node = &self.inner.tree()[node_id];
-
-            if let Some(element) = node.element_data() {
-                let dioxus_id = DioxusDocument::dioxus_id(element);
-                chain.push(DxNodeIds { node_id, dioxus_id })
-            }
-
-            next_node_id = node.parent;
-        }
-
+    fn handle_event(&mut self, event: &mut DomEvent) {
         set_event_converter(Box::new(NativeConverter {}));
 
-        let renderer_event = event.clone();
+        let node = &self.inner.tree()[event.target];
+        let Some(dioxus_id) = node
+            .element_data()
+            .map(|element| DioxusDocument::dioxus_id(element))
+            .flatten()
+        else {
+            return;
+        };
 
-        let mut prevent_default = false;
-        let mut stop_propagation = false;
-
-        match &event.data {
-            DomEventData::MouseDown { .. } => {
-                let click_event_data = wrap_event_data(NativeClickData);
-
-                for &DxNodeIds { node_id, dioxus_id } in chain.iter() {
-                    if let Some(id) = dioxus_id {
-                        let click_event = Event::new(click_event_data.clone(), true);
-                        self.vdom
-                            .runtime()
-                            .handle_event("mousedown", click_event.clone(), id);
-                        prevent_default |= !click_event.default_action_enabled();
-                        stop_propagation |= !click_event.propagates();
-                    }
-
-                    if !prevent_default {
-                        let default_event = DomEvent {
-                            target: node_id,
-                            data: renderer_event.data.clone(),
-                        };
-                        self.inner.as_mut().handle_event(default_event);
-                    }
-
-                    if stop_propagation {
-                        break;
-                    }
+        let dioxus_event = match &event.data {
+            DomEventData::Event(event_type) => match event_type {
+                &"input" => {
+                    let element_data = self
+                        .inner
+                        .get_node(event.target)
+                        .unwrap()
+                        .element_data()
+                        .unwrap();
+                    let form_data = wrap_event_data(
+                        self.input_event_form_data(&event.composed_path(), element_data),
+                    );
+                    let event = Event::new(form_data, true);
+                    Some(("input", event))
                 }
+                _ => None,
+            },
+            DomEventData::MouseDown { .. } => {
+                let event_data = wrap_event_data(NativeClickData);
+                let event = Event::new(event_data, true);
+                Some(("mousedown", event))
             }
             DomEventData::MouseUp { .. } => {
-                let click_event_data = wrap_event_data(NativeClickData);
-
-                for &DxNodeIds {
-                    node_id, dioxus_id, ..
-                } in chain.iter()
-                {
-                    if let Some(id) = dioxus_id {
-                        let click_event = Event::new(click_event_data.clone(), true);
-                        self.vdom
-                            .runtime()
-                            .handle_event("mouseup", click_event.clone(), id);
-                        prevent_default |= !click_event.default_action_enabled();
-                        stop_propagation |= !click_event.propagates();
-                    }
-
-                    if !prevent_default {
-                        let default_event = DomEvent {
-                            target: node_id,
-                            data: renderer_event.data.clone(),
-                        };
-                        self.inner.as_mut().handle_event(default_event);
-                    }
-
-                    if stop_propagation {
-                        break;
-                    }
-                }
+                let event_data = wrap_event_data(NativeClickData);
+                let event = Event::new(event_data, true);
+                Some(("mouseup", event))
             }
             DomEventData::Click { .. } => {
-                // look for the data-dioxus-id attribute on the element
-                // todo: we might need to walk upwards to find the first element with a data-dioxus-id attribute
-
-                let click_event_data = wrap_event_data(NativeClickData);
-
-                for &DxNodeIds { node_id, dioxus_id } in chain.iter() {
-                    let mut trigger_label = false;
-
-                    if let Some(id) = dioxus_id {
-                        // Trigger click event
-                        let click_event = Event::new(click_event_data.clone(), true);
-                        self.vdom
-                            .runtime()
-                            .handle_event("click", click_event.clone(), id);
-                        prevent_default |= !click_event.default_action_enabled();
-                        stop_propagation |= !click_event.propagates();
-
-                        if !prevent_default {
-                            let default_event = DomEvent {
-                                target: node_id,
-                                data: renderer_event.data.clone(),
-                            };
-                            self.inner.as_mut().handle_event(default_event);
-                            prevent_default = true;
-
-                            let element = self.inner.tree()[node_id].element_data().unwrap();
-                            trigger_label = element.name.local == *"label";
-
-                            //TODO Check for other inputs which trigger input event on click here, eg radio
-                            let triggers_input_event = element.name.local == local_name!("input")
-                                && element.attr(local_name!("type")) == Some("checkbox");
-                            if triggers_input_event {
-                                let form_data =
-                                    wrap_event_data(self.input_event_form_data(&chain, element));
-                                let input_event = Event::new(form_data, true);
-                                self.vdom.runtime().handle_event("input", input_event, id);
-                            }
-                        }
-                    }
-
-                    //Clicking labels triggers click, and possibly input event, of bound input
-                    if trigger_label {
-                        if let Some((dioxus_id, node_id)) = self.label_bound_input_element(node_id)
-                        {
-                            let click_event = Event::new(click_event_data.clone(), true);
-                            self.vdom.runtime().handle_event(
-                                "click",
-                                click_event.clone(),
-                                dioxus_id,
-                            );
-
-                            // Handle default DOM event
-                            if click_event.default_action_enabled() {
-                                let DomEventData::Click(event) = &renderer_event.data else {
-                                    unreachable!();
-                                };
-                                let input_click_data = self
-                                    .inner
-                                    .get_node(node_id)
-                                    .unwrap()
-                                    .synthetic_click_event(event.mods);
-                                let default_event = DomEvent {
-                                    target: node_id,
-                                    data: input_click_data,
-                                };
-                                self.inner.as_mut().handle_event(default_event);
-                                prevent_default = true;
-
-                                // TODO: Generated click events should bubble separatedly
-                                // prevent_default |= !click_event.default_action_enabled();
-
-                                //TODO Check for other inputs which trigger input event on click here, eg radio
-                                let element_data = self
-                                    .inner
-                                    .get_node(node_id)
-                                    .unwrap()
-                                    .element_data()
-                                    .unwrap();
-                                let triggers_input_event =
-                                    element_data.attr(local_name!("type")) == Some("checkbox");
-                                let form_data = wrap_event_data(
-                                    self.input_event_form_data(&chain, element_data),
-                                );
-                                if triggers_input_event {
-                                    let input_event = Event::new(form_data, true);
-                                    self.vdom.runtime().handle_event(
-                                        "input",
-                                        input_event,
-                                        dioxus_id,
-                                    );
-                                }
-                            }
-                        }
-                    }
-
-                    if stop_propagation {
-                        break;
-                    }
-                }
+                let event_data = wrap_event_data(NativeClickData);
+                let event = Event::new(event_data.clone(), true);
+                Some(("click", event))
+            }
+            DomEventData::Input(_) => {
+                let element_data = self
+                    .inner
+                    .get_node(event.target)
+                    .unwrap()
+                    .element_data()
+                    .unwrap();
+                let form_data = wrap_event_data(
+                    self.input_event_form_data(&event.composed_path(), element_data),
+                );
+                let event = Event::new(form_data, true);
+                Some(("input", event))
+            }
+            DomEventData::KeyDown(kevent) => {
+                let event_data = wrap_event_data(BlitzKeyboardData(kevent.clone()));
+                let event = Event::new(event_data.clone(), true);
+                Some(("keydown", event))
+            }
+            DomEventData::KeyUp(kevent) => {
+                let event_data = wrap_event_data(BlitzKeyboardData(kevent.clone()));
+                let event = Event::new(event_data.clone(), true);
+                Some(("keyup", event))
             }
             DomEventData::KeyPress(kevent) => {
-                let key_event_data = wrap_event_data(BlitzKeyboardData(kevent.clone()));
-
-                for &DxNodeIds { node_id, dioxus_id } in chain.iter() {
-                    println!("{} {:?}", node_id, dioxus_id);
-
-                    if let Some(id) = dioxus_id {
-                        if kevent.state.is_pressed() {
-                            // Handle keydown event
-                            let event = Event::new(key_event_data.clone(), true);
-                            self.vdom
-                                .runtime()
-                                .handle_event("keydown", event.clone(), id);
-                            prevent_default |= !event.default_action_enabled();
-                            stop_propagation |= !event.propagates();
-
-                            if !prevent_default && kevent.text.is_some() {
-                                // Handle keypress event
-                                let event = Event::new(key_event_data.clone(), true);
-                                self.vdom
-                                    .runtime()
-                                    .handle_event("keypress", event.clone(), id);
-                                prevent_default |= !event.default_action_enabled();
-                                stop_propagation |= !event.propagates();
-
-                                if !prevent_default {
-                                    // Handle default DOM event
-                                    let default_event = DomEvent {
-                                        target: node_id,
-                                        data: renderer_event.data.clone(),
-                                    };
-                                    self.inner.as_mut().handle_event(default_event);
-                                    prevent_default = true;
-
-                                    // Handle input event
-                                    let element =
-                                        self.inner.tree()[node_id].element_data().unwrap();
-                                    let triggers_input_event = &element.name.local == "input"
-                                        && matches!(
-                                            element.attr(local_name!("type")),
-                                            None | Some("text" | "password" | "email" | "search")
-                                        );
-                                    if triggers_input_event {
-                                        let form_data = wrap_event_data(dbg!(
-                                            self.input_event_form_data(&chain, element)
-                                        ));
-                                        let input_event = Event::new(form_data, true);
-                                        self.vdom.runtime().handle_event("input", input_event, id);
-                                    }
-                                }
-                            }
-                        } else {
-                            // Handle keyup event
-                            let event = Event::new(key_event_data.clone(), true);
-                            self.vdom.runtime().handle_event("keyup", event.clone(), id);
-                            prevent_default |= !event.default_action_enabled();
-                            stop_propagation |= !event.propagates();
-                        }
-                    }
-
-                    if stop_propagation {
-                        break;
-                    }
-                }
+                let event_data = wrap_event_data(BlitzKeyboardData(kevent.clone()));
+                let event = Event::new(event_data.clone(), true);
+                Some(("keypress", event))
+                // if !prevent_default && kevent.text.is_some() {
+                // Handle keypress event
             }
             // TODO: Implement IME and Hover events handling
-            DomEventData::Ime(_) => {}
-            DomEventData::Hover => {}
-        }
+            DomEventData::Ime(_) => None,
+            DomEventData::Hover => None,
+        };
 
-        if !prevent_default {
-            self.inner.as_mut().handle_event(event);
+        if let Some((name, dioxus_event)) = dioxus_event {
+            self.vdom
+                .runtime()
+                .handle_event(name, dioxus_event.clone(), dioxus_id);
+
+            if !dioxus_event.default_action_enabled() {
+                event.prevent_default();
+            }
+            if !dioxus_event.propagates() {
+                event.stop_propagation();
+            }
         }
     }
 }
@@ -349,11 +175,11 @@ impl DioxusDocument {
     /// Currently only cares about input checkboxes
     pub fn input_event_form_data(
         &self,
-        parent_chain: &[DxNodeIds],
+        parent_chain: &Vec<usize>,
         element_node_data: &ElementNodeData,
     ) -> NativeFormData {
-        let parent_form = parent_chain.iter().map(|ids| ids.node_id).find_map(|id| {
-            let node = self.inner.get_node(id)?;
+        let parent_form = parent_chain.iter().find_map(|id| {
+            let node = self.inner.get_node(*id)?;
             let element_data = node.element_data()?;
             if element_data.name.local == local_name!("form") {
                 Some(node)

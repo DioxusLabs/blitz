@@ -3,6 +3,7 @@ use crate::convert_events::{
 };
 use crate::event::{create_waker, BlitzShellEvent};
 use blitz_dom::BaseDocument;
+use blitz_event::Event as BlitzEvent;
 use blitz_traits::{BlitzMouseButtonEvent, ColorScheme, Devtools, Viewport};
 use blitz_traits::{Document, DocumentRenderer, DomEvent, DomEventData};
 use winit::keyboard::PhysicalKey;
@@ -48,7 +49,7 @@ impl<Doc: Document<Doc = D>, Rend: DocumentRenderer<Doc = D>> WindowConfig<Doc, 
 }
 
 pub struct View<Doc: Document<Doc = D>, Rend: DocumentRenderer<Doc = D>> {
-    pub doc: Doc,
+    pub doc: BlitzEvent<Doc>,
 
     pub(crate) renderer: Rend,
     pub(crate) waker: Option<Waker>,
@@ -66,9 +67,6 @@ pub struct View<Doc: Document<Doc = D>, Rend: DocumentRenderer<Doc = D>> {
     pub devtools: Devtools,
     theme_override: Option<Theme>,
     keyboard_modifiers: Modifiers,
-    mouse_pos: (f32, f32),
-    dom_mouse_pos: (f32, f32),
-    mouse_down_node: Option<usize>,
 
     #[cfg(feature = "accessibility")]
     /// Accessibility adapter for `accesskit`.
@@ -105,13 +103,10 @@ impl<Doc: Document<Doc = D>, Rend: DocumentRenderer<Doc = D>> View<Doc, Rend> {
 
             event_loop_proxy: proxy.clone(),
             window: winit_window.clone(),
-            doc: config.doc,
+            doc: BlitzEvent::new(config.doc),
             viewport,
             devtools: Default::default(),
             theme_override: None,
-            mouse_pos: Default::default(),
-            dom_mouse_pos: Default::default(),
-            mouse_down_node: None,
 
             #[cfg(feature = "accessibility")]
             accessibility: AccessibilityState::new(&winit_window, proxy.clone()),
@@ -126,7 +121,7 @@ impl<Doc: Document<Doc = D>, Rend: DocumentRenderer<Doc = D>> View<Doc, Rend> {
             let scroll = self.doc.as_ref().viewport_scroll();
             new_doc.as_mut().set_viewport_scroll(scroll);
         }
-        self.doc = new_doc;
+        self.doc = BlitzEvent::new(new_doc);
         self.kick_viewport();
         self.poll();
         self.request_redraw();
@@ -244,98 +239,6 @@ impl<Doc: Document<Doc = D>, Rend: DocumentRenderer<Doc = D>> View<Doc, Rend> {
         }
     }
 
-    pub fn mouse_move(&mut self, x: f32, y: f32) -> bool {
-        let viewport_scroll = self.doc.as_ref().viewport_scroll();
-        let dom_x = x + viewport_scroll.x as f32 / self.viewport.zoom();
-        let dom_y = y + viewport_scroll.y as f32 / self.viewport.zoom();
-
-        // println!("Mouse move: ({}, {})", x, y);
-        // println!("Unscaled: ({}, {})",);
-
-        self.mouse_pos = (x, y);
-        self.dom_mouse_pos = (dom_x, dom_y);
-        self.doc.as_mut().set_hover_to(dom_x, dom_y)
-    }
-
-    pub fn mouse_down(&mut self, _button: &str) {
-        let Some(node_id) = self.doc.as_ref().get_hover_node_id() else {
-            return;
-        };
-
-        self.doc.as_mut().active_node();
-
-        self.doc.handle_event(DomEvent {
-            target: node_id,
-            data: DomEventData::MouseDown(BlitzMouseButtonEvent {
-                x: self.dom_mouse_pos.0,
-                y: self.dom_mouse_pos.1,
-                mods: winit_modifiers_to_kbt_modifiers(self.keyboard_modifiers.state()),
-            }),
-        });
-
-        self.mouse_down_node = Some(node_id);
-    }
-
-    pub fn mouse_up(&mut self, button: &str) {
-        self.doc.as_mut().unactive_node();
-
-        let Some(node_id) = self.doc.as_ref().get_hover_node_id() else {
-            return;
-        };
-
-        self.doc.handle_event(DomEvent {
-            target: node_id,
-            data: DomEventData::MouseUp(BlitzMouseButtonEvent {
-                x: self.dom_mouse_pos.0,
-                y: self.dom_mouse_pos.1,
-                mods: winit_modifiers_to_kbt_modifiers(self.keyboard_modifiers.state()),
-            }),
-        });
-
-        if self.mouse_down_node == Some(node_id) {
-            self.click(button);
-        } else if let Some(mouse_down_id) = self.mouse_down_node {
-            // Anonymous node ids are unstable due to tree reconstruction. So we compare the id
-            // of the first non-anonymous ancestor.
-            if self.doc.as_ref().non_anon_ancestor_if_anon(mouse_down_id)
-                == self.doc.as_ref().non_anon_ancestor_if_anon(node_id)
-            {
-                self.click(button);
-            }
-        }
-    }
-
-    pub fn click(&mut self, button: &str) {
-        let Some(node_id) = self.doc.as_ref().get_hover_node_id() else {
-            return;
-        };
-
-        if self.devtools.highlight_hover {
-            let mut node = self.doc.as_ref().get_node(node_id).unwrap();
-            if button == "right" {
-                if let Some(parent_id) = node.layout_parent.get() {
-                    node = self.doc.as_ref().get_node(parent_id).unwrap();
-                }
-            }
-            self.doc.as_ref().debug_log_node(node.id);
-            self.devtools.highlight_hover = false;
-        } else {
-            // Not debug mode. Handle click as usual
-            if button == "left" {
-                // If we hit a node, then we collect the node to its parents, check for listeners, and then
-                // call those listeners
-                self.doc.handle_event(DomEvent {
-                    target: node_id,
-                    data: DomEventData::Click(BlitzMouseButtonEvent {
-                        x: self.dom_mouse_pos.0,
-                        y: self.dom_mouse_pos.1,
-                        mods: winit_modifiers_to_kbt_modifiers(self.keyboard_modifiers.state()),
-                    }),
-                });
-            }
-        }
-    }
-
     #[cfg(feature = "accessibility")]
     pub fn build_accessibility_tree(&mut self) {
         self.accessibility.build_tree(self.doc.as_ref());
@@ -374,7 +277,13 @@ impl<Doc: Document<Doc = D>, Rend: DocumentRenderer<Doc = D>> View<Doc, Rend> {
             // Text / keyboard events
             WindowEvent::Ime(ime_event) => {
                 if let Some(target) = self.doc.as_ref().get_focussed_node_id() {
-                    self.doc.handle_event(DomEvent { target, data: DomEventData::Ime(winit_ime_to_blitz(ime_event)) });
+                    let mut event = DomEvent::new(target, DomEventData::Ime(winit_ime_to_blitz(ime_event)), Vec::new());
+                    event.current_target = Some(target);
+                    self.doc.handle_event(&mut event);
+                    if !event.default_prevented {
+                        self.doc.as_mut().handle_event(&mut event);
+                    }
+                    event.current_target = None;
                     self.request_redraw();
                 }
             },
@@ -439,10 +348,11 @@ impl<Doc: Document<Doc = D>, Rend: DocumentRenderer<Doc = D>> View<Doc, Rend> {
                     }
                     _ => {
                         if let Some(focus_node_id) = self.doc.as_ref().get_focussed_node_id() {
-                            self.doc.handle_event(DomEvent {
-                                target: focus_node_id,
-                                data: DomEventData::KeyPress(winit_key_event_to_blitz(&event, self.keyboard_modifiers.state()))
-                            });
+                            let event_data = winit_key_event_to_blitz(
+                                &event,
+                                self.keyboard_modifiers.state(),
+                            );
+                            self.doc.key_down(event_data, focus_node_id);
                             self.request_redraw();
                         }
                     }
@@ -455,7 +365,7 @@ impl<Doc: Document<Doc = D>, Rend: DocumentRenderer<Doc = D>> View<Doc, Rend> {
             WindowEvent::CursorLeft { /*device_id*/.. } => {}
             WindowEvent::CursorMoved { position, .. } => {
                 let winit::dpi::LogicalPosition::<f32> { x, y } = position.to_logical(self.window.scale_factor());
-                let changed = self.mouse_move(x, y);
+                let changed = self.doc.mouse_move(x, y, self.viewport.zoom());
 
                 if changed {
                     let cursor = self.doc.as_ref().get_cursor();
@@ -473,9 +383,15 @@ impl<Doc: Document<Doc = D>, Rend: DocumentRenderer<Doc = D>> View<Doc, Rend> {
                         _ => unreachable!(),
                     };
 
+                    let event_data = BlitzMouseButtonEvent {
+                        x: self.doc.dom_mouse_pos.0,
+                        y: self.doc.dom_mouse_pos.1,
+                        mods: winit_modifiers_to_kbt_modifiers(self.keyboard_modifiers.state()),
+                    };
+
                     match state {
-                        ElementState::Pressed => self.mouse_down(button),
-                        ElementState::Released => self.mouse_up(button)
+                        ElementState::Pressed => self.doc.mouse_down(event_data),
+                        ElementState::Released => self.doc.mouse_up(event_data, button)
                     }
 
                     self.request_redraw();

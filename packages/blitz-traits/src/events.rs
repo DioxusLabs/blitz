@@ -8,10 +8,52 @@ pub struct EventListener {
 #[derive(Debug, Clone)]
 pub struct DomEvent {
     pub target: usize,
+    /// Which is true if the event bubbles up through the DOM tree.
+    pub bubbles: bool,
+    /// which is true if the event can be canceled.
+    pub cancelable: bool,
+    pub current_target: Option<usize>,
+    composed_path: Vec<usize>,
+    /// Where true indicates that the default user agent action was prevented,
+    /// and false indicates that it was not.
+    pub default_prevented: bool,
+
+    pub stop_propagation: bool,
     pub data: DomEventData,
 }
 
 impl DomEvent {
+    pub fn new(target: usize, data: DomEventData, composed_path: Vec<usize>) -> Self {
+        let cancelable = !matches!(data, DomEventData::Input(_));
+
+        Self {
+            target,
+            bubbles: true,
+            cancelable,
+            current_target: None,
+            composed_path,
+            default_prevented: false,
+
+            stop_propagation: false,
+            data,
+        }
+    }
+
+    pub fn composed_path(&self) -> &Vec<usize> {
+        &self.composed_path
+    }
+
+    pub fn prevent_default(&mut self) {
+        if !self.cancelable {
+            return;
+        }
+        self.default_prevented = true;
+    }
+
+    pub fn stop_propagation(&mut self) {
+        self.stop_propagation = true;
+    }
+
     /// Returns the name of the event ("click", "mouseover", "keypress", etc)
     pub fn name(&self) -> &'static str {
         self.data.name()
@@ -23,9 +65,14 @@ pub enum DomEventData {
     MouseDown(BlitzMouseButtonEvent),
     MouseUp(BlitzMouseButtonEvent),
     Click(BlitzMouseButtonEvent),
+    Input(BlitzKeyEvent),
+    KeyDown(BlitzKeyEvent),
+    KeyUp(BlitzKeyEvent),
     KeyPress(BlitzKeyEvent),
     Ime(BlitzImeEvent),
     Hover,
+    /// A string containing the type of Event.
+    Event(&'static str),
 }
 
 impl DomEventData {
@@ -34,9 +81,13 @@ impl DomEventData {
             DomEventData::MouseDown { .. } => "mousedown",
             DomEventData::MouseUp { .. } => "mouseup",
             DomEventData::Click { .. } => "click",
+            DomEventData::Input { .. } => "input",
+            DomEventData::KeyDown { .. } => "keydown",
+            DomEventData::KeyUp { .. } => "keyup",
             DomEventData::KeyPress { .. } => "keypress",
             DomEventData::Ime { .. } => "input",
             DomEventData::Hover => "mouseover",
+            DomEventData::Event(event_type) => event_type,
         }
     }
 }
