@@ -25,7 +25,7 @@ pub enum DomEventData {
     Click(BlitzMouseButtonEvent),
     KeyPress(BlitzKeyEvent),
     Ime(BlitzImeEvent),
-    Hover,
+    Hover(BlitzHoverEvent),
 }
 
 impl DomEventData {
@@ -36,9 +36,15 @@ impl DomEventData {
             DomEventData::Click { .. } => "click",
             DomEventData::KeyPress { .. } => "keypress",
             DomEventData::Ime { .. } => "input",
-            DomEventData::Hover => "mouseover",
+            DomEventData::Hover { .. } => "mouseover",
         }
     }
+}
+
+#[derive(Clone, Debug)]
+pub struct BlitzHoverEvent {
+    pub x: f32,
+    pub y: f32,
 }
 
 #[derive(Debug, Clone, Copy)]

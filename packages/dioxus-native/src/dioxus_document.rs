@@ -331,7 +331,45 @@ impl Document for DioxusDocument {
             }
             // TODO: Implement IME and Hover events handling
             DomEventData::Ime(_) => {}
-            DomEventData::Hover => {}
+            DomEventData::Hover { .. } => {
+                let hover_event_data = wrap_event_data(NativeClickData);
+                println!("HOVER EVENT");
+
+                for &DxNodeIds { node_id, dioxus_id } in chain.iter() {
+                    if let Some(id) = dioxus_id {
+                        // Dispatch both mouseenter and mouseover events
+                        let events = ["mouseenter", "mouseover"];
+                        for event_name in events {
+                            let hover_event = Event::new(hover_event_data.clone(), true);
+                            self.vdom
+                                .runtime()
+                                .handle_event(event_name, hover_event.clone(), id);
+                            prevent_default |= !hover_event.default_action_enabled();
+                            stop_propagation |= !hover_event.propagates();
+                        }
+
+                        // Also dispatch mouseleave when hover ends
+                        if !prevent_default {
+                            let default_event = DomEvent {
+                                target: node_id,
+                                data: renderer_event.data.clone(),
+                            };
+                            self.inner.as_mut().handle_event(default_event.clone());
+
+                            // Explicit mouseleave event
+                            self.vdom.runtime().handle_event(
+                                "mouseleave",
+                                Event::new(hover_event_data.clone(), true),
+                                id,
+                            );
+                        }
+                    }
+
+                    if stop_propagation {
+                        break;
+                    }
+                }
+            }
         }
 
         if !prevent_default {

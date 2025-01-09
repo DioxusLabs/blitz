@@ -3,7 +3,7 @@ use crate::convert_events::{
 };
 use crate::event::{create_waker, BlitzShellEvent};
 use blitz_dom::BaseDocument;
-use blitz_traits::{BlitzMouseButtonEvent, ColorScheme, Devtools, Viewport};
+use blitz_traits::{BlitzHoverEvent, BlitzMouseButtonEvent, ColorScheme, Devtools, Viewport};
 use blitz_traits::{Document, DocumentRenderer, DomEvent, DomEventData};
 use winit::keyboard::PhysicalKey;
 
@@ -249,12 +249,36 @@ impl<Doc: Document<Doc = D>, Rend: DocumentRenderer<Doc = D>> View<Doc, Rend> {
         let dom_x = x + viewport_scroll.x as f32 / self.viewport.zoom();
         let dom_y = y + viewport_scroll.y as f32 / self.viewport.zoom();
 
-        // println!("Mouse move: ({}, {})", x, y);
-        // println!("Unscaled: ({}, {})",);
+        //println!("Mouse move: ({}, {})", x, y);
+        //println!("Unscaled: ({}, {})",);
 
         self.mouse_pos = (x, y);
         self.dom_mouse_pos = (dom_x, dom_y);
-        self.doc.as_mut().set_hover_to(dom_x, dom_y)
+
+        // Get previous and new hover nodes
+        let previous_hover_node = self.doc.as_ref().get_hover_node_id();
+        let hover_changed = self.doc.as_mut().set_hover_to(dom_x, dom_y);
+        let current_hover_node = self.doc.as_ref().get_hover_node_id();
+
+        if previous_hover_node != current_hover_node {
+            // ! No Idea how Handle mouseleave for previous node
+            // if let Some(prev_node) = previous_hover_node {
+            //     self.doc.handle_event(DomEvent {
+            //         target: prev_node,
+            //         data: DomEventData::Hover(BlitzHoverEvent { x: dom_x, y: dom_y }),
+            //     });
+            // }
+
+            // Handle mouseenter for new node
+            if let Some(curr_node) = current_hover_node {
+                self.doc.handle_event(DomEvent {
+                    target: curr_node,
+                    data: DomEventData::Hover(BlitzHoverEvent { x: dom_x, y: dom_y }),
+                });
+            }
+        }
+
+        hover_changed
     }
 
     pub fn mouse_down(&mut self, _button: &str) {
