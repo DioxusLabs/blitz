@@ -168,7 +168,7 @@ impl<Doc: Document<Doc = D>> Event<Doc> {
         let bound_input_elements = self.doc.as_ref().label_bound_input_elements(label_node_id);
 
         // Filter down bound elements to those which have dioxus id
-        bound_input_elements.into_iter().find_map(|n| Some(n.id))
+        bound_input_elements.into_iter().map(|n| n.id).next()
     }
 
     fn call_node_chain(&mut self, target: usize, event_data: DomEventData) -> Option<Vec<usize>> {
@@ -186,7 +186,7 @@ impl<Doc: Document<Doc = D>> Event<Doc> {
             }
             event.current_target = None;
 
-            if !event.bubbles && (|| event.stop_propagation)() {
+            if !event.bubbles && event.stop_propagation {
                 break;
             }
         }

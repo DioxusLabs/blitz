@@ -31,7 +31,6 @@ pub(crate) fn handle_mousedown(doc: &mut BaseDocument, target: usize, x: f32, y:
             .move_to_point(x as f32, y as f32);
 
         doc.set_focus_to(target);
-        return;
     }
 }
 

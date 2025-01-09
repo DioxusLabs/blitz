@@ -76,11 +76,7 @@ impl Document for DioxusDocument {
         set_event_converter(Box::new(NativeConverter {}));
 
         let node = &self.inner.tree()[event.target];
-        let Some(dioxus_id) = node
-            .element_data()
-            .map(|element| DioxusDocument::dioxus_id(element))
-            .flatten()
-        else {
+        let Some(dioxus_id) = node.element_data().and_then(DioxusDocument::dioxus_id) else {
             return;
         };
 
@@ -94,7 +90,7 @@ impl Document for DioxusDocument {
                         .element_data()
                         .unwrap();
                     let form_data = wrap_event_data(
-                        self.input_event_form_data(&event.composed_path(), element_data),
+                        self.input_event_form_data(event.composed_path(), element_data),
                     );
                     let event = Event::new(form_data, true);
                     Some(("input", event))
@@ -124,7 +120,7 @@ impl Document for DioxusDocument {
                     .element_data()
                     .unwrap();
                 let form_data = wrap_event_data(
-                    self.input_event_form_data(&event.composed_path(), element_data),
+                    self.input_event_form_data(event.composed_path(), element_data),
                 );
                 let event = Event::new(form_data, true);
                 Some(("input", event))
@@ -175,7 +171,7 @@ impl DioxusDocument {
     /// Currently only cares about input checkboxes
     pub fn input_event_form_data(
         &self,
-        parent_chain: &Vec<usize>,
+        parent_chain: &[usize],
         element_node_data: &ElementNodeData,
     ) -> NativeFormData {
         let parent_form = parent_chain.iter().find_map(|id| {
