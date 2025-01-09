@@ -89,4 +89,7 @@ pub(crate) fn handle_click(doc: &mut BaseDocument, _target: usize, x: f32, y: f3
         // No match. Recurse up to parent.
         maybe_hit = parent_hit(&doc.nodes[hit.node_id], x, y)
     }
+
+    // If nothing is matched then clear focus
+    doc.clear_focus();
 }

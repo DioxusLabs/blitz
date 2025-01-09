@@ -873,6 +873,14 @@ impl BaseDocument {
         Some(id)
     }
 
+    /// Clear the focussed node
+    pub fn clear_focus(&mut self) {
+        if let Some(id) = self.focus_node_id {
+            self.snapshot_node_and(id, |node| node.blur());
+            self.focus_node_id = None;
+        }
+    }
+
     pub fn set_focus_to(&mut self, focus_node_id: usize) -> bool {
         if Some(focus_node_id) == self.focus_node_id {
             return false;
