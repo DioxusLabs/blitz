@@ -74,8 +74,9 @@ impl Document for DioxusDocument {
 
     fn handle_event(&mut self, event: &mut DomEvent) {
         set_event_converter(Box::new(NativeConverter {}));
+        let current_target = event.current_target.unwrap();
 
-        let node = &self.inner.tree()[event.target];
+        let node = &self.inner.tree()[current_target];
         let Some(dioxus_id) = node.element_data().and_then(DioxusDocument::dioxus_id) else {
             return;
         };
@@ -85,7 +86,7 @@ impl Document for DioxusDocument {
                 &"input" => {
                     let element_data = self
                         .inner
-                        .get_node(event.target)
+                        .get_node(current_target)
                         .unwrap()
                         .element_data()
                         .unwrap();
@@ -116,7 +117,7 @@ impl Document for DioxusDocument {
             DomEventData::Input(_) => {
                 let element_data = self
                     .inner
-                    .get_node(event.target)
+                    .get_node(current_target)
                     .unwrap()
                     .element_data()
                     .unwrap();
