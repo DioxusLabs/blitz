@@ -296,6 +296,14 @@ impl<Doc: Document<Doc = D>, Rend: DocumentRenderer<Doc = D>> View<Doc, Rend> {
                     return;
                 };
                 if !event.state.is_pressed() {
+                    if let Some(focus_node_id) = self.doc.as_ref().get_focussed_node_id() {
+                        let event_data = winit_key_event_to_blitz(
+                            &event,
+                            self.keyboard_modifiers.state(),
+                        );
+                        self.doc.key_up(event_data, focus_node_id);
+                        self.request_redraw();
+                    }
                     return;
                 }
 
