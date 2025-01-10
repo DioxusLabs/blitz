@@ -222,6 +222,13 @@ impl<Doc: Document<Doc = D>> Event<Doc> {
     }
 
     fn call_node_chain(&mut self, target: usize, event_data: DomEventData) -> Option<Vec<usize>> {
+        let node_data = &self.doc.as_ref().tree()[target].raw_dom_data;
+        if node_data.is_element_with_tag_name(&local_name!("input"))
+            && node_data.attr(local_name!("disabled")).is_some()
+        {
+            return None;
+        }
+
         // Collect the nodes into a chain by traversing upwards
         // This is important so the "capture" phase can be implemented
         let chain = self.node_chain(target);

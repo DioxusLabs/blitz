@@ -140,8 +140,6 @@ impl Document for DioxusDocument {
                 let event_data = wrap_event_data(BlitzKeyboardData(kevent.clone()));
                 let event = Event::new(event_data.clone(), true);
                 Some(("keypress", event))
-                // if !prevent_default && kevent.text.is_some() {
-                // Handle keypress event
             }
             // TODO: Implement IME and Hover events handling
             DomEventData::Ime(_) => None,
