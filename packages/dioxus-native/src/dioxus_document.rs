@@ -112,6 +112,7 @@ impl Document for DioxusDocument {
                 let event = Event::new(event_data.clone(), true);
                 Some(("click", event))
             }
+            DomEventData::Focus => None,
             DomEventData::Input(_) => {
                 let element_data = self
                     .inner

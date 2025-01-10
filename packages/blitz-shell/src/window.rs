@@ -389,9 +389,24 @@ impl<Doc: Document<Doc = D>, Rend: DocumentRenderer<Doc = D>> View<Doc, Rend> {
                         mods: winit_modifiers_to_kbt_modifiers(self.keyboard_modifiers.state()),
                     };
 
-                    match state {
-                        ElementState::Pressed => self.doc.mouse_down(event_data),
-                        ElementState::Released => self.doc.mouse_up(event_data, button)
+                    if self.devtools.highlight_hover && state.is_pressed() {
+                        let Some(node_id) = self.doc.as_ref().get_hover_node_id() else {
+                            return;
+                        };
+                        let mut node = self.doc.as_ref().get_node(node_id).unwrap();
+                        if button == "right" {
+                            if let Some(parent_id) = node.layout_parent.get() {
+                                node = self.doc.as_ref().get_node(parent_id).unwrap();
+                            }
+                        }
+                        self.doc.as_ref().debug_log_node(node.id);
+                        self.devtools.highlight_hover = false;
+                    } else {
+                        // Not debug mode. Handle click as usual
+                        match state {
+                            ElementState::Pressed => self.doc.mouse_down(event_data),
+                            ElementState::Released => self.doc.mouse_up(event_data, button)
+                        }
                     }
 
                     self.request_redraw();

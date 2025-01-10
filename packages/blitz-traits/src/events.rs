@@ -24,11 +24,23 @@ pub struct DomEvent {
 
 impl DomEvent {
     pub fn new(target: usize, data: DomEventData, composed_path: Vec<usize>) -> Self {
-        let cancelable = !matches!(data, DomEventData::Input(_));
+        let mut cancelable = true;
+        let mut bubbles = true;
+
+        match data.name() {
+            "input" => {
+                cancelable = false;
+            }
+            "focus" => {
+                cancelable = false;
+                bubbles = false;
+            }
+            _ => {}
+        }
 
         Self {
             target,
-            bubbles: true,
+            bubbles,
             cancelable,
             current_target: None,
             composed_path,
@@ -65,6 +77,7 @@ pub enum DomEventData {
     MouseDown(BlitzMouseButtonEvent),
     MouseUp(BlitzMouseButtonEvent),
     Click(BlitzMouseButtonEvent),
+    Focus,
     Input(BlitzKeyEvent),
     KeyDown(BlitzKeyEvent),
     KeyUp(BlitzKeyEvent),
@@ -81,6 +94,7 @@ impl DomEventData {
             DomEventData::MouseDown { .. } => "mousedown",
             DomEventData::MouseUp { .. } => "mouseup",
             DomEventData::Click { .. } => "click",
+            DomEventData::Focus => "focus",
             DomEventData::Input { .. } => "input",
             DomEventData::KeyDown { .. } => "keydown",
             DomEventData::KeyUp { .. } => "keyup",

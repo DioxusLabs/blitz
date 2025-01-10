@@ -57,7 +57,23 @@ impl<Doc: Document<Doc = D>> Event<Doc> {
 
         self.doc.as_mut().active_node();
 
-        self.call_node_chain(node_id, DomEventData::MouseDown(event_data));
+        let chain = self.call_node_chain(node_id, DomEventData::MouseDown(event_data));
+
+        if let Some(chain) = chain {
+            for target in chain.iter() {
+                let element = self.doc.as_ref().tree()[*target].element_data().unwrap();
+
+                let triggers_input_event = element.name.local == local_name!("input")
+                    && matches!(
+                        element.attr(local_name!("type")),
+                        None | Some("text" | "password" | "email" | "search")
+                    );
+
+                if triggers_input_event {
+                    self.input(None);
+                }
+            }
+        }
 
         self.mouse_down_node = Some(node_id);
     }
@@ -89,17 +105,6 @@ impl<Doc: Document<Doc = D>> Event<Doc> {
     }
 
     pub fn click(&mut self, event_data: BlitzMouseButtonEvent, node_id: usize, button: &str) {
-        // if self.devtools.highlight_hover {
-        //     let mut node = self.doc.as_ref().get_node(node_id).unwrap();
-        //     if button == "right" {
-        //         if let Some(parent_id) = node.layout_parent.get() {
-        //             node = self.doc.as_ref().get_node(parent_id).unwrap();
-        //         }
-        //     }
-        //     self.doc.as_ref().debug_log_node(node.id);
-        //     self.devtools.highlight_hover = false;
-        // } else {
-        // Not debug mode. Handle click as usual
         if button == "left" {
             let chain = self.call_node_chain(node_id, DomEventData::Click(event_data.clone()));
 
@@ -118,7 +123,7 @@ impl<Doc: Document<Doc = D>> Event<Doc> {
                         );
 
                     if triggers_input_event {
-                        self.input();
+                        self.input(None);
                     } else if trigger_label && !root_input {
                         if let Some(input_id) = self.label_bound_input_element(*target) {
                             self.click(event_data.clone(), input_id, "left");
@@ -130,7 +135,7 @@ impl<Doc: Document<Doc = D>> Event<Doc> {
     }
 
     pub fn key_down(&mut self, event_data: BlitzKeyEvent, node_id: usize) {
-        let chain = self.call_node_chain(node_id, DomEventData::KeyDown(event_data));
+        let chain = self.call_node_chain(node_id, DomEventData::KeyDown(event_data.clone()));
 
         if let Some(chain) = chain {
             for target in chain.iter() {
@@ -143,29 +148,55 @@ impl<Doc: Document<Doc = D>> Event<Doc> {
                     );
 
                 if triggers_input_event {
-                    self.input();
+                    self.key_press(event_data.clone(), node_id);
                 }
             }
         }
     }
 
     pub fn key_press(&mut self, event_data: BlitzKeyEvent, node_id: usize) {
-        self.call_node_chain(node_id, DomEventData::KeyPress(event_data));
+        let chain = self.call_node_chain(node_id, DomEventData::KeyPress(event_data.clone()));
+
+        if let Some(chain) = chain {
+            for target in chain.iter() {
+                let element = self.doc.as_ref().tree()[*target].element_data().unwrap();
+
+                let triggers_input_event = element.name.local == local_name!("input")
+                    && matches!(
+                        element.attr(local_name!("type")),
+                        None | Some("text" | "password" | "email" | "search")
+                    );
+
+                if triggers_input_event {
+                    self.input(Some(event_data.clone()));
+                }
+            }
+        }
     }
 
     pub fn key_up(&mut self, event_data: BlitzKeyEvent, node_id: usize) {
         self.call_node_chain(node_id, DomEventData::KeyUp(event_data));
     }
 
-    pub fn input(&mut self) {
-        let Some(node_id) = self.doc.as_ref().get_hover_node_id() else {
+    pub fn input(&mut self, event_data: Option<BlitzKeyEvent>) {
+        let Some(node_id) = self.doc.as_ref().get_focussed_node_id() else {
             return;
         };
 
-        self.call_node_chain(node_id, DomEventData::Event("input"));
+        if let Some(event_data) = event_data {
+            self.call_node_chain(node_id, DomEventData::Input(event_data));
+        } else {
+            self.call_node_chain(node_id, DomEventData::Event("input"));
+        }
     }
 
-    pub fn focus(&mut self) {}
+    pub fn focus(&mut self) {
+        let Some(node_id) = self.doc.as_ref().get_focussed_node_id() else {
+            return;
+        };
+
+        self.call_node_chain(node_id, DomEventData::Event("focus"));
+    }
 
     fn label_bound_input_element(&self, label_node_id: usize) -> Option<usize> {
         let bound_input_elements = self.doc.as_ref().label_bound_input_elements(label_node_id);
@@ -205,7 +236,7 @@ impl<Doc: Document<Doc = D>> Event<Doc> {
             }
             event.current_target = None;
 
-            if !event.bubbles && event.stop_propagation {
+            if !event.bubbles || event.stop_propagation {
                 break;
             }
         }

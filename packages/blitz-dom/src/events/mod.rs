@@ -21,6 +21,7 @@ pub(crate) fn handle_event(doc: &mut BaseDocument, event: DomEvent) {
         DomEventData::Click(event) => {
             handle_click(doc, target_node_id, event.x, event.y);
         }
+        DomEventData::Focus => {}
         DomEventData::Input(_) => {}
         DomEventData::KeyDown(event) => {
             handle_keydown(doc, target_node_id, event);
