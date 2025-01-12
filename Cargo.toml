@@ -33,6 +33,7 @@ euclid = "0.22"
 string_cache = "0.8.7"
 atomic_refcell = "0.1.13"
 app_units = "0.7.5"
+smallvec = "1"
 
 # DioxusLabs dependencies
 dioxus = { version = "0.6" }

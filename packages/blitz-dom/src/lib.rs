@@ -17,6 +17,7 @@ pub(crate) const BULLET_FONT: &[u8] = include_bytes!("../assets/moz-bullet-font.
 ///
 /// This is the primary entry point for this crate.
 pub mod document;
+mod query_selector;
 
 /// Integration of taffy and the DOM.
 pub mod layout;
@@ -51,3 +52,4 @@ pub use node::{ElementNodeData, Node, NodeData, TextNodeData};
 pub use parley::FontContext;
 pub use string_cache::Atom;
 pub use style::invalidation::element::restyle_hints::RestyleHint;
+pub type SelectorList = selectors::SelectorList<style::selector_parser::SelectorImpl>;
