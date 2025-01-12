@@ -1,8 +1,10 @@
+mod hover;
 mod ime;
 mod keyboard;
 mod mouse;
 
 use blitz_traits::{DomEvent, DomEventData};
+pub(crate) use hover::handle_hover;
 pub(crate) use ime::handle_ime_event;
 pub(crate) use keyboard::handle_keypress;
 pub(crate) use mouse::handle_click;
@@ -15,7 +17,9 @@ pub(crate) fn handle_event(doc: &mut BaseDocument, event: DomEvent) {
     match event.data {
         DomEventData::MouseDown(_) => {}
         DomEventData::MouseUp(_) => {}
-        DomEventData::Hover => {}
+        DomEventData::Hover(event) => {
+            handle_hover(doc, target_node_id, event.x, event.y);
+        }
         DomEventData::Click(event) => {
             handle_click(doc, target_node_id, event.x, event.y);
         }
