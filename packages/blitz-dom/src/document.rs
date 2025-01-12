@@ -893,6 +893,27 @@ impl BaseDocument {
         true
     }
 
+    pub fn focus_node(&mut self, node_id: usize) -> bool {
+        println!("Focussed node {}", node_id);
+
+        // Focus the new node
+        self.snapshot_node_and(node_id, |node| node.focus());
+        self.focus_node_id = Some(node_id);
+
+        true
+    }
+
+    pub fn blur_node(&mut self) -> bool {
+        let Some(focus_node_id) = self.focus_node_id else {
+            return false;
+        };
+
+        self.snapshot_node_and(focus_node_id, |node| node.blur());
+        self.focus_node_id = None;
+
+        true
+    }
+
     pub fn active_node(&mut self) -> bool {
         let Some(hover_node_id) = self.get_hover_node_id() else {
             return false;

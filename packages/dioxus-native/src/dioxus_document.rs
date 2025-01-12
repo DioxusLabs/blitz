@@ -94,26 +94,27 @@ impl Document for DioxusDocument {
                         self.input_event_form_data(event.composed_path(), element_data),
                     );
                     let event = Event::new(form_data, true);
-                    Some(("input", event))
+                    Some(event)
                 }
                 _ => None,
             },
             DomEventData::MouseDown { .. } => {
                 let event_data = wrap_event_data(NativeClickData);
                 let event = Event::new(event_data, true);
-                Some(("mousedown", event))
+                Some(event)
             }
             DomEventData::MouseUp { .. } => {
                 let event_data = wrap_event_data(NativeClickData);
                 let event = Event::new(event_data, true);
-                Some(("mouseup", event))
+                Some(event)
             }
             DomEventData::Click { .. } => {
                 let event_data = wrap_event_data(NativeClickData);
                 let event = Event::new(event_data.clone(), true);
-                Some(("click", event))
+                Some(event)
             }
             DomEventData::Focus => None,
+            DomEventData::Blur => None,
             DomEventData::Input(_) => {
                 let element_data = self
                     .inner
@@ -125,32 +126,32 @@ impl Document for DioxusDocument {
                     self.input_event_form_data(event.composed_path(), element_data),
                 );
                 let event = Event::new(form_data, true);
-                Some(("input", event))
+                Some(event)
             }
             DomEventData::KeyDown(kevent) => {
                 let event_data = wrap_event_data(BlitzKeyboardData(kevent.clone()));
                 let event = Event::new(event_data.clone(), true);
-                Some(("keydown", event))
+                Some(event)
             }
             DomEventData::KeyUp(kevent) => {
                 let event_data = wrap_event_data(BlitzKeyboardData(kevent.clone()));
                 let event = Event::new(event_data.clone(), true);
-                Some(("keyup", event))
+                Some(event)
             }
             DomEventData::KeyPress(kevent) => {
                 let event_data = wrap_event_data(BlitzKeyboardData(kevent.clone()));
                 let event = Event::new(event_data.clone(), true);
-                Some(("keypress", event))
+                Some(event)
             }
             // TODO: Implement IME and Hover events handling
             DomEventData::Ime(_) => None,
             DomEventData::Hover => None,
         };
 
-        if let Some((name, dioxus_event)) = dioxus_event {
+        if let Some(dioxus_event) = dioxus_event {
             self.vdom
                 .runtime()
-                .handle_event(name, dioxus_event.clone(), dioxus_id);
+                .handle_event(event.name(), dioxus_event.clone(), dioxus_id);
 
             if !dioxus_event.default_action_enabled() {
                 event.prevent_default();

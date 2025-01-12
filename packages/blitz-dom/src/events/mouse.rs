@@ -24,15 +24,6 @@ pub(crate) fn handle_mousedown(doc: &mut BaseDocument, target: usize, x: f32, y:
             .editor
             .driver(&mut doc.font_ctx, &mut doc.layout_ctx)
             .move_to_point(x as f32, y as f32);
-
-        doc.set_focus_to(target);
-    } else if el.name.local == local_name!("input")
-        && matches!(
-            el.attr(local_name!("type")),
-            Some("checkbox") | Some("radio")
-        )
-    {
-        doc.set_focus_to(target);
     }
 }
 

@@ -31,7 +31,7 @@ impl DomEvent {
             "input" => {
                 cancelable = false;
             }
-            "focus" => {
+            "focus" | "blur" => {
                 cancelable = false;
                 bubbles = false;
             }
@@ -78,6 +78,7 @@ pub enum DomEventData {
     MouseUp(BlitzMouseButtonEvent),
     Click(BlitzMouseButtonEvent),
     Focus,
+    Blur,
     Input(BlitzKeyEvent),
     KeyDown(BlitzKeyEvent),
     KeyUp(BlitzKeyEvent),
@@ -95,6 +96,7 @@ impl DomEventData {
             DomEventData::MouseUp { .. } => "mouseup",
             DomEventData::Click { .. } => "click",
             DomEventData::Focus => "focus",
+            DomEventData::Blur => "blur",
             DomEventData::Input { .. } => "input",
             DomEventData::KeyDown { .. } => "keydown",
             DomEventData::KeyUp { .. } => "keyup",

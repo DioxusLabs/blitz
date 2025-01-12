@@ -54,24 +54,25 @@ impl<Doc: Document<Doc = D>> Event<Doc> {
         let Some(node_id) = self.doc.as_ref().get_hover_node_id() else {
             return;
         };
+        let focussed_node_id = self.doc.as_ref().get_focussed_node_id();
 
         self.doc.as_mut().active_node();
 
         let chain = self.call_node_chain(node_id, DomEventData::MouseDown(event_data));
 
-        if let Some(chain) = chain {
-            for target in chain.iter() {
-                let element = self.doc.as_ref().tree()[*target].element_data().unwrap();
-
-                let triggers_input_event = element.name.local == local_name!("input")
-                    && matches!(
-                        element.attr(local_name!("type")),
-                        None | Some("text" | "password" | "email" | "search")
-                    );
-
-                if triggers_input_event {
-                    self.input(None);
+        if chain.is_some() {
+            if let Some(focussed_node_id) = focussed_node_id {
+                if node_id != focussed_node_id {
+                    self.blur(focussed_node_id);
                 }
+            };
+
+            let element = self.doc.as_ref().tree()[node_id].element_data().unwrap();
+            let triggers_input_event = element.name.local == local_name!("input")
+                || element.name.local == local_name!("textarea");
+
+            if triggers_input_event {
+                self.focus(node_id);
             }
         }
 
@@ -190,12 +191,12 @@ impl<Doc: Document<Doc = D>> Event<Doc> {
         }
     }
 
-    pub fn focus(&mut self) {
-        let Some(node_id) = self.doc.as_ref().get_focussed_node_id() else {
-            return;
-        };
+    pub fn focus(&mut self, node_id: usize) {
+        self.call_node_chain(node_id, DomEventData::Focus);
+    }
 
-        self.call_node_chain(node_id, DomEventData::Event("focus"));
+    pub fn blur(&mut self, node_id: usize) {
+        self.call_node_chain(node_id, DomEventData::Blur);
     }
 
     fn label_bound_input_element(&self, label_node_id: usize) -> Option<usize> {
