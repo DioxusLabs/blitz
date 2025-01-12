@@ -2,11 +2,15 @@ use blitz_traits::net::{BoxedHandler, Bytes, NetCallback, NetProvider, Request};
 use data_url::DataUrl;
 use std::{
     path::{Path, PathBuf},
-    sync::{Arc, Mutex},
+    sync::{
+        atomic::{AtomicUsize, Ordering},
+        Arc, Mutex,
+    },
 };
 
 pub struct WptNetProvider<D: Send + Sync + 'static> {
     base_path: PathBuf,
+    request_count: AtomicUsize,
     callback: Arc<VecCallback<D>>,
 }
 impl<D: Send + Sync + 'static> WptNetProvider<D> {
@@ -14,8 +18,13 @@ impl<D: Send + Sync + 'static> WptNetProvider<D> {
         let base_path = base_path.to_path_buf();
         Self {
             base_path,
+            request_count: AtomicUsize::new(0),
             callback: Arc::new(VecCallback::new()),
         }
+    }
+
+    pub fn pending_item_count(&self) -> usize {
+        self.request_count.load(Ordering::SeqCst) - self.callback.processed_count()
     }
 
     pub fn for_each(&self, cb: impl FnMut(D)) {
@@ -28,6 +37,7 @@ impl<D: Send + Sync + 'static> WptNetProvider<D> {
         request: Request,
         handler: BoxedHandler<D>,
     ) -> Result<(), WptNetProviderError> {
+        self.request_count.fetch_add(1, Ordering::SeqCst);
         let callback = self.callback.clone();
         match request.url.scheme() {
             "data" => {
@@ -87,10 +97,20 @@ impl From<data_url::forgiving_base64::InvalidBase64> for WptNetProviderError {
     }
 }
 
-struct VecCallback<T>(Mutex<Vec<T>>);
+struct VecCallback<T> {
+    processed_count: AtomicUsize,
+    queue: Mutex<Vec<T>>,
+}
 impl<T> VecCallback<T> {
     pub fn new() -> Self {
-        Self(Mutex::new(Vec::new()))
+        Self {
+            processed_count: AtomicUsize::new(0),
+            queue: Mutex::new(Vec::new()),
+        }
+    }
+
+    pub fn processed_count(&self) -> usize {
+        self.processed_count.load(Ordering::SeqCst)
     }
 
     pub fn for_each(&self, mut cb: impl FnMut(T)) {
@@ -98,7 +118,8 @@ impl<T> VecCallback<T> {
         // This prevents the mutex from being poisoned if any of the callbacks panic, allowing it to be reused for further tests.
         //
         // TODO: Cleanup still-in-flight requests in case of panic.
-        let mut data = std::mem::take(&mut *self.0.lock().unwrap());
+        let mut data = std::mem::take(&mut *self.queue.lock().unwrap());
+        self.processed_count.fetch_add(data.len(), Ordering::SeqCst);
         for item in data.drain(0..) {
             cb(item)
         }
@@ -107,7 +128,7 @@ impl<T> VecCallback<T> {
 impl<T: Send + Sync + 'static> NetCallback for VecCallback<T> {
     type Data = T;
     fn call(&self, _doc_id: usize, data: Self::Data) {
-        self.0
+        self.queue
             .lock()
             .unwrap_or_else(|err| err.into_inner())
             .push(data)

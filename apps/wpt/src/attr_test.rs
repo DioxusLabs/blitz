@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{sync::Arc, time::Instant};
 
 use blitz_dom::{BaseDocument, Node, net::Resource};
 use blitz_html::HtmlDocument;
@@ -66,9 +66,16 @@ pub async fn parse_and_resolve_document(
 
     document.as_mut().set_viewport(ctx.viewport.clone());
 
-    // Load resources
-    ctx.net_provider
-        .for_each(|res| document.as_mut().load_resource(res));
+    // Load resources.
+    // Loop because loading a resource may result in further resources being requested
+    let start = Instant::now();
+    while ctx.net_provider.pending_item_count() > 0 {
+        ctx.net_provider
+            .for_each(|res| document.as_mut().load_resource(res));
+        if Instant::now().duration_since(start).as_millis() > 500 {
+            panic!("Timeout loading resources");
+        }
+    }
 
     // Compute style, layout, etc for HtmlDocument
     document.as_mut().resolve();
