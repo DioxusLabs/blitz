@@ -17,7 +17,12 @@ pub async fn process_attr_test(
     let Ok(subtest_roots) = document.query_selector_all(subtest_selector) else {
         panic!("Err parsing subtest selector \"{}\"", subtest_selector);
     };
-    assert!(!subtest_roots.is_empty());
+    if subtest_roots.is_empty() {
+        panic!(
+            "No matching nodes found for subtest selector \"{}\"",
+            subtest_selector
+        );
+    }
 
     println!("{subtest_selector} ({} found)", subtest_roots.len());
 
