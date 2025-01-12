@@ -24,8 +24,6 @@ pub async fn process_attr_test(
         );
     }
 
-    println!("{subtest_selector} ({} found)", subtest_roots.len());
-
     let subtest_count = subtest_roots.len() as u32;
     let mut pass_count: u32 = 0;
     let mut fail_count: u32 = 0;
