@@ -20,6 +20,7 @@ pub struct DomEvent {
 
     pub stop_propagation: bool,
     pub data: DomEventData,
+    pub request_redraw: bool,
 }
 
 impl DomEvent {
@@ -48,6 +49,7 @@ impl DomEvent {
 
             stop_propagation: false,
             data,
+            request_redraw: false,
         }
     }
 
@@ -74,6 +76,7 @@ impl DomEvent {
 
 #[derive(Debug, Clone)]
 pub enum DomEventData {
+    MouseMove(BlitzMouseButtonEvent),
     MouseDown(BlitzMouseButtonEvent),
     MouseUp(BlitzMouseButtonEvent),
     Click(BlitzMouseButtonEvent),
@@ -92,6 +95,7 @@ pub enum DomEventData {
 impl DomEventData {
     pub fn name(&self) -> &'static str {
         match self {
+            DomEventData::MouseMove { .. } => "mousemove",
             DomEventData::MouseDown { .. } => "mousedown",
             DomEventData::MouseUp { .. } => "mouseup",
             DomEventData::Click { .. } => "click",
@@ -118,10 +122,35 @@ pub struct HitResult {
     pub y: f32,
 }
 
+/// The button property indicates which button was pressed
+/// on the mouse to trigger the event.
+///
+/// [MDN Documentation](https://developer.mozilla.org/en-US/docs/Web/API/MouseEvent/button)
+#[derive(Clone, Debug, Default)]
+pub enum MouseEventButton {
+    /// Main button pressed, usually the left button or the un-initialized state
+    #[default]
+    Main = 0,
+    /// Auxiliary button pressed, usually the wheel button or the middle button (if present)
+    Auxiliary = 1,
+    /// Secondary button pressed, usually the right button
+    Secondary = 2,
+    /// Fourth button, typically the Browser Back button
+    Fourth = 3,
+    /// Fifth button, typically the Browser Forward button
+    Fifth = 4,
+}
+
 #[derive(Clone, Debug)]
 pub struct BlitzMouseButtonEvent {
     pub x: f32,
     pub y: f32,
+    pub button: MouseEventButton,
+    /// The buttons property indicates which buttons are pressed on the mouse
+    /// (or other input device) when a mouse event is triggered.
+    ///
+    /// [MDN Documentation](https://developer.mozilla.org/en-US/docs/Web/API/MouseEvent/buttons)
+    pub buttons: u8,
     pub mods: Modifiers,
 }
 

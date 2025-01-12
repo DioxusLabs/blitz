@@ -4,7 +4,7 @@ use crate::convert_events::{
 use crate::event::{create_waker, BlitzShellEvent};
 use blitz_dom::BaseDocument;
 use blitz_event::Event as BlitzEvent;
-use blitz_traits::{BlitzMouseButtonEvent, ColorScheme, Devtools, Viewport};
+use blitz_traits::{BlitzMouseButtonEvent, ColorScheme, Devtools, MouseEventButton, Viewport};
 use blitz_traits::{Document, DocumentRenderer, DomEvent, DomEventData};
 use winit::keyboard::PhysicalKey;
 
@@ -373,7 +373,14 @@ impl<Doc: Document<Doc = D>, Rend: DocumentRenderer<Doc = D>> View<Doc, Rend> {
             WindowEvent::CursorLeft { /*device_id*/.. } => {}
             WindowEvent::CursorMoved { position, .. } => {
                 let winit::dpi::LogicalPosition::<f32> { x, y } = position.to_logical(self.window.scale_factor());
-                let changed = self.doc.mouse_move(x, y, self.viewport.zoom());
+                let event_data = BlitzMouseButtonEvent {
+                    x,
+                    y,
+                    button: Default::default(),
+                    buttons: Default::default(),
+                    mods: winit_modifiers_to_kbt_modifiers(self.keyboard_modifiers.state()),
+                };
+                let changed = self.doc.mouse_move(event_data, self.viewport.zoom());
 
                 if changed {
                     let cursor = self.doc.as_ref().get_cursor();
@@ -385,6 +392,12 @@ impl<Doc: Document<Doc = D>, Rend: DocumentRenderer<Doc = D>> View<Doc, Rend> {
             }
             WindowEvent::MouseInput { button, state, .. } => {
                 if matches!(button, MouseButton::Left | MouseButton::Right) {
+                    let event_button = match button {
+                        MouseButton::Left => MouseEventButton::Main,
+                        MouseButton::Right => MouseEventButton::Secondary,
+                        _ => unreachable!(),
+                    };
+
                     let button = match button {
                         MouseButton::Left => "left",
                         MouseButton::Right => "right",
@@ -394,6 +407,8 @@ impl<Doc: Document<Doc = D>, Rend: DocumentRenderer<Doc = D>> View<Doc, Rend> {
                     let event_data = BlitzMouseButtonEvent {
                         x: self.doc.dom_mouse_pos.0,
                         y: self.doc.dom_mouse_pos.1,
+                        button: event_button,
+                        buttons: Default::default(),
                         mods: winit_modifiers_to_kbt_modifiers(self.keyboard_modifiers.state()),
                     };
 

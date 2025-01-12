@@ -1,5 +1,7 @@
 use blitz_dom::{local_name, BaseDocument};
-use blitz_traits::{BlitzKeyEvent, BlitzMouseButtonEvent, Document, DomEvent, DomEventData};
+use blitz_traits::{
+    BlitzKeyEvent, BlitzMouseButtonEvent, Document, DomEvent, DomEventData, MouseEventButton,
+};
 use std::ops::{Deref, DerefMut};
 
 // TODO: make generic
@@ -8,6 +10,11 @@ type D = BaseDocument;
 pub struct Event<Doc: Document<Doc = D>> {
     doc: Doc,
 
+    /// The buttons property indicates which buttons are pressed on the mouse
+    /// (or other input device) when a mouse event is triggered.
+    ///
+    /// [MDN Documentation](https://developer.mozilla.org/en-US/docs/Web/API/MouseEvent/buttons)
+    buttons: u8,
     mouse_pos: (f32, f32),
     pub dom_mouse_pos: (f32, f32),
     mouse_down_node: Option<usize>,
@@ -31,13 +38,15 @@ impl<Doc: Document<Doc = D>> Event<Doc> {
     pub fn new(doc: Doc) -> Self {
         Self {
             doc,
+            buttons: 0,
             mouse_pos: Default::default(),
             dom_mouse_pos: Default::default(),
             mouse_down_node: None,
         }
     }
 
-    pub fn mouse_move(&mut self, x: f32, y: f32, zoom: f32) -> bool {
+    pub fn mouse_move(&mut self, mut event_data: BlitzMouseButtonEvent, zoom: f32) -> bool {
+        let (x, y) = (event_data.x, event_data.y);
         let viewport_scroll = self.doc.as_ref().viewport_scroll();
         let dom_x = x + viewport_scroll.x as f32 / zoom;
         let dom_y = y + viewport_scroll.y as f32 / zoom;
@@ -47,44 +56,50 @@ impl<Doc: Document<Doc = D>> Event<Doc> {
 
         self.mouse_pos = (x, y);
         self.dom_mouse_pos = (dom_x, dom_y);
-        self.doc.as_mut().set_hover_to(dom_x, dom_y)
+        let mut changed = self.doc.as_mut().set_hover_to(dom_x, dom_y);
+
+        event_data.x = self.dom_mouse_pos.0;
+        event_data.y = self.dom_mouse_pos.1;
+        event_data.buttons = self.buttons;
+
+        if let Some(node_id) = self.doc.as_ref().get_hover_node_id() {
+            let event = self.call_node_chain(node_id, DomEventData::MouseMove(event_data.clone()));
+            if event.map_or(false, |e| e.request_redraw) {
+                changed = true;
+            }
+        }
+
+        changed
     }
 
-    pub fn mouse_down(&mut self, event_data: BlitzMouseButtonEvent) {
+    pub fn mouse_down(&mut self, mut event_data: BlitzMouseButtonEvent) {
         let Some(node_id) = self.doc.as_ref().get_hover_node_id() else {
             return;
         };
-        let focussed_node_id = self.doc.as_ref().get_focussed_node_id();
+
+        self.buttons |= button_to_buttons(&event_data.button);
+        event_data.buttons = self.buttons;
 
         self.doc.as_mut().active_node();
 
         let chain = self.call_node_chain(node_id, DomEventData::MouseDown(event_data));
 
         if chain.is_some() {
-            if let Some(focussed_node_id) = focussed_node_id {
-                if node_id != focussed_node_id {
-                    self.blur(focussed_node_id);
-                }
-            };
-
-            let element = self.doc.as_ref().tree()[node_id].element_data().unwrap();
-            let triggers_input_event = element.name.local == local_name!("input")
-                || element.name.local == local_name!("textarea");
-
-            if triggers_input_event {
-                self.focus(node_id);
-            }
+            self.focus(node_id);
         }
 
         self.mouse_down_node = Some(node_id);
     }
 
-    pub fn mouse_up(&mut self, event_data: BlitzMouseButtonEvent, button: &str) {
+    pub fn mouse_up(&mut self, mut event_data: BlitzMouseButtonEvent, button: &str) {
         self.doc.as_mut().unactive_node();
 
         let Some(node_id) = self.doc.as_ref().get_hover_node_id() else {
             return;
         };
+
+        self.buttons ^= button_to_buttons(&event_data.button);
+        event_data.buttons = self.buttons;
 
         self.call_node_chain(node_id, DomEventData::MouseUp(event_data.clone()));
 
@@ -107,9 +122,15 @@ impl<Doc: Document<Doc = D>> Event<Doc> {
 
     pub fn click(&mut self, event_data: BlitzMouseButtonEvent, node_id: usize, button: &str) {
         if button == "left" {
-            let chain = self.call_node_chain(node_id, DomEventData::Click(event_data.clone()));
+            let event = self.call_node_chain(node_id, DomEventData::Click(event_data.clone()));
 
-            if let Some(chain) = chain {
+            if let Some(chain) = event.and_then(|e| {
+                if !e.default_prevented {
+                    Some(e.node_chain)
+                } else {
+                    None
+                }
+            }) {
                 let element = self.doc.as_ref().tree()[node_id].element_data().unwrap();
                 let root_input = element.name.local == local_name!("input");
 
@@ -136,9 +157,15 @@ impl<Doc: Document<Doc = D>> Event<Doc> {
     }
 
     pub fn key_down(&mut self, event_data: BlitzKeyEvent, node_id: usize) {
-        let chain = self.call_node_chain(node_id, DomEventData::KeyDown(event_data.clone()));
+        let event = self.call_node_chain(node_id, DomEventData::KeyDown(event_data.clone()));
 
-        if let Some(chain) = chain {
+        if let Some(chain) = event.and_then(|e| {
+            if !e.default_prevented {
+                Some(e.node_chain)
+            } else {
+                None
+            }
+        }) {
             for target in chain.iter() {
                 let element = self.doc.as_ref().tree()[*target].element_data().unwrap();
 
@@ -156,9 +183,15 @@ impl<Doc: Document<Doc = D>> Event<Doc> {
     }
 
     pub fn key_press(&mut self, event_data: BlitzKeyEvent, node_id: usize) {
-        let chain = self.call_node_chain(node_id, DomEventData::KeyPress(event_data.clone()));
+        let event = self.call_node_chain(node_id, DomEventData::KeyPress(event_data.clone()));
 
-        if let Some(chain) = chain {
+        if let Some(chain) = event.and_then(|e| {
+            if !e.default_prevented {
+                Some(e.node_chain)
+            } else {
+                None
+            }
+        }) {
             for target in chain.iter() {
                 let element = self.doc.as_ref().tree()[*target].element_data().unwrap();
 
@@ -192,7 +225,21 @@ impl<Doc: Document<Doc = D>> Event<Doc> {
     }
 
     pub fn focus(&mut self, node_id: usize) {
-        self.call_node_chain(node_id, DomEventData::Focus);
+        if let Some(focussed_node_id) = self.doc.as_ref().get_focussed_node_id() {
+            if node_id == focussed_node_id {
+                return;
+            }
+
+            self.blur(focussed_node_id);
+        }
+
+        let element = self.doc.as_ref().tree()[node_id].element_data().unwrap();
+        let triggers_input_event = element.name.local == local_name!("input")
+            || element.name.local == local_name!("textarea");
+
+        if triggers_input_event {
+            self.call_node_chain(node_id, DomEventData::Focus);
+        }
     }
 
     pub fn blur(&mut self, node_id: usize) {
@@ -222,7 +269,7 @@ impl<Doc: Document<Doc = D>> Event<Doc> {
         })
     }
 
-    fn call_node_chain(&mut self, target: usize, event_data: DomEventData) -> Option<Vec<usize>> {
+    fn call_node_chain(&mut self, target: usize, event_data: DomEventData) -> Option<ReturnEvent> {
         let node_data = &self.doc.as_ref().tree()[target].raw_dom_data;
         if node_data.is_element_with_tag_name(&local_name!("input"))
             && node_data.attr(local_name!("disabled")).is_some()
@@ -249,11 +296,16 @@ impl<Doc: Document<Doc = D>> Event<Doc> {
             }
         }
 
-        if !event.default_prevented {
-            Some(chain)
-        } else {
-            None
-        }
+        Some(ReturnEvent {
+            node_chain: chain,
+            default_prevented: event.default_prevented,
+            request_redraw: event.request_redraw,
+        })
+        // if !event.default_prevented {
+        //     Some(chain)
+        // } else {
+        //     None
+        // }
     }
 
     /// Collect the nodes into a chain by traversing upwards
@@ -272,5 +324,21 @@ impl<Doc: Document<Doc = D>> Event<Doc> {
         }
 
         chain
+    }
+}
+
+struct ReturnEvent {
+    node_chain: Vec<usize>,
+    default_prevented: bool,
+    request_redraw: bool,
+}
+
+fn button_to_buttons(button: &MouseEventButton) -> u8 {
+    match button {
+        MouseEventButton::Main => 1,
+        MouseEventButton::Auxiliary => 4,
+        MouseEventButton::Secondary => 2,
+        MouseEventButton::Fourth => 8,
+        MouseEventButton::Fifth => 16,
     }
 }

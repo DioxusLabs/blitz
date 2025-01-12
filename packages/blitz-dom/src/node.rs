@@ -1082,7 +1082,13 @@ impl Node {
         let x = absolute_position.x + (self.final_layout.size.width / 2.0);
         let y = absolute_position.y + (self.final_layout.size.height / 2.0);
 
-        DomEventData::Click(BlitzMouseButtonEvent { x, y, mods })
+        DomEventData::Click(BlitzMouseButtonEvent {
+            x,
+            y,
+            button: Default::default(),
+            buttons: Default::default(),
+            mods,
+        })
     }
 }
 

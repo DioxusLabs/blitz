@@ -1,7 +1,61 @@
 use crate::{node::NodeSpecificData, util::resolve_url, BaseDocument};
 use markup5ever::local_name;
 
+pub(crate) fn handle_mousemove(
+    doc: &mut BaseDocument,
+    target: usize,
+    x: f32,
+    y: f32,
+    buttons: u8,
+) -> bool {
+    let Some(hit) = doc.hit(x, y) else {
+        return false;
+    };
+    if hit.node_id != target {
+        return false;
+    }
+
+    let node = &mut doc.nodes[target];
+    let Some(el) = node.raw_dom_data.downcast_element_mut() else {
+        return false;
+    };
+
+    let disabled = el.attr(local_name!("disabled")).is_some();
+    if disabled {
+        return false;
+    }
+
+    if let NodeSpecificData::TextInput(ref mut text_input_data) = el.node_specific_data {
+        if buttons == 0 {
+            return false;
+        }
+        let content_box_offset = taffy::Point {
+            x: node.final_layout.padding.left + node.final_layout.border.left,
+            y: node.final_layout.padding.top + node.final_layout.border.top,
+        };
+
+        let x = (hit.x - content_box_offset.x) as f64 * doc.viewport.scale_f64();
+        let y = (hit.y - content_box_offset.y) as f64 * doc.viewport.scale_f64();
+
+        text_input_data
+            .editor
+            .driver(&mut doc.font_ctx, &mut doc.layout_ctx)
+            .extend_selection_to_point(x as f32, y as f32);
+
+        return true;
+    }
+
+    false
+}
+
 pub(crate) fn handle_mousedown(doc: &mut BaseDocument, target: usize, x: f32, y: f32) {
+    let Some(hit) = doc.hit(x, y) else {
+        return;
+    };
+    if hit.node_id != target {
+        return;
+    }
+
     let node = &mut doc.nodes[target];
     let Some(el) = node.raw_dom_data.downcast_element_mut() else {
         return;
@@ -18,8 +72,9 @@ pub(crate) fn handle_mousedown(doc: &mut BaseDocument, target: usize, x: f32, y:
             y: node.final_layout.padding.top + node.final_layout.border.top,
         };
 
-        let x = (x - content_box_offset.x) as f64 * doc.viewport.scale_f64();
-        let y = (y - content_box_offset.y) as f64 * doc.viewport.scale_f64();
+        let x = (hit.x - content_box_offset.x) as f64 * doc.viewport.scale_f64();
+        let y = (hit.y - content_box_offset.y) as f64 * doc.viewport.scale_f64();
+
         text_input_data
             .editor
             .driver(&mut doc.font_ctx, &mut doc.layout_ctx)

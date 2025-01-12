@@ -98,6 +98,11 @@ impl Document for DioxusDocument {
                 }
                 _ => None,
             },
+            DomEventData::MouseMove { .. } => {
+                let event_data = wrap_event_data(NativeClickData);
+                let event = Event::new(event_data, true);
+                Some(event)
+            }
             DomEventData::MouseDown { .. } => {
                 let event_data = wrap_event_data(NativeClickData);
                 let event = Event::new(event_data, true);

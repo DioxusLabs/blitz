@@ -157,7 +157,7 @@ fn make_device(viewport: &Viewport) -> Device {
 impl Document for BaseDocument {
     type Doc = Self;
     fn handle_event(&mut self, event: &mut DomEvent) {
-        handle_event(self, event.clone())
+        handle_event(self, event)
     }
 
     fn id(&self) -> usize {
