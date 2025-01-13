@@ -5,7 +5,7 @@ mod mouse;
 use blitz_traits::{DomEvent, DomEventData};
 pub(crate) use ime::handle_ime_event;
 pub(crate) use keyboard::handle_keydown;
-pub(crate) use mouse::{handle_click, handle_mousedown, handle_mousemove};
+pub(crate) use mouse::{handle_blur, handle_click, handle_mousedown, handle_mousemove};
 
 use crate::BaseDocument;
 
@@ -37,7 +37,7 @@ pub(crate) fn handle_event(doc: &mut BaseDocument, event: &mut DomEvent) {
             doc.focus_node(target_node_id);
         }
         DomEventData::Blur => {
-            doc.blur_node();
+            handle_blur(doc, target_node_id);
         }
         DomEventData::Input(_) => {}
         DomEventData::KeyDown(event) => {

@@ -64,7 +64,7 @@ impl<Doc: Document<Doc = D>> Event<Doc> {
 
         if let Some(node_id) = self.doc.as_ref().get_hover_node_id() {
             let event = self.call_node_chain(node_id, DomEventData::MouseMove(event_data.clone()));
-            if event.map_or(false, |e| e.request_redraw) {
+            if event.is_some_and(|e| e.request_redraw) {
                 changed = true;
             }
         }

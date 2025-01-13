@@ -118,3 +118,20 @@ pub(crate) fn handle_click(doc: &mut BaseDocument, target: usize, _x: f32, _y: f
         }
     }
 }
+
+pub(crate) fn handle_blur(doc: &mut BaseDocument, target: usize) {
+    let node = &mut doc.nodes[target];
+    if let Some(el) = node.raw_dom_data.downcast_element_mut() {
+        let disabled = el.attr(local_name!("disabled")).is_some();
+        if !disabled {
+            if let NodeSpecificData::TextInput(ref mut text_input_data) = el.node_specific_data {
+                text_input_data
+                    .editor
+                    .driver(&mut doc.font_ctx, &mut doc.layout_ctx)
+                    .collapse_selection();
+            }
+        }
+    };
+
+    doc.blur_node();
+}
