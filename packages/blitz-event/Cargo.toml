@@ -1,0 +1,10 @@
+[package]
+name = "blitz-event"
+version = "0.1.0"
+license.workspace = true
+edition = "2021"
+
+[dependencies]
+# Blitz dependencies
+blitz-dom = { path = "../blitz-dom", default-features = false }
+blitz-traits = { path = "../blitz-traits" }

@@ -8,10 +8,66 @@ pub struct EventListener {
 #[derive(Debug, Clone)]
 pub struct DomEvent {
     pub target: usize,
+    /// Which is true if the event bubbles up through the DOM tree.
+    pub bubbles: bool,
+    /// which is true if the event can be canceled.
+    pub cancelable: bool,
+    pub current_target: Option<usize>,
+    composed_path: Vec<usize>,
+    /// Where true indicates that the default user agent action was prevented,
+    /// and false indicates that it was not.
+    pub default_prevented: bool,
+
+    pub stop_propagation: bool,
     pub data: DomEventData,
+    pub request_redraw: bool,
 }
 
 impl DomEvent {
+    pub fn new(target: usize, data: DomEventData, composed_path: Vec<usize>) -> Self {
+        let mut cancelable = true;
+        let mut bubbles = true;
+
+        match data.name() {
+            "input" => {
+                cancelable = false;
+            }
+            "focus" | "blur" => {
+                cancelable = false;
+                bubbles = false;
+            }
+            _ => {}
+        }
+
+        Self {
+            target,
+            bubbles,
+            cancelable,
+            current_target: None,
+            composed_path,
+            default_prevented: false,
+
+            stop_propagation: false,
+            data,
+            request_redraw: false,
+        }
+    }
+
+    pub fn composed_path(&self) -> &Vec<usize> {
+        &self.composed_path
+    }
+
+    pub fn prevent_default(&mut self) {
+        if !self.cancelable {
+            return;
+        }
+        self.default_prevented = true;
+    }
+
+    pub fn stop_propagation(&mut self) {
+        self.stop_propagation = true;
+    }
+
     /// Returns the name of the event ("click", "mouseover", "keypress", etc)
     pub fn name(&self) -> &'static str {
         self.data.name()
@@ -20,23 +76,38 @@ impl DomEvent {
 
 #[derive(Debug, Clone)]
 pub enum DomEventData {
+    MouseMove(BlitzMouseButtonEvent),
     MouseDown(BlitzMouseButtonEvent),
     MouseUp(BlitzMouseButtonEvent),
     Click(BlitzMouseButtonEvent),
+    Focus,
+    Blur,
+    Input(BlitzKeyEvent),
+    KeyDown(BlitzKeyEvent),
+    KeyUp(BlitzKeyEvent),
     KeyPress(BlitzKeyEvent),
     Ime(BlitzImeEvent),
     Hover,
+    /// A string containing the type of Event.
+    Event(&'static str),
 }
 
 impl DomEventData {
     pub fn name(&self) -> &'static str {
         match self {
+            DomEventData::MouseMove { .. } => "mousemove",
             DomEventData::MouseDown { .. } => "mousedown",
             DomEventData::MouseUp { .. } => "mouseup",
             DomEventData::Click { .. } => "click",
+            DomEventData::Focus => "focus",
+            DomEventData::Blur => "blur",
+            DomEventData::Input { .. } => "input",
+            DomEventData::KeyDown { .. } => "keydown",
+            DomEventData::KeyUp { .. } => "keyup",
             DomEventData::KeyPress { .. } => "keypress",
             DomEventData::Ime { .. } => "input",
             DomEventData::Hover => "mouseover",
+            DomEventData::Event(event_type) => event_type,
         }
     }
 }
@@ -51,10 +122,35 @@ pub struct HitResult {
     pub y: f32,
 }
 
+/// The button property indicates which button was pressed
+/// on the mouse to trigger the event.
+///
+/// [MDN Documentation](https://developer.mozilla.org/en-US/docs/Web/API/MouseEvent/button)
+#[derive(Clone, Debug, Default)]
+pub enum MouseEventButton {
+    /// Main button pressed, usually the left button or the un-initialized state
+    #[default]
+    Main = 0,
+    /// Auxiliary button pressed, usually the wheel button or the middle button (if present)
+    Auxiliary = 1,
+    /// Secondary button pressed, usually the right button
+    Secondary = 2,
+    /// Fourth button, typically the Browser Back button
+    Fourth = 3,
+    /// Fifth button, typically the Browser Forward button
+    Fifth = 4,
+}
+
 #[derive(Clone, Debug)]
 pub struct BlitzMouseButtonEvent {
     pub x: f32,
     pub y: f32,
+    pub button: MouseEventButton,
+    /// The buttons property indicates which buttons are pressed on the mouse
+    /// (or other input device) when a mouse event is triggered.
+    ///
+    /// [MDN Documentation](https://developer.mozilla.org/en-US/docs/Web/API/MouseEvent/buttons)
+    pub buttons: u8,
     pub mods: Modifiers,
 }
 

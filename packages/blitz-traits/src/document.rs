@@ -11,7 +11,7 @@ pub trait Document: AsRef<Self::Doc> + AsMut<Self::Doc> + Into<Self::Doc> + 'sta
         false
     }
 
-    fn handle_event(&mut self, _event: DomEvent) {
+    fn handle_event(&mut self, _event: &mut DomEvent) {
         // Default implementation does nothing
     }
 

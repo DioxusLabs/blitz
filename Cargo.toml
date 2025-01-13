@@ -2,6 +2,7 @@
 members = [
   "packages/blitz-traits",
   "packages/blitz-dom", 
+  "packages/blitz-event",
   "packages/blitz-html",
   "packages/blitz-net",
   "packages/blitz-renderer-vello",

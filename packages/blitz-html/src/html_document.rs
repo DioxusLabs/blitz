@@ -30,9 +30,7 @@ impl From<HtmlDocument> for BaseDocument {
 }
 impl Document for HtmlDocument {
     type Doc = BaseDocument;
-    fn handle_event(&mut self, event: DomEvent) {
-        self.inner.as_mut().handle_event(event)
-    }
+    fn handle_event(&mut self, _event: &mut DomEvent) {}
 
     fn id(&self) -> usize {
         self.inner.id()
