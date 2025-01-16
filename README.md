@@ -2,13 +2,11 @@
 
 **A [radically modular](https://github.com/DioxusLabs/blitz?tab=readme-ov-file#architecture) HTML/CSS rendering engine**
 
-
-[![Discord](https://img.shields.io/discord/899851952891002890.svg?logo=discord&style=flat-square&label=discord)](https://discord.gg/XgGxMSkvUM)
-[![dependency status](https://deps.rs/repo/github/dioxuslabs/blitz/status.svg)](https://deps.rs/repo/github/dioxuslabs/blitz)
-![Crates.io License](https://img.shields.io/crates/l/blitz)
 [![Build Status](https://github.com/dioxuslabs/blitz/actions/workflows/ci.yml/badge.svg)](https://github.com/dioxuslabs/blitz/actions)
 [![Crates.io](https://img.shields.io/crates/v/blitz.svg)](https://crates.io/crates/blitz)
 [![Docs](https://docs.rs/blitz/badge.svg)](https://docs.rs/blitz)
+![Crates.io License](https://img.shields.io/crates/l/blitz)
+[![dependency status](https://deps.rs/repo/github/dioxuslabs/blitz/status.svg)](https://deps.rs/repo/github/dioxuslabs/blitz)
 
 Talk to us in: the [#native](https://discord.gg/AnNPqT95pu) channel in the [Dioxus Discord](https://discord.gg/AnNPqT95pu)
 
