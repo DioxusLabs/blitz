@@ -400,6 +400,7 @@ impl VelloSceneGenerator<'_> {
             size,
             border,
             padding,
+            content_size,
             ..
         } = node.final_layout;
         let scaled_pb = (padding + border).map(f64::from);
@@ -407,13 +408,21 @@ impl VelloSceneGenerator<'_> {
             x: box_position.x + scaled_pb.left,
             y: box_position.y + scaled_pb.top,
         };
-        let content_size = kurbo::Size {
+        let content_box_size = kurbo::Size {
             width: (size.width as f64 - scaled_pb.left - scaled_pb.right) * self.scale,
             height: (size.height as f64 - scaled_pb.top - scaled_pb.bottom) * self.scale,
         };
+
+        // Don't render things that are out of view
+        let scaled_y = box_position.y * self.scale;
+        let scaled_content_height = content_size.height.max(size.height) as f64 * self.scale;
+        if scaled_y > self.height as f64 || scaled_y + scaled_content_height < 0.0 {
+            return;
+        }
+
         let transform = Affine::translate(content_position.to_vec2() * self.scale);
         let origin = kurbo::Point { x: 0.0, y: 0.0 };
-        let clip = Rect::from_origin_size(origin, content_size);
+        let clip = Rect::from_origin_size(origin, content_box_size);
 
         // Optimise zero-area (/very small area) clips by not rendering at all
         if should_clip && clip.area() < 0.01 {
