@@ -556,7 +556,10 @@ fn main() {
 
     let subtest_pass_percent = as_percent(subtest_pass_count, subtest_count);
 
-    println!("Done in {:.2}s", (Instant::now() - start).as_millis() as f64 / 1000.0);
+    println!(
+        "Done in {:.2}s",
+        (Instant::now() - start).as_millis() as f64 / 1000.0
+    );
     println!("---\n");
 
     println!("{count:>4} tests FOUND");
