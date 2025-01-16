@@ -5,6 +5,8 @@ use blitz_traits::navigation::{DummyNavigationProvider, NavigationProvider};
 use blitz_traits::{ColorScheme, Viewport};
 use parley::FontContext;
 use pollster::FutureExt as _;
+use supports_hyperlinks::supports_hyperlinks;
+use terminal_link::Link;
 use thread_local::ThreadLocal;
 use url::Url;
 
@@ -237,14 +239,27 @@ struct TestResult {
 
 impl TestResult {
     fn print_to(&self, mut out: impl Write) {
-        let result_str = format!(
-            "{} ({}/{}) {} ({}ms) ",
-            self.status.as_str(),
-            self.subtest_counts.pass,
-            self.subtest_counts.total,
-            &self.name,
-            self.duration.as_millis(),
-        );
+        let result_str = if supports_hyperlinks() {
+            let url = format!("https://wpt.live/{}", &self.name);
+            let link = Link::new(&self.name, &url);
+            format!(
+                "{} ({}/{}) {} ({}ms) ",
+                self.status.as_str(),
+                self.subtest_counts.pass,
+                self.subtest_counts.total,
+                &link,
+                self.duration.as_millis(),
+            )
+        } else {
+            format!(
+                "{} ({}/{}) {} ({}ms) ",
+                self.status.as_str(),
+                self.subtest_counts.pass,
+                self.subtest_counts.total,
+                &self.name,
+                self.duration.as_millis(),
+            )
+        };
 
         match self.status {
             TestStatus::Pass => write!(out, "{}", result_str.green()).unwrap(),
