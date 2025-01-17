@@ -437,6 +437,7 @@ impl VelloSceneGenerator<'_> {
         cx.stroke_effects(scene);
         cx.stroke_outline(scene);
         cx.draw_outset_box_shadow(scene);
+        cx.draw_background(scene);
 
         if should_clip && clips_available {
             scene.push_layer(Mix::Clip, 1.0, transform, &cx.frame.frame());
@@ -445,7 +446,6 @@ impl VelloSceneGenerator<'_> {
             CLIP_DEPTH_USED.fetch_max(depth, atomic::Ordering::SeqCst);
         }
 
-        cx.draw_background(scene);
         cx.draw_inset_box_shadow(scene);
         cx.stroke_border(scene);
         cx.stroke_devtools(scene);
