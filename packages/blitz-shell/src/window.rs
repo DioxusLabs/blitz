@@ -225,6 +225,7 @@ impl<Doc: Document<Doc = D>, Rend: DocumentRenderer<Doc = D>> View<Doc, Rend> {
 
     pub fn kick_viewport(&mut self) {
         self.kick_dom_viewport();
+        self.doc.as_mut().scroll_viewport_by(0.0, 0.0); // Clamp scroll offset
         self.kick_renderer_viewport();
     }
 
