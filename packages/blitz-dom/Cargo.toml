@@ -36,6 +36,7 @@ taffy = { workspace = true }
 # Linebender dependencies
 parley = { workspace = true }
 peniko = { workspace = true }
+color = { workspace = true }
 
 # Other dependencies
 slab = { workspace = true }

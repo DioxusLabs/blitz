@@ -1,15 +1,29 @@
+use color::{AlphaColor, DynamicColor, Srgb};
 use style::color::AbsoluteColor;
-use vello::peniko::Color as VelloColor;
 
-pub trait ToVelloColor {
-    fn as_vello(&self) -> VelloColor;
+pub type Color = AlphaColor<Srgb>;
+
+pub trait ToColorColor {
+    /// Converts a color into the `AlphaColor<Srgb>` type from the `color` crate
+    fn as_srgb_color(&self) -> Color;
+
+    /// Converts a color into the `DynamicColor` type from the `color` crate
+    fn as_dynamic_color(&self) -> DynamicColor;
 }
-impl ToVelloColor for AbsoluteColor {
-    fn as_vello(&self) -> VelloColor {
-        let [r, g, b, a] = self
-            .to_color_space(style::color::ColorSpace::Srgb)
-            .raw_components()
-            .map(|f| (f * 255.0) as u8);
-        VelloColor { r, g, b, a }
+impl ToColorColor for AbsoluteColor {
+    fn as_srgb_color(&self) -> Color {
+        Color::new(
+            *self
+                .to_color_space(style::color::ColorSpace::Srgb)
+                .raw_components(),
+        )
     }
+
+    fn as_dynamic_color(&self) -> DynamicColor {
+        DynamicColor::from_alpha_color(self.as_srgb_color())
+    }
+}
+
+pub(crate) fn as_dyn_color(color: Color) -> DynamicColor {
+    DynamicColor::from_alpha_color(color)
 }

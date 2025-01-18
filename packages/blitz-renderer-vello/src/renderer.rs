@@ -2,12 +2,12 @@ mod multicolor_rounded_rect;
 mod render;
 
 use crate::renderer::render::generate_vello_scene;
+use crate::Color;
 use blitz_dom::BaseDocument;
 use blitz_traits::{BlitzWindowHandle, Devtools, DocumentRenderer, Viewport};
 use std::num::NonZeroUsize;
 use std::sync::Arc;
 use vello::{
-    peniko::Color,
     util::{block_on_wgpu, RenderContext, RenderSurface},
     AaSupport, RenderParams, Renderer as VelloRenderer, RendererOptions, Scene,
 };

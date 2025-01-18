@@ -4,7 +4,7 @@ use std::borrow::Cow;
 use style::values::computed::Length;
 
 use crate::node::TextBrush;
-use crate::util::ToPenikoColor;
+use crate::util::ToColorColor;
 
 // Module of type aliases so we can refer to stylo types with nicer names
 pub(crate) mod stylo {
@@ -101,13 +101,13 @@ pub(crate) fn style(style: &stylo::ComputedValues) -> parley::TextStyle<'static,
         .collect();
 
     // Convert text colour
-    let color = itext_styles.color.as_peniko();
+    let color = itext_styles.color.as_color_color();
 
     let decoration_brush = style
         .get_text()
         .text_decoration_color
         .as_absolute()
-        .map(ToPenikoColor::as_peniko)
+        .map(ToColorColor::as_color_color)
         .map(peniko::Brush::Solid);
 
     parley::TextStyle {

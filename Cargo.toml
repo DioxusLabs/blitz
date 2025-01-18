@@ -44,13 +44,14 @@ dioxus-devtools = { version = "0.6" }
 taffy = { git = "https://github.com/dioxuslabs/taffy", rev = "51e21564", default-features = false, features = ["std", "flexbox", "grid", "block_layout", "content_size"] }
 
 # Linebender + WGPU
-peniko = "0.2"
-vello = { version = "0.3", features = [ "wgpu" ] }
-parley = { version = "0.2", git = "https://github.com/linebender/parley", rev = "4efc335cc2bf8aa30d746b42a5907a476c85553f" }
-wgpu = "22.1.0"
+color = "0.2"
+peniko = "0.3"
+vello = { version = "0.4", git = "https://github.com/linebender/vello", rev = "6105e401", features = [ "wgpu" ] }
+parley = { version = "0.2", git = "https://github.com/linebender/parley", rev = "63f23d0e" } # external-span-ids
+wgpu = "23"
 
 # SVG dependencies
-vello_svg = "0.5"
+vello_svg = { git = "https://github.com/linebender/vello_svg", rev = "851a6459" }
 usvg = "0.44.0"
 
 # Windowing & Input
