@@ -2,7 +2,7 @@ use std::sync::atomic::{self, AtomicUsize};
 use std::sync::Arc;
 
 use super::multicolor_rounded_rect::{Edge, ElementFrame};
-use crate::util::{as_dyn_color, Color, ToColorColor};
+use crate::util::{Color, ToColorColor};
 use blitz_dom::node::{
     ImageData, ListItemLayout, ListItemLayoutPosition, Marker, NodeData, RasterImageData,
     TextBrush, TextInputData, TextNodeData,
@@ -10,6 +10,7 @@ use blitz_dom::node::{
 use blitz_dom::{local_name, BaseDocument, ElementNodeData, Node};
 use blitz_traits::Devtools;
 
+use color::DynamicColor;
 use euclid::Transform3D;
 use parley::Line;
 use style::color::AbsoluteColor;
@@ -1255,7 +1256,7 @@ impl ElementCx<'_> {
                                 (last_a + multiplier * (a - last_a)),
                             ]);
                             gradient.stops.push(peniko::ColorStop {
-                                color: as_dyn_color(color),
+                                color: DynamicColor::from_alpha_color(color),
                                 offset: cur_offset,
                             });
                         };

@@ -23,7 +23,3 @@ impl ToColorColor for AbsoluteColor {
         DynamicColor::from_alpha_color(self.as_srgb_color())
     }
 }
-
-pub(crate) fn as_dyn_color(color: Color) -> DynamicColor {
-    DynamicColor::from_alpha_color(color)
-}
