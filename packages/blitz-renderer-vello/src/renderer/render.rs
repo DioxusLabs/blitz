@@ -241,7 +241,7 @@ impl VelloSceneGenerator<'_> {
         let transform =
             Affine::translate(base_translation + Vec2::new(scaled_pb.left, scaled_pb.top));
         let rect = Rect::new(0.0, 0.0, content_width, content_height);
-        let fill_color = Color::new([66.0, 144.0, 245.0, 0.5]); // blue
+        let fill_color = Color::from_rgba8(66, 144, 245, 128); // blue
         scene.fill(
             vello::peniko::Fill::NonZero,
             transform,
@@ -288,7 +288,7 @@ impl VelloSceneGenerator<'_> {
             fill(bt + Vec2::new(ew.left, bottom), inner_w, ew.bottom); // bottom
         }
 
-        let padding_color = Color::new([81.0, 144.0, 66.0, 0.5]); // green
+        let padding_color = Color::from_rgba8(81, 144, 66, 128); // green
         draw_cutout_rect(
             scene,
             base_translation + Vec2::new(scaled_border.left, scaled_border.top),
@@ -300,7 +300,7 @@ impl VelloSceneGenerator<'_> {
             padding_color,
         );
 
-        let border_color = Color::new([245.0, 66.0, 66.0, 0.5]); // red
+        let border_color = Color::from_rgba8(245, 66, 66, 128); // red
         draw_cutout_rect(
             scene,
             base_translation,
@@ -309,7 +309,7 @@ impl VelloSceneGenerator<'_> {
             border_color,
         );
 
-        let margin_color = Color::new([249.0, 204.0, 157.0, 0.5]); // orange
+        let margin_color = Color::from_rgba8(249, 204, 157, 128); // orange
         draw_cutout_rect(
             scene,
             base_translation - Vec2::new(scaled_margin.left, scaled_margin.top),
