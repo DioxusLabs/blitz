@@ -984,10 +984,10 @@ impl ElementCx<'_> {
             let stroke = Stroke::new(self.scale);
 
             let stroke_color = match self.node.style.display {
-                taffy::Display::Block => Color::from_rgba8(1, 0, 0, 255),
-                taffy::Display::Flex => Color::from_rgba8(0, 1, 0, 255),
-                taffy::Display::Grid => Color::from_rgba8(0, 0, 1, 255),
-                taffy::Display::None => Color::from_rgba8(0, 0, 1, 255),
+                taffy::Display::Block => Color::new([1.0, 0.0, 0.0, 1.0]),
+                taffy::Display::Flex => Color::new([0.0, 1.0, 0.0, 1.0]),
+                taffy::Display::Grid => Color::new([0.0, 0.0, 1.0, 1.0]),
+                taffy::Display::None => Color::new([0.0, 0.0, 1.0, 1.0]),
             };
 
             scene.stroke(&stroke, self.transform, stroke_color, None, &shape);
@@ -1248,12 +1248,12 @@ impl ElementCx<'_> {
                             let [last_r, last_g, last_b, last_a] = last_stop.color.components;
                             let [r, g, b, a] = color.components;
 
-                            let color = Color::from_rgba8(
-                                (last_r + multiplier * (r - last_r)) as u8,
-                                (last_g + multiplier * (g - last_g)) as u8,
-                                (last_b + multiplier * (b - last_b)) as u8,
-                                (last_a + multiplier * (a - last_a)) as u8,
-                            );
+                            let color = Color::new([
+                                (last_r + multiplier * (r - last_r)),
+                                (last_g + multiplier * (g - last_g)),
+                                (last_b + multiplier * (b - last_b)),
+                                (last_a + multiplier * (a - last_a)),
+                            ]);
                             gradient.stops.push(peniko::ColorStop {
                                 color: as_dyn_color(color),
                                 offset: cur_offset,
