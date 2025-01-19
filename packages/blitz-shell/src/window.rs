@@ -121,15 +121,17 @@ impl<Doc: Document<Doc = D>, Rend: DocumentRenderer<Doc = D>> View<Doc, Rend> {
         }
     }
 
-    pub fn replace_document(&mut self, mut new_doc: Doc, retain_scroll_position: bool) {
-        if retain_scroll_position {
-            let scroll = self.doc.as_ref().viewport_scroll();
-            new_doc.as_mut().set_viewport_scroll(scroll);
-        }
+    pub fn replace_document(&mut self, new_doc: Doc, retain_scroll_position: bool) {
+        let scroll = self.doc.as_ref().viewport_scroll();
+
         self.doc = new_doc;
         self.kick_viewport();
         self.poll();
         self.request_redraw();
+
+        if retain_scroll_position {
+            self.doc.as_mut().set_viewport_scroll(scroll);
+        }
     }
 
     pub fn theme_override(&self) -> Option<Theme> {
