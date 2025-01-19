@@ -57,8 +57,8 @@ usvg = "0.44.0"
 # Windowing & Input
 raw-window-handle = "0.6.0"
 winit = { version = "0.30.2", features = ["rwh_06"] }
-accesskit_winit = "0.21.1"
-accesskit = "0.15.0"
+accesskit_winit = "0.23"
+accesskit = "0.17"
 muda = { version = "0.11.5", default-features = false }
 arboard = { version = "3.4.1", default-features = false }
 keyboard-types = "0.7"
