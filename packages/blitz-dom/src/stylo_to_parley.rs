@@ -82,7 +82,6 @@ pub(crate) fn style(style: &stylo::ComputedValues) -> parley::TextStyle<'static,
                         break 'ret parley::FontFamily::Generic(parley::GenericFamily::SystemUi);
                     }
 
-                    // TODO: fix leak!
                     break 'ret parley::FontFamily::Named(Cow::Owned(name.to_string()));
                 }
             }
