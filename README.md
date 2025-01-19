@@ -54,9 +54,20 @@ We don't yet have Blitz bindings for other languages (JavaScript, Python, etc) b
 
 ## Architecture
 
-Blitz consists of a core DOM abstraction; several modular pieces which provide additional functionality like networking, rendering, windows, and state management; and two high-level wrappers that support rendering either a Dioxus application or HTML.
+Blitz consists of a core DOM abstraction; several modular pieces which provide additional functionality like networking, rendering, windows, and state management; and two high-level wrappers that support rendering either a Dioxus application or HTML with a simplified API.
 
 These pieces can be combined together to make a cohesive web engine.
+
+### High-level "wrapper" crates
+
+- **`blitz`** - An HTML/markdown frontend that can render an HTML string. This is useful for previewing HTML and/or markdown files but currently lacks interactivity.
+<br /><small><b>Uses: `blitz-dom`, `blitz-html`, `blitz-shell`, `blitz-renderer-vello`</b></small>
+- **`dioxus-native`** - A Dioxus frontend that can render a Dioxus VirtualDom. This has full interactivity support via Dioxus's event handling.
+<br /><small><b>Uses: `blitz-dom`, `dioxus-core`, `blitz-shell`, `blitz-renderer-vello`</b></small>
+
+Both wrappers can optionally use <b>`blitz-net`</b> to fetch sub-resources.
+
+### Modular Components
 
 #### Core crates
 
@@ -64,7 +75,7 @@ These pieces can be combined together to make a cohesive web engine.
 <br /><small><b>Uses: [Stylo](https://github.com/servo/stylo) (CSS parsing/resolution), [Taffy](https://github.com/DioxusLabs/taffy) (box-level layout), [Parley](https://github.com/linebender/parley) (text layout)</b></small>
 - **`blitz-traits`** - Minimal base crate containing types and traits to allow the other crates to interoperate without depending on each other
 
-#### Optional modules
+#### Additional crates
 
 - **`blitz-renderer-vello`** - Adds a Vello/WGPU based renderer to `blitz-dom`
 <br /><small><b>Uses: [Vello](https://github.com/linebender/vello) + [WGPU](https://github.com/gfx-rs/wgpu) for rendering</b></small>
@@ -76,9 +87,7 @@ These pieces can be combined together to make a cohesive web engine.
 - **`blitz-shell`** - A shell that allows Blitz to render to a window (integrates a Winit event loop, AccessKit, Muda etc).
 <br /><small><b>Uses: [Winit](https://github.com/rust-windowing/winit) (windowing/input), [AccessKit](https://github.com/AccessKit/accesskit) (accessibility), [Muda](https://github.com/tauri-apps/muda) (system menus)</b></small>
 
-#### High-level entry points
-- **`blitz`** - An HTML/markdown frontend that can render an HTML string. This is useful for previewing HTML and/or markdown files but currently lacks interactivity.
-- **`dioxus-native`** - A Dioxus frontend that can render a Dioxus VirtualDom. This has full interactivity support via Dioxus's event handling.
+
 
 ## License
 
