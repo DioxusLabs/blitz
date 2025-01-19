@@ -43,6 +43,9 @@ pub mod events;
 
 pub mod net;
 
+#[cfg(feature = "accessibility")]
+mod accessibility;
+
 pub use document::BaseDocument;
 pub use markup5ever::{
     local_name, namespace_prefix, namespace_url, ns, Namespace, NamespaceStaticSet, Prefix,
