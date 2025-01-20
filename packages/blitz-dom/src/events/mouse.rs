@@ -111,7 +111,9 @@ pub(crate) fn handle_click(doc: &mut BaseDocument, _target: usize, x: f32, y: f3
             return;
         }
 
-        if el.name.local == local_name!("input")
+        if let NodeSpecificData::TextInput(_) = el.node_specific_data {
+            return;
+        } else if el.name.local == local_name!("input")
             && matches!(el.attr(local_name!("type")), Some("checkbox"))
         {
             BaseDocument::toggle_checkbox(el);
