@@ -100,7 +100,8 @@ pub(crate) fn collect_layout_children(
                         .unwrap()
                         .element_data_mut()
                         .unwrap()
-                        .node_specific_data = NodeSpecificData::Image(ImageData::Svg(svg));
+                        .node_specific_data =
+                        NodeSpecificData::Image(Box::new(ImageData::Svg(svg)));
                 }
                 Err(err) => {
                     println!("{} SVG parse failed", container_node_id);

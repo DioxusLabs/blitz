@@ -236,22 +236,22 @@ impl LayoutPartialTree for BaseDocument {
 
                         // Get image's native size
                         let inherent_size = match &element_data.node_specific_data {
-                            NodeSpecificData::Image(ImageData::Raster(data)) => taffy::Size {
-                                width: data.image.width() as f32,
-                                height: data.image.height() as f32,
-                            },
-                            #[cfg(feature = "svg")]
-                            NodeSpecificData::Image(ImageData::Svg(svg)) => {
-                                let size = svg.size();
-                                taffy::Size {
-                                    width: size.width(),
-                                    height: size.height(),
+                            NodeSpecificData::Image(image_data) => match &**image_data {
+                                ImageData::Raster(data) => taffy::Size {
+                                    width: data.image.width() as f32,
+                                    height: data.image.height() as f32,
+                                },
+                                #[cfg(feature = "svg")]
+                                ImageData::Svg(svg) => {
+                                    let size = svg.size();
+                                    taffy::Size {
+                                        width: size.width(),
+                                        height: size.height(),
+                                    }
                                 }
-                            }
-                            NodeSpecificData::None => taffy::Size {
-                                width: 0.0,
-                                height: 0.0,
+                                ImageData::None => taffy::Size::ZERO,
                             },
+                            NodeSpecificData::None => taffy::Size::ZERO,
                             _ => unreachable!(),
                         };
 

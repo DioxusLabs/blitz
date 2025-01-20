@@ -549,8 +549,7 @@ impl selectors::Element for BlitzNode<'_> {
     }
 
     fn is_link(&self) -> bool {
-        self.data
-            .is_element_with_tag_name(&local_name!("a"))
+        self.data.is_element_with_tag_name(&local_name!("a"))
     }
 
     fn is_html_slot_element(&self) -> bool {
@@ -834,9 +833,7 @@ impl<'a> TElement for BlitzNode<'a> {
 
     fn is_html_document_body_element(&self) -> bool {
         // Check node is a <body> element
-        let is_body_element = self
-            .data
-            .is_element_with_tag_name(&local_name!("body"));
+        let is_body_element = self.data.is_element_with_tag_name(&local_name!("body"));
 
         // If it isn't then return early
         if !is_body_element {

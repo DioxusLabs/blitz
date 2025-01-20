@@ -148,10 +148,10 @@ impl VelloSceneGenerator<'_> {
                     .children
                     .iter()
                     .find_map(|id| {
-                        self.dom.as_ref().get_node(*id).filter(|node| {
-                            node.data
-                                .is_element_with_tag_name(&local_name!("body"))
-                        })
+                        self.dom
+                            .as_ref()
+                            .get_node(*id)
+                            .filter(|node| node.data.is_element_with_tag_name(&local_name!("body")))
                     })
                     .and_then(|body| body.primary_styles())
                     .map(|style| {

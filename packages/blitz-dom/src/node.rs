@@ -412,32 +412,46 @@ impl ElementNodeData {
         attr.value.parse::<T>().ok()
     }
 
-    pub fn raster_image_data(&self) -> Option<&RasterImageData> {
+    pub fn image_data(&self) -> Option<&ImageData> {
         match self.node_specific_data {
-            NodeSpecificData::Image(ImageData::Raster(ref data)) => Some(data),
+            NodeSpecificData::Image(ref data) => Some(&**data),
+            _ => None,
+        }
+    }
+
+    pub fn image_data_mut(&mut self) -> Option<&mut ImageData> {
+        match self.node_specific_data {
+            NodeSpecificData::Image(ref mut data) => Some(&mut **data),
+            _ => None,
+        }
+    }
+
+    pub fn raster_image_data(&self) -> Option<&RasterImageData> {
+        match self.image_data()? {
+            ImageData::Raster(ref data) => Some(data),
             _ => None,
         }
     }
 
     pub fn raster_image_data_mut(&mut self) -> Option<&mut RasterImageData> {
-        match self.node_specific_data {
-            NodeSpecificData::Image(ImageData::Raster(ref mut data)) => Some(data),
+        match self.image_data_mut()? {
+            ImageData::Raster(ref mut data) => Some(data),
             _ => None,
         }
     }
 
     #[cfg(feature = "svg")]
     pub fn svg_data(&self) -> Option<&usvg::Tree> {
-        match self.node_specific_data {
-            NodeSpecificData::Image(ImageData::Svg(ref data)) => Some(data),
+        match self.image_data()? {
+            ImageData::Svg(ref data) => Some(data),
             _ => None,
         }
     }
 
     #[cfg(feature = "svg")]
     pub fn svg_data_mut(&mut self) -> Option<&mut usvg::Tree> {
-        match self.node_specific_data {
-            NodeSpecificData::Image(ImageData::Svg(ref mut data)) => Some(data),
+        match self.image_data_mut()? {
+            ImageData::Svg(ref mut data) => Some(data),
             _ => None,
         }
     }
@@ -626,7 +640,7 @@ impl TextInputData {
 #[derive(Clone)]
 pub enum NodeSpecificData {
     /// The element's image content (\<img\> element's only)
-    Image(ImageData),
+    Image(Box<ImageData>),
     /// Pre-computed table layout data
     TableRoot(Arc<TableContext>),
     /// Parley text editor (text inputs)
@@ -640,7 +654,7 @@ pub enum NodeSpecificData {
 impl std::fmt::Debug for NodeSpecificData {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            NodeSpecificData::Image(data) => match data {
+            NodeSpecificData::Image(data) => match **data {
                 ImageData::Raster(_) => f.write_str("NodeSpecificData::Image(Raster)"),
                 #[cfg(feature = "svg")]
                 ImageData::Svg(_) => f.write_str("NodeSpecificData::Image(Svg)"),

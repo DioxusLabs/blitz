@@ -586,7 +586,7 @@ impl BaseDocument {
                 match kind {
                     ImageType::Image => {
                         node.element_data_mut().unwrap().node_specific_data =
-                            NodeSpecificData::Image(ImageData::from(image));
+                            NodeSpecificData::Image(Box::new(ImageData::from(image)));
 
                         // Clear layout cache
                         node.cache.clear();
@@ -609,7 +609,7 @@ impl BaseDocument {
                 match kind {
                     ImageType::Image => {
                         node.element_data_mut().unwrap().node_specific_data =
-                            NodeSpecificData::Image(ImageData::Svg(*tree));
+                            NodeSpecificData::Image(Box::new(ImageData::Svg(*tree)));
 
                         // Clear layout cache
                         node.cache.clear();
