@@ -1,6 +1,6 @@
+use bitflags::bitflags;
 use keyboard_types::{Code, Key, Location, Modifiers};
 use smol_str::SmolStr;
-
 pub struct EventListener {
     pub name: String,
 }
@@ -8,10 +8,26 @@ pub struct EventListener {
 #[derive(Debug, Clone)]
 pub struct DomEvent {
     pub target: usize,
+    /// Which is true if the event bubbles up through the DOM tree.
+    pub bubbles: bool,
+    /// which is true if the event can be canceled.
+    pub cancelable: bool,
+
     pub data: DomEventData,
+    pub request_redraw: bool,
 }
 
 impl DomEvent {
+    pub fn new(target: usize, data: DomEventData) -> Self {
+        Self {
+            target,
+            bubbles: data.bubbles(),
+            cancelable: data.cancelable(),
+            data,
+            request_redraw: false,
+        }
+    }
+
     /// Returns the name of the event ("click", "mouseover", "keypress", etc)
     pub fn name(&self) -> &'static str {
         self.data.name()
@@ -20,6 +36,7 @@ impl DomEvent {
 
 #[derive(Debug, Clone)]
 pub enum DomEventData {
+    MouseMove(BlitzMouseButtonEvent),
     MouseDown(BlitzMouseButtonEvent),
     MouseUp(BlitzMouseButtonEvent),
     Click(BlitzMouseButtonEvent),
@@ -31,12 +48,37 @@ pub enum DomEventData {
 impl DomEventData {
     pub fn name(&self) -> &'static str {
         match self {
-            DomEventData::MouseDown { .. } => "mousedown",
-            DomEventData::MouseUp { .. } => "mouseup",
-            DomEventData::Click { .. } => "click",
-            DomEventData::KeyPress { .. } => "keypress",
-            DomEventData::Ime { .. } => "input",
-            DomEventData::Hover => "mouseover",
+            Self::MouseMove { .. } => "mousemove",
+            Self::MouseDown { .. } => "mousedown",
+            Self::MouseUp { .. } => "mouseup",
+            Self::Click { .. } => "click",
+            Self::KeyPress { .. } => "keypress",
+            Self::Ime { .. } => "input",
+            Self::Hover => "mouseover",
+        }
+    }
+
+    pub fn cancelable(&self) -> bool {
+        match self {
+            Self::MouseMove { .. } => true,
+            Self::MouseDown { .. } => true,
+            Self::MouseUp { .. } => true,
+            Self::Click { .. } => true,
+            Self::KeyPress { .. } => true,
+            Self::Ime { .. } => true,
+            Self::Hover => true,
+        }
+    }
+
+    pub fn bubbles(&self) -> bool {
+        match self {
+            Self::MouseMove { .. } => true,
+            Self::MouseDown { .. } => true,
+            Self::MouseUp { .. } => true,
+            Self::Click { .. } => true,
+            Self::KeyPress { .. } => true,
+            Self::Ime { .. } => true,
+            Self::Hover => true,
         }
     }
 }
@@ -55,7 +97,68 @@ pub struct HitResult {
 pub struct BlitzMouseButtonEvent {
     pub x: f32,
     pub y: f32,
+    pub button: MouseEventButton,
+    pub buttons: MouseEventButtons,
     pub mods: Modifiers,
+}
+
+bitflags! {
+    /// The buttons property indicates which buttons are pressed on the mouse
+    /// (or other input device) when a mouse event is triggered.
+    ///
+    /// [MDN Documentation](https://developer.mozilla.org/en-US/docs/Web/API/MouseEvent/buttons)
+    #[derive(Copy, Clone, Debug, PartialEq, Eq)]
+    pub struct MouseEventButtons: u8 {
+        /// 0: No button or un-initialized
+        const None = 0b0000_0000;
+        /// 1: Primary button (usually the left button)
+        const Primary = 0b0000_0001;
+        /// 2: Secondary button (usually the right button)
+        const Secondary = 0b0000_0010;
+        /// 4: Auxiliary button (usually the mouse wheel button or middle button)
+        const Auxiliary = 0b0000_0100;
+        /// 8: 4th button (typically the "Browser Back" button)
+        const Fourth = 0b0000_1000;
+        /// 16: 5th button (typically the "Browser Forward" button)
+        const Fifth = 0b0001_0000;
+    }
+}
+
+impl Default for MouseEventButtons {
+    fn default() -> Self {
+        Self::None
+    }
+}
+
+impl From<MouseEventButton> for MouseEventButtons {
+    fn from(value: MouseEventButton) -> Self {
+        match value {
+            MouseEventButton::Main => Self::Primary,
+            MouseEventButton::Auxiliary => Self::Auxiliary,
+            MouseEventButton::Secondary => Self::Secondary,
+            MouseEventButton::Fourth => Self::Fourth,
+            MouseEventButton::Fifth => Self::Fifth,
+        }
+    }
+}
+
+/// The button property indicates which button was pressed
+/// on the mouse to trigger the event.
+///
+/// [MDN Documentation](https://developer.mozilla.org/en-US/docs/Web/API/MouseEvent/button)
+#[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
+pub enum MouseEventButton {
+    /// Main button pressed, usually the left button or the un-initialized state
+    #[default]
+    Main = 0,
+    /// Auxiliary button pressed, usually the wheel button or the middle button (if present)
+    Auxiliary = 1,
+    /// Secondary button pressed, usually the right button
+    Secondary = 2,
+    /// Fourth button, typically the Browser Back button
+    Fourth = 3,
+    /// Fifth button, typically the Browser Forward button
+    Fifth = 4,
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]

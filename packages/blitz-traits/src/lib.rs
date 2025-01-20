@@ -5,7 +5,7 @@ pub mod navigation;
 mod events;
 pub use events::{
     BlitzImeEvent, BlitzKeyEvent, BlitzMouseButtonEvent, DomEvent, DomEventData, EventListener,
-    HitResult, KeyState,
+    HitResult, KeyState, MouseEventButton, MouseEventButtons,
 };
 
 mod document;
