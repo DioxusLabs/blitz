@@ -4,28 +4,49 @@ use blitz_dom::{net::Resource, BaseDocument, Node};
 use blitz_html::HtmlDocument;
 use blitz_traits::net::SharedProvider;
 
-use crate::{clone_font_ctx, TestStatus, ThreadCtx};
+use crate::{clone_font_ctx, SubtestCounts, ThreadCtx};
 
 pub async fn process_attr_test(
     ctx: &mut ThreadCtx,
-    _subtest_selector: &str,
+    subtest_selector: &str,
     html: &str,
     relative_path: &str,
-) -> TestStatus {
+) -> SubtestCounts {
     let mut document = parse_and_resolve_document(ctx, html, relative_path).await;
 
-    let mut has_error = false;
-    let root_id = document.root_node().id;
-    document.iter_subtree_mut(root_id, |node_id, doc| {
-        let node = doc.get_node(node_id).unwrap();
-        let passes = check_node_layout(node);
-        has_error |= !passes;
-    });
+    let Ok(subtest_roots) = document.query_selector_all(subtest_selector) else {
+        panic!("Err parsing subtest selector \"{}\"", subtest_selector);
+    };
+    if subtest_roots.is_empty() {
+        panic!(
+            "No matching nodes found for subtest selector \"{}\"",
+            subtest_selector
+        );
+    }
 
-    if has_error {
-        TestStatus::Fail
-    } else {
-        TestStatus::Pass
+    let subtest_count = subtest_roots.len() as u32;
+    let mut pass_count: u32 = 0;
+    let mut fail_count: u32 = 0;
+
+    for root_id in subtest_roots {
+        let mut has_error = false;
+        document.iter_subtree_mut(root_id, |node_id, doc| {
+            let node = doc.get_node(node_id).unwrap();
+            let passes = check_node_layout(node);
+            has_error |= !passes;
+        });
+
+        if !has_error {
+            fail_count += 1;
+        } else {
+            pass_count += 1;
+        }
+    }
+
+    assert!(pass_count + fail_count == subtest_count);
+    SubtestCounts {
+        pass: pass_count,
+        total: subtest_count,
     }
 }
 

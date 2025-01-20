@@ -156,7 +156,7 @@ fn make_device(viewport: &Viewport) -> Device {
 
 impl Document for BaseDocument {
     type Doc = Self;
-    fn handle_event(&mut self, event: DomEvent) {
+    fn handle_event(&mut self, event: &mut DomEvent) {
         handle_event(self, event)
     }
 
@@ -873,6 +873,14 @@ impl BaseDocument {
         Some(id)
     }
 
+    /// Clear the focussed node
+    pub fn clear_focus(&mut self) {
+        if let Some(id) = self.focus_node_id {
+            self.snapshot_node_and(id, |node| node.blur());
+            self.focus_node_id = None;
+        }
+    }
+
     pub fn set_focus_to(&mut self, focus_node_id: usize) -> bool {
         if Some(focus_node_id) == self.focus_node_id {
             return false;
@@ -1177,6 +1185,24 @@ impl BaseDocument {
                 stack.push_front(child_key);
             }
         }
+    }
+
+    /// Collect the nodes into a chain by traversing upwards
+    pub fn node_chain(&self, node_id: usize) -> Vec<usize> {
+        let mut next_node_id = Some(node_id);
+        let mut chain = Vec::with_capacity(16);
+
+        while let Some(node_id) = next_node_id {
+            let node = &self.tree()[node_id];
+
+            if node.is_element() {
+                chain.push(node_id);
+            }
+
+            next_node_id = node.parent;
+        }
+
+        chain
     }
 }
 

@@ -5,12 +5,13 @@ license.workspace = true
 edition = "2021"
 
 [features]
-default = ["tracing", "svg", "woff", "clipboard"]
+default = ["tracing", "svg", "woff", "clipboard", "accessibility"]
 tracing = ["dep:tracing"]
 svg = ["dep:usvg"]
 woff = ["dep:woff"]
 woff2 = ["dep:woff2"]
 clipboard = ["dep:arboard"]
+accessibility = ["accesskit"]
 
 [dependencies]
 # Blitz dependencies
@@ -28,13 +29,16 @@ euclid = { workspace = true, features = ["serde"] }
 atomic_refcell = { workspace = true, features = ["serde"] }
 string_cache = { workspace = true }
 markup5ever = { workspace = true }
+smallvec = { workspace = true }
 
 # DioxusLabs dependencies
 taffy = { workspace = true }
 
 # Linebender dependencies
+accesskit = { workspace = true, optional = true }
 parley = { workspace = true }
 peniko = { workspace = true }
+color = { workspace = true }
 
 # Other dependencies
 slab = { workspace = true }

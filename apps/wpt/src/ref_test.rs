@@ -10,7 +10,7 @@ use std::io::Write;
 use std::path::Path;
 use std::sync::Arc;
 
-use crate::{clone_font_ctx, BufferKind, TestFlags, TestStatus, ThreadCtx, HEIGHT, WIDTH};
+use crate::{clone_font_ctx, BufferKind, SubtestCounts, TestFlags, ThreadCtx, HEIGHT, WIDTH};
 
 #[allow(clippy::too_many_arguments)]
 pub async fn process_ref_test(
@@ -19,7 +19,7 @@ pub async fn process_ref_test(
     test_html: &str,
     ref_file: &str,
     flags: &mut TestFlags,
-) -> TestStatus {
+) -> SubtestCounts {
     let ref_url: Url = ctx
         .dummy_base_url
         .join(test_relative_path)
@@ -77,7 +77,7 @@ pub async fn process_ref_test(
     .await;
 
     if ctx.buffers.test_buffer == ctx.buffers.ref_buffer {
-        return TestStatus::Pass;
+        return SubtestCounts::ONE_OF_ONE;
     }
 
     let test_image = ImageBuffer::from_raw(WIDTH, HEIGHT, ctx.buffers.test_buffer.clone()).unwrap();
@@ -92,9 +92,9 @@ pub async fn process_ref_test(
         let parent = path.parent().unwrap();
         fs::create_dir_all(parent).unwrap();
         diff.1.save_with_format(path, ImageFormat::Png).unwrap();
-        TestStatus::Fail
+        SubtestCounts::ZERO_OF_ONE
     } else {
-        TestStatus::Pass
+        SubtestCounts::ONE_OF_ONE
     }
 }
 

@@ -5,7 +5,7 @@ edition = "2021"
 license.workspace = true
 
 [dependencies]
-blitz-dom = { path = "../../packages/blitz-dom" }
+blitz-dom = { path = "../../packages/blitz-dom", default-features = false, features = ["svg", "woff"] }
 blitz-html = { path = "../../packages/blitz-html" }
 blitz-traits = { path = "../../packages/blitz-traits" }
 blitz-renderer-vello = { path = "../../packages/blitz-renderer-vello" }
@@ -26,3 +26,6 @@ rayon = "1.10.0"
 thread_local = "1.1.8"
 bitflags = "2.6.0"
 pollster = "0.4.0"
+atomic_float = "1"
+supports-hyperlinks = "3.1.0"
+terminal-link = "0.1.0"

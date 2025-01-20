@@ -3,7 +3,9 @@ use crate::convert_events::{
 };
 use crate::event::{create_waker, BlitzShellEvent};
 use blitz_dom::BaseDocument;
-use blitz_traits::{BlitzHoverEvent, BlitzMouseButtonEvent, ColorScheme, Devtools, Viewport};
+use blitz_traits::{
+    BlitzMouseButtonEvent, ColorScheme, Devtools, MouseEventButton, MouseEventButtons, Viewport,
+};
 use blitz_traits::{Document, DocumentRenderer, DomEvent, DomEventData};
 use winit::keyboard::PhysicalKey;
 
@@ -66,6 +68,7 @@ pub struct View<Doc: Document<Doc = D>, Rend: DocumentRenderer<Doc = D>> {
     pub devtools: Devtools,
     theme_override: Option<Theme>,
     keyboard_modifiers: Modifiers,
+    buttons: MouseEventButtons,
     mouse_pos: (f32, f32),
     dom_mouse_pos: (f32, f32),
     mouse_down_node: Option<usize>,
@@ -109,6 +112,7 @@ impl<Doc: Document<Doc = D>, Rend: DocumentRenderer<Doc = D>> View<Doc, Rend> {
             viewport,
             devtools: Default::default(),
             theme_override: None,
+            buttons: MouseEventButtons::None,
             mouse_pos: Default::default(),
             dom_mouse_pos: Default::default(),
             mouse_down_node: None,
@@ -121,15 +125,17 @@ impl<Doc: Document<Doc = D>, Rend: DocumentRenderer<Doc = D>> View<Doc, Rend> {
         }
     }
 
-    pub fn replace_document(&mut self, mut new_doc: Doc, retain_scroll_position: bool) {
-        if retain_scroll_position {
-            let scroll = self.doc.as_ref().viewport_scroll();
-            new_doc.as_mut().set_viewport_scroll(scroll);
-        }
+    pub fn replace_document(&mut self, new_doc: Doc, retain_scroll_position: bool) {
+        let scroll = self.doc.as_ref().viewport_scroll();
+
         self.doc = new_doc;
         self.kick_viewport();
         self.poll();
         self.request_redraw();
+
+        if retain_scroll_position {
+            self.doc.as_mut().set_viewport_scroll(scroll);
+        }
     }
 
     pub fn theme_override(&self) -> Option<Theme> {
@@ -225,6 +231,7 @@ impl<Doc: Document<Doc = D>, Rend: DocumentRenderer<Doc = D>> View<Doc, Rend> {
 
     pub fn kick_viewport(&mut self) {
         self.kick_dom_viewport();
+        self.doc.as_mut().scroll_viewport_by(0.0, 0.0); // Clamp scroll offset
         self.kick_renderer_viewport();
     }
 
@@ -254,67 +261,69 @@ impl<Doc: Document<Doc = D>, Rend: DocumentRenderer<Doc = D>> View<Doc, Rend> {
 
         self.mouse_pos = (x, y);
         self.dom_mouse_pos = (dom_x, dom_y);
+        let mut changed = self.doc.as_mut().set_hover_to(dom_x, dom_y);
 
-        // Get previous and new hover nodes
-        let previous_hover_node = self.doc.as_ref().get_hover_node_id();
-        let hover_changed = self.doc.as_mut().set_hover_to(dom_x, dom_y);
-        let current_hover_node = self.doc.as_ref().get_hover_node_id();
-
-        if previous_hover_node != current_hover_node {
-            // ! No Idea how Handle mouseleave for previous node
-            // if let Some(prev_node) = previous_hover_node {
-            //     self.doc.handle_event(DomEvent {
-            //         target: prev_node,
-            //         data: DomEventData::Hover(BlitzHoverEvent { x: dom_x, y: dom_y }),
-            //     });
-            // }
-
-            // Handle mouseenter for new node
-            if let Some(curr_node) = current_hover_node {
-                self.doc.handle_event(DomEvent {
-                    target: curr_node,
-                    data: DomEventData::Hover(BlitzHoverEvent { x: dom_x, y: dom_y }),
-                });
+        if let Some(node_id) = self.doc.as_ref().get_hover_node_id() {
+            let mut event = DomEvent::new(
+                node_id,
+                DomEventData::MouseMove(BlitzMouseButtonEvent {
+                    x: self.dom_mouse_pos.0,
+                    y: self.dom_mouse_pos.1,
+                    button: Default::default(),
+                    buttons: self.buttons,
+                    mods: winit_modifiers_to_kbt_modifiers(self.keyboard_modifiers.state()),
+                }),
+            );
+            self.doc.handle_event(&mut event);
+            if event.request_redraw {
+                changed = true;
             }
         }
 
-        hover_changed
+        changed
     }
 
-    pub fn mouse_down(&mut self, _button: &str) {
+    pub fn mouse_down(&mut self, button: MouseEventButton) {
         let Some(node_id) = self.doc.as_ref().get_hover_node_id() else {
             return;
         };
 
         self.doc.as_mut().active_node();
+        self.buttons |= button.into();
 
-        self.doc.handle_event(DomEvent {
-            target: node_id,
-            data: DomEventData::MouseDown(BlitzMouseButtonEvent {
+        self.doc.handle_event(&mut DomEvent::new(
+            node_id,
+            DomEventData::MouseDown(BlitzMouseButtonEvent {
                 x: self.dom_mouse_pos.0,
                 y: self.dom_mouse_pos.1,
+                button,
+                buttons: self.buttons,
                 mods: winit_modifiers_to_kbt_modifiers(self.keyboard_modifiers.state()),
             }),
-        });
+        ));
 
         self.mouse_down_node = Some(node_id);
     }
 
-    pub fn mouse_up(&mut self, button: &str) {
+    pub fn mouse_up(&mut self, button: MouseEventButton) {
         self.doc.as_mut().unactive_node();
 
         let Some(node_id) = self.doc.as_ref().get_hover_node_id() else {
             return;
         };
 
-        self.doc.handle_event(DomEvent {
-            target: node_id,
-            data: DomEventData::MouseUp(BlitzMouseButtonEvent {
+        self.buttons ^= button.into();
+
+        self.doc.handle_event(&mut DomEvent::new(
+            node_id,
+            DomEventData::MouseUp(BlitzMouseButtonEvent {
                 x: self.dom_mouse_pos.0,
                 y: self.dom_mouse_pos.1,
+                button,
+                buttons: self.buttons,
                 mods: winit_modifiers_to_kbt_modifiers(self.keyboard_modifiers.state()),
             }),
-        });
+        ));
 
         if self.mouse_down_node == Some(node_id) {
             self.click(button);
@@ -329,14 +338,14 @@ impl<Doc: Document<Doc = D>, Rend: DocumentRenderer<Doc = D>> View<Doc, Rend> {
         }
     }
 
-    pub fn click(&mut self, button: &str) {
+    pub fn click(&mut self, button: MouseEventButton) {
         let Some(node_id) = self.doc.as_ref().get_hover_node_id() else {
             return;
         };
 
         if self.devtools.highlight_hover {
             let mut node = self.doc.as_ref().get_node(node_id).unwrap();
-            if button == "right" {
+            if button == MouseEventButton::Secondary {
                 if let Some(parent_id) = node.layout_parent.get() {
                     node = self.doc.as_ref().get_node(parent_id).unwrap();
                 }
@@ -345,17 +354,19 @@ impl<Doc: Document<Doc = D>, Rend: DocumentRenderer<Doc = D>> View<Doc, Rend> {
             self.devtools.highlight_hover = false;
         } else {
             // Not debug mode. Handle click as usual
-            if button == "left" {
+            if button == MouseEventButton::Main {
                 // If we hit a node, then we collect the node to its parents, check for listeners, and then
                 // call those listeners
-                self.doc.handle_event(DomEvent {
-                    target: node_id,
-                    data: DomEventData::Click(BlitzMouseButtonEvent {
+                self.doc.handle_event(&mut DomEvent::new(
+                    node_id,
+                    DomEventData::Click(BlitzMouseButtonEvent {
                         x: self.dom_mouse_pos.0,
                         y: self.dom_mouse_pos.1,
+                        button,
+                        buttons: self.buttons,
                         mods: winit_modifiers_to_kbt_modifiers(self.keyboard_modifiers.state()),
                     }),
-                });
+                ));
             }
         }
     }
@@ -398,7 +409,7 @@ impl<Doc: Document<Doc = D>, Rend: DocumentRenderer<Doc = D>> View<Doc, Rend> {
             // Text / keyboard events
             WindowEvent::Ime(ime_event) => {
                 if let Some(target) = self.doc.as_ref().get_focussed_node_id() {
-                    self.doc.handle_event(DomEvent { target, data: DomEventData::Ime(winit_ime_to_blitz(ime_event)) });
+                    self.doc.handle_event(&mut DomEvent::new(target, DomEventData::Ime(winit_ime_to_blitz(ime_event))));
                     self.request_redraw();
                 }
             },
@@ -463,10 +474,10 @@ impl<Doc: Document<Doc = D>, Rend: DocumentRenderer<Doc = D>> View<Doc, Rend> {
                     }
                     _ => {
                         if let Some(focus_node_id) = self.doc.as_ref().get_focussed_node_id() {
-                            self.doc.handle_event(DomEvent {
-                                target: focus_node_id,
-                                data: DomEventData::KeyPress(winit_key_event_to_blitz(&event, self.keyboard_modifiers.state()))
-                            });
+                            self.doc.handle_event(&mut DomEvent::new(
+                                focus_node_id,
+                                DomEventData::KeyPress(winit_key_event_to_blitz(&event, self.keyboard_modifiers.state()))
+                            ));
                             self.request_redraw();
                         }
                     }
@@ -492,8 +503,8 @@ impl<Doc: Document<Doc = D>, Rend: DocumentRenderer<Doc = D>> View<Doc, Rend> {
             WindowEvent::MouseInput { button, state, .. } => {
                 if matches!(button, MouseButton::Left | MouseButton::Right) {
                     let button = match button {
-                        MouseButton::Left => "left",
-                        MouseButton::Right => "right",
+                        MouseButton::Left => MouseEventButton::Main,
+                        MouseButton::Right => MouseEventButton::Secondary,
                         _ => unreachable!(),
                     };
 

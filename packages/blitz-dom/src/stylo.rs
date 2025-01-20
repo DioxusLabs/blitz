@@ -342,7 +342,8 @@ impl<'a> TNode for BlitzNode<'a> {
     }
 
     fn as_shadow_root(&self) -> Option<Self::ConcreteShadowRoot> {
-        todo!("Shadow roots aren't real, yet")
+        // TODO: implement shadow DOM
+        None
     }
 }
 

@@ -6,3 +6,4 @@
 mod renderer;
 mod util;
 pub use renderer::*;
+pub use util::Color;

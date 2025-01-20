@@ -1,9 +1,12 @@
+use atomic_float::AtomicF64;
 use blitz_dom::net::Resource;
 use blitz_renderer_vello::VelloImageRenderer;
 use blitz_traits::navigation::{DummyNavigationProvider, NavigationProvider};
 use blitz_traits::{ColorScheme, Viewport};
 use parley::FontContext;
 use pollster::FutureExt as _;
+use supports_hyperlinks::supports_hyperlinks;
+use terminal_link::Link;
 use thread_local::ThreadLocal;
 use url::Url;
 
@@ -80,6 +83,39 @@ impl TestStatus {
             TestStatus::Fail => "FAIL",
             TestStatus::Skip => "SKIP",
             TestStatus::Crash => "CRASH",
+        }
+    }
+}
+
+#[derive(Copy, Clone)]
+struct SubtestCounts {
+    pass: u32,
+    total: u32,
+}
+
+impl SubtestCounts {
+    /// 1 of 1 subtests pass. Indicates PASS for a test with no subtests
+    const ONE_OF_ONE: Self = Self { pass: 1, total: 1 };
+    /// 0 of 1 subtests pass. Indicates FAIL for a test with no subtests
+    const ZERO_OF_ONE: Self = Self { pass: 0, total: 1 };
+    /// 0 of 0 subtests pass. Indicates the test was SKIPed
+    const ZERO_OF_ZERO: Self = Self { pass: 0, total: 0 };
+
+    fn pass_fraction(self) -> f64 {
+        if self.total == 0 {
+            0.0
+        } else {
+            (self.pass as f64) / (self.total as f64)
+        }
+    }
+
+    fn as_status(self) -> TestStatus {
+        if self.total == 0 {
+            TestStatus::Skip
+        } else if self.total == self.pass {
+            TestStatus::Pass
+        } else {
+            TestStatus::Fail
         }
     }
 }
@@ -196,21 +232,39 @@ struct TestResult {
     kind: TestKind,
     flags: TestFlags,
     status: TestStatus,
+    subtest_counts: SubtestCounts,
     duration: Duration,
     panic_msg: Option<String>,
 }
 
 impl TestResult {
     fn print_to(&self, mut out: impl Write) {
-        let result_str = format!(
-            "{} {} ({}ms) ",
-            self.status.as_str(),
-            &self.name,
-            self.duration.as_millis(),
-        );
+        let result_str = if supports_hyperlinks() {
+            let url = format!("https://wpt.live/{}", &self.name);
+            let link = Link::new(&self.name, &url);
+            format!(
+                "{} ({}/{}) {} ({}ms) ",
+                self.status.as_str(),
+                self.subtest_counts.pass,
+                self.subtest_counts.total,
+                &link,
+                self.duration.as_millis(),
+            )
+        } else {
+            format!(
+                "{} ({}/{}) {} ({}ms) ",
+                self.status.as_str(),
+                self.subtest_counts.pass,
+                self.subtest_counts.total,
+                &self.name,
+                self.duration.as_millis(),
+            )
+        };
+
         match self.status {
             TestStatus::Pass => write!(out, "{}", result_str.green()).unwrap(),
-            TestStatus::Fail if !self.flags.is_empty() => {
+            // TestStatus::Fail if !self.flags.is_empty() => {
+            TestStatus::Fail if self.subtest_counts.pass > 0 => {
                 write!(out, "{}", result_str.yellow()).unwrap()
             }
             TestStatus::Fail => write!(out, "{}", result_str.red()).unwrap(),
@@ -279,6 +333,15 @@ fn main() {
 
     let pass_count = AtomicU32::new(0);
     let fail_count = AtomicU32::new(0);
+    let skip_count = AtomicU32::new(0);
+    let crash_count = AtomicU32::new(0);
+
+    let subtest_count = AtomicU32::new(0);
+    let subtest_pass_count = AtomicU32::new(0);
+    let subtest_fail_count = AtomicU32::new(0);
+
+    let fractional_pass_count = AtomicF64::new(0.0);
+
     let masonry_fail_count = AtomicU32::new(0);
     let subgrid_fail_count = AtomicU32::new(0);
     let writing_mode_fail_count = AtomicU32::new(0);
@@ -287,8 +350,6 @@ fn main() {
     let calc_fail_count = AtomicU32::new(0);
     let intrinsic_size_fail_count = AtomicU32::new(0);
     let other_fail_count = AtomicU32::new(0);
-    let skip_count = AtomicU32::new(0);
-    let crash_count = AtomicU32::new(0);
     let start = Instant::now();
 
     let num = AtomicU32::new(0);
@@ -370,8 +431,11 @@ fn main() {
             let result = catch_unwind(AssertUnwindSafe(|| {
                 process_test_file(&mut ctx, &relative_path).block_on()
             }));
-            let (kind, flags, status, panic_msg) = match result {
-                Ok((kind, flags, status)) => (kind, flags, status, None),
+            let (kind, flags, status, subtest_counts, panic_msg) = match result {
+                Ok((kind, flags, subtest_counts)) => {
+                    let status = subtest_counts.as_status();
+                    (kind, flags, status, subtest_counts, None)
+                }
                 Err(err) => {
                     let str_msg = err.downcast_ref::<&str>().map(|s| s.to_string());
                     let string_msg = err.downcast_ref::<String>().map(|s| s.to_string());
@@ -381,6 +445,7 @@ fn main() {
                         TestKind::Unknown,
                         TestFlags::empty(),
                         TestStatus::Crash,
+                        SubtestCounts::ZERO_OF_ZERO,
                         panic_msg,
                     )
                 }
@@ -413,11 +478,21 @@ fn main() {
                 TestStatus::Crash => crash_count.fetch_add(1, Ordering::SeqCst),
             };
 
+            // Bump fractional count
+            fractional_pass_count.fetch_add(subtest_counts.pass_fraction(), Ordering::SeqCst);
+
+            // Bump subtest counts
+            subtest_count.fetch_add(subtest_counts.total, Ordering::SeqCst);
+            subtest_pass_count.fetch_add(subtest_counts.pass, Ordering::SeqCst);
+            subtest_fail_count
+                .fetch_add(subtest_counts.total - subtest_counts.pass, Ordering::SeqCst);
+
             let result = TestResult {
                 name: relative_path,
                 kind,
                 flags,
                 status,
+                subtest_counts,
                 duration: start.elapsed(),
                 panic_msg,
             };
@@ -445,6 +520,16 @@ fn main() {
 
     let pass_count = pass_count.load(Ordering::SeqCst);
     let fail_count = fail_count.load(Ordering::SeqCst);
+    let crash_count = crash_count.load(Ordering::SeqCst);
+    let skip_count = skip_count.load(Ordering::SeqCst);
+
+    let run_count = pass_count + fail_count + crash_count;
+    let count = count as u32;
+
+    let fractional_pass_count = fractional_pass_count.load(Ordering::SeqCst);
+    let subtest_count = subtest_count.load(Ordering::SeqCst);
+    let subtest_pass_count = subtest_pass_count.load(Ordering::SeqCst);
+
     let subgrid_fail_count = subgrid_fail_count.load(Ordering::SeqCst);
     let masonry_fail_count = masonry_fail_count.load(Ordering::SeqCst);
     let writing_mode_fail_count = writing_mode_fail_count.load(Ordering::SeqCst);
@@ -453,10 +538,6 @@ fn main() {
     let calc_fail_count = calc_fail_count.load(Ordering::SeqCst);
     let intrinsic_size_fail_count = intrinsic_size_fail_count.load(Ordering::SeqCst);
     let other_fail_count = other_fail_count.load(Ordering::SeqCst);
-    let crash_count = crash_count.load(Ordering::SeqCst);
-    let skip_count = skip_count.load(Ordering::SeqCst);
-    let run_count = pass_count + fail_count + crash_count;
-    let count = count as u32;
 
     fn as_percent(amount: u32, out_of: u32) -> f32 {
         (amount as f32 / out_of as f32) * 100.0
@@ -466,24 +547,38 @@ fn main() {
     let skip_percent = as_percent(skip_count, count);
     let pass_percent_run = as_percent(pass_count, run_count);
     let pass_percent_total = as_percent(pass_count, count);
+    let fractional_pass_percent_run = as_percent(fractional_pass_count as u32, run_count);
+    let fractional_pass_percent_total = as_percent(fractional_pass_count as u32, count);
     let fail_percent_run = as_percent(fail_count, run_count);
     let fail_percent_total = as_percent(fail_count, count);
     let crash_percent_run = as_percent(crash_count, run_count);
     let crash_percent_total = as_percent(crash_count, count);
 
-    println!("Done in {}s", (Instant::now() - start).as_secs());
+    let subtest_pass_percent = as_percent(subtest_pass_count, subtest_count);
+
+    println!(
+        "Done in {:.2}s",
+        (Instant::now() - start).as_millis() as f64 / 1000.0
+    );
     println!("---\n");
 
     println!("{count:>4} tests FOUND");
-    println!("{run_count:>4} tests RUN ({run_percent:.2}%)");
     println!("{skip_count:>4} tests SKIPPED ({skip_percent:.2}%)");
+    println!("{run_count:>4} tests RUN ({run_percent:.2}%)");
 
-    println!("{}", "\nOf those run:".bright_black());
+    println!("{}", "\nOf tests run:".bright_black());
+    println!("{subtest_count:>4} subtests RUN");
+    println!("{subtest_pass_count:>4} subtests PASSED ({subtest_pass_percent:.2}%)");
+
+    println!("{}", "\nOf tests run:".bright_black());
     println!("{crash_count:>4} tests CRASHED ({crash_percent_run:.2}% of run; {crash_percent_total:.2}% of found)");
     println!("{pass_count:>4} tests PASSED ({pass_percent_run:.2}% of run; {pass_percent_total:.2}% of found)");
     println!("{fail_count:>4} tests FAILED ({fail_percent_run:.2}% of run; {fail_percent_total:.2}% of found)");
 
-    println!("{}", "\nOf those which failed:".bright_black());
+    println!("{}", "\nCounting partial tests:".bright_black());
+    println!("{fractional_pass_count:>4.2} tests PASSED ({fractional_pass_percent_run:.2}% of run; {fractional_pass_percent_total:.2}% of found)");
+
+    println!("{}", "\nOf those tests which failed:".bright_black());
     println!("{other_fail_count:>4} do not use unsupported features");
     println!("{writing_mode_fail_count:>4} use writing-mode");
     println!("{direction_fail_count:>4} use direction");
@@ -502,7 +597,7 @@ fn main() {
 async fn process_test_file(
     ctx: &mut ThreadCtx,
     relative_path: &str,
-) -> (TestKind, TestFlags, TestStatus) {
+) -> (TestKind, TestFlags, SubtestCounts) {
     info!("Processing test file: {}", relative_path);
 
     let file_contents = fs::read_to_string(ctx.wpt_dir.join(relative_path)).unwrap();
@@ -537,7 +632,7 @@ async fn process_test_file(
         .captures(&file_contents)
         .and_then(|captures| captures.get(1).map(|href| href.as_str().to_string()));
     if let Some(reference) = reference {
-        let result = process_ref_test(
+        let results = process_ref_test(
             ctx,
             relative_path,
             file_contents.as_str(),
@@ -546,7 +641,7 @@ async fn process_test_file(
         )
         .block_on();
 
-        return (TestKind::Ref, flags, result);
+        return (TestKind::Ref, flags, results);
     }
 
     // Attr Test
@@ -559,11 +654,13 @@ async fn process_test_file(
         let selector = captures.get(1).unwrap().as_str().to_string();
         drop(matches);
 
-        let result = process_attr_test(ctx, &selector, &file_contents, relative_path).block_on();
+        println!("{}", selector);
 
-        return (TestKind::Attr, flags, result);
+        let results = process_attr_test(ctx, &selector, &file_contents, relative_path).block_on();
+
+        return (TestKind::Attr, flags, results);
     }
 
     // TODO: Handle other test formats.
-    (TestKind::Unknown, flags, TestStatus::Skip)
+    (TestKind::Unknown, flags, SubtestCounts::ZERO_OF_ZERO)
 }

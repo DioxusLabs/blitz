@@ -30,7 +30,7 @@ impl From<HtmlDocument> for BaseDocument {
 }
 impl Document for HtmlDocument {
     type Doc = BaseDocument;
-    fn handle_event(&mut self, event: DomEvent) {
+    fn handle_event(&mut self, event: &mut DomEvent) {
         self.inner.as_mut().handle_event(event)
     }
 

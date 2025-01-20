@@ -1,6 +1,8 @@
 use crate::node::{Node, NodeData};
-use peniko::Color as PenikoColor;
+use color::{AlphaColor, Srgb};
 use style::color::AbsoluteColor;
+
+pub type Color = AlphaColor<Srgb>;
 
 #[cfg(feature = "svg")]
 use std::sync::{Arc, LazyLock};
@@ -104,15 +106,16 @@ pub(crate) fn parse_svg(source: &[u8]) -> Result<usvg::Tree, usvg::Error> {
     Ok(tree)
 }
 
-pub trait ToPenikoColor {
-    fn as_peniko(&self) -> PenikoColor;
+pub trait ToColorColor {
+    /// Converts a color into the `AlphaColor<Srgb>` type from the `color` crate
+    fn as_color_color(&self) -> Color;
 }
-impl ToPenikoColor for AbsoluteColor {
-    fn as_peniko(&self) -> PenikoColor {
-        let [r, g, b, a] = self
-            .to_color_space(style::color::ColorSpace::Srgb)
-            .raw_components()
-            .map(|f| (f * 255.0) as u8);
-        PenikoColor { r, g, b, a }
+impl ToColorColor for AbsoluteColor {
+    fn as_color_color(&self) -> Color {
+        Color::new(
+            *self
+                .to_color_space(style::color::ColorSpace::Srgb)
+                .raw_components(),
+        )
     }
 }

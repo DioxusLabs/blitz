@@ -2,7 +2,7 @@ use std::sync::atomic::{self, AtomicUsize};
 use std::sync::Arc;
 
 use super::multicolor_rounded_rect::{Edge, ElementFrame};
-use crate::util::ToVelloColor;
+use crate::util::{Color, ToColorColor};
 use blitz_dom::node::{
     ImageData, ListItemLayout, ListItemLayoutPosition, Marker, NodeData, RasterImageData,
     TextBrush, TextInputData, TextNodeData,
@@ -10,6 +10,7 @@ use blitz_dom::node::{
 use blitz_dom::{local_name, BaseDocument, ElementNodeData, Node};
 use blitz_traits::Devtools;
 
+use color::DynamicColor;
 use euclid::Transform3D;
 use parley::Line;
 use style::color::AbsoluteColor;
@@ -52,7 +53,7 @@ use vello::kurbo::{self, BezPath, Cap, Circle, Join};
 use vello::peniko::Gradient;
 use vello::{
     kurbo::{Affine, Point, Rect, Shape, Stroke, Vec2},
-    peniko::{self, Color, Fill, Mix},
+    peniko::{self, Fill, Mix},
     Scene,
 };
 #[cfg(feature = "svg")]
@@ -166,7 +167,7 @@ impl VelloSceneGenerator<'_> {
         };
 
         if let Some(bg_color) = background_color {
-            let bg_color = bg_color.as_vello();
+            let bg_color = bg_color.as_srgb_color();
             let rect = Rect::from_origin_size((0.0, 0.0), (bg_width as f64, bg_height as f64));
             scene.fill(Fill::NonZero, Affine::IDENTITY, bg_color, None, &rect);
         }
@@ -241,7 +242,7 @@ impl VelloSceneGenerator<'_> {
         let transform =
             Affine::translate(base_translation + Vec2::new(scaled_pb.left, scaled_pb.top));
         let rect = Rect::new(0.0, 0.0, content_width, content_height);
-        let fill_color = Color::rgba(66.0 / 255.0, 144.0 / 255.0, 245.0 / 255.0, 0.5); // blue
+        let fill_color = Color::from_rgba8(66, 144, 245, 128); // blue
         scene.fill(
             vello::peniko::Fill::NonZero,
             transform,
@@ -288,7 +289,7 @@ impl VelloSceneGenerator<'_> {
             fill(bt + Vec2::new(ew.left, bottom), inner_w, ew.bottom); // bottom
         }
 
-        let padding_color = Color::rgba(81.0 / 255.0, 144.0 / 245.0, 66.0 / 255.0, 0.5); // green
+        let padding_color = Color::from_rgba8(81, 144, 66, 128); // green
         draw_cutout_rect(
             scene,
             base_translation + Vec2::new(scaled_border.left, scaled_border.top),
@@ -300,7 +301,7 @@ impl VelloSceneGenerator<'_> {
             padding_color,
         );
 
-        let border_color = Color::rgba(245.0 / 255.0, 66.0 / 245.0, 66.0 / 255.0, 0.5); // red
+        let border_color = Color::from_rgba8(245, 66, 66, 128); // red
         draw_cutout_rect(
             scene,
             base_translation,
@@ -309,7 +310,7 @@ impl VelloSceneGenerator<'_> {
             border_color,
         );
 
-        let margin_color = Color::rgba(249.0 / 255.0, 204.0 / 245.0, 157.0 / 255.0, 0.5); // orange
+        let margin_color = Color::from_rgba8(249, 204, 157, 128); // orange
         draw_cutout_rect(
             scene,
             base_translation - Vec2::new(scaled_margin.left, scaled_margin.top),
@@ -400,6 +401,7 @@ impl VelloSceneGenerator<'_> {
             size,
             border,
             padding,
+            content_size,
             ..
         } = node.final_layout;
         let scaled_pb = (padding + border).map(f64::from);
@@ -407,13 +409,21 @@ impl VelloSceneGenerator<'_> {
             x: box_position.x + scaled_pb.left,
             y: box_position.y + scaled_pb.top,
         };
-        let content_size = kurbo::Size {
+        let content_box_size = kurbo::Size {
             width: (size.width as f64 - scaled_pb.left - scaled_pb.right) * self.scale,
             height: (size.height as f64 - scaled_pb.top - scaled_pb.bottom) * self.scale,
         };
+
+        // Don't render things that are out of view
+        let scaled_y = box_position.y * self.scale;
+        let scaled_content_height = content_size.height.max(size.height) as f64 * self.scale;
+        if scaled_y > self.height as f64 || scaled_y + scaled_content_height < 0.0 {
+            return;
+        }
+
         let transform = Affine::translate(content_position.to_vec2() * self.scale);
         let origin = kurbo::Point { x: 0.0, y: 0.0 };
-        let clip = Rect::from_origin_size(origin, content_size);
+        let clip = Rect::from_origin_size(origin, content_box_size);
 
         // Optimise zero-area (/very small area) clips by not rendering at all
         if should_clip && clip.area() < 0.01 {
@@ -428,6 +438,7 @@ impl VelloSceneGenerator<'_> {
         cx.stroke_effects(scene);
         cx.stroke_outline(scene);
         cx.draw_outset_box_shadow(scene);
+        cx.draw_background(scene);
 
         if should_clip && clips_available {
             scene.push_layer(Mix::Clip, 1.0, transform, &cx.frame.frame());
@@ -436,7 +447,6 @@ impl VelloSceneGenerator<'_> {
             CLIP_DEPTH_USED.fetch_max(depth, atomic::Ordering::SeqCst);
         }
 
-        cx.draw_background(scene);
         cx.draw_inset_box_shadow(scene);
         cx.stroke_border(scene);
         cx.stroke_devtools(scene);
@@ -642,11 +652,13 @@ fn ensure_resized_image(data: &RasterImageData, width: u32, height: u32) {
 
         let peniko_image = peniko::Image {
             data: peniko::Blob::new(Arc::new(image_data)),
-            format: peniko::Format::Rgba8,
+            format: peniko::ImageFormat::Rgba8,
             width,
             height,
-            alpha: 255,
-            extend: peniko::Extend::Pad,
+            alpha: 1.0,
+            x_extend: peniko::Extend::Pad,
+            y_extend: peniko::Extend::Pad,
+            quality: peniko::ImageQuality::High,
         };
 
         *resized_image = Some(Arc::new(peniko_image));
@@ -719,13 +731,21 @@ impl ElementCx<'_> {
         if let Some(input_data) = self.text_input {
             let transform = Affine::translate((pos.x * self.scale, pos.y * self.scale));
 
-            // Render selection/caret
-            for rect in input_data.editor.selection_geometry().iter() {
-                scene.fill(Fill::NonZero, transform, Color::STEEL_BLUE, None, &rect);
+            if self.node.is_focussed() {
+                // Render selection/caret
+                for rect in input_data.editor.selection_geometry().iter() {
+                    scene.fill(
+                        Fill::NonZero,
+                        transform,
+                        color::palette::css::STEEL_BLUE,
+                        None,
+                        &rect,
+                    );
+                }
+                if let Some(cursor) = input_data.editor.cursor_geometry(1.5) {
+                    scene.fill(Fill::NonZero, transform, Color::BLACK, None, &cursor);
+                };
             }
-            if let Some(cursor) = input_data.editor.cursor_geometry(1.5) {
-                scene.fill(Fill::NonZero, transform, Color::BLACK, None, &cursor);
-            };
 
             // Render text
             self.stroke_text(scene, input_data.editor.try_layout().unwrap().lines(), pos);
@@ -798,11 +818,6 @@ impl ElementCx<'_> {
                     let glyph_xform = synthesis
                         .skew()
                         .map(|angle| Affine::skew(angle.to_radians().tan() as f64, 0.0));
-                    let coords = run
-                        .normalized_coords()
-                        .iter()
-                        .map(|coord| vello::skrifa::instance::NormalizedCoord::from_bits(*coord))
-                        .collect::<Vec<_>>();
 
                     scene
                         .draw_glyphs(font)
@@ -811,7 +826,7 @@ impl ElementCx<'_> {
                         .transform(transform)
                         .glyph_transform(glyph_xform)
                         .font_size(font_size)
-                        .normalized_coords(&coords)
+                        .normalized_coords(run.normalized_coords())
                         .draw(
                             Fill::NonZero,
                             glyph_run.glyphs().map(|glyph| {
@@ -970,10 +985,10 @@ impl ElementCx<'_> {
             let stroke = Stroke::new(self.scale);
 
             let stroke_color = match self.node.style.display {
-                taffy::Display::Block => Color::rgb(1.0, 0.0, 0.0),
-                taffy::Display::Flex => Color::rgb(0.0, 1.0, 0.0),
-                taffy::Display::Grid => Color::rgb(0.0, 0.0, 1.0),
-                taffy::Display::None => Color::rgb(0.0, 0.0, 1.0),
+                taffy::Display::Block => Color::new([1.0, 0.0, 0.0, 1.0]),
+                taffy::Display::Flex => Color::new([0.0, 1.0, 0.0, 1.0]),
+                taffy::Display::Grid => Color::new([0.0, 0.0, 1.0, 1.0]),
+                taffy::Display::None => Color::new([0.0, 0.0, 1.0, 1.0]),
             };
 
             scene.stroke(&stroke, self.transform, stroke_color, None, &shape);
@@ -1164,14 +1179,17 @@ impl ElementCx<'_> {
                 GenericGradientItem::SimpleColorStop(color) => {
                     let step = 1.0 / (items.len() as f32 - 1.0);
                     (
-                        color.resolve_to_absolute(&current_color).as_vello(),
+                        color.resolve_to_absolute(&current_color).as_dynamic_color(),
                         step * idx as f32,
                     )
                 }
                 GenericGradientItem::ComplexColorStop { color, position } => {
                     let offset = item_resolver(gradient_length, position);
                     if let Some(offset) = offset {
-                        (color.resolve_to_absolute(&current_color).as_vello(), offset)
+                        (
+                            color.resolve_to_absolute(&current_color).as_dynamic_color(),
+                            offset,
+                        )
                     } else {
                         continue;
                     }
@@ -1228,22 +1246,17 @@ impl ElementCx<'_> {
                             let relative_offset =
                                 (cur_offset - last_stop.offset) / (offset - last_stop.offset);
                             let multiplier = relative_offset.powf(0.5f32.log(mid_point));
-                            let color = Color::rgba8(
-                                (last_stop.color.r as f32
-                                    + multiplier * (color.r as f32 - last_stop.color.r as f32))
-                                    as u8,
-                                (last_stop.color.g as f32
-                                    + multiplier * (color.g as f32 - last_stop.color.g as f32))
-                                    as u8,
-                                (last_stop.color.b as f32
-                                    + multiplier * (color.b as f32 - last_stop.color.b as f32))
-                                    as u8,
-                                (last_stop.color.a as f32
-                                    + multiplier * (color.a as f32 - last_stop.color.a as f32))
-                                    as u8,
-                            );
+                            let [last_r, last_g, last_b, last_a] = last_stop.color.components;
+                            let [r, g, b, a] = color.components;
+
+                            let color = Color::new([
+                                (last_r + multiplier * (r - last_r)),
+                                (last_g + multiplier * (g - last_g)),
+                                (last_b + multiplier * (b - last_b)),
+                                (last_a + multiplier * (a - last_a)),
+                            ]);
                             gradient.stops.push(peniko::ColorStop {
-                                color,
+                                color: DynamicColor::from_alpha_color(color),
                                 offset: cur_offset,
                             });
                         };
@@ -1277,7 +1290,7 @@ impl ElementCx<'_> {
             let last_offset = gradient.stops.last().unwrap().offset;
             if first_offset != 0.0 || last_offset != 1.0 {
                 let scale_inv = 1e-7_f32.max(1.0 / (last_offset - first_offset));
-                for stop in &mut gradient.stops {
+                for stop in &mut *gradient.stops {
                     stop.offset = (stop.offset - first_offset) * scale_inv;
                 }
             }
@@ -1351,7 +1364,7 @@ impl ElementCx<'_> {
                         .base
                         .color
                         .resolve_to_absolute(&current_color)
-                        .as_vello();
+                        .as_srgb_color();
                     if shadow_color != Color::TRANSPARENT {
                         let transform = elem_cx.transform.then_translate(Vec2 {
                             x: shadow.base.horizontal.px() as f64,
@@ -1402,7 +1415,7 @@ impl ElementCx<'_> {
                 .base
                 .color
                 .resolve_to_absolute(&current_color)
-                .as_vello();
+                .as_srgb_color();
             if shadow_color != Color::TRANSPARENT {
                 let transform = self.transform.then_translate(Vec2 {
                     x: shadow.base.horizontal.px() as f64,
@@ -1441,7 +1454,7 @@ impl ElementCx<'_> {
         let background_color = &self.style.get_background().background_color;
         let bg_color = background_color
             .resolve_to_absolute(&current_color)
-            .as_vello();
+            .as_srgb_color();
 
         if bg_color != Color::TRANSPARENT {
             let shape = self.frame.frame();
@@ -1501,19 +1514,19 @@ impl ElementCx<'_> {
             Edge::Top => border
                 .border_top_color
                 .resolve_to_absolute(&current_color)
-                .as_vello(),
+                .as_srgb_color(),
             Edge::Right => border
                 .border_right_color
                 .resolve_to_absolute(&current_color)
-                .as_vello(),
+                .as_srgb_color(),
             Edge::Bottom => border
                 .border_bottom_color
                 .resolve_to_absolute(&current_color)
-                .as_vello(),
+                .as_srgb_color(),
             Edge::Left => border
                 .border_left_color
                 .resolve_to_absolute(&current_color)
-                .as_vello(),
+                .as_srgb_color(),
         };
 
         sb.fill(Fill::NonZero, self.transform, color, None, &path);
@@ -1537,7 +1550,9 @@ impl ElementCx<'_> {
         } = self.style.get_outline();
 
         let current_color = self.style.clone_color();
-        let color = outline_color.resolve_to_absolute(&current_color).as_vello();
+        let color = outline_color
+            .resolve_to_absolute(&current_color)
+            .as_srgb_color();
 
         let style = match outline_style {
             OutlineStyle::Auto => return,
@@ -1790,14 +1805,9 @@ impl ElementCx<'_> {
 
             // TODO this should be coming from css accent-color, but I couldn't find how to retrieve it
             let accent_color = if disabled {
-                peniko::Color {
-                    r: 209,
-                    g: 209,
-                    b: 209,
-                    a: 255,
-                }
+                Color::from_rgba8(209, 209, 209, 255)
             } else {
-                self.style.clone_color().as_vello()
+                self.style.clone_color().as_srgb_color()
             };
 
             let scale = (self
@@ -1871,7 +1881,7 @@ impl ElementCx<'_> {
                     scene.fill(
                         Fill::NonZero,
                         self.transform,
-                        Color::GRAY,
+                        color::palette::css::GRAY,
                         None,
                         &outer_ring,
                     );
