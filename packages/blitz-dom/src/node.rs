@@ -35,7 +35,7 @@ use taffy::{
 use url::Url;
 
 use crate::layout::table::TableContext;
-use blitz_traits::{BlitzMouseButtonEvent, DomEventData, EventListener, HitResult};
+use blitz_traits::{BlitzMouseButtonEvent, DomEventData, HitResult};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum DisplayOuter {
@@ -78,15 +78,12 @@ pub struct Node {
 
     // Taffy layout data:
     pub style: Style,
-    pub hidden: bool,
-    pub is_hovered: bool,
     pub has_snapshot: bool,
     pub snapshot_handled: AtomicBool,
     pub display_outer: DisplayOuter,
     pub cache: Cache,
     pub unrounded_layout: Layout,
     pub final_layout: Layout,
-    pub listeners: Vec<EventListener>,
     pub scroll_offset: kurbo::Point,
 
     // Flags
@@ -121,15 +118,12 @@ impl Node {
             after: None,
 
             style: Default::default(),
-            hidden: false,
-            is_hovered: false,
             has_snapshot: false,
             snapshot_handled: AtomicBool::new(false),
             display_outer: DisplayOuter::Block,
             cache: Cache::new(),
             unrounded_layout: Layout::new(),
             final_layout: Layout::new(),
-            listeners: Default::default(),
             scroll_offset: kurbo::Point::ZERO,
             is_inline_root: false,
             is_table_root: false,
@@ -204,13 +198,11 @@ impl Node {
     }
 
     pub fn hover(&mut self) {
-        self.is_hovered = true;
         self.element_state.insert(ElementState::HOVER);
         self.set_restyle_hint(RestyleHint::restyle_subtree());
     }
 
     pub fn unhover(&mut self) {
-        self.is_hovered = false;
         self.element_state.remove(ElementState::HOVER);
         self.set_restyle_hint(RestyleHint::restyle_subtree());
     }
@@ -401,7 +393,6 @@ impl ElementNodeData {
             node_specific_data: NodeSpecificData::None,
             template_contents: None,
             background_images: Vec::new(),
-            // listeners: FxHashSet::default(),
         };
         data.flush_is_focussable();
         data

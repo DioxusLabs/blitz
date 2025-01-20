@@ -4,8 +4,8 @@ pub mod navigation;
 
 mod events;
 pub use events::{
-    BlitzImeEvent, BlitzKeyEvent, BlitzMouseButtonEvent, DomEvent, DomEventData, EventListener,
-    HitResult, KeyState, MouseEventButton, MouseEventButtons,
+    BlitzImeEvent, BlitzKeyEvent, BlitzMouseButtonEvent, DomEvent, DomEventData, HitResult,
+    KeyState, MouseEventButton, MouseEventButtons,
 };
 
 mod document;

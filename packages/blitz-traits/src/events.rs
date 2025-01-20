@@ -1,9 +1,6 @@
 use bitflags::bitflags;
 use keyboard_types::{Code, Key, Location, Modifiers};
 use smol_str::SmolStr;
-pub struct EventListener {
-    pub name: String,
-}
 
 #[derive(Debug, Clone)]
 pub struct DomEvent {
