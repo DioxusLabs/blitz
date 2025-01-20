@@ -11,3 +11,4 @@ bytes = { workspace = true }
 keyboard-types = { workspace = true }
 raw-window-handle = { workspace = true }
 smol_str = { workspace = true }
+bitflags = { workspace = true }
