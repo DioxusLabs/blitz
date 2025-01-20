@@ -85,8 +85,11 @@ impl Document for DioxusDocument {
         match &event.data {
             DomEventData::MouseMove { .. }
             | DomEventData::MouseDown { .. }
-            | DomEventData::MouseUp { .. } => {
+            | DomEventData::MouseUp { .. }
+            | DomEventData::MouseLeave => {
                 let click_event_data = wrap_event_data(NativeClickData);
+
+                println!("{:?}", event.name());
 
                 for node_id in chain.clone().into_iter() {
                     let node = &self.inner.tree()[node_id];
@@ -268,41 +271,44 @@ impl Document for DioxusDocument {
             }
             // TODO: Implement IME and Hover events handling
             DomEventData::Ime(_) => {}
-            DomEventData::Hover { .. } => {
+            DomEventData::MouseOver { .. } => {
                 let hover_event_data = wrap_event_data(NativeClickData);
+
                 println!("HOVER EVENT");
 
-                for &DxNodeIds { node_id, dioxus_id } in chain.iter() {
+                for node_id in chain.clone().into_iter() {
+                    let node = &self.inner.tree()[node_id];
+                    let dioxus_id = node.element_data().and_then(DioxusDocument::dioxus_id);
+
                     if let Some(id) = dioxus_id {
-                        // Dispatch both mouseenter and mouseover events
-                        let events = ["mouseenter", "mouseover"];
-                        for event_name in events {
-                            let hover_event = Event::new(hover_event_data.clone(), true);
+                        // Handle mouseenter event
+                        let event = Event::new(hover_event_data.clone(), true);
+                        self.vdom
+                            .runtime()
+                            .handle_event("mouseenter", event.clone(), id);
+                        prevent_default |= !event.default_action_enabled();
+                        stop_propagation |= !event.propagates();
+
+                        if !prevent_default {
+                            // Handle mouseover event
+                            let event = Event::new(hover_event_data.clone(), true);
                             self.vdom
                                 .runtime()
-                                .handle_event(event_name, hover_event.clone(), id);
-                            prevent_default |= !hover_event.default_action_enabled();
-                            stop_propagation |= !hover_event.propagates();
-                        }
+                                .handle_event("mouseover", event.clone(), id);
+                            prevent_default |= !event.default_action_enabled();
+                            stop_propagation |= !event.propagates();
 
-                        // Also dispatch mouseleave when hover ends
-                        if !prevent_default {
-                            let default_event = DomEvent {
-                                target: node_id,
-                                data: renderer_event.data.clone(),
-                            };
-                            self.inner.as_mut().handle_event(default_event.clone());
-
-                            // Explicit mouseleave event
-                            self.vdom.runtime().handle_event(
-                                "mouseleave",
-                                Event::new(hover_event_data.clone(), true),
-                                id,
-                            );
+                            if !prevent_default {
+                                // Handle default DOM event
+                                let mut default_event =
+                                    DomEvent::new(node_id, renderer_event.data.clone());
+                                self.inner.as_mut().handle_event(&mut default_event);
+                                prevent_default = true;
+                            }
                         }
                     }
 
-                    if stop_propagation {
+                    if !event.bubbles || stop_propagation {
                         break;
                     }
                 }

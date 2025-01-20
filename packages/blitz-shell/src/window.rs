@@ -4,7 +4,8 @@ use crate::convert_events::{
 use crate::event::{create_waker, BlitzShellEvent};
 use blitz_dom::BaseDocument;
 use blitz_traits::{
-    BlitzMouseButtonEvent, ColorScheme, Devtools, MouseEventButton, MouseEventButtons, Viewport,
+    BlitzMouseButtonEvent, BlitzMouseOverEvent, ColorScheme, Devtools, MouseEventButton,
+    MouseEventButtons, Viewport,
 };
 use blitz_traits::{Document, DocumentRenderer, DomEvent, DomEventData};
 use winit::keyboard::PhysicalKey;
@@ -256,15 +257,42 @@ impl<Doc: Document<Doc = D>, Rend: DocumentRenderer<Doc = D>> View<Doc, Rend> {
         let dom_x = x + viewport_scroll.x as f32 / self.viewport.zoom();
         let dom_y = y + viewport_scroll.y as f32 / self.viewport.zoom();
 
-        //println!("Mouse move: ({}, {})", x, y);
-        //println!("Unscaled: ({}, {})",);
-
         self.mouse_pos = (x, y);
         self.dom_mouse_pos = (dom_x, dom_y);
-        let mut changed = self.doc.as_mut().set_hover_to(dom_x, dom_y);
 
-        if let Some(node_id) = self.doc.as_ref().get_hover_node_id() {
-            let mut event = DomEvent::new(
+        // Get previous hover state before updating
+        let prev_hover = self.doc.as_ref().get_hover_node_id();
+
+        // Update hover state once
+        let hover_changed = self.doc.as_mut().set_hover_to(dom_x, dom_y);
+        let new_hover = self.doc.as_ref().get_hover_node_id();
+
+        let mut changed = hover_changed;
+
+        // Dispatch hover events only when hover state changes
+        if prev_hover != new_hover {
+            // Handle mouseleave on previous node
+            if let Some(prev_id) = prev_hover {
+                let mut mouse_leave_event = DomEvent::new(prev_id, DomEventData::MouseLeave);
+                self.doc.handle_event(&mut mouse_leave_event);
+            }
+
+            // Handle mouseenter on new node
+            if let Some(new_id) = new_hover {
+                let mut hover_event = DomEvent::new(
+                    new_id,
+                    DomEventData::MouseOver(BlitzMouseOverEvent {
+                        x: self.mouse_pos.0,
+                        y: self.mouse_pos.1,
+                    }),
+                );
+                self.doc.handle_event(&mut hover_event);
+            }
+        }
+
+        // Always dispatch mousemove if we have a target
+        if let Some(node_id) = new_hover {
+            let mut move_event = DomEvent::new(
                 node_id,
                 DomEventData::MouseMove(BlitzMouseButtonEvent {
                     x: self.dom_mouse_pos.0,
@@ -274,10 +302,8 @@ impl<Doc: Document<Doc = D>, Rend: DocumentRenderer<Doc = D>> View<Doc, Rend> {
                     mods: winit_modifiers_to_kbt_modifiers(self.keyboard_modifiers.state()),
                 }),
             );
-            self.doc.handle_event(&mut event);
-            if event.request_redraw {
-                changed = true;
-            }
+            self.doc.handle_event(&mut move_event);
+            changed |= move_event.request_redraw;
         }
 
         changed
