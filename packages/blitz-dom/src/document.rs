@@ -326,7 +326,7 @@ impl BaseDocument {
     pub fn toggle_radio(&mut self, radio_set_name: String, target_radio_id: usize) {
         for i in 0..self.nodes.len() {
             let node = &mut self.nodes[i];
-            if let Some(node_data) = node.raw_dom_data.downcast_element_mut() {
+            if let Some(node_data) = node.data.downcast_element_mut() {
                 if node_data.attr(local_name!("name")) == Some(&radio_set_name) {
                     let was_clicked = i == target_radio_id;
                     let Some(is_checked) = node_data.checkbox_input_checked_mut() else {
@@ -386,7 +386,7 @@ impl BaseDocument {
     pub fn deep_clone_node(&mut self, node_id: usize) -> usize {
         // Load existing node
         let node = &self.nodes[node_id];
-        let data = node.raw_dom_data.clone();
+        let data = node.data.clone();
         let children = node.children.clone();
 
         // Create new node
@@ -1089,7 +1089,7 @@ impl BaseDocument {
             return;
         };
 
-        let is_html_or_body = node.raw_dom_data.downcast_element().is_some_and(|e| {
+        let is_html_or_body = node.data.downcast_element().is_some_and(|e| {
             let tag = &e.name.local;
             tag == "html" || tag == "body"
         });

@@ -149,7 +149,7 @@ impl VelloSceneGenerator<'_> {
                     .iter()
                     .find_map(|id| {
                         self.dom.as_ref().get_node(*id).filter(|node| {
-                            node.raw_dom_data
+                            node.data
                                 .is_element_with_tag_name(&local_name!("body"))
                         })
                     })
@@ -483,7 +483,7 @@ impl VelloSceneGenerator<'_> {
     fn render_node(&self, scene: &mut Scene, node_id: usize, location: Point) {
         let node = &self.dom.as_ref().tree()[node_id];
 
-        match &node.raw_dom_data {
+        match &node.data {
             NodeData::Element(_) | NodeData::AnonymousBlock(_) => {
                 self.render_element(scene, node_id, location)
             }

@@ -114,7 +114,7 @@ impl LayoutPartialTree for BaseDocument {
             let font_size = font_styles.map(|s| s.0);
             let resolved_line_height = font_styles.map(|s| s.1);
 
-            match &mut node.raw_dom_data {
+            match &mut node.data {
                 NodeData::Text(data) => {
                     // With the new "inline context" architecture all text nodes should be wrapped in an "inline layout context"
                     // and should therefore never be measured individually.
@@ -280,7 +280,7 @@ impl LayoutPartialTree for BaseDocument {
 
                     if node.is_table_root {
                         let NodeSpecificData::TableRoot(context) = &tree.nodes[node_id.into()]
-                            .raw_dom_data
+                            .data
                             .downcast_element()
                             .unwrap()
                             .node_specific_data
@@ -428,7 +428,7 @@ impl PrintTree for BaseDocument {
         let node = &self.node_from_id(node_id);
         let style = &node.style;
 
-        match node.raw_dom_data {
+        match node.data {
             NodeData::Document => "DOCUMENT",
             // NodeData::Doctype { .. } => return "DOCTYPE",
             NodeData::Text { .. } => node.node_debug_str().leak(),

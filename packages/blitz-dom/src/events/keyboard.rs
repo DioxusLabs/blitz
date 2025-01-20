@@ -14,7 +14,7 @@ pub(crate) fn handle_keypress(doc: &mut BaseDocument, target: usize, event: Blit
 
         let node = &mut doc.nodes[node_id];
         let text_input_data = node
-            .raw_dom_data
+            .data
             .downcast_element_mut()
             .and_then(|el| el.text_input_data_mut());
 
