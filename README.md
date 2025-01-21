@@ -83,7 +83,7 @@ Both wrappers can optionally use <b>`blitz-net`</b> to fetch sub-resources.
 - **`blitz-net`** -  Networking that can fetch resources over http, from the file-system or from encoded data URIs.
 <br /><small><b>Uses: [Reqwest](https://github.com/seanmonstar/reqwest) for HTTP</b></small>
 - **`blitz-html`** -  Adds HTML parsing to `blitz-dom`
-<br /><small><b>Uses: [html5ever](https://github.com/server/html5ever/html5ever) (HTML parsing) and [xml5ever](https://github.com/server/html5ever/html5ever) (XHTML parsing)</b></small>
+<br /><small><b>Uses: [html5ever](https://github.com/servo/html5ever) (HTML parsing) and [xml5ever](https://github.com/servo/html5ever/tree/main/xml5ever) (XHTML parsing)</b></small>
 - **`blitz-shell`** - A shell that allows Blitz to render to a window (integrates a Winit event loop, AccessKit, Muda etc).
 <br /><small><b>Uses: [Winit](https://github.com/rust-windowing/winit) (windowing/input), [AccessKit](https://github.com/AccessKit/accesskit) (accessibility), [Muda](https://github.com/tauri-apps/muda) (system menus)</b></small>
 
