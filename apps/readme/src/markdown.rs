@@ -25,6 +25,7 @@ pub(crate) fn markdown_to_html(contents: String) -> String {
                 description_lists: false,
                 front_matter_delimiter: None,
                 multiline_block_quotes: false,
+                alerts: true,
                 ..ExtensionOptions::default()
             },
             render: RenderOptions {

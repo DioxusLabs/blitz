@@ -98,7 +98,11 @@ codegen-units = 1
 strip = true
 incremental = false
 
-[profile.sizeopt]
+[profile.p2]
+inherits = "production"
+opt-level = 2
+
+[profile.small]
 inherits = "production"
 opt-level = "z"
 panic = "abort"
