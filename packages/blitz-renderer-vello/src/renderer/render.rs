@@ -515,6 +515,11 @@ impl VelloSceneGenerator<'_> {
 
         let scale = self.scale;
 
+        // todo: maybe cache this so we don't need to constantly be figuring it out
+        // It is quite a bit of math to calculate during render/traverse
+        // Also! we can cache the bezpaths themselves, saving us a bunch of work
+        let frame = ElementFrame::new(&style, &layout, scale);
+
         // the bezpaths for every element are (potentially) cached (not yet, tbd)
         // By performing the transform, we prevent the cache from becoming invalid when the page shifts around
         let mut transform = Affine::translate(box_position.to_vec2() * scale);
@@ -533,13 +538,27 @@ impl VelloSceneGenerator<'_> {
             // And https://docs.rs/kurbo/latest/kurbo/struct.Affine.html#method.new
             let kurbo_transform =
                 Affine::new([t.m11, t.m12, t.m21, t.m22, t.m41, t.m42].map(|v| v as f64));
+
+            // Apply the transform origin by:
+            //   - Translating by the origin offset
+            //   - Applying our transform
+            //   - Translating by the inverse of the origin offset
+            let transform_origin = &style.get_box().transform_origin;
+            let origin_translation = Affine::translate(Vec2 {
+                x: transform_origin
+                    .horizontal
+                    .resolve(CSSPixelLength::new(frame.outer_rect.width() as f32))
+                    .px() as f64,
+                y: transform_origin
+                    .vertical
+                    .resolve(CSSPixelLength::new(frame.outer_rect.width() as f32))
+                    .px() as f64,
+            });
+            let kurbo_transform =
+                origin_translation * kurbo_transform * origin_translation.inverse();
+
             transform *= kurbo_transform;
         }
-
-        // todo: maybe cache this so we don't need to constantly be figuring it out
-        // It is quite a bit of math to calculate during render/traverse
-        // Also! we can cache the bezpaths themselves, saving us a bunch of work
-        let frame = ElementFrame::new(&style, &layout, scale);
 
         let element = node.element_data().unwrap();
 
