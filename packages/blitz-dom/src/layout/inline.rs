@@ -222,7 +222,7 @@ impl BaseDocument {
                 // println!("\n");
 
                 inputs.known_dimensions.unwrap_or(taffy::Size {
-                    width: inline_layout.layout.width() / scale,
+                    width: inline_layout.layout.width().ceil() / scale,
                     height: inline_layout.layout.height() / scale,
                 })
             },
