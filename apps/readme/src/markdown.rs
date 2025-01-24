@@ -38,6 +38,9 @@ pub(crate) fn markdown_to_html(contents: String) -> String {
         &plugins,
     );
 
+    // Strip trailing newlines in code blocks
+    let body_html = body_html.replace("\n</code", "</code");
+
     format!(
         r#"
         <!DOCTYPE html>
