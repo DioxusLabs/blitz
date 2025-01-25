@@ -37,6 +37,11 @@
     display: none;
 }
 
+a {
+    color: rgb(0, 0, 238);
+    text-decoration: underline;
+}
+
 /* https://html.spec.whatwg.org/#bidi-rendering */
 input[type=tel]:dir(ltr) {
     direction: ltr;
