@@ -87,7 +87,6 @@ impl Document for DioxusDocument {
             DomEventData::MouseMove { .. }
             | DomEventData::MouseDown { .. }
             | DomEventData::MouseUp { .. }
-            | DomEventData::MouseOver { .. }
             | DomEventData::MouseLeave => {
                 let click_event_data = wrap_event_data(NativeClickData);
 
