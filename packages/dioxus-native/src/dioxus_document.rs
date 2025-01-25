@@ -273,46 +273,6 @@ impl Document for DioxusDocument {
             }
             // TODO: Implement IME and Hover events handling
             DomEventData::Ime(_) => {}
-            DomEventData::MouseOver { .. } => {
-                let hover_event_data = wrap_event_data(NativeClickData);
-
-                for node_id in chain.clone().into_iter() {
-                    let node = &self.inner.tree()[node_id];
-                    let dioxus_id = node.element_data().and_then(DioxusDocument::dioxus_id);
-
-                    if let Some(id) = dioxus_id {
-                        // Handle mouseenter event
-                        let event = Event::new(hover_event_data.clone(), true);
-                        self.vdom
-                            .runtime()
-                            .handle_event("mouseenter", event.clone(), id);
-                        prevent_default |= !event.default_action_enabled();
-                        stop_propagation |= !event.propagates();
-
-                        if !prevent_default {
-                            // Handle mouseover event
-                            let event = Event::new(hover_event_data.clone(), true);
-                            self.vdom
-                                .runtime()
-                                .handle_event("mouseover", event.clone(), id);
-                            prevent_default |= !event.default_action_enabled();
-                            stop_propagation |= !event.propagates();
-
-                            if !prevent_default {
-                                // Handle default DOM event
-                                let mut default_event =
-                                    DomEvent::new(node_id, renderer_event.data.clone());
-                                self.inner.as_mut().handle_event(&mut default_event);
-                                prevent_default = true;
-                            }
-                        }
-                    }
-
-                    if !event.bubbles || stop_propagation {
-                        break;
-                    }
-                }
-            }
         }
 
         if !event.cancelable || !prevent_default {
