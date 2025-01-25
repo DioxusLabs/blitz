@@ -16,7 +16,7 @@ impl BaseDocument {
 
         // Take inline layout to satisfy borrow checker
         let mut inline_layout = self.nodes[node_id]
-            .raw_dom_data
+            .data
             .downcast_element_mut()
             .unwrap()
             .take_inline_layout()
@@ -222,7 +222,7 @@ impl BaseDocument {
                 // println!("\n");
 
                 inputs.known_dimensions.unwrap_or(taffy::Size {
-                    width: inline_layout.layout.width() / scale,
+                    width: inline_layout.layout.width().ceil() / scale,
                     height: inline_layout.layout.height() / scale,
                 })
             },
@@ -230,7 +230,7 @@ impl BaseDocument {
 
         // Put layout back
         self.nodes[node_id]
-            .raw_dom_data
+            .data
             .downcast_element_mut()
             .unwrap()
             .inline_layout_data = Some(inline_layout);

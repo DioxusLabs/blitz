@@ -26,7 +26,7 @@ impl BaseDocument {
 
         if node.is_inline_root {
             let inline_layout = &node
-                .raw_dom_data
+                .data
                 .downcast_element()
                 .unwrap()
                 .inline_layout_data

@@ -46,12 +46,12 @@ taffy = { git = "https://github.com/dioxuslabs/taffy", rev = "51e21564", default
 # Linebender + WGPU
 color = "0.2"
 peniko = "0.3"
-vello = { version = "0.4", git = "https://github.com/linebender/vello", rev = "6105e401", features = [ "wgpu" ] }
-parley = { version = "0.2", git = "https://github.com/linebender/parley", rev = "63f23d0e" } # external-span-ids
+vello = { version = "0.4", features = [ "wgpu" ] }
+parley = { version = "0.2", git = "https://github.com/linebender/parley", rev = "b648f143" } # external-span-ids
 wgpu = "23"
 
 # SVG dependencies
-vello_svg = { git = "https://github.com/linebender/vello_svg", rev = "851a6459" }
+vello_svg = { version = "0.6" }
 usvg = "0.44.0"
 
 # Windowing & Input
@@ -98,7 +98,11 @@ codegen-units = 1
 strip = true
 incremental = false
 
-[profile.sizeopt]
+[profile.p2]
+inherits = "production"
+opt-level = 2
+
+[profile.small]
 inherits = "production"
 opt-level = "z"
 panic = "abort"

@@ -35,7 +35,7 @@ use taffy::{
 use url::Url;
 
 use crate::layout::table::TableContext;
-use blitz_traits::{BlitzMouseButtonEvent, DomEventData, EventListener, HitResult};
+use blitz_traits::{BlitzMouseButtonEvent, DomEventData, HitResult};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum DisplayOuter {
@@ -63,7 +63,7 @@ pub struct Node {
     pub paint_children: RefCell<Option<Vec<usize>>>,
 
     /// Node type (Element, TextNode, etc) specific data
-    pub raw_dom_data: NodeData,
+    pub data: NodeData,
 
     // This little bundle of joy is our style data from stylo and a lock guard that allows access to it
     // TODO: See if guard can be hoisted to a higher level
@@ -78,15 +78,12 @@ pub struct Node {
 
     // Taffy layout data:
     pub style: Style,
-    pub hidden: bool,
-    pub is_hovered: bool,
     pub has_snapshot: bool,
     pub snapshot_handled: AtomicBool,
     pub display_outer: DisplayOuter,
     pub cache: Cache,
     pub unrounded_layout: Layout,
     pub final_layout: Layout,
-    pub listeners: Vec<EventListener>,
     pub scroll_offset: kurbo::Point,
 
     // Flags
@@ -111,7 +108,7 @@ impl Node {
             layout_children: RefCell::new(None),
             paint_children: RefCell::new(None),
 
-            raw_dom_data: data,
+            data,
             stylo_element_data: Default::default(),
             selector_flags: AtomicRefCell::new(ElementSelectorFlags::empty()),
             guard,
@@ -121,15 +118,12 @@ impl Node {
             after: None,
 
             style: Default::default(),
-            hidden: false,
-            is_hovered: false,
             has_snapshot: false,
             snapshot_handled: AtomicBool::new(false),
             display_outer: DisplayOuter::Block,
             cache: Cache::new(),
             unrounded_layout: Layout::new(),
             final_layout: Layout::new(),
-            listeners: Default::default(),
             scroll_offset: kurbo::Point::ZERO,
             is_inline_root: false,
             is_table_root: false,
@@ -191,7 +185,7 @@ impl Node {
     }
 
     pub fn is_focussable(&self) -> bool {
-        self.raw_dom_data
+        self.data
             .downcast_element()
             .map(|el| el.is_focussable)
             .unwrap_or(false)
@@ -204,13 +198,11 @@ impl Node {
     }
 
     pub fn hover(&mut self) {
-        self.is_hovered = true;
         self.element_state.insert(ElementState::HOVER);
         self.set_restyle_hint(RestyleHint::restyle_subtree());
     }
 
     pub fn unhover(&mut self) {
-        self.is_hovered = false;
         self.element_state.remove(ElementState::HOVER);
         self.set_restyle_hint(RestyleHint::restyle_subtree());
     }
@@ -401,7 +393,6 @@ impl ElementNodeData {
             node_specific_data: NodeSpecificData::None,
             template_contents: None,
             background_images: Vec::new(),
-            // listeners: FxHashSet::default(),
         };
         data.flush_is_focussable();
         data
@@ -421,32 +412,46 @@ impl ElementNodeData {
         attr.value.parse::<T>().ok()
     }
 
-    pub fn raster_image_data(&self) -> Option<&RasterImageData> {
+    pub fn image_data(&self) -> Option<&ImageData> {
         match self.node_specific_data {
-            NodeSpecificData::Image(ImageData::Raster(ref data)) => Some(data),
+            NodeSpecificData::Image(ref data) => Some(&**data),
+            _ => None,
+        }
+    }
+
+    pub fn image_data_mut(&mut self) -> Option<&mut ImageData> {
+        match self.node_specific_data {
+            NodeSpecificData::Image(ref mut data) => Some(&mut **data),
+            _ => None,
+        }
+    }
+
+    pub fn raster_image_data(&self) -> Option<&RasterImageData> {
+        match self.image_data()? {
+            ImageData::Raster(ref data) => Some(data),
             _ => None,
         }
     }
 
     pub fn raster_image_data_mut(&mut self) -> Option<&mut RasterImageData> {
-        match self.node_specific_data {
-            NodeSpecificData::Image(ImageData::Raster(ref mut data)) => Some(data),
+        match self.image_data_mut()? {
+            ImageData::Raster(ref mut data) => Some(data),
             _ => None,
         }
     }
 
     #[cfg(feature = "svg")]
     pub fn svg_data(&self) -> Option<&usvg::Tree> {
-        match self.node_specific_data {
-            NodeSpecificData::Image(ImageData::Svg(ref data)) => Some(data),
+        match self.image_data()? {
+            ImageData::Svg(ref data) => Some(data),
             _ => None,
         }
     }
 
     #[cfg(feature = "svg")]
     pub fn svg_data_mut(&mut self) -> Option<&mut usvg::Tree> {
-        match self.node_specific_data {
-            NodeSpecificData::Image(ImageData::Svg(ref mut data)) => Some(data),
+        match self.image_data_mut()? {
+            ImageData::Svg(ref mut data) => Some(data),
             _ => None,
         }
     }
@@ -635,7 +640,7 @@ impl TextInputData {
 #[derive(Clone)]
 pub enum NodeSpecificData {
     /// The element's image content (\<img\> element's only)
-    Image(ImageData),
+    Image(Box<ImageData>),
     /// Pre-computed table layout data
     TableRoot(Arc<TableContext>),
     /// Parley text editor (text inputs)
@@ -649,7 +654,7 @@ pub enum NodeSpecificData {
 impl std::fmt::Debug for NodeSpecificData {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            NodeSpecificData::Image(data) => match data {
+            NodeSpecificData::Image(data) => match **data {
                 ImageData::Raster(_) => f.write_str("NodeSpecificData::Image(Raster)"),
                 #[cfg(feature = "svg")]
                 ImageData::Svg(_) => f.write_str("NodeSpecificData::Image(Svg)"),
@@ -802,19 +807,19 @@ impl Node {
     }
 
     pub fn is_element(&self) -> bool {
-        matches!(self.raw_dom_data, NodeData::Element { .. })
+        matches!(self.data, NodeData::Element { .. })
     }
 
     pub fn is_anonymous(&self) -> bool {
-        matches!(self.raw_dom_data, NodeData::AnonymousBlock { .. })
+        matches!(self.data, NodeData::AnonymousBlock { .. })
     }
 
     pub fn is_text_node(&self) -> bool {
-        matches!(self.raw_dom_data, NodeData::Text { .. })
+        matches!(self.data, NodeData::Text { .. })
     }
 
     pub fn element_data(&self) -> Option<&ElementNodeData> {
-        match self.raw_dom_data {
+        match self.data {
             NodeData::Element(ref data) => Some(data),
             NodeData::AnonymousBlock(ref data) => Some(data),
             _ => None,
@@ -822,7 +827,7 @@ impl Node {
     }
 
     pub fn element_data_mut(&mut self) -> Option<&mut ElementNodeData> {
-        match self.raw_dom_data {
+        match self.data {
             NodeData::Element(ref mut data) => Some(data),
             NodeData::AnonymousBlock(ref mut data) => Some(data),
             _ => None,
@@ -830,14 +835,14 @@ impl Node {
     }
 
     pub fn text_data(&self) -> Option<&TextNodeData> {
-        match self.raw_dom_data {
+        match self.data {
             NodeData::Text(ref data) => Some(data),
             _ => None,
         }
     }
 
     pub fn text_data_mut(&mut self) -> Option<&mut TextNodeData> {
-        match self.raw_dom_data {
+        match self.data {
             NodeData::Text(ref mut data) => Some(data),
             _ => None,
         }
@@ -846,7 +851,7 @@ impl Node {
     pub fn node_debug_str(&self) -> String {
         let mut s = String::new();
 
-        match &self.raw_dom_data {
+        match &self.data {
             NodeData::Document => write!(s, "DOCUMENT"),
             // NodeData::Doctype { name, .. } => write!(s, "DOCTYPE {name}"),
             NodeData::Text(data) => {
@@ -895,7 +900,7 @@ impl Node {
             .map(|style| style.clone_color())
             .map(|color| color.to_css_string());
 
-        match &self.raw_dom_data {
+        match &self.data {
             NodeData::Document => {}
             NodeData::Comment => {}
             NodeData::AnonymousBlock(_) => {}
@@ -975,7 +980,7 @@ impl Node {
     }
 
     fn write_text_content(&self, out: &mut String) {
-        match &self.raw_dom_data {
+        match &self.data {
             NodeData::Text(data) => {
                 out.push_str(&data.content);
             }
@@ -989,7 +994,7 @@ impl Node {
     }
 
     pub fn flush_style_attribute(&mut self) {
-        if let NodeData::Element(ref mut elem_data) = self.raw_dom_data {
+        if let NodeData::Element(ref mut elem_data) = self.data {
             elem_data.flush_style_attribute(&self.guard);
         }
     }
@@ -1123,7 +1128,7 @@ impl std::fmt::Debug for Node {
             .field("children", &self.children)
             .field("layout_children", &self.layout_children.borrow())
             // .field("style", &self.style)
-            .field("node", &self.raw_dom_data)
+            .field("node", &self.data)
             .field("stylo_element_data", &self.stylo_element_data)
             // .field("unrounded_layout", &self.unrounded_layout)
             // .field("final_layout", &self.final_layout)

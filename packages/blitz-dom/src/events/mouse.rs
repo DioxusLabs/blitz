@@ -38,7 +38,7 @@ pub(crate) fn handle_mousemove(
     }
 
     let node = &mut doc.nodes[target];
-    let Some(el) = node.raw_dom_data.downcast_element_mut() else {
+    let Some(el) = node.data.downcast_element_mut() else {
         return false;
     };
 
@@ -80,7 +80,7 @@ pub(crate) fn handle_mousedown(doc: &mut BaseDocument, target: usize, x: f32, y:
     }
 
     let node = &mut doc.nodes[target];
-    let Some(el) = node.raw_dom_data.downcast_element_mut() else {
+    let Some(el) = node.data.downcast_element_mut() else {
         return;
     };
 
@@ -112,7 +112,7 @@ pub(crate) fn handle_click(doc: &mut BaseDocument, _target: usize, x: f32, y: f3
     while let Some(hit) = maybe_hit {
         let node = &mut doc.nodes[hit.node_id];
 
-        let Some(el) = node.raw_dom_data.downcast_element_mut() else {
+        let Some(el) = node.data.downcast_element_mut() else {
             maybe_hit = parent_hit(node, x, y);
             continue;
         };

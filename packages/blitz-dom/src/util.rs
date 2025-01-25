@@ -32,7 +32,7 @@ pub(crate) fn resolve_url(base_url: &Option<url::Url>, raw: &str) -> Option<url:
 // Debug print an RcDom
 pub fn walk_tree(indent: usize, node: &Node) {
     // Skip all-whitespace text nodes entirely
-    if let NodeData::Text(data) = &node.raw_dom_data {
+    if let NodeData::Text(data) = &node.data {
         if data.content.chars().all(|c| c.is_ascii_whitespace()) {
             return;
         }
@@ -40,7 +40,7 @@ pub fn walk_tree(indent: usize, node: &Node) {
 
     print!("{}", " ".repeat(indent));
     let id = node.id;
-    match &node.raw_dom_data {
+    match &node.data {
         NodeData::Document => println!("#Document {id}"),
 
         NodeData::Text(data) => {
@@ -89,7 +89,7 @@ pub fn walk_tree(indent: usize, node: &Node) {
             walk_tree(indent + 2, node.with(*child_id));
         }
 
-        if let NodeData::Element(data) = &node.raw_dom_data {
+        if let NodeData::Element(data) = &node.data {
             println!("{}</{}>", " ".repeat(indent), data.name.local);
         }
     }

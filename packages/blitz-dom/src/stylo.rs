@@ -81,7 +81,7 @@ impl crate::document::BaseDocument {
 
             // Flush background image from style to dedicated storage on the node
             // TODO: handle multiple background images
-            if let Some(elem) = node.raw_dom_data.downcast_element_mut() {
+            if let Some(elem) = node.data.downcast_element_mut() {
                 let style_bgs = &style.get_background().background_image.0;
                 let elem_bgs = &mut elem.background_images;
 
@@ -328,14 +328,14 @@ impl<'a> TNode for BlitzNode<'a> {
     }
 
     fn as_element(&self) -> Option<Self::ConcreteElement> {
-        match self.raw_dom_data {
+        match self.data {
             NodeData::Element { .. } => Some(self),
             _ => None,
         }
     }
 
     fn as_document(&self) -> Option<Self::ConcreteDocument> {
-        match self.raw_dom_data {
+        match self.data {
             NodeData::Document { .. } => Some(self),
             _ => None,
         }
@@ -370,7 +370,7 @@ impl selectors::Element for BlitzNode<'_> {
     }
 
     fn is_pseudo_element(&self) -> bool {
-        matches!(self.raw_dom_data, NodeData::AnonymousBlock(_))
+        matches!(self.data, NodeData::AnonymousBlock(_))
     }
 
     // These methods are implemented naively since we only threaded real nodes and not fake nodes
@@ -409,7 +409,7 @@ impl selectors::Element for BlitzNode<'_> {
     }
 
     fn has_local_name(&self, local_name: &LocalName) -> bool {
-        self.raw_dom_data.is_element_with_tag_name(local_name)
+        self.data.is_element_with_tag_name(local_name)
     }
 
     fn has_namespace(&self, ns: &Namespace) -> bool {
@@ -426,7 +426,7 @@ impl selectors::Element for BlitzNode<'_> {
         local_name: &GenericAtomIdent<LocalNameStaticSet>,
         operation: &AttrSelectorOperation<&AtomString>,
     ) -> bool {
-        let Some(attr_value) = self.raw_dom_data.attr(local_name.0.clone()) else {
+        let Some(attr_value) = self.data.attr(local_name.0.clone()) else {
             return false;
         };
 
@@ -468,7 +468,7 @@ impl selectors::Element for BlitzNode<'_> {
         match *pseudo_class {
             NonTSPseudoClass::Active => self.element_state.contains(ElementState::ACTIVE),
             NonTSPseudoClass::AnyLink => self
-                .raw_dom_data
+                .data
                 .downcast_element()
                 .map(|elem| {
                     (elem.name.local == local_name!("a") || elem.name.local == local_name!("area"))
@@ -476,7 +476,7 @@ impl selectors::Element for BlitzNode<'_> {
                 })
                 .unwrap_or(false),
             NonTSPseudoClass::Checked => self
-                .raw_dom_data
+                .data
                 .downcast_element()
                 .and_then(|elem| elem.checkbox_input_checked())
                 .unwrap_or(false),
@@ -494,7 +494,7 @@ impl selectors::Element for BlitzNode<'_> {
             NonTSPseudoClass::Lang(_) => false,
             NonTSPseudoClass::CustomState(_) => false,
             NonTSPseudoClass::Link => self
-                .raw_dom_data
+                .data
                 .downcast_element()
                 .map(|elem| {
                     (elem.name.local == local_name!("a") || elem.name.local == local_name!("area"))
@@ -526,7 +526,7 @@ impl selectors::Element for BlitzNode<'_> {
         pe: &PseudoElement,
         _context: &mut MatchingContext<Self::Impl>,
     ) -> bool {
-        match self.raw_dom_data {
+        match self.data {
             NodeData::AnonymousBlock(_) => *pe == PseudoElement::ServoAnonymousBox,
             _ => false,
         }
@@ -549,8 +549,7 @@ impl selectors::Element for BlitzNode<'_> {
     }
 
     fn is_link(&self) -> bool {
-        self.raw_dom_data
-            .is_element_with_tag_name(&local_name!("a"))
+        self.data.is_element_with_tag_name(&local_name!("a"))
     }
 
     fn is_html_slot_element(&self) -> bool {
@@ -573,7 +572,7 @@ impl selectors::Element for BlitzNode<'_> {
         search_name: &<Self::Impl as selectors::SelectorImpl>::Identifier,
         case_sensitivity: selectors::attr::CaseSensitivity,
     ) -> bool {
-        let class_attr = self.raw_dom_data.attr(local_name!("class"));
+        let class_attr = self.data.attr(local_name!("class"));
         if let Some(class_attr) = class_attr {
             // split the class attribute
             for pheme in class_attr.split_ascii_whitespace() {
@@ -701,7 +700,7 @@ impl<'a> TElement for BlitzNode<'a> {
     where
         F: FnMut(&style::values::AtomIdent),
     {
-        let class_attr = self.raw_dom_data.attr(local_name!("class"));
+        let class_attr = self.data.attr(local_name!("class"));
         if let Some(class_attr) = class_attr {
             // split the class attribute
             for pheme in class_attr.split_ascii_whitespace() {
@@ -715,7 +714,7 @@ impl<'a> TElement for BlitzNode<'a> {
     where
         F: FnMut(&style::LocalName),
     {
-        if let Some(attrs) = self.raw_dom_data.attrs() {
+        if let Some(attrs) = self.data.attrs() {
             for attr in attrs.iter() {
                 callback(&GenericAtomIdent(attr.name.local.clone()));
             }
@@ -834,9 +833,7 @@ impl<'a> TElement for BlitzNode<'a> {
 
     fn is_html_document_body_element(&self) -> bool {
         // Check node is a <body> element
-        let is_body_element = self
-            .raw_dom_data
-            .is_element_with_tag_name(&local_name!("body"));
+        let is_body_element = self.data.is_element_with_tag_name(&local_name!("body"));
 
         // If it isn't then return early
         if !is_body_element {
@@ -858,7 +855,7 @@ impl<'a> TElement for BlitzNode<'a> {
     ) where
         V: Push<style::applicable_declarations::ApplicableDeclarationBlock>,
     {
-        let Some(elem) = self.raw_dom_data.downcast_element() else {
+        let Some(elem) = self.data.downcast_element() else {
             return;
         };
 

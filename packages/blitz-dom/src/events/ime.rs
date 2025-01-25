@@ -6,7 +6,7 @@ pub(crate) fn handle_ime_event(doc: &mut BaseDocument, event: BlitzImeEvent) {
     if let Some(node_id) = doc.focus_node_id {
         let node = &mut doc.nodes[node_id];
         let text_input_data = node
-            .raw_dom_data
+            .data
             .downcast_element_mut()
             .and_then(|el| el.text_input_data_mut());
         if let Some(input_data) = text_input_data {

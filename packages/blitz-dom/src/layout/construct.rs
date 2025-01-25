@@ -58,12 +58,12 @@ pub(crate) fn collect_layout_children(
 
     flush_pseudo_elements(doc, container_node_id);
 
-    if let Some(el) = doc.nodes[container_node_id].raw_dom_data.downcast_element() {
+    if let Some(el) = doc.nodes[container_node_id].data.downcast_element() {
         // Handle text inputs
         let tag_name = el.name.local.as_ref();
         if matches!(tag_name, "input" | "textarea") {
             let type_attr: Option<&str> = doc.nodes[container_node_id]
-                .raw_dom_data
+                .data
                 .downcast_element()
                 .and_then(|el| el.attr(local_name!("type")));
             if tag_name == "textarea" {
@@ -100,7 +100,8 @@ pub(crate) fn collect_layout_children(
                         .unwrap()
                         .element_data_mut()
                         .unwrap()
-                        .node_specific_data = NodeSpecificData::Image(ImageData::Svg(svg));
+                        .node_specific_data =
+                        NodeSpecificData::Image(Box::new(ImageData::Svg(svg)));
                 }
                 Err(err) => {
                     println!("{} SVG parse failed", container_node_id);
@@ -134,7 +135,7 @@ pub(crate) fn collect_layout_children(
     }
 
     let container_display = doc.nodes[container_node_id].display_style().unwrap_or(
-        match doc.nodes[container_node_id].raw_dom_data.kind() {
+        match doc.nodes[container_node_id].data.kind() {
             NodeKind::AnonymousBlock => Display::Block,
             _ => Display::Inline,
         },
@@ -191,7 +192,7 @@ pub(crate) fn collect_layout_children(
                 let (inline_layout, ilayout_children) = build_inline_layout(doc, container_node_id);
                 doc.nodes[container_node_id].is_inline_root = true;
                 doc.nodes[container_node_id]
-                    .raw_dom_data
+                    .data
                     .downcast_element_mut()
                     .unwrap()
                     .inline_layout_data = Some(Box::new(inline_layout));
@@ -234,7 +235,7 @@ pub(crate) fn collect_layout_children(
                 .map(|child_id| &doc.nodes[child_id])
                 .any(|child| {
                     let display = child.display_style().unwrap_or(Display::inline());
-                    let node_kind = child.raw_dom_data.kind();
+                    let node_kind = child.data.kind();
                     display.inside() == DisplayInside::Contents || node_kind == NodeKind::Text
                 });
 
@@ -262,7 +263,7 @@ pub(crate) fn collect_layout_children(
             let (table_context, tlayout_children) = build_table_context(doc, container_node_id);
             doc.nodes[container_node_id].is_table_root = true;
             doc.nodes[container_node_id]
-                .raw_dom_data
+                .data
                 .downcast_element_mut()
                 .unwrap()
                 .node_specific_data = NodeSpecificData::TableRoot(Arc::new(table_context));
@@ -571,7 +572,7 @@ fn collect_complex_layout_children(
 
     doc.iter_children_and_pseudos_mut(container_node_id, |child_id, doc| {
         // Get node kind (text, element, comment, etc)
-        let child_node_kind = doc.nodes[child_id].raw_dom_data.kind();
+        let child_node_kind = doc.nodes[child_id].data.kind();
 
         // Get Display style. Default to inline because nodes without styles are probably text nodes
         let contains_block = doc.nodes[child_id].is_or_contains_block();
@@ -585,7 +586,7 @@ fn collect_complex_layout_children(
             child_display.outside()
         };
 
-        let is_whitespace_node = match &doc.nodes[child_id].raw_dom_data {
+        let is_whitespace_node = match &doc.nodes[child_id].data {
             NodeData::Text(data) => data.content.chars().all(|c| c.is_ascii_whitespace()),
             _ => false,
         };
@@ -671,7 +672,7 @@ fn create_text_editor(doc: &mut BaseDocument, input_element_id: usize, is_multil
         .map(|s| stylo_to_parley::style(s))
         .unwrap_or_default();
 
-    let element = &mut node.raw_dom_data.downcast_element_mut().unwrap();
+    let element = &mut node.data.downcast_element_mut().unwrap();
     if !matches!(element.node_specific_data, NodeSpecificData::TextInput(_)) {
         let mut text_input_data = TextInputData::new(is_multiline);
         let editor = &mut text_input_data.editor;
@@ -694,7 +695,7 @@ fn create_text_editor(doc: &mut BaseDocument, input_element_id: usize, is_multil
 fn create_checkbox_input(doc: &mut BaseDocument, input_element_id: usize) {
     let node = &mut doc.nodes[input_element_id];
 
-    let element = &mut node.raw_dom_data.downcast_element_mut().unwrap();
+    let element = &mut node.data.downcast_element_mut().unwrap();
     if !matches!(
         element.node_specific_data,
         NodeSpecificData::CheckboxInput(_)
@@ -839,7 +840,7 @@ pub(crate) fn build_inline_layout(
             .unwrap_or(collapse_mode);
         builder.set_white_space_mode(collapse_mode);
 
-        match &node.raw_dom_data {
+        match &node.data {
             NodeData::Element(element_data) | NodeData::AnonymousBlock(element_data) => {
                 // Hide hidden nodes
                 if let Some("hidden" | "") = element_data.attr(local_name!("hidden")) {
