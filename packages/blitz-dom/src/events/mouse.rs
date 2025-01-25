@@ -22,6 +22,24 @@ pub(crate) fn handle_mouseover(doc: &mut BaseDocument, _target: usize, x: f32, y
     }
 }
 
+pub(crate) fn handle_mouseleave(doc: &mut BaseDocument, target: usize) -> bool {
+    if let Some(node) = doc.get_node_mut(target) {
+        // Clear hover state
+        node.unhover();
+
+        // If this was the focused node, clear focus
+        if doc.get_focussed_node_id() == Some(target) {
+            doc.clear_focus();
+        }
+
+        // Clear hover position
+        doc.clear_hover_state();
+
+        return true;
+    }
+    false
+}
+
 pub(crate) fn handle_mousemove(
     doc: &mut BaseDocument,
     target: usize,

@@ -6,8 +6,8 @@ use blitz_traits::{DomEvent, DomEventData};
 
 pub(crate) use ime::handle_ime_event;
 pub(crate) use keyboard::handle_keypress;
-use mouse::handle_mouseover;
 pub(crate) use mouse::{handle_click, handle_mousedown, handle_mousemove};
+use mouse::{handle_mouseleave, handle_mouseover};
 
 use crate::BaseDocument;
 
@@ -34,7 +34,9 @@ pub(crate) fn handle_event(doc: &mut BaseDocument, event: &mut DomEvent) {
         DomEventData::MouseOver(event) => {
             handle_mouseover(doc, target_node_id, event.x, event.y);
         }
-        DomEventData::MouseLeave => {}
+        DomEventData::MouseLeave => {
+            handle_mouseleave(doc, target_node_id);
+        }
         DomEventData::Click(event) => {
             handle_click(doc, target_node_id, event.x, event.y);
         }

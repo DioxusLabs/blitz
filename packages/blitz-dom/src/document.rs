@@ -964,6 +964,14 @@ impl BaseDocument {
         true
     }
 
+    pub fn clear_hover_state(&mut self) {
+        if let Some(id) = self.hover_node_id {
+            self.snapshot_node_and(id, |node| node.unhover());
+            self.hover_node_id = None;
+            self.changed.insert(id);
+        }
+    }
+
     pub fn get_hover_node_id(&self) -> Option<usize> {
         self.hover_node_id
     }
