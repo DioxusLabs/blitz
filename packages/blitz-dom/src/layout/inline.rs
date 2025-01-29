@@ -127,7 +127,9 @@ impl BaseDocument {
                             - pbw
                     });
 
-                inline_layout.layout.align(Some(alignment_width), alignment);
+                inline_layout
+                    .layout
+                    .align(Some(alignment_width), alignment, false);
 
                 // Store sizes and positions of inline boxes
                 for line in inline_layout.layout.lines() {

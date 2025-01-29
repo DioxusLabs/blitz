@@ -47,7 +47,7 @@ taffy = { git = "https://github.com/dioxuslabs/taffy", rev = "51e21564", default
 color = "0.2"
 peniko = "0.3"
 vello = { version = "0.4", features = [ "wgpu" ] }
-parley = { version = "0.2", git = "https://github.com/linebender/parley", rev = "b648f143" } # external-span-ids
+parley = { git = "https://github.com/linebender/parley", rev = "c961a82" }
 wgpu = "23"
 
 # SVG dependencies
