@@ -840,7 +840,7 @@ impl ElementCx<'_> {
 
                     scene
                         .draw_glyphs(font)
-                        .brush(&style.brush)
+                        .brush(&style.brush.brush)
                         .hint(true)
                         .transform(transform)
                         .glyph_transform(glyph_xform)
@@ -866,7 +866,13 @@ impl ElementCx<'_> {
                         let w = glyph_run.advance() as f64;
                         let y = (glyph_run.baseline() - offset + size / 2.0) as f64;
                         let line = kurbo::Line::new((x, y), (x + w, y));
-                        scene.stroke(&Stroke::new(size as f64), transform, brush, None, &line)
+                        scene.stroke(
+                            &Stroke::new(size as f64),
+                            transform,
+                            &brush.brush,
+                            None,
+                            &line,
+                        )
                     };
 
                     if let Some(underline) = &style.underline {

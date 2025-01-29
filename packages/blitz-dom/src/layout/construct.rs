@@ -423,19 +423,16 @@ fn node_list_item_child(
     let position = match list_style_position {
         ListStylePosition::Inside => ListItemLayoutPosition::Inside,
         ListStylePosition::Outside => {
-            let mut parley_style = stylo_to_parley::style(&styles);
+            let mut parley_style = stylo_to_parley::style(child_id, &styles);
 
             if let Some(font_stack) = font_for_bullet_style(list_style_type) {
                 parley_style.font_stack = font_stack;
             }
 
             // Create a parley tree builder
-            let mut builder = doc.layout_ctx.tree_builder(
-                &mut doc.font_ctx,
-                doc.viewport.scale(),
-                child_id as u64,
-                &parley_style,
-            );
+            let mut builder =
+                doc.layout_ctx
+                    .tree_builder(&mut doc.font_ctx, doc.viewport.scale(), &parley_style);
 
             match &marker {
                 Marker::Char(char) => builder.push_text(&char.to_string()),
@@ -669,7 +666,7 @@ fn create_text_editor(doc: &mut BaseDocument, input_element_id: usize, is_multil
     let parley_style = node
         .primary_styles()
         .as_ref()
-        .map(|s| stylo_to_parley::style(s))
+        .map(|s| stylo_to_parley::style(node.id, s))
         .unwrap_or_default();
 
     let element = &mut node.data.downcast_element_mut().unwrap();
@@ -724,7 +721,7 @@ pub(crate) fn build_inline_layout(
 
     let parley_style = root_node_style
         .as_ref()
-        .map(|s| stylo_to_parley::style(s))
+        .map(|s| stylo_to_parley::style(inline_context_root_node_id, s))
         .unwrap_or_default();
 
     // dbg!(&parley_style);
@@ -732,12 +729,9 @@ pub(crate) fn build_inline_layout(
     let root_line_height = parley_style.line_height;
 
     // Create a parley tree builder
-    let mut builder = doc.layout_ctx.tree_builder(
-        &mut doc.font_ctx,
-        doc.viewport.scale(),
-        inline_context_root_node_id as u64,
-        &parley_style,
-    );
+    let mut builder =
+        doc.layout_ctx
+            .tree_builder(&mut doc.font_ctx, doc.viewport.scale(), &parley_style);
 
     // Set whitespace collapsing mode
     let collapse_mode = root_node_style
@@ -887,7 +881,8 @@ pub(crate) fn build_inline_layout(
                                 height: 0.0,
                             });
                         } else if *tag_name == local_name!("br") {
-                            builder.push_style_modification_span(node_id as u64, &[]);
+                            // TODO: update span id for br spans
+                            builder.push_style_modification_span(&[]);
                             builder.set_white_space_mode(WhiteSpaceCollapse::Preserve);
                             builder.push_text("\n");
                             builder.pop_style_span();
@@ -895,7 +890,7 @@ pub(crate) fn build_inline_layout(
                         } else {
                             let mut style = node
                                 .primary_styles()
-                                .map(|s| stylo_to_parley::style(&s))
+                                .map(|s| stylo_to_parley::style(node.id, &s))
                                 .unwrap_or_default();
 
                             // dbg!(&style);
@@ -909,7 +904,7 @@ pub(crate) fn build_inline_layout(
                             // dbg!(node_id);
                             // dbg!(&style);
 
-                            builder.push_style_span(node_id as u64, style);
+                            builder.push_style_span(style);
 
                             if let Some(before_id) = node.before {
                                 build_inline_layout_recursive(

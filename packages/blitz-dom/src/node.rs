@@ -1,4 +1,5 @@
 use atomic_refcell::{AtomicRef, AtomicRefCell};
+use color::{AlphaColor, Srgb};
 use image::DynamicImage;
 use keyboard_types::Modifiers;
 use markup5ever::{local_name, LocalName, QualName};
@@ -701,7 +702,29 @@ impl std::fmt::Debug for ListItemLayout {
     }
 }
 
-pub type TextBrush = peniko::Brush;
+#[derive(Debug, Clone, Default, PartialEq)]
+/// Parley Brush type for Blitz which contains a `peniko::Brush` and a Blitz node id
+pub struct TextBrush {
+    /// The node id for the span
+    pub id: usize,
+    /// Peniko brush for the span (represents text color)
+    pub brush: peniko::Brush,
+}
+
+impl TextBrush {
+    pub(crate) fn from_peniko_brush(brush: peniko::Brush) -> Self {
+        Self { id: 0, brush }
+    }
+    pub(crate) fn from_color(color: AlphaColor<Srgb>) -> Self {
+        Self::from_peniko_brush(peniko::Brush::Solid(color))
+    }
+    pub(crate) fn from_id_and_color(id: usize, color: AlphaColor<Srgb>) -> Self {
+        Self {
+            id,
+            brush: peniko::Brush::Solid(color),
+        }
+    }
+}
 
 #[derive(Clone)]
 pub struct TextLayout {
@@ -1066,7 +1089,8 @@ impl Node {
                     let scale = layout.scale();
 
                     Cluster::from_point(layout, x * scale, y * scale).map(|(cluster, _)| {
-                        let node_id = cluster.external_span_id() as usize;
+                        let style_index = cluster.glyphs().next().unwrap().style_index();
+                        let node_id = layout.styles()[style_index].brush.id;
                         HitResult { node_id, x, y }
                     })
                 } else {
