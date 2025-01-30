@@ -181,13 +181,6 @@ fn collect_tests(wpt_dir: &Path) -> Vec<PathBuf> {
     test_paths
 }
 
-fn clone_font_ctx(ctx: &FontContext) -> FontContext {
-    FontContext {
-        collection: ctx.collection.clone(),
-        source_cache: ctx.source_cache.clone(),
-    }
-}
-
 enum BufferKind {
     Test,
     Ref,
@@ -364,7 +357,7 @@ fn main() {
             let mut ctx = thread_state
                 .get_or(|| {
                     let renderer = VelloImageRenderer::new(WIDTH, HEIGHT, SCALE).block_on();
-                    let font_ctx = clone_font_ctx(&base_font_context);
+                    let font_ctx = base_font_context.clone();
                     let test_buffer = Vec::with_capacity((WIDTH * HEIGHT * 4) as usize);
                     let ref_buffer = Vec::with_capacity((WIDTH * HEIGHT * 4) as usize);
                     let viewport = Viewport::new(

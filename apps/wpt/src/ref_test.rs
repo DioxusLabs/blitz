@@ -10,7 +10,7 @@ use std::io::Write;
 use std::path::Path;
 use std::sync::Arc;
 
-use crate::{clone_font_ctx, BufferKind, SubtestCounts, TestFlags, ThreadCtx, HEIGHT, WIDTH};
+use crate::{BufferKind, SubtestCounts, TestFlags, ThreadCtx, HEIGHT, WIDTH};
 
 #[allow(clippy::too_many_arguments)]
 pub async fn process_ref_test(
@@ -110,7 +110,7 @@ async fn render_html_to_buffer(
         Some(ctx.dummy_base_url.join(relative_path).unwrap().to_string()),
         Vec::new(),
         Arc::clone(&ctx.net_provider) as SharedProvider<Resource>,
-        Some(clone_font_ctx(&ctx.font_ctx)),
+        Some(ctx.font_ctx.clone()),
         ctx.navigation_provider.clone(),
     );
 

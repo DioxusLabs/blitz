@@ -4,7 +4,7 @@ use blitz_dom::{net::Resource, BaseDocument, Node};
 use blitz_html::HtmlDocument;
 use blitz_traits::net::SharedProvider;
 
-use crate::{clone_font_ctx, SubtestCounts, ThreadCtx};
+use crate::{SubtestCounts, ThreadCtx};
 
 pub async fn process_attr_test(
     ctx: &mut ThreadCtx,
@@ -60,7 +60,7 @@ pub async fn parse_and_resolve_document(
         Some(ctx.dummy_base_url.join(relative_path).unwrap().to_string()),
         Vec::new(),
         Arc::clone(&ctx.net_provider) as SharedProvider<Resource>,
-        Some(clone_font_ctx(&ctx.font_ctx)),
+        Some(ctx.font_ctx.clone()),
         ctx.navigation_provider.clone(),
     );
 
