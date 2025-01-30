@@ -43,14 +43,12 @@ dioxus-cli-config = { version = "0.6" }
 dioxus-devtools = { version = "0.6" }
 taffy = { git = "https://github.com/dioxuslabs/taffy", rev = "51e21564", default-features = false, features = ["std", "flexbox", "grid", "block_layout", "content_size"] }
 
-# Linebender + WGPU
+# Linebender + WGPU + SVG
 color = "0.2"
 peniko = "0.3"
-vello = { version = "0.4", features = [ "wgpu" ] }
 parley = { git = "https://github.com/linebender/parley", rev = "c961a82" }
 wgpu = "23"
-
-# SVG dependencies
+vello = { version = "0.4", features = [ "wgpu" ] }
 vello_svg = { version = "0.6" }
 usvg = "0.44.0"
 
