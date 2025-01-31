@@ -13,8 +13,8 @@ use style::values::computed::length_percentage::CalcLengthPercentage;
 use style::values::computed::CSSPixelLength;
 use taffy::{
     compute_block_layout, compute_cached_layout, compute_flexbox_layout, compute_grid_layout,
-    compute_leaf_layout, prelude::*, FlexDirection, LayoutPartialTree, NodeId, ResolveOrZero,
-    RoundTree, Style, TraversePartialTree, TraverseTree,
+    compute_leaf_layout, prelude::*, CollapsibleMarginSet, FlexDirection, LayoutPartialTree,
+    NodeId, ResolveOrZero, RoundTree, Style, TraversePartialTree, TraverseTree,
 };
 
 pub(crate) mod construct;
@@ -258,22 +258,22 @@ impl LayoutPartialTree for BaseDocument {
                             attr_size,
                         };
 
-                        let computed = compute_leaf_layout(
-                            inputs,
+                        let computed = replaced_measure_function(
+                            inputs.known_dimensions,
+                            inputs.parent_size,
+                            &replaced_context,
                             &node.style,
-                            resolve_calc_value,
-                            |known_dimensions, _available_space| {
-                                replaced_measure_function(
-                                    known_dimensions,
-                                    inputs.parent_size,
-                                    &replaced_context,
-                                    &node.style,
-                                    false,
-                                )
-                            },
+                            false,
                         );
 
-                        return computed;
+                        return taffy::LayoutOutput {
+                            size: computed,
+                            content_size: computed,
+                            first_baselines: taffy::Point::NONE,
+                            top_margin: CollapsibleMarginSet::ZERO,
+                            bottom_margin: CollapsibleMarginSet::ZERO,
+                            margins_can_collapse_through: false,
+                        };
                     }
 
                     if node.is_table_root {

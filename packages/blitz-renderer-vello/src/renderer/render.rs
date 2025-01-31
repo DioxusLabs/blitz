@@ -981,17 +981,23 @@ impl ElementCx<'_> {
     fn draw_image(&self, scene: &mut Scene) {
         let width = self.frame.content_box.width() as u32;
         let height = self.frame.content_box.height() as u32;
+        let x = self.frame.content_box.origin().x;
+        let y = self.frame.content_box.origin().y;
+        let transform = self.transform.then_translate(Vec2 { x, y });
 
         if let Some(image_data) = self.element.raster_image_data() {
             ensure_resized_image(image_data, width, height);
             let resized_image = image_data.resized_image.borrow();
-            scene.draw_image(resized_image.as_ref().unwrap(), self.transform);
+            scene.draw_image(resized_image.as_ref().unwrap(), transform);
         }
     }
 
     fn draw_raster_bg_image(&self, scene: &mut Scene, idx: usize) {
         let width = self.frame.padding_box.width() as u32;
         let height = self.frame.padding_box.height() as u32;
+        let x = self.frame.content_box.origin().x;
+        let y = self.frame.content_box.origin().y;
+        let transform = self.transform.then_translate(Vec2 { x, y });
 
         let bg_image = self.element.background_images.get(idx);
 
@@ -999,7 +1005,7 @@ impl ElementCx<'_> {
             if let ImageData::Raster(image_data) = &bg_image.image {
                 ensure_resized_image(image_data, width, height);
                 let resized_image = image_data.resized_image.borrow();
-                scene.draw_image(resized_image.as_ref().unwrap(), self.transform);
+                scene.draw_image(resized_image.as_ref().unwrap(), transform);
             }
         }
     }
