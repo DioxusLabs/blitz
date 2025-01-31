@@ -1,7 +1,7 @@
 [workspace]
 members = [
   "packages/blitz-traits",
-  "packages/blitz-dom", 
+  "packages/blitz-dom",
   "packages/blitz-html",
   "packages/blitz-net",
   "packages/blitz-renderer-vello",
