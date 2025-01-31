@@ -1088,10 +1088,10 @@ impl Node {
                     let layout = &element_data.inline_layout_data.as_ref().unwrap().layout;
                     let scale = layout.scale();
 
-                    Cluster::from_point(layout, x * scale, y * scale).map(|(cluster, _)| {
-                        let style_index = cluster.glyphs().next().unwrap().style_index();
+                    Cluster::from_point(layout, x * scale, y * scale).and_then(|(cluster, _)| {
+                        let style_index = cluster.glyphs().next()?.style_index();
                         let node_id = layout.styles()[style_index].brush.id;
-                        HitResult { node_id, x, y }
+                        Some(HitResult { node_id, x, y })
                     })
                 } else {
                     None
