@@ -547,11 +547,11 @@ impl VelloSceneGenerator<'_> {
             let origin_translation = Affine::translate(Vec2 {
                 x: transform_origin
                     .horizontal
-                    .resolve(CSSPixelLength::new(frame.outer_rect.width() as f32))
+                    .resolve(CSSPixelLength::new(frame.border_box.width() as f32))
                     .px() as f64,
                 y: transform_origin
                     .vertical
-                    .resolve(CSSPixelLength::new(frame.outer_rect.width() as f32))
+                    .resolve(CSSPixelLength::new(frame.border_box.width() as f32))
                     .px() as f64,
             });
             let kurbo_transform =
@@ -899,14 +899,14 @@ impl ElementCx<'_> {
             return;
         };
 
-        let width = self.frame.inner_rect.width() as u32;
-        let height = self.frame.inner_rect.height() as u32;
+        let width = self.frame.padding_box.width() as u32;
+        let height = self.frame.padding_box.height() as u32;
         let svg_size = svg.size();
 
         let x_scale = width as f64 / svg_size.width() as f64;
         let y_scale = height as f64 / svg_size.height() as f64;
 
-        let box_inset = self.frame.inner_rect.origin();
+        let box_inset = self.frame.padding_box.origin();
         let transform = Affine::translate((
             self.pos.x * self.scale + box_inset.x,
             self.pos.y * self.scale + box_inset.y,
@@ -930,8 +930,8 @@ impl ElementCx<'_> {
             return;
         };
 
-        let frame_w = self.frame.inner_rect.width() as f32;
-        let frame_h = self.frame.inner_rect.height() as f32;
+        let frame_w = self.frame.padding_box.width() as f32;
+        let frame_h = self.frame.padding_box.height() as f32;
 
         let svg_size = svg.size();
         let bg_size = compute_background_size(
@@ -979,8 +979,8 @@ impl ElementCx<'_> {
     }
 
     fn draw_image(&self, scene: &mut Scene) {
-        let width = self.frame.inner_rect.width() as u32;
-        let height = self.frame.inner_rect.height() as u32;
+        let width = self.frame.content_box.width() as u32;
+        let height = self.frame.content_box.height() as u32;
 
         if let Some(image_data) = self.element.raster_image_data() {
             ensure_resized_image(image_data, width, height);
@@ -990,8 +990,8 @@ impl ElementCx<'_> {
     }
 
     fn draw_raster_bg_image(&self, scene: &mut Scene, idx: usize) {
-        let width = self.frame.inner_rect.width() as u32;
-        let height = self.frame.inner_rect.height() as u32;
+        let width = self.frame.padding_box.width() as u32;
+        let height = self.frame.padding_box.height() as u32;
 
         let bg_image = self.element.background_images.get(idx);
 
@@ -1006,7 +1006,7 @@ impl ElementCx<'_> {
 
     fn stroke_devtools(&self, scene: &mut Scene) {
         if self.devtools.show_layout {
-            let shape = &self.frame.outer_rect;
+            let shape = &self.frame.border_box;
             let stroke = Stroke::new(self.scale);
 
             let stroke_color = match self.node.style.display {
@@ -1099,12 +1099,12 @@ impl ElementCx<'_> {
         items: &[GradientItem<LengthPercentage>],
         flags: GradientFlags,
     ) {
-        let bb = self.frame.outer_rect.bounding_box();
+        let bb = self.frame.border_box.bounding_box();
         let current_color = self.style.clone_color();
 
         let shape = self.frame.frame();
         let center = bb.center();
-        let rect = self.frame.inner_rect;
+        let rect = self.frame.padding_box;
         let (start, end) = match direction {
             LineDirection::Angle(angle) => {
                 let angle = -angle.radians64() + std::f64::consts::PI;
@@ -1115,12 +1115,12 @@ impl ElementCx<'_> {
             }
             LineDirection::Horizontal(horizontal) => {
                 let start = Point::new(
-                    self.frame.inner_rect.x0,
-                    self.frame.inner_rect.y0 + rect.height() / 2.0,
+                    self.frame.padding_box.x0,
+                    self.frame.padding_box.y0 + rect.height() / 2.0,
                 );
                 let end = Point::new(
-                    self.frame.inner_rect.x1,
-                    self.frame.inner_rect.y0 + rect.height() / 2.0,
+                    self.frame.padding_box.x1,
+                    self.frame.padding_box.y0 + rect.height() / 2.0,
                 );
                 match horizontal {
                     HorizontalPositionKeyword::Right => (start, end),
@@ -1129,12 +1129,12 @@ impl ElementCx<'_> {
             }
             LineDirection::Vertical(vertical) => {
                 let start = Point::new(
-                    self.frame.inner_rect.x0 + rect.width() / 2.0,
-                    self.frame.inner_rect.y0,
+                    self.frame.padding_box.x0 + rect.width() / 2.0,
+                    self.frame.padding_box.y0,
                 );
                 let end = Point::new(
-                    self.frame.inner_rect.x0 + rect.width() / 2.0,
-                    self.frame.inner_rect.y1,
+                    self.frame.padding_box.x0 + rect.width() / 2.0,
+                    self.frame.padding_box.y1,
                 );
                 match vertical {
                     VerticalPositionKeyword::Top => (end, start),
@@ -1144,18 +1144,18 @@ impl ElementCx<'_> {
             LineDirection::Corner(horizontal, vertical) => {
                 let (start_x, end_x) = match horizontal {
                     HorizontalPositionKeyword::Right => {
-                        (self.frame.inner_rect.x0, self.frame.inner_rect.x1)
+                        (self.frame.padding_box.x0, self.frame.padding_box.x1)
                     }
                     HorizontalPositionKeyword::Left => {
-                        (self.frame.inner_rect.x1, self.frame.inner_rect.x0)
+                        (self.frame.padding_box.x1, self.frame.padding_box.x0)
                     }
                 };
                 let (start_y, end_y) = match vertical {
                     VerticalPositionKeyword::Top => {
-                        (self.frame.inner_rect.y1, self.frame.inner_rect.y0)
+                        (self.frame.padding_box.y1, self.frame.padding_box.y0)
                     }
                     VerticalPositionKeyword::Bottom => {
-                        (self.frame.inner_rect.y0, self.frame.inner_rect.y1)
+                        (self.frame.padding_box.y0, self.frame.padding_box.y1)
                     }
                 };
                 (Point::new(start_x, start_y), Point::new(end_x, end_y))
@@ -1410,7 +1410,7 @@ impl ElementCx<'_> {
                         // Fill the color
                         scene.draw_blurred_rounded_rect(
                             transform,
-                            elem_cx.frame.outer_rect,
+                            elem_cx.frame.border_box,
                             shadow_color,
                             radius,
                             shadow.base.blur.px() as f64,
@@ -1461,7 +1461,7 @@ impl ElementCx<'_> {
                 // Fill the color
                 scene.draw_blurred_rounded_rect(
                     transform,
-                    self.frame.outer_rect,
+                    self.frame.border_box,
                     shadow_color,
                     radius,
                     shadow.base.blur.px() as f64,
@@ -1639,7 +1639,7 @@ impl ElementCx<'_> {
         flags: GradientFlags,
     ) {
         let bez_path = self.frame.frame();
-        let rect = self.frame.inner_rect;
+        let rect = self.frame.padding_box;
         let repeating = flags.contains(GradientFlags::REPEATING);
         let current_color = self.style.clone_color();
 
@@ -1761,7 +1761,7 @@ impl ElementCx<'_> {
         flags: GradientFlags,
     ) {
         let bez_path = self.frame.frame();
-        let rect = self.frame.inner_rect;
+        let rect = self.frame.padding_box;
         let current_color = self.style.clone_color();
 
         let repeating = flags.contains(GradientFlags::REPEATING);
@@ -1808,12 +1808,12 @@ impl ElementCx<'_> {
         rect: Rect,
     ) -> Vec2 {
         Vec2::new(
-            self.frame.inner_rect.x0
+            self.frame.padding_box.x0
                 + position
                     .horizontal
                     .resolve(CSSPixelLength::new(rect.width() as f32))
                     .px() as f64,
-            self.frame.inner_rect.y0
+            self.frame.padding_box.y0
                 + position
                     .vertical
                     .resolve(CSSPixelLength::new(rect.height() as f32))
@@ -1837,14 +1837,14 @@ impl ElementCx<'_> {
 
             let scale = (self
                 .frame
-                .outer_rect
+                .border_box
                 .width()
-                .min(self.frame.outer_rect.height())
+                .min(self.frame.border_box.height())
                 - 4.0)
                 .max(0.0)
                 / 16.0;
 
-            let frame = self.frame.outer_rect.to_rounded_rect(scale * 2.0);
+            let frame = self.frame.border_box.to_rounded_rect(scale * 2.0);
 
             let attr_type = self.node.attr(local_name!("type"));
 

@@ -19,8 +19,9 @@ use vello::kurbo::{Arc, BezPath, Ellipse, PathEl, Point, Rect, Shape, Vec2};
 ///
 #[derive(Debug, Clone)]
 pub struct ElementFrame {
-    pub outer_rect: Rect,
-    pub inner_rect: Rect,
+    pub border_box: Rect,
+    pub padding_box: Rect,
+    pub content_box: Rect,
     pub outline_width: f64,
 
     pub border_top_width: f64,
@@ -42,16 +43,17 @@ pub struct ElementFrame {
 impl ElementFrame {
     #[rustfmt::skip]
     pub fn new(style: &ComputedValues, layout: &Layout, scale: f64) -> Self {
-        let (border, outline) = (style.get_border(), style.get_outline());
-
-        // let scale = 1.0;
+        let s_border = style.get_border();
+        let outline = style.get_outline();
 
         // Resolve and rescale
         // We have to scale since document pixels are not same same as rendered pixels
-        let border_top_width = scale * border.border_top_width.to_f64_px();
-        let border_left_width = scale * border.border_left_width.to_f64_px();
-        let border_right_width = scale * border.border_right_width.to_f64_px();
-        let border_bottom_width = scale * border.border_bottom_width.to_f64_px();
+        // let border_top_width = scale * border.border_top_width.to_f64_px();
+        // let border_left_width = scale * border.border_left_width.to_f64_px();
+        // let border_right_width = scale * border.border_right_width.to_f64_px();
+        // let border_bottom_width = scale * border.border_bottom_width.to_f64_px();
+        let border = layout.border.map(|p| p as f64 * scale);
+        let padding = layout.padding.map(|p| p as f64 * scale);
         let outline_width =  scale * outline.outline_width.to_f64_px();
 
         let width: f64 = layout.size.width.into();
@@ -59,36 +61,42 @@ impl ElementFrame {
         let width =  scale * width;
         let height = scale * height;
 
-        let outer_rect = Rect::new(0.0, 0.0, width, height);
-        let inner_rect = Rect::new(
-            border_left_width,
-            border_top_width,
-            width - border_right_width,
-            height - border_bottom_width,
+        let border_box = Rect::new(0.0, 0.0, width, height);
+        let padding_box = Rect::new(
+            border.left,
+            border.top,
+            width - border.right,
+            height - border.bottom,
+        );
+        let content_box = Rect::new(
+            border.left + padding.left,
+            border.top + padding.top,
+            width - border.right - padding.right,
+            height - border.bottom - padding.bottom,
         );
 
         // Resolve the radii to a length. need to downscale since the radii are in document pixels
-        let pixel_width = CSSPixelLength::new((inner_rect.width() / scale) as _);
-        let pixel_height = CSSPixelLength::new((inner_rect.height() / scale) as _);
+        let pixel_width = CSSPixelLength::new((padding_box.width() / scale) as _);
+        let pixel_height = CSSPixelLength::new((padding_box.height() / scale) as _);
 
-        let mut border_top_left_radius_width = scale * border.border_top_left_radius.0.width.0.resolve(pixel_width).px() as f64;
-        let mut border_top_left_radius_height = scale * border.border_top_left_radius.0.height.0.resolve(pixel_height).px() as f64;
+        let mut border_top_left_radius_width = scale * s_border.border_top_left_radius.0.width.0.resolve(pixel_width).px() as f64;
+        let mut border_top_left_radius_height = scale * s_border.border_top_left_radius.0.height.0.resolve(pixel_height).px() as f64;
 
-        let mut border_top_right_radius_width = scale * border.border_top_right_radius.0.width.0.resolve(pixel_width).px() as f64;
-        let mut border_top_right_radius_height = scale * border.border_top_right_radius.0.height.0.resolve(pixel_height).px() as f64;
+        let mut border_top_right_radius_width = scale * s_border.border_top_right_radius.0.width.0.resolve(pixel_width).px() as f64;
+        let mut border_top_right_radius_height = scale * s_border.border_top_right_radius.0.height.0.resolve(pixel_height).px() as f64;
 
-        let mut border_bottom_left_radius_width = scale * border.border_bottom_left_radius.0.width.0.resolve(pixel_width).px() as f64;
-        let mut border_bottom_left_radius_height = scale * border.border_bottom_left_radius.0.height.0.resolve(pixel_height).px() as f64;
+        let mut border_bottom_left_radius_width = scale * s_border.border_bottom_left_radius.0.width.0.resolve(pixel_width).px() as f64;
+        let mut border_bottom_left_radius_height = scale * s_border.border_bottom_left_radius.0.height.0.resolve(pixel_height).px() as f64;
 
-        let mut border_bottom_right_radius_width = scale * border.border_bottom_right_radius.0.width.0.resolve(pixel_width).px() as f64;
-        let mut border_bottom_right_radius_height = scale * border.border_bottom_right_radius.0.height.0.resolve(pixel_height).px() as f64;
+        let mut border_bottom_right_radius_width = scale * s_border.border_bottom_right_radius.0.width.0.resolve(pixel_width).px() as f64;
+        let mut border_bottom_right_radius_height = scale * s_border.border_bottom_right_radius.0.height.0.resolve(pixel_height).px() as f64;
 
         // Correct the border radii if they are too big if two border radii would intersect, then we need to shrink
         // ALL border radii by the same factor such that they do not
-        let top_overlap_factor = inner_rect.width() / (border_top_left_radius_width + border_top_right_radius_width);
-        let bottom_overlap_factor = inner_rect.width() / (border_bottom_left_radius_width + border_bottom_right_radius_width);
-        let left_overlap_factor = inner_rect.height() / (border_top_left_radius_height + border_bottom_left_radius_height);
-        let right_overlap_factor = inner_rect.height() / (border_top_right_radius_height + border_bottom_right_radius_height);
+        let top_overlap_factor = padding_box.width() / (border_top_left_radius_width + border_top_right_radius_width);
+        let bottom_overlap_factor = padding_box.width() / (border_bottom_left_radius_width + border_bottom_right_radius_width);
+        let left_overlap_factor = padding_box.height() / (border_top_left_radius_height + border_bottom_left_radius_height);
+        let right_overlap_factor = padding_box.height() / (border_top_right_radius_height + border_bottom_right_radius_height);
 
         let min_factor = top_overlap_factor.min(bottom_overlap_factor).min(left_overlap_factor).min(right_overlap_factor).min(1.0);
         if min_factor < 1.0 {
@@ -103,13 +111,14 @@ impl ElementFrame {
         }
 
         Self {
-            inner_rect,
-            outer_rect,
+            padding_box,
+            border_box,
+            content_box,
             outline_width,
-            border_top_width,
-            border_left_width,
-            border_right_width,
-            border_bottom_width,
+            border_top_width: border.top,
+            border_left_width: border.left,
+            border_right_width: border.right,
+            border_bottom_width: border.bottom,
             border_top_left_radius_width,
             border_top_left_radius_height,
             border_top_right_radius_width,
@@ -241,7 +250,7 @@ impl ElementFrame {
     }
 
     fn corner(&self, corner: Corner, side: ArcSide) -> Point {
-        let Rect { x0, y0, x1, y1 } = self.outer_rect;
+        let Rect { x0, y0, x1, y1 } = self.border_box;
 
         let (x, y) = match corner {
             Corner::TopLeft => match side {
@@ -274,7 +283,7 @@ impl ElementFrame {
     }
 
     fn shadow_clip_corner(&self, corner: Corner, offset: f64) -> Point {
-        let Rect { x0, y0, x1, y1 } = self.outer_rect;
+        let Rect { x0, y0, x1, y1 } = self.border_box;
 
         let (x, y) = match corner {
             Corner::TopLeft => (x0 - offset, y0 - offset),
@@ -459,7 +468,7 @@ impl ElementFrame {
     fn ellipse(&self, corner: Corner, side: ArcSide) -> Ellipse {
         use {Corner::*, ArcSide::*};
         let ElementFrame {
-            outer_rect: rect,
+            border_box: rect,
             border_top_width,
             border_left_width,
             border_right_width,
