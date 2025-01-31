@@ -5,11 +5,7 @@
 //! This is slower, yes, but happens fast enough that it's not a huge issue.
 
 use crate::node::{ImageData, NodeData, NodeSpecificData};
-use crate::{
-    document::BaseDocument,
-    image::{image_measure_function, ImageContext},
-    node::Node,
-};
+use crate::{document::BaseDocument, node::Node};
 use markup5ever::local_name;
 use std::cell::Ref;
 use std::sync::Arc;
@@ -23,8 +19,10 @@ use taffy::{
 
 pub(crate) mod construct;
 pub(crate) mod inline;
+pub(crate) mod replaced;
 pub(crate) mod table;
 
+use self::replaced::{replaced_measure_function, ReplacedContext};
 use self::table::TableTreeWrapper;
 
 pub(crate) fn resolve_calc_value(calc_value: u64, parent_size: f32) -> f32 {
@@ -255,7 +253,7 @@ impl LayoutPartialTree for BaseDocument {
                             _ => unreachable!(),
                         };
 
-                        let image_context = ImageContext {
+                        let replaced_context = ReplacedContext {
                             inherent_size,
                             attr_size,
                         };
@@ -265,10 +263,10 @@ impl LayoutPartialTree for BaseDocument {
                             &node.style,
                             resolve_calc_value,
                             |known_dimensions, _available_space| {
-                                image_measure_function(
+                                replaced_measure_function(
                                     known_dimensions,
                                     inputs.parent_size,
-                                    &image_context,
+                                    &replaced_context,
                                     &node.style,
                                     false,
                                 )

@@ -3,15 +3,15 @@ use taffy::{MaybeMath, MaybeResolve};
 use crate::layout::resolve_calc_value;
 
 #[derive(Debug, Clone, Copy)]
-pub struct ImageContext {
+pub struct ReplacedContext {
     pub inherent_size: taffy::Size<f32>,
     pub attr_size: taffy::Size<Option<f32>>,
 }
 
-pub fn image_measure_function(
+pub fn replaced_measure_function(
     known_dimensions: taffy::Size<Option<f32>>,
     parent_size: taffy::Size<Option<f32>>,
-    image_context: &ImageContext,
+    image_context: &ReplacedContext,
     style: &taffy::Style,
     _debug: bool,
 ) -> taffy::geometry::Size<f32> {
