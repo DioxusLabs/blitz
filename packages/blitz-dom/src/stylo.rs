@@ -336,7 +336,7 @@ impl<'a> TNode for BlitzNode<'a> {
 
     fn as_document(&self) -> Option<Self::ConcreteDocument> {
         match self.data {
-            NodeData::Document { .. } => Some(self),
+            NodeData::Document => Some(self),
             _ => None,
         }
     }
