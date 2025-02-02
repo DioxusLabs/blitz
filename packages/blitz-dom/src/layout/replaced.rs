@@ -84,17 +84,20 @@ pub fn replaced_measure_function(
             .map(|s| s.unwrap())
     };
 
+    // Floor size at zero
+    let size = unclamped_size.map(|s| s.max(0.0));
+
     // Violations
-    let w_min = unclamped_size.width < min_size.width.unwrap_or(0.0);
-    let w_max = unclamped_size.width > max_size.width.unwrap_or(f32::INFINITY);
-    let h_min = unclamped_size.height < min_size.height.unwrap_or(0.0);
-    let h_max = unclamped_size.height > max_size.height.unwrap_or(f32::INFINITY);
+    let w_min = size.width < min_size.width.unwrap_or(0.0);
+    let w_max = size.width > max_size.width.unwrap_or(f32::INFINITY);
+    let h_min = size.height < min_size.height.unwrap_or(0.0);
+    let h_max = size.height > max_size.height.unwrap_or(f32::INFINITY);
 
     // Clamp following rules in table at
     // https://www.w3.org/TR/CSS22/visudet.html#min-max-widths
     let size = match (w_min, w_max, h_min, h_max) {
         // No constraint violation
-        (false, false, false, false) => unclamped_size,
+        (false, false, false, false) => size,
         // w > max-width
         (false, true, false, false) => {
             let max_width = max_size.width.unwrap();
@@ -131,7 +134,7 @@ pub fn replaced_measure_function(
         (false, true, false, true) => {
             let max_width = max_size.width.unwrap();
             let max_height = max_size.height.unwrap();
-            if max_width / unclamped_size.width <= max_height / unclamped_size.height {
+            if max_width / size.width <= max_height / size.height {
                 Size {
                     width: max_width,
                     height: (max_width * inv_aspect_ratio).maybe_max(min_size.height),
@@ -147,7 +150,7 @@ pub fn replaced_measure_function(
         (true, false, true, false) => {
             let min_width = min_size.width.unwrap();
             let min_height = min_size.height.unwrap();
-            if min_width / unclamped_size.width <= min_height / unclamped_size.height {
+            if min_width / size.width <= min_height / size.height {
                 Size {
                     width: (min_height * aspect_ratio).maybe_min(max_size.width),
                     height: min_height,
