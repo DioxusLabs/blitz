@@ -25,6 +25,7 @@ use style::rule_tree::CascadeLevel;
 use style::selector_parser::PseudoElement;
 use style::servo::url::ComputedUrl;
 use style::stylesheets::layer_rule::LayerOrder;
+use style::stylesheets::scope_rule::ImplicitScopeRoot;
 use style::values::computed::Percentage;
 use style::values::generics::image::Image as StyloImage;
 use style::values::specified::box_::DisplayOutside;
@@ -628,7 +629,10 @@ impl<'a> TElement for BlitzNode<'a> {
         self
     }
 
-    fn unopaque(_opaque: OpaqueElement) -> Self {
+    fn implicit_scope_for_sheet_in_shadow_root(
+        _opaque_host: OpaqueElement,
+        _sheet_index: usize,
+    ) -> Option<ImplicitScopeRoot> {
         // We cannot currently implement this as we are using the NodeId as the OpaqueElement,
         // and need a reference to the Slab to convert it back into an Element
         //
