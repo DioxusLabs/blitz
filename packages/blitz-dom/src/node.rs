@@ -414,8 +414,8 @@ impl ElementNodeData {
     }
 
     pub fn image_data(&self) -> Option<&ImageData> {
-        match self.node_specific_data {
-            NodeSpecificData::Image(ref data) => Some(&**data),
+        match &self.node_specific_data {
+            NodeSpecificData::Image(data) => Some(&**data),
             _ => None,
         }
     }
@@ -429,14 +429,14 @@ impl ElementNodeData {
 
     pub fn raster_image_data(&self) -> Option<&RasterImageData> {
         match self.image_data()? {
-            ImageData::Raster(ref data) => Some(data),
+            ImageData::Raster(data) => Some(data),
             _ => None,
         }
     }
 
     pub fn raster_image_data_mut(&mut self) -> Option<&mut RasterImageData> {
         match self.image_data_mut()? {
-            ImageData::Raster(ref mut data) => Some(data),
+            ImageData::Raster(data) => Some(data),
             _ => None,
         }
     }
@@ -444,7 +444,7 @@ impl ElementNodeData {
     #[cfg(feature = "svg")]
     pub fn svg_data(&self) -> Option<&usvg::Tree> {
         match self.image_data()? {
-            ImageData::Svg(ref data) => Some(data),
+            ImageData::Svg(data) => Some(data),
             _ => None,
         }
     }
@@ -452,21 +452,21 @@ impl ElementNodeData {
     #[cfg(feature = "svg")]
     pub fn svg_data_mut(&mut self) -> Option<&mut usvg::Tree> {
         match self.image_data_mut()? {
-            ImageData::Svg(ref mut data) => Some(data),
+            ImageData::Svg(data) => Some(data),
             _ => None,
         }
     }
 
     pub fn text_input_data(&self) -> Option<&TextInputData> {
-        match self.node_specific_data {
-            NodeSpecificData::TextInput(ref data) => Some(data),
+        match &self.node_specific_data {
+            NodeSpecificData::TextInput(data) => Some(data),
             _ => None,
         }
     }
 
     pub fn text_input_data_mut(&mut self) -> Option<&mut TextInputData> {
-        match self.node_specific_data {
-            NodeSpecificData::TextInput(ref mut data) => Some(data),
+        match &mut self.node_specific_data {
+            NodeSpecificData::TextInput(data) => Some(data),
             _ => None,
         }
     }
