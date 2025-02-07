@@ -1074,7 +1074,7 @@ impl BaseDocument {
                 return Some(CursorIcon::Pointer);
             }
 
-            maybe_node = node.parent_node();
+            maybe_node = node.layout_parent.get().map(|node_id| node.with(node_id));
         }
 
         // Else fallback to default cursor
