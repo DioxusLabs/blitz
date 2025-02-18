@@ -74,14 +74,14 @@ impl BaseDocument {
 
                         match s.clone_text_align() {
                             TextAlignKeyword::Start => Alignment::Start,
-                            TextAlignKeyword::Left => Alignment::Start,
-                            TextAlignKeyword::Right => Alignment::End,
+                            TextAlignKeyword::Left => Alignment::Left,
+                            TextAlignKeyword::Right => Alignment::Right,
                             TextAlignKeyword::Center => Alignment::Middle,
                             TextAlignKeyword::Justify => Alignment::Justified,
                             TextAlignKeyword::End => Alignment::End,
                             TextAlignKeyword::MozCenter => Alignment::Middle,
-                            TextAlignKeyword::MozLeft => Alignment::Start,
-                            TextAlignKeyword::MozRight => Alignment::End,
+                            TextAlignKeyword::MozLeft => Alignment::Left,
+                            TextAlignKeyword::MozRight => Alignment::Right,
                         }
                     })
                     .unwrap_or(parley::layout::Alignment::Start);
