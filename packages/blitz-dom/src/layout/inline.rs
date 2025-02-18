@@ -1,3 +1,4 @@
+use parley::AlignmentOptions;
 use taffy::{
     compute_leaf_layout, AvailableSpace, LayoutPartialTree as _, MaybeMath as _, MaybeResolve as _,
     NodeId, Position, ResolveOrZero as _, Size,
@@ -127,9 +128,13 @@ impl BaseDocument {
                             - pbw
                     });
 
-                inline_layout
-                    .layout
-                    .align(Some(alignment_width), alignment, false);
+                inline_layout.layout.align(
+                    Some(alignment_width),
+                    alignment,
+                    AlignmentOptions {
+                        align_when_overflowing: false,
+                    },
+                );
 
                 // Store sizes and positions of inline boxes
                 for line in inline_layout.layout.lines() {
