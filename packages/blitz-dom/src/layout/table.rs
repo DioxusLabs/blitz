@@ -256,8 +256,8 @@ impl taffy::LayoutPartialTree for TableTreeWrapper<'_> {
         &self.ctx.style
     }
 
-    fn resolve_calc_value(&self, calc_value: u64, parent_size: f32) -> f32 {
-        resolve_calc_value(calc_value, parent_size)
+    fn resolve_calc_value(&self, calc_ptr: *const (), parent_size: f32) -> f32 {
+        resolve_calc_value(calc_ptr, parent_size)
     }
 
     fn set_unrounded_layout(&mut self, node_id: taffy::NodeId, layout: &taffy::Layout) {

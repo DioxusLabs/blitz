@@ -2681,9 +2681,9 @@ dependencies = [
 
 [[package]]
 name = "grid"
-version = "0.15.0"
+version = "0.16.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "36119f3a540b086b4e436bb2b588cf98a68863470e0e880f4d0842f112a3183a"
+checksum = "fb6ae361963ea5fe52038156ea1729f3b4e4ccc0711c362ab2b2d2c0a259e7c3"
 
 [[package]]
 name = "gtk"
@@ -5566,7 +5566,7 @@ dependencies = [
 [[package]]
 name = "taffy"
 version = "0.7.3"
-source = "git+https://github.com/dioxuslabs/taffy?rev=51e21564#51e215645c1e3e11b19fd14bab7ef51b440e2b76"
+source = "git+https://github.com/dioxuslabs/taffy?rev=8437796c#8437796cc084de78ee04e2d940086954c924cb98"
 dependencies = [
  "arrayvec",
  "grid",

@@ -25,9 +25,8 @@ pub(crate) mod table;
 use self::replaced::{replaced_measure_function, ReplacedContext};
 use self::table::TableTreeWrapper;
 
-pub(crate) fn resolve_calc_value(calc_value: u64, parent_size: f32) -> f32 {
-    let calc_ptr = calc_value as usize as *const CalcLengthPercentage;
-    let calc = unsafe { &*calc_ptr };
+pub(crate) fn resolve_calc_value(calc_ptr: *const (), parent_size: f32) -> f32 {
+    let calc = unsafe { &*(calc_ptr as *const CalcLengthPercentage) };
     calc.resolve(CSSPixelLength::new(parent_size)).px()
 }
 
@@ -85,8 +84,8 @@ impl LayoutPartialTree for BaseDocument {
         self.node_from_id_mut(node_id).unrounded_layout = *layout;
     }
 
-    fn resolve_calc_value(&self, calc_value: u64, parent_size: f32) -> f32 {
-        resolve_calc_value(calc_value, parent_size)
+    fn resolve_calc_value(&self, calc_ptr: *const (), parent_size: f32) -> f32 {
+        resolve_calc_value(calc_ptr, parent_size)
     }
 
     fn compute_child_layout(
