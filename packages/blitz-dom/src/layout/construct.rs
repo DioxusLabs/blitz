@@ -261,12 +261,14 @@ pub(crate) fn collect_layout_children(
 
         DisplayInside::Table => {
             let (table_context, tlayout_children) = build_table_context(doc, container_node_id);
+            #[allow(clippy::arc_with_non_send_sync)]
+            let data = NodeSpecificData::TableRoot(Arc::new(table_context));
             doc.nodes[container_node_id].is_table_root = true;
             doc.nodes[container_node_id]
                 .data
                 .downcast_element_mut()
                 .unwrap()
-                .node_specific_data = NodeSpecificData::TableRoot(Arc::new(table_context));
+                .node_specific_data = data;
             if let Some(before) = doc.nodes[container_node_id].before {
                 layout_children.push(before);
             }
