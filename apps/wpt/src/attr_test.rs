@@ -36,7 +36,7 @@ pub async fn process_attr_test(
             has_error |= !passes;
         });
 
-        if !has_error {
+        if has_error {
             fail_count += 1;
         } else {
             pass_count += 1;
