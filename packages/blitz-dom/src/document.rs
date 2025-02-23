@@ -769,6 +769,7 @@ impl BaseDocument {
         node_id: usize,
         mut cb: impl FnMut(usize, &mut BaseDocument),
     ) {
+        cb(node_id, self);
         iter_subtree_mut_inner(self, node_id, &mut cb);
         fn iter_subtree_mut_inner(
             doc: &mut BaseDocument,
