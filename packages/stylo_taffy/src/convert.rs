@@ -246,11 +246,13 @@ pub fn content_alignment(input: stylo::ContentDistribution) -> Option<taffy::Ali
 #[inline]
 pub fn item_alignment(input: stylo::AlignFlags) -> Option<taffy::AlignItems> {
     match input.value() {
-        stylo::AlignFlags::NORMAL => None,
         stylo::AlignFlags::AUTO => None,
+        stylo::AlignFlags::NORMAL => Some(taffy::AlignItems::Stretch),
         stylo::AlignFlags::STRETCH => Some(taffy::AlignItems::Stretch),
         stylo::AlignFlags::FLEX_START => Some(taffy::AlignItems::FlexStart),
         stylo::AlignFlags::FLEX_END => Some(taffy::AlignItems::FlexEnd),
+        stylo::AlignFlags::SELF_START => Some(taffy::AlignItems::Start),
+        stylo::AlignFlags::SELF_END => Some(taffy::AlignItems::End),
         stylo::AlignFlags::START => Some(taffy::AlignItems::Start),
         stylo::AlignFlags::END => Some(taffy::AlignItems::End),
         stylo::AlignFlags::LEFT => Some(taffy::AlignItems::Start),
