@@ -145,8 +145,8 @@ fn collect_tests(wpt_dir: &Path) -> Vec<PathBuf> {
     }
 
     for suite in suites {
-        for ext in ["htm", "html", "xht", "xhtml"] {
-            let pattern = format!("{}/{}/**/*.{}", wpt_dir.display(), suite, ext);
+        for pat in ["", "/**/*.htm", "/**/*.html", "/**/*.xht", "/**/*.xhtml"] {
+            let pattern = format!("{}/{}{}", wpt_dir.display(), suite, pat);
 
             let glob_results = glob::glob(&pattern).expect("Invalid glob pattern.");
 
@@ -165,7 +165,9 @@ fn collect_tests(wpt_dir: &Path) -> Vec<PathBuf> {
                         .iter()
                         .any(|suffix| path_str.ends_with(suffix));
 
-                    if is_ref | is_support_file | is_blocked {
+                    let is_dir = path_buf.is_dir();
+
+                    if is_ref | is_support_file | is_blocked | is_dir {
                         None
                     } else {
                         Some(path_buf)
