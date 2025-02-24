@@ -2108,7 +2108,7 @@ dependencies = [
 [[package]]
 name = "fontique"
 version = "0.2.0"
-source = "git+https://github.com/linebender/parley?rev=5325b2c#5325b2c2b12693b3da2746d06312116102a12978"
+source = "git+https://github.com/linebender/parley?rev=7c8983cf#7c8983cf61bd25903c2be1ca6de4ab4835e4f503"
 dependencies = [
  "bytemuck",
  "fontconfig-cache-parser",
@@ -4210,7 +4210,7 @@ dependencies = [
 [[package]]
 name = "parley"
 version = "0.2.0"
-source = "git+https://github.com/linebender/parley?rev=5325b2c#5325b2c2b12693b3da2746d06312116102a12978"
+source = "git+https://github.com/linebender/parley?rev=7c8983cf#7c8983cf61bd25903c2be1ca6de4ab4835e4f503"
 dependencies = [
  "fontique",
  "hashbrown 0.15.2",
