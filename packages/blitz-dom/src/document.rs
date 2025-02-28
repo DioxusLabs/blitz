@@ -126,6 +126,8 @@ pub struct BaseDocument {
 
     pub changed: HashSet<usize>,
 
+    pub controls_to_form: HashMap<usize, usize>,
+
     /// Network provider. Can be used to fetch assets.
     pub net_provider: SharedProvider<Resource>,
 
@@ -211,6 +213,7 @@ impl BaseDocument {
             focus_node_id: None,
             active_node_id: None,
             changed: HashSet::new(),
+            controls_to_form: HashMap::new(),
             net_provider: Arc::new(DummyNetProvider::default()),
             navigation_provider: Arc::new(DummyNavigationProvider {}),
         };
@@ -628,6 +631,7 @@ impl BaseDocument {
             Resource::Font(bytes) => {
                 self.font_ctx.collection.register_fonts(bytes.to_vec());
             }
+            _ => {}
         }
     }
 
