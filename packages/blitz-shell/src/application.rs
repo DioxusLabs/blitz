@@ -16,7 +16,7 @@ type D = BaseDocument;
 pub struct BlitzApplication<Doc: Document<Doc = D>, Rend: DocumentRenderer<Doc = D>> {
     pub windows: HashMap<WindowId, View<Doc, Rend>>,
     pending_windows: Vec<WindowConfig<Doc, Rend>>,
-    proxy: EventLoopProxy<BlitzShellEvent>,
+    pub proxy: EventLoopProxy<BlitzShellEvent>,
 
     #[cfg(all(feature = "menu", not(any(target_os = "android", target_os = "ios"))))]
     menu_channel: muda::MenuEventReceiver,
@@ -37,8 +37,20 @@ impl<Doc: Document<Doc = D>, Rend: DocumentRenderer<Doc = D>> BlitzApplication<D
     pub fn add_window(&mut self, window_config: WindowConfig<Doc, Rend>) {
         self.pending_windows.push(window_config);
     }
+    pub fn force_add_window(
+        &mut self,
+        window_config: WindowConfig<Doc, Rend>,
+        event_loop: &ActiveEventLoop,
+    ) {
+        let mut view = View::init(window_config, event_loop, &self.proxy);
+        view.resume();
+        if !view.renderer.is_active() {
+            return;
+        }
+        self.windows.insert(view.window_id(), view);
+    }
 
-    fn window_mut_by_doc_id(&mut self, doc_id: usize) -> Option<&mut View<Doc, Rend>> {
+    pub fn window_mut_by_doc_id(&mut self, doc_id: usize) -> Option<&mut View<Doc, Rend>> {
         self.windows.values_mut().find(|w| w.doc.id() == doc_id)
     }
 }
@@ -113,7 +125,6 @@ impl<Doc: Document<Doc = D>, Rend: DocumentRenderer<Doc = D>> ApplicationHandler
                     window.poll();
                 };
             }
-
             BlitzShellEvent::ResourceLoad { doc_id, data } => {
                 // TODO: Handle multiple documents per window
                 if let Some(window) = self.window_mut_by_doc_id(doc_id) {
@@ -142,7 +153,7 @@ impl<Doc: Document<Doc = D>, Rend: DocumentRenderer<Doc = D>> ApplicationHandler
             BlitzShellEvent::Embedder(_) => {
                 // Do nothing. Should be handled by embedders (if required).
             }
-            BlitzShellEvent::Navigate(_url) => {
+            BlitzShellEvent::Navigate(_opts) => {
                 // Do nothing. Should be handled by embedders (if required).
             }
         }

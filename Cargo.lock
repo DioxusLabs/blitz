@@ -651,6 +651,7 @@ dependencies = [
  "markup5ever",
  "parley",
  "peniko",
+ "percent-encoding",
  "selectors",
  "slab",
  "smallvec",
@@ -6522,6 +6523,22 @@ dependencies = [
  "log",
  "once_cell",
  "pkg-config",
+]
+
+[[package]]
+name = "web"
+version = "0.1.0"
+dependencies = [
+ "blitz-dom",
+ "blitz-html",
+ "blitz-net",
+ "blitz-renderer-vello",
+ "blitz-shell",
+ "blitz-traits",
+ "reqwest",
+ "tokio",
+ "url",
+ "winit",
 ]
 
 [[package]]
