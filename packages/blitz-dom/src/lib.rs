@@ -33,6 +33,8 @@ pub mod stylo;
 pub mod stylo_to_cursor_icon;
 pub mod stylo_to_parley;
 
+mod form;
+
 pub mod util;
 
 pub mod debug;

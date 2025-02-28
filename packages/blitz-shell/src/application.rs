@@ -16,7 +16,7 @@ type D = BaseDocument;
 pub struct BlitzApplication<Doc: Document<Doc = D>, Rend: DocumentRenderer<Doc = D>> {
     pub windows: HashMap<WindowId, View<Doc, Rend>>,
     pending_windows: Vec<WindowConfig<Doc, Rend>>,
-    proxy: EventLoopProxy<BlitzShellEvent>,
+    pub proxy: EventLoopProxy<BlitzShellEvent>,
 
     #[cfg(all(feature = "menu", not(any(target_os = "android", target_os = "ios"))))]
     menu_channel: muda::MenuEventReceiver,
@@ -113,7 +113,6 @@ impl<Doc: Document<Doc = D>, Rend: DocumentRenderer<Doc = D>> ApplicationHandler
                     window.poll();
                 };
             }
-
             BlitzShellEvent::ResourceLoad { doc_id, data } => {
                 // TODO: Handle multiple documents per window
                 if let Some(window) = self.window_mut_by_doc_id(doc_id) {
@@ -142,7 +141,7 @@ impl<Doc: Document<Doc = D>, Rend: DocumentRenderer<Doc = D>> ApplicationHandler
             BlitzShellEvent::Embedder(_) => {
                 // Do nothing. Should be handled by embedders (if required).
             }
-            BlitzShellEvent::Navigate(_url) => {
+            BlitzShellEvent::Navigate(_opts) => {
                 // Do nothing. Should be handled by embedders (if required).
             }
         }
