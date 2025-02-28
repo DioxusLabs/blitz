@@ -1,6 +1,5 @@
 use std::fmt::{Display, Formatter};
 
-use blitz_traits::net::{Request, Response};
 use thiserror::Error;
 
 #[cfg(feature = "reqwest")]
@@ -9,19 +8,9 @@ mod reqwest;
 mod ureq;
 
 #[cfg(feature = "reqwest")]
-pub use reqwest::Backend;
-#[cfg(feature = "reqwest")]
-pub use reqwest::Provider;
-
+pub use reqwest::{get_text, Provider};
 #[cfg(feature = "ureq")]
-pub use ureq::Backend;
-
-pub trait RequestBackend {
-    fn new() -> Self
-    where
-        Self: Sized;
-    async fn request(&mut self, request: Request) -> Result<Response, BackendError>;
-}
+pub use ureq::{get_text, Provider};
 
 #[derive(Debug, Error)]
 pub struct BackendError {

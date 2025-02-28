@@ -706,6 +706,7 @@ dependencies = [
  "blitz-traits",
  "data-url",
  "http",
+ "rayon",
  "reqwest",
  "thiserror 1.0.69",
  "tokio",

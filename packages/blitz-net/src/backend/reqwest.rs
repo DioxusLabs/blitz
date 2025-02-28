@@ -2,14 +2,12 @@ use std::sync::Arc;
 
 use crate::{ProviderError, USER_AGENT};
 
-use super::{BackendError, RequestBackend, Response};
-use blitz_traits::net::{BoxedHandler, NetProvider, Request, SharedCallback};
+use super::BackendError;
+use blitz_traits::net::{BoxedHandler, Bytes, NetProvider, Request, Response, SharedCallback};
 use data_url::DataUrl;
 use http::HeaderValue;
-use tokio::{
-    runtime::Handle,
-    sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender},
-};
+use tokio::runtime::Handle;
+use url::Url;
 
 // Compat with reqwest
 impl From<reqwest::Error> for BackendError {
@@ -25,17 +23,14 @@ pub struct Backend {
     client: reqwest::Client,
 }
 
-impl RequestBackend for Backend {
-    fn new() -> Self
-    where
-        Self: Sized,
-    {
+impl Backend {
+    pub fn new() -> Self {
         Self {
             client: reqwest::Client::new(),
         }
     }
 
-    async fn request(&mut self, request: Request) -> Result<Response, BackendError> {
+    pub async fn request(&mut self, request: Request) -> Result<Response, BackendError> {
         let request = self
             .client
             .request(request.method, request.url.clone())
@@ -52,6 +47,13 @@ impl RequestBackend for Backend {
             body,
         })
     }
+}
+
+pub async fn get_text(url: &str) -> String {
+    let mut backend = Backend::new();
+    let request = Request::get(Url::parse(url).unwrap());
+    let response = backend.request(request).await.unwrap();
+    String::from_utf8_lossy(&response.body).to_string()
 }
 
 pub struct Provider<D> {
@@ -75,6 +77,36 @@ impl<D: 'static> Provider<D> {
 
     pub fn is_empty(&self) -> bool {
         Arc::strong_count(&self.resource_callback) == 1
+    }
+
+    async fn fetch_inner(
+        mut client: Backend,
+        doc_id: usize,
+        request: Request,
+        handler: BoxedHandler<D>,
+        res_callback: SharedCallback<D>,
+    ) -> Result<(), ProviderError> {
+        match request.url.scheme() {
+            "data" => {
+                let data_url = DataUrl::process(request.url.as_str())?;
+                let decoded = data_url.decode_to_vec()?;
+                handler.bytes(doc_id, Bytes::from(decoded.0), res_callback);
+            }
+            "file" => {
+                let file_content = std::fs::read(request.url.path())?;
+                handler.bytes(doc_id, Bytes::from(file_content), res_callback);
+            }
+            _ => {
+                let mut request = Request::get(request.url);
+                request
+                    .headers
+                    .insert("User-Agent", HeaderValue::from_static(USER_AGENT));
+                let response = client.request(request).await?;
+
+                handler.bytes(doc_id, response.body, res_callback);
+            }
+        }
+        Ok(())
     }
 }
 

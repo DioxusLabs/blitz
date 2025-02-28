@@ -5,5 +5,3 @@ pub mod ureq;
 
 #[cfg(feature = "reqwest")]
 pub use reqwest::*;
-#[cfg(feature = "ureq")]
-pub use ureq::*;
