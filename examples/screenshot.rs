@@ -22,7 +22,8 @@ const USER_AGENT: &str = "Mozilla/5.0 (X11; Linux x86_64; rv:60.0) Gecko/2010010
 async fn main() {
     let mut timer = Timer::init();
 
-    let url_string = std::env::args().nth(1)
+    let url_string = std::env::args()
+        .nth(1)
         .unwrap_or_else(|| "https://www.google.com".into());
 
     println!("{}", url_string);
@@ -53,7 +54,8 @@ async fn main() {
     // Setup viewport. TODO: make configurable.
     let scale = 2;
     let height = 800;
-    let width: u32 = std::env::args().nth(2)
+    let width: u32 = std::env::args()
+        .nth(2)
         .and_then(|arg| arg.parse().ok())
         .unwrap_or(1200);
 

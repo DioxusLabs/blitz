@@ -3,10 +3,13 @@ use std::sync::Arc;
 use crate::{ProviderError, USER_AGENT};
 
 use super::{BackendError, RequestBackend, Response};
-use blitz_traits::net::{BoxedHandler, Bytes, NetCallback, NetProvider, Request, SharedCallback};
+use blitz_traits::net::{BoxedHandler, NetProvider, Request, SharedCallback};
 use data_url::DataUrl;
 use http::HeaderValue;
-use tokio::{runtime::Handle, sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender}};
+use tokio::{
+    runtime::Handle,
+    sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender},
+};
 
 // Compat with reqwest
 impl From<reqwest::Error> for BackendError {
@@ -52,9 +55,9 @@ impl RequestBackend for Backend {
 }
 
 pub struct Provider<D> {
-  rt: Handle,
-  client: Backend,
-  resource_callback: SharedCallback<D>,
+    rt: Handle,
+    client: Backend,
+    resource_callback: SharedCallback<D>,
 }
 
 impl<D: 'static> Provider<D> {
@@ -76,20 +79,20 @@ impl<D: 'static> Provider<D> {
 }
 
 impl<D: 'static> NetProvider for Provider<D> {
-  type Data = D;
+    type Data = D;
 
-  fn fetch(&self, doc_id: usize, request: Request, handler: BoxedHandler<D>) {
-      let client = self.client.clone();
-      let callback = Arc::clone(&self.resource_callback);
-      println!("Fetching {}", &request.url);
-      drop(self.rt.spawn(async move {
-          let url = request.url.to_string();
-          let res = Self::fetch_inner(client, doc_id, request, handler, callback).await;
-          if let Err(e) = res {
-              eprintln!("Error fetching {}: {e}", url);
-          } else {
-              println!("Success {}", url);
-          }
-      }));
-  }
+    fn fetch(&self, doc_id: usize, request: Request, handler: BoxedHandler<D>) {
+        let client = self.client.clone();
+        let callback = Arc::clone(&self.resource_callback);
+        println!("Fetching {}", &request.url);
+        drop(self.rt.spawn(async move {
+            let url = request.url.to_string();
+            let res = Self::fetch_inner(client, doc_id, request, handler, callback).await;
+            if let Err(e) = res {
+                eprintln!("Error fetching {}: {e}", url);
+            } else {
+                println!("Success {}", url);
+            }
+        }));
+    }
 }
