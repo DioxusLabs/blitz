@@ -1,37 +1,39 @@
+use backend::{Backend, RequestBackend};
 use blitz_traits::net::{BoxedHandler, Bytes, NetCallback, NetProvider, Request, SharedCallback};
 use data_url::DataUrl;
-use reqwest::Client;
+use http::HeaderValue;
 use std::sync::Arc;
 use thiserror::Error;
 use tokio::{
     runtime::Handle,
     sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender},
 };
+use url::Url;
+
+#[cfg(all(feature = "reqwest", feature = "ureq"))]
+compile_error!("multiple request backends cannot be enabled at the same time");
+
+mod backend;
 
 const USER_AGENT: &str = "Mozilla/5.0 (X11; Linux x86_64; rv:60.0) Gecko/20100101 Firefox/81.0";
 
 pub async fn get_text(url: &str) -> String {
-    Client::new()
-        .get(url)
-        .header("User-Agent", USER_AGENT)
-        .send()
-        .await
-        .unwrap()
-        .text()
-        .await
-        .unwrap()
+    let mut backend = Backend::new();
+    let request = Request::get(Url::parse(url).unwrap());
+    let response = backend.request(request).await.unwrap();
+    String::from_utf8_lossy(&response.body).to_string()
 }
 
 pub struct Provider<D> {
     rt: Handle,
-    client: Client,
+    client: Backend,
     resource_callback: SharedCallback<D>,
 }
 impl<D: 'static> Provider<D> {
     pub fn new(res_callback: SharedCallback<D>) -> Self {
         Self {
             rt: Handle::current(),
-            client: Client::new(),
+            client: Backend::new(),
             resource_callback: res_callback,
         }
     }
@@ -44,7 +46,7 @@ impl<D: 'static> Provider<D> {
 }
 impl<D: 'static> Provider<D> {
     async fn fetch_inner(
-        client: Client,
+        mut client: Backend,
         doc_id: usize,
         request: Request,
         handler: BoxedHandler<D>,
@@ -61,15 +63,13 @@ impl<D: 'static> Provider<D> {
                 handler.bytes(doc_id, Bytes::from(file_content), res_callback);
             }
             _ => {
-                let response = client
-                    .request(request.method, request.url)
-                    .headers(request.headers)
-                    .header("User-Agent", USER_AGENT)
-                    .body(request.body)
-                    .send()
-                    .await?;
+                let mut request = Request::get(request.url);
+                request
+                    .headers
+                    .insert("User-Agent", HeaderValue::from_static(USER_AGENT));
+                let response = client.request(request).await?;
 
-                handler.bytes(doc_id, response.bytes().await?, res_callback);
+                handler.bytes(doc_id, response.body, res_callback);
             }
         }
         Ok(())
@@ -103,7 +103,7 @@ enum ProviderError {
     #[error("{0}")]
     DataUrlBas64(#[from] data_url::forgiving_base64::InvalidBase64),
     #[error("{0}")]
-    ReqwestError(#[from] reqwest::Error),
+    BackendError(#[from] backend::BackendError),
 }
 
 pub struct MpscCallback<T>(UnboundedSender<(usize, T)>);

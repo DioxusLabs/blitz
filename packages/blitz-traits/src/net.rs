@@ -51,6 +51,23 @@ impl Request {
     }
 }
 
+impl Into<http::Request<Vec<u8>>> for Request {
+    fn into(self) -> http::Request<Vec<u8>> {
+        let mut request = http::Request::new(self.body.into());
+        request.headers_mut().extend(self.headers);
+        *request.method_mut() = self.method;
+        request
+    }
+}
+
+#[derive(Debug)]
+/// An HTTP response
+pub struct Response {
+    pub status: u16,
+    pub headers: HeaderMap,
+    pub body: Bytes,
+}
+
 /// A default noop NetProvider
 pub struct DummyNetProvider<D>(PhantomData<D>);
 impl<D> Default for DummyNetProvider<D> {

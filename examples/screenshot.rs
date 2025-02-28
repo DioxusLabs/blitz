@@ -22,9 +22,7 @@ const USER_AGENT: &str = "Mozilla/5.0 (X11; Linux x86_64; rv:60.0) Gecko/2010010
 async fn main() {
     let mut timer = Timer::init();
 
-    let url_string = std::env::args()
-        .skip(1)
-        .next()
+    let url_string = std::env::args().nth(1)
         .unwrap_or_else(|| "https://www.google.com".into());
 
     println!("{}", url_string);
@@ -55,9 +53,7 @@ async fn main() {
     // Setup viewport. TODO: make configurable.
     let scale = 2;
     let height = 800;
-    let width: u32 = std::env::args()
-        .skip(2)
-        .next()
+    let width: u32 = std::env::args().nth(2)
         .and_then(|arg| arg.parse().ok())
         .unwrap_or(1200);
 
@@ -151,7 +147,7 @@ fn write_png<W: Write>(writer: W, buffer: &[u8], width: u32, height: u32) {
 
     // Write PNG data to writer
     let mut writer = encoder.write_header().unwrap();
-    writer.write_image_data(&buffer).unwrap();
+    writer.write_image_data(buffer).unwrap();
     writer.finish().unwrap();
 }
 
