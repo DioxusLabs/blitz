@@ -439,6 +439,7 @@ impl VelloSceneGenerator<'_> {
         cx.stroke_outline(scene);
         cx.draw_outset_box_shadow(scene);
         cx.draw_background(scene);
+        cx.stroke_border(scene);
 
         if should_clip && clips_available {
             scene.push_layer(Mix::Clip, 1.0, cx.transform, &cx.frame.frame());
@@ -448,7 +449,6 @@ impl VelloSceneGenerator<'_> {
         }
 
         cx.draw_inset_box_shadow(scene);
-        cx.stroke_border(scene);
         cx.stroke_devtools(scene);
 
         // Now that background has been drawn, offset pos and cx in order to draw our contents scrolled
