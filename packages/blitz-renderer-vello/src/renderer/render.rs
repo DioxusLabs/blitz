@@ -421,7 +421,6 @@ impl VelloSceneGenerator<'_> {
             return;
         }
 
-        let transform = Affine::translate(content_position.to_vec2() * self.scale);
         let origin = kurbo::Point { x: 0.0, y: 0.0 };
         let clip = Rect::from_origin_size(origin, content_box_size);
 
