@@ -10,6 +10,9 @@ mod ureq;
 
 #[cfg(feature = "reqwest")]
 pub use reqwest::Backend;
+#[cfg(feature = "reqwest")]
+pub use reqwest::Provider;
+
 #[cfg(feature = "ureq")]
 pub use ureq::Backend;
 

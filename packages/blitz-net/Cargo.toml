@@ -6,12 +6,12 @@ edition = "2021"
 
 [features]
 default = ["reqwest"]
-reqwest = ["dep:reqwest"]
+reqwest = ["dep:reqwest", "dep:tokio"]
 ureq = ["dep:ureq"]
 
 [dependencies]
 blitz-traits = { path = "../blitz-traits" }
-tokio = { workspace = true }
+tokio = { workspace = true, optional = true }
 reqwest = { workspace = true, optional = true }
 ureq = { workspace = true, optional = true }
 data-url = { workspace = true }

@@ -2,7 +2,7 @@
 
 use blitz_dom::net::Resource;
 use blitz_html::HtmlDocument;
-use blitz_net::{MpscCallback, Provider};
+use blitz_net::{callback::MpscCallback, Provider};
 use blitz_renderer_vello::render_to_buffer;
 use blitz_traits::navigation::DummyNavigationProvider;
 use blitz_traits::net::SharedProvider;
