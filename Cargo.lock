@@ -6526,22 +6526,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "web"
-version = "0.1.0"
-dependencies = [
- "blitz-dom",
- "blitz-html",
- "blitz-net",
- "blitz-renderer-vello",
- "blitz-shell",
- "blitz-traits",
- "reqwest",
- "tokio",
- "url",
- "winit",
-]
-
-[[package]]
 name = "web-sys"
 version = "0.3.77"
 source = "registry+https://github.com/rust-lang/crates.io-index"

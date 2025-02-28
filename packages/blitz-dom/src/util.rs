@@ -139,7 +139,7 @@ impl<'a> TreeTraverser<'a> {
         }
     }
 }
-impl<'a> Iterator for TreeTraverser<'a> {
+impl Iterator for TreeTraverser<'_> {
     type Item = usize;
 
     fn next(&mut self) -> Option<Self::Item> {

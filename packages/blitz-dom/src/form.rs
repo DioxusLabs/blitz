@@ -1,9 +1,7 @@
 use markup5ever::{local_name, LocalName};
 
 use crate::{util::TreeTraverser, BaseDocument, ElementNodeData, Node};
-use blitz_traits::navigation::{
-    DocumentResource, Entry, EntryList, NavigationOptions, RequestContentType,
-};
+use blitz_traits::navigation::{DocumentResource, NavigationOptions, RequestContentType};
 use core::str::FromStr;
 
 impl BaseDocument {
@@ -29,9 +27,7 @@ impl BaseDocument {
                     .nodes
                     .get(*owner_id)
                     .and_then(|node| node.element_data())
-                    .map_or(false, |element_data| {
-                        element_data.name.local == local_name!("form")
-                    })
+                    .is_some_and(|element_data| element_data.name.local == local_name!("form"))
                 {
                     Some(*owner_id)
                 } else {
@@ -220,12 +216,12 @@ fn construct_entry_list(doc: &BaseDocument, form_id: usize, submitter_id: usize)
     };
 
     fn datalist_ancestor(doc: &BaseDocument, node: &Node) -> bool {
-        node.element_data().map_or(false, |element| {
-            element.name.local == local_name!("datalist")
-        }) || node
-            .parent
-            .and_then(|parent_id| doc.get_node(parent_id))
-            .map_or(false, |node| datalist_ancestor(doc, node))
+        node.element_data()
+            .is_some_and(|element| element.name.local == local_name!("datalist"))
+            || node
+                .parent
+                .and_then(|parent_id| doc.get_node(parent_id))
+                .is_some_and(|node| datalist_ancestor(doc, node))
     }
 
     for control_id in TreeTraverser::new(doc) {
@@ -257,7 +253,7 @@ fn construct_entry_list(doc: &BaseDocument, form_id: usize, submitter_id: usize)
         //  then continue.
         if datalist_ancestor(doc, node)
             || element.attr(local_name!("disabled")).is_some()
-            || element.name.local == local_name!("button") && !(node.id == submitter_id)
+            || element.name.local == local_name!("button") && node.id != submitter_id
             || element.name.local == local_name!("input")
                 && matches!(element_type, Some("checkbox" | "radio"))
                 && !element.checkbox_input_checked().unwrap_or(false)
@@ -268,7 +264,7 @@ fn construct_entry_list(doc: &BaseDocument, form_id: usize, submitter_id: usize)
         // If the field element is an input element whose type attribute is in the Image Button state, then:
         if element_type == Some("image") {
             // If the field element is not submitter, then continue.
-            if !(node.id == submitter_id) {
+            if node.id != submitter_id {
                 continue;
             }
             // TODO: If the field element has a name attribute specified and its value is not the empty string, let name be that value followed by U+002E (.). Otherwise, let name be the empty string.
@@ -302,11 +298,7 @@ fn construct_entry_list(doc: &BaseDocument, form_id: usize, submitter_id: usize)
             && matches!(element_type, Some("checkbox" | "radio"))
         {
             // If the field element has a value attribute specified, then let value be the value of that attribute; otherwise, let value be the string "on".
-            let value = if let Some(value) = element.attr(local_name!("value")) {
-                value
-            } else {
-                "on"
-            };
+            let value = element.attr(local_name!("value")).unwrap_or("on");
             //         Create an entry with name and value, and append it to entry list.
             create_entry(name, value);
         }
@@ -333,7 +325,7 @@ fn construct_entry_list(doc: &BaseDocument, form_id: usize, submitter_id: usize)
             }
             // ...
             else if let Some(text) = element.text_input_data() {
-                create_entry(name, &*text.editor.text().to_string());
+                create_entry(name, &text.editor.text().to_string());
             }
         }
     }

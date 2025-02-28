@@ -24,7 +24,7 @@ pub(crate) fn handle_keypress(doc: &mut BaseDocument, target: usize, event: Blit
                 apply_keypress_event(input_data, &mut doc.font_ctx, &mut doc.layout_ctx, event);
 
             if implicit_submission {
-                implicit_form_submission(&doc, target);
+                implicit_form_submission(doc, target);
             }
         }
     }
@@ -189,10 +189,9 @@ fn implicit_form_submission(doc: &BaseDocument, text_target: usize) {
         .controls_to_form
         .iter()
         .filter(|(_control_id, form_id)| *form_id == form_owner_id)
-        .map(|(control_id, _)| doc.nodes[*control_id].element_data())
-        .flatten()
+        .filter_map(|(control_id, _)| doc.nodes[*control_id].element_data())
         .filter(|element_data| {
-            element_data.attr(local_name!("type")).map_or(false, |t| {
+            element_data.attr(local_name!("type")).is_some_and(|t| {
                 matches!(
                     t,
                     "text"
