@@ -4,6 +4,7 @@ use crate::{
 };
 use blitz_traits::BlitzKeyEvent;
 use keyboard_types::{Key, Modifiers};
+use markup5ever::local_name;
 use parley::{FontContext, LayoutContext};
 
 pub(crate) fn handle_keypress(doc: &mut BaseDocument, target: usize, event: BlitzKeyEvent) {
@@ -13,13 +14,17 @@ pub(crate) fn handle_keypress(doc: &mut BaseDocument, target: usize, event: Blit
         }
 
         let node = &mut doc.nodes[node_id];
-        let text_input_data = node
-            .data
-            .downcast_element_mut()
-            .and_then(|el| el.text_input_data_mut());
+        let Some(element_data) = node.element_data_mut() else {
+            return;
+        };
 
-        if let Some(input_data) = text_input_data {
-            apply_keypress_event(input_data, &mut doc.font_ctx, &mut doc.layout_ctx, event);
+        if let Some(input_data) = element_data.text_input_data_mut() {
+            let implicit_submission =
+                apply_keypress_event(input_data, &mut doc.font_ctx, &mut doc.layout_ctx, event);
+
+            if implicit_submission {
+                implicit_form_submission(doc, target);
+            }
         }
     }
 }
@@ -34,10 +39,10 @@ pub(crate) fn apply_keypress_event(
     font_ctx: &mut FontContext,
     layout_ctx: &mut LayoutContext<TextBrush>,
     event: BlitzKeyEvent,
-) {
+) -> bool {
     // Do nothing if it is a keyup event
     if !event.state.is_pressed() {
-        return;
+        return false;
     }
 
     let mods = event.modifiers;
@@ -164,9 +169,50 @@ pub(crate) fn apply_keypress_event(
         Key::Enter => {
             if is_multiline {
                 driver.insert_or_replace_selection("\n");
+            } else {
+                return true;
             }
         }
         Key::Character(s) => driver.insert_or_replace_selection(&s),
         _ => {}
     };
+    false
+}
+
+/// https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#field-that-blocks-implicit-submission
+fn implicit_form_submission(doc: &BaseDocument, text_target: usize) {
+    let Some(form_owner_id) = doc.controls_to_form.get(&text_target) else {
+        return;
+    };
+    if doc
+        .controls_to_form
+        .iter()
+        .filter(|(_control_id, form_id)| *form_id == form_owner_id)
+        .filter_map(|(control_id, _)| doc.nodes[*control_id].element_data())
+        .filter(|element_data| {
+            element_data.attr(local_name!("type")).is_some_and(|t| {
+                matches!(
+                    t,
+                    "text"
+                        | "search"
+                        | "email"
+                        | "url"
+                        | "tel"
+                        | "password"
+                        | "date"
+                        | "month"
+                        | "week"
+                        | "time"
+                        | "datetime-local"
+                        | "number"
+                )
+            })
+        })
+        .count()
+        > 1
+    {
+        return;
+    }
+
+    doc.submit_form(*form_owner_id, *form_owner_id);
 }

@@ -700,6 +700,7 @@ dependencies = [
  "objc2 0.6.1",
  "parley",
  "peniko 0.3.2",
+ "percent-encoding",
  "selectors",
  "slab",
  "smallvec",

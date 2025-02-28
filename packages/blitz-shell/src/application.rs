@@ -12,8 +12,7 @@ use crate::{View, WindowConfig};
 pub struct BlitzApplication<Rend: WindowRenderer> {
     pub windows: HashMap<WindowId, View<Rend>>,
     pending_windows: Vec<WindowConfig<Rend>>,
-    proxy: EventLoopProxy<BlitzShellEvent>,
-
+    pub proxy: EventLoopProxy<BlitzShellEvent>,
     #[cfg(all(feature = "menu", not(any(target_os = "android", target_os = "ios"))))]
     menu_channel: muda::MenuEventReceiver,
 }
@@ -107,7 +106,6 @@ impl<Rend: WindowRenderer> ApplicationHandler<BlitzShellEvent> for BlitzApplicat
                     window.poll();
                 };
             }
-
             BlitzShellEvent::ResourceLoad { doc_id, data } => {
                 // TODO: Handle multiple documents per window
                 if let Some(window) = self.window_mut_by_doc_id(doc_id) {
@@ -136,7 +134,7 @@ impl<Rend: WindowRenderer> ApplicationHandler<BlitzShellEvent> for BlitzApplicat
             BlitzShellEvent::Embedder(_) => {
                 // Do nothing. Should be handled by embedders (if required).
             }
-            BlitzShellEvent::Navigate(_url) => {
+            BlitzShellEvent::Navigate(_opts) => {
                 // Do nothing. Should be handled by embedders (if required).
             }
         }

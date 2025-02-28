@@ -1,4 +1,7 @@
-use crate::node::{Node, NodeData};
+use crate::{
+    BaseDocument,
+    node::{Node, NodeData},
+};
 use color::{AlphaColor, Srgb};
 use style::color::AbsoluteColor;
 
@@ -117,5 +120,32 @@ impl ToColorColor for AbsoluteColor {
                 .to_color_space(style::color::ColorSpace::Srgb)
                 .raw_components(),
         )
+    }
+}
+
+pub struct TreeTraverser<'a> {
+    doc: &'a BaseDocument,
+    stack: Vec<usize>,
+}
+
+impl<'a> TreeTraverser<'a> {
+    pub fn new(doc: &'a BaseDocument) -> Self {
+        Self::new_with_root(doc, 0)
+    }
+    pub fn new_with_root(doc: &'a BaseDocument, root: usize) -> Self {
+        TreeTraverser {
+            doc,
+            stack: vec![root],
+        }
+    }
+}
+impl Iterator for TreeTraverser<'_> {
+    type Item = usize;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let id = self.stack.pop()?;
+        let node = self.doc.get_node(id)?;
+        self.stack.extend(node.children.iter().rev());
+        Some(id)
     }
 }
