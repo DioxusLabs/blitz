@@ -142,8 +142,8 @@ impl ApplicationHandler<BlitzShellEvent> for ReadmeApplication {
                     self.reload_document(true);
                 }
             }
-            BlitzShellEvent::Navigate(url) => {
-                let old_url = std::mem::replace(&mut self.raw_url, url);
+            BlitzShellEvent::Navigate(opts) => {
+                let old_url = std::mem::replace(&mut self.raw_url, opts.url.into());
                 self.url_history.push(old_url);
                 self.reload_document(false);
             }

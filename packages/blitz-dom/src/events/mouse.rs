@@ -1,4 +1,4 @@
-use blitz_traits::{HitResult, MouseEventButtons};
+use blitz_traits::{HitResult, MouseEventButtons, navigation::NavigationOptions};
 use markup5ever::local_name;
 
 use crate::{BaseDocument, Node, node::NodeSpecificData, util::resolve_url};
@@ -99,10 +99,14 @@ pub(crate) fn handle_click(doc: &mut BaseDocument, _target: usize, x: f32, y: f3
     let mut maybe_hit = doc.hit(x, y);
 
     while let Some(hit) = maybe_hit {
-        let node = &mut doc.nodes[hit.node_id];
+        let node_id = hit.node_id;
+        let maybe_element = {
+            let node = &mut doc.nodes[node_id];
+            node.data.downcast_element_mut()
+        };
 
-        let Some(el) = node.data.downcast_element_mut() else {
-            maybe_hit = parent_hit(node, x, y);
+        let Some(el) = maybe_element else {
+            maybe_hit = parent_hit(&doc.nodes[node_id], x, y);
             continue;
         };
 
@@ -117,20 +121,18 @@ pub(crate) fn handle_click(doc: &mut BaseDocument, _target: usize, x: f32, y: f3
             && matches!(el.attr(local_name!("type")), Some("checkbox"))
         {
             BaseDocument::toggle_checkbox(el);
-            doc.set_focus_to(hit.node_id);
+            doc.set_focus_to(node_id);
             return;
         } else if el.name.local == local_name!("input")
             && matches!(el.attr(local_name!("type")), Some("radio"))
         {
-            let node_id = node.id;
             let radio_set = el.attr(local_name!("name")).unwrap().to_string();
             BaseDocument::toggle_radio(doc, radio_set, node_id);
-            BaseDocument::set_focus_to(doc, hit.node_id);
+            BaseDocument::set_focus_to(doc, node_id);
             return;
         }
         // Clicking labels triggers click, and possibly input event, of associated input
         else if el.name.local == local_name!("label") {
-            let node_id = node.id;
             if let Some(target_node_id) = doc
                 .label_bound_input_elements(node_id)
                 .first()
@@ -146,7 +148,8 @@ pub(crate) fn handle_click(doc: &mut BaseDocument, _target: usize, x: f32, y: f3
         } else if el.name.local == local_name!("a") {
             if let Some(href) = el.attr(local_name!("href")) {
                 if let Some(url) = resolve_url(&doc.base_url, href) {
-                    doc.navigation_provider.navigate_new_page(url.into());
+                    doc.navigation_provider
+                        .navigate_to(NavigationOptions::new(url, doc.id()));
                 } else {
                     println!(
                         "{href} is not parseable as a url. : {base_url:?}",
@@ -157,10 +160,17 @@ pub(crate) fn handle_click(doc: &mut BaseDocument, _target: usize, x: f32, y: f3
             } else {
                 println!("Clicked link without href: {:?}", el.attrs());
             }
+        } else if el.name.local == local_name!("input")
+            && el.attr(local_name!("type")) == Some("submit")
+            || el.name.local == local_name!("button")
+        {
+            if let Some(form_owner) = doc.controls_to_form.get(&node_id) {
+                doc.submit_form(*form_owner, node_id);
+            }
         }
 
         // No match. Recurse up to parent.
-        maybe_hit = parent_hit(&doc.nodes[hit.node_id], x, y)
+        maybe_hit = parent_hit(&doc.nodes[node_id], x, y)
     }
 
     // If nothing is matched then clear focus

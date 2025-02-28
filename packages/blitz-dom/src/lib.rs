@@ -25,6 +25,7 @@ pub mod node;
 
 mod debug;
 mod events;
+mod form;
 /// Integration of taffy and the DOM.
 mod layout;
 mod query_selector;
