@@ -421,7 +421,6 @@ impl VelloSceneGenerator<'_> {
             return;
         }
 
-        let transform = Affine::translate(content_position.to_vec2() * self.scale);
         let origin = kurbo::Point { x: 0.0, y: 0.0 };
         let clip = Rect::from_origin_size(origin, content_box_size);
 
@@ -439,16 +438,16 @@ impl VelloSceneGenerator<'_> {
         cx.stroke_outline(scene);
         cx.draw_outset_box_shadow(scene);
         cx.draw_background(scene);
+        cx.stroke_border(scene);
 
         if should_clip && clips_available {
-            scene.push_layer(Mix::Clip, 1.0, transform, &cx.frame.frame());
+            scene.push_layer(Mix::Clip, 1.0, cx.transform, &cx.frame.frame());
             CLIPS_USED.fetch_add(1, atomic::Ordering::SeqCst);
             let depth = CLIP_DEPTH.fetch_add(1, atomic::Ordering::SeqCst) + 1;
             CLIP_DEPTH_USED.fetch_max(depth, atomic::Ordering::SeqCst);
         }
 
         cx.draw_inset_box_shadow(scene);
-        cx.stroke_border(scene);
         cx.stroke_devtools(scene);
 
         // Now that background has been drawn, offset pos and cx in order to draw our contents scrolled
