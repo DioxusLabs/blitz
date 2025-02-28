@@ -441,7 +441,7 @@ impl VelloSceneGenerator<'_> {
         cx.draw_background(scene);
 
         if should_clip && clips_available {
-            scene.push_layer(Mix::Clip, 1.0, transform, &cx.frame.frame());
+            scene.push_layer(Mix::Clip, 1.0, cx.transform, &cx.frame.frame());
             CLIPS_USED.fetch_add(1, atomic::Ordering::SeqCst);
             let depth = CLIP_DEPTH.fetch_add(1, atomic::Ordering::SeqCst) + 1;
             CLIP_DEPTH_USED.fetch_max(depth, atomic::Ordering::SeqCst);
