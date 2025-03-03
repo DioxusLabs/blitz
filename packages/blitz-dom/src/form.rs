@@ -1,6 +1,9 @@
 use markup5ever::{local_name, LocalName};
 
-use crate::{util::TreeTraverser, BaseDocument, ElementNodeData, Node};
+use crate::{
+    util::{AncestorTraverser, TreeTraverser},
+    BaseDocument, ElementNodeData, Node,
+};
 use blitz_traits::navigation::{DocumentResource, NavigationOptions, RequestContentType};
 use core::str::FromStr;
 
@@ -35,7 +38,7 @@ impl BaseDocument {
                 }
             })
             .or_else(|| {
-                self.node_chain(node_id).drain(..).find_map(|ancestor_id| {
+                AncestorTraverser::new(self, node_id).find_map(|ancestor_id| {
                     let node = &self.nodes[ancestor_id];
                     node.element_data()
                         .filter(|element| element.name.local == local_name!("form"))
