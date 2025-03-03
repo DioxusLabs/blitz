@@ -2,7 +2,7 @@ use crate::events::handle_event;
 use crate::layout::construct::collect_layout_children;
 use crate::node::{ImageData, NodeSpecificData, Status, TextBrush};
 use crate::stylo_to_cursor_icon::stylo_to_cursor_icon;
-use crate::util::{resolve_url, ImageType};
+use crate::util::{resolve_url, AncestorTraverser, ImageType, TreeTraverser};
 use crate::{ElementNodeData, Node, NodeData, TextNodeData};
 use app_units::Au;
 use blitz_traits::navigation::{DummyNavigationProvider, NavigationProvider};
@@ -24,7 +24,7 @@ use style::values::GenericAtomIdent;
 use crate::net::{Resource, StylesheetLoader};
 use selectors::{matching::QuirksMode, Element};
 use slab::Slab;
-use std::collections::{BTreeMap, Bound, HashMap, HashSet, VecDeque};
+use std::collections::{BTreeMap, Bound, HashMap, HashSet};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use style::media_queries::MediaType;
@@ -1181,35 +1181,14 @@ impl BaseDocument {
     where
         F: FnMut(usize, &Node),
     {
-        let mut stack = VecDeque::new();
-        stack.push_front(0);
-
-        while let Some(node_key) = stack.pop_back() {
-            let node = &self.nodes[node_key];
-            visit(node_key, node);
-
-            for &child_key in &node.children {
-                stack.push_front(child_key);
-            }
-        }
+        TreeTraverser::new(self).for_each(|node_id| visit(node_id, &self.nodes[node_id]));
     }
 
     /// Collect the nodes into a chain by traversing upwards
     pub fn node_chain(&self, node_id: usize) -> Vec<usize> {
-        let mut next_node_id = Some(node_id);
-        let mut chain = Vec::with_capacity(16);
-
-        while let Some(node_id) = next_node_id {
-            let node = &self.tree()[node_id];
-
-            if node.is_element() {
-                chain.push(node_id);
-            }
-
-            next_node_id = node.parent;
-        }
-
-        chain
+        AncestorTraverser::new(self, node_id)
+            .filter(|ancestor_id| self.nodes[*ancestor_id].is_element())
+            .collect()
     }
 }
 
