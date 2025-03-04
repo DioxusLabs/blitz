@@ -609,7 +609,7 @@ impl BaseDocument {
                 match kind {
                     ImageType::Image => {
                         node.element_data_mut().unwrap().node_specific_data =
-                            NodeSpecificData::Image(Box::new(ImageData::Svg(*tree)));
+                            NodeSpecificData::Image(Box::new(ImageData::Svg(tree)));
 
                         // Clear layout cache
                         node.cache.clear();
@@ -620,7 +620,7 @@ impl BaseDocument {
                             .and_then(|el| el.background_images.get_mut(idx))
                         {
                             bg_image.status = Status::Ok;
-                            bg_image.image = ImageData::Svg(*tree);
+                            bg_image.image = ImageData::Svg(tree);
                         }
                     }
                 }

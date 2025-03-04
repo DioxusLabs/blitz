@@ -559,7 +559,7 @@ impl RasterImageData {
 pub enum ImageData {
     Raster(RasterImageData),
     #[cfg(feature = "svg")]
-    Svg(usvg::Tree),
+    Svg(Box<usvg::Tree>),
     None,
 }
 impl From<Arc<DynamicImage>> for ImageData {
@@ -570,7 +570,7 @@ impl From<Arc<DynamicImage>> for ImageData {
 #[cfg(feature = "svg")]
 impl From<usvg::Tree> for ImageData {
     fn from(value: usvg::Tree) -> Self {
-        Self::Svg(value)
+        Self::Svg(Box::new(value))
     }
 }
 

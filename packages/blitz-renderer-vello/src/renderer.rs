@@ -27,6 +27,7 @@ pub struct ActiveRenderState {
     surface: RenderSurface<'static>,
 }
 
+#[allow(clippy::large_enum_variant)]
 pub enum RenderState {
     Active(ActiveRenderState),
     Suspended,
