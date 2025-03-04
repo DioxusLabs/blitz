@@ -82,11 +82,16 @@ impl Document for DioxusDocument {
         let mut prevent_default = false;
         let mut stop_propagation = false;
 
+        // TODO: Maybe we might need to handle the cases separately for mouse leave ?
         match &event.data {
             DomEventData::MouseMove { .. }
             | DomEventData::MouseDown { .. }
-            | DomEventData::MouseUp { .. } => {
+            | DomEventData::MouseUp { .. }
+            | DomEventData::MouseOver { .. }
+            | DomEventData::MouseLeave => {
                 let click_event_data = wrap_event_data(NativeClickData);
+
+                println!("{:?}", event.name());
 
                 for node_id in chain.clone().into_iter() {
                     let node = &self.inner.tree()[node_id];
@@ -268,7 +273,6 @@ impl Document for DioxusDocument {
             }
             // TODO: Implement IME and Hover events handling
             DomEventData::Ime(_) => {}
-            DomEventData::Hover => {}
         }
 
         if !event.cancelable || !prevent_default {
