@@ -2,7 +2,7 @@ use markup5ever::{LocalName, local_name};
 
 use crate::{
     util::{AncestorTraverser, TreeTraverser},
-    BaseDocument, ElementNodeData, Node,
+    BaseDocument, ElementNodeData,
 };
 use blitz_traits::navigation::{DocumentResource, NavigationOptions, RequestContentType};
 use core::str::FromStr;
@@ -25,24 +25,16 @@ impl BaseDocument {
         let final_owner_id = element
             .attr(local_name!("form"))
             .and_then(|owner| self.nodes_to_id.get(owner))
-            .and_then(|owner_id| {
-                if self
-                    .nodes
-                    .get(*owner_id)
-                    .and_then(|node| node.element_data())
-                    .is_some_and(|element_data| element_data.name.local == local_name!("form"))
-                {
-                    Some(*owner_id)
-                } else {
-                    None
-                }
+            .copied()
+            .filter(|owner_id| {
+                self.get_node(*owner_id)
+                    .is_some_and(|node| node.data.is_element_with_tag_name(&local_name!("form")))
             })
             .or_else(|| {
-                AncestorTraverser::new(self, node_id).find_map(|ancestor_id| {
-                    let node = &self.nodes[ancestor_id];
-                    node.element_data()
-                        .filter(|element| element.name.local == local_name!("form"))
-                        .map(|_| ancestor_id)
+                AncestorTraverser::new(self, node_id).find(|ancestor_id| {
+                    self.nodes[*ancestor_id]
+                        .data
+                        .is_element_with_tag_name(&local_name!("form"))
                 })
             });
 
@@ -218,13 +210,12 @@ fn construct_entry_list(doc: &BaseDocument, form_id: usize, submitter_id: usize)
         entry_list.0.push(Entry::new(name, value));
     };
 
-    fn datalist_ancestor(doc: &BaseDocument, node: &Node) -> bool {
-        node.element_data()
-            .is_some_and(|element| element.name.local == local_name!("datalist"))
-            || node
-                .parent
-                .and_then(|parent_id| doc.get_node(parent_id))
-                .is_some_and(|node| datalist_ancestor(doc, node))
+    fn datalist_ancestor(doc: &BaseDocument, node_id: usize) -> bool {
+        AncestorTraverser::new(doc, node_id).any(|node_id| {
+            doc.nodes[node_id]
+                .data
+                .is_element_with_tag_name(&local_name!("datalist"))
+        })
     }
 
     for control_id in TreeTraverser::new(doc) {
@@ -254,7 +245,7 @@ fn construct_entry_list(doc: &BaseDocument, form_id: usize, submitter_id: usize)
         //   field is an input element whose type attribute is in the Checkbox state and whose checkedness is false; or
         //   field is an input element whose type attribute is in the Radio Button state and whose checkedness is false,
         //  then continue.
-        if datalist_ancestor(doc, node)
+        if datalist_ancestor(doc, node.id)
             || element.attr(local_name!("disabled")).is_some()
             || element.name.local == local_name!("button") && node.id != submitter_id
             || element.name.local == local_name!("input")
