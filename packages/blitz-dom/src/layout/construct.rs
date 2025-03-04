@@ -83,8 +83,6 @@ pub(crate) fn collect_layout_children(
 
         #[cfg(feature = "svg")]
         if matches!(tag_name, "svg") {
-            use crate::node::ImageData;
-
             let mut outer_html = doc.get_node(container_node_id).unwrap().outer_html();
 
             // HACK: usvg fails to parse SVGs that don't have the SVG xmlns set. So inject it
@@ -100,8 +98,7 @@ pub(crate) fn collect_layout_children(
                         .unwrap()
                         .element_data_mut()
                         .unwrap()
-                        .node_specific_data =
-                        NodeSpecificData::Image(Box::new(ImageData::Svg(svg)));
+                        .node_specific_data = NodeSpecificData::Image(Box::new(svg.into()));
                 }
                 Err(err) => {
                     println!("{} SVG parse failed", container_node_id);
