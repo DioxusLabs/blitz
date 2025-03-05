@@ -53,22 +53,22 @@ impl Request {
     }
 }
 
-impl Into<http::Request<()>> for Request {
-    fn into(self) -> http::Request<()> {
+impl From<Request> for http::Request<()> {
+    fn from(req: Request) -> http::Request<()> {
         let mut request = http::Request::new(());
-        request.headers_mut().extend(self.headers);
-        *request.uri_mut() = Uri::from_str(&self.url.to_string()).unwrap();
-        *request.method_mut() = self.method;
+        request.headers_mut().extend(req.headers);
+        *request.uri_mut() = Uri::from_str(req.url.as_ref()).unwrap();
+        *request.method_mut() = req.method;
         request
     }
 }
 
-impl Into<http::Request<Vec<u8>>> for Request {
-    fn into(self) -> http::Request<Vec<u8>> {
-        let mut request = http::Request::new(self.body.into());
-        request.headers_mut().extend(self.headers);
-        *request.uri_mut() = Uri::from_str(&self.url.to_string()).unwrap();
-        *request.method_mut() = self.method;
+impl From<Request> for http::Request<Vec<u8>> {
+    fn from(req: Request) -> http::Request<Vec<u8>> {
+        let mut request = http::Request::new(req.body.into());
+        request.headers_mut().extend(req.headers);
+        *request.uri_mut() = Uri::from_str(req.url.as_ref()).unwrap();
+        *request.method_mut() = req.method;
         request
     }
 }
