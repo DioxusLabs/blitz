@@ -1,4 +1,4 @@
-use blitz_traits::{navigation::NavigationOptions, HitResult, MouseEventButtons};
+use blitz_traits::{HitResult, MouseEventButtons, navigation::NavigationOptions};
 use markup5ever::local_name;
 
 use crate::{BaseDocument, Node, node::NodeSpecificData, util::resolve_url};
