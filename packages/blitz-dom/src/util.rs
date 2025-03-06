@@ -1,6 +1,6 @@
 use crate::{
-    node::{Node, NodeData},
     BaseDocument,
+    node::{Node, NodeData},
 };
 use color::{AlphaColor, Srgb};
 use style::color::AbsoluteColor;
