@@ -1,8 +1,8 @@
-use markup5ever::{local_name, LocalName};
+use markup5ever::{LocalName, local_name};
 
 use crate::{
-    util::{AncestorTraverser, TreeTraverser},
     BaseDocument, ElementNodeData,
+    util::{AncestorTraverser, TreeTraverser},
 };
 use blitz_traits::navigation::{DocumentResource, NavigationOptions, RequestContentType};
 use core::str::FromStr;
@@ -277,7 +277,10 @@ fn construct_entry_list(doc: &BaseDocument, form_id: usize, submitter_id: usize)
 
         //     If either the field element does not have a name attribute specified, or its name attribute's value is the empty string, then continue.
         //     Let name be the value of the field element's name attribute.
-        let Some(name) = element.attr(local_name!("name")) else {
+        let Some(name) = element
+            .attr(local_name!("name"))
+            .filter(|str| !str.is_empty())
+        else {
             continue;
         };
 
@@ -308,7 +311,7 @@ fn construct_entry_list(doc: &BaseDocument, form_id: usize, submitter_id: usize)
         {
             // Let charset be the name of encoding.
             let charset = "UTF-8"; // TODO: Support multiple encodings.
-                                   // Create an entry with name and charset, and append it to entry list.
+            // Create an entry with name and charset, and append it to entry list.
             create_entry(name, charset);
         }
         // Otherwise, create an entry with name and the value of the field element, and append it to entry list.

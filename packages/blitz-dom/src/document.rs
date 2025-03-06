@@ -2,7 +2,7 @@ use crate::events::handle_event;
 use crate::layout::construct::collect_layout_children;
 use crate::node::{ImageData, NodeSpecificData, Status, TextBrush};
 use crate::stylo_to_cursor_icon::stylo_to_cursor_icon;
-use crate::util::{resolve_url, AncestorTraverser, ImageType, TreeTraverser};
+use crate::util::{AncestorTraverser, ImageType, TreeTraverser, resolve_url};
 use crate::{ElementNodeData, Node, NodeData, TextNodeData};
 use app_units::Au;
 use blitz_traits::navigation::{DummyNavigationProvider, NavigationProvider};
@@ -24,12 +24,7 @@ use style::values::computed::Overflow;
 use crate::net::{Resource, StylesheetLoader};
 use selectors::{Element, matching::QuirksMode};
 use slab::Slab;
-<<<<<<< HEAD
-use std::collections::{BTreeMap, Bound, HashMap, HashSet, VecDeque};
-=======
 use std::collections::{BTreeMap, Bound, HashMap, HashSet};
-use std::sync::atomic::{AtomicUsize, Ordering};
->>>>>>> 10eb29f4 (Use custom iterator instead of node_chain)
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use style::media_queries::MediaType;
