@@ -1,8 +1,8 @@
 use markup5ever::{LocalName, local_name};
 
 use crate::{
-    util::{AncestorTraverser, TreeTraverser},
     BaseDocument, ElementNodeData,
+    util::{AncestorTraverser, TreeTraverser},
 };
 use blitz_traits::navigation::{DocumentResource, NavigationOptions, RequestContentType};
 use core::str::FromStr;
@@ -277,7 +277,10 @@ fn construct_entry_list(doc: &BaseDocument, form_id: usize, submitter_id: usize)
 
         //     If either the field element does not have a name attribute specified, or its name attribute's value is the empty string, then continue.
         //     Let name be the value of the field element's name attribute.
-        let Some(name) = element.attr(local_name!("name")) else {
+        let Some(name) = element
+            .attr(local_name!("name"))
+            .filter(|str| !str.is_empty())
+        else {
             continue;
         };
 
