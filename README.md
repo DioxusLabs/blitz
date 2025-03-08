@@ -1,4 +1,4 @@
-<img src="https://blitz-website.fly.dev/static/blitz-logo-with-text3.svg" alt="Blitz" width="368" /> 
+<img src="https://blitz-website.fly.dev/static/blitz-logo-with-text3.svg" alt="Blitz" height="70" /> 
 
 **A [radically modular](https://github.com/DioxusLabs/blitz?tab=readme-ov-file#architecture) HTML/CSS rendering engine**
 
