@@ -204,9 +204,9 @@ pub fn position(input: stylo::Position) -> taffy::Position {
 
 #[inline]
 pub fn overflow(input: stylo::Overflow) -> taffy::Overflow {
-    // TODO: Enable Overflow::Clip in servo configuration of stylo
     match input {
         stylo::Overflow::Visible => taffy::Overflow::Visible,
+        stylo::Overflow::Clip => taffy::Overflow::Clip,
         stylo::Overflow::Hidden => taffy::Overflow::Hidden,
         stylo::Overflow::Scroll => taffy::Overflow::Scroll,
         // TODO: Support Overflow::Auto in Taffy

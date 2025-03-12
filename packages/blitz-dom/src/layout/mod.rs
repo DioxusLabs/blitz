@@ -27,7 +27,8 @@ use self::table::TableTreeWrapper;
 
 pub(crate) fn resolve_calc_value(calc_ptr: *const (), parent_size: f32) -> f32 {
     let calc = unsafe { &*(calc_ptr as *const CalcLengthPercentage) };
-    calc.resolve(CSSPixelLength::new(parent_size)).px()
+    let result = calc.resolve(CSSPixelLength::new(parent_size), None);
+    result.unwrap().result.px()
 }
 
 impl BaseDocument {

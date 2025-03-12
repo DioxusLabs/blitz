@@ -519,6 +519,9 @@ impl selectors::Element for BlitzNode<'_> {
             NonTSPseudoClass::Required => false,
             NonTSPseudoClass::UserInvalid => false,
             NonTSPseudoClass::UserValid => false,
+            NonTSPseudoClass::MozMeterOptimum => false,
+            NonTSPseudoClass::MozMeterSubOptimum => false,
+            NonTSPseudoClass::MozMeterSubSubOptimum => false,
         }
     }
 
