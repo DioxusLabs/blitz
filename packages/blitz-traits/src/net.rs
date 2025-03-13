@@ -1,6 +1,8 @@
 pub use bytes::Bytes;
+use http::Uri;
 pub use http::{self, HeaderMap, Method};
 use std::marker::PhantomData;
+use std::str::FromStr;
 use std::sync::Arc;
 pub use url::Url;
 
@@ -49,6 +51,34 @@ impl Request {
             body: Bytes::new(),
         }
     }
+}
+
+impl From<Request> for http::Request<()> {
+    fn from(req: Request) -> http::Request<()> {
+        let mut request = http::Request::new(());
+        request.headers_mut().extend(req.headers);
+        *request.uri_mut() = Uri::from_str(req.url.as_ref()).unwrap();
+        *request.method_mut() = req.method;
+        request
+    }
+}
+
+impl From<Request> for http::Request<Vec<u8>> {
+    fn from(req: Request) -> http::Request<Vec<u8>> {
+        let mut request = http::Request::new(req.body.into());
+        request.headers_mut().extend(req.headers);
+        *request.uri_mut() = Uri::from_str(req.url.as_ref()).unwrap();
+        *request.method_mut() = req.method;
+        request
+    }
+}
+
+#[derive(Debug)]
+/// An HTTP response
+pub struct Response {
+    pub status: u16,
+    pub headers: HeaderMap,
+    pub body: Bytes,
 }
 
 /// A default noop NetProvider
