@@ -1,4 +1,7 @@
-<img src="https://blitz-website.fly.dev/static/blitz-logo-with-text3.svg" alt="Blitz" height="70" /> 
+<picture >
+  <source media="(prefers-color-scheme: dark)" srcset="https://blitz-website.fly.dev/static/blitz-logo-with-text3-white.svg">
+  <img height="70" alt="Blitz" src="https://blitz-website.fly.dev/static/blitz-logo-with-text3.svg">
+</picture>
 
 **A [radically modular](https://github.com/DioxusLabs/blitz?tab=readme-ov-file#architecture) HTML/CSS rendering engine**
 
