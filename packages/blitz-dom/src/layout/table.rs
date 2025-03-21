@@ -199,6 +199,7 @@ pub(crate) fn collect_table_cells(
                 start: style_helpers::line(*row as i16),
                 end: style_helpers::span(1),
             };
+            style.size.width = style_helpers::auto();
             cells.push(TableItem {
                 kind: TableItemKind::Cell,
                 node_id,
