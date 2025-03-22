@@ -31,13 +31,25 @@ fn app() -> Element {
                     }
                 }
                 div {
+                    input {
+                        type: "checkbox",
+                        id: "check3",
+                        name: "check3",
+                        value: "check3",
+                    }
+                    label {
+                        r#for: "check3",
+                        "Checkbox 1 (uncontrolled with for)"
+                    }
+                }
+                div {
                     label {
                         input {
                             type: "checkbox",
                             name: "check2",
                             value: "check2",
                         }
-                        "Checkbox 2 (uncontrolled)"
+                        "Checkbox 2 (uncontrolled nested)"
                     }
                 }
                 div {
