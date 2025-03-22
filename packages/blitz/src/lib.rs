@@ -49,15 +49,14 @@ pub fn launch_static_html(html: &str) {
 }
 
 pub fn launch_static_html_cfg(html: &str, cfg: Config) {
+    // Turn on the runtime and enter it
     #[cfg(feature = "net")]
-    {
-        // Turn on the runtime and enter it
-        let rt = tokio::runtime::Builder::new_multi_thread()
-            .enable_all()
-            .build()
-            .unwrap();
-        let _guard = rt.enter();
-    }
+    let rt = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+    #[cfg(feature = "net")]
+    let _guard = rt.enter();
 
     launch_internal(html, cfg)
 }
