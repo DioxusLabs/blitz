@@ -1,15 +1,15 @@
 use std::collections::HashMap;
 
 use dioxus_html::{
+    AnimationData, ClipboardData, CompositionData, DragData, FocusData, FormData, FormValue,
+    HasFileData, HasFormData, HasMouseData, HtmlEventConverter, ImageData, KeyboardData, MediaData,
+    MountedData, MouseData, PlatformEventData, PointerData, ResizeData, ScrollData, SelectionData,
+    ToggleData, TouchData, TransitionData, VisibleData, WheelData,
     geometry::{ClientPoint, ElementPoint, PagePoint, ScreenPoint},
     input_data::{MouseButton, MouseButtonSet},
     point_interaction::{
         InteractionElementOffset, InteractionLocation, ModifiersInteraction, PointerInteraction,
     },
-    AnimationData, ClipboardData, CompositionData, DragData, FocusData, FormData, FormValue,
-    HasFileData, HasFormData, HasMouseData, HtmlEventConverter, ImageData, KeyboardData, MediaData,
-    MountedData, MouseData, PlatformEventData, PointerData, ResizeData, ScrollData, SelectionData,
-    ToggleData, TouchData, TransitionData, VisibleData, WheelData,
 };
 use keyboard_types::Modifiers;
 

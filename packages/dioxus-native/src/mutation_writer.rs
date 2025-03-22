@@ -1,8 +1,8 @@
-use crate::{dioxus_document::qual_name, NodeId};
+use crate::{NodeId, dioxus_document::qual_name};
 use blitz_dom::{
-    local_name, namespace_url,
+    BaseDocument, ElementNodeData, NodeData, QualName, RestyleHint, local_name, namespace_url,
     node::{Attribute, NodeSpecificData},
-    ns, BaseDocument, ElementNodeData, NodeData, QualName, RestyleHint,
+    ns,
 };
 use dioxus_core::{
     AttributeValue, ElementId, Template, TemplateAttribute, TemplateNode, WriteMutations,

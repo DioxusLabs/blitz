@@ -74,13 +74,13 @@ impl BaseDocument {
         let layout = &node.final_layout;
         println!("Layout:");
         println!(
-                "  x: {x} y: {y} w: {width} h: {height} content_w: {content_width} content_h: {content_height}",
-                x = layout.location.x,
-                y = layout.location.y,
-                width = layout.size.width,
-                height = layout.size.height,
-                content_width = layout.content_size.width,
-                content_height = layout.content_size.height,
+            "  x: {x} y: {y} w: {width} h: {height} content_w: {content_width} content_h: {content_height}",
+            x = layout.location.x,
+            y = layout.location.y,
+            width = layout.size.width,
+            height = layout.size.height,
+            content_width = layout.content_size.width,
+            content_height = layout.content_size.height,
         );
         println!(
             "  border: l:{l} r:{r} t:{t} b:{b}",

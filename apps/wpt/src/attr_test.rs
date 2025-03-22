@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use blitz_dom::{net::Resource, BaseDocument, Node};
+use blitz_dom::{BaseDocument, Node, net::Resource};
 use blitz_html::HtmlDocument;
 use blitz_traits::net::SharedProvider;
 

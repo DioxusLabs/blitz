@@ -112,11 +112,11 @@ panic = "abort"
 name = "blitz-examples"
 version = "0.0.1"
 authors = ["Jonathan Kelley"]
-edition = "2021"
+edition = "2024"
 description = "Top level crate for Blitz"
 license = "MIT OR Apache-2.0"
 keywords = ["dom", "ui", "gui", "react", "wasm"]
-rust-version = "1.70.0"
+rust-version = "1.85.1"
 publish = false
 
 [dev-dependencies]

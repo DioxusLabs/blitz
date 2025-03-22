@@ -4,13 +4,13 @@ mod readme_application;
 use blitz_html::HtmlDocument;
 use blitz_net::Provider;
 use blitz_traits::navigation::NavigationProvider;
-use markdown::{markdown_to_html, BLITZ_MD_STYLES, GITHUB_MD_STYLES};
+use markdown::{BLITZ_MD_STYLES, GITHUB_MD_STYLES, markdown_to_html};
 use notify::{Error as NotifyError, Event as NotifyEvent, RecursiveMode, Watcher as _};
 use readme_application::{ReadmeApplication, ReadmeEvent};
 use reqwest::header::HeaderName;
 
 use blitz_shell::{
-    create_default_event_loop, BlitzShellEvent, BlitzShellNetCallback, WindowConfig,
+    BlitzShellEvent, BlitzShellNetCallback, WindowConfig, create_default_event_loop,
 };
 use std::env::current_dir;
 use std::fs;

@@ -14,8 +14,8 @@ use std::sync::Arc;
 use blitz_html::HtmlDocument;
 use blitz_renderer_vello::BlitzVelloRenderer;
 use blitz_shell::{
-    create_default_event_loop, BlitzApplication, BlitzShellEvent, BlitzShellNetCallback, Config,
-    WindowConfig,
+    BlitzApplication, BlitzShellEvent, BlitzShellNetCallback, Config, WindowConfig,
+    create_default_event_loop,
 };
 use blitz_traits::navigation::DummyNavigationProvider;
 

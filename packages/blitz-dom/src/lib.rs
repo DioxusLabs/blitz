@@ -46,8 +46,8 @@ mod accessibility;
 
 pub use document::BaseDocument;
 pub use markup5ever::{
-    local_name, namespace_prefix, namespace_url, ns, Namespace, NamespaceStaticSet, Prefix,
-    PrefixStaticSet, QualName,
+    Namespace, NamespaceStaticSet, Prefix, PrefixStaticSet, QualName, local_name, namespace_prefix,
+    namespace_url, ns,
 };
 pub use node::{ElementNodeData, Node, NodeData, TextNodeData};
 pub use parley::FontContext;

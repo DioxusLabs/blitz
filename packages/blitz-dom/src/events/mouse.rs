@@ -1,7 +1,7 @@
 use blitz_traits::{HitResult, MouseEventButtons};
 use markup5ever::local_name;
 
-use crate::{node::NodeSpecificData, util::resolve_url, BaseDocument, Node};
+use crate::{BaseDocument, Node, node::NodeSpecificData, util::resolve_url};
 
 fn parent_hit(node: &Node, x: f32, y: f32) -> Option<HitResult> {
     node.layout_parent.get().map(|parent_id| HitResult {

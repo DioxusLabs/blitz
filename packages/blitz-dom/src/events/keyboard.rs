@@ -1,6 +1,6 @@
 use crate::{
-    node::{TextBrush, TextInputData},
     BaseDocument,
+    node::{TextBrush, TextInputData},
 };
 use blitz_traits::BlitzKeyEvent;
 use keyboard_types::{Key, Modifiers};

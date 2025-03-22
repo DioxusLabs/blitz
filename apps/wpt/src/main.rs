@@ -18,12 +18,12 @@ use log::{error, info};
 use owo_colors::OwoColorize;
 use std::cell::RefCell;
 use std::fmt::Display;
-use std::io::{stdout, Write};
-use std::panic::{catch_unwind, AssertUnwindSafe};
+use std::io::{Write, stdout};
+use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::path::{self, Path, PathBuf};
+use std::sync::Arc;
 use std::sync::atomic::AtomicU32;
 use std::sync::atomic::Ordering;
-use std::sync::Arc;
 use std::time::{Duration, Instant};
 use std::{env, fs};
 
@@ -314,7 +314,9 @@ fn main() {
     let wpt_dir = path::absolute(env::var("WPT_DIR").expect("WPT_DIR is not set")).unwrap();
     info!("WPT_DIR: {}", wpt_dir.display());
     if !wpt_dir.exists() {
-        error!("WPT_DIR does not exist. This should be set to a local copy of https://github.com/web-platform-tests/wpt.");
+        error!(
+            "WPT_DIR does not exist. This should be set to a local copy of https://github.com/web-platform-tests/wpt."
+        );
     }
     let test_paths = collect_tests(&wpt_dir);
     let count = test_paths.len();
@@ -566,12 +568,20 @@ fn main() {
     println!("{subtest_pass_count:>4} subtests PASSED ({subtest_pass_percent:.2}%)");
 
     println!("{}", "\nOf tests run:".bright_black());
-    println!("{crash_count:>4} tests CRASHED ({crash_percent_run:.2}% of run; {crash_percent_total:.2}% of found)");
-    println!("{pass_count:>4} tests PASSED ({pass_percent_run:.2}% of run; {pass_percent_total:.2}% of found)");
-    println!("{fail_count:>4} tests FAILED ({fail_percent_run:.2}% of run; {fail_percent_total:.2}% of found)");
+    println!(
+        "{crash_count:>4} tests CRASHED ({crash_percent_run:.2}% of run; {crash_percent_total:.2}% of found)"
+    );
+    println!(
+        "{pass_count:>4} tests PASSED ({pass_percent_run:.2}% of run; {pass_percent_total:.2}% of found)"
+    );
+    println!(
+        "{fail_count:>4} tests FAILED ({fail_percent_run:.2}% of run; {fail_percent_total:.2}% of found)"
+    );
 
     println!("{}", "\nCounting partial tests:".bright_black());
-    println!("{fractional_pass_count:>4.2} tests PASSED ({fractional_pass_percent_run:.2}% of run; {fractional_pass_percent_total:.2}% of found)");
+    println!(
+        "{fractional_pass_count:>4.2} tests PASSED ({fractional_pass_percent_run:.2}% of run; {fractional_pass_percent_total:.2}% of found)"
+    );
 
     println!("{}", "\nOf those tests which failed:".bright_black());
     println!("{other_fail_count:>4} do not use unsupported features");

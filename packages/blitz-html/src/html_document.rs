@@ -2,9 +2,9 @@ use std::sync::Arc;
 
 use crate::DocumentHtmlParser;
 
-use blitz_dom::{net::Resource, BaseDocument, FontContext, DEFAULT_CSS};
+use blitz_dom::{BaseDocument, DEFAULT_CSS, FontContext, net::Resource};
 use blitz_traits::{
-    navigation::NavigationProvider, net::SharedProvider, ColorScheme, Document, DomEvent, Viewport,
+    ColorScheme, Document, DomEvent, Viewport, navigation::NavigationProvider, net::SharedProvider,
 };
 
 pub struct HtmlDocument {

@@ -2,7 +2,7 @@
 name = "dioxus-native"
 version = "0.0.0"
 license.workspace = true
-edition = "2021"
+edition = "2024"
 
 [features]
 default = ["accessibility", "hot-reload", "menu", "tracing", "net", "svg"]

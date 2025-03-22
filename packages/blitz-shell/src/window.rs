@@ -1,7 +1,7 @@
 use crate::convert_events::{
     winit_ime_to_blitz, winit_key_event_to_blitz, winit_modifiers_to_kbt_modifiers,
 };
-use crate::event::{create_waker, BlitzShellEvent};
+use crate::event::{BlitzShellEvent, create_waker};
 use blitz_dom::BaseDocument;
 use blitz_traits::{
     BlitzMouseButtonEvent, ColorScheme, Devtools, MouseEventButton, MouseEventButtons, Viewport,

@@ -1,5 +1,5 @@
-use std::sync::atomic::{self, AtomicUsize};
 use std::sync::Arc;
+use std::sync::atomic::{self, AtomicUsize};
 
 use super::multicolor_rounded_rect::{Edge, ElementFrame};
 use crate::util::{Color, ToColorColor};
@@ -7,7 +7,7 @@ use blitz_dom::node::{
     ImageData, ListItemLayout, ListItemLayoutPosition, Marker, NodeData, RasterImageData,
     TextBrush, TextInputData, TextNodeData,
 };
-use blitz_dom::{local_name, BaseDocument, ElementNodeData, Node};
+use blitz_dom::{BaseDocument, ElementNodeData, Node, local_name};
 use blitz_traits::Devtools;
 
 use color::DynamicColor;
@@ -15,11 +15,12 @@ use euclid::Transform3D;
 use parley::Line;
 use style::color::AbsoluteColor;
 use style::{
+    OwnedSlice,
     dom::TElement,
     properties::{
+        ComputedValues,
         generated::longhands::visibility::computed_value::T as StyloVisibility,
         style_structs::{Font, Outline},
-        ComputedValues,
     },
     values::{
         computed::{
@@ -27,18 +28,17 @@ use style::{
             LineDirection, Overflow, Percentage,
         },
         generics::{
+            NonNegative,
             image::{
                 EndingShape, GenericGradient, GenericGradientItem, GenericImage, GradientFlags,
             },
             position::GenericPosition,
-            NonNegative,
         },
         specified::{
-            position::{HorizontalPositionKeyword, VerticalPositionKeyword},
             BorderStyle, OutlineStyle,
+            position::{HorizontalPositionKeyword, VerticalPositionKeyword},
         },
     },
-    OwnedSlice,
 };
 
 use image::imageops::FilterType;
@@ -52,9 +52,9 @@ use taffy::Layout;
 use vello::kurbo::{self, BezPath, Cap, Circle, Join};
 use vello::peniko::Gradient;
 use vello::{
+    Scene,
     kurbo::{Affine, Point, Rect, Shape, Stroke, Vec2},
     peniko::{self, Fill, Mix},
-    Scene,
 };
 #[cfg(feature = "svg")]
 use vello_svg::usvg;
@@ -918,7 +918,7 @@ impl ElementCx<'_> {
 
     #[cfg(feature = "svg")]
     fn draw_svg_bg_image(&self, scene: &mut Scene, idx: usize) {
-        use style::{values::computed::Length, Zero as _};
+        use style::{Zero as _, values::computed::Length};
 
         let bg_image = self.element.background_images.get(idx);
 

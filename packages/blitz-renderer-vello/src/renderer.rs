@@ -1,15 +1,15 @@
 mod multicolor_rounded_rect;
 mod render;
 
-use crate::renderer::render::generate_vello_scene;
 use crate::Color;
+use crate::renderer::render::generate_vello_scene;
 use blitz_dom::BaseDocument;
 use blitz_traits::{BlitzWindowHandle, Devtools, DocumentRenderer, Viewport};
 use std::num::NonZeroUsize;
 use std::sync::Arc;
 use vello::{
-    util::{block_on_wgpu, RenderContext, RenderSurface},
     AaSupport, RenderParams, Renderer as VelloRenderer, RendererOptions, Scene,
+    util::{RenderContext, RenderSurface, block_on_wgpu},
 };
 use wgpu::{
     BufferDescriptor, BufferUsages, CommandEncoderDescriptor, Extent3d, ImageCopyBuffer,
