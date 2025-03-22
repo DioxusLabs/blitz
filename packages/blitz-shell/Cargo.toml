@@ -6,7 +6,7 @@ edition = "2021"
 
 [features]
 default = ["accessibility", "menu", "tracing"]
-accessibility = ["dep:accesskit", "dep:accesskit_winit"]
+accessibility = ["dep:accesskit", "dep:accesskit_winit", "blitz-dom/accessibility"]
 menu = ["dep:muda"]
 tracing = ["dep:tracing", "blitz-dom/tracing"]
 
