@@ -350,7 +350,7 @@ fn flush_pseudo_elements(doc: &mut BaseDocument, node_id: usize) {
             let node_styles = &mut node_styles.as_mut().unwrap();
             let primary_styles = &mut node_styles.styles.primary;
 
-            if &**primary_styles.as_ref().unwrap() as *const _ != &*pe_style as *const _ {
+            if !std::ptr::eq(&**primary_styles.as_ref().unwrap(), &*pe_style) {
                 *primary_styles = Some(pe_style);
                 node_styles.set_restyled();
             }
