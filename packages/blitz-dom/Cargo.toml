@@ -5,11 +5,16 @@ license.workspace = true
 edition = "2024"
 
 [features]
-default = ["tracing", "svg", "woff", "clipboard", "accessibility"]
+default = ["tracing", "svg", "woff-c", "clipboard", "accessibility"]
 tracing = ["dep:tracing"]
 svg = ["dep:usvg"]
-woff = ["dep:woff"]
-woff2 = ["dep:woff2"]
+# WOFF decoding using the "woff" crate which binds to C libraries
+# ("woff" for woff2) and "sfnt2woff" for woff1).
+# Both woff1 and woff2 are supported
+woff-c = ["dep:woff"]
+# WOFF decoding using the "woff2" crate which is pure Rust
+# Only woff2 is supported. Does not work correct with all woff2 fonts
+woff-rust = ["dep:woff2"]
 clipboard = ["dep:arboard"]
 accessibility = ["accesskit"]
 
