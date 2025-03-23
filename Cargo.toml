@@ -21,15 +21,15 @@ license = "MIT OR Apache-2.0"
 
 [workspace.dependencies]
 # Servo dependencies
-style = { git = "https://github.com/servo/stylo", rev = "4ff13d4f", package = "style" } # 2025-03-11
-style_traits = { git = "https://github.com/servo/stylo", rev = "4ff13d4f", package = "style_traits" } # 2025-03-11
-style_config = { git = "https://github.com/servo/stylo", rev = "4ff13d4f", package = "stylo_config" } # 2025-03-11
-style_dom = { git = "https://github.com/servo/stylo", rev = "4ff13d4f", package = "stylo_dom" } # 2025-03-11
-selectors = { git = "https://github.com/servo/stylo", rev = "4ff13d4f", package = "selectors" } # 2025-03-11
+style = { git = "https://github.com/servo/stylo", rev = "4b44fbdb", package = "stylo" } # 2025-03-15
+style_traits = { git = "https://github.com/servo/stylo", rev = "4b44fbdb", package = "stylo_traits" } # 2025-03-15
+style_config = { git = "https://github.com/servo/stylo", rev = "4b44fbdb", package = "stylo_config" } # 2025-03-15
+style_dom = { git = "https://github.com/servo/stylo", rev = "4b44fbdb", package = "stylo_dom" } # 2025-03-15
+selectors = { git = "https://github.com/servo/stylo", rev = "4b44fbdb", package = "selectors" } # 2025-03-15
 
-markup5ever = "0.14" # needs to match stylo markup5ever version
-html5ever = "0.29" # needs to match stylo markup5ever version
-xml5ever = "0.20" # needs to match stylo markup5ever version
+markup5ever = "0.15" # needs to match stylo markup5ever version
+html5ever = "0.30" # needs to match stylo markup5ever version
+xml5ever = "0.21" # needs to match stylo markup5ever version
 euclid = "0.22"
 string_cache = "0.8.7"
 atomic_refcell = "0.1.13"
