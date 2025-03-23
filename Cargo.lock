@@ -7191,11 +7191,12 @@ dependencies = [
 
 [[package]]
 name = "woff"
-version = "0.3.4"
+version = "0.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c56bbf3fa56e26583c772464687abdb1140d110a44ab8a8c2fbb5825978ebfc7"
+checksum = "2e229335e006d138b1c318e83b99eaa3e1ab03e08c4ced4967e46705e6e9d1cf"
 dependencies = [
  "cc",
+ "libc",
 ]
 
 [[package]]
