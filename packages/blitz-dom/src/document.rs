@@ -185,6 +185,7 @@ impl BaseDocument {
         style_config::set_bool("layout.flexbox.enabled", true);
         style_config::set_bool("layout.grid.enabled", true);
         style_config::set_bool("layout.legacy_layout", true);
+        style_config::set_bool("layout.unimplemented", true);
         style_config::set_bool("layout.columns.enabled", true);
 
         font_ctx
@@ -356,24 +357,14 @@ impl BaseDocument {
 
     pub fn create_node(&mut self, node_data: NodeData) -> usize {
         let slab_ptr = self.nodes.as_mut() as *mut Slab<Node>;
+        let guard = self.guard.clone();
+        
         let entry = self.nodes.vacant_entry();
         let id = entry.key();
-        let guard = self.guard.clone();
-
         entry.insert(Node::new(slab_ptr, id, guard, node_data));
-
-        // self.quadtree.insert(
-        //     AreaBuilder::default()
-        //         .anchor(quadtree_rs::point::Point { x: 4, y: 5 })
-        //         .dimensions((2, 3))
-        //         .build()
-        //         .unwrap(),
-        //     id as usize,
-        // );
 
         // Mark the new node as changed.
         self.changed.insert(id);
-
         id
     }
 
