@@ -157,15 +157,24 @@ impl NetHandler for FontFaceHandler {
     fn bytes(mut self: Box<Self>, doc_id: usize, bytes: Bytes, callback: SharedCallback<Resource>) {
         if self.0 == FontFaceSourceFormatKeyword::None {
             self.0 = match bytes.as_ref() {
-                // https://w3c.github.io/woff/woff2/#woff20Header
-                #[cfg(feature = "woff")]
-                [0x77, 0x4F, 0x46, 0x32, ..] => FontFaceSourceFormatKeyword::Woff2,
-                // https://learn.microsoft.com/en-us/typography/opentype/spec/otff#organization-of-an-opentype-font
-                [0x4F, 0x54, 0x54, 0x4F, ..] => FontFaceSourceFormatKeyword::Opentype,
-                // https://developer.apple.com/fonts/TrueType-Reference-Manual/RM06/Chap6.html#ScalerTypeNote
-                [0x00, 0x01, 0x00, 0x00, ..] | [0x74, 0x72, 0x75, 0x65, ..] => {
-                    FontFaceSourceFormatKeyword::Truetype
-                }
+                // WOFF (v1) files begin with 0x774F4646 ('wOFF' in ascii)
+                // See: <https://w3c.github.io/woff/woff1/spec/Overview.html#WOFFHeader>
+                #[cfg(any(feature = "woff", feature = "woff2"))]
+                [b'w', b'O', b'F', b'F', ..] => FontFaceSourceFormatKeyword::Woff
+                [b'w', b'O', b'F', b'F', ..] => FontFaceSourceFormatKeyword::Woff,
+                // WOFF2 files begin with 0x774F4632 ('wOF2' in ascii)
+                // See: <https://w3c.github.io/woff/woff2/#woff20Header>
+                #[cfg(any(feature = "woff", feature = "woff2"))]
+                [b'w', b'O', b'F', b'2', ..] => FontFaceSourceFormatKeyword::Woff2,
+                // Opentype fonts with CFF data begin with 0x4F54544F ('OTTO' in ascii)
+                // See: <https://learn.microsoft.com/en-us/typography/opentype/spec/otff#organization-of-an-opentype-font>
+                [b'O', b'T', b'T', b'O', ..] => FontFaceSourceFormatKeyword::Opentype,
+                // Opentype fonts truetype outlines begin with 0x00010000
+                // See: <https://learn.microsoft.com/en-us/typography/opentype/spec/otff#organization-of-an-opentype-font>
+                [0x00, 0x01, 0x00, 0x00, ..] => FontFaceSourceFormatKeyword::Truetype,
+                // Truetype fonts begin with 0x74727565 ('true' in ascii)
+                // See: <https://developer.apple.com/fonts/TrueType-Reference-Manual/RM06/Chap6.html#ScalerTypeNote>
+                [b't', b'r', b'u', b'e', ..] => FontFaceSourceFormatKeyword::Truetype,
                 _ => FontFaceSourceFormatKeyword::None,
             }
         }
