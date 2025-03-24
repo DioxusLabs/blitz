@@ -72,7 +72,7 @@ reqwest = "0.12"
 
 # Media & Decoding
 image = { version = "0.25", default-features = false }
-woff = "0.6"
+woff = { version = "0.6", default-features = false }
 woff2 = "0.3"
 html-escape = "0.2.13"
 

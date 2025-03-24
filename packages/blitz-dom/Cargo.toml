@@ -52,7 +52,7 @@ tracing = { workspace = true, optional = true }
 # Media & Decoding
 image = { workspace = true }
 usvg = { workspace = true, optional = true }
-woff = { workspace = true, optional = true }
+woff = { workspace = true, optional = true, features = ["version2"] }
 woff2 = { workspace = true, optional = true }
 html-escape = { workspace = true }
 
