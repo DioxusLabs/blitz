@@ -358,7 +358,7 @@ impl BaseDocument {
     pub fn create_node(&mut self, node_data: NodeData) -> usize {
         let slab_ptr = self.nodes.as_mut() as *mut Slab<Node>;
         let guard = self.guard.clone();
-        
+
         let entry = self.nodes.vacant_entry();
         let id = entry.key();
         entry.insert(Node::new(slab_ptr, id, guard, node_data));

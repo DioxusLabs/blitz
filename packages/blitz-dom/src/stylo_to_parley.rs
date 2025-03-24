@@ -63,6 +63,15 @@ pub(crate) fn style(
         val => parley::FontStyle::Oblique(Some(val.oblique_degrees())),
     };
     let font_width = parley::FontWidth::from_percentage(font_styles.font_stretch.0.to_float());
+    let font_variations: Vec<_> = font_styles
+        .font_variation_settings
+        .0
+        .iter()
+        .map(|v| parley::FontVariation {
+            tag: v.tag.0,
+            value: v.value,
+        })
+        .collect();
 
     // Convert font family
     let families: Vec<_> = font_styles
@@ -119,7 +128,7 @@ pub(crate) fn style(
         font_width,
         font_style,
         font_weight,
-        font_variations: parley::FontSettings::List(Cow::Borrowed(&[])),
+        font_variations: parley::FontSettings::List(Cow::Owned(font_variations)),
         font_features: parley::FontSettings::List(Cow::Borrowed(&[])),
         locale: Default::default(),
         brush: TextBrush::from_id_and_color(span_id, color),
