@@ -71,6 +71,7 @@ pub fn dimension(val: &stylo::Size) -> taffy::Dimension {
         stylo::Size::MaxContent => taffy::Dimension::AUTO,
         stylo::Size::MinContent => taffy::Dimension::AUTO,
         stylo::Size::FitContent => taffy::Dimension::AUTO,
+        stylo::Size::FitContentFunction(_) => taffy::Dimension::AUTO,
         stylo::Size::Stretch => taffy::Dimension::AUTO,
 
         // Anchor positioning will be flagged off for time being
@@ -88,6 +89,7 @@ pub fn max_size_dimension(val: &stylo::MaxSize) -> taffy::Dimension {
         stylo::MaxSize::MaxContent => taffy::Dimension::AUTO,
         stylo::MaxSize::MinContent => taffy::Dimension::AUTO,
         stylo::MaxSize::FitContent => taffy::Dimension::AUTO,
+        stylo::MaxSize::FitContentFunction(_) => taffy::Dimension::AUTO,
         stylo::MaxSize::Stretch => taffy::Dimension::AUTO,
 
         // Anchor positioning will be flagged off for time being
