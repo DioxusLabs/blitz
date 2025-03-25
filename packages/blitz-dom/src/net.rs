@@ -30,6 +30,10 @@ pub enum Resource {
     Svg(usize, ImageType, Box<usvg::Tree>),
     Css(usize, DocumentStyleSheet),
     Font(Bytes),
+    Navigation {
+        url: String,
+        document: Bytes,
+    },
 }
 pub struct CssHandler {
     pub node: usize,
@@ -312,5 +316,24 @@ impl NetHandler for ImageHandler {
             let tree = parse_svg(&bytes).unwrap_or(parse_svg(DUMMY_SVG).unwrap());
             callback.call(doc_id, Resource::Svg(self.0, self.1, Box::new(tree)));
         }
+    }
+}
+
+pub struct NavigationHandler(String);
+impl NavigationHandler {
+    pub fn boxed(url: impl Into<String>) -> Box<Self> {
+        Box::new(Self(url.into()))
+    }
+}
+impl NetHandler for NavigationHandler {
+    type Data = Resource;
+    fn bytes(self: Box<Self>, doc_id: usize, bytes: Bytes, callback: SharedCallback<Resource>) {
+        callback.call(
+            doc_id,
+            Resource::Navigation {
+                url: self.0,
+                document: bytes,
+            },
+        );
     }
 }
