@@ -48,10 +48,11 @@ bitflags! {
         const USES_WRITING_MODE = 0b00010000;
         const USES_SUBGRID = 0b00100000;
         const USES_MASONRY = 0b01000000;
+        const USES_SCRIPT = 0b10000000;
     }
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, PartialEq)]
 enum TestKind {
     Ref,
     Attr,
@@ -217,6 +218,7 @@ struct ThreadCtx {
     writing_mode_re: Regex,
     subgrid_re: Regex,
     masonry_re: Regex,
+    script_re: Regex,
     out_dir: PathBuf,
     wpt_dir: PathBuf,
     dummy_base_url: Url,
@@ -295,6 +297,9 @@ impl TestResult {
             if self.flags.contains(TestFlags::USES_MASONRY) {
                 write!(out, "{}", "M".bright_black()).unwrap();
             }
+            if self.kind == TestKind::Ref && self.flags.contains(TestFlags::USES_SCRIPT) {
+                write!(out, "{}", "X".bright_black()).unwrap();
+            }
 
             write!(out, "{}", ")".bright_black()).unwrap();
         }
@@ -346,6 +351,7 @@ fn main() {
     let float_fail_count = AtomicU32::new(0);
     let calc_fail_count = AtomicU32::new(0);
     let intrinsic_size_fail_count = AtomicU32::new(0);
+    let script_fail_count = AtomicU32::new(0);
     let other_fail_count = AtomicU32::new(0);
     let start = Instant::now();
 
@@ -382,6 +388,7 @@ fn main() {
                     let writing_mode_re = Regex::new(r#"writing-mode:|vertical(RL|LR)"#).unwrap();
                     let subgrid_re = Regex::new(r#"subgrid"#).unwrap();
                     let masonry_re = Regex::new(r#"masonry"#).unwrap();
+                    let script_re = Regex::new(r#"<script|onload="#).unwrap();
 
                     let attrtest_re =
                         Regex::new(r#"checkLayout\(\s*['"]([^'"]*)['"]\s*(,\s*(true|false))?\)"#)
@@ -408,6 +415,7 @@ fn main() {
                         writing_mode_re,
                         subgrid_re,
                         masonry_re,
+                        script_re,
                         out_dir: out_dir.clone(),
                         wpt_dir: wpt_dir.clone(),
                         dummy_base_url,
@@ -467,6 +475,8 @@ fn main() {
                         calc_fail_count.fetch_add(1, Ordering::SeqCst);
                     } else if flags.contains(TestFlags::USES_FLOAT) {
                         float_fail_count.fetch_add(1, Ordering::SeqCst);
+                    } else if kind == TestKind::Ref && flags.contains(TestFlags::USES_SCRIPT) {
+                        script_fail_count.fetch_add(1, Ordering::SeqCst);
                     } else {
                         other_fail_count.fetch_add(1, Ordering::SeqCst);
                     }
@@ -535,6 +545,7 @@ fn main() {
     let float_fail_count = float_fail_count.load(Ordering::SeqCst);
     let calc_fail_count = calc_fail_count.load(Ordering::SeqCst);
     let intrinsic_size_fail_count = intrinsic_size_fail_count.load(Ordering::SeqCst);
+    let script_fail_count = script_fail_count.load(Ordering::SeqCst);
     let other_fail_count = other_fail_count.load(Ordering::SeqCst);
 
     fn as_percent(amount: u32, out_of: u32) -> f32 {
@@ -590,6 +601,7 @@ fn main() {
     println!("{direction_fail_count:>4} use direction");
     println!("{float_fail_count:>4} use floats");
     println!("{intrinsic_size_fail_count:>4} use intrinsic size keywords");
+    println!("{script_fail_count:>4} use script");
     println!("{calc_fail_count:>4} use calc");
     if subgrid_fail_count > 0 {
         println!("{subgrid_fail_count:>4} use subgrid");
@@ -630,6 +642,9 @@ async fn process_test_file(
     }
     if ctx.masonry_re.is_match(&file_contents) {
         flags |= TestFlags::USES_MASONRY;
+    }
+    if ctx.script_re.is_match(&file_contents) {
+        flags |= TestFlags::USES_SCRIPT;
     }
 
     // Ref Test
