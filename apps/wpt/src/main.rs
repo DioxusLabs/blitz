@@ -604,17 +604,17 @@ fn main() {
 
     println!("{}", "\nOf those tests which failed:".bright_black());
     println!("{other_fail_count:>4} do not use unsupported features");
-    println!("{writing_mode_fail_count:>4} use writing-mode");
-    println!("{direction_fail_count:>4} use direction");
-    println!("{float_fail_count:>4} use floats");
-    println!("{intrinsic_size_fail_count:>4} use intrinsic size keywords");
-    println!("{script_fail_count:>4} use script");
-    println!("{calc_fail_count:>4} use calc");
+    println!("{writing_mode_fail_count:>4} use writing-mode (W)");
+    println!("{direction_fail_count:>4} use direction (D)");
+    println!("{float_fail_count:>4} use floats (F)");
+    println!("{intrinsic_size_fail_count:>4} use intrinsic size keywords (I)");
+    println!("{script_fail_count:>4} use script (X)");
+    println!("{calc_fail_count:>4} use calc (C)");
     if subgrid_fail_count > 0 {
-        println!("{subgrid_fail_count:>4} use subgrid");
+        println!("{subgrid_fail_count:>4} use subgrid (S)");
     }
     if masonry_fail_count > 0 {
-        println!("{masonry_fail_count:>4} use masonry");
+        println!("{masonry_fail_count:>4} use masonry (M)");
     }
 }
 
