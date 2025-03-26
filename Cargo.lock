@@ -2098,8 +2098,7 @@ dependencies = [
 [[package]]
 name = "fontique"
 version = "0.3.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6b5fcb214137f01bc842c4fd633236255c51f8a24c6d3923eb8361c6d0940737"
+source = "git+https://github.com/valadaptive/parley?branch=wrapping-styles#7cd427cba2f49f70ddb69861519184fce00dfd74"
 dependencies = [
  "bytemuck",
  "fontconfig-cache-parser",
@@ -4208,8 +4207,7 @@ dependencies = [
 [[package]]
 name = "parley"
 version = "0.3.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0d1c2b33b240c246f06cfceac48dc6c96040cb177d2aa5348899982b298b5577"
+source = "git+https://github.com/valadaptive/parley?branch=wrapping-styles#7cd427cba2f49f70ddb69861519184fce00dfd74"
 dependencies = [
  "fontique",
  "hashbrown 0.15.2",
@@ -5545,8 +5543,7 @@ dependencies = [
 [[package]]
 name = "swash"
 version = "0.2.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "13d5bbc2aa266907ed8ee977c9c9e16363cc2b001266104e13397b57f1d15f71"
+source = "git+https://github.com/valadaptive/swash?branch=word-break-setting#1c0431d44e5dfcc52a3469df3cf82cc73c9dce05"
 dependencies = [
  "skrifa",
  "yazi",

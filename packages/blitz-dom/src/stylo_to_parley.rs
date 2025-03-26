@@ -9,6 +9,8 @@ use crate::util::ToColorColor;
 // Module of type aliases so we can refer to stylo types with nicer names
 pub(crate) mod stylo {
     pub(crate) use style::computed_values::white_space_collapse::T as WhiteSpaceCollapse;
+    pub(crate) use style::computed_values::overflow_wrap::T as OverflowWrap;
+    pub(crate) use style::computed_values::word_break::T as WordBreak;
     pub(crate) use style::properties::ComputedValues;
     pub(crate) use style::values::computed::font::FontStyle;
     pub(crate) use style::values::computed::font::GenericFontFamily;
@@ -28,6 +30,22 @@ pub(crate) fn white_space_collapse(input: stylo::WhiteSpaceCollapse) -> parley::
         // TODO: Implement PreserveBreaks and BreakSpaces modes
         stylo::WhiteSpaceCollapse::PreserveBreaks => parley::WhiteSpaceCollapse::Preserve,
         stylo::WhiteSpaceCollapse::BreakSpaces => parley::WhiteSpaceCollapse::Preserve,
+    }
+}
+
+pub(crate) fn overflow_wrap(input: stylo::OverflowWrap) -> parley::OverflowWrap {
+    match input {
+        stylo::OverflowWrap::Normal => parley::OverflowWrap::Normal,
+        stylo::OverflowWrap::Anywhere => parley::OverflowWrap::Anywhere,
+        stylo::OverflowWrap::BreakWord => parley::OverflowWrap::BreakWord,
+    }
+}
+
+pub(crate) fn word_break(input: stylo::WordBreak) -> parley::WordBreakStrength {
+    match input {
+        stylo::WordBreak::Normal => parley::WordBreakStrength::Normal,
+        stylo::WordBreak::BreakAll => parley::WordBreakStrength::BreakAll,
+        stylo::WordBreak::KeepAll => parley::WordBreakStrength::KeepAll,
     }
 }
 
@@ -143,5 +161,7 @@ pub(crate) fn style(
         line_height,
         word_spacing: Default::default(),
         letter_spacing,
+        overflow_wrap: overflow_wrap(itext_styles.overflow_wrap),
+        word_break: word_break(itext_styles.word_break),
     }
 }

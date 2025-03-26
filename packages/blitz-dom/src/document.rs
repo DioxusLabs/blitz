@@ -12,7 +12,7 @@ use blitz_traits::{DomEvent, HitResult};
 use cursor_icon::CursorIcon;
 use markup5ever::local_name;
 use parley::FontContext;
-use peniko::kurbo;
+use peniko::{kurbo, Blob};
 use string_cache::Atom;
 use style::attr::{AttrIdentifier, AttrValue};
 use style::data::{ElementData, ElementStyles};
@@ -190,7 +190,7 @@ impl BaseDocument {
 
         font_ctx
             .collection
-            .register_fonts(crate::BULLET_FONT.to_vec());
+            .register_fonts(Blob::from(crate::BULLET_FONT.to_vec()), None);
 
         let mut doc = Self {
             id,
@@ -620,7 +620,7 @@ impl BaseDocument {
                 }
             }
             Resource::Font(bytes) => {
-                self.font_ctx.collection.register_fonts(bytes.to_vec());
+                self.font_ctx.collection.register_fonts(Blob::from(bytes.to_vec()), None);
             }
             Resource::None => {
                 // Do nothing
