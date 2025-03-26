@@ -371,7 +371,8 @@ fn main() {
                         ColorScheme::Light,
                     );
                     let net_provider = Arc::new(WptNetProvider::new(&wpt_dir));
-                    let reftest_re = Regex::new(r#"<link\s+rel="match"\s+href="([^"]+)""#).unwrap();
+                    let reftest_re =
+                        Regex::new(r#"<link\s+rel=['"]match['"]\s+href=['"]([^'"]+)['"]"#).unwrap();
 
                     let float_re = Regex::new(r#"float:"#).unwrap();
                     let intrinsic_re =
