@@ -45,7 +45,7 @@ use url::Url;
 
 // TODO: implement a proper font metrics provider
 #[derive(Debug, Clone)]
-pub struct DummyFontMetricsProvider;
+struct DummyFontMetricsProvider;
 impl FontMetricsProvider for DummyFontMetricsProvider {
     fn query_font_metrics(
         &self,
