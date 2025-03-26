@@ -11,7 +11,8 @@ pub(crate) fn handle_ime_event(doc: &mut BaseDocument, event: BlitzImeEvent) {
             .and_then(|el| el.text_input_data_mut());
         if let Some(input_data) = text_input_data {
             let editor = &mut input_data.editor;
-            let mut driver = editor.driver(&mut doc.font_ctx, &mut doc.layout_ctx);
+            let mut font_ctx = doc.font_ctx.lock().unwrap();
+            let mut driver = editor.driver(&mut font_ctx, &mut doc.layout_ctx);
 
             match event {
                 BlitzImeEvent::Enabled => { /* Do nothing */ }
