@@ -40,6 +40,7 @@ const HEIGHT: u32 = 600;
 const SCALE: f64 = 1.0;
 
 bitflags! {
+    #[derive(Copy, Clone)]
     pub struct TestFlags : u32 {
         const USES_FLOAT = 0b00000001;
         const USES_INTRINSIC_SIZE = 0b00000010;
@@ -273,7 +274,13 @@ impl TestResult {
         write!(out, "{}", format_args!("{}", self.kind).bright_black()).unwrap();
 
         // Write flag markers
-        if !self.flags.is_empty() {
+
+        let mut flags = self.flags;
+        if self.kind != TestKind::Ref {
+            flags.remove(TestFlags::USES_SCRIPT);
+        }
+
+        if !flags.is_empty() {
             write!(out, " {}", "(".bright_black()).unwrap();
 
             if self.flags.contains(TestFlags::USES_FLOAT) {
