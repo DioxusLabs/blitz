@@ -82,7 +82,7 @@ impl<D: 'static> NetProvider for Provider<D> {
         let client = self.client.clone();
         let callback = Arc::clone(&self.resource_callback);
         println!("Fetching {}", &request.url);
-        drop(self.rt.spawn(async move {
+        self.rt.spawn(async move {
             let url = request.url.to_string();
             let res = Self::fetch_inner(client, doc_id, request, handler, callback).await;
             if let Err(e) = res {
@@ -90,7 +90,7 @@ impl<D: 'static> NetProvider for Provider<D> {
             } else {
                 println!("Success {}", url);
             }
-        }));
+        });
     }
 }
 
