@@ -938,8 +938,8 @@ impl ElementCx<'_> {
             frame_w,
             frame_h,
             idx,
-            svg_size.width(),
-            svg_size.height(),
+            svg_size.width() / self.scale as f32,
+            svg_size.height() / self.scale as f32,
             self.scale as f32,
         );
         let bg_size = bg_size * self.scale;
