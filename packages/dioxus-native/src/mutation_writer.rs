@@ -1,9 +1,12 @@
 use crate::{NodeId, dioxus_document::qual_name};
 use blitz_dom::{
     BaseDocument, ElementNodeData, NodeData, QualName, RestyleHint, local_name, namespace_url,
+    net::ImageHandler,
     node::{Attribute, NodeSpecificData},
     ns,
+    util::ImageType,
 };
+use blitz_traits::net::{Request, Url};
 use dioxus_core::{
     AttributeValue, ElementId, Template, TemplateAttribute, TemplateNode, WriteMutations,
 };
@@ -262,6 +265,7 @@ impl WriteMutations for MutationWriter<'_> {
         id: ElementId,
     ) {
         let node_id = self.state.element_to_node_id(id);
+        let doc_id = self.doc.id();
 
         #[cfg(feature = "tracing")]
         tracing::info!(
@@ -319,6 +323,17 @@ impl WriteMutations for MutationWriter<'_> {
 
                 if name == "style" {
                     element.flush_style_attribute(&self.doc.guard);
+                }
+
+                if element.name.local == local_name!("img") && name == "src" {
+                    element.node_specific_data = NodeSpecificData::None;
+                    if let Ok(url) = Url::parse(val) {
+                        self.doc.net_provider.fetch(
+                            doc_id,
+                            Request::get(url),
+                            Box::new(ImageHandler::new(node_id, ImageType::Image)),
+                        );
+                    }
                 }
             }
 
