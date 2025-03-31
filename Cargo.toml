@@ -21,11 +21,11 @@ license = "MIT OR Apache-2.0"
 
 [workspace.dependencies]
 # Servo dependencies
-style = { git = "https://github.com/servo/stylo", rev = "e9412412", package = "stylo" } # 2025-03-15
-style_traits = { git = "https://github.com/servo/stylo", rev = "e9412412", package = "stylo_traits" } # 2025-03-15
-style_config = { git = "https://github.com/servo/stylo", rev = "e9412412", package = "stylo_config" } # 2025-03-15
-style_dom = { git = "https://github.com/servo/stylo", rev = "e9412412", package = "stylo_dom" } # 2025-03-15
-selectors = { git = "https://github.com/servo/stylo", rev = "e9412412", package = "selectors" } # 2025-03-15
+style = { version = "0.2", package = "stylo" } # 2025-03-15
+style_traits = { version = "0.2", package = "stylo_traits" } # 2025-03-15
+style_config = { version = "0.2", package = "stylo_config" } # 2025-03-15
+style_dom = { version = "0.2", package = "stylo_dom" } # 2025-03-15
+selectors = { version = "0.27", package = "selectors" } # 2025-03-15
 
 markup5ever = "0.15" # needs to match stylo markup5ever version
 html5ever = "0.30" # needs to match stylo markup5ever version
