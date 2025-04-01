@@ -28,7 +28,7 @@ blitz-traits = { version = "0.1.0-alpha.1", path = "../blitz-traits" }
 stylo_taffy = { version = "0.1.0-alpha.1", path = "../stylo_taffy" }
 
 # Servo dependencies
-style = { workspace = true, features = ["servo"] }
+style = { workspace = true }
 selectors = { workspace = true }
 style_config = { workspace = true }
 style_traits = { workspace = true }

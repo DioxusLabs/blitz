@@ -9,8 +9,13 @@ license.workspace = true
 edition = "2024"
 
 [dependencies]
+# Blitz dependencies
 blitz-traits = { version = "0.1.0-alpha.1", path = "../blitz-traits" }
+
+# Networking dependencies
 tokio = { workspace = true }
 reqwest = { workspace = true }
 data-url = { workspace = true }
+
+# Other dependencies
 thiserror = { workspace = true }
