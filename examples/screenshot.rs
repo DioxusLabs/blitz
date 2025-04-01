@@ -2,7 +2,7 @@
 
 use blitz_dom::net::Resource;
 use blitz_html::HtmlDocument;
-use blitz_net::{MpscCallback, Provider};
+use blitz_net::{callback::MpscCallback, Provider};
 use blitz_renderer_vello::render_to_buffer;
 use blitz_traits::navigation::DummyNavigationProvider;
 use blitz_traits::net::SharedProvider;
@@ -23,8 +23,7 @@ async fn main() {
     let mut timer = Timer::init();
 
     let url_string = std::env::args()
-        .skip(1)
-        .next()
+        .nth(1)
         .unwrap_or_else(|| "https://www.google.com".into());
 
     println!("{}", url_string);
@@ -56,8 +55,7 @@ async fn main() {
     let scale = 2;
     let height = 800;
     let width: u32 = std::env::args()
-        .skip(2)
-        .next()
+        .nth(2)
         .and_then(|arg| arg.parse().ok())
         .unwrap_or(1200);
 
@@ -151,7 +149,7 @@ fn write_png<W: Write>(writer: W, buffer: &[u8], width: u32, height: u32) {
 
     // Write PNG data to writer
     let mut writer = encoder.write_header().unwrap();
-    writer.write_image_data(&buffer).unwrap();
+    writer.write_image_data(buffer).unwrap();
     writer.finish().unwrap();
 }
 

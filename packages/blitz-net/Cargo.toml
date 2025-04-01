@@ -4,9 +4,18 @@ version = "0.1.0"
 license.workspace = true
 edition = "2024"
 
+[features]
+default = ["reqwest"]
+reqwest = ["dep:reqwest", "dep:tokio"]
+ureq = ["dep:ureq", "dep:rayon"]
+
 [dependencies]
 blitz-traits = { path = "../blitz-traits" }
-tokio = { workspace = true }
-reqwest = { workspace = true }
+tokio = { workspace = true, optional = true }
+reqwest = { workspace = true, optional = true }
+ureq = { workspace = true, optional = true }
 data-url = { workspace = true }
 thiserror = { workspace = true }
+http = { workspace = true }
+url = { workspace = true }
+rayon = { workspace = true, optional = true }
