@@ -706,7 +706,6 @@ dependencies = [
  "blitz-traits",
  "data-url",
  "reqwest",
- "thiserror 1.0.69",
  "tokio",
 ]
 
@@ -7251,7 +7250,6 @@ dependencies = [
  "supports-hyperlinks",
  "taffy",
  "terminal-link",
- "thiserror 1.0.69",
  "thread_local",
  "url",
 ]

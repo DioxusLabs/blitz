@@ -2,7 +2,6 @@ use blitz_traits::net::{BoxedHandler, Bytes, NetCallback, NetProvider, Request, 
 use data_url::DataUrl;
 use reqwest::Client;
 use std::sync::Arc;
-use thiserror::Error;
 use tokio::{
     runtime::Handle,
     sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel},
@@ -86,7 +85,7 @@ impl<D: 'static> NetProvider for Provider<D> {
             let url = request.url.to_string();
             let res = Self::fetch_inner(client, doc_id, request, handler, callback).await;
             if let Err(e) = res {
-                eprintln!("Error fetching {}: {e}", url);
+                eprintln!("Error fetching {}: {:?}", url, e);
             } else {
                 println!("Success {}", url);
             }
@@ -94,16 +93,36 @@ impl<D: 'static> NetProvider for Provider<D> {
     }
 }
 
-#[derive(Error, Debug)]
-enum ProviderError {
-    #[error("{0}")]
-    Io(#[from] std::io::Error),
-    #[error("{0}")]
-    DataUrl(#[from] data_url::DataUrlError),
-    #[error("{0}")]
-    DataUrlBas64(#[from] data_url::forgiving_base64::InvalidBase64),
-    #[error("{0}")]
-    ReqwestError(#[from] reqwest::Error),
+#[derive(Debug)]
+pub enum ProviderError {
+    Io(std::io::Error),
+    DataUrl(data_url::DataUrlError),
+    DataUrlBase64(data_url::forgiving_base64::InvalidBase64),
+    ReqwestError(reqwest::Error),
+}
+
+impl From<std::io::Error> for ProviderError {
+    fn from(value: std::io::Error) -> Self {
+        Self::Io(value)
+    }
+}
+
+impl From<data_url::DataUrlError> for ProviderError {
+    fn from(value: data_url::DataUrlError) -> Self {
+        Self::DataUrl(value)
+    }
+}
+
+impl From<data_url::forgiving_base64::InvalidBase64> for ProviderError {
+    fn from(value: data_url::forgiving_base64::InvalidBase64) -> Self {
+        Self::DataUrlBase64(value)
+    }
+}
+
+impl From<reqwest::Error> for ProviderError {
+    fn from(value: reqwest::Error) -> Self {
+        Self::ReqwestError(value)
+    }
 }
 
 pub struct MpscCallback<T>(UnboundedSender<(usize, T)>);

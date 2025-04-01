@@ -4,7 +4,6 @@ use std::{
     path::{Path, PathBuf},
     sync::{Arc, Mutex},
 };
-use thiserror::Error;
 
 pub struct WptNetProvider<D: Send + Sync + 'static> {
     base_path: PathBuf,
@@ -56,20 +55,36 @@ impl<D: Send + Sync + 'static> NetProvider for WptNetProvider<D> {
         let res = self.fetch_inner(doc_id, request, handler);
         if let Err(e) = res {
             if !matches!(e, WptNetProviderError::Io(_)) {
-                eprintln!("Error loading {}: {e}", url);
+                eprintln!("Error loading {}: {:?}", url, e);
             }
         }
     }
 }
 
-#[derive(Error, Debug)]
+#[derive(Debug)]
+#[allow(dead_code)]
 enum WptNetProviderError {
-    #[error("{0}")]
-    Io(#[from] std::io::Error),
-    #[error("{0}")]
-    DataUrl(#[from] data_url::DataUrlError),
-    #[error("{0}")]
-    DataUrlBase64(#[from] data_url::forgiving_base64::InvalidBase64),
+    Io(std::io::Error),
+    DataUrl(data_url::DataUrlError),
+    DataUrlBase64(data_url::forgiving_base64::InvalidBase64),
+}
+
+impl From<std::io::Error> for WptNetProviderError {
+    fn from(value: std::io::Error) -> Self {
+        Self::Io(value)
+    }
+}
+
+impl From<data_url::DataUrlError> for WptNetProviderError {
+    fn from(value: data_url::DataUrlError) -> Self {
+        Self::DataUrl(value)
+    }
+}
+
+impl From<data_url::forgiving_base64::InvalidBase64> for WptNetProviderError {
+    fn from(value: data_url::forgiving_base64::InvalidBase64) -> Self {
+        Self::DataUrlBase64(value)
+    }
 }
 
 struct VecCallback<T>(Mutex<Vec<T>>);
