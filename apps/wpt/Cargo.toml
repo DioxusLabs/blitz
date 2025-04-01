@@ -1,11 +1,11 @@
 [package]
 name = "wpt"
 version = "0.1.0"
-edition = "2021"
+edition = "2024"
 license.workspace = true
 
 [dependencies]
-blitz-dom = { path = "../../packages/blitz-dom", default-features = false, features = ["svg", "woff"] }
+blitz-dom = { path = "../../packages/blitz-dom", default-features = false, features = ["svg", "woff-c"] }
 blitz-html = { path = "../../packages/blitz-html" }
 blitz-traits = { path = "../../packages/blitz-traits" }
 blitz-renderer-vello = { path = "../../packages/blitz-renderer-vello" }

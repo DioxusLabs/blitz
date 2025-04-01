@@ -1,17 +1,17 @@
 /// Private module of type aliases so we can refer to stylo types with nicer names
 mod stylo {
+    pub(crate) use style::properties::ComputedValues;
     pub(crate) use style::properties::generated::longhands::box_sizing::computed_value::T as BoxSizing;
     pub(crate) use style::properties::longhands::aspect_ratio::computed_value::T as AspectRatio;
     pub(crate) use style::properties::longhands::position::computed_value::T as Position;
-    pub(crate) use style::properties::ComputedValues;
     pub(crate) use style::values::computed::length_percentage::CalcLengthPercentage;
     pub(crate) use style::values::computed::length_percentage::Unpacked as UnpackedLengthPercentage;
     pub(crate) use style::values::computed::{LengthPercentage, Percentage};
+    pub(crate) use style::values::generics::NonNegative;
     pub(crate) use style::values::generics::length::{
         GenericLengthPercentageOrNormal, GenericMargin, GenericMaxSize, GenericSize,
     };
     pub(crate) use style::values::generics::position::{Inset as GenericInset, PreferredRatio};
-    pub(crate) use style::values::generics::NonNegative;
     pub(crate) use style::values::specified::align::{AlignFlags, ContentDistribution};
     pub(crate) use style::values::specified::box_::{
         Display, DisplayInside, DisplayOutside, Overflow,
@@ -44,8 +44,8 @@ mod stylo {
     };
 }
 
-use taffy::style_helpers::*;
 use taffy::CompactLength;
+use taffy::style_helpers::*;
 
 #[inline]
 pub fn length_percentage(val: &stylo::LengthPercentage) -> taffy::LengthPercentage {
@@ -71,6 +71,7 @@ pub fn dimension(val: &stylo::Size) -> taffy::Dimension {
         stylo::Size::MaxContent => taffy::Dimension::AUTO,
         stylo::Size::MinContent => taffy::Dimension::AUTO,
         stylo::Size::FitContent => taffy::Dimension::AUTO,
+        stylo::Size::FitContentFunction(_) => taffy::Dimension::AUTO,
         stylo::Size::Stretch => taffy::Dimension::AUTO,
 
         // Anchor positioning will be flagged off for time being
@@ -88,6 +89,7 @@ pub fn max_size_dimension(val: &stylo::MaxSize) -> taffy::Dimension {
         stylo::MaxSize::MaxContent => taffy::Dimension::AUTO,
         stylo::MaxSize::MinContent => taffy::Dimension::AUTO,
         stylo::MaxSize::FitContent => taffy::Dimension::AUTO,
+        stylo::MaxSize::FitContentFunction(_) => taffy::Dimension::AUTO,
         stylo::MaxSize::Stretch => taffy::Dimension::AUTO,
 
         // Anchor positioning will be flagged off for time being
@@ -204,9 +206,9 @@ pub fn position(input: stylo::Position) -> taffy::Position {
 
 #[inline]
 pub fn overflow(input: stylo::Overflow) -> taffy::Overflow {
-    // TODO: Enable Overflow::Clip in servo configuration of stylo
     match input {
         stylo::Overflow::Visible => taffy::Overflow::Visible,
+        stylo::Overflow::Clip => taffy::Overflow::Clip,
         stylo::Overflow::Hidden => taffy::Overflow::Hidden,
         stylo::Overflow::Scroll => taffy::Overflow::Scroll,
         // TODO: Support Overflow::Auto in Taffy
@@ -218,7 +220,7 @@ pub fn overflow(input: stylo::Overflow) -> taffy::Overflow {
 pub fn aspect_ratio(input: stylo::AspectRatio) -> Option<f32> {
     match input.ratio {
         stylo::PreferredRatio::None => None,
-        stylo::PreferredRatio::Ratio(val) => Some(val.0 .0 / val.1 .0),
+        stylo::PreferredRatio::Ratio(val) => Some(val.0.0 / val.1.0),
     }
 }
 
@@ -473,6 +475,7 @@ pub fn to_taffy_style(style: &stylo::ComputedValues) -> taffy::Style {
         display: self::display(display),
         box_sizing: self::box_sizing(style.clone_box_sizing()),
         item_is_table: display.inside() == stylo::DisplayInside::Table,
+        item_is_replaced: false,
         position: self::position(style.clone_position()),
         overflow: taffy::Point {
             x: self::overflow(style.clone_overflow_x()),

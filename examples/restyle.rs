@@ -1,5 +1,5 @@
 use dioxus::prelude::*;
-use tokio::time::{sleep, Duration};
+use tokio::time::{Duration, sleep};
 
 fn main() {
     // Turn on the runtime and enter it

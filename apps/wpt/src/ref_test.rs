@@ -10,7 +10,7 @@ use std::io::Write;
 use std::path::Path;
 use std::sync::Arc;
 
-use crate::{BufferKind, SubtestCounts, TestFlags, ThreadCtx, HEIGHT, WIDTH};
+use crate::{BufferKind, HEIGHT, SubtestCounts, TestFlags, ThreadCtx, WIDTH};
 
 #[allow(clippy::too_many_arguments)]
 pub async fn process_ref_test(

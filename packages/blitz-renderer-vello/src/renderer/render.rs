@@ -1,5 +1,5 @@
-use std::sync::atomic::{self, AtomicUsize};
 use std::sync::Arc;
+use std::sync::atomic::{self, AtomicUsize};
 
 use super::multicolor_rounded_rect::{Edge, ElementFrame};
 use crate::util::{Color, ToColorColor};
@@ -7,7 +7,7 @@ use blitz_dom::node::{
     ImageData, ListItemLayout, ListItemLayoutPosition, Marker, NodeData, RasterImageData,
     TextBrush, TextInputData, TextNodeData,
 };
-use blitz_dom::{local_name, BaseDocument, ElementNodeData, Node};
+use blitz_dom::{BaseDocument, ElementNodeData, Node, local_name};
 use blitz_traits::Devtools;
 
 use color::DynamicColor;
@@ -15,11 +15,12 @@ use euclid::Transform3D;
 use parley::Line;
 use style::color::AbsoluteColor;
 use style::{
+    OwnedSlice,
     dom::TElement,
     properties::{
+        ComputedValues,
         generated::longhands::visibility::computed_value::T as StyloVisibility,
         style_structs::{Font, Outline},
-        ComputedValues,
     },
     values::{
         computed::{
@@ -27,18 +28,17 @@ use style::{
             LineDirection, Overflow, Percentage,
         },
         generics::{
+            NonNegative,
             image::{
                 EndingShape, GenericGradient, GenericGradientItem, GenericImage, GradientFlags,
             },
             position::GenericPosition,
-            NonNegative,
         },
         specified::{
-            position::{HorizontalPositionKeyword, VerticalPositionKeyword},
             BorderStyle, OutlineStyle,
+            position::{HorizontalPositionKeyword, VerticalPositionKeyword},
         },
     },
-    OwnedSlice,
 };
 
 use image::imageops::FilterType;
@@ -52,9 +52,9 @@ use taffy::Layout;
 use vello::kurbo::{self, BezPath, Cap, Circle, Join};
 use vello::peniko::Gradient;
 use vello::{
+    Scene,
     kurbo::{Affine, Point, Rect, Shape, Stroke, Vec2},
     peniko::{self, Fill, Mix},
-    Scene,
 };
 #[cfg(feature = "svg")]
 use vello_svg::usvg;
@@ -421,7 +421,6 @@ impl VelloSceneGenerator<'_> {
             return;
         }
 
-        let transform = Affine::translate(content_position.to_vec2() * self.scale);
         let origin = kurbo::Point { x: 0.0, y: 0.0 };
         let clip = Rect::from_origin_size(origin, content_box_size);
 
@@ -439,16 +438,16 @@ impl VelloSceneGenerator<'_> {
         cx.stroke_outline(scene);
         cx.draw_outset_box_shadow(scene);
         cx.draw_background(scene);
+        cx.stroke_border(scene);
 
         if should_clip && clips_available {
-            scene.push_layer(Mix::Clip, 1.0, transform, &cx.frame.frame());
+            scene.push_layer(Mix::Clip, 1.0, cx.transform, &cx.frame.frame());
             CLIPS_USED.fetch_add(1, atomic::Ordering::SeqCst);
             let depth = CLIP_DEPTH.fetch_add(1, atomic::Ordering::SeqCst) + 1;
             CLIP_DEPTH_USED.fetch_max(depth, atomic::Ordering::SeqCst);
         }
 
         cx.draw_inset_box_shadow(scene);
-        cx.stroke_border(scene);
         cx.stroke_devtools(scene);
 
         // Now that background has been drawn, offset pos and cx in order to draw our contents scrolled
@@ -919,7 +918,7 @@ impl ElementCx<'_> {
 
     #[cfg(feature = "svg")]
     fn draw_svg_bg_image(&self, scene: &mut Scene, idx: usize) {
-        use style::{values::computed::Length, Zero as _};
+        use style::{Zero as _, values::computed::Length};
 
         let bg_image = self.element.background_images.get(idx);
 
@@ -939,10 +938,11 @@ impl ElementCx<'_> {
             frame_w,
             frame_h,
             idx,
-            svg_size.width(),
-            svg_size.height(),
+            svg_size.width() / self.scale as f32,
+            svg_size.height() / self.scale as f32,
             self.scale as f32,
         );
+        let bg_size = bg_size * self.scale;
 
         let x_ratio = bg_size.width as f64 / svg_size.width() as f64;
         let y_ratio = bg_size.height as f64 / svg_size.height() as f64;

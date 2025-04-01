@@ -2,7 +2,7 @@ use atomic_refcell::{AtomicRef, AtomicRefCell};
 use color::{AlphaColor, Srgb};
 use image::DynamicImage;
 use keyboard_types::Modifiers;
-use markup5ever::{local_name, LocalName, QualName};
+use markup5ever::{LocalName, QualName, local_name};
 use parley::{Cluster, FontContext, LayoutContext};
 use peniko::kurbo;
 use selectors::matching::{ElementSelectorFlags, QuirksMode};
@@ -10,19 +10,19 @@ use slab::Slab;
 use std::cell::{Cell, RefCell};
 use std::fmt::Write;
 use std::str::FromStr;
-use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
+use style::Atom;
 use style::invalidation::element::restyle_hints::RestyleHint;
-use style::properties::generated::longhands::position::computed_value::T as Position;
 use style::properties::ComputedValues;
+use style::properties::generated::longhands::position::computed_value::T as Position;
 use style::selector_parser::PseudoElement;
 use style::stylesheets::UrlExtraData;
 use style::values::computed::Display;
 use style::values::specified::box_::{DisplayInside, DisplayOutside};
-use style::Atom;
 use style::{
     data::ElementData,
-    properties::{parse_style_attribute, PropertyDeclarationBlock},
+    properties::{PropertyDeclarationBlock, parse_style_attribute},
     servo_arc::Arc as ServoArc,
     shared_lock::{Locked, SharedRwLock},
     stylesheets::CssRuleType,
@@ -30,8 +30,8 @@ use style::{
 use style_dom::ElementState;
 use style_traits::values::ToCss;
 use taffy::{
-    prelude::{Layout, Style},
     Cache,
+    prelude::{Layout, Style},
 };
 use url::Url;
 
@@ -559,7 +559,7 @@ impl RasterImageData {
 pub enum ImageData {
     Raster(RasterImageData),
     #[cfg(feature = "svg")]
-    Svg(usvg::Tree),
+    Svg(Box<usvg::Tree>),
     None,
 }
 impl From<Arc<DynamicImage>> for ImageData {
@@ -570,7 +570,7 @@ impl From<Arc<DynamicImage>> for ImageData {
 #[cfg(feature = "svg")]
 impl From<usvg::Tree> for ImageData {
     fn from(value: usvg::Tree) -> Self {
-        Self::Svg(value)
+        Self::Svg(Box::new(value))
     }
 }
 

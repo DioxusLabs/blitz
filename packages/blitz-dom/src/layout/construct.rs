@@ -1,7 +1,7 @@
 use core::str;
 use std::sync::Arc;
 
-use markup5ever::{local_name, namespace_url, ns, QualName};
+use markup5ever::{QualName, local_name, namespace_url, ns};
 use parley::{FontStack, InlineBox, StyleProperty, TreeBuilder, WhiteSpaceCollapse};
 use slab::Slab;
 use style::{
@@ -18,11 +18,12 @@ use style::{
 };
 
 use crate::{
+    BaseDocument, ElementNodeData, Node, NodeData,
     node::{
         ListItemLayout, ListItemLayoutPosition, Marker, NodeKind, NodeSpecificData, TextBrush,
         TextInputData, TextLayout,
     },
-    stylo_to_parley, BaseDocument, ElementNodeData, Node, NodeData,
+    stylo_to_parley,
 };
 
 use super::table::build_table_context;
@@ -83,8 +84,6 @@ pub(crate) fn collect_layout_children(
 
         #[cfg(feature = "svg")]
         if matches!(tag_name, "svg") {
-            use crate::node::ImageData;
-
             let mut outer_html = doc.get_node(container_node_id).unwrap().outer_html();
 
             // HACK: usvg fails to parse SVGs that don't have the SVG xmlns set. So inject it
@@ -100,8 +99,7 @@ pub(crate) fn collect_layout_children(
                         .unwrap()
                         .element_data_mut()
                         .unwrap()
-                        .node_specific_data =
-                        NodeSpecificData::Image(Box::new(ImageData::Svg(svg)));
+                        .node_specific_data = NodeSpecificData::Image(Box::new(svg.into()));
                 }
                 Err(err) => {
                     println!("{} SVG parse failed", container_node_id);
@@ -353,7 +351,7 @@ fn flush_pseudo_elements(doc: &mut BaseDocument, node_id: usize) {
             let node_styles = &mut node_styles.as_mut().unwrap();
             let primary_styles = &mut node_styles.styles.primary;
 
-            if &**primary_styles.as_ref().unwrap() as *const _ != &*pe_style as *const _ {
+            if !std::ptr::eq(&**primary_styles.as_ref().unwrap(), &*pe_style) {
                 *primary_styles = Some(pe_style);
                 node_styles.set_restyled();
             }

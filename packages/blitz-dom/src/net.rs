@@ -1,6 +1,6 @@
 use image::DynamicImage;
 use selectors::context::QuirksMode;
-use std::{io::Cursor, sync::atomic::AtomicBool, sync::Arc};
+use std::{io::Cursor, sync::Arc, sync::atomic::AtomicBool};
 use style::{
     font_face::{FontFaceSourceFormat, FontFaceSourceFormatKeyword, Source},
     media_queries::MediaList,
@@ -9,10 +9,10 @@ use style::{
     shared_lock::SharedRwLock,
     shared_lock::{Locked, SharedRwLockReadGuard},
     stylesheets::{
-        import_rule::{ImportLayer, ImportSheet, ImportSupportsCondition},
         AllowImportRules, CssRule, CssRules, DocumentStyleSheet, ImportRule, Origin, Stylesheet,
         StylesheetContents, StylesheetInDocument, StylesheetLoader as ServoStylesheetLoader,
         UrlExtraData,
+        import_rule::{ImportLayer, ImportSheet, ImportSupportsCondition},
     },
     values::{CssUrl, SourceLocation},
 };
@@ -157,35 +157,58 @@ impl NetHandler for FontFaceHandler {
     fn bytes(mut self: Box<Self>, doc_id: usize, bytes: Bytes, callback: SharedCallback<Resource>) {
         if self.0 == FontFaceSourceFormatKeyword::None {
             self.0 = match bytes.as_ref() {
-                // https://w3c.github.io/woff/woff2/#woff20Header
-                #[cfg(feature = "woff")]
-                [0x77, 0x4F, 0x46, 0x32, ..] => FontFaceSourceFormatKeyword::Woff2,
-                // https://learn.microsoft.com/en-us/typography/opentype/spec/otff#organization-of-an-opentype-font
-                [0x4F, 0x54, 0x54, 0x4F, ..] => FontFaceSourceFormatKeyword::Opentype,
-                // https://developer.apple.com/fonts/TrueType-Reference-Manual/RM06/Chap6.html#ScalerTypeNote
-                [0x00, 0x01, 0x00, 0x00, ..] | [0x74, 0x72, 0x75, 0x65, ..] => {
-                    FontFaceSourceFormatKeyword::Truetype
-                }
+                // WOFF (v1) files begin with 0x774F4646 ('wOFF' in ascii)
+                // See: <https://w3c.github.io/woff/woff1/spec/Overview.html#WOFFHeader>
+                // #[cfg(any(feature = "woff-c"))]
+                // [b'w', b'O', b'F', b'F', ..] => FontFaceSourceFormatKeyword::Woff,
+                // WOFF2 files begin with 0x774F4632 ('wOF2' in ascii)
+                // See: <https://w3c.github.io/woff/woff2/#woff20Header>
+                #[cfg(any(feature = "woff-c", feature = "woff-rust"))]
+                [b'w', b'O', b'F', b'2', ..] => FontFaceSourceFormatKeyword::Woff2,
+                // Opentype fonts with CFF data begin with 0x4F54544F ('OTTO' in ascii)
+                // See: <https://learn.microsoft.com/en-us/typography/opentype/spec/otff#organization-of-an-opentype-font>
+                [b'O', b'T', b'T', b'O', ..] => FontFaceSourceFormatKeyword::Opentype,
+                // Opentype fonts truetype outlines begin with 0x00010000
+                // See: <https://learn.microsoft.com/en-us/typography/opentype/spec/otff#organization-of-an-opentype-font>
+                [0x00, 0x01, 0x00, 0x00, ..] => FontFaceSourceFormatKeyword::Truetype,
+                // Truetype fonts begin with 0x74727565 ('true' in ascii)
+                // See: <https://developer.apple.com/fonts/TrueType-Reference-Manual/RM06/Chap6.html#ScalerTypeNote>
+                [b't', b'r', b'u', b'e', ..] => FontFaceSourceFormatKeyword::Truetype,
                 _ => FontFaceSourceFormatKeyword::None,
             }
         }
 
         // Satisfy rustc's mutability linting with woff feature both enabled/disabled
-        #[cfg(any(feature = "woff", feature = "woff2"))]
+        #[cfg(any(feature = "woff-c", feature = "woff-rust"))]
         let mut bytes = bytes;
 
         match self.0 {
-            #[cfg(any(feature = "woff", feature = "woff2"))]
+            // #[cfg(feature = "woff-c")]
+            // FontFaceSourceFormatKeyword::Woff => {
+            //     #[cfg(feature = "tracing")]
+            //     tracing::info!("Decompressing woff1 font");
+
+            //     // Use woff crate to decompress font
+            //     let decompressed = woff::version1::decompress(&bytes);
+
+            //     if let Some(decompressed) = decompressed {
+            //         bytes = Bytes::from(decompressed);
+            //     } else {
+            //         #[cfg(feature = "tracing")]
+            //         tracing::warn!("Failed to decompress woff1 font");
+            //     }
+            // }
+            #[cfg(any(feature = "woff-c", feature = "woff-rust"))]
             FontFaceSourceFormatKeyword::Woff2 => {
                 #[cfg(feature = "tracing")]
                 tracing::info!("Decompressing woff2 font");
 
                 // Use woff crate to decompress font
-                #[cfg(feature = "woff")]
+                #[cfg(feature = "woff-c")]
                 let decompressed = woff::version2::decompress(&bytes);
 
                 // Use woff2 crate to decompress font
-                #[cfg(feature = "woff2")]
+                #[cfg(feature = "woff-rust")]
                 let decompressed = woff2::decode::convert_woff2_to_ttf(&mut bytes).ok();
 
                 if let Some(decompressed) = decompressed {

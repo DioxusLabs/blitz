@@ -6,14 +6,13 @@ use std::borrow::Cow;
 use std::cell::{Cell, Ref, RefCell, RefMut};
 use std::collections::HashSet;
 
-use blitz_dom::node::{Attribute, ElementNodeData, Node, NodeData};
 use blitz_dom::BaseDocument;
+use blitz_dom::node::{Attribute, ElementNodeData, Node, NodeData};
 use blitz_traits::net::{Request, SharedProvider};
 use html5ever::{
-    local_name,
+    QualName, local_name,
     tendril::{StrTendril, TendrilSink},
     tree_builder::{ElementFlags, NodeOrText, QuirksMode, TreeSink},
-    QualName,
 };
 
 /// Convert an html5ever Attribute which uses tendril for its value to a blitz Attribute
@@ -399,7 +398,7 @@ impl<'b> TreeSink for DocumentHtmlParser<'b> {
 
 #[test]
 fn parses_some_html() {
-    use blitz_traits::{net::DummyNetProvider, ColorScheme, Viewport};
+    use blitz_traits::{ColorScheme, Viewport, net::DummyNetProvider};
     use std::sync::Arc;
 
     let html = "<!DOCTYPE html><html><body><h1>hello world</h1></body></html>";

@@ -1,4 +1,4 @@
-use crate::{local_name, BaseDocument, Node as BlitzDomNode};
+use crate::{BaseDocument, Node as BlitzDomNode, local_name};
 use accesskit::{Node as AccessKitNode, NodeId, Role, Tree, TreeUpdate};
 
 impl BaseDocument {

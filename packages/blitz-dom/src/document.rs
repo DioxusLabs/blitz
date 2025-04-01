@@ -2,7 +2,7 @@ use crate::events::handle_event;
 use crate::layout::construct::collect_layout_children;
 use crate::node::{ImageData, NodeSpecificData, Status, TextBrush};
 use crate::stylo_to_cursor_icon::stylo_to_cursor_icon;
-use crate::util::{resolve_url, ImageType};
+use crate::util::{ImageType, resolve_url};
 use crate::{ElementNodeData, Node, NodeData, TextNodeData};
 use app_units::Au;
 use blitz_traits::navigation::{DummyNavigationProvider, NavigationProvider};
@@ -16,17 +16,17 @@ use peniko::kurbo;
 use string_cache::Atom;
 use style::attr::{AttrIdentifier, AttrValue};
 use style::data::{ElementData, ElementStyles};
-use style::properties::style_structs::Font;
 use style::properties::ComputedValues;
-use style::values::computed::Overflow;
+use style::properties::style_structs::Font;
 use style::values::GenericAtomIdent;
+use style::values::computed::Overflow;
 // use quadtree_rs::Quadtree;
 use crate::net::{Resource, StylesheetLoader};
-use selectors::{matching::QuirksMode, Element};
+use selectors::{Element, matching::QuirksMode};
 use slab::Slab;
 use std::collections::{BTreeMap, Bound, HashMap, HashSet, VecDeque};
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use style::media_queries::MediaType;
 use style::queries::values::PrefersColorScheme;
 use style::selector_parser::ServoElementSnapshot;
@@ -45,7 +45,7 @@ use url::Url;
 
 // TODO: implement a proper font metrics provider
 #[derive(Debug, Clone)]
-pub struct DummyFontMetricsProvider;
+struct DummyFontMetricsProvider;
 impl FontMetricsProvider for DummyFontMetricsProvider {
     fn query_font_metrics(
         &self,
@@ -185,6 +185,7 @@ impl BaseDocument {
         style_config::set_bool("layout.flexbox.enabled", true);
         style_config::set_bool("layout.grid.enabled", true);
         style_config::set_bool("layout.legacy_layout", true);
+        style_config::set_bool("layout.unimplemented", true);
         style_config::set_bool("layout.columns.enabled", true);
 
         font_ctx
@@ -356,24 +357,14 @@ impl BaseDocument {
 
     pub fn create_node(&mut self, node_data: NodeData) -> usize {
         let slab_ptr = self.nodes.as_mut() as *mut Slab<Node>;
-        let entry = self.nodes.vacant_entry();
-        let id = entry.key();
         let guard = self.guard.clone();
 
+        let entry = self.nodes.vacant_entry();
+        let id = entry.key();
         entry.insert(Node::new(slab_ptr, id, guard, node_data));
-
-        // self.quadtree.insert(
-        //     AreaBuilder::default()
-        //         .anchor(quadtree_rs::point::Point { x: 4, y: 5 })
-        //         .dimensions((2, 3))
-        //         .build()
-        //         .unwrap(),
-        //     id as usize,
-        // );
 
         // Mark the new node as changed.
         self.changed.insert(id);
-
         id
     }
 
@@ -609,7 +600,7 @@ impl BaseDocument {
                 match kind {
                     ImageType::Image => {
                         node.element_data_mut().unwrap().node_specific_data =
-                            NodeSpecificData::Image(Box::new(ImageData::Svg(*tree)));
+                            NodeSpecificData::Image(Box::new(ImageData::Svg(tree)));
 
                         // Clear layout cache
                         node.cache.clear();
@@ -620,7 +611,7 @@ impl BaseDocument {
                             .and_then(|el| el.background_images.get_mut(idx))
                         {
                             bg_image.status = Status::Ok;
-                            bg_image.image = ImageData::Svg(*tree);
+                            bg_image.image = ImageData::Svg(tree);
                         }
                     }
                 }
