@@ -621,7 +621,7 @@ dependencies = [
 
 [[package]]
 name = "blitz"
-version = "0.0.0"
+version = "0.1.0-alpha.1"
 dependencies = [
  "blitz-html",
  "blitz-net",
@@ -634,7 +634,7 @@ dependencies = [
 
 [[package]]
 name = "blitz-dom"
-version = "0.0.0"
+version = "0.1.0-alpha.1"
 dependencies = [
  "accesskit",
  "app_units",
@@ -691,7 +691,7 @@ dependencies = [
 
 [[package]]
 name = "blitz-html"
-version = "0.1.0"
+version = "0.1.0-alpha.1"
 dependencies = [
  "blitz-dom",
  "blitz-traits",
@@ -701,7 +701,7 @@ dependencies = [
 
 [[package]]
 name = "blitz-net"
-version = "0.1.0"
+version = "0.1.0-alpha.1"
 dependencies = [
  "blitz-traits",
  "data-url",
@@ -712,7 +712,7 @@ dependencies = [
 
 [[package]]
 name = "blitz-renderer-vello"
-version = "0.1.0"
+version = "0.1.0-alpha.1"
 dependencies = [
  "blitz-dom",
  "blitz-traits",
@@ -733,7 +733,7 @@ dependencies = [
 
 [[package]]
 name = "blitz-shell"
-version = "0.0.0"
+version = "0.1.0-alpha.1"
 dependencies = [
  "accesskit",
  "accesskit_winit",
@@ -749,7 +749,7 @@ dependencies = [
 
 [[package]]
 name = "blitz-traits"
-version = "0.1.0"
+version = "0.1.0-alpha.1"
 dependencies = [
  "bitflags 2.9.0",
  "bytes",
@@ -1684,7 +1684,7 @@ dependencies = [
 
 [[package]]
 name = "dioxus-native"
-version = "0.0.0"
+version = "0.1.0-alpha.1"
 dependencies = [
  "blitz-dom",
  "blitz-net",
@@ -5487,7 +5487,7 @@ checksum = "decb57071c4b4d5690a9719fb04a07cf2fab0fa3df99a830ef735192a1a98e5d"
 
 [[package]]
 name = "stylo_taffy"
-version = "0.1.0"
+version = "0.1.0-alpha.1"
 dependencies = [
  "stylo",
  "taffy",

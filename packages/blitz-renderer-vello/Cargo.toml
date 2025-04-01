@@ -1,6 +1,10 @@
 [package]
 name = "blitz-renderer-vello"
-version = "0.1.0"
+description = "Blitz renderer using vello"
+version = "0.1.0-alpha.1"
+homepage = "https://github.com/dioxuslabs/blitz"
+repository = "https://github.com/dioxuslabs/blitz"
+documentation = "https://docs.rs/blitz-renderer-vello"
 license.workspace = true
 edition = "2024"
 
@@ -10,8 +14,8 @@ tracing = ["dep:tracing"]
 svg = ["dep:vello_svg", "blitz-dom/svg"]
 
 [dependencies]
-blitz-traits = { path = "../blitz-traits" }
-blitz-dom = { path = "../blitz-dom", default-features = false }
+blitz-traits = { version = "0.1.0-alpha.1", path = "../blitz-traits" }
+blitz-dom = {version = "0.1.0-alpha.1",  path = "../blitz-dom", default-features = false }
 style = { workspace = true, features = ["servo"] }
 euclid = { workspace = true }
 taffy = { workspace = true }

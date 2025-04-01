@@ -1,6 +1,10 @@
 [package]
 name = "blitz-dom"
-version = "0.0.0"
+description = "Blitz DOM implementation"
+version = "0.1.0-alpha.1"
+homepage = "https://github.com/dioxuslabs/blitz"
+repository = "https://github.com/dioxuslabs/blitz"
+documentation = "https://docs.rs/blitz-dom"
 license.workspace = true
 edition = "2024"
 
@@ -20,8 +24,8 @@ accessibility = ["accesskit"]
 
 [dependencies]
 # Blitz dependencies
-blitz-traits = { path = "../blitz-traits" }
-stylo_taffy = { path = "../stylo_taffy" }
+blitz-traits = { version = "0.1.0-alpha.1", path = "../blitz-traits" }
+stylo_taffy = { version = "0.1.0-alpha.1", path = "../stylo_taffy" }
 
 # Servo dependencies
 style = { workspace = true, features = ["servo"] }

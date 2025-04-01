@@ -1,13 +1,17 @@
 [package]
 name = "blitz-html"
-version = "0.1.0"
+description = "Blitz HTML parser"
+version = "0.1.0-alpha.1"
+homepage = "https://github.com/dioxuslabs/blitz"
+repository = "https://github.com/dioxuslabs/blitz"
+documentation = "https://docs.rs/blitz-html"
 license.workspace = true
 edition = "2024"
 
 [dependencies]
 # Blitz dependencies
-blitz-dom = { path = "../blitz-dom", default-features = false }
-blitz-traits = { path = "../blitz-traits" }
+blitz-dom = { version = "0.1.0-alpha.1", path = "../blitz-dom", default-features = false }
+blitz-traits = { version = "0.1.0-alpha.1", path = "../blitz-traits" }
 
 # Servo dependencies
 html5ever = { workspace = true }

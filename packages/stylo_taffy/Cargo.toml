@@ -1,12 +1,12 @@
 [package]
 name = "stylo_taffy"
-version = "0.1.0"
+version = "0.1.0-alpha.1"
 license = "MIT OR Apache-2.0 OR MPL-2.0"
 description = "Interop crate for the stylo and taffy crates"
 keywords = ["css", "layout"]
 categories = ["gui"]
 edition = "2024"
-repository = "https://github.com/dioxuslabs/taffy"
+repository = "https://github.com/dioxuslabs/blitz"
 
 [dependencies]
 taffy = { workspace = true }
