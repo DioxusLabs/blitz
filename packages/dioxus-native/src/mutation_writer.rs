@@ -33,6 +33,10 @@ pub struct MutationWriter<'a> {
     pub state: &'a mut DioxusState,
 
     pub style_nodes: HashSet<usize>,
+
+    /// The (latest) node which has been mounted in and had autofocus=true, if any
+    #[cfg(feature = "autofocus")]
+    pub node_to_autofocus: Option<usize>,
 }
 
 impl<'a> MutationWriter<'a> {
@@ -41,6 +45,9 @@ impl<'a> MutationWriter<'a> {
             doc,
             state,
             style_nodes: HashSet::new(),
+
+            #[cfg(feature = "autofocus")]
+            node_to_autofocus: None,
         }
     }
 
@@ -72,6 +79,13 @@ impl Drop for MutationWriter<'_> {
         // Add/Update inline stylesheets (<style> elements)
         for &id in &self.style_nodes {
             self.doc.upsert_stylesheet_for_node(id);
+        }
+
+        #[cfg(feature = "autofocus")]
+        if let Some(node_id) = self.node_to_autofocus {
+            if self.doc.get_node(node_id).is_some() {
+                self.doc.set_focus_to(node_id);
+            }
         }
     }
 }
@@ -197,6 +211,10 @@ impl WriteMutations for MutationWriter<'_> {
 
         let template_node_id = template_entry[index];
         let clone_id = self.doc.deep_clone_node(template_node_id);
+
+        #[cfg(feature = "autofocus")]
+        process_cloned_node(self.doc, &mut self.node_to_autofocus, clone_id);
+
         self.set_id_mapping(clone_id, id);
         self.state.stack.push(clone_id);
     }
@@ -507,5 +525,24 @@ fn create_template_node(doc: &mut BaseDocument, node: &TemplateNode) -> NodeId {
         }
         TemplateNode::Text { text } => doc.create_text_node(text),
         TemplateNode::Dynamic { .. } => doc.create_node(NodeData::Comment),
+    }
+}
+
+#[cfg(feature = "autofocus")]
+fn process_cloned_node(doc: &BaseDocument, node_to_autofocus: &mut Option<usize>, node_id: usize) {
+    if let Some(node) = doc.get_node(node_id) {
+        if node.is_focussable() {
+            if let NodeData::Element(ref element) = node.data {
+                if let Some(value) = element.attr(local_name!("autofocus")) {
+                    if value == "true" {
+                        *node_to_autofocus = Some(node_id);
+                    }
+                }
+            }
+        }
+
+        for child_node_id in &node.children {
+            process_cloned_node(doc, node_to_autofocus, *child_node_id);
+        }
     }
 }
