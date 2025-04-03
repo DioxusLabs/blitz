@@ -11,6 +11,35 @@ fn parent_hit(node: &Node, x: f32, y: f32) -> Option<HitResult> {
     })
 }
 
+pub(crate) fn handle_mouseover(doc: &mut BaseDocument, _target: usize, x: f32, y: f32) {
+    if let Some(node) = doc.get_node_mut(_target) {
+        // Toggle hover state on the node
+        node.hover();
+
+        doc.set_focus_to(_target);
+
+        doc.set_hover_to(x, y);
+    }
+}
+
+pub(crate) fn handle_mouseleave(doc: &mut BaseDocument, target: usize) -> bool {
+    if let Some(node) = doc.get_node_mut(target) {
+        // Clear hover state
+        node.unhover();
+
+        // If this was the focused node, clear focus
+        if doc.get_focussed_node_id() == Some(target) {
+            doc.clear_focus();
+        }
+
+        // Clear hover position
+        doc.clear_hover_state();
+
+        return true;
+    }
+    false
+}
+
 pub(crate) fn handle_mousemove(
     doc: &mut BaseDocument,
     target: usize,
