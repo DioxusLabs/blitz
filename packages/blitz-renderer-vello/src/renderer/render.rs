@@ -19,6 +19,7 @@ use style::{
     dom::TElement,
     properties::{
         ComputedValues,
+        generated::longhands::background_clip::single_value::computed_value::T as StyloBackgroundClip,
         generated::longhands::visibility::computed_value::T as StyloVisibility,
         style_structs::{Font, Outline},
     },
@@ -1036,18 +1037,27 @@ impl ElementCx<'_> {
 
     fn draw_background(&self, scene: &mut Scene) {
         use GenericImage::*;
+        use StyloBackgroundClip::*;
+
+        let segments = &self.style.get_background().background_clip.0;
+        let background_clip = segments.iter().next().cloned().unwrap_or(BorderBox);
+        let background_clip_path = match background_clip {
+            BorderBox => self.frame.frame_border(),
+            PaddingBox => self.frame.frame_padding(),
+            ContentBox => self.frame.frame_content(),
+        };
 
         CLIPS_WANTED.fetch_add(1, atomic::Ordering::SeqCst);
         let clips_available = CLIPS_USED.load(atomic::Ordering::SeqCst) <= CLIP_LIMIT;
         if clips_available {
-            scene.push_layer(Mix::Clip, 1.0, self.transform, &self.frame.frame());
+            scene.push_layer(Mix::Clip, 1.0, self.transform, &background_clip_path);
             CLIPS_USED.fetch_add(1, atomic::Ordering::SeqCst);
             let depth = CLIP_DEPTH.fetch_add(1, atomic::Ordering::SeqCst) + 1;
             CLIP_DEPTH_USED.fetch_max(depth, atomic::Ordering::SeqCst);
         }
 
         // Draw background color (if any)
-        self.draw_solid_frame(scene);
+        self.draw_solid_frame(scene, &background_clip_path);
         let segments = &self.style.get_background().background_image.0;
         for (idx, segment) in segments.iter().enumerate().rev() {
             match segment {
@@ -1480,7 +1490,7 @@ impl ElementCx<'_> {
         }
     }
 
-    fn draw_solid_frame(&self, scene: &mut Scene) {
+    fn draw_solid_frame(&self, scene: &mut Scene, shape: &BezPath) {
         let current_color = self.style.clone_color();
         let background_color = &self.style.get_background().background_color;
         let bg_color = background_color
@@ -1488,10 +1498,8 @@ impl ElementCx<'_> {
             .as_srgb_color();
 
         if bg_color != Color::TRANSPARENT {
-            let shape = self.frame.frame();
-
             // Fill the color
-            scene.fill(Fill::NonZero, self.transform, bg_color, None, &shape);
+            scene.fill(Fill::NonZero, self.transform, bg_color, None, shape);
         }
     }
 
@@ -1560,7 +1568,10 @@ impl ElementCx<'_> {
                 .as_srgb_color(),
         };
 
-        sb.fill(Fill::NonZero, self.transform, color, None, &path);
+        let alpha = color.components[3];
+        if alpha != 0.0 {
+            sb.fill(Fill::NonZero, self.transform, color, None, &path);
+        }
     }
 
     /// ❌ dotted - Defines a dotted border
