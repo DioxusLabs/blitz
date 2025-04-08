@@ -84,7 +84,7 @@ pub struct View<Doc: Document<Doc = D>, Rend: DocumentRenderer<Doc = D>> {
 }
 
 impl<Doc: Document<Doc = D>, Rend: DocumentRenderer<Doc = D>> View<Doc, Rend> {
-    pub(crate) fn init(
+    pub fn init(
         config: WindowConfig<Doc, Rend>,
         event_loop: &ActiveEventLoop,
         proxy: &EventLoopProxy<BlitzShellEvent>,
