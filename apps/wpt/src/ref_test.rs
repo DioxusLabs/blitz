@@ -115,8 +115,8 @@ async fn render_html_to_buffer(
         Some(ctx.font_ctx.clone()),
         ctx.navigation_provider.clone(),
     );
-
     document.as_mut().set_viewport(ctx.viewport.clone());
+    document.as_mut().resolve();
 
     // Load resources.
     // Loop because loading a resource may result in further resources being requested
@@ -134,6 +134,8 @@ async fn render_html_to_buffer(
         }
     }
 
+    ctx.net_provider
+        .for_each(|res| document.as_mut().load_resource(res));
     document.as_mut().resolve();
 
     // Determine height to render
