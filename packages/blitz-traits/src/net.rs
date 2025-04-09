@@ -27,7 +27,7 @@ pub trait NetHandler: Send + Sync + 'static {
 /// (or does arbitrary things with it)
 pub trait NetCallback: Send + Sync + 'static {
     type Data;
-    fn call(&self, doc_id: usize, data: Self::Data);
+    fn call(&self, doc_id: usize, result: Result<Self::Data, Option<String>>);
 }
 
 #[non_exhaustive]
@@ -72,5 +72,5 @@ impl<D: Send + Sync + 'static> Default for DummyNetCallback<D> {
 }
 impl<D: Send + Sync + 'static> NetCallback for DummyNetCallback<D> {
     type Data = D;
-    fn call(&self, _doc_id: usize, _data: Self::Data) {}
+    fn call(&self, _doc_id: usize, _result: Result<Self::Data, Option<String>>) {}
 }

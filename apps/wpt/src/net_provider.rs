@@ -248,7 +248,15 @@ struct Callback<T> {
 
 impl<T: Send + Sync + 'static> NetCallback for Callback<T> {
     type Data = T;
-    fn call(&self, _doc_id: usize, data: Self::Data) {
-        self.queue.callback(data, self.request_id)
+    fn call(&self, _doc_id: usize, result: Result<Self::Data, Option<String>>) {
+        match result {
+            Ok(data) => self.queue.callback(data, self.request_id),
+            Err(err) => {
+                if let Some(msg) = err {
+                    eprintln!("{msg}");
+                }
+                self.queue.mark_failure(self.request_id);
+            }
+        }
     }
 }

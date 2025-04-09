@@ -29,6 +29,7 @@ pub enum Resource {
     Svg(usize, ImageType, Box<usvg::Tree>),
     Css(usize, DocumentStyleSheet),
     Font(Bytes),
+    None,
 }
 pub struct CssHandler {
     pub node: usize,
@@ -94,9 +95,12 @@ impl ServoStylesheetLoader for StylesheetLoader {
                 self: Box<Self>,
                 doc_id: usize,
                 bytes: Bytes,
-                _callback: SharedCallback<Self::Data>,
+                callback: SharedCallback<Self::Data>,
             ) {
-                let css = std::str::from_utf8(&bytes).expect("Invalid UTF8");
+                let Ok(css) = std::str::from_utf8(&bytes) else {
+                    callback.call(doc_id, Err(Some(String::from("Invalid UTF8"))));
+                    return;
+                };
                 let escaped_css = html_escape::decode_html_entities(css);
                 Stylesheet::update_from_str(
                     &self.sheet,
@@ -106,7 +110,8 @@ impl ServoStylesheetLoader for StylesheetLoader {
                     None,
                     AllowImportRules::Yes,
                 );
-                fetch_font_face(doc_id, &self.sheet, &self.provider, &self.read_lock.read())
+                fetch_font_face(doc_id, &self.sheet, &self.provider, &self.read_lock.read());
+                callback.call(doc_id, Ok(Resource::None))
             }
         }
         let url = import.url.url().unwrap();
@@ -128,7 +133,11 @@ impl ServoStylesheetLoader for StylesheetLoader {
 impl NetHandler for CssHandler {
     type Data = Resource;
     fn bytes(self: Box<Self>, doc_id: usize, bytes: Bytes, callback: SharedCallback<Resource>) {
-        let css = std::str::from_utf8(&bytes).expect("Invalid UTF8");
+        let Ok(css) = std::str::from_utf8(&bytes) else {
+            callback.call(doc_id, Err(Some(String::from("Invalid UTF8"))));
+            return;
+        };
+
         let escaped_css = html_escape::decode_html_entities(css);
         let sheet = Stylesheet::from_str(
             &escaped_css,
@@ -146,7 +155,10 @@ impl NetHandler for CssHandler {
 
         callback.call(
             doc_id,
-            Resource::Css(self.node, DocumentStyleSheet(ServoArc::new(sheet))),
+            Ok(Resource::Css(
+                self.node,
+                DocumentStyleSheet(ServoArc::new(sheet)),
+            )),
         )
     }
 }
@@ -223,7 +235,7 @@ impl NetHandler for FontFaceHandler {
             _ => {}
         }
 
-        callback.call(doc_id, Resource::Font(bytes))
+        callback.call(doc_id, Ok(Resource::Font(bytes)))
     }
 }
 
@@ -301,13 +313,13 @@ impl NetHandler for ImageHandler {
             let raw_rgba8_data = image.clone().into_rgba8().into_raw();
             callback.call(
                 doc_id,
-                Resource::Image(
+                Ok(Resource::Image(
                     self.0,
                     self.1,
                     image.width(),
                     image.height(),
                     Arc::new(raw_rgba8_data),
-                ),
+                )),
             );
             return;
         };
@@ -315,11 +327,12 @@ impl NetHandler for ImageHandler {
         #[cfg(feature = "svg")]
         {
             use crate::util::parse_svg;
-
-            // Try parse SVG
-            const DUMMY_SVG : &[u8] = r#"<?xml version="1.0" encoding="UTF-8"?><svg xmlns="http://www.w3.org/2000/svg" width="1" height="1"/>"#.as_bytes();
-            let tree = parse_svg(&bytes).unwrap_or(parse_svg(DUMMY_SVG).unwrap());
-            callback.call(doc_id, Resource::Svg(self.0, self.1, Box::new(tree)));
+            if let Ok(tree) = parse_svg(&bytes) {
+                callback.call(doc_id, Ok(Resource::Svg(self.0, self.1, Box::new(tree))));
+                return;
+            }
         }
+
+        callback.call(doc_id, Err(Some(String::from("Could not parse image"))))
     }
 }
