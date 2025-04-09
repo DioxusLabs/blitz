@@ -1,4 +1,3 @@
-use image::DynamicImage;
 use selectors::context::QuirksMode;
 use std::{io::Cursor, sync::Arc, sync::atomic::AtomicBool};
 use style::{
@@ -25,7 +24,7 @@ use crate::util::ImageType;
 
 #[derive(Clone, Debug)]
 pub enum Resource {
-    Image(usize, ImageType, Arc<DynamicImage>),
+    Image(usize, ImageType, u32, u32, Arc<Vec<u8>>),
     #[cfg(feature = "svg")]
     Svg(usize, ImageType, Box<usvg::Tree>),
     Css(usize, DocumentStyleSheet),
@@ -299,7 +298,17 @@ impl NetHandler for ImageHandler {
             .expect("IO errors impossible with Cursor")
             .decode()
         {
-            callback.call(doc_id, Resource::Image(self.0, self.1, Arc::new(image)));
+            let raw_rgba8_data = image.clone().into_rgba8().into_raw();
+            callback.call(
+                doc_id,
+                Resource::Image(
+                    self.0,
+                    self.1,
+                    image.width(),
+                    image.height(),
+                    Arc::new(raw_rgba8_data),
+                ),
+            );
             return;
         };
 

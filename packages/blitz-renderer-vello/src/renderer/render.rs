@@ -1,4 +1,3 @@
-use std::sync::Arc;
 use std::sync::atomic::{self, AtomicUsize};
 
 use super::multicolor_rounded_rect::{Edge, ElementFrame};
@@ -41,7 +40,6 @@ use style::{
     },
 };
 
-use image::imageops::FilterType;
 use parley::layout::PositionedLayoutItem;
 use style::values::generics::color::GenericColor;
 use style::values::generics::image::{
@@ -653,33 +651,16 @@ fn compute_background_size(
 }
 
 /// Ensure that the `resized_image` field has a correctly sized image
-fn ensure_resized_image(data: &RasterImageData, width: u32, height: u32) {
-    let mut resized_image = data.resized_image.borrow_mut();
-
-    if resized_image.is_none()
-        || resized_image
-            .as_ref()
-            .is_some_and(|img| img.width != width || img.height != height)
-    {
-        let image_data = data
-            .image
-            .clone()
-            .resize_to_fill(width, height, FilterType::Lanczos3)
-            .into_rgba8()
-            .into_raw();
-
-        let peniko_image = peniko::Image {
-            data: peniko::Blob::new(Arc::new(image_data)),
-            format: peniko::ImageFormat::Rgba8,
-            width,
-            height,
-            alpha: 1.0,
-            x_extend: peniko::Extend::Pad,
-            y_extend: peniko::Extend::Pad,
-            quality: peniko::ImageQuality::High,
-        };
-
-        *resized_image = Some(Arc::new(peniko_image));
+fn to_peniko_image(image: &RasterImageData) -> peniko::Image {
+    peniko::Image {
+        data: peniko::Blob::new(image.data.clone()),
+        format: peniko::ImageFormat::Rgba8,
+        width: image.width,
+        height: image.height,
+        alpha: 1.0,
+        x_extend: peniko::Extend::Repeat,
+        y_extend: peniko::Extend::Repeat,
+        quality: peniko::ImageQuality::High,
     }
 }
 
@@ -979,33 +960,41 @@ impl ElementCx<'_> {
     }
 
     fn draw_image(&self, scene: &mut Scene) {
-        let width = self.frame.content_box.width() as u32;
-        let height = self.frame.content_box.height() as u32;
-        let x = self.frame.content_box.origin().x;
-        let y = self.frame.content_box.origin().y;
-        let transform = self.transform.then_translate(Vec2 { x, y });
+        if let Some(image) = self.element.raster_image_data() {
+            let width = self.frame.content_box.width() as u32;
+            let height = self.frame.content_box.height() as u32;
+            let x = self.frame.content_box.origin().x;
+            let y = self.frame.content_box.origin().y;
 
-        if let Some(image_data) = self.element.raster_image_data() {
-            ensure_resized_image(image_data, width, height);
-            let resized_image = image_data.resized_image.borrow();
-            scene.draw_image(resized_image.as_ref().unwrap(), transform);
+            let x_scale = width as f64 / image.width as f64;
+            let y_scale = height as f64 / image.height as f64;
+            let transform = self
+                .transform
+                .pre_scale_non_uniform(x_scale, y_scale)
+                .then_translate(Vec2 { x, y });
+
+            scene.draw_image(&to_peniko_image(image), transform);
         }
     }
 
     fn draw_raster_bg_image(&self, scene: &mut Scene, idx: usize) {
-        let width = self.frame.padding_box.width() as u32;
-        let height = self.frame.padding_box.height() as u32;
-        let x = self.frame.content_box.origin().x;
-        let y = self.frame.content_box.origin().y;
-        let transform = self.transform.then_translate(Vec2 { x, y });
-
         let bg_image = self.element.background_images.get(idx);
 
         if let Some(Some(bg_image)) = bg_image.as_ref() {
-            if let ImageData::Raster(image_data) = &bg_image.image {
-                ensure_resized_image(image_data, width, height);
-                let resized_image = image_data.resized_image.borrow();
-                scene.draw_image(resized_image.as_ref().unwrap(), transform);
+            if let ImageData::Raster(image) = &bg_image.image {
+                let width = self.frame.padding_box.width() as u32;
+                let height = self.frame.padding_box.height() as u32;
+                let x = self.frame.content_box.origin().x;
+                let y = self.frame.content_box.origin().y;
+
+                let x_scale = width as f64 / image.width as f64;
+                let y_scale = height as f64 / image.height as f64;
+                let transform = self
+                    .transform
+                    .pre_scale_non_uniform(x_scale, y_scale)
+                    .then_translate(Vec2 { x, y });
+
+                scene.draw_image(&to_peniko_image(image), transform);
             }
         }
     }

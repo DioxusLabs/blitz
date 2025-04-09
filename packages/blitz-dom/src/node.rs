@@ -1,6 +1,5 @@
 use atomic_refcell::{AtomicRef, AtomicRefCell};
 use color::{AlphaColor, Srgb};
-use image::DynamicImage;
 use keyboard_types::Modifiers;
 use markup5ever::{LocalName, QualName, local_name};
 use parley::{Cluster, FontContext, LayoutContext};
@@ -541,16 +540,19 @@ impl ElementNodeData {
 
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct RasterImageData {
-    /// The raw image data
-    pub image: Arc<DynamicImage>,
-    /// The resized image data (for the most recent size it's been displayed at)
-    pub resized_image: RefCell<Option<Arc<peniko::Image>>>,
+    /// The width of the image
+    pub width: u32,
+    /// The height of the image
+    pub height: u32,
+    /// The raw image data in RGBA8 format
+    pub data: Arc<Vec<u8>>,
 }
 impl RasterImageData {
-    pub fn new(image: Arc<DynamicImage>) -> Self {
+    pub fn new(width: u32, height: u32, data: Arc<Vec<u8>>) -> Self {
         Self {
-            image,
-            resized_image: RefCell::new(None),
+            width,
+            height,
+            data,
         }
     }
 }
@@ -561,11 +563,6 @@ pub enum ImageData {
     #[cfg(feature = "svg")]
     Svg(Box<usvg::Tree>),
     None,
-}
-impl From<Arc<DynamicImage>> for ImageData {
-    fn from(value: Arc<DynamicImage>) -> Self {
-        Self::Raster(RasterImageData::new(value))
-    }
 }
 #[cfg(feature = "svg")]
 impl From<usvg::Tree> for ImageData {

@@ -1,6 +1,6 @@
 use crate::events::handle_event;
 use crate::layout::construct::collect_layout_children;
-use crate::node::{ImageData, NodeSpecificData, Status, TextBrush};
+use crate::node::{ImageData, NodeSpecificData, RasterImageData, Status, TextBrush};
 use crate::stylo_to_cursor_icon::stylo_to_cursor_icon;
 use crate::util::{ImageType, resolve_url};
 use crate::{ElementNodeData, Node, NodeData, TextNodeData};
@@ -571,13 +571,15 @@ impl BaseDocument {
             Resource::Css(node_id, css) => {
                 self.add_stylesheet_for_node(css, node_id);
             }
-            Resource::Image(node_id, kind, image) => {
+            Resource::Image(node_id, kind, width, height, image_data) => {
                 let node = self.get_node_mut(node_id).unwrap();
 
                 match kind {
                     ImageType::Image => {
                         node.element_data_mut().unwrap().node_specific_data =
-                            NodeSpecificData::Image(Box::new(ImageData::from(image)));
+                            NodeSpecificData::Image(Box::new(ImageData::Raster(
+                                RasterImageData::new(width, height, image_data),
+                            )));
 
                         // Clear layout cache
                         node.cache.clear();
@@ -588,7 +590,8 @@ impl BaseDocument {
                             .and_then(|el| el.background_images.get_mut(idx))
                         {
                             bg_image.status = Status::Ok;
-                            bg_image.image = ImageData::from(image);
+                            bg_image.image =
+                                ImageData::Raster(RasterImageData::new(width, height, image_data))
                         }
                     }
                 }
