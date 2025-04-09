@@ -133,16 +133,14 @@ enum RequestStatus {
 }
 
 struct RequestState<D> {
-    id: usize,
     url: String,
     status: RequestStatus,
     data: Option<D>,
 }
 
 impl<D> RequestState<D> {
-    fn new(id: usize, url: String) -> Self {
+    fn new(_id: usize, url: String) -> Self {
         Self {
-            id,
             url,
             status: RequestStatus::InProgress,
             data: None,
@@ -225,10 +223,8 @@ impl<T> InternalQueue<T> {
         });
         drop(requests);
 
-        for item in completed {
-            if let Ok(data) = item {
-                cb(data);
-            }
+        for data in completed.into_iter().flatten() {
+            cb(data);
         }
     }
 
