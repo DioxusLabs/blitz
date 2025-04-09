@@ -134,7 +134,10 @@ impl<T> MpscCallback<T> {
 }
 impl<T: Send + Sync + 'static> NetCallback for MpscCallback<T> {
     type Data = T;
-    fn call(&self, doc_id: usize, data: Self::Data) {
-        let _ = self.0.send((doc_id, data));
+    fn call(&self, doc_id: usize, result: Result<Self::Data, Option<String>>) {
+        // TODO: handle error case
+        if let Ok(data) = result {
+            let _ = self.0.send((doc_id, data));
+        }
     }
 }

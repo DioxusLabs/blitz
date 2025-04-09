@@ -622,6 +622,9 @@ impl BaseDocument {
             Resource::Font(bytes) => {
                 self.font_ctx.collection.register_fonts(bytes.to_vec());
             }
+            Resource::None => {
+                // Do nothing
+            }
         }
     }
 

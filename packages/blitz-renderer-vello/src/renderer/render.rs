@@ -139,8 +139,8 @@ impl VelloSceneGenerator<'_> {
         let background_color = {
             let html_color = root_element
                 .primary_styles()
-                .unwrap()
-                .clone_background_color();
+                .map(|s| s.clone_background_color())
+                .unwrap_or(GenericColor::TRANSPARENT_BLACK);
             if html_color == GenericColor::TRANSPARENT_BLACK {
                 root_element
                     .children
