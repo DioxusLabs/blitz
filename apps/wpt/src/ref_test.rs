@@ -9,6 +9,7 @@ use std::fs::File;
 use std::io::Write;
 use std::path::Path;
 use std::sync::Arc;
+use std::time::Instant;
 
 use crate::{BufferKind, HEIGHT, SubtestCounts, TestFlags, ThreadCtx, WIDTH};
 
@@ -105,6 +106,7 @@ async fn render_html_to_buffer(
     out_path: &Path,
     html: &str,
 ) {
+    ctx.net_provider.reset();
     let mut document = HtmlDocument::from_html(
         html,
         Some(ctx.dummy_base_url.join(relative_path).unwrap().to_string()),
@@ -116,11 +118,22 @@ async fn render_html_to_buffer(
 
     document.as_mut().set_viewport(ctx.viewport.clone());
 
-    // Load resources
-    ctx.net_provider
-        .for_each(|res| document.as_mut().load_resource(res));
+    // Load resources.
+    // Loop because loading a resource may result in further resources being requested
+    let start = Instant::now();
+    while ctx.net_provider.pending_item_count() > 0 {
+        ctx.net_provider
+            .for_each(|res| document.as_mut().load_resource(res));
+        document.as_mut().resolve();
+        if Instant::now().duration_since(start).as_millis() > 500 {
+            ctx.net_provider.log_pending_items();
+            panic!(
+                "Timeout. {} pending items.",
+                ctx.net_provider.pending_item_count()
+            );
+        }
+    }
 
-    // Compute style, layout, etc for HtmlDocument
     document.as_mut().resolve();
 
     // Determine height to render

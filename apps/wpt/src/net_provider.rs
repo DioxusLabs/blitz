@@ -1,44 +1,59 @@
 use blitz_traits::net::{BoxedHandler, Bytes, NetCallback, NetProvider, Request};
 use data_url::DataUrl;
 use std::{
+    collections::HashMap,
+    panic::{AssertUnwindSafe, catch_unwind},
     path::{Path, PathBuf},
     sync::{
-        atomic::{AtomicUsize, Ordering},
         Arc, Mutex,
+        atomic::{AtomicUsize, Ordering},
     },
 };
 
+static REQUEST_ID: AtomicUsize = AtomicUsize::new(0);
+
 pub struct WptNetProvider<D: Send + Sync + 'static> {
     base_path: PathBuf,
-    request_count: AtomicUsize,
-    callback: Arc<VecCallback<D>>,
+    queue: Arc<InternalQueue<D>>,
 }
 impl<D: Send + Sync + 'static> WptNetProvider<D> {
     pub fn new(base_path: &Path) -> Self {
         let base_path = base_path.to_path_buf();
         Self {
             base_path,
-            request_count: AtomicUsize::new(0),
-            callback: Arc::new(VecCallback::new()),
+            queue: Arc::new(InternalQueue::new()),
         }
     }
 
     pub fn pending_item_count(&self) -> usize {
-        self.request_count.load(Ordering::SeqCst) - self.callback.processed_count()
+        self.queue.pending_item_count()
+    }
+
+    pub fn log_pending_items(&self) {
+        self.queue.log_pending_items();
     }
 
     pub fn for_each(&self, cb: impl FnMut(D)) {
-        self.callback.for_each(cb);
+        self.queue.for_each(cb);
+    }
+
+    /// Clear request state (any in-flight requests will be ignored)
+    pub fn reset(&self) {
+        self.queue.reset();
     }
 
     fn fetch_inner(
         &self,
         doc_id: usize,
+        request_id: usize,
         request: Request,
         handler: BoxedHandler<D>,
     ) -> Result<(), WptNetProviderError> {
-        self.request_count.fetch_add(1, Ordering::SeqCst);
-        let callback = self.callback.clone();
+        let callback = Arc::new(Callback {
+            queue: self.queue.clone(),
+            request_id,
+        });
+
         match request.url.scheme() {
             "data" => {
                 let data_url = DataUrl::process(request.url.as_str())?;
@@ -51,7 +66,15 @@ impl<D: Send + Sync + 'static> WptNetProvider<D> {
                 let file_content = std::fs::read(&path).inspect_err(|err| {
                     eprintln!("Error loading {}: {}", path.display(), &err);
                 })?;
-                handler.bytes(doc_id, Bytes::from(file_content), callback);
+                catch_unwind(AssertUnwindSafe(|| {
+                    handler.bytes(doc_id, Bytes::from(file_content), callback)
+                }))
+                .map_err(|err| {
+                    let str_msg = err.downcast_ref::<&str>().map(|s| s.to_string());
+                    let string_msg = err.downcast_ref::<String>().map(|s| s.to_string());
+                    let panic_msg = str_msg.or(string_msg);
+                    WptNetProviderError::HandlerPanic(panic_msg)
+                })?;
             }
         }
         Ok(())
@@ -62,11 +85,15 @@ impl<D: Send + Sync + 'static> NetProvider for WptNetProvider<D> {
     fn fetch(&self, doc_id: usize, request: Request, handler: BoxedHandler<D>) {
         let url = request.url.to_string();
 
-        let res = self.fetch_inner(doc_id, request, handler);
+        // println!("Loading {url}");
+
+        let request_id = self.queue.create_request(request.url.to_string());
+        let res = self.fetch_inner(doc_id, request_id, request, handler);
         if let Err(e) = res {
-            if !matches!(e, WptNetProviderError::Io(_)) {
-                eprintln!("Error loading {}: {:?}", url, e);
-            }
+            self.queue.mark_failure(request_id);
+            // if !matches!(e, WptNetProviderError::Io(_)) {
+            eprintln!("Error loading {}: {:?}", url, e);
+            // }
         }
     }
 }
@@ -77,6 +104,7 @@ enum WptNetProviderError {
     Io(std::io::Error),
     DataUrl(data_url::DataUrlError),
     DataUrlBase64(data_url::forgiving_base64::InvalidBase64),
+    HandlerPanic(Option<String>),
 }
 
 impl From<std::io::Error> for WptNetProviderError {
@@ -97,40 +125,130 @@ impl From<data_url::forgiving_base64::InvalidBase64> for WptNetProviderError {
     }
 }
 
-struct VecCallback<T> {
-    processed_count: AtomicUsize,
-    queue: Mutex<Vec<T>>,
+#[derive(Debug)]
+enum RequestStatus {
+    InProgress,
+    Success,
+    Error,
 }
-impl<T> VecCallback<T> {
+
+struct RequestState<D> {
+    id: usize,
+    url: String,
+    status: RequestStatus,
+    data: Option<D>,
+}
+
+impl<D> RequestState<D> {
+    fn new(id: usize, url: String) -> Self {
+        Self {
+            id,
+            url,
+            status: RequestStatus::InProgress,
+            data: None,
+        }
+    }
+}
+
+struct InternalQueue<T> {
+    requests: Mutex<HashMap<usize, RequestState<T>>>,
+}
+impl<T> InternalQueue<T> {
     pub fn new() -> Self {
         Self {
-            processed_count: AtomicUsize::new(0),
-            queue: Mutex::new(Vec::new()),
+            requests: Mutex::new(HashMap::new()),
         }
     }
 
-    pub fn processed_count(&self) -> usize {
-        self.processed_count.load(Ordering::SeqCst)
+    pub fn reset(&self) {
+        self.requests
+            .lock()
+            .unwrap_or_else(|err| err.into_inner())
+            .clear();
     }
 
-    pub fn for_each(&self, mut cb: impl FnMut(T)) {
-        // Note: we use std::mem::take here so that the mutex is unlocked prior to any of the callbacks being called.
+    pub fn create_request(&self, url: String) -> usize {
+        let request_id = REQUEST_ID.fetch_add(1, Ordering::SeqCst);
+        let state = RequestState::new(request_id, url);
+        self.requests
+            .lock()
+            .unwrap_or_else(|err| err.into_inner())
+            .insert(request_id, state);
+        request_id
+    }
+
+    pub fn mark_failure(&self, request_id: usize) {
+        let mut requests = self.requests.lock().unwrap_or_else(|err| err.into_inner());
+        if let Some(req) = requests.get_mut(&request_id) {
+            req.status = RequestStatus::Error;
+        }
+    }
+
+    pub fn pending_item_count(&self) -> usize {
+        self.requests
+            .lock()
+            .unwrap_or_else(|err| err.into_inner())
+            .len()
+    }
+
+    pub fn log_pending_items(&self) {
+        // Note: we use a temporary Vec here so that the mutex is unlocked prior to any of the callbacks being called.
         // This prevents the mutex from being poisoned if any of the callbacks panic, allowing it to be reused for further tests.
         //
         // TODO: Cleanup still-in-flight requests in case of panic.
-        let mut data = std::mem::take(&mut *self.queue.lock().unwrap());
-        self.processed_count.fetch_add(data.len(), Ordering::SeqCst);
-        for item in data.drain(0..) {
-            cb(item)
+        // TODO: replace .retain with .extract_if once Rust 1.87 is stable
+        let requests = self.requests.lock().unwrap_or_else(|err| err.into_inner());
+        for (id, req) in requests.iter() {
+            println!("Req {}: {} ({:?})", id, req.url, req.status);
+        }
+    }
+
+    pub fn for_each(&self, mut cb: impl FnMut(T)) {
+        // Note: we use a temporary Vec here so that the mutex is unlocked prior to any of the callbacks being called.
+        // This prevents the mutex from being poisoned if any of the callbacks panic, allowing it to be reused for further tests.
+        //
+        // TODO: Cleanup still-in-flight requests in case of panic.
+        // TODO: replace .retain with .extract_if once Rust 1.87 is stable
+        let mut requests = self.requests.lock().unwrap_or_else(|err| err.into_inner());
+        let mut completed: Vec<Result<T, ()>> = Vec::new();
+        requests.retain(|_id, req| match req.status {
+            RequestStatus::InProgress => true,
+            RequestStatus::Success => {
+                let data = req.data.take().unwrap();
+                completed.push(Ok(data));
+                false
+            }
+            RequestStatus::Error => {
+                completed.push(Err(()));
+                false
+            }
+        });
+        drop(requests);
+
+        for item in completed {
+            if let Ok(data) = item {
+                cb(data);
+            }
+        }
+    }
+
+    pub fn callback(&self, data: T, request_id: usize) {
+        let mut requests = self.requests.lock().unwrap_or_else(|err| err.into_inner());
+        if let Some(req) = requests.get_mut(&request_id) {
+            req.status = RequestStatus::Success;
+            req.data = Some(data);
         }
     }
 }
-impl<T: Send + Sync + 'static> NetCallback for VecCallback<T> {
+
+struct Callback<T> {
+    queue: Arc<InternalQueue<T>>,
+    request_id: usize,
+}
+
+impl<T: Send + Sync + 'static> NetCallback for Callback<T> {
     type Data = T;
     fn call(&self, _doc_id: usize, data: Self::Data) {
-        self.queue
-            .lock()
-            .unwrap_or_else(|err| err.into_inner())
-            .push(data)
+        self.queue.callback(data, self.request_id)
     }
 }

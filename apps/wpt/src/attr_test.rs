@@ -55,6 +55,7 @@ pub async fn parse_and_resolve_document(
     html: &str,
     relative_path: &str,
 ) -> BaseDocument {
+    ctx.net_provider.reset();
     let mut document = HtmlDocument::from_html(
         html,
         Some(ctx.dummy_base_url.join(relative_path).unwrap().to_string()),
@@ -65,6 +66,7 @@ pub async fn parse_and_resolve_document(
     );
 
     document.as_mut().set_viewport(ctx.viewport.clone());
+    document.as_mut().resolve();
 
     // Load resources.
     // Loop because loading a resource may result in further resources being requested
@@ -72,12 +74,16 @@ pub async fn parse_and_resolve_document(
     while ctx.net_provider.pending_item_count() > 0 {
         ctx.net_provider
             .for_each(|res| document.as_mut().load_resource(res));
+        document.as_mut().resolve();
         if Instant::now().duration_since(start).as_millis() > 500 {
-            panic!("Timeout loading resources");
+            ctx.net_provider.log_pending_items();
+            panic!(
+                "Timeout. {} pending items.",
+                ctx.net_provider.pending_item_count()
+            );
         }
     }
 
-    // Compute style, layout, etc for HtmlDocument
     document.as_mut().resolve();
 
     document.into()

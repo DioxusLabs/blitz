@@ -431,6 +431,9 @@ fn main() {
                 })
                 .borrow_mut();
 
+            // Clear any pending requests to avoid failed requests from a previous test interfering with subsequent tests
+            ctx.net_provider.reset();
+
             let num = num.fetch_add(1, Ordering::SeqCst) + 1;
 
             let relative_path = path
