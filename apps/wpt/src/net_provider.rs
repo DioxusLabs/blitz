@@ -90,7 +90,7 @@ impl<D: Send + Sync + 'static> NetProvider for WptNetProvider<D> {
         let request_id = self.queue.create_request(request.url.to_string());
         let res = self.fetch_inner(doc_id, request_id, request, handler);
         if let Err(e) = res {
-            self.queue.mark_failure(request_id);
+            self.queue.record_failure(request_id);
             // if !matches!(e, WptNetProviderError::Io(_)) {
             eprintln!("Error loading {}: {:?}", url, e);
             // }
@@ -175,9 +175,19 @@ impl<T> InternalQueue<T> {
         request_id
     }
 
-    pub fn mark_failure(&self, request_id: usize) {
+    pub fn record_success(&self, data: T, request_id: usize) {
         let mut requests = self.requests.lock().unwrap_or_else(|err| err.into_inner());
         if let Some(req) = requests.get_mut(&request_id) {
+            // println!("Loaded {}", req.url);
+            req.status = RequestStatus::Success;
+            req.data = Some(data);
+        }
+    }
+
+    pub fn record_failure(&self, request_id: usize) {
+        let mut requests = self.requests.lock().unwrap_or_else(|err| err.into_inner());
+        if let Some(req) = requests.get_mut(&request_id) {
+            println!("Error loading {}", req.url);
             req.status = RequestStatus::Error;
         }
     }
@@ -227,14 +237,6 @@ impl<T> InternalQueue<T> {
             cb(data);
         }
     }
-
-    pub fn callback(&self, data: T, request_id: usize) {
-        let mut requests = self.requests.lock().unwrap_or_else(|err| err.into_inner());
-        if let Some(req) = requests.get_mut(&request_id) {
-            req.status = RequestStatus::Success;
-            req.data = Some(data);
-        }
-    }
 }
 
 struct Callback<T> {
@@ -246,12 +248,12 @@ impl<T: Send + Sync + 'static> NetCallback for Callback<T> {
     type Data = T;
     fn call(&self, _doc_id: usize, result: Result<Self::Data, Option<String>>) {
         match result {
-            Ok(data) => self.queue.callback(data, self.request_id),
+            Ok(data) => self.queue.record_success(data, self.request_id),
             Err(err) => {
                 if let Some(msg) = err {
                     eprintln!("{msg}");
                 }
-                self.queue.mark_failure(self.request_id);
+                self.queue.record_failure(self.request_id);
             }
         }
     }
