@@ -137,6 +137,25 @@ fn path_contains_directory(path: &Path, dir_name: &str) -> bool {
         .any(|component| component.as_os_str() == dir_name)
 }
 
+fn filter_path(p: &Path) -> bool {
+    // let is_tentative = path_buf.ends_with("tentative.html");
+    let path_str = p.to_string_lossy();
+    let is_ref = path_str.ends_with("-ref.html")
+        || path_str.ends_with("-ref.htm")
+        || path_str.ends_with("-ref.xhtml")
+        || path_str.ends_with("-ref.xht")
+        || path_contains_directory(p, "reference");
+    let is_support_file = path_contains_directory(p, "support");
+
+    let is_blocked = BLOCKED_TESTS
+        .iter()
+        .any(|suffix| path_str.ends_with(suffix));
+
+    let is_dir = p.is_dir();
+
+    !(is_ref | is_support_file | is_blocked | is_dir)
+}
+
 fn collect_tests(wpt_dir: &Path) -> Vec<PathBuf> {
     let mut test_paths = Vec::new();
 
@@ -152,33 +171,18 @@ fn collect_tests(wpt_dir: &Path) -> Vec<PathBuf> {
 
             let glob_results = glob::glob(&pattern).expect("Invalid glob pattern.");
 
-            test_paths.extend(glob_results.filter_map(|glob_result| {
-                if let Ok(path_buf) = glob_result {
-                    // let is_tentative = path_buf.ends_with("tentative.html");
-                    let path_str = path_buf.to_string_lossy();
-                    let is_ref = path_str.ends_with("-ref.html")
-                        || path_str.ends_with("-ref.htm")
-                        || path_str.ends_with("-ref.xhtml")
-                        || path_str.ends_with("-ref.xht")
-                        || path_contains_directory(&path_buf, "reference");
-                    let is_support_file = path_contains_directory(&path_buf, "support");
-
-                    let is_blocked = BLOCKED_TESTS
-                        .iter()
-                        .any(|suffix| path_str.ends_with(suffix));
-
-                    let is_dir = path_buf.is_dir();
-
-                    if is_ref | is_support_file | is_blocked | is_dir {
-                        None
-                    } else {
-                        Some(path_buf)
-                    }
-                } else {
-                    error!("Failure during glob.");
-                    panic!("Failure during glob");
-                }
-            }));
+            test_paths.extend(
+                glob_results
+                    .map(|glob_result| {
+                        if let Ok(path_buf) = glob_result {
+                            path_buf
+                        } else {
+                            error!("Failure during glob.");
+                            panic!("Failure during glob");
+                        }
+                    })
+                    .filter(|path_buf| filter_path(path_buf)),
+            );
         }
     }
 
