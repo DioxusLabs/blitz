@@ -381,9 +381,11 @@ impl VelloSceneGenerator<'_> {
         }
 
         // We can't fully support opacity yet, but we can hide elements with opacity 0
-        if node.primary_styles().unwrap().get_effects().opacity == 0.0 {
+        let opacity = node.primary_styles().unwrap().get_effects().opacity;
+        if opacity == 0.0 {
             return;
         }
+        let has_opacity = opacity < 1.0;
 
         // TODO: account for overflow_x vs overflow_y
         let styles = &node.primary_styles().unwrap();
@@ -427,7 +429,8 @@ impl VelloSceneGenerator<'_> {
             return;
         }
 
-        if should_clip {
+        let wants_layer = should_clip | has_opacity;
+        if wants_layer {
             CLIPS_WANTED.fetch_add(1, atomic::Ordering::SeqCst);
         }
 
@@ -438,7 +441,8 @@ impl VelloSceneGenerator<'_> {
         cx.draw_background(scene);
         cx.stroke_border(scene);
 
-        if should_clip && clips_available {
+        if wants_layer && clips_available {
+            // TODO: allow layers with opacity to be unclipped (overflow: visible)
             scene.push_layer(Mix::Clip, 1.0, cx.transform, &cx.frame.frame());
             CLIPS_USED.fetch_add(1, atomic::Ordering::SeqCst);
             let depth = CLIP_DEPTH.fetch_add(1, atomic::Ordering::SeqCst) + 1;
@@ -471,7 +475,7 @@ impl VelloSceneGenerator<'_> {
         cx.draw_marker(scene, content_position);
         cx.draw_children(scene);
 
-        if should_clip {
+        if wants_layer {
             scene.pop_layer();
             CLIP_DEPTH.fetch_sub(1, atomic::Ordering::SeqCst);
         }
