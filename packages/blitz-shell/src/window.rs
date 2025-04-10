@@ -271,14 +271,26 @@ impl<Doc: Document<Doc = D>, Rend: DocumentRenderer<Doc = D>> View<Doc, Rend> {
 
         // Dispatch hover events only when hover state changes
         if prev_hover != new_hover {
-            // Handle mouseleave on previous node
+            // Handle mouseout and mouseleave on previous node
             if let Some(prev_id) = prev_hover {
+                // First dispatch mouseout (bubbles)
+                let mut mouse_out_event = DomEvent::new(
+                    prev_id,
+                    DomEventData::MouseOut(BlitzMouseOverEvent {
+                        x: self.mouse_pos.0,
+                        y: self.mouse_pos.1,
+                    }),
+                );
+                self.doc.handle_event(&mut mouse_out_event);
+
+                // Then dispatch mouseleave (doesn't bubble)
                 let mut mouse_leave_event = DomEvent::new(prev_id, DomEventData::MouseLeave);
                 self.doc.handle_event(&mut mouse_leave_event);
             }
 
-            // Handle mouseenter on new node
+            // Handle mouseover and mouseenter on new node
             if let Some(new_id) = new_hover {
+                // First dispatch mouseover (bubbles)
                 let mut hover_event = DomEvent::new(
                     new_id,
                     DomEventData::MouseOver(BlitzMouseOverEvent {
@@ -287,6 +299,16 @@ impl<Doc: Document<Doc = D>, Rend: DocumentRenderer<Doc = D>> View<Doc, Rend> {
                     }),
                 );
                 self.doc.handle_event(&mut hover_event);
+
+                // Then dispatch mouseenter (doesn't bubble)
+                let mut enter_event = DomEvent::new(
+                    new_id,
+                    DomEventData::MouseEnter(BlitzMouseOverEvent {
+                        x: self.mouse_pos.0,
+                        y: self.mouse_pos.1,
+                    }),
+                );
+                self.doc.handle_event(&mut enter_event);
             }
         }
 

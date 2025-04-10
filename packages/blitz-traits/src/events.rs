@@ -40,6 +40,8 @@ pub enum DomEventData {
     KeyPress(BlitzKeyEvent),
     Ime(BlitzImeEvent),
     MouseOver(BlitzMouseOverEvent),
+    MouseEnter(BlitzMouseOverEvent),
+    MouseOut(BlitzMouseOverEvent),
     MouseLeave,
 }
 
@@ -53,6 +55,8 @@ impl DomEventData {
             Self::KeyPress { .. } => "keypress",
             Self::Ime { .. } => "input",
             Self::MouseOver { .. } => "mouseover",
+            Self::MouseEnter { .. } => "mouseenter",
+            Self::MouseOut { .. } => "mouseout",
             Self::MouseLeave => "mouseleave",
         }
     }
@@ -66,6 +70,8 @@ impl DomEventData {
             Self::KeyPress { .. } => true,
             Self::Ime { .. } => true,
             Self::MouseOver { .. } => true,
+            Self::MouseEnter { .. } => false,
+            Self::MouseOut { .. } => true,
             Self::MouseLeave => false,
         }
     }
@@ -79,6 +85,8 @@ impl DomEventData {
             Self::KeyPress { .. } => true,
             Self::Ime { .. } => true,
             Self::MouseOver { .. } => true,
+            Self::MouseEnter { .. } => false,
+            Self::MouseOut { .. } => true,
             Self::MouseLeave => true,
         }
     }
