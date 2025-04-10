@@ -83,9 +83,12 @@ impl BlitzShellNetCallback {
 }
 impl NetCallback for BlitzShellNetCallback {
     type Data = Resource;
-    fn call(&self, doc_id: usize, data: Self::Data) {
-        self.0
-            .send_event(BlitzShellEvent::ResourceLoad { doc_id, data })
-            .unwrap()
+    fn call(&self, doc_id: usize, result: Result<Self::Data, Option<String>>) {
+        // TODO: handle error case
+        if let Ok(data) = result {
+            self.0
+                .send_event(BlitzShellEvent::ResourceLoad { doc_id, data })
+                .unwrap()
+        }
     }
 }

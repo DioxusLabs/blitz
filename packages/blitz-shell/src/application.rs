@@ -87,9 +87,15 @@ impl<Doc: Document<Doc = D>, Rend: DocumentRenderer<Doc = D>> ApplicationHandler
         window_id: WindowId,
         event: WindowEvent,
     ) {
-        // Exit the app when window close is requested. TODO: Only exit when last window is closed.
+        // Exit the app when window close is requested.
         if matches!(event, WindowEvent::CloseRequested) {
-            event_loop.exit();
+            // Drop window before exiting event loop
+            // See https://github.com/rust-windowing/winit/issues/4135
+            let window = self.windows.remove(&window_id);
+            drop(window);
+            if self.windows.is_empty() {
+                event_loop.exit();
+            }
             return;
         }
 

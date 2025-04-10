@@ -18,12 +18,12 @@ use log::{error, info};
 use owo_colors::OwoColorize;
 use std::cell::RefCell;
 use std::fmt::Display;
-use std::io::{stdout, Write};
-use std::panic::{catch_unwind, AssertUnwindSafe};
+use std::io::{Write, stdout};
+use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::path::{self, Path, PathBuf};
+use std::sync::Arc;
 use std::sync::atomic::AtomicU32;
 use std::sync::atomic::Ordering;
-use std::sync::Arc;
 use std::time::{Duration, Instant};
 use std::{env, fs};
 
@@ -40,6 +40,7 @@ const HEIGHT: u32 = 600;
 const SCALE: f64 = 1.0;
 
 bitflags! {
+    #[derive(Copy, Clone)]
     pub struct TestFlags : u32 {
         const USES_FLOAT = 0b00000001;
         const USES_INTRINSIC_SIZE = 0b00000010;
@@ -48,10 +49,11 @@ bitflags! {
         const USES_WRITING_MODE = 0b00010000;
         const USES_SUBGRID = 0b00100000;
         const USES_MASONRY = 0b01000000;
+        const USES_SCRIPT = 0b10000000;
     }
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, PartialEq)]
 enum TestKind {
     Ref,
     Attr,
@@ -135,6 +137,25 @@ fn path_contains_directory(path: &Path, dir_name: &str) -> bool {
         .any(|component| component.as_os_str() == dir_name)
 }
 
+fn filter_path(p: &Path) -> bool {
+    // let is_tentative = path_buf.ends_with("tentative.html");
+    let path_str = p.to_string_lossy();
+    let is_ref = path_str.ends_with("-ref.html")
+        || path_str.ends_with("-ref.htm")
+        || path_str.ends_with("-ref.xhtml")
+        || path_str.ends_with("-ref.xht")
+        || path_contains_directory(p, "reference");
+    let is_support_file = path_contains_directory(p, "support");
+
+    let is_blocked = BLOCKED_TESTS
+        .iter()
+        .any(|suffix| path_str.ends_with(suffix));
+
+    let is_dir = p.is_dir();
+
+    !(is_ref | is_support_file | is_blocked | is_dir)
+}
+
 fn collect_tests(wpt_dir: &Path) -> Vec<PathBuf> {
     let mut test_paths = Vec::new();
 
@@ -145,47 +166,27 @@ fn collect_tests(wpt_dir: &Path) -> Vec<PathBuf> {
     }
 
     for suite in suites {
-        for ext in ["htm", "html", "xht", "xhtml"] {
-            let pattern = format!("{}/{}/**/*.{}", wpt_dir.display(), suite, ext);
+        for pat in ["", "/**/*.htm", "/**/*.html", "/**/*.xht", "/**/*.xhtml"] {
+            let pattern = format!("{}/{}{}", wpt_dir.display(), suite, pat);
 
             let glob_results = glob::glob(&pattern).expect("Invalid glob pattern.");
 
-            test_paths.extend(glob_results.filter_map(|glob_result| {
-                if let Ok(path_buf) = glob_result {
-                    // let is_tentative = path_buf.ends_with("tentative.html");
-                    let path_str = path_buf.to_string_lossy();
-                    let is_ref = path_str.ends_with("-ref.html")
-                        || path_str.ends_with("-ref.htm")
-                        || path_str.ends_with("-ref.xhtml")
-                        || path_str.ends_with("-ref.xht")
-                        || path_contains_directory(&path_buf, "reference");
-                    let is_support_file = path_contains_directory(&path_buf, "support");
-
-                    let is_blocked = BLOCKED_TESTS
-                        .iter()
-                        .any(|suffix| path_str.ends_with(suffix));
-
-                    if is_ref | is_support_file | is_blocked {
-                        None
-                    } else {
-                        Some(path_buf)
-                    }
-                } else {
-                    error!("Failure during glob.");
-                    panic!("Failure during glob");
-                }
-            }));
+            test_paths.extend(
+                glob_results
+                    .map(|glob_result| {
+                        if let Ok(path_buf) = glob_result {
+                            path_buf
+                        } else {
+                            error!("Failure during glob.");
+                            panic!("Failure during glob");
+                        }
+                    })
+                    .filter(|path_buf| filter_path(path_buf)),
+            );
         }
     }
 
     test_paths
-}
-
-fn clone_font_ctx(ctx: &FontContext) -> FontContext {
-    FontContext {
-        collection: ctx.collection.clone(),
-        source_cache: ctx.source_cache.clone(),
-    }
 }
 
 enum BufferKind {
@@ -222,6 +223,7 @@ struct ThreadCtx {
     writing_mode_re: Regex,
     subgrid_re: Regex,
     masonry_re: Regex,
+    script_re: Regex,
     out_dir: PathBuf,
     wpt_dir: PathBuf,
     dummy_base_url: Url,
@@ -276,7 +278,13 @@ impl TestResult {
         write!(out, "{}", format_args!("{}", self.kind).bright_black()).unwrap();
 
         // Write flag markers
-        if !self.flags.is_empty() {
+
+        let mut flags = self.flags;
+        if self.kind != TestKind::Ref {
+            flags.remove(TestFlags::USES_SCRIPT);
+        }
+
+        if !flags.is_empty() {
             write!(out, " {}", "(".bright_black()).unwrap();
 
             if self.flags.contains(TestFlags::USES_FLOAT) {
@@ -300,6 +308,9 @@ impl TestResult {
             if self.flags.contains(TestFlags::USES_MASONRY) {
                 write!(out, "{}", "M".bright_black()).unwrap();
             }
+            if self.kind == TestKind::Ref && self.flags.contains(TestFlags::USES_SCRIPT) {
+                write!(out, "{}", "X".bright_black()).unwrap();
+            }
 
             write!(out, "{}", ")".bright_black()).unwrap();
         }
@@ -319,7 +330,9 @@ fn main() {
     let wpt_dir = path::absolute(env::var("WPT_DIR").expect("WPT_DIR is not set")).unwrap();
     info!("WPT_DIR: {}", wpt_dir.display());
     if !wpt_dir.exists() {
-        error!("WPT_DIR does not exist. This should be set to a local copy of https://github.com/web-platform-tests/wpt.");
+        error!(
+            "WPT_DIR does not exist. This should be set to a local copy of https://github.com/web-platform-tests/wpt."
+        );
     }
     let test_paths = collect_tests(&wpt_dir);
     let count = test_paths.len();
@@ -349,6 +362,7 @@ fn main() {
     let float_fail_count = AtomicU32::new(0);
     let calc_fail_count = AtomicU32::new(0);
     let intrinsic_size_fail_count = AtomicU32::new(0);
+    let script_fail_count = AtomicU32::new(0);
     let other_fail_count = AtomicU32::new(0);
     let start = Instant::now();
 
@@ -364,7 +378,7 @@ fn main() {
             let mut ctx = thread_state
                 .get_or(|| {
                     let renderer = VelloImageRenderer::new(WIDTH, HEIGHT, SCALE).block_on();
-                    let font_ctx = clone_font_ctx(&base_font_context);
+                    let font_ctx = base_font_context.clone();
                     let test_buffer = Vec::with_capacity((WIDTH * HEIGHT * 4) as usize);
                     let ref_buffer = Vec::with_capacity((WIDTH * HEIGHT * 4) as usize);
                     let viewport = Viewport::new(
@@ -374,7 +388,8 @@ fn main() {
                         ColorScheme::Light,
                     );
                     let net_provider = Arc::new(WptNetProvider::new(&wpt_dir));
-                    let reftest_re = Regex::new(r#"<link\s+rel="match"\s+href="([^"]+)""#).unwrap();
+                    let reftest_re =
+                        Regex::new(r#"<link\s+rel=['"]match['"]\s+href=['"]([^'"]+)['"]"#).unwrap();
 
                     let float_re = Regex::new(r#"float:"#).unwrap();
                     let intrinsic_re =
@@ -384,6 +399,7 @@ fn main() {
                     let writing_mode_re = Regex::new(r#"writing-mode:|vertical(RL|LR)"#).unwrap();
                     let subgrid_re = Regex::new(r#"subgrid"#).unwrap();
                     let masonry_re = Regex::new(r#"masonry"#).unwrap();
+                    let script_re = Regex::new(r#"<script|onload="#).unwrap();
 
                     let attrtest_re =
                         Regex::new(r#"checkLayout\(\s*['"]([^'"]*)['"]\s*(,\s*(true|false))?\)"#)
@@ -410,6 +426,7 @@ fn main() {
                         writing_mode_re,
                         subgrid_re,
                         masonry_re,
+                        script_re,
                         out_dir: out_dir.clone(),
                         wpt_dir: wpt_dir.clone(),
                         dummy_base_url,
@@ -417,6 +434,9 @@ fn main() {
                     })
                 })
                 .borrow_mut();
+
+            // Clear any pending requests to avoid failed requests from a previous test interfering with subsequent tests
+            ctx.net_provider.reset();
 
             let num = num.fetch_add(1, Ordering::SeqCst) + 1;
 
@@ -469,6 +489,8 @@ fn main() {
                         calc_fail_count.fetch_add(1, Ordering::SeqCst);
                     } else if flags.contains(TestFlags::USES_FLOAT) {
                         float_fail_count.fetch_add(1, Ordering::SeqCst);
+                    } else if kind == TestKind::Ref && flags.contains(TestFlags::USES_SCRIPT) {
+                        script_fail_count.fetch_add(1, Ordering::SeqCst);
                     } else {
                         other_fail_count.fetch_add(1, Ordering::SeqCst);
                     }
@@ -537,6 +559,7 @@ fn main() {
     let float_fail_count = float_fail_count.load(Ordering::SeqCst);
     let calc_fail_count = calc_fail_count.load(Ordering::SeqCst);
     let intrinsic_size_fail_count = intrinsic_size_fail_count.load(Ordering::SeqCst);
+    let script_fail_count = script_fail_count.load(Ordering::SeqCst);
     let other_fail_count = other_fail_count.load(Ordering::SeqCst);
 
     fn as_percent(amount: u32, out_of: u32) -> f32 {
@@ -571,25 +594,34 @@ fn main() {
     println!("{subtest_pass_count:>4} subtests PASSED ({subtest_pass_percent:.2}%)");
 
     println!("{}", "\nOf tests run:".bright_black());
-    println!("{crash_count:>4} tests CRASHED ({crash_percent_run:.2}% of run; {crash_percent_total:.2}% of found)");
-    println!("{pass_count:>4} tests PASSED ({pass_percent_run:.2}% of run; {pass_percent_total:.2}% of found)");
-    println!("{fail_count:>4} tests FAILED ({fail_percent_run:.2}% of run; {fail_percent_total:.2}% of found)");
+    println!(
+        "{crash_count:>4} tests CRASHED ({crash_percent_run:.2}% of run; {crash_percent_total:.2}% of found)"
+    );
+    println!(
+        "{pass_count:>4} tests PASSED ({pass_percent_run:.2}% of run; {pass_percent_total:.2}% of found)"
+    );
+    println!(
+        "{fail_count:>4} tests FAILED ({fail_percent_run:.2}% of run; {fail_percent_total:.2}% of found)"
+    );
 
     println!("{}", "\nCounting partial tests:".bright_black());
-    println!("{fractional_pass_count:>4.2} tests PASSED ({fractional_pass_percent_run:.2}% of run; {fractional_pass_percent_total:.2}% of found)");
+    println!(
+        "{fractional_pass_count:>4.2} tests PASSED ({fractional_pass_percent_run:.2}% of run; {fractional_pass_percent_total:.2}% of found)"
+    );
 
     println!("{}", "\nOf those tests which failed:".bright_black());
     println!("{other_fail_count:>4} do not use unsupported features");
-    println!("{writing_mode_fail_count:>4} use writing-mode");
-    println!("{direction_fail_count:>4} use direction");
-    println!("{float_fail_count:>4} use floats");
-    println!("{intrinsic_size_fail_count:>4} use intrinsic size keywords");
-    println!("{calc_fail_count:>4} use calc");
+    println!("{writing_mode_fail_count:>4} use writing-mode (W)");
+    println!("{direction_fail_count:>4} use direction (D)");
+    println!("{float_fail_count:>4} use floats (F)");
+    println!("{intrinsic_size_fail_count:>4} use intrinsic size keywords (I)");
+    println!("{script_fail_count:>4} use script (X)");
+    println!("{calc_fail_count:>4} use calc (C)");
     if subgrid_fail_count > 0 {
-        println!("{subgrid_fail_count:>4} use subgrid");
+        println!("{subgrid_fail_count:>4} use subgrid (S)");
     }
     if masonry_fail_count > 0 {
-        println!("{masonry_fail_count:>4} use masonry");
+        println!("{masonry_fail_count:>4} use masonry (M)");
     }
 }
 
@@ -624,6 +656,9 @@ async fn process_test_file(
     }
     if ctx.masonry_re.is_match(&file_contents) {
         flags |= TestFlags::USES_MASONRY;
+    }
+    if ctx.script_re.is_match(&file_contents) {
+        flags |= TestFlags::USES_SCRIPT;
     }
 
     // Ref Test

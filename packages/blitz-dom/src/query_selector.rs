@@ -1,6 +1,6 @@
 use selectors::SelectorList;
 use smallvec::SmallVec;
-use style::dom_apis::{query_selector, MayUseInvalidation, QueryAll, QueryFirst};
+use style::dom_apis::{MayUseInvalidation, QueryAll, QueryFirst, query_selector};
 use style::selector_parser::{SelectorImpl, SelectorParser};
 use style::stylesheets::UrlExtraData;
 use style_traits::ParseError;

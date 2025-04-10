@@ -1,5 +1,4 @@
 use std::sync::atomic::{self, AtomicUsize};
-use std::sync::Arc;
 
 use super::multicolor_rounded_rect::{Edge, ElementFrame};
 use crate::util::{Color, ToColorColor};
@@ -7,7 +6,7 @@ use blitz_dom::node::{
     ImageData, ListItemLayout, ListItemLayoutPosition, Marker, NodeData, RasterImageData,
     TextBrush, TextInputData, TextNodeData,
 };
-use blitz_dom::{local_name, BaseDocument, ElementNodeData, Node};
+use blitz_dom::{BaseDocument, ElementNodeData, Node, local_name};
 use blitz_traits::Devtools;
 
 use color::DynamicColor;
@@ -15,11 +14,12 @@ use euclid::Transform3D;
 use parley::Line;
 use style::color::AbsoluteColor;
 use style::{
+    OwnedSlice,
     dom::TElement,
     properties::{
+        ComputedValues,
         generated::longhands::visibility::computed_value::T as StyloVisibility,
         style_structs::{Font, Outline},
-        ComputedValues,
     },
     values::{
         computed::{
@@ -27,21 +27,19 @@ use style::{
             LineDirection, Overflow, Percentage,
         },
         generics::{
+            NonNegative,
             image::{
                 EndingShape, GenericGradient, GenericGradientItem, GenericImage, GradientFlags,
             },
             position::GenericPosition,
-            NonNegative,
         },
         specified::{
-            position::{HorizontalPositionKeyword, VerticalPositionKeyword},
             BorderStyle, OutlineStyle,
+            position::{HorizontalPositionKeyword, VerticalPositionKeyword},
         },
     },
-    OwnedSlice,
 };
 
-use image::imageops::FilterType;
 use parley::layout::PositionedLayoutItem;
 use style::values::generics::color::GenericColor;
 use style::values::generics::image::{
@@ -52,9 +50,9 @@ use taffy::Layout;
 use vello::kurbo::{self, BezPath, Cap, Circle, Join};
 use vello::peniko::Gradient;
 use vello::{
+    Scene,
     kurbo::{Affine, Point, Rect, Shape, Stroke, Vec2},
     peniko::{self, Fill, Mix},
-    Scene,
 };
 #[cfg(feature = "svg")]
 use vello_svg::usvg;
@@ -141,8 +139,8 @@ impl VelloSceneGenerator<'_> {
         let background_color = {
             let html_color = root_element
                 .primary_styles()
-                .unwrap()
-                .clone_background_color();
+                .map(|s| s.clone_background_color())
+                .unwrap_or(GenericColor::TRANSPARENT_BLACK);
             if html_color == GenericColor::TRANSPARENT_BLACK {
                 root_element
                     .children
@@ -383,9 +381,11 @@ impl VelloSceneGenerator<'_> {
         }
 
         // We can't fully support opacity yet, but we can hide elements with opacity 0
-        if node.primary_styles().unwrap().get_effects().opacity == 0.0 {
+        let opacity = node.primary_styles().unwrap().get_effects().opacity;
+        if opacity == 0.0 {
             return;
         }
+        let has_opacity = opacity < 1.0;
 
         // TODO: account for overflow_x vs overflow_y
         let styles = &node.primary_styles().unwrap();
@@ -421,7 +421,6 @@ impl VelloSceneGenerator<'_> {
             return;
         }
 
-        let transform = Affine::translate(content_position.to_vec2() * self.scale);
         let origin = kurbo::Point { x: 0.0, y: 0.0 };
         let clip = Rect::from_origin_size(origin, content_box_size);
 
@@ -430,7 +429,8 @@ impl VelloSceneGenerator<'_> {
             return;
         }
 
-        if should_clip {
+        let wants_layer = should_clip | has_opacity;
+        if wants_layer {
             CLIPS_WANTED.fetch_add(1, atomic::Ordering::SeqCst);
         }
 
@@ -439,16 +439,17 @@ impl VelloSceneGenerator<'_> {
         cx.stroke_outline(scene);
         cx.draw_outset_box_shadow(scene);
         cx.draw_background(scene);
+        cx.stroke_border(scene);
 
-        if should_clip && clips_available {
-            scene.push_layer(Mix::Clip, 1.0, transform, &cx.frame.frame());
+        if wants_layer && clips_available {
+            // TODO: allow layers with opacity to be unclipped (overflow: visible)
+            scene.push_layer(Mix::Clip, 1.0, cx.transform, &cx.frame.frame());
             CLIPS_USED.fetch_add(1, atomic::Ordering::SeqCst);
             let depth = CLIP_DEPTH.fetch_add(1, atomic::Ordering::SeqCst) + 1;
             CLIP_DEPTH_USED.fetch_max(depth, atomic::Ordering::SeqCst);
         }
 
         cx.draw_inset_box_shadow(scene);
-        cx.stroke_border(scene);
         cx.stroke_devtools(scene);
 
         // Now that background has been drawn, offset pos and cx in order to draw our contents scrolled
@@ -474,7 +475,7 @@ impl VelloSceneGenerator<'_> {
         cx.draw_marker(scene, content_position);
         cx.draw_children(scene);
 
-        if should_clip {
+        if wants_layer {
             scene.pop_layer();
             CLIP_DEPTH.fetch_sub(1, atomic::Ordering::SeqCst);
         }
@@ -547,11 +548,11 @@ impl VelloSceneGenerator<'_> {
             let origin_translation = Affine::translate(Vec2 {
                 x: transform_origin
                     .horizontal
-                    .resolve(CSSPixelLength::new(frame.outer_rect.width() as f32))
+                    .resolve(CSSPixelLength::new(frame.border_box.width() as f32))
                     .px() as f64,
                 y: transform_origin
                     .vertical
-                    .resolve(CSSPixelLength::new(frame.outer_rect.width() as f32))
+                    .resolve(CSSPixelLength::new(frame.border_box.width() as f32))
                     .px() as f64,
             });
             let kurbo_transform =
@@ -654,33 +655,16 @@ fn compute_background_size(
 }
 
 /// Ensure that the `resized_image` field has a correctly sized image
-fn ensure_resized_image(data: &RasterImageData, width: u32, height: u32) {
-    let mut resized_image = data.resized_image.borrow_mut();
-
-    if resized_image.is_none()
-        || resized_image
-            .as_ref()
-            .is_some_and(|img| img.width != width || img.height != height)
-    {
-        let image_data = data
-            .image
-            .clone()
-            .resize_to_fill(width, height, FilterType::Lanczos3)
-            .into_rgba8()
-            .into_raw();
-
-        let peniko_image = peniko::Image {
-            data: peniko::Blob::new(Arc::new(image_data)),
-            format: peniko::ImageFormat::Rgba8,
-            width,
-            height,
-            alpha: 1.0,
-            x_extend: peniko::Extend::Pad,
-            y_extend: peniko::Extend::Pad,
-            quality: peniko::ImageQuality::High,
-        };
-
-        *resized_image = Some(Arc::new(peniko_image));
+fn to_peniko_image(image: &RasterImageData) -> peniko::Image {
+    peniko::Image {
+        data: peniko::Blob::new(image.data.clone()),
+        format: peniko::ImageFormat::Rgba8,
+        width: image.width,
+        height: image.height,
+        alpha: 1.0,
+        x_extend: peniko::Extend::Repeat,
+        y_extend: peniko::Extend::Repeat,
+        quality: peniko::ImageQuality::High,
     }
 }
 
@@ -840,7 +824,7 @@ impl ElementCx<'_> {
 
                     scene
                         .draw_glyphs(font)
-                        .brush(&style.brush)
+                        .brush(&style.brush.brush)
                         .hint(true)
                         .transform(transform)
                         .glyph_transform(glyph_xform)
@@ -866,7 +850,13 @@ impl ElementCx<'_> {
                         let w = glyph_run.advance() as f64;
                         let y = (glyph_run.baseline() - offset + size / 2.0) as f64;
                         let line = kurbo::Line::new((x, y), (x + w, y));
-                        scene.stroke(&Stroke::new(size as f64), transform, brush, None, &line)
+                        scene.stroke(
+                            &Stroke::new(size as f64),
+                            transform,
+                            &brush.brush,
+                            None,
+                            &line,
+                        )
                     };
 
                     if let Some(underline) = &style.underline {
@@ -893,14 +883,14 @@ impl ElementCx<'_> {
             return;
         };
 
-        let width = self.frame.inner_rect.width() as u32;
-        let height = self.frame.inner_rect.height() as u32;
+        let width = self.frame.padding_box.width() as u32;
+        let height = self.frame.padding_box.height() as u32;
         let svg_size = svg.size();
 
         let x_scale = width as f64 / svg_size.width() as f64;
         let y_scale = height as f64 / svg_size.height() as f64;
 
-        let box_inset = self.frame.inner_rect.origin();
+        let box_inset = self.frame.padding_box.origin();
         let transform = Affine::translate((
             self.pos.x * self.scale + box_inset.x,
             self.pos.y * self.scale + box_inset.y,
@@ -913,7 +903,7 @@ impl ElementCx<'_> {
 
     #[cfg(feature = "svg")]
     fn draw_svg_bg_image(&self, scene: &mut Scene, idx: usize) {
-        use style::{values::computed::Length, Zero as _};
+        use style::{Zero as _, values::computed::Length};
 
         let bg_image = self.element.background_images.get(idx);
 
@@ -924,8 +914,8 @@ impl ElementCx<'_> {
             return;
         };
 
-        let frame_w = self.frame.inner_rect.width() as f32;
-        let frame_h = self.frame.inner_rect.height() as f32;
+        let frame_w = self.frame.padding_box.width() as f32;
+        let frame_h = self.frame.padding_box.height() as f32;
 
         let svg_size = svg.size();
         let bg_size = compute_background_size(
@@ -933,10 +923,11 @@ impl ElementCx<'_> {
             frame_w,
             frame_h,
             idx,
-            svg_size.width(),
-            svg_size.height(),
+            svg_size.width() / self.scale as f32,
+            svg_size.height() / self.scale as f32,
             self.scale as f32,
         );
+        let bg_size = bg_size * self.scale;
 
         let x_ratio = bg_size.width as f64 / svg_size.width() as f64;
         let y_ratio = bg_size.height as f64 / svg_size.height() as f64;
@@ -973,34 +964,48 @@ impl ElementCx<'_> {
     }
 
     fn draw_image(&self, scene: &mut Scene) {
-        let width = self.frame.inner_rect.width() as u32;
-        let height = self.frame.inner_rect.height() as u32;
+        if let Some(image) = self.element.raster_image_data() {
+            let width = self.frame.content_box.width() as u32;
+            let height = self.frame.content_box.height() as u32;
+            let x = self.frame.content_box.origin().x;
+            let y = self.frame.content_box.origin().y;
 
-        if let Some(image_data) = self.element.raster_image_data() {
-            ensure_resized_image(image_data, width, height);
-            let resized_image = image_data.resized_image.borrow();
-            scene.draw_image(resized_image.as_ref().unwrap(), self.transform);
+            let x_scale = width as f64 / image.width as f64;
+            let y_scale = height as f64 / image.height as f64;
+            let transform = self
+                .transform
+                .pre_scale_non_uniform(x_scale, y_scale)
+                .then_translate(Vec2 { x, y });
+
+            scene.draw_image(&to_peniko_image(image), transform);
         }
     }
 
     fn draw_raster_bg_image(&self, scene: &mut Scene, idx: usize) {
-        let width = self.frame.inner_rect.width() as u32;
-        let height = self.frame.inner_rect.height() as u32;
-
         let bg_image = self.element.background_images.get(idx);
 
         if let Some(Some(bg_image)) = bg_image.as_ref() {
-            if let ImageData::Raster(image_data) = &bg_image.image {
-                ensure_resized_image(image_data, width, height);
-                let resized_image = image_data.resized_image.borrow();
-                scene.draw_image(resized_image.as_ref().unwrap(), self.transform);
+            if let ImageData::Raster(image) = &bg_image.image {
+                let width = self.frame.padding_box.width() as u32;
+                let height = self.frame.padding_box.height() as u32;
+                let x = self.frame.content_box.origin().x;
+                let y = self.frame.content_box.origin().y;
+
+                let x_scale = width as f64 / image.width as f64;
+                let y_scale = height as f64 / image.height as f64;
+                let transform = self
+                    .transform
+                    .pre_scale_non_uniform(x_scale, y_scale)
+                    .then_translate(Vec2 { x, y });
+
+                scene.draw_image(&to_peniko_image(image), transform);
             }
         }
     }
 
     fn stroke_devtools(&self, scene: &mut Scene) {
         if self.devtools.show_layout {
-            let shape = &self.frame.outer_rect;
+            let shape = &self.frame.border_box;
             let stroke = Stroke::new(self.scale);
 
             let stroke_color = match self.node.style.display {
@@ -1093,12 +1098,12 @@ impl ElementCx<'_> {
         items: &[GradientItem<LengthPercentage>],
         flags: GradientFlags,
     ) {
-        let bb = self.frame.outer_rect.bounding_box();
+        let bb = self.frame.border_box.bounding_box();
         let current_color = self.style.clone_color();
 
         let shape = self.frame.frame();
         let center = bb.center();
-        let rect = self.frame.inner_rect;
+        let rect = self.frame.padding_box;
         let (start, end) = match direction {
             LineDirection::Angle(angle) => {
                 let angle = -angle.radians64() + std::f64::consts::PI;
@@ -1109,12 +1114,12 @@ impl ElementCx<'_> {
             }
             LineDirection::Horizontal(horizontal) => {
                 let start = Point::new(
-                    self.frame.inner_rect.x0,
-                    self.frame.inner_rect.y0 + rect.height() / 2.0,
+                    self.frame.padding_box.x0,
+                    self.frame.padding_box.y0 + rect.height() / 2.0,
                 );
                 let end = Point::new(
-                    self.frame.inner_rect.x1,
-                    self.frame.inner_rect.y0 + rect.height() / 2.0,
+                    self.frame.padding_box.x1,
+                    self.frame.padding_box.y0 + rect.height() / 2.0,
                 );
                 match horizontal {
                     HorizontalPositionKeyword::Right => (start, end),
@@ -1123,12 +1128,12 @@ impl ElementCx<'_> {
             }
             LineDirection::Vertical(vertical) => {
                 let start = Point::new(
-                    self.frame.inner_rect.x0 + rect.width() / 2.0,
-                    self.frame.inner_rect.y0,
+                    self.frame.padding_box.x0 + rect.width() / 2.0,
+                    self.frame.padding_box.y0,
                 );
                 let end = Point::new(
-                    self.frame.inner_rect.x0 + rect.width() / 2.0,
-                    self.frame.inner_rect.y1,
+                    self.frame.padding_box.x0 + rect.width() / 2.0,
+                    self.frame.padding_box.y1,
                 );
                 match vertical {
                     VerticalPositionKeyword::Top => (end, start),
@@ -1138,18 +1143,18 @@ impl ElementCx<'_> {
             LineDirection::Corner(horizontal, vertical) => {
                 let (start_x, end_x) = match horizontal {
                     HorizontalPositionKeyword::Right => {
-                        (self.frame.inner_rect.x0, self.frame.inner_rect.x1)
+                        (self.frame.padding_box.x0, self.frame.padding_box.x1)
                     }
                     HorizontalPositionKeyword::Left => {
-                        (self.frame.inner_rect.x1, self.frame.inner_rect.x0)
+                        (self.frame.padding_box.x1, self.frame.padding_box.x0)
                     }
                 };
                 let (start_y, end_y) = match vertical {
                     VerticalPositionKeyword::Top => {
-                        (self.frame.inner_rect.y1, self.frame.inner_rect.y0)
+                        (self.frame.padding_box.y1, self.frame.padding_box.y0)
                     }
                     VerticalPositionKeyword::Bottom => {
-                        (self.frame.inner_rect.y0, self.frame.inner_rect.y1)
+                        (self.frame.padding_box.y0, self.frame.padding_box.y1)
                     }
                 };
                 (Point::new(start_x, start_y), Point::new(end_x, end_y))
@@ -1404,7 +1409,7 @@ impl ElementCx<'_> {
                         // Fill the color
                         scene.draw_blurred_rounded_rect(
                             transform,
-                            elem_cx.frame.outer_rect,
+                            elem_cx.frame.border_box,
                             shadow_color,
                             radius,
                             shadow.base.blur.px() as f64,
@@ -1455,7 +1460,7 @@ impl ElementCx<'_> {
                 // Fill the color
                 scene.draw_blurred_rounded_rect(
                     transform,
-                    self.frame.outer_rect,
+                    self.frame.border_box,
                     shadow_color,
                     radius,
                     shadow.base.blur.px() as f64,
@@ -1633,7 +1638,7 @@ impl ElementCx<'_> {
         flags: GradientFlags,
     ) {
         let bez_path = self.frame.frame();
-        let rect = self.frame.inner_rect;
+        let rect = self.frame.padding_box;
         let repeating = flags.contains(GradientFlags::REPEATING);
         let current_color = self.style.clone_color();
 
@@ -1755,7 +1760,7 @@ impl ElementCx<'_> {
         flags: GradientFlags,
     ) {
         let bez_path = self.frame.frame();
-        let rect = self.frame.inner_rect;
+        let rect = self.frame.padding_box;
         let current_color = self.style.clone_color();
 
         let repeating = flags.contains(GradientFlags::REPEATING);
@@ -1802,12 +1807,12 @@ impl ElementCx<'_> {
         rect: Rect,
     ) -> Vec2 {
         Vec2::new(
-            self.frame.inner_rect.x0
+            self.frame.padding_box.x0
                 + position
                     .horizontal
                     .resolve(CSSPixelLength::new(rect.width() as f32))
                     .px() as f64,
-            self.frame.inner_rect.y0
+            self.frame.padding_box.y0
                 + position
                     .vertical
                     .resolve(CSSPixelLength::new(rect.height() as f32))
@@ -1831,14 +1836,14 @@ impl ElementCx<'_> {
 
             let scale = (self
                 .frame
-                .outer_rect
+                .border_box
                 .width()
-                .min(self.frame.outer_rect.height())
+                .min(self.frame.border_box.height())
                 - 4.0)
                 .max(0.0)
                 / 16.0;
 
-            let frame = self.frame.outer_rect.to_rounded_rect(scale * 2.0);
+            let frame = self.frame.border_box.to_rounded_rect(scale * 2.0);
 
             let attr_type = self.node.attr(local_name!("type"));
 

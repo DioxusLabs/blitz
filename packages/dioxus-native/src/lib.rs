@@ -20,7 +20,7 @@ pub use dioxus_application::DioxusNativeApplication;
 pub use dioxus_document::DioxusDocument;
 pub use event::DioxusNativeEvent;
 
-use blitz_shell::{create_default_event_loop, BlitzShellEvent, Config, WindowConfig};
+use blitz_shell::{BlitzShellEvent, Config, WindowConfig, create_default_event_loop};
 use dioxus_core::{ComponentFunction, Element, VirtualDom};
 
 type NodeId = usize;
@@ -43,16 +43,18 @@ pub fn launch_cfg_with_props<P: Clone + 'static, M: 'static>(
     let event_loop = create_default_event_loop::<BlitzShellEvent>();
 
     #[cfg(feature = "net")]
+    // Turn on the runtime and enter it
+    let rt = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+    #[cfg(feature = "net")]
+    let _guard = rt.enter();
+
+    #[cfg(feature = "net")]
     let net_provider = {
         use blitz_net::Provider;
         use blitz_shell::BlitzShellNetCallback;
-
-        // Turn on the runtime and enter it
-        let rt = tokio::runtime::Builder::new_multi_thread()
-            .enable_all()
-            .build()
-            .unwrap();
-        let _guard = rt.enter();
 
         let proxy = event_loop.create_proxy();
         let net_callback = BlitzShellNetCallback::shared(proxy);

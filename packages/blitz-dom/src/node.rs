@@ -1,7 +1,7 @@
 use atomic_refcell::{AtomicRef, AtomicRefCell};
-use image::DynamicImage;
+use color::{AlphaColor, Srgb};
 use keyboard_types::Modifiers;
-use markup5ever::{local_name, LocalName, QualName};
+use markup5ever::{LocalName, QualName, local_name};
 use parley::{Cluster, FontContext, LayoutContext};
 use peniko::kurbo;
 use selectors::matching::{ElementSelectorFlags, QuirksMode};
@@ -9,19 +9,19 @@ use slab::Slab;
 use std::cell::{Cell, RefCell};
 use std::fmt::Write;
 use std::str::FromStr;
-use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
+use style::Atom;
 use style::invalidation::element::restyle_hints::RestyleHint;
-use style::properties::generated::longhands::position::computed_value::T as Position;
 use style::properties::ComputedValues;
+use style::properties::generated::longhands::position::computed_value::T as Position;
 use style::selector_parser::PseudoElement;
 use style::stylesheets::UrlExtraData;
 use style::values::computed::Display;
 use style::values::specified::box_::{DisplayInside, DisplayOutside};
-use style::Atom;
 use style::{
     data::ElementData,
-    properties::{parse_style_attribute, PropertyDeclarationBlock},
+    properties::{PropertyDeclarationBlock, parse_style_attribute},
     servo_arc::Arc as ServoArc,
     shared_lock::{Locked, SharedRwLock},
     stylesheets::CssRuleType,
@@ -29,8 +29,8 @@ use style::{
 use style_dom::ElementState;
 use style_traits::values::ToCss;
 use taffy::{
-    prelude::{Layout, Style},
     Cache,
+    prelude::{Layout, Style},
 };
 use url::Url;
 
@@ -413,8 +413,8 @@ impl ElementNodeData {
     }
 
     pub fn image_data(&self) -> Option<&ImageData> {
-        match self.node_specific_data {
-            NodeSpecificData::Image(ref data) => Some(&**data),
+        match &self.node_specific_data {
+            NodeSpecificData::Image(data) => Some(&**data),
             _ => None,
         }
     }
@@ -428,14 +428,14 @@ impl ElementNodeData {
 
     pub fn raster_image_data(&self) -> Option<&RasterImageData> {
         match self.image_data()? {
-            ImageData::Raster(ref data) => Some(data),
+            ImageData::Raster(data) => Some(data),
             _ => None,
         }
     }
 
     pub fn raster_image_data_mut(&mut self) -> Option<&mut RasterImageData> {
         match self.image_data_mut()? {
-            ImageData::Raster(ref mut data) => Some(data),
+            ImageData::Raster(data) => Some(data),
             _ => None,
         }
     }
@@ -443,7 +443,7 @@ impl ElementNodeData {
     #[cfg(feature = "svg")]
     pub fn svg_data(&self) -> Option<&usvg::Tree> {
         match self.image_data()? {
-            ImageData::Svg(ref data) => Some(data),
+            ImageData::Svg(data) => Some(data),
             _ => None,
         }
     }
@@ -451,21 +451,21 @@ impl ElementNodeData {
     #[cfg(feature = "svg")]
     pub fn svg_data_mut(&mut self) -> Option<&mut usvg::Tree> {
         match self.image_data_mut()? {
-            ImageData::Svg(ref mut data) => Some(data),
+            ImageData::Svg(data) => Some(data),
             _ => None,
         }
     }
 
     pub fn text_input_data(&self) -> Option<&TextInputData> {
-        match self.node_specific_data {
-            NodeSpecificData::TextInput(ref data) => Some(data),
+        match &self.node_specific_data {
+            NodeSpecificData::TextInput(data) => Some(data),
             _ => None,
         }
     }
 
     pub fn text_input_data_mut(&mut self) -> Option<&mut TextInputData> {
-        match self.node_specific_data {
-            NodeSpecificData::TextInput(ref mut data) => Some(data),
+        match &mut self.node_specific_data {
+            NodeSpecificData::TextInput(data) => Some(data),
             _ => None,
         }
     }
@@ -540,16 +540,19 @@ impl ElementNodeData {
 
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct RasterImageData {
-    /// The raw image data
-    pub image: Arc<DynamicImage>,
-    /// The resized image data (for the most recent size it's been displayed at)
-    pub resized_image: RefCell<Option<Arc<peniko::Image>>>,
+    /// The width of the image
+    pub width: u32,
+    /// The height of the image
+    pub height: u32,
+    /// The raw image data in RGBA8 format
+    pub data: Arc<Vec<u8>>,
 }
 impl RasterImageData {
-    pub fn new(image: Arc<DynamicImage>) -> Self {
+    pub fn new(width: u32, height: u32, data: Arc<Vec<u8>>) -> Self {
         Self {
-            image,
-            resized_image: RefCell::new(None),
+            width,
+            height,
+            data,
         }
     }
 }
@@ -558,18 +561,13 @@ impl RasterImageData {
 pub enum ImageData {
     Raster(RasterImageData),
     #[cfg(feature = "svg")]
-    Svg(usvg::Tree),
+    Svg(Box<usvg::Tree>),
     None,
-}
-impl From<Arc<DynamicImage>> for ImageData {
-    fn from(value: Arc<DynamicImage>) -> Self {
-        Self::Raster(RasterImageData::new(value))
-    }
 }
 #[cfg(feature = "svg")]
 impl From<usvg::Tree> for ImageData {
     fn from(value: usvg::Tree) -> Self {
-        Self::Svg(value)
+        Self::Svg(Box::new(value))
     }
 }
 
@@ -701,7 +699,29 @@ impl std::fmt::Debug for ListItemLayout {
     }
 }
 
-pub type TextBrush = peniko::Brush;
+#[derive(Debug, Clone, Default, PartialEq)]
+/// Parley Brush type for Blitz which contains a `peniko::Brush` and a Blitz node id
+pub struct TextBrush {
+    /// The node id for the span
+    pub id: usize,
+    /// Peniko brush for the span (represents text color)
+    pub brush: peniko::Brush,
+}
+
+impl TextBrush {
+    pub(crate) fn from_peniko_brush(brush: peniko::Brush) -> Self {
+        Self { id: 0, brush }
+    }
+    pub(crate) fn from_color(color: AlphaColor<Srgb>) -> Self {
+        Self::from_peniko_brush(peniko::Brush::Solid(color))
+    }
+    pub(crate) fn from_id_and_color(id: usize, color: AlphaColor<Srgb>) -> Self {
+        Self {
+            id,
+            brush: peniko::Brush::Solid(color),
+        }
+    }
+}
 
 #[derive(Clone)]
 pub struct TextLayout {
@@ -1065,9 +1085,10 @@ impl Node {
                     let layout = &element_data.inline_layout_data.as_ref().unwrap().layout;
                     let scale = layout.scale();
 
-                    Cluster::from_point(layout, x * scale, y * scale).map(|(cluster, _)| {
-                        let node_id = cluster.external_span_id() as usize;
-                        HitResult { node_id, x, y }
+                    Cluster::from_point(layout, x * scale, y * scale).and_then(|(cluster, _)| {
+                        let style_index = cluster.glyphs().next()?.style_index();
+                        let node_id = layout.styles()[style_index].brush.id;
+                        Some(HitResult { node_id, x, y })
                     })
                 } else {
                     None

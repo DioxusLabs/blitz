@@ -9,8 +9,9 @@ use std::fs::File;
 use std::io::Write;
 use std::path::Path;
 use std::sync::Arc;
+use std::time::Instant;
 
-use crate::{clone_font_ctx, BufferKind, SubtestCounts, TestFlags, ThreadCtx, HEIGHT, WIDTH};
+use crate::{BufferKind, HEIGHT, SubtestCounts, TestFlags, ThreadCtx, WIDTH};
 
 #[allow(clippy::too_many_arguments)]
 pub async fn process_ref_test(
@@ -105,22 +106,36 @@ async fn render_html_to_buffer(
     out_path: &Path,
     html: &str,
 ) {
+    ctx.net_provider.reset();
     let mut document = HtmlDocument::from_html(
         html,
         Some(ctx.dummy_base_url.join(relative_path).unwrap().to_string()),
         Vec::new(),
         Arc::clone(&ctx.net_provider) as SharedProvider<Resource>,
-        Some(clone_font_ctx(&ctx.font_ctx)),
+        Some(ctx.font_ctx.clone()),
         ctx.navigation_provider.clone(),
     );
-
     document.as_mut().set_viewport(ctx.viewport.clone());
+    document.as_mut().resolve();
 
-    // Load resources
+    // Load resources.
+    // Loop because loading a resource may result in further resources being requested
+    let start = Instant::now();
+    while ctx.net_provider.pending_item_count() > 0 {
+        ctx.net_provider
+            .for_each(|res| document.as_mut().load_resource(res));
+        document.as_mut().resolve();
+        if Instant::now().duration_since(start).as_millis() > 500 {
+            ctx.net_provider.log_pending_items();
+            panic!(
+                "Timeout. {} pending items.",
+                ctx.net_provider.pending_item_count()
+            );
+        }
+    }
+
     ctx.net_provider
         .for_each(|res| document.as_mut().load_resource(res));
-
-    // Compute style, layout, etc for HtmlDocument
     document.as_mut().resolve();
 
     // Determine height to render

@@ -31,7 +31,10 @@ pub(crate) fn white_space_collapse(input: stylo::WhiteSpaceCollapse) -> parley::
     }
 }
 
-pub(crate) fn style(style: &stylo::ComputedValues) -> parley::TextStyle<'static, TextBrush> {
+pub(crate) fn style(
+    span_id: usize,
+    style: &stylo::ComputedValues,
+) -> parley::TextStyle<'static, TextBrush> {
     let font_styles = style.get_font();
     // let text_styles = style.get_text();
     let itext_styles = style.get_inherited_text();
@@ -60,6 +63,15 @@ pub(crate) fn style(style: &stylo::ComputedValues) -> parley::TextStyle<'static,
         val => parley::FontStyle::Oblique(Some(val.oblique_degrees())),
     };
     let font_width = parley::FontWidth::from_percentage(font_styles.font_stretch.0.to_float());
+    let font_variations: Vec<_> = font_styles
+        .font_variation_settings
+        .0
+        .iter()
+        .map(|v| parley::FontVariation {
+            tag: v.tag.0,
+            value: v.value,
+        })
+        .collect();
 
     // Convert font family
     let families: Vec<_> = font_styles
@@ -107,7 +119,7 @@ pub(crate) fn style(style: &stylo::ComputedValues) -> parley::TextStyle<'static,
         .text_decoration_color
         .as_absolute()
         .map(ToColorColor::as_color_color)
-        .map(peniko::Brush::Solid);
+        .map(TextBrush::from_color);
 
     parley::TextStyle {
         // font_stack: parley::FontStack::Single(FontFamily::Generic(GenericFamily::SystemUi)),
@@ -116,10 +128,10 @@ pub(crate) fn style(style: &stylo::ComputedValues) -> parley::TextStyle<'static,
         font_width,
         font_style,
         font_weight,
-        font_variations: parley::FontSettings::List(Cow::Borrowed(&[])),
+        font_variations: parley::FontSettings::List(Cow::Owned(font_variations)),
         font_features: parley::FontSettings::List(Cow::Borrowed(&[])),
         locale: Default::default(),
-        brush: peniko::Brush::Solid(color),
+        brush: TextBrush::from_id_and_color(span_id, color),
         has_underline: itext_styles.text_decorations_in_effect.underline,
         underline_offset: Default::default(),
         underline_size: Default::default(),

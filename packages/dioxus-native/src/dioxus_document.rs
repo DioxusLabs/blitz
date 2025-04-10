@@ -3,19 +3,19 @@
 use std::{any::Any, collections::HashMap, rc::Rc, sync::Arc};
 
 use blitz_dom::{
-    local_name, namespace_url, net::Resource, node::NodeSpecificData, ns, Atom, BaseDocument,
-    ElementNodeData, Node, NodeData, QualName, DEFAULT_CSS,
+    Atom, BaseDocument, DEFAULT_CSS, ElementNodeData, Node, NodeData, QualName, local_name,
+    namespace_url, net::Resource, node::NodeSpecificData, ns,
 };
 
-use blitz_traits::{net::NetProvider, ColorScheme, Document, DomEvent, DomEventData, Viewport};
+use blitz_traits::{ColorScheme, Document, DomEvent, DomEventData, Viewport, net::NetProvider};
 use dioxus_core::{ElementId, Event, VirtualDom};
-use dioxus_html::{set_event_converter, FormValue, PlatformEventData};
-use futures_util::{pin_mut, FutureExt};
+use dioxus_html::{FormValue, PlatformEventData, set_event_converter};
+use futures_util::{FutureExt, pin_mut};
 
 use super::event_handler::{NativeClickData, NativeConverter, NativeFormData};
+use crate::NodeId;
 use crate::keyboard_event::BlitzKeyboardData;
 use crate::mutation_writer::{DioxusState, MutationWriter};
-use crate::NodeId;
 
 pub(crate) fn qual_name(local_name: &str, namespace: Option<&str>) -> QualName {
     QualName {

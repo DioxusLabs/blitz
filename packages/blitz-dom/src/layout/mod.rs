@@ -5,32 +5,30 @@
 //! This is slower, yes, but happens fast enough that it's not a huge issue.
 
 use crate::node::{ImageData, NodeData, NodeSpecificData};
-use crate::{
-    document::BaseDocument,
-    image::{image_measure_function, ImageContext},
-    node::Node,
-};
+use crate::{document::BaseDocument, node::Node};
 use markup5ever::local_name;
 use std::cell::Ref;
 use std::sync::Arc;
-use style::values::computed::length_percentage::CalcLengthPercentage;
 use style::values::computed::CSSPixelLength;
+use style::values::computed::length_percentage::CalcLengthPercentage;
 use taffy::{
-    compute_block_layout, compute_cached_layout, compute_flexbox_layout, compute_grid_layout,
-    compute_leaf_layout, prelude::*, FlexDirection, LayoutPartialTree, NodeId, ResolveOrZero,
-    RoundTree, Style, TraversePartialTree, TraverseTree,
+    CollapsibleMarginSet, FlexDirection, LayoutPartialTree, NodeId, ResolveOrZero, RoundTree,
+    Style, TraversePartialTree, TraverseTree, compute_block_layout, compute_cached_layout,
+    compute_flexbox_layout, compute_grid_layout, compute_leaf_layout, prelude::*,
 };
 
 pub(crate) mod construct;
 pub(crate) mod inline;
+pub(crate) mod replaced;
 pub(crate) mod table;
 
+use self::replaced::{ReplacedContext, replaced_measure_function};
 use self::table::TableTreeWrapper;
 
-pub(crate) fn resolve_calc_value(calc_value: u64, parent_size: f32) -> f32 {
-    let calc_ptr = calc_value as usize as *const CalcLengthPercentage;
-    let calc = unsafe { &*calc_ptr };
-    calc.resolve(CSSPixelLength::new(parent_size)).px()
+pub(crate) fn resolve_calc_value(calc_ptr: *const (), parent_size: f32) -> f32 {
+    let calc = unsafe { &*(calc_ptr as *const CalcLengthPercentage) };
+    let result = calc.resolve(CSSPixelLength::new(parent_size), None);
+    result.unwrap().result.px()
 }
 
 impl BaseDocument {
@@ -87,8 +85,8 @@ impl LayoutPartialTree for BaseDocument {
         self.node_from_id_mut(node_id).unrounded_layout = *layout;
     }
 
-    fn resolve_calc_value(&self, calc_value: u64, parent_size: f32) -> f32 {
-        resolve_calc_value(calc_value, parent_size)
+    fn resolve_calc_value(&self, calc_ptr: *const (), parent_size: f32) -> f32 {
+        resolve_calc_value(calc_ptr, parent_size)
     }
 
     fn compute_child_layout(
@@ -237,9 +235,9 @@ impl LayoutPartialTree for BaseDocument {
                         // Get image's native size
                         let inherent_size = match &element_data.node_specific_data {
                             NodeSpecificData::Image(image_data) => match &**image_data {
-                                ImageData::Raster(data) => taffy::Size {
-                                    width: data.image.width() as f32,
-                                    height: data.image.height() as f32,
+                                ImageData::Raster(image) => taffy::Size {
+                                    width: image.width as f32,
+                                    height: image.height as f32,
                                 },
                                 #[cfg(feature = "svg")]
                                 ImageData::Svg(svg) => {
@@ -255,27 +253,27 @@ impl LayoutPartialTree for BaseDocument {
                             _ => unreachable!(),
                         };
 
-                        let image_context = ImageContext {
+                        let replaced_context = ReplacedContext {
                             inherent_size,
                             attr_size,
                         };
 
-                        let computed = compute_leaf_layout(
-                            inputs,
+                        let computed = replaced_measure_function(
+                            inputs.known_dimensions,
+                            inputs.parent_size,
+                            &replaced_context,
                             &node.style,
-                            resolve_calc_value,
-                            |known_dimensions, _available_space| {
-                                image_measure_function(
-                                    known_dimensions,
-                                    inputs.parent_size,
-                                    &image_context,
-                                    &node.style,
-                                    false,
-                                )
-                            },
+                            false,
                         );
 
-                        return computed;
+                        return taffy::LayoutOutput {
+                            size: computed,
+                            content_size: computed,
+                            first_baselines: taffy::Point::NONE,
+                            top_margin: CollapsibleMarginSet::ZERO,
+                            bottom_margin: CollapsibleMarginSet::ZERO,
+                            margins_can_collapse_through: false,
+                        };
                     }
 
                     if node.is_table_root {
@@ -432,7 +430,7 @@ impl PrintTree for BaseDocument {
             NodeData::Document => "DOCUMENT",
             // NodeData::Doctype { .. } => return "DOCTYPE",
             NodeData::Text { .. } => node.node_debug_str().leak(),
-            NodeData::Comment { .. } => "COMMENT",
+            NodeData::Comment => "COMMENT",
             NodeData::AnonymousBlock(_) => "ANONYMOUS BLOCK",
             NodeData::Element(_) => {
                 let display = match style.display {

@@ -14,7 +14,7 @@ use winit::keyboard::{KeyCode, PhysicalKey};
 use winit::window::{Theme, WindowId};
 
 use crate::fetch;
-use crate::markdown::{markdown_to_html, BLITZ_MD_STYLES, GITHUB_MD_STYLES};
+use crate::markdown::{BLITZ_MD_STYLES, GITHUB_MD_STYLES, markdown_to_html};
 
 pub struct ReadmeEvent;
 

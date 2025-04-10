@@ -1,9 +1,12 @@
-use crate::{dioxus_document::qual_name, NodeId};
+use crate::{NodeId, dioxus_document::qual_name};
 use blitz_dom::{
-    local_name, namespace_url,
+    BaseDocument, ElementNodeData, NodeData, QualName, RestyleHint, local_name, namespace_url,
+    net::ImageHandler,
     node::{Attribute, NodeSpecificData},
-    ns, BaseDocument, ElementNodeData, NodeData, QualName, RestyleHint,
+    ns,
+    util::ImageType,
 };
+use blitz_traits::net::{Request, Url};
 use dioxus_core::{
     AttributeValue, ElementId, Template, TemplateAttribute, TemplateNode, WriteMutations,
 };
@@ -30,6 +33,10 @@ pub struct MutationWriter<'a> {
     pub state: &'a mut DioxusState,
 
     pub style_nodes: HashSet<usize>,
+
+    /// The (latest) node which has been mounted in and had autofocus=true, if any
+    #[cfg(feature = "autofocus")]
+    pub node_to_autofocus: Option<usize>,
 }
 
 impl<'a> MutationWriter<'a> {
@@ -38,6 +45,9 @@ impl<'a> MutationWriter<'a> {
             doc,
             state,
             style_nodes: HashSet::new(),
+
+            #[cfg(feature = "autofocus")]
+            node_to_autofocus: None,
         }
     }
 
@@ -69,6 +79,13 @@ impl Drop for MutationWriter<'_> {
         // Add/Update inline stylesheets (<style> elements)
         for &id in &self.style_nodes {
             self.doc.upsert_stylesheet_for_node(id);
+        }
+
+        #[cfg(feature = "autofocus")]
+        if let Some(node_id) = self.node_to_autofocus {
+            if self.doc.get_node(node_id).is_some() {
+                self.doc.set_focus_to(node_id);
+            }
         }
     }
 }
@@ -194,6 +211,10 @@ impl WriteMutations for MutationWriter<'_> {
 
         let template_node_id = template_entry[index];
         let clone_id = self.doc.deep_clone_node(template_node_id);
+
+        #[cfg(feature = "autofocus")]
+        process_cloned_node(self.doc, &mut self.node_to_autofocus, clone_id);
+
         self.set_id_mapping(clone_id, id);
         self.state.stack.push(clone_id);
     }
@@ -262,6 +283,7 @@ impl WriteMutations for MutationWriter<'_> {
         id: ElementId,
     ) {
         let node_id = self.state.element_to_node_id(id);
+        let doc_id = self.doc.id();
 
         #[cfg(feature = "tracing")]
         tracing::info!(
@@ -319,6 +341,17 @@ impl WriteMutations for MutationWriter<'_> {
 
                 if name == "style" {
                     element.flush_style_attribute(&self.doc.guard);
+                }
+
+                if element.name.local == local_name!("img") && name == "src" {
+                    element.node_specific_data = NodeSpecificData::None;
+                    if let Ok(url) = Url::parse(val) {
+                        self.doc.net_provider.fetch(
+                            doc_id,
+                            Request::get(url),
+                            Box::new(ImageHandler::new(node_id, ImageType::Image)),
+                        );
+                    }
                 }
             }
 
@@ -492,5 +525,24 @@ fn create_template_node(doc: &mut BaseDocument, node: &TemplateNode) -> NodeId {
         }
         TemplateNode::Text { text } => doc.create_text_node(text),
         TemplateNode::Dynamic { .. } => doc.create_node(NodeData::Comment),
+    }
+}
+
+#[cfg(feature = "autofocus")]
+fn process_cloned_node(doc: &BaseDocument, node_to_autofocus: &mut Option<usize>, node_id: usize) {
+    if let Some(node) = doc.get_node(node_id) {
+        if node.is_focussable() {
+            if let NodeData::Element(ref element) = node.data {
+                if let Some(value) = element.attr(local_name!("autofocus")) {
+                    if value == "true" {
+                        *node_to_autofocus = Some(node_id);
+                    }
+                }
+            }
+        }
+
+        for child_node_id in &node.children {
+            process_cloned_node(doc, node_to_autofocus, *child_node_id);
+        }
     }
 }

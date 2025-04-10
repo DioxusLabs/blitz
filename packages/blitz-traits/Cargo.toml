@@ -1,8 +1,12 @@
 [package]
 name = "blitz-traits"
-version = "0.1.0"
+description = "Shared traits and types for Blitz"
+version = "0.1.0-alpha.1"
+homepage = "https://github.com/dioxuslabs/blitz"
+repository = "https://github.com/dioxuslabs/blitz"
+documentation = "https://docs.rs/blitz-traits"
 license.workspace = true
-edition = "2021"
+edition = "2024"
 
 [dependencies]
 http = { workspace = true }

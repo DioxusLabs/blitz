@@ -1,19 +1,23 @@
 [package]
 name = "blitz-shell"
-version = "0.0.0"
+description = "Blitz application shell"
+version = "0.1.0-alpha.1"
+homepage = "https://github.com/dioxuslabs/blitz"
+repository = "https://github.com/dioxuslabs/blitz"
+documentation = "https://docs.rs/blitz-shell"
 license.workspace = true
-edition = "2021"
+edition = "2024"
 
 [features]
 default = ["accessibility", "menu", "tracing"]
-accessibility = ["dep:accesskit", "dep:accesskit_winit"]
+accessibility = ["dep:accesskit", "dep:accesskit_winit", "blitz-dom/accessibility"]
 menu = ["dep:muda"]
 tracing = ["dep:tracing", "blitz-dom/tracing"]
 
 [dependencies]
 # Blitz dependencies
-blitz-traits = { path = "../blitz-traits" }
-blitz-dom = { path = "../blitz-dom", default-features = false }
+blitz-traits = { version = "0.1.0-alpha.1", path = "../blitz-traits" }
+blitz-dom = { version = "0.1.0-alpha.1", path = "../blitz-dom", default-features = false }
 
 # Windowing & Input
 winit = { workspace = true }

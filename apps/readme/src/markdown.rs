@@ -1,6 +1,6 @@
 //! Render the readme.md using the gpu renderer
 
-use comrak::{markdown_to_html_with_plugins, ExtensionOptions, Options, Plugins, RenderOptions};
+use comrak::{ExtensionOptions, Options, Plugins, RenderOptions, markdown_to_html_with_plugins};
 
 pub(crate) const GITHUB_MD_STYLES: &str = include_str!("../assets/github-markdown.css");
 pub(crate) const BLITZ_MD_STYLES: &str = include_str!("../assets/blitz-markdown-overrides.css");

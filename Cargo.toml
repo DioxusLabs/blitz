@@ -1,7 +1,7 @@
 [workspace]
 members = [
   "packages/blitz-traits",
-  "packages/blitz-dom", 
+  "packages/blitz-dom",
   "packages/blitz-html",
   "packages/blitz-net",
   "packages/blitz-renderer-vello",
@@ -13,6 +13,7 @@ members = [
   "apps/readme",
   "examples/counter",
 ]
+exclude = ["sites"]
 resolver = "2"
 
 [workspace.package]
@@ -20,15 +21,15 @@ license = "MIT OR Apache-2.0"
 
 [workspace.dependencies]
 # Servo dependencies
-style = { git = "https://github.com/servo/stylo", rev = "dfed17bd", package = "style" } # 2025-01-02
-style_config = { git = "https://github.com/servo/stylo", rev = "dfed17bd", package = "style_config" } # 2025-01-02
-style_traits = { git = "https://github.com/servo/stylo", rev = "dfed17bd", package = "style_traits" } # 2025-01-02
-style_dom = { git = "https://github.com/servo/stylo", rev = "dfed17bd", package = "dom" } # 2025-01-02
-selectors = { git = "https://github.com/servo/stylo", rev = "dfed17bd", package = "selectors" } # 2025-01-02
+style = { version = "0.2", package = "stylo" } # 2025-03-15
+style_traits = { version = "0.2", package = "stylo_traits" } # 2025-03-15
+style_config = { version = "0.2", package = "stylo_config" } # 2025-03-15
+style_dom = { version = "0.2", package = "stylo_dom" } # 2025-03-15
+selectors = { version = "0.27", package = "selectors" } # 2025-03-15
 
-markup5ever = "0.14" # needs to match stylo markup5ever version
-html5ever = "0.29" # needs to match stylo markup5ever version
-xml5ever = "0.20" # needs to match stylo markup5ever version
+markup5ever = "0.15" # needs to match stylo markup5ever version
+html5ever = "0.30" # needs to match stylo markup5ever version
+xml5ever = "0.21" # needs to match stylo markup5ever version
 euclid = "0.22"
 string_cache = "0.8.7"
 atomic_refcell = "0.1.13"
@@ -41,16 +42,14 @@ dioxus-core = { version = "0.6" }
 dioxus-html = { version = "0.6" }
 dioxus-cli-config = { version = "0.6" }
 dioxus-devtools = { version = "0.6" }
-taffy = { git = "https://github.com/dioxuslabs/taffy", rev = "51e21564", default-features = false, features = ["std", "flexbox", "grid", "block_layout", "content_size"] }
+taffy = { version = "0.8", default-features = false, features = ["std", "flexbox", "grid", "block_layout", "content_size", "calc"] }
 
-# Linebender + WGPU
+# Linebender + WGPU + SVG
 color = "0.2"
 peniko = "0.3"
-vello = { version = "0.4", features = [ "wgpu" ] }
-parley = { version = "0.2", git = "https://github.com/linebender/parley", rev = "b648f143" } # external-span-ids
+parley = "0.3"
 wgpu = "23"
-
-# SVG dependencies
+vello = { version = "0.4", features = [ "wgpu" ] }
 vello_svg = { version = "0.6" }
 usvg = "0.44.0"
 
@@ -73,7 +72,7 @@ reqwest = "0.12"
 
 # Media & Decoding
 image = { version = "0.25", default-features = false }
-woff = "0.3"
+woff = { version = "0.6", default-features = false }
 woff2 = "0.3"
 html-escape = "0.2.13"
 
@@ -84,7 +83,6 @@ slab = "0.4.9"
 tracing = "0.1.40"
 futures-util = "0.3.30"
 futures-intrusive = "0.5.0"
-thiserror = "1.0.63"
 pollster = "0.4"
 smol_str = "0.2"
 bitflags = "2.8.0"
@@ -113,11 +111,11 @@ panic = "abort"
 name = "blitz-examples"
 version = "0.0.1"
 authors = ["Jonathan Kelley"]
-edition = "2021"
+edition = "2024"
 description = "Top level crate for Blitz"
 license = "MIT OR Apache-2.0"
 keywords = ["dom", "ui", "gui", "react", "wasm"]
-rust-version = "1.70.0"
+rust-version = "1.85.1"
 publish = false
 
 [dev-dependencies]

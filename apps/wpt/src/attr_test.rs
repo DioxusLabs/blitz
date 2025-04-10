@@ -1,10 +1,10 @@
-use std::sync::Arc;
+use std::{sync::Arc, time::Instant};
 
-use blitz_dom::{net::Resource, BaseDocument, Node};
+use blitz_dom::{BaseDocument, Node, net::Resource};
 use blitz_html::HtmlDocument;
 use blitz_traits::net::SharedProvider;
 
-use crate::{clone_font_ctx, SubtestCounts, ThreadCtx};
+use crate::{SubtestCounts, ThreadCtx};
 
 pub async fn process_attr_test(
     ctx: &mut ThreadCtx,
@@ -36,7 +36,7 @@ pub async fn process_attr_test(
             has_error |= !passes;
         });
 
-        if !has_error {
+        if has_error {
             fail_count += 1;
         } else {
             pass_count += 1;
@@ -55,22 +55,37 @@ pub async fn parse_and_resolve_document(
     html: &str,
     relative_path: &str,
 ) -> BaseDocument {
+    ctx.net_provider.reset();
     let mut document = HtmlDocument::from_html(
         html,
         Some(ctx.dummy_base_url.join(relative_path).unwrap().to_string()),
         Vec::new(),
         Arc::clone(&ctx.net_provider) as SharedProvider<Resource>,
-        Some(clone_font_ctx(&ctx.font_ctx)),
+        Some(ctx.font_ctx.clone()),
         ctx.navigation_provider.clone(),
     );
 
     document.as_mut().set_viewport(ctx.viewport.clone());
+    document.as_mut().resolve();
 
-    // Load resources
+    // Load resources.
+    // Loop because loading a resource may result in further resources being requested
+    let start = Instant::now();
+    while ctx.net_provider.pending_item_count() > 0 {
+        ctx.net_provider
+            .for_each(|res| document.as_mut().load_resource(res));
+        document.as_mut().resolve();
+        if Instant::now().duration_since(start).as_millis() > 500 {
+            ctx.net_provider.log_pending_items();
+            panic!(
+                "Timeout. {} pending items.",
+                ctx.net_provider.pending_item_count()
+            );
+        }
+    }
+
     ctx.net_provider
         .for_each(|res| document.as_mut().load_resource(res));
-
-    // Compute style, layout, etc for HtmlDocument
     document.as_mut().resolve();
 
     document.into()

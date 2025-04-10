@@ -1,7 +1,7 @@
 [package]
 name = "readme"
 version = "0.1.0"
-edition = "2021"
+edition = "2024"
 license.workspace = true
 
 [dependencies]
@@ -15,5 +15,5 @@ tokio = { workspace = true, features = ["rt", "rt-multi-thread"] }
 reqwest = { workspace = true }
 url = { workspace = true }
 winit = { workspace = true }
-comrak = { version = "0.35", default-features = false }
+comrak = { version = "0.36", default-features = false }
 notify = "8.0.0"

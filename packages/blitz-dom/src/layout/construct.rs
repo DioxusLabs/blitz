@@ -1,7 +1,7 @@
 use core::str;
 use std::sync::Arc;
 
-use markup5ever::{local_name, namespace_url, ns, QualName};
+use markup5ever::{QualName, local_name, namespace_url, ns};
 use parley::{FontStack, InlineBox, StyleProperty, TreeBuilder, WhiteSpaceCollapse};
 use slab::Slab;
 use style::{
@@ -18,11 +18,12 @@ use style::{
 };
 
 use crate::{
+    BaseDocument, ElementNodeData, Node, NodeData,
     node::{
         ListItemLayout, ListItemLayoutPosition, Marker, NodeKind, NodeSpecificData, TextBrush,
         TextInputData, TextLayout,
     },
-    stylo_to_parley, BaseDocument, ElementNodeData, Node, NodeData,
+    stylo_to_parley,
 };
 
 use super::table::build_table_context;
@@ -83,8 +84,6 @@ pub(crate) fn collect_layout_children(
 
         #[cfg(feature = "svg")]
         if matches!(tag_name, "svg") {
-            use crate::node::ImageData;
-
             let mut outer_html = doc.get_node(container_node_id).unwrap().outer_html();
 
             // HACK: usvg fails to parse SVGs that don't have the SVG xmlns set. So inject it
@@ -100,8 +99,7 @@ pub(crate) fn collect_layout_children(
                         .unwrap()
                         .element_data_mut()
                         .unwrap()
-                        .node_specific_data =
-                        NodeSpecificData::Image(Box::new(ImageData::Svg(svg)));
+                        .node_specific_data = NodeSpecificData::Image(Box::new(svg.into()));
                 }
                 Err(err) => {
                     println!("{} SVG parse failed", container_node_id);
@@ -261,12 +259,14 @@ pub(crate) fn collect_layout_children(
 
         DisplayInside::Table => {
             let (table_context, tlayout_children) = build_table_context(doc, container_node_id);
+            #[allow(clippy::arc_with_non_send_sync)]
+            let data = NodeSpecificData::TableRoot(Arc::new(table_context));
             doc.nodes[container_node_id].is_table_root = true;
             doc.nodes[container_node_id]
                 .data
                 .downcast_element_mut()
                 .unwrap()
-                .node_specific_data = NodeSpecificData::TableRoot(Arc::new(table_context));
+                .node_specific_data = data;
             if let Some(before) = doc.nodes[container_node_id].before {
                 layout_children.push(before);
             }
@@ -351,7 +351,7 @@ fn flush_pseudo_elements(doc: &mut BaseDocument, node_id: usize) {
             let node_styles = &mut node_styles.as_mut().unwrap();
             let primary_styles = &mut node_styles.styles.primary;
 
-            if &**primary_styles.as_ref().unwrap() as *const _ != &*pe_style as *const _ {
+            if !std::ptr::eq(&**primary_styles.as_ref().unwrap(), &*pe_style) {
                 *primary_styles = Some(pe_style);
                 node_styles.set_restyled();
             }
@@ -423,19 +423,16 @@ fn node_list_item_child(
     let position = match list_style_position {
         ListStylePosition::Inside => ListItemLayoutPosition::Inside,
         ListStylePosition::Outside => {
-            let mut parley_style = stylo_to_parley::style(&styles);
+            let mut parley_style = stylo_to_parley::style(child_id, &styles);
 
             if let Some(font_stack) = font_for_bullet_style(list_style_type) {
                 parley_style.font_stack = font_stack;
             }
 
             // Create a parley tree builder
-            let mut builder = doc.layout_ctx.tree_builder(
-                &mut doc.font_ctx,
-                doc.viewport.scale(),
-                child_id as u64,
-                &parley_style,
-            );
+            let mut builder =
+                doc.layout_ctx
+                    .tree_builder(&mut doc.font_ctx, doc.viewport.scale(), &parley_style);
 
             match &marker {
                 Marker::Char(char) => builder.push_text(&char.to_string()),
@@ -669,7 +666,7 @@ fn create_text_editor(doc: &mut BaseDocument, input_element_id: usize, is_multil
     let parley_style = node
         .primary_styles()
         .as_ref()
-        .map(|s| stylo_to_parley::style(s))
+        .map(|s| stylo_to_parley::style(node.id, s))
         .unwrap_or_default();
 
     let element = &mut node.data.downcast_element_mut().unwrap();
@@ -724,7 +721,7 @@ pub(crate) fn build_inline_layout(
 
     let parley_style = root_node_style
         .as_ref()
-        .map(|s| stylo_to_parley::style(s))
+        .map(|s| stylo_to_parley::style(inline_context_root_node_id, s))
         .unwrap_or_default();
 
     // dbg!(&parley_style);
@@ -732,12 +729,9 @@ pub(crate) fn build_inline_layout(
     let root_line_height = parley_style.line_height;
 
     // Create a parley tree builder
-    let mut builder = doc.layout_ctx.tree_builder(
-        &mut doc.font_ctx,
-        doc.viewport.scale(),
-        inline_context_root_node_id as u64,
-        &parley_style,
-    );
+    let mut builder =
+        doc.layout_ctx
+            .tree_builder(&mut doc.font_ctx, doc.viewport.scale(), &parley_style);
 
     // Set whitespace collapsing mode
     let collapse_mode = root_node_style
@@ -887,7 +881,8 @@ pub(crate) fn build_inline_layout(
                                 height: 0.0,
                             });
                         } else if *tag_name == local_name!("br") {
-                            builder.push_style_modification_span(node_id as u64, &[]);
+                            // TODO: update span id for br spans
+                            builder.push_style_modification_span(&[]);
                             builder.set_white_space_mode(WhiteSpaceCollapse::Preserve);
                             builder.push_text("\n");
                             builder.pop_style_span();
@@ -895,7 +890,7 @@ pub(crate) fn build_inline_layout(
                         } else {
                             let mut style = node
                                 .primary_styles()
-                                .map(|s| stylo_to_parley::style(&s))
+                                .map(|s| stylo_to_parley::style(node.id, &s))
                                 .unwrap_or_default();
 
                             // dbg!(&style);
@@ -909,7 +904,7 @@ pub(crate) fn build_inline_layout(
                             // dbg!(node_id);
                             // dbg!(&style);
 
-                            builder.push_style_span(node_id as u64, style);
+                            builder.push_style_span(style);
 
                             if let Some(before_id) = node.before {
                                 build_inline_layout_recursive(

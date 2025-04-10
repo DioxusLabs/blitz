@@ -1,7 +1,7 @@
 use std::any::Any;
 
 use blitz_traits::BlitzKeyEvent;
-use dioxus_html::{point_interaction::ModifiersInteraction, HasKeyboardData};
+use dioxus_html::{HasKeyboardData, point_interaction::ModifiersInteraction};
 use keyboard_types::{Code, Key, Location, Modifiers};
 
 #[derive(Clone, Debug)]

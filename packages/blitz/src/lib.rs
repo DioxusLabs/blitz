@@ -14,8 +14,8 @@ use std::sync::Arc;
 use blitz_html::HtmlDocument;
 use blitz_renderer_vello::BlitzVelloRenderer;
 use blitz_shell::{
-    create_default_event_loop, BlitzApplication, BlitzShellEvent, BlitzShellNetCallback, Config,
-    WindowConfig,
+    BlitzApplication, BlitzShellEvent, BlitzShellNetCallback, Config, WindowConfig,
+    create_default_event_loop,
 };
 use blitz_traits::navigation::DummyNavigationProvider;
 
@@ -49,15 +49,14 @@ pub fn launch_static_html(html: &str) {
 }
 
 pub fn launch_static_html_cfg(html: &str, cfg: Config) {
+    // Turn on the runtime and enter it
     #[cfg(feature = "net")]
-    {
-        // Turn on the runtime and enter it
-        let rt = tokio::runtime::Builder::new_multi_thread()
-            .enable_all()
-            .build()
-            .unwrap();
-        let _guard = rt.enter();
-    }
+    let rt = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+    #[cfg(feature = "net")]
+    let _guard = rt.enter();
 
     launch_internal(html, cfg)
 }

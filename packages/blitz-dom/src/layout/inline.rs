@@ -1,6 +1,7 @@
+use parley::AlignmentOptions;
 use taffy::{
-    compute_leaf_layout, AvailableSpace, LayoutPartialTree as _, MaybeMath as _, MaybeResolve as _,
-    NodeId, Position, ResolveOrZero as _, Size,
+    AvailableSpace, LayoutPartialTree as _, MaybeMath as _, MaybeResolve as _, NodeId, Position,
+    ResolveOrZero as _, Size, compute_leaf_layout,
 };
 
 use super::resolve_calc_value;
@@ -73,14 +74,14 @@ impl BaseDocument {
 
                         match s.clone_text_align() {
                             TextAlignKeyword::Start => Alignment::Start,
-                            TextAlignKeyword::Left => Alignment::Start,
-                            TextAlignKeyword::Right => Alignment::End,
+                            TextAlignKeyword::Left => Alignment::Left,
+                            TextAlignKeyword::Right => Alignment::Right,
                             TextAlignKeyword::Center => Alignment::Middle,
                             TextAlignKeyword::Justify => Alignment::Justified,
                             TextAlignKeyword::End => Alignment::End,
                             TextAlignKeyword::MozCenter => Alignment::Middle,
-                            TextAlignKeyword::MozLeft => Alignment::Start,
-                            TextAlignKeyword::MozRight => Alignment::End,
+                            TextAlignKeyword::MozLeft => Alignment::Left,
+                            TextAlignKeyword::MozRight => Alignment::Right,
                         }
                     })
                     .unwrap_or(parley::layout::Alignment::Start);
@@ -127,7 +128,13 @@ impl BaseDocument {
                             - pbw
                     });
 
-                inline_layout.layout.align(Some(alignment_width), alignment);
+                inline_layout.layout.align(
+                    Some(alignment_width),
+                    alignment,
+                    AlignmentOptions {
+                        align_when_overflowing: false,
+                    },
+                );
 
                 // Store sizes and positions of inline boxes
                 for line in inline_layout.layout.lines() {

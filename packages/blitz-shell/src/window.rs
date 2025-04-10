@@ -1,7 +1,7 @@
 use crate::convert_events::{
     winit_ime_to_blitz, winit_key_event_to_blitz, winit_modifiers_to_kbt_modifiers,
 };
-use crate::event::{create_waker, BlitzShellEvent};
+use crate::event::{BlitzShellEvent, create_waker};
 use blitz_dom::BaseDocument;
 use blitz_traits::{
     BlitzMouseButtonEvent, BlitzMouseOverEvent, ColorScheme, Devtools, MouseEventButton,
@@ -85,7 +85,7 @@ pub struct View<Doc: Document<Doc = D>, Rend: DocumentRenderer<Doc = D>> {
 }
 
 impl<Doc: Document<Doc = D>, Rend: DocumentRenderer<Doc = D>> View<Doc, Rend> {
-    pub(crate) fn init(
+    pub fn init(
         config: WindowConfig<Doc, Rend>,
         event_loop: &ActiveEventLoop,
         proxy: &EventLoopProxy<BlitzShellEvent>,
