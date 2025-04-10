@@ -24,11 +24,6 @@ pub struct ElementFrame {
     pub content_box: Rect,
     pub outline_width: f64,
 
-    pub padding_top_width: f64,
-    pub padding_left_width: f64,
-    pub padding_right_width: f64,
-    pub padding_bottom_width: f64,
-
     pub border_top_width: f64,
     pub border_left_width: f64,
     pub border_right_width: f64,
@@ -98,10 +93,10 @@ impl ElementFrame {
 
         // Correct the border radii if they are too big if two border radii would intersect, then we need to shrink
         // ALL border radii by the same factor such that they do not
-        let top_overlap_factor = border_box.width() / (border_top_left_radius_width + border_top_right_radius_width);
-        let bottom_overlap_factor = border_box.width() / (border_bottom_left_radius_width + border_bottom_right_radius_width);
-        let left_overlap_factor = border_box.height() / (border_top_left_radius_height + border_bottom_left_radius_height);
-        let right_overlap_factor = border_box.height() / (border_top_right_radius_height + border_bottom_right_radius_height);
+        let top_overlap_factor = padding_box.width() / (border_top_left_radius_width + border_top_right_radius_width);
+        let bottom_overlap_factor = padding_box.width() / (border_bottom_left_radius_width + border_bottom_right_radius_width);
+        let left_overlap_factor = padding_box.height() / (border_top_left_radius_height + border_bottom_left_radius_height);
+        let right_overlap_factor = padding_box.height() / (border_top_right_radius_height + border_bottom_right_radius_height);
 
         let min_factor = top_overlap_factor.min(bottom_overlap_factor).min(left_overlap_factor).min(right_overlap_factor).min(1.0);
         if min_factor < 1.0 {
@@ -120,10 +115,6 @@ impl ElementFrame {
             border_box,
             content_box,
             outline_width,
-            padding_top_width: padding.top,
-            padding_left_width: padding.left,
-            padding_right_width: padding.right,
-            padding_bottom_width: padding.bottom,
             border_top_width: border.top,
             border_left_width: border.left,
             border_right_width: border.right,
@@ -160,7 +151,7 @@ impl ElementFrame {
 
         // 1. First corner
         // if the radius is bigger than the border, we need to draw the inner arc to fill in the gap
-        if self.is_sharp(c0, Outer) {
+        if self.is_sharp(c0) {
             path.move_to(self.corner(c0, Inner));
             path.line_to(self.corner(c0, Outer));
         } else {
@@ -172,7 +163,7 @@ impl ElementFrame {
         }
 
         // 2. Second corner
-        if self.is_sharp(c1, Outer) {
+        if self.is_sharp(c1) {
             path.line_to(self.corner(c1, Outer));
             path.line_to(self.corner(c1, Inner));
         } else {
@@ -209,27 +200,6 @@ impl ElementFrame {
         path
     }
 
-    /// Construct a bezpath drawing the frame border
-    pub fn frame_border(&self) -> BezPath {
-        let mut path = BezPath::new();
-        self.shape(&mut path, ArcSide::Outer, Direction::Clockwise);
-        path
-    }
-
-    /// Construct a bezpath drawing the frame padding
-    pub fn frame_padding(&self) -> BezPath {
-        let mut path = BezPath::new();
-        self.shape(&mut path, ArcSide::Inner, Direction::Clockwise);
-        path
-    }
-
-    /// Construct a bezpath drawing the frame content
-    pub fn frame_content(&self) -> BezPath {
-        let mut path = BezPath::new();
-        self.shape(&mut path, ArcSide::Content, Direction::Clockwise);
-        path
-    }
-
     fn shape(&self, path: &mut BezPath, line: ArcSide, direction: Direction) {
         use Corner::*;
 
@@ -239,7 +209,7 @@ impl ElementFrame {
         };
 
         for corner in route {
-            if self.is_sharp(corner, line) {
+            if self.is_sharp(corner) {
                 path.insert_point(self.corner(corner, line));
             } else {
                 path.insert_arc(self.full_arc(corner, line, direction));
@@ -261,7 +231,7 @@ impl ElementFrame {
             path.insert_point(self.shadow_clip_corner(corner, 100.0));
         }
 
-        if self.is_sharp(TopLeft, ArcSide::Outer) {
+        if self.is_sharp(TopLeft) {
             path.move_to(self.corner(TopLeft, ArcSide::Outer));
         } else {
             const TOLERANCE: f64 = 0.1;
@@ -271,7 +241,7 @@ impl ElementFrame {
         }
 
         for corner in [/*TopLeft, */ BottomLeft, BottomRight, TopRight] {
-            if self.is_sharp(corner, ArcSide::Outer) {
+            if self.is_sharp(corner) {
                 path.insert_point(self.corner(corner, ArcSide::Outer));
             } else {
                 path.insert_arc(self.full_arc(corner, ArcSide::Outer, Direction::Anticlockwise));
@@ -284,40 +254,24 @@ impl ElementFrame {
 
         let (x, y) = match corner {
             Corner::TopLeft => match side {
-                ArcSide::Content => (
-                    x0 + self.border_left_width + self.padding_left_width,
-                    y0 + self.border_top_width + self.padding_top_width,
-                ),
                 ArcSide::Inner => (x0 + self.border_left_width, y0 + self.border_top_width),
                 ArcSide::Outer => (x0, y0),
                 ArcSide::Outline => (x0 - self.outline_width, y0 - self.outline_width),
                 ArcSide::Middle => unimplemented!(),
             },
             Corner::TopRight => match side {
-                ArcSide::Content => (
-                    x1 - self.border_left_width - self.padding_left_width,
-                    y0 + self.border_top_width + self.padding_top_width,
-                ),
                 ArcSide::Inner => (x1 - self.border_right_width, y0 + self.border_top_width),
                 ArcSide::Outer => (x1, y0),
                 ArcSide::Outline => (x1 + self.outline_width, y0 - self.outline_width),
                 ArcSide::Middle => unimplemented!(),
             },
             Corner::BottomRight => match side {
-                ArcSide::Content => (
-                    x1 - self.border_right_width - self.padding_right_width,
-                    y1 - self.border_bottom_width - self.padding_bottom_width,
-                ),
                 ArcSide::Inner => (x1 - self.border_right_width, y1 - self.border_bottom_width),
                 ArcSide::Outer => (x1, y1),
                 ArcSide::Outline => (x1 + self.outline_width, y1 + self.outline_width),
                 ArcSide::Middle => unimplemented!(),
             },
             Corner::BottomLeft => match side {
-                ArcSide::Content => (
-                    x0 + self.border_left_width + self.padding_left_width,
-                    y1 - self.border_bottom_width - self.padding_bottom_width,
-                ),
                 ArcSide::Inner => (x0 + self.border_left_width, y1 - self.border_bottom_width),
                 ArcSide::Outer => (x0, y1),
                 ArcSide::Outline => (x0 - self.outline_width, y1 + self.outline_width),
@@ -489,97 +443,24 @@ impl ElementFrame {
     }
 
     /// Check if a corner is sharp (IE the absolute radius is 0)
-    fn is_sharp(&self, corner: Corner, side: ArcSide) -> bool {
-        use ArcSide::*;
-        use Corner::*;
-
-        let is_sharp = match corner {
-            TopLeft => {
+    fn is_sharp(&self, corner: Corner) -> bool {
+        match corner {
+            Corner::TopLeft => {
                 self.border_top_left_radius_width == 0.0
                     || self.border_top_left_radius_height == 0.0
             }
-            TopRight => {
+            Corner::TopRight => {
                 self.border_top_right_radius_width == 0.0
                     || self.border_top_right_radius_height == 0.0
             }
-            BottomRight => {
+            Corner::BottomRight => {
                 self.border_bottom_right_radius_width == 0.0
                     || self.border_bottom_right_radius_height == 0.0
             }
-            BottomLeft => {
+            Corner::BottomLeft => {
                 self.border_bottom_left_radius_width == 0.0
                     || self.border_bottom_left_radius_height == 0.0
             }
-        };
-
-        if is_sharp {
-            return true;
-        }
-
-        if side == Inner {
-            match corner {
-                TopLeft => {
-                    self.border_top_left_radius_width - self.border_left_width <= 0.0
-                        || self.border_top_left_radius_height - self.border_top_width <= 0.0
-                }
-                TopRight => {
-                    self.border_top_right_radius_width - self.border_right_width <= 0.0
-                        || self.border_top_right_radius_height - self.border_top_width <= 0.0
-                }
-                BottomRight => {
-                    self.border_bottom_right_radius_width - self.border_right_width <= 0.0
-                        || self.border_bottom_right_radius_height - self.border_bottom_width <= 0.0
-                }
-                BottomLeft => {
-                    self.border_bottom_left_radius_width - self.border_left_width <= 0.0
-                        || self.border_bottom_left_radius_height - self.border_bottom_width <= 0.0
-                }
-            }
-        } else if side == Content {
-            match corner {
-                TopLeft => {
-                    self.border_top_left_radius_width
-                        - self.border_left_width
-                        - self.padding_left_width
-                        <= 0.0
-                        || self.border_top_left_radius_height
-                            - self.border_top_width
-                            - self.padding_top_width
-                            <= 0.0
-                }
-                TopRight => {
-                    self.border_top_right_radius_width
-                        - self.border_right_width
-                        - self.padding_right_width
-                        <= 0.0
-                        || self.border_top_right_radius_height
-                            - self.border_top_width
-                            - self.padding_top_width
-                            <= 0.0
-                }
-                BottomRight => {
-                    self.border_bottom_right_radius_width
-                        - self.border_right_width
-                        - self.padding_right_width
-                        <= 0.0
-                        || self.border_bottom_right_radius_height
-                            - self.border_bottom_width
-                            - self.padding_bottom_width
-                            <= 0.0
-                }
-                BottomLeft => {
-                    self.border_bottom_left_radius_width
-                        - self.border_left_width
-                        - self.padding_left_width
-                        <= 0.0
-                        || self.border_bottom_left_radius_height
-                            - self.border_bottom_width
-                            - self.padding_bottom_width
-                            <= 0.0
-                }
-            }
-        } else {
-            is_sharp
         }
     }
 
@@ -588,10 +469,6 @@ impl ElementFrame {
         use {Corner::*, ArcSide::*};
         let ElementFrame {
             border_box: rect,
-            padding_top_width,
-            padding_left_width,
-            padding_right_width,
-            padding_bottom_width,
             border_top_width,
             border_left_width,
             border_right_width,
@@ -637,12 +514,6 @@ impl ElementFrame {
                 BottomRight => (border_bottom_right_radius_width - border_right_width, border_bottom_right_radius_height - border_bottom_width),
                 BottomLeft => (border_bottom_left_radius_width - border_left_width, border_bottom_left_radius_height - border_bottom_width),
             },
-            Content => match corner {
-                TopLeft => (border_top_left_radius_width - border_left_width - padding_left_width, border_top_left_radius_height - border_top_width - padding_top_width),
-                TopRight => (border_top_right_radius_width - border_right_width - padding_right_width, border_top_right_radius_height - border_top_width - padding_top_width),
-                BottomRight => (border_bottom_right_radius_width - border_right_width - padding_right_width, border_bottom_right_radius_height - border_bottom_width - padding_bottom_width),
-                BottomLeft => (border_bottom_left_radius_width - border_left_width - padding_left_width, border_bottom_left_radius_height - border_bottom_width - padding_bottom_width),
-            },
         };
 
         Ellipse::new(rect.origin() + center, radii, 0.0)
@@ -685,13 +556,13 @@ pub enum Edge {
 ///    |    |    *----------------------------------------------*    |   |  <--- ArcSide::Middle
 ///    |    |    |                    Border Inner              |    |   |
 ///    |    |    |    *------------------------------------*    |    |   |  <--- ArcSide::Inner
-///    |    |    |    |               Padding              |    |    |   |
-///    |    |    |    |    *--------------------------*    |    |    |   |  <--- ArcSide::Content
-///    |    |    |    |    |                          |    |    |    |   |
-///    |    |    |    |    |                          |    |    |    |   |
-///    |    |    |    |    |                          |    |    |    |   |
-///    |    |    |    |    |                          |    |    |    |   |
-///    |    |    |    |    *--------------------------*    |    |    |   |
+///    |    |    |    |                                    |    |    |   |
+///    |    |    |    |                                    |    |    |   |
+///    |    |    |    |                                    |    |    |   |
+///    |    |    |    |                                    |    |    |   |
+///    |    |    |    |                                    |    |    |   |
+///    |    |    |    |                                    |    |    |   |
+///    |    |    |    |                                    |    |    |   |
 ///    |    |    |    |                                    |    |    |   |
 ///    |    |    |    *------------------------------------*    |    |   |
 ///    |    |    |                                              |    |   |
@@ -709,14 +580,13 @@ enum Corner {
     BottomRight,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy)]
 enum ArcSide {
     Outline,
     Outer,
     #[allow(unused)]
     Middle,
     Inner,
-    Content,
 }
 
 #[derive(Debug, Clone, Copy)]
