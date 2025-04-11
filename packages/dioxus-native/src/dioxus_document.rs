@@ -90,7 +90,7 @@ impl Document for DioxusDocument {
             | DomEventData::MouseOver { .. }
             | DomEventData::MouseEnter { .. }
             | DomEventData::MouseOut { .. }
-            | DomEventData::MouseLeave => {
+            | DomEventData::MouseLeave { .. } => {
                 let click_event_data = wrap_event_data(NativeClickData);
 
                 for node_id in chain.clone().into_iter() {

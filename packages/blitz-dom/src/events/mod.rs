@@ -46,8 +46,14 @@ pub(crate) fn handle_event(doc: &mut BaseDocument, event: &mut DomEvent) {
                 event.request_redraw = true;
             }
         }
-        DomEventData::MouseLeave => {
-            handle_mouse_unhover(doc, target_node_id, true, None, None);
+        DomEventData::MouseLeave(mouse_event) => {
+            handle_mouse_unhover(
+                doc,
+                target_node_id,
+                true,
+                Some(mouse_event.x),
+                Some(mouse_event.y),
+            );
         }
         DomEventData::Click(event) => {
             handle_click(doc, target_node_id, event.x, event.y);

@@ -4,7 +4,7 @@ use crate::convert_events::{
 use crate::event::{BlitzShellEvent, create_waker};
 use blitz_dom::BaseDocument;
 use blitz_traits::{
-    BlitzMouseButtonEvent, BlitzMouseOverEvent, ColorScheme, Devtools, MouseEventButton,
+    BlitzMouseButtonEvent, BlitzMousePositionEvent, ColorScheme, Devtools, MouseEventButton,
     MouseEventButtons, Viewport,
 };
 use blitz_traits::{Document, DocumentRenderer, DomEvent, DomEventData};
@@ -276,7 +276,7 @@ impl<Doc: Document<Doc = D>, Rend: DocumentRenderer<Doc = D>> View<Doc, Rend> {
                 // First dispatch mouseout (bubbles)
                 let mut mouse_out_event = DomEvent::new(
                     prev_id,
-                    DomEventData::MouseOut(BlitzMouseOverEvent {
+                    DomEventData::MouseOut(BlitzMousePositionEvent {
                         x: self.mouse_pos.0,
                         y: self.mouse_pos.1,
                     }),
@@ -284,7 +284,13 @@ impl<Doc: Document<Doc = D>, Rend: DocumentRenderer<Doc = D>> View<Doc, Rend> {
                 self.doc.handle_event(&mut mouse_out_event);
 
                 // Then dispatch mouseleave (doesn't bubble)
-                let mut mouse_leave_event = DomEvent::new(prev_id, DomEventData::MouseLeave);
+                let mut mouse_leave_event = DomEvent::new(
+                    prev_id,
+                    DomEventData::MouseLeave(BlitzMousePositionEvent {
+                        x: self.mouse_pos.0,
+                        y: self.mouse_pos.1,
+                    }),
+                );
                 self.doc.handle_event(&mut mouse_leave_event);
             }
 
@@ -293,7 +299,7 @@ impl<Doc: Document<Doc = D>, Rend: DocumentRenderer<Doc = D>> View<Doc, Rend> {
                 // First dispatch mouseover (bubbles)
                 let mut hover_event = DomEvent::new(
                     new_id,
-                    DomEventData::MouseOver(BlitzMouseOverEvent {
+                    DomEventData::MouseOver(BlitzMousePositionEvent {
                         x: self.mouse_pos.0,
                         y: self.mouse_pos.1,
                     }),
@@ -303,7 +309,7 @@ impl<Doc: Document<Doc = D>, Rend: DocumentRenderer<Doc = D>> View<Doc, Rend> {
                 // Then dispatch mouseenter (doesn't bubble)
                 let mut enter_event = DomEvent::new(
                     new_id,
-                    DomEventData::MouseEnter(BlitzMouseOverEvent {
+                    DomEventData::MouseEnter(BlitzMousePositionEvent {
                         x: self.mouse_pos.0,
                         y: self.mouse_pos.1,
                     }),
