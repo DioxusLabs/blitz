@@ -93,8 +93,6 @@ impl Document for DioxusDocument {
             | DomEventData::MouseLeave => {
                 let click_event_data = wrap_event_data(NativeClickData);
 
-                println!("{:?}", event.name());
-
                 for node_id in chain.clone().into_iter() {
                     let node = &self.inner.tree()[node_id];
                     let dioxus_id = node.element_data().and_then(DioxusDocument::dioxus_id);
