@@ -49,9 +49,10 @@ pub(crate) fn handle_mousemove(
         let x = (hit.x - content_box_offset.x) as f64 * doc.viewport.scale_f64();
         let y = (hit.y - content_box_offset.y) as f64 * doc.viewport.scale_f64();
 
+        let mut font_ctx = doc.font_ctx.lock().unwrap();
         text_input_data
             .editor
-            .driver(&mut doc.font_ctx, &mut doc.layout_ctx)
+            .driver(&mut font_ctx, &mut doc.layout_ctx)
             .extend_selection_to_point(x as f32, y as f32);
 
         return true;
@@ -86,10 +87,12 @@ pub(crate) fn handle_mousedown(doc: &mut BaseDocument, target: usize, x: f32, y:
         let x = (hit.x - content_box_offset.x) as f64 * doc.viewport.scale_f64();
         let y = (hit.y - content_box_offset.y) as f64 * doc.viewport.scale_f64();
 
+        let mut font_ctx = doc.font_ctx.lock().unwrap();
         text_input_data
             .editor
-            .driver(&mut doc.font_ctx, &mut doc.layout_ctx)
+            .driver(&mut font_ctx, &mut doc.layout_ctx)
             .move_to_point(x as f32, y as f32);
+        drop(font_ctx);
 
         doc.set_focus_to(hit.node_id);
     }
