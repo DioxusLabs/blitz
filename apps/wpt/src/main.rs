@@ -330,6 +330,11 @@ impl TestResult {
                 panic_info.file, panic_info.line, panic_info.column
             )
             .unwrap();
+
+            if let Some(trimmed_backtrace) = panic_backtrace::trim_backtrace(&panic_info.backtrace)
+            {
+                writeln!(out, "Backtrace:\n{}", trimmed_backtrace).unwrap();
+            }
         }
     }
 }
@@ -460,7 +465,9 @@ fn main() {
             let start = Instant::now();
 
             let result = catch_unwind(AssertUnwindSafe(|| {
-                process_test_file(&mut ctx, &relative_path).block_on()
+                panic_backtrace::backtrace_cutoff(|| {
+                    process_test_file(&mut ctx, &relative_path).block_on()
+                })
             }));
             let (kind, flags, status, subtest_counts, panic_info) = match result {
                 Ok((kind, flags, subtest_counts)) => {
