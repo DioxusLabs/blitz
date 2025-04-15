@@ -4131,6 +4131,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "os_info"
+version = "3.10.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2a604e53c24761286860eba4e2c8b23a0161526476b1de520139d69cdb85a6b5"
+dependencies = [
+ "log",
+ "serde",
+ "windows-sys 0.52.0",
+]
+
+[[package]]
 name = "overload"
 version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4986,6 +4997,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5f0e2c6ed6606019b4e29e69dbaba95b11854410e5347d525002456dbbb786b6"
 dependencies = [
  "serde_derive",
+]
+
+[[package]]
+name = "serde-jsonlines"
+version = "0.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "07bdd6db666f827c1843d4710520093675e6c0b6e39a02e1a8d9e9b2f71cbb58"
+dependencies = [
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -7241,17 +7262,32 @@ dependencies = [
  "glob",
  "image",
  "log",
+ "os_info",
  "owo-colors",
  "parley",
  "png",
  "pollster",
  "rayon",
  "regex",
+ "serde_json",
  "supports-hyperlinks",
  "taffy",
  "terminal-link",
  "thread_local",
  "url",
+ "wptreport",
+]
+
+[[package]]
+name = "wptreport"
+version = "0.0.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9b22e83bcee4a21b467d421fb50924b19176898babbc1aa30af9668fa6068f0b"
+dependencies = [
+ "rayon",
+ "serde",
+ "serde-jsonlines",
+ "serde_json",
 ]
 
 [[package]]

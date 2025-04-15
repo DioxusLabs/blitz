@@ -6,6 +6,7 @@ use blitz_traits::{ColorScheme, Viewport};
 use panic_backtrace::StashedPanicInfo;
 use parley::FontContext;
 use pollster::FutureExt as _;
+use report::generate_report;
 use supports_hyperlinks::supports_hyperlinks;
 use terminal_link::Link;
 use thread_local::ThreadLocal;
@@ -19,23 +20,33 @@ use log::{error, info};
 use owo_colors::OwoColorize;
 use std::cell::RefCell;
 use std::fmt::Display;
-use std::io::{Write, stdout};
+use std::fs::File;
+use std::io::{BufWriter, Write, stdout};
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::path::{self, Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::AtomicU32;
 use std::sync::atomic::Ordering;
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime};
 use std::{env, fs};
 
 mod attr_test;
 mod net_provider;
 mod panic_backtrace;
 mod ref_test;
+mod report;
 
 use attr_test::process_attr_test;
 use net_provider::WptNetProvider;
 use ref_test::process_ref_test;
+
+/// Create a unix timestamp of the current time using the standard library
+fn unix_timestamp() -> u64 {
+    SystemTime::now()
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .unwrap()
+        .as_secs()
+}
 
 const WIDTH: u32 = 800;
 const HEIGHT: u32 = 600;
@@ -161,7 +172,10 @@ fn filter_path(p: &Path) -> bool {
 fn collect_tests(wpt_dir: &Path) -> Vec<PathBuf> {
     let mut test_paths = Vec::new();
 
-    let mut suites: Vec<_> = std::env::args().skip(1).collect();
+    let mut suites: Vec<_> = std::env::args()
+        .skip(1)
+        .filter(|arg| !arg.starts_with('-'))
+        .collect();
     if suites.is_empty() {
         suites.push("css/css-flexbox".to_string());
         suites.push("css/css-grid".to_string());
@@ -381,6 +395,7 @@ fn main() {
     let script_fail_count = AtomicU32::new(0);
     let other_fail_count = AtomicU32::new(0);
     let start = Instant::now();
+    let start_timestamp = unix_timestamp();
 
     let num = AtomicU32::new(0);
 
@@ -543,6 +558,8 @@ fn main() {
         })
         .collect();
 
+    let end_timestamp = unix_timestamp();
+
     // Sort results alphabetically
     results.sort_unstable_by(|a, b| a.name.cmp(&b.name));
 
@@ -638,6 +655,23 @@ fn main() {
     if masonry_fail_count > 0 {
         println!("{masonry_fail_count:>4} use masonry (M)");
     }
+
+    let report_start = Instant::now();
+    let report = generate_report(&wpt_dir, results, start_timestamp, end_timestamp);
+    println!(
+        "\nReport generated in {}ms",
+        report_start.elapsed().as_millis()
+    );
+
+    let write_report_start = Instant::now();
+    let report_path = out_dir.join("wptreport.json");
+    let mut report_file_writer = BufWriter::new(File::create(&report_path).unwrap());
+    serde_json::to_writer(&mut report_file_writer, &report).unwrap();
+    println!(
+        "Report written to {:?} in {}ms",
+        report_path,
+        write_report_start.elapsed().as_millis()
+    );
 }
 
 #[allow(clippy::too_many_arguments)]
