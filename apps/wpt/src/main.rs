@@ -3,6 +3,7 @@ use blitz_dom::net::Resource;
 use blitz_renderer_vello::VelloImageRenderer;
 use blitz_traits::navigation::{DummyNavigationProvider, NavigationProvider};
 use blitz_traits::{ColorScheme, Viewport};
+use panic_backtrace::StashedPanicInfo;
 use parley::FontContext;
 use pollster::FutureExt as _;
 use supports_hyperlinks::supports_hyperlinks;
@@ -29,6 +30,7 @@ use std::{env, fs};
 
 mod attr_test;
 mod net_provider;
+mod panic_backtrace;
 mod ref_test;
 
 use attr_test::process_attr_test;
@@ -236,7 +238,7 @@ struct TestResult {
     status: TestStatus,
     subtest_counts: SubtestCounts,
     duration: Duration,
-    panic_msg: Option<String>,
+    panic_info: Option<StashedPanicInfo>,
 }
 
 impl TestResult {
@@ -318,14 +320,23 @@ impl TestResult {
         // Newline
         writeln!(out).unwrap();
 
-        if let Some(panic_msg) = &self.panic_msg {
-            writeln!(out, "{}", panic_msg).unwrap();
+        if let Some(panic_info) = &self.panic_info {
+            if let Some(panic_msg) = &panic_info.message {
+                writeln!(out, "{panic_msg}").unwrap();
+            }
+            writeln!(
+                out,
+                "Panicked at {}:{}:{}",
+                panic_info.file, panic_info.line, panic_info.column
+            )
+            .unwrap();
         }
     }
 }
 
 fn main() {
     env_logger::init();
+    std::panic::set_hook(Box::new(panic_backtrace::stash_panic_handler));
 
     let wpt_dir = path::absolute(env::var("WPT_DIR").expect("WPT_DIR is not set")).unwrap();
     info!("WPT_DIR: {}", wpt_dir.display());
@@ -451,22 +462,19 @@ fn main() {
             let result = catch_unwind(AssertUnwindSafe(|| {
                 process_test_file(&mut ctx, &relative_path).block_on()
             }));
-            let (kind, flags, status, subtest_counts, panic_msg) = match result {
+            let (kind, flags, status, subtest_counts, panic_info) = match result {
                 Ok((kind, flags, subtest_counts)) => {
                     let status = subtest_counts.as_status();
                     (kind, flags, status, subtest_counts, None)
                 }
-                Err(err) => {
-                    let str_msg = err.downcast_ref::<&str>().map(|s| s.to_string());
-                    let string_msg = err.downcast_ref::<String>().map(|s| s.to_string());
-                    let panic_msg = str_msg.or(string_msg);
-
+                Err(_) => {
+                    let panic_info = panic_backtrace::take_stashed_panic_info();
                     (
                         TestKind::Unknown,
                         TestFlags::empty(),
                         TestStatus::Crash,
                         SubtestCounts::ZERO_OF_ZERO,
-                        panic_msg,
+                        panic_info,
                     )
                 }
             };
@@ -516,7 +524,7 @@ fn main() {
                 status,
                 subtest_counts,
                 duration: start.elapsed(),
-                panic_msg,
+                panic_info,
             };
 
             // Print status line
