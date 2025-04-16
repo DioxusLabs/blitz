@@ -18,7 +18,11 @@ use style::{
     dom::TElement,
     properties::{
         ComputedValues,
-        generated::longhands::visibility::computed_value::T as StyloVisibility,
+        generated::longhands::{
+            background_clip::single_value::computed_value::T as StyloBackgroundClip,
+            background_origin::single_value::computed_value::T as StyloBackgroundOrigin,
+            visibility::computed_value::T as StyloVisibility,
+        },
         style_structs::{Font, Outline},
     },
     values::{
@@ -58,6 +62,23 @@ use vello::{
 use vello_svg::usvg;
 
 type GradientItem<T> = GenericGradientItem<GenericColor<Percentage>, T>;
+type LinearGradient<'a> = (
+    &'a LineDirection,
+    &'a [GradientItem<LengthPercentage>],
+    GradientFlags,
+);
+type RadialGradient<'a> = (
+    &'a EndingShape<NonNegative<CSSPixelLength>, NonNegative<LengthPercentage>>,
+    &'a GenericPosition<LengthPercentage, LengthPercentage>,
+    &'a OwnedSlice<GenericGradientItem<GenericColor<Percentage>, LengthPercentage>>,
+    GradientFlags,
+);
+type ConicGradient<'a> = (
+    &'a Angle,
+    &'a GenericPosition<LengthPercentage, LengthPercentage>,
+    &'a OwnedSlice<GenericGradientItem<GenericColor<Percentage>, AngleOrPercentage>>,
+    GradientFlags,
+);
 
 const CLIP_LIMIT: usize = 1024;
 static CLIPS_USED: AtomicUsize = AtomicUsize::new(0);
@@ -581,14 +602,12 @@ impl VelloSceneGenerator<'_> {
     }
 }
 
-#[cfg(feature = "svg")]
 fn compute_background_size(
     style: &ComputedValues,
     container_w: f32,
     container_h: f32,
     bg_idx: usize,
-    bg_w: f32,
-    bg_h: f32,
+    mode: BackgroundSizeComputeMode,
     scale: f32,
 ) -> kurbo::Size {
     use style::values::computed::{BackgroundSize, Length};
@@ -609,43 +628,65 @@ fn compute_background_size(
 
             match (width, height) {
                 (Lpa::LengthPercentage(width), Lpa::LengthPercentage(height)) => {
-                    (width.px(), height.px())
+                    let width = width.px();
+                    let height = height.px();
+                    match mode {
+                        BackgroundSizeComputeMode::Auto => (width, height),
+                        BackgroundSizeComputeMode::Size(_, _) => (width, height),
+                    }
                 }
                 (Lpa::LengthPercentage(width), Lpa::Auto) => {
-                    let height = (width.px() / bg_w) * bg_h;
-                    (width.px(), height)
+                    let width = width.px();
+                    let height = match mode {
+                        BackgroundSizeComputeMode::Auto => container_h,
+                        BackgroundSizeComputeMode::Size(bg_w, bg_h) => (width / bg_w) * bg_h,
+                    };
+                    (width, height)
                 }
                 (Lpa::Auto, Lpa::LengthPercentage(height)) => {
-                    let width = (height.px() / bg_h) * bg_w;
-                    (width, height.px())
+                    let height = height.px();
+                    let width = match mode {
+                        BackgroundSizeComputeMode::Auto => container_w,
+                        BackgroundSizeComputeMode::Size(bg_w, bg_h) => (height / bg_h) * bg_w,
+                    };
+                    (width, height)
                 }
-                (Lpa::Auto, Lpa::Auto) => (bg_w * scale, bg_h * scale),
+                (Lpa::Auto, Lpa::Auto) => match mode {
+                    BackgroundSizeComputeMode::Auto => (container_w, container_h),
+                    BackgroundSizeComputeMode::Size(bg_w, bg_h) => (bg_w * scale, bg_h * scale),
+                },
             }
         }
-        BackgroundSize::Cover => {
-            let x_ratio = container_w / bg_w;
-            let y_ratio = container_h / bg_h;
+        BackgroundSize::Cover => match mode {
+            BackgroundSizeComputeMode::Auto => (container_w, container_h),
+            BackgroundSizeComputeMode::Size(bg_w, bg_h) => {
+                let x_ratio = container_w / bg_w;
+                let y_ratio = container_h / bg_h;
 
-            let ratio = if x_ratio < 1.0 || y_ratio < 1.0 {
-                x_ratio.min(y_ratio)
-            } else {
-                x_ratio.max(y_ratio)
-            };
+                let ratio = if x_ratio < 1.0 || y_ratio < 1.0 {
+                    x_ratio.min(y_ratio)
+                } else {
+                    x_ratio.max(y_ratio)
+                };
 
-            (bg_w * ratio, bg_h * ratio)
-        }
-        BackgroundSize::Contain => {
-            let x_ratio = container_w / bg_w;
-            let y_ratio = container_h / bg_h;
+                (bg_w * ratio, bg_h * ratio)
+            }
+        },
+        BackgroundSize::Contain => match mode {
+            BackgroundSizeComputeMode::Auto => (container_w, container_h),
+            BackgroundSizeComputeMode::Size(bg_w, bg_h) => {
+                let x_ratio = container_w / bg_w;
+                let y_ratio = container_h / bg_h;
 
-            let ratio = if x_ratio < 1.0 || y_ratio < 1.0 {
-                x_ratio.max(y_ratio)
-            } else {
-                x_ratio.min(y_ratio)
-            };
+                let ratio = if x_ratio < 1.0 || y_ratio < 1.0 {
+                    x_ratio.max(y_ratio)
+                } else {
+                    x_ratio.min(y_ratio)
+                };
 
-            (bg_w * ratio, bg_h * ratio)
-        }
+                (bg_w * ratio, bg_h * ratio)
+            }
+        },
     };
 
     kurbo::Size {
@@ -923,8 +964,10 @@ impl ElementCx<'_> {
             frame_w,
             frame_h,
             idx,
-            svg_size.width() / self.scale as f32,
-            svg_size.height() / self.scale as f32,
+            BackgroundSizeComputeMode::Size(
+                svg_size.width() / self.scale as f32,
+                svg_size.height() / self.scale as f32,
+            ),
             self.scale as f32,
         );
         let bg_size = bg_size * self.scale;
@@ -982,25 +1025,83 @@ impl ElementCx<'_> {
     }
 
     fn draw_raster_bg_image(&self, scene: &mut Scene, idx: usize) {
+        use style::{Zero as _, values::computed::Length};
+
         let bg_image = self.element.background_images.get(idx);
 
-        if let Some(Some(bg_image)) = bg_image.as_ref() {
-            if let ImageData::Raster(image) = &bg_image.image {
-                let width = self.frame.padding_box.width() as u32;
-                let height = self.frame.padding_box.height() as u32;
-                let x = self.frame.content_box.origin().x;
-                let y = self.frame.content_box.origin().y;
+        let Some(Some(bg_image)) = bg_image.as_ref() else {
+            return;
+        };
+        let ImageData::Raster(image_data) = &bg_image.image else {
+            return;
+        };
 
-                let x_scale = width as f64 / image.width as f64;
-                let y_scale = height as f64 / image.height as f64;
-                let transform = self
-                    .transform
-                    .pre_scale_non_uniform(x_scale, y_scale)
-                    .then_translate(Vec2 { x, y });
+        let background_origin = self
+            .style
+            .get_background()
+            .background_origin
+            .0
+            .get(idx)
+            .cloned()
+            .unwrap_or(StyloBackgroundOrigin::PaddingBox);
 
-                scene.draw_image(&to_peniko_image(image), transform);
-            }
-        }
+        let origin_rect = match background_origin {
+            StyloBackgroundOrigin::BorderBox => self.frame.border_box,
+            StyloBackgroundOrigin::PaddingBox => self.frame.padding_box,
+            StyloBackgroundOrigin::ContentBox => self.frame.content_box,
+        };
+
+        let frame_w = origin_rect.width() as f32;
+        let frame_h = origin_rect.height() as f32;
+
+        let image_width = image_data.width as f64;
+        let image_height = image_data.height as f64;
+        let bg_size = compute_background_size(
+            &self.style,
+            frame_w,
+            frame_h,
+            idx,
+            BackgroundSizeComputeMode::Size(
+                (image_width / self.scale) as f32,
+                (image_height / self.scale) as f32,
+            ),
+            self.scale as f32,
+        );
+        let bg_size = bg_size * self.scale;
+
+        let x_ratio = bg_size.width / image_width;
+        let y_ratio = bg_size.height / image_height;
+
+        let bg_pos_x = self
+            .style
+            .get_background()
+            .background_position_x
+            .0
+            .get(idx)
+            .cloned()
+            .unwrap_or(LengthPercentage::zero())
+            .resolve(Length::new(frame_w - (bg_size.width as f32)))
+            .px() as f64;
+        let bg_pos_y = self
+            .style
+            .get_background()
+            .background_position_y
+            .0
+            .get(idx)
+            .cloned()
+            .unwrap_or(LengthPercentage::zero())
+            .resolve(Length::new(frame_h - bg_size.height as f32))
+            .px() as f64;
+
+        let transform = self
+            .transform
+            .then_translate(Vec2 {
+                x: (origin_rect.x0 * self.scale) + bg_pos_x,
+                y: (origin_rect.y0 * self.scale) + bg_pos_y,
+            })
+            .pre_scale_non_uniform(x_ratio, y_ratio);
+
+        scene.draw_image(&to_peniko_image(image_data), transform);
     }
 
     fn stroke_devtools(&self, scene: &mut Scene) {
@@ -1029,25 +1130,34 @@ impl ElementCx<'_> {
 
     fn draw_background(&self, scene: &mut Scene) {
         use GenericImage::*;
+        use StyloBackgroundClip::*;
+
+        let segments = &self.style.get_background().background_clip.0;
+        let background_clip = segments.iter().next().cloned().unwrap_or(BorderBox);
+        let background_clip_path = match background_clip {
+            BorderBox => self.frame.frame_border(),
+            PaddingBox => self.frame.frame_padding(),
+            ContentBox => self.frame.frame_content(),
+        };
 
         CLIPS_WANTED.fetch_add(1, atomic::Ordering::SeqCst);
         let clips_available = CLIPS_USED.load(atomic::Ordering::SeqCst) <= CLIP_LIMIT;
         if clips_available {
-            scene.push_layer(Mix::Clip, 1.0, self.transform, &self.frame.frame());
+            scene.push_layer(Mix::Clip, 1.0, self.transform, &background_clip_path);
             CLIPS_USED.fetch_add(1, atomic::Ordering::SeqCst);
             let depth = CLIP_DEPTH.fetch_add(1, atomic::Ordering::SeqCst) + 1;
             CLIP_DEPTH_USED.fetch_max(depth, atomic::Ordering::SeqCst);
         }
 
         // Draw background color (if any)
-        self.draw_solid_frame(scene);
+        self.draw_solid_frame(scene, &background_clip_path);
         let segments = &self.style.get_background().background_image.0;
         for (idx, segment) in segments.iter().enumerate().rev() {
             match segment {
                 None => {
                     // Do nothing
                 }
-                Gradient(gradient) => self.draw_gradient_frame(scene, gradient),
+                Gradient(gradient) => self.draw_gradient_frame(scene, gradient, idx),
                 Url(_) => {
                     self.draw_raster_bg_image(scene, idx);
                     #[cfg(feature = "svg")]
@@ -1063,7 +1173,61 @@ impl ElementCx<'_> {
         CLIP_DEPTH.fetch_sub(1, atomic::Ordering::SeqCst);
     }
 
-    fn draw_gradient_frame(&self, scene: &mut Scene, gradient: &StyloGradient) {
+    fn draw_gradient_frame(&self, scene: &mut Scene, gradient: &StyloGradient, idx: usize) {
+        use style::{Zero as _, values::computed::Length};
+
+        let background_origin = self
+            .style
+            .get_background()
+            .background_origin
+            .0
+            .get(idx)
+            .cloned()
+            .unwrap_or(StyloBackgroundOrigin::PaddingBox);
+
+        let origin_rect = match background_origin {
+            StyloBackgroundOrigin::BorderBox => self.frame.border_box,
+            StyloBackgroundOrigin::PaddingBox => self.frame.padding_box,
+            StyloBackgroundOrigin::ContentBox => self.frame.content_box,
+        };
+
+        let frame_w = origin_rect.width() as f32;
+        let frame_h = origin_rect.height() as f32;
+
+        let bg_size = compute_background_size(
+            &self.style,
+            frame_w,
+            frame_h,
+            idx,
+            BackgroundSizeComputeMode::Auto,
+            self.scale as f32,
+        );
+
+        let bg_size = bg_size * self.scale;
+        let origin_rect = origin_rect.with_size(bg_size);
+
+        let bg_pos_x = self
+            .style
+            .get_background()
+            .background_position_x
+            .0
+            .get(idx)
+            .cloned()
+            .unwrap_or(LengthPercentage::zero())
+            .resolve(Length::new(frame_w - (bg_size.width as f32)))
+            .px() as f64;
+        let bg_pos_y = self
+            .style
+            .get_background()
+            .background_position_y
+            .0
+            .get(idx)
+            .cloned()
+            .unwrap_or(LengthPercentage::zero())
+            .resolve(Length::new(frame_h - bg_size.height as f32))
+            .px() as f64;
+        let bg_position = Point::new(bg_pos_x, bg_pos_y);
+
         match gradient {
             // https://developer.mozilla.org/en-US/docs/Web/CSS/gradient/linear-gradient
             GenericGradient::Linear {
@@ -1072,7 +1236,12 @@ impl ElementCx<'_> {
                 flags,
                 // compat_mode,
                 ..
-            } => self.draw_linear_gradient(scene, direction, items, *flags),
+            } => self.draw_linear_gradient(
+                scene,
+                (direction, items, *flags),
+                origin_rect,
+                bg_position,
+            ),
             GenericGradient::Radial {
                 shape,
                 position,
@@ -1080,30 +1249,40 @@ impl ElementCx<'_> {
                 flags,
                 // compat_mode,
                 ..
-            } => self.draw_radial_gradient(scene, shape, position, items, *flags),
+            } => self.draw_radial_gradient(
+                scene,
+                (shape, position, items, *flags),
+                origin_rect,
+                bg_position,
+            ),
             GenericGradient::Conic {
                 angle,
                 position,
                 items,
                 flags,
                 ..
-            } => self.draw_conic_gradient(scene, angle, position, items, *flags),
+            } => self.draw_conic_gradient(
+                scene,
+                (angle, position, items, *flags),
+                origin_rect,
+                bg_position,
+            ),
         };
     }
 
     fn draw_linear_gradient(
         &self,
         scene: &mut Scene,
-        direction: &LineDirection,
-        items: &[GradientItem<LengthPercentage>],
-        flags: GradientFlags,
+        gradient: LinearGradient,
+        origin_rect: Rect,
+        bg_position: Point,
     ) {
+        let (direction, items, flags) = gradient;
         let bb = self.frame.border_box.bounding_box();
         let current_color = self.style.clone_color();
 
-        let shape = self.frame.frame();
         let center = bb.center();
-        let rect = self.frame.padding_box;
+        let rect = origin_rect;
         let (start, end) = match direction {
             LineDirection::Angle(angle) => {
                 let angle = -angle.radians64() + std::f64::consts::PI;
@@ -1113,28 +1292,16 @@ impl ElementCx<'_> {
                 (center - offset_vec, center + offset_vec)
             }
             LineDirection::Horizontal(horizontal) => {
-                let start = Point::new(
-                    self.frame.padding_box.x0,
-                    self.frame.padding_box.y0 + rect.height() / 2.0,
-                );
-                let end = Point::new(
-                    self.frame.padding_box.x1,
-                    self.frame.padding_box.y0 + rect.height() / 2.0,
-                );
+                let start = Point::new(rect.x0, rect.y0 + rect.height() / 2.0);
+                let end = Point::new(rect.x1, rect.y0 + rect.height() / 2.0);
                 match horizontal {
                     HorizontalPositionKeyword::Right => (start, end),
                     HorizontalPositionKeyword::Left => (end, start),
                 }
             }
             LineDirection::Vertical(vertical) => {
-                let start = Point::new(
-                    self.frame.padding_box.x0 + rect.width() / 2.0,
-                    self.frame.padding_box.y0,
-                );
-                let end = Point::new(
-                    self.frame.padding_box.x0 + rect.width() / 2.0,
-                    self.frame.padding_box.y1,
-                );
+                let start = Point::new(rect.x0 + rect.width() / 2.0, rect.y0);
+                let end = Point::new(rect.x0 + rect.width() / 2.0, rect.y1);
                 match vertical {
                     VerticalPositionKeyword::Top => (end, start),
                     VerticalPositionKeyword::Bottom => (start, end),
@@ -1142,20 +1309,12 @@ impl ElementCx<'_> {
             }
             LineDirection::Corner(horizontal, vertical) => {
                 let (start_x, end_x) = match horizontal {
-                    HorizontalPositionKeyword::Right => {
-                        (self.frame.padding_box.x0, self.frame.padding_box.x1)
-                    }
-                    HorizontalPositionKeyword::Left => {
-                        (self.frame.padding_box.x1, self.frame.padding_box.x0)
-                    }
+                    HorizontalPositionKeyword::Right => (rect.x0, rect.x1),
+                    HorizontalPositionKeyword::Left => (rect.x1, rect.x0),
                 };
                 let (start_y, end_y) = match vertical {
-                    VerticalPositionKeyword::Top => {
-                        (self.frame.padding_box.y1, self.frame.padding_box.y0)
-                    }
-                    VerticalPositionKeyword::Bottom => {
-                        (self.frame.padding_box.y0, self.frame.padding_box.y1)
-                    }
+                    VerticalPositionKeyword::Top => (rect.y1, rect.y0),
+                    VerticalPositionKeyword::Bottom => (rect.y0, rect.y1),
                 };
                 (Point::new(start_x, start_y), Point::new(end_x, end_y))
             }
@@ -1183,8 +1342,18 @@ impl ElementCx<'_> {
                 end: end + (start - end) * (1.0 - last_offset) as f64,
             };
         }
+        let transform = self.transform.then_translate(Vec2 {
+            x: bg_position.x,
+            y: bg_position.y,
+        });
         let brush = peniko::BrushRef::Gradient(&gradient);
-        scene.fill(peniko::Fill::NonZero, self.transform, brush, None, &shape);
+        scene.fill(
+            peniko::Fill::NonZero,
+            transform,
+            brush,
+            None,
+            &origin_rect.to_path(0.1),
+        );
     }
 
     #[inline]
@@ -1473,7 +1642,7 @@ impl ElementCx<'_> {
         }
     }
 
-    fn draw_solid_frame(&self, scene: &mut Scene) {
+    fn draw_solid_frame(&self, scene: &mut Scene, shape: &BezPath) {
         let current_color = self.style.clone_color();
         let background_color = &self.style.get_background().background_color;
         let bg_color = background_color
@@ -1481,10 +1650,8 @@ impl ElementCx<'_> {
             .as_srgb_color();
 
         if bg_color != Color::TRANSPARENT {
-            let shape = self.frame.frame();
-
             // Fill the color
-            scene.fill(Fill::NonZero, self.transform, bg_color, None, &shape);
+            scene.fill(Fill::NonZero, self.transform, bg_color, None, shape);
         }
     }
 
@@ -1553,7 +1720,10 @@ impl ElementCx<'_> {
                 .as_srgb_color(),
         };
 
-        sb.fill(Fill::NonZero, self.transform, color, None, &path);
+        let alpha = color.components[3];
+        if alpha != 0.0 {
+            sb.fill(Fill::NonZero, self.transform, color, None, &path);
+        }
     }
 
     /// ❌ dotted - Defines a dotted border
@@ -1632,13 +1802,12 @@ impl ElementCx<'_> {
     fn draw_radial_gradient(
         &self,
         scene: &mut Scene,
-        shape: &EndingShape<NonNegative<CSSPixelLength>, NonNegative<LengthPercentage>>,
-        position: &GenericPosition<LengthPercentage, LengthPercentage>,
-        items: &OwnedSlice<GenericGradientItem<GenericColor<Percentage>, LengthPercentage>>,
-        flags: GradientFlags,
+        gradient: RadialGradient,
+        origin_rect: Rect,
+        bg_position: Point,
     ) {
-        let bez_path = self.frame.frame();
-        let rect = self.frame.padding_box;
+        let (shape, position, items, flags) = gradient;
+        let rect = origin_rect;
         let repeating = flags.contains(GradientFlags::REPEATING);
         let current_color = self.style.clone_color();
 
@@ -1741,26 +1910,29 @@ impl ElementCx<'_> {
             }
         };
 
+        let transform = self.transform.then_translate(Vec2 {
+            x: bg_position.x,
+            y: bg_position.y,
+        });
         let brush = peniko::BrushRef::Gradient(&gradient);
         scene.fill(
             peniko::Fill::NonZero,
-            self.transform,
+            transform,
             brush,
             gradient_transform,
-            &bez_path,
+            &origin_rect.to_path(0.1),
         );
     }
 
     fn draw_conic_gradient(
         &self,
         scene: &mut Scene,
-        angle: &Angle,
-        position: &GenericPosition<LengthPercentage, LengthPercentage>,
-        items: &OwnedSlice<GenericGradientItem<GenericColor<Percentage>, AngleOrPercentage>>,
-        flags: GradientFlags,
+        gradient: ConicGradient,
+        origin_rect: Rect,
+        bg_position: Point,
     ) {
-        let bez_path = self.frame.frame();
-        let rect = self.frame.padding_box;
+        let (angle, position, items, flags) = gradient;
+        let rect = origin_rect;
         let current_color = self.style.clone_color();
 
         let repeating = flags.contains(GradientFlags::REPEATING);
@@ -1786,17 +1958,21 @@ impl ElementCx<'_> {
             };
         }
 
+        let transform = self.transform.then_translate(Vec2 {
+            x: bg_position.x,
+            y: bg_position.y,
+        });
         let brush = peniko::BrushRef::Gradient(&gradient);
 
         scene.fill(
             peniko::Fill::NonZero,
-            self.transform,
+            transform,
             brush,
             Some(
                 Affine::rotate(angle.radians() as f64 - std::f64::consts::PI / 2.0)
                     .then_translate(self.get_translation(position, rect)),
             ),
-            &bez_path,
+            &origin_rect.to_path(0.1),
         );
     }
 
@@ -1807,12 +1983,12 @@ impl ElementCx<'_> {
         rect: Rect,
     ) -> Vec2 {
         Vec2::new(
-            self.frame.padding_box.x0
+            rect.x0
                 + position
                     .horizontal
                     .resolve(CSSPixelLength::new(rect.width() as f32))
                     .px() as f64,
-            self.frame.padding_box.y0
+            rect.y0
                 + position
                     .vertical
                     .resolve(CSSPixelLength::new(rect.height() as f32))
@@ -1920,4 +2096,9 @@ impl<'a> std::ops::Deref for ElementCx<'a> {
     fn deref(&self) -> &Self::Target {
         self.context
     }
+}
+
+enum BackgroundSizeComputeMode {
+    Auto,
+    Size(f32, f32),
 }
