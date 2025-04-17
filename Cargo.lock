@@ -679,7 +679,6 @@ dependencies = [
  "blitz-shell",
  "blitz-traits",
  "dioxus",
- "dioxus-native",
  "env_logger",
  "euclid",
  "image",
@@ -1213,14 +1212,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "counter"
-version = "0.1.0"
-dependencies = [
- "dioxus",
- "dioxus-native",
-]
-
-[[package]]
 name = "cpufeatures"
 version = "0.2.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1616,9 +1607,6 @@ dependencies = [
  "keyboard-types",
  "lazy-js-bundle",
  "rustversion",
- "serde",
- "serde_json",
- "serde_repr",
  "tracing",
 ]
 
@@ -1679,27 +1667,6 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "tracing-wasm",
-]
-
-[[package]]
-name = "dioxus-native"
-version = "0.1.0-alpha.1"
-dependencies = [
- "blitz-dom",
- "blitz-net",
- "blitz-renderer-vello",
- "blitz-shell",
- "blitz-traits",
- "dioxus-cli-config",
- "dioxus-core",
- "dioxus-devtools",
- "dioxus-html",
- "futures-util",
- "keyboard-types",
- "rustc-hash",
- "tokio",
- "tracing",
- "winit",
 ]
 
 [[package]]

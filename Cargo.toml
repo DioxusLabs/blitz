@@ -7,11 +7,9 @@ members = [
   "packages/blitz-renderer-vello",
   "packages/blitz-shell",
   "packages/blitz",
-  "packages/dioxus-native",
   "packages/stylo_taffy",
   "apps/wpt",
   "apps/readme",
-  "examples/counter",
 ]
 exclude = ["sites"]
 resolver = "2"
@@ -126,7 +124,6 @@ blitz-renderer-vello = { path = "./packages/blitz-renderer-vello" }
 blitz-shell = { path = "./packages/blitz-shell" }
 blitz-net = { path = "./packages/blitz-net" }
 blitz = { path = "./packages/blitz", features = ["net"] }
-dioxus-native = { path = "./packages/dioxus-native", features = ["tracing"] }
 dioxus = { workspace = true }
 euclid = { workspace = true }
 reqwest = { workspace = true }
