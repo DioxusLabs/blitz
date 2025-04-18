@@ -20,7 +20,12 @@ pub(crate) fn handle_keypress(doc: &mut BaseDocument, target: usize, event: Blit
 
         if let Some(input_data) = text_input_data {
             println!("Sent text event to {}", node_id);
-            apply_keypress_event(input_data, &mut doc.font_ctx, &mut doc.layout_ctx, event);
+            apply_keypress_event(
+                input_data,
+                &mut doc.font_ctx.lock().unwrap(),
+                &mut doc.layout_ctx,
+                event,
+            );
         }
     }
 }

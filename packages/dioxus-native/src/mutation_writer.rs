@@ -312,7 +312,11 @@ impl WriteMutations for MutationWriter<'_> {
                 if name == "value" {
                     // Update text input value
                     if let Some(input_data) = element.text_input_data_mut() {
-                        input_data.set_text(&mut self.doc.font_ctx, &mut self.doc.layout_ctx, val);
+                        input_data.set_text(
+                            &mut self.doc.font_ctx.lock().unwrap(),
+                            &mut self.doc.layout_ctx,
+                            val,
+                        );
                     }
                 }
 
@@ -359,7 +363,11 @@ impl WriteMutations for MutationWriter<'_> {
                 // Update text input value
                 if name == "value" {
                     if let Some(input_data) = element.text_input_data_mut() {
-                        input_data.set_text(&mut self.doc.font_ctx, &mut self.doc.layout_ctx, "");
+                        input_data.set_text(
+                            &mut self.doc.font_ctx.lock().unwrap(),
+                            &mut self.doc.layout_ctx,
+                            "",
+                        );
                     }
                 }
 
