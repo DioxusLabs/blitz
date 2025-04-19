@@ -6,7 +6,7 @@ use blitz_traits::{ColorScheme, Viewport};
 use panic_backtrace::StashedPanicInfo;
 use parley::FontContext;
 use pollster::FutureExt as _;
-use report::generate_report;
+use report::{generate_expectations, generate_report};
 use supports_hyperlinks::supports_hyperlinks;
 use terminal_link::Link;
 use test_runners::{SubtestResult, process_test_file};
@@ -656,13 +656,18 @@ fn main() {
         println!("{masonry_fail_count:>4} use masonry (M)");
     }
 
+    // Generate wpt_expectations.txt
+    let expectations = generate_expectations(&results);
+    let expectations_path = out_dir.join("wpt_expectations.txt");
+    fs::write(&expectations_path, expectations).unwrap();
+
+    // Generate wptreport.json
     let report_start = Instant::now();
     let report = generate_report(&wpt_dir, results, start_timestamp, end_timestamp);
     println!(
         "\nReport generated in {}ms",
         report_start.elapsed().as_millis()
     );
-
     let write_report_start = Instant::now();
     let report_path = out_dir.join("wptreport.json");
     let mut report_file_writer = BufWriter::new(File::create(&report_path).unwrap());
