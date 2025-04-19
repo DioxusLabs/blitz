@@ -1,14 +1,22 @@
 use blitz_dom::Node;
 
-use super::parse_and_resolve_document;
-use crate::{SubtestCounts, ThreadCtx};
+use super::{SubtestResult, parse_and_resolve_document};
+use crate::{SubtestCounts, TestStatus, ThreadCtx};
+
+fn status_from_bool(input: bool) -> TestStatus {
+    if input {
+        TestStatus::Pass
+    } else {
+        TestStatus::Fail
+    }
+}
 
 pub fn process_attr_test(
     ctx: &mut ThreadCtx,
     subtest_selector: &str,
     html: &str,
     relative_path: &str,
-) -> SubtestCounts {
+) -> (SubtestCounts, Vec<SubtestResult>) {
     let mut document = parse_and_resolve_document(ctx, html, relative_path);
 
     let Ok(subtest_roots) = document.query_selector_all(subtest_selector) else {
@@ -25,26 +33,38 @@ pub fn process_attr_test(
     let mut pass_count: u32 = 0;
     let mut fail_count: u32 = 0;
 
-    for root_id in subtest_roots {
-        let mut has_error = false;
-        document.iter_subtree_mut(root_id, |node_id, doc| {
-            let node = doc.get_node(node_id).unwrap();
-            let passes = check_node_layout(node);
-            has_error |= !passes;
-        });
+    let subtest_results: Vec<_> = subtest_roots
+        .into_iter()
+        .enumerate()
+        .map(|(idx, root_id)| {
+            let mut has_error = false;
+            document.iter_subtree_mut(root_id, |node_id, doc| {
+                let node = doc.get_node(node_id).unwrap();
+                let passes = check_node_layout(node);
+                has_error |= !passes;
+            });
 
-        if has_error {
-            fail_count += 1;
-        } else {
-            pass_count += 1;
-        }
-    }
+            if has_error {
+                fail_count += 1;
+            } else {
+                pass_count += 1;
+            }
+
+            SubtestResult {
+                name: format!("{subtest_selector} {}", idx + 1),
+                status: status_from_bool(!has_error),
+                message: None, // TODO: error message
+            }
+        })
+        .collect();
 
     assert!(pass_count + fail_count == subtest_count);
-    SubtestCounts {
+    let subtest_counts = SubtestCounts {
         pass: pass_count,
         total: subtest_count,
-    }
+    };
+
+    (subtest_counts, subtest_results)
 }
 
 pub fn check_node_layout(node: &Node) -> bool {

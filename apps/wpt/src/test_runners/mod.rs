@@ -5,7 +5,7 @@ use blitz_html::HtmlDocument;
 use blitz_traits::net::SharedProvider;
 use log::info;
 
-use crate::{SubtestCounts, TestFlags, TestKind, ThreadCtx};
+use crate::{SubtestCounts, TestFlags, TestKind, TestStatus, ThreadCtx};
 
 mod attr_test;
 mod ref_test;
@@ -13,11 +13,17 @@ mod ref_test;
 pub use attr_test::process_attr_test;
 pub use ref_test::process_ref_test;
 
+pub struct SubtestResult {
+    pub name: String,
+    pub status: TestStatus,
+    pub message: Option<String>,
+}
+
 #[allow(clippy::too_many_arguments)]
 pub fn process_test_file(
     ctx: &mut ThreadCtx,
     relative_path: &str,
-) -> (TestKind, TestFlags, SubtestCounts) {
+) -> (TestKind, TestFlags, SubtestCounts, Vec<SubtestResult>) {
     info!("Processing test file: {}", relative_path);
 
     let file_contents = fs::read_to_string(ctx.wpt_dir.join(relative_path)).unwrap();
@@ -55,7 +61,7 @@ pub fn process_test_file(
         .captures(&file_contents)
         .and_then(|captures| captures.get(1).map(|href| href.as_str().to_string()));
     if let Some(reference) = reference {
-        let results = process_ref_test(
+        let counts = process_ref_test(
             ctx,
             relative_path,
             file_contents.as_str(),
@@ -63,7 +69,7 @@ pub fn process_test_file(
             &mut flags,
         );
 
-        return (TestKind::Ref, flags, results);
+        return (TestKind::Ref, flags, counts, Vec::new());
     }
 
     // Attr Test
@@ -78,13 +84,18 @@ pub fn process_test_file(
 
         println!("{}", selector);
 
-        let results = process_attr_test(ctx, &selector, &file_contents, relative_path);
+        let (counts, results) = process_attr_test(ctx, &selector, &file_contents, relative_path);
 
-        return (TestKind::Attr, flags, results);
+        return (TestKind::Attr, flags, counts, results);
     }
 
     // TODO: Handle other test formats.
-    (TestKind::Unknown, flags, SubtestCounts::ZERO_OF_ZERO)
+    (
+        TestKind::Unknown,
+        flags,
+        SubtestCounts::ZERO_OF_ZERO,
+        Vec::new(),
+    )
 }
 
 fn parse_and_resolve_document(

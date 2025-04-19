@@ -64,6 +64,15 @@ fn convert_status(status: TestStatus) -> wpt_report::TestStatus {
     }
 }
 
+fn convert_subtest_status(status: TestStatus) -> wpt_report::SubtestStatus {
+    match status {
+        TestStatus::Pass => wpt_report::SubtestStatus::Pass,
+        TestStatus::Fail => wpt_report::SubtestStatus::Fail,
+        TestStatus::Skip => wpt_report::SubtestStatus::Skip,
+        TestStatus::Crash => unreachable!(),
+    }
+}
+
 pub fn generate_report(
     wpt_dir: &Path,
     results: Vec<TestResult>,
@@ -79,7 +88,16 @@ pub fn generate_report(
             message: test.panic_info.and_then(|info| info.message),
             known_intermittent: Vec::new(),
             subsuite: String::new(),
-            subtests: Vec::new(),
+            subtests: test
+                .subtest_results
+                .into_iter()
+                .map(|subtest| wpt_report::SubtestResult {
+                    name: subtest.name,
+                    status: convert_subtest_status(subtest.status),
+                    message: subtest.message,
+                    known_intermittent: Vec::new(),
+                })
+                .collect(),
         })
         .collect();
 

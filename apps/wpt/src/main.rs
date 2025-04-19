@@ -9,7 +9,7 @@ use pollster::FutureExt as _;
 use report::generate_report;
 use supports_hyperlinks::supports_hyperlinks;
 use terminal_link::Link;
-use test_runners::process_test_file;
+use test_runners::{SubtestResult, process_test_file};
 use thread_local::ThreadLocal;
 use url::Url;
 
@@ -250,6 +250,7 @@ struct TestResult {
     flags: TestFlags,
     status: TestStatus,
     subtest_counts: SubtestCounts,
+    subtest_results: Vec<SubtestResult>,
     duration: Duration,
     panic_info: Option<StashedPanicInfo>,
 }
@@ -481,10 +482,10 @@ fn main() {
             let result = catch_unwind(AssertUnwindSafe(|| {
                 panic_backtrace::backtrace_cutoff(|| process_test_file(&mut ctx, &relative_path))
             }));
-            let (kind, flags, status, subtest_counts, panic_info) = match result {
-                Ok((kind, flags, subtest_counts)) => {
+            let (kind, flags, status, subtest_counts, panic_info, subtest_results) = match result {
+                Ok((kind, flags, subtest_counts, subtest_results)) => {
                     let status = subtest_counts.as_status();
-                    (kind, flags, status, subtest_counts, None)
+                    (kind, flags, status, subtest_counts, None, subtest_results)
                 }
                 Err(_) => {
                     let panic_info = panic_backtrace::take_stashed_panic_info();
@@ -494,6 +495,7 @@ fn main() {
                         TestStatus::Crash,
                         SubtestCounts::ZERO_OF_ZERO,
                         panic_info,
+                        Vec::new(),
                     )
                 }
             };
@@ -542,6 +544,7 @@ fn main() {
                 flags,
                 status,
                 subtest_counts,
+                subtest_results,
                 duration: start.elapsed(),
                 panic_info,
             };
