@@ -1,18 +1,15 @@
-use std::{sync::Arc, time::Instant};
+use blitz_dom::Node;
 
-use blitz_dom::{BaseDocument, Node, net::Resource};
-use blitz_html::HtmlDocument;
-use blitz_traits::net::SharedProvider;
-
+use super::parse_and_resolve_document;
 use crate::{SubtestCounts, ThreadCtx};
 
-pub async fn process_attr_test(
+pub fn process_attr_test(
     ctx: &mut ThreadCtx,
     subtest_selector: &str,
     html: &str,
     relative_path: &str,
 ) -> SubtestCounts {
-    let mut document = parse_and_resolve_document(ctx, html, relative_path).await;
+    let mut document = parse_and_resolve_document(ctx, html, relative_path);
 
     let Ok(subtest_roots) = document.query_selector_all(subtest_selector) else {
         panic!("Err parsing subtest selector \"{}\"", subtest_selector);
@@ -48,47 +45,6 @@ pub async fn process_attr_test(
         pass: pass_count,
         total: subtest_count,
     }
-}
-
-pub async fn parse_and_resolve_document(
-    ctx: &mut ThreadCtx,
-    html: &str,
-    relative_path: &str,
-) -> BaseDocument {
-    ctx.net_provider.reset();
-    let mut document = HtmlDocument::from_html(
-        html,
-        Some(ctx.dummy_base_url.join(relative_path).unwrap().to_string()),
-        Vec::new(),
-        Arc::clone(&ctx.net_provider) as SharedProvider<Resource>,
-        Some(ctx.font_ctx.clone()),
-        ctx.navigation_provider.clone(),
-    );
-
-    document.as_mut().set_viewport(ctx.viewport.clone());
-    document.as_mut().resolve();
-
-    // Load resources.
-    // Loop because loading a resource may result in further resources being requested
-    let start = Instant::now();
-    while ctx.net_provider.pending_item_count() > 0 {
-        ctx.net_provider
-            .for_each(|res| document.as_mut().load_resource(res));
-        document.as_mut().resolve();
-        if Instant::now().duration_since(start).as_millis() > 500 {
-            ctx.net_provider.log_pending_items();
-            panic!(
-                "Timeout. {} pending items.",
-                ctx.net_provider.pending_item_count()
-            );
-        }
-    }
-
-    ctx.net_provider
-        .for_each(|res| document.as_mut().load_resource(res));
-    document.as_mut().resolve();
-
-    document.into()
 }
 
 pub fn check_node_layout(node: &Node) -> bool {

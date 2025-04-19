@@ -9,6 +9,7 @@ use pollster::FutureExt as _;
 use report::generate_report;
 use supports_hyperlinks::supports_hyperlinks;
 use terminal_link::Link;
+use test_runners::process_test_file;
 use thread_local::ThreadLocal;
 use url::Url;
 
@@ -30,15 +31,13 @@ use std::sync::atomic::Ordering;
 use std::time::{Duration, Instant, SystemTime};
 use std::{env, fs};
 
-mod attr_test;
+mod test_runners;
+
 mod net_provider;
 mod panic_backtrace;
-mod ref_test;
 mod report;
 
-use attr_test::process_attr_test;
 use net_provider::WptNetProvider;
-use ref_test::process_ref_test;
 
 /// Create a unix timestamp of the current time using the standard library
 fn unix_timestamp() -> u64 {
@@ -480,9 +479,7 @@ fn main() {
             let start = Instant::now();
 
             let result = catch_unwind(AssertUnwindSafe(|| {
-                panic_backtrace::backtrace_cutoff(|| {
-                    process_test_file(&mut ctx, &relative_path).block_on()
-                })
+                panic_backtrace::backtrace_cutoff(|| process_test_file(&mut ctx, &relative_path))
             }));
             let (kind, flags, status, subtest_counts, panic_info) = match result {
                 Ok((kind, flags, subtest_counts)) => {
@@ -672,79 +669,4 @@ fn main() {
         report_path,
         write_report_start.elapsed().as_millis()
     );
-}
-
-#[allow(clippy::too_many_arguments)]
-async fn process_test_file(
-    ctx: &mut ThreadCtx,
-    relative_path: &str,
-) -> (TestKind, TestFlags, SubtestCounts) {
-    info!("Processing test file: {}", relative_path);
-
-    let file_contents = fs::read_to_string(ctx.wpt_dir.join(relative_path)).unwrap();
-
-    // Compute flags
-    let mut flags = TestFlags::empty();
-    if ctx.float_re.is_match(&file_contents) {
-        flags |= TestFlags::USES_FLOAT;
-    }
-    if ctx.intrinsic_re.is_match(&file_contents) {
-        flags |= TestFlags::USES_INTRINSIC_SIZE;
-    }
-    if ctx.calc_re.is_match(&file_contents) {
-        flags |= TestFlags::USES_CALC;
-    }
-    if ctx.direction_re.is_match(&file_contents) {
-        flags |= TestFlags::USES_DIRECTION;
-    }
-    if ctx.writing_mode_re.is_match(&file_contents) {
-        flags |= TestFlags::USES_WRITING_MODE;
-    }
-    if ctx.subgrid_re.is_match(&file_contents) {
-        flags |= TestFlags::USES_SUBGRID;
-    }
-    if ctx.masonry_re.is_match(&file_contents) {
-        flags |= TestFlags::USES_MASONRY;
-    }
-    if ctx.script_re.is_match(&file_contents) {
-        flags |= TestFlags::USES_SCRIPT;
-    }
-
-    // Ref Test
-    let reference = ctx
-        .reftest_re
-        .captures(&file_contents)
-        .and_then(|captures| captures.get(1).map(|href| href.as_str().to_string()));
-    if let Some(reference) = reference {
-        let results = process_ref_test(
-            ctx,
-            relative_path,
-            file_contents.as_str(),
-            reference.as_str(),
-            &mut flags,
-        )
-        .block_on();
-
-        return (TestKind::Ref, flags, results);
-    }
-
-    // Attr Test
-    let mut matches = ctx.attrtest_re.captures_iter(&file_contents);
-    let first = matches.next();
-    let second = matches.next();
-    if first.is_some() && second.is_none() {
-        // TODO: handle tests with multiple calls to checkLayout.
-        let captures = first.unwrap();
-        let selector = captures.get(1).unwrap().as_str().to_string();
-        drop(matches);
-
-        println!("{}", selector);
-
-        let results = process_attr_test(ctx, &selector, &file_contents, relative_path).block_on();
-
-        return (TestKind::Attr, flags, results);
-    }
-
-    // TODO: Handle other test formats.
-    (TestKind::Unknown, flags, SubtestCounts::ZERO_OF_ZERO)
 }

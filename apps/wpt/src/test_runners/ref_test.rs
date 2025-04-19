@@ -1,6 +1,3 @@
-use blitz_dom::net::Resource;
-use blitz_html::HtmlDocument;
-use blitz_traits::net::SharedProvider;
 use url::Url;
 
 use image::{ImageBuffer, ImageFormat};
@@ -8,13 +5,13 @@ use std::fs;
 use std::fs::File;
 use std::io::Write;
 use std::path::Path;
-use std::sync::Arc;
-use std::time::Instant;
 
 use crate::{BufferKind, HEIGHT, SubtestCounts, TestFlags, ThreadCtx, WIDTH};
 
+use super::parse_and_resolve_document;
+
 #[allow(clippy::too_many_arguments)]
-pub async fn process_ref_test(
+pub fn process_ref_test(
     ctx: &mut ThreadCtx,
     test_relative_path: &str,
     test_html: &str,
@@ -62,8 +59,7 @@ pub async fn process_ref_test(
         test_relative_path,
         &test_out_path,
         test_html,
-    )
-    .await;
+    );
 
     let ref_out_path = ctx
         .out_dir
@@ -74,8 +70,7 @@ pub async fn process_ref_test(
         &ref_relative_path,
         &ref_out_path,
         &ref_html,
-    )
-    .await;
+    );
 
     if ctx.buffers.test_buffer == ctx.buffers.ref_buffer {
         return SubtestCounts::ONE_OF_ONE;
@@ -99,44 +94,14 @@ pub async fn process_ref_test(
     }
 }
 
-async fn render_html_to_buffer(
+fn render_html_to_buffer(
     ctx: &mut ThreadCtx,
     buffer_kind: BufferKind,
     relative_path: &str,
     out_path: &Path,
     html: &str,
 ) {
-    ctx.net_provider.reset();
-    let mut document = HtmlDocument::from_html(
-        html,
-        Some(ctx.dummy_base_url.join(relative_path).unwrap().to_string()),
-        Vec::new(),
-        Arc::clone(&ctx.net_provider) as SharedProvider<Resource>,
-        Some(ctx.font_ctx.clone()),
-        ctx.navigation_provider.clone(),
-    );
-    document.as_mut().set_viewport(ctx.viewport.clone());
-    document.as_mut().resolve();
-
-    // Load resources.
-    // Loop because loading a resource may result in further resources being requested
-    let start = Instant::now();
-    while ctx.net_provider.pending_item_count() > 0 {
-        ctx.net_provider
-            .for_each(|res| document.as_mut().load_resource(res));
-        document.as_mut().resolve();
-        if Instant::now().duration_since(start).as_millis() > 500 {
-            ctx.net_provider.log_pending_items();
-            panic!(
-                "Timeout. {} pending items.",
-                ctx.net_provider.pending_item_count()
-            );
-        }
-    }
-
-    ctx.net_provider
-        .for_each(|res| document.as_mut().load_resource(res));
-    document.as_mut().resolve();
+    let document = parse_and_resolve_document(ctx, html, relative_path);
 
     // Determine height to render
     // let computed_height = document.as_ref().root_element().final_layout.size.height;
