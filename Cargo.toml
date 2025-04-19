@@ -9,8 +9,8 @@ members = [
   "packages/blitz",
   "packages/dioxus-native",
   "packages/stylo_taffy",
-  "apps/wpt",
   "apps/readme",
+  "wpt/runner",
   "examples/counter",
 ]
 exclude = ["sites"]

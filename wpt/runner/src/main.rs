@@ -368,7 +368,7 @@ fn main() {
     let count = test_paths.len();
 
     let cargo_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
-    let out_dir = cargo_dir.join("output");
+    let out_dir = cargo_dir.parent().unwrap().join("output");
     if fs::exists(&out_dir).unwrap() {
         fs::remove_dir_all(&out_dir).unwrap();
     }

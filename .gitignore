@@ -6,5 +6,6 @@ experiments
 /examples/output/**/*.jpg
 /examples/output/**/*.jpeg
 /out
+/wpt/output
 /apps/wpt/output
 /sites
