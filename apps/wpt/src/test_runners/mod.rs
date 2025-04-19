@@ -16,7 +16,7 @@ pub use ref_test::process_ref_test;
 pub struct SubtestResult {
     pub name: String,
     pub status: TestStatus,
-    pub message: Option<String>,
+    pub errors: Vec<String>,
 }
 
 #[allow(clippy::too_many_arguments)]

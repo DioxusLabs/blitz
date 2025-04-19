@@ -94,7 +94,11 @@ pub fn generate_report(
                 .map(|subtest| wpt_report::SubtestResult {
                     name: subtest.name,
                     status: convert_subtest_status(subtest.status),
-                    message: subtest.message,
+                    message: if subtest.errors.is_empty() {
+                        None
+                    } else {
+                        Some(subtest.errors.join("\n"))
+                    },
                     known_intermittent: Vec::new(),
                 })
                 .collect(),
@@ -107,4 +111,29 @@ pub fn generate_report(
         run_info: generate_run_info(wpt_dir),
         results,
     }
+}
+
+pub fn generate_expectations(results: &[TestResult]) -> String {
+    let mut out = String::with_capacity(10 * 1024 * 1024); // 10MB
+
+    for test in results {
+        out.push_str(&test.name);
+        out.push(' ');
+        out.push_str(test.status.as_str());
+        out.push(' ');
+
+        for subtest in &test.subtest_results {
+            let c = match subtest.status {
+                TestStatus::Pass => 'Y',
+                TestStatus::Fail => 'N',
+                TestStatus::Skip => '.',
+                TestStatus::Crash => unreachable!(),
+            };
+            out.push(c);
+        }
+
+        out.push('\n');
+    }
+
+    out
 }
