@@ -39,7 +39,10 @@ pub enum DomEventData {
     Click(BlitzMouseButtonEvent),
     KeyPress(BlitzKeyEvent),
     Ime(BlitzImeEvent),
-    Hover,
+    MouseOver(BlitzMousePositionEvent),
+    MouseEnter(BlitzMousePositionEvent),
+    MouseOut(BlitzMousePositionEvent),
+    MouseLeave(BlitzMousePositionEvent),
 }
 
 impl DomEventData {
@@ -51,7 +54,10 @@ impl DomEventData {
             Self::Click { .. } => "click",
             Self::KeyPress { .. } => "keypress",
             Self::Ime { .. } => "input",
-            Self::Hover => "mouseover",
+            Self::MouseOver { .. } => "mouseover",
+            Self::MouseEnter { .. } => "mouseenter",
+            Self::MouseOut { .. } => "mouseout",
+            Self::MouseLeave { .. } => "mouseleave",
         }
     }
 
@@ -63,7 +69,10 @@ impl DomEventData {
             Self::Click { .. } => true,
             Self::KeyPress { .. } => true,
             Self::Ime { .. } => true,
-            Self::Hover => true,
+            Self::MouseOver { .. } => true,
+            Self::MouseEnter { .. } => false,
+            Self::MouseOut { .. } => true,
+            Self::MouseLeave { .. } => false,
         }
     }
 
@@ -75,9 +84,18 @@ impl DomEventData {
             Self::Click { .. } => true,
             Self::KeyPress { .. } => true,
             Self::Ime { .. } => true,
-            Self::Hover => true,
+            Self::MouseOver { .. } => true,
+            Self::MouseEnter { .. } => false,
+            Self::MouseOut { .. } => true,
+            Self::MouseLeave { .. } => true,
         }
     }
+}
+
+#[derive(Clone, Debug)]
+pub struct BlitzMousePositionEvent {
+    pub x: f32,
+    pub y: f32,
 }
 
 #[derive(Debug, Clone, Copy)]
