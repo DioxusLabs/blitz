@@ -126,19 +126,24 @@ impl DocumentHtmlParser<'_> {
         let rel_attr = node.attr(local_name!("rel"));
         let href_attr = node.attr(local_name!("href"));
 
-        if let (Some("stylesheet"), Some(href)) = (rel_attr, href_attr) {
-            let url = self.doc.borrow().resolve_url(href);
-            self.net_provider.fetch(
-                self.doc_id,
-                Request::get(url.clone()),
-                Box::new(CssHandler {
-                    node: target_id,
-                    source_url: url,
-                    guard: self.doc.borrow().guard.clone(),
-                    provider: self.net_provider.clone(),
-                }),
-            );
+        let (Some(rels), Some(href)) = (rel_attr, href_attr) else {
+            return;
+        };
+        if !rels.split_ascii_whitespace().any(|rel| rel == "stylesheet") {
+            return;
         }
+
+        let url = self.doc.borrow().resolve_url(href);
+        self.net_provider.fetch(
+            self.doc_id,
+            Request::get(url.clone()),
+            Box::new(CssHandler {
+                node: target_id,
+                source_url: url,
+                guard: self.doc.borrow().guard.clone(),
+                provider: self.net_provider.clone(),
+            }),
+        );
     }
 
     fn load_image(&self, target_id: usize) {
