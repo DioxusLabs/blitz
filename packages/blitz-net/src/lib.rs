@@ -34,7 +34,7 @@ impl<D: 'static> Provider<D> {
             resource_callback: res_callback,
         }
     }
-    pub fn shared(res_callback: SharedCallback<D>) -> Arc<dyn NetProvider<Data = D>> {
+    pub fn shared(res_callback: SharedCallback<D>) -> Arc<dyn NetProvider<D>> {
         Arc::new(Self::new(res_callback))
     }
     pub fn is_empty(&self) -> bool {
@@ -75,8 +75,7 @@ impl<D: 'static> Provider<D> {
     }
 }
 
-impl<D: 'static> NetProvider for Provider<D> {
-    type Data = D;
+impl<D: 'static> NetProvider<D> for Provider<D> {
     fn fetch(&self, doc_id: usize, request: Request, handler: BoxedHandler<D>) {
         let client = self.client.clone();
         let callback = Arc::clone(&self.resource_callback);
@@ -132,9 +131,8 @@ impl<T> MpscCallback<T> {
         (recv, Self(send))
     }
 }
-impl<T: Send + Sync + 'static> NetCallback for MpscCallback<T> {
-    type Data = T;
-    fn call(&self, doc_id: usize, result: Result<Self::Data, Option<String>>) {
+impl<T: Send + Sync + 'static> NetCallback<T> for MpscCallback<T> {
+    fn call(&self, doc_id: usize, result: Result<T, Option<String>>) {
         // TODO: handle error case
         if let Ok(data) = result {
             let _ = self.0.send((doc_id, data));

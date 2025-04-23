@@ -80,8 +80,7 @@ impl<D: Send + Sync + 'static> WptNetProvider<D> {
         Ok(())
     }
 }
-impl<D: Send + Sync + 'static> NetProvider for WptNetProvider<D> {
-    type Data = D;
+impl<D: Send + Sync + 'static> NetProvider<D> for WptNetProvider<D> {
     fn fetch(&self, doc_id: usize, request: Request, handler: BoxedHandler<D>) {
         let url = request.url.to_string();
 
@@ -244,9 +243,8 @@ struct Callback<T> {
     request_id: usize,
 }
 
-impl<T: Send + Sync + 'static> NetCallback for Callback<T> {
-    type Data = T;
-    fn call(&self, _doc_id: usize, result: Result<Self::Data, Option<String>>) {
+impl<T: Send + Sync + 'static> NetCallback<T> for Callback<T> {
+    fn call(&self, _doc_id: usize, result: Result<T, Option<String>>) {
         match result {
             Ok(data) => self.queue.record_success(data, self.request_id),
             Err(err) => {

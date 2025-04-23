@@ -89,13 +89,12 @@ impl ServoStylesheetLoader for StylesheetLoader {
             sheet: ServoArc<Stylesheet>,
             provider: SharedProvider<Resource>,
         }
-        impl NetHandler for StylesheetLoaderInner {
-            type Data = Resource;
+        impl NetHandler<Resource> for StylesheetLoaderInner {
             fn bytes(
                 self: Box<Self>,
                 doc_id: usize,
                 bytes: Bytes,
-                callback: SharedCallback<Self::Data>,
+                callback: SharedCallback<Resource>,
             ) {
                 let Ok(css) = std::str::from_utf8(&bytes) else {
                     callback.call(doc_id, Err(Some(String::from("Invalid UTF8"))));
@@ -130,8 +129,7 @@ impl ServoStylesheetLoader for StylesheetLoader {
         ServoArc::new(lock.wrap(import))
     }
 }
-impl NetHandler for CssHandler {
-    type Data = Resource;
+impl NetHandler<Resource> for CssHandler {
     fn bytes(self: Box<Self>, doc_id: usize, bytes: Bytes, callback: SharedCallback<Resource>) {
         let Ok(css) = std::str::from_utf8(&bytes) else {
             callback.call(doc_id, Err(Some(String::from("Invalid UTF8"))));
@@ -163,8 +161,7 @@ impl NetHandler for CssHandler {
     }
 }
 struct FontFaceHandler(FontFaceSourceFormatKeyword);
-impl NetHandler for FontFaceHandler {
-    type Data = Resource;
+impl NetHandler<Resource> for FontFaceHandler {
     fn bytes(mut self: Box<Self>, doc_id: usize, bytes: Bytes, callback: SharedCallback<Resource>) {
         if self.0 == FontFaceSourceFormatKeyword::None {
             self.0 = match bytes.as_ref() {
@@ -301,8 +298,7 @@ impl ImageHandler {
         Self(node_id, kind)
     }
 }
-impl NetHandler for ImageHandler {
-    type Data = Resource;
+impl NetHandler<Resource> for ImageHandler {
     fn bytes(self: Box<Self>, doc_id: usize, bytes: Bytes, callback: SharedCallback<Resource>) {
         // Try parse image
         if let Ok(image) = image::ImageReader::new(Cursor::new(&bytes))

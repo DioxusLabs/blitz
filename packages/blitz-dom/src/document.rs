@@ -212,7 +212,7 @@ impl BaseDocument {
             focus_node_id: None,
             active_node_id: None,
             changed: HashSet::new(),
-            net_provider: Arc::new(DummyNetProvider::default()),
+            net_provider: Arc::new(DummyNetProvider),
             navigation_provider: Arc::new(DummyNavigationProvider {}),
         };
 

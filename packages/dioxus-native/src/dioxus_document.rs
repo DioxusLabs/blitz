@@ -357,10 +357,7 @@ impl DioxusDocument {
             .collect()
     }
 
-    pub fn new(
-        vdom: VirtualDom,
-        net_provider: Option<Arc<dyn NetProvider<Data = Resource>>>,
-    ) -> Self {
+    pub fn new(vdom: VirtualDom, net_provider: Option<Arc<dyn NetProvider<Resource>>>) -> Self {
         let viewport = Viewport::new(0, 0, 1.0, ColorScheme::Light);
         let mut doc = BaseDocument::new(viewport);
 

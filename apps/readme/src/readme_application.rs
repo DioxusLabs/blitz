@@ -21,7 +21,7 @@ pub struct ReadmeEvent;
 pub struct ReadmeApplication {
     inner: BlitzApplication<HtmlDocument, BlitzVelloRenderer>,
     handle: tokio::runtime::Handle,
-    net_provider: Arc<dyn NetProvider<Data = Resource>>,
+    net_provider: Arc<dyn NetProvider<Resource>>,
     raw_url: String,
     keyboard_modifiers: Modifiers,
     navigation_provider: Arc<dyn NavigationProvider>,
@@ -31,7 +31,7 @@ impl ReadmeApplication {
     pub fn new(
         proxy: EventLoopProxy<BlitzShellEvent>,
         raw_url: String,
-        net_provider: Arc<dyn NetProvider<Data = Resource>>,
+        net_provider: Arc<dyn NetProvider<Resource>>,
         navigation_provider: Arc<dyn NavigationProvider>,
     ) -> Self {
         let handle = Handle::current();

@@ -77,13 +77,12 @@ impl BlitzShellNetCallback {
         Self(proxy)
     }
 
-    pub fn shared(proxy: EventLoopProxy<BlitzShellEvent>) -> Arc<dyn NetCallback<Data = Resource>> {
+    pub fn shared(proxy: EventLoopProxy<BlitzShellEvent>) -> Arc<dyn NetCallback<Resource>> {
         Arc::new(Self(proxy))
     }
 }
-impl NetCallback for BlitzShellNetCallback {
-    type Data = Resource;
-    fn call(&self, doc_id: usize, result: Result<Self::Data, Option<String>>) {
+impl NetCallback<Resource> for BlitzShellNetCallback {
+    fn call(&self, doc_id: usize, result: Result<Resource, Option<String>>) {
         // TODO: handle error case
         if let Ok(data) = result {
             self.0
