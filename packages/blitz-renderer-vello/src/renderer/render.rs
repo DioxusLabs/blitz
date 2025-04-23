@@ -13,6 +13,8 @@ use color::DynamicColor;
 use euclid::Transform3D;
 use parley::Line;
 use style::color::AbsoluteColor;
+use style::values::computed::BackgroundRepeat;
+use style::values::specified::background::BackgroundRepeatKeyword;
 use style::{
     OwnedSlice,
     dom::TElement,
@@ -1036,9 +1038,9 @@ impl ElementCx<'_> {
             return;
         };
 
-        let background_origin = self
-            .style
-            .get_background()
+        let bg_styles = &self.style.get_background();
+
+        let background_origin = bg_styles
             .background_origin
             .0
             .get(idx)
@@ -1072,9 +1074,7 @@ impl ElementCx<'_> {
         let x_ratio = bg_size.width / image_width;
         let y_ratio = bg_size.height / image_height;
 
-        let bg_pos_x = self
-            .style
-            .get_background()
+        let bg_pos_x = bg_styles
             .background_position_x
             .0
             .get(idx)
@@ -1082,9 +1082,7 @@ impl ElementCx<'_> {
             .unwrap_or(LengthPercentage::zero())
             .resolve(Length::new(frame_w - (bg_size.width as f32)))
             .px() as f64;
-        let bg_pos_y = self
-            .style
-            .get_background()
+        let bg_pos_y = bg_styles
             .background_position_y
             .0
             .get(idx)
@@ -1101,7 +1099,22 @@ impl ElementCx<'_> {
             })
             .pre_scale_non_uniform(x_ratio, y_ratio);
 
-        scene.draw_image(&to_peniko_image(image_data), transform);
+        let BackgroundRepeat(repeat_x, repeat_y) =
+            bg_styles.background_repeat.0.get(idx).cloned().unwrap();
+
+        if repeat_x == BackgroundRepeatKeyword::Repeat
+            && repeat_y == BackgroundRepeatKeyword::Repeat
+        {
+            scene.fill(
+                peniko::Fill::NonZero,
+                transform,
+                &to_peniko_image(image_data),
+                None,
+                &origin_rect.to_path(0.1),
+            );
+        } else {
+            scene.draw_image(&to_peniko_image(image_data), transform);
+        }
     }
 
     fn stroke_devtools(&self, scene: &mut Scene) {
