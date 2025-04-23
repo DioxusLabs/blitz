@@ -3,7 +3,7 @@ use crate::layout::construct::collect_layout_children;
 use crate::node::{ImageData, NodeSpecificData, RasterImageData, Status, TextBrush};
 use crate::stylo_to_cursor_icon::stylo_to_cursor_icon;
 use crate::util::{ImageType, resolve_url};
-use crate::{ElementNodeData, Node, NodeData, TextNodeData};
+use crate::{ElementNodeData, Node, NodeData, TextNodeData, stylo_to_parley};
 use app_units::Au;
 use blitz_traits::navigation::{DummyNavigationProvider, NavigationProvider};
 use blitz_traits::net::{DummyNetProvider, SharedProvider};
@@ -12,21 +12,25 @@ use blitz_traits::{DomEvent, HitResult};
 use cursor_icon::CursorIcon;
 use markup5ever::local_name;
 use parley::FontContext;
+use parley::swash::Setting;
 use peniko::kurbo;
+use skrifa::charmap::Charmap;
+use skrifa::{MetadataProvider, Tag};
 use string_cache::Atom;
 use style::attr::{AttrIdentifier, AttrValue};
 use style::data::{ElementData, ElementStyles};
+use style::font_metrics::FontMetrics;
 use style::properties::ComputedValues;
 use style::properties::style_structs::Font;
 use style::values::GenericAtomIdent;
-use style::values::computed::Overflow;
+use style::values::computed::{CSSPixelLength, Overflow};
 // use quadtree_rs::Quadtree;
 use crate::net::{Resource, StylesheetLoader};
 use selectors::{Element, matching::QuirksMode};
 use slab::Slab;
 use std::collections::{BTreeMap, Bound, HashMap, HashSet, VecDeque};
-use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex};
 use style::media_queries::MediaType;
 use style::queries::values::PrefersColorScheme;
 use style::selector_parser::ServoElementSnapshot;
@@ -43,19 +47,138 @@ use style::{
 use taffy::AvailableSpace;
 use url::Url;
 
-// TODO: implement a proper font metrics provider
-#[derive(Debug, Clone)]
-struct DummyFontMetricsProvider;
-impl FontMetricsProvider for DummyFontMetricsProvider {
+#[derive(Clone)]
+struct BlitzFontMetricsProvider {
+    font_ctx: Arc<Mutex<FontContext>>,
+}
+
+impl core::fmt::Debug for BlitzFontMetricsProvider {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "BlitzFontMetricsProvider")
+    }
+}
+
+impl FontMetricsProvider for BlitzFontMetricsProvider {
     fn query_font_metrics(
         &self,
         _vertical: bool,
-        _font: &style::properties::style_structs::Font,
-        _base_size: style::values::computed::CSSPixelLength,
+        font_styles: &style::properties::style_structs::Font,
+        font_size: style::values::computed::CSSPixelLength,
         _in_media_query: bool,
         _retrieve_math_scales: bool,
-    ) -> style::font_metrics::FontMetrics {
-        Default::default()
+    ) -> FontMetrics {
+        use parley::fontique::{Attributes, Query, QueryFont, QueryStatus};
+        use skrifa::instance::{LocationRef, Size};
+        use skrifa::metrics::{GlyphMetrics, Metrics};
+
+        // Lock font_ctx. Explicit reborrow required for borrow checker.
+        let mut font_ctx = self.font_ctx.lock().unwrap();
+        let font_ctx = &mut *font_ctx;
+
+        // Query fontique for the font that matches the font styles
+        let mut query = font_ctx.collection.query(&mut font_ctx.source_cache);
+        let families = font_styles
+            .font_family
+            .families
+            .iter()
+            .map(stylo_to_parley::query_font_family);
+        query.set_families(families);
+        query.set_attributes(Attributes {
+            width: stylo_to_parley::font_width(font_styles.font_stretch),
+            weight: stylo_to_parley::font_weight(font_styles.font_weight),
+            style: stylo_to_parley::font_style(font_styles.font_style),
+        });
+        // let fb_script = crate::swash_convert::script_to_fontique(script);
+        // let fb_language = locale.and_then(crate::swash_convert::locale_to_fontique);
+        // query.set_fallbacks(fontique::FallbackKey::new(fb_script, fb_language.as_ref()));
+
+        let variations = stylo_to_parley::font_variations(&font_styles.font_variation_settings);
+        // let features = self.rcx.features(style.font_features).unwrap_or(&[]);
+
+        // fn name_of(font_ref: &skrifa::FontRef) -> String {
+        //     use skrifa::string::StringId;
+        //     font_ref
+        //         .localized_strings(StringId::POSTSCRIPT_NAME)
+        //         .english_or_first()
+        //         .unwrap()
+        //         .chars()
+        //         .collect()
+        // }
+
+        fn find_font_for(query: &mut Query, ch: char) -> Option<QueryFont> {
+            let mut font = None;
+            query.matches_with(|q_font: &QueryFont| {
+                use skrifa::MetadataProvider;
+
+                let Ok(font_ref) = skrifa::FontRef::from_index(q_font.blob.as_ref(), q_font.index)
+                else {
+                    return QueryStatus::Continue;
+                };
+
+                let charmap = font_ref.charmap();
+                if charmap.map(ch).is_some() {
+                    font = Some(q_font.clone());
+                    QueryStatus::Stop
+                } else {
+                    QueryStatus::Continue
+                }
+            });
+            font
+        }
+
+        fn advance_of(
+            query: &mut Query,
+            ch: char,
+            font_size: Size,
+            variations: &[Setting<f32>],
+        ) -> Option<f32> {
+            let font = find_font_for(query, ch)?;
+            let font_ref = skrifa::FontRef::from_index(font.blob.as_ref(), font.index).ok()?;
+            let location = font_ref.axes().location(
+                variations
+                    .iter()
+                    .map(|v| (Tag::new(&v.tag.to_le_bytes()), v.value)),
+            );
+            let location_ref = LocationRef::from(&location);
+            let glyph_metrics = GlyphMetrics::new(&font_ref, font_size, location_ref);
+            let char_map = Charmap::new(&font_ref);
+            let glyph_id = char_map.map(ch)?;
+            glyph_metrics.advance_width(glyph_id)
+        }
+
+        fn metrics_of(
+            query: &mut Query,
+            ch: char,
+            font_size: Size,
+            variations: &[Setting<f32>],
+        ) -> Option<(f32, Option<f32>, Option<f32>)> {
+            let font = find_font_for(query, ch)?;
+            let font_ref = skrifa::FontRef::from_index(font.blob.as_ref(), font.index).ok()?;
+            let location = font_ref.axes().location(
+                variations
+                    .iter()
+                    .map(|v| (Tag::new(&v.tag.to_le_bytes()), v.value)),
+            );
+            let location_ref = LocationRef::from(&location);
+            let metrics = Metrics::new(&font_ref, font_size, location_ref);
+            Some((metrics.ascent, metrics.x_height, metrics.cap_height))
+        }
+
+        let font_size = Size::new(font_size.px());
+        let zero_advance = advance_of(&mut query, '0', font_size, &variations);
+        let ic_advance = advance_of(&mut query, '\u{6C34}', font_size, &variations);
+        let (ascent, x_height, cap_height) =
+            metrics_of(&mut query, ' ', font_size, &variations).unwrap();
+
+        FontMetrics {
+            ascent: CSSPixelLength::new(ascent),
+            x_height: x_height.filter(|xh| *xh != 0.0).map(CSSPixelLength::new),
+            cap_height: cap_height.map(CSSPixelLength::new),
+            zero_advance_measure: zero_advance.map(CSSPixelLength::new),
+            ic_width: ic_advance.map(CSSPixelLength::new),
+            script_percent_scale_down: None,
+            script_script_percent_scale_down: None,
+        }
     }
 
     fn base_size_for_generic(
@@ -112,7 +235,7 @@ pub struct BaseDocument {
     pub(crate) nodes_to_stylesheet: BTreeMap<usize, DocumentStyleSheet>,
 
     /// A Parley font context
-    pub font_ctx: parley::FontContext,
+    pub font_ctx: Arc<Mutex<parley::FontContext>>,
 
     /// A Parley layout context
     pub layout_ctx: parley::LayoutContext<TextBrush>,
@@ -134,7 +257,7 @@ pub struct BaseDocument {
     pub navigation_provider: Arc<dyn NavigationProvider>,
 }
 
-fn make_device(viewport: &Viewport) -> Device {
+fn make_device(viewport: &Viewport, font_ctx: Arc<Mutex<FontContext>>) -> Device {
     let width = viewport.window_size.0 as f32 / viewport.scale();
     let height = viewport.window_size.1 as f32 / viewport.scale();
     let viewport_size = euclid::Size2D::new(width, height);
@@ -145,7 +268,7 @@ fn make_device(viewport: &Viewport) -> Device {
         selectors::matching::QuirksMode::NoQuirks,
         viewport_size,
         device_pixel_ratio,
-        Box::new(DummyFontMetricsProvider),
+        Box::new(BlitzFontMetricsProvider { font_ctx }),
         ComputedValues::initial_values_with_font_override(Font::initial_values()),
         match viewport.color_scheme {
             ColorScheme::Light => PrefersColorScheme::Light,
@@ -174,7 +297,14 @@ impl BaseDocument {
         static ID_GENERATOR: AtomicUsize = AtomicUsize::new(1);
 
         let id = ID_GENERATOR.fetch_add(1, Ordering::SeqCst);
-        let device = make_device(&viewport);
+
+        // Register bullet font and wrap font context in Arc<Mutex>
+        font_ctx
+            .collection
+            .register_fonts(crate::BULLET_FONT.to_vec());
+        let font_ctx = Arc::new(Mutex::new(font_ctx));
+
+        let device = make_device(&viewport, font_ctx.clone());
         let stylist = Stylist::new(device, QuirksMode::NoQuirks);
         let snapshots = SnapshotMap::new();
         let nodes = Box::new(Slab::new());
@@ -187,10 +317,6 @@ impl BaseDocument {
         style_config::set_bool("layout.legacy_layout", true);
         style_config::set_bool("layout.unimplemented", true);
         style_config::set_bool("layout.columns.enabled", true);
-
-        font_ctx
-            .collection
-            .register_fonts(crate::BULLET_FONT.to_vec());
 
         let mut doc = Self {
             id,
@@ -620,7 +746,11 @@ impl BaseDocument {
                 }
             }
             Resource::Font(bytes) => {
-                self.font_ctx.collection.register_fonts(bytes.to_vec());
+                self.font_ctx
+                    .lock()
+                    .unwrap()
+                    .collection
+                    .register_fonts(bytes.to_vec());
             }
             Resource::None => {
                 // Do nothing
@@ -970,7 +1100,7 @@ impl BaseDocument {
 
     pub fn set_viewport(&mut self, viewport: Viewport) {
         self.viewport = viewport;
-        self.set_stylist_device(make_device(&self.viewport));
+        self.set_stylist_device(make_device(&self.viewport, self.font_ctx.clone()));
     }
 
     pub fn get_viewport(&self) -> Viewport {
