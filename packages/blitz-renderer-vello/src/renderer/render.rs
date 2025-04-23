@@ -1099,8 +1099,15 @@ impl ElementCx<'_> {
             })
             .pre_scale_non_uniform(x_ratio, y_ratio);
 
-        let BackgroundRepeat(repeat_x, repeat_y) =
-            bg_styles.background_repeat.0.get(idx).cloned().unwrap();
+        let BackgroundRepeat(repeat_x, repeat_y) = bg_styles
+            .background_repeat
+            .0
+            .get(idx)
+            .cloned()
+            .unwrap_or(BackgroundRepeat(
+                BackgroundRepeatKeyword::Repeat,
+                BackgroundRepeatKeyword::Repeat,
+            ));
 
         if repeat_x == BackgroundRepeatKeyword::Repeat
             && repeat_y == BackgroundRepeatKeyword::Repeat
