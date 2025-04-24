@@ -884,7 +884,7 @@ impl BaseDocument {
             return false;
         }
 
-        println!("Focussed node {}", focus_node_id);
+        println!("Focussed node {focus_node_id}");
 
         // Remove focus from the old node
         if let Some(id) = self.focus_node_id {

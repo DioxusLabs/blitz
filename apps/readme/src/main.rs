@@ -128,7 +128,7 @@ async fn fetch(raw_url: &str) -> (String, String, bool, Option<PathBuf>) {
     } else if let Ok(url) = Url::parse(&format!("https://{raw_url}")) {
         fetch_url(url).await
     } else {
-        eprintln!("Cannot parse {} as url or find it as a file", raw_url);
+        eprintln!("Cannot parse {raw_url} as url or find it as a file");
         std::process::exit(1);
     }
 }
@@ -186,7 +186,7 @@ fn fetch_file_path(raw_path: &str) -> (String, String, bool, Option<PathBuf>) {
     };
 
     let base_url_path = path.parent().unwrap().to_string_lossy();
-    let base_url = format!("file://{}/", base_url_path);
+    let base_url = format!("file://{base_url_path}/");
     let is_md = path
         .extension()
         .is_some_and(|ext| ext.eq_ignore_ascii_case("md"));

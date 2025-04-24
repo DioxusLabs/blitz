@@ -22,7 +22,7 @@ use blitz_traits::navigation::DummyNavigationProvider;
 #[cfg(feature = "net")]
 pub fn launch_url(url: &str) {
     // Assert that url is valid
-    println!("{}", url);
+    println!("{url}");
     let url = url.to_owned();
     url::Url::parse(&url).expect("Invalid url");
 

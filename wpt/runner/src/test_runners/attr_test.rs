@@ -20,13 +20,10 @@ pub fn process_attr_test(
     let mut document = parse_and_resolve_document(ctx, html, relative_path);
 
     let Ok(subtest_roots) = document.query_selector_all(subtest_selector) else {
-        panic!("Err parsing subtest selector \"{}\"", subtest_selector);
+        panic!("Err parsing subtest selector \"{subtest_selector}\"");
     };
     if subtest_roots.is_empty() {
-        panic!(
-            "No matching nodes found for subtest selector \"{}\"",
-            subtest_selector
-        );
+        panic!("No matching nodes found for subtest selector \"{subtest_selector}\"");
     }
 
     let subtest_count = subtest_roots.len() as u32;

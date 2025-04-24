@@ -91,7 +91,7 @@ impl<D: Send + Sync + 'static> NetProvider<D> for WptNetProvider<D> {
         if let Err(e) = res {
             self.queue.record_failure(request_id);
             // if !matches!(e, WptNetProviderError::Io(_)) {
-            eprintln!("Error loading {}: {:?}", url, e);
+            eprintln!("Error loading {url}: {e:?}");
             // }
         }
     }

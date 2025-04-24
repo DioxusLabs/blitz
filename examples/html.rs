@@ -45,5 +45,5 @@ const HTML: &str = r#"
 "#;
 
 fn main() {
-    blitz::launch_static_html(&HTML);
+    blitz::launch_static_html(HTML);
 }

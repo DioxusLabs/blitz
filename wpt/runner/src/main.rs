@@ -347,7 +347,7 @@ impl TestResult {
 
             if let Some(trimmed_backtrace) = panic_backtrace::trim_backtrace(&panic_info.backtrace)
             {
-                writeln!(out, "Backtrace:\n{}", trimmed_backtrace).unwrap();
+                writeln!(out, "Backtrace:\n{trimmed_backtrace}").unwrap();
             }
         }
     }

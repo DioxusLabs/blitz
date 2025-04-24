@@ -29,7 +29,7 @@ pub(crate) fn handle_ime_event(doc: &mut BaseDocument, event: BlitzImeEvent) {
                     }
                 }
             }
-            println!("Sent ime event to {}", node_id);
+            println!("Sent ime event to {node_id}");
         }
     }
 }

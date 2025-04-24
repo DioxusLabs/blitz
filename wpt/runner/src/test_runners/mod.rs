@@ -24,7 +24,7 @@ pub fn process_test_file(
     ctx: &mut ThreadCtx,
     relative_path: &str,
 ) -> (TestKind, TestFlags, SubtestCounts, Vec<SubtestResult>) {
-    info!("Processing test file: {}", relative_path);
+    info!("Processing test file: {relative_path}");
 
     let file_contents = fs::read_to_string(ctx.wpt_dir.join(relative_path)).unwrap();
 
@@ -82,7 +82,7 @@ pub fn process_test_file(
         let selector = captures.get(1).unwrap().as_str().to_string();
         drop(matches);
 
-        println!("{}", selector);
+        println!("{selector}");
 
         let (counts, results) = process_attr_test(ctx, &selector, &file_contents, relative_path);
 

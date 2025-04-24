@@ -102,8 +102,8 @@ pub(crate) fn collect_layout_children(
                         .node_specific_data = NodeSpecificData::Image(Box::new(svg.into()));
                 }
                 Err(err) => {
-                    println!("{} SVG parse failed", container_node_id);
-                    println!("{}", outer_html);
+                    println!("{container_node_id} SVG parse failed");
+                    println!("{outer_html}");
                     dbg!(err);
                 }
             };
@@ -460,7 +460,7 @@ fn marker_for_style(list_style_type: ListStyleType, index: usize) -> Option<Mark
         ListStyleType::LowerAlpha => {
             let mut marker = String::new();
             build_alpha_marker(index, &mut marker);
-            Marker::String(format!("{}. ", marker))
+            Marker::String(format!("{marker}. "))
         }
         ListStyleType::UpperAlpha => {
             let mut marker = String::new();
@@ -748,7 +748,7 @@ pub(crate) fn build_inline_layout(
         .and_then(|el| el.list_item_data.as_deref())
     {
         match marker {
-            Marker::Char(char) => builder.push_text(&format!("{} ", char)),
+            Marker::Char(char) => builder.push_text(&format!("{char} ")),
             Marker::String(str) => builder.push_text(str),
         }
     };

@@ -207,7 +207,7 @@ impl Document for DioxusDocument {
                 for node_id in chain.clone().into_iter() {
                     let node = &self.inner.tree()[node_id];
                     let dioxus_id = node.element_data().and_then(DioxusDocument::dioxus_id);
-                    println!("{} {:?}", node_id, dioxus_id);
+                    println!("{node_id} {dioxus_id:?}");
 
                     if let Some(id) = dioxus_id {
                         if kevent.state.is_pressed() {

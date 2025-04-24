@@ -203,7 +203,7 @@ impl<'b> TreeSink for DocumentHtmlParser<'b> {
         }
 
         for error in self.errors.borrow().iter() {
-            println!("ERROR: {}", error);
+            println!("ERROR: {error}");
         }
 
         doc
@@ -409,7 +409,7 @@ fn parses_some_html() {
     let html = "<!DOCTYPE html><html><body><h1>hello world</h1></body></html>";
     let viewport = Viewport::new(800, 600, 1.0, ColorScheme::Light);
     let mut doc = BaseDocument::new(viewport);
-    let sink = DocumentHtmlParser::new(&mut doc, Arc::new(DummyNetProvider::default()));
+    let sink = DocumentHtmlParser::new(&mut doc, Arc::new(DummyNetProvider));
 
     html5ever::parse_document(sink, Default::default())
         .from_utf8()

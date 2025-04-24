@@ -84,9 +84,9 @@ impl<D: 'static> NetProvider<D> for Provider<D> {
             let url = request.url.to_string();
             let res = Self::fetch_inner(client, doc_id, request, handler, callback).await;
             if let Err(e) = res {
-                eprintln!("Error fetching {}: {:?}", url, e);
+                eprintln!("Error fetching {url}: {e:?}");
             } else {
-                println!("Success {}", url);
+                println!("Success {url}");
             }
         });
     }

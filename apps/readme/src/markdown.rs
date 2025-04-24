@@ -46,11 +46,10 @@ pub(crate) fn markdown_to_html(contents: String) -> String {
         <!DOCTYPE html>
         <html>
         <body>
-        <div class="markdown-body">{}</div>
+        <div class="markdown-body">{body_html}</div>
         </body>
         </html>
-    "#,
-        body_html
+        "#
     )
 }
 
