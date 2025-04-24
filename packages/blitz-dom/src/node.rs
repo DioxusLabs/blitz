@@ -310,6 +310,11 @@ impl NodeData {
         self.downcast_element()?.attr(name)
     }
 
+    pub fn has_attr(&self, name: impl PartialEq<LocalName>) -> bool {
+        self.downcast_element()
+            .is_some_and(|elem| elem.has_attr(name))
+    }
+
     pub fn kind(&self) -> NodeKind {
         match self {
             NodeData::Document => NodeKind::Document,
@@ -410,6 +415,11 @@ impl ElementNodeData {
     pub fn attr_parsed<T: FromStr>(&self, name: impl PartialEq<LocalName>) -> Option<T> {
         let attr = self.attrs.iter().find(|attr| name == attr.name.local)?;
         attr.value.parse::<T>().ok()
+    }
+
+    /// Detects the presence of the attribute, treating *any* value as truthy.
+    pub fn has_attr(&self, name: impl PartialEq<LocalName>) -> bool {
+        self.attrs.iter().any(|attr| name == attr.name.local)
     }
 
     pub fn image_data(&self) -> Option<&ImageData> {

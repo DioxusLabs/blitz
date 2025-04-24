@@ -697,8 +697,7 @@ fn create_checkbox_input(doc: &mut BaseDocument, input_element_id: usize) {
         element.node_specific_data,
         NodeSpecificData::CheckboxInput(_)
     ) {
-        let checked = element.attr_parsed(local_name!("checked")).unwrap_or(false);
-
+        let checked = element.has_attr(local_name!("checked"));
         element.node_specific_data = NodeSpecificData::CheckboxInput(checked);
     }
 }
