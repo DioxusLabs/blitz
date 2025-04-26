@@ -343,8 +343,7 @@ impl NavigationHandler {
         Box::new(Self(url.into()))
     }
 }
-impl NetHandler for NavigationHandler {
-    type Data = Resource;
+impl NetHandler<Resource> for NavigationHandler {
     fn bytes(self: Box<Self>, doc_id: usize, bytes: Bytes, callback: SharedCallback<Resource>) {
         callback.call(
             doc_id,
