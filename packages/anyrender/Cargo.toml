@@ -1,0 +1,14 @@
+[package]
+name = "anyrender"
+description = "2D Canvas abstraction"
+version = "0.0.0"
+homepage = "https://github.com/dioxuslabs/blitz"
+repository = "https://github.com/dioxuslabs/blitz"
+documentation = "https://docs.rs/anyrender"
+license.workspace = true
+edition = "2024"
+publish = false
+
+[dependencies]
+kurbo = { workspace = true }
+peniko = { workspace = true }

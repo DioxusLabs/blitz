@@ -261,6 +261,35 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e16d2d3311acee920a9eb8d33b8cbc1787ce4a264e85f964c2404b969bdcd487"
 
 [[package]]
+name = "anyrender"
+version = "0.0.0"
+dependencies = [
+ "kurbo",
+ "peniko",
+]
+
+[[package]]
+name = "anyrender_vello"
+version = "0.0.0"
+dependencies = [
+ "anyrender",
+ "kurbo",
+ "peniko",
+ "vello",
+]
+
+[[package]]
+name = "anyrender_vello_cpu"
+version = "0.0.0"
+dependencies = [
+ "anyrender",
+ "kurbo",
+ "peniko",
+ "vello_common",
+ "vello_cpu",
+]
+
+[[package]]
 name = "app_units"
 version = "0.7.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6358,6 +6387,35 @@ dependencies = [
  "vello_encoding",
  "vello_shaders",
  "wgpu",
+]
+
+[[package]]
+name = "vello_api"
+version = "0.4.0"
+source = "git+https://github.com/linebender/vello?rev=3c5b17bd#3c5b17bd35f290999b4bb79507c7c9766b3ee787"
+dependencies = [
+ "peniko",
+ "png",
+]
+
+[[package]]
+name = "vello_common"
+version = "0.4.0"
+source = "git+https://github.com/linebender/vello?rev=3c5b17bd#3c5b17bd35f290999b4bb79507c7c9766b3ee787"
+dependencies = [
+ "bytemuck",
+ "roxmltree",
+ "skrifa",
+ "smallvec",
+ "vello_api",
+]
+
+[[package]]
+name = "vello_cpu"
+version = "0.4.0"
+source = "git+https://github.com/linebender/vello?rev=3c5b17bd#3c5b17bd35f290999b4bb79507c7c9766b3ee787"
+dependencies = [
+ "vello_common",
 ]
 
 [[package]]

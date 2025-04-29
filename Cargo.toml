@@ -1,5 +1,8 @@
 [workspace]
 members = [
+  "packages/anyrender",
+  "packages/anyrender_vello",
+  "packages/anyrender_vello_cpu",
   "packages/blitz-traits",
   "packages/blitz-dom",
   "packages/blitz-html",
@@ -47,11 +50,15 @@ taffy = { version = "0.8", default-features = false, features = ["std", "flexbox
 # Linebender + WGPU + SVG
 color = "0.2"
 peniko = "0.3"
+kurbo = "0.11"
 parley = "0.3"
 wgpu = "23"
 vello = { version = "0.4", features = [ "wgpu" ] }
 vello_svg = { version = "0.6" }
 usvg = "0.44.0"
+vello_cpu = { git = "https://github.com/linebender/vello", rev = "3c5b17bd" }
+vello_common = { git = "https://github.com/linebender/vello", rev = "3c5b17bd" }
+vello_api = { git = "https://github.com/linebender/vello", rev = "3c5b17bd" }
 
 # Windowing & Input
 raw-window-handle = "0.6.0"
