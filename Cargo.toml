@@ -10,6 +10,7 @@ members = [
   "packages/blitz-net",
   "packages/blitz-paint",
   "packages/blitz-renderer-vello",
+  "packages/blitz-renderer-vello-cpu",
   "packages/blitz-shell",
   "packages/blitz",
   "packages/dioxus-native",
@@ -58,6 +59,9 @@ wgpu = "23"
 vello = { version = "0.4", features = [ "wgpu" ] }
 vello_svg = { version = "0.6" }
 usvg = "0.44.0"
+
+# CPU-rendering dependencies
+softbuffer = "0.4"
 vello_cpu = { git = "https://github.com/linebender/vello", rev = "3c5b17bd" }
 vello_common = { git = "https://github.com/linebender/vello", rev = "3c5b17bd" }
 vello_api = { git = "https://github.com/linebender/vello", rev = "3c5b17bd" }
@@ -132,6 +136,7 @@ blitz-dom = { path = "./packages/blitz-dom" }
 blitz-html = { path = "./packages/blitz-html" }
 blitz-traits = { path = "./packages/blitz-traits" }
 blitz-renderer-vello = { path = "./packages/blitz-renderer-vello" }
+blitz-renderer-vello-cpu = { path = "./packages/blitz-renderer-vello-cpu" }
 blitz-shell = { path = "./packages/blitz-shell" }
 blitz-net = { path = "./packages/blitz-net" }
 blitz = { path = "./packages/blitz", features = ["net"] }
