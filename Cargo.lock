@@ -756,20 +756,25 @@ dependencies = [
 name = "blitz-renderer-vello"
 version = "0.1.0-alpha.1"
 dependencies = [
+ "anyrender",
+ "anyrender_svg",
+ "anyrender_vello",
  "blitz-dom",
  "blitz-traits",
  "color",
  "euclid",
  "futures-intrusive",
  "image",
+ "kurbo",
  "parley",
+ "peniko",
  "pollster",
  "raw-window-handle",
  "stylo",
  "taffy",
  "tracing",
+ "usvg",
  "vello",
- "vello_svg",
  "wgpu",
 ]
 
@@ -6454,18 +6459,6 @@ dependencies = [
  "naga",
  "thiserror 2.0.12",
  "vello_encoding",
-]
-
-[[package]]
-name = "vello_svg"
-version = "0.6.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3a0fd265f55b496a8048a43c769bf15487f2be9f6642086b3468c64677cc8c87"
-dependencies = [
- "image",
- "thiserror 2.0.12",
- "usvg",
- "vello",
 ]
 
 [[package]]

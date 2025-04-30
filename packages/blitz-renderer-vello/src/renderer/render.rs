@@ -46,22 +46,17 @@ use style::{
     },
 };
 
+use kurbo::{self, BezPath, Cap, Circle, Join};
+use kurbo::{Affine, Point, Rect, Shape, Stroke, Vec2};
 use parley::layout::PositionedLayoutItem;
+use peniko::Gradient;
+use peniko::{self, BlendMode, Fill, Mix};
 use style::values::generics::color::GenericColor;
 use style::values::generics::image::{
     GenericCircle, GenericEllipse, GenericEndingShape, ShapeExtent,
 };
 use style::values::specified::percentage::ToPercentage;
 use taffy::Layout;
-use vello::kurbo::{self, BezPath, Cap, Circle, Join};
-use vello::peniko::Gradient;
-use vello::{
-    Scene,
-    kurbo::{Affine, Point, Rect, Shape, Stroke, Vec2},
-    peniko::{self, Fill, Mix},
-};
-#[cfg(feature = "svg")]
-use vello_svg::usvg;
 
 type GradientItem<T> = GenericGradientItem<GenericColor<Percentage>, T>;
 type LinearGradient<'a> = (
@@ -93,8 +88,8 @@ static CLIPS_WANTED: AtomicUsize = AtomicUsize::new(0);
 ///
 /// This assumes styles are resolved and layout is complete.
 /// Make sure you do those before trying to render
-pub fn generate_vello_scene(
-    scene: &mut Scene,
+pub fn paint_scene(
+    scene: &mut impl anyrender::Scene,
     dom: &BaseDocument,
     scale: f64,
     width: u32,
@@ -104,14 +99,14 @@ pub fn generate_vello_scene(
     CLIPS_USED.store(0, atomic::Ordering::SeqCst);
     CLIPS_WANTED.store(0, atomic::Ordering::SeqCst);
 
-    let generator = VelloSceneGenerator {
+    let generator = BlitzDomPainter {
         dom,
         scale,
         width,
         height,
         devtools: devtool_config,
     };
-    generator.generate_vello_scene(scene);
+    generator.paint_scene(scene);
 
     // println!(
     //     "Rendered using {} clips (depth: {}) (wanted: {})",
@@ -121,9 +116,9 @@ pub fn generate_vello_scene(
     // );
 }
 
-/// A short-lived struct which holds a bunch of parameters for rendering a vello scene so
+/// A short-lived struct which holds a bunch of parameters for rendering a scene so
 /// that we don't have to pass them down as parameters
-pub struct VelloSceneGenerator<'dom> {
+pub struct BlitzDomPainter<'dom> {
     /// Input parameters (read only) for generating the Scene
     dom: &'dom BaseDocument,
     scale: f64,
@@ -132,7 +127,7 @@ pub struct VelloSceneGenerator<'dom> {
     devtools: Devtools,
 }
 
-impl VelloSceneGenerator<'_> {
+impl BlitzDomPainter<'_> {
     fn node_position(&self, node: usize, location: Point) -> (Layout, Point) {
         let layout = self.layout(node);
         let pos = location + Vec2::new(layout.location.x as f64, layout.location.y as f64);
@@ -149,7 +144,7 @@ impl VelloSceneGenerator<'_> {
     ///
     /// This assumes styles are resolved and layout is complete.
     /// Make sure you do those before trying to render
-    pub fn generate_vello_scene(&self, scene: &mut Scene) {
+    pub fn paint_scene(&self, scene: &mut impl anyrender::Scene) {
         // Simply render the document (the root element (note that this is not the same as the root node)))
         scene.reset();
         let viewport_scroll = self.dom.as_ref().viewport_scroll();
@@ -212,7 +207,7 @@ impl VelloSceneGenerator<'_> {
 
     /// Renders a layout debugging overlay which visualises the content size, padding and border
     /// of the node with a transparent overlay.
-    fn render_debug_overlay(&self, scene: &mut Scene, node_id: usize) {
+    fn render_debug_overlay(&self, scene: &mut impl anyrender::Scene, node_id: usize) {
         let scale = self.scale;
 
         let viewport_scroll = self.dom.as_ref().viewport_scroll();
@@ -264,16 +259,10 @@ impl VelloSceneGenerator<'_> {
             Affine::translate(base_translation + Vec2::new(scaled_pb.left, scaled_pb.top));
         let rect = Rect::new(0.0, 0.0, content_width, content_height);
         let fill_color = Color::from_rgba8(66, 144, 245, 128); // blue
-        scene.fill(
-            vello::peniko::Fill::NonZero,
-            transform,
-            fill_color,
-            None,
-            &rect,
-        );
+        scene.fill(peniko::Fill::NonZero, transform, fill_color, None, &rect);
 
         fn draw_cutout_rect(
-            scene: &mut Scene,
+            scene: &mut impl anyrender::Scene,
             base_translation: Vec2,
             size: Vec2,
             edge_widths: taffy::Rect<f64>,
@@ -281,7 +270,7 @@ impl VelloSceneGenerator<'_> {
         ) {
             let mut fill = |pos: Vec2, width: f64, height: f64| {
                 scene.fill(
-                    vello::peniko::Fill::NonZero,
+                    peniko::Fill::NonZero,
                     Affine::translate(pos),
                     color,
                     None,
@@ -353,22 +342,7 @@ impl VelloSceneGenerator<'_> {
     ///
     /// Approaching rendering this way guarantees we have all the styles we need when rendering text with not having
     /// to traverse back to the parent for its styles, or needing to pass down styles
-    fn render_element(&self, scene: &mut Scene, node_id: usize, location: Point) {
-        // Need to do research on how we can cache most of the bezpaths - there's gonna be a lot of encoding between frames.
-        // Might be able to cache resources deeper in vello.
-        //
-        // Implemented (completely):
-        //  - nothing is completely done:
-        //  - vello is limiting all the styles we can implement (performantly)
-        //  - servo is missing a number of features (like space-evenly justify)
-        //
-        // Implemented (partially):
-        //  - background, border, font, margin, outline, padding,
-        //
-        // Not Implemented:
-        //  - position, table, text, ui,
-        //  - custom_properties, writing_mode, rules, visited_style, flags,  box_, column, counters, effects,
-        //  - inherited_box, inherited_table, inherited_text, inherited_ui,
+    fn render_element(&self, scene: &mut impl anyrender::Scene, node_id: usize, location: Point) {
         let node = &self.dom.as_ref().tree()[node_id];
 
         // Early return if the element is hidden
@@ -504,7 +478,7 @@ impl VelloSceneGenerator<'_> {
         }
     }
 
-    fn render_node(&self, scene: &mut Scene, node_id: usize, location: Point) {
+    fn render_node(&self, scene: &mut impl anyrender::Scene, node_id: usize, location: Point) {
         let node = &self.dom.as_ref().tree()[node_id];
 
         match &node.data {
@@ -713,7 +687,7 @@ fn to_peniko_image(image: &RasterImageData) -> peniko::Image {
 
 /// A context of loaded and hot data to draw the element from
 struct ElementCx<'a> {
-    context: &'a VelloSceneGenerator<'a>,
+    context: &'a BlitzDomPainter<'a>,
     frame: ElementFrame,
     style: style::servo_arc::Arc<ComputedValues>,
     pos: Point,
@@ -729,11 +703,11 @@ struct ElementCx<'a> {
 }
 
 impl ElementCx<'_> {
-    fn with_maybe_clip(
+    fn with_maybe_clip<S: anyrender::Scene, F: FnMut(&ElementCx<'_>, &mut S)>(
         &self,
-        scene: &mut Scene,
+        scene: &mut S,
         mut condition: impl FnMut() -> bool,
-        mut cb: impl FnMut(&ElementCx<'_>, &mut Scene),
+        mut cb: F,
     ) {
         let clip_wanted = condition();
         let mut clips_available = false;
@@ -758,7 +732,7 @@ impl ElementCx<'_> {
         }
     }
 
-    fn draw_inline_layout(&self, scene: &mut Scene, pos: Point) {
+    fn draw_inline_layout(&self, scene: &mut impl anyrender::Scene, pos: Point) {
         if self.node.is_inline_root {
             let text_layout = self.element
                 .inline_layout_data
@@ -772,7 +746,7 @@ impl ElementCx<'_> {
         }
     }
 
-    fn draw_text_input_text(&self, scene: &mut Scene, pos: Point) {
+    fn draw_text_input_text(&self, scene: &mut impl anyrender::Scene, pos: Point) {
         // Render the text in text inputs
         if let Some(input_data) = self.text_input {
             let transform = Affine::translate((pos.x * self.scale, pos.y * self.scale));
@@ -798,7 +772,7 @@ impl ElementCx<'_> {
         }
     }
 
-    fn draw_marker(&self, scene: &mut Scene, pos: Point) {
+    fn draw_marker(&self, scene: &mut impl anyrender::Scene, pos: Point) {
         if let Some(ListItemLayout {
             marker,
             position: ListItemLayoutPosition::Outside(layout),
@@ -833,7 +807,7 @@ impl ElementCx<'_> {
         }
     }
 
-    fn draw_children(&self, scene: &mut Scene) {
+    fn draw_children(&self, scene: &mut impl anyrender::Scene) {
         if let Some(children) = &*self.node.paint_children.borrow() {
             for child_id in children {
                 self.render_node(scene, *child_id, self.pos);
@@ -843,12 +817,11 @@ impl ElementCx<'_> {
 
     fn stroke_text<'a>(
         &self,
-        scene: &mut Scene,
+        scene: &mut impl anyrender::Scene,
         lines: impl Iterator<Item = Line<'a, TextBrush>>,
         pos: Point,
     ) {
         let transform = Affine::translate((pos.x * self.scale, pos.y * self.scale));
-
         for line in lines {
             for item in line.items() {
                 if let PositionedLayoutItem::GlyphRun(glyph_run) = item {
@@ -865,28 +838,28 @@ impl ElementCx<'_> {
                         .skew()
                         .map(|angle| Affine::skew(angle.to_radians().tan() as f64, 0.0));
 
-                    scene
-                        .draw_glyphs(font)
-                        .brush(&style.brush.brush)
-                        .hint(true)
-                        .transform(transform)
-                        .glyph_transform(glyph_xform)
-                        .font_size(font_size)
-                        .normalized_coords(run.normalized_coords())
-                        .draw(
-                            Fill::NonZero,
-                            glyph_run.glyphs().map(|glyph| {
-                                let gx = x + glyph.x;
-                                let gy = y - glyph.y;
-                                x += glyph.advance;
+                    scene.draw_glyphs(
+                        font,
+                        font_size,
+                        true, // hint
+                        run.normalized_coords(),
+                        Fill::NonZero,
+                        &style.brush.brush,
+                        1.0, // alpha
+                        transform,
+                        glyph_xform,
+                        glyph_run.glyphs().map(|glyph| {
+                            let gx = x + glyph.x;
+                            let gy = y - glyph.y;
+                            x += glyph.advance;
 
-                                vello::Glyph {
-                                    id: glyph.id as _,
-                                    x: gx,
-                                    y: gy,
-                                }
-                            }),
-                        );
+                            anyrender::Glyph {
+                                id: glyph.id as _,
+                                x: gx,
+                                y: gy,
+                            }
+                        }),
+                    );
 
                     let mut draw_decoration_line = |offset: f32, size: f32, brush: &TextBrush| {
                         let x = glyph_run.offset() as f64;
@@ -921,7 +894,7 @@ impl ElementCx<'_> {
     }
 
     #[cfg(feature = "svg")]
-    fn draw_svg(&self, scene: &mut Scene) {
+    fn draw_svg(&self, scene: &mut impl anyrender::Scene) {
         let Some(svg) = self.svg else {
             return;
         };
@@ -940,12 +913,11 @@ impl ElementCx<'_> {
         ))
         .pre_scale_non_uniform(x_scale, y_scale);
 
-        let fragment = vello_svg::render_tree(svg);
-        scene.append(&fragment, Some(transform));
+        anyrender_svg::append_tree(scene, svg, transform);
     }
 
     #[cfg(feature = "svg")]
-    fn draw_svg_bg_image(&self, scene: &mut Scene, idx: usize) {
+    fn draw_svg_bg_image(&self, scene: &mut impl anyrender::Scene, idx: usize) {
         use style::{Zero as _, values::computed::Length};
 
         let bg_image = self.element.background_images.get(idx);
@@ -1004,11 +976,10 @@ impl ElementCx<'_> {
         ))
         .pre_scale_non_uniform(x_ratio, y_ratio);
 
-        let fragment = vello_svg::render_tree(svg);
-        scene.append(&fragment, Some(transform));
+        anyrender_svg::append_tree(scene, svg, transform);
     }
 
-    fn draw_image(&self, scene: &mut Scene) {
+    fn draw_image(&self, scene: &mut impl anyrender::Scene) {
         if let Some(image) = self.element.raster_image_data() {
             let width = self.frame.content_box.width() as u32;
             let height = self.frame.content_box.height() as u32;
@@ -1026,7 +997,7 @@ impl ElementCx<'_> {
         }
     }
 
-    fn draw_raster_bg_image(&self, scene: &mut Scene, idx: usize) {
+    fn draw_raster_bg_image(&self, scene: &mut impl anyrender::Scene, idx: usize) {
         use style::{Zero as _, values::computed::Length};
 
         let bg_image = self.element.background_images.get(idx);
@@ -1124,7 +1095,7 @@ impl ElementCx<'_> {
         }
     }
 
-    fn stroke_devtools(&self, scene: &mut Scene) {
+    fn stroke_devtools(&self, scene: &mut impl anyrender::Scene) {
         if self.devtools.show_layout {
             let shape = &self.frame.border_box;
             let stroke = Stroke::new(self.scale);
@@ -1148,7 +1119,7 @@ impl ElementCx<'_> {
         // }
     }
 
-    fn draw_background(&self, scene: &mut Scene) {
+    fn draw_background(&self, scene: &mut impl anyrender::Scene) {
         use GenericImage::*;
         use StyloBackgroundClip::*;
 
@@ -1193,7 +1164,12 @@ impl ElementCx<'_> {
         CLIP_DEPTH.fetch_sub(1, atomic::Ordering::SeqCst);
     }
 
-    fn draw_gradient_frame(&self, scene: &mut Scene, gradient: &StyloGradient, idx: usize) {
+    fn draw_gradient_frame(
+        &self,
+        scene: &mut impl anyrender::Scene,
+        gradient: &StyloGradient,
+        idx: usize,
+    ) {
         use style::{Zero as _, values::computed::Length};
 
         let background_origin = self
@@ -1292,7 +1268,7 @@ impl ElementCx<'_> {
 
     fn draw_linear_gradient(
         &self,
-        scene: &mut Scene,
+        scene: &mut impl anyrender::Scene,
         gradient: LinearGradient,
         origin_rect: Rect,
         bg_position: Point,
@@ -1560,9 +1536,9 @@ impl ElementCx<'_> {
         )
     }
 
-    // fn draw_image_frame(&self, scene: &mut Scene) {}
+    // fn draw_image_frame(&self, scene: &mut impl anyrender::Scene) {}
 
-    fn draw_outset_box_shadow(&self, scene: &mut Scene) {
+    fn draw_outset_box_shadow(&self, scene: &mut impl anyrender::Scene) {
         let box_shadow = &self.style.get_effects().box_shadow.0;
         let current_color = self.style.clone_color();
 
@@ -1596,7 +1572,7 @@ impl ElementCx<'_> {
                             / 8.0;
 
                         // Fill the color
-                        scene.draw_blurred_rounded_rect(
+                        scene.draw_box_shadow(
                             transform,
                             elem_cx.frame.border_box,
                             shadow_color,
@@ -1609,7 +1585,7 @@ impl ElementCx<'_> {
         )
     }
 
-    fn draw_inset_box_shadow(&self, scene: &mut Scene) {
+    fn draw_inset_box_shadow(&self, scene: &mut impl anyrender::Scene) {
         let box_shadow = &self.style.get_effects().box_shadow.0;
         let current_color = self.style.clone_color();
         let has_inset_shadow = box_shadow.iter().any(|s| s.inset);
@@ -1647,7 +1623,7 @@ impl ElementCx<'_> {
                     / 8.0;
 
                 // Fill the color
-                scene.draw_blurred_rounded_rect(
+                scene.draw_box_shadow(
                     transform,
                     self.frame.border_box,
                     shadow_color,
@@ -1662,7 +1638,7 @@ impl ElementCx<'_> {
         }
     }
 
-    fn draw_solid_frame(&self, scene: &mut Scene, shape: &BezPath) {
+    fn draw_solid_frame(&self, scene: &mut impl anyrender::Scene, shape: &BezPath) {
         let current_color = self.style.clone_color();
         let background_color = &self.style.get_background().background_color;
         let bg_color = background_color
@@ -1692,7 +1668,7 @@ impl ElementCx<'_> {
     /// ✅ hidden - Defines a hidden border
     ///
     /// The border-style property can have from one to four values (for the top border, right border, bottom border, and the left border).
-    fn stroke_border(&self, sb: &mut Scene) {
+    fn stroke_border(&self, sb: &mut impl anyrender::Scene) {
         for edge in [Edge::Top, Edge::Right, Edge::Bottom, Edge::Left] {
             self.stroke_border_edge(sb, edge);
         }
@@ -1715,7 +1691,7 @@ impl ElementCx<'_> {
     /// - ✅ hidden: Defines a hidden border
     ///
     /// [*] The effect depends on the border-color value
-    fn stroke_border_edge(&self, sb: &mut Scene, edge: Edge) {
+    fn stroke_border_edge(&self, sb: &mut impl anyrender::Scene, edge: Edge) {
         let style = &*self.style;
         let border = style.get_border();
         let path = self.frame.border(edge);
@@ -1756,7 +1732,7 @@ impl ElementCx<'_> {
     /// ❌ outset - Defines a 3D outset border. The effect depends on the border-color value
     /// ✅ none - Defines no border
     /// ✅ hidden - Defines a hidden border
-    fn stroke_outline(&self, scene: &mut Scene) {
+    fn stroke_outline(&self, scene: &mut impl anyrender::Scene) {
         let Outline {
             outline_color,
             outline_style,
@@ -1794,14 +1770,11 @@ impl ElementCx<'_> {
 
     /// Applies filters to a final frame
     ///
-    /// Notably, I don't think we can do this here since vello needs to run this as a pass (shadows need to apply everywhere)
-    ///
-    /// ❌ opacity: The opacity computed value.
     /// ❌ box_shadow: The box-shadow computed value.
     /// ❌ clip: The clip computed value.
     /// ❌ filter: The filter computed value.
     /// ❌ mix_blend_mode: The mix-blend-mode computed value.
-    fn stroke_effects(&self, _scene: &mut Scene) {
+    fn stroke_effects(&self, _scene: &mut impl anyrender::Scene) {
         // also: if focused, draw a focus ring
         //
         //             let stroke_color = Color::rgb(1.0, 1.0, 1.0);
@@ -1815,13 +1788,13 @@ impl ElementCx<'_> {
         // let effects = self.style.get_effects();
     }
 
-    // fn stroke_box_shadow(&self, scene: &mut Scene) {
+    // fn stroke_box_shadow(&self, scene: &mut impl anyrender::Scene) {
     //     let effects = self.style.get_effects();
     // }
 
     fn draw_radial_gradient(
         &self,
-        scene: &mut Scene,
+        scene: &mut impl anyrender::Scene,
         gradient: RadialGradient,
         origin_rect: Rect,
         bg_position: Point,
@@ -1946,7 +1919,7 @@ impl ElementCx<'_> {
 
     fn draw_conic_gradient(
         &self,
-        scene: &mut Scene,
+        scene: &mut impl anyrender::Scene,
         gradient: ConicGradient,
         origin_rect: Rect,
         bg_position: Point,
@@ -2016,7 +1989,7 @@ impl ElementCx<'_> {
         )
     }
 
-    fn draw_input(&self, scene: &mut Scene) {
+    fn draw_input(&self, scene: &mut impl anyrender::Scene) {
         if self.node.local_name() == "input" {
             let Some(checked) = self.element.checkbox_input_checked() else {
                 return;
@@ -2112,7 +2085,7 @@ impl ElementCx<'_> {
     }
 }
 impl<'a> std::ops::Deref for ElementCx<'a> {
-    type Target = VelloSceneGenerator<'a>;
+    type Target = BlitzDomPainter<'a>;
     fn deref(&self) -> &Self::Target {
         self.context
     }

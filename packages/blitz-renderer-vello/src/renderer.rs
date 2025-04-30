@@ -2,7 +2,7 @@ mod multicolor_rounded_rect;
 mod render;
 
 use crate::Color;
-use crate::renderer::render::generate_vello_scene;
+use crate::renderer::render::paint_scene;
 use blitz_dom::BaseDocument;
 use blitz_traits::{BlitzWindowHandle, Devtools, DocumentRenderer, Viewport};
 use std::num::NonZeroUsize;
@@ -129,7 +129,9 @@ impl DocumentRenderer for BlitzVelloRenderer {
         };
 
         // Regenerate the vello scene
-        render::generate_vello_scene(&mut self.scene, doc, scale, width, height, devtools);
+        let scene = std::mem::take(&mut self.scene);
+        let mut anyrender_scene = anyrender_vello::VelloAnyrenderScene(scene);
+        render::paint_scene(&mut anyrender_scene, doc, scale, width, height, devtools);
 
         state
             .renderer
@@ -146,6 +148,7 @@ impl DocumentRenderer for BlitzVelloRenderer {
         device.device.poll(wgpu::Maintain::Wait);
 
         // Empty the Vello scene (memory optimisation)
+        self.scene = anyrender_scene.0;
         self.scene.reset();
     }
 }
@@ -231,14 +234,17 @@ impl VelloImageRenderer {
     }
 
     pub fn render_document(&mut self, doc: &BaseDocument, cpu_buffer: &mut Vec<u8>) {
-        generate_vello_scene(
-            &mut self.scene,
+        let scene = std::mem::take(&mut self.scene);
+        let mut anyrender_scene = anyrender_vello::VelloAnyrenderScene(scene);
+        paint_scene(
+            &mut anyrender_scene,
             doc,
             self.scale,
             self.size.width,
             self.size.height,
             Devtools::default(),
         );
+        self.scene = anyrender_scene.0;
 
         self.render_internal_scene(cpu_buffer);
     }

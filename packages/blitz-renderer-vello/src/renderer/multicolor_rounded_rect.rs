@@ -6,10 +6,10 @@
 //! Can I just say, this is a lot of work for a border
 //! HTML/css is annoyingly wild
 
+use kurbo::{Arc, BezPath, Ellipse, PathEl, Point, Rect, Shape, Vec2};
 use std::{f64::consts::FRAC_PI_2, f64::consts::PI};
 use style::{properties::ComputedValues, values::computed::CSSPixelLength};
 use taffy::prelude::Layout;
-use vello::kurbo::{Arc, BezPath, Ellipse, PathEl, Point, Rect, Shape, Vec2};
 
 /// Resolved positions, thicknesses, and radii using the document scale and layout data
 ///

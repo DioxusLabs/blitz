@@ -11,10 +11,13 @@ edition = "2024"
 [features]
 default = ["tracing", "svg"]
 tracing = ["dep:tracing"]
-svg = ["dep:vello_svg", "blitz-dom/svg"]
+svg = ["dep:anyrender_svg", "dep:usvg", "blitz-dom/svg"]
 
 [dependencies]
 # Blitz dependencies
+anyrender = { path = "../anyrender" }
+anyrender_vello = { path = "../anyrender_vello" }
+anyrender_svg = { path = "../anyrender_svg", optional = true }
 blitz-traits = { version = "0.1.0-alpha.1", path = "../blitz-traits" }
 blitz-dom = {version = "0.1.0-alpha.1",  path = "../blitz-dom", default-features = false }
 
@@ -28,8 +31,10 @@ taffy = { workspace = true }
 # Linebender + WGPU dependencies
 parley = { workspace = true }
 color = { workspace = true }
+peniko = { workspace = true }
+kurbo = { workspace = true }
 vello = { workspace = true }
-vello_svg = { workspace = true, optional = true }
+usvg = { workspace = true, optional = true }
 
 # Rendering dependencies
 raw-window-handle = { workspace = true }
