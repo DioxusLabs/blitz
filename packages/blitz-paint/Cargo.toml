@@ -1,37 +1,38 @@
 [package]
-name = "blitz-renderer-vello"
-description = "Blitz renderer using vello"
+name = "blitz-paint"
+description = "Paint a Blitz Document using anyrender"
 version = "0.1.0-alpha.1"
 homepage = "https://github.com/dioxuslabs/blitz"
 repository = "https://github.com/dioxuslabs/blitz"
-documentation = "https://docs.rs/blitz-renderer-vello"
+documentation = "https://docs.rs/blitz-paint"
 license.workspace = true
 edition = "2024"
 
 [features]
 default = ["tracing", "svg"]
 tracing = ["dep:tracing"]
-svg = ["blitz-dom/svg", "blitz-paint/svg"]
+svg = ["dep:anyrender_svg", "dep:usvg", "blitz-dom/svg"]
 
 [dependencies]
 # Blitz dependencies
-blitz-paint = { path = "../blitz-paint" }
+anyrender = { path = "../anyrender" }
+anyrender_svg = { path = "../anyrender_svg", optional = true }
 blitz-traits = { version = "0.1.0-alpha.1", path = "../blitz-traits" }
 blitz-dom = {version = "0.1.0-alpha.1",  path = "../blitz-dom", default-features = false }
-anyrender = { path = "../anyrender" }
-anyrender_vello = { path = "../anyrender_vello" }
+
+# Servo dependencies
+style = { workspace = true }
+euclid = { workspace = true }
+
+# DioxusLabs dependencies
+taffy = { workspace = true }
 
 # Linebender + WGPU dependencies
+parley = { workspace = true }
+color = { workspace = true }
 peniko = { workspace = true }
 kurbo = { workspace = true }
-vello = { workspace = true }
-
-# Rendering dependencies
-raw-window-handle = { workspace = true }
-wgpu = { workspace = true }
-image = { workspace = true }
+usvg = { workspace = true, optional = true }
 
 # Other dependencies
 tracing = { workspace = true, optional = true }
-futures-intrusive = { workspace = true }
-pollster = { workspace = true }

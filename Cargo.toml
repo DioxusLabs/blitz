@@ -8,6 +8,7 @@ members = [
   "packages/blitz-dom",
   "packages/blitz-html",
   "packages/blitz-net",
+  "packages/blitz-paint",
   "packages/blitz-renderer-vello",
   "packages/blitz-shell",
   "packages/blitz",

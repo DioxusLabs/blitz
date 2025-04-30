@@ -753,27 +753,40 @@ dependencies = [
 ]
 
 [[package]]
-name = "blitz-renderer-vello"
+name = "blitz-paint"
 version = "0.1.0-alpha.1"
 dependencies = [
  "anyrender",
  "anyrender_svg",
- "anyrender_vello",
  "blitz-dom",
  "blitz-traits",
  "color",
  "euclid",
- "futures-intrusive",
- "image",
  "kurbo",
  "parley",
  "peniko",
- "pollster",
- "raw-window-handle",
  "stylo",
  "taffy",
  "tracing",
  "usvg",
+]
+
+[[package]]
+name = "blitz-renderer-vello"
+version = "0.1.0-alpha.1"
+dependencies = [
+ "anyrender",
+ "anyrender_vello",
+ "blitz-dom",
+ "blitz-paint",
+ "blitz-traits",
+ "futures-intrusive",
+ "image",
+ "kurbo",
+ "peniko",
+ "pollster",
+ "raw-window-handle",
+ "tracing",
  "vello",
  "wgpu",
 ]

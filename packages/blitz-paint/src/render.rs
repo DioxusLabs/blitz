@@ -50,7 +50,7 @@ use kurbo::{self, BezPath, Cap, Circle, Join};
 use kurbo::{Affine, Point, Rect, Shape, Stroke, Vec2};
 use parley::layout::PositionedLayoutItem;
 use peniko::Gradient;
-use peniko::{self, BlendMode, Fill, Mix};
+use peniko::{self, Fill, Mix};
 use style::values::generics::color::GenericColor;
 use style::values::generics::image::{
     GenericCircle, GenericEllipse, GenericEndingShape, ShapeExtent,

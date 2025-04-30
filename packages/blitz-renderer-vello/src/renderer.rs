@@ -1,10 +1,9 @@
-mod multicolor_rounded_rect;
-mod render;
-
-use crate::Color;
-use crate::renderer::render::paint_scene;
+use anyrender::Scene as _;
+use anyrender_vello::VelloAnyrenderScene;
 use blitz_dom::BaseDocument;
+use blitz_paint::paint_scene;
 use blitz_traits::{BlitzWindowHandle, Devtools, DocumentRenderer, Viewport};
+use peniko::Color;
 use std::num::NonZeroUsize;
 use std::sync::Arc;
 use vello::{
@@ -41,7 +40,7 @@ pub struct BlitzVelloRenderer {
 
     // Vello
     render_context: RenderContext,
-    scene: Scene,
+    scene: VelloAnyrenderScene,
 }
 
 impl DocumentRenderer for BlitzVelloRenderer {
@@ -59,7 +58,7 @@ impl DocumentRenderer for BlitzVelloRenderer {
             render_context,
             render_state: RenderState::Suspended,
             window_handle: window,
-            scene: Scene::new(),
+            scene: VelloAnyrenderScene(Scene::new()),
         }
     }
 
@@ -129,16 +128,14 @@ impl DocumentRenderer for BlitzVelloRenderer {
         };
 
         // Regenerate the vello scene
-        let scene = std::mem::take(&mut self.scene);
-        let mut anyrender_scene = anyrender_vello::VelloAnyrenderScene(scene);
-        render::paint_scene(&mut anyrender_scene, doc, scale, width, height, devtools);
+        paint_scene(&mut self.scene, doc, scale, width, height, devtools);
 
         state
             .renderer
             .render_to_surface(
                 &device.device,
                 &device.queue,
-                &self.scene,
+                &self.scene.0,
                 &surface_texture,
                 &render_params,
             )
@@ -148,7 +145,6 @@ impl DocumentRenderer for BlitzVelloRenderer {
         device.device.poll(wgpu::Maintain::Wait);
 
         // Empty the Vello scene (memory optimisation)
-        self.scene = anyrender_scene.0;
         self.scene.reset();
     }
 }
@@ -160,7 +156,7 @@ pub struct VelloImageRenderer {
     device: wgpu::Device,
     queue: wgpu::Queue,
     renderer: vello::Renderer,
-    scene: vello::Scene,
+    scene: VelloAnyrenderScene,
     texture: wgpu::Texture,
     texture_view: wgpu::TextureView,
     gpu_buffer: wgpu::Buffer,
@@ -229,22 +225,19 @@ impl VelloImageRenderer {
             texture,
             texture_view,
             gpu_buffer,
-            scene: Scene::new(),
+            scene: VelloAnyrenderScene(Scene::new()),
         }
     }
 
     pub fn render_document(&mut self, doc: &BaseDocument, cpu_buffer: &mut Vec<u8>) {
-        let scene = std::mem::take(&mut self.scene);
-        let mut anyrender_scene = anyrender_vello::VelloAnyrenderScene(scene);
         paint_scene(
-            &mut anyrender_scene,
+            &mut self.scene,
             doc,
             self.scale,
             self.size.width,
             self.size.height,
             Devtools::default(),
         );
-        self.scene = anyrender_scene.0;
 
         self.render_internal_scene(cpu_buffer);
     }
@@ -261,7 +254,7 @@ impl VelloImageRenderer {
             .render_to_texture(
                 &self.device,
                 &self.queue,
-                &self.scene,
+                &self.scene.0,
                 &self.texture_view,
                 &render_params,
             )
