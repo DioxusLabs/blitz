@@ -3,6 +3,7 @@ members = [
   "packages/anyrender",
   "packages/anyrender_vello",
   "packages/anyrender_vello_cpu",
+  "packages/anyrender_svg",
   "packages/blitz-traits",
   "packages/blitz-dom",
   "packages/blitz-html",
