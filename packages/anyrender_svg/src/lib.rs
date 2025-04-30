@@ -91,7 +91,13 @@ pub fn append_tree_with<S: Scene, F: FnMut(&mut S, &usvg::Node)>(
     transform: Affine,
     error_handler: &mut F,
 ) {
-    render::render_group(scene, svg.root(), transform, error_handler);
+    render::render_group(
+        scene,
+        svg.root(),
+        Affine::IDENTITY,
+        transform,
+        error_handler,
+    );
 }
 
 #[cfg(test)]

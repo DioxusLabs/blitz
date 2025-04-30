@@ -11,6 +11,7 @@ pub(crate) fn render_group<S: Scene, F: FnMut(&mut S, &usvg::Node)>(
     scene: &mut S,
     group: &usvg::Group,
     transform: Affine,
+    global_transform: Affine,
     error_handler: &mut F,
 ) {
     for node in group.children() {
@@ -28,14 +29,14 @@ pub(crate) fn render_group<S: Scene, F: FnMut(&mut S, &usvg::Node)>(
                                 compose: peniko::Compose::SrcOver,
                             },
                             1.0,
-                            transform,
+                            global_transform * transform,
                             &local_path,
                         );
                         pushed_clip = true;
                     }
                 }
 
-                render_group(scene, g, Affine::IDENTITY, error_handler);
+                render_group(scene, g, Affine::IDENTITY, global_transform, error_handler);
 
                 if pushed_clip {
                     scene.pop_layer();
@@ -47,6 +48,7 @@ pub(crate) fn render_group<S: Scene, F: FnMut(&mut S, &usvg::Node)>(
                 }
                 let local_path = util::to_bez_path(path);
 
+                let transform = global_transform * transform;
                 match path.paint_order() {
                     usvg::PaintOrder::FillAndStroke => {
                         fill(scene, error_handler, path, transform, &local_path, node);
@@ -75,7 +77,7 @@ pub(crate) fn render_group<S: Scene, F: FnMut(&mut S, &usvg::Node)>(
                                 continue;
                             };
                             let image = util::into_image(decoded_image);
-                            let image_ts = util::to_affine(&img.abs_transform());
+                            let image_ts = global_transform * util::to_affine(&img.abs_transform());
                             scene.draw_image(&image, image_ts);
                         }
 
@@ -86,12 +88,24 @@ pub(crate) fn render_group<S: Scene, F: FnMut(&mut S, &usvg::Node)>(
                         }
                     }
                     usvg::ImageKind::SVG(svg) => {
-                        render_group(scene, svg.root(), transform, error_handler);
+                        render_group(
+                            scene,
+                            svg.root(),
+                            transform,
+                            global_transform,
+                            error_handler,
+                        );
                     }
                 }
             }
             usvg::Node::Text(text) => {
-                render_group(scene, text.flattened(), transform, error_handler);
+                render_group(
+                    scene,
+                    text.flattened(),
+                    transform,
+                    global_transform,
+                    error_handler,
+                );
             }
         }
     }
