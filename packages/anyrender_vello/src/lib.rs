@@ -1,19 +1,11 @@
+use anyrender::{NormalizedCoord, Scene};
 use kurbo::{Affine, Rect, Shape, Stroke};
 use peniko::{BlendMode, BrushRef, Color, Fill, Font, StyleRef};
 
-use anyrender::{DrawGlyphs, NormalizedCoord, Scene};
-
 pub struct VelloAnyrenderScene(pub vello::Scene);
-
-pub struct VelloAnyrenderGlyphBuilder<'a>(pub vello::DrawGlyphs<'a>);
 
 impl Scene for VelloAnyrenderScene {
     type Output = vello::Scene;
-
-    type GlyphBuilder<'a>
-        = VelloAnyrenderGlyphBuilder<'a>
-    where
-        Self: 'a;
 
     fn reset(&mut self) {
         self.0.reset();
@@ -56,8 +48,36 @@ impl Scene for VelloAnyrenderScene {
         self.0.fill(style, transform, brush, brush_transform, shape);
     }
 
-    fn draw_glyphs(&mut self, font: &Font) -> Self::GlyphBuilder<'_> {
-        VelloAnyrenderGlyphBuilder(self.0.draw_glyphs(font))
+    fn draw_glyphs<'a, 's: 'a>(
+        &'a mut self,
+        font: &'a Font,
+        font_size: f32,
+        hint: bool,
+        normalized_coords: &'a [NormalizedCoord],
+        style: impl Into<StyleRef<'a>>,
+        brush: impl Into<BrushRef<'a>>,
+        brush_alpha: f32,
+        transform: Affine,
+        glyph_transform: Option<Affine>,
+        glyphs: impl Iterator<Item = anyrender::Glyph>,
+    ) {
+        self.0
+            .draw_glyphs(font)
+            .font_size(font_size)
+            .hint(hint)
+            .normalized_coords(normalized_coords)
+            .brush(brush)
+            .brush_alpha(brush_alpha)
+            .transform(transform)
+            .glyph_transform(glyph_transform)
+            .draw(
+                style,
+                glyphs.map(|g: anyrender::Glyph| vello::Glyph {
+                    id: g.id,
+                    x: g.x,
+                    y: g.y,
+                }),
+            );
     }
 
     fn draw_box_shadow(
@@ -74,46 +94,5 @@ impl Scene for VelloAnyrenderScene {
 
     fn finish(self) -> Self::Output {
         self.0
-    }
-}
-
-impl<'a> DrawGlyphs<'a> for VelloAnyrenderGlyphBuilder<'a> {
-    fn font_size(self, size: f32) -> Self {
-        Self(self.0.font_size(size))
-    }
-
-    fn hint(self, hint: bool) -> Self {
-        Self(self.0.hint(hint))
-    }
-
-    fn normalized_coords(self, coords: &[NormalizedCoord]) -> Self {
-        Self(self.0.normalized_coords(coords))
-    }
-
-    fn brush(self, brush: impl Into<BrushRef<'a>>) -> Self {
-        Self(self.0.brush(brush))
-    }
-
-    fn brush_alpha(self, alpha: f32) -> Self {
-        Self(self.0.brush_alpha(alpha))
-    }
-
-    fn transform(self, transform: Affine) -> Self {
-        Self(self.0.transform(transform))
-    }
-
-    fn glyph_transform(self, transform: Option<Affine>) -> Self {
-        Self(self.0.glyph_transform(transform))
-    }
-
-    fn draw(self, style: impl Into<StyleRef<'a>>, glyphs: impl Iterator<Item = anyrender::Glyph>) {
-        self.0.draw(
-            style,
-            glyphs.map(|g: anyrender::Glyph| vello::Glyph {
-                id: g.id,
-                x: g.x,
-                y: g.y,
-            }),
-        );
     }
 }

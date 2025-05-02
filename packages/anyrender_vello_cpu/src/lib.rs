@@ -1,17 +1,11 @@
-use std::sync::Arc;
-
+use anyrender::{NormalizedCoord, Scene};
 use kurbo::{Affine, Rect, Shape, Stroke};
 use peniko::{BlendMode, BrushRef, Color, Fill, Font, StyleRef};
-
-use anyrender::{DrawGlyphs, NormalizedCoord, Scene};
+use std::sync::Arc;
 use vello_common::paint::PaintType;
 use vello_cpu::Pixmap;
 
-type VelloCpuGlyphBuilder<'a> = vello_common::glyph::GlyphRunBuilder<'a, vello_cpu::RenderContext>;
-
-pub struct VelloCpuAnyrenderScene(pub vello_cpu::RenderContext);
-
-pub struct VelloCpuAnyrenderGlyphBuilder<'a>(pub VelloCpuGlyphBuilder<'a>);
+const DEFAULT_TOLERANCE: f64 = 0.1;
 
 fn brush_ref_to_paint_type<'a>(brush_ref: BrushRef<'a>) -> PaintType {
     match brush_ref {
@@ -30,15 +24,10 @@ fn brush_ref_to_paint_type<'a>(brush_ref: BrushRef<'a>) -> PaintType {
     }
 }
 
-const DEFAULT_TOLERANCE: f64 = 0.1;
+pub struct VelloCpuAnyrenderScene(pub vello_cpu::RenderContext);
 
 impl Scene for VelloCpuAnyrenderScene {
     type Output = vello_cpu::Pixmap;
-
-    type GlyphBuilder<'a>
-        = VelloCpuAnyrenderGlyphBuilder<'a>
-    where
-        Self: 'a;
 
     fn reset(&mut self) {
         self.0.reset();
@@ -96,10 +85,54 @@ impl Scene for VelloCpuAnyrenderScene {
         self.0.fill_path(&shape.into_path(DEFAULT_TOLERANCE));
     }
 
-    fn draw_glyphs(&mut self, font: &Font) -> Self::GlyphBuilder<'_> {
-        VelloCpuAnyrenderGlyphBuilder(self.0.glyph_run(font))
-    }
+    fn draw_glyphs<'a, 's: 'a>(
+        &'a mut self,
+        font: &'a Font,
+        font_size: f32,
+        hint: bool,
+        normalized_coords: &'a [NormalizedCoord],
+        style: impl Into<StyleRef<'a>>,
+        brush: impl Into<BrushRef<'a>>,
+        _brush_alpha: f32,
+        transform: Affine,
+        glyph_transform: Option<Affine>,
+        glyphs: impl Iterator<Item = anyrender::Glyph>,
+    ) {
+        self.0.set_transform(transform);
+        self.0.set_paint(brush_ref_to_paint_type(brush.into()));
 
+        fn into_vello_cpu_glyph(g: anyrender::Glyph) -> vello_common::glyph::Glyph {
+            vello_common::glyph::Glyph {
+                id: g.id,
+                x: g.x,
+                y: g.y,
+            }
+        }
+
+        let style: StyleRef<'a> = style.into();
+        match style {
+            StyleRef::Fill(fill) => {
+                self.0.set_fill_rule(fill);
+                self.0
+                    .glyph_run(font)
+                    .font_size(font_size)
+                    .hint(hint)
+                    .normalized_coords(normalized_coords)
+                    .glyph_transform(glyph_transform.unwrap_or_default())
+                    .fill_glyphs(glyphs.map(into_vello_cpu_glyph));
+            }
+            StyleRef::Stroke(stroke) => {
+                self.0.set_stroke(stroke.clone());
+                self.0
+                    .glyph_run(font)
+                    .font_size(font_size)
+                    .hint(hint)
+                    .normalized_coords(normalized_coords)
+                    .glyph_transform(glyph_transform.unwrap_or_default())
+                    .stroke_glyphs(glyphs.map(into_vello_cpu_glyph));
+            }
+        }
+    }
     fn draw_box_shadow(
         &mut self,
         transform: Affine,
@@ -118,57 +151,5 @@ impl Scene for VelloCpuAnyrenderScene {
         let mut pixmap = Pixmap::new(self.0.width(), self.0.height());
         self.0.render_to_pixmap(&mut pixmap);
         pixmap
-    }
-}
-
-impl<'a> DrawGlyphs<'a> for VelloCpuAnyrenderGlyphBuilder<'a> {
-    fn font_size(self, size: f32) -> Self {
-        Self(self.0.font_size(size))
-    }
-
-    fn hint(self, hint: bool) -> Self {
-        Self(self.0.hint(hint))
-    }
-
-    fn normalized_coords(self, coords: &'a [NormalizedCoord]) -> Self {
-        Self(self.0.normalized_coords(coords))
-    }
-
-    fn brush(self, _brush: impl Into<BrushRef<'a>>) -> Self {
-        self // TODO
-    }
-
-    fn brush_alpha(self, _alpha: f32) -> Self {
-        self // TODO
-    }
-
-    fn transform(self, _transform: Affine) -> Self {
-        self // TODO
-    }
-
-    fn glyph_transform(self, transform: Option<Affine>) -> Self {
-        Self(self.0.glyph_transform(transform.unwrap_or_default()))
-    }
-
-    fn draw(self, style: impl Into<StyleRef<'a>>, glyphs: impl Iterator<Item = anyrender::Glyph>) {
-        fn into_vello_cpu_glyph(g: anyrender::Glyph) -> vello_common::glyph::Glyph {
-            vello_common::glyph::Glyph {
-                id: g.id,
-                x: g.x,
-                y: g.y,
-            }
-        }
-
-        let style: StyleRef<'a> = style.into();
-        match style {
-            StyleRef::Fill(_fill) => {
-                // TODO: set fill style
-                self.0.fill_glyphs(glyphs.map(into_vello_cpu_glyph))
-            }
-            StyleRef::Stroke(_stroke) => {
-                // TODO: set stroke style
-                self.0.stroke_glyphs(glyphs.map(into_vello_cpu_glyph))
-            }
-        }
     }
 }
