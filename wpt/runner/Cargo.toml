@@ -4,11 +4,17 @@ version = "0.1.0"
 edition = "2024"
 license.workspace = true
 
+[features]
+default = ["gpu"]
+gpu = ["dep:blitz-renderer-vello"]
+cpu = ["dep:blitz-renderer-vello-cpu"]
+
 [dependencies]
 blitz-dom = { path = "../../packages/blitz-dom", default-features = false, features = ["svg", "woff-c"] }
 blitz-html = { path = "../../packages/blitz-html" }
 blitz-traits = { path = "../../packages/blitz-traits" }
-blitz-renderer-vello = { path = "../../packages/blitz-renderer-vello" }
+blitz-renderer-vello = { path = "../../packages/blitz-renderer-vello", optional = true }
+blitz-renderer-vello-cpu = { path = "../../packages/blitz-renderer-vello-cpu", optional = true }
 taffy = { workspace = true }
 parley = { workspace = true }
 image = { workspace = true }

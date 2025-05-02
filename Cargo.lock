@@ -7531,6 +7531,7 @@ dependencies = [
  "blitz-dom",
  "blitz-html",
  "blitz-renderer-vello",
+ "blitz-renderer-vello-cpu",
  "blitz-traits",
  "data-url",
  "dify",

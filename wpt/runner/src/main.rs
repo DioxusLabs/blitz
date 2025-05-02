@@ -1,6 +1,9 @@
 use atomic_float::AtomicF64;
 use blitz_dom::net::Resource;
+#[cfg(feature = "gpu")]
 use blitz_renderer_vello::VelloImageRenderer;
+#[cfg(feature = "cpu")]
+use blitz_renderer_vello_cpu::VelloCpuImageRenderer as VelloImageRenderer;
 use blitz_traits::navigation::{DummyNavigationProvider, NavigationProvider};
 use blitz_traits::{ColorScheme, Viewport};
 use panic_backtrace::StashedPanicInfo;
