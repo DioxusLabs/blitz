@@ -62,9 +62,12 @@ usvg = "0.44.0"
 
 # CPU-rendering dependencies
 softbuffer = "0.4"
-vello_cpu = { git = "https://github.com/linebender/vello", rev = "3c5b17bd" }
-vello_common = { git = "https://github.com/linebender/vello", rev = "3c5b17bd" }
-vello_api = { git = "https://github.com/linebender/vello", rev = "3c5b17bd" }
+vello_cpu = { git = "https://github.com/linebender/vello", rev = "24feb9a6" }
+vello_common = { git = "https://github.com/linebender/vello", rev = "24feb9a6" }
+vello_api = { git = "https://github.com/linebender/vello", rev = "24feb9a6" }
+# vello_cpu = { path = "../vello/sparse_strips/vello_cpu" }
+# vello_common = { path = "../vello/sparse_strips/vello_common" }
+# vello_api = { path = "../vello/sparse_strips/vello_api" }
 
 # Windowing & Input
 raw-window-handle = "0.6.0"

@@ -6570,7 +6570,7 @@ dependencies = [
 [[package]]
 name = "vello_api"
 version = "0.4.0"
-source = "git+https://github.com/linebender/vello?rev=3c5b17bd#3c5b17bd35f290999b4bb79507c7c9766b3ee787"
+source = "git+https://github.com/linebender/vello?rev=24feb9a6#24feb9a6d1b8c72a2066e295196caeab2044a210"
 dependencies = [
  "peniko",
  "png",
@@ -6579,7 +6579,7 @@ dependencies = [
 [[package]]
 name = "vello_common"
 version = "0.4.0"
-source = "git+https://github.com/linebender/vello?rev=3c5b17bd#3c5b17bd35f290999b4bb79507c7c9766b3ee787"
+source = "git+https://github.com/linebender/vello?rev=24feb9a6#24feb9a6d1b8c72a2066e295196caeab2044a210"
 dependencies = [
  "bytemuck",
  "roxmltree",
@@ -6591,7 +6591,7 @@ dependencies = [
 [[package]]
 name = "vello_cpu"
 version = "0.4.0"
-source = "git+https://github.com/linebender/vello?rev=3c5b17bd#3c5b17bd35f290999b4bb79507c7c9766b3ee787"
+source = "git+https://github.com/linebender/vello?rev=24feb9a6#24feb9a6d1b8c72a2066e295196caeab2044a210"
 dependencies = [
  "vello_common",
 ]
