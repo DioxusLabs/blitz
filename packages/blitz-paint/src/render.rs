@@ -1772,7 +1772,6 @@ impl ElementCx<'_> {
 
     /// Applies filters to a final frame
     ///
-    /// ❌ box_shadow: The box-shadow computed value.
     /// ❌ clip: The clip computed value.
     /// ❌ filter: The filter computed value.
     /// ❌ mix_blend_mode: The mix-blend-mode computed value.
@@ -1789,10 +1788,6 @@ impl ElementCx<'_> {
         //             background.draw_shape(scene_builder, &smaller_shape, layout, viewport_size);
         // let effects = self.style.get_effects();
     }
-
-    // fn stroke_box_shadow(&self, scene: &mut impl anyrender::Scene) {
-    //     let effects = self.style.get_effects();
-    // }
 
     fn draw_radial_gradient(
         &self,
