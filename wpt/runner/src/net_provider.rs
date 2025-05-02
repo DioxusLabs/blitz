@@ -199,11 +199,6 @@ impl<T> InternalQueue<T> {
     }
 
     pub fn log_pending_items(&self) {
-        // Note: we use a temporary Vec here so that the mutex is unlocked prior to any of the callbacks being called.
-        // This prevents the mutex from being poisoned if any of the callbacks panic, allowing it to be reused for further tests.
-        //
-        // TODO: Cleanup still-in-flight requests in case of panic.
-        // TODO: replace .retain with .extract_if once Rust 1.87 is stable
         let requests = self.requests.lock().unwrap_or_else(|err| err.into_inner());
         for (id, req) in requests.iter() {
             println!("Req {}: {} ({:?})", id, req.url, req.status);
@@ -214,7 +209,6 @@ impl<T> InternalQueue<T> {
         // Note: we use a temporary Vec here so that the mutex is unlocked prior to any of the callbacks being called.
         // This prevents the mutex from being poisoned if any of the callbacks panic, allowing it to be reused for further tests.
         //
-        // TODO: Cleanup still-in-flight requests in case of panic.
         // TODO: replace .retain with .extract_if once Rust 1.87 is stable
         let mut requests = self.requests.lock().unwrap_or_else(|err| err.into_inner());
         let mut completed: Vec<Result<T, ()>> = Vec::new();
