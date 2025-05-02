@@ -472,7 +472,7 @@ impl BlitzDomPainter<'_> {
         cx.draw_marker(scene, content_position);
         cx.draw_children(scene);
 
-        if wants_layer {
+        if wants_layer && clips_available {
             scene.pop_layer();
             CLIP_DEPTH.fetch_sub(1, atomic::Ordering::SeqCst);
         }
@@ -1160,8 +1160,10 @@ impl ElementCx<'_> {
             }
         }
 
-        scene.pop_layer();
-        CLIP_DEPTH.fetch_sub(1, atomic::Ordering::SeqCst);
+        if clips_available {
+            scene.pop_layer();
+            CLIP_DEPTH.fetch_sub(1, atomic::Ordering::SeqCst);
+        }
     }
 
     fn draw_gradient_frame(
@@ -1589,9 +1591,9 @@ impl ElementCx<'_> {
         let box_shadow = &self.style.get_effects().box_shadow.0;
         let current_color = self.style.clone_color();
         let has_inset_shadow = box_shadow.iter().any(|s| s.inset);
+        let clips_available = CLIPS_USED.load(atomic::Ordering::SeqCst) <= CLIP_LIMIT;
         if has_inset_shadow {
             CLIPS_WANTED.fetch_add(1, atomic::Ordering::SeqCst);
-            let clips_available = CLIPS_USED.load(atomic::Ordering::SeqCst) <= CLIP_LIMIT;
             if clips_available {
                 scene.push_layer(Mix::Clip, 1.0, self.transform, &self.frame.frame());
                 CLIPS_USED.fetch_add(1, atomic::Ordering::SeqCst);
@@ -1632,7 +1634,7 @@ impl ElementCx<'_> {
                 );
             }
         }
-        if has_inset_shadow {
+        if has_inset_shadow && clips_available {
             scene.pop_layer();
             CLIP_DEPTH.fetch_sub(1, atomic::Ordering::SeqCst);
         }
