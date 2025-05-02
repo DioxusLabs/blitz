@@ -7,26 +7,6 @@ use softbuffer::{Context, Surface};
 use std::{num::NonZero, sync::Arc};
 use vello_cpu::{Pixmap, RenderContext};
 
-pub async fn render_to_buffer(dom: &BaseDocument, viewport: Viewport) -> Vec<u8> {
-    let (width, height) = viewport.window_size;
-
-    let scene = RenderContext::new(width as u16, height as u16);
-    let mut anyrender_scene = VelloCpuAnyrenderScene(scene);
-    paint_scene(
-        &mut anyrender_scene,
-        dom,
-        viewport.scale_f64(),
-        width,
-        height,
-        Devtools::default(),
-    );
-
-    let mut pixmap = Pixmap::new(width as u16, height as u16);
-    anyrender_scene.0.render_to_pixmap(&mut pixmap);
-
-    pixmap.buf
-}
-
 // Simple struct to hold the state of the renderer
 pub struct ActiveRenderState {
     _context: Context<Arc<dyn BlitzWindowHandle>>,
@@ -140,4 +120,45 @@ impl DocumentRenderer for BlitzVelloCpuRenderer {
         // Empty the Vello render context (memory optimisation)
         self.render_context.0.reset();
     }
+}
+
+pub struct VelloCpuImageRenderer {
+    scene: VelloCpuAnyrenderScene,
+    scale: f64,
+}
+
+impl VelloCpuImageRenderer {
+    pub async fn new(width: u32, height: u32, scale: f64) -> Self {
+        Self {
+            scene: VelloCpuAnyrenderScene(RenderContext::new(width as u16, height as u16)),
+            scale,
+        }
+    }
+
+    pub fn render_document(&mut self, doc: &BaseDocument, cpu_buffer: &mut Vec<u8>) {
+        let width = self.scene.0.width();
+        let height = self.scene.0.height();
+        paint_scene(
+            &mut self.scene,
+            doc,
+            self.scale,
+            width as u32,
+            height as u32,
+            Devtools::default(),
+        );
+        cpu_buffer.resize(width as usize * height as usize * 4, 0);
+        self.scene
+            .0
+            .render_to_buffer(&mut *cpu_buffer, width, height);
+    }
+}
+
+pub async fn render_to_buffer(doc: &BaseDocument, viewport: Viewport) -> Vec<u8> {
+    let (width, height) = viewport.window_size;
+
+    let mut buffer = Vec::with_capacity(width as usize * height as usize * 4);
+    let mut renderer = VelloCpuImageRenderer::new(width, height, viewport.scale_f64()).await;
+    renderer.render_document(doc, &mut buffer);
+
+    buffer
 }
