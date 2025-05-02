@@ -3,7 +3,8 @@
 use blitz_dom::net::Resource;
 use blitz_html::HtmlDocument;
 use blitz_net::{MpscCallback, Provider};
-use blitz_renderer_vello::render_to_buffer;
+use blitz_renderer_vello::render_to_buffer as render_to_buffer_using_gpu;
+use blitz_renderer_vello_cpu::render_to_buffer as render_to_buffer_using_cpu;
 use blitz_traits::navigation::DummyNavigationProvider;
 use blitz_traits::net::SharedProvider;
 use blitz_traits::{ColorScheme, Viewport};
@@ -21,6 +22,8 @@ const USER_AGENT: &str = "Mozilla/5.0 (X11; Linux x86_64; rv:60.0) Gecko/2010010
 #[tokio::main]
 async fn main() {
     let mut timer = Timer::init();
+
+    let use_cpu_renderer = std::env::args().any(|arg| arg == "--cpu");
 
     let url_string = std::env::args()
         .nth(1)
@@ -103,18 +106,19 @@ async fn main() {
     // Determine height to render
     let computed_height = document.as_ref().root_element().final_layout.size.height;
     let render_height = (computed_height as u32).max(height).min(4000);
+    let viewport = Viewport::new(
+        width * scale,
+        render_height * scale,
+        scale as f32,
+        ColorScheme::Light,
+    );
 
     // Render document to RGBA buffer
-    let buffer = render_to_buffer(
-        document.as_ref(),
-        Viewport::new(
-            width * scale,
-            render_height * scale,
-            scale as f32,
-            ColorScheme::Light,
-        ),
-    )
-    .await;
+    let buffer = if use_cpu_renderer {
+        render_to_buffer_using_cpu(document.as_ref(), viewport).await
+    } else {
+        render_to_buffer_using_gpu(document.as_ref(), viewport).await
+    };
 
     timer.time("Rendered to buffer");
 
