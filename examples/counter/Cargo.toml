@@ -7,3 +7,7 @@ license.workspace = true
 [dependencies]
 dioxus-native = { path = "../../packages/dioxus-native", default-features = false }
 dioxus = { version = "0.6", default-features = false, features = ["html", "hooks", "macro", "signals"] }
+
+# Disable unicode URL support
+# See https://github.com/hsivonen/idna_adapter
+idna_adapter = "=1.0.0"
