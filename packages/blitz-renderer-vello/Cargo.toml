@@ -15,7 +15,7 @@ svg = ["blitz-dom/svg", "blitz-paint/svg"]
 
 [dependencies]
 # Blitz dependencies
-blitz-paint = { path = "../blitz-paint" }
+blitz-paint = { path = "../blitz-paint", default-features = false }
 blitz-traits = { version = "0.1.0-alpha.1", path = "../blitz-traits" }
 blitz-dom = {version = "0.1.0-alpha.1",  path = "../blitz-dom", default-features = false }
 anyrender = { path = "../anyrender" }
