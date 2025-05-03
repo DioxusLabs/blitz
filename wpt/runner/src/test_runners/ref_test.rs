@@ -1,14 +1,14 @@
-use url::Url;
-
+use anyrender::ImageRenderer as _;
+use blitz_paint::paint_scene;
 use image::{ImageBuffer, ImageFormat};
 use std::fs;
 use std::fs::File;
 use std::io::Write;
 use std::path::Path;
-
-use crate::{BufferKind, HEIGHT, SubtestCounts, TestFlags, ThreadCtx, WIDTH};
+use url::Url;
 
 use super::parse_and_resolve_document;
+use crate::{BufferKind, HEIGHT, SCALE, SubtestCounts, TestFlags, ThreadCtx, WIDTH};
 
 #[allow(clippy::too_many_arguments)]
 pub fn process_ref_test(
@@ -110,7 +110,10 @@ fn render_html_to_buffer(
 
     // Render document to RGBA buffer
     let buf = ctx.buffers.get_mut(buffer_kind);
-    ctx.renderer.render_document(document.as_ref(), buf);
+    ctx.renderer.render(
+        |scene| paint_scene(scene, document.as_ref(), SCALE, WIDTH, HEIGHT),
+        buf,
+    );
 
     fs::create_dir_all(out_path.parent().unwrap()).unwrap();
     let mut file = File::create(out_path).unwrap();

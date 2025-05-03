@@ -10,8 +10,9 @@ edition = "2024"
 publish = false
 
 [dependencies]
+anyrender = { path = "../anyrender"}
 kurbo = { workspace = true }
 peniko = { workspace = true }
 vello_cpu = { workspace = true }
 vello_common = { workspace = true }
-anyrender = { path = "../anyrender"}
+softbuffer = { workspace = true }

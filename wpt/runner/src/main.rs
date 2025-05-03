@@ -1,14 +1,14 @@
+use anyrender::ImageRenderer as _;
+#[cfg(feature = "gpu")]
+use anyrender_vello::VelloImageRenderer;
+#[cfg(feature = "cpu")]
+use anyrender_vello_cpu::VelloCpuImageRenderer as VelloImageRenderer;
 use atomic_float::AtomicF64;
 use blitz_dom::net::Resource;
-#[cfg(feature = "gpu")]
-use blitz_renderer_vello::VelloImageRenderer;
-#[cfg(feature = "cpu")]
-use blitz_renderer_vello_cpu::VelloCpuImageRenderer as VelloImageRenderer;
 use blitz_traits::navigation::{DummyNavigationProvider, NavigationProvider};
 use blitz_traits::{ColorScheme, Viewport};
 use panic_backtrace::StashedPanicInfo;
 use parley::FontContext;
-use pollster::FutureExt as _;
 use report::{generate_expectations, generate_report};
 use supports_hyperlinks::supports_hyperlinks;
 use terminal_link::Link;
@@ -411,7 +411,7 @@ fn main() {
         .map(|path| {
             let mut ctx = thread_state
                 .get_or(|| {
-                    let renderer = VelloImageRenderer::new(WIDTH, HEIGHT, SCALE).block_on();
+                    let renderer = VelloImageRenderer::new(WIDTH, HEIGHT);
                     let font_ctx = base_font_context.clone();
                     let test_buffer = Vec::with_capacity((WIDTH * HEIGHT * 4) as usize);
                     let ref_buffer = Vec::with_capacity((WIDTH * HEIGHT * 4) as usize);

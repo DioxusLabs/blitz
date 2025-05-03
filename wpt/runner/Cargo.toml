@@ -6,15 +6,17 @@ license.workspace = true
 
 [features]
 default = ["gpu"]
-gpu = ["dep:blitz-renderer-vello"]
-cpu = ["dep:blitz-renderer-vello-cpu"]
+gpu = ["dep:anyrender_vello"]
+cpu = ["dep:anyrender_vello_cpu"]
 
 [dependencies]
 blitz-dom = { path = "../../packages/blitz-dom", default-features = false, features = ["svg", "woff-c"] }
 blitz-html = { path = "../../packages/blitz-html" }
 blitz-traits = { path = "../../packages/blitz-traits" }
-blitz-renderer-vello = { path = "../../packages/blitz-renderer-vello", optional = true }
-blitz-renderer-vello-cpu = { path = "../../packages/blitz-renderer-vello-cpu", optional = true }
+blitz-paint = { path = "../../packages/blitz-paint" }
+anyrender_vello = { path = "../../packages/anyrender_vello", optional = true }
+anyrender_vello_cpu = { path = "../../packages/anyrender_vello_cpu", optional = true }
+anyrender = { path = "../../packages/anyrender" }
 taffy = { workspace = true }
 parley = { workspace = true }
 image = { workspace = true }

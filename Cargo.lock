@@ -266,6 +266,7 @@ version = "0.0.0"
 dependencies = [
  "kurbo",
  "peniko 0.3.2",
+ "raw-window-handle",
 ]
 
 [[package]]
@@ -285,9 +286,13 @@ name = "anyrender_vello"
 version = "0.0.0"
 dependencies = [
  "anyrender",
+ "futures-intrusive",
  "kurbo",
  "peniko 0.3.2",
+ "pollster",
+ "raw-window-handle",
  "vello",
+ "wgpu",
 ]
 
 [[package]]
@@ -297,6 +302,7 @@ dependencies = [
  "anyrender",
  "kurbo",
  "peniko 0.3.2",
+ "softbuffer",
  "vello_common",
  "vello_cpu",
 ]
@@ -666,9 +672,9 @@ dependencies = [
 name = "blitz"
 version = "0.1.0-alpha.1"
 dependencies = [
+ "anyrender_vello",
  "blitz-html",
  "blitz-net",
- "blitz-renderer-vello",
  "blitz-shell",
  "blitz-traits",
  "tokio",
@@ -715,12 +721,14 @@ dependencies = [
 name = "blitz-examples"
 version = "0.0.1"
 dependencies = [
+ "anyrender",
+ "anyrender_vello",
+ "anyrender_vello_cpu",
  "blitz",
  "blitz-dom",
  "blitz-html",
  "blitz-net",
- "blitz-renderer-vello",
- "blitz-renderer-vello-cpu",
+ "blitz-paint",
  "blitz-shell",
  "blitz-traits",
  "dioxus",
@@ -774,48 +782,15 @@ dependencies = [
 ]
 
 [[package]]
-name = "blitz-renderer-vello"
-version = "0.1.0-alpha.1"
-dependencies = [
- "anyrender",
- "anyrender_vello",
- "blitz-dom",
- "blitz-paint",
- "blitz-traits",
- "futures-intrusive",
- "kurbo",
- "peniko 0.3.2",
- "pollster",
- "raw-window-handle",
- "tracing",
- "vello",
- "wgpu",
-]
-
-[[package]]
-name = "blitz-renderer-vello-cpu"
-version = "0.1.0-alpha.1"
-dependencies = [
- "anyrender_vello_cpu",
- "blitz-dom",
- "blitz-paint",
- "blitz-traits",
- "image",
- "kurbo",
- "peniko 0.3.2",
- "softbuffer",
- "tracing",
- "vello_cpu",
-]
-
-[[package]]
 name = "blitz-shell"
 version = "0.1.0-alpha.1"
 dependencies = [
  "accesskit",
  "accesskit_winit",
  "android-activity",
+ "anyrender",
  "blitz-dom",
+ "blitz-paint",
  "blitz-traits",
  "futures-util",
  "keyboard-types",
@@ -832,7 +807,6 @@ dependencies = [
  "bytes",
  "http",
  "keyboard-types",
- "raw-window-handle",
  "smol_str",
  "url",
 ]
@@ -1811,9 +1785,10 @@ dependencies = [
 name = "dioxus-native"
 version = "0.1.0-alpha.1"
 dependencies = [
+ "anyrender_vello",
  "blitz-dom",
  "blitz-net",
- "blitz-renderer-vello",
+ "blitz-paint",
  "blitz-shell",
  "blitz-traits",
  "dioxus-cli-config",
@@ -4801,10 +4776,10 @@ dependencies = [
 name = "readme"
 version = "0.1.0"
 dependencies = [
+ "anyrender_vello",
  "blitz-dom",
  "blitz-html",
  "blitz-net",
- "blitz-renderer-vello",
  "blitz-shell",
  "blitz-traits",
  "comrak",
@@ -7498,12 +7473,14 @@ dependencies = [
 name = "wpt"
 version = "0.1.0"
 dependencies = [
+ "anyrender",
+ "anyrender_vello",
+ "anyrender_vello_cpu",
  "atomic_float",
  "bitflags 2.9.0",
  "blitz-dom",
  "blitz-html",
- "blitz-renderer-vello",
- "blitz-renderer-vello-cpu",
+ "blitz-paint",
  "blitz-traits",
  "data-url",
  "dify",

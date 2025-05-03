@@ -1,0 +1,128 @@
+use anyrender::{Scene as _, WindowHandle, WindowRenderer};
+use peniko::Color;
+use std::sync::Arc;
+use vello::{
+    AaSupport, RenderParams, Renderer as VelloRenderer, RendererOptions, Scene,
+    util::{RenderContext, RenderSurface},
+};
+use wgpu::{PresentMode, SurfaceError};
+
+use crate::{DEFAULT_THREADS, VelloAnyrenderScene};
+
+// Simple struct to hold the state of the renderer
+struct ActiveRenderState {
+    renderer: VelloRenderer,
+    surface: RenderSurface<'static>,
+}
+
+#[allow(clippy::large_enum_variant)]
+enum RenderState {
+    Active(ActiveRenderState),
+    Suspended,
+}
+
+pub struct VelloWindowRenderer {
+    // The fields MUST be in this order, so that the surface is dropped before the window
+    // Window is cached even when suspended so that it can be reused when the app is resumed after being suspended
+    render_state: RenderState,
+    window_handle: Arc<dyn WindowHandle>,
+
+    // Vello
+    render_context: RenderContext,
+    scene: VelloAnyrenderScene,
+}
+
+impl WindowRenderer for VelloWindowRenderer {
+    type Scene = VelloAnyrenderScene;
+
+    fn new(window: Arc<dyn WindowHandle>) -> Self {
+        // 2. Set up Vello specific stuff
+        let render_context = RenderContext::new();
+
+        Self {
+            render_context,
+            render_state: RenderState::Suspended,
+            window_handle: window,
+            scene: VelloAnyrenderScene(Scene::new()),
+        }
+    }
+
+    fn is_active(&self) -> bool {
+        matches!(self.render_state, RenderState::Active(_))
+    }
+
+    fn resume(&mut self, width: u32, height: u32) {
+        let surface = pollster::block_on(self.render_context.create_surface(
+            self.window_handle.clone(),
+            width,
+            height,
+            PresentMode::AutoVsync,
+        ))
+        .expect("Error creating surface");
+
+        let options = RendererOptions {
+            surface_format: Some(surface.config.format),
+            antialiasing_support: AaSupport::all(),
+            use_cpu: false,
+            num_init_threads: DEFAULT_THREADS,
+        };
+
+        let renderer =
+            VelloRenderer::new(&self.render_context.devices[surface.dev_id].device, options)
+                .unwrap();
+
+        self.render_state = RenderState::Active(ActiveRenderState { renderer, surface });
+    }
+
+    fn suspend(&mut self) {
+        self.render_state = RenderState::Suspended;
+    }
+
+    fn set_size(&mut self, width: u32, height: u32) {
+        if let RenderState::Active(state) = &mut self.render_state {
+            self.render_context
+                .resize_surface(&mut state.surface, width, height);
+        };
+    }
+
+    fn render<F: FnOnce(&mut Self::Scene)>(&mut self, draw_fn: F) {
+        let RenderState::Active(state) = &mut self.render_state else {
+            return;
+        };
+        let surface_texture = match state.surface.surface.get_current_texture() {
+            Ok(surface) => surface,
+            // When resizing too aggresively, the surface can get outdated (another resize) before being rendered into
+            Err(SurfaceError::Outdated) => return,
+            Err(_) => panic!("failed to get surface texture"),
+        };
+
+        let device = &self.render_context.devices[state.surface.dev_id];
+
+        let render_params = RenderParams {
+            base_color: Color::WHITE,
+            width: state.surface.config.width,
+            height: state.surface.config.height,
+            antialiasing_method: vello::AaConfig::Msaa16,
+        };
+
+        // Regenerate the vello scene
+        draw_fn(&mut self.scene);
+
+        state
+            .renderer
+            .render_to_surface(
+                &device.device,
+                &device.queue,
+                &self.scene.0,
+                &surface_texture,
+                &render_params,
+            )
+            .expect("failed to render to surface");
+
+        surface_texture.present();
+        device.device.poll(wgpu::Maintain::Wait);
+
+        // Empty the Vello scene (memory optimisation)
+        self.scene.reset();
+    }
+}

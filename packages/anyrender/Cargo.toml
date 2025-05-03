@@ -12,3 +12,4 @@ publish = false
 [dependencies]
 kurbo = { workspace = true }
 peniko = { workspace = true }
+raw-window-handle = { workspace = true }

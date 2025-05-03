@@ -1,4 +1,4 @@
-use blitz_renderer_vello::BlitzVelloRenderer;
+use anyrender_vello::VelloWindowRenderer;
 use blitz_shell::BlitzApplication;
 use winit::application::ApplicationHandler;
 use winit::event::{StartCause, WindowEvent};
@@ -8,7 +8,7 @@ use winit::window::WindowId;
 use crate::{BlitzShellEvent, DioxusDocument, DioxusNativeEvent, WindowConfig};
 
 pub struct DioxusNativeApplication {
-    inner: BlitzApplication<DioxusDocument, BlitzVelloRenderer>,
+    inner: BlitzApplication<DioxusDocument, VelloWindowRenderer>,
 }
 
 impl DioxusNativeApplication {
@@ -18,7 +18,7 @@ impl DioxusNativeApplication {
         }
     }
 
-    pub fn add_window(&mut self, window_config: WindowConfig<DioxusDocument, BlitzVelloRenderer>) {
+    pub fn add_window(&mut self, window_config: WindowConfig<DioxusDocument, VelloWindowRenderer>) {
         self.inner.add_window(window_config);
     }
 

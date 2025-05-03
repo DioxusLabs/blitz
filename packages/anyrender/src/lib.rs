@@ -1,13 +1,58 @@
+use std::sync::Arc;
+
 use kurbo::{Affine, Rect, Shape, Stroke};
 use peniko::{BlendMode, BrushRef, Color, Fill, Font, Image, StyleRef};
+use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
+
+mod wasm_send_sync;
+pub use wasm_send_sync::*;
 
 pub type NormalizedCoord = i16;
 
 /// A positioned glyph.
+#[derive(Copy, Clone, Debug)]
 pub struct Glyph {
     pub id: u32,
     pub x: f32,
     pub y: f32,
+}
+
+// #[derive(Copy, Clone, Debug)]
+// pub struct Viewport {
+//     pub width: u32,
+//     pub height: u32,
+//     pub scale: f64,
+// }
+
+pub trait WindowHandle: HasWindowHandle + HasDisplayHandle + WasmNotSendSync {}
+impl<T: HasWindowHandle + HasDisplayHandle + WasmNotSendSync> WindowHandle for T {}
+
+pub trait WindowRenderer {
+    type Scene: Scene;
+    fn new(window: Arc<dyn WindowHandle>) -> Self;
+    fn resume(&mut self, width: u32, height: u32);
+    fn suspend(&mut self);
+    fn is_active(&self) -> bool;
+    fn set_size(&mut self, width: u32, height: u32);
+    fn render<F: FnOnce(&mut Self::Scene)>(&mut self, draw_fn: F);
+}
+
+pub trait ImageRenderer {
+    type Scene: Scene;
+    fn new(width: u32, height: u32) -> Self;
+    fn render<F: FnOnce(&mut Self::Scene)>(&mut self, draw_fn: F, buffer: &mut Vec<u8>);
+}
+
+pub fn render_to_buffer<R: ImageRenderer, F: FnOnce(&mut R::Scene)>(
+    draw_fn: F,
+    width: u32,
+    height: u32,
+) -> Vec<u8> {
+    let mut buf = Vec::with_capacity((width * height * 4) as usize);
+    let mut renderer = R::new(width, height);
+    renderer.render(draw_fn, &mut buf);
+
+    buf
 }
 
 /// The primary drawing abstraction for drawing a single 2D scene

@@ -1,16 +1,13 @@
-//! A vello_cpu+softbuffer renderer for blitz-dom
-use anyrender_vello_cpu::VelloCpuAnyrenderScene;
-use blitz_dom::BaseDocument;
-use blitz_paint::paint_scene;
-use blitz_traits::{BlitzWindowHandle, DocumentRenderer, Viewport};
+use crate::VelloCpuAnyrenderScene;
+use anyrender::{WindowHandle, WindowRenderer};
 use softbuffer::{Context, Surface};
 use std::{num::NonZero, sync::Arc};
 use vello_cpu::{Pixmap, RenderContext};
 
 // Simple struct to hold the state of the renderer
 pub struct ActiveRenderState {
-    _context: Context<Arc<dyn BlitzWindowHandle>>,
-    surface: Surface<Arc<dyn BlitzWindowHandle>, Arc<dyn BlitzWindowHandle>>,
+    _context: Context<Arc<dyn WindowHandle>>,
+    surface: Surface<Arc<dyn WindowHandle>, Arc<dyn WindowHandle>>,
 }
 
 #[allow(clippy::large_enum_variant)]
@@ -19,18 +16,18 @@ pub enum RenderState {
     Suspended,
 }
 
-pub struct BlitzVelloCpuRenderer {
+pub struct VelloCpuWindowRenderer {
     // The fields MUST be in this order, so that the surface is dropped before the window
     // Window is cached even when suspended so that it can be reused when the app is resumed after being suspended
     render_state: RenderState,
-    window_handle: Arc<dyn BlitzWindowHandle>,
+    window_handle: Arc<dyn WindowHandle>,
     render_context: VelloCpuAnyrenderScene,
 }
 
-impl DocumentRenderer for BlitzVelloCpuRenderer {
-    type Doc = BaseDocument;
+impl WindowRenderer for VelloCpuWindowRenderer {
+    type Scene = VelloCpuAnyrenderScene;
 
-    fn new(window: Arc<dyn BlitzWindowHandle>) -> Self {
+    fn new(window: Arc<dyn WindowHandle>) -> Self {
         Self {
             render_state: RenderState::Suspended,
             window_handle: window,
@@ -42,7 +39,7 @@ impl DocumentRenderer for BlitzVelloCpuRenderer {
         matches!(self.render_state, RenderState::Active(_))
     }
 
-    fn resume(&mut self, viewport: &Viewport) {
+    fn resume(&mut self, width: u32, height: u32) {
         let context = Context::new(self.window_handle.clone()).unwrap();
         let surface = Surface::new(&context, self.window_handle.clone()).unwrap();
         self.render_state = RenderState::Active(ActiveRenderState {
@@ -50,9 +47,7 @@ impl DocumentRenderer for BlitzVelloCpuRenderer {
             surface,
         });
 
-        let (width, height) = viewport.window_size;
         self.set_size(width, height);
-        self.render_context = VelloCpuAnyrenderScene(RenderContext::new(0, 0));
     }
 
     fn suspend(&mut self) {
@@ -75,7 +70,7 @@ impl DocumentRenderer for BlitzVelloCpuRenderer {
         };
     }
 
-    fn render(&mut self, doc: &BaseDocument, scale: f64, width: u32, height: u32) {
+    fn render<F: FnOnce(&mut Self::Scene)>(&mut self, draw_fn: F) {
         let RenderState::Active(state) = &mut self.render_state else {
             return;
         };
@@ -84,8 +79,10 @@ impl DocumentRenderer for BlitzVelloCpuRenderer {
         };
 
         // Paint
-        let mut pixmap = Pixmap::new(width as u16, height as u16);
-        paint_scene(&mut self.render_context, doc, scale, width, height);
+        let width = self.render_context.0.width();
+        let height = self.render_context.0.height();
+        let mut pixmap = Pixmap::new(width, height);
+        draw_fn(&mut self.render_context);
         self.render_context.0.render_to_pixmap(&mut pixmap);
 
         let out = surface_buffer.as_mut();
@@ -106,44 +103,4 @@ impl DocumentRenderer for BlitzVelloCpuRenderer {
         // Empty the Vello render context (memory optimisation)
         self.render_context.0.reset();
     }
-}
-
-pub struct VelloCpuImageRenderer {
-    scene: VelloCpuAnyrenderScene,
-    scale: f64,
-}
-
-impl VelloCpuImageRenderer {
-    pub async fn new(width: u32, height: u32, scale: f64) -> Self {
-        Self {
-            scene: VelloCpuAnyrenderScene(RenderContext::new(width as u16, height as u16)),
-            scale,
-        }
-    }
-
-    pub fn render_document(&mut self, doc: &BaseDocument, cpu_buffer: &mut Vec<u8>) {
-        let width = self.scene.0.width();
-        let height = self.scene.0.height();
-        paint_scene(
-            &mut self.scene,
-            doc,
-            self.scale,
-            width as u32,
-            height as u32,
-        );
-        cpu_buffer.resize(width as usize * height as usize * 4, 0);
-        self.scene
-            .0
-            .render_to_buffer(&mut *cpu_buffer, width, height);
-    }
-}
-
-pub async fn render_to_buffer(doc: &BaseDocument, viewport: Viewport) -> Vec<u8> {
-    let (width, height) = viewport.window_size;
-
-    let mut buffer = Vec::with_capacity(width as usize * height as usize * 4);
-    let mut renderer = VelloCpuImageRenderer::new(width, height, viewport.scale_f64()).await;
-    renderer.render_document(doc, &mut buffer);
-
-    buffer
 }

@@ -9,8 +9,7 @@ license.workspace = true
 edition = "2024"
 
 [features]
-default = ["net", "accessibility", "menu", "tracing", "svg"]
-svg = ["blitz-renderer-vello/svg"]
+default = ["net", "accessibility", "menu", "tracing"]
 net = ["dep:tokio", "dep:url", "dep:blitz-net"]
 accessibility = ["blitz-shell/accessibility"]
 menu = ["blitz-shell/menu"]
@@ -18,7 +17,7 @@ tracing = ["blitz-shell/tracing"]
 
 [dependencies]
 # Blitz dependencies
-blitz-renderer-vello = { version = "0.1.0-alpha.1", path = "../blitz-renderer-vello" }
+anyrender_vello = { path = "../anyrender_vello" }
 blitz-html = { version = "0.1.0-alpha.1", path = "../blitz-html" }
 blitz-shell = { version = "0.1.0-alpha.1", path = "../blitz-shell" }
 blitz-net = { version = "0.1.0-alpha.1", path = "../blitz-net", optional = true }

@@ -10,7 +10,7 @@ edition = "2024"
 
 [features]
 default = ["accessibility", "hot-reload", "menu", "tracing", "net", "svg"]
-svg = ["blitz-dom/svg", "blitz-renderer-vello/svg"]
+svg = ["blitz-dom/svg", "blitz-paint/svg"]
 net = ["dep:tokio", "dep:blitz-net"]
 accessibility = ["blitz-shell/accessibility", "blitz-dom/accessibility"]
 autofocus = []
@@ -20,7 +20,8 @@ hot-reload = ["dep:dioxus-cli-config", "dep:dioxus-devtools"]
 
 [dependencies]
 # Blitz dependencies
-blitz-renderer-vello = { version = "0.1.0-alpha.1", path = "../blitz-renderer-vello", default-features = false }
+anyrender_vello = { path = "../anyrender_vello", default-features = false }
+blitz-paint = { version = "0.1.0-alpha.1", path = "../blitz-paint", default-features = false }
 blitz-dom = { version = "0.1.0-alpha.1", path = "../blitz-dom", default-features = false }
 blitz-net = { version = "0.1.0-alpha.1", path = "../blitz-net", optional = true }
 blitz-traits = { version = "0.1.0-alpha.1", path = "../blitz-traits" }

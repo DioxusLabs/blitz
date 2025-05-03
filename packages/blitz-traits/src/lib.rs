@@ -9,13 +9,10 @@ pub use events::{
 };
 
 mod document;
-pub use document::{BlitzWindowHandle, Document, DocumentRenderer};
+pub use document::Document;
 
 mod devtools;
 pub use devtools::Devtools;
 
 mod viewport;
 pub use viewport::{ColorScheme, Viewport};
-
-mod wasm_send_sync;
-pub use wasm_send_sync::{WasmNotSend, WasmNotSendSync, WasmNotSync};

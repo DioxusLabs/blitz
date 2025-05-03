@@ -2,11 +2,13 @@ use crate::convert_events::{
     winit_ime_to_blitz, winit_key_event_to_blitz, winit_modifiers_to_kbt_modifiers,
 };
 use crate::event::{BlitzShellEvent, create_waker};
+use anyrender::WindowRenderer;
 use blitz_dom::BaseDocument;
+use blitz_paint::paint_scene;
 use blitz_traits::{
     BlitzMouseButtonEvent, ColorScheme, MouseEventButton, MouseEventButtons, Viewport,
 };
-use blitz_traits::{Document, DocumentRenderer, DomEvent, DomEventData};
+use blitz_traits::{Document, DomEvent, DomEventData};
 use winit::keyboard::PhysicalKey;
 
 use std::marker::PhantomData;
@@ -26,16 +28,13 @@ use crate::accessibility::AccessibilityState;
 // TODO: make generic
 type D = BaseDocument;
 
-pub struct WindowConfig<
-    Doc: Document<Doc = BaseDocument>,
-    Rend: DocumentRenderer<Doc = BaseDocument>,
-> {
+pub struct WindowConfig<Doc: Document<Doc = BaseDocument>, Rend: WindowRenderer> {
     doc: Doc,
     attributes: WindowAttributes,
     rend: PhantomData<Rend>,
 }
 
-impl<Doc: Document<Doc = D>, Rend: DocumentRenderer<Doc = D>> WindowConfig<Doc, Rend> {
+impl<Doc: Document<Doc = D>, Rend: WindowRenderer> WindowConfig<Doc, Rend> {
     pub fn new(doc: Doc) -> Self {
         Self::with_attributes(doc, Window::default_attributes())
     }
@@ -49,7 +48,7 @@ impl<Doc: Document<Doc = D>, Rend: DocumentRenderer<Doc = D>> WindowConfig<Doc, 
     }
 }
 
-pub struct View<Doc: Document<Doc = D>, Rend: DocumentRenderer<Doc = D>> {
+pub struct View<Doc: Document<Doc = D>, Rend: WindowRenderer> {
     pub doc: Doc,
 
     pub(crate) renderer: Rend,
@@ -82,7 +81,7 @@ pub struct View<Doc: Document<Doc = D>, Rend: DocumentRenderer<Doc = D>> {
     _menu: muda::Menu,
 }
 
-impl<Doc: Document<Doc = D>, Rend: DocumentRenderer<Doc = D>> View<Doc, Rend> {
+impl<Doc: Document<Doc = D>, Rend: WindowRenderer> View<Doc, Rend> {
     pub fn init(
         config: WindowConfig<Doc, Rend>,
         event_loop: &ActiveEventLoop,
@@ -153,22 +152,29 @@ impl<Doc: Document<Doc = D>, Rend: DocumentRenderer<Doc = D>> View<Doc, Rend> {
     }
 }
 
-impl<Doc: Document<Doc = D>, Rend: DocumentRenderer<Doc = D>> View<Doc, Rend> {
+impl<Doc: Document<Doc = D>, Rend: WindowRenderer> View<Doc, Rend> {
     pub fn resume(&mut self) {
         // Resolve dom
         self.doc.as_mut().set_viewport(self.viewport.clone());
         self.doc.as_mut().resolve();
 
         // Resume renderer
-        self.renderer.resume(&self.viewport);
+        let (width, height) = self.viewport.window_size;
+        self.renderer.resume(width, height);
         if !self.renderer.is_active() {
             panic!("Renderer failed to resume");
         };
 
         // Render
-        let (width, height) = self.viewport.window_size;
-        self.renderer
-            .render(self.doc.as_ref(), self.viewport.scale_f64(), width, height);
+        self.renderer.render(|scene| {
+            paint_scene(
+                scene,
+                self.doc.as_ref(),
+                self.viewport.scale_f64(),
+                width,
+                height,
+            )
+        });
 
         // Set waker
         self.waker = Some(create_waker(&self.event_loop_proxy, self.window_id()));
@@ -209,8 +215,15 @@ impl<Doc: Document<Doc = D>, Rend: DocumentRenderer<Doc = D>> View<Doc, Rend> {
     pub fn redraw(&mut self) {
         self.doc.as_mut().resolve();
         let (width, height) = self.viewport.window_size;
-        self.renderer
-            .render(self.doc.as_ref(), self.viewport.scale_f64(), width, height);
+        self.renderer.render(|scene| {
+            paint_scene(
+                scene,
+                self.doc.as_ref(),
+                self.viewport.scale_f64(),
+                width,
+                height,
+            )
+        });
     }
 
     pub fn window_id(&self) -> WindowId {

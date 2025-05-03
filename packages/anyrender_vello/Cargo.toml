@@ -10,7 +10,11 @@ edition = "2024"
 publish = false
 
 [dependencies]
+anyrender = { path = "../anyrender"}
 kurbo = { workspace = true }
 peniko = { workspace = true }
 vello = { workspace = true }
-anyrender = { path = "../anyrender"}
+raw-window-handle = { workspace = true }
+wgpu = { workspace = true }
+futures-intrusive = { workspace = true }
+pollster = { workspace = true }

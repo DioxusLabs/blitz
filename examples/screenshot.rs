@@ -1,10 +1,12 @@
 //! Load first CLI argument as a url. Fallback to google.com if no CLI argument is provided.
 
+use anyrender::render_to_buffer;
+use anyrender_vello::VelloImageRenderer;
+use anyrender_vello_cpu::VelloCpuImageRenderer;
 use blitz_dom::net::Resource;
 use blitz_html::HtmlDocument;
 use blitz_net::{MpscCallback, Provider};
-use blitz_renderer_vello::render_to_buffer as render_to_buffer_using_gpu;
-use blitz_renderer_vello_cpu::render_to_buffer as render_to_buffer_using_cpu;
+use blitz_paint::paint_scene;
 use blitz_traits::navigation::DummyNavigationProvider;
 use blitz_traits::net::SharedProvider;
 use blitz_traits::{ColorScheme, Viewport};
@@ -55,7 +57,7 @@ async fn main() {
     timer.time("Fetched HTML");
 
     // Setup viewport. TODO: make configurable.
-    let scale = 2;
+    let scale = 2.0;
     let height = 800;
     let width: u32 = std::env::args()
         .nth(2)
@@ -83,8 +85,8 @@ async fn main() {
     timer.time("Parsed document");
 
     document.as_mut().set_viewport(Viewport::new(
-        width * scale,
-        height * scale,
+        width * (scale as u32),
+        height * (scale as u32),
         scale as f32,
         ColorScheme::Light,
     ));
@@ -105,19 +107,22 @@ async fn main() {
 
     // Determine height to render
     let computed_height = document.as_ref().root_element().final_layout.size.height;
-    let render_height = (computed_height as u32).max(height).min(4000);
-    let viewport = Viewport::new(
-        width * scale,
-        render_height * scale,
-        scale as f32,
-        ColorScheme::Light,
-    );
+    let render_width = (width as f64 * scale) as u32;
+    let render_height = ((computed_height as f64).max(height as f64).min(4000.0) * scale) as u32;
 
     // Render document to RGBA buffer
     let buffer = if use_cpu_renderer {
-        render_to_buffer_using_cpu(document.as_ref(), viewport).await
+        render_to_buffer::<VelloCpuImageRenderer, _>(
+            |scene| paint_scene(scene, document.as_ref(), scale, render_width, render_height),
+            render_width,
+            render_height,
+        )
     } else {
-        render_to_buffer_using_gpu(document.as_ref(), viewport).await
+        render_to_buffer::<VelloImageRenderer, _>(
+            |scene| paint_scene(scene, document.as_ref(), scale, render_width, render_height),
+            render_width,
+            render_height,
+        )
     };
 
     timer.time("Rendered to buffer");
@@ -127,7 +132,7 @@ async fn main() {
     let mut file = File::create(&out_path).unwrap();
 
     // Encode buffer as PNG and write it to a file
-    write_png(&mut file, &buffer, width * scale, render_height * scale);
+    write_png(&mut file, &buffer, render_width, render_height);
 
     timer.time("Wrote out png");
 

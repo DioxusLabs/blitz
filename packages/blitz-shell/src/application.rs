@@ -1,7 +1,8 @@
 use crate::event::BlitzShellEvent;
 
+use anyrender::WindowRenderer;
 use blitz_dom::BaseDocument;
-use blitz_traits::{Document, DocumentRenderer};
+use blitz_traits::Document;
 use std::collections::HashMap;
 use winit::application::ApplicationHandler;
 use winit::event::WindowEvent;
@@ -13,7 +14,7 @@ use crate::{View, WindowConfig};
 // TODO: make generic
 type D = BaseDocument;
 
-pub struct BlitzApplication<Doc: Document<Doc = D>, Rend: DocumentRenderer<Doc = D>> {
+pub struct BlitzApplication<Doc: Document<Doc = D>, Rend: WindowRenderer> {
     pub windows: HashMap<WindowId, View<Doc, Rend>>,
     pending_windows: Vec<WindowConfig<Doc, Rend>>,
     proxy: EventLoopProxy<BlitzShellEvent>,
@@ -22,7 +23,7 @@ pub struct BlitzApplication<Doc: Document<Doc = D>, Rend: DocumentRenderer<Doc =
     menu_channel: muda::MenuEventReceiver,
 }
 
-impl<Doc: Document<Doc = D>, Rend: DocumentRenderer<Doc = D>> BlitzApplication<Doc, Rend> {
+impl<Doc: Document<Doc = D>, Rend: WindowRenderer> BlitzApplication<Doc, Rend> {
     pub fn new(proxy: EventLoopProxy<BlitzShellEvent>) -> Self {
         BlitzApplication {
             windows: HashMap::new(),
@@ -43,7 +44,7 @@ impl<Doc: Document<Doc = D>, Rend: DocumentRenderer<Doc = D>> BlitzApplication<D
     }
 }
 
-impl<Doc: Document<Doc = D>, Rend: DocumentRenderer<Doc = D>> ApplicationHandler<BlitzShellEvent>
+impl<Doc: Document<Doc = D>, Rend: WindowRenderer> ApplicationHandler<BlitzShellEvent>
     for BlitzApplication<Doc, Rend>
 {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {

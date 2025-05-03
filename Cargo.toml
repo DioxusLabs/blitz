@@ -9,8 +9,6 @@ members = [
   "packages/blitz-html",
   "packages/blitz-net",
   "packages/blitz-paint",
-  "packages/blitz-renderer-vello",
-  "packages/blitz-renderer-vello-cpu",
   "packages/blitz-shell",
   "packages/blitz",
   "packages/dioxus-native",
@@ -138,8 +136,10 @@ publish = false
 blitz-dom = { path = "./packages/blitz-dom" }
 blitz-html = { path = "./packages/blitz-html" }
 blitz-traits = { path = "./packages/blitz-traits" }
-blitz-renderer-vello = { path = "./packages/blitz-renderer-vello" }
-blitz-renderer-vello-cpu = { path = "./packages/blitz-renderer-vello-cpu" }
+blitz-paint = { path = "./packages/blitz-paint" }
+anyrender = { path = "./packages/anyrender" }
+anyrender_vello = { path = "./packages/anyrender_vello" }
+anyrender_vello_cpu = { path = "./packages/anyrender_vello_cpu" }
 blitz-shell = { path = "./packages/blitz-shell" }
 blitz-net = { path = "./packages/blitz-net" }
 blitz = { path = "./packages/blitz", features = ["net"] }

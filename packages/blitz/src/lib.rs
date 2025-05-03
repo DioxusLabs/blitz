@@ -11,8 +11,8 @@
 
 use std::sync::Arc;
 
+use anyrender_vello::VelloWindowRenderer;
 use blitz_html::HtmlDocument;
-use blitz_renderer_vello::BlitzVelloRenderer;
 use blitz_shell::{
     BlitzApplication, BlitzShellEvent, BlitzShellNetCallback, Config, WindowConfig,
     create_default_event_loop,
@@ -86,7 +86,7 @@ fn launch_internal(html: &str, cfg: Config) {
         None,
         navigation_provider,
     );
-    let window: WindowConfig<HtmlDocument, BlitzVelloRenderer> = WindowConfig::new(doc);
+    let window: WindowConfig<HtmlDocument, VelloWindowRenderer> = WindowConfig::new(doc);
 
     // Create application
     let mut application = BlitzApplication::new(event_loop.create_proxy());
