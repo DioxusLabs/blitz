@@ -46,7 +46,7 @@ use style::{
     },
 };
 
-use kurbo::{self, BezPath, Cap, Circle, Join};
+use kurbo::{self, BezPath, Cap, Circle, Join, Size};
 use kurbo::{Affine, Point, Rect, Shape, Stroke, Vec2};
 use parley::layout::PositionedLayoutItem;
 use peniko::Gradient;
@@ -615,7 +615,7 @@ fn compute_background_size(
                     let width = width.px();
                     let height = match mode {
                         BackgroundSizeComputeMode::Auto => container_h,
-                        BackgroundSizeComputeMode::Size(bg_w, bg_h) => (width / bg_w) * bg_h,
+                        BackgroundSizeComputeMode::Size(bg_w, bg_h) => bg_h / bg_w * width,
                     };
                     (width, height)
                 }
@@ -623,7 +623,7 @@ fn compute_background_size(
                     let height = height.px();
                     let width = match mode {
                         BackgroundSizeComputeMode::Auto => container_w,
-                        BackgroundSizeComputeMode::Size(bg_w, bg_h) => (height / bg_h) * bg_w,
+                        BackgroundSizeComputeMode::Size(bg_w, bg_h) => bg_w / bg_h * height,
                     };
                     (width, height)
                 }
@@ -998,6 +998,7 @@ impl ElementCx<'_> {
     }
 
     fn draw_raster_bg_image(&self, scene: &mut impl anyrender::Scene, idx: usize) {
+        use BackgroundRepeatKeyword::*;
         use style::{Zero as _, values::computed::Length};
 
         let bg_image = self.element.background_images.get(idx);
@@ -1034,16 +1035,9 @@ impl ElementCx<'_> {
             frame_w,
             frame_h,
             idx,
-            BackgroundSizeComputeMode::Size(
-                (image_width / self.scale) as f32,
-                (image_height / self.scale) as f32,
-            ),
-            self.scale as f32,
+            BackgroundSizeComputeMode::Size(image_width as f32, image_height as f32),
+            1.0,
         );
-        let bg_size = bg_size * self.scale;
-
-        let x_ratio = bg_size.width / image_width;
-        let y_ratio = bg_size.height / image_height;
 
         let bg_pos_x = bg_styles
             .background_position_x
@@ -1062,36 +1056,195 @@ impl ElementCx<'_> {
             .resolve(Length::new(frame_h - bg_size.height as f32))
             .px() as f64;
 
-        let transform = self
-            .transform
-            .then_translate(Vec2 {
-                x: (origin_rect.x0 * self.scale) + bg_pos_x,
-                y: (origin_rect.y0 * self.scale) + bg_pos_y,
-            })
-            .pre_scale_non_uniform(x_ratio, y_ratio);
-
         let BackgroundRepeat(repeat_x, repeat_y) = bg_styles
             .background_repeat
             .0
             .get(idx)
             .cloned()
-            .unwrap_or(BackgroundRepeat(
-                BackgroundRepeatKeyword::Repeat,
-                BackgroundRepeatKeyword::Repeat,
-            ));
+            .unwrap_or(BackgroundRepeat::repeat());
 
-        if repeat_x == BackgroundRepeatKeyword::Repeat
-            && repeat_y == BackgroundRepeatKeyword::Repeat
-        {
+        let bg_size = if matches!(repeat_x, Round) && matches!(repeat_y, Round) {
+            let count = (frame_w as f64 / bg_size.width).round();
+            let width = frame_w as f64 / count;
+
+            let count = (frame_h as f64 / bg_size.height).round();
+            let height = frame_h as f64 / count;
+
+            Size::new(width, height)
+        } else if matches!(repeat_x, Round) {
+            let count = (frame_w as f64 / bg_size.width).round();
+            let width = frame_w as f64 / count;
+            Size::new(width, bg_size.height)
+        } else if matches!(repeat_y, Round) {
+            let count = (frame_h as f64 / bg_size.height).round();
+            let height = frame_h as f64 / count;
+            Size::new(bg_size.width, height)
+        } else {
+            bg_size
+        };
+
+        let x_ratio = bg_size.width * self.scale / image_width;
+        let y_ratio = bg_size.height * self.scale / image_height;
+
+        fn extend(offset: f64, length: f64) -> f64 {
+            let extend_length = offset % length;
+            if extend_length > 0.0 {
+                length - extend_length
+            } else {
+                -extend_length
+            }
+        }
+
+        let transform = self.transform.pre_scale_non_uniform(x_ratio, y_ratio);
+        let (origin_rect, transform) = match repeat_x {
+            Repeat | Round => {
+                let extend_width = extend(bg_pos_x, bg_size.width) * self.scale;
+
+                let transform = transform.then_translate(Vec2 {
+                    x: origin_rect.x0 - extend_width,
+                    y: 0.0,
+                });
+
+                let origin_rect = origin_rect.with_size(Size::new(
+                    (origin_rect.width() + extend_width) / x_ratio,
+                    origin_rect.height(),
+                ));
+
+                (origin_rect, transform)
+            }
+            Space => (origin_rect, transform),
+            NoRepeat => {
+                let transform = transform.then_translate(Vec2 {
+                    x: (origin_rect.x0 + bg_pos_x) * self.scale,
+                    y: 0.0,
+                });
+
+                let origin_rect =
+                    origin_rect.with_size(Size::new(image_width, origin_rect.height()));
+
+                (origin_rect, transform)
+            }
+        };
+        let (origin_rect, transform) = match repeat_y {
+            Repeat | Round => {
+                let extend_height = extend(bg_pos_y, bg_size.height) * self.scale;
+
+                let transform = transform.then_translate(Vec2 {
+                    x: 0.0,
+                    y: origin_rect.y0 - extend_height,
+                });
+
+                let origin_rect = origin_rect.with_size(Size::new(
+                    origin_rect.width(),
+                    (origin_rect.height() + extend_height) / y_ratio,
+                ));
+
+                (origin_rect, transform)
+            }
+            Space => (origin_rect, transform),
+            NoRepeat => {
+                let transform = transform.then_translate(Vec2 {
+                    x: 0.0,
+                    y: (origin_rect.y0 + bg_pos_y) * self.scale,
+                });
+
+                let origin_rect =
+                    origin_rect.with_size(Size::new(origin_rect.width(), image_height));
+                (origin_rect, transform)
+            }
+        };
+
+        if matches!(repeat_x, Space) || matches!(repeat_y, Space) {
+            let (width_count, width_gap, origin_rect, transform) = if matches!(repeat_x, Space) {
+                let frame_w = frame_w as f64;
+                let width_modulo = frame_w % bg_size.width;
+                let width_count = (((frame_w - width_modulo) / bg_size.width) as u32).max(1);
+                let width_gap = if width_count > 1 {
+                    width_modulo / (width_count - 1) as f64
+                } else {
+                    0.0
+                } + bg_size.width;
+
+                let transform = if width_count == 1 {
+                    transform.then_translate(Vec2 {
+                        x: bg_pos_x,
+                        y: 0.0,
+                    })
+                } else {
+                    transform
+                };
+
+                let origin_rect =
+                    origin_rect.with_size(Size::new(image_width, origin_rect.height()));
+
+                (width_count, width_gap, origin_rect, transform)
+            } else {
+                (1, 0.0, origin_rect, transform)
+            };
+
+            let (height_count, height_gap, origin_rect, transform) = if matches!(repeat_y, Space) {
+                let frame_h = frame_h as f64;
+                let height_modulo = frame_h % bg_size.height;
+                let height_count = (((frame_h - height_modulo) / bg_size.height) as u32).max(1);
+                let height_gap = if height_count > 1 {
+                    height_modulo / (height_count - 1) as f64
+                } else {
+                    0.0
+                } + bg_size.height;
+
+                let transform = if height_count == 1 {
+                    transform.then_translate(Vec2 {
+                        x: 0.0,
+                        y: bg_pos_y,
+                    })
+                } else {
+                    transform
+                };
+
+                let origin_rect =
+                    origin_rect.with_size(Size::new(origin_rect.width(), image_height));
+
+                (height_count, height_gap, origin_rect, transform)
+            } else {
+                (1, 0.0, origin_rect, transform)
+            };
+
+            for hc in 0..height_count {
+                for wc in 0..width_count {
+                    let width_gap = if matches!(repeat_x, Space) {
+                        (origin_rect.x0 + wc as f64 * width_gap) * self.scale
+                    } else {
+                        0.0
+                    };
+
+                    let height_gap = if matches!(repeat_y, Space) {
+                        (origin_rect.y0 + hc as f64 * height_gap) * self.scale
+                    } else {
+                        0.0
+                    };
+
+                    let transform = transform.then_translate(Vec2 {
+                        x: width_gap,
+                        y: height_gap,
+                    });
+
+                    scene.fill(
+                        peniko::Fill::NonZero,
+                        transform,
+                        &to_peniko_image(image_data),
+                        None,
+                        &Rect::new(0.0, 0.0, origin_rect.width(), origin_rect.height()),
+                    );
+                }
+            }
+        } else {
             scene.fill(
                 peniko::Fill::NonZero,
                 transform,
                 &to_peniko_image(image_data),
                 None,
-                &origin_rect.to_path(0.1),
+                &Rect::new(0.0, 0.0, origin_rect.width(), origin_rect.height()),
             );
-        } else {
-            scene.draw_image(&to_peniko_image(image_data), transform);
         }
     }
 
