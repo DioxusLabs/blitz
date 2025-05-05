@@ -54,7 +54,7 @@ taffy = { version = "0.8", default-features = false, features = ["std", "flexbox
 color = "0.2"
 peniko = "0.3"
 kurbo = "0.11"
-parley = "0.3"
+parley = { version = "0.3", default-features = false, features = ["std"] }
 wgpu = "23"
 vello = { version = "0.4", features = [ "wgpu" ] }
 vello_svg = { version = "0.6" }

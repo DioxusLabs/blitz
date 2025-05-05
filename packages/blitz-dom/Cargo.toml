@@ -9,7 +9,7 @@ license.workspace = true
 edition = "2024"
 
 [features]
-default = ["tracing", "svg", "woff-c", "clipboard", "accessibility"]
+default = ["tracing", "svg", "woff-c", "clipboard", "accessibility", "system_fonts"]
 tracing = ["dep:tracing"]
 svg = ["dep:usvg"]
 # WOFF decoding using the "woff" crate which binds to C libraries
@@ -21,6 +21,7 @@ woff-c = ["dep:woff"]
 woff-rust = ["dep:woff2"]
 clipboard = ["dep:arboard"]
 accessibility = ["accesskit"]
+system_fonts = ["parley/system"]
 
 [dependencies]
 # Blitz dependencies
