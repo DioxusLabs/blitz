@@ -340,7 +340,7 @@ impl WriteMutations for MutationWriter<'_> {
                 }
 
                 if name == "style" {
-                    element.flush_style_attribute(&self.doc.guard);
+                    element.flush_style_attribute(&self.doc.guard, self.doc.base_url.clone());
                 }
 
                 if element.name.local == local_name!("img") && name == "src" {
@@ -498,7 +498,7 @@ fn create_template_node(doc: &mut BaseDocument, node: &TemplateNode) -> NodeId {
                 .collect();
 
             let mut data = ElementNodeData::new(name, attrs);
-            data.flush_style_attribute(doc.guard());
+            data.flush_style_attribute(doc.guard(), doc.base_url.clone());
 
             let id = doc.create_node(NodeData::Element(data));
             let node = doc.get_node(id).unwrap();

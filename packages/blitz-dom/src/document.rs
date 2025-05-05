@@ -93,7 +93,7 @@ pub struct BaseDocument {
     pub nodes_to_id: HashMap<String, usize>,
 
     /// Base url for resolving linked resources (stylesheets, images, fonts, etc)
-    pub(crate) base_url: Option<url::Url>,
+    pub base_url: Option<url::Url>,
 
     // /// The quadtree we use for hit-testing
     // pub(crate) quadtree: Quadtree<u64, usize>,

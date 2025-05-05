@@ -525,13 +525,13 @@ impl ElementNodeData {
             }
     }
 
-    pub fn flush_style_attribute(&mut self, guard: &SharedRwLock) {
+    pub fn flush_style_attribute(&mut self, guard: &SharedRwLock, base_url: Option<Url>) {
         self.style_attribute = self.attr(local_name!("style")).map(|style_str| {
-            let url = UrlExtraData::from(
+            let url = UrlExtraData::from(base_url.clone().unwrap_or_else(|| {
                 "data:text/css;charset=utf-8;base64,"
                     .parse::<Url>()
-                    .unwrap(),
-            );
+                    .unwrap()
+            }));
 
             ServoArc::new(guard.wrap(parse_style_attribute(
                 style_str,
@@ -1023,9 +1023,9 @@ impl Node {
         }
     }
 
-    pub fn flush_style_attribute(&mut self) {
+    pub fn flush_style_attribute(&mut self, base_url: Option<Url>) {
         if let NodeData::Element(ref mut elem_data) = self.data {
-            elem_data.flush_style_attribute(&self.guard);
+            elem_data.flush_style_attribute(&self.guard, base_url);
         }
     }
 

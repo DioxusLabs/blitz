@@ -234,7 +234,7 @@ impl<'b> TreeSink for DocumentHtmlParser<'b> {
     ) -> Self::Handle {
         let attrs = attrs.into_iter().map(html5ever_to_blitz_attr).collect();
         let mut data = ElementNodeData::new(name.clone(), attrs);
-        data.flush_style_attribute(&self.doc.borrow().guard);
+        data.flush_style_attribute(&self.doc.borrow().guard, self.doc.borrow().base_url.clone());
 
         let id = self.create_node(NodeData::Element(data));
         let node = self.node(id);
