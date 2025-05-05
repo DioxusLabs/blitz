@@ -4,9 +4,16 @@ version = "0.1.0"
 edition = "2024"
 license.workspace = true
 
+[features]
+default = ["system_fonts"]
+system_fonts = ["blitz-dom/system_fonts"]
+
 [dependencies]
 dioxus-native = { path = "../../packages/dioxus-native", default-features = false }
 dioxus = { version = "0.6", default-features = false, features = ["html", "hooks", "macro", "signals"] }
+
+# Control whether system font support is enabled
+blitz-dom = { path = "../../packages/blitz-dom", default-features = false }
 
 # Disable unicode URL support
 # See https://github.com/hsivonen/idna_adapter
