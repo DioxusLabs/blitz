@@ -1,7 +1,7 @@
 //! Conversion functions from Stylo types to Parley types
 use std::borrow::Cow;
 
-use style::values::computed::Length;
+use style::values::computed::{Length, TextDecorationLine};
 
 use crate::node::TextBrush;
 use crate::util::ToColorColor;
@@ -36,7 +36,7 @@ pub(crate) fn style(
     style: &stylo::ComputedValues,
 ) -> parley::TextStyle<'static, TextBrush> {
     let font_styles = style.get_font();
-    // let text_styles = style.get_text();
+    let text_styles = style.get_text();
     let itext_styles = style.get_inherited_text();
 
     // Convert font size and line height
@@ -114,6 +114,8 @@ pub(crate) fn style(
     // Convert text colour
     let color = itext_styles.color.as_color_color();
 
+    // Text decorations
+    let text_decoration_line = text_styles.text_decoration_line;
     let decoration_brush = style
         .get_text()
         .text_decoration_color
@@ -132,11 +134,11 @@ pub(crate) fn style(
         font_features: parley::FontSettings::List(Cow::Borrowed(&[])),
         locale: Default::default(),
         brush: TextBrush::from_id_and_color(span_id, color),
-        has_underline: itext_styles.text_decorations_in_effect.underline,
+        has_underline: text_decoration_line.contains(TextDecorationLine::UNDERLINE),
         underline_offset: Default::default(),
         underline_size: Default::default(),
         underline_brush: decoration_brush.clone(),
-        has_strikethrough: itext_styles.text_decorations_in_effect.line_through,
+        has_strikethrough: text_decoration_line.contains(TextDecorationLine::LINE_THROUGH),
         strikethrough_offset: Default::default(),
         strikethrough_size: Default::default(),
         strikethrough_brush: decoration_brush,

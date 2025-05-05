@@ -27,15 +27,15 @@ license = "MIT OR Apache-2.0"
 
 [workspace.dependencies]
 # Servo dependencies
-style = { version = "0.2", package = "stylo" } # 2025-03-15
-style_traits = { version = "0.2", package = "stylo_traits" } # 2025-03-15
-style_config = { version = "0.2", package = "stylo_config" } # 2025-03-15
-style_dom = { version = "0.2", package = "stylo_dom" } # 2025-03-15
-selectors = { version = "0.27", package = "selectors" } # 2025-03-15
+style = { version = "0.3", package = "stylo" }
+style_traits = { version = "0.3", package = "stylo_traits" }
+style_config = { version = "0.3", package = "stylo_config" }
+style_dom = { version = "0.3", package = "stylo_dom" }
+selectors = { version = "0.28", package = "selectors" }
 
-markup5ever = "0.15" # needs to match stylo markup5ever version
-html5ever = "0.30" # needs to match stylo markup5ever version
-xml5ever = "0.21" # needs to match stylo markup5ever version
+markup5ever = "0.16.1" # needs to match stylo web_atoms version
+html5ever = "0.31" # needs to match stylo web_atoms version
+xml5ever = "0.22" # needs to match stylo web_atoms version
 euclid = "0.22"
 string_cache = "0.8.7"
 atomic_refcell = "0.1.13"

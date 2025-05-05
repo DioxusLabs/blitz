@@ -4,7 +4,7 @@ use std::{any::Any, collections::HashMap, rc::Rc, sync::Arc};
 
 use blitz_dom::{
     Atom, BaseDocument, DEFAULT_CSS, ElementNodeData, Node, NodeData, QualName, local_name,
-    namespace_url, net::Resource, node::NodeSpecificData, ns,
+    net::Resource, node::NodeSpecificData, ns,
 };
 
 use blitz_traits::{ColorScheme, Document, DomEvent, DomEventData, Viewport, net::NetProvider};

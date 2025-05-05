@@ -1,7 +1,7 @@
 use core::str;
 use std::sync::Arc;
 
-use markup5ever::{QualName, local_name, namespace_url, ns};
+use markup5ever::{QualName, local_name, ns};
 use parley::{FontStack, InlineBox, StyleProperty, TreeBuilder, WhiteSpaceCollapse};
 use slab::Slab;
 use style::{

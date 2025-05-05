@@ -1,6 +1,6 @@
 use crate::{NodeId, dioxus_document::qual_name};
 use blitz_dom::{
-    BaseDocument, ElementNodeData, NodeData, QualName, RestyleHint, local_name, namespace_url,
+    BaseDocument, ElementNodeData, NodeData, QualName, RestyleHint, local_name,
     net::ImageHandler,
     node::{Attribute, NodeSpecificData},
     ns,

@@ -50,10 +50,9 @@ impl FontMetricsProvider for DummyFontMetricsProvider {
     fn query_font_metrics(
         &self,
         _vertical: bool,
-        _font: &style::properties::style_structs::Font,
+        _font: &Font,
         _base_size: style::values::computed::CSSPixelLength,
-        _in_media_query: bool,
-        _retrieve_math_scales: bool,
+        _flags: style::values::computed::font::QueryFontMetricsFlags,
     ) -> style::font_metrics::FontMetrics {
         Default::default()
     }
