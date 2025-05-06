@@ -295,7 +295,7 @@ impl ElementFrame {
             },
             Corner::TopRight => match side {
                 ArcSide::Content => (
-                    x1 - self.border_left_width - self.padding_left_width,
+                    x1 - self.border_right_width - self.padding_right_width,
                     y0 + self.border_top_width + self.padding_top_width,
                 ),
                 ArcSide::Inner => (x1 - self.border_right_width, y0 + self.border_top_width),

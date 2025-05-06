@@ -1276,27 +1276,40 @@ impl ElementCx<'_> {
         use GenericImage::*;
         use StyloBackgroundClip::*;
 
-        let segments = &self.style.get_background().background_clip.0;
-        let background_clip = segments.iter().next().cloned().unwrap_or(BorderBox);
+        let background_clip_segments = &self.style.get_background().background_clip.0;
+        let background_image_segments = &self.style.get_background().background_image.0;
+
+        fn get_cyclic<T>(values: &[T], layer_index: usize) -> &T {
+            &values[layer_index % values.len()]
+        }
+
+        let background_clip = get_cyclic(background_clip_segments, background_image_segments.len() - 1);
         let background_clip_path = match background_clip {
             BorderBox => self.frame.frame_border(),
             PaddingBox => self.frame.frame_padding(),
             ContentBox => self.frame.frame_content(),
         };
 
-        CLIPS_WANTED.fetch_add(1, atomic::Ordering::SeqCst);
-        let clips_available = CLIPS_USED.load(atomic::Ordering::SeqCst) <= CLIP_LIMIT;
-        if clips_available {
-            scene.push_layer(Mix::Clip, 1.0, self.transform, &background_clip_path);
-            CLIPS_USED.fetch_add(1, atomic::Ordering::SeqCst);
-            let depth = CLIP_DEPTH.fetch_add(1, atomic::Ordering::SeqCst) + 1;
-            CLIP_DEPTH_USED.fetch_max(depth, atomic::Ordering::SeqCst);
-        }
-
         // Draw background color (if any)
         self.draw_solid_frame(scene, &background_clip_path);
-        let segments = &self.style.get_background().background_image.0;
-        for (idx, segment) in segments.iter().enumerate().rev() {
+
+        for (idx, segment) in background_image_segments.iter().enumerate().rev() {
+            let background_clip = get_cyclic(background_clip_segments, idx);
+            let background_clip_path = match background_clip {
+                BorderBox => self.frame.frame_border(),
+                PaddingBox => self.frame.frame_padding(),
+                ContentBox => self.frame.frame_content(),
+            };
+
+            CLIPS_WANTED.fetch_add(1, atomic::Ordering::SeqCst);
+            let clips_available = CLIPS_USED.load(atomic::Ordering::SeqCst) <= CLIP_LIMIT;
+            if clips_available {
+                scene.push_layer(Mix::Clip, 1.0, self.transform, &background_clip_path);
+                CLIPS_USED.fetch_add(1, atomic::Ordering::SeqCst);
+                let depth = CLIP_DEPTH.fetch_add(1, atomic::Ordering::SeqCst) + 1;
+                CLIP_DEPTH_USED.fetch_max(depth, atomic::Ordering::SeqCst);
+            }
+
             match segment {
                 None => {
                     // Do nothing
@@ -1311,11 +1324,11 @@ impl ElementCx<'_> {
                 CrossFade(_) => todo!("Implement background drawing for Image::CrossFade"),
                 ImageSet(_) => todo!("Implement background drawing for Image::ImageSet"),
             }
-        }
 
-        if clips_available {
-            scene.pop_layer();
-            CLIP_DEPTH.fetch_sub(1, atomic::Ordering::SeqCst);
+            if clips_available {
+                scene.pop_layer();
+                CLIP_DEPTH.fetch_sub(1, atomic::Ordering::SeqCst);
+            }
         }
     }
 
