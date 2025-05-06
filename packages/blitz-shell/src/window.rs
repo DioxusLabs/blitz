@@ -94,6 +94,21 @@ impl<Doc: Document<Doc = D>, Rend: DocumentRenderer<Doc = D>> View<Doc, Rend> {
         // TODO: make this conditional on text input focus
         winit_window.set_ime_allowed(true);
 
+        #[cfg(target_arch = "wasm32")]
+        {
+            use winit::platform::web::WindowExtWebSys;
+
+            // On wasm, append the canvas to the document body
+            let canvas = winit_window.canvas().unwrap();
+            web_sys::window()
+                .and_then(|win| win.document())
+                .and_then(|doc| doc.body())
+                .and_then(|body| body.append_child(canvas.as_ref()).ok())
+                .expect("couldn't append canvas to document body");
+            // Best effort to start with the canvas focused, taking input
+            drop(web_sys::HtmlElement::from(canvas).focus());     
+        }
+
         // Create viewport
         let size = winit_window.inner_size();
         let scale = winit_window.scale_factor() as f32;

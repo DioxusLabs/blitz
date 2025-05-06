@@ -36,6 +36,12 @@ muda = { workspace = true, default-features = false, features = ["serde"], optio
 [target.'cfg(target_os = "android")'.dependencies]
 android-activity = { version = "0.6.0", features = ["native-activity"] }
 
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+wasm-bindgen-futures = "0.4.45"
+web-sys = { version = "0.3.77", features = ["HtmlCollection", "Text"] }
+# If updating, also update in .github/workflows/web-demo.yml
+wasm-bindgen = "=0.2.100"
+
 [package.metadata.docs.rs]
 all-features = true
 rustdoc-args = ["--cfg", "docsrs"]

@@ -15,3 +15,6 @@ open *ARGS:
 
 todomvc:
   cargo run --release --example todomvc
+
+run-wasm:
+  cargo run -p run-wasm -- -p counter --no-default-features

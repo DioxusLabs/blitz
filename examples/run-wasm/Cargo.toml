@@ -1,0 +1,8 @@
+[package]
+name = "run-wasm"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+publish = false
+
+[dependencies]
+cargo-run-wasm = "0.4.0"

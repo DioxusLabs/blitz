@@ -28,6 +28,7 @@ softbuffer = { workspace = true }
 
 # Rendering dependencies
 image = { workspace = true }
+log = "*"
 
 # Other dependencies
 tracing = { workspace = true, optional = true }

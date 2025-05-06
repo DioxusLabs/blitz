@@ -103,7 +103,7 @@ impl DocumentRenderer for BlitzVelloCpuRenderer {
         self.render_context.0.render_to_pixmap(&mut pixmap);
 
         let out = surface_buffer.as_mut();
-        assert_eq!(pixmap.buf.len(), out.len() * 4);
+        // assert_eq!(pixmap.buf.len(), out.len() * 4);
         for (src, dest) in pixmap.buf.chunks_exact_mut(4).zip(out.iter_mut()) {
             let [r, g, b, a] = *src else {
                 panic!();

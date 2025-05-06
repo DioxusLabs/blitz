@@ -10,7 +10,7 @@ edition = "2024"
 
 [features]
 default = ["accessibility", "hot-reload", "menu", "tracing", "net", "svg"]
-svg = ["blitz-dom/svg", "blitz-renderer-vello/svg"]
+svg = ["blitz-dom/svg", "blitz-renderer-vello-cpu/svg"]
 net = ["dep:tokio", "dep:blitz-net"]
 accessibility = ["blitz-shell/accessibility", "blitz-dom/accessibility"]
 autofocus = []
@@ -20,7 +20,7 @@ hot-reload = ["dep:dioxus-cli-config", "dep:dioxus-devtools"]
 
 [dependencies]
 # Blitz dependencies
-blitz-renderer-vello = { version = "0.1.0-alpha.1", path = "../blitz-renderer-vello", default-features = false }
+blitz-renderer-vello-cpu = { version = "0.1.0-alpha.1", path = "../blitz-renderer-vello-cpu", default-features = false }
 blitz-dom = { version = "0.1.0-alpha.1", path = "../blitz-dom", default-features = false }
 blitz-net = { version = "0.1.0-alpha.1", path = "../blitz-net", optional = true }
 blitz-traits = { version = "0.1.0-alpha.1", path = "../blitz-traits" }
@@ -44,7 +44,10 @@ tracing = { workspace = true, optional = true }
 rustc-hash = { workspace = true }
 futures-util = { workspace = true }
 
-
+# WASM dependencies
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+console_error_panic_hook = "0.1.7"
+console_log = "1.0.0"
 
 [package.metadata.docs.rs]
 all-features = true

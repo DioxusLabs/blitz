@@ -23,6 +23,10 @@ pub use event::DioxusNativeEvent;
 use blitz_shell::{BlitzShellEvent, Config, WindowConfig, create_default_event_loop};
 use dioxus_core::{ComponentFunction, Element, VirtualDom};
 
+#[cfg(target_arch = "wasm32")]
+use winit::platform::web::EventLoopExtWebSys;
+use winit::{dpi::LogicalSize, window::WindowAttributes};
+
 type NodeId = usize;
 
 /// Launch an interactive HTML/CSS renderer driven by the Dioxus virtualdom
@@ -40,6 +44,11 @@ pub fn launch_cfg_with_props<P: Clone + 'static, M: 'static>(
     props: P,
     _cfg: Config,
 ) {
+    #[cfg(target_arch = "wasm32")]
+    std::panic::set_hook(Box::new(console_error_panic_hook::hook));
+    #[cfg(target_arch = "wasm32")]
+    console_log::init().expect("could not initialize logger");
+
     let event_loop = create_default_event_loop::<BlitzShellEvent>();
 
     #[cfg(feature = "net")]
@@ -70,7 +79,8 @@ pub fn launch_cfg_with_props<P: Clone + 'static, M: 'static>(
     // We're going to need to hit it with a special waker
     let vdom = VirtualDom::new_with_props(root, props);
     let doc = DioxusDocument::new(vdom, net_provider);
-    let window = WindowConfig::new(doc);
+    let attrs = WindowAttributes::default().with_inner_size(LogicalSize { width: 800, height: 600});
+    let window = WindowConfig::with_attributes(doc, attrs);
 
     // Setup hot-reloading if enabled.
     #[cfg(all(
@@ -95,5 +105,9 @@ pub fn launch_cfg_with_props<P: Clone + 'static, M: 'static>(
     application.add_window(window);
 
     // Run event loop
+    #[cfg(target_arch = "wasm32")]
+    event_loop.spawn_app(application);
+
+    #[cfg(not(target_arch = "wasm32"))]
     event_loop.run_app(&mut application).unwrap();
 }

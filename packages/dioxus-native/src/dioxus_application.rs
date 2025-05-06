@@ -1,4 +1,4 @@
-use blitz_renderer_vello::BlitzVelloRenderer;
+use blitz_renderer_vello_cpu::BlitzVelloCpuRenderer as BlitzVelloRenderer;
 use blitz_shell::BlitzApplication;
 use winit::application::ApplicationHandler;
 use winit::event::{StartCause, WindowEvent};
