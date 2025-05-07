@@ -3,7 +3,7 @@ use crate::convert_events::{
 };
 use crate::event::{BlitzShellEvent, create_waker};
 use anyrender::WindowRenderer;
-use blitz_dom::{BaseDocument, Document};
+use blitz_dom::Document;
 use blitz_paint::paint_scene;
 use blitz_traits::{
     BlitzMouseButtonEvent, ColorScheme, MouseEventButton, MouseEventButtons, Viewport,
@@ -25,16 +25,13 @@ use crate::menu::init_menu;
 #[cfg(feature = "accessibility")]
 use crate::accessibility::AccessibilityState;
 
-// TODO: make generic
-type D = BaseDocument;
-
-pub struct WindowConfig<Doc: Document<Doc = BaseDocument>, Rend: WindowRenderer> {
+pub struct WindowConfig<Doc: Document, Rend: WindowRenderer> {
     doc: Doc,
     attributes: WindowAttributes,
     rend: PhantomData<Rend>,
 }
 
-impl<Doc: Document<Doc = D>, Rend: WindowRenderer> WindowConfig<Doc, Rend> {
+impl<Doc: Document, Rend: WindowRenderer> WindowConfig<Doc, Rend> {
     pub fn new(doc: Doc) -> Self {
         Self::with_attributes(doc, Window::default_attributes())
     }
@@ -48,7 +45,7 @@ impl<Doc: Document<Doc = D>, Rend: WindowRenderer> WindowConfig<Doc, Rend> {
     }
 }
 
-pub struct View<Doc: Document<Doc = D>, Rend: WindowRenderer> {
+pub struct View<Doc: Document, Rend: WindowRenderer> {
     pub doc: Doc,
 
     pub(crate) renderer: Rend,
@@ -81,7 +78,7 @@ pub struct View<Doc: Document<Doc = D>, Rend: WindowRenderer> {
     _menu: muda::Menu,
 }
 
-impl<Doc: Document<Doc = D>, Rend: WindowRenderer> View<Doc, Rend> {
+impl<Doc: Document, Rend: WindowRenderer> View<Doc, Rend> {
     pub fn init(
         config: WindowConfig<Doc, Rend>,
         event_loop: &ActiveEventLoop,
@@ -152,7 +149,7 @@ impl<Doc: Document<Doc = D>, Rend: WindowRenderer> View<Doc, Rend> {
     }
 }
 
-impl<Doc: Document<Doc = D>, Rend: WindowRenderer> View<Doc, Rend> {
+impl<Doc: Document, Rend: WindowRenderer> View<Doc, Rend> {
     pub fn resume(&mut self) {
         // Resolve dom
         self.doc.as_mut().set_viewport(self.viewport.clone());

@@ -49,8 +49,6 @@ impl From<DioxusDocument> for BaseDocument {
     }
 }
 impl Document for DioxusDocument {
-    type Doc = BaseDocument;
-
     fn poll(&mut self, mut cx: std::task::Context) -> bool {
         {
             let fut = self.vdom.wait_for_work();

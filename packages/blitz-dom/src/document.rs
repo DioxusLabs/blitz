@@ -44,9 +44,9 @@ use style::{
 use taffy::AvailableSpace;
 use url::Url;
 
-pub trait Document: AsRef<Self::Doc> + AsMut<Self::Doc> + Into<Self::Doc> + 'static {
-    type Doc: 'static;
-
+pub trait Document:
+    AsRef<BaseDocument> + AsMut<BaseDocument> + Into<BaseDocument> + 'static
+{
     fn poll(&mut self, _cx: std::task::Context) -> bool {
         // Default implementation does nothing
         false
@@ -176,7 +176,6 @@ fn make_device(viewport: &Viewport) -> Device {
 }
 
 impl Document for BaseDocument {
-    type Doc = Self;
     fn handle_event(&mut self, event: &mut DomEvent) {
         handle_event(self, event)
     }
