@@ -82,16 +82,26 @@ Both wrappers can optionally use <b>`blitz-net`</b> to fetch sub-resources.
 
 #### Additional crates
 
-- **`blitz-renderer-vello`** - Adds a Vello/WGPU based renderer to `blitz-dom`
-<br /><small><b>Uses: [Vello](https://github.com/linebender/vello) + [WGPU](https://github.com/gfx-rs/wgpu) for rendering</b></small>
-
 - **`blitz-net`** -  Networking that can fetch resources over http, from the file-system or from encoded data URIs.
-<br /><small><b>Uses: [Reqwest](https://github.com/seanmonstar/reqwest) for HTTP</b></small>
+<br /><small><b>Uses: [reqwest](https://github.com/seanmonstar/reqwest) (HTTP client)</b></small>
+- **`blitz-paint`** - Translates a `blitz-dom` tree into `anyrender` draw commands.
+<br /><small><b>Uses: [anyrender](https://github.com/DioxusLabs/blitz/tree/main/packages/anyrender) (2D drawing abstraction)</b></small>
 - **`blitz-html`** -  Adds HTML parsing to `blitz-dom`
 <br /><small><b>Uses: [html5ever](https://github.com/servo/html5ever) (HTML parsing) and [xml5ever](https://github.com/servo/html5ever/tree/main/xml5ever) (XHTML parsing)</b></small>
 - **`blitz-shell`** - A shell that allows Blitz to render to a window (integrates a Winit event loop, AccessKit, Muda etc).
-<br /><small><b>Uses: [Winit](https://github.com/rust-windowing/winit) (windowing/input), [AccessKit](https://github.com/AccessKit/accesskit) (accessibility), [Muda](https://github.com/tauri-apps/muda) (system menus)</b></small>
+<br /><small><b>Uses: [winit](https://github.com/rust-windowing/winit) (windowing/input), [accesskit](https://github.com/AccessKit/accesskit) (accessibility), [muda](https://github.com/tauri-apps/muda) (system menus)</b></small>
 
+#### Anyrender crates
+
+Temporarily hosted in the Blitz repository while they mature/stabilise, these will be spun out into their own repo when ready.
+
+- **`anyrender`** - A 2D drawing abstraction suitable for rendering web content.
+- **`anyrender_svg`** - Translates SVGs into `anyrender` drawing commands.
+<br /><small><b>Uses: [usvg](https://github.com/linebender/resvg) (SVG)</b></small>
+- **`anyrender_vello`** - A Vello/WGPU backend for `anyrender`
+<br /><small><b>Uses: [vello](https://github.com/linebender/vello) + [wgpu](https://github.com/gfx-rs/wgpu) for rendering</b></small>
+- **`anyrender_vello_cpu`** - A vello_cpu/softbuffer backend for `anyrender`
+<br /><small><b>Uses: [vello_cpu](https://github.com/linebender/vello/sparse_strips/vello_cpu) + [softbuffer](https://github.com/rust-windowing/softbuffer) for rendering</b></small>
 
 
 ## License
