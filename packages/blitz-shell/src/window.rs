@@ -149,11 +149,7 @@ impl<Rend: WindowRenderer> View<Rend> {
     }
 
     pub fn downcast_doc_mut<T: 'static>(&mut self) -> &mut T {
-        self
-            .doc
-            .as_any_mut()
-            .downcast_mut::<T>()
-            .unwrap()
+        self.doc.as_any_mut().downcast_mut::<T>().unwrap()
     }
 }
 
