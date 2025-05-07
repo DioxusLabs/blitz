@@ -3,7 +3,7 @@ use anyrender::Scene as _;
 use anyrender_vello::VelloAnyrenderScene;
 use blitz_dom::BaseDocument;
 use blitz_paint::paint_scene;
-use blitz_traits::{BlitzWindowHandle, Devtools, DocumentRenderer, Viewport};
+use blitz_traits::{BlitzWindowHandle, DocumentRenderer, Viewport};
 use peniko::Color;
 use std::num::NonZeroUsize;
 use std::sync::Arc;
@@ -101,14 +101,7 @@ impl DocumentRenderer for BlitzVelloRenderer {
         };
     }
 
-    fn render(
-        &mut self,
-        doc: &BaseDocument,
-        scale: f64,
-        width: u32,
-        height: u32,
-        devtools: Devtools,
-    ) {
+    fn render(&mut self, doc: &BaseDocument, scale: f64, width: u32, height: u32) {
         let RenderState::Active(state) = &mut self.render_state else {
             return;
         };
@@ -129,7 +122,7 @@ impl DocumentRenderer for BlitzVelloRenderer {
         };
 
         // Regenerate the vello scene
-        paint_scene(&mut self.scene, doc, scale, width, height, devtools);
+        paint_scene(&mut self.scene, doc, scale, width, height);
 
         state
             .renderer
@@ -237,7 +230,6 @@ impl VelloImageRenderer {
             self.scale,
             self.size.width,
             self.size.height,
-            Devtools::default(),
         );
 
         self.render_internal_scene(cpu_buffer);

@@ -7,7 +7,7 @@ use crate::{ElementNodeData, Node, NodeData, TextNodeData};
 use app_units::Au;
 use blitz_traits::navigation::{DummyNavigationProvider, NavigationProvider};
 use blitz_traits::net::{DummyNetProvider, SharedProvider};
-use blitz_traits::{ColorScheme, Document, Viewport};
+use blitz_traits::{ColorScheme, Devtools, Document, Viewport};
 use blitz_traits::{DomEvent, HitResult};
 use cursor_icon::CursorIcon;
 use markup5ever::local_name;
@@ -100,6 +100,8 @@ pub struct BaseDocument {
 
     // Viewport details such as the dimensions, HiDPI scale, and zoom factor,
     pub(crate) viewport: Viewport,
+    // Devtool settings. Currently used to render debug overlays
+    pub(crate) devtool_settings: Devtools,
 
     // Scroll within our viewport
     pub(crate) viewport_scroll: kurbo::Point,
@@ -199,6 +201,7 @@ impl BaseDocument {
             snapshots,
             nodes_to_id,
             viewport,
+            devtool_settings: Devtools::default(),
             viewport_scroll: kurbo::Point::ZERO,
             base_url: None,
             // quadtree: Quadtree::new(20),
@@ -974,6 +977,14 @@ impl BaseDocument {
 
     pub fn get_viewport(&self) -> Viewport {
         self.viewport.clone()
+    }
+
+    pub fn devtools(&self) -> &Devtools {
+        &self.devtool_settings
+    }
+
+    pub fn devtools_mut(&mut self) -> &mut Devtools {
+        &mut self.devtool_settings
     }
 
     /// Update the device and reset the stylist to process the new size

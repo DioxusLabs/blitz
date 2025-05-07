@@ -2,7 +2,7 @@
 use anyrender_vello_cpu::VelloCpuAnyrenderScene;
 use blitz_dom::BaseDocument;
 use blitz_paint::paint_scene;
-use blitz_traits::{BlitzWindowHandle, Devtools, DocumentRenderer, Viewport};
+use blitz_traits::{BlitzWindowHandle, DocumentRenderer, Viewport};
 use softbuffer::{Context, Surface};
 use std::{num::NonZero, sync::Arc};
 use vello_cpu::{Pixmap, RenderContext};
@@ -75,14 +75,7 @@ impl DocumentRenderer for BlitzVelloCpuRenderer {
         };
     }
 
-    fn render(
-        &mut self,
-        doc: &BaseDocument,
-        scale: f64,
-        width: u32,
-        height: u32,
-        devtools: Devtools,
-    ) {
+    fn render(&mut self, doc: &BaseDocument, scale: f64, width: u32, height: u32) {
         let RenderState::Active(state) = &mut self.render_state else {
             return;
         };
@@ -92,14 +85,7 @@ impl DocumentRenderer for BlitzVelloCpuRenderer {
 
         // Paint
         let mut pixmap = Pixmap::new(width as u16, height as u16);
-        paint_scene(
-            &mut self.render_context,
-            doc,
-            scale,
-            width,
-            height,
-            devtools,
-        );
+        paint_scene(&mut self.render_context, doc, scale, width, height);
         self.render_context.0.render_to_pixmap(&mut pixmap);
 
         let out = surface_buffer.as_mut();
@@ -144,7 +130,6 @@ impl VelloCpuImageRenderer {
             self.scale,
             width as u32,
             height as u32,
-            Devtools::default(),
         );
         cpu_buffer.resize(width as usize * height as usize * 4, 0);
         self.scene

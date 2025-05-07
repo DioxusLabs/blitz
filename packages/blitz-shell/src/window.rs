@@ -4,7 +4,7 @@ use crate::convert_events::{
 use crate::event::{BlitzShellEvent, create_waker};
 use blitz_dom::BaseDocument;
 use blitz_traits::{
-    BlitzMouseButtonEvent, ColorScheme, Devtools, MouseEventButton, MouseEventButtons, Viewport,
+    BlitzMouseButtonEvent, ColorScheme, MouseEventButton, MouseEventButtons, Viewport,
 };
 use blitz_traits::{Document, DocumentRenderer, DomEvent, DomEventData};
 use winit::keyboard::PhysicalKey;
@@ -65,7 +65,6 @@ pub struct View<Doc: Document<Doc = D>, Rend: DocumentRenderer<Doc = D>> {
 
     /// The state of the keyboard modifiers (ctrl, shift, etc). Winit/Tao don't track these for us so we
     /// need to store them in order to have access to them when processing keypress events
-    pub devtools: Devtools,
     theme_override: Option<Theme>,
     keyboard_modifiers: Modifiers,
     buttons: MouseEventButtons,
@@ -110,7 +109,6 @@ impl<Doc: Document<Doc = D>, Rend: DocumentRenderer<Doc = D>> View<Doc, Rend> {
             window: winit_window.clone(),
             doc: config.doc,
             viewport,
-            devtools: Default::default(),
             theme_override: None,
             buttons: MouseEventButtons::None,
             mouse_pos: Default::default(),
@@ -169,13 +167,8 @@ impl<Doc: Document<Doc = D>, Rend: DocumentRenderer<Doc = D>> View<Doc, Rend> {
 
         // Render
         let (width, height) = self.viewport.window_size;
-        self.renderer.render(
-            self.doc.as_ref(),
-            self.viewport.scale_f64(),
-            width,
-            height,
-            self.devtools,
-        );
+        self.renderer
+            .render(self.doc.as_ref(), self.viewport.scale_f64(), width, height);
 
         // Set waker
         self.waker = Some(create_waker(&self.event_loop_proxy, self.window_id()));
@@ -216,13 +209,8 @@ impl<Doc: Document<Doc = D>, Rend: DocumentRenderer<Doc = D>> View<Doc, Rend> {
     pub fn redraw(&mut self) {
         self.doc.as_mut().resolve();
         let (width, height) = self.viewport.window_size;
-        self.renderer.render(
-            self.doc.as_ref(),
-            self.viewport.scale_f64(),
-            width,
-            height,
-            self.devtools,
-        );
+        self.renderer
+            .render(self.doc.as_ref(), self.viewport.scale_f64(), width, height);
     }
 
     pub fn window_id(&self) -> WindowId {
@@ -343,7 +331,7 @@ impl<Doc: Document<Doc = D>, Rend: DocumentRenderer<Doc = D>> View<Doc, Rend> {
             return;
         };
 
-        if self.devtools.highlight_hover {
+        if self.doc.as_ref().devtools().highlight_hover {
             let mut node = self.doc.as_ref().get_node(node_id).unwrap();
             if button == MouseEventButton::Secondary {
                 if let Some(parent_id) = node.layout_parent.get() {
@@ -351,7 +339,7 @@ impl<Doc: Document<Doc = D>, Rend: DocumentRenderer<Doc = D>> View<Doc, Rend> {
                 }
             }
             self.doc.as_ref().debug_log_node(node.id);
-            self.devtools.highlight_hover = false;
+            self.doc.as_mut().devtools_mut().highlight_hover = false;
         } else {
             // Not debug mode. Handle click as usual
             if button == MouseEventButton::Main {
@@ -452,11 +440,11 @@ impl<Doc: Document<Doc = D>, Rend: DocumentRenderer<Doc = D>> View<Doc, Rend> {
                 if alt {
                     match key_code {
                         KeyCode::KeyD => {
-                            self.devtools.show_layout = !self.devtools.show_layout;
+                            self.doc.as_mut().devtools_mut().toggle_show_layout();
                             self.request_redraw();
                         }
                         KeyCode::KeyH => {
-                            self.devtools.highlight_hover = !self.devtools.highlight_hover;
+                            self.doc.as_mut().devtools_mut().toggle_highlight_hover();
                             self.request_redraw();
                         }
                         KeyCode::KeyT => {

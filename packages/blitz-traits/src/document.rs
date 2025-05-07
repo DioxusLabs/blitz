@@ -1,4 +1,4 @@
-use crate::{Devtools, DomEvent, Viewport, WasmNotSendSync};
+use crate::{DomEvent, Viewport, WasmNotSendSync};
 use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
 use std::any::Any;
 use std::sync::Arc;
@@ -36,5 +36,5 @@ pub trait DocumentRenderer {
     /// Adjust the viewport
     fn set_size(&mut self, physical_width: u32, physical_height: u32);
 
-    fn render(&mut self, doc: &Self::Doc, scale: f64, width: u32, height: u32, devtools: Devtools);
+    fn render(&mut self, doc: &Self::Doc, scale: f64, width: u32, height: u32);
 }

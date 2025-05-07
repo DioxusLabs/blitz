@@ -94,17 +94,17 @@ pub fn paint_scene(
     scale: f64,
     width: u32,
     height: u32,
-    devtool_config: Devtools,
 ) {
     CLIPS_USED.store(0, atomic::Ordering::SeqCst);
     CLIPS_WANTED.store(0, atomic::Ordering::SeqCst);
 
+    let devtools = *dom.devtools();
     let generator = BlitzDomPainter {
         dom,
         scale,
         width,
         height,
-        devtools: devtool_config,
+        devtools,
     };
     generator.paint_scene(scene);
 

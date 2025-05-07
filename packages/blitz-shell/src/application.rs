@@ -74,7 +74,7 @@ impl<Doc: Document<Doc = D>, Rend: DocumentRenderer<Doc = D>> ApplicationHandler
         if let Ok(event) = self.menu_channel.try_recv() {
             if event.id == muda::MenuId::new("dev.show_layout") {
                 for (_, view) in self.windows.iter_mut() {
-                    view.devtools.show_layout = !view.devtools.show_layout;
+                    view.doc.as_mut().devtools_mut().toggle_show_layout();
                     view.request_redraw();
                 }
             }
