@@ -1,7 +1,6 @@
 use crate::event::BlitzShellEvent;
 
 use anyrender::WindowRenderer;
-use blitz_dom::Document;
 use std::collections::HashMap;
 use winit::application::ApplicationHandler;
 use winit::event::WindowEvent;
@@ -10,16 +9,16 @@ use winit::window::WindowId;
 
 use crate::{View, WindowConfig};
 
-pub struct BlitzApplication<Doc: Document, Rend: WindowRenderer> {
-    pub windows: HashMap<WindowId, View<Doc, Rend>>,
-    pending_windows: Vec<WindowConfig<Doc, Rend>>,
+pub struct BlitzApplication<Rend: WindowRenderer> {
+    pub windows: HashMap<WindowId, View<Rend>>,
+    pending_windows: Vec<WindowConfig<Rend>>,
     proxy: EventLoopProxy<BlitzShellEvent>,
 
     #[cfg(all(feature = "menu", not(any(target_os = "android", target_os = "ios"))))]
     menu_channel: muda::MenuEventReceiver,
 }
 
-impl<Doc: Document, Rend: WindowRenderer> BlitzApplication<Doc, Rend> {
+impl<Rend: WindowRenderer> BlitzApplication<Rend> {
     pub fn new(proxy: EventLoopProxy<BlitzShellEvent>) -> Self {
         BlitzApplication {
             windows: HashMap::new(),
@@ -31,18 +30,16 @@ impl<Doc: Document, Rend: WindowRenderer> BlitzApplication<Doc, Rend> {
         }
     }
 
-    pub fn add_window(&mut self, window_config: WindowConfig<Doc, Rend>) {
+    pub fn add_window(&mut self, window_config: WindowConfig<Rend>) {
         self.pending_windows.push(window_config);
     }
 
-    fn window_mut_by_doc_id(&mut self, doc_id: usize) -> Option<&mut View<Doc, Rend>> {
+    fn window_mut_by_doc_id(&mut self, doc_id: usize) -> Option<&mut View<Rend>> {
         self.windows.values_mut().find(|w| w.doc.id() == doc_id)
     }
 }
 
-impl<Doc: Document, Rend: WindowRenderer> ApplicationHandler<BlitzShellEvent>
-    for BlitzApplication<Doc, Rend>
-{
+impl<Rend: WindowRenderer> ApplicationHandler<BlitzShellEvent> for BlitzApplication<Rend> {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
         // Resume existing windows
         for (_, view) in self.windows.iter_mut() {

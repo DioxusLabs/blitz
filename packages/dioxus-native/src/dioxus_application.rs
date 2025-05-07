@@ -5,10 +5,10 @@ use winit::event::{StartCause, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, EventLoopProxy};
 use winit::window::WindowId;
 
-use crate::{BlitzShellEvent, DioxusDocument, DioxusNativeEvent, WindowConfig};
+use crate::{BlitzShellEvent, DioxusNativeEvent, WindowConfig};
 
 pub struct DioxusNativeApplication {
-    inner: BlitzApplication<DioxusDocument, VelloWindowRenderer>,
+    inner: BlitzApplication<VelloWindowRenderer>,
 }
 
 impl DioxusNativeApplication {
@@ -18,7 +18,7 @@ impl DioxusNativeApplication {
         }
     }
 
-    pub fn add_window(&mut self, window_config: WindowConfig<DioxusDocument, VelloWindowRenderer>) {
+    pub fn add_window(&mut self, window_config: WindowConfig<VelloWindowRenderer>) {
         self.inner.add_window(window_config);
     }
 
@@ -36,8 +36,10 @@ impl DioxusNativeApplication {
             ))]
             DioxusNativeEvent::DevserverEvent(event) => match event {
                 dioxus_devtools::DevserverMsg::HotReload(hotreload_message) => {
+                    use crate::DioxusDocument;
                     for window in self.inner.windows.values_mut() {
-                        dioxus_devtools::apply_changes(&window.doc.vdom, hotreload_message);
+                        let doc = window.downcast_doc_mut::<DioxusDocument>();
+                        dioxus_devtools::apply_changes(&doc.vdom, hotreload_message);
                         window.poll();
                     }
                 }

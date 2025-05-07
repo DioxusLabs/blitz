@@ -85,7 +85,7 @@ fn main() {
         navigation_provider.clone(),
     );
     let attrs = WindowAttributes::default().with_title(title);
-    let window = WindowConfig::with_attributes(doc, attrs);
+    let window = WindowConfig::with_attributes(Box::new(doc) as _, attrs);
 
     // Create application
     let mut application = ReadmeApplication::new(

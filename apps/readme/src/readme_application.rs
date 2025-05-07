@@ -19,7 +19,7 @@ use crate::markdown::{BLITZ_MD_STYLES, GITHUB_MD_STYLES, markdown_to_html};
 pub struct ReadmeEvent;
 
 pub struct ReadmeApplication {
-    inner: BlitzApplication<HtmlDocument, VelloWindowRenderer>,
+    inner: BlitzApplication<VelloWindowRenderer>,
     handle: tokio::runtime::Handle,
     net_provider: Arc<dyn NetProvider<Resource>>,
     raw_url: String,
@@ -45,11 +45,11 @@ impl ReadmeApplication {
         }
     }
 
-    pub fn add_window(&mut self, window_config: WindowConfig<HtmlDocument, VelloWindowRenderer>) {
+    pub fn add_window(&mut self, window_config: WindowConfig<VelloWindowRenderer>) {
         self.inner.add_window(window_config);
     }
 
-    fn window_mut(&mut self) -> &mut View<HtmlDocument, VelloWindowRenderer> {
+    fn window_mut(&mut self) -> &mut View<VelloWindowRenderer> {
         self.inner.windows.values_mut().next().unwrap()
     }
 
@@ -73,7 +73,7 @@ impl ReadmeApplication {
             self.navigation_provider.clone(),
         );
         self.window_mut()
-            .replace_document(doc, retain_scroll_position);
+            .replace_document(Box::new(doc) as _, retain_scroll_position);
     }
 
     fn toggle_theme(&mut self) {

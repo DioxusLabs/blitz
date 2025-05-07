@@ -25,18 +25,18 @@ use crate::menu::init_menu;
 #[cfg(feature = "accessibility")]
 use crate::accessibility::AccessibilityState;
 
-pub struct WindowConfig<Doc: Document, Rend: WindowRenderer> {
-    doc: Doc,
+pub struct WindowConfig<Rend: WindowRenderer> {
+    doc: Box<dyn Document>,
     attributes: WindowAttributes,
     rend: PhantomData<Rend>,
 }
 
-impl<Doc: Document, Rend: WindowRenderer> WindowConfig<Doc, Rend> {
-    pub fn new(doc: Doc) -> Self {
+impl<Rend: WindowRenderer> WindowConfig<Rend> {
+    pub fn new(doc: Box<dyn Document>) -> Self {
         Self::with_attributes(doc, Window::default_attributes())
     }
 
-    pub fn with_attributes(doc: Doc, attributes: WindowAttributes) -> Self {
+    pub fn with_attributes(doc: Box<dyn Document>, attributes: WindowAttributes) -> Self {
         WindowConfig {
             doc,
             attributes,
@@ -45,8 +45,8 @@ impl<Doc: Document, Rend: WindowRenderer> WindowConfig<Doc, Rend> {
     }
 }
 
-pub struct View<Doc: Document, Rend: WindowRenderer> {
-    pub doc: Doc,
+pub struct View<Rend: WindowRenderer> {
+    pub doc: Box<dyn Document>,
 
     pub(crate) renderer: Rend,
     pub(crate) waker: Option<Waker>,
@@ -78,9 +78,9 @@ pub struct View<Doc: Document, Rend: WindowRenderer> {
     _menu: muda::Menu,
 }
 
-impl<Doc: Document, Rend: WindowRenderer> View<Doc, Rend> {
+impl<Rend: WindowRenderer> View<Rend> {
     pub fn init(
-        config: WindowConfig<Doc, Rend>,
+        config: WindowConfig<Rend>,
         event_loop: &ActiveEventLoop,
         proxy: &EventLoopProxy<BlitzShellEvent>,
     ) -> Self {
@@ -119,7 +119,7 @@ impl<Doc: Document, Rend: WindowRenderer> View<Doc, Rend> {
         }
     }
 
-    pub fn replace_document(&mut self, new_doc: Doc, retain_scroll_position: bool) {
+    pub fn replace_document(&mut self, new_doc: Box<dyn Document>, retain_scroll_position: bool) {
         let scroll = self.doc.viewport_scroll();
 
         self.doc = new_doc;
@@ -147,9 +147,17 @@ impl<Doc: Document, Rend: WindowRenderer> View<Doc, Rend> {
         self.kick_viewport();
         self.request_redraw();
     }
+
+    pub fn downcast_doc_mut<T: 'static>(&mut self) -> &mut T {
+        self
+            .doc
+            .as_any_mut()
+            .downcast_mut::<T>()
+            .unwrap()
+    }
 }
 
-impl<Doc: Document, Rend: WindowRenderer> View<Doc, Rend> {
+impl<Rend: WindowRenderer> View<Rend> {
     pub fn resume(&mut self) {
         // Resolve dom
         self.doc.set_viewport(self.viewport.clone());

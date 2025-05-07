@@ -86,7 +86,7 @@ fn launch_internal(html: &str, cfg: Config) {
         None,
         navigation_provider,
     );
-    let window: WindowConfig<HtmlDocument, VelloWindowRenderer> = WindowConfig::new(doc);
+    let window: WindowConfig<VelloWindowRenderer> = WindowConfig::new(Box::new(doc) as _);
 
     // Create application
     let mut application = BlitzApplication::new(event_loop.create_proxy());

@@ -70,7 +70,7 @@ pub fn launch_cfg_with_props<P: Clone + 'static, M: 'static>(
     // We're going to need to hit it with a special waker
     let vdom = VirtualDom::new_with_props(root, props);
     let doc = DioxusDocument::new(vdom, net_provider);
-    let window = WindowConfig::new(doc);
+    let window = WindowConfig::new(Box::new(doc) as _);
 
     // Setup hot-reloading if enabled.
     #[cfg(all(
