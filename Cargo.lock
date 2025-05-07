@@ -691,6 +691,7 @@ dependencies = [
  "image",
  "keyboard-types",
  "markup5ever",
+ "objc2 0.6.1",
  "parley",
  "peniko 0.3.2",
  "selectors",

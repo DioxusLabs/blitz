@@ -61,6 +61,10 @@ woff = { workspace = true, optional = true, features = ["version2"] }
 woff2 = { workspace = true, optional = true }
 html-escape = { workspace = true }
 
+# HACK: Blitz doesn't need to depend on objc2 directly. But this feature flag is necessary
+# to prevent debug builds from panicking.
+objc2 = { version = "0.6", features = ["disable-encoding-assertions"] }
+
 # IO & Networking
 url = { workspace = true, features = ["serde"] }
 
