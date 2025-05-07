@@ -1283,7 +1283,10 @@ impl ElementCx<'_> {
             &values[layer_index % values.len()]
         }
 
-        let background_clip = get_cyclic(background_clip_segments, background_image_segments.len() - 1);
+        let background_clip = get_cyclic(
+            background_clip_segments,
+            background_image_segments.len() - 1,
+        );
         let background_clip_path = match background_clip {
             BorderBox => self.frame.frame_border(),
             PaddingBox => self.frame.frame_padding(),
@@ -1314,7 +1317,9 @@ impl ElementCx<'_> {
                 None => {
                     // Do nothing
                 }
-                Gradient(gradient) => self.draw_gradient_frame(scene, gradient, idx),
+                Gradient(gradient) => {
+                    self.draw_gradient_frame(scene, gradient, idx, *background_clip)
+                }
                 Url(_) => {
                     self.draw_raster_bg_image(scene, idx);
                     #[cfg(feature = "svg")]
@@ -1337,8 +1342,12 @@ impl ElementCx<'_> {
         scene: &mut impl anyrender::Scene,
         gradient: &StyloGradient,
         idx: usize,
+        background_clip: StyloBackgroundClip,
     ) {
+        use BackgroundRepeatKeyword::*;
         use style::{Zero as _, values::computed::Length};
+
+        let bg_styles = &self.style.get_background();
 
         let background_origin = self
             .style
@@ -1367,12 +1376,7 @@ impl ElementCx<'_> {
             self.scale as f32,
         );
 
-        let bg_size = bg_size * self.scale;
-        let origin_rect = origin_rect.with_size(bg_size);
-
-        let bg_pos_x = self
-            .style
-            .get_background()
+        let bg_pos_x = bg_styles
             .background_position_x
             .0
             .get(idx)
@@ -1380,9 +1384,7 @@ impl ElementCx<'_> {
             .unwrap_or(LengthPercentage::zero())
             .resolve(Length::new(frame_w - (bg_size.width as f32)))
             .px() as f64;
-        let bg_pos_y = self
-            .style
-            .get_background()
+        let bg_pos_y = bg_styles
             .background_position_y
             .0
             .get(idx)
@@ -1390,9 +1392,246 @@ impl ElementCx<'_> {
             .unwrap_or(LengthPercentage::zero())
             .resolve(Length::new(frame_h - bg_size.height as f32))
             .px() as f64;
-        let bg_position = Point::new(bg_pos_x, bg_pos_y);
 
-        match gradient {
+        let BackgroundRepeat(repeat_x, repeat_y) = bg_styles
+            .background_repeat
+            .0
+            .get(idx)
+            .cloned()
+            .unwrap_or(BackgroundRepeat::repeat());
+
+        let bg_size = if matches!(repeat_x, Round) && matches!(repeat_y, Round) {
+            let count = (frame_w as f64 / bg_size.width).round();
+            let width = frame_w as f64 / count;
+
+            let count = (frame_h as f64 / bg_size.height).round();
+            let height = frame_h as f64 / count;
+
+            Size::new(width, height)
+        } else if matches!(repeat_x, Round) {
+            let count = (frame_w as f64 / bg_size.width).round();
+            let width = frame_w as f64 / count;
+            Size::new(width, bg_size.height)
+        } else if matches!(repeat_y, Round) {
+            let count = (frame_h as f64 / bg_size.height).round();
+            let height = frame_h as f64 / count;
+            Size::new(bg_size.width, height)
+        } else {
+            bg_size
+        };
+
+        fn extend(offset: f64, length: f64) -> f64 {
+            let extend_length = offset % length;
+            if extend_length > 0.0 {
+                length - extend_length
+            } else {
+                -extend_length
+            }
+        }
+
+        let transform = self.transform;
+        let (origin_rect, transform, width_count, width_gap) = match repeat_x {
+            Repeat | Round => {
+                let (origin_rect, extend_width, count) = if (background_clip, background_origin)
+                    == (
+                        StyloBackgroundClip::BorderBox,
+                        StyloBackgroundOrigin::PaddingBox,
+                    ) {
+                    let extend_width =
+                        extend(self.frame.border_left_width + bg_pos_x, bg_size.width) * self.scale;
+                    let width = self.frame.border_box.width() + extend_width;
+                    let count = (width / bg_size.width).ceil() as u32;
+                    let origin_rect = self
+                        .frame
+                        .border_box
+                        .with_size(Size::new(bg_size.width, origin_rect.height()));
+                    (origin_rect, extend_width, count)
+                } else if (background_clip, background_origin)
+                    == (
+                        StyloBackgroundClip::BorderBox,
+                        StyloBackgroundOrigin::ContentBox,
+                    )
+                {
+                    let extend_width = extend(
+                        self.frame.border_left_width + self.frame.padding_left_width + bg_pos_x,
+                        bg_size.width,
+                    ) * self.scale;
+                    let width = self.frame.border_box.width() + extend_width;
+                    let count = (width / bg_size.width).ceil() as u32;
+                    let origin_rect = self
+                        .frame
+                        .border_box
+                        .with_size(Size::new(bg_size.width, origin_rect.height()));
+
+                    (origin_rect, extend_width, count)
+                } else if (background_clip, background_origin)
+                    == (
+                        StyloBackgroundClip::PaddingBox,
+                        StyloBackgroundOrigin::ContentBox,
+                    )
+                {
+                    let extend_width =
+                        extend(self.frame.padding_left_width + bg_pos_x, bg_size.width)
+                            * self.scale;
+                    let width = self.frame.padding_box.width() + extend_width;
+                    let count = (width / bg_size.width).ceil() as u32;
+                    let origin_rect = self
+                        .frame
+                        .padding_box
+                        .with_size(Size::new(bg_size.width, origin_rect.height()));
+
+                    (origin_rect, extend_width, count)
+                } else {
+                    let extend_width = extend(bg_pos_x, bg_size.width) * self.scale;
+                    let width = origin_rect.width() + extend_width;
+                    let count = (width / bg_size.width).ceil() as u32;
+                    let origin_rect =
+                        origin_rect.with_size(Size::new(bg_size.width, origin_rect.height()));
+
+                    (origin_rect, extend_width, count)
+                };
+
+                let transform = transform.then_translate(Vec2 {
+                    x: origin_rect.x0 - extend_width,
+                    y: 0.0,
+                });
+
+                (origin_rect, transform, count, bg_size.width)
+            }
+            Space => {
+                let frame_w = frame_w as f64;
+                let modulo = frame_w % bg_size.width;
+                let count = (((frame_w - modulo) / bg_size.width) as u32).max(1);
+                let gap = if count > 1 {
+                    modulo / (count - 1) as f64
+                } else {
+                    0.0
+                } + bg_size.width;
+
+                let transform = transform.then_translate(Vec2 {
+                    x: origin_rect.x0 * self.scale + if count == 1 { bg_pos_x } else { 0.0 },
+                    y: 0.0,
+                });
+
+                let origin_rect =
+                    origin_rect.with_size(Size::new(bg_size.width, origin_rect.height()));
+
+                (origin_rect, transform, count, gap)
+            }
+            NoRepeat => {
+                let transform = transform.then_translate(Vec2 {
+                    x: (origin_rect.x0 + bg_pos_x) * self.scale,
+                    y: 0.0,
+                });
+
+                let origin_rect =
+                    origin_rect.with_size(Size::new(bg_size.width, origin_rect.height()));
+
+                (origin_rect, transform, 1, 0.0)
+            }
+        };
+        let (origin_rect_transform, transform, height_count, height_gap) = match repeat_y {
+            Repeat | Round => {
+                let (origin_rect, extend_height, count) = if (background_clip, background_origin)
+                    == (
+                        StyloBackgroundClip::BorderBox,
+                        StyloBackgroundOrigin::PaddingBox,
+                    ) {
+                    let extend_height =
+                        extend(self.frame.border_top_width + bg_pos_y, bg_size.height) * self.scale;
+                    let height = self.frame.border_box.height() + extend_height;
+                    let count = (height / bg_size.height).ceil() as u32;
+                    let origin_rect = self
+                        .frame
+                        .border_box
+                        .with_size(Size::new(origin_rect.width(), bg_size.height));
+
+                    (origin_rect, extend_height, count)
+                } else if (background_clip, background_origin)
+                    == (
+                        StyloBackgroundClip::BorderBox,
+                        StyloBackgroundOrigin::ContentBox,
+                    )
+                {
+                    let extend_height = extend(
+                        self.frame.border_top_width + self.frame.padding_top_width + bg_pos_x,
+                        bg_size.height,
+                    ) * self.scale;
+                    let height = self.frame.border_box.height() + extend_height;
+                    let count = (height / bg_size.height).ceil() as u32;
+                    let origin_rect = self
+                        .frame
+                        .border_box
+                        .with_size(Size::new(origin_rect.width(), bg_size.height));
+
+                    (origin_rect, extend_height, count)
+                } else if (background_clip, background_origin)
+                    == (
+                        StyloBackgroundClip::PaddingBox,
+                        StyloBackgroundOrigin::ContentBox,
+                    )
+                {
+                    let extend_height =
+                        extend(self.frame.padding_top_width + bg_pos_x, bg_size.height)
+                            * self.scale;
+                    let height = self.frame.padding_box.height() + extend_height;
+                    let count = (height / bg_size.height).ceil() as u32;
+                    let origin_rect = self
+                        .frame
+                        .padding_box
+                        .with_size(Size::new(origin_rect.width(), bg_size.height));
+
+                    (origin_rect, extend_height, count)
+                } else {
+                    let extend_height = extend(bg_pos_x, bg_size.height) * self.scale;
+                    let height = origin_rect.height() + extend_height;
+                    let count = (height / bg_size.height).ceil() as u32;
+                    let origin_rect =
+                        origin_rect.with_size(Size::new(origin_rect.width(), bg_size.height));
+
+                    (origin_rect, extend_height, count)
+                };
+
+                let transform = transform.then_translate(Vec2 {
+                    x: origin_rect.x0 - extend_height,
+                    y: 0.0,
+                });
+
+                (origin_rect, transform, count, bg_size.height)
+            }
+            Space => {
+                let frame_h = frame_h as f64;
+                let modulo = frame_h % bg_size.height;
+                let count = (((frame_h - modulo) / bg_size.height) as u32).max(1);
+                let gap = if count > 1 {
+                    modulo / (count - 1) as f64
+                } else {
+                    0.0
+                } + bg_size.height;
+
+                let transform = transform.then_translate(Vec2 {
+                    x: 0.0,
+                    y: origin_rect.y0 * self.scale + if count == 1 { bg_pos_y } else { 0.0 },
+                });
+
+                let origin_rect =
+                    origin_rect.with_size(Size::new(origin_rect.width(), bg_size.height));
+
+                (origin_rect, transform, count, gap)
+            }
+            NoRepeat => {
+                let transform = transform.then_translate(Vec2 {
+                    x: 0.0,
+                    y: (origin_rect.y0 + bg_pos_y) * self.scale,
+                });
+
+                let origin_rect =
+                    origin_rect.with_size(Size::new(origin_rect.width(), bg_size.height));
+                (origin_rect, transform, 1, 0.0)
+            }
+        };
+
+        let (gradient, gradient_transform) = match gradient {
             // https://developer.mozilla.org/en-US/docs/Web/CSS/gradient/linear-gradient
             GenericGradient::Linear {
                 direction,
@@ -1400,12 +1639,7 @@ impl ElementCx<'_> {
                 flags,
                 // compat_mode,
                 ..
-            } => self.draw_linear_gradient(
-                scene,
-                (direction, items, *flags),
-                origin_rect,
-                bg_position,
-            ),
+            } => self.draw_linear_gradient((direction, items, *flags), origin_rect),
             GenericGradient::Radial {
                 shape,
                 position,
@@ -1413,34 +1647,45 @@ impl ElementCx<'_> {
                 flags,
                 // compat_mode,
                 ..
-            } => self.draw_radial_gradient(
-                scene,
-                (shape, position, items, *flags),
-                origin_rect,
-                bg_position,
-            ),
+            } => self.draw_radial_gradient((shape, position, items, *flags), origin_rect),
             GenericGradient::Conic {
                 angle,
                 position,
                 items,
                 flags,
                 ..
-            } => self.draw_conic_gradient(
-                scene,
-                (angle, position, items, *flags),
-                origin_rect,
-                bg_position,
-            ),
+            } => self.draw_conic_gradient((angle, position, items, *flags), origin_rect),
         };
+        let brush = peniko::BrushRef::Gradient(&gradient);
+
+        for hc in 0..height_count {
+            for wc in 0..width_count {
+                let transform = transform.then_translate(Vec2 {
+                    x: wc as f64 * width_gap * self.scale,
+                    y: hc as f64 * height_gap * self.scale,
+                });
+
+                scene.fill(
+                    peniko::Fill::NonZero,
+                    transform,
+                    brush,
+                    gradient_transform,
+                    &Rect::new(
+                        0.0,
+                        0.0,
+                        origin_rect_transform.width(),
+                        origin_rect_transform.height(),
+                    ),
+                );
+            }
+        }
     }
 
     fn draw_linear_gradient(
         &self,
-        scene: &mut impl anyrender::Scene,
         gradient: LinearGradient,
         origin_rect: Rect,
-        bg_position: Point,
-    ) {
+    ) -> (peniko::Gradient, Option<Affine>) {
         let (direction, items, flags) = gradient;
         let bb = self.frame.border_box.bounding_box();
         let current_color = self.style.clone_color();
@@ -1506,18 +1751,8 @@ impl ElementCx<'_> {
                 end: end + (start - end) * (1.0 - last_offset) as f64,
             };
         }
-        let transform = self.transform.then_translate(Vec2 {
-            x: bg_position.x,
-            y: bg_position.y,
-        });
-        let brush = peniko::BrushRef::Gradient(&gradient);
-        scene.fill(
-            peniko::Fill::NonZero,
-            transform,
-            brush,
-            None,
-            &origin_rect.to_path(0.1),
-        );
+
+        (gradient, None)
     }
 
     #[inline]
@@ -1957,11 +2192,9 @@ impl ElementCx<'_> {
 
     fn draw_radial_gradient(
         &self,
-        scene: &mut impl anyrender::Scene,
         gradient: RadialGradient,
         origin_rect: Rect,
-        bg_position: Point,
-    ) {
+    ) -> (peniko::Gradient, Option<Affine>) {
         let (shape, position, items, flags) = gradient;
         let rect = origin_rect;
         let repeating = flags.contains(GradientFlags::REPEATING);
@@ -2066,27 +2299,14 @@ impl ElementCx<'_> {
             }
         };
 
-        let transform = self.transform.then_translate(Vec2 {
-            x: bg_position.x,
-            y: bg_position.y,
-        });
-        let brush = peniko::BrushRef::Gradient(&gradient);
-        scene.fill(
-            peniko::Fill::NonZero,
-            transform,
-            brush,
-            gradient_transform,
-            &origin_rect.to_path(0.1),
-        );
+        (gradient, gradient_transform)
     }
 
     fn draw_conic_gradient(
         &self,
-        scene: &mut impl anyrender::Scene,
         gradient: ConicGradient,
         origin_rect: Rect,
-        bg_position: Point,
-    ) {
+    ) -> (peniko::Gradient, Option<Affine>) {
         let (angle, position, items, flags) = gradient;
         let rect = origin_rect;
         let current_color = self.style.clone_color();
@@ -2114,22 +2334,12 @@ impl ElementCx<'_> {
             };
         }
 
-        let transform = self.transform.then_translate(Vec2 {
-            x: bg_position.x,
-            y: bg_position.y,
-        });
-        let brush = peniko::BrushRef::Gradient(&gradient);
-
-        scene.fill(
-            peniko::Fill::NonZero,
-            transform,
-            brush,
-            Some(
-                Affine::rotate(angle.radians() as f64 - std::f64::consts::PI / 2.0)
-                    .then_translate(self.get_translation(position, rect)),
-            ),
-            &origin_rect.to_path(0.1),
+        let gradient_transform = Some(
+            Affine::rotate(angle.radians() as f64 - std::f64::consts::PI / 2.0)
+                .then_translate(self.get_translation(position, rect)),
         );
+
+        (gradient, gradient_transform)
     }
 
     #[inline]
