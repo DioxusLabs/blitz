@@ -1,4 +1,7 @@
-use std::sync::Arc;
+use std::{
+    ops::{Deref, DerefMut},
+    sync::Arc,
+};
 
 use crate::DocumentHtmlParser;
 
@@ -12,14 +15,14 @@ pub struct HtmlDocument {
 }
 
 // Implement DocumentLike and required traits for HtmlDocument
-
-impl AsRef<BaseDocument> for HtmlDocument {
-    fn as_ref(&self) -> &BaseDocument {
+impl Deref for HtmlDocument {
+    type Target = BaseDocument;
+    fn deref(&self) -> &BaseDocument {
         &self.inner
     }
 }
-impl AsMut<BaseDocument> for HtmlDocument {
-    fn as_mut(&mut self) -> &mut BaseDocument {
+impl DerefMut for HtmlDocument {
+    fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.inner
     }
 }

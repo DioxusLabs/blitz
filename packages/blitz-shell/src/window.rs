@@ -120,7 +120,7 @@ impl<Doc: Document, Rend: WindowRenderer> View<Doc, Rend> {
     }
 
     pub fn replace_document(&mut self, new_doc: Doc, retain_scroll_position: bool) {
-        let scroll = self.doc.as_ref().viewport_scroll();
+        let scroll = self.doc.viewport_scroll();
 
         self.doc = new_doc;
         self.kick_viewport();
@@ -128,7 +128,7 @@ impl<Doc: Document, Rend: WindowRenderer> View<Doc, Rend> {
         self.request_redraw();
 
         if retain_scroll_position {
-            self.doc.as_mut().set_viewport_scroll(scroll);
+            self.doc.set_viewport_scroll(scroll);
         }
     }
 
@@ -152,8 +152,8 @@ impl<Doc: Document, Rend: WindowRenderer> View<Doc, Rend> {
 impl<Doc: Document, Rend: WindowRenderer> View<Doc, Rend> {
     pub fn resume(&mut self) {
         // Resolve dom
-        self.doc.as_mut().set_viewport(self.viewport.clone());
-        self.doc.as_mut().resolve();
+        self.doc.set_viewport(self.viewport.clone());
+        self.doc.resolve();
 
         // Resume renderer
         let (width, height) = self.viewport.window_size;
@@ -164,13 +164,7 @@ impl<Doc: Document, Rend: WindowRenderer> View<Doc, Rend> {
 
         // Render
         self.renderer.render(|scene| {
-            paint_scene(
-                scene,
-                self.doc.as_ref(),
-                self.viewport.scale_f64(),
-                width,
-                height,
-            )
+            paint_scene(scene, &self.doc, self.viewport.scale_f64(), width, height)
         });
 
         // Set waker
@@ -189,9 +183,9 @@ impl<Doc: Document, Rend: WindowRenderer> View<Doc, Rend> {
                 #[cfg(feature = "accessibility")]
                 {
                     // TODO send fine grained accessibility tree updates.
-                    let changed = std::mem::take(&mut self.doc.as_mut().changed);
+                    let changed = std::mem::take(&mut self.doc.changed);
                     if !changed.is_empty() {
-                        self.accessibility.build_tree(self.doc.as_ref());
+                        self.accessibility.build_tree(&self.doc);
                     }
                 }
 
@@ -210,16 +204,10 @@ impl<Doc: Document, Rend: WindowRenderer> View<Doc, Rend> {
     }
 
     pub fn redraw(&mut self) {
-        self.doc.as_mut().resolve();
+        self.doc.resolve();
         let (width, height) = self.viewport.window_size;
         self.renderer.render(|scene| {
-            paint_scene(
-                scene,
-                self.doc.as_ref(),
-                self.viewport.scale_f64(),
-                width,
-                height,
-            )
+            paint_scene(scene, &self.doc, self.viewport.scale_f64(), width, height)
         });
     }
 
@@ -229,14 +217,14 @@ impl<Doc: Document, Rend: WindowRenderer> View<Doc, Rend> {
 
     pub fn kick_viewport(&mut self) {
         self.kick_dom_viewport();
-        self.doc.as_mut().scroll_viewport_by(0.0, 0.0); // Clamp scroll offset
+        self.doc.scroll_viewport_by(0.0, 0.0); // Clamp scroll offset
         self.kick_renderer_viewport();
     }
 
     pub fn kick_dom_viewport(&mut self) {
         let (width, height) = self.viewport.window_size;
         if width > 0 && height > 0 {
-            self.doc.as_mut().set_viewport(self.viewport.clone());
+            self.doc.set_viewport(self.viewport.clone());
             self.request_redraw();
         }
     }
@@ -250,7 +238,7 @@ impl<Doc: Document, Rend: WindowRenderer> View<Doc, Rend> {
     }
 
     pub fn mouse_move(&mut self, x: f32, y: f32) -> bool {
-        let viewport_scroll = self.doc.as_ref().viewport_scroll();
+        let viewport_scroll = self.doc.viewport_scroll();
         let dom_x = x + viewport_scroll.x as f32 / self.viewport.zoom();
         let dom_y = y + viewport_scroll.y as f32 / self.viewport.zoom();
 
@@ -259,9 +247,9 @@ impl<Doc: Document, Rend: WindowRenderer> View<Doc, Rend> {
 
         self.mouse_pos = (x, y);
         self.dom_mouse_pos = (dom_x, dom_y);
-        let mut changed = self.doc.as_mut().set_hover_to(dom_x, dom_y);
+        let mut changed = self.doc.set_hover_to(dom_x, dom_y);
 
-        if let Some(node_id) = self.doc.as_ref().get_hover_node_id() {
+        if let Some(node_id) = self.doc.get_hover_node_id() {
             let mut event = DomEvent::new(
                 node_id,
                 DomEventData::MouseMove(BlitzMouseButtonEvent {
@@ -282,11 +270,11 @@ impl<Doc: Document, Rend: WindowRenderer> View<Doc, Rend> {
     }
 
     pub fn mouse_down(&mut self, button: MouseEventButton) {
-        let Some(node_id) = self.doc.as_ref().get_hover_node_id() else {
+        let Some(node_id) = self.doc.get_hover_node_id() else {
             return;
         };
 
-        self.doc.as_mut().active_node();
+        self.doc.active_node();
         self.buttons |= button.into();
 
         self.doc.handle_event(&mut DomEvent::new(
@@ -304,9 +292,9 @@ impl<Doc: Document, Rend: WindowRenderer> View<Doc, Rend> {
     }
 
     pub fn mouse_up(&mut self, button: MouseEventButton) {
-        self.doc.as_mut().unactive_node();
+        self.doc.unactive_node();
 
-        let Some(node_id) = self.doc.as_ref().get_hover_node_id() else {
+        let Some(node_id) = self.doc.get_hover_node_id() else {
             return;
         };
 
@@ -328,8 +316,8 @@ impl<Doc: Document, Rend: WindowRenderer> View<Doc, Rend> {
         } else if let Some(mouse_down_id) = self.mouse_down_node {
             // Anonymous node ids are unstable due to tree reconstruction. So we compare the id
             // of the first non-anonymous ancestor.
-            if self.doc.as_ref().non_anon_ancestor_if_anon(mouse_down_id)
-                == self.doc.as_ref().non_anon_ancestor_if_anon(node_id)
+            if self.doc.non_anon_ancestor_if_anon(mouse_down_id)
+                == self.doc.non_anon_ancestor_if_anon(node_id)
             {
                 self.click(button);
             }
@@ -337,19 +325,19 @@ impl<Doc: Document, Rend: WindowRenderer> View<Doc, Rend> {
     }
 
     pub fn click(&mut self, button: MouseEventButton) {
-        let Some(node_id) = self.doc.as_ref().get_hover_node_id() else {
+        let Some(node_id) = self.doc.get_hover_node_id() else {
             return;
         };
 
-        if self.doc.as_ref().devtools().highlight_hover {
-            let mut node = self.doc.as_ref().get_node(node_id).unwrap();
+        if self.doc.devtools().highlight_hover {
+            let mut node = self.doc.get_node(node_id).unwrap();
             if button == MouseEventButton::Secondary {
                 if let Some(parent_id) = node.layout_parent.get() {
-                    node = self.doc.as_ref().get_node(parent_id).unwrap();
+                    node = self.doc.get_node(parent_id).unwrap();
                 }
             }
-            self.doc.as_ref().debug_log_node(node.id);
-            self.doc.as_mut().devtools_mut().highlight_hover = false;
+            self.doc.debug_log_node(node.id);
+            self.doc.devtools_mut().highlight_hover = false;
         } else {
             // Not debug mode. Handle click as usual
             if button == MouseEventButton::Main {
@@ -371,7 +359,7 @@ impl<Doc: Document, Rend: WindowRenderer> View<Doc, Rend> {
 
     #[cfg(feature = "accessibility")]
     pub fn build_accessibility_tree(&mut self) {
-        self.accessibility.build_tree(self.doc.as_ref());
+        self.accessibility.build_tree(&self.doc);
     }
 
     pub fn handle_winit_event(&mut self, event: WindowEvent) {
@@ -406,7 +394,7 @@ impl<Doc: Document, Rend: WindowRenderer> View<Doc, Rend> {
 
             // Text / keyboard events
             WindowEvent::Ime(ime_event) => {
-                if let Some(target) = self.doc.as_ref().get_focussed_node_id() {
+                if let Some(target) = self.doc.get_focussed_node_id() {
                     self.doc.handle_event(&mut DomEvent::new(target, DomEventData::Ime(winit_ime_to_blitz(ime_event))));
                     self.request_redraw();
                 }
@@ -450,15 +438,15 @@ impl<Doc: Document, Rend: WindowRenderer> View<Doc, Rend> {
                 if alt {
                     match key_code {
                         KeyCode::KeyD => {
-                            self.doc.as_mut().devtools_mut().toggle_show_layout();
+                            self.doc.devtools_mut().toggle_show_layout();
                             self.request_redraw();
                         }
                         KeyCode::KeyH => {
-                            self.doc.as_mut().devtools_mut().toggle_highlight_hover();
+                            self.doc.devtools_mut().toggle_highlight_hover();
                             self.request_redraw();
                         }
                         KeyCode::KeyT => {
-                            self.doc.as_ref().print_taffy_tree();
+                            self.doc.print_taffy_tree();
                         }
                         _ => {}
                     };
@@ -467,11 +455,11 @@ impl<Doc: Document, Rend: WindowRenderer> View<Doc, Rend> {
                 // Unmodified keypresses
                 match key_code {
                     KeyCode::Tab if event.state.is_pressed() => {
-                        self.doc.as_mut().focus_next_node();
+                        self.doc.focus_next_node();
                         self.request_redraw();
                     }
                     _ => {
-                        if let Some(focus_node_id) = self.doc.as_ref().get_focussed_node_id() {
+                        if let Some(focus_node_id) = self.doc.get_focussed_node_id() {
                             self.doc.handle_event(&mut DomEvent::new(
                                 focus_node_id,
                                 DomEventData::KeyPress(winit_key_event_to_blitz(&event, self.keyboard_modifiers.state()))
@@ -491,7 +479,7 @@ impl<Doc: Document, Rend: WindowRenderer> View<Doc, Rend> {
                 let changed = self.mouse_move(x, y);
 
                 if changed {
-                    let cursor = self.doc.as_ref().get_cursor();
+                    let cursor = self.doc.get_cursor();
                     if let Some(cursor) = cursor {
                             self.window.set_cursor(cursor);
                             self.request_redraw();
@@ -520,10 +508,10 @@ impl<Doc: Document, Rend: WindowRenderer> View<Doc, Rend> {
                     winit::event::MouseScrollDelta::PixelDelta(offsets) => (offsets.x, offsets.y)
                 };
 
-                if let Some(hover_node_id)= self.doc.as_ref().get_hover_node_id() {
-                    self.doc.as_mut().scroll_node_by(hover_node_id, scroll_x, scroll_y);
+                if let Some(hover_node_id)= self.doc.get_hover_node_id() {
+                    self.doc.scroll_node_by(hover_node_id, scroll_x, scroll_y);
                 } else {
-                    self.doc.as_mut().scroll_viewport_by(scroll_x, scroll_y);
+                    self.doc.scroll_viewport_by(scroll_x, scroll_y);
                 }
                 self.request_redraw();
             }

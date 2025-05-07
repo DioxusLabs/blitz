@@ -26,6 +26,7 @@ use selectors::{Element, matching::QuirksMode};
 use slab::Slab;
 use std::any::Any;
 use std::collections::{BTreeMap, Bound, HashMap, HashSet, VecDeque};
+use std::ops::{Deref, DerefMut};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use style::media_queries::MediaType;
@@ -44,7 +45,7 @@ use style::{
 use taffy::AvailableSpace;
 use url::Url;
 
-pub trait Document: AsRef<BaseDocument> + AsMut<BaseDocument> + 'static {
+pub trait Document: Deref<Target = BaseDocument> + DerefMut + 'static {
     fn poll(&mut self, _cx: std::task::Context) -> bool {
         // Default implementation does nothing
         false
@@ -171,16 +172,11 @@ fn make_device(viewport: &Viewport) -> Device {
     )
 }
 
-impl Document for BaseDocument {
-    fn handle_event(&mut self, event: &mut DomEvent) {
+impl BaseDocument {
+    pub fn handle_event(&mut self, event: &mut DomEvent) {
         handle_event(self, event)
     }
-
-    fn id(&self) -> usize {
-        self.id
-    }
-
-    fn as_any_mut(&mut self) -> &mut dyn Any {
+    pub fn as_any_mut(&mut self) -> &mut dyn Any {
         self
     }
 }

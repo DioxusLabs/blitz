@@ -1,5 +1,6 @@
 //! Integration between Dioxus and Blitz
 
+use std::ops::{Deref, DerefMut};
 use std::{any::Any, collections::HashMap, rc::Rc, sync::Arc};
 
 use blitz_dom::{
@@ -32,14 +33,14 @@ pub struct DioxusDocument {
 }
 
 // Implement DocumentLike and required traits for DioxusDocument
-
-impl AsRef<BaseDocument> for DioxusDocument {
-    fn as_ref(&self) -> &BaseDocument {
+impl Deref for DioxusDocument {
+    type Target = BaseDocument;
+    fn deref(&self) -> &BaseDocument {
         &self.inner
     }
 }
-impl AsMut<BaseDocument> for DioxusDocument {
-    fn as_mut(&mut self) -> &mut BaseDocument {
+impl DerefMut for DioxusDocument {
+    fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.inner
     }
 }
