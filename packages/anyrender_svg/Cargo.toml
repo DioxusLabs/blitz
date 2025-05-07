@@ -15,7 +15,7 @@ peniko = { workspace = true }
 kurbo = { workspace = true }
 usvg = { workspace = true }
 image = { workspace = true, default-features = false, optional = true }
-thiserror = "1.0.69"
+thiserror = "2"
 
 [features]
 default = ["image_format_png", "image_format_gif", "image_format_jpeg", "image_format_webp"]

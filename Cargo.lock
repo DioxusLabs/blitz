@@ -277,7 +277,7 @@ dependencies = [
  "image",
  "kurbo",
  "peniko 0.3.2",
- "thiserror 1.0.69",
+ "thiserror 2.0.12",
  "usvg",
 ]
 
