@@ -15,13 +15,36 @@ fn brush_ref_to_paint_type<'a>(brush_ref: BrushRef<'a>) -> PaintType {
             pixmap: Arc::new(Pixmap {
                 width: image.width as u16,
                 height: image.height as u16,
-                buf: Vec::from(image.data.as_ref()),
+                buf: premultiply(image),
             }),
             x_extend: image.x_extend,
             y_extend: image.y_extend,
             quality: image.quality,
         }),
     }
+}
+
+fn premultiply(image: &peniko::Image) -> Vec<u8> {
+    image
+        .data
+        .as_ref()
+        .chunks_exact(4)
+        .flat_map(|d| {
+            let alpha = d[3] as u16;
+            let premultiply = |e: u8| ((e as u16 * alpha) / 255) as u8;
+
+            if alpha == 0 {
+                [0, 0, 0, 0]
+            } else {
+                [
+                    premultiply(d[0]),
+                    premultiply(d[1]),
+                    premultiply(d[2]),
+                    d[3],
+                ]
+            }
+        })
+        .collect()
 }
 
 pub struct VelloCpuAnyrenderScene(pub vello_cpu::RenderContext);
