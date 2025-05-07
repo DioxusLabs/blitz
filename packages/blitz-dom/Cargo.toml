@@ -61,10 +61,6 @@ woff = { workspace = true, optional = true, features = ["version2"] }
 woff2 = { workspace = true, optional = true }
 html-escape = { workspace = true }
 
-# HACK: Blitz doesn't need to depend on objc2 directly. But this feature flag is necessary
-# to prevent debug builds from panicking.
-objc2 = { version = "0.6", features = ["disable-encoding-assertions"] }
-
 # IO & Networking
 url = { workspace = true, features = ["serde"] }
 
@@ -74,3 +70,8 @@ cursor-icon = { workspace = true }
 
 [target.'cfg(any(target_os = "windows",target_os = "macos",target_os = "linux",target_os = "dragonfly", target_os = "freebsd", target_os = "netbsd", target_os = "openbsd"))'.dependencies]
 arboard = { workspace = true, optional = true }
+
+# HACK: Blitz doesn't need to depend on objc2 directly. But this feature flag is necessary
+# to prevent debug builds from panicking.
+[target.'cfg(any(target_vendor = "apple"))'.dependencies]
+objc2 = { version = "0.6", features = ["disable-encoding-assertions"] }
