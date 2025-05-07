@@ -39,7 +39,7 @@ pub mod util;
 #[cfg(feature = "accessibility")]
 mod accessibility;
 
-pub use document::BaseDocument;
+pub use document::{BaseDocument, Document};
 pub use markup5ever::{
     Namespace, NamespaceStaticSet, Prefix, PrefixStaticSet, QualName, local_name, namespace_prefix,
     namespace_url, ns,

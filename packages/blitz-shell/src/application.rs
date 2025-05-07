@@ -1,8 +1,7 @@
 use crate::event::BlitzShellEvent;
 
 use anyrender::WindowRenderer;
-use blitz_dom::BaseDocument;
-use blitz_traits::Document;
+use blitz_dom::{BaseDocument, Document};
 use std::collections::HashMap;
 use winit::application::ApplicationHandler;
 use winit::event::WindowEvent;

@@ -8,9 +8,6 @@ pub use events::{
     KeyState, MouseEventButton, MouseEventButtons,
 };
 
-mod document;
-pub use document::Document;
-
 mod devtools;
 pub use devtools::Devtools;
 

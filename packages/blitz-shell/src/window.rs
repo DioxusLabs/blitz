@@ -3,12 +3,12 @@ use crate::convert_events::{
 };
 use crate::event::{BlitzShellEvent, create_waker};
 use anyrender::WindowRenderer;
-use blitz_dom::BaseDocument;
+use blitz_dom::{BaseDocument, Document};
 use blitz_paint::paint_scene;
 use blitz_traits::{
     BlitzMouseButtonEvent, ColorScheme, MouseEventButton, MouseEventButtons, Viewport,
 };
-use blitz_traits::{Document, DomEvent, DomEventData};
+use blitz_traits::{DomEvent, DomEventData};
 use winit::keyboard::PhysicalKey;
 
 use std::marker::PhantomData;

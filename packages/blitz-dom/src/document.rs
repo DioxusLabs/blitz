@@ -7,7 +7,7 @@ use crate::{ElementNodeData, Node, NodeData, TextNodeData};
 use app_units::Au;
 use blitz_traits::navigation::{DummyNavigationProvider, NavigationProvider};
 use blitz_traits::net::{DummyNetProvider, SharedProvider};
-use blitz_traits::{ColorScheme, Devtools, Document, Viewport};
+use blitz_traits::{ColorScheme, Devtools, Viewport};
 use blitz_traits::{DomEvent, HitResult};
 use cursor_icon::CursorIcon;
 use markup5ever::local_name;
@@ -24,6 +24,7 @@ use style::values::computed::Overflow;
 use crate::net::{Resource, StylesheetLoader};
 use selectors::{Element, matching::QuirksMode};
 use slab::Slab;
+use std::any::Any;
 use std::collections::{BTreeMap, Bound, HashMap, HashSet, VecDeque};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -42,6 +43,25 @@ use style::{
 };
 use taffy::AvailableSpace;
 use url::Url;
+
+pub trait Document: AsRef<Self::Doc> + AsMut<Self::Doc> + Into<Self::Doc> + 'static {
+    type Doc: 'static;
+
+    fn poll(&mut self, _cx: std::task::Context) -> bool {
+        // Default implementation does nothing
+        false
+    }
+
+    fn handle_event(&mut self, _event: &mut DomEvent) {
+        // Default implementation does nothing
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
+    }
+
+    fn id(&self) -> usize;
+}
 
 // TODO: implement a proper font metrics provider
 #[derive(Debug, Clone)]

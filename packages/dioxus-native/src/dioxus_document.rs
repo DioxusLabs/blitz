@@ -3,11 +3,11 @@
 use std::{any::Any, collections::HashMap, rc::Rc, sync::Arc};
 
 use blitz_dom::{
-    Atom, BaseDocument, DEFAULT_CSS, ElementNodeData, Node, NodeData, QualName, local_name,
-    net::Resource, node::NodeSpecificData, ns,
+    Atom, BaseDocument, DEFAULT_CSS, Document, ElementNodeData, Node, NodeData, QualName,
+    local_name, net::Resource, node::NodeSpecificData, ns,
 };
 
-use blitz_traits::{ColorScheme, Document, DomEvent, DomEventData, Viewport, net::NetProvider};
+use blitz_traits::{ColorScheme, DomEvent, DomEventData, Viewport, net::NetProvider};
 use dioxus_core::{ElementId, Event, VirtualDom};
 use dioxus_html::{FormValue, PlatformEventData, set_event_converter};
 use futures_util::{FutureExt, pin_mut};
