@@ -44,9 +44,7 @@ use style::{
 use taffy::AvailableSpace;
 use url::Url;
 
-pub trait Document:
-    AsRef<BaseDocument> + AsMut<BaseDocument> + Into<BaseDocument> + 'static
-{
+pub trait Document: AsRef<BaseDocument> + AsMut<BaseDocument> + 'static {
     fn poll(&mut self, _cx: std::task::Context) -> bool {
         // Default implementation does nothing
         false
@@ -56,9 +54,7 @@ pub trait Document:
         // Default implementation does nothing
     }
 
-    fn as_any_mut(&mut self) -> &mut dyn Any {
-        self
-    }
+    fn as_any_mut(&mut self) -> &mut dyn Any;
 
     fn id(&self) -> usize;
 }
@@ -182,6 +178,10 @@ impl Document for BaseDocument {
 
     fn id(&self) -> usize {
         self.id
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
     }
 }
 

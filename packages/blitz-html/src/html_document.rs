@@ -36,6 +36,10 @@ impl Document for HtmlDocument {
     fn id(&self) -> usize {
         self.inner.id()
     }
+
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
+    }
 }
 
 impl HtmlDocument {

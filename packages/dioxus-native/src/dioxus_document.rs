@@ -273,6 +273,10 @@ impl Document for DioxusDocument {
             self.inner.as_mut().handle_event(event);
         }
     }
+
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
+    }
 }
 
 fn wrap_event_data<T: Any>(value: T) -> Rc<dyn Any> {
