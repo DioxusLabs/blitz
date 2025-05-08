@@ -5,8 +5,10 @@ edition = "2024"
 license.workspace = true
 
 [features]
-default = ["system_fonts"]
+default = ["system_fonts", "gpu_backend"]
 system_fonts = ["blitz-dom/system_fonts"]
+gpu_backend = ["dioxus-native/gpu_backend"]
+cpu_backend = ["dioxus-native/cpu_backend"]
 
 [dependencies]
 dioxus-native = { path = "../../packages/dioxus-native", default-features = false }

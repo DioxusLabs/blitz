@@ -1,4 +1,7 @@
+#[cfg(feature = "gpu_backend")]
 use anyrender_vello::VelloWindowRenderer;
+#[cfg(feature = "cpu_backend")]
+use anyrender_vello_cpu::VelloCpuWindowRenderer as VelloWindowRenderer;
 use blitz_shell::BlitzApplication;
 use winit::application::ApplicationHandler;
 use winit::event::{StartCause, WindowEvent};

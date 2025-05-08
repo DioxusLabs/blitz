@@ -9,7 +9,7 @@ license.workspace = true
 edition = "2024"
 
 [features]
-default = ["accessibility", "hot-reload", "menu", "tracing", "net", "svg"]
+default = ["accessibility", "hot-reload", "menu", "tracing", "net", "svg", "gpu_backend"]
 svg = ["blitz-dom/svg", "blitz-paint/svg"]
 net = ["dep:tokio", "dep:blitz-net"]
 accessibility = ["blitz-shell/accessibility", "blitz-dom/accessibility"]
@@ -17,10 +17,13 @@ autofocus = []
 menu = ["blitz-shell/menu"]
 tracing = ["dep:tracing", "blitz-shell/tracing", "blitz-dom/tracing"]
 hot-reload = ["dep:dioxus-cli-config", "dep:dioxus-devtools"]
+gpu_backend = ["dep:anyrender_vello"]
+cpu_backend = ["dep:anyrender_vello_cpu"]
 
 [dependencies]
 # Blitz dependencies
-anyrender_vello = { path = "../anyrender_vello", default-features = false }
+anyrender_vello = { path = "../anyrender_vello", default-features = false, optional = true }
+anyrender_vello_cpu = { path = "../anyrender_vello_cpu", default-features = false, optional = true }
 blitz-paint = { version = "0.1.0-alpha.1", path = "../blitz-paint", default-features = false }
 blitz-dom = { version = "0.1.0-alpha.1", path = "../blitz-dom", default-features = false }
 blitz-net = { version = "0.1.0-alpha.1", path = "../blitz-net", optional = true }
