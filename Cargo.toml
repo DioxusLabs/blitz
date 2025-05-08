@@ -49,20 +49,19 @@ dioxus-devtools = { version = "0.6" }
 taffy = { version = "0.8", default-features = false, features = ["std", "flexbox", "grid", "block_layout", "content_size", "calc"] }
 
 # Linebender + WGPU + SVG
-color = "0.2"
-peniko = "0.3"
+color = "0.3"
+peniko = "0.4"
 kurbo = "0.11"
 parley = { version = "0.3", default-features = false, features = ["std"] }
-wgpu = "23"
-vello = { version = "0.4", features = [ "wgpu" ] }
-vello_svg = { version = "0.6" }
+wgpu = "24"
+vello = { git = "https://github.com/linebender/vello", rev = "13d35021", features = [ "wgpu" ] }
 usvg = "0.44.0"
 
 # CPU-rendering dependencies
 softbuffer = "0.4"
-vello_cpu = { git = "https://github.com/linebender/vello", rev = "7c34ce12" }
-vello_common = { git = "https://github.com/linebender/vello", rev = "7c34ce12" }
-vello_api = { git = "https://github.com/linebender/vello", rev = "7c34ce12" }
+vello_cpu = { git = "https://github.com/linebender/vello", rev = "13d35021" }
+vello_common = { git = "https://github.com/linebender/vello", rev = "13d35021" }
+vello_api = { git = "https://github.com/linebender/vello", rev = "13d35021" }
 # vello_cpu = { path = "../vello/sparse_strips/vello_cpu" }
 # vello_common = { path = "../vello/sparse_strips/vello_common" }
 # vello_api = { path = "../vello/sparse_strips/vello_api" }

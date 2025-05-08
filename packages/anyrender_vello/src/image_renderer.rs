@@ -4,8 +4,8 @@ use vello::{
     util::{RenderContext, block_on_wgpu},
 };
 use wgpu::{
-    BufferDescriptor, BufferUsages, CommandEncoderDescriptor, Extent3d, ImageCopyBuffer,
-    TextureDescriptor, TextureFormat, TextureUsages,
+    BufferDescriptor, BufferUsages, CommandEncoderDescriptor, Extent3d, TexelCopyBufferInfo,
+    TexelCopyBufferLayout, TextureDescriptor, TextureFormat, TextureUsages,
 };
 
 use crate::{DEFAULT_THREADS, VelloAnyrenderScene};
@@ -46,10 +46,10 @@ impl ImageRenderer for VelloImageRenderer {
         let renderer = vello::Renderer::new(
             &device,
             RendererOptions {
-                surface_format: None,
                 use_cpu: false,
                 num_init_threads: DEFAULT_THREADS,
                 antialiasing_support: vello::AaSupport::area_only(),
+                pipeline_cache: None,
             },
         )
         .expect("Got non-Send/Sync error from creating renderer");
@@ -121,9 +121,9 @@ impl VelloImageRenderer {
         let padded_byte_width = (self.size.width * 4).next_multiple_of(256);
         encoder.copy_texture_to_buffer(
             self.texture.as_image_copy(),
-            ImageCopyBuffer {
+            TexelCopyBufferInfo {
                 buffer: &self.gpu_buffer,
-                layout: wgpu::ImageDataLayout {
+                layout: TexelCopyBufferLayout {
                     offset: 0,
                     bytes_per_row: Some(padded_byte_width),
                     rows_per_image: None,

@@ -1,6 +1,6 @@
 use anyrender::{NormalizedCoord, Scene};
 use kurbo::{Affine, Rect, Shape, Stroke};
-use peniko::{BlendMode, BrushRef, Color, Fill, Font, StyleRef};
+use peniko::{BlendMode, BrushRef, Color, Fill, Font, StyleRef, color::PremulRgba8};
 use std::sync::Arc;
 use vello_common::paint::PaintType;
 use vello_cpu::Pixmap;
@@ -12,11 +12,11 @@ fn brush_ref_to_paint_type<'a>(brush_ref: BrushRef<'a>) -> PaintType {
         BrushRef::Solid(alpha_color) => PaintType::Solid(alpha_color),
         BrushRef::Gradient(gradient) => PaintType::Gradient(gradient.clone()),
         BrushRef::Image(image) => PaintType::Image(vello_common::paint::Image {
-            pixmap: Arc::new(Pixmap {
-                width: image.width as u16,
-                height: image.height as u16,
-                buf: premultiply(image),
-            }),
+            pixmap: Arc::new(Pixmap::from_parts(
+                premultiply(image),
+                image.width as u16,
+                image.height as u16,
+            )),
             x_extend: image.x_extend,
             y_extend: image.y_extend,
             quality: image.quality,
@@ -24,24 +24,23 @@ fn brush_ref_to_paint_type<'a>(brush_ref: BrushRef<'a>) -> PaintType {
     }
 }
 
-fn premultiply(image: &peniko::Image) -> Vec<u8> {
+fn premultiply(image: &peniko::Image) -> Vec<PremulRgba8> {
     image
         .data
         .as_ref()
         .chunks_exact(4)
-        .flat_map(|d| {
+        .map(|d| {
             let alpha = d[3] as u16;
             let premultiply = |e: u8| ((e as u16 * alpha) / 255) as u8;
-
             if alpha == 0 {
-                [0, 0, 0, 0]
+                PremulRgba8::from_u8_array([0, 0, 0, 0])
             } else {
-                [
-                    premultiply(d[0]),
-                    premultiply(d[1]),
-                    premultiply(d[2]),
-                    d[3],
-                ]
+                PremulRgba8 {
+                    r: premultiply(d[0]),
+                    b: premultiply(d[1]),
+                    g: premultiply(d[2]),
+                    a: d[3],
+                }
             }
         })
         .collect()
