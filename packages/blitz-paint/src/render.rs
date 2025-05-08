@@ -753,7 +753,7 @@ impl ElementCx<'_> {
 
             if self.node.is_focussed() {
                 // Render selection/caret
-                for rect in input_data.editor.selection_geometry().iter() {
+                for (rect, _line_idx) in input_data.editor.selection_geometry().iter() {
                     scene.fill(
                         Fill::NonZero,
                         transform,

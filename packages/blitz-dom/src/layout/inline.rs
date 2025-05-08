@@ -59,52 +59,30 @@ impl BaseDocument {
                     }
                 }
 
-                // Perform inline layout
-                let max_advance = match available_space.width {
-                    AvailableSpace::Definite(px) => Some(px * scale),
-                    AvailableSpace::MinContent => Some(0.0),
-                    AvailableSpace::MaxContent => None,
-                };
-
-                let alignment = self.nodes[node_id]
-                    .primary_styles()
-                    .map(|s| {
-                        use parley::layout::Alignment;
-                        use style::values::specified::TextAlignKeyword;
-
-                        match s.clone_text_align() {
-                            TextAlignKeyword::Start => Alignment::Start,
-                            TextAlignKeyword::Left => Alignment::Left,
-                            TextAlignKeyword::Right => Alignment::Right,
-                            TextAlignKeyword::Center => Alignment::Middle,
-                            TextAlignKeyword::Justify => Alignment::Justified,
-                            TextAlignKeyword::End => Alignment::End,
-                            TextAlignKeyword::MozCenter => Alignment::Middle,
-                            TextAlignKeyword::MozLeft => Alignment::Left,
-                            TextAlignKeyword::MozRight => Alignment::Right,
-                        }
-                    })
-                    .unwrap_or(parley::layout::Alignment::Start);
-
-                inline_layout.layout.break_all_lines(max_advance);
-
+                // Determine width
                 let padding = style
                     .padding
                     .resolve_or_zero(inputs.parent_size, resolve_calc_value);
                 let border = style
                     .border
                     .resolve_or_zero(inputs.parent_size, resolve_calc_value);
-
                 let container_pb = padding + border;
                 let pbw = container_pb.horizontal_components().sum() * scale;
 
-                // Align layout
-                let alignment_width = inputs
+                let width = inputs
                     .known_dimensions
                     .width
                     .map(|w| (w * scale) - pbw)
                     .unwrap_or_else(|| {
-                        let computed_width = inline_layout.layout.width();
+                        let content_sizes = inline_layout.layout.content_widths();
+                        let computed_width = match available_space.width {
+                            AvailableSpace::MinContent => content_sizes.min,
+                            AvailableSpace::MaxContent => content_sizes.max,
+                            AvailableSpace::Definite(limit) => (limit * scale)
+                                .min(content_sizes.max)
+                                .max(content_sizes.min),
+                        }
+                        .ceil();
                         let style_width = style
                             .size
                             .width
@@ -128,8 +106,39 @@ impl BaseDocument {
                             - pbw
                     });
 
+                // Perform inline layout
+                inline_layout.layout.break_all_lines(Some(width));
+
+                if inputs.run_mode == taffy::RunMode::ComputeSize {
+                    return taffy::Size {
+                        width: width.ceil() / scale,
+                        // Height will be ignored in RequestedAxis is Horizontal
+                        height: inline_layout.layout.height() / scale,
+                    };
+                }
+
+                let alignment = self.nodes[node_id]
+                    .primary_styles()
+                    .map(|s| {
+                        use parley::layout::Alignment;
+                        use style::values::specified::TextAlignKeyword;
+
+                        match s.clone_text_align() {
+                            TextAlignKeyword::Start => Alignment::Start,
+                            TextAlignKeyword::Left => Alignment::Left,
+                            TextAlignKeyword::Right => Alignment::Right,
+                            TextAlignKeyword::Center => Alignment::Middle,
+                            TextAlignKeyword::Justify => Alignment::Justified,
+                            TextAlignKeyword::End => Alignment::End,
+                            TextAlignKeyword::MozCenter => Alignment::Middle,
+                            TextAlignKeyword::MozLeft => Alignment::Left,
+                            TextAlignKeyword::MozRight => Alignment::Right,
+                        }
+                    })
+                    .unwrap_or(parley::layout::Alignment::Start);
+
                 inline_layout.layout.align(
-                    Some(alignment_width),
+                    Some(width),
                     alignment,
                     AlignmentOptions {
                         align_when_overflowing: false,

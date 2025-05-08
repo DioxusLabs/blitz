@@ -12,7 +12,7 @@ use blitz_traits::{DomEvent, HitResult};
 use cursor_icon::CursorIcon;
 use markup5ever::local_name;
 use parley::FontContext;
-use peniko::kurbo;
+use peniko::{Blob, kurbo};
 use string_cache::Atom;
 use style::attr::{AttrIdentifier, AttrValue};
 use style::data::{ElementData, ElementStyles};
@@ -206,7 +206,7 @@ impl BaseDocument {
 
         font_ctx
             .collection
-            .register_fonts(crate::BULLET_FONT.to_vec());
+            .register_fonts(Blob::new(Arc::new(crate::BULLET_FONT) as _), None);
 
         let mut doc = Self {
             id,
@@ -637,7 +637,11 @@ impl BaseDocument {
                 }
             }
             Resource::Font(bytes) => {
-                self.font_ctx.collection.register_fonts(bytes.to_vec());
+                // TODO: Implement FontInfoOveride
+                // TODO: Investigate eliminating double-box
+                self.font_ctx
+                    .collection
+                    .register_fonts(Blob::new(Arc::new(bytes)) as _, None);
             }
             Resource::None => {
                 // Do nothing

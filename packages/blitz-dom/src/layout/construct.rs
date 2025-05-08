@@ -430,9 +430,12 @@ fn node_list_item_child(
             }
 
             // Create a parley tree builder
-            let mut builder =
-                doc.layout_ctx
-                    .tree_builder(&mut doc.font_ctx, doc.viewport.scale(), &parley_style);
+            let mut builder = doc.layout_ctx.tree_builder(
+                &mut doc.font_ctx,
+                doc.viewport.scale(),
+                true,
+                &parley_style,
+            );
 
             match &marker {
                 Marker::Char(char) => builder.push_text(&char.to_string()),
@@ -730,7 +733,7 @@ pub(crate) fn build_inline_layout(
     // Create a parley tree builder
     let mut builder =
         doc.layout_ctx
-            .tree_builder(&mut doc.font_ctx, doc.viewport.scale(), &parley_style);
+            .tree_builder(&mut doc.font_ctx, doc.viewport.scale(), true, &parley_style);
 
     // Set whitespace collapsing mode
     let collapse_mode = root_node_style

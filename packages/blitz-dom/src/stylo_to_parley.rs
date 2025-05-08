@@ -10,6 +10,8 @@ use crate::util::ToColorColor;
 pub(crate) mod stylo {
     pub(crate) use style::computed_values::white_space_collapse::T as WhiteSpaceCollapse;
     pub(crate) use style::properties::ComputedValues;
+    pub(crate) use style::values::computed::OverflowWrap;
+    pub(crate) use style::values::computed::WordBreak;
     pub(crate) use style::values::computed::font::FontStyle;
     pub(crate) use style::values::computed::font::GenericFontFamily;
     pub(crate) use style::values::computed::font::LineHeight;
@@ -123,6 +125,18 @@ pub(crate) fn style(
         .map(ToColorColor::as_color_color)
         .map(TextBrush::from_color);
 
+    // Wrapping and breaking
+    let word_break = match itext_styles.word_break {
+        stylo::WordBreak::Normal => parley::WordBreakStrength::Normal,
+        stylo::WordBreak::BreakAll => parley::WordBreakStrength::BreakAll,
+        stylo::WordBreak::KeepAll => parley::WordBreakStrength::KeepAll,
+    };
+    let overflow_wrap = match itext_styles.overflow_wrap {
+        stylo::OverflowWrap::Normal => parley::OverflowWrap::Normal,
+        stylo::OverflowWrap::BreakWord => parley::OverflowWrap::BreakWord,
+        stylo::OverflowWrap::Anywhere => parley::OverflowWrap::Anywhere,
+    };
+
     parley::TextStyle {
         // font_stack: parley::FontStack::Single(FontFamily::Generic(GenericFamily::SystemUi)),
         font_stack: parley::FontStack::List(Cow::Owned(families)),
@@ -145,5 +159,7 @@ pub(crate) fn style(
         line_height,
         word_spacing: Default::default(),
         letter_spacing,
+        overflow_wrap,
+        word_break,
     }
 }
