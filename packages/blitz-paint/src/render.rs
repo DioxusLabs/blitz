@@ -1441,10 +1441,12 @@ impl ElementCx<'_> {
                         extend(self.frame.border_left_width + bg_pos_x, bg_size.width) * self.scale;
                     let width = self.frame.border_box.width() + extend_width;
                     let count = (width / bg_size.width).ceil() as u32;
-                    let origin_rect = self
-                        .frame
-                        .border_box
-                        .with_size(Size::new(bg_size.width, origin_rect.height()));
+
+                    let origin_rect = Rect::from_origin_size(
+                        Point::new(self.frame.border_box.x0, origin_rect.y0),
+                        Size::new(bg_size.width, origin_rect.height()),
+                    );
+
                     (origin_rect, extend_width, count)
                 } else if (background_clip, background_origin)
                     == (
@@ -1458,10 +1460,11 @@ impl ElementCx<'_> {
                     ) * self.scale;
                     let width = self.frame.border_box.width() + extend_width;
                     let count = (width / bg_size.width).ceil() as u32;
-                    let origin_rect = self
-                        .frame
-                        .border_box
-                        .with_size(Size::new(bg_size.width, origin_rect.height()));
+
+                    let origin_rect = Rect::from_origin_size(
+                        Point::new(self.frame.border_box.x0, origin_rect.y0),
+                        Size::new(bg_size.width, origin_rect.height()),
+                    );
 
                     (origin_rect, extend_width, count)
                 } else if (background_clip, background_origin)
@@ -1475,10 +1478,11 @@ impl ElementCx<'_> {
                             * self.scale;
                     let width = self.frame.padding_box.width() + extend_width;
                     let count = (width / bg_size.width).ceil() as u32;
-                    let origin_rect = self
-                        .frame
-                        .padding_box
-                        .with_size(Size::new(bg_size.width, origin_rect.height()));
+                    
+                    let origin_rect = Rect::from_origin_size(
+                        Point::new(self.frame.padding_box.x0, origin_rect.y0),
+                        Size::new(bg_size.width, origin_rect.height()),
+                    );
 
                     (origin_rect, extend_width, count)
                 } else {
@@ -1530,7 +1534,7 @@ impl ElementCx<'_> {
                 (origin_rect, transform, 1, 0.0)
             }
         };
-        let (origin_rect_transform, transform, height_count, height_gap) = match repeat_y {
+        let (origin_rect, transform, height_count, height_gap) = match repeat_y {
             Repeat | Round => {
                 let (origin_rect, extend_height, count) = if (background_clip, background_origin)
                     == (
@@ -1541,10 +1545,11 @@ impl ElementCx<'_> {
                         extend(self.frame.border_top_width + bg_pos_y, bg_size.height) * self.scale;
                     let height = self.frame.border_box.height() + extend_height;
                     let count = (height / bg_size.height).ceil() as u32;
-                    let origin_rect = self
-                        .frame
-                        .border_box
-                        .with_size(Size::new(origin_rect.width(), bg_size.height));
+
+                    let origin_rect = Rect::from_origin_size(
+                        Point::new(origin_rect.x0, self.frame.border_box.y0),
+                        Size::new(origin_rect.width(), bg_size.height),
+                    );
 
                     (origin_rect, extend_height, count)
                 } else if (background_clip, background_origin)
@@ -1559,10 +1564,11 @@ impl ElementCx<'_> {
                     ) * self.scale;
                     let height = self.frame.border_box.height() + extend_height;
                     let count = (height / bg_size.height).ceil() as u32;
-                    let origin_rect = self
-                        .frame
-                        .border_box
-                        .with_size(Size::new(origin_rect.width(), bg_size.height));
+                    
+                    let origin_rect = Rect::from_origin_size(
+                        Point::new(origin_rect.x0, self.frame.border_box.y0),
+                        Size::new(origin_rect.width(), bg_size.height),
+                    );
 
                     (origin_rect, extend_height, count)
                 } else if (background_clip, background_origin)
@@ -1576,10 +1582,11 @@ impl ElementCx<'_> {
                             * self.scale;
                     let height = self.frame.padding_box.height() + extend_height;
                     let count = (height / bg_size.height).ceil() as u32;
-                    let origin_rect = self
-                        .frame
-                        .padding_box
-                        .with_size(Size::new(origin_rect.width(), bg_size.height));
+                    
+                    let origin_rect = Rect::from_origin_size(
+                        Point::new(origin_rect.x0, self.frame.padding_box.y0),
+                        Size::new(origin_rect.width(), bg_size.height),
+                    );
 
                     (origin_rect, extend_height, count)
                 } else {
@@ -1593,8 +1600,8 @@ impl ElementCx<'_> {
                 };
 
                 let transform = transform.then_translate(Vec2 {
-                    x: origin_rect.x0 - extend_height,
-                    y: 0.0,
+                    x: 0.0,
+                    y: origin_rect.y0 - extend_height,
                 });
 
                 (origin_rect, transform, count, bg_size.height)
@@ -1630,6 +1637,13 @@ impl ElementCx<'_> {
                 (origin_rect, transform, 1, 0.0)
             }
         };
+
+        // TODO https://wpt.live/css/css-backgrounds/background-size/background-size-near-zero-gradient.html
+        if width_count * height_count > 500 {
+            return;
+        }
+
+        let origin_rect = Rect::new(0.0, 0.0, origin_rect.width(), origin_rect.height());
 
         let (gradient, gradient_transform) = match gradient {
             // https://developer.mozilla.org/en-US/docs/Web/CSS/gradient/linear-gradient
@@ -1670,12 +1684,7 @@ impl ElementCx<'_> {
                     transform,
                     brush,
                     gradient_transform,
-                    &Rect::new(
-                        0.0,
-                        0.0,
-                        origin_rect_transform.width(),
-                        origin_rect_transform.height(),
-                    ),
+                    &origin_rect,
                 );
             }
         }
