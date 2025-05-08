@@ -1,5 +1,6 @@
 use crate::VelloCpuAnyrenderScene;
 use anyrender::{WindowHandle, WindowRenderer};
+use peniko::color::PremulRgba8;
 use softbuffer::{Context, Surface};
 use std::{num::NonZero, sync::Arc};
 use vello_cpu::{Pixmap, RenderContext};
@@ -86,11 +87,9 @@ impl WindowRenderer for VelloCpuWindowRenderer {
         self.render_context.0.render_to_pixmap(&mut pixmap);
 
         let out = surface_buffer.as_mut();
-        assert_eq!(pixmap.buf.len(), out.len() * 4);
-        for (src, dest) in pixmap.buf.chunks_exact_mut(4).zip(out.iter_mut()) {
-            let [r, g, b, a] = *src else {
-                panic!();
-            };
+        assert_eq!(pixmap.data().len(), out.len());
+        for (src, dest) in pixmap.data().iter().zip(out.iter_mut()) {
+            let PremulRgba8 { r, g, b, a } = *src;
             if a == 0 {
                 *dest = u32::MAX;
             } else {

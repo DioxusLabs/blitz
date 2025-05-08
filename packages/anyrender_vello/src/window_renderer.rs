@@ -5,7 +5,7 @@ use vello::{
     AaSupport, RenderParams, Renderer as VelloRenderer, RendererOptions, Scene,
     util::{RenderContext, RenderSurface},
 };
-use wgpu::{PresentMode, SurfaceError};
+use wgpu::{CommandEncoderDescriptor, PresentMode, TextureViewDescriptor};
 
 use crate::{DEFAULT_THREADS, VelloAnyrenderScene};
 
@@ -61,10 +61,11 @@ impl WindowRenderer for VelloWindowRenderer {
         .expect("Error creating surface");
 
         let options = RendererOptions {
-            surface_format: Some(surface.config.format),
             antialiasing_support: AaSupport::all(),
             use_cpu: false,
             num_init_threads: DEFAULT_THREADS,
+            // TODO: add pipeline cache
+            pipeline_cache: None,
         };
 
         let renderer =
@@ -89,14 +90,9 @@ impl WindowRenderer for VelloWindowRenderer {
         let RenderState::Active(state) = &mut self.render_state else {
             return;
         };
-        let surface_texture = match state.surface.surface.get_current_texture() {
-            Ok(surface) => surface,
-            // When resizing too aggresively, the surface can get outdated (another resize) before being rendered into
-            Err(SurfaceError::Outdated) => return,
-            Err(_) => panic!("failed to get surface texture"),
-        };
 
         let device = &self.render_context.devices[state.surface.dev_id];
+        let surface = &state.surface;
 
         let render_params = RenderParams {
             base_color: Color::WHITE,
@@ -110,16 +106,49 @@ impl WindowRenderer for VelloWindowRenderer {
 
         state
             .renderer
-            .render_to_surface(
+            .render_to_texture(
                 &device.device,
                 &device.queue,
                 &self.scene.0,
-                &surface_texture,
+                &surface.target_view,
                 &render_params,
             )
-            .expect("failed to render to surface");
+            .expect("failed to render to texture");
 
+        // TODO: verify that handling of SurfaceError::Outdated is no longer required
+        //
+        // let surface_texture = match state.surface.surface.get_current_texture() {
+        //     Ok(surface) => surface,
+        //     // When resizing too aggresively, the surface can get outdated (another resize) before being rendered into
+        //     Err(SurfaceError::Outdated) => return,
+        //     Err(_) => panic!("failed to get surface texture"),
+        // };
+
+        let surface_texture = state
+            .surface
+            .surface
+            .get_current_texture()
+            .expect("failed to get surface texture");
+
+        // Perform the copy
+        // (TODO: Does it improve throughput to acquire the surface after the previous texture render has happened?)
+        let mut encoder = device
+            .device
+            .create_command_encoder(&CommandEncoderDescriptor {
+                label: Some("Surface Blit"),
+            });
+
+        state.surface.blitter.copy(
+            &device.device,
+            &mut encoder,
+            &surface.target_view,
+            &surface_texture
+                .texture
+                .create_view(&TextureViewDescriptor::default()),
+        );
+        device.queue.submit([encoder.finish()]);
         surface_texture.present();
+
         device.device.poll(wgpu::Maintain::Wait);
 
         // Empty the Vello scene (memory optimisation)
