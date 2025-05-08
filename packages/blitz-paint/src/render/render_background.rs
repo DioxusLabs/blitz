@@ -16,6 +16,7 @@ use style::{
             background_clip::single_value::computed_value::T as StyloBackgroundClip,
             background_origin::single_value::computed_value::T as StyloBackgroundOrigin,
         },
+        style_structs::Background,
     },
     values::{
         computed::{
@@ -59,20 +60,15 @@ type ConicGradient<'a> = (
 );
 
 impl ElementCx<'_> {
-    pub fn draw_background(&self, scene: &mut impl anyrender::Scene) {
+    pub(super) fn draw_background(&self, scene: &mut impl anyrender::Scene) {
         use GenericImage::*;
         use StyloBackgroundClip::*;
 
-        let background_clip_segments = &self.style.get_background().background_clip.0;
-        let background_image_segments = &self.style.get_background().background_image.0;
-
-        fn get_cyclic<T>(values: &[T], layer_index: usize) -> &T {
-            &values[layer_index % values.len()]
-        }
+        let bg_styles = &self.style.get_background();
 
         let background_clip = get_cyclic(
-            background_clip_segments,
-            background_image_segments.len() - 1,
+            &bg_styles.background_clip.0,
+            bg_styles.background_image.0.len() - 1,
         );
         let background_clip_path = match background_clip {
             BorderBox => self.frame.frame_border(),
@@ -83,8 +79,8 @@ impl ElementCx<'_> {
         // Draw background color (if any)
         self.draw_solid_frame(scene, &background_clip_path);
 
-        for (idx, segment) in background_image_segments.iter().enumerate().rev() {
-            let background_clip = get_cyclic(background_clip_segments, idx);
+        for (idx, segment) in bg_styles.background_image.0.iter().enumerate().rev() {
+            let background_clip = get_cyclic(&bg_styles.background_clip.0, idx);
             let background_clip_path = match background_clip {
                 BorderBox => self.frame.frame_border(),
                 PaddingBox => self.frame.frame_padding(),
@@ -139,8 +135,6 @@ impl ElementCx<'_> {
 
     #[cfg(feature = "svg")]
     fn draw_svg_bg_image(&self, scene: &mut impl anyrender::Scene, idx: usize) {
-        use style::{Zero as _, values::computed::Length};
-
         let bg_image = self.element.background_images.get(idx);
 
         let Some(Some(bg_image)) = bg_image.as_ref() else {
@@ -149,6 +143,8 @@ impl ElementCx<'_> {
         let ImageData::Svg(svg) = &bg_image.image else {
             return;
         };
+
+        let bg_styles = &self.style.get_background();
 
         let frame_w = self.frame.padding_box.width() as f32;
         let frame_h = self.frame.padding_box.height() as f32;
@@ -170,26 +166,12 @@ impl ElementCx<'_> {
         let x_ratio = bg_size.width as f64 / svg_size.width() as f64;
         let y_ratio = bg_size.height as f64 / svg_size.height() as f64;
 
-        let bg_pos_x = self
-            .style
-            .get_background()
-            .background_position_x
-            .0
-            .get(idx)
-            .cloned()
-            .unwrap_or(LengthPercentage::zero())
-            .resolve(Length::new(frame_w - (bg_size.width as f32)))
-            .px() as f64;
-        let bg_pos_y = self
-            .style
-            .get_background()
-            .background_position_y
-            .0
-            .get(idx)
-            .cloned()
-            .unwrap_or(LengthPercentage::zero())
-            .resolve(Length::new(frame_h - bg_size.height as f32))
-            .px() as f64;
+        let (bg_pos_x, bg_pos_y) = Self::get_background_position(
+            bg_styles,
+            idx,
+            frame_w - bg_size.width as f32,
+            frame_h - bg_size.height as f32,
+        );
 
         let transform = Affine::translate((
             (self.pos.x * self.scale) + bg_pos_x,
@@ -202,7 +184,6 @@ impl ElementCx<'_> {
 
     fn draw_raster_bg_image(&self, scene: &mut impl anyrender::Scene, idx: usize) {
         use BackgroundRepeatKeyword::*;
-        use style::{Zero as _, values::computed::Length};
 
         let bg_image = self.element.background_images.get(idx);
 
@@ -215,13 +196,7 @@ impl ElementCx<'_> {
 
         let bg_styles = &self.style.get_background();
 
-        let background_origin = bg_styles
-            .background_origin
-            .0
-            .get(idx)
-            .cloned()
-            .unwrap_or(StyloBackgroundOrigin::PaddingBox);
-
+        let background_origin = get_cyclic(&bg_styles.background_origin.0, idx);
         let origin_rect = match background_origin {
             StyloBackgroundOrigin::BorderBox => self.frame.border_box,
             StyloBackgroundOrigin::PaddingBox => self.frame.padding_box,
@@ -242,29 +217,14 @@ impl ElementCx<'_> {
             1.0,
         );
 
-        let bg_pos_x = bg_styles
-            .background_position_x
-            .0
-            .get(idx)
-            .cloned()
-            .unwrap_or(LengthPercentage::zero())
-            .resolve(Length::new(frame_w - (bg_size.width as f32)))
-            .px() as f64;
-        let bg_pos_y = bg_styles
-            .background_position_y
-            .0
-            .get(idx)
-            .cloned()
-            .unwrap_or(LengthPercentage::zero())
-            .resolve(Length::new(frame_h - bg_size.height as f32))
-            .px() as f64;
+        let (bg_pos_x, bg_pos_y) = Self::get_background_position(
+            bg_styles,
+            idx,
+            frame_w - bg_size.width as f32,
+            frame_h - bg_size.height as f32,
+        );
 
-        let BackgroundRepeat(repeat_x, repeat_y) = bg_styles
-            .background_repeat
-            .0
-            .get(idx)
-            .cloned()
-            .unwrap_or(BackgroundRepeat::repeat());
+        let BackgroundRepeat(repeat_x, repeat_y) = get_cyclic(&bg_styles.background_repeat.0, idx);
 
         let bg_size = if matches!(repeat_x, Round) && matches!(repeat_y, Round) {
             let count = (frame_w as f64 / bg_size.width).round();
@@ -288,15 +248,6 @@ impl ElementCx<'_> {
 
         let x_ratio = bg_size.width * self.scale / image_width;
         let y_ratio = bg_size.height * self.scale / image_height;
-
-        fn extend(offset: f64, length: f64) -> f64 {
-            let extend_length = offset % length;
-            if extend_length > 0.0 {
-                length - extend_length
-            } else {
-                -extend_length
-            }
-        }
 
         let transform = self.transform.pre_scale_non_uniform(x_ratio, y_ratio);
         let (origin_rect, transform) = match repeat_x {
@@ -459,19 +410,10 @@ impl ElementCx<'_> {
         background_clip: StyloBackgroundClip,
     ) {
         use BackgroundRepeatKeyword::*;
-        use style::{Zero as _, values::computed::Length};
 
         let bg_styles = &self.style.get_background();
 
-        let background_origin = self
-            .style
-            .get_background()
-            .background_origin
-            .0
-            .get(idx)
-            .cloned()
-            .unwrap_or(StyloBackgroundOrigin::PaddingBox);
-
+        let background_origin = get_cyclic(&bg_styles.background_origin.0, idx).clone();
         let origin_rect = match background_origin {
             StyloBackgroundOrigin::BorderBox => self.frame.border_box,
             StyloBackgroundOrigin::PaddingBox => self.frame.padding_box,
@@ -490,29 +432,14 @@ impl ElementCx<'_> {
             self.scale as f32,
         );
 
-        let bg_pos_x = bg_styles
-            .background_position_x
-            .0
-            .get(idx)
-            .cloned()
-            .unwrap_or(LengthPercentage::zero())
-            .resolve(Length::new(frame_w - (bg_size.width as f32)))
-            .px() as f64;
-        let bg_pos_y = bg_styles
-            .background_position_y
-            .0
-            .get(idx)
-            .cloned()
-            .unwrap_or(LengthPercentage::zero())
-            .resolve(Length::new(frame_h - bg_size.height as f32))
-            .px() as f64;
+        let (bg_pos_x, bg_pos_y) = Self::get_background_position(
+            bg_styles,
+            idx,
+            frame_w - bg_size.width as f32,
+            frame_h - bg_size.height as f32,
+        );
 
-        let BackgroundRepeat(repeat_x, repeat_y) = bg_styles
-            .background_repeat
-            .0
-            .get(idx)
-            .cloned()
-            .unwrap_or(BackgroundRepeat::repeat());
+        let BackgroundRepeat(repeat_x, repeat_y) = get_cyclic(&bg_styles.background_repeat.0, idx);
 
         let bg_size = if matches!(repeat_x, Round) && matches!(repeat_y, Round) {
             let count = (frame_w as f64 / bg_size.width).round();
@@ -533,15 +460,6 @@ impl ElementCx<'_> {
         } else {
             bg_size
         };
-
-        fn extend(offset: f64, length: f64) -> f64 {
-            let extend_length = offset % length;
-            if extend_length > 0.0 {
-                length - extend_length
-            } else {
-                -extend_length
-            }
-        }
 
         let transform = self.transform;
         let (origin_rect, transform, width_count, width_gap) = match repeat_x {
@@ -767,7 +685,7 @@ impl ElementCx<'_> {
                 flags,
                 // compat_mode,
                 ..
-            } => self.draw_linear_gradient((direction, items, *flags), origin_rect),
+            } => self.linear_gradient((direction, items, *flags), origin_rect),
             GenericGradient::Radial {
                 shape,
                 position,
@@ -775,14 +693,14 @@ impl ElementCx<'_> {
                 flags,
                 // compat_mode,
                 ..
-            } => self.draw_radial_gradient((shape, position, items, *flags), origin_rect),
+            } => self.radial_gradient((shape, position, items, *flags), origin_rect),
             GenericGradient::Conic {
                 angle,
                 position,
                 items,
                 flags,
                 ..
-            } => self.draw_conic_gradient((angle, position, items, *flags), origin_rect),
+            } => self.conic_gradient((angle, position, items, *flags), origin_rect),
         };
         let brush = peniko::BrushRef::Gradient(&gradient);
 
@@ -804,7 +722,7 @@ impl ElementCx<'_> {
         }
     }
 
-    fn draw_linear_gradient(
+    fn linear_gradient(
         &self,
         gradient: LinearGradient,
         origin_rect: Rect,
@@ -878,7 +796,7 @@ impl ElementCx<'_> {
         (gradient, None)
     }
 
-    fn draw_radial_gradient(
+    fn radial_gradient(
         &self,
         gradient: RadialGradient,
         origin_rect: Rect,
@@ -990,7 +908,7 @@ impl ElementCx<'_> {
         (gradient, gradient_transform)
     }
 
-    fn draw_conic_gradient(
+    fn conic_gradient(
         &self,
         gradient: ConicGradient,
         origin_rect: Rect,
@@ -1213,6 +1131,25 @@ impl ElementCx<'_> {
             },
         )
     }
+
+    #[inline]
+    fn get_background_position(
+        background: &Background,
+        idx: usize,
+        width: f32,
+        height: f32,
+    ) -> (f64, f64) {
+        use style::values::computed::Length;
+
+        let bg_pos_x = get_cyclic(&background.background_position_x.0, idx)
+            .resolve(Length::new(width))
+            .px() as f64;
+        let bg_pos_y = get_cyclic(&background.background_position_y.0, idx)
+            .resolve(Length::new(height))
+            .px() as f64;
+
+        (bg_pos_x, bg_pos_y)
+    }
 }
 
 fn compute_background_size(
@@ -1311,4 +1248,18 @@ fn compute_background_size(
 enum BackgroundSizeComputeMode {
     Auto,
     Size(f32, f32),
+}
+
+#[inline]
+fn get_cyclic<T>(values: &[T], layer_index: usize) -> &T {
+    &values[layer_index % values.len()]
+}
+
+fn extend(offset: f64, length: f64) -> f64 {
+    let extend_length = offset % length;
+    if extend_length > 0.0 {
+        length - extend_length
+    } else {
+        -extend_length
+    }
 }
