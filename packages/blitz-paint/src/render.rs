@@ -21,8 +21,7 @@ use style::{
         style_structs::{Font, Outline},
     },
     values::{
-        computed::{CSSPixelLength, LengthPercentage, Overflow},
-        generics::position::GenericPosition,
+        computed::{CSSPixelLength, Overflow},
         specified::{BorderStyle, OutlineStyle},
     },
 };
@@ -1058,26 +1057,6 @@ impl ElementCx<'_> {
         //             scene_builder.stroke(&stroke, Affine::IDENTITY, stroke_color, None, &shape);
         //             background.draw_shape(scene_builder, &smaller_shape, layout, viewport_size);
         // let effects = self.style.get_effects();
-    }
-
-    #[inline]
-    fn get_translation(
-        &self,
-        position: &GenericPosition<LengthPercentage, LengthPercentage>,
-        rect: Rect,
-    ) -> Vec2 {
-        Vec2::new(
-            rect.x0
-                + position
-                    .horizontal
-                    .resolve(CSSPixelLength::new(rect.width() as f32))
-                    .px() as f64,
-            rect.y0
-                + position
-                    .vertical
-                    .resolve(CSSPixelLength::new(rect.height() as f32))
-                    .px() as f64,
-        )
     }
 
     fn draw_input(&self, scene: &mut impl anyrender::Scene) {

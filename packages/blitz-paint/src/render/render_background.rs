@@ -413,7 +413,7 @@ impl ElementCx<'_> {
 
         let bg_styles = &self.style.get_background();
 
-        let background_origin = get_cyclic(&bg_styles.background_origin.0, idx).clone();
+        let background_origin = *get_cyclic(&bg_styles.background_origin.0, idx);
         let origin_rect = match background_origin {
             StyloBackgroundOrigin::BorderBox => self.frame.border_box,
             StyloBackgroundOrigin::PaddingBox => self.frame.padding_box,
@@ -898,7 +898,7 @@ impl ElementCx<'_> {
                 };
                 Some(
                     Affine::scale_non_uniform(gradient_scale.x * scale, gradient_scale.y * scale)
-                        .then_translate(self.get_translation(position, rect)),
+                        .then_translate(Self::get_translation(position, rect)),
                 )
             } else {
                 None
@@ -942,7 +942,7 @@ impl ElementCx<'_> {
 
         let gradient_transform = Some(
             Affine::rotate(angle.radians() as f64 - std::f64::consts::PI / 2.0)
-                .then_translate(self.get_translation(position, rect)),
+                .then_translate(Self::get_translation(position, rect)),
         );
 
         (gradient, gradient_transform)
@@ -1129,6 +1129,25 @@ impl ElementCx<'_> {
                     AngleOrPercentage::Percentage(percentage) => Some(percentage.to_percentage()),
                 }
             },
+        )
+    }
+
+    #[inline]
+    fn get_translation(
+        position: &GenericPosition<LengthPercentage, LengthPercentage>,
+        rect: Rect,
+    ) -> Vec2 {
+        Vec2::new(
+            rect.x0
+                + position
+                    .horizontal
+                    .resolve(CSSPixelLength::new(rect.width() as f32))
+                    .px() as f64,
+            rect.y0
+                + position
+                    .vertical
+                    .resolve(CSSPixelLength::new(rect.height() as f32))
+                    .px() as f64,
         )
     }
 
