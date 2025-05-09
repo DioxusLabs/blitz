@@ -11,7 +11,6 @@ use style::color::AbsoluteColor;
 use style::{
     OwnedSlice,
     properties::{
-        ComputedValues,
         generated::longhands::{
             background_clip::single_value::computed_value::T as StyloBackgroundClip,
             background_origin::single_value::computed_value::T as StyloBackgroundOrigin,
@@ -151,7 +150,7 @@ impl ElementCx<'_> {
 
         let svg_size = svg.size();
         let bg_size = compute_background_size(
-            &self.style,
+            bg_styles,
             frame_w,
             frame_h,
             idx,
@@ -166,7 +165,7 @@ impl ElementCx<'_> {
         let x_ratio = bg_size.width as f64 / svg_size.width() as f64;
         let y_ratio = bg_size.height as f64 / svg_size.height() as f64;
 
-        let (bg_pos_x, bg_pos_y) = Self::get_background_position(
+        let bg_pos = compute_background_position(
             bg_styles,
             idx,
             frame_w - bg_size.width as f32,
@@ -174,8 +173,8 @@ impl ElementCx<'_> {
         );
 
         let transform = Affine::translate((
-            (self.pos.x * self.scale) + bg_pos_x,
-            (self.pos.y * self.scale) + bg_pos_y,
+            (self.pos.x * self.scale) + bg_pos.x,
+            (self.pos.y * self.scale) + bg_pos.y,
         ))
         .pre_scale_non_uniform(x_ratio, y_ratio);
 
@@ -203,56 +202,30 @@ impl ElementCx<'_> {
             StyloBackgroundOrigin::ContentBox => self.frame.content_box,
         };
 
-        let frame_w = origin_rect.width() as f32;
-        let frame_h = origin_rect.height() as f32;
-
         let image_width = image_data.width as f64;
         let image_height = image_data.height as f64;
-        let bg_size = compute_background_size(
-            &self.style,
-            frame_w,
-            frame_h,
+
+        let (bg_pos, bg_size) = compute_background_position_and_background_size(
+            bg_styles,
+            origin_rect.width() / self.scale,
+            origin_rect.height() / self.scale,
             idx,
             BackgroundSizeComputeMode::Size(image_width as f32, image_height as f32),
-            1.0,
         );
 
-        let (bg_pos_x, bg_pos_y) = Self::get_background_position(
-            bg_styles,
-            idx,
-            frame_w - bg_size.width as f32,
-            frame_h - bg_size.height as f32,
-        );
+        let bg_pos_x = bg_pos.x * self.scale;
+        let bg_pos_y = bg_pos.y * self.scale;
+        let bg_size = bg_size * self.scale;
+
+        let x_ratio = bg_size.width / image_width;
+        let y_ratio = bg_size.height / image_height;
 
         let BackgroundRepeat(repeat_x, repeat_y) = get_cyclic(&bg_styles.background_repeat.0, idx);
-
-        let bg_size = if matches!(repeat_x, Round) && matches!(repeat_y, Round) {
-            let count = (frame_w as f64 / bg_size.width).round();
-            let width = frame_w as f64 / count;
-
-            let count = (frame_h as f64 / bg_size.height).round();
-            let height = frame_h as f64 / count;
-
-            Size::new(width, height)
-        } else if matches!(repeat_x, Round) {
-            let count = (frame_w as f64 / bg_size.width).round();
-            let width = frame_w as f64 / count;
-            Size::new(width, bg_size.height)
-        } else if matches!(repeat_y, Round) {
-            let count = (frame_h as f64 / bg_size.height).round();
-            let height = frame_h as f64 / count;
-            Size::new(bg_size.width, height)
-        } else {
-            bg_size
-        };
-
-        let x_ratio = bg_size.width * self.scale / image_width;
-        let y_ratio = bg_size.height * self.scale / image_height;
 
         let transform = self.transform.pre_scale_non_uniform(x_ratio, y_ratio);
         let (origin_rect, transform) = match repeat_x {
             Repeat | Round => {
-                let extend_width = extend(bg_pos_x, bg_size.width) * self.scale;
+                let extend_width = extend(bg_pos_x, bg_size.width);
 
                 let transform = transform.then_translate(Vec2 {
                     x: origin_rect.x0 - extend_width,
@@ -269,7 +242,7 @@ impl ElementCx<'_> {
             Space => (origin_rect, transform),
             NoRepeat => {
                 let transform = transform.then_translate(Vec2 {
-                    x: (origin_rect.x0 + bg_pos_x) * self.scale,
+                    x: origin_rect.x0 + bg_pos_x,
                     y: 0.0,
                 });
 
@@ -281,7 +254,7 @@ impl ElementCx<'_> {
         };
         let (origin_rect, transform) = match repeat_y {
             Repeat | Round => {
-                let extend_height = extend(bg_pos_y, bg_size.height) * self.scale;
+                let extend_height = extend(bg_pos_y, bg_size.height);
 
                 let transform = transform.then_translate(Vec2 {
                     x: 0.0,
@@ -299,7 +272,7 @@ impl ElementCx<'_> {
             NoRepeat => {
                 let transform = transform.then_translate(Vec2 {
                     x: 0.0,
-                    y: (origin_rect.y0 + bg_pos_y) * self.scale,
+                    y: origin_rect.y0 + bg_pos_y,
                 });
 
                 let origin_rect =
@@ -309,17 +282,10 @@ impl ElementCx<'_> {
         };
 
         if matches!(repeat_x, Space) || matches!(repeat_y, Space) {
-            let (width_count, width_gap, origin_rect, transform) = if matches!(repeat_x, Space) {
-                let frame_w = frame_w as f64;
-                let width_modulo = frame_w % bg_size.width;
-                let width_count = (((frame_w - width_modulo) / bg_size.width) as u32).max(1);
-                let width_gap = if width_count > 1 {
-                    width_modulo / (width_count - 1) as f64
-                } else {
-                    0.0
-                } + bg_size.width;
+            let (origin_rect, transform, width_count, width_gap) = if matches!(repeat_x, Space) {
+                let (count, gap) = compute_space_count_and_gap(origin_rect.width(), bg_size.width);
 
-                let transform = if width_count == 1 {
+                let transform = if count == 1 {
                     transform.then_translate(Vec2 {
                         x: bg_pos_x,
                         y: 0.0,
@@ -331,22 +297,16 @@ impl ElementCx<'_> {
                 let origin_rect =
                     origin_rect.with_size(Size::new(image_width, origin_rect.height()));
 
-                (width_count, width_gap, origin_rect, transform)
+                (origin_rect, transform, count, gap)
             } else {
-                (1, 0.0, origin_rect, transform)
+                (origin_rect, transform, 1, 0.0)
             };
 
-            let (height_count, height_gap, origin_rect, transform) = if matches!(repeat_y, Space) {
-                let frame_h = frame_h as f64;
-                let height_modulo = frame_h % bg_size.height;
-                let height_count = (((frame_h - height_modulo) / bg_size.height) as u32).max(1);
-                let height_gap = if height_count > 1 {
-                    height_modulo / (height_count - 1) as f64
-                } else {
-                    0.0
-                } + bg_size.height;
+            let (origin_rect, transform, height_count, height_gap) = if matches!(repeat_y, Space) {
+                let (count, gap) =
+                    compute_space_count_and_gap(origin_rect.height(), bg_size.height);
 
-                let transform = if height_count == 1 {
+                let transform = if count == 1 {
                     transform.then_translate(Vec2 {
                         x: 0.0,
                         y: bg_pos_y,
@@ -358,21 +318,21 @@ impl ElementCx<'_> {
                 let origin_rect =
                     origin_rect.with_size(Size::new(origin_rect.width(), image_height));
 
-                (height_count, height_gap, origin_rect, transform)
+                (origin_rect, transform, count, gap)
             } else {
-                (1, 0.0, origin_rect, transform)
+                (origin_rect, transform, 1, 0.0)
             };
 
             for hc in 0..height_count {
                 for wc in 0..width_count {
                     let width_gap = if matches!(repeat_x, Space) {
-                        (origin_rect.x0 + wc as f64 * width_gap) * self.scale
+                        origin_rect.x0 + wc as f64 * width_gap
                     } else {
                         0.0
                     };
 
                     let height_gap = if matches!(repeat_y, Space) {
-                        (origin_rect.y0 + hc as f64 * height_gap) * self.scale
+                        origin_rect.y0 + hc as f64 * height_gap
                     } else {
                         0.0
                     };
@@ -420,46 +380,19 @@ impl ElementCx<'_> {
             StyloBackgroundOrigin::ContentBox => self.frame.content_box,
         };
 
-        let frame_w = origin_rect.width() as f32;
-        let frame_h = origin_rect.height() as f32;
-
-        let bg_size = compute_background_size(
-            &self.style,
-            frame_w,
-            frame_h,
+        let (bg_pos, bg_size) = compute_background_position_and_background_size(
+            bg_styles,
+            origin_rect.width() / self.scale,
+            origin_rect.height() / self.scale,
             idx,
             BackgroundSizeComputeMode::Auto,
-            self.scale as f32,
         );
 
-        let (bg_pos_x, bg_pos_y) = Self::get_background_position(
-            bg_styles,
-            idx,
-            frame_w - bg_size.width as f32,
-            frame_h - bg_size.height as f32,
-        );
+        let bg_pos_x = bg_pos.x * self.scale;
+        let bg_pos_y = bg_pos.y * self.scale;
+        let bg_size = bg_size * self.scale;
 
         let BackgroundRepeat(repeat_x, repeat_y) = get_cyclic(&bg_styles.background_repeat.0, idx);
-
-        let bg_size = if matches!(repeat_x, Round) && matches!(repeat_y, Round) {
-            let count = (frame_w as f64 / bg_size.width).round();
-            let width = frame_w as f64 / count;
-
-            let count = (frame_h as f64 / bg_size.height).round();
-            let height = frame_h as f64 / count;
-
-            Size::new(width, height)
-        } else if matches!(repeat_x, Round) {
-            let count = (frame_w as f64 / bg_size.width).round();
-            let width = frame_w as f64 / count;
-            Size::new(width, bg_size.height)
-        } else if matches!(repeat_y, Round) {
-            let count = (frame_h as f64 / bg_size.height).round();
-            let height = frame_h as f64 / count;
-            Size::new(bg_size.width, height)
-        } else {
-            bg_size
-        };
 
         let transform = self.transform;
         let (origin_rect, transform, width_count, width_gap) = match repeat_x {
@@ -470,7 +403,8 @@ impl ElementCx<'_> {
                         StyloBackgroundOrigin::PaddingBox,
                     ) {
                     let extend_width =
-                        extend(self.frame.border_left_width + bg_pos_x, bg_size.width) * self.scale;
+                        extend(self.frame.border_left_width + bg_pos_x, bg_size.width);
+
                     let width = self.frame.border_box.width() + extend_width;
                     let count = (width / bg_size.width).ceil() as u32;
 
@@ -489,7 +423,7 @@ impl ElementCx<'_> {
                     let extend_width = extend(
                         self.frame.border_left_width + self.frame.padding_left_width + bg_pos_x,
                         bg_size.width,
-                    ) * self.scale;
+                    );
                     let width = self.frame.border_box.width() + extend_width;
                     let count = (width / bg_size.width).ceil() as u32;
 
@@ -506,8 +440,7 @@ impl ElementCx<'_> {
                     )
                 {
                     let extend_width =
-                        extend(self.frame.padding_left_width + bg_pos_x, bg_size.width)
-                            * self.scale;
+                        extend(self.frame.padding_left_width + bg_pos_x, bg_size.width);
                     let width = self.frame.padding_box.width() + extend_width;
                     let count = (width / bg_size.width).ceil() as u32;
 
@@ -518,7 +451,7 @@ impl ElementCx<'_> {
 
                     (origin_rect, extend_width, count)
                 } else {
-                    let extend_width = extend(bg_pos_x, bg_size.width) * self.scale;
+                    let extend_width = extend(bg_pos_x, bg_size.width);
                     let width = origin_rect.width() + extend_width;
                     let count = (width / bg_size.width).ceil() as u32;
                     let origin_rect =
@@ -535,17 +468,10 @@ impl ElementCx<'_> {
                 (origin_rect, transform, count, bg_size.width)
             }
             Space => {
-                let frame_w = frame_w as f64;
-                let modulo = frame_w % bg_size.width;
-                let count = (((frame_w - modulo) / bg_size.width) as u32).max(1);
-                let gap = if count > 1 {
-                    modulo / (count - 1) as f64
-                } else {
-                    0.0
-                } + bg_size.width;
+                let (count, gap) = compute_space_count_and_gap(origin_rect.width(), bg_size.width);
 
                 let transform = transform.then_translate(Vec2 {
-                    x: origin_rect.x0 * self.scale + if count == 1 { bg_pos_x } else { 0.0 },
+                    x: origin_rect.x0 + if count == 1 { bg_pos_x } else { 0.0 },
                     y: 0.0,
                 });
 
@@ -556,7 +482,7 @@ impl ElementCx<'_> {
             }
             NoRepeat => {
                 let transform = transform.then_translate(Vec2 {
-                    x: (origin_rect.x0 + bg_pos_x) * self.scale,
+                    x: origin_rect.x0 + bg_pos_x,
                     y: 0.0,
                 });
 
@@ -574,7 +500,7 @@ impl ElementCx<'_> {
                         StyloBackgroundOrigin::PaddingBox,
                     ) {
                     let extend_height =
-                        extend(self.frame.border_top_width + bg_pos_y, bg_size.height) * self.scale;
+                        extend(self.frame.border_top_width + bg_pos_y, bg_size.height);
                     let height = self.frame.border_box.height() + extend_height;
                     let count = (height / bg_size.height).ceil() as u32;
 
@@ -593,7 +519,7 @@ impl ElementCx<'_> {
                     let extend_height = extend(
                         self.frame.border_top_width + self.frame.padding_top_width + bg_pos_x,
                         bg_size.height,
-                    ) * self.scale;
+                    );
                     let height = self.frame.border_box.height() + extend_height;
                     let count = (height / bg_size.height).ceil() as u32;
 
@@ -610,8 +536,7 @@ impl ElementCx<'_> {
                     )
                 {
                     let extend_height =
-                        extend(self.frame.padding_top_width + bg_pos_x, bg_size.height)
-                            * self.scale;
+                        extend(self.frame.padding_top_width + bg_pos_x, bg_size.height);
                     let height = self.frame.padding_box.height() + extend_height;
                     let count = (height / bg_size.height).ceil() as u32;
 
@@ -622,7 +547,7 @@ impl ElementCx<'_> {
 
                     (origin_rect, extend_height, count)
                 } else {
-                    let extend_height = extend(bg_pos_x, bg_size.height) * self.scale;
+                    let extend_height = extend(bg_pos_x, bg_size.height);
                     let height = origin_rect.height() + extend_height;
                     let count = (height / bg_size.height).ceil() as u32;
                     let origin_rect =
@@ -639,18 +564,12 @@ impl ElementCx<'_> {
                 (origin_rect, transform, count, bg_size.height)
             }
             Space => {
-                let frame_h = frame_h as f64;
-                let modulo = frame_h % bg_size.height;
-                let count = (((frame_h - modulo) / bg_size.height) as u32).max(1);
-                let gap = if count > 1 {
-                    modulo / (count - 1) as f64
-                } else {
-                    0.0
-                } + bg_size.height;
+                let (count, gap) =
+                    compute_space_count_and_gap(origin_rect.height(), bg_size.height);
 
                 let transform = transform.then_translate(Vec2 {
                     x: 0.0,
-                    y: origin_rect.y0 * self.scale + if count == 1 { bg_pos_y } else { 0.0 },
+                    y: origin_rect.y0 + if count == 1 { bg_pos_y } else { 0.0 },
                 });
 
                 let origin_rect =
@@ -661,7 +580,7 @@ impl ElementCx<'_> {
             NoRepeat => {
                 let transform = transform.then_translate(Vec2 {
                     x: 0.0,
-                    y: (origin_rect.y0 + bg_pos_y) * self.scale,
+                    y: origin_rect.y0 + bg_pos_y,
                 });
 
                 let origin_rect =
@@ -670,7 +589,7 @@ impl ElementCx<'_> {
             }
         };
 
-        // TODO https://wpt.live/css/css-backgrounds/background-size/background-size-near-zero-gradient.html
+        // FIXME: https://wpt.live/css/css-backgrounds/background-size/background-size-near-zero-gradient.html
         if width_count * height_count > 500 {
             return;
         }
@@ -707,8 +626,8 @@ impl ElementCx<'_> {
         for hc in 0..height_count {
             for wc in 0..width_count {
                 let transform = transform.then_translate(Vec2 {
-                    x: wc as f64 * width_gap * self.scale,
-                    y: hc as f64 * height_gap * self.scale,
+                    x: wc as f64 * width_gap,
+                    y: hc as f64 * height_gap,
                 });
 
                 scene.fill(
@@ -725,14 +644,13 @@ impl ElementCx<'_> {
     fn linear_gradient(
         &self,
         gradient: LinearGradient,
-        origin_rect: Rect,
+        rect: Rect,
     ) -> (peniko::Gradient, Option<Affine>) {
         let (direction, items, flags) = gradient;
         let bb = self.frame.border_box.bounding_box();
         let current_color = self.style.clone_color();
 
         let center = bb.center();
-        let rect = origin_rect;
         let (start, end) = match direction {
             LineDirection::Angle(angle) => {
                 let angle = -angle.radians64() + std::f64::consts::PI;
@@ -799,10 +717,9 @@ impl ElementCx<'_> {
     fn radial_gradient(
         &self,
         gradient: RadialGradient,
-        origin_rect: Rect,
+        rect: Rect,
     ) -> (peniko::Gradient, Option<Affine>) {
         let (shape, position, items, flags) = gradient;
-        let rect = origin_rect;
         let repeating = flags.contains(GradientFlags::REPEATING);
         let current_color = self.style.clone_color();
 
@@ -911,10 +828,9 @@ impl ElementCx<'_> {
     fn conic_gradient(
         &self,
         gradient: ConicGradient,
-        origin_rect: Rect,
+        rect: Rect,
     ) -> (peniko::Gradient, Option<Affine>) {
         let (angle, position, items, flags) = gradient;
-        let rect = origin_rect;
         let current_color = self.style.clone_color();
 
         let repeating = flags.contains(GradientFlags::REPEATING);
@@ -1150,29 +1066,79 @@ impl ElementCx<'_> {
                     .px() as f64,
         )
     }
+}
 
-    #[inline]
-    fn get_background_position(
-        background: &Background,
-        idx: usize,
-        width: f32,
-        height: f32,
-    ) -> (f64, f64) {
-        use style::values::computed::Length;
+fn compute_background_position_and_background_size(
+    background: &Background,
+    container_w: f64,
+    container_h: f64,
+    bg_idx: usize,
+    size_mode: BackgroundSizeComputeMode,
+) -> (Point, Size) {
+    use BackgroundRepeatKeyword::*;
 
-        let bg_pos_x = get_cyclic(&background.background_position_x.0, idx)
-            .resolve(Length::new(width))
-            .px() as f64;
-        let bg_pos_y = get_cyclic(&background.background_position_y.0, idx)
-            .resolve(Length::new(height))
-            .px() as f64;
+    let bg_size = compute_background_size(
+        background,
+        container_w as f32,
+        container_h as f32,
+        bg_idx,
+        size_mode,
+        1.0,
+    );
 
-        (bg_pos_x, bg_pos_y)
-    }
+    let bg_pos = compute_background_position(
+        background,
+        bg_idx,
+        (container_w - bg_size.width) as f32,
+        (container_h - bg_size.height) as f32,
+    );
+
+    let BackgroundRepeat(repeat_x, repeat_y) = get_cyclic(&background.background_repeat.0, bg_idx);
+
+    let bg_size = if matches!(repeat_x, Round) && matches!(repeat_y, Round) {
+        let count = (container_w / bg_size.width).round();
+        let width = container_w / count;
+
+        let count = (container_h / bg_size.height).round();
+        let height = container_h / count;
+
+        Size::new(width, height)
+    } else if matches!(repeat_x, Round) {
+        let count = (container_w / bg_size.width).round();
+        let width = container_w / count;
+        Size::new(width, bg_size.height)
+    } else if matches!(repeat_y, Round) {
+        let count = (container_h / bg_size.height).round();
+        let height = container_h / count;
+        Size::new(bg_size.width, height)
+    } else {
+        bg_size
+    };
+
+    (bg_pos, bg_size)
+}
+
+#[inline]
+fn compute_background_position(
+    background: &Background,
+    bg_idx: usize,
+    width: f32,
+    height: f32,
+) -> Point {
+    use style::values::computed::Length;
+
+    let bg_pos_x = get_cyclic(&background.background_position_x.0, bg_idx)
+        .resolve(Length::new(width))
+        .px() as f64;
+    let bg_pos_y = get_cyclic(&background.background_position_y.0, bg_idx)
+        .resolve(Length::new(height))
+        .px() as f64;
+
+    Point::new(bg_pos_x, bg_pos_y)
 }
 
 fn compute_background_size(
-    style: &ComputedValues,
+    background: &Background,
     container_w: f32,
     container_h: f32,
     bg_idx: usize,
@@ -1182,13 +1148,7 @@ fn compute_background_size(
     use style::values::computed::{BackgroundSize, Length};
     use style::values::generics::length::GenericLengthPercentageOrAuto as Lpa;
 
-    let bg_size = style
-        .get_background()
-        .background_size
-        .0
-        .get(bg_idx)
-        .cloned()
-        .unwrap_or(BackgroundSize::auto());
+    let bg_size = get_cyclic(&background.background_size.0, bg_idx);
 
     let (width, height): (f32, f32) = match bg_size {
         BackgroundSize::ExplicitSize { width, height } => {
@@ -1267,6 +1227,18 @@ fn compute_background_size(
 enum BackgroundSizeComputeMode {
     Auto,
     Size(f32, f32),
+}
+
+fn compute_space_count_and_gap(bg_size: f64, size: f64) -> (u32, f64) {
+    let modulo = bg_size % size;
+    let count = (((bg_size - modulo) / size) as u32).max(1);
+    let gap = if count > 1 {
+        modulo / (count - 1) as f64
+    } else {
+        0.0
+    } + size;
+
+    (count, gap)
 }
 
 #[inline]
