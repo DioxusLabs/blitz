@@ -303,7 +303,6 @@ dependencies = [
  "kurbo",
  "peniko",
  "softbuffer",
- "vello_common",
  "vello_cpu",
 ]
 
@@ -6497,31 +6496,23 @@ dependencies = [
 ]
 
 [[package]]
-name = "vello_api"
-version = "0.4.0"
-source = "git+https://github.com/linebender/vello?rev=13d35021#13d350211b3586c8180e6750155dffac6c173aef"
+name = "vello_common"
+version = "0.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6b5e49f2836e87b6bd3d8f70324696f22b5f7dfdc836caeab463fff05957c1b1"
 dependencies = [
  "bytemuck",
  "peniko",
  "png",
-]
-
-[[package]]
-name = "vello_common"
-version = "0.4.0"
-source = "git+https://github.com/linebender/vello?rev=13d35021#13d350211b3586c8180e6750155dffac6c173aef"
-dependencies = [
- "bytemuck",
- "roxmltree",
  "skrifa",
  "smallvec",
- "vello_api",
 ]
 
 [[package]]
 name = "vello_cpu"
-version = "0.4.0"
-source = "git+https://github.com/linebender/vello?rev=13d35021#13d350211b3586c8180e6750155dffac6c173aef"
+version = "0.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a45e0a6b777abb4354e15146ecf95bac03aada7a85024fd47762f56095b32896"
 dependencies = [
  "vello_common",
 ]

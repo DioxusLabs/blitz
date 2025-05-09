@@ -3,7 +3,7 @@ use anyrender::{WindowHandle, WindowRenderer};
 use peniko::color::PremulRgba8;
 use softbuffer::{Context, Surface};
 use std::{num::NonZero, sync::Arc};
-use vello_cpu::{Pixmap, RenderContext};
+use vello_cpu::{Pixmap, RenderContext, RenderMode};
 
 // Simple struct to hold the state of the renderer
 pub struct ActiveRenderState {
@@ -84,7 +84,9 @@ impl WindowRenderer for VelloCpuWindowRenderer {
         let height = self.render_context.0.height();
         let mut pixmap = Pixmap::new(width, height);
         draw_fn(&mut self.render_context);
-        self.render_context.0.render_to_pixmap(&mut pixmap);
+        self.render_context
+            .0
+            .render_to_pixmap(&mut pixmap, RenderMode::OptimizeSpeed);
 
         let out = surface_buffer.as_mut();
         assert_eq!(pixmap.data().len(), out.len());

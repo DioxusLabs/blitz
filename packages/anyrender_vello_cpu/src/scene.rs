@@ -2,8 +2,7 @@ use anyrender::{NormalizedCoord, Scene};
 use kurbo::{Affine, Rect, Shape, Stroke};
 use peniko::{BlendMode, BrushRef, Color, Fill, Font, StyleRef, color::PremulRgba8};
 use std::sync::Arc;
-use vello_common::paint::PaintType;
-use vello_cpu::Pixmap;
+use vello_cpu::{PaintType, Pixmap, RenderMode};
 
 const DEFAULT_TOLERANCE: f64 = 0.1;
 
@@ -11,7 +10,7 @@ fn brush_ref_to_paint_type<'a>(brush_ref: BrushRef<'a>) -> PaintType {
     match brush_ref {
         BrushRef::Solid(alpha_color) => PaintType::Solid(alpha_color),
         BrushRef::Gradient(gradient) => PaintType::Gradient(gradient.clone()),
-        BrushRef::Image(image) => PaintType::Image(vello_common::paint::Image {
+        BrushRef::Image(image) => PaintType::Image(vello_cpu::Image {
             pixmap: Arc::new(Pixmap::from_parts(
                 premultiply(image),
                 image.width as u16,
@@ -66,7 +65,7 @@ impl Scene for VelloCpuAnyrenderScene {
         self.0.push_layer(
             Some(&clip.into_path(DEFAULT_TOLERANCE)),
             Some(blend.into()),
-            Some((alpha * 255.0) as u8),
+            Some(alpha * 255.0),
             None,
         );
     }
@@ -123,8 +122,8 @@ impl Scene for VelloCpuAnyrenderScene {
         self.0.set_transform(transform);
         self.0.set_paint(brush_ref_to_paint_type(brush.into()));
 
-        fn into_vello_cpu_glyph(g: anyrender::Glyph) -> vello_common::glyph::Glyph {
-            vello_common::glyph::Glyph {
+        fn into_vello_cpu_glyph(g: anyrender::Glyph) -> vello_cpu::Glyph {
+            vello_cpu::Glyph {
                 id: g.id,
                 x: g.x,
                 y: g.y,
@@ -171,7 +170,8 @@ impl Scene for VelloCpuAnyrenderScene {
 
     fn finish(self) -> Self::Output {
         let mut pixmap = Pixmap::new(self.0.width(), self.0.height());
-        self.0.render_to_pixmap(&mut pixmap);
+        self.0
+            .render_to_pixmap(&mut pixmap, RenderMode::OptimizeSpeed);
         pixmap
     }
 }

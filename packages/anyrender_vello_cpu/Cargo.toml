@@ -14,5 +14,4 @@ anyrender = { path = "../anyrender"}
 kurbo = { workspace = true }
 peniko = { workspace = true }
 vello_cpu = { workspace = true }
-vello_common = { workspace = true }
 softbuffer = { workspace = true }
