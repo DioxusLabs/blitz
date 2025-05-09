@@ -17,8 +17,8 @@ tracing = ["dep:tracing", "blitz-dom/tracing"]
 [dependencies]
 # Blitz dependencies
 blitz-traits = { version = "0.1.0-alpha.1", path = "../blitz-traits" }
-blitz-paint = { version = "0.1.0-alpha.1", path = "../blitz-paint" }
 blitz-dom = { version = "0.1.0-alpha.1", path = "../blitz-dom", default-features = false }
+blitz-paint = { version = "0.1.0-alpha.1", path = "../blitz-paint", default-features = false }
 anyrender = { path = "../anyrender", default-features = false }
 
 # Windowing & Input

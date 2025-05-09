@@ -4762,6 +4762,7 @@ dependencies = [
  "blitz-dom",
  "blitz-html",
  "blitz-net",
+ "blitz-paint",
  "blitz-shell",
  "blitz-traits",
  "comrak",

@@ -10,10 +10,11 @@ gpu = ["dep:anyrender_vello"]
 cpu = ["dep:anyrender_vello_cpu"]
 
 [dependencies]
-blitz-dom = { path = "../../packages/blitz-dom" }
-blitz-net = { path = "../../packages/blitz-net" }
 blitz-traits = { path = "../../packages/blitz-traits" }
+blitz-dom = { path = "../../packages/blitz-dom" }
 blitz-html = { path = "../../packages/blitz-html" }
+blitz-paint = { path = "../../packages/blitz-paint" }
+blitz-net = { path = "../../packages/blitz-net" }
 blitz-shell = { path = "../../packages/blitz-shell", features = ["tracing"] }
 anyrender_vello = { path = "../../packages/anyrender_vello", optional = true }
 anyrender_vello_cpu = { path = "../../packages/anyrender_vello_cpu", optional = true }
