@@ -4758,6 +4758,7 @@ name = "readme"
 version = "0.1.0"
 dependencies = [
  "anyrender_vello",
+ "anyrender_vello_cpu",
  "blitz-dom",
  "blitz-html",
  "blitz-net",

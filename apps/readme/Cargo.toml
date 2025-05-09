@@ -4,13 +4,19 @@ version = "0.1.0"
 edition = "2024"
 license.workspace = true
 
+[features]
+default = ["gpu"]
+gpu = ["dep:anyrender_vello"]
+cpu = ["dep:anyrender_vello_cpu"]
+
 [dependencies]
 blitz-dom = { path = "../../packages/blitz-dom" }
 blitz-net = { path = "../../packages/blitz-net" }
 blitz-traits = { path = "../../packages/blitz-traits" }
 blitz-html = { path = "../../packages/blitz-html" }
-anyrender_vello = { path = "../../packages/anyrender_vello" }
 blitz-shell = { path = "../../packages/blitz-shell", features = ["tracing"] }
+anyrender_vello = { path = "../../packages/anyrender_vello", optional = true }
+anyrender_vello_cpu = { path = "../../packages/anyrender_vello_cpu", optional = true }
 tokio = { workspace = true, features = ["rt", "rt-multi-thread"] }
 reqwest = { workspace = true }
 url = { workspace = true }

@@ -1,6 +1,10 @@
 use std::sync::Arc;
 
+#[cfg(feature = "gpu")]
 use anyrender_vello::VelloWindowRenderer;
+#[cfg(feature = "cpu")]
+use anyrender_vello_cpu::VelloCpuWindowRenderer as VelloWindowRenderer;
+
 use blitz_dom::net::Resource;
 use blitz_html::HtmlDocument;
 use blitz_shell::{BlitzApplication, BlitzShellEvent, View, WindowConfig};
