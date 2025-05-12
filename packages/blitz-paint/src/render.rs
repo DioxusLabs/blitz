@@ -679,25 +679,6 @@ impl ElementCx<'_> {
 
         scene.fill(Fill::NonZero, self.transform, color, None, &path);
     }
-
-    /// Applies filters to a final frame
-    ///
-    /// ❌ clip: The clip computed value.
-    /// ❌ filter: The filter computed value.
-    /// ❌ mix_blend_mode: The mix-blend-mode computed value.
-    fn stroke_effects(&self, _scene: &mut impl anyrender::Scene) {
-        // also: if focused, draw a focus ring
-        //
-        //             let stroke_color = Color::rgb(1.0, 1.0, 1.0);
-        //             let stroke = Stroke::new(FOCUS_BORDER_WIDTH as f32 / 2.0);
-        //             scene_builder.stroke(&stroke, Affine::IDENTITY, stroke_color, None, &shape);
-        //             let smaller_rect = shape.rect().inset(-FOCUS_BORDER_WIDTH / 2.0);
-        //             let smaller_shape = RoundedRect::from_rect(smaller_rect, shape.radii());
-        //             let stroke_color = Color::rgb(0.0, 0.0, 0.0);
-        //             scene_builder.stroke(&stroke, Affine::IDENTITY, stroke_color, None, &shape);
-        //             background.draw_shape(scene_builder, &smaller_shape, layout, viewport_size);
-        // let effects = self.style.get_effects();
-    }
 }
 impl<'a> std::ops::Deref for ElementCx<'a> {
     type Target = BlitzDomPainter<'a>;
