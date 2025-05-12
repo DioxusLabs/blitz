@@ -1,5 +1,6 @@
 //! A generic painter for blitz-dom using anyrender
 
+mod debug_overlay;
 mod multicolor_rounded_rect;
 mod render;
 mod text;
