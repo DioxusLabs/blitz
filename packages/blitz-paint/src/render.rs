@@ -1,5 +1,6 @@
-mod render_background;
 mod box_shadow;
+mod form_controls;
+mod render_background;
 
 use super::multicolor_rounded_rect::{Edge, ElementFrame};
 use crate::debug_overlay::render_debug_overlay;
@@ -26,8 +27,7 @@ use style::{
     },
 };
 
-use kurbo::{self, BezPath, Cap, Circle, Join};
-use kurbo::{Affine, Point, Rect, Stroke, Vec2};
+use kurbo::{self, Affine, Point, Rect, Stroke, Vec2};
 use peniko::{self, Fill};
 use style::values::generics::color::GenericColor;
 use taffy::Layout;
@@ -697,101 +697,6 @@ impl ElementCx<'_> {
         //             scene_builder.stroke(&stroke, Affine::IDENTITY, stroke_color, None, &shape);
         //             background.draw_shape(scene_builder, &smaller_shape, layout, viewport_size);
         // let effects = self.style.get_effects();
-    }
-
-    fn draw_input(&self, scene: &mut impl anyrender::Scene) {
-        if self.node.local_name() == "input" {
-            let Some(checked) = self.element.checkbox_input_checked() else {
-                return;
-            };
-            let disabled = self.node.attr(local_name!("disabled")).is_some();
-
-            // TODO this should be coming from css accent-color, but I couldn't find how to retrieve it
-            let accent_color = if disabled {
-                Color::from_rgba8(209, 209, 209, 255)
-            } else {
-                self.style.clone_color().as_srgb_color()
-            };
-
-            let scale = (self
-                .frame
-                .border_box
-                .width()
-                .min(self.frame.border_box.height())
-                - 4.0)
-                .max(0.0)
-                / 16.0;
-
-            let frame = self.frame.border_box.to_rounded_rect(scale * 2.0);
-
-            let attr_type = self.node.attr(local_name!("type"));
-
-            if attr_type == Some("checkbox") {
-                if checked {
-                    scene.fill(Fill::NonZero, self.transform, accent_color, None, &frame);
-                    //Tick code derived from masonry
-                    let mut path = BezPath::new();
-                    path.move_to((2.0, 9.0));
-                    path.line_to((6.0, 13.0));
-                    path.line_to((14.0, 2.0));
-
-                    path.apply_affine(Affine::translate(Vec2 { x: 2.0, y: 1.0 }).then_scale(scale));
-
-                    let style = Stroke {
-                        width: 2.0 * scale,
-                        join: Join::Round,
-                        miter_limit: 10.0,
-                        start_cap: Cap::Round,
-                        end_cap: Cap::Round,
-                        dash_pattern: Default::default(),
-                        dash_offset: 0.0,
-                    };
-
-                    scene.stroke(&style, self.transform, Color::WHITE, None, &path);
-                } else {
-                    scene.fill(Fill::NonZero, self.transform, Color::WHITE, None, &frame);
-                    scene.stroke(
-                        &Stroke::default(),
-                        self.transform,
-                        accent_color,
-                        None,
-                        &frame,
-                    );
-                }
-            } else if attr_type == Some("radio") {
-                let center = frame.center();
-                let outer_ring = Circle::new(center, 8.0 * scale);
-                let gap = Circle::new(center, 6.0 * scale);
-                let inner_circle = Circle::new(center, 4.0 * scale);
-
-                if checked {
-                    scene.fill(
-                        Fill::NonZero,
-                        self.transform,
-                        accent_color,
-                        None,
-                        &outer_ring,
-                    );
-                    scene.fill(Fill::NonZero, self.transform, Color::WHITE, None, &gap);
-                    scene.fill(
-                        Fill::NonZero,
-                        self.transform,
-                        accent_color,
-                        None,
-                        &inner_circle,
-                    );
-                } else {
-                    scene.fill(
-                        Fill::NonZero,
-                        self.transform,
-                        color::palette::css::GRAY,
-                        None,
-                        &outer_ring,
-                    );
-                    scene.fill(Fill::NonZero, self.transform, Color::WHITE, None, &gap);
-                }
-            }
-        }
     }
 }
 impl<'a> std::ops::Deref for ElementCx<'a> {
