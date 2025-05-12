@@ -3,9 +3,9 @@ mod form_controls;
 mod render_background;
 
 use super::multicolor_rounded_rect::{Edge, ElementFrame};
+use crate::color::{Color, ToColorColor};
 use crate::debug_overlay::render_debug_overlay;
 use crate::layers::{maybe_with_layer, reset_layer_stats};
-use crate::util::{Color, ToColorColor};
 use blitz_dom::node::{
     ListItemLayout, ListItemLayoutPosition, Marker, NodeData, RasterImageData, TextInputData,
     TextNodeData,

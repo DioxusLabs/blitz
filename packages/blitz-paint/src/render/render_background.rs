@@ -1,6 +1,6 @@
 use super::{ElementCx, to_peniko_image};
+use crate::color::{Color, ToColorColor};
 use crate::layers::maybe_with_layer;
-use crate::util::{Color, ToColorColor};
 use blitz_dom::node::ImageData;
 use color::DynamicColor;
 use kurbo::{self, Affine, BezPath, Point, Rect, Shape, Size, Vec2};

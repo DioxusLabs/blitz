@@ -1,5 +1,5 @@
 use super::ElementCx;
-use crate::util::{Color, ToColorColor as _};
+use crate::color::{Color, ToColorColor as _};
 use anyrender::Scene;
 use blitz_dom::local_name;
 use kurbo::{Affine, BezPath, Cap, Circle, Join, Point, RoundedRect, Stroke, Vec2};

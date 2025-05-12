@@ -1,7 +1,7 @@
 use blitz_dom::BaseDocument;
 use kurbo::{Affine, Rect, Vec2};
 
-use crate::util::Color;
+use crate::color::Color;
 
 /// Renders a layout debugging overlay which visualises the content size, padding and border
 /// of the node with a transparent overlay.

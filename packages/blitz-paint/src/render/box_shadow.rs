@@ -1,7 +1,7 @@
 use super::ElementCx;
 use crate::{
+    color::{Color, ToColorColor as _},
     layers::maybe_with_layer,
-    util::{Color, ToColorColor as _},
 };
 use kurbo::Vec2;
 
