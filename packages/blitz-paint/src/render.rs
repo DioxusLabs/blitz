@@ -5,14 +5,13 @@ use std::sync::atomic::{self, AtomicUsize};
 use super::multicolor_rounded_rect::{Edge, ElementFrame};
 use crate::util::{Color, ToColorColor};
 use blitz_dom::node::{
-    ListItemLayout, ListItemLayoutPosition, Marker, NodeData, RasterImageData, TextBrush,
-    TextInputData, TextNodeData,
+    ListItemLayout, ListItemLayoutPosition, Marker, NodeData, RasterImageData, TextInputData,
+    TextNodeData,
 };
 use blitz_dom::{BaseDocument, ElementNodeData, Node, local_name};
 use blitz_traits::Devtools;
 
 use euclid::Transform3D;
-use parley::Line;
 use style::{
     dom::TElement,
     properties::{
@@ -28,7 +27,6 @@ use style::{
 
 use kurbo::{self, BezPath, Cap, Circle, Join};
 use kurbo::{Affine, Point, Rect, Stroke, Vec2};
-use parley::layout::PositionedLayoutItem;
 use peniko::{self, Fill, Mix};
 use style::values::generics::color::GenericColor;
 use taffy::Layout;
@@ -605,7 +603,7 @@ impl ElementCx<'_> {
                 });
 
             // Render text
-            self.stroke_text(scene, text_layout.layout.lines(), pos);
+            crate::text::stroke_text(self.scale, scene, text_layout.layout.lines(), pos);
         }
     }
 
@@ -631,7 +629,12 @@ impl ElementCx<'_> {
             }
 
             // Render text
-            self.stroke_text(scene, input_data.editor.try_layout().unwrap().lines(), pos);
+            crate::text::stroke_text(
+                self.scale,
+                scene,
+                input_data.editor.try_layout().unwrap().lines(),
+                pos,
+            );
         }
     }
 
@@ -666,7 +669,8 @@ impl ElementCx<'_> {
                 x: pos.x + x_offset as f64,
                 y: pos.y + y_offset as f64,
             };
-            self.stroke_text(scene, layout.lines(), pos);
+
+            crate::text::stroke_text(self.scale, scene, layout.lines(), pos);
         }
     }
 
@@ -674,84 +678,6 @@ impl ElementCx<'_> {
         if let Some(children) = &*self.node.paint_children.borrow() {
             for child_id in children {
                 self.render_node(scene, *child_id, self.pos);
-            }
-        }
-    }
-
-    fn stroke_text<'a>(
-        &self,
-        scene: &mut impl anyrender::Scene,
-        lines: impl Iterator<Item = Line<'a, TextBrush>>,
-        pos: Point,
-    ) {
-        let transform = Affine::translate((pos.x * self.scale, pos.y * self.scale));
-        for line in lines {
-            for item in line.items() {
-                if let PositionedLayoutItem::GlyphRun(glyph_run) = item {
-                    let mut x = glyph_run.offset();
-                    let y = glyph_run.baseline();
-
-                    let run = glyph_run.run();
-                    let font = run.font();
-                    let font_size = run.font_size();
-                    let metrics = run.metrics();
-                    let style = glyph_run.style();
-                    let synthesis = run.synthesis();
-                    let glyph_xform = synthesis
-                        .skew()
-                        .map(|angle| Affine::skew(angle.to_radians().tan() as f64, 0.0));
-
-                    scene.draw_glyphs(
-                        font,
-                        font_size,
-                        true, // hint
-                        run.normalized_coords(),
-                        Fill::NonZero,
-                        &style.brush.brush,
-                        1.0, // alpha
-                        transform,
-                        glyph_xform,
-                        glyph_run.glyphs().map(|glyph| {
-                            let gx = x + glyph.x;
-                            let gy = y - glyph.y;
-                            x += glyph.advance;
-
-                            anyrender::Glyph {
-                                id: glyph.id as _,
-                                x: gx,
-                                y: gy,
-                            }
-                        }),
-                    );
-
-                    let mut draw_decoration_line = |offset: f32, size: f32, brush: &TextBrush| {
-                        let x = glyph_run.offset() as f64;
-                        let w = glyph_run.advance() as f64;
-                        let y = (glyph_run.baseline() - offset + size / 2.0) as f64;
-                        let line = kurbo::Line::new((x, y), (x + w, y));
-                        scene.stroke(
-                            &Stroke::new(size as f64),
-                            transform,
-                            &brush.brush,
-                            None,
-                            &line,
-                        )
-                    };
-
-                    if let Some(underline) = &style.underline {
-                        let offset = underline.offset.unwrap_or(metrics.underline_offset);
-                        let size = underline.size.unwrap_or(metrics.underline_size);
-
-                        // TODO: intercept line when crossing an descending character like "gqy"
-                        draw_decoration_line(offset, size, &underline.brush);
-                    }
-                    if let Some(strikethrough) = &style.strikethrough {
-                        let offset = strikethrough.offset.unwrap_or(metrics.strikethrough_offset);
-                        let size = strikethrough.size.unwrap_or(metrics.strikethrough_size);
-
-                        draw_decoration_line(offset, size, &strikethrough.brush);
-                    }
-                }
             }
         }
     }
