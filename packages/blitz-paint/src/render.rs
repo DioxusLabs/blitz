@@ -610,17 +610,7 @@ impl ElementCx<'_> {
 
             scene.stroke(&stroke, self.transform, stroke_color, None, &shape);
         }
-
-        // if self.devtools.show_style {
-        //     self.frame.draw_style(scene);
-        // }
-
-        // if self.devtools.print_hover {
-        //     self.frame.draw_hover(scene);
-        // }
     }
-
-    // fn draw_image_frame(&self, scene: &mut impl anyrender::Scene) {}
 
     fn draw_outset_box_shadow(&self, scene: &mut impl anyrender::Scene) {
         let box_shadow = &self.style.get_effects().box_shadow.0;
