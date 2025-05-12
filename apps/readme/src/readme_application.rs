@@ -29,6 +29,7 @@ pub struct ReadmeApplication {
     raw_url: String,
     keyboard_modifiers: Modifiers,
     navigation_provider: Arc<dyn NavigationProvider>,
+    url_history: Vec<String>,
 }
 
 impl ReadmeApplication {
@@ -46,6 +47,7 @@ impl ReadmeApplication {
             net_provider,
             keyboard_modifiers: Default::default(),
             navigation_provider,
+            url_history: Vec::new(),
         }
     }
 
@@ -119,6 +121,12 @@ impl ApplicationHandler<BlitzShellEvent> for ReadmeApplication {
                 match event.physical_key {
                     PhysicalKey::Code(KeyCode::KeyR) => self.reload_document(true),
                     PhysicalKey::Code(KeyCode::KeyT) => self.toggle_theme(),
+                    PhysicalKey::Code(KeyCode::KeyB) => {
+                        if let Some(url) = self.url_history.pop() {
+                            self.raw_url = url;
+                            self.reload_document(false);
+                        }
+                    }
                     _ => {}
                 }
             }
@@ -135,7 +143,8 @@ impl ApplicationHandler<BlitzShellEvent> for ReadmeApplication {
                 }
             }
             BlitzShellEvent::Navigate(url) => {
-                self.raw_url = url;
+                let old_url = std::mem::replace(&mut self.raw_url, url);
+                self.url_history.push(old_url);
                 self.reload_document(false);
             }
             event => self.inner.user_event(event_loop, event),
