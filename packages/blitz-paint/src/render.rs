@@ -1,9 +1,8 @@
 mod render_background;
 
-use std::sync::atomic::{self, AtomicUsize};
-
 use super::multicolor_rounded_rect::{Edge, ElementFrame};
 use crate::debug_overlay::render_debug_overlay;
+use crate::layers::{maybe_with_layer, reset_layer_stats};
 use crate::util::{Color, ToColorColor};
 use blitz_dom::node::{
     ListItemLayout, ListItemLayoutPosition, Marker, NodeData, RasterImageData, TextInputData,
@@ -28,15 +27,9 @@ use style::{
 
 use kurbo::{self, BezPath, Cap, Circle, Join};
 use kurbo::{Affine, Point, Rect, Stroke, Vec2};
-use peniko::{self, Fill, Mix};
+use peniko::{self, Fill};
 use style::values::generics::color::GenericColor;
 use taffy::Layout;
-
-const CLIP_LIMIT: usize = 1024;
-static CLIPS_USED: AtomicUsize = AtomicUsize::new(0);
-static CLIP_DEPTH: AtomicUsize = AtomicUsize::new(0);
-static CLIP_DEPTH_USED: AtomicUsize = AtomicUsize::new(0);
-static CLIPS_WANTED: AtomicUsize = AtomicUsize::new(0);
 
 /// Draw the current tree to current render surface
 /// Eventually we'll want the surface itself to be passed into the render function, along with things like the viewport
@@ -50,8 +43,7 @@ pub fn paint_scene(
     width: u32,
     height: u32,
 ) {
-    CLIPS_USED.store(0, atomic::Ordering::SeqCst);
-    CLIPS_WANTED.store(0, atomic::Ordering::SeqCst);
+    reset_layer_stats();
 
     let devtools = *dom.devtools();
     let generator = BlitzDomPainter {
@@ -217,7 +209,6 @@ impl BlitzDomPainter<'_> {
         let overflow_y = styles.get_box().overflow_y;
         let should_clip =
             !matches!(overflow_x, Overflow::Visible) || !matches!(overflow_y, Overflow::Visible);
-        let clips_available = CLIPS_USED.load(atomic::Ordering::SeqCst) <= CLIP_LIMIT;
 
         // Apply padding/border offset to inline root
         let (layout, box_position) = self.node_position(node_id, location);
@@ -253,11 +244,6 @@ impl BlitzDomPainter<'_> {
             return;
         }
 
-        let wants_layer = should_clip | has_opacity;
-        if wants_layer {
-            CLIPS_WANTED.fetch_add(1, atomic::Ordering::SeqCst);
-        }
-
         let mut cx = self.element_cx(node, layout, box_position);
         cx.stroke_effects(scene);
         cx.stroke_outline(scene);
@@ -265,44 +251,37 @@ impl BlitzDomPainter<'_> {
         cx.draw_background(scene);
         cx.stroke_border(scene);
 
-        if wants_layer && clips_available {
-            // TODO: allow layers with opacity to be unclipped (overflow: visible)
-            scene.push_layer(Mix::Clip, 1.0, cx.transform, &cx.frame.frame());
-            CLIPS_USED.fetch_add(1, atomic::Ordering::SeqCst);
-            let depth = CLIP_DEPTH.fetch_add(1, atomic::Ordering::SeqCst) + 1;
-            CLIP_DEPTH_USED.fetch_max(depth, atomic::Ordering::SeqCst);
-        }
+        // TODO: allow layers with opacity to be unclipped (overflow: visible)
+        let wants_layer = should_clip | has_opacity;
+        let clip = &cx.frame.frame();
 
-        cx.draw_inset_box_shadow(scene);
-        cx.stroke_devtools(scene);
+        maybe_with_layer(scene, wants_layer, opacity, cx.transform, clip, |scene| {
+            cx.draw_inset_box_shadow(scene);
+            cx.stroke_devtools(scene);
 
-        // Now that background has been drawn, offset pos and cx in order to draw our contents scrolled
-        let content_position = Point {
-            x: content_position.x - node.scroll_offset.x,
-            y: content_position.y - node.scroll_offset.y,
-        };
-        cx.pos = Point {
-            x: cx.pos.x - node.scroll_offset.x,
-            y: cx.pos.y - node.scroll_offset.y,
-        };
-        cx.transform = cx.transform.then_translate(Vec2 {
-            x: -node.scroll_offset.x,
-            y: -node.scroll_offset.y,
+            // Now that background has been drawn, offset pos and cx in order to draw our contents scrolled
+            let content_position = Point {
+                x: content_position.x - node.scroll_offset.x,
+                y: content_position.y - node.scroll_offset.y,
+            };
+            cx.pos = Point {
+                x: cx.pos.x - node.scroll_offset.x,
+                y: cx.pos.y - node.scroll_offset.y,
+            };
+            cx.transform = cx.transform.then_translate(Vec2 {
+                x: -node.scroll_offset.x,
+                y: -node.scroll_offset.y,
+            });
+            cx.draw_image(scene);
+            #[cfg(feature = "svg")]
+            cx.draw_svg(scene);
+            cx.draw_input(scene);
+
+            cx.draw_text_input_text(scene, content_position);
+            cx.draw_inline_layout(scene, content_position);
+            cx.draw_marker(scene, content_position);
+            cx.draw_children(scene);
         });
-        cx.draw_image(scene);
-        #[cfg(feature = "svg")]
-        cx.draw_svg(scene);
-        cx.draw_input(scene);
-
-        cx.draw_text_input_text(scene, content_position);
-        cx.draw_inline_layout(scene, content_position);
-        cx.draw_marker(scene, content_position);
-        cx.draw_children(scene);
-
-        if wants_layer && clips_available {
-            scene.pop_layer();
-            CLIP_DEPTH.fetch_sub(1, atomic::Ordering::SeqCst);
-        }
     }
 
     fn render_node(&self, scene: &mut impl anyrender::Scene, node_id: usize, location: Point) {
@@ -437,35 +416,6 @@ struct ElementCx<'a> {
 }
 
 impl ElementCx<'_> {
-    fn with_maybe_clip<S: anyrender::Scene, F: FnMut(&ElementCx<'_>, &mut S)>(
-        &self,
-        scene: &mut S,
-        mut condition: impl FnMut() -> bool,
-        mut cb: F,
-    ) {
-        let clip_wanted = condition();
-        let mut clips_available = false;
-        if clip_wanted {
-            CLIPS_WANTED.fetch_add(1, atomic::Ordering::SeqCst);
-            clips_available = CLIPS_USED.load(atomic::Ordering::SeqCst) <= CLIP_LIMIT;
-        }
-        let do_clip = clip_wanted & clips_available;
-
-        if do_clip {
-            scene.push_layer(Mix::Clip, 1.0, self.transform, &self.frame.shadow_clip());
-            CLIPS_USED.fetch_add(1, atomic::Ordering::SeqCst);
-            let depth = CLIP_DEPTH.fetch_add(1, atomic::Ordering::SeqCst) + 1;
-            CLIP_DEPTH_USED.fetch_max(depth, atomic::Ordering::SeqCst);
-        }
-
-        cb(self, scene);
-
-        if do_clip {
-            scene.pop_layer();
-            CLIP_DEPTH.fetch_sub(1, atomic::Ordering::SeqCst);
-        }
-    }
-
     fn draw_inline_layout(&self, scene: &mut impl anyrender::Scene, pos: Point) {
         if self.node.is_inline_root {
             let text_layout = self.element
@@ -618,10 +568,13 @@ impl ElementCx<'_> {
 
         // TODO: Only apply clip if element has transparency
         let has_outset_shadow = box_shadow.iter().any(|s| !s.inset);
-        self.with_maybe_clip(
+        maybe_with_layer(
             scene,
-            || has_outset_shadow,
-            |elem_cx, scene| {
+            has_outset_shadow,
+            1.0,
+            self.transform,
+            &self.frame.shadow_clip(),
+            |scene| {
                 for shadow in box_shadow.iter().filter(|s| !s.inset) {
                     let shadow_color = shadow
                         .base
@@ -629,26 +582,26 @@ impl ElementCx<'_> {
                         .resolve_to_absolute(&current_color)
                         .as_srgb_color();
                     if shadow_color != Color::TRANSPARENT {
-                        let transform = elem_cx.transform.then_translate(Vec2 {
+                        let transform = self.transform.then_translate(Vec2 {
                             x: shadow.base.horizontal.px() as f64,
                             y: shadow.base.vertical.px() as f64,
                         });
 
                         //TODO draw shadows with matching individual radii instead of averaging
-                        let radius = (elem_cx.frame.border_top_left_radius_height
-                            + elem_cx.frame.border_bottom_left_radius_width
-                            + elem_cx.frame.border_bottom_left_radius_height
-                            + elem_cx.frame.border_bottom_left_radius_width
-                            + elem_cx.frame.border_bottom_right_radius_height
-                            + elem_cx.frame.border_bottom_right_radius_width
-                            + elem_cx.frame.border_top_right_radius_height
-                            + elem_cx.frame.border_top_right_radius_width)
+                        let radius = (self.frame.border_top_left_radius_height
+                            + self.frame.border_bottom_left_radius_width
+                            + self.frame.border_bottom_left_radius_height
+                            + self.frame.border_bottom_left_radius_width
+                            + self.frame.border_bottom_right_radius_height
+                            + self.frame.border_bottom_right_radius_width
+                            + self.frame.border_top_right_radius_height
+                            + self.frame.border_top_right_radius_width)
                             / 8.0;
 
                         // Fill the color
                         scene.draw_box_shadow(
                             transform,
-                            elem_cx.frame.border_box,
+                            self.frame.border_box,
                             shadow_color,
                             radius,
                             shadow.base.blur.px() as f64,
@@ -660,56 +613,55 @@ impl ElementCx<'_> {
     }
 
     fn draw_inset_box_shadow(&self, scene: &mut impl anyrender::Scene) {
-        let box_shadow = &self.style.get_effects().box_shadow.0;
         let current_color = self.style.clone_color();
+        let box_shadow = &self.style.get_effects().box_shadow.0;
         let has_inset_shadow = box_shadow.iter().any(|s| s.inset);
-        let clips_available = CLIPS_USED.load(atomic::Ordering::SeqCst) <= CLIP_LIMIT;
-        if has_inset_shadow {
-            CLIPS_WANTED.fetch_add(1, atomic::Ordering::SeqCst);
-            if clips_available {
-                scene.push_layer(Mix::Clip, 1.0, self.transform, &self.frame.frame());
-                CLIPS_USED.fetch_add(1, atomic::Ordering::SeqCst);
-                let depth = CLIP_DEPTH.fetch_add(1, atomic::Ordering::SeqCst) + 1;
-                CLIP_DEPTH_USED.fetch_max(depth, atomic::Ordering::SeqCst);
-            }
+        if !has_inset_shadow {
+            return;
         }
-        for shadow in box_shadow.iter().filter(|s| s.inset) {
-            let shadow_color = shadow
-                .base
-                .color
-                .resolve_to_absolute(&current_color)
-                .as_srgb_color();
-            if shadow_color != Color::TRANSPARENT {
-                let transform = self.transform.then_translate(Vec2 {
-                    x: shadow.base.horizontal.px() as f64,
-                    y: shadow.base.vertical.px() as f64,
-                });
 
-                //TODO draw shadows with matching individual radii instead of averaging
-                let radius = (self.frame.border_top_left_radius_height
-                    + self.frame.border_bottom_left_radius_width
-                    + self.frame.border_bottom_left_radius_height
-                    + self.frame.border_bottom_left_radius_width
-                    + self.frame.border_bottom_right_radius_height
-                    + self.frame.border_bottom_right_radius_width
-                    + self.frame.border_top_right_radius_height
-                    + self.frame.border_top_right_radius_width)
-                    / 8.0;
+        maybe_with_layer(
+            scene,
+            has_inset_shadow,
+            1.0,
+            self.transform,
+            &self.frame.frame(),
+            |scene| {
+                for shadow in box_shadow.iter().filter(|s| s.inset) {
+                    let shadow_color = shadow
+                        .base
+                        .color
+                        .resolve_to_absolute(&current_color)
+                        .as_srgb_color();
+                    if shadow_color != Color::TRANSPARENT {
+                        let transform = self.transform.then_translate(Vec2 {
+                            x: shadow.base.horizontal.px() as f64,
+                            y: shadow.base.vertical.px() as f64,
+                        });
 
-                // Fill the color
-                scene.draw_box_shadow(
-                    transform,
-                    self.frame.border_box,
-                    shadow_color,
-                    radius,
-                    shadow.base.blur.px() as f64,
-                );
-            }
-        }
-        if has_inset_shadow && clips_available {
-            scene.pop_layer();
-            CLIP_DEPTH.fetch_sub(1, atomic::Ordering::SeqCst);
-        }
+                        //TODO draw shadows with matching individual radii instead of averaging
+                        let radius = (self.frame.border_top_left_radius_height
+                            + self.frame.border_bottom_left_radius_width
+                            + self.frame.border_bottom_left_radius_height
+                            + self.frame.border_bottom_left_radius_width
+                            + self.frame.border_bottom_right_radius_height
+                            + self.frame.border_bottom_right_radius_width
+                            + self.frame.border_top_right_radius_height
+                            + self.frame.border_top_right_radius_width)
+                            / 8.0;
+
+                        // Fill the color
+                        scene.draw_box_shadow(
+                            transform,
+                            self.frame.border_box,
+                            shadow_color,
+                            radius,
+                            shadow.base.blur.px() as f64,
+                        );
+                    }
+                }
+            },
+        );
     }
 
     /// Stroke a border

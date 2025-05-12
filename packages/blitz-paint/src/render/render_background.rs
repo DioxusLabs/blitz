@@ -1,12 +1,10 @@
-use super::{
-    CLIP_DEPTH, CLIP_DEPTH_USED, CLIP_LIMIT, CLIPS_USED, CLIPS_WANTED, ElementCx, to_peniko_image,
-};
+use super::{ElementCx, to_peniko_image};
+use crate::layers::maybe_with_layer;
 use crate::util::{Color, ToColorColor};
 use blitz_dom::node::ImageData;
 use color::DynamicColor;
 use kurbo::{self, Affine, BezPath, Point, Rect, Shape, Size, Vec2};
-use peniko::{self, Fill, Gradient, Mix};
-use std::sync::atomic;
+use peniko::{self, Fill, Gradient};
 use style::color::AbsoluteColor;
 use style::{
     OwnedSlice,
@@ -86,36 +84,33 @@ impl ElementCx<'_> {
                 ContentBox => self.frame.frame_content(),
             };
 
-            CLIPS_WANTED.fetch_add(1, atomic::Ordering::SeqCst);
-            let clips_available = CLIPS_USED.load(atomic::Ordering::SeqCst) <= CLIP_LIMIT;
-            if clips_available {
-                scene.push_layer(Mix::Clip, 1.0, self.transform, &background_clip_path);
-                CLIPS_USED.fetch_add(1, atomic::Ordering::SeqCst);
-                let depth = CLIP_DEPTH.fetch_add(1, atomic::Ordering::SeqCst) + 1;
-                CLIP_DEPTH_USED.fetch_max(depth, atomic::Ordering::SeqCst);
-            }
-
-            match segment {
-                None => {
-                    // Do nothing
-                }
-                Gradient(gradient) => {
-                    self.draw_gradient_frame(scene, gradient, idx, *background_clip)
-                }
-                Url(_) => {
-                    self.draw_raster_bg_image(scene, idx);
-                    #[cfg(feature = "svg")]
-                    self.draw_svg_bg_image(scene, idx);
-                }
-                PaintWorklet(_) => todo!("Implement background drawing for Image::PaintWorklet"),
-                CrossFade(_) => todo!("Implement background drawing for Image::CrossFade"),
-                ImageSet(_) => todo!("Implement background drawing for Image::ImageSet"),
-            }
-
-            if clips_available {
-                scene.pop_layer();
-                CLIP_DEPTH.fetch_sub(1, atomic::Ordering::SeqCst);
-            }
+            maybe_with_layer(
+                scene,
+                true,
+                1.0,
+                self.transform,
+                &background_clip_path,
+                |scene| {
+                    match segment {
+                        None => {
+                            // Do nothing
+                        }
+                        Gradient(gradient) => {
+                            self.draw_gradient_frame(scene, gradient, idx, *background_clip)
+                        }
+                        Url(_) => {
+                            self.draw_raster_bg_image(scene, idx);
+                            #[cfg(feature = "svg")]
+                            self.draw_svg_bg_image(scene, idx);
+                        }
+                        PaintWorklet(_) => {
+                            todo!("Implement background drawing for Image::PaintWorklet")
+                        }
+                        CrossFade(_) => todo!("Implement background drawing for Image::CrossFade"),
+                        ImageSet(_) => todo!("Implement background drawing for Image::ImageSet"),
+                    }
+                },
+            );
         }
     }
 
