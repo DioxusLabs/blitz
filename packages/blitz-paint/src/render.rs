@@ -246,7 +246,6 @@ impl BlitzDomPainter<'_> {
         }
 
         let mut cx = self.element_cx(node, layout, box_position);
-        cx.stroke_effects(scene);
         cx.stroke_outline(scene);
         cx.draw_outset_box_shadow(scene);
         cx.draw_background(scene);
