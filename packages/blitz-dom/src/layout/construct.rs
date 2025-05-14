@@ -443,8 +443,8 @@ fn node_list_item_child(
             };
 
             let mut layout = builder.build().0;
-
-            layout.break_all_lines(Some(0.0));
+            let width = layout.max_content_width();
+            layout.break_all_lines(Some(width));
 
             ListItemLayoutPosition::Outside(Box::new(layout))
         }
