@@ -438,7 +438,10 @@ fn node_list_item_child(
             );
 
             match &marker {
-                Marker::Char(char) => builder.push_text(&char.to_string()),
+                Marker::Char(char) => {
+                    let mut buf = [0u8; 4];
+                    builder.push_text(char.encode_utf8(&mut buf));
+                }
                 Marker::String(str) => builder.push_text(str),
             };
 
