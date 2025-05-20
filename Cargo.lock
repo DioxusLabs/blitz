@@ -1089,9 +1089,9 @@ dependencies = [
 
 [[package]]
 name = "color"
-version = "0.3.0"
+version = "0.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "010263546cea9f9f8385a5b7aad534b9e6448e62a0d3bf9da29d583308dd11bb"
+checksum = "7ae467d04a8a8aea5d9a49018a6ade2e4221d92968e8ce55a48c0b1164e5f698"
 dependencies = [
  "bytemuck",
 ]
