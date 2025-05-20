@@ -12,4 +12,20 @@
   html, body {
     background-color: #0d1117;
   }
+
+  [href$="#gh-light-mode-only"] {
+    display: none !important;
+  }
+  [src$="#gh-light-mode-only"] {
+    display: none !important;
+  }
+}
+
+@media (prefers-color-scheme: light) {
+  [href$="#gh-dark-mode-only"] {
+    display: none !important;
+  }
+  [src$="#gh-dark-mode-only"] {
+    display: none !important;
+  }
 }
