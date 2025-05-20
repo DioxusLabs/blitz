@@ -1,5 +1,4 @@
 use bytes::Bytes;
-use core::str::FromStr;
 use http::{HeaderMap, Method};
 use url::Url;
 

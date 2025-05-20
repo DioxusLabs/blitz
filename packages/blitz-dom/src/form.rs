@@ -4,7 +4,7 @@ use crate::{
     BaseDocument, ElementNodeData,
     util::{AncestorTraverser, TreeTraverser},
 };
-use blitz_traits::navigation::{DocumentResource, NavigationOptions, RequestContentType};
+use blitz_traits::navigation::NavigationOptions;
 use core::str::FromStr;
 
 impl BaseDocument {
