@@ -1213,9 +1213,12 @@ impl BaseDocument {
 
     /// Collect the nodes into a chain by traversing upwards
     pub fn node_chain(&self, node_id: usize) -> Vec<usize> {
-        AncestorTraverser::new(self, node_id)
-            .filter(|ancestor_id| self.nodes[*ancestor_id].is_element())
-            .collect()
+        let mut chain = Vec::with_capacity(16);
+        chain.push(node_id);
+        chain.extend(
+            AncestorTraverser::new(self, node_id).filter(|id| self.nodes[*id].is_element()),
+        );
+        chain
     }
 }
 
