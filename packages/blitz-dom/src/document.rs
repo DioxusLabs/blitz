@@ -144,6 +144,7 @@ pub struct BaseDocument {
 
     pub changed: HashSet<usize>,
 
+    /// A map from control node ID's to their associated forms node ID's
     pub controls_to_form: HashMap<usize, usize>,
 
     /// Network provider. Can be used to fetch assets.
