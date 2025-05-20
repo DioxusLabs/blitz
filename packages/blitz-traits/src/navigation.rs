@@ -1,5 +1,4 @@
 use bytes::Bytes;
-use core::str::FromStr;
 use http::{HeaderMap, Method};
 use url::Url;
 
@@ -27,7 +26,7 @@ pub struct NavigationOptions {
     /// Source document for the navigation
     pub source_document: usize,
 
-    pub document_resource: Option<DocumentResource>,
+    pub document_resource: Option<Bytes>,
 }
 
 impl NavigationOptions {
@@ -38,22 +37,18 @@ impl NavigationOptions {
             document_resource: None,
         }
     }
-    pub fn set_document_resource(mut self, document_resource: Option<DocumentResource>) -> Self {
+    pub fn set_document_resource(mut self, document_resource: Option<Bytes>) -> Self {
         self.document_resource = document_resource;
         self
     }
 
     pub fn into_request(self) -> Request {
-        if let Some(DocumentResource::PostResource {
-            body,
-            content_type: _,
-        }) = self.document_resource
-        {
+        if let Some(document_resource) = self.document_resource {
             Request {
                 url: self.url,
                 method: Method::POST,
                 headers: HeaderMap::new(),
-                body,
+                body: document_resource,
             }
         } else {
             Request {
@@ -63,37 +58,5 @@ impl NavigationOptions {
                 body: Bytes::new(),
             }
         }
-    }
-}
-
-#[derive(Debug, Clone)]
-pub enum DocumentResource {
-    String(String),
-    PostResource {
-        body: Bytes,
-        content_type: RequestContentType,
-    },
-}
-
-/// Supported content types for HTTP requests
-#[derive(Debug, Clone)]
-pub enum RequestContentType {
-    /// application/x-www-form-urlencoded
-    FormUrlEncoded,
-    /// multipart/form-data
-    MultipartFormData,
-    /// text/plain
-    TextPlain,
-}
-
-impl FromStr for RequestContentType {
-    type Err = ();
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        Ok(match s {
-            "application/x-www-form-urlencoded" => RequestContentType::FormUrlEncoded,
-            "multipart/form-data" => RequestContentType::MultipartFormData,
-            "text/plain" => RequestContentType::TextPlain,
-            _ => return Err(()),
-        })
     }
 }

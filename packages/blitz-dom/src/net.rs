@@ -336,21 +336,3 @@ impl NetHandler<Resource> for ImageHandler {
         callback.call(doc_id, Err(Some(String::from("Could not parse image"))))
     }
 }
-
-pub struct NavigationHandler(String);
-impl NavigationHandler {
-    pub fn boxed(url: impl Into<String>) -> Box<Self> {
-        Box::new(Self(url.into()))
-    }
-}
-impl NetHandler<Resource> for NavigationHandler {
-    fn bytes(self: Box<Self>, doc_id: usize, bytes: Bytes, callback: SharedCallback<Resource>) {
-        callback.call(
-            doc_id,
-            Ok(Resource::Navigation {
-                url: self.0,
-                document: bytes,
-            }),
-        );
-    }
-}
