@@ -248,17 +248,17 @@ impl ElementFrame {
     }
 
     /// Construct a bezpath drawing the frame
-    pub fn shadow_clip(&self) -> BezPath {
+    pub fn shadow_clip(&self, shadow_rect: Rect) -> BezPath {
         let mut path = BezPath::new();
-        self.shadow_clip_shape(&mut path);
+        self.shadow_clip_shape(&mut path, shadow_rect);
         path
     }
 
-    fn shadow_clip_shape(&self, path: &mut BezPath) {
+    fn shadow_clip_shape(&self, path: &mut BezPath, shadow_rect: Rect) {
         use Corner::*;
 
         for corner in [TopLeft, TopRight, BottomRight, BottomLeft] {
-            path.insert_point(self.shadow_clip_corner(corner, 100.0));
+            path.insert_point(self.shadow_clip_corner(corner, shadow_rect));
         }
 
         if self.is_sharp(TopLeft, ArcSide::Outer) {
@@ -328,14 +328,12 @@ impl ElementFrame {
         Point { x, y }
     }
 
-    fn shadow_clip_corner(&self, corner: Corner, offset: f64) -> Point {
-        let Rect { x0, y0, x1, y1 } = self.border_box;
-
+    fn shadow_clip_corner(&self, corner: Corner, shadow_rect: Rect) -> Point {
         let (x, y) = match corner {
-            Corner::TopLeft => (x0 - offset, y0 - offset),
-            Corner::TopRight => (x1 + offset, y0 - offset),
-            Corner::BottomRight => (x1 + offset, y1 + offset),
-            Corner::BottomLeft => (x0 - offset, y1 + offset),
+            Corner::TopLeft => (shadow_rect.x0, shadow_rect.y0),
+            Corner::TopRight => (shadow_rect.x1, shadow_rect.y0),
+            Corner::BottomRight => (shadow_rect.x1, shadow_rect.y1),
+            Corner::BottomLeft => (shadow_rect.x0, shadow_rect.y1),
         };
 
         Point { x, y }
