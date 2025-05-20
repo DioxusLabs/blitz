@@ -60,6 +60,7 @@ usvg = { workspace = true, optional = true }
 woff = { workspace = true, optional = true, features = ["version2"] }
 woff2 = { workspace = true, optional = true }
 html-escape = { workspace = true }
+percent-encoding = { workspace = true }
 
 # IO & Networking
 url = { workspace = true, features = ["serde"] }

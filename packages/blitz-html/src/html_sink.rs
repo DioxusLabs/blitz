@@ -28,6 +28,7 @@ pub struct DocumentHtmlParser<'a> {
     doc_id: usize,
     doc: RefCell<&'a mut BaseDocument>,
     style_nodes: RefCell<Vec<usize>>,
+    form_nodes: RefCell<Vec<usize>>,
 
     /// Errors that occurred during parsing.
     pub errors: RefCell<Vec<Cow<'static, str>>>,
@@ -48,6 +49,7 @@ impl DocumentHtmlParser<'_> {
             doc_id: doc.id(),
             doc: RefCell::new(doc),
             style_nodes: RefCell::new(Vec::new()),
+            form_nodes: RefCell::new(Vec::new()),
             errors: RefCell::new(Vec::new()),
             quirks_mode: Cell::new(QuirksMode::NoQuirks),
             net_provider,
@@ -202,6 +204,10 @@ impl<'b> TreeSink for DocumentHtmlParser<'b> {
             doc.process_style_element(*id);
         }
 
+        for id in self.form_nodes.borrow().iter() {
+            doc.reset_form_owner(*id);
+        }
+
         for error in self.errors.borrow().iter() {
             println!("ERROR: {error}");
         }
@@ -248,6 +254,14 @@ impl<'b> TreeSink for DocumentHtmlParser<'b> {
         // If the node has an "id" attribute, store it in the ID map.
         if let Some(id_attr) = id_attr {
             self.doc.borrow_mut().nodes_to_id.insert(id_attr, id);
+        }
+
+        // If node is an listed form element add to form elements list
+        if matches!(
+            name.local.as_ref(),
+            "button" | "fieldset" | "input" | "select" | "textarea" | "object" | "output"
+        ) {
+            self.form_nodes.borrow_mut().push(id);
         }
 
         // Custom post-processing by element tag name

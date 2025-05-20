@@ -2,7 +2,7 @@ use crate::events::handle_event;
 use crate::layout::construct::collect_layout_children;
 use crate::node::{ImageData, NodeSpecificData, RasterImageData, Status, TextBrush};
 use crate::stylo_to_cursor_icon::stylo_to_cursor_icon;
-use crate::util::{ImageType, resolve_url};
+use crate::util::{AncestorTraverser, ImageType, TreeTraverser, resolve_url};
 use crate::{ElementNodeData, Node, NodeData, TextNodeData};
 use app_units::Au;
 use blitz_traits::navigation::{DummyNavigationProvider, NavigationProvider};
@@ -25,7 +25,7 @@ use crate::net::{Resource, StylesheetLoader};
 use selectors::{Element, matching::QuirksMode};
 use slab::Slab;
 use std::any::Any;
-use std::collections::{BTreeMap, Bound, HashMap, HashSet, VecDeque};
+use std::collections::{BTreeMap, Bound, HashMap, HashSet};
 use std::ops::{Deref, DerefMut};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -144,6 +144,8 @@ pub struct BaseDocument {
 
     pub changed: HashSet<usize>,
 
+    pub controls_to_form: HashMap<usize, usize>,
+
     /// Network provider. Can be used to fetch assets.
     pub net_provider: SharedProvider<Resource>,
 
@@ -229,6 +231,7 @@ impl BaseDocument {
             focus_node_id: None,
             active_node_id: None,
             changed: HashSet::new(),
+            controls_to_form: HashMap::new(),
             net_provider: Arc::new(DummyNetProvider),
             navigation_provider: Arc::new(DummyNavigationProvider {}),
         };
@@ -646,6 +649,7 @@ impl BaseDocument {
             Resource::None => {
                 // Do nothing
             }
+            _ => {}
         }
     }
 
@@ -1203,35 +1207,14 @@ impl BaseDocument {
     where
         F: FnMut(usize, &Node),
     {
-        let mut stack = VecDeque::new();
-        stack.push_front(0);
-
-        while let Some(node_key) = stack.pop_back() {
-            let node = &self.nodes[node_key];
-            visit(node_key, node);
-
-            for &child_key in &node.children {
-                stack.push_front(child_key);
-            }
-        }
+        TreeTraverser::new(self).for_each(|node_id| visit(node_id, &self.nodes[node_id]));
     }
 
     /// Collect the nodes into a chain by traversing upwards
     pub fn node_chain(&self, node_id: usize) -> Vec<usize> {
-        let mut next_node_id = Some(node_id);
-        let mut chain = Vec::with_capacity(16);
-
-        while let Some(node_id) = next_node_id {
-            let node = &self.tree()[node_id];
-
-            if node.is_element() {
-                chain.push(node_id);
-            }
-
-            next_node_id = node.parent;
-        }
-
-        chain
+        AncestorTraverser::new(self, node_id)
+            .filter(|ancestor_id| self.nodes[*ancestor_id].is_element())
+            .collect()
     }
 }
 
