@@ -108,10 +108,7 @@ impl BaseDocument {
                     let pairs = entry.convert_to_list_of_name_value_pairs();
                     let mut body = String::new();
                     url::form_urlencoded::Serializer::new(&mut body).extend_pairs(pairs);
-                    post_resource = Some(DocumentResource::PostResource {
-                        body: body.into(),
-                        content_type: enctype,
-                    })
+                    post_resource = Some(body.into());
                 }
                 RequestContentType::MultipartFormData => {
                     #[cfg(feature = "tracing")]
@@ -121,10 +118,7 @@ impl BaseDocument {
                 RequestContentType::TextPlain => {
                     let pairs = entry.convert_to_list_of_name_value_pairs();
                     let body = encode_text_plain(&pairs).into();
-                    post_resource = Some(DocumentResource::PostResource {
-                        body,
-                        content_type: enctype,
-                    })
+                    post_resource = Some(body);
                 }
             },
             ("mailto", FormMethod::Get) => {
@@ -422,6 +416,29 @@ impl FromStr for FormMethod {
             "get" => FormMethod::Get,
             "post" => FormMethod::Post,
             "dialog" => FormMethod::Dialog,
+            _ => return Err(()),
+        })
+    }
+}
+
+/// Supported content types for HTTP requests
+#[derive(Debug, Clone)]
+pub enum RequestContentType {
+    /// application/x-www-form-urlencoded
+    FormUrlEncoded,
+    /// multipart/form-data
+    MultipartFormData,
+    /// text/plain
+    TextPlain,
+}
+
+impl FromStr for RequestContentType {
+    type Err = ();
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Ok(match s {
+            "application/x-www-form-urlencoded" => RequestContentType::FormUrlEncoded,
+            "multipart/form-data" => RequestContentType::MultipartFormData,
+            "text/plain" => RequestContentType::TextPlain,
             _ => return Err(()),
         })
     }
