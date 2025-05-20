@@ -2,7 +2,7 @@ use markup5ever::{LocalName, local_name};
 
 use crate::{
     BaseDocument, ElementNodeData,
-    util::{AncestorTraverser, TreeTraverser},
+    traversal::{AncestorTraverser, TreeTraverser},
 };
 use blitz_traits::navigation::{DocumentResource, NavigationOptions, RequestContentType};
 use core::str::FromStr;

@@ -33,6 +33,7 @@ mod query_selector;
 mod stylo;
 mod stylo_to_cursor_icon;
 mod stylo_to_parley;
+mod traversal;
 
 pub mod net;
 pub mod util;
