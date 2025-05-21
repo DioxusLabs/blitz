@@ -1,3 +1,6 @@
+check:
+  cargo check --workspace
+
 clippy:
   cargo +nightly clippy --workspace
 
