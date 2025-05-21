@@ -9,7 +9,7 @@ use blitz_dom::net::Resource;
 use blitz_html::HtmlDocument;
 use blitz_net::Provider;
 use blitz_shell::{BlitzApplication, BlitzShellEvent, View, WindowConfig};
-use blitz_traits::navigation::NavigationProvider;
+use blitz_traits::navigation::{NavigationOptions, NavigationProvider};
 use tokio::runtime::Handle;
 use winit::application::ApplicationHandler;
 use winit::event::{Modifiers, StartCause, WindowEvent};
@@ -76,6 +76,25 @@ impl ReadmeApplication {
                 })
                 .unwrap();
         });
+    }
+
+    fn navigate(&mut self, options: Box<NavigationOptions>) {
+        let proxy = self.inner.proxy.clone();
+        self.net_provider.fetch_with_callback(
+            dbg!(options.into_request()),
+            Box::new(move |result| {
+                let (url, bytes) = result.unwrap();
+                let contents = str::from_utf8(&bytes).unwrap().to_string();
+                proxy
+                    .send_event(BlitzShellEvent::NavigationLoad {
+                        url,
+                        contents,
+                        is_md: false,
+                        retain_scroll_position: false,
+                    })
+                    .unwrap();
+            }),
+        );
     }
 
     fn load_document(
@@ -165,10 +184,11 @@ impl ApplicationHandler<BlitzShellEvent> for ReadmeApplication {
                     self.reload_document(true);
                 }
             }
-            BlitzShellEvent::Navigate(opts) => {
-                let old_url = std::mem::replace(&mut self.raw_url, opts.url.into());
+            BlitzShellEvent::Navigate(options) => {
+                let old_url = std::mem::replace(&mut self.raw_url, options.url.to_string());
                 self.url_history.push(old_url);
                 self.reload_document(false);
+                self.navigate(options);
             }
             BlitzShellEvent::NavigationLoad {
                 url,
