@@ -8,6 +8,9 @@ documentation = "https://docs.rs/blitz-net"
 license.workspace = true
 edition = "2024"
 
+[features]
+cookies = ["reqwest/cookies"]
+
 [dependencies]
 # Blitz dependencies
 blitz-traits = { version = "0.1.0-alpha.1", path = "../blitz-traits" }

@@ -27,11 +27,16 @@ pub struct Provider<D> {
     resource_callback: SharedCallback<D>,
 }
 impl<D: 'static> Provider<D> {
-    pub fn new(res_callback: SharedCallback<D>) -> Self {
+    pub fn new(resource_callback: SharedCallback<D>) -> Self {
+        #[cfg(feature = "cookies")]
+        let client = Client::builder().cookie_store(true).build().unwrap();
+        #[cfg(not(feature = "cookies"))]
+        let client = Client::new();
+
         Self {
             rt: Handle::current(),
-            client: Client::new(),
-            resource_callback: res_callback,
+            client,
+            resource_callback,
         }
     }
     pub fn shared(res_callback: SharedCallback<D>) -> Arc<dyn NetProvider<D>> {
