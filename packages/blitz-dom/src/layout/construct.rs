@@ -72,7 +72,7 @@ pub(crate) fn collect_layout_children(
                 return;
             } else if matches!(
                 type_attr,
-                Some("text" | "password" | "email" | "number" | "search" | "tel" | "url")
+                None | Some("text" | "password" | "email" | "number" | "search" | "tel" | "url")
             ) {
                 create_text_editor(doc, container_node_id, false);
                 return;
