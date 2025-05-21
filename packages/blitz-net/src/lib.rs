@@ -44,20 +44,17 @@ impl<D: 'static> Provider<D> {
 impl<D: 'static> Provider<D> {
     async fn fetch_inner(
         client: Client,
-        doc_id: usize,
         request: Request,
-        handler: BoxedHandler<D>,
-        res_callback: SharedCallback<D>,
-    ) -> Result<(), ProviderError> {
-        match request.url.scheme() {
+    ) -> Result<(String, Bytes), ProviderError> {
+        Ok(match request.url.scheme() {
             "data" => {
                 let data_url = DataUrl::process(request.url.as_str())?;
                 let decoded = data_url.decode_to_vec()?;
-                handler.bytes(doc_id, Bytes::from(decoded.0), res_callback);
+                (request.url.to_string(), Bytes::from(decoded.0))
             }
             "file" => {
                 let file_content = std::fs::read(request.url.path())?;
-                handler.bytes(doc_id, Bytes::from(file_content), res_callback);
+                (request.url.to_string(), Bytes::from(file_content))
             }
             _ => {
                 let response = client
@@ -68,10 +65,40 @@ impl<D: 'static> Provider<D> {
                     .send()
                     .await?;
 
-                handler.bytes(doc_id, response.bytes().await?, res_callback);
+                (response.url().to_string(), response.bytes().await?)
             }
-        }
+        })
+    }
+
+    async fn fetch_with_handler(
+        client: Client,
+        doc_id: usize,
+        request: Request,
+        handler: BoxedHandler<D>,
+        res_callback: SharedCallback<D>,
+    ) -> Result<(), ProviderError> {
+        let (_response_url, bytes) = Self::fetch_inner(client, request).await?;
+        handler.bytes(doc_id, bytes, res_callback);
         Ok(())
+    }
+
+    #[allow(clippy::type_complexity)]
+    pub fn fetch_with_callback(
+        &self,
+        request: Request,
+        callback: Box<dyn FnOnce(Result<(String, Bytes), ProviderError>) + Send + Sync + 'static>,
+    ) {
+        let client = self.client.clone();
+        self.rt.spawn(async move {
+            let url = request.url.to_string();
+            let result = Self::fetch_inner(client, request).await;
+            if let Err(e) = &result {
+                eprintln!("Error fetching {url}: {e:?}");
+            } else {
+                println!("Success {url}");
+            }
+            callback(result);
+        });
     }
 }
 
@@ -82,7 +109,7 @@ impl<D: 'static> NetProvider<D> for Provider<D> {
         println!("Fetching {}", &request.url);
         self.rt.spawn(async move {
             let url = request.url.to_string();
-            let res = Self::fetch_inner(client, doc_id, request, handler, callback).await;
+            let res = Self::fetch_with_handler(client, doc_id, request, handler, callback).await;
             if let Err(e) = res {
                 eprintln!("Error fetching {url}: {e:?}");
             } else {

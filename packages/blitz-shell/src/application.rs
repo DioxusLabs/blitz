@@ -137,6 +137,9 @@ impl<Rend: WindowRenderer> ApplicationHandler<BlitzShellEvent> for BlitzApplicat
             BlitzShellEvent::Navigate(_opts) => {
                 // Do nothing. Should be handled by embedders (if required).
             }
+            BlitzShellEvent::NavigationLoad { .. } => {
+                // Do nothing. Should be handled by embedders (if required).
+            }
         }
     }
 }

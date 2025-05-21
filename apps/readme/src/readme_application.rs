@@ -7,9 +7,9 @@ use anyrender_vello_cpu::VelloCpuWindowRenderer as VelloWindowRenderer;
 
 use blitz_dom::net::Resource;
 use blitz_html::HtmlDocument;
+use blitz_net::Provider;
 use blitz_shell::{BlitzApplication, BlitzShellEvent, View, WindowConfig};
 use blitz_traits::navigation::NavigationProvider;
-use blitz_traits::net::NetProvider;
 use tokio::runtime::Handle;
 use winit::application::ApplicationHandler;
 use winit::event::{Modifiers, StartCause, WindowEvent};
@@ -25,7 +25,7 @@ pub struct ReadmeEvent;
 pub struct ReadmeApplication {
     inner: BlitzApplication<VelloWindowRenderer>,
     handle: tokio::runtime::Handle,
-    net_provider: Arc<dyn NetProvider<Resource>>,
+    net_provider: Arc<Provider<Resource>>,
     raw_url: String,
     keyboard_modifiers: Modifiers,
     navigation_provider: Arc<dyn NavigationProvider>,
@@ -36,7 +36,7 @@ impl ReadmeApplication {
     pub fn new(
         proxy: EventLoopProxy<BlitzShellEvent>,
         raw_url: String,
-        net_provider: Arc<dyn NetProvider<Resource>>,
+        net_provider: Arc<Provider<Resource>>,
         navigation_provider: Arc<dyn NavigationProvider>,
     ) -> Self {
         let handle = Handle::current();
@@ -60,8 +60,31 @@ impl ReadmeApplication {
     }
 
     fn reload_document(&mut self, retain_scroll_position: bool) {
-        let (base_url, contents, is_md, _) = self.handle.block_on(fetch(&self.raw_url));
+        let proxy = self.inner.proxy.clone();
 
+        let url = self.raw_url.clone();
+        let net_provider = Arc::clone(&self.net_provider);
+        self.handle.spawn(async move {
+            let url = url;
+            let (base_url, contents, is_md, _file_path) = fetch(&url, net_provider).await;
+            proxy
+                .send_event(BlitzShellEvent::NavigationLoad {
+                    url: base_url,
+                    contents,
+                    is_md,
+                    retain_scroll_position,
+                })
+                .unwrap();
+        });
+    }
+
+    fn load_document(
+        &mut self,
+        contents: String,
+        retain_scroll_position: bool,
+        url: String,
+        is_md: bool,
+    ) {
         let mut html = contents;
         let mut stylesheets = Vec::new();
         if is_md {
@@ -72,7 +95,7 @@ impl ReadmeApplication {
 
         let doc = HtmlDocument::from_html(
             &html,
-            Some(base_url),
+            Some(url),
             stylesheets,
             self.net_provider.clone(),
             None,
@@ -146,6 +169,14 @@ impl ApplicationHandler<BlitzShellEvent> for ReadmeApplication {
                 let old_url = std::mem::replace(&mut self.raw_url, opts.url.into());
                 self.url_history.push(old_url);
                 self.reload_document(false);
+            }
+            BlitzShellEvent::NavigationLoad {
+                url,
+                contents,
+                retain_scroll_position,
+                is_md,
+            } => {
+                self.load_document(contents, retain_scroll_position, url, is_md);
             }
             event => self.inner.user_event(event_loop, event),
         }
