@@ -78,7 +78,7 @@ impl ReadmeApplication {
         });
     }
 
-    fn navigate(&mut self, options: Box<NavigationOptions>) {
+    fn navigate(&mut self, options: NavigationOptions) {
         let proxy = self.inner.proxy.clone();
         self.net_provider.fetch_with_callback(
             dbg!(options.into_request()),
@@ -188,7 +188,7 @@ impl ApplicationHandler<BlitzShellEvent> for ReadmeApplication {
                 let old_url = std::mem::replace(&mut self.raw_url, options.url.to_string());
                 self.url_history.push(old_url);
                 self.reload_document(false);
-                self.navigate(options);
+                self.navigate(*options);
             }
             BlitzShellEvent::NavigationLoad {
                 url,
