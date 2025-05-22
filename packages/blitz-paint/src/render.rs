@@ -6,6 +6,7 @@ use super::multicolor_rounded_rect::{Edge, ElementFrame};
 use crate::color::{Color, ToColorColor};
 use crate::debug_overlay::render_debug_overlay;
 use crate::layers::{maybe_with_layer, reset_layer_stats};
+use crate::sizing::compute_object_fit;
 use blitz_dom::node::{
     ListItemLayout, ListItemLayoutPosition, Marker, NodeData, RasterImageData, TextInputData,
     TextNodeData,
@@ -29,6 +30,7 @@ use style::{
 
 use kurbo::{self, Affine, Point, Rect, Stroke, Vec2};
 use peniko::{self, Fill};
+use style::properties::generated::longhands::object_fit::computed_value::T as ObjectFit;
 use style::values::generics::color::GenericColor;
 use taffy::Layout;
 
@@ -511,12 +513,24 @@ impl ElementCx<'_> {
             return;
         };
 
-        let width = self.frame.padding_box.width() as u32;
-        let height = self.frame.padding_box.height() as u32;
+        let width = self.frame.content_box.width() as u32;
+        let height = self.frame.content_box.height() as u32;
         let svg_size = svg.size();
 
-        let x_scale = width as f64 / svg_size.width() as f64;
-        let y_scale = height as f64 / svg_size.height() as f64;
+        // Apply object-fit algorithm
+        let container_size = taffy::Size {
+            width: width as f32,
+            height: height as f32,
+        };
+        let object_size = taffy::Size {
+            width: svg_size.width(),
+            height: svg_size.height(),
+        };
+        // let object_fit = self.style.clone_object_fit();
+        let paint_size = compute_object_fit(container_size, Some(object_size), ObjectFit::Contain);
+
+        let x_scale = paint_size.width as f64 / object_size.width as f64;
+        let y_scale = paint_size.height as f64 / object_size.height as f64;
 
         let box_inset = self.frame.padding_box.origin();
         let transform = Affine::translate((
@@ -535,8 +549,20 @@ impl ElementCx<'_> {
             let x = self.frame.content_box.origin().x;
             let y = self.frame.content_box.origin().y;
 
-            let x_scale = width as f64 / image.width as f64;
-            let y_scale = height as f64 / image.height as f64;
+            // Apply object-fit algorithm
+            let container_size = taffy::Size {
+                width: width as f32,
+                height: height as f32,
+            };
+            let object_size = taffy::Size {
+                width: image.width as f32,
+                height: image.height as f32,
+            };
+            let object_fit = self.style.clone_object_fit();
+            let paint_size = compute_object_fit(container_size, Some(object_size), object_fit);
+
+            let x_scale = paint_size.width as f64 / object_size.width as f64;
+            let y_scale = paint_size.height as f64 / object_size.height as f64;
             let transform = self
                 .transform
                 .pre_scale_non_uniform(x_scale, y_scale)

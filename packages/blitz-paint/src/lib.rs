@@ -5,6 +5,7 @@ mod debug_overlay;
 mod layers;
 mod multicolor_rounded_rect;
 mod render;
+mod sizing;
 mod text;
 
 pub use render::{BlitzDomPainter, paint_scene};
