@@ -15,10 +15,9 @@ impl<'a> TreeTraverser<'a> {
 
     /// Creates a new tree traverser for the given document which starts at the specified node.
     pub fn new_with_root(doc: &'a BaseDocument, root: usize) -> Self {
-        TreeTraverser {
-            doc,
-            stack: vec![root],
-        }
+        let mut stack = Vec::with_capacity(32);
+        stack.push(root);
+        TreeTraverser { doc, stack }
     }
 }
 impl Iterator for TreeTraverser<'_> {
