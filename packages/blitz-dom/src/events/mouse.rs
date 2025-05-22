@@ -148,8 +148,11 @@ pub(crate) fn handle_click(doc: &mut BaseDocument, _target: usize, x: f32, y: f3
         } else if el.name.local == local_name!("a") {
             if let Some(href) = el.attr(local_name!("href")) {
                 if let Some(url) = resolve_url(&doc.base_url, href) {
-                    doc.navigation_provider
-                        .navigate_to(NavigationOptions::new(url, doc.id()));
+                    doc.navigation_provider.navigate_to(NavigationOptions::new(
+                        url,
+                        String::from("text/plain"),
+                        doc.id(),
+                    ));
                 } else {
                     println!(
                         "{href} is not parseable as a url. : {base_url:?}",

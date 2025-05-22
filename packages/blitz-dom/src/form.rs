@@ -6,6 +6,7 @@ use crate::{
 };
 use blitz_traits::navigation::NavigationOptions;
 use core::str::FromStr;
+use std::fmt::Display;
 
 impl BaseDocument {
     /// Resets the form owner for a given node by either using an explicit form attribute
@@ -180,7 +181,8 @@ impl BaseDocument {
         }
 
         let navigation_options =
-            NavigationOptions::new(parsed_action, self.id()).set_document_resource(post_resource);
+            NavigationOptions::new(parsed_action, enctype.to_string(), self.id())
+                .set_document_resource(post_resource);
 
         self.navigation_provider.navigate_to(navigation_options)
     }
@@ -436,6 +438,16 @@ impl FromStr for RequestContentType {
             "text/plain" => RequestContentType::TextPlain,
             _ => return Err(()),
         })
+    }
+}
+
+impl Display for RequestContentType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            RequestContentType::FormUrlEncoded => write!(f, "application/x-www-form-urlencoded"),
+            RequestContentType::MultipartFormData => write!(f, "multipart/form-data"),
+            RequestContentType::TextPlain => write!(f, "text/plain"),
+        }
     }
 }
 

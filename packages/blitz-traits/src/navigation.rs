@@ -1,5 +1,5 @@
 use bytes::Bytes;
-use http::{HeaderMap, Method};
+use http::{HeaderMap, HeaderValue, Method};
 use url::Url;
 
 use crate::net::Request;
@@ -23,6 +23,8 @@ pub struct NavigationOptions {
     /// The URL to navigate to
     pub url: Url,
 
+    pub content_type: String,
+
     /// Source document for the navigation
     pub source_document: usize,
 
@@ -30,9 +32,10 @@ pub struct NavigationOptions {
 }
 
 impl NavigationOptions {
-    pub fn new(url: Url, source_document: usize) -> Self {
+    pub fn new(url: Url, content_type: String, source_document: usize) -> Self {
         Self {
             url,
+            content_type,
             source_document,
             document_resource: None,
         }
@@ -43,18 +46,24 @@ impl NavigationOptions {
     }
 
     pub fn into_request(self) -> Request {
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            "content-type",
+            HeaderValue::from_str(&self.content_type).unwrap(),
+        );
+
         if let Some(document_resource) = self.document_resource {
             Request {
                 url: self.url,
                 method: Method::POST,
-                headers: HeaderMap::new(),
+                headers,
                 body: document_resource,
             }
         } else {
             Request {
                 url: self.url,
                 method: Method::GET,
-                headers: HeaderMap::new(),
+                headers,
                 body: Bytes::new(),
             }
         }
