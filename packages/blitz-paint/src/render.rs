@@ -210,8 +210,13 @@ impl BlitzDomPainter<'_> {
         let styles = &node.primary_styles().unwrap();
         let overflow_x = styles.get_box().overflow_x;
         let overflow_y = styles.get_box().overflow_y;
-        let should_clip =
-            !matches!(overflow_x, Overflow::Visible) || !matches!(overflow_y, Overflow::Visible);
+        let is_image = node
+            .element_data()
+            .and_then(|e| e.raster_image_data())
+            .is_some();
+        let should_clip = is_image
+            || !matches!(overflow_x, Overflow::Visible)
+            || !matches!(overflow_y, Overflow::Visible);
 
         // Apply padding/border offset to inline root
         let (layout, box_position) = self.node_position(node_id, location);
