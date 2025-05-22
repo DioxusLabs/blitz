@@ -309,15 +309,10 @@ fn construct_entry_list(doc: &BaseDocument, form_id: usize, submitter_id: usize)
             create_entry(name, charset);
         }
         // Otherwise, create an entry with name and the value of the field element, and append it to entry list.
-        else {
-            let value = element.attr(local_name!("value"));
-            if let Some(value) = value {
-                create_entry(name, value);
-            }
-            // ...
-            else if let Some(text) = element.text_input_data() {
-                create_entry(name, &text.editor.text().to_string());
-            }
+        else if let Some(text) = element.text_input_data() {
+            create_entry(name, &text.editor.text().to_string());
+        } else if let Some(value) = element.attr(local_name!("value")) {
+            create_entry(name, value);
         }
     }
     entry_list
