@@ -40,7 +40,7 @@ pub fn replaced_measure_function(
         width: padding_border.left + padding_border.right,
         height: padding_border.top + padding_border.bottom,
     };
-    let box_sizing_adjustment = if style.box_sizing() == BoxSizing::ContentBox {
+    let box_sizing_adjustment = if style.box_sizing() == BoxSizing::BorderBox {
         pb_sum
     } else {
         Size::ZERO
