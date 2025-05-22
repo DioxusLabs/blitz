@@ -239,11 +239,9 @@ impl BlitzDomPainter<'_> {
             return;
         }
 
-        let origin = kurbo::Point { x: 0.0, y: 0.0 };
-        let clip = Rect::from_origin_size(origin, content_box_size);
-
         // Optimise zero-area (/very small area) clips by not rendering at all
-        if should_clip && clip.area() < 0.01 {
+        let clip_area = content_box_size.width * content_box_size.height;
+        if should_clip && clip_area < 0.01 {
             return;
         }
 
