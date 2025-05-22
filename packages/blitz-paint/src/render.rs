@@ -517,6 +517,12 @@ impl ElementCx<'_> {
         let height = self.frame.content_box.height() as u32;
         let svg_size = svg.size();
 
+        let x = self.frame.content_box.origin().x;
+        let y = self.frame.content_box.origin().y;
+
+        // let object_fit = self.style.clone_object_fit();
+        let object_position = self.style.clone_object_position();
+
         // Apply object-fit algorithm
         let container_size = taffy::Size {
             width: width as f32,
@@ -526,18 +532,24 @@ impl ElementCx<'_> {
             width: svg_size.width(),
             height: svg_size.height(),
         };
-        // let object_fit = self.style.clone_object_fit();
         let paint_size = compute_object_fit(container_size, Some(object_size), ObjectFit::Contain);
+
+        // Compute object-position
+        let x_offset = object_position.horizontal.resolve(
+            CSSPixelLength::new(container_size.width - paint_size.width) / self.scale as f32,
+        ) * self.scale as f32;
+        let y_offset = object_position.vertical.resolve(
+            CSSPixelLength::new(container_size.height - paint_size.height) / self.scale as f32,
+        ) * self.scale as f32;
+        let x = x + x_offset.px() as f64;
+        let y = y + y_offset.px() as f64;
 
         let x_scale = paint_size.width as f64 / object_size.width as f64;
         let y_scale = paint_size.height as f64 / object_size.height as f64;
 
-        let box_inset = self.frame.padding_box.origin();
-        let transform = Affine::translate((
-            self.pos.x * self.scale + box_inset.x,
-            self.pos.y * self.scale + box_inset.y,
-        ))
-        .pre_scale_non_uniform(x_scale, y_scale);
+        let transform =
+            Affine::translate((self.pos.x * self.scale + x, self.pos.y * self.scale + y))
+                .pre_scale_non_uniform(x_scale, y_scale);
 
         anyrender_svg::append_tree(scene, svg, transform);
     }
@@ -549,6 +561,9 @@ impl ElementCx<'_> {
             let x = self.frame.content_box.origin().x;
             let y = self.frame.content_box.origin().y;
 
+            let object_fit = self.style.clone_object_fit();
+            let object_position = self.style.clone_object_position();
+
             // Apply object-fit algorithm
             let container_size = taffy::Size {
                 width: width as f32,
@@ -558,8 +573,17 @@ impl ElementCx<'_> {
                 width: image.width as f32,
                 height: image.height as f32,
             };
-            let object_fit = self.style.clone_object_fit();
             let paint_size = compute_object_fit(container_size, Some(object_size), object_fit);
+
+            // Compute object-position
+            let x_offset = object_position.horizontal.resolve(
+                CSSPixelLength::new(container_size.width - paint_size.width) / self.scale as f32,
+            ) * self.scale as f32;
+            let y_offset = object_position.vertical.resolve(
+                CSSPixelLength::new(container_size.height - paint_size.height) / self.scale as f32,
+            ) * self.scale as f32;
+            let x = x + x_offset.px() as f64;
+            let y = y + y_offset.px() as f64;
 
             let x_scale = paint_size.width as f64 / object_size.width as f64;
             let y_scale = paint_size.height as f64 / object_size.height as f64;
