@@ -165,7 +165,7 @@ async fn fetch_url(
     let is_md = response_url.ends_with(".md");
 
     // Get the file content
-    let file_content = str::from_utf8(&bytes).unwrap().to_string();
+    let file_content = std::str::from_utf8(&bytes).unwrap().to_string();
 
     (response_url, file_content, is_md, None)
 }

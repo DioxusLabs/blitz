@@ -84,7 +84,7 @@ impl ReadmeApplication {
             dbg!(options.into_request()),
             Box::new(move |result| {
                 let (url, bytes) = result.unwrap();
-                let contents = str::from_utf8(&bytes).unwrap().to_string();
+                let contents = std::str::from_utf8(&bytes).unwrap().to_string();
                 proxy
                     .send_event(BlitzShellEvent::NavigationLoad {
                         url,
