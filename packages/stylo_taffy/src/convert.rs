@@ -2,6 +2,7 @@
 
 /// Private module of type aliases so we can refer to stylo types with nicer names
 mod stylo {
+    pub(crate) use style::Atom;
     pub(crate) use style::properties::ComputedValues;
     pub(crate) use style::properties::generated::longhands::box_sizing::computed_value::T as BoxSizing;
     pub(crate) use style::properties::longhands::aspect_ratio::computed_value::T as AspectRatio;
@@ -18,6 +19,9 @@ mod stylo {
     pub(crate) use style::values::specified::box_::{
         Display, DisplayInside, DisplayOutside, Overflow,
     };
+    pub(crate) use style::values::specified::position::GridTemplateAreas;
+    pub(crate) use style::values::specified::position::NamedArea;
+    pub(crate) use style_atoms::atom;
     pub(crate) type MarginVal = GenericMargin<LengthPercentage>;
     pub(crate) type InsetVal = GenericInset<Percentage, LengthPercentage>;
     pub(crate) type Size = GenericSize<NonNegative<LengthPercentage>>;
@@ -46,6 +50,8 @@ mod stylo {
     };
 }
 
+use crate::wrapper::LineNameWrapper;
+use stylo::Atom;
 use taffy::CompactLength;
 use taffy::style_helpers::*;
 
@@ -343,11 +349,14 @@ pub fn grid_auto_flow(input: stylo::GridAutoFlow) -> taffy::GridAutoFlow {
 
 #[inline]
 #[cfg(feature = "grid")]
-pub fn grid_line(input: &stylo::GridLine) -> taffy::GridPlacement {
+pub fn grid_line(input: &stylo::GridLine) -> taffy::GridPlacement<Atom> {
     if input.is_auto() {
         taffy::GridPlacement::Auto
     } else if input.is_span {
         taffy::style_helpers::span(input.line_num.try_into().unwrap())
+    } else if input.ident.0 != stylo::atom!("") {
+        // TODO: handle case where these is both a custom-ident and a line number
+        taffy::GridPlacement::Named(input.ident.0.clone())
     } else if input.line_num == 0 {
         taffy::GridPlacement::Auto
     } else {
@@ -379,6 +388,47 @@ pub fn grid_template_tracks(
         // TODO: Implement subgrid and masonry
         stylo::GenericGridTemplateComponent::Subgrid(_) => Vec::new(),
         stylo::GenericGridTemplateComponent::Masonry => Vec::new(),
+    }
+}
+
+#[inline]
+#[cfg(feature = "grid_named")]
+pub fn grid_template_line_names(input: &stylo::GridTemplateComponent) -> Option<LineNameWrapper> {
+    match input {
+        stylo::GenericGridTemplateComponent::None => None,
+        stylo::GenericGridTemplateComponent::TrackList(list) => {
+            Some(LineNameWrapper(&list.line_names))
+        }
+
+        // TODO: Implement subgrid and masonry
+        stylo::GenericGridTemplateComponent::Subgrid(_) => None,
+        stylo::GenericGridTemplateComponent::Masonry => None,
+    }
+}
+
+#[inline]
+#[cfg(feature = "grid_named")]
+pub fn grid_template_area(input: &stylo::NamedArea) -> taffy::GridTemplateArea<Atom> {
+    taffy::GridTemplateArea {
+        name: input.name.clone(),
+        row_start: input.rows.start as u16,
+        row_end: input.rows.end as u16,
+        column_start: input.columns.start as u16,
+        column_end: input.columns.end as u16,
+    }
+}
+
+#[inline]
+#[cfg(feature = "grid_named")]
+fn grid_template_areas(input: &stylo::GridTemplateAreas) -> Vec<taffy::GridTemplateArea<Atom>> {
+    match input {
+        stylo::GridTemplateAreas::None => Vec::new(),
+        stylo::GridTemplateAreas::Areas(template_areas_arc) => template_areas_arc
+            .0
+            .areas
+            .iter()
+            .map(self::grid_template_area)
+            .collect(),
     }
 }
 
@@ -471,7 +521,7 @@ pub fn max_track(
 }
 
 /// Eagerly convert an entire [`stylo::ComputedValues`] into a [`taffy::Style`]
-pub fn to_taffy_style(style: &stylo::ComputedValues) -> taffy::Style {
+pub fn to_taffy_style(style: &stylo::ComputedValues) -> taffy::Style<Atom> {
     let display = style.clone_display();
     let pos = style.get_position();
     let margin = style.get_margin();
@@ -571,6 +621,19 @@ pub fn to_taffy_style(style: &stylo::ComputedValues) -> taffy::Style {
         grid_template_rows: self::grid_template_tracks(&pos.grid_template_rows),
         #[cfg(feature = "grid")]
         grid_template_columns: self::grid_template_tracks(&pos.grid_template_columns),
+        #[cfg(feature = "grid")]
+        grid_template_row_names: match self::grid_template_line_names(&pos.grid_template_rows) {
+            Some(line_name_iter) => line_name_iter.into_iter().collect(),
+            None => Vec::new(),
+        },
+        #[cfg(feature = "grid")]
+        grid_template_column_names: match self::grid_template_line_names(&pos.grid_template_columns)
+        {
+            Some(line_name_iter) => line_name_iter.into_iter().collect(),
+            None => Vec::new(),
+        },
+        #[cfg(feature = "grid_named")]
+        grid_template_areas: self::grid_template_areas(&pos.grid_template_areas),
         #[cfg(feature = "grid")]
         grid_auto_rows: self::grid_auto_tracks(&pos.grid_auto_rows),
         #[cfg(feature = "grid")]

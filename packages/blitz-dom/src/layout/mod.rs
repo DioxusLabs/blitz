@@ -9,6 +9,7 @@ use crate::{document::BaseDocument, node::Node};
 use markup5ever::local_name;
 use std::cell::Ref;
 use std::sync::Arc;
+use style::Atom;
 use style::values::computed::CSSPixelLength;
 use style::values::computed::length_percentage::CalcLengthPercentage;
 use taffy::{
@@ -73,11 +74,13 @@ impl TraverseTree for BaseDocument {}
 
 impl LayoutPartialTree for BaseDocument {
     type CoreContainerStyle<'a>
-        = &'a taffy::Style
+        = &'a taffy::Style<Atom>
     where
         Self: 'a;
 
-    fn get_core_container_style(&self, node_id: NodeId) -> &Style {
+    type CustomIdent = Atom;
+
+    fn get_core_container_style(&self, node_id: NodeId) -> &Style<Atom> {
         &self.node_from_id(node_id).style
     }
 
@@ -349,12 +352,12 @@ impl taffy::CacheTree for BaseDocument {
 
 impl taffy::LayoutBlockContainer for BaseDocument {
     type BlockContainerStyle<'a>
-        = &'a Style
+        = &'a Style<Atom>
     where
         Self: 'a;
 
     type BlockItemStyle<'a>
-        = &'a Style
+        = &'a Style<Atom>
     where
         Self: 'a;
 
@@ -369,12 +372,12 @@ impl taffy::LayoutBlockContainer for BaseDocument {
 
 impl taffy::LayoutFlexboxContainer for BaseDocument {
     type FlexboxContainerStyle<'a>
-        = &'a Style
+        = &'a Style<Atom>
     where
         Self: 'a;
 
     type FlexboxItemStyle<'a>
-        = &'a Style
+        = &'a Style<Atom>
     where
         Self: 'a;
 
@@ -389,12 +392,12 @@ impl taffy::LayoutFlexboxContainer for BaseDocument {
 
 impl taffy::LayoutGridContainer for BaseDocument {
     type GridContainerStyle<'a>
-        = &'a Style
+        = &'a Style<Atom>
     where
         Self: 'a;
 
     type GridItemStyle<'a>
-        = &'a Style
+        = &'a Style<Atom>
     where
         Self: 'a;
 
