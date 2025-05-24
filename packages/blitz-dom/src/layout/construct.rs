@@ -871,6 +871,7 @@ pub(crate) fn build_inline_layout(
                             || *tag_name == local_name!("svg")
                             || *tag_name == local_name!("input")
                             || *tag_name == local_name!("textarea")
+                            || *tag_name == local_name!("button")
                         {
                             builder.push_inline_box(InlineBox {
                                 id: node_id as u64,
