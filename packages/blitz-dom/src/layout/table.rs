@@ -1,8 +1,8 @@
 use std::{ops::Range, sync::Arc};
 
 use markup5ever::local_name;
-use style::computed_values::table_layout::T as TableLayout;
 use style::values::specified::box_::{DisplayInside, DisplayOutside};
+use style::{Atom, computed_values::table_layout::T as TableLayout};
 use taffy::{
     Dimension, LayoutPartialTree as _, NonRepeatedTrackSizingFunction, ResolveOrZero,
     compute_leaf_layout, style_helpers,
@@ -19,7 +19,7 @@ pub struct TableTreeWrapper<'doc> {
 
 #[derive(Debug, Clone)]
 pub struct TableContext {
-    style: taffy::Style,
+    style: taffy::Style<Atom>,
     items: Vec<TableItem>,
 }
 
@@ -33,7 +33,7 @@ pub enum TableItemKind {
 pub struct TableItem {
     kind: TableItemKind,
     node_id: usize,
-    style: taffy::Style,
+    style: taffy::Style<Atom>,
 }
 
 pub(crate) fn build_table_context(
@@ -259,11 +259,13 @@ impl taffy::TraverseTree for TableTreeWrapper<'_> {}
 
 impl taffy::LayoutPartialTree for TableTreeWrapper<'_> {
     type CoreContainerStyle<'a>
-        = &'a taffy::Style
+        = &'a taffy::Style<Atom>
     where
         Self: 'a;
 
-    fn get_core_container_style(&self, _node_id: taffy::NodeId) -> &taffy::Style {
+    type CustomIdent = Atom;
+
+    fn get_core_container_style(&self, _node_id: taffy::NodeId) -> &taffy::Style<Atom> {
         &self.ctx.style
     }
 
@@ -298,12 +300,12 @@ impl taffy::LayoutPartialTree for TableTreeWrapper<'_> {
 
 impl taffy::LayoutGridContainer for TableTreeWrapper<'_> {
     type GridContainerStyle<'a>
-        = &'a taffy::Style
+        = &'a taffy::Style<Atom>
     where
         Self: 'a;
 
     type GridItemStyle<'a>
-        = &'a taffy::Style
+        = &'a taffy::Style<Atom>
     where
         Self: 'a;
 
