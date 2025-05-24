@@ -142,12 +142,6 @@ impl LayoutPartialTree for BaseDocument {
                     // })
                 }
                 NodeData::Element(element_data) | NodeData::AnonymousBlock(element_data) => {
-                    // Hide hidden nodes
-                    if let Some("hidden" | "") = element_data.attr(local_name!("hidden")) {
-                        node.style.display = Display::None;
-                        return taffy::LayoutOutput::HIDDEN;
-                    }
-
                     // TODO: deduplicate with single-line text input
                     if *element_data.name.local == *"textarea" {
                         let rows = element_data

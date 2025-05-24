@@ -841,11 +841,6 @@ pub(crate) fn build_inline_layout(
 
         match &node.data {
             NodeData::Element(element_data) | NodeData::AnonymousBlock(element_data) => {
-                // Hide hidden nodes
-                if let Some("hidden" | "") = element_data.attr(local_name!("hidden")) {
-                    return;
-                }
-
                 // if the input type is hidden, hide it
                 if *element_data.name.local == *"input" {
                     if let Some("hidden") = element_data.attr(local_name!("type")) {

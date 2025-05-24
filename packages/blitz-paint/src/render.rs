@@ -177,11 +177,6 @@ impl BlitzDomPainter<'_> {
             return;
         }
 
-        // Hide elements with "hidden" attribute
-        if let Some("true" | "") = node.attr(local_name!("hidden")) {
-            return;
-        }
-
         // Hide inputs with type=hidden
         // Implemented here rather than using the style engine for performance reasons
         if node.local_name() == "input" && node.attr(local_name!("type")) == Some("hidden") {

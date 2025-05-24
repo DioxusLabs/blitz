@@ -984,6 +984,11 @@ impl<'a> TElement for BlitzNode<'a> {
                     ));
                 }
             }
+
+            if *name == local_name!("hidden") {
+                use style::values::specified::Display;
+                push_style(PropertyDeclaration::Display(Display::None));
+            }
         }
     }
 
