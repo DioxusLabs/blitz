@@ -866,6 +866,8 @@ impl<'a> TElement for BlitzNode<'a> {
             return;
         };
 
+        let tag = &elem.name.local;
+
         let mut push_style = |decl: PropertyDeclaration| {
             hints.push(ApplicableDeclarationBlock::from_declarations(
                 Arc::new(
@@ -900,7 +902,10 @@ impl<'a> TElement for BlitzNode<'a> {
             None
         }
 
-        fn parse_size_attr(value: &str) -> Option<style::values::specified::LengthPercentage> {
+        fn parse_size_attr(
+            value: &str,
+            filter_fn: impl FnOnce(&f32) -> bool,
+        ) -> Option<style::values::specified::LengthPercentage> {
             use style::values::specified::{AbsoluteLength, LengthPercentage, NoCalcLength};
             if let Some(value) = value.strip_suffix("px") {
                 let val: f32 = value.parse().ok()?;
@@ -914,7 +919,7 @@ impl<'a> TElement for BlitzNode<'a> {
                 return Some(LengthPercentage::Percentage(Percentage(val / 100.0)));
             }
 
-            let val: f32 = value.parse().ok()?;
+            let val: f32 = value.parse().ok().filter(filter_fn)?;
             Some(LengthPercentage::Length(NoCalcLength::Absolute(
                 AbsoluteLength::Px(val),
             )))
@@ -938,17 +943,32 @@ impl<'a> TElement for BlitzNode<'a> {
                 }
             }
 
-            if *name == local_name!("width") {
-                if let Some(width) = parse_size_attr(value) {
+            // https://html.spec.whatwg.org/multipage/rendering.html#dimRendering
+            if *name == local_name!("width")
+                && (*tag == local_name!("table")
+                    || *tag == local_name!("col")
+                    || *tag == local_name!("tr")
+                    || *tag == local_name!("td")
+                    || *tag == local_name!("th")
+                    || *tag == local_name!("hr"))
+            {
+                let is_table = *tag == local_name!("table");
+                if let Some(width) = parse_size_attr(value, |v| !is_table || *v != 0.0) {
                     use style::values::generics::{NonNegative, length::Size};
+
                     push_style(PropertyDeclaration::Width(Size::LengthPercentage(
                         NonNegative(width),
                     )));
                 }
             }
 
-            if *name == local_name!("height") {
-                if let Some(height) = parse_size_attr(value) {
+            if *name == local_name!("height")
+                && (*tag == local_name!("table")
+                    || *tag == local_name!("thead")
+                    || *tag == local_name!("tbody")
+                    || *tag == local_name!("tfoot"))
+            {
+                if let Some(height) = parse_size_attr(value, |_| true) {
                     use style::values::generics::{NonNegative, length::Size};
                     push_style(PropertyDeclaration::Height(Size::LengthPercentage(
                         NonNegative(height),
