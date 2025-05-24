@@ -376,8 +376,11 @@ impl<'b> TreeSink for DocumentHtmlParser<'b> {
     }
 
     fn remove_from_parent(&self, target: &Self::Handle) {
-        let mut node = self.node_mut(*target);
-        let parent_id = node.parent.take().expect("Node has no parent");
+        let parent_id = self
+            .node_mut(*target)
+            .parent
+            .take()
+            .expect("Node has no parent");
         self.node_mut(parent_id)
             .children
             .retain(|child_id| child_id != target);
