@@ -77,7 +77,7 @@ pub struct Node {
     pub after: Option<usize>,
 
     // Taffy layout data:
-    pub style: Style,
+    pub style: Style<Atom>,
     pub has_snapshot: bool,
     pub snapshot_handled: AtomicBool,
     pub display_outer: DisplayOuter,

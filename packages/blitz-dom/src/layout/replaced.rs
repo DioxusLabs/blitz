@@ -1,3 +1,4 @@
+use style::Atom;
 use taffy::{BoxSizing, CoreStyle as _, MaybeMath, MaybeResolve, ResolveOrZero as _, Size};
 
 use crate::layout::resolve_calc_value;
@@ -24,7 +25,7 @@ pub fn replaced_measure_function(
     known_dimensions: taffy::Size<Option<f32>>,
     parent_size: taffy::Size<Option<f32>>,
     image_context: &ReplacedContext,
-    style: &taffy::Style,
+    style: &taffy::Style<Atom>,
     _debug: bool,
 ) -> taffy::Size<f32> {
     let inherent_size = image_context.inherent_size;
