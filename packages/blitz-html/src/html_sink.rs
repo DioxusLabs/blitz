@@ -2,6 +2,9 @@
 
 use blitz_dom::net::{CssHandler, ImageHandler, Resource};
 use blitz_dom::util::ImageType;
+use html5ever::ParseOpts;
+use html5ever::tokenizer::TokenizerOpts;
+use html5ever::tree_builder::TreeBuilderOpts;
 use std::borrow::Cow;
 use std::cell::{Cell, Ref, RefCell, RefMut};
 use std::collections::HashSet;
@@ -76,7 +79,18 @@ impl DocumentHtmlParser<'_> {
                 .unwrap()
         } else {
             sink.is_xml = false;
-            html5ever::parse_document(sink, Default::default())
+            let opts = ParseOpts {
+                tokenizer: TokenizerOpts::default(),
+                tree_builder: TreeBuilderOpts {
+                    exact_errors: false,
+                    scripting_enabled: false, // Enables parsing of <noscript> tags
+                    iframe_srcdoc: false,
+                    drop_doctype: true,
+                    ignore_missing_rules: false,
+                    quirks_mode: QuirksMode::NoQuirks,
+                },
+            };
+            html5ever::parse_document(sink, opts)
                 .from_utf8()
                 .read_from(&mut html.as_bytes())
                 .unwrap()
