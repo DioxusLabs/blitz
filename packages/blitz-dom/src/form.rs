@@ -243,10 +243,11 @@ fn construct_entry_list(doc: &BaseDocument, form_id: usize, submitter_id: usize)
         //  then continue.
         if datalist_ancestor(doc, node.id)
             || element.attr(local_name!("disabled")).is_some()
-            || element.name.local == local_name!("button") && node.id != submitter_id
+            || (element.name.local == local_name!("button") && node.id != submitter_id)
             || element.name.local == local_name!("input")
-                && matches!(element_type, Some("checkbox" | "radio"))
-                && !element.checkbox_input_checked().unwrap_or(false)
+                && ((matches!(element_type, Some("checkbox" | "radio"))
+                    && !element.checkbox_input_checked().unwrap_or(false))
+                    || matches!(element_type, Some("submit" | "button")))
         {
             continue;
         }
