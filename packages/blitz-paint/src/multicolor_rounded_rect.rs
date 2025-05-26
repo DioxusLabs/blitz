@@ -291,7 +291,6 @@ impl ElementFrame {
                 ArcSide::Inner => (x0 + self.border_left_width, y0 + self.border_top_width),
                 ArcSide::Outer => (x0, y0),
                 ArcSide::Outline => (x0 - self.outline_width, y0 - self.outline_width),
-                ArcSide::Middle => unimplemented!(),
             },
             Corner::TopRight => match side {
                 ArcSide::Content => (
@@ -301,7 +300,6 @@ impl ElementFrame {
                 ArcSide::Inner => (x1 - self.border_right_width, y0 + self.border_top_width),
                 ArcSide::Outer => (x1, y0),
                 ArcSide::Outline => (x1 + self.outline_width, y0 - self.outline_width),
-                ArcSide::Middle => unimplemented!(),
             },
             Corner::BottomRight => match side {
                 ArcSide::Content => (
@@ -311,7 +309,6 @@ impl ElementFrame {
                 ArcSide::Inner => (x1 - self.border_right_width, y1 - self.border_bottom_width),
                 ArcSide::Outer => (x1, y1),
                 ArcSide::Outline => (x1 + self.outline_width, y1 + self.outline_width),
-                ArcSide::Middle => unimplemented!(),
             },
             Corner::BottomLeft => match side {
                 ArcSide::Content => (
@@ -321,7 +318,6 @@ impl ElementFrame {
                 ArcSide::Inner => (x0 + self.border_left_width, y1 - self.border_bottom_width),
                 ArcSide::Outer => (x0, y1),
                 ArcSide::Outline => (x0 - self.outline_width, y1 + self.outline_width),
-                ArcSide::Middle => unimplemented!(),
             },
         };
 
@@ -628,7 +624,6 @@ impl ElementFrame {
                 BottomRight => (border_bottom_right_radius_width + outline_width, border_bottom_right_radius_height + outline_width),
                 BottomLeft => (border_bottom_left_radius_width + outline_width, border_bottom_left_radius_height + outline_width),
             },
-            Middle => todo!("Implement border midline offset"),
             Inner => match corner {
                 TopLeft => (border_top_left_radius_width - border_left_width, border_top_left_radius_height - border_top_width),
                 TopRight => (border_top_right_radius_width - border_right_width, border_top_right_radius_height - border_top_width),
@@ -676,28 +671,24 @@ pub enum Edge {
 /// We combine the corners and their distances to have twelve options here.
 ///
 /// ```a
-///    *-----------------------------------------------------------------*  <--- ArcSide::Outline
-///    |                               Outline                           |
-///    |    *--------------------------------------------------------*   |  <--- ArcSide::Outer
-///    |    |                         Border Outer                   |   |
-///    |    |    *----------------------------------------------*    |   |  <--- ArcSide::Middle
-///    |    |    |                    Border Inner              |    |   |
-///    |    |    |    *------------------------------------*    |    |   |  <--- ArcSide::Inner
-///    |    |    |    |               Padding              |    |    |   |
-///    |    |    |    |    *--------------------------*    |    |    |   |  <--- ArcSide::Content
-///    |    |    |    |    |                          |    |    |    |   |
-///    |    |    |    |    |                          |    |    |    |   |
-///    |    |    |    |    |                          |    |    |    |   |
-///    |    |    |    |    |                          |    |    |    |   |
-///    |    |    |    |    *--------------------------*    |    |    |   |
-///    |    |    |    |                                    |    |    |   |
-///    |    |    |    *------------------------------------*    |    |   |
-///    |    |    |                                              |    |   |
-///    |    |    *----------------------------------------------*    |   |
-///    |    |                                                        |   |
-///    |    *--------------------------------------------------------*   |
-///    |                                                                 |
-///    *-----------------------------------------------------------------*
+///    *--------------------------------------------------------*  <--- ArcSide::Outline
+///    |                         Outline                        |
+///    |    *----------------------------------------------*    |  <--- ArcSide::Outer
+///    |    |                    Border                    |    |
+///    |    |    *------------------------------------*    |    |  <--- ArcSide::Inner
+///    |    |    |               Padding              |    |    |
+///    |    |    |    *--------------------------*    |    |    |  <--- ArcSide::Content
+///    |    |    |    |                          |    |    |    |
+///    |    |    |    |                          |    |    |    |
+///    |    |    |    |                          |    |    |    |
+///    |    |    |    |                          |    |    |    |
+///    |    |    |    *--------------------------*    |    |    |
+///    |    |    |                                    |    |    |
+///    |    |    *------------------------------------*    |    |
+///    |    |                                              |    |
+///    |    *----------------------------------------------*    |
+///    |                                                        |
+///    *--------------------------------------------------------*
 /// ```
 #[derive(Debug, Clone, Copy)]
 enum Corner {
@@ -711,8 +702,6 @@ enum Corner {
 enum ArcSide {
     Outline,
     Outer,
-    #[allow(unused)]
-    Middle,
     Inner,
     Content,
 }
