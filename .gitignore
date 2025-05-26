@@ -1,6 +1,6 @@
 /target
 .DS_Store
-experiments
+/scratch
 /.vscode
 /examples/output/**/*.png
 /examples/output/**/*.jpg
