@@ -8,6 +8,7 @@ use crate::util::ToColorColor;
 
 // Module of type aliases so we can refer to stylo types with nicer names
 pub(crate) mod stylo {
+    pub(crate) use style::computed_values::text_wrap_mode::T as TextWrapMode;
     pub(crate) use style::computed_values::white_space_collapse::T as WhiteSpaceCollapse;
     pub(crate) use style::properties::ComputedValues;
     pub(crate) use style::values::computed::OverflowWrap;
@@ -43,13 +44,11 @@ pub(crate) fn style(
 
     // Convert font size and line height
     let font_size = font_styles.font_size.used_size.0.px();
-    let line_height: f32 = match font_styles.line_height {
-        stylo::LineHeight::Normal => font_size * 1.2,
-        stylo::LineHeight::Number(num) => font_size * num.0,
-        stylo::LineHeight::Length(value) => value.0.px(),
+    let line_height = match font_styles.line_height {
+        stylo::LineHeight::Normal => parley::LineHeight::FontSizeRelative(1.2),
+        stylo::LineHeight::Number(num) => parley::LineHeight::FontSizeRelative(num.0),
+        stylo::LineHeight::Length(value) => parley::LineHeight::Absolute(value.0.px()),
     };
-    // Parley expects line height as a multiple of font size!
-    let line_height = line_height / font_size;
 
     let letter_spacing = itext_styles
         .letter_spacing
@@ -126,6 +125,10 @@ pub(crate) fn style(
         .map(TextBrush::from_color);
 
     // Wrapping and breaking
+    let text_wrap_mode = match itext_styles.text_wrap_mode {
+        stylo::TextWrapMode::Wrap => parley::TextWrapMode::Wrap,
+        stylo::TextWrapMode::Nowrap => parley::TextWrapMode::NoWrap,
+    };
     let word_break = match itext_styles.word_break {
         stylo::WordBreak::Normal => parley::WordBreakStrength::Normal,
         stylo::WordBreak::BreakAll => parley::WordBreakStrength::BreakAll,
@@ -161,5 +164,6 @@ pub(crate) fn style(
         letter_spacing,
         overflow_wrap,
         word_break,
+        text_wrap_mode,
     }
 }
