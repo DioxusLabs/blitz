@@ -49,16 +49,8 @@ impl ElementCx<'_> {
                             y: shadow.base.vertical.px() as f64 * self.scale,
                         });
 
-                        //TODO draw shadows with matching individual radii instead of averaging
-                        let radius = (self.frame.border_top_left_radius_height
-                            + self.frame.border_bottom_left_radius_width
-                            + self.frame.border_bottom_left_radius_height
-                            + self.frame.border_bottom_left_radius_width
-                            + self.frame.border_bottom_right_radius_height
-                            + self.frame.border_bottom_right_radius_width
-                            + self.frame.border_top_right_radius_height
-                            + self.frame.border_top_right_radius_width)
-                            / 8.0;
+                        // TODO draw shadows with matching individual radii instead of averaging
+                        let radius = self.frame.border_radii.average();
 
                         let spread = shadow.spread.px() as f64 * self.scale;
                         let rect = self.frame.border_box.inflate(spread, spread);
@@ -105,15 +97,7 @@ impl ElementCx<'_> {
                         });
 
                         //TODO draw shadows with matching individual radii instead of averaging
-                        let radius = (self.frame.border_top_left_radius_height
-                            + self.frame.border_bottom_left_radius_width
-                            + self.frame.border_bottom_left_radius_height
-                            + self.frame.border_bottom_left_radius_width
-                            + self.frame.border_bottom_right_radius_height
-                            + self.frame.border_bottom_right_radius_width
-                            + self.frame.border_top_right_radius_height
-                            + self.frame.border_top_right_radius_width)
-                            / 8.0;
+                        let radius = self.frame.border_radii.average();
 
                         // Fill the color
                         scene.draw_box_shadow(

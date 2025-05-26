@@ -18,9 +18,8 @@ use euclid::Transform3D;
 use style::{
     dom::TElement,
     properties::{
-        ComputedValues,
-        generated::longhands::visibility::computed_value::T as StyloVisibility,
-        style_structs::{Font, Outline},
+        ComputedValues, generated::longhands::visibility::computed_value::T as StyloVisibility,
+        style_structs::Font,
     },
     values::{
         computed::{CSSPixelLength, Overflow},
@@ -246,10 +245,10 @@ impl BlitzDomPainter<'_> {
         }
 
         let mut cx = self.element_cx(node, layout, box_position);
-        cx.stroke_outline(scene);
+        cx.draw_outline(scene);
         cx.draw_outset_box_shadow(scene);
         cx.draw_background(scene);
-        cx.stroke_border(scene);
+        cx.draw_border(scene);
 
         // TODO: allow layers with opacity to be unclipped (overflow: visible)
         let wants_layer = should_clip | has_opacity;
@@ -627,9 +626,9 @@ impl ElementCx<'_> {
     /// ✅ hidden - Defines a hidden border
     ///
     /// The border-style property can have from one to four values (for the top border, right border, bottom border, and the left border).
-    fn stroke_border(&self, sb: &mut impl anyrender::Scene) {
+    fn draw_border(&self, sb: &mut impl anyrender::Scene) {
         for edge in [Edge::Top, Edge::Right, Edge::Bottom, Edge::Left] {
-            self.stroke_border_edge(sb, edge);
+            self.draw_border_edge(sb, edge);
         }
     }
 
@@ -650,10 +649,10 @@ impl ElementCx<'_> {
     /// - ✅ hidden: Defines a hidden border
     ///
     /// [*] The effect depends on the border-color value
-    fn stroke_border_edge(&self, sb: &mut impl anyrender::Scene, edge: Edge) {
+    fn draw_border_edge(&self, sb: &mut impl anyrender::Scene, edge: Edge) {
         let style = &*self.style;
         let border = style.get_border();
-        let path = self.frame.border(edge);
+        let path = self.frame.border_edge_shape(edge);
 
         let current_color = style.clone_color();
         let color = match edge {
@@ -691,22 +690,17 @@ impl ElementCx<'_> {
     /// ❌ outset - Defines a 3D outset border. The effect depends on the border-color value
     /// ✅ none - Defines no border
     /// ✅ hidden - Defines a hidden border
-    fn stroke_outline(&self, scene: &mut impl anyrender::Scene) {
-        let Outline {
-            outline_color,
-            outline_style,
-            ..
-        } = self.style.get_outline();
+    fn draw_outline(&self, scene: &mut impl anyrender::Scene) {
+        let outline = self.style.get_outline();
 
         let current_color = self.style.clone_color();
-        let color = outline_color
+        let color = outline
+            .outline_color
             .resolve_to_absolute(&current_color)
             .as_srgb_color();
 
-        let style = match outline_style {
+        let style = match outline.outline_style {
             OutlineStyle::Auto => return,
-            OutlineStyle::BorderStyle(BorderStyle::Hidden) => return,
-            OutlineStyle::BorderStyle(BorderStyle::None) => return,
             OutlineStyle::BorderStyle(style) => style,
         };
 
@@ -715,13 +709,13 @@ impl ElementCx<'_> {
             BorderStyle::Solid => self.frame.outline(),
 
             // TODO: Implement other border styles
-            BorderStyle::Inset => self.frame.outline(),
-            BorderStyle::Groove => self.frame.outline(),
-            BorderStyle::Outset => self.frame.outline(),
-            BorderStyle::Ridge => self.frame.outline(),
-            BorderStyle::Dotted => self.frame.outline(),
-            BorderStyle::Dashed => self.frame.outline(),
-            BorderStyle::Double => self.frame.outline(),
+            BorderStyle::Inset
+            | BorderStyle::Groove
+            | BorderStyle::Outset
+            | BorderStyle::Ridge
+            | BorderStyle::Dotted
+            | BorderStyle::Dashed
+            | BorderStyle::Double => self.frame.outline(),
         };
 
         scene.fill(Fill::NonZero, self.transform, color, None, &path);

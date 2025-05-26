@@ -8,8 +8,13 @@
 
 use kurbo::{Arc, BezPath, Ellipse, PathEl, Point, Rect, Shape, Vec2};
 use std::{f64::consts::FRAC_PI_2, f64::consts::PI};
-use style::{properties::ComputedValues, values::computed::CSSPixelLength};
+use style::{
+    properties::ComputedValues,
+    values::computed::{BorderCornerRadius, CSSPixelLength},
+};
 use taffy::prelude::Layout;
+
+use crate::non_uniform_rounded_rect::NonUniformRoundedRectRadii;
 
 /// Resolved positions, thicknesses, and radii using the document scale and layout data
 ///
@@ -22,49 +27,28 @@ pub struct ElementFrame {
     pub border_box: Rect,
     pub padding_box: Rect,
     pub content_box: Rect,
+    pub outline_box: Rect,
+
     pub outline_width: f64,
 
-    pub padding_top_width: f64,
-    pub padding_left_width: f64,
-    pub padding_right_width: f64,
-    pub padding_bottom_width: f64,
+    pub padding_width: taffy::Rect<f64>,
+    pub border_width: taffy::Rect<f64>,
 
-    pub border_top_width: f64,
-    pub border_left_width: f64,
-    pub border_right_width: f64,
-    pub border_bottom_width: f64,
-
-    pub border_top_left_radius_width: f64,
-    pub border_top_left_radius_height: f64,
-    pub border_top_right_radius_width: f64,
-    pub border_top_right_radius_height: f64,
-
-    pub border_bottom_left_radius_width: f64,
-    pub border_bottom_left_radius_height: f64,
-    pub border_bottom_right_radius_width: f64,
-    pub border_bottom_right_radius_height: f64,
+    pub border_radii: NonUniformRoundedRectRadii,
 }
 
 impl ElementFrame {
-    #[rustfmt::skip]
     pub fn new(style: &ComputedValues, layout: &Layout, scale: f64) -> Self {
         let s_border = style.get_border();
         let outline = style.get_outline();
 
         // Resolve and rescale
         // We have to scale since document pixels are not same same as rendered pixels
-        // let border_top_width = scale * border.border_top_width.to_f64_px();
-        // let border_left_width = scale * border.border_left_width.to_f64_px();
-        // let border_right_width = scale * border.border_right_width.to_f64_px();
-        // let border_bottom_width = scale * border.border_bottom_width.to_f64_px();
+        let width: f64 = layout.size.width as f64 * scale;
+        let height: f64 = layout.size.height as f64 * scale;
         let border = layout.border.map(|p| p as f64 * scale);
         let padding = layout.padding.map(|p| p as f64 * scale);
-        let outline_width =  scale * outline.outline_width.to_f64_px();
-
-        let width: f64 = layout.size.width.into();
-        let height: f64 = layout.size.height.into();
-        let width =  scale * width;
-        let height = scale * height;
+        let outline_width = scale * outline.outline_width.to_f64_px();
 
         let border_box = Rect::new(0.0, 0.0, width, height);
         let padding_box = Rect::new(
@@ -79,74 +63,71 @@ impl ElementFrame {
             width - border.right - padding.right,
             height - border.bottom - padding.bottom,
         );
+        let outline_box = Rect::new(
+            border.left - outline_width,
+            border.top - outline_width,
+            width + (outline_width * 2.0),
+            height + (outline_width * 2.0),
+        );
 
         // Resolve the radii to a length. need to downscale since the radii are in document pixels
-        let pixel_width = CSSPixelLength::new((padding_box.width() / scale) as _);
-        let pixel_height = CSSPixelLength::new((padding_box.height() / scale) as _);
-
-        let mut border_top_left_radius_width = scale * s_border.border_top_left_radius.0.width.0.resolve(pixel_width).px() as f64;
-        let mut border_top_left_radius_height = scale * s_border.border_top_left_radius.0.height.0.resolve(pixel_height).px() as f64;
-
-        let mut border_top_right_radius_width = scale * s_border.border_top_right_radius.0.width.0.resolve(pixel_width).px() as f64;
-        let mut border_top_right_radius_height = scale * s_border.border_top_right_radius.0.height.0.resolve(pixel_height).px() as f64;
-
-        let mut border_bottom_left_radius_width = scale * s_border.border_bottom_left_radius.0.width.0.resolve(pixel_width).px() as f64;
-        let mut border_bottom_left_radius_height = scale * s_border.border_bottom_left_radius.0.height.0.resolve(pixel_height).px() as f64;
-
-        let mut border_bottom_right_radius_width = scale * s_border.border_bottom_right_radius.0.width.0.resolve(pixel_width).px() as f64;
-        let mut border_bottom_right_radius_height = scale * s_border.border_bottom_right_radius.0.height.0.resolve(pixel_height).px() as f64;
+        let resolve_w = CSSPixelLength::new((padding_box.width() / scale) as _);
+        let resolve_h = CSSPixelLength::new((padding_box.height() / scale) as _);
+        let resolve_radii = |radius: &BorderCornerRadius| -> Vec2 {
+            Vec2 {
+                x: scale * radius.0.width.0.resolve(resolve_w).px() as f64,
+                y: scale * radius.0.height.0.resolve(resolve_h).px() as f64,
+            }
+        };
+        let mut border_radii = NonUniformRoundedRectRadii {
+            top_left: resolve_radii(&s_border.border_top_left_radius),
+            top_right: resolve_radii(&s_border.border_top_right_radius),
+            bottom_right: resolve_radii(&s_border.border_bottom_right_radius),
+            bottom_left: resolve_radii(&s_border.border_bottom_left_radius),
+        };
 
         // Correct the border radii if they are too big if two border radii would intersect, then we need to shrink
         // ALL border radii by the same factor such that they do not
-        let top_overlap_factor = border_box.width() / (border_top_left_radius_width + border_top_right_radius_width);
-        let bottom_overlap_factor = border_box.width() / (border_bottom_left_radius_width + border_bottom_right_radius_width);
-        let left_overlap_factor = border_box.height() / (border_top_left_radius_height + border_bottom_left_radius_height);
-        let right_overlap_factor = border_box.height() / (border_top_right_radius_height + border_bottom_right_radius_height);
+        let top_overlap_factor =
+            border_box.width() / (border_radii.top_left.x + border_radii.top_right.x);
+        let bottom_overlap_factor =
+            border_box.width() / (border_radii.bottom_left.x + border_radii.bottom_right.x);
+        let left_overlap_factor =
+            border_box.height() / (border_radii.top_left.y + border_radii.bottom_left.y);
+        let right_overlap_factor =
+            border_box.height() / (border_radii.top_right.y + border_radii.bottom_right.y);
 
-        let min_factor = top_overlap_factor.min(bottom_overlap_factor).min(left_overlap_factor).min(right_overlap_factor).min(1.0);
+        let min_factor = top_overlap_factor
+            .min(bottom_overlap_factor)
+            .min(left_overlap_factor)
+            .min(right_overlap_factor)
+            .min(1.0);
         if min_factor < 1.0 {
-            border_top_left_radius_width *= min_factor;
-            border_top_left_radius_height *= min_factor;
-            border_top_right_radius_width *= min_factor;
-            border_top_right_radius_height *= min_factor;
-            border_bottom_left_radius_width *= min_factor;
-            border_bottom_left_radius_height *= min_factor;
-            border_bottom_right_radius_width *= min_factor;
-            border_bottom_right_radius_height *= min_factor;
+            border_radii *= min_factor
         }
 
         Self {
             padding_box,
             border_box,
             content_box,
+            outline_box,
             outline_width,
-            padding_top_width: padding.top,
-            padding_left_width: padding.left,
-            padding_right_width: padding.right,
-            padding_bottom_width: padding.bottom,
-            border_top_width: border.top,
-            border_left_width: border.left,
-            border_right_width: border.right,
-            border_bottom_width: border.bottom,
-            border_top_left_radius_width,
-            border_top_left_radius_height,
-            border_top_right_radius_width,
-            border_top_right_radius_height,
-            border_bottom_left_radius_width,
-            border_bottom_left_radius_height,
-            border_bottom_right_radius_width,
-            border_bottom_right_radius_height,
+            padding_width: padding,
+            border_width: border,
+            border_radii,
         }
     }
 
-    /// Construct a BezPath representing the edges of a border.
+    /// Construct a BezPath representing one edge of a box's border.
+    /// Takes into account border-radius and the possibility that the edges
+    /// are different colors.
     ///
     /// Will construct the border by:
     /// - drawing an inner arc
     /// - jumping to an outer arc
     /// - jumping to the next outer arc (completing the edge with the previous)
     /// - drawing an inner arc
-    pub fn border(&self, edge: Edge) -> BezPath {
+    pub fn border_edge_shape(&self, edge: Edge) -> BezPath {
         use {Corner::*, CssBox::*, Direction::*, Edge::*};
 
         let mut path = BezPath::new();
@@ -188,16 +169,14 @@ impl ElementFrame {
 
     /// Construct a bezpath drawing the outline
     pub fn outline(&self) -> BezPath {
-        use Corner::*;
-
         let mut path = BezPath::new();
 
-        // todo: this has been known to produce quirky outputs with hugely rounded edges
+        // TODO: this has been known to produce quirky outputs with hugely rounded edges
         self.shape(&mut path, CssBox::OutlineBox, Direction::Clockwise);
-        path.move_to(self.corner(TopLeft, CssBox::BorderBox));
+        path.move_to(self.corner(Corner::TopLeft, CssBox::BorderBox));
 
         self.shape(&mut path, CssBox::BorderBox, Direction::Anticlockwise);
-        path.move_to(self.corner(TopLeft, CssBox::BorderBox));
+        path.move_to(self.corner(Corner::TopLeft, CssBox::BorderBox));
 
         path
     }
@@ -279,49 +258,19 @@ impl ElementFrame {
         }
     }
 
-    fn corner(&self, corner: Corner, side: CssBox) -> Point {
-        let Rect { x0, y0, x1, y1 } = self.border_box;
-
-        let (x, y) = match corner {
-            Corner::TopLeft => match side {
-                CssBox::ContentBox => (
-                    x0 + self.border_left_width + self.padding_left_width,
-                    y0 + self.border_top_width + self.padding_top_width,
-                ),
-                CssBox::PaddingBox => (x0 + self.border_left_width, y0 + self.border_top_width),
-                CssBox::BorderBox => (x0, y0),
-                CssBox::OutlineBox => (x0 - self.outline_width, y0 - self.outline_width),
-            },
-            Corner::TopRight => match side {
-                CssBox::ContentBox => (
-                    x1 - self.border_right_width - self.padding_right_width,
-                    y0 + self.border_top_width + self.padding_top_width,
-                ),
-                CssBox::PaddingBox => (x1 - self.border_right_width, y0 + self.border_top_width),
-                CssBox::BorderBox => (x1, y0),
-                CssBox::OutlineBox => (x1 + self.outline_width, y0 - self.outline_width),
-            },
-            Corner::BottomRight => match side {
-                CssBox::ContentBox => (
-                    x1 - self.border_right_width - self.padding_right_width,
-                    y1 - self.border_bottom_width - self.padding_bottom_width,
-                ),
-                CssBox::PaddingBox => (x1 - self.border_right_width, y1 - self.border_bottom_width),
-                CssBox::BorderBox => (x1, y1),
-                CssBox::OutlineBox => (x1 + self.outline_width, y1 + self.outline_width),
-            },
-            Corner::BottomLeft => match side {
-                CssBox::ContentBox => (
-                    x0 + self.border_left_width + self.padding_left_width,
-                    y1 - self.border_bottom_width - self.padding_bottom_width,
-                ),
-                CssBox::PaddingBox => (x0 + self.border_left_width, y1 - self.border_bottom_width),
-                CssBox::BorderBox => (x0, y1),
-                CssBox::OutlineBox => (x0 - self.outline_width, y1 + self.outline_width),
-            },
+    fn corner(&self, corner: Corner, css_box: CssBox) -> Point {
+        let Rect { x0, y0, x1, y1 } = match css_box {
+            CssBox::OutlineBox => self.outline_box,
+            CssBox::BorderBox => self.border_box,
+            CssBox::PaddingBox => self.padding_box,
+            CssBox::ContentBox => self.content_box,
         };
-
-        Point { x, y }
+        match corner {
+            Corner::TopLeft => Point { x: x0, y: y0 },
+            Corner::TopRight => Point { x: x1, y: y0 },
+            Corner::BottomLeft => Point { x: x0, y: y1 },
+            Corner::BottomRight => Point { x: x1, y: y1 },
+        }
     }
 
     fn shadow_clip_corner(&self, corner: Corner, shadow_rect: Rect) -> Point {
@@ -338,38 +287,22 @@ impl ElementFrame {
     /// Check if the corner width is smaller than the radius.
     /// If it is, we need to fill in the gap with an arc
     fn corner_needs_infill(&self, corner: Corner) -> bool {
-        let Self {
-            border_top_width,
-            border_left_width,
-            border_right_width,
-            border_bottom_width,
-            border_top_left_radius_width,
-            border_top_left_radius_height,
-            border_top_right_radius_width,
-            border_top_right_radius_height,
-            border_bottom_left_radius_width,
-            border_bottom_left_radius_height,
-            border_bottom_right_radius_width,
-            border_bottom_right_radius_height,
-            ..
-        } = self;
-
         match corner {
             Corner::TopLeft => {
-                border_top_left_radius_width > border_left_width
-                    && border_top_left_radius_height > border_top_width
+                self.border_radii.top_left.x > self.border_width.left
+                    && self.border_radii.top_left.y > self.border_width.top
             }
             Corner::TopRight => {
-                border_top_right_radius_width > border_right_width
-                    && border_top_right_radius_height > border_top_width
+                self.border_radii.top_right.x > self.border_width.right
+                    && self.border_radii.top_right.y > self.border_width.top
             }
             Corner::BottomRight => {
-                border_bottom_right_radius_width > border_right_width
-                    && border_bottom_right_radius_height > border_bottom_width
+                self.border_radii.bottom_right.x > self.border_width.right
+                    && self.border_radii.bottom_right.y > self.border_width.bottom
             }
             Corner::BottomLeft => {
-                border_bottom_left_radius_width > border_left_width
-                    && border_bottom_left_radius_height > border_bottom_width
+                self.border_radii.bottom_left.x > self.border_width.left
+                    && self.border_radii.bottom_left.y > self.border_width.bottom
             }
         }
     }
@@ -487,167 +420,115 @@ impl ElementFrame {
         use Corner::*;
         use CssBox::*;
 
-        let is_sharp = match corner {
-            TopLeft => {
-                self.border_top_left_radius_width == 0.0
-                    || self.border_top_left_radius_height == 0.0
-            }
-            TopRight => {
-                self.border_top_right_radius_width == 0.0
-                    || self.border_top_right_radius_height == 0.0
-            }
-            BottomRight => {
-                self.border_bottom_right_radius_width == 0.0
-                    || self.border_bottom_right_radius_height == 0.0
-            }
-            BottomLeft => {
-                self.border_bottom_left_radius_width == 0.0
-                    || self.border_bottom_left_radius_height == 0.0
-            }
+        let corner_radii = match corner {
+            TopLeft => self.border_radii.top_left,
+            TopRight => self.border_radii.top_right,
+            BottomLeft => self.border_radii.bottom_left,
+            BottomRight => self.border_radii.bottom_right,
         };
-
+        let is_sharp = (corner_radii.x == 0.0) | (corner_radii.y == 0.0);
         if is_sharp {
             return true;
         }
 
-        if side == PaddingBox {
-            match corner {
-                TopLeft => {
-                    self.border_top_left_radius_width - self.border_left_width <= 0.0
-                        || self.border_top_left_radius_height - self.border_top_width <= 0.0
-                }
-                TopRight => {
-                    self.border_top_right_radius_width - self.border_right_width <= 0.0
-                        || self.border_top_right_radius_height - self.border_top_width <= 0.0
-                }
-                BottomRight => {
-                    self.border_bottom_right_radius_width - self.border_right_width <= 0.0
-                        || self.border_bottom_right_radius_height - self.border_bottom_width <= 0.0
-                }
-                BottomLeft => {
-                    self.border_bottom_left_radius_width - self.border_left_width <= 0.0
-                        || self.border_bottom_left_radius_height - self.border_bottom_width <= 0.0
-                }
-            }
-        } else if side == ContentBox {
-            match corner {
-                TopLeft => {
-                    self.border_top_left_radius_width
-                        - self.border_left_width
-                        - self.padding_left_width
-                        <= 0.0
-                        || self.border_top_left_radius_height
-                            - self.border_top_width
-                            - self.padding_top_width
-                            <= 0.0
-                }
-                TopRight => {
-                    self.border_top_right_radius_width
-                        - self.border_right_width
-                        - self.padding_right_width
-                        <= 0.0
-                        || self.border_top_right_radius_height
-                            - self.border_top_width
-                            - self.padding_top_width
-                            <= 0.0
-                }
-                BottomRight => {
-                    self.border_bottom_right_radius_width
-                        - self.border_right_width
-                        - self.padding_right_width
-                        <= 0.0
-                        || self.border_bottom_right_radius_height
-                            - self.border_bottom_width
-                            - self.padding_bottom_width
-                            <= 0.0
-                }
-                BottomLeft => {
-                    self.border_bottom_left_radius_width
-                        - self.border_left_width
-                        - self.padding_left_width
-                        <= 0.0
-                        || self.border_bottom_left_radius_height
-                            - self.border_bottom_width
-                            - self.padding_bottom_width
-                            <= 0.0
-                }
-            }
-        } else {
-            is_sharp
+        let css_box = match side {
+            OutlineBox => return false,
+            BorderBox => return false,
+            PaddingBox => self.border_width,
+            ContentBox => self.border_width + self.padding_width,
+        };
+        match corner {
+            TopLeft => (corner_radii.x <= css_box.left) | (corner_radii.y <= css_box.top),
+            TopRight => (corner_radii.x <= css_box.right) | (corner_radii.y <= css_box.top),
+            BottomLeft => (corner_radii.x <= css_box.left) | (corner_radii.y <= css_box.bottom),
+            BottomRight => (corner_radii.x <= css_box.right) | (corner_radii.y <= css_box.bottom),
         }
     }
 
-    #[rustfmt::skip]
     fn ellipse(&self, corner: Corner, side: CssBox) -> Ellipse {
         use {Corner::*, CssBox::*};
         let ElementFrame {
-            border_box: rect,
-            padding_top_width,
-            padding_left_width,
-            padding_right_width,
-            padding_bottom_width,
-            border_top_width,
-            border_left_width,
-            border_right_width,
-            border_top_left_radius_width,
-            border_top_left_radius_height,
-            border_top_right_radius_width,
-            border_top_right_radius_height,
-            border_bottom_width,
-            border_bottom_left_radius_width,
-            border_bottom_left_radius_height,
-            border_bottom_right_radius_width,
-            border_bottom_right_radius_height,
-            outline_width,
+            border_box,
+            padding_width,
+            border_width,
+            border_radii,
             ..
         } = self;
 
-        let outer = match corner {
-            TopLeft => (*border_top_left_radius_width, *border_top_left_radius_height),
-            TopRight => (*border_top_right_radius_width, *border_top_right_radius_height),
-            BottomLeft => (*border_bottom_left_radius_width, *border_bottom_left_radius_height),
-            BottomRight => (*border_bottom_right_radius_width, *border_bottom_right_radius_height),
+        let corner_radii = match corner {
+            TopLeft => border_radii.top_left,
+            TopRight => border_radii.top_right,
+            BottomLeft => border_radii.bottom_left,
+            BottomRight => border_radii.bottom_right,
         };
 
         let center = match corner {
-            TopLeft => outer,
-            TopRight => (rect.width() - outer.0, outer.1),
-            BottomLeft => (outer.0, rect.height() - outer.1),
-            BottomRight => (rect.width() - outer.0, rect.height() - outer.1),
+            TopLeft => corner_radii,
+            TopRight => Vec2 {
+                x: border_box.width() - corner_radii.x,
+                y: corner_radii.y,
+            },
+            BottomLeft => Vec2 {
+                x: corner_radii.x,
+                y: border_box.height() - corner_radii.y,
+            },
+            BottomRight => Vec2 {
+                x: border_box.width() - corner_radii.x,
+                y: border_box.height() - corner_radii.y,
+            },
         };
 
-        let radii = match side {
-            BorderBox => outer,
-            OutlineBox => match corner {
-                TopLeft => (border_top_left_radius_width + outline_width, border_top_left_radius_height + outline_width),
-                TopRight => (border_top_right_radius_width + outline_width, border_top_right_radius_height + outline_width),
-                BottomRight => (border_bottom_right_radius_width + outline_width, border_bottom_right_radius_height + outline_width),
-                BottomLeft => (border_bottom_left_radius_width + outline_width, border_bottom_left_radius_height + outline_width),
-            },
+        let radii: Vec2 = match side {
+            BorderBox => corner_radii,
+            OutlineBox => corner_radii + Vec2::new(self.outline_width, self.outline_width),
             PaddingBox => match corner {
-                TopLeft => (border_top_left_radius_width - border_left_width, border_top_left_radius_height - border_top_width),
-                TopRight => (border_top_right_radius_width - border_right_width, border_top_right_radius_height - border_top_width),
-                BottomRight => (border_bottom_right_radius_width - border_right_width, border_bottom_right_radius_height - border_bottom_width),
-                BottomLeft => (border_bottom_left_radius_width - border_left_width, border_bottom_left_radius_height - border_bottom_width),
+                TopLeft => Vec2 {
+                    x: corner_radii.x - border_width.left,
+                    y: corner_radii.y - border_width.top,
+                },
+                TopRight => Vec2 {
+                    x: corner_radii.x - border_width.right,
+                    y: corner_radii.y - border_width.top,
+                },
+                BottomRight => Vec2 {
+                    x: corner_radii.x - border_width.right,
+                    y: corner_radii.y - border_width.bottom,
+                },
+                BottomLeft => Vec2 {
+                    x: corner_radii.x - border_width.left,
+                    y: corner_radii.y - border_width.bottom,
+                },
             },
             ContentBox => match corner {
-                TopLeft => (border_top_left_radius_width - border_left_width - padding_left_width, border_top_left_radius_height - border_top_width - padding_top_width),
-                TopRight => (border_top_right_radius_width - border_right_width - padding_right_width, border_top_right_radius_height - border_top_width - padding_top_width),
-                BottomRight => (border_bottom_right_radius_width - border_right_width - padding_right_width, border_bottom_right_radius_height - border_bottom_width - padding_bottom_width),
-                BottomLeft => (border_bottom_left_radius_width - border_left_width - padding_left_width, border_bottom_left_radius_height - border_bottom_width - padding_bottom_width),
+                TopLeft => Vec2 {
+                    x: corner_radii.x - border_width.left - padding_width.left,
+                    y: corner_radii.y - border_width.top - padding_width.top,
+                },
+                TopRight => Vec2 {
+                    x: corner_radii.x - border_width.right - padding_width.right,
+                    y: corner_radii.y - border_width.top - padding_width.top,
+                },
+                BottomRight => Vec2 {
+                    x: corner_radii.x - border_width.right - padding_width.right,
+                    y: corner_radii.y - border_width.bottom - padding_width.bottom,
+                },
+                BottomLeft => Vec2 {
+                    x: corner_radii.x - border_width.left - padding_width.left,
+                    y: corner_radii.y - border_width.bottom - padding_width.bottom,
+                },
             },
         };
 
-        Ellipse::new(rect.origin() + center, radii, 0.0)
+        Ellipse::new(border_box.origin() + center, radii, 0.0)
     }
 
     fn start_angle(&self, corner: Corner, radii: Vec2) -> f64 {
         use Corner::*;
         match corner {
-            TopLeft => start_angle(self.border_top_width, self.border_left_width, radii),
-            TopRight => start_angle(self.border_top_width, self.border_right_width, radii),
-            BottomLeft => start_angle(self.border_bottom_width, self.border_left_width, radii),
-            BottomRight => start_angle(self.border_bottom_width, self.border_right_width, radii),
+            TopLeft => start_angle(self.border_width.top, self.border_width.left, radii),
+            TopRight => start_angle(self.border_width.top, self.border_width.right, radii),
+            BottomLeft => start_angle(self.border_width.bottom, self.border_width.left, radii),
+            BottomRight => start_angle(self.border_width.bottom, self.border_width.right, radii),
         }
     }
 }

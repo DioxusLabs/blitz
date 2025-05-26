@@ -362,7 +362,7 @@ impl ElementCx<'_> {
                         StyloBackgroundOrigin::PaddingBox,
                     ) {
                     let extend_width =
-                        extend(self.frame.border_left_width + bg_pos_x, bg_size.width);
+                        extend(self.frame.border_width.left + bg_pos_x, bg_size.width);
 
                     let width = self.frame.border_box.width() + extend_width;
                     let count = (width / bg_size.width).ceil() as u32;
@@ -380,7 +380,7 @@ impl ElementCx<'_> {
                     )
                 {
                     let extend_width = extend(
-                        self.frame.border_left_width + self.frame.padding_left_width + bg_pos_x,
+                        self.frame.border_width.left + self.frame.padding_width.left + bg_pos_x,
                         bg_size.width,
                     );
                     let width = self.frame.border_box.width() + extend_width;
@@ -399,7 +399,7 @@ impl ElementCx<'_> {
                     )
                 {
                     let extend_width =
-                        extend(self.frame.padding_left_width + bg_pos_x, bg_size.width);
+                        extend(self.frame.padding_width.left + bg_pos_x, bg_size.width);
                     let width = self.frame.padding_box.width() + extend_width;
                     let count = (width / bg_size.width).ceil() as u32;
 
@@ -459,7 +459,7 @@ impl ElementCx<'_> {
                         StyloBackgroundOrigin::PaddingBox,
                     ) {
                     let extend_height =
-                        extend(self.frame.border_top_width + bg_pos_y, bg_size.height);
+                        extend(self.frame.border_width.top + bg_pos_y, bg_size.height);
                     let height = self.frame.border_box.height() + extend_height;
                     let count = (height / bg_size.height).ceil() as u32;
 
@@ -476,7 +476,7 @@ impl ElementCx<'_> {
                     )
                 {
                     let extend_height = extend(
-                        self.frame.border_top_width + self.frame.padding_top_width + bg_pos_x,
+                        self.frame.border_width.top + self.frame.padding_width.top + bg_pos_x,
                         bg_size.height,
                     );
                     let height = self.frame.border_box.height() + extend_height;
@@ -495,7 +495,7 @@ impl ElementCx<'_> {
                     )
                 {
                     let extend_height =
-                        extend(self.frame.padding_top_width + bg_pos_x, bg_size.height);
+                        extend(self.frame.padding_width.top + bg_pos_x, bg_size.height);
                     let height = self.frame.padding_box.height() + extend_height;
                     let count = (height / bg_size.height).ceil() as u32;
 
