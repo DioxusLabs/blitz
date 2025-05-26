@@ -2,6 +2,7 @@
 
 mod color;
 mod debug_overlay;
+mod gradient;
 mod layers;
 mod multicolor_rounded_rect;
 mod render;
