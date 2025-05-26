@@ -74,7 +74,7 @@ impl ElementCx<'_> {
         };
 
         // Draw background color (if any)
-        self.draw_solid_frame(scene, &background_clip_path);
+        self.draw_solid_bg(scene, &background_clip_path);
 
         for (idx, segment) in bg_styles.background_image.0.iter().enumerate().rev() {
             let background_clip = get_cyclic(&bg_styles.background_clip.0, idx);
@@ -96,7 +96,7 @@ impl ElementCx<'_> {
                             // Do nothing
                         }
                         Gradient(gradient) => {
-                            self.draw_gradient_frame(scene, gradient, idx, *background_clip)
+                            self.draw_gradient_bg(scene, gradient, idx, *background_clip)
                         }
                         Url(_) => {
                             self.draw_raster_bg_image(scene, idx);
@@ -114,7 +114,7 @@ impl ElementCx<'_> {
         }
     }
 
-    fn draw_solid_frame(&self, scene: &mut impl anyrender::Scene, shape: &BezPath) {
+    fn draw_solid_bg(&self, scene: &mut impl anyrender::Scene, shape: &BezPath) {
         let current_color = self.style.clone_color();
         let background_color = &self.style.get_background().background_color;
         let bg_color = background_color
@@ -357,7 +357,7 @@ impl ElementCx<'_> {
         }
     }
 
-    fn draw_gradient_frame(
+    fn draw_gradient_bg(
         &self,
         scene: &mut impl anyrender::Scene,
         gradient: &StyloGradient,
