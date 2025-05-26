@@ -82,7 +82,7 @@ impl ElementCx<'_> {
             has_inset_shadow,
             1.0,
             self.transform,
-            &self.frame.frame_padding(),
+            &self.frame.padding_box_path(),
             |scene| {
                 for shadow in box_shadow.iter().filter(|s| s.inset) {
                     let shadow_color = shadow

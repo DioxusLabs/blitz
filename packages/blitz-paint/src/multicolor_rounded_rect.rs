@@ -182,21 +182,21 @@ impl ElementFrame {
     }
 
     /// Construct a bezpath drawing the frame border
-    pub fn frame_border(&self) -> BezPath {
+    pub fn border_box_path(&self) -> BezPath {
         let mut path = BezPath::new();
         self.shape(&mut path, CssBox::BorderBox, Direction::Clockwise);
         path
     }
 
     /// Construct a bezpath drawing the frame padding
-    pub fn frame_padding(&self) -> BezPath {
+    pub fn padding_box_path(&self) -> BezPath {
         let mut path = BezPath::new();
         self.shape(&mut path, CssBox::PaddingBox, Direction::Clockwise);
         path
     }
 
     /// Construct a bezpath drawing the frame content
-    pub fn frame_content(&self) -> BezPath {
+    pub fn content_box_path(&self) -> BezPath {
         let mut path = BezPath::new();
         self.shape(&mut path, CssBox::ContentBox, Direction::Clockwise);
         path

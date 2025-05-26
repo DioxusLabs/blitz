@@ -252,7 +252,7 @@ impl BlitzDomPainter<'_> {
 
         // TODO: allow layers with opacity to be unclipped (overflow: visible)
         let wants_layer = should_clip | has_opacity;
-        let clip = &cx.frame.frame_padding();
+        let clip = &cx.frame.padding_box_path();
 
         maybe_with_layer(scene, wants_layer, opacity, cx.transform, clip, |scene| {
             cx.draw_inset_box_shadow(scene);

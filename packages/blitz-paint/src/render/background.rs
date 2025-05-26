@@ -32,9 +32,9 @@ impl ElementCx<'_> {
             bg_styles.background_image.0.len() - 1,
         );
         let background_clip_path = match background_clip {
-            BorderBox => self.frame.frame_border(),
-            PaddingBox => self.frame.frame_padding(),
-            ContentBox => self.frame.frame_content(),
+            BorderBox => self.frame.border_box_path(),
+            PaddingBox => self.frame.padding_box_path(),
+            ContentBox => self.frame.content_box_path(),
         };
 
         // Draw background color (if any)
@@ -43,9 +43,9 @@ impl ElementCx<'_> {
         for (idx, segment) in bg_styles.background_image.0.iter().enumerate().rev() {
             let background_clip = get_cyclic(&bg_styles.background_clip.0, idx);
             let background_clip_path = match background_clip {
-                BorderBox => self.frame.frame_border(),
-                PaddingBox => self.frame.frame_padding(),
-                ContentBox => self.frame.frame_content(),
+                BorderBox => self.frame.border_box_path(),
+                PaddingBox => self.frame.padding_box_path(),
+                ContentBox => self.frame.content_box_path(),
             };
 
             maybe_with_layer(
