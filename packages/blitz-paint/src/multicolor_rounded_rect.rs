@@ -181,13 +181,6 @@ impl ElementFrame {
         path
     }
 
-    /// Construct a bezpath drawing the frame
-    pub fn frame(&self) -> BezPath {
-        let mut path = BezPath::new();
-        self.shape(&mut path, CssBox::PaddingBox, Direction::Clockwise);
-        path
-    }
-
     /// Construct a bezpath drawing the frame border
     pub fn frame_border(&self) -> BezPath {
         let mut path = BezPath::new();
