@@ -146,10 +146,12 @@ impl ElementFrame {
             path.line_to(self.corner(c0, BorderBox));
         } else {
             match self.corner_needs_infill(c0) {
-                true => path.insert_arc(self.arc(c0, PaddingBox, edge, Anticlockwise)),
+                true => {
+                    path.insert_arc(self.partial_corner_arc(c0, PaddingBox, edge, Anticlockwise))
+                }
                 false => path.move_to(self.corner(c0, PaddingBox)),
             }
-            path.insert_arc(self.arc(c0, BorderBox, edge, Clockwise));
+            path.insert_arc(self.partial_corner_arc(c0, BorderBox, edge, Clockwise));
         }
 
         // 2. Second corner
@@ -157,9 +159,11 @@ impl ElementFrame {
             path.line_to(self.corner(c1, BorderBox));
             path.line_to(self.corner(c1, PaddingBox));
         } else {
-            path.insert_arc(self.arc(c1, BorderBox, edge, Clockwise));
+            path.insert_arc(self.partial_corner_arc(c1, BorderBox, edge, Clockwise));
             match self.corner_needs_infill(c1) {
-                true => path.insert_arc(self.arc(c1, PaddingBox, edge, Anticlockwise)),
+                true => {
+                    path.insert_arc(self.partial_corner_arc(c1, PaddingBox, edge, Anticlockwise))
+                }
                 false => path.line_to(self.corner(c1, PaddingBox)),
             }
         }
@@ -214,7 +218,7 @@ impl ElementFrame {
             if self.is_sharp(corner, line) {
                 path.insert_point(self.corner(corner, line));
             } else {
-                path.insert_arc(self.full_arc(corner, line, direction));
+                path.insert_arc(self.corner_arc(corner, line, direction));
             }
         }
     }
@@ -237,7 +241,7 @@ impl ElementFrame {
             path.move_to(self.corner(TopLeft, CssBox::BorderBox));
         } else {
             const TOLERANCE: f64 = 0.1;
-            let arc = self.full_arc(TopLeft, CssBox::BorderBox, Direction::Anticlockwise);
+            let arc = self.corner_arc(TopLeft, CssBox::BorderBox, Direction::Anticlockwise);
             let elements = arc.path_elements(TOLERANCE);
             path.extend(elements);
         }
@@ -246,7 +250,11 @@ impl ElementFrame {
             if self.is_sharp(corner, CssBox::BorderBox) {
                 path.insert_point(self.corner(corner, CssBox::BorderBox));
             } else {
-                path.insert_arc(self.full_arc(corner, CssBox::BorderBox, Direction::Anticlockwise));
+                path.insert_arc(self.corner_arc(
+                    corner,
+                    CssBox::BorderBox,
+                    Direction::Anticlockwise,
+                ));
             }
         }
     }
@@ -301,8 +309,8 @@ impl ElementFrame {
     }
 
     /// Get the complete arc for a corner, skipping the need for splitting the arc into pieces
-    fn full_arc(&self, corner: Corner, side: CssBox, direction: Direction) -> Arc {
-        let ellipse = self.ellipse(corner, side);
+    fn corner_arc(&self, corner: Corner, css_box: CssBox, direction: Direction) -> Arc {
+        let ellipse = self.ellipse(corner, css_box);
 
         // Sweep clockwise for outer arcs, counter clockwise for inner arcs
         let sweep_direction = match direction {
@@ -333,14 +341,24 @@ impl ElementFrame {
         )
     }
 
-    /// Get the partial arc for a corner
+    /// Get the arc for a half of a corner.
+    /// This handles the case where adjacent border sides have different colors and thus
+    /// the corner between the side changes color in the middle. We draw these as separate shapes
+    /// and thus need to to get the arc up to the "middle point".
     ///
-    fn arc(&self, corner: Corner, side: CssBox, edge: Edge, direction: Direction) -> Arc {
+    /// The angle at which the color changes depends on the ratio of the border widths and radii of the corner
+    fn partial_corner_arc(
+        &self,
+        corner: Corner,
+        css_box: CssBox,
+        edge: Edge,
+        direction: Direction,
+    ) -> Arc {
         use Corner::*;
         use CssBox::*;
         use Edge::*;
 
-        let ellipse = self.ellipse(corner, side);
+        let ellipse = self.ellipse(corner, css_box);
 
         // We solve a tiny system of equations to find the start angle
         // This is fixed to a single coordinate system, so we need to adjust the start angle
@@ -369,7 +387,7 @@ impl ElementFrame {
         // Depededning on the edge, we need to adjust the start angle
         // We still sweep the same, but the theta split is different since we're cutting in half
         // I imagine you could mnake this simpler using a bit more math
-        let start = match (edge, corner, side) {
+        let start = match (edge, corner, css_box) {
             // Top Edge
             (Top, TopLeft, PaddingBox) => 0.0,
             (Top, TopLeft, BorderBox) => -theta,
