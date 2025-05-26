@@ -147,7 +147,7 @@ impl ElementFrame {
     /// - jumping to the next outer arc (completing the edge with the previous)
     /// - drawing an inner arc
     pub fn border(&self, edge: Edge) -> BezPath {
-        use {ArcSide::*, Corner::*, Direction::*, Edge::*};
+        use {Corner::*, CssBox::*, Direction::*, Edge::*};
 
         let mut path = BezPath::new();
 
@@ -160,26 +160,26 @@ impl ElementFrame {
 
         // 1. First corner
         // if the radius is bigger than the border, we need to draw the inner arc to fill in the gap
-        if self.is_sharp(c0, Outer) {
-            path.move_to(self.corner(c0, Inner));
-            path.line_to(self.corner(c0, Outer));
+        if self.is_sharp(c0, BorderBox) {
+            path.move_to(self.corner(c0, PaddingBox));
+            path.line_to(self.corner(c0, BorderBox));
         } else {
             match self.corner_needs_infill(c0) {
-                true => path.insert_arc(self.arc(c0, Inner, edge, Anticlockwise)),
-                false => path.move_to(self.corner(c0, Inner)),
+                true => path.insert_arc(self.arc(c0, PaddingBox, edge, Anticlockwise)),
+                false => path.move_to(self.corner(c0, PaddingBox)),
             }
-            path.insert_arc(self.arc(c0, Outer, edge, Clockwise));
+            path.insert_arc(self.arc(c0, BorderBox, edge, Clockwise));
         }
 
         // 2. Second corner
-        if self.is_sharp(c1, Outer) {
-            path.line_to(self.corner(c1, Outer));
-            path.line_to(self.corner(c1, Inner));
+        if self.is_sharp(c1, BorderBox) {
+            path.line_to(self.corner(c1, BorderBox));
+            path.line_to(self.corner(c1, PaddingBox));
         } else {
-            path.insert_arc(self.arc(c1, Outer, edge, Clockwise));
+            path.insert_arc(self.arc(c1, BorderBox, edge, Clockwise));
             match self.corner_needs_infill(c1) {
-                true => path.insert_arc(self.arc(c1, Inner, edge, Anticlockwise)),
-                false => path.line_to(self.corner(c1, Inner)),
+                true => path.insert_arc(self.arc(c1, PaddingBox, edge, Anticlockwise)),
+                false => path.line_to(self.corner(c1, PaddingBox)),
             }
         }
 
@@ -193,11 +193,11 @@ impl ElementFrame {
         let mut path = BezPath::new();
 
         // todo: this has been known to produce quirky outputs with hugely rounded edges
-        self.shape(&mut path, ArcSide::Outline, Direction::Clockwise);
-        path.move_to(self.corner(TopLeft, ArcSide::Outer));
+        self.shape(&mut path, CssBox::OutlineBox, Direction::Clockwise);
+        path.move_to(self.corner(TopLeft, CssBox::BorderBox));
 
-        self.shape(&mut path, ArcSide::Outer, Direction::Anticlockwise);
-        path.move_to(self.corner(TopLeft, ArcSide::Outer));
+        self.shape(&mut path, CssBox::BorderBox, Direction::Anticlockwise);
+        path.move_to(self.corner(TopLeft, CssBox::BorderBox));
 
         path
     }
@@ -205,32 +205,32 @@ impl ElementFrame {
     /// Construct a bezpath drawing the frame
     pub fn frame(&self) -> BezPath {
         let mut path = BezPath::new();
-        self.shape(&mut path, ArcSide::Inner, Direction::Clockwise);
+        self.shape(&mut path, CssBox::PaddingBox, Direction::Clockwise);
         path
     }
 
     /// Construct a bezpath drawing the frame border
     pub fn frame_border(&self) -> BezPath {
         let mut path = BezPath::new();
-        self.shape(&mut path, ArcSide::Outer, Direction::Clockwise);
+        self.shape(&mut path, CssBox::BorderBox, Direction::Clockwise);
         path
     }
 
     /// Construct a bezpath drawing the frame padding
     pub fn frame_padding(&self) -> BezPath {
         let mut path = BezPath::new();
-        self.shape(&mut path, ArcSide::Inner, Direction::Clockwise);
+        self.shape(&mut path, CssBox::PaddingBox, Direction::Clockwise);
         path
     }
 
     /// Construct a bezpath drawing the frame content
     pub fn frame_content(&self) -> BezPath {
         let mut path = BezPath::new();
-        self.shape(&mut path, ArcSide::Content, Direction::Clockwise);
+        self.shape(&mut path, CssBox::ContentBox, Direction::Clockwise);
         path
     }
 
-    fn shape(&self, path: &mut BezPath, line: ArcSide, direction: Direction) {
+    fn shape(&self, path: &mut BezPath, line: CssBox, direction: Direction) {
         use Corner::*;
 
         let route = match direction {
@@ -261,63 +261,63 @@ impl ElementFrame {
             path.insert_point(self.shadow_clip_corner(corner, shadow_rect));
         }
 
-        if self.is_sharp(TopLeft, ArcSide::Outer) {
-            path.move_to(self.corner(TopLeft, ArcSide::Outer));
+        if self.is_sharp(TopLeft, CssBox::BorderBox) {
+            path.move_to(self.corner(TopLeft, CssBox::BorderBox));
         } else {
             const TOLERANCE: f64 = 0.1;
-            let arc = self.full_arc(TopLeft, ArcSide::Outer, Direction::Anticlockwise);
+            let arc = self.full_arc(TopLeft, CssBox::BorderBox, Direction::Anticlockwise);
             let elements = arc.path_elements(TOLERANCE);
             path.extend(elements);
         }
 
         for corner in [/*TopLeft, */ BottomLeft, BottomRight, TopRight] {
-            if self.is_sharp(corner, ArcSide::Outer) {
-                path.insert_point(self.corner(corner, ArcSide::Outer));
+            if self.is_sharp(corner, CssBox::BorderBox) {
+                path.insert_point(self.corner(corner, CssBox::BorderBox));
             } else {
-                path.insert_arc(self.full_arc(corner, ArcSide::Outer, Direction::Anticlockwise));
+                path.insert_arc(self.full_arc(corner, CssBox::BorderBox, Direction::Anticlockwise));
             }
         }
     }
 
-    fn corner(&self, corner: Corner, side: ArcSide) -> Point {
+    fn corner(&self, corner: Corner, side: CssBox) -> Point {
         let Rect { x0, y0, x1, y1 } = self.border_box;
 
         let (x, y) = match corner {
             Corner::TopLeft => match side {
-                ArcSide::Content => (
+                CssBox::ContentBox => (
                     x0 + self.border_left_width + self.padding_left_width,
                     y0 + self.border_top_width + self.padding_top_width,
                 ),
-                ArcSide::Inner => (x0 + self.border_left_width, y0 + self.border_top_width),
-                ArcSide::Outer => (x0, y0),
-                ArcSide::Outline => (x0 - self.outline_width, y0 - self.outline_width),
+                CssBox::PaddingBox => (x0 + self.border_left_width, y0 + self.border_top_width),
+                CssBox::BorderBox => (x0, y0),
+                CssBox::OutlineBox => (x0 - self.outline_width, y0 - self.outline_width),
             },
             Corner::TopRight => match side {
-                ArcSide::Content => (
+                CssBox::ContentBox => (
                     x1 - self.border_right_width - self.padding_right_width,
                     y0 + self.border_top_width + self.padding_top_width,
                 ),
-                ArcSide::Inner => (x1 - self.border_right_width, y0 + self.border_top_width),
-                ArcSide::Outer => (x1, y0),
-                ArcSide::Outline => (x1 + self.outline_width, y0 - self.outline_width),
+                CssBox::PaddingBox => (x1 - self.border_right_width, y0 + self.border_top_width),
+                CssBox::BorderBox => (x1, y0),
+                CssBox::OutlineBox => (x1 + self.outline_width, y0 - self.outline_width),
             },
             Corner::BottomRight => match side {
-                ArcSide::Content => (
+                CssBox::ContentBox => (
                     x1 - self.border_right_width - self.padding_right_width,
                     y1 - self.border_bottom_width - self.padding_bottom_width,
                 ),
-                ArcSide::Inner => (x1 - self.border_right_width, y1 - self.border_bottom_width),
-                ArcSide::Outer => (x1, y1),
-                ArcSide::Outline => (x1 + self.outline_width, y1 + self.outline_width),
+                CssBox::PaddingBox => (x1 - self.border_right_width, y1 - self.border_bottom_width),
+                CssBox::BorderBox => (x1, y1),
+                CssBox::OutlineBox => (x1 + self.outline_width, y1 + self.outline_width),
             },
             Corner::BottomLeft => match side {
-                ArcSide::Content => (
+                CssBox::ContentBox => (
                     x0 + self.border_left_width + self.padding_left_width,
                     y1 - self.border_bottom_width - self.padding_bottom_width,
                 ),
-                ArcSide::Inner => (x0 + self.border_left_width, y1 - self.border_bottom_width),
-                ArcSide::Outer => (x0, y1),
-                ArcSide::Outline => (x0 - self.outline_width, y1 + self.outline_width),
+                CssBox::PaddingBox => (x0 + self.border_left_width, y1 - self.border_bottom_width),
+                CssBox::BorderBox => (x0, y1),
+                CssBox::OutlineBox => (x0 - self.outline_width, y1 + self.outline_width),
             },
         };
 
@@ -375,7 +375,7 @@ impl ElementFrame {
     }
 
     /// Get the complete arc for a corner, skipping the need for splitting the arc into pieces
-    fn full_arc(&self, corner: Corner, side: ArcSide, direction: Direction) -> Arc {
+    fn full_arc(&self, corner: Corner, side: CssBox, direction: Direction) -> Arc {
         let ellipse = self.ellipse(corner, side);
 
         // Sweep clockwise for outer arcs, counter clockwise for inner arcs
@@ -409,9 +409,9 @@ impl ElementFrame {
 
     /// Get the partial arc for a corner
     ///
-    fn arc(&self, corner: Corner, side: ArcSide, edge: Edge, direction: Direction) -> Arc {
-        use ArcSide::*;
+    fn arc(&self, corner: Corner, side: CssBox, edge: Edge, direction: Direction) -> Arc {
         use Corner::*;
+        use CssBox::*;
         use Edge::*;
 
         let ellipse = self.ellipse(corner, side);
@@ -445,28 +445,28 @@ impl ElementFrame {
         // I imagine you could mnake this simpler using a bit more math
         let start = match (edge, corner, side) {
             // Top Edge
-            (Top, TopLeft, Inner) => 0.0,
-            (Top, TopLeft, Outer) => -theta,
-            (Top, TopRight, Outer) => 0.0,
-            (Top, TopRight, Inner) => theta,
+            (Top, TopLeft, PaddingBox) => 0.0,
+            (Top, TopLeft, BorderBox) => -theta,
+            (Top, TopRight, BorderBox) => 0.0,
+            (Top, TopRight, PaddingBox) => theta,
 
             // Right Edge
-            (Right, TopRight, Inner) => 0.0,
-            (Right, TopRight, Outer) => -theta,
-            (Right, BottomRight, Outer) => 0.0,
-            (Right, BottomRight, Inner) => theta,
+            (Right, TopRight, PaddingBox) => 0.0,
+            (Right, TopRight, BorderBox) => -theta,
+            (Right, BottomRight, BorderBox) => 0.0,
+            (Right, BottomRight, PaddingBox) => theta,
 
             // Bottom Edge
-            (Bottom, BottomRight, Inner) => 0.0,
-            (Bottom, BottomRight, Outer) => -theta,
-            (Bottom, BottomLeft, Outer) => 0.0,
-            (Bottom, BottomLeft, Inner) => theta,
+            (Bottom, BottomRight, PaddingBox) => 0.0,
+            (Bottom, BottomRight, BorderBox) => -theta,
+            (Bottom, BottomLeft, BorderBox) => 0.0,
+            (Bottom, BottomLeft, PaddingBox) => theta,
 
             // Left Edge
-            (Left, BottomLeft, Inner) => 0.0,
-            (Left, BottomLeft, Outer) => -theta,
-            (Left, TopLeft, Outer) => 0.0,
-            (Left, TopLeft, Inner) => theta,
+            (Left, BottomLeft, PaddingBox) => 0.0,
+            (Left, BottomLeft, BorderBox) => -theta,
+            (Left, TopLeft, BorderBox) => 0.0,
+            (Left, TopLeft, PaddingBox) => theta,
 
             _ => unreachable!("Invalid edge/corner combination"),
         };
@@ -483,9 +483,9 @@ impl ElementFrame {
     }
 
     /// Check if a corner is sharp (IE the absolute radius is 0)
-    fn is_sharp(&self, corner: Corner, side: ArcSide) -> bool {
-        use ArcSide::*;
+    fn is_sharp(&self, corner: Corner, side: CssBox) -> bool {
         use Corner::*;
+        use CssBox::*;
 
         let is_sharp = match corner {
             TopLeft => {
@@ -510,7 +510,7 @@ impl ElementFrame {
             return true;
         }
 
-        if side == Inner {
+        if side == PaddingBox {
             match corner {
                 TopLeft => {
                     self.border_top_left_radius_width - self.border_left_width <= 0.0
@@ -529,7 +529,7 @@ impl ElementFrame {
                         || self.border_bottom_left_radius_height - self.border_bottom_width <= 0.0
                 }
             }
-        } else if side == Content {
+        } else if side == ContentBox {
             match corner {
                 TopLeft => {
                     self.border_top_left_radius_width
@@ -578,8 +578,8 @@ impl ElementFrame {
     }
 
     #[rustfmt::skip]
-    fn ellipse(&self, corner: Corner, side: ArcSide) -> Ellipse {
-        use {Corner::*, ArcSide::*};
+    fn ellipse(&self, corner: Corner, side: CssBox) -> Ellipse {
+        use {Corner::*, CssBox::*};
         let ElementFrame {
             border_box: rect,
             padding_top_width,
@@ -617,20 +617,20 @@ impl ElementFrame {
         };
 
         let radii = match side {
-            Outer => outer,
-            Outline => match corner {
+            BorderBox => outer,
+            OutlineBox => match corner {
                 TopLeft => (border_top_left_radius_width + outline_width, border_top_left_radius_height + outline_width),
                 TopRight => (border_top_right_radius_width + outline_width, border_top_right_radius_height + outline_width),
                 BottomRight => (border_bottom_right_radius_width + outline_width, border_bottom_right_radius_height + outline_width),
                 BottomLeft => (border_bottom_left_radius_width + outline_width, border_bottom_left_radius_height + outline_width),
             },
-            Inner => match corner {
+            PaddingBox => match corner {
                 TopLeft => (border_top_left_radius_width - border_left_width, border_top_left_radius_height - border_top_width),
                 TopRight => (border_top_right_radius_width - border_right_width, border_top_right_radius_height - border_top_width),
                 BottomRight => (border_bottom_right_radius_width - border_right_width, border_bottom_right_radius_height - border_bottom_width),
                 BottomLeft => (border_bottom_left_radius_width - border_left_width, border_bottom_left_radius_height - border_bottom_width),
             },
-            Content => match corner {
+            ContentBox => match corner {
                 TopLeft => (border_top_left_radius_width - border_left_width - padding_left_width, border_top_left_radius_height - border_top_width - padding_top_width),
                 TopRight => (border_top_right_radius_width - border_right_width - padding_right_width, border_top_right_radius_height - border_top_width - padding_top_width),
                 BottomRight => (border_bottom_right_radius_width - border_right_width - padding_right_width, border_bottom_right_radius_height - border_bottom_width - padding_bottom_width),
@@ -699,11 +699,12 @@ enum Corner {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
-enum ArcSide {
-    Outline,
-    Outer,
-    Inner,
-    Content,
+#[allow(clippy::enum_variant_names, reason = "Use CSS standard terminology")]
+enum CssBox {
+    OutlineBox,
+    BorderBox,
+    PaddingBox,
+    ContentBox,
 }
 
 #[derive(Debug, Clone, Copy)]
