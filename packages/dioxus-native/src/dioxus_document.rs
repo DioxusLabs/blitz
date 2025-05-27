@@ -72,10 +72,9 @@ impl Document for DioxusDocument {
     }
 
     fn handle_event(&mut self, event: &mut DomEvent) {
-        let chain = self.inner.node_chain(event.target);
-
         set_event_converter(Box::new(NativeConverter {}));
 
+        let chain = self.inner.node_chain(event.target);
         let renderer_event = event.clone();
 
         let mut prevent_default = false;

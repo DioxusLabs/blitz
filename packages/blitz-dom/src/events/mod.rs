@@ -1,8 +1,10 @@
+mod driver;
 mod ime;
 mod keyboard;
 mod mouse;
 
 use blitz_traits::{DomEvent, DomEventData};
+pub use driver::{EventDriver, EventHandler, EventState};
 pub(crate) use ime::handle_ime_event;
 pub(crate) use keyboard::handle_keypress;
 pub(crate) use mouse::{handle_click, handle_mousedown, handle_mousemove};
