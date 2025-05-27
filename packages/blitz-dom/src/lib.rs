@@ -28,6 +28,7 @@ mod events;
 mod form;
 /// Integration of taffy and the DOM.
 mod layout;
+mod mutator;
 mod query_selector;
 /// Implementations that interact with servo's style engine
 mod stylo;
@@ -46,7 +47,8 @@ pub use markup5ever::{
     Namespace, NamespaceStaticSet, Prefix, PrefixStaticSet, QualName, local_name, namespace_prefix,
     namespace_url, ns,
 };
-pub use node::{ElementNodeData, Node, NodeData, TextNodeData};
+pub use mutator::DocumentMutator;
+pub use node::{Attribute, ElementNodeData, Node, NodeData, TextNodeData};
 pub use parley::FontContext;
 pub use string_cache::Atom;
 pub use style::invalidation::element::restyle_hints::RestyleHint;

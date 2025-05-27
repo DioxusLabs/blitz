@@ -79,7 +79,7 @@ impl HtmlDocument {
         }
 
         // Parse HTML string into document
-        DocumentHtmlParser::parse_into_doc(&mut doc, html, net_provider);
+        DocumentHtmlParser::parse_into_doc(&mut doc, html);
 
         HtmlDocument { inner: doc }
     }

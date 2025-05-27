@@ -4,7 +4,7 @@ use crate::node::{ImageData, NodeSpecificData, RasterImageData, Status, TextBrus
 use crate::stylo_to_cursor_icon::stylo_to_cursor_icon;
 use crate::traversal::{AncestorTraverser, TreeTraverser};
 use crate::util::{ImageType, resolve_url};
-use crate::{ElementNodeData, Node, NodeData, TextNodeData};
+use crate::{DocumentMutator, ElementNodeData, Node, NodeData, TextNodeData};
 use app_units::Au;
 use blitz_traits::navigation::{DummyNavigationProvider, NavigationProvider};
 use blitz_traits::net::{DummyNetProvider, SharedProvider};
@@ -295,6 +295,10 @@ impl BaseDocument {
     pub fn get_focussed_node_id(&self) -> Option<usize> {
         self.focus_node_id
             .or(self.try_root_element().map(|el| el.id))
+    }
+
+    pub fn mutate<'doc>(&'doc mut self) -> DocumentMutator<'doc> {
+        DocumentMutator::new(self)
     }
 
     /// Find the label's bound input elements:
