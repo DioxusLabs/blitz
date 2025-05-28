@@ -21,6 +21,7 @@ use style::properties::ComputedValues;
 use style::properties::style_structs::Font;
 use style::values::GenericAtomIdent;
 use style::values::computed::Overflow;
+use style_traits::ParsingMode;
 // use quadtree_rs::Quadtree;
 use crate::net::{Resource, StylesheetLoader};
 use selectors::{Element, matching::QuirksMode};
@@ -38,9 +39,12 @@ use style::servo_arc::Arc as ServoArc;
 use style::{
     dom::{TDocument, TNode},
     media_queries::{Device, MediaList},
+    parser::ParserContext,
     selector_parser::SnapshotMap,
     shared_lock::{SharedRwLock, StylesheetGuards},
-    stylesheets::{AllowImportRules, DocumentStyleSheet, Origin, Stylesheet, UrlExtraData},
+    stylesheets::{
+        AllowImportRules, CssRuleType, DocumentStyleSheet, Origin, Stylesheet, UrlExtraData,
+    },
     stylist::Stylist,
 };
 use taffy::AvailableSpace;
@@ -1224,6 +1228,32 @@ impl BaseDocument {
             AncestorTraverser::new(self, node_id).filter(|id| self.nodes[*id].is_element()),
         );
         chain
+    }
+
+    /// https://developer.mozilla.org/en-US/docs/Web/API/Window/matchMedia
+    pub fn match_media(&self, media_query_string: &str) -> bool {
+        let mut input = cssparser::ParserInput::new(media_query_string);
+        let mut parser = cssparser::Parser::new(&mut input);
+
+        let url_data = UrlExtraData::from(
+            self.base_url
+                .clone()
+                .unwrap_or_else(|| "about:blank".parse::<Url>().unwrap()),
+        );
+        let quirks_mode = self.stylist.quirks_mode();
+        let context = ParserContext::new(
+            Origin::Author,
+            &url_data,
+            Some(CssRuleType::Style),
+            ParsingMode::all(),
+            quirks_mode,
+            Default::default(),
+            None,
+            None,
+        );
+
+        let media_list = MediaList::parse(&context, &mut parser);
+        media_list.evaluate(self.stylist.device(), quirks_mode)
     }
 }
 
