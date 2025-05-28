@@ -38,6 +38,7 @@ use crate::layout::table::TableContext;
 use blitz_traits::{BlitzMouseButtonEvent, DomEventData, HitResult};
 
 pub mod image;
+use image::ImageSource;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum DisplayOuter {
@@ -426,14 +427,14 @@ impl ElementNodeData {
 
     pub fn image_data(&self) -> Option<&ImageData> {
         match &self.node_specific_data {
-            NodeSpecificData::Image(data) => Some(&**data),
+            NodeSpecificData::Image(context) => context.data.as_ref(),
             _ => None,
         }
     }
 
     pub fn image_data_mut(&mut self) -> Option<&mut ImageData> {
         match self.node_specific_data {
-            NodeSpecificData::Image(ref mut data) => Some(&mut **data),
+            NodeSpecificData::Image(ref mut context) => context.data.as_mut(),
             _ => None,
         }
     }
@@ -583,6 +584,21 @@ impl From<usvg::Tree> for ImageData {
     }
 }
 
+#[derive(Clone)]
+pub struct ImageContext {
+    pub selected_source: ImageSource,
+    pub data: Option<ImageData>,
+}
+
+impl ImageContext {
+    fn new(selected_source: ImageSource) -> Self {
+        Self {
+            selected_source,
+            data: None,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum Status {
     Ok,
@@ -650,7 +666,7 @@ impl TextInputData {
 #[derive(Clone)]
 pub enum NodeSpecificData {
     /// The element's image content (\<img\> element's only)
-    Image(Box<ImageData>),
+    Image(Box<ImageContext>),
     /// Pre-computed table layout data
     TableRoot(Arc<TableContext>),
     /// Parley text editor (text inputs)
@@ -664,12 +680,18 @@ pub enum NodeSpecificData {
 impl std::fmt::Debug for NodeSpecificData {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            NodeSpecificData::Image(data) => match **data {
-                ImageData::Raster(_) => f.write_str("NodeSpecificData::Image(Raster)"),
-                #[cfg(feature = "svg")]
-                ImageData::Svg(_) => f.write_str("NodeSpecificData::Image(Svg)"),
-                ImageData::None => f.write_str("NodeSpecificData::Image(None)"),
-            },
+            NodeSpecificData::Image(context) => {
+                if let Some(image_data) = &context.data {
+                    match image_data {
+                        ImageData::Raster(_) => f.write_str("NodeSpecificData::Image(Raster)"),
+                        #[cfg(feature = "svg")]
+                        ImageData::Svg(_) => f.write_str("NodeSpecificData::Image(Svg)"),
+                        ImageData::None => f.write_str("NodeSpecificData::Image(None)"),
+                    }
+                } else {
+                    f.write_str("NodeSpecificData::Image(None)")
+                }
+            }
             NodeSpecificData::TableRoot(_) => f.write_str("NodeSpecificData::TableRoot"),
             NodeSpecificData::TextInput(_) => f.write_str("NodeSpecificData::TextInput"),
             NodeSpecificData::CheckboxInput(_) => f.write_str("NodeSpecificData::CheckboxInput"),

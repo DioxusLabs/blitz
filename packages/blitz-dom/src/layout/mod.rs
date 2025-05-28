@@ -228,21 +228,27 @@ impl LayoutPartialTree for BaseDocument {
 
                         // Get image's native size
                         let inherent_size = match &element_data.node_specific_data {
-                            NodeSpecificData::Image(image_data) => match &**image_data {
-                                ImageData::Raster(image) => taffy::Size {
-                                    width: image.width as f32,
-                                    height: image.height as f32,
-                                },
-                                #[cfg(feature = "svg")]
-                                ImageData::Svg(svg) => {
-                                    let size = svg.size();
-                                    taffy::Size {
-                                        width: size.width(),
-                                        height: size.height(),
+                            NodeSpecificData::Image(context) => {
+                                if let Some(image_data) = &context.data {
+                                    match image_data {
+                                        ImageData::Raster(image) => taffy::Size {
+                                            width: image.width as f32,
+                                            height: image.height as f32,
+                                        },
+                                        #[cfg(feature = "svg")]
+                                        ImageData::Svg(svg) => {
+                                            let size = svg.size();
+                                            taffy::Size {
+                                                width: size.width(),
+                                                height: size.height(),
+                                            }
+                                        }
+                                        ImageData::None => taffy::Size::ZERO,
                                     }
+                                } else {
+                                    taffy::Size::ZERO
                                 }
-                                ImageData::None => taffy::Size::ZERO,
-                            },
+                            }
                             NodeSpecificData::None => taffy::Size::ZERO,
                             _ => unreachable!(),
                         };

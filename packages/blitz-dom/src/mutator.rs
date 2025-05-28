@@ -401,15 +401,9 @@ impl<'doc> DocumentMutator<'doc> {
         );
     }
 
-    fn is_img_node(&self, node_id: usize) -> bool {
-        self.doc.nodes[node_id]
-            .data
-            .is_element_with_tag_name(&local_name!("img"))
-    }
-
-    fn maybe_load_image(&self, node_ids: &[usize]) {
+    fn maybe_load_image(&mut self, node_ids: &[usize]) {
         for id in node_ids.iter() {
-            if self.is_img_node(*id) {
+            if self.doc.is_img_node(*id) {
                 self.doc.load_image(*id);
             }
         }
