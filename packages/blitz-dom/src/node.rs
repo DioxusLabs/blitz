@@ -37,6 +37,8 @@ use url::Url;
 use crate::layout::table::TableContext;
 use blitz_traits::{BlitzMouseButtonEvent, DomEventData, HitResult};
 
+pub mod image;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum DisplayOuter {
     Block,

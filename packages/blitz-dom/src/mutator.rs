@@ -2,9 +2,8 @@ use std::collections::HashSet;
 use std::ops::{Deref, DerefMut};
 
 use crate::document::make_device;
-use crate::net::{CssHandler, ImageHandler};
+use crate::net::CssHandler;
 use crate::node::NodeSpecificData;
-use crate::util::ImageType;
 use crate::{Attribute, BaseDocument, ElementNodeData, NodeData, QualName, local_name, ns};
 use blitz_traits::Viewport;
 use blitz_traits::net::Request;
@@ -90,6 +89,7 @@ impl DocumentMutator<'_> {
         let child_ids = std::mem::take(&mut self.doc.nodes[old_parent_id].children);
         self.maybe_record_node(old_parent_id);
         self.append_children(new_parent_id, &child_ids);
+        self.maybe_load_image(&child_ids);
     }
 
     pub fn append_children(&mut self, parent_id: usize, child_ids: &[usize]) {
@@ -105,6 +105,7 @@ impl DocumentMutator<'_> {
         }
 
         self.maybe_record_node(parent_id);
+        self.maybe_load_image(child_ids);
     }
 
     pub fn replace_node_with(&mut self, anchor_node_id: usize, new_node_ids: &[usize]) {
@@ -143,11 +144,13 @@ impl DocumentMutator<'_> {
         }
 
         self.maybe_record_parent_node(anchor_node_id);
+        self.maybe_load_image(new_node_ids);
     }
 
     pub fn insert_nodes_before(&mut self, anchor_node_id: usize, new_node_ids: &[usize]) {
         self.doc.insert_before(anchor_node_id, new_node_ids);
         self.maybe_record_parent_node(anchor_node_id);
+        self.maybe_load_image(new_node_ids);
     }
 
     pub fn remove_node_if_unparented(&mut self, node_id: usize) {
@@ -217,7 +220,7 @@ impl DocumentMutator<'_> {
         match tag {
             "title" => self.title_node = Some(id),
             "link" => self.load_linked_stylesheet(id),
-            "img" => self.load_image(id),
+            // "img" => self.doc.load_image(id),
             "style" => {
                 self.style_nodes.insert(id);
             }
@@ -262,7 +265,8 @@ impl DocumentMutator<'_> {
         };
 
         let attr = name.local.as_ref();
-        let load_image = element.name.local == local_name!("img") && attr == "src";
+        let load_image =
+            element.name.local == local_name!("img") && (attr == "src" || attr == "srcset");
 
         if element.name.local == local_name!("input") && attr == "checked" {
             set_input_checked_state(element, value.to_string());
@@ -291,7 +295,7 @@ impl DocumentMutator<'_> {
         }
 
         if load_image {
-            self.load_image(node_id);
+            self.doc.load_image(node_id);
         }
     }
 
@@ -397,16 +401,16 @@ impl<'doc> DocumentMutator<'doc> {
         );
     }
 
-    fn load_image(&mut self, target_id: usize) {
-        let node = &self.doc.nodes[target_id];
-        if let Some(raw_src) = node.attr(local_name!("src")) {
-            if !raw_src.is_empty() {
-                let src = self.doc.resolve_url(raw_src);
-                self.doc.net_provider.fetch(
-                    self.doc.id(),
-                    Request::get(src),
-                    Box::new(ImageHandler::new(target_id, ImageType::Image)),
-                );
+    fn is_img_node(&self, node_id: usize) -> bool {
+        self.doc.nodes[node_id]
+            .data
+            .is_element_with_tag_name(&local_name!("img"))
+    }
+
+    fn maybe_load_image(&self, node_ids: &[usize]) {
+        for id in node_ids.iter() {
+            if self.is_img_node(*id) {
+                self.doc.load_image(*id);
             }
         }
     }
