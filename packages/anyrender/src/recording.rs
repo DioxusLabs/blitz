@@ -6,6 +6,10 @@ use peniko::{BlendMode, Blob, BrushRef, Color, Fill, FontData, Gradient, Style, 
 
 const DEFAULT_TOLERANCE: f64 = 0.1;
 
+pub trait Drawable {
+    fn draw(&self, scene: &mut impl PaintScene);
+}
+
 #[derive(Clone)]
 pub struct ResourceId(pub u64);
 
