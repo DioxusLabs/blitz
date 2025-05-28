@@ -35,6 +35,7 @@ pub mod wasm_send_sync;
 pub use wasm_send_sync::*;
 pub mod types;
 pub use types::*;
+pub mod recording;
 
 /// Abstraction for rendering a scene to a window
 pub trait WindowRenderer {
