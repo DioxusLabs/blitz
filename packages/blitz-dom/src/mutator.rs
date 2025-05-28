@@ -215,8 +215,11 @@ impl DocumentMutator<'_> {
             element.flush_style_attribute(&self.doc.guard, self.doc.base_url.clone());
         } else if (tag, attr) == tag_and_attr!("input", "checked") {
             set_input_checked_state(element, value.to_string());
-        } else if (tag, attr) == tag_and_attr!("img", "src") {
+        } else if *tag == local_name!("img")
+            && (*attr == local_name!("src") || *attr == local_name!("srcset"))
+        {
             self.load_image(node_id);
+            // self.doc.load_image(node_id);
         } else if (tag, attr) == tag_and_attr!("canvas", "src") {
             self.load_custom_paint_src(node_id);
         }
@@ -581,6 +584,14 @@ impl<'doc> DocumentMutator<'doc> {
             }
         }
     }
+
+    // fn maybe_load_image(&mut self, node_ids: &[usize]) {
+    //     for id in node_ids.iter() {
+    //         if self.doc.is_img_node(*id) {
+    //             self.doc.load_image(*id);
+    //         }
+    //     }
+    // }
 
     fn load_custom_paint_src(&mut self, target_id: usize) {
         let node = &mut self.doc.nodes[target_id];

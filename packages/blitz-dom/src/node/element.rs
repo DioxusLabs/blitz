@@ -1,3 +1,4 @@
+use blitz_traits::net::AbortController;
 use color::{AlphaColor, Srgb};
 use markup5ever::{LocalName, QualName, local_name};
 use parley::{FontContext, LayoutContext};
@@ -14,7 +15,7 @@ use style::{
 };
 use url::Url;
 
-use super::{Attribute, Attributes};
+use super::{Attribute, Attributes, ImageSource};
 use crate::layout::table::TableContext;
 
 #[derive(Debug, Clone)]
@@ -73,7 +74,7 @@ pub enum SpecialElementType {
 pub enum SpecialElementData {
     Stylesheet(DocumentStyleSheet),
     /// An \<img\> element's image data
-    Image(Box<ImageData>),
+    Image(Box<ImageContext>),
     /// A \<canvas\> element's custom paint source
     Canvas(CanvasData),
     /// Pre-computed table layout data
@@ -137,15 +138,15 @@ impl ElementData {
     }
 
     pub fn image_data(&self) -> Option<&ImageData> {
-        match &self.special_data {
-            SpecialElementData::Image(data) => Some(&**data),
+        match self.special_data {
+            SpecialElementData::Image(ref context) => context.data.as_ref(),
             _ => None,
         }
     }
 
     pub fn image_data_mut(&mut self) -> Option<&mut ImageData> {
         match self.special_data {
-            SpecialElementData::Image(ref mut data) => Some(&mut **data),
+            SpecialElementData::Image(ref mut context) => context.data.as_mut(),
             _ => None,
         }
     }
@@ -302,6 +303,44 @@ impl From<usvg::Tree> for ImageData {
     }
 }
 
+#[derive(Debug)]
+pub struct ImageContext {
+    pub selected_source: ImageSource,
+    pub data: Option<ImageData>,
+    pub controller: Option<AbortController>,
+}
+
+impl Clone for ImageContext {
+    fn clone(&self) -> Self {
+        Self {
+            selected_source: self.selected_source.clone(),
+            data: self.data.clone(),
+            controller: None,
+        }
+    }
+}
+
+impl ImageContext {
+    pub(crate) fn new_with_controller(
+        selected_source: ImageSource,
+        controller: AbortController,
+    ) -> Self {
+        Self {
+            selected_source,
+            data: None,
+            controller: Some(controller),
+        }
+    }
+
+    pub fn new_with_data(selected_source: ImageSource, data: ImageData) -> Self {
+        Self {
+            selected_source,
+            data: Some(data),
+            controller: None,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum Status {
     Ok,
@@ -374,12 +413,18 @@ impl std::fmt::Debug for SpecialElementData {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             SpecialElementData::Stylesheet(_) => f.write_str("NodeSpecificData::Stylesheet"),
-            SpecialElementData::Image(data) => match **data {
-                ImageData::Raster(_) => f.write_str("NodeSpecificData::Image(Raster)"),
-                #[cfg(feature = "svg")]
-                ImageData::Svg(_) => f.write_str("NodeSpecificData::Image(Svg)"),
-                ImageData::None => f.write_str("NodeSpecificData::Image(None)"),
-            },
+            SpecialElementData::Image(context) => {
+                if let Some(image_data) = &context.data {
+                    match image_data {
+                        ImageData::Raster(_) => f.write_str("NodeSpecificData::Image(Raster)"),
+                        #[cfg(feature = "svg")]
+                        ImageData::Svg(_) => f.write_str("NodeSpecificData::Image(Svg)"),
+                        ImageData::None => f.write_str("NodeSpecificData::Image(None)"),
+                    }
+                } else {
+                    f.write_str("NodeSpecificData::Image(None)")
+                }
+            }
             SpecialElementData::Canvas(_) => f.write_str("NodeSpecificData::Canvas"),
             SpecialElementData::TableRoot(_) => f.write_str("NodeSpecificData::TableRoot"),
             SpecialElementData::TextInput(_) => f.write_str("NodeSpecificData::TextInput"),

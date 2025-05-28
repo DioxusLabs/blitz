@@ -20,8 +20,8 @@ use style::{
 use crate::{
     BaseDocument, ElementData, Node, NodeData,
     node::{
-        ListItemLayout, ListItemLayoutPosition, Marker, NodeFlags, NodeKind, SpecialElementData,
-        TextBrush, TextInputData, TextLayout,
+        ImageContext, ImageSource, ListItemLayout, ListItemLayoutPosition, Marker, NodeFlags,
+        NodeKind, SpecialElementData, TextBrush, TextInputData, TextLayout,
     },
     stylo_to_parley,
 };
@@ -110,7 +110,11 @@ pub(crate) fn collect_layout_children(
                         .unwrap()
                         .element_data_mut()
                         .unwrap()
-                        .special_data = SpecialElementData::Image(Box::new(svg.into()));
+                        .special_data =
+                        SpecialElementData::Image(Box::new(ImageContext::new_with_data(
+                            ImageSource::new("about:blank".to_string()),
+                            svg.into(),
+                        )));
                 }
                 Err(err) => {
                     println!("{container_node_id} SVG parse failed");
