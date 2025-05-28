@@ -18,6 +18,11 @@ pub(crate) fn handle_keypress<F: FnMut(DomEvent)>(
     event: BlitzKeyEvent,
     mut dispatch_event: F,
 ) {
+    if event.key == Key::Tab {
+        doc.focus_next_node();
+        return;
+    }
+
     if let Some(node_id) = doc.focus_node_id {
         if target != node_id {
             return;

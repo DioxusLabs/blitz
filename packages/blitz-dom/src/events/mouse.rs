@@ -1,4 +1,7 @@
-use blitz_traits::{HitResult, MouseEventButtons, navigation::NavigationOptions};
+use blitz_traits::{
+    BlitzMouseButtonEvent, DomEvent, DomEventData, HitResult, MouseEventButton, MouseEventButtons,
+    navigation::NavigationOptions,
+};
 use markup5ever::local_name;
 
 use crate::{BaseDocument, Node, node::NodeSpecificData, util::resolve_url};
@@ -18,27 +21,29 @@ pub(crate) fn handle_mousemove(
     y: f32,
     buttons: MouseEventButtons,
 ) -> bool {
+    let mut changed = doc.set_hover_to(x, y);
+
     let Some(hit) = doc.hit(x, y) else {
-        return false;
+        return changed;
     };
 
     if hit.node_id != target {
-        return false;
+        return changed;
     }
 
     let node = &mut doc.nodes[target];
     let Some(el) = node.data.downcast_element_mut() else {
-        return false;
+        return changed;
     };
 
     let disabled = el.attr(local_name!("disabled")).is_some();
     if disabled {
-        return false;
+        return changed;
     }
 
     if let NodeSpecificData::TextInput(ref mut text_input_data) = el.node_specific_data {
         if buttons == MouseEventButtons::None {
-            return false;
+            return changed;
         }
 
         let content_box_offset = taffy::Point {
@@ -54,10 +59,10 @@ pub(crate) fn handle_mousemove(
             .driver(&mut doc.font_ctx, &mut doc.layout_ctx)
             .extend_selection_to_point(x as f32, y as f32);
 
-        return true;
+        changed = true;
     }
 
-    false
+    changed
 }
 
 pub(crate) fn handle_mousedown(doc: &mut BaseDocument, target: usize, x: f32, y: f32) {
@@ -92,6 +97,39 @@ pub(crate) fn handle_mousedown(doc: &mut BaseDocument, target: usize, x: f32, y:
             .move_to_point(x as f32, y as f32);
 
         doc.set_focus_to(hit.node_id);
+    }
+}
+
+pub(crate) fn handle_mouseup<F: FnMut(DomEvent)>(
+    doc: &mut BaseDocument,
+    target: usize,
+    event: &BlitzMouseButtonEvent,
+    mut dispatch_event: F,
+) {
+    if doc.devtools().highlight_hover {
+        let mut node = doc.get_node(target).unwrap();
+        if event.button == MouseEventButton::Secondary {
+            if let Some(parent_id) = node.layout_parent.get() {
+                node = doc.get_node(parent_id).unwrap();
+            }
+        }
+        doc.debug_log_node(node.id);
+        doc.devtools_mut().highlight_hover = false;
+        return;
+    }
+
+    // Determine whether to dispatch a click event
+    let do_click = true;
+    // let do_click = doc.mouse_down_node.is_some_and(|mouse_down_id| {
+    //     // Anonymous node ids are unstable due to tree reconstruction. So we compare the id
+    //     // of the first non-anonymous ancestor.
+    //     mouse_down_id == target
+    //         || doc.non_anon_ancestor_if_anon(mouse_down_id) == doc.non_anon_ancestor_if_anon(target)
+    // });
+
+    // Dispatch a click event
+    if do_click && event.button == MouseEventButton::Main {
+        dispatch_event(DomEvent::new(target, DomEventData::Click(event.clone())));
     }
 }
 

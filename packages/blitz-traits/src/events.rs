@@ -41,6 +41,16 @@ impl EventState {
 }
 
 #[derive(Debug, Clone)]
+pub enum UiEvent {
+    MouseMove(BlitzMouseButtonEvent),
+    MouseUp(BlitzMouseButtonEvent),
+    MouseDown(BlitzMouseButtonEvent),
+    KeyUp(BlitzKeyEvent),
+    KeyDown(BlitzKeyEvent),
+    Ime(BlitzImeEvent),
+}
+
+#[derive(Debug, Clone)]
 pub struct DomEvent {
     pub target: usize,
     /// Which is true if the event bubbles up through the DOM tree.

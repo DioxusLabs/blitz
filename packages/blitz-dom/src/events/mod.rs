@@ -7,6 +7,7 @@ use blitz_traits::{DomEvent, DomEventData};
 pub use driver::{EventDriver, EventHandler, NoopEventHandler};
 pub(crate) use ime::handle_ime_event;
 pub(crate) use keyboard::handle_keypress;
+use mouse::handle_mouseup;
 pub(crate) use mouse::{handle_click, handle_mousedown, handle_mousemove};
 
 use crate::BaseDocument;
@@ -35,8 +36,8 @@ pub(crate) fn handle_event<F: FnMut(DomEvent)>(
         DomEventData::MouseDown(event) => {
             handle_mousedown(doc, target_node_id, event.x, event.y);
         }
-        DomEventData::MouseUp(_) => {
-            // TODO: generate click events
+        DomEventData::MouseUp(event) => {
+            handle_mouseup(doc, target_node_id, event, dispatch_event);
         }
         DomEventData::Click(event) => {
             handle_click(doc, target_node_id, event.x, event.y);

@@ -10,6 +10,7 @@ use blitz_dom::{
 use blitz_dom::{EventDriver, EventHandler};
 
 use blitz_traits::EventState;
+use blitz_traits::events::UiEvent;
 use blitz_traits::{ColorScheme, DomEvent, DomEventData, Viewport, net::NetProvider};
 use dioxus_core::{ElementId, Event, VirtualDom};
 use dioxus_html::{FormValue, PlatformEventData, set_event_converter};
@@ -77,14 +78,14 @@ impl Document for DioxusDocument {
         self
     }
 
-    fn handle_event(&mut self, event: DomEvent) {
+    fn handle_event(&mut self, event: UiEvent) {
         set_event_converter(Box::new(NativeConverter {}));
         let handler = DioxusEventHandler {
             vdom: &mut self.vdom,
             vdom_state: &mut self.vdom_state,
         };
         let mut driver = EventDriver::new(self.inner.mutate(), handler);
-        driver.handle_event(event);
+        driver.handle_ui_event(event);
     }
 }
 

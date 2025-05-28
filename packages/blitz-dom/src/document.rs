@@ -6,6 +6,7 @@ use crate::traversal::{AncestorTraverser, TreeTraverser};
 use crate::util::{ImageType, resolve_url};
 use crate::{DocumentMutator, ElementNodeData, Node, NodeData, TextNodeData};
 use app_units::Au;
+use blitz_traits::events::UiEvent;
 use blitz_traits::navigation::{DummyNavigationProvider, NavigationProvider};
 use blitz_traits::net::{DummyNetProvider, SharedProvider};
 use blitz_traits::{ColorScheme, Devtools, Viewport};
@@ -53,7 +54,7 @@ pub trait Document: Deref<Target = BaseDocument> + DerefMut + 'static {
         false
     }
 
-    fn handle_event(&mut self, event: DomEvent) {
+    fn handle_event(&mut self, event: UiEvent) {
         // Default implementation does nothing
         let _ = event;
     }
@@ -144,6 +145,8 @@ pub struct BaseDocument {
     pub(crate) focus_node_id: Option<usize>,
     /// The node which is currently active (if any)
     pub(crate) active_node_id: Option<usize>,
+    /// The node which recieved a mousedown event (if any)
+    pub(crate) mousedown_node_id: Option<usize>,
 
     pub changed: HashSet<usize>,
 
@@ -234,6 +237,7 @@ impl BaseDocument {
             hover_node_id: None,
             focus_node_id: None,
             active_node_id: None,
+            mousedown_node_id: None,
             changed: HashSet::new(),
             controls_to_form: HashMap::new(),
             net_provider: Arc::new(DummyNetProvider),
@@ -912,6 +916,9 @@ impl BaseDocument {
         }
     }
 
+    pub fn set_mousedown_node_id(&mut self, node_id: Option<usize>) {
+        self.mousedown_node_id = node_id;
+    }
     pub fn set_focus_to(&mut self, focus_node_id: usize) -> bool {
         if Some(focus_node_id) == self.focus_node_id {
             return false;
