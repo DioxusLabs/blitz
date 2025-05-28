@@ -53,4 +53,4 @@ pub use parley::FontContext;
 pub use string_cache::Atom;
 pub use style::invalidation::element::restyle_hints::RestyleHint;
 pub type SelectorList = selectors::SelectorList<style::selector_parser::SelectorImpl>;
-pub use events::{EventDriver, EventHandler, EventState};
+pub use events::{EventDriver, EventHandler, NoopEventHandler};

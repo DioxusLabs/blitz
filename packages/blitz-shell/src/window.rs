@@ -251,10 +251,10 @@ impl<Rend: WindowRenderer> View<Rend> {
 
         self.mouse_pos = (x, y);
         self.dom_mouse_pos = (dom_x, dom_y);
-        let mut changed = self.doc.set_hover_to(dom_x, dom_y);
+        let changed = self.doc.set_hover_to(dom_x, dom_y);
 
         if let Some(node_id) = self.doc.get_hover_node_id() {
-            let mut event = DomEvent::new(
+            let event = DomEvent::new(
                 node_id,
                 DomEventData::MouseMove(BlitzMouseButtonEvent {
                     x: self.dom_mouse_pos.0,
@@ -264,10 +264,10 @@ impl<Rend: WindowRenderer> View<Rend> {
                     mods: winit_modifiers_to_kbt_modifiers(self.keyboard_modifiers.state()),
                 }),
             );
-            self.doc.handle_event(&mut event);
-            if event.request_redraw {
-                changed = true;
-            }
+            self.doc.handle_event(event);
+            // if event.request_redraw {
+            //     changed = true;
+            // }
         }
 
         changed
@@ -281,7 +281,7 @@ impl<Rend: WindowRenderer> View<Rend> {
         self.doc.active_node();
         self.buttons |= button.into();
 
-        self.doc.handle_event(&mut DomEvent::new(
+        self.doc.handle_event(DomEvent::new(
             node_id,
             DomEventData::MouseDown(BlitzMouseButtonEvent {
                 x: self.dom_mouse_pos.0,
@@ -304,7 +304,7 @@ impl<Rend: WindowRenderer> View<Rend> {
 
         self.buttons ^= button.into();
 
-        self.doc.handle_event(&mut DomEvent::new(
+        self.doc.handle_event(DomEvent::new(
             node_id,
             DomEventData::MouseUp(BlitzMouseButtonEvent {
                 x: self.dom_mouse_pos.0,
@@ -347,7 +347,7 @@ impl<Rend: WindowRenderer> View<Rend> {
             if button == MouseEventButton::Main {
                 // If we hit a node, then we collect the node to its parents, check for listeners, and then
                 // call those listeners
-                self.doc.handle_event(&mut DomEvent::new(
+                self.doc.handle_event(DomEvent::new(
                     node_id,
                     DomEventData::Click(BlitzMouseButtonEvent {
                         x: self.dom_mouse_pos.0,
@@ -399,7 +399,7 @@ impl<Rend: WindowRenderer> View<Rend> {
             // Text / keyboard events
             WindowEvent::Ime(ime_event) => {
                 if let Some(target) = self.doc.get_focussed_node_id() {
-                    self.doc.handle_event(&mut DomEvent::new(target, DomEventData::Ime(winit_ime_to_blitz(ime_event))));
+                    self.doc.handle_event(DomEvent::new(target, DomEventData::Ime(winit_ime_to_blitz(ime_event))));
                     self.request_redraw();
                 }
             },
@@ -464,9 +464,17 @@ impl<Rend: WindowRenderer> View<Rend> {
                     }
                     _ => {
                         if let Some(focus_node_id) = self.doc.get_focussed_node_id() {
-                            self.doc.handle_event(&mut DomEvent::new(
+
+                            let key_event_data = winit_key_event_to_blitz(&event, self.keyboard_modifiers.state());
+                            let event_data = if event.state.is_pressed() {
+                                DomEventData::KeyDown(key_event_data)
+                            } else {
+                                DomEventData::KeyUp(key_event_data)
+                            };
+
+                            self.doc.handle_event(DomEvent::new(
                                 focus_node_id,
-                                DomEventData::KeyPress(winit_key_event_to_blitz(&event, self.keyboard_modifiers.state()))
+                                event_data,
                             ));
                             self.request_redraw();
                         }

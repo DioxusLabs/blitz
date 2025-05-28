@@ -5,7 +5,9 @@ use std::{
 
 use crate::DocumentHtmlParser;
 
-use blitz_dom::{BaseDocument, DEFAULT_CSS, Document, FontContext, net::Resource};
+use blitz_dom::{
+    BaseDocument, DEFAULT_CSS, Document, EventDriver, FontContext, NoopEventHandler, net::Resource,
+};
 use blitz_traits::{
     ColorScheme, DomEvent, Viewport, navigation::NavigationProvider, net::SharedProvider,
 };
@@ -32,8 +34,9 @@ impl From<HtmlDocument> for BaseDocument {
     }
 }
 impl Document for HtmlDocument {
-    fn handle_event(&mut self, event: &mut DomEvent) {
-        self.inner.as_mut().handle_event(event)
+    fn handle_event(&mut self, event: DomEvent) {
+        let mut driver = EventDriver::new(self.inner.mutate(), NoopEventHandler);
+        driver.handle_event(event);
     }
 
     fn id(&self) -> usize {

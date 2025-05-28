@@ -2,6 +2,44 @@ use bitflags::bitflags;
 use keyboard_types::{Code, Key, Location, Modifiers};
 use smol_str::SmolStr;
 
+#[derive(Default)]
+pub struct EventState {
+    cancelled: bool,
+    propagation_stopped: bool,
+    redraw_requested: bool,
+}
+impl EventState {
+    #[inline(always)]
+    pub fn prevent_default(&mut self) {
+        self.cancelled = true;
+    }
+
+    #[inline(always)]
+    pub fn stop_propagation(&mut self) {
+        self.propagation_stopped = true;
+    }
+
+    #[inline(always)]
+    pub fn request_redraw(&mut self) {
+        self.redraw_requested = true;
+    }
+
+    #[inline(always)]
+    pub fn is_cancelled(&self) -> bool {
+        self.cancelled
+    }
+
+    #[inline(always)]
+    pub fn propagation_is_stopped(&self) -> bool {
+        self.propagation_stopped
+    }
+
+    #[inline(always)]
+    pub fn redraw_is_requested(&self) -> bool {
+        self.redraw_requested
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct DomEvent {
     pub target: usize,
@@ -38,8 +76,10 @@ pub enum DomEventData {
     MouseUp(BlitzMouseButtonEvent),
     Click(BlitzMouseButtonEvent),
     KeyPress(BlitzKeyEvent),
+    KeyDown(BlitzKeyEvent),
+    KeyUp(BlitzKeyEvent),
+    Input(BlitzInputEvent),
     Ime(BlitzImeEvent),
-    Hover,
 }
 
 impl DomEventData {
@@ -50,8 +90,10 @@ impl DomEventData {
             Self::MouseUp { .. } => "mouseup",
             Self::Click { .. } => "click",
             Self::KeyPress { .. } => "keypress",
-            Self::Ime { .. } => "input",
-            Self::Hover => "mouseover",
+            Self::KeyDown { .. } => "keydown",
+            Self::KeyUp { .. } => "keyup",
+            Self::Ime { .. } => "composition",
+            Self::Input { .. } => "input",
         }
     }
 
@@ -61,9 +103,11 @@ impl DomEventData {
             Self::MouseDown { .. } => true,
             Self::MouseUp { .. } => true,
             Self::Click { .. } => true,
+            Self::KeyDown { .. } => true,
+            Self::KeyUp { .. } => true,
             Self::KeyPress { .. } => true,
             Self::Ime { .. } => true,
-            Self::Hover => true,
+            Self::Input { .. } => false,
         }
     }
 
@@ -73,9 +117,11 @@ impl DomEventData {
             Self::MouseDown { .. } => true,
             Self::MouseUp { .. } => true,
             Self::Click { .. } => true,
+            Self::KeyDown { .. } => true,
+            Self::KeyUp { .. } => true,
             Self::KeyPress { .. } => true,
             Self::Ime { .. } => true,
-            Self::Hover => true,
+            Self::Input { .. } => true,
         }
     }
 }
@@ -180,6 +226,11 @@ pub struct BlitzKeyEvent {
     pub is_composing: bool,
     pub state: KeyState,
     pub text: Option<SmolStr>,
+}
+
+#[derive(Clone, Debug)]
+pub struct BlitzInputEvent {
+    pub value: String,
 }
 
 /// Copy of Winit IME event to avoid lower-level Blitz crates depending on winit

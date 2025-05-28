@@ -4,14 +4,18 @@ mod keyboard;
 mod mouse;
 
 use blitz_traits::{DomEvent, DomEventData};
-pub use driver::{EventDriver, EventHandler, EventState};
+pub use driver::{EventDriver, EventHandler, NoopEventHandler};
 pub(crate) use ime::handle_ime_event;
 pub(crate) use keyboard::handle_keypress;
 pub(crate) use mouse::{handle_click, handle_mousedown, handle_mousemove};
 
 use crate::BaseDocument;
 
-pub(crate) fn handle_event(doc: &mut BaseDocument, event: &mut DomEvent) {
+pub(crate) fn handle_event<F: FnMut(DomEvent)>(
+    doc: &mut BaseDocument,
+    event: &mut DomEvent,
+    dispatch_event: F,
+) {
     let target_node_id = event.target;
 
     match &event.data {
@@ -24,22 +28,33 @@ pub(crate) fn handle_event(doc: &mut BaseDocument, event: &mut DomEvent) {
                 mouse_event.buttons,
             );
             if changed {
-                event.request_redraw = true;
+                // TODO: request redraw
+                // event_state.request_redraw();
             }
         }
         DomEventData::MouseDown(event) => {
             handle_mousedown(doc, target_node_id, event.x, event.y);
         }
-        DomEventData::MouseUp(_) => {}
-        DomEventData::Hover => {}
+        DomEventData::MouseUp(_) => {
+            // TODO: generate click events
+        }
         DomEventData::Click(event) => {
             handle_click(doc, target_node_id, event.x, event.y);
         }
-        DomEventData::KeyPress(event) => {
-            handle_keypress(doc, target_node_id, event.clone());
+        DomEventData::KeyDown(event) => {
+            handle_keypress(doc, target_node_id, event.clone(), dispatch_event);
+        }
+        DomEventData::KeyPress(_) => {
+            // Do nothing (no default action)
+        }
+        DomEventData::KeyUp(_) => {
+            // Do nothing (no default action)
         }
         DomEventData::Ime(event) => {
             handle_ime_event(doc, event.clone());
+        }
+        DomEventData::Input(_) => {
+            // Do nothing (no default action)
         }
     }
 }

@@ -47,13 +47,15 @@ use taffy::AvailableSpace;
 use url::Url;
 
 pub trait Document: Deref<Target = BaseDocument> + DerefMut + 'static {
-    fn poll(&mut self, _cx: std::task::Context) -> bool {
+    fn poll(&mut self, cx: std::task::Context) -> bool {
         // Default implementation does nothing
+        let _ = cx;
         false
     }
 
-    fn handle_event(&mut self, _event: &mut DomEvent) {
+    fn handle_event(&mut self, event: DomEvent) {
         // Default implementation does nothing
+        let _ = event;
     }
 
     fn as_any_mut(&mut self) -> &mut dyn Any;
@@ -177,8 +179,8 @@ fn make_device(viewport: &Viewport) -> Device {
 }
 
 impl BaseDocument {
-    pub fn handle_event(&mut self, event: &mut DomEvent) {
-        handle_event(self, event)
+    pub fn handle_event<F: FnMut(DomEvent)>(&mut self, event: &mut DomEvent, dispatch_event: F) {
+        handle_event(self, event, dispatch_event)
     }
     pub fn as_any_mut(&mut self) -> &mut dyn Any {
         self
