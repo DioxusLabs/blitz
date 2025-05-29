@@ -1,14 +1,13 @@
 use crate::convert_events::{
-    winit_ime_to_blitz, winit_key_event_to_blitz, winit_modifiers_to_kbt_modifiers,
+    color_scheme_to_theme, theme_to_color_scheme, winit_ime_to_blitz, winit_key_event_to_blitz,
+    winit_modifiers_to_kbt_modifiers,
 };
 use crate::event::{BlitzShellEvent, create_waker};
 use anyrender::WindowRenderer;
 use blitz_dom::Document;
 use blitz_paint::paint_scene;
 use blitz_traits::events::UiEvent;
-use blitz_traits::{
-    BlitzMouseButtonEvent, ColorScheme, MouseEventButton, MouseEventButtons, Viewport,
-};
+use blitz_traits::{BlitzMouseButtonEvent, MouseEventButton, MouseEventButtons, Viewport};
 use winit::keyboard::PhysicalKey;
 
 use std::marker::PhantomData;
@@ -150,21 +149,15 @@ impl<Rend: WindowRenderer> View<Rend> {
 
         // Resume renderer
         let (width, height) = self.doc.viewport().window_size;
+        let scale = self.doc.viewport().scale_f64();
         self.renderer.resume(width, height);
         if !self.renderer.is_active() {
             panic!("Renderer failed to resume");
         };
 
         // Render
-        self.renderer.render(|scene| {
-            paint_scene(
-                scene,
-                &self.doc,
-                self.doc.viewport().scale_f64(),
-                width,
-                height,
-            )
-        });
+        self.renderer
+            .render(|scene| paint_scene(scene, &self.doc, scale, width, height));
 
         // Set waker
         self.waker = Some(create_waker(&self.event_loop_proxy, self.window_id()));
@@ -224,18 +217,6 @@ impl<Rend: WindowRenderer> View<Rend> {
             self.renderer.set_size(width, height);
             self.request_redraw();
         }
-    }
-
-    pub fn mouse_move(&mut self, x: f32, y: f32) {
-        self.mouse_pos = (x, y);
-        let event = UiEvent::MouseMove(BlitzMouseButtonEvent {
-            x,
-            y,
-            button: Default::default(),
-            buttons: self.buttons,
-            mods: winit_modifiers_to_kbt_modifiers(self.keyboard_modifiers.state()),
-        });
-        self.doc.handle_event(event);
     }
 
     #[cfg(feature = "accessibility")]
@@ -311,9 +292,7 @@ impl<Rend: WindowRenderer> View<Rend> {
                                 self.doc.devtools_mut().toggle_highlight_hover();
                                 self.request_redraw();
                             }
-                            KeyCode::KeyT => {
-                                self.doc.print_taffy_tree();
-                            }
+                            KeyCode::KeyT => self.doc.print_taffy_tree(),
                             _ => {}
                         };
                     }
@@ -338,7 +317,15 @@ impl<Rend: WindowRenderer> View<Rend> {
             WindowEvent::CursorLeft { /*device_id*/.. } => {}
             WindowEvent::CursorMoved { position, .. } => {
                 let winit::dpi::LogicalPosition::<f32> { x, y } = position.to_logical(self.window.scale_factor());
-                self.mouse_move(x, y);
+                self.mouse_pos = (x, y);
+                let event = UiEvent::MouseMove(BlitzMouseButtonEvent {
+                    x,
+                    y,
+                    button: Default::default(),
+                    buttons: self.buttons,
+                    mods: winit_modifiers_to_kbt_modifiers(self.keyboard_modifiers.state()),
+                });
+                self.doc.handle_event(event);
                 self.request_redraw();
 
                 // TODO cursor_changed event
@@ -384,7 +371,7 @@ impl<Rend: WindowRenderer> View<Rend> {
                     winit::event::MouseScrollDelta::PixelDelta(offsets) => (offsets.x, offsets.y)
                 };
 
-                if let Some(hover_node_id)= self.doc.get_hover_node_id() {
+                if let Some(hover_node_id) = self.doc.get_hover_node_id() {
                     self.doc.scroll_node_by(hover_node_id, scroll_x, scroll_y);
                 } else {
                     self.doc.scroll_viewport_by(scroll_x, scroll_y);
@@ -408,19 +395,5 @@ impl<Rend: WindowRenderer> View<Rend> {
             WindowEvent::DoubleTapGesture { .. } => {},
             WindowEvent::RotationGesture { .. } => {},
         }
-    }
-}
-
-fn theme_to_color_scheme(theme: Theme) -> ColorScheme {
-    match theme {
-        Theme::Light => ColorScheme::Light,
-        Theme::Dark => ColorScheme::Dark,
-    }
-}
-
-fn color_scheme_to_theme(scheme: ColorScheme) -> Theme {
-    match scheme {
-        ColorScheme::Light => Theme::Light,
-        ColorScheme::Dark => Theme::Dark,
     }
 }
