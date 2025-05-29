@@ -54,11 +54,6 @@ pub struct View<Rend: WindowRenderer> {
     event_loop_proxy: EventLoopProxy<BlitzShellEvent>,
     window: Arc<Window>,
 
-    /// The actual viewport of the page that we're getting a glimpse of.
-    /// We need this since the part of the page that's being viewed might not be the page in its entirety.
-    /// This will let us opt of rendering some stuff
-    viewport: Viewport,
-
     /// The state of the keyboard modifiers (ctrl, shift, etc). Winit/Tao don't track these for us so we
     /// need to store them in order to have access to them when processing keypress events
     theme_override: Option<Theme>,
@@ -94,15 +89,16 @@ impl<Rend: WindowRenderer> View<Rend> {
         let color_scheme = theme_to_color_scheme(theme);
         let viewport = Viewport::new(size.width, size.height, scale, color_scheme);
 
+        let mut doc = config.doc;
+        doc.set_viewport(viewport);
+
         Self {
             renderer: Rend::new(winit_window.clone()),
             waker: None,
             keyboard_modifiers: Default::default(),
-
             event_loop_proxy: proxy.clone(),
             window: winit_window.clone(),
-            doc: config.doc,
-            viewport,
+            doc,
             theme_override: None,
             buttons: MouseEventButtons::None,
             mouse_pos: Default::default(),
@@ -116,9 +112,10 @@ impl<Rend: WindowRenderer> View<Rend> {
 
     pub fn replace_document(&mut self, new_doc: Box<dyn Document>, retain_scroll_position: bool) {
         let scroll = self.doc.viewport_scroll();
+        let viewport = self.doc.viewport().clone();
 
         self.doc = new_doc;
-        self.kick_viewport();
+        self.doc.set_viewport(viewport);
         self.poll();
         self.request_redraw();
 
@@ -132,15 +129,13 @@ impl<Rend: WindowRenderer> View<Rend> {
     }
 
     pub fn current_theme(&self) -> Theme {
-        color_scheme_to_theme(self.viewport.color_scheme)
+        color_scheme_to_theme(self.doc.viewport().color_scheme)
     }
 
     pub fn set_theme_override(&mut self, theme: Option<Theme>) {
         self.theme_override = theme;
         let theme = theme.or(self.window.theme()).unwrap_or(Theme::Light);
-        self.viewport.color_scheme = theme_to_color_scheme(theme);
-        self.kick_viewport();
-        self.request_redraw();
+        self.with_viewport(|v| v.color_scheme = theme_to_color_scheme(theme));
     }
 
     pub fn downcast_doc_mut<T: 'static>(&mut self) -> &mut T {
@@ -151,11 +146,10 @@ impl<Rend: WindowRenderer> View<Rend> {
 impl<Rend: WindowRenderer> View<Rend> {
     pub fn resume(&mut self) {
         // Resolve dom
-        self.doc.set_viewport(self.viewport.clone());
         self.doc.resolve();
 
         // Resume renderer
-        let (width, height) = self.viewport.window_size;
+        let (width, height) = self.doc.viewport().window_size;
         self.renderer.resume(width, height);
         if !self.renderer.is_active() {
             panic!("Renderer failed to resume");
@@ -163,7 +157,13 @@ impl<Rend: WindowRenderer> View<Rend> {
 
         // Render
         self.renderer.render(|scene| {
-            paint_scene(scene, &self.doc, self.viewport.scale_f64(), width, height)
+            paint_scene(
+                scene,
+                &self.doc,
+                self.doc.viewport().scale_f64(),
+                width,
+                height,
+            )
         });
 
         // Set waker
@@ -204,32 +204,22 @@ impl<Rend: WindowRenderer> View<Rend> {
 
     pub fn redraw(&mut self) {
         self.doc.resolve();
-        let (width, height) = self.viewport.window_size;
-        self.renderer.render(|scene| {
-            paint_scene(scene, &self.doc, self.viewport.scale_f64(), width, height)
-        });
+        let (width, height) = self.doc.viewport().window_size;
+        let scale = self.doc.viewport().scale_f64();
+        self.renderer
+            .render(|scene| paint_scene(scene, &self.doc, scale, width, height));
     }
 
     pub fn window_id(&self) -> WindowId {
         self.window.id()
     }
 
-    pub fn kick_viewport(&mut self) {
-        self.kick_dom_viewport();
-        self.doc.scroll_viewport_by(0.0, 0.0); // Clamp scroll offset
-        self.kick_renderer_viewport();
-    }
-
-    pub fn kick_dom_viewport(&mut self) {
-        let (width, height) = self.viewport.window_size;
-        if width > 0 && height > 0 {
-            self.doc.set_viewport(self.viewport.clone());
-            self.request_redraw();
-        }
-    }
-
-    pub fn kick_renderer_viewport(&mut self) {
-        let (width, height) = self.viewport.window_size;
+    #[inline]
+    pub fn with_viewport(&mut self, cb: impl FnOnce(&mut Viewport)) {
+        let mut viewport = self.doc.viewport_mut();
+        cb(&mut viewport);
+        drop(viewport);
+        let (width, height) = self.doc.viewport().window_size;
         if width > 0 && height > 0 {
             self.renderer.set_size(width, height);
             self.request_redraw();
@@ -269,18 +259,16 @@ impl<Rend: WindowRenderer> View<Rend> {
             WindowEvent::Moved(_) => {}
             WindowEvent::Occluded(_) => {},
             WindowEvent::Resized(physical_size) => {
-                self.viewport.window_size = (physical_size.width, physical_size.height);
-                self.kick_viewport();
+                self.with_viewport(|v| v.window_size = (physical_size.width, physical_size.height));
             }
             WindowEvent::ScaleFactorChanged { scale_factor, .. } => {
-                self.viewport.set_hidpi_scale(scale_factor as f32);
-                self.kick_viewport();
+                self.with_viewport(|v| v.set_hidpi_scale(scale_factor as f32));
             }
 
             // Theme events
             WindowEvent::ThemeChanged(theme) => {
-                self.viewport.color_scheme = theme_to_color_scheme(self.theme_override.unwrap_or(theme));
-                self.kick_viewport();
+                let color_scheme = theme_to_color_scheme(self.theme_override.unwrap_or(theme));
+                self.doc.viewport_mut().color_scheme = color_scheme;
             }
 
             // Text / keyboard events
@@ -305,18 +293,9 @@ impl<Rend: WindowRenderer> View<Rend> {
                     // Ctrl/Super keyboard shortcuts
                     if ctrl | meta {
                         match key_code {
-                            KeyCode::Equal => {
-                                *self.viewport.zoom_mut() += 0.1;
-                                self.kick_dom_viewport();
-                            }
-                            KeyCode::Minus => {
-                                *self.viewport.zoom_mut() -= 0.1;
-                                self.kick_dom_viewport();
-                            }
-                            KeyCode::Digit0 => {
-                                *self.viewport.zoom_mut() = 1.0;
-                                self.kick_dom_viewport();
-                            }
+                            KeyCode::Equal => self.doc.viewport_mut().zoom_by(0.1),
+                            KeyCode::Minus => self.doc.viewport_mut().zoom_by(-0.1),
+                            KeyCode::Digit0 => self.doc.viewport_mut().set_zoom(1.0),
                             _ => {}
                         };
                     }

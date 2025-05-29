@@ -1,5 +1,6 @@
 use crate::events::handle_event;
 use crate::layout::construct::collect_layout_children;
+use crate::mutator::ViewportMut;
 use crate::node::{ImageData, NodeSpecificData, RasterImageData, Status, TextBrush};
 use crate::stylo_to_cursor_icon::stylo_to_cursor_icon;
 use crate::traversal::{AncestorTraverser, TreeTraverser};
@@ -161,7 +162,7 @@ pub struct BaseDocument {
     pub navigation_provider: Arc<dyn NavigationProvider>,
 }
 
-fn make_device(viewport: &Viewport) -> Device {
+pub(crate) fn make_device(viewport: &Viewport) -> Device {
     let width = viewport.window_size.0 as f32 / viewport.scale();
     let height = viewport.window_size.1 as f32 / viewport.scale();
     let viewport_size = euclid::Size2D::new(width, height);
@@ -1011,6 +1012,25 @@ impl BaseDocument {
     pub fn set_viewport(&mut self, viewport: Viewport) {
         self.viewport = viewport;
         self.set_stylist_device(make_device(&self.viewport));
+        self.scroll_viewport_by(0.0, 0.0); // Clamp scroll offset
+    }
+
+    pub fn viewport(&self) -> &Viewport {
+        &self.viewport
+    }
+
+    pub fn viewport_mut(&mut self) -> ViewportMut<'_> {
+        ViewportMut::new(self)
+    }
+
+    pub fn zoom_by(&mut self, increment: f32) {
+        *self.viewport.zoom_mut() += increment;
+        self.set_viewport(self.viewport.clone());
+    }
+
+    pub fn zoom_to(&mut self, zoom: f32) {
+        *self.viewport.zoom_mut() = zoom;
+        self.set_viewport(self.viewport.clone());
     }
 
     pub fn get_viewport(&self) -> Viewport {

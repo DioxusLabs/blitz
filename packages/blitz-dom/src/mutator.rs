@@ -1,9 +1,12 @@
 use std::collections::HashSet;
+use std::ops::{Deref, DerefMut};
 
+use crate::document::make_device;
 use crate::net::{CssHandler, ImageHandler};
 use crate::node::NodeSpecificData;
 use crate::util::ImageType;
 use crate::{Attribute, BaseDocument, ElementNodeData, NodeData, QualName, local_name, ns};
+use blitz_traits::Viewport;
 use blitz_traits::net::Request;
 use style::invalidation::element::restyle_hints::RestyleHint;
 
@@ -452,5 +455,34 @@ fn process_cloned_node(doc: &BaseDocument, node_to_autofocus: &mut Option<usize>
         for child_node_id in &node.children {
             process_cloned_node(doc, node_to_autofocus, *child_node_id);
         }
+    }
+}
+
+/// Type that allows mutable access to the viewport
+/// And syncs it back to stylist on drop.
+pub struct ViewportMut<'doc> {
+    doc: &'doc mut BaseDocument,
+}
+impl ViewportMut<'_> {
+    pub fn new(doc: &mut BaseDocument) -> ViewportMut<'_> {
+        ViewportMut { doc }
+    }
+}
+impl Deref for ViewportMut<'_> {
+    type Target = Viewport;
+
+    fn deref(&self) -> &Self::Target {
+        &self.doc.viewport
+    }
+}
+impl DerefMut for ViewportMut<'_> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.doc.viewport
+    }
+}
+impl Drop for ViewportMut<'_> {
+    fn drop(&mut self) {
+        self.doc.set_stylist_device(make_device(&self.doc.viewport));
+        self.doc.scroll_viewport_by(0.0, 0.0); // Clamp scroll offset
     }
 }

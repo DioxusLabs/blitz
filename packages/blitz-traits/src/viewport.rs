@@ -55,6 +55,10 @@ impl Viewport {
         self.zoom = zoom;
     }
 
+    pub fn zoom_by(&mut self, zoom: f32) {
+        self.zoom += zoom;
+    }
+
     pub fn zoom_mut(&mut self) -> &mut f32 {
         &mut self.zoom
     }
