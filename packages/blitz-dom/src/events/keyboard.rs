@@ -7,6 +7,7 @@ use keyboard_types::{Key, Modifiers};
 use markup5ever::local_name;
 use parley::{FontContext, LayoutContext};
 
+// TODO: support keypress events
 enum GeneratedEvent {
     Input,
     Submit,
