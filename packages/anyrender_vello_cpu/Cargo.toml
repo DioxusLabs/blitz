@@ -1,16 +1,15 @@
 [package]
 name = "anyrender_vello_cpu"
 description = "vello_cpu backend for anyrender"
-version = "0.0.0"
+version = "0.1.0"
 homepage = "https://github.com/dioxuslabs/blitz"
 repository = "https://github.com/dioxuslabs/blitz"
 documentation = "https://docs.rs/anyrender_vello_cpu"
 license.workspace = true
 edition = "2024"
-publish = false
 
 [dependencies]
-anyrender = { path = "../anyrender"}
+anyrender = { version = "0.1", path = "../anyrender"}
 kurbo = { workspace = true }
 peniko = { workspace = true }
 vello_cpu = { workspace = true }

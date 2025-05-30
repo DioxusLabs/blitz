@@ -1,7 +1,7 @@
 [package]
 name = "blitz-shell"
 description = "Blitz application shell"
-version = "0.1.0-alpha.1"
+version = "0.1.0-alpha.2"
 homepage = "https://github.com/dioxuslabs/blitz"
 repository = "https://github.com/dioxuslabs/blitz"
 documentation = "https://docs.rs/blitz-shell"
@@ -16,10 +16,10 @@ tracing = ["dep:tracing", "blitz-dom/tracing"]
 
 [dependencies]
 # Blitz dependencies
-blitz-traits = { version = "0.1.0-alpha.1", path = "../blitz-traits" }
-blitz-dom = { version = "0.1.0-alpha.1", path = "../blitz-dom", default-features = false }
-blitz-paint = { version = "0.1.0-alpha.1", path = "../blitz-paint", default-features = false }
-anyrender = { path = "../anyrender", default-features = false }
+blitz-traits = { version = "0.1.0-alpha.2", path = "../blitz-traits" }
+blitz-dom = { version = "0.1.0-alpha.2", path = "../blitz-dom", default-features = false }
+blitz-paint = { version = "0.1.0-alpha.2", path = "../blitz-paint", default-features = false }
+anyrender = { version = "0.1", path = "../anyrender", default-features = false }
 
 # Windowing & Input
 winit = { workspace = true }

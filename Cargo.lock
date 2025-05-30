@@ -262,7 +262,7 @@ checksum = "e16d2d3311acee920a9eb8d33b8cbc1787ce4a264e85f964c2404b969bdcd487"
 
 [[package]]
 name = "anyrender"
-version = "0.0.0"
+version = "0.1.0"
 dependencies = [
  "kurbo",
  "peniko",
@@ -271,7 +271,7 @@ dependencies = [
 
 [[package]]
 name = "anyrender_svg"
-version = "0.0.0"
+version = "0.1.0"
 dependencies = [
  "anyrender",
  "image",
@@ -283,7 +283,7 @@ dependencies = [
 
 [[package]]
 name = "anyrender_vello"
-version = "0.0.0"
+version = "0.1.0"
 dependencies = [
  "anyrender",
  "futures-intrusive",
@@ -297,7 +297,7 @@ dependencies = [
 
 [[package]]
 name = "anyrender_vello_cpu"
-version = "0.0.0"
+version = "0.1.0"
 dependencies = [
  "anyrender",
  "kurbo",
@@ -691,7 +691,7 @@ dependencies = [
 
 [[package]]
 name = "blitz"
-version = "0.1.0-alpha.1"
+version = "0.1.0-alpha.2"
 dependencies = [
  "anyrender_vello",
  "blitz-html",
@@ -704,7 +704,7 @@ dependencies = [
 
 [[package]]
 name = "blitz-dom"
-version = "0.1.0-alpha.1"
+version = "0.1.0-alpha.2"
 dependencies = [
  "accesskit",
  "app_units",
@@ -766,7 +766,7 @@ dependencies = [
 
 [[package]]
 name = "blitz-html"
-version = "0.1.0-alpha.1"
+version = "0.1.0-alpha.2"
 dependencies = [
  "blitz-dom",
  "blitz-traits",
@@ -776,7 +776,7 @@ dependencies = [
 
 [[package]]
 name = "blitz-net"
-version = "0.1.0-alpha.1"
+version = "0.1.0-alpha.2"
 dependencies = [
  "blitz-traits",
  "data-url",
@@ -786,7 +786,7 @@ dependencies = [
 
 [[package]]
 name = "blitz-paint"
-version = "0.1.0-alpha.1"
+version = "0.1.0-alpha.2"
 dependencies = [
  "anyrender",
  "anyrender_svg",
@@ -805,7 +805,7 @@ dependencies = [
 
 [[package]]
 name = "blitz-shell"
-version = "0.1.0-alpha.1"
+version = "0.1.0-alpha.2"
 dependencies = [
  "accesskit",
  "accesskit_winit",
@@ -823,7 +823,7 @@ dependencies = [
 
 [[package]]
 name = "blitz-traits"
-version = "0.1.0-alpha.1"
+version = "0.1.0-alpha.2"
 dependencies = [
  "bitflags 2.9.0",
  "bytes",
@@ -5866,7 +5866,7 @@ checksum = "9600d11cdad6c275426272f35fbe085c4362be1d67bb9775f378fd2be7942d3a"
 
 [[package]]
 name = "stylo_taffy"
-version = "0.1.0-alpha.1"
+version = "0.1.0-alpha.2"
 dependencies = [
  "stylo",
  "taffy",

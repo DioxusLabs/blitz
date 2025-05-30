@@ -1,7 +1,7 @@
 [package]
 name = "blitz-dom"
 description = "Blitz DOM implementation"
-version = "0.1.0-alpha.1"
+version = "0.1.0-alpha.2"
 homepage = "https://github.com/dioxuslabs/blitz"
 repository = "https://github.com/dioxuslabs/blitz"
 documentation = "https://docs.rs/blitz-dom"
@@ -26,8 +26,8 @@ autofocus = []
 
 [dependencies]
 # Blitz dependencies
-blitz-traits = { version = "0.1.0-alpha.1", path = "../blitz-traits" }
-stylo_taffy = { version = "0.1.0-alpha.1", path = "../stylo_taffy" }
+blitz-traits = { version = "0.1.0-alpha.2", path = "../blitz-traits" }
+stylo_taffy = { version = "0.1.0-alpha.2", path = "../stylo_taffy" }
 
 # Servo dependencies
 style = { workspace = true }

@@ -1,16 +1,15 @@
 [package]
 name = "anyrender_svg"
 description = "Render SVGs with anyrender"
-version = "0.0.0"
+version = "0.1.0"
 homepage = "https://github.com/dioxuslabs/blitz"
 repository = "https://github.com/dioxuslabs/blitz"
 documentation = "https://docs.rs/anyrender-svg"
 license.workspace = true
 edition = "2024"
-publish = false
 
 [dependencies]
-anyrender = { path = "../anyrender" }
+anyrender = { version = "0.1", path = "../anyrender" }
 peniko = { workspace = true }
 kurbo = { workspace = true }
 usvg = { workspace = true }
