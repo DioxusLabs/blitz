@@ -10,6 +10,7 @@ use blitz_traits::Viewport;
 use blitz_traits::net::Request;
 use style::invalidation::element::restyle_hints::RestyleHint;
 
+#[derive(Debug, Clone)]
 pub enum AppendTextErr {
     /// The node is not a text node
     NotTextNode,
