@@ -9,15 +9,19 @@
 //!  - `menu`: Enables the [`muda`] menubar.
 //!  - `tracing`: Enables tracing support.
 
-mod dioxus_application;
 mod dioxus_document;
 mod events;
 
-pub use dioxus_application::DioxusNativeApplication;
-pub use dioxus_application::DioxusNativeEvent;
+#[cfg(feature = "gpu_backend")]
+use anyrender_vello::VelloWindowRenderer;
+#[cfg(feature = "cpu_backend")]
+use anyrender_vello_cpu::VelloCpuWindowRenderer as VelloWindowRenderer;
+
 pub use dioxus_document::DioxusDocument;
 
-use blitz_shell::{BlitzShellEvent, Config, WindowConfig, create_default_event_loop};
+use blitz_shell::{
+    BlitzApplication, BlitzShellEvent, Config, WindowConfig, create_default_event_loop,
+};
 use dioxus_core::{ComponentFunction, Element, VirtualDom};
 
 type NodeId = usize;
@@ -69,25 +73,8 @@ pub fn launch_cfg_with_props<P: Clone + 'static, M: 'static>(
     let doc = DioxusDocument::new(vdom, net_provider);
     let window = WindowConfig::new(Box::new(doc) as _);
 
-    // Setup hot-reloading if enabled.
-    #[cfg(all(
-        feature = "hot-reload",
-        debug_assertions,
-        not(target_os = "android"),
-        not(target_os = "ios")
-    ))]
-    {
-        if let Some(endpoint) = dioxus_cli_config::devserver_ws_endpoint() {
-            let proxy = event_loop.create_proxy();
-            dioxus_devtools::connect(endpoint, move |event| {
-                let dxn_event = DioxusNativeEvent::DevserverEvent(event);
-                let _ = proxy.send_event(BlitzShellEvent::embedder_event(dxn_event));
-            })
-        }
-    }
-
     // Create application
-    let mut application = DioxusNativeApplication::new(event_loop.create_proxy());
+    let mut application = BlitzApplication::<VelloWindowRenderer>::new(event_loop.create_proxy());
     application.add_window(window);
 
     // Run event loop
