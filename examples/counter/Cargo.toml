@@ -7,11 +7,11 @@ license.workspace = true
 [features]
 default = ["system_fonts", "gpu_backend"]
 system_fonts = ["blitz-dom/system_fonts"]
-gpu_backend = ["dioxus-native/gpu_backend"]
-cpu_backend = ["dioxus-native/cpu_backend"]
+gpu_backend = ["mini-dxn/gpu_backend"]
+cpu_backend = ["mini-dxn/cpu_backend"]
 
 [dependencies]
-dioxus-native = { path = "../../packages/dioxus-native", default-features = false }
+mini-dxn = { path = "../../packages/mini-dxn", default-features = false }
 dioxus = { version = "0.6", default-features = false, features = ["html", "hooks", "macro", "signals"] }
 
 # Control whether system font support is enabled

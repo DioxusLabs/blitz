@@ -754,10 +754,10 @@ dependencies = [
  "blitz-shell",
  "blitz-traits",
  "dioxus",
- "dioxus-native",
  "env_logger",
  "euclid",
  "image",
+ "mini-dxn",
  "png",
  "reqwest",
  "tokio",
@@ -1359,8 +1359,8 @@ version = "0.1.0"
 dependencies = [
  "blitz-dom",
  "dioxus",
- "dioxus-native",
  "idna_adapter",
+ "mini-dxn",
 ]
 
 [[package]]
@@ -1859,29 +1859,6 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "tracing-wasm",
-]
-
-[[package]]
-name = "dioxus-native"
-version = "0.1.0-alpha.1"
-dependencies = [
- "anyrender_vello",
- "anyrender_vello_cpu",
- "blitz-dom",
- "blitz-net",
- "blitz-paint",
- "blitz-shell",
- "blitz-traits",
- "dioxus-cli-config",
- "dioxus-core",
- "dioxus-devtools",
- "dioxus-html",
- "futures-util",
- "keyboard-types",
- "rustc-hash",
- "tokio",
- "tracing",
- "winit",
 ]
 
 [[package]]
@@ -3757,6 +3734,29 @@ name = "mime"
 version = "0.3.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6877bb514081ee2a7ff5ef9de3281f14a4dd4bceac4c09388074a6b5df8a139a"
+
+[[package]]
+name = "mini-dxn"
+version = "0.0.0"
+dependencies = [
+ "anyrender_vello",
+ "anyrender_vello_cpu",
+ "blitz-dom",
+ "blitz-net",
+ "blitz-paint",
+ "blitz-shell",
+ "blitz-traits",
+ "dioxus-cli-config",
+ "dioxus-core",
+ "dioxus-devtools",
+ "dioxus-html",
+ "futures-util",
+ "keyboard-types",
+ "rustc-hash",
+ "tokio",
+ "tracing",
+ "winit",
+]
 
 [[package]]
 name = "miniz_oxide"

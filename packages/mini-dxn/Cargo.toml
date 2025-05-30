@@ -1,12 +1,15 @@
 [package]
-name = "dioxus-native"
-description = "Native Dioxus backend powered by Blitz"
-version = "0.1.0-alpha.1"
+name = "mini-dxn"
+description = "Mini Dioxus Native for testing Blitz"
+version = "0.0.0"
 homepage = "https://github.com/dioxuslabs/blitz"
 repository = "https://github.com/dioxuslabs/blitz"
-documentation = "https://docs.rs/dioxus-native"
+documentation = "https://docs.rs/mini-dxn"
 license.workspace = true
 edition = "2024"
+# This crate is only for internal use when developing Blitz.
+# The main dioxus-native crate lives in the Dioxus repo.
+publish = false
 
 [features]
 default = ["accessibility", "hot-reload", "menu", "tracing", "net", "svg", "gpu_backend"]

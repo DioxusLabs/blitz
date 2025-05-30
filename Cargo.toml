@@ -11,7 +11,7 @@ members = [
   "packages/blitz-paint",
   "packages/blitz-shell",
   "packages/blitz",
-  "packages/dioxus-native",
+  "packages/mini-dxn",
   "packages/stylo_taffy",
   "apps/readme",
   "wpt/runner",
@@ -136,7 +136,7 @@ anyrender_vello_cpu = { path = "./packages/anyrender_vello_cpu" }
 blitz-shell = { path = "./packages/blitz-shell" }
 blitz-net = { path = "./packages/blitz-net" }
 blitz = { path = "./packages/blitz", features = ["net"] }
-dioxus-native = { path = "./packages/dioxus-native", features = ["tracing"] }
+mini-dxn = { path = "./packages/mini-dxn", features = ["tracing"] }
 dioxus = { workspace = true }
 euclid = { workspace = true }
 reqwest = { workspace = true }
