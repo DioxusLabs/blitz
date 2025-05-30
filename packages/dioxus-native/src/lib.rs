@@ -11,6 +11,7 @@
 
 mod dioxus_document;
 mod events;
+mod mutation_writer;
 
 #[cfg(feature = "gpu_backend")]
 use anyrender_vello::VelloWindowRenderer;
@@ -18,7 +19,9 @@ use anyrender_vello::VelloWindowRenderer;
 use anyrender_vello_cpu::VelloCpuWindowRenderer as VelloWindowRenderer;
 
 pub use dioxus_document::DioxusDocument;
+pub use mutation_writer::MutationWriter;
 
+use blitz_dom::{Atom, QualName, ns};
 use blitz_shell::{
     BlitzApplication, BlitzShellEvent, Config, WindowConfig, create_default_event_loop,
 };
@@ -79,6 +82,14 @@ pub fn launch_cfg_with_props<P: Clone + 'static, M: 'static>(
 
     // Run event loop
     event_loop.run_app(&mut application).unwrap();
+}
+
+pub(crate) fn qual_name(local_name: &str, namespace: Option<&str>) -> QualName {
+    QualName {
+        prefix: None,
+        ns: namespace.map(Atom::from).unwrap_or(ns!(html)),
+        local: Atom::from(local_name),
+    }
 }
 
 // Syntax sugar to make tracing calls less noisy in function below
