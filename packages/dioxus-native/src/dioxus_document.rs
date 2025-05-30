@@ -102,12 +102,7 @@ impl EventHandler for DioxusEventHandler<'_> {
         mutr: &mut blitz_dom::DocumentMutator<'_>,
         event_state: &mut EventState,
     ) {
-        let dioxus_id = mutr
-            .doc
-            .get_node(node_id)
-            .and_then(|node| node.element_data())
-            .and_then(DioxusDocument::dioxus_id);
-
+        let dioxus_id = mutr.doc.get_node(node_id).and_then(get_dioxus_id);
         let Some(id) = dioxus_id else {
             return;
         };
@@ -460,16 +455,13 @@ impl DioxusDocument {
         // std::process::exit(0);
         // dbg!(writer.state);
     }
+}
 
-    fn dioxus_id(element_node_data: &ElementNodeData) -> Option<ElementId> {
-        Some(ElementId(
-            element_node_data
-                .attrs
-                .iter()
-                .find(|attr| *attr.name.local == *"data-dioxus-id")?
-                .value
-                .parse::<usize>()
-                .ok()?,
-        ))
-    }
+fn get_dioxus_id(node: &Node) -> Option<ElementId> {
+    node.element_data()?
+        .attrs
+        .iter()
+        .find(|attr| *attr.name.local == *"data-dioxus-id")
+        .and_then(|attr| attr.value.parse::<usize>().ok())
+        .map(ElementId)
 }
