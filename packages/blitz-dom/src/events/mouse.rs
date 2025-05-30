@@ -1,18 +1,10 @@
 use blitz_traits::{
-    BlitzMouseButtonEvent, DomEvent, DomEventData, HitResult, MouseEventButton, MouseEventButtons,
-    navigation::NavigationOptions,
+    BlitzMouseButtonEvent, DomEvent, DomEventData, MouseEventButton, MouseEventButtons,
+    events::BlitzInputEvent, navigation::NavigationOptions,
 };
 use markup5ever::local_name;
 
-use crate::{BaseDocument, Node, node::NodeSpecificData, util::resolve_url};
-
-fn parent_hit(node: &Node, x: f32, y: f32) -> Option<HitResult> {
-    node.layout_parent.get().map(|parent_id| HitResult {
-        node_id: parent_id,
-        x: x + node.final_layout.location.x,
-        y: y + node.final_layout.location.y,
-    })
-}
+use crate::{BaseDocument, node::NodeSpecificData, util::resolve_url};
 
 pub(crate) fn handle_mousemove(
     doc: &mut BaseDocument,
@@ -133,18 +125,21 @@ pub(crate) fn handle_mouseup<F: FnMut(DomEvent)>(
     }
 }
 
-pub(crate) fn handle_click(doc: &mut BaseDocument, _target: usize, event: &BlitzMouseButtonEvent) {
-    let mut maybe_hit = doc.hit(event.x, event.y);
-
-    while let Some(hit) = maybe_hit {
-        let node_id = hit.node_id;
+pub(crate) fn handle_click<F: FnMut(DomEvent)>(
+    doc: &mut BaseDocument,
+    target: usize,
+    event: &BlitzMouseButtonEvent,
+    mut dispatch_event: F,
+) {
+    let mut maybe_node_id = Some(target);
+    while let Some(node_id) = maybe_node_id {
         let maybe_element = {
             let node = &mut doc.nodes[node_id];
             node.data.downcast_element_mut()
         };
 
         let Some(el) = maybe_element else {
-            maybe_hit = parent_hit(&doc.nodes[node_id], event.x, event.y);
+            maybe_node_id = doc.nodes[node_id].parent;
             continue;
         };
 
@@ -158,7 +153,12 @@ pub(crate) fn handle_click(doc: &mut BaseDocument, _target: usize, event: &Blitz
         } else if el.name.local == local_name!("input")
             && matches!(el.attr(local_name!("type")), Some("checkbox"))
         {
-            BaseDocument::toggle_checkbox(el);
+            let is_checked = BaseDocument::toggle_checkbox(el);
+            let value = is_checked.to_string();
+            dispatch_event(DomEvent::new(
+                node_id,
+                DomEventData::Input(BlitzInputEvent { value }),
+            ));
             doc.set_focus_to(node_id);
             return;
         } else if el.name.local == local_name!("input")
@@ -166,7 +166,16 @@ pub(crate) fn handle_click(doc: &mut BaseDocument, _target: usize, event: &Blitz
         {
             let radio_set = el.attr(local_name!("name")).unwrap().to_string();
             BaseDocument::toggle_radio(doc, radio_set, node_id);
+
+            // TODO: make input event conditional on value actually changing
+            let value = String::from("true");
+            dispatch_event(DomEvent::new(
+                node_id,
+                DomEventData::Input(BlitzInputEvent { value }),
+            ));
+
             BaseDocument::set_focus_to(doc, node_id);
+
             return;
         }
         // Clicking labels triggers click, and possibly input event, of associated input
@@ -175,7 +184,7 @@ pub(crate) fn handle_click(doc: &mut BaseDocument, _target: usize, event: &Blitz
                 // Apply default click event action for target node
                 let target_node = doc.get_node_mut(target_node_id).unwrap();
                 let syn_event = target_node.synthetic_click_event_data(event.mods);
-                handle_click(doc, target_node_id, &syn_event);
+                handle_click(doc, target_node_id, &syn_event, dispatch_event);
                 return;
             }
         } else if el.name.local == local_name!("a") {
@@ -206,7 +215,7 @@ pub(crate) fn handle_click(doc: &mut BaseDocument, _target: usize, event: &Blitz
         }
 
         // No match. Recurse up to parent.
-        maybe_hit = parent_hit(&doc.nodes[node_id], event.x, event.y)
+        maybe_node_id = doc.nodes[node_id].parent;
     }
 
     // If nothing is matched then clear focus

@@ -40,7 +40,7 @@ pub(crate) fn handle_event<F: FnMut(DomEvent)>(
             handle_mouseup(doc, target_node_id, event, dispatch_event);
         }
         DomEventData::Click(event) => {
-            handle_click(doc, target_node_id, event);
+            handle_click(doc, target_node_id, event, dispatch_event);
         }
         DomEventData::KeyDown(event) => {
             handle_keypress(doc, target_node_id, event.clone(), dispatch_event);
