@@ -1,10 +1,4 @@
 //! Drive the renderer from Dioxus
-
-// use dioxus_core::prelude::*;
-// use dioxus_html::elements::*;
-// use dioxus_core_macro::*;
-// use dioxus_hooks::*;
-
 use dioxus::prelude::*;
 
 fn main() {
