@@ -52,6 +52,14 @@ impl From<DioxusDocument> for BaseDocument {
     }
 }
 impl Document for DioxusDocument {
+    fn id(&self) -> usize {
+        self.inner.id()
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
+    }
+
     fn poll(&mut self, mut cx: std::task::Context) -> bool {
         {
             let fut = self.vdom.wait_for_work();
@@ -67,14 +75,6 @@ impl Document for DioxusDocument {
         self.vdom.render_immediate(&mut writer);
 
         true
-    }
-
-    fn id(&self) -> usize {
-        self.inner.id()
-    }
-
-    fn as_any_mut(&mut self) -> &mut dyn Any {
-        self
     }
 
     fn handle_event(&mut self, event: UiEvent) {
@@ -206,5 +206,3 @@ impl DioxusDocument {
         // dbg!(writer.state);
     }
 }
-
-
