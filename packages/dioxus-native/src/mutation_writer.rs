@@ -191,23 +191,41 @@ impl WriteMutations for MutationWriter<'_> {
             return;
         }
 
+        fn is_falsy(val: &AttributeValue) -> bool {
+            match val {
+                AttributeValue::None => true,
+                AttributeValue::Text(val) => val == "false",
+                AttributeValue::Bool(val) => !val,
+                AttributeValue::Int(val) => *val == 0,
+                AttributeValue::Float(val) => *val == 0.0,
+                _ => false,
+            }
+        }
+
         let name = qual_name(local_name, ns);
-        match value {
-            AttributeValue::Text(value) => {
-                self.docm.set_attribute(node_id, name, value);
-            }
-            AttributeValue::Float(value) => {
-                let value = value.to_string();
-                self.docm.set_attribute(node_id, name, &value);
-            }
-            AttributeValue::Int(value) => {
-                let value = value.to_string();
-                self.docm.set_attribute(node_id, name, &value);
-            }
-            AttributeValue::None => {
-                self.docm.clear_attribute(node_id, name);
-            }
-            _ => { /* FIXME: support all attribute types */ }
+
+        // FIXME: more principled handling of special case attributes
+        if value == &AttributeValue::None || (local_name == "checked" && is_falsy(value)) {
+            self.docm.clear_attribute(node_id, name);
+        } else {
+            match value {
+                AttributeValue::Text(value) => self.docm.set_attribute(node_id, name, value),
+                AttributeValue::Float(value) => {
+                    let value = value.to_string();
+                    self.docm.set_attribute(node_id, name, &value);
+                }
+                AttributeValue::Int(value) => {
+                    let value = value.to_string();
+                    self.docm.set_attribute(node_id, name, &value);
+                }
+                AttributeValue::Bool(value) => {
+                    let value = value.to_string();
+                    self.docm.set_attribute(node_id, name, &value);
+                }
+                _ => {
+                    // FIXME: support all attribute types
+                }
+            };
         }
     }
 
