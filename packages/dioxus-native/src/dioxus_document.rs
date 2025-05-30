@@ -17,7 +17,6 @@ use dioxus_html::{FormValue, PlatformEventData, set_event_converter};
 use futures_util::{FutureExt, pin_mut};
 
 use super::event_handler::{NativeClickData, NativeConverter, NativeFormData};
-use crate::NodeId;
 use crate::keyboard_event::BlitzKeyboardData;
 use crate::mutation_writer::{DioxusState, MutationWriter};
 
@@ -462,18 +461,6 @@ impl DioxusDocument {
         // dbg!(writer.state);
     }
 
-    pub fn label_bound_input_element(&self, label_node_id: NodeId) -> Option<(ElementId, NodeId)> {
-        let bound_input_elements = self.inner.label_bound_input_elements(label_node_id);
-
-        // Filter down bound elements to those which have dioxus id
-        bound_input_elements.into_iter().find_map(|n| {
-            let target_element_data = n.element_data()?;
-            let node_id = n.id;
-            let dioxus_id = DioxusDocument::dioxus_id(target_element_data)?;
-            Some((dioxus_id, node_id))
-        })
-    }
-
     fn dioxus_id(element_node_data: &ElementNodeData) -> Option<ElementId> {
         Some(ElementId(
             element_node_data
@@ -485,16 +472,4 @@ impl DioxusDocument {
                 .ok()?,
         ))
     }
-
-    // pub fn apply_mutations(&mut self) {
-    //     // Apply the mutations to the actual dom
-    //     let mut writer = MutationWriter {
-    //         doc: &mut self.inner,
-    //         state: &mut self.vdom_state,
-    //     };
-    //     self.vdom.render_immediate(&mut writer);
-
-    //     println!("APPLY MUTATIONS");
-    //     self.inner.print_tree();
-    // }
 }

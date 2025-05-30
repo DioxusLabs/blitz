@@ -1126,17 +1126,21 @@ impl Node {
 
     /// Creates a synthetic click event
     pub fn synthetic_click_event(&self, mods: Modifiers) -> DomEventData {
+        DomEventData::Click(self.synthetic_click_event_data(mods))
+    }
+
+    pub fn synthetic_click_event_data(&self, mods: Modifiers) -> BlitzMouseButtonEvent {
         let absolute_position = self.absolute_position(0.0, 0.0);
         let x = absolute_position.x + (self.final_layout.size.width / 2.0);
         let y = absolute_position.y + (self.final_layout.size.height / 2.0);
 
-        DomEventData::Click(BlitzMouseButtonEvent {
+        BlitzMouseButtonEvent {
             x,
             y,
             mods,
             button: Default::default(),
             buttons: Default::default(),
-        })
+        }
     }
 }
 

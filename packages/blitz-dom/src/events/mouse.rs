@@ -133,8 +133,8 @@ pub(crate) fn handle_mouseup<F: FnMut(DomEvent)>(
     }
 }
 
-pub(crate) fn handle_click(doc: &mut BaseDocument, _target: usize, x: f32, y: f32) {
-    let mut maybe_hit = doc.hit(x, y);
+pub(crate) fn handle_click(doc: &mut BaseDocument, _target: usize, event: &BlitzMouseButtonEvent) {
+    let mut maybe_hit = doc.hit(event.x, event.y);
 
     while let Some(hit) = maybe_hit {
         let node_id = hit.node_id;
@@ -144,7 +144,7 @@ pub(crate) fn handle_click(doc: &mut BaseDocument, _target: usize, x: f32, y: f3
         };
 
         let Some(el) = maybe_element else {
-            maybe_hit = parent_hit(&doc.nodes[node_id], x, y);
+            maybe_hit = parent_hit(&doc.nodes[node_id], event.x, event.y);
             continue;
         };
 
@@ -171,16 +171,11 @@ pub(crate) fn handle_click(doc: &mut BaseDocument, _target: usize, x: f32, y: f3
         }
         // Clicking labels triggers click, and possibly input event, of associated input
         else if el.name.local == local_name!("label") {
-            if let Some(target_node_id) = doc
-                .label_bound_input_elements(node_id)
-                .first()
-                .map(|n| n.id)
-            {
+            if let Some(target_node_id) = doc.label_bound_input_element(node_id).map(|n| n.id) {
+                // Apply default click event action for target node
                 let target_node = doc.get_node_mut(target_node_id).unwrap();
-                if let Some(target_element) = target_node.element_data_mut() {
-                    BaseDocument::toggle_checkbox(target_element);
-                }
-                doc.set_focus_to(node_id);
+                let syn_event = target_node.synthetic_click_event_data(event.mods);
+                handle_click(doc, target_node_id, &syn_event);
                 return;
             }
         } else if el.name.local == local_name!("a") {
@@ -211,7 +206,7 @@ pub(crate) fn handle_click(doc: &mut BaseDocument, _target: usize, x: f32, y: f3
         }
 
         // No match. Recurse up to parent.
-        maybe_hit = parent_hit(&doc.nodes[node_id], x, y)
+        maybe_hit = parent_hit(&doc.nodes[node_id], event.x, event.y)
     }
 
     // If nothing is matched then clear focus

@@ -314,13 +314,12 @@ impl BaseDocument {
     /// Note that although there should only be one bound element,
     /// we return all possibilities instead of just the first
     /// in order to allow the caller to decide which one is correct
-    pub fn label_bound_input_elements(&self, label_node_id: usize) -> Vec<&Node> {
-        let label_node = self.get_node(label_node_id).unwrap();
-        let label_element = label_node.element_data().unwrap();
+    pub fn label_bound_input_element(&self, label_node_id: usize) -> Option<&Node> {
+        let label_element = self.nodes[label_node_id].element_data()?;
         if let Some(target_element_dom_id) = label_element.attr(local_name!("for")) {
-            self.tree()
-                .into_iter()
-                .filter_map(|(_id, node)| {
+            TreeTraverser::new(self)
+                .filter_map(|id| {
+                    let node = self.get_node(id)?;
                     let element_data = node.element_data()?;
                     if element_data.name.local != local_name!("input") {
                         return None;
@@ -332,13 +331,11 @@ impl BaseDocument {
                         None
                     }
                 })
-                .collect()
+                .next()
         } else {
-            label_node
-                .children
-                .iter()
+            TreeTraverser::new_with_root(self, label_node_id)
                 .filter_map(|child_id| {
-                    let node = self.get_node(*child_id)?;
+                    let node = self.get_node(child_id)?;
                     let element_data = node.element_data()?;
                     if element_data.name.local == local_name!("input") {
                         Some(node)
@@ -346,15 +343,17 @@ impl BaseDocument {
                         None
                     }
                 })
-                .collect()
+                .next()
         }
     }
 
-    pub fn toggle_checkbox(el: &mut ElementNodeData) {
+    pub fn toggle_checkbox(el: &mut ElementNodeData) -> bool {
         let Some(is_checked) = el.checkbox_input_checked_mut() else {
-            return;
+            return false;
         };
         *is_checked = !*is_checked;
+
+        *is_checked
     }
 
     pub fn toggle_radio(&mut self, radio_set_name: String, target_radio_id: usize) {
