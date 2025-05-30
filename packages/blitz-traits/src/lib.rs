@@ -1,15 +1,14 @@
-pub mod net;
-
-pub mod navigation;
-
 pub mod events;
+pub mod navigation;
+pub mod net;
+pub mod shell;
+
+mod devtools;
+mod viewport;
+
+pub use devtools::Devtools;
 pub use events::{
     BlitzImeEvent, BlitzKeyEvent, BlitzMouseButtonEvent, DomEvent, DomEventData, EventState,
     HitResult, KeyState, MouseEventButton, MouseEventButtons,
 };
-
-mod devtools;
-pub use devtools::Devtools;
-
-mod viewport;
 pub use viewport::{ColorScheme, Viewport};

@@ -10,6 +10,7 @@ use app_units::Au;
 use blitz_traits::events::UiEvent;
 use blitz_traits::navigation::{DummyNavigationProvider, NavigationProvider};
 use blitz_traits::net::{DummyNetProvider, SharedProvider};
+use blitz_traits::shell::{DummyShellProvider, ShellProvider};
 use blitz_traits::{ColorScheme, Devtools, Viewport};
 use blitz_traits::{DomEvent, HitResult};
 use cursor_icon::CursorIcon;
@@ -160,6 +161,9 @@ pub struct BaseDocument {
     /// Navigation provider. Can be used to navigate to a new page (bubbles up the event
     /// on e.g. clicking a Link)
     pub navigation_provider: Arc<dyn NavigationProvider>,
+
+    /// Shell provider. Can be used to request a redraw or set the cursor icon
+    pub shell_provider: Arc<dyn ShellProvider>,
 }
 
 pub(crate) fn make_device(viewport: &Viewport) -> Device {
@@ -242,7 +246,8 @@ impl BaseDocument {
             changed: HashSet::new(),
             controls_to_form: HashMap::new(),
             net_provider: Arc::new(DummyNetProvider),
-            navigation_provider: Arc::new(DummyNavigationProvider {}),
+            navigation_provider: Arc::new(DummyNavigationProvider),
+            shell_provider: Arc::new(DummyShellProvider),
         };
 
         // Initialise document with root Document node
@@ -272,6 +277,11 @@ impl BaseDocument {
     /// Set the Document's navigation provider
     pub fn set_navigation_provider(&mut self, navigation_provider: Arc<dyn NavigationProvider>) {
         self.navigation_provider = navigation_provider;
+    }
+
+    /// Set the Document's shell provider
+    pub fn set_shell_provider(&mut self, shell_provider: Arc<dyn ShellProvider>) {
+        self.shell_provider = shell_provider;
     }
 
     /// Set base url for resolving linked resources (stylesheets, images, fonts, etc)
@@ -1000,6 +1010,13 @@ impl BaseDocument {
         }
 
         self.hover_node_id = hover_node_id;
+
+        // Update the cursor
+        let cursor = self.get_cursor().unwrap_or_default();
+        self.shell_provider.set_cursor(cursor);
+
+        // Request redraw
+        self.shell_provider.request_redraw();
 
         true
     }

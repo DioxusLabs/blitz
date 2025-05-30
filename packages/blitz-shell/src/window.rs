@@ -1,3 +1,4 @@
+use crate::BlitzShellProvider;
 use crate::convert_events::{
     color_scheme_to_theme, theme_to_color_scheme, winit_ime_to_blitz, winit_key_event_to_blitz,
     winit_modifiers_to_kbt_modifiers,
@@ -88,8 +89,12 @@ impl<Rend: WindowRenderer> View<Rend> {
         let color_scheme = theme_to_color_scheme(theme);
         let viewport = Viewport::new(size.width, size.height, scale, color_scheme);
 
+        // Create shell provider
+        let shell_provider = BlitzShellProvider::new(winit_window.clone());
+
         let mut doc = config.doc;
         doc.set_viewport(viewport);
+        doc.set_shell_provider(Arc::new(shell_provider));
 
         Self {
             renderer: Rend::new(winit_window.clone()),
@@ -112,9 +117,11 @@ impl<Rend: WindowRenderer> View<Rend> {
     pub fn replace_document(&mut self, new_doc: Box<dyn Document>, retain_scroll_position: bool) {
         let scroll = self.doc.viewport_scroll();
         let viewport = self.doc.viewport().clone();
+        let shell_provider = self.doc.shell_provider.clone();
 
         self.doc = new_doc;
         self.doc.set_viewport(viewport);
+        self.doc.set_shell_provider(shell_provider);
         self.poll();
         self.request_redraw();
 
@@ -327,16 +334,6 @@ impl<Rend: WindowRenderer> View<Rend> {
                 });
                 self.doc.handle_event(event);
                 self.request_redraw();
-
-                // TODO cursor_changed event
-                //
-                // if changed {
-                //     let cursor = self.doc.get_cursor();
-                //     if let Some(cursor) = cursor {
-                //             self.window.set_cursor(cursor);
-                //             self.request_redraw();
-                //     }
-                // }
             }
             WindowEvent::MouseInput { button, state, .. } => {
                 let button = match button {
