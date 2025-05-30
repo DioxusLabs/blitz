@@ -5,7 +5,7 @@ use std::collections::VecDeque;
 pub trait EventHandler {
     fn handle_event(
         &mut self,
-        node_id: usize,
+        chain: &[usize],
         event: &mut DomEvent,
         mutr: &mut DocumentMutator<'_>,
         event_state: &mut EventState,
@@ -16,7 +16,7 @@ pub struct NoopEventHandler;
 impl EventHandler for NoopEventHandler {
     fn handle_event(
         &mut self,
-        _node_id: usize,
+        _chain: &[usize],
         _event: &mut DomEvent,
         _mutr: &mut DocumentMutator<'_>,
         _event_state: &mut EventState,
@@ -97,16 +97,15 @@ impl<'doc, Handler: EventHandler> EventDriver<'doc, Handler> {
         queue.push_back(event);
 
         while let Some(mut event) = queue.pop_front() {
-            let chain = self.doc().node_chain(event.target);
+            let chain = if event.bubbles {
+                self.doc().node_chain(event.target)
+            } else {
+                vec![event.target]
+            };
 
             let mut event_state = EventState::default();
-            for node_id in chain.clone().into_iter() {
-                self.handler
-                    .handle_event(node_id, &mut event, &mut self.mutr, &mut event_state);
-                if !event.bubbles | event_state.propagation_is_stopped() {
-                    break;
-                }
-            }
+            self.handler
+                .handle_event(&chain, &mut event, &mut self.mutr, &mut event_state);
 
             if !event_state.is_cancelled() {
                 self.doc_mut()

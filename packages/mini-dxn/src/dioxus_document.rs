@@ -142,16 +142,11 @@ pub struct DioxusEventHandler<'v> {
 impl EventHandler for DioxusEventHandler<'_> {
     fn handle_event(
         &mut self,
-        node_id: usize,
+        chain: &[usize],
         event: &mut DomEvent,
         mutr: &mut blitz_dom::DocumentMutator<'_>,
         event_state: &mut EventState,
     ) {
-        let dioxus_id = mutr.doc.get_node(node_id).and_then(get_dioxus_id);
-        let Some(id) = dioxus_id else {
-            return;
-        };
-
         let event_data = match &event.data {
             DomEventData::MouseMove { .. }
             | DomEventData::MouseDown { .. }
@@ -177,16 +172,27 @@ impl EventHandler for DioxusEventHandler<'_> {
             return;
         };
 
-        let dx_event = Event::new(event_data.clone(), event.bubbles);
-        self.vdom
-            .runtime()
-            .handle_event(event.name(), dx_event.clone(), id);
+        for &node_id in chain {
+            // Get dioxus vdom id for node
+            let dioxus_id = mutr.doc.get_node(node_id).and_then(get_dioxus_id);
+            let Some(id) = dioxus_id else {
+                return;
+            };
 
-        if !dx_event.default_action_enabled() {
-            event_state.prevent_default();
-        }
-        if !dx_event.propagates() {
-            event_state.stop_propagation()
+            // Handle event in vdom
+            let dx_event = Event::new(event_data.clone(), event.bubbles);
+            self.vdom
+                .runtime()
+                .handle_event(event.name(), dx_event.clone(), id);
+
+            // Update event state
+            if !dx_event.default_action_enabled() {
+                event_state.prevent_default();
+            }
+            if !dx_event.propagates() {
+                event_state.stop_propagation();
+                break;
+            }
         }
     }
 }
