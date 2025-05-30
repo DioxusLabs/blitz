@@ -5,7 +5,7 @@ use std::{any::Any, collections::HashMap, rc::Rc, sync::Arc};
 
 use blitz_dom::{
     Atom, BaseDocument, DEFAULT_CSS, Document, ElementNodeData, Node, NodeData, QualName,
-    local_name, net::Resource, node::NodeSpecificData, ns,
+    net::Resource, ns,
 };
 use blitz_dom::{EventDriver, EventHandler};
 
@@ -13,7 +13,7 @@ use blitz_traits::EventState;
 use blitz_traits::events::UiEvent;
 use blitz_traits::{ColorScheme, DomEvent, DomEventData, Viewport, net::NetProvider};
 use dioxus_core::{ElementId, Event, VirtualDom};
-use dioxus_html::{FormValue, PlatformEventData, set_event_converter};
+use dioxus_html::{PlatformEventData, set_event_converter};
 use futures_util::{FutureExt, pin_mut};
 
 use super::event_handler::{NativeClickData, NativeConverter, NativeFormData};
@@ -150,82 +150,16 @@ fn wrap_event_data<T: Any>(value: T) -> Rc<dyn Any> {
     Rc::new(PlatformEventData::new(Box::new(value)))
 }
 
+fn get_dioxus_id(node: &Node) -> Option<ElementId> {
+    node.element_data()?
+        .attrs
+        .iter()
+        .find(|attr| *attr.name.local == *"data-dioxus-id")
+        .and_then(|attr| attr.value.parse::<usize>().ok())
+        .map(ElementId)
+}
+
 impl DioxusDocument {
-    /// Generate the FormData from an input event
-    /// Currently only cares about input checkboxes
-    pub fn input_event_form_data(
-        &self,
-        parent_chain: &[usize],
-        element_node_data: &ElementNodeData,
-    ) -> NativeFormData {
-        let parent_form = parent_chain.iter().find_map(|id| {
-            let node = self.inner.get_node(*id)?;
-            let element_data = node.element_data()?;
-            if element_data.name.local == local_name!("form") {
-                Some(node)
-            } else {
-                None
-            }
-        });
-        let values = if let Some(parent_form) = parent_form {
-            let mut values = HashMap::<String, FormValue>::new();
-            for form_input in self.input_descendents(parent_form).into_iter() {
-                // Match html behaviour here. To be included in values:
-                // - input must have a name
-                // - if its an input, we only include it if checked
-                // - if value is not specified, it defaults to 'on'
-                if let Some(name) = form_input.attr(local_name!("name")) {
-                    if form_input.attr(local_name!("type")) == Some("checkbox")
-                        && form_input
-                            .element_data()
-                            .and_then(|data| data.checkbox_input_checked())
-                            .unwrap_or(false)
-                    {
-                        let value = form_input
-                            .attr(local_name!("value"))
-                            .unwrap_or("on")
-                            .to_string();
-                        values.insert(name.to_string(), FormValue(vec![value]));
-                    }
-                }
-            }
-            values
-        } else {
-            Default::default()
-        };
-        let value = match &element_node_data.node_specific_data {
-            NodeSpecificData::CheckboxInput(checked) => checked.to_string(),
-            NodeSpecificData::TextInput(input_data) => input_data.editor.text().to_string(),
-            _ => element_node_data
-                .attr(local_name!("value"))
-                .unwrap_or_default()
-                .to_string(),
-        };
-
-        NativeFormData { value, values }
-    }
-
-    /// Collect all the inputs which are descendents of a given node
-    fn input_descendents(&self, node: &Node) -> Vec<&Node> {
-        node.children
-            .iter()
-            .flat_map(|id| {
-                let mut res = Vec::<&Node>::new();
-                let Some(n) = self.inner.get_node(*id) else {
-                    return res;
-                };
-                let Some(element_data) = n.element_data() else {
-                    return res;
-                };
-                if element_data.name.local == local_name!("input") {
-                    res.push(n);
-                }
-                res.extend(self.input_descendents(n).iter());
-                res
-            })
-            .collect()
-    }
-
     pub fn new(vdom: VirtualDom, net_provider: Option<Arc<dyn NetProvider<Resource>>>) -> Self {
         let viewport = Viewport::new(0, 0, 1.0, ColorScheme::Light);
         let mut doc = BaseDocument::new(viewport);
@@ -273,11 +207,4 @@ impl DioxusDocument {
     }
 }
 
-fn get_dioxus_id(node: &Node) -> Option<ElementId> {
-    node.element_data()?
-        .attrs
-        .iter()
-        .find(|attr| *attr.name.local == *"data-dioxus-id")
-        .and_then(|attr| attr.value.parse::<usize>().ok())
-        .map(ElementId)
-}
+
