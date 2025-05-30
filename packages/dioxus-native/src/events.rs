@@ -1,19 +1,19 @@
+use std::any::Any;
 use std::collections::HashMap;
 
+use blitz_traits::BlitzKeyEvent;
 use dioxus_html::{
     AnimationData, ClipboardData, CompositionData, DragData, FocusData, FormData, FormValue,
-    HasFileData, HasFormData, HasMouseData, HtmlEventConverter, ImageData, KeyboardData, MediaData,
-    MountedData, MouseData, PlatformEventData, PointerData, ResizeData, ScrollData, SelectionData,
-    ToggleData, TouchData, TransitionData, VisibleData, WheelData,
+    HasFileData, HasFormData, HasKeyboardData, HasMouseData, HtmlEventConverter, ImageData,
+    KeyboardData, MediaData, MountedData, MouseData, PlatformEventData, PointerData, ResizeData,
+    ScrollData, SelectionData, ToggleData, TouchData, TransitionData, VisibleData, WheelData,
     geometry::{ClientPoint, ElementPoint, PagePoint, ScreenPoint},
     input_data::{MouseButton, MouseButtonSet},
     point_interaction::{
         InteractionElementOffset, InteractionLocation, ModifiersInteraction, PointerInteraction,
     },
 };
-use keyboard_types::Modifiers;
-
-use super::keyboard_event::BlitzKeyboardData;
+use keyboard_types::{Code, Key, Location, Modifiers};
 
 #[derive(Clone)]
 pub struct NativeClickData;
@@ -165,3 +165,38 @@ impl HasFormData for NativeFormData {
 }
 
 impl HasFileData for NativeFormData {}
+
+#[derive(Clone, Debug)]
+pub(crate) struct BlitzKeyboardData(pub(crate) BlitzKeyEvent);
+
+impl ModifiersInteraction for BlitzKeyboardData {
+    fn modifiers(&self) -> Modifiers {
+        self.0.modifiers
+    }
+}
+
+impl HasKeyboardData for BlitzKeyboardData {
+    fn key(&self) -> Key {
+        self.0.key.clone()
+    }
+
+    fn code(&self) -> Code {
+        self.0.code
+    }
+
+    fn location(&self) -> Location {
+        self.0.location
+    }
+
+    fn is_auto_repeating(&self) -> bool {
+        self.0.is_auto_repeating
+    }
+
+    fn is_composing(&self) -> bool {
+        self.0.is_composing
+    }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self as &dyn Any
+    }
+}

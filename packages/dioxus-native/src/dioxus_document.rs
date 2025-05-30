@@ -18,8 +18,8 @@ use dioxus_core::{
 };
 use dioxus_html::{PlatformEventData, set_event_converter};
 
-use super::event_handler::{NativeClickData, NativeConverter, NativeFormData};
-use crate::{NodeId, keyboard_event::BlitzKeyboardData, trace};
+use crate::events::{BlitzKeyboardData, NativeClickData, NativeConverter, NativeFormData};
+use crate::{NodeId, trace};
 
 pub(crate) fn qual_name(local_name: &str, namespace: Option<&str>) -> QualName {
     QualName {

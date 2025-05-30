@@ -11,8 +11,7 @@
 
 mod dioxus_application;
 mod dioxus_document;
-mod event_handler;
-mod keyboard_event;
+mod events;
 
 pub use dioxus_application::DioxusNativeApplication;
 pub use dioxus_application::DioxusNativeEvent;
