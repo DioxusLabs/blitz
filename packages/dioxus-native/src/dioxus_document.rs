@@ -4,8 +4,7 @@ use std::ops::{Deref, DerefMut};
 use std::{any::Any, collections::HashMap, rc::Rc, sync::Arc};
 
 use blitz_dom::{
-    BaseDocument, DEFAULT_CSS, Document, ElementNodeData, EventDriver, EventHandler, Node,
-    NodeData, net::Resource,
+    BaseDocument, DEFAULT_CSS, Document, EventDriver, EventHandler, Node, net::Resource,
 };
 use blitz_traits::{
     ColorScheme, DomEvent, DomEventData, EventState, Viewport, events::UiEvent, net::NetProvider,
@@ -18,29 +17,68 @@ use crate::events::{BlitzKeyboardData, NativeClickData, NativeConverter, NativeF
 use crate::mutation_writer::{DioxusState, MutationWriter};
 use crate::qual_name;
 
+fn wrap_event_data<T: Any>(value: T) -> Rc<dyn Any> {
+    Rc::new(PlatformEventData::new(Box::new(value)))
+}
+
+/// Get the value of the "dioxus-data-id" attribute parsed aa usize
+fn get_dioxus_id(node: &Node) -> Option<ElementId> {
+    node.element_data()?
+        .attrs
+        .iter()
+        .find(|attr| *attr.name.local == *"data-dioxus-id")
+        .and_then(|attr| attr.value.parse::<usize>().ok())
+        .map(ElementId)
+}
+
 pub struct DioxusDocument {
     pub(crate) vdom: VirtualDom,
     vdom_state: DioxusState,
     inner: BaseDocument,
 }
 
+impl DioxusDocument {
+    pub fn new(vdom: VirtualDom, net_provider: Option<Arc<dyn NetProvider<Resource>>>) -> Self {
+        let viewport = Viewport::new(0, 0, 1.0, ColorScheme::Light);
+        let mut doc = BaseDocument::new(viewport);
+
+        // Set net provider
+        if let Some(net_provider) = net_provider {
+            doc.set_net_provider(net_provider);
+        }
+
+        // Create a virtual "html" element to act as the root element, as we won't necessarily
+        // have a single root otherwise, while the rest of blitz requires that we do
+        {
+            let mut mutr = doc.mutate();
+            let html_element_id = mutr.create_element(qual_name("html", None), vec![]);
+            mutr.append_children(mutr.doc.root_node().id, &[html_element_id]);
+        }
+
+        // Include default and user-specified stylesheets
+        doc.add_user_agent_stylesheet(DEFAULT_CSS);
+
+        let vdom_state = DioxusState::create(&mut doc);
+        let mut doc = Self {
+            vdom,
+            vdom_state,
+            inner: doc,
+        };
+
+        doc.initial_build();
+
+        doc.inner.print_tree();
+
+        doc
+    }
+
+    pub fn initial_build(&mut self) {
+        let mut writer = MutationWriter::new(&mut self.inner, &mut self.vdom_state);
+        self.vdom.rebuild(&mut writer);
+    }
+}
+
 // Implement DocumentLike and required traits for DioxusDocument
-impl Deref for DioxusDocument {
-    type Target = BaseDocument;
-    fn deref(&self) -> &BaseDocument {
-        &self.inner
-    }
-}
-impl DerefMut for DioxusDocument {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.inner
-    }
-}
-impl From<DioxusDocument> for BaseDocument {
-    fn from(doc: DioxusDocument) -> BaseDocument {
-        doc.inner
-    }
-}
 impl Document for DioxusDocument {
     fn id(&self) -> usize {
         self.inner.id()
@@ -75,6 +113,23 @@ impl Document for DioxusDocument {
         };
         let mut driver = EventDriver::new(self.inner.mutate(), handler);
         driver.handle_ui_event(event);
+    }
+}
+
+impl Deref for DioxusDocument {
+    type Target = BaseDocument;
+    fn deref(&self) -> &BaseDocument {
+        &self.inner
+    }
+}
+impl DerefMut for DioxusDocument {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.inner
+    }
+}
+impl From<DioxusDocument> for BaseDocument {
+    fn from(doc: DioxusDocument) -> BaseDocument {
+        doc.inner
     }
 }
 
@@ -133,66 +188,5 @@ impl EventHandler for DioxusEventHandler<'_> {
         if !dx_event.propagates() {
             event_state.stop_propagation()
         }
-    }
-}
-
-fn wrap_event_data<T: Any>(value: T) -> Rc<dyn Any> {
-    Rc::new(PlatformEventData::new(Box::new(value)))
-}
-
-fn get_dioxus_id(node: &Node) -> Option<ElementId> {
-    node.element_data()?
-        .attrs
-        .iter()
-        .find(|attr| *attr.name.local == *"data-dioxus-id")
-        .and_then(|attr| attr.value.parse::<usize>().ok())
-        .map(ElementId)
-}
-
-impl DioxusDocument {
-    pub fn new(vdom: VirtualDom, net_provider: Option<Arc<dyn NetProvider<Resource>>>) -> Self {
-        let viewport = Viewport::new(0, 0, 1.0, ColorScheme::Light);
-        let mut doc = BaseDocument::new(viewport);
-
-        // Set net provider
-        if let Some(net_provider) = net_provider {
-            doc.set_net_provider(net_provider);
-        }
-
-        // Create a virtual "html" element to act as the root element, as we won't necessarily
-        // have a single root otherwise, while the rest of blitz requires that we do
-        let html_element_id = doc.create_node(NodeData::Element(ElementNodeData::new(
-            qual_name("html", None),
-            Vec::new(),
-        )));
-        let root_node_id = doc.root_node().id;
-        let html_element = doc.get_node_mut(html_element_id).unwrap();
-        html_element.parent = Some(root_node_id);
-        let root_node = doc.get_node_mut(root_node_id).unwrap();
-        root_node.children.push(html_element_id);
-
-        // Include default and user-specified stylesheets
-        doc.add_user_agent_stylesheet(DEFAULT_CSS);
-
-        let state = DioxusState::create(&mut doc);
-        let mut doc = Self {
-            vdom,
-            vdom_state: state,
-            inner: doc,
-        };
-
-        doc.initial_build();
-
-        doc.inner.print_tree();
-
-        doc
-    }
-
-    pub fn initial_build(&mut self) {
-        let mut writer = MutationWriter::new(&mut self.inner, &mut self.vdom_state);
-        self.vdom.rebuild(&mut writer);
-        // dbg!(self.vdom.rebuild_to_vec());
-        // std::process::exit(0);
-        // dbg!(writer.state);
     }
 }
