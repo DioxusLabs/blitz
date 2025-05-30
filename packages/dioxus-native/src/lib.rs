@@ -14,7 +14,6 @@ mod dioxus_document;
 mod event;
 mod event_handler;
 mod keyboard_event;
-mod mutation_writer;
 
 pub use dioxus_application::DioxusNativeApplication;
 pub use dioxus_document::DioxusDocument;
@@ -97,3 +96,28 @@ pub fn launch_cfg_with_props<P: Clone + 'static, M: 'static>(
     // Run event loop
     event_loop.run_app(&mut application).unwrap();
 }
+
+// Syntax sugar to make tracing calls less noisy in function below
+macro_rules! trace {
+    ($pattern:literal) => {{
+        #[cfg(feature = "tracing")]
+        tracing::info!($pattern);
+    }};
+    ($pattern:literal, $item1:expr) => {{
+        #[cfg(feature = "tracing")]
+        tracing::info!($pattern, $item1);
+    }};
+    ($pattern:literal, $item1:expr, $item2:expr) => {{
+        #[cfg(feature = "tracing")]
+        tracing::info!($pattern, $item1, $item2);
+    }};
+    ($pattern:literal, $item1:expr, $item2:expr, $item3:expr) => {{
+        #[cfg(feature = "tracing")]
+        tracing::info!($pattern, $item1, $item2);
+    }};
+    ($pattern:literal, $item1:expr, $item2:expr, $item3:expr, $item4:expr) => {{
+        #[cfg(feature = "tracing")]
+        tracing::info!($pattern, $item1, $item2, $item3, $item4);
+    }};
+}
+pub(crate) use trace;
