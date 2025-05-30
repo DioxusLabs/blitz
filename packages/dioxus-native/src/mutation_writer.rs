@@ -1,33 +1,11 @@
-use crate::{NodeId, dioxus_document::qual_name};
+//! Integration between Dioxus and Blitz
+
+use crate::{NodeId, qual_name, trace};
 use blitz_dom::{Attribute, BaseDocument, DocumentMutator};
 use dioxus_core::{
     AttributeValue, ElementId, Template, TemplateAttribute, TemplateNode, WriteMutations,
 };
 use rustc_hash::FxHashMap;
-
-// Syntax sugar to make tracing calls less noisy in function below
-macro_rules! trace {
-    ($pattern:literal) => {{
-        #[cfg(feature = "tracing")]
-        tracing::info!($pattern);
-    }};
-    ($pattern:literal, $item1:expr) => {{
-        #[cfg(feature = "tracing")]
-        tracing::info!($pattern, $item1);
-    }};
-    ($pattern:literal, $item1:expr, $item2:expr) => {{
-        #[cfg(feature = "tracing")]
-        tracing::info!($pattern, $item1, $item2);
-    }};
-    ($pattern:literal, $item1:expr, $item2:expr, $item3:expr) => {{
-        #[cfg(feature = "tracing")]
-        tracing::info!($pattern, $item1, $item2);
-    }};
-    ($pattern:literal, $item1:expr, $item2:expr, $item3:expr, $item4:expr) => {{
-        #[cfg(feature = "tracing")]
-        tracing::info!($pattern, $item1, $item2, $item3, $item4);
-    }};
-}
 
 /// The state of the Dioxus integration with the RealDom
 #[derive(Debug)]
@@ -38,35 +16,6 @@ pub struct DioxusState {
     stack: Vec<NodeId>,
     /// Mapping from vdom ElementId -> rdom NodeId
     node_id_mapping: Vec<Option<NodeId>>,
-}
-
-impl DioxusState {
-    fn anchor_and_nodes(&mut self, id: ElementId, m: usize) -> (usize, Vec<usize>) {
-        let anchor_node_id = self.element_to_node_id(id);
-        let new_nodes = self.m_stack_nodes(m);
-        (anchor_node_id, new_nodes)
-    }
-
-    fn m_stack_nodes(&mut self, m: usize) -> Vec<usize> {
-        self.stack.split_off(self.stack.len() - m)
-    }
-}
-
-/// A writer for mutations that can be used with the RealDom.
-pub struct MutationWriter<'a> {
-    /// The realdom associated with this writer
-    pub docm: DocumentMutator<'a>,
-    /// The state associated with this writer
-    pub state: &'a mut DioxusState,
-}
-
-impl<'a> MutationWriter<'a> {
-    pub fn new(doc: &'a mut BaseDocument, state: &'a mut DioxusState) -> Self {
-        MutationWriter {
-            docm: doc.mutate(),
-            state,
-        }
-    }
 }
 
 impl DioxusState {
@@ -90,6 +39,33 @@ impl DioxusState {
     /// Attempt to convert an ElementId to a NodeId. This will return None if the ElementId is not in the RealDom.
     pub fn try_element_to_node_id(&self, element_id: ElementId) -> Option<NodeId> {
         self.node_id_mapping.get(element_id.0).copied().flatten()
+    }
+
+    pub(crate) fn anchor_and_nodes(&mut self, id: ElementId, m: usize) -> (usize, Vec<usize>) {
+        let anchor_node_id = self.element_to_node_id(id);
+        let new_nodes = self.m_stack_nodes(m);
+        (anchor_node_id, new_nodes)
+    }
+
+    pub(crate) fn m_stack_nodes(&mut self, m: usize) -> Vec<usize> {
+        self.stack.split_off(self.stack.len() - m)
+    }
+}
+
+/// A writer for mutations that can be used with the RealDom.
+pub struct MutationWriter<'a> {
+    /// The realdom associated with this writer
+    pub docm: DocumentMutator<'a>,
+    /// The state associated with this writer
+    pub state: &'a mut DioxusState,
+}
+
+impl<'a> MutationWriter<'a> {
+    pub fn new(doc: &'a mut BaseDocument, state: &'a mut DioxusState) -> Self {
+        MutationWriter {
+            docm: doc.mutate(),
+            state,
+        }
     }
 }
 
@@ -215,23 +191,41 @@ impl WriteMutations for MutationWriter<'_> {
             return;
         }
 
+        fn is_falsy(val: &AttributeValue) -> bool {
+            match val {
+                AttributeValue::None => true,
+                AttributeValue::Text(val) => val == "false",
+                AttributeValue::Bool(val) => !val,
+                AttributeValue::Int(val) => *val == 0,
+                AttributeValue::Float(val) => *val == 0.0,
+                _ => false,
+            }
+        }
+
         let name = qual_name(local_name, ns);
-        match value {
-            AttributeValue::Text(value) => {
-                self.docm.set_attribute(node_id, name, value);
-            }
-            AttributeValue::Float(value) => {
-                let value = value.to_string();
-                self.docm.set_attribute(node_id, name, &value);
-            }
-            AttributeValue::Int(value) => {
-                let value = value.to_string();
-                self.docm.set_attribute(node_id, name, &value);
-            }
-            AttributeValue::None => {
-                self.docm.clear_attribute(node_id, name);
-            }
-            _ => { /* FIXME: support all attribute types */ }
+
+        // FIXME: more principled handling of special case attributes
+        if value == &AttributeValue::None || (local_name == "checked" && is_falsy(value)) {
+            self.docm.clear_attribute(node_id, name);
+        } else {
+            match value {
+                AttributeValue::Text(value) => self.docm.set_attribute(node_id, name, value),
+                AttributeValue::Float(value) => {
+                    let value = value.to_string();
+                    self.docm.set_attribute(node_id, name, &value);
+                }
+                AttributeValue::Int(value) => {
+                    let value = value.to_string();
+                    self.docm.set_attribute(node_id, name, &value);
+                }
+                AttributeValue::Bool(value) => {
+                    let value = value.to_string();
+                    self.docm.set_attribute(node_id, name, &value);
+                }
+                _ => {
+                    // FIXME: support all attribute types
+                }
+            };
         }
     }
 

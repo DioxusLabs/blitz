@@ -827,6 +827,7 @@ version = "0.1.0-alpha.1"
 dependencies = [
  "bitflags 2.9.0",
  "bytes",
+ "cursor-icon",
  "http",
  "keyboard-types",
  "smol_str",

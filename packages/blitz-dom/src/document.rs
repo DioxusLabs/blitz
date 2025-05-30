@@ -1,13 +1,16 @@
 use crate::events::handle_event;
 use crate::layout::construct::collect_layout_children;
+use crate::mutator::ViewportMut;
 use crate::node::{ImageData, NodeSpecificData, RasterImageData, Status, TextBrush};
 use crate::stylo_to_cursor_icon::stylo_to_cursor_icon;
 use crate::traversal::{AncestorTraverser, TreeTraverser};
 use crate::util::{ImageType, resolve_url};
 use crate::{DocumentMutator, ElementNodeData, Node, NodeData, TextNodeData};
 use app_units::Au;
+use blitz_traits::events::UiEvent;
 use blitz_traits::navigation::{DummyNavigationProvider, NavigationProvider};
 use blitz_traits::net::{DummyNetProvider, SharedProvider};
+use blitz_traits::shell::{DummyShellProvider, ShellProvider};
 use blitz_traits::{ColorScheme, Devtools, Viewport};
 use blitz_traits::{DomEvent, HitResult};
 use cursor_icon::CursorIcon;
@@ -47,13 +50,15 @@ use taffy::AvailableSpace;
 use url::Url;
 
 pub trait Document: Deref<Target = BaseDocument> + DerefMut + 'static {
-    fn poll(&mut self, _cx: std::task::Context) -> bool {
+    fn poll(&mut self, cx: std::task::Context) -> bool {
         // Default implementation does nothing
+        let _ = cx;
         false
     }
 
-    fn handle_event(&mut self, _event: &mut DomEvent) {
+    fn handle_event(&mut self, event: UiEvent) {
         // Default implementation does nothing
+        let _ = event;
     }
 
     fn as_any_mut(&mut self) -> &mut dyn Any;
@@ -142,6 +147,8 @@ pub struct BaseDocument {
     pub(crate) focus_node_id: Option<usize>,
     /// The node which is currently active (if any)
     pub(crate) active_node_id: Option<usize>,
+    /// The node which recieved a mousedown event (if any)
+    pub(crate) mousedown_node_id: Option<usize>,
 
     pub changed: HashSet<usize>,
 
@@ -154,9 +161,12 @@ pub struct BaseDocument {
     /// Navigation provider. Can be used to navigate to a new page (bubbles up the event
     /// on e.g. clicking a Link)
     pub navigation_provider: Arc<dyn NavigationProvider>,
+
+    /// Shell provider. Can be used to request a redraw or set the cursor icon
+    pub shell_provider: Arc<dyn ShellProvider>,
 }
 
-fn make_device(viewport: &Viewport) -> Device {
+pub(crate) fn make_device(viewport: &Viewport) -> Device {
     let width = viewport.window_size.0 as f32 / viewport.scale();
     let height = viewport.window_size.1 as f32 / viewport.scale();
     let viewport_size = euclid::Size2D::new(width, height);
@@ -177,8 +187,8 @@ fn make_device(viewport: &Viewport) -> Device {
 }
 
 impl BaseDocument {
-    pub fn handle_event(&mut self, event: &mut DomEvent) {
-        handle_event(self, event)
+    pub fn handle_event<F: FnMut(DomEvent)>(&mut self, event: &mut DomEvent, dispatch_event: F) {
+        handle_event(self, event, dispatch_event)
     }
     pub fn as_any_mut(&mut self) -> &mut dyn Any {
         self
@@ -232,10 +242,12 @@ impl BaseDocument {
             hover_node_id: None,
             focus_node_id: None,
             active_node_id: None,
+            mousedown_node_id: None,
             changed: HashSet::new(),
             controls_to_form: HashMap::new(),
             net_provider: Arc::new(DummyNetProvider),
-            navigation_provider: Arc::new(DummyNavigationProvider {}),
+            navigation_provider: Arc::new(DummyNavigationProvider),
+            shell_provider: Arc::new(DummyShellProvider),
         };
 
         // Initialise document with root Document node
@@ -265,6 +277,11 @@ impl BaseDocument {
     /// Set the Document's navigation provider
     pub fn set_navigation_provider(&mut self, navigation_provider: Arc<dyn NavigationProvider>) {
         self.navigation_provider = navigation_provider;
+    }
+
+    /// Set the Document's shell provider
+    pub fn set_shell_provider(&mut self, shell_provider: Arc<dyn ShellProvider>) {
+        self.shell_provider = shell_provider;
     }
 
     /// Set base url for resolving linked resources (stylesheets, images, fonts, etc)
@@ -307,13 +324,12 @@ impl BaseDocument {
     /// Note that although there should only be one bound element,
     /// we return all possibilities instead of just the first
     /// in order to allow the caller to decide which one is correct
-    pub fn label_bound_input_elements(&self, label_node_id: usize) -> Vec<&Node> {
-        let label_node = self.get_node(label_node_id).unwrap();
-        let label_element = label_node.element_data().unwrap();
+    pub fn label_bound_input_element(&self, label_node_id: usize) -> Option<&Node> {
+        let label_element = self.nodes[label_node_id].element_data()?;
         if let Some(target_element_dom_id) = label_element.attr(local_name!("for")) {
-            self.tree()
-                .into_iter()
-                .filter_map(|(_id, node)| {
+            TreeTraverser::new(self)
+                .filter_map(|id| {
+                    let node = self.get_node(id)?;
                     let element_data = node.element_data()?;
                     if element_data.name.local != local_name!("input") {
                         return None;
@@ -325,13 +341,11 @@ impl BaseDocument {
                         None
                     }
                 })
-                .collect()
+                .next()
         } else {
-            label_node
-                .children
-                .iter()
+            TreeTraverser::new_with_root(self, label_node_id)
                 .filter_map(|child_id| {
-                    let node = self.get_node(*child_id)?;
+                    let node = self.get_node(child_id)?;
                     let element_data = node.element_data()?;
                     if element_data.name.local == local_name!("input") {
                         Some(node)
@@ -339,15 +353,17 @@ impl BaseDocument {
                         None
                     }
                 })
-                .collect()
+                .next()
         }
     }
 
-    pub fn toggle_checkbox(el: &mut ElementNodeData) {
+    pub fn toggle_checkbox(el: &mut ElementNodeData) -> bool {
         let Some(is_checked) = el.checkbox_input_checked_mut() else {
-            return;
+            return false;
         };
         *is_checked = !*is_checked;
+
+        *is_checked
     }
 
     pub fn toggle_radio(&mut self, radio_set_name: String, target_radio_id: usize) {
@@ -910,6 +926,9 @@ impl BaseDocument {
         }
     }
 
+    pub fn set_mousedown_node_id(&mut self, node_id: Option<usize>) {
+        self.mousedown_node_id = node_id;
+    }
     pub fn set_focus_to(&mut self, focus_node_id: usize) -> bool {
         if Some(focus_node_id) == self.focus_node_id {
             return false;
@@ -992,6 +1011,13 @@ impl BaseDocument {
 
         self.hover_node_id = hover_node_id;
 
+        // Update the cursor
+        let cursor = self.get_cursor().unwrap_or_default();
+        self.shell_provider.set_cursor(cursor);
+
+        // Request redraw
+        self.shell_provider.request_redraw();
+
         true
     }
 
@@ -1002,6 +1028,25 @@ impl BaseDocument {
     pub fn set_viewport(&mut self, viewport: Viewport) {
         self.viewport = viewport;
         self.set_stylist_device(make_device(&self.viewport));
+        self.scroll_viewport_by(0.0, 0.0); // Clamp scroll offset
+    }
+
+    pub fn viewport(&self) -> &Viewport {
+        &self.viewport
+    }
+
+    pub fn viewport_mut(&mut self) -> ViewportMut<'_> {
+        ViewportMut::new(self)
+    }
+
+    pub fn zoom_by(&mut self, increment: f32) {
+        *self.viewport.zoom_mut() += increment;
+        self.set_viewport(self.viewport.clone());
+    }
+
+    pub fn zoom_to(&mut self, zoom: f32) {
+        *self.viewport.zoom_mut() = zoom;
+        self.set_viewport(self.viewport.clone());
     }
 
     pub fn get_viewport(&self) -> Viewport {

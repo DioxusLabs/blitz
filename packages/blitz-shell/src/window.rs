@@ -1,14 +1,14 @@
+use crate::BlitzShellProvider;
 use crate::convert_events::{
-    winit_ime_to_blitz, winit_key_event_to_blitz, winit_modifiers_to_kbt_modifiers,
+    color_scheme_to_theme, theme_to_color_scheme, winit_ime_to_blitz, winit_key_event_to_blitz,
+    winit_modifiers_to_kbt_modifiers,
 };
 use crate::event::{BlitzShellEvent, create_waker};
 use anyrender::WindowRenderer;
 use blitz_dom::Document;
 use blitz_paint::paint_scene;
-use blitz_traits::{
-    BlitzMouseButtonEvent, ColorScheme, MouseEventButton, MouseEventButtons, Viewport,
-};
-use blitz_traits::{DomEvent, DomEventData};
+use blitz_traits::events::UiEvent;
+use blitz_traits::{BlitzMouseButtonEvent, MouseEventButton, MouseEventButtons, Viewport};
 use winit::keyboard::PhysicalKey;
 
 use std::marker::PhantomData;
@@ -54,19 +54,12 @@ pub struct View<Rend: WindowRenderer> {
     event_loop_proxy: EventLoopProxy<BlitzShellEvent>,
     window: Arc<Window>,
 
-    /// The actual viewport of the page that we're getting a glimpse of.
-    /// We need this since the part of the page that's being viewed might not be the page in its entirety.
-    /// This will let us opt of rendering some stuff
-    viewport: Viewport,
-
     /// The state of the keyboard modifiers (ctrl, shift, etc). Winit/Tao don't track these for us so we
     /// need to store them in order to have access to them when processing keypress events
     theme_override: Option<Theme>,
     keyboard_modifiers: Modifiers,
     buttons: MouseEventButtons,
     mouse_pos: (f32, f32),
-    dom_mouse_pos: (f32, f32),
-    mouse_down_node: Option<usize>,
 
     #[cfg(feature = "accessibility")]
     /// Accessibility adapter for `accesskit`.
@@ -96,21 +89,23 @@ impl<Rend: WindowRenderer> View<Rend> {
         let color_scheme = theme_to_color_scheme(theme);
         let viewport = Viewport::new(size.width, size.height, scale, color_scheme);
 
+        // Create shell provider
+        let shell_provider = BlitzShellProvider::new(winit_window.clone());
+
+        let mut doc = config.doc;
+        doc.set_viewport(viewport);
+        doc.set_shell_provider(Arc::new(shell_provider));
+
         Self {
             renderer: Rend::new(winit_window.clone()),
             waker: None,
             keyboard_modifiers: Default::default(),
-
             event_loop_proxy: proxy.clone(),
             window: winit_window.clone(),
-            doc: config.doc,
-            viewport,
+            doc,
             theme_override: None,
             buttons: MouseEventButtons::None,
             mouse_pos: Default::default(),
-            dom_mouse_pos: Default::default(),
-            mouse_down_node: None,
-
             #[cfg(feature = "accessibility")]
             accessibility: AccessibilityState::new(&winit_window, proxy.clone()),
 
@@ -121,9 +116,12 @@ impl<Rend: WindowRenderer> View<Rend> {
 
     pub fn replace_document(&mut self, new_doc: Box<dyn Document>, retain_scroll_position: bool) {
         let scroll = self.doc.viewport_scroll();
+        let viewport = self.doc.viewport().clone();
+        let shell_provider = self.doc.shell_provider.clone();
 
         self.doc = new_doc;
-        self.kick_viewport();
+        self.doc.set_viewport(viewport);
+        self.doc.set_shell_provider(shell_provider);
         self.poll();
         self.request_redraw();
 
@@ -137,15 +135,13 @@ impl<Rend: WindowRenderer> View<Rend> {
     }
 
     pub fn current_theme(&self) -> Theme {
-        color_scheme_to_theme(self.viewport.color_scheme)
+        color_scheme_to_theme(self.doc.viewport().color_scheme)
     }
 
     pub fn set_theme_override(&mut self, theme: Option<Theme>) {
         self.theme_override = theme;
         let theme = theme.or(self.window.theme()).unwrap_or(Theme::Light);
-        self.viewport.color_scheme = theme_to_color_scheme(theme);
-        self.kick_viewport();
-        self.request_redraw();
+        self.with_viewport(|v| v.color_scheme = theme_to_color_scheme(theme));
     }
 
     pub fn downcast_doc_mut<T: 'static>(&mut self) -> &mut T {
@@ -156,20 +152,19 @@ impl<Rend: WindowRenderer> View<Rend> {
 impl<Rend: WindowRenderer> View<Rend> {
     pub fn resume(&mut self) {
         // Resolve dom
-        self.doc.set_viewport(self.viewport.clone());
         self.doc.resolve();
 
         // Resume renderer
-        let (width, height) = self.viewport.window_size;
+        let (width, height) = self.doc.viewport().window_size;
+        let scale = self.doc.viewport().scale_f64();
         self.renderer.resume(width, height);
         if !self.renderer.is_active() {
             panic!("Renderer failed to resume");
         };
 
         // Render
-        self.renderer.render(|scene| {
-            paint_scene(scene, &self.doc, self.viewport.scale_f64(), width, height)
-        });
+        self.renderer
+            .render(|scene| paint_scene(scene, &self.doc, scale, width, height));
 
         // Set waker
         self.waker = Some(create_waker(&self.event_loop_proxy, self.window_id()));
@@ -209,155 +204,25 @@ impl<Rend: WindowRenderer> View<Rend> {
 
     pub fn redraw(&mut self) {
         self.doc.resolve();
-        let (width, height) = self.viewport.window_size;
-        self.renderer.render(|scene| {
-            paint_scene(scene, &self.doc, self.viewport.scale_f64(), width, height)
-        });
+        let (width, height) = self.doc.viewport().window_size;
+        let scale = self.doc.viewport().scale_f64();
+        self.renderer
+            .render(|scene| paint_scene(scene, &self.doc, scale, width, height));
     }
 
     pub fn window_id(&self) -> WindowId {
         self.window.id()
     }
 
-    pub fn kick_viewport(&mut self) {
-        self.kick_dom_viewport();
-        self.doc.scroll_viewport_by(0.0, 0.0); // Clamp scroll offset
-        self.kick_renderer_viewport();
-    }
-
-    pub fn kick_dom_viewport(&mut self) {
-        let (width, height) = self.viewport.window_size;
-        if width > 0 && height > 0 {
-            self.doc.set_viewport(self.viewport.clone());
-            self.request_redraw();
-        }
-    }
-
-    pub fn kick_renderer_viewport(&mut self) {
-        let (width, height) = self.viewport.window_size;
+    #[inline]
+    pub fn with_viewport(&mut self, cb: impl FnOnce(&mut Viewport)) {
+        let mut viewport = self.doc.viewport_mut();
+        cb(&mut viewport);
+        drop(viewport);
+        let (width, height) = self.doc.viewport().window_size;
         if width > 0 && height > 0 {
             self.renderer.set_size(width, height);
             self.request_redraw();
-        }
-    }
-
-    pub fn mouse_move(&mut self, x: f32, y: f32) -> bool {
-        let viewport_scroll = self.doc.viewport_scroll();
-        let dom_x = x + viewport_scroll.x as f32 / self.viewport.zoom();
-        let dom_y = y + viewport_scroll.y as f32 / self.viewport.zoom();
-
-        // println!("Mouse move: ({}, {})", x, y);
-        // println!("Unscaled: ({}, {})",);
-
-        self.mouse_pos = (x, y);
-        self.dom_mouse_pos = (dom_x, dom_y);
-        let mut changed = self.doc.set_hover_to(dom_x, dom_y);
-
-        if let Some(node_id) = self.doc.get_hover_node_id() {
-            let mut event = DomEvent::new(
-                node_id,
-                DomEventData::MouseMove(BlitzMouseButtonEvent {
-                    x: self.dom_mouse_pos.0,
-                    y: self.dom_mouse_pos.1,
-                    button: Default::default(),
-                    buttons: self.buttons,
-                    mods: winit_modifiers_to_kbt_modifiers(self.keyboard_modifiers.state()),
-                }),
-            );
-            self.doc.handle_event(&mut event);
-            if event.request_redraw {
-                changed = true;
-            }
-        }
-
-        changed
-    }
-
-    pub fn mouse_down(&mut self, button: MouseEventButton) {
-        let Some(node_id) = self.doc.get_hover_node_id() else {
-            return;
-        };
-
-        self.doc.active_node();
-        self.buttons |= button.into();
-
-        self.doc.handle_event(&mut DomEvent::new(
-            node_id,
-            DomEventData::MouseDown(BlitzMouseButtonEvent {
-                x: self.dom_mouse_pos.0,
-                y: self.dom_mouse_pos.1,
-                button,
-                buttons: self.buttons,
-                mods: winit_modifiers_to_kbt_modifiers(self.keyboard_modifiers.state()),
-            }),
-        ));
-
-        self.mouse_down_node = Some(node_id);
-    }
-
-    pub fn mouse_up(&mut self, button: MouseEventButton) {
-        self.doc.unactive_node();
-
-        let Some(node_id) = self.doc.get_hover_node_id() else {
-            return;
-        };
-
-        self.buttons ^= button.into();
-
-        self.doc.handle_event(&mut DomEvent::new(
-            node_id,
-            DomEventData::MouseUp(BlitzMouseButtonEvent {
-                x: self.dom_mouse_pos.0,
-                y: self.dom_mouse_pos.1,
-                button,
-                buttons: self.buttons,
-                mods: winit_modifiers_to_kbt_modifiers(self.keyboard_modifiers.state()),
-            }),
-        ));
-
-        if self.mouse_down_node == Some(node_id) {
-            self.click(button);
-        } else if let Some(mouse_down_id) = self.mouse_down_node {
-            // Anonymous node ids are unstable due to tree reconstruction. So we compare the id
-            // of the first non-anonymous ancestor.
-            if self.doc.non_anon_ancestor_if_anon(mouse_down_id)
-                == self.doc.non_anon_ancestor_if_anon(node_id)
-            {
-                self.click(button);
-            }
-        }
-    }
-
-    pub fn click(&mut self, button: MouseEventButton) {
-        let Some(node_id) = self.doc.get_hover_node_id() else {
-            return;
-        };
-
-        if self.doc.devtools().highlight_hover {
-            let mut node = self.doc.get_node(node_id).unwrap();
-            if button == MouseEventButton::Secondary {
-                if let Some(parent_id) = node.layout_parent.get() {
-                    node = self.doc.get_node(parent_id).unwrap();
-                }
-            }
-            self.doc.debug_log_node(node.id);
-            self.doc.devtools_mut().highlight_hover = false;
-        } else {
-            // Not debug mode. Handle click as usual
-            if button == MouseEventButton::Main {
-                // If we hit a node, then we collect the node to its parents, check for listeners, and then
-                // call those listeners
-                self.doc.handle_event(&mut DomEvent::new(
-                    node_id,
-                    DomEventData::Click(BlitzMouseButtonEvent {
-                        x: self.dom_mouse_pos.0,
-                        y: self.dom_mouse_pos.1,
-                        button,
-                        buttons: self.buttons,
-                        mods: winit_modifiers_to_kbt_modifiers(self.keyboard_modifiers.state()),
-                    }),
-                ));
-            }
         }
     }
 
@@ -382,26 +247,22 @@ impl<Rend: WindowRenderer> View<Rend> {
             WindowEvent::Moved(_) => {}
             WindowEvent::Occluded(_) => {},
             WindowEvent::Resized(physical_size) => {
-                self.viewport.window_size = (physical_size.width, physical_size.height);
-                self.kick_viewport();
+                self.with_viewport(|v| v.window_size = (physical_size.width, physical_size.height));
             }
             WindowEvent::ScaleFactorChanged { scale_factor, .. } => {
-                self.viewport.set_hidpi_scale(scale_factor as f32);
-                self.kick_viewport();
+                self.with_viewport(|v| v.set_hidpi_scale(scale_factor as f32));
             }
 
             // Theme events
             WindowEvent::ThemeChanged(theme) => {
-                self.viewport.color_scheme = theme_to_color_scheme(self.theme_override.unwrap_or(theme));
-                self.kick_viewport();
+                let color_scheme = theme_to_color_scheme(self.theme_override.unwrap_or(theme));
+                self.doc.viewport_mut().color_scheme = color_scheme;
             }
 
             // Text / keyboard events
             WindowEvent::Ime(ime_event) => {
-                if let Some(target) = self.doc.get_focussed_node_id() {
-                    self.doc.handle_event(&mut DomEvent::new(target, DomEventData::Ime(winit_ime_to_blitz(ime_event))));
-                    self.request_redraw();
-                }
+                self.doc.handle_event(UiEvent::Ime(winit_ime_to_blitz(ime_event)));
+                self.request_redraw();
             },
             WindowEvent::ModifiersChanged(new_state) => {
                 // Store new keyboard modifier (ctrl, shift, etc) state for later use
@@ -411,67 +272,50 @@ impl<Rend: WindowRenderer> View<Rend> {
                 let PhysicalKey::Code(key_code) = event.physical_key else {
                     return;
                 };
-                if !event.state.is_pressed() {
-                    return;
-                }
 
-                let ctrl = self.keyboard_modifiers.state().control_key();
-                let meta = self.keyboard_modifiers.state().super_key();
-                let alt = self.keyboard_modifiers.state().alt_key();
+                if event.state.is_pressed() {
+                    let ctrl = self.keyboard_modifiers.state().control_key();
+                    let meta = self.keyboard_modifiers.state().super_key();
+                    let alt = self.keyboard_modifiers.state().alt_key();
 
-                // Ctrl/Super keyboard shortcuts
-                if ctrl | meta {
-                    match key_code {
-                        KeyCode::Equal => {
-                            *self.viewport.zoom_mut() += 0.1;
-                            self.kick_dom_viewport();
-                        }
-                        KeyCode::Minus => {
-                            *self.viewport.zoom_mut() -= 0.1;
-                            self.kick_dom_viewport();
-                        }
-                        KeyCode::Digit0 => {
-                            *self.viewport.zoom_mut() = 1.0;
-                            self.kick_dom_viewport();
-                        }
-                        _ => {}
-                    };
-                }
+                    // Ctrl/Super keyboard shortcuts
+                    if ctrl | meta {
+                        match key_code {
+                            KeyCode::Equal => self.doc.viewport_mut().zoom_by(0.1),
+                            KeyCode::Minus => self.doc.viewport_mut().zoom_by(-0.1),
+                            KeyCode::Digit0 => self.doc.viewport_mut().set_zoom(1.0),
+                            _ => {}
+                        };
+                    }
 
-                // Alt keyboard shortcuts
-                if alt {
-                    match key_code {
-                        KeyCode::KeyD => {
-                            self.doc.devtools_mut().toggle_show_layout();
-                            self.request_redraw();
-                        }
-                        KeyCode::KeyH => {
-                            self.doc.devtools_mut().toggle_highlight_hover();
-                            self.request_redraw();
-                        }
-                        KeyCode::KeyT => {
-                            self.doc.print_taffy_tree();
-                        }
-                        _ => {}
-                    };
+                    // Alt keyboard shortcuts
+                    if alt {
+                        match key_code {
+                            KeyCode::KeyD => {
+                                self.doc.devtools_mut().toggle_show_layout();
+                                self.request_redraw();
+                            }
+                            KeyCode::KeyH => {
+                                self.doc.devtools_mut().toggle_highlight_hover();
+                                self.request_redraw();
+                            }
+                            KeyCode::KeyT => self.doc.print_taffy_tree(),
+                            _ => {}
+                        };
+                    }
+
                 }
 
                 // Unmodified keypresses
-                match key_code {
-                    KeyCode::Tab if event.state.is_pressed() => {
-                        self.doc.focus_next_node();
-                        self.request_redraw();
-                    }
-                    _ => {
-                        if let Some(focus_node_id) = self.doc.get_focussed_node_id() {
-                            self.doc.handle_event(&mut DomEvent::new(
-                                focus_node_id,
-                                DomEventData::KeyPress(winit_key_event_to_blitz(&event, self.keyboard_modifiers.state()))
-                            ));
-                            self.request_redraw();
-                        }
-                    }
-                }
+                let key_event_data = winit_key_event_to_blitz(&event, self.keyboard_modifiers.state());
+                let event = if event.state.is_pressed() {
+                    UiEvent::KeyDown(key_event_data)
+                } else {
+                    UiEvent::KeyUp(key_event_data)
+                };
+
+                self.doc.handle_event(event);
+                self.request_redraw();
             }
 
 
@@ -480,31 +324,43 @@ impl<Rend: WindowRenderer> View<Rend> {
             WindowEvent::CursorLeft { /*device_id*/.. } => {}
             WindowEvent::CursorMoved { position, .. } => {
                 let winit::dpi::LogicalPosition::<f32> { x, y } = position.to_logical(self.window.scale_factor());
-                let changed = self.mouse_move(x, y);
-
-                if changed {
-                    let cursor = self.doc.get_cursor();
-                    if let Some(cursor) = cursor {
-                            self.window.set_cursor(cursor);
-                            self.request_redraw();
-                    }
-                }
+                self.mouse_pos = (x, y);
+                let event = UiEvent::MouseMove(BlitzMouseButtonEvent {
+                    x,
+                    y,
+                    button: Default::default(),
+                    buttons: self.buttons,
+                    mods: winit_modifiers_to_kbt_modifiers(self.keyboard_modifiers.state()),
+                });
+                self.doc.handle_event(event);
+                self.request_redraw();
             }
             WindowEvent::MouseInput { button, state, .. } => {
-                if matches!(button, MouseButton::Left | MouseButton::Right) {
-                    let button = match button {
-                        MouseButton::Left => MouseEventButton::Main,
-                        MouseButton::Right => MouseEventButton::Secondary,
-                        _ => unreachable!(),
-                    };
+                let button = match button {
+                    MouseButton::Left => MouseEventButton::Main,
+                    MouseButton::Right => MouseEventButton::Secondary,
+                    _ => return,
+                };
 
-                    match state {
-                        ElementState::Pressed => self.mouse_down(button),
-                        ElementState::Released => self.mouse_up(button)
-                    }
-
-                    self.request_redraw();
+                match state {
+                    ElementState::Pressed => self.buttons |= button.into(),
+                    ElementState::Released => self.buttons ^= button.into(),
                 }
+
+                let event = BlitzMouseButtonEvent {
+                    x: self.mouse_pos.0,
+                    y: self.mouse_pos.1,
+                    button,
+                    buttons: self.buttons,
+                    mods: winit_modifiers_to_kbt_modifiers(self.keyboard_modifiers.state()),
+                };
+
+                let event = match state {
+                    ElementState::Pressed => UiEvent::MouseDown(event),
+                    ElementState::Released => UiEvent::MouseUp(event),
+                };
+                self.doc.handle_event(event);
+                self.request_redraw();
             }
             WindowEvent::MouseWheel { delta, .. } => {
                 let (scroll_x, scroll_y)= match delta {
@@ -512,7 +368,7 @@ impl<Rend: WindowRenderer> View<Rend> {
                     winit::event::MouseScrollDelta::PixelDelta(offsets) => (offsets.x, offsets.y)
                 };
 
-                if let Some(hover_node_id)= self.doc.get_hover_node_id() {
+                if let Some(hover_node_id) = self.doc.get_hover_node_id() {
                     self.doc.scroll_node_by(hover_node_id, scroll_x, scroll_y);
                 } else {
                     self.doc.scroll_viewport_by(scroll_x, scroll_y);
@@ -536,19 +392,5 @@ impl<Rend: WindowRenderer> View<Rend> {
             WindowEvent::DoubleTapGesture { .. } => {},
             WindowEvent::RotationGesture { .. } => {},
         }
-    }
-}
-
-fn theme_to_color_scheme(theme: Theme) -> ColorScheme {
-    match theme {
-        Theme::Light => ColorScheme::Light,
-        Theme::Dark => ColorScheme::Dark,
-    }
-}
-
-fn color_scheme_to_theme(scheme: ColorScheme) -> Theme {
-    match scheme {
-        ColorScheme::Light => Theme::Light,
-        ColorScheme::Dark => Theme::Dark,
     }
 }

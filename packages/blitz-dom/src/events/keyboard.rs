@@ -2,12 +2,28 @@ use crate::{
     BaseDocument,
     node::{TextBrush, TextInputData},
 };
-use blitz_traits::BlitzKeyEvent;
+use blitz_traits::{BlitzKeyEvent, DomEvent, DomEventData, events::BlitzInputEvent};
 use keyboard_types::{Key, Modifiers};
 use markup5ever::local_name;
 use parley::{FontContext, LayoutContext};
 
-pub(crate) fn handle_keypress(doc: &mut BaseDocument, target: usize, event: BlitzKeyEvent) {
+// TODO: support keypress events
+enum GeneratedEvent {
+    Input,
+    Submit,
+}
+
+pub(crate) fn handle_keypress<F: FnMut(DomEvent)>(
+    doc: &mut BaseDocument,
+    target: usize,
+    event: BlitzKeyEvent,
+    mut dispatch_event: F,
+) {
+    if event.key == Key::Tab {
+        doc.focus_next_node();
+        return;
+    }
+
     if let Some(node_id) = doc.focus_node_id {
         if target != node_id {
             return;
@@ -19,11 +35,23 @@ pub(crate) fn handle_keypress(doc: &mut BaseDocument, target: usize, event: Blit
         };
 
         if let Some(input_data) = element_data.text_input_data_mut() {
-            let implicit_submission =
+            let generated_event =
                 apply_keypress_event(input_data, &mut doc.font_ctx, &mut doc.layout_ctx, event);
 
-            if implicit_submission {
-                implicit_form_submission(doc, target);
+            if let Some(generated_event) = generated_event {
+                match generated_event {
+                    GeneratedEvent::Input => {
+                        let value = input_data.editor.raw_text().to_string();
+                        dispatch_event(DomEvent::new(
+                            node_id,
+                            DomEventData::Input(BlitzInputEvent { value }),
+                        ));
+                    }
+                    GeneratedEvent::Submit => {
+                        // TODO: Generate submit event that can be handled by script
+                        implicit_form_submission(doc, target);
+                    }
+                }
             }
         }
     }
@@ -34,15 +62,15 @@ const ACTION_MOD: Modifiers = Modifiers::SUPER;
 #[cfg(not(target_os = "macos"))]
 const ACTION_MOD: Modifiers = Modifiers::CONTROL;
 
-pub(crate) fn apply_keypress_event(
+fn apply_keypress_event(
     input_data: &mut TextInputData,
     font_ctx: &mut FontContext,
     layout_ctx: &mut LayoutContext<TextBrush>,
     event: BlitzKeyEvent,
-) -> bool {
+) -> Option<GeneratedEvent> {
     // Do nothing if it is a keyup event
     if !event.state.is_pressed() {
-        return false;
+        return None;
     }
 
     let mods = event.modifiers;
@@ -78,6 +106,8 @@ pub(crate) fn apply_keypress_event(
                 }
                 _ => unreachable!(),
             }
+
+            return Some(GeneratedEvent::Input);
         }
         Key::Character(c) if action_mod && matches!(c.to_lowercase().as_str(), "a") => {
             if shift {
@@ -158,6 +188,7 @@ pub(crate) fn apply_keypress_event(
             } else {
                 driver.delete()
             }
+            return Some(GeneratedEvent::Input);
         }
         Key::Backspace => {
             if action_mod {
@@ -165,18 +196,23 @@ pub(crate) fn apply_keypress_event(
             } else {
                 driver.backdelete()
             }
+            return Some(GeneratedEvent::Input);
         }
         Key::Enter => {
             if is_multiline {
                 driver.insert_or_replace_selection("\n");
             } else {
-                return true;
+                return Some(GeneratedEvent::Submit);
             }
         }
-        Key::Character(s) => driver.insert_or_replace_selection(&s),
+        Key::Character(s) => {
+            driver.insert_or_replace_selection(&s);
+            return Some(GeneratedEvent::Input);
+        }
         _ => {}
     };
-    false
+
+    None
 }
 
 /// https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#field-that-blocks-implicit-submission

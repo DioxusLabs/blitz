@@ -26,9 +26,10 @@ pub use crate::window::{View, WindowConfig};
 
 use blitz_dom::net::Resource;
 use blitz_traits::net::NetCallback;
+use blitz_traits::shell::ShellProvider;
 use std::sync::Arc;
-use winit::event_loop::EventLoopProxy;
-use winit::event_loop::{ControlFlow, EventLoop};
+use winit::event_loop::{ControlFlow, EventLoop, EventLoopProxy};
+use winit::window::{CursorIcon, Window};
 
 #[derive(Default)]
 pub struct Config {
@@ -89,5 +90,23 @@ impl NetCallback<Resource> for BlitzShellNetCallback {
                 .send_event(BlitzShellEvent::ResourceLoad { doc_id, data })
                 .unwrap()
         }
+    }
+}
+
+pub struct BlitzShellProvider {
+    window: Arc<Window>,
+}
+impl BlitzShellProvider {
+    pub fn new(window: Arc<Window>) -> Self {
+        Self { window }
+    }
+}
+
+impl ShellProvider for BlitzShellProvider {
+    fn request_redraw(&self) {
+        self.window.request_redraw();
+    }
+    fn set_cursor(&self, icon: CursorIcon) {
+        self.window.set_cursor(icon);
     }
 }
