@@ -11,13 +11,12 @@
 
 mod dioxus_application;
 mod dioxus_document;
-mod event;
 mod event_handler;
 mod keyboard_event;
 
 pub use dioxus_application::DioxusNativeApplication;
+pub use dioxus_application::DioxusNativeEvent;
 pub use dioxus_document::DioxusDocument;
-pub use event::DioxusNativeEvent;
 
 use blitz_shell::{BlitzShellEvent, Config, WindowConfig, create_default_event_loop};
 use dioxus_core::{ComponentFunction, Element, VirtualDom};
@@ -79,7 +78,6 @@ pub fn launch_cfg_with_props<P: Clone + 'static, M: 'static>(
         not(target_os = "ios")
     ))]
     {
-        use crate::event::DioxusNativeEvent;
         if let Some(endpoint) = dioxus_cli_config::devserver_ws_endpoint() {
             let proxy = event_loop.create_proxy();
             dioxus_devtools::connect(endpoint, move |event| {
