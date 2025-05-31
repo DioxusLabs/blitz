@@ -136,7 +136,7 @@ anyrender_vello_cpu = { path = "./packages/anyrender_vello_cpu" }
 blitz-shell = { path = "./packages/blitz-shell" }
 blitz-net = { path = "./packages/blitz-net" }
 blitz = { path = "./packages/blitz", features = ["net"] }
-mini-dxn = { path = "./packages/mini-dxn", features = ["tracing"] }
+mini-dxn = { path = "./packages/mini-dxn", features = ["tracing", "autofocus"] }
 dioxus = { workspace = true }
 euclid = { workspace = true }
 reqwest = { workspace = true }
