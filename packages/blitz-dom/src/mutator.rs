@@ -22,6 +22,7 @@ pub struct DocumentMutator<'doc> {
     pub doc: &'doc mut BaseDocument,
 
     // Tracked nodes for deferred processing when mutations have completed
+    title_node: Option<usize>,
     style_nodes: HashSet<usize>,
     form_nodes: HashSet<usize>,
     /// The (latest) node which has been mounted in and had autofocus=true, if any
@@ -39,6 +40,7 @@ impl DocumentMutator<'_> {
     pub fn new<'doc>(doc: &'doc mut BaseDocument) -> DocumentMutator<'doc> {
         DocumentMutator {
             doc,
+            title_node: None,
             style_nodes: HashSet::new(),
             form_nodes: HashSet::new(),
             #[cfg(feature = "autofocus")]
@@ -86,7 +88,7 @@ impl DocumentMutator<'_> {
     /// Remove all of the children from old_parent_id and append them to new_parent_id
     pub fn reparent_children(&mut self, old_parent_id: usize, new_parent_id: usize) {
         let child_ids = std::mem::take(&mut self.doc.nodes[old_parent_id].children);
-        self.maybe_push_style_node(old_parent_id);
+        self.maybe_record_node(old_parent_id);
         self.append_children(new_parent_id, &child_ids);
     }
 
@@ -98,15 +100,15 @@ impl DocumentMutator<'_> {
                 self.doc.nodes[old_parent_id]
                     .children
                     .retain(|id| *id != child_id);
-                self.maybe_push_style_node(old_parent);
+                self.maybe_record_node(old_parent);
             }
         }
 
-        self.maybe_push_style_node(parent_id);
+        self.maybe_record_node(parent_id);
     }
 
     pub fn replace_node_with(&mut self, anchor_node_id: usize, new_node_ids: &[usize]) {
-        self.maybe_push_parent_style_node(anchor_node_id);
+        self.maybe_record_parent_node(anchor_node_id);
         self.doc.insert_before(anchor_node_id, new_node_ids);
         self.doc.remove_node(anchor_node_id);
     }
@@ -116,7 +118,7 @@ impl DocumentMutator<'_> {
         anchor_node_id: usize,
         new_node_ids: &[usize],
     ) {
-        self.maybe_push_parent_style_node(anchor_node_id);
+        self.maybe_record_parent_node(anchor_node_id);
         self.doc.insert_before(anchor_node_id, new_node_ids);
         self.doc.remove_node(anchor_node_id);
     }
@@ -140,12 +142,12 @@ impl DocumentMutator<'_> {
             None => self.doc.append(anchor_node_id, new_node_ids),
         }
 
-        self.maybe_push_parent_style_node(anchor_node_id);
+        self.maybe_record_parent_node(anchor_node_id);
     }
 
     pub fn insert_nodes_before(&mut self, anchor_node_id: usize, new_node_ids: &[usize]) {
         self.doc.insert_before(anchor_node_id, new_node_ids);
-        self.maybe_push_parent_style_node(anchor_node_id);
+        self.maybe_record_parent_node(anchor_node_id);
     }
 
     pub fn remove_node_if_unparented(&mut self, node_id: usize) {
@@ -180,7 +182,7 @@ impl DocumentMutator<'_> {
             text.content.clear();
             text.content.push_str(value);
             let parent = node.parent;
-            self.maybe_push_style_node(parent);
+            self.maybe_record_node(parent);
         }
     }
 
@@ -213,6 +215,7 @@ impl DocumentMutator<'_> {
         let node = &self.doc.nodes[id];
         let tag = node.element_data().unwrap().name.local.as_ref();
         match tag {
+            "title" => self.title_node = Some(id),
             "link" => self.load_linked_stylesheet(id),
             "img" => self.load_image(id),
             "style" => {
@@ -318,6 +321,11 @@ impl DocumentMutator<'_> {
 
 impl<'doc> DocumentMutator<'doc> {
     pub fn flush(&mut self) {
+        if let Some(id) = self.title_node {
+            let title = self.doc.nodes[id].text_content();
+            self.doc.shell_provider.set_window_title(title);
+        }
+
         // Add/Update inline stylesheets (<style> elements)
         for id in self.style_nodes.drain() {
             self.doc.process_style_element(id);
@@ -335,24 +343,32 @@ impl<'doc> DocumentMutator<'doc> {
         }
     }
 
-    fn is_style_node(&self, node_id: usize) -> bool {
-        self.doc.nodes[node_id]
-            .data
-            .is_element_with_tag_name(&local_name!("style"))
-    }
+    fn maybe_record_node(&mut self, node_id: impl Into<Option<usize>>) {
+        let Some(node_id) = node_id.into() else {
+            return;
+        };
 
-    fn maybe_push_style_node(&mut self, node_id: impl Into<Option<usize>>) {
-        if let Some(node_id) = node_id.into() {
-            if self.is_style_node(node_id) {
+        let Some(tag_name) = self.doc.nodes[node_id]
+            .data
+            .downcast_element()
+            .map(|elem| &elem.name.local)
+        else {
+            return;
+        };
+
+        match tag_name.as_ref() {
+            "title" => self.title_node = Some(node_id),
+            "style" => {
                 self.style_nodes.insert(node_id);
             }
+            _ => {}
         }
     }
 
     #[track_caller]
-    fn maybe_push_parent_style_node(&mut self, node_id: usize) {
+    fn maybe_record_parent_node(&mut self, node_id: usize) {
         let parent_id = self.doc.get_node(node_id).unwrap().parent;
-        self.maybe_push_style_node(parent_id);
+        self.maybe_record_node(parent_id);
     }
 
     fn load_linked_stylesheet(&mut self, target_id: usize) {

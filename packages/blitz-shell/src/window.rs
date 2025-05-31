@@ -96,6 +96,14 @@ impl<Rend: WindowRenderer> View<Rend> {
         doc.set_viewport(viewport);
         doc.set_shell_provider(Arc::new(shell_provider));
 
+        // If the document title is set prior to the window being created then it will
+        // have been sent to a dummy ShellProvider and won't get picked up.
+        // So we look for it here and set it if present.
+        let title = doc.find_title_node().map(|node| node.text_content());
+        if let Some(title) = title {
+            winit_window.set_title(&title);
+        }
+
         Self {
             renderer: Rend::new(winit_window.clone()),
             waker: None,

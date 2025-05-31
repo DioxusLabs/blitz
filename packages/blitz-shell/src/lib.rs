@@ -109,4 +109,7 @@ impl ShellProvider for BlitzShellProvider {
     fn set_cursor(&self, icon: CursorIcon) {
         self.window.set_cursor(icon);
     }
+    fn set_window_title(&self, title: String) {
+        self.window.set_title(&title);
+    }
 }

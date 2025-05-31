@@ -5,6 +5,9 @@ pub trait ShellProvider {
     fn set_cursor(&self, icon: CursorIcon) {
         let _ = icon;
     }
+    fn set_window_title(&self, title: String) {
+        let _ = title;
+    }
 }
 
 pub struct DummyShellProvider;

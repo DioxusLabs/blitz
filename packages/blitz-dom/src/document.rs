@@ -1261,6 +1261,16 @@ impl BaseDocument {
         TreeTraverser::new(self).for_each(|node_id| visit(node_id, &self.nodes[node_id]));
     }
 
+    pub fn find_title_node(&self) -> Option<&Node> {
+        TreeTraverser::new(self)
+            .find(|node_id| {
+                self.nodes[*node_id]
+                    .data
+                    .is_element_with_tag_name(&local_name!("title"))
+            })
+            .map(|node_id| &self.nodes[node_id])
+    }
+
     /// Collect the nodes into a chain by traversing upwards
     pub fn node_chain(&self, node_id: usize) -> Vec<usize> {
         let mut chain = Vec::with_capacity(16);
