@@ -43,13 +43,11 @@ pub(crate) fn style(
 
     // Convert font size and line height
     let font_size = font_styles.font_size.used_size.0.px();
-    let line_height: f32 = match font_styles.line_height {
-        stylo::LineHeight::Normal => font_size * 1.2,
-        stylo::LineHeight::Number(num) => font_size * num.0,
-        stylo::LineHeight::Length(value) => value.0.px(),
+    let line_height = match font_styles.line_height {
+        stylo::LineHeight::Normal => parley::LineHeight::FontSizeRelative(1.2),
+        stylo::LineHeight::Number(num) => parley::LineHeight::FontSizeRelative(num.0),
+        stylo::LineHeight::Length(value) => parley::LineHeight::Absolute(value.0.px()),
     };
-    // Parley expects line height as a multiple of font size!
-    let line_height = line_height / font_size;
 
     let letter_spacing = itext_styles
         .letter_spacing

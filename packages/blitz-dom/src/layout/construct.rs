@@ -44,6 +44,15 @@ fn push_children_and_pseudos(layout_children: &mut Vec<usize>, node: &Node) {
     }
 }
 
+/// Convert a relative line height to an absolute one
+fn resolve_line_height(line_height: parley::LineHeight, font_size: f32) -> f32 {
+    match line_height {
+        parley::LineHeight::FontSizeRelative(relative) => relative * font_size,
+        parley::LineHeight::Absolute(absolute) => absolute,
+        parley::LineHeight::MetricsRelative(_) => unreachable!(),
+    }
+}
+
 pub(crate) fn collect_layout_children(
     doc: &mut BaseDocument,
     container_node_id: usize,
@@ -446,7 +455,7 @@ fn node_list_item_child(
             };
 
             let mut layout = builder.build().0;
-            let width = layout.max_content_width();
+            let width = layout.calculate_content_widths().max;
             layout.break_all_lines(Some(width));
 
             ListItemLayoutPosition::Outside(Box::new(layout))
@@ -731,7 +740,7 @@ pub(crate) fn build_inline_layout(
 
     // dbg!(&parley_style);
 
-    let root_line_height = parley_style.line_height;
+    let root_line_height = resolve_line_height(parley_style.line_height, parley_style.font_size);
 
     // Create a parley tree builder
     let mut builder =
@@ -898,9 +907,14 @@ pub(crate) fn build_inline_layout(
 
                             // style.brush = peniko::Brush::Solid(peniko::Color::WHITE);
 
+                            let font_size = style.font_size;
+
                             // Floor the line-height of the span by the line-height of the inline context
                             // See https://www.w3.org/TR/CSS21/visudet.html#line-height
-                            style.line_height = style.line_height.max(root_line_height);
+                            style.line_height = parley::LineHeight::Absolute(
+                                resolve_line_height(style.line_height, font_size)
+                                    .max(root_line_height),
+                            );
 
                             // dbg!(node_id);
                             // dbg!(&style);

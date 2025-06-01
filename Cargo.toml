@@ -52,7 +52,7 @@ taffy = { version = "0.8", default-features = false, features = ["std", "flexbox
 color = "0.3"
 peniko = "0.4"
 kurbo = "0.11"
-parley = { version = "0.4", default-features = false, features = ["std"] }
+parley = { version = "0.5", default-features = false, features = ["std"] }
 wgpu = "24"
 softbuffer = "0.4"
 vello = { version = "0.5", features = [ "wgpu" ] }
