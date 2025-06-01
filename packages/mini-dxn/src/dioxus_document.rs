@@ -47,26 +47,43 @@ impl DioxusDocument {
             doc.set_net_provider(net_provider);
         }
 
-        // Create a virtual "html" element to act as the root element, as we won't necessarily
-        // have a single root otherwise, while the rest of blitz requires that we do
-        {
-            let mut mutr = doc.mutate();
-            let html_element_id = mutr.create_element(qual_name("html", None), vec![]);
-            mutr.append_children(mutr.doc.root_node().id, &[html_element_id]);
-        }
+        // Create some minimal HTML to render the app into.
+
+        // Create the html element
+        let mut mutr = doc.mutate();
+        let html_element_id = mutr.create_element(qual_name("html", None), vec![]);
+        mutr.append_children(mutr.doc.root_node().id, &[html_element_id]);
+
+        // Create the head element
+        let head_element_id = mutr.create_element(qual_name("head", None), vec![]);
+        mutr.append_children(html_element_id, &[head_element_id]);
+
+        // Create the body element
+        let body_element_id = mutr.create_element(qual_name("body", None), vec![]);
+        mutr.append_children(html_element_id, &[body_element_id]);
+
+        // Create another virtual element to hold the root <div id="main"></div> under the html element
+        let main_attr = blitz_dom::Attribute {
+            name: qual_name("id", None),
+            value: "main".to_string(),
+        };
+        let main_element_id = mutr.create_element(qual_name("main", None), vec![main_attr]);
+        mutr.append_children(body_element_id, &[main_element_id]);
+
+        drop(mutr);
 
         // Include default and user-specified stylesheets
         doc.add_user_agent_stylesheet(DEFAULT_CSS);
 
-        let vdom_state = DioxusState::create(&mut doc);
+        let vdom_state = DioxusState::create(main_element_id);
         let mut doc = Self {
             vdom,
             vdom_state,
             inner: doc,
         };
 
+        doc.inner.set_base_url("dioxus://index.html");
         doc.initial_build();
-
         doc.inner.print_tree();
 
         doc

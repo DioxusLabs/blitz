@@ -3,7 +3,7 @@ use std::ops::{Deref, DerefMut};
 
 use crate::document::make_device;
 use crate::net::{CssHandler, ImageHandler};
-use crate::node::NodeSpecificData;
+use crate::node::{CanvasData, NodeSpecificData};
 use crate::util::ImageType;
 use crate::{Attribute, BaseDocument, ElementNodeData, NodeData, QualName, local_name, ns};
 use blitz_traits::Viewport;
@@ -218,6 +218,7 @@ impl DocumentMutator<'_> {
             "title" => self.title_node = Some(id),
             "link" => self.load_linked_stylesheet(id),
             "img" => self.load_image(id),
+            "canvas" => self.load_custom_paint_src(id),
             "style" => {
                 self.style_nodes.insert(id);
             }
@@ -263,6 +264,7 @@ impl DocumentMutator<'_> {
 
         let attr = name.local.as_ref();
         let load_image = element.name.local == local_name!("img") && attr == "src";
+        let set_custom_paint_src = element.name.local == local_name!("canvas") && attr == "data";
 
         if element.name.local == local_name!("input") && attr == "checked" {
             set_input_checked_state(element, value.to_string());
@@ -292,6 +294,10 @@ impl DocumentMutator<'_> {
 
         if load_image {
             self.load_image(node_id);
+        }
+
+        if set_custom_paint_src {
+            self.load_custom_paint_src(node_id);
         }
     }
 
@@ -407,6 +413,18 @@ impl<'doc> DocumentMutator<'doc> {
                     Request::get(src),
                     Box::new(ImageHandler::new(target_id, ImageType::Image)),
                 );
+            }
+        }
+    }
+
+    fn load_custom_paint_src(&mut self, target_id: usize) {
+        let node = &mut self.doc.nodes[target_id];
+        if let Some(raw_src) = node.attr(local_name!("data")) {
+            if let Ok(custom_paint_source_id) = raw_src.parse::<u64>() {
+                let canvas_data = NodeSpecificData::Canvas(CanvasData {
+                    custom_paint_source_id,
+                });
+                node.element_data_mut().unwrap().node_specific_data = canvas_data;
             }
         }
     }

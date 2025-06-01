@@ -7,7 +7,7 @@ pub struct VelloCpuImageRenderer {
 }
 
 impl ImageRenderer for VelloCpuImageRenderer {
-    type Scene = VelloCpuAnyrenderScene;
+    type Scene<'a> = VelloCpuAnyrenderScene;
 
     fn new(width: u32, height: u32) -> Self {
         Self {
@@ -15,7 +15,7 @@ impl ImageRenderer for VelloCpuImageRenderer {
         }
     }
 
-    fn render<F: FnOnce(&mut Self::Scene)>(&mut self, draw_fn: F, buffer: &mut Vec<u8>) {
+    fn render<F: FnOnce(&mut Self::Scene<'_>)>(&mut self, draw_fn: F, buffer: &mut Vec<u8>) {
         let width = self.scene.0.width();
         let height = self.scene.0.height();
         draw_fn(&mut self.scene);

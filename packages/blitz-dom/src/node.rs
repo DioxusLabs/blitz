@@ -450,6 +450,13 @@ impl ElementNodeData {
         }
     }
 
+    pub fn canvas_data(&self) -> Option<&CanvasData> {
+        match &self.node_specific_data {
+            NodeSpecificData::Canvas(data) => Some(data),
+            _ => None,
+        }
+    }
+
     #[cfg(feature = "svg")]
     pub fn svg_data(&self) -> Option<&usvg::Tree> {
         match self.image_data()? {
@@ -647,8 +654,10 @@ impl TextInputData {
 /// Heterogeneous data that depends on the element's type.
 #[derive(Clone)]
 pub enum NodeSpecificData {
-    /// The element's image content (\<img\> element's only)
+    /// An \<img\> element's image data
     Image(Box<ImageData>),
+    /// A \<canvas\> element's custom paint source
+    Canvas(CanvasData),
     /// Pre-computed table layout data
     TableRoot(Arc<TableContext>),
     /// Parley text editor (text inputs)
@@ -657,6 +666,11 @@ pub enum NodeSpecificData {
     CheckboxInput(bool),
     /// No data (for nodes that don't need any node-specific data)
     None,
+}
+
+#[derive(Debug, Clone)]
+pub struct CanvasData {
+    pub custom_paint_source_id: u64,
 }
 
 impl std::fmt::Debug for NodeSpecificData {
@@ -668,6 +682,7 @@ impl std::fmt::Debug for NodeSpecificData {
                 ImageData::Svg(_) => f.write_str("NodeSpecificData::Image(Svg)"),
                 ImageData::None => f.write_str("NodeSpecificData::Image(None)"),
             },
+            NodeSpecificData::Canvas(_) => f.write_str("NodeSpecificData::Canvas"),
             NodeSpecificData::TableRoot(_) => f.write_str("NodeSpecificData::TableRoot"),
             NodeSpecificData::TextInput(_) => f.write_str("NodeSpecificData::TextInput"),
             NodeSpecificData::CheckboxInput(_) => f.write_str("NodeSpecificData::CheckboxInput"),

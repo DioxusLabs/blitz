@@ -16,6 +16,7 @@ members = [
   "apps/readme",
   "wpt/runner",
   "examples/counter",
+  "examples/wgpu_texture",
 ]
 exclude = ["sites"]
 resolver = "2"
@@ -43,6 +44,7 @@ smallvec = "1"
 dioxus = { version = "=0.7.0-alpha.1" }
 dioxus-core = { version = "=0.7.0-alpha.1" }
 dioxus-html = { version = "=0.7.0-alpha.1" }
+dioxus-hooks = { version = "=0.7.0-alpha.1" }
 dioxus-cli-config = { version = "=0.7.0-alpha.1" }
 dioxus-devtools = { version = "=0.7.0-alpha.1" }
 taffy = { version = "0.8", default-features = false, features = ["std", "flexbox", "grid", "block_layout", "content_size", "calc"] }
@@ -91,6 +93,7 @@ futures-intrusive = "0.5.0"
 pollster = "0.4"
 smol_str = "0.2"
 bitflags = "2.8.0"
+bytemuck = "1"
 
 [profile.production]
 inherits = "release"

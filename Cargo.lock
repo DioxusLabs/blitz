@@ -291,6 +291,7 @@ dependencies = [
  "peniko",
  "pollster",
  "raw-window-handle",
+ "rustc-hash 1.1.0",
  "vello",
  "wgpu",
 ]
@@ -3493,6 +3494,7 @@ checksum = "6877bb514081ee2a7ff5ef9de3281f14a4dd4bceac4c09388074a6b5df8a139a"
 name = "mini-dxn"
 version = "0.0.0"
 dependencies = [
+ "anyrender",
  "anyrender_vello",
  "anyrender_vello_cpu",
  "blitz-dom",
@@ -3503,12 +3505,14 @@ dependencies = [
  "dioxus-cli-config",
  "dioxus-core",
  "dioxus-devtools",
+ "dioxus-hooks",
  "dioxus-html",
  "futures-util",
  "keyboard-types",
  "rustc-hash 1.1.0",
  "tokio",
  "tracing",
+ "wgpu",
  "winit",
 ]
 
@@ -6929,6 +6933,24 @@ dependencies = [
  "js-sys",
  "log",
  "web-sys",
+]
+
+[[package]]
+name = "wgpu_texture"
+version = "0.0.0"
+dependencies = [
+ "anyrender",
+ "anyrender_vello",
+ "blitz-dom",
+ "blitz-html",
+ "blitz-shell",
+ "blitz-traits",
+ "bytemuck",
+ "color",
+ "dioxus",
+ "mini-dxn",
+ "pollster",
+ "wgpu",
 ]
 
 [[package]]

@@ -211,6 +211,7 @@ impl LayoutPartialTree for BaseDocument {
                     }
 
                     if *element_data.name.local == *"img"
+                        || *element_data.name.local == *"canvas"
                         || (cfg!(feature = "svg") && *element_data.name.local == *"svg")
                     {
                         // Get width and height attributes on image element
@@ -243,6 +244,7 @@ impl LayoutPartialTree for BaseDocument {
                                 }
                                 ImageData::None => taffy::Size::ZERO,
                             },
+                            NodeSpecificData::Canvas(_) => taffy::Size::ZERO,
                             NodeSpecificData::None => taffy::Size::ZERO,
                             _ => unreachable!(),
                         };
