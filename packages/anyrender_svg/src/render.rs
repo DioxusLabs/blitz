@@ -4,7 +4,7 @@
 use crate::util;
 use anyrender::Scene;
 use kurbo::{Affine, BezPath};
-use peniko::{BlendMode, Fill};
+use peniko::{BlendMode, BrushRef, Fill};
 use usvg::{Node, Path};
 
 pub(crate) fn render_group<S: Scene, F: FnMut(&mut S, &usvg::Node)>(
@@ -127,7 +127,7 @@ fn fill<S: Scene, F: FnMut(&mut S, &usvg::Node)>(
                     usvg::FillRule::EvenOdd => Fill::EvenOdd,
                 },
                 transform,
-                &brush,
+                BrushRef::from(&brush),
                 Some(brush_transform),
                 local_path,
             );

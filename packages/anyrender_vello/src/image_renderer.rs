@@ -1,8 +1,7 @@
+use crate::wgpu_context::{WGPUContext, block_on_wgpu};
 use anyrender::{ImageRenderer, Scene as _};
-use vello::{
-    RendererOptions, Scene,
-    util::{RenderContext, block_on_wgpu},
-};
+use rustc_hash::FxHashMap;
+use vello::{RendererOptions, Scene as VelloScene};
 use wgpu::{
     BufferDescriptor, BufferUsages, CommandEncoderDescriptor, Extent3d, TexelCopyBufferInfo,
     TexelCopyBufferLayout, TextureDescriptor, TextureFormat, TextureUsages,
@@ -16,14 +15,20 @@ pub struct VelloImageRenderer {
     device: wgpu::Device,
     queue: wgpu::Queue,
     renderer: vello::Renderer,
-    scene: VelloAnyrenderScene,
     texture: wgpu::Texture,
     texture_view: wgpu::TextureView,
     gpu_buffer: wgpu::Buffer,
+
+    // scene is always Some except temporarily during when it is moved out
+    // to keep the borrow-checker happy.
+    scene: Option<VelloScene>,
 }
 
 impl ImageRenderer for VelloImageRenderer {
-    type Scene = VelloAnyrenderScene;
+    type Scene<'a>
+        = VelloAnyrenderScene<'a>
+    where
+        Self: 'a;
 
     fn new(width: u32, height: u32) -> Self {
         let size = Extent3d {
@@ -33,12 +38,12 @@ impl ImageRenderer for VelloImageRenderer {
         };
 
         // Create render context
-        let mut context = RenderContext::new();
+        let mut context = WGPUContext::new();
 
         // Setup device
-        let device_id =
-            pollster::block_on(context.device(None)).expect("No compatible device found");
-        let device_handle = context.devices.remove(device_id);
+        let device_id = pollster::block_on(context.find_or_create_device(None))
+            .expect("No compatible device found");
+        let device_handle = context.device_pool.remove(device_id);
         let device = device_handle.device;
         let queue = device_handle.queue;
 
@@ -84,12 +89,18 @@ impl ImageRenderer for VelloImageRenderer {
             texture,
             texture_view,
             gpu_buffer,
-            scene: VelloAnyrenderScene(Scene::new()),
+            scene: Some(VelloScene::new()),
         }
     }
 
-    fn render<F: FnOnce(&mut Self::Scene)>(&mut self, draw_fn: F, cpu_buffer: &mut Vec<u8>) {
-        draw_fn(&mut self.scene);
+    fn render<F: FnOnce(&mut Self::Scene<'_>)>(&mut self, draw_fn: F, cpu_buffer: &mut Vec<u8>) {
+        let mut scene = VelloAnyrenderScene {
+            inner: self.scene.take().unwrap(),
+            renderer: &mut self.renderer,
+            custom_paint_sources: &mut FxHashMap::default(),
+        };
+        draw_fn(&mut scene);
+        self.scene = Some(scene.finish());
         self.render_internal_scene(cpu_buffer);
     }
 }
@@ -107,7 +118,7 @@ impl VelloImageRenderer {
             .render_to_texture(
                 &self.device,
                 &self.queue,
-                &self.scene.0,
+                self.scene.as_ref().unwrap(),
                 &self.texture_view,
                 &render_params,
             )
@@ -159,6 +170,6 @@ impl VelloImageRenderer {
         self.gpu_buffer.unmap();
 
         // Empty the Vello scene (memory optimisation)
-        self.scene.reset();
+        self.scene.as_mut().unwrap().reset();
     }
 }

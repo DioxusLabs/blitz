@@ -1,14 +1,41 @@
-use anyrender::{NormalizedCoord, Scene};
+use anyrender::{CustomPaint, NormalizedCoord, Paint, Scene};
 use kurbo::{Affine, Rect, Shape, Stroke};
 use peniko::{BlendMode, BrushRef, Color, Fill, Font, StyleRef};
+use rustc_hash::FxHashMap;
+use vello::Renderer as VelloRenderer;
 
-pub struct VelloAnyrenderScene(pub vello::Scene);
+use crate::{CustomPaintSource, custom_paint_source::CustomPaintCtx};
 
-impl Scene for VelloAnyrenderScene {
+pub struct VelloAnyrenderScene<'r> {
+    pub(crate) renderer: &'r mut VelloRenderer,
+    pub(crate) custom_paint_sources: &'r mut FxHashMap<u64, Box<dyn CustomPaintSource>>,
+    pub(crate) inner: vello::Scene,
+}
+
+impl VelloAnyrenderScene<'_> {
+    fn render_custom_source(&mut self, custom_paint: CustomPaint) -> Option<peniko::Image> {
+        let CustomPaint {
+            source_id,
+            width,
+            height,
+            scale,
+        } = custom_paint;
+
+        // Render custom paint source
+        let source = self.custom_paint_sources.get_mut(&source_id)?;
+        let ctx = CustomPaintCtx::new(self.renderer);
+        let texture_handle = source.render(ctx, width, height, scale)?;
+
+        // Return dummy image
+        Some(texture_handle.dummy_image())
+    }
+}
+
+impl Scene for VelloAnyrenderScene<'_> {
     type Output = vello::Scene;
 
     fn reset(&mut self) {
-        self.0.reset();
+        self.inner.reset();
     }
 
     fn push_layer(
@@ -18,11 +45,11 @@ impl Scene for VelloAnyrenderScene {
         transform: Affine,
         clip: &impl Shape,
     ) {
-        self.0.push_layer(blend, alpha, transform, clip);
+        self.inner.push_layer(blend, alpha, transform, clip);
     }
 
     fn pop_layer(&mut self) {
-        self.0.pop_layer();
+        self.inner.pop_layer();
     }
 
     fn stroke<'a>(
@@ -33,7 +60,7 @@ impl Scene for VelloAnyrenderScene {
         brush_transform: Option<Affine>,
         shape: &impl Shape,
     ) {
-        self.0
+        self.inner
             .stroke(style, transform, brush, brush_transform, shape);
     }
 
@@ -41,11 +68,33 @@ impl Scene for VelloAnyrenderScene {
         &mut self,
         style: Fill,
         transform: Affine,
-        brush: impl Into<BrushRef<'a>>,
+        paint: impl Into<Paint<'a>>,
         brush_transform: Option<Affine>,
         shape: &impl Shape,
     ) {
-        self.0.fill(style, transform, brush, brush_transform, shape);
+        let paint: Paint<'_> = paint.into();
+
+        let dummy_image: peniko::Image;
+        let brush_ref = match paint {
+            Paint::Solid(color) => BrushRef::Solid(color),
+            Paint::Gradient(gradient) => BrushRef::Gradient(gradient),
+            Paint::Image(image) => BrushRef::Image(image),
+            Paint::Custom(custom_paint) => {
+                if let Ok(custom_paint) = custom_paint.downcast::<CustomPaint>() {
+                    if let Some(image) = self.render_custom_source(*custom_paint) {
+                        dummy_image = image;
+                        BrushRef::Image(&dummy_image)
+                    } else {
+                        BrushRef::Solid(peniko::color::palette::css::TRANSPARENT)
+                    }
+                } else {
+                    BrushRef::Solid(peniko::color::palette::css::TRANSPARENT)
+                }
+            }
+        };
+
+        self.inner
+            .fill(style, transform, brush_ref, brush_transform, shape);
     }
 
     fn draw_glyphs<'a, 's: 'a>(
@@ -61,7 +110,7 @@ impl Scene for VelloAnyrenderScene {
         glyph_transform: Option<Affine>,
         glyphs: impl Iterator<Item = anyrender::Glyph>,
     ) {
-        self.0
+        self.inner
             .draw_glyphs(font)
             .font_size(font_size)
             .hint(hint)
@@ -88,11 +137,11 @@ impl Scene for VelloAnyrenderScene {
         radius: f64,
         std_dev: f64,
     ) {
-        self.0
+        self.inner
             .draw_blurred_rounded_rect(transform, rect, brush, radius, std_dev);
     }
 
     fn finish(self) -> Self::Output {
-        self.0
+        self.inner
     }
 }
