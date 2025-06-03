@@ -1049,7 +1049,6 @@ impl BaseDocument {
         self.viewport = viewport;
         self.set_stylist_device(make_device(&self.viewport));
         self.scroll_viewport_by(0.0, 0.0); // Clamp scroll offset
-        self.environment_changes();
     }
 
     pub fn viewport(&self) -> &Viewport {
@@ -1093,6 +1092,7 @@ impl BaseDocument {
             self.stylist.set_device(device, &guards)
         };
         self.stylist.force_stylesheet_origins_dirty(origins);
+        self.environment_changes();
     }
 
     pub fn stylist_device(&mut self) -> &Device {
