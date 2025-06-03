@@ -1,4 +1,5 @@
 use atomic_refcell::{AtomicRef, AtomicRefCell};
+use blitz_traits::net::AbortController;
 use color::{AlphaColor, Srgb};
 use keyboard_types::Modifiers;
 use markup5ever::{LocalName, QualName, local_name};
@@ -584,17 +585,37 @@ impl From<usvg::Tree> for ImageData {
     }
 }
 
-#[derive(Clone)]
+#[derive(Debug)]
 pub struct ImageContext {
     pub selected_source: ImageSource,
     pub data: Option<ImageData>,
+    pub controller: Option<AbortController>,
+}
+
+impl Clone for ImageContext {
+    fn clone(&self) -> Self {
+        Self {
+            selected_source: self.selected_source.clone(),
+            data: self.data.clone(),
+            controller: None,
+        }
+    }
 }
 
 impl ImageContext {
-    fn new(selected_source: ImageSource) -> Self {
+    fn new_with_controller(selected_source: ImageSource, controller: AbortController) -> Self {
         Self {
             selected_source,
             data: None,
+            controller: Some(controller),
+        }
+    }
+
+    pub fn new_with_data(selected_source: ImageSource, data: ImageData) -> Self {
+        Self {
+            selected_source,
+            data: Some(data),
+            controller: None,
         }
     }
 }

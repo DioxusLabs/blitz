@@ -1,6 +1,6 @@
 use super::{ImageContext, NodeSpecificData};
 use crate::{BaseDocument, net::ImageHandler, util::ImageType};
-use blitz_traits::net::Request;
+use blitz_traits::net::{AbortController, Request};
 use markup5ever::local_name;
 use mime::Mime;
 use std::{
@@ -44,23 +44,31 @@ impl BaseDocument {
             return;
         };
 
-        if let NodeSpecificData::Image(context) = &mut data.node_specific_data {
-            if context.selected_source.url == selected_source.url
-                && context.selected_source.descriptor.density == selected_source.descriptor.density
+        let controller = AbortController::default();
+        let signal = controller.signal.clone();
+
+        match &mut data.node_specific_data {
+            NodeSpecificData::Image(context)
+                if !context
+                    .selected_source
+                    .is_same_image_source(&selected_source) =>
             {
-                return;
-            } else {
                 context.selected_source = selected_source;
+                if let Some(controller) = context.controller.replace(controller) {
+                    controller.abort();
+                }
             }
-        } else if let NodeSpecificData::None = data.node_specific_data {
-            data.node_specific_data =
-                NodeSpecificData::Image(Box::new(ImageContext::new(selected_source)));
-        } else {
-            return;
+            NodeSpecificData::None => {
+                data.node_specific_data = NodeSpecificData::Image(Box::new(
+                    ImageContext::new_with_controller(selected_source, controller),
+                ));
+            }
+            _ => return,
         }
+
         self.net_provider.fetch(
             self.id(),
-            Request::get(src),
+            Request::get(src).signal(signal),
             Box::new(ImageHandler::new(target_id, ImageType::Image)),
         );
     }
@@ -381,6 +389,11 @@ impl ImageSource {
             url,
             descriptor: Default::default(),
         }
+    }
+
+    #[inline]
+    fn is_same_image_source(&self, other: &Self) -> bool {
+        self.url == other.url && self.descriptor.density == other.descriptor.density
     }
 
     fn parse(input: &str) -> Option<Self> {

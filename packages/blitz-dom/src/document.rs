@@ -1304,7 +1304,7 @@ impl BaseDocument {
 
     /// Used to determine whether a document matches a media query string,
     /// and to monitor a document to detect when it matches (or stops matching) that media query.
-    /// 
+    ///
     /// https://developer.mozilla.org/en-US/docs/Web/API/Window/matchMedia
     pub fn match_media(&self, media_query_string: &str) -> bool {
         let mut input = cssparser::ParserInput::new(media_query_string);

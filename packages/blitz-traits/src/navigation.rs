@@ -58,6 +58,7 @@ impl NavigationOptions {
                 method: Method::POST,
                 headers,
                 body: document_resource,
+                signal: None,
             }
         } else {
             Request {
@@ -65,6 +66,7 @@ impl NavigationOptions {
                 method: Method::GET,
                 headers,
                 body: Bytes::new(),
+                signal: None,
             }
         }
     }
