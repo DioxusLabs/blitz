@@ -2,9 +2,6 @@
 
 use comrak::{ExtensionOptions, Options, Plugins, RenderOptions, markdown_to_html_with_plugins};
 
-pub(crate) const GITHUB_MD_STYLES: &str = include_str!("../assets/github-markdown.css");
-pub(crate) const BLITZ_MD_STYLES: &str = include_str!("../assets/blitz-markdown-overrides.css");
-
 pub(crate) fn markdown_to_html(contents: String) -> String {
     let plugins = Plugins::default();
     // let syntax_highligher = CustomSyntectAdapter(SyntectAdapter::new(Some("InspiredGitHub")));

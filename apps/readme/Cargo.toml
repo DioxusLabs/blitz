@@ -5,10 +5,12 @@ edition = "2024"
 license.workspace = true
 
 [features]
-default = ["gpu"]
+default = ["gpu", "comrak"]
 gpu = ["dep:anyrender_vello"]
 cpu = ["dep:anyrender_vello_cpu"]
 avif = ["dep:image", "image?/avif-native"]
+comrak = ["dep:comrak"]
+pulldown_cmark = ["dep:pulldown-cmark"]
 
 [dependencies]
 blitz-traits = { path = "../../packages/blitz-traits" }
@@ -23,6 +25,7 @@ tokio = { workspace = true, features = ["rt", "rt-multi-thread"] }
 reqwest = { workspace = true }
 url = { workspace = true }
 winit = { workspace = true }
-comrak = { version = "0.39", default-features = false }
+comrak = { version = "0.39", default-features = false, optional = true }
+pulldown-cmark = { version = "0.13", default-features = false, features = ["html"], optional = true }
 image = { workspace = true, default-features = false, optional = true }
 notify = "8.0.0"

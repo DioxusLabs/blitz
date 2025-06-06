@@ -1,5 +1,19 @@
-mod markdown;
 mod readme_application;
+
+mod markdown {
+    pub(crate) const GITHUB_MD_STYLES: &str = include_str!("../assets/github-markdown.css");
+    pub(crate) const BLITZ_MD_STYLES: &str = include_str!("../assets/blitz-markdown-overrides.css");
+
+    #[cfg(feature = "comrak")]
+    mod comrak;
+    #[cfg(feature = "comrak")]
+    pub(crate) use comrak::*;
+
+    #[cfg(feature = "pulldown_cmark")]
+    mod pulldown_cmark;
+    #[cfg(feature = "pulldown_cmark")]
+    pub(crate) use pulldown_cmark::*;
+}
 
 use blitz_dom::net::Resource;
 use blitz_html::HtmlDocument;
