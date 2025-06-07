@@ -1,6 +1,9 @@
 pub use bytes::Bytes;
 pub use http::{self, HeaderMap, Method};
-use std::sync::Arc;
+use std::sync::{
+    Arc,
+    atomic::{AtomicBool, Ordering},
+};
 pub use url::Url;
 
 pub type SharedProvider<D> = Arc<dyn NetProvider<D>>;
@@ -40,6 +43,7 @@ pub struct Request {
     pub method: Method,
     pub headers: HeaderMap,
     pub body: Bytes,
+    pub signal: Option<AbortSignal>,
 }
 impl Request {
     /// A get request to the specified Url and an empty body
@@ -49,7 +53,13 @@ impl Request {
             method: Method::GET,
             headers: HeaderMap::new(),
             body: Bytes::new(),
+            signal: None,
         }
+    }
+
+    pub fn signal(mut self, signal: AbortSignal) -> Self {
+        self.signal = Some(signal);
+        self
     }
 }
 
@@ -65,4 +75,43 @@ impl<D: Send + Sync + 'static> NetProvider<D> for DummyNetProvider {
 pub struct DummyNetCallback;
 impl<D: Send + Sync + 'static> NetCallback<D> for DummyNetCallback {
     fn call(&self, _doc_id: usize, _result: Result<D, Option<String>>) {}
+}
+
+/// The AbortController interface represents a controller object that
+/// allows you to abort one or more Web requests as and when desired.
+///
+/// https://developer.mozilla.org/en-US/docs/Web/API/AbortController
+#[derive(Debug, Default)]
+pub struct AbortController {
+    pub signal: AbortSignal,
+}
+
+impl AbortController {
+    /// The abort() method of the AbortController interface aborts
+    /// an asynchronous operation before it has completed.
+    /// This is able to abort fetch requests.
+    ///
+    /// https://developer.mozilla.org/en-US/docs/Web/API/AbortController/abort
+    pub fn abort(self) {
+        self.signal.0.store(true, Ordering::SeqCst);
+    }
+}
+
+/// The AbortSignal interface represents a signal object that allows you to
+/// communicate with an asynchronous operation (such as a fetch request) and
+/// abort it if required via an AbortController object.
+///
+/// https://developer.mozilla.org/en-US/docs/Web/API/AbortSignal
+#[derive(Debug, Default, Clone)]
+pub struct AbortSignal(Arc<AtomicBool>);
+
+impl AbortSignal {
+    /// The aborted read-only property returns a value that indicates whether
+    /// the asynchronous operations the signal is communicating with are
+    /// aborted (true) or not (false).
+    ///
+    /// https://developer.mozilla.org/en-US/docs/Web/API/AbortSignal/aborted
+    pub fn aborted(&self) -> bool {
+        self.0.load(Ordering::SeqCst)
+    }
 }

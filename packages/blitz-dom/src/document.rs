@@ -24,6 +24,7 @@ use style::properties::ComputedValues;
 use style::properties::style_structs::Font;
 use style::values::GenericAtomIdent;
 use style::values::computed::Overflow;
+use style_traits::ParsingMode;
 // use quadtree_rs::Quadtree;
 use crate::net::{Resource, StylesheetLoader};
 use selectors::{Element, matching::QuirksMode};
@@ -41,9 +42,12 @@ use style::servo_arc::Arc as ServoArc;
 use style::{
     dom::{TDocument, TNode},
     media_queries::{Device, MediaList},
+    parser::ParserContext,
     selector_parser::SnapshotMap,
     shared_lock::{SharedRwLock, StylesheetGuards},
-    stylesheets::{AllowImportRules, DocumentStyleSheet, Origin, Stylesheet, UrlExtraData},
+    stylesheets::{
+        AllowImportRules, CssRuleType, DocumentStyleSheet, Origin, Stylesheet, UrlExtraData,
+    },
     stylist::Stylist,
 };
 use taffy::AvailableSpace;
@@ -152,6 +156,9 @@ pub struct BaseDocument {
 
     pub changed: HashSet<usize>,
 
+    // All image nodes.
+    image_nodes: HashSet<usize>,
+
     /// A map from control node ID's to their associated forms node ID's
     pub controls_to_form: HashMap<usize, usize>,
 
@@ -244,6 +251,7 @@ impl BaseDocument {
             active_node_id: None,
             mousedown_node_id: None,
             changed: HashSet::new(),
+            image_nodes: HashSet::new(),
             controls_to_form: HashMap::new(),
             net_provider: Arc::new(DummyNetProvider),
             navigation_provider: Arc::new(DummyNavigationProvider),
@@ -407,6 +415,11 @@ impl BaseDocument {
 
         // Mark the new node as changed.
         self.changed.insert(id);
+
+        if self.is_img_node(id) {
+            self.image_nodes.insert(id);
+        }
+
         id
     }
 
@@ -501,6 +514,7 @@ impl BaseDocument {
     pub fn remove_and_drop_node(&mut self, node_id: usize) -> Option<Node> {
         fn remove_node_ignoring_parent(doc: &mut BaseDocument, node_id: usize) -> Option<Node> {
             let node = doc.nodes.try_remove(node_id);
+            doc.image_nodes.remove(&node_id);
             if let Some(node) = &node {
                 for &child in &node.children {
                     remove_node_ignoring_parent(doc, child);
@@ -618,10 +632,13 @@ impl BaseDocument {
 
                 match kind {
                     ImageType::Image => {
-                        node.element_data_mut().unwrap().node_specific_data =
-                            NodeSpecificData::Image(Box::new(ImageData::Raster(
-                                RasterImageData::new(width, height, image_data),
+                        if let NodeSpecificData::Image(context) =
+                            &mut node.element_data_mut().unwrap().node_specific_data
+                        {
+                            context.data = Some(ImageData::Raster(RasterImageData::new(
+                                width, height, image_data,
                             )));
+                        }
 
                         // Clear layout cache
                         node.cache.clear();
@@ -644,8 +661,11 @@ impl BaseDocument {
 
                 match kind {
                     ImageType::Image => {
-                        node.element_data_mut().unwrap().node_specific_data =
-                            NodeSpecificData::Image(Box::new(ImageData::Svg(tree)));
+                        if let NodeSpecificData::Image(context) =
+                            &mut node.element_data_mut().unwrap().node_specific_data
+                        {
+                            context.data = Some(ImageData::Svg(tree));
+                        }
 
                         // Clear layout cache
                         node.cache.clear();
@@ -1072,6 +1092,7 @@ impl BaseDocument {
             self.stylist.set_device(device, &guards)
         };
         self.stylist.force_stylesheet_origins_dirty(origins);
+        self.environment_changes();
     }
 
     pub fn stylist_device(&mut self) -> &Device {
@@ -1279,6 +1300,42 @@ impl BaseDocument {
             AncestorTraverser::new(self, node_id).filter(|id| self.nodes[*id].is_element()),
         );
         chain
+    }
+
+    /// Used to determine whether a document matches a media query string,
+    /// and to monitor a document to detect when it matches (or stops matching) that media query.
+    ///
+    /// https://developer.mozilla.org/en-US/docs/Web/API/Window/matchMedia
+    pub fn match_media(&self, media_query_string: &str) -> bool {
+        let mut input = cssparser::ParserInput::new(media_query_string);
+        let mut parser = cssparser::Parser::new(&mut input);
+
+        let url_data = UrlExtraData::from(
+            self.base_url
+                .clone()
+                .unwrap_or_else(|| "about:blank".parse::<Url>().unwrap()),
+        );
+        let quirks_mode = self.stylist.quirks_mode();
+        let context = ParserContext::new(
+            Origin::Author,
+            &url_data,
+            Some(CssRuleType::Style),
+            ParsingMode::all(),
+            quirks_mode,
+            Default::default(),
+            None,
+            None,
+        );
+
+        let media_list = MediaList::parse(&context, &mut parser);
+        media_list.evaluate(self.stylist.device(), quirks_mode)
+    }
+
+    fn environment_changes(&mut self) {
+        let image_nodes = self.image_nodes.clone();
+        for node_id in image_nodes.into_iter() {
+            self.environment_changes_with_image(node_id);
+        }
     }
 }
 
