@@ -9,10 +9,9 @@ license.workspace = true
 edition = "2024"
 
 [features]
-default = ["net", "accessibility", "menu", "tracing"]
+default = ["net", "accessibility", "tracing"]
 net = ["dep:tokio", "dep:url", "dep:blitz-net"]
 accessibility = ["blitz-shell/accessibility"]
-menu = ["blitz-shell/menu"]
 tracing = ["blitz-shell/tracing"]
 
 [dependencies]

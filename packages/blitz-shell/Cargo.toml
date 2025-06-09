@@ -9,9 +9,8 @@ license.workspace = true
 edition = "2024"
 
 [features]
-default = ["accessibility", "menu", "tracing"]
+default = ["accessibility", "tracing"]
 accessibility = ["dep:accesskit", "dep:accesskit_winit", "blitz-dom/accessibility"]
-menu = ["dep:muda"]
 tracing = ["dep:tracing", "blitz-dom/tracing"]
 
 [dependencies]
@@ -31,9 +30,6 @@ accesskit_winit = {workspace = true, optional = true }
 # Other dependencies
 tracing = { workspace = true, optional = true }
 futures-util = { workspace = true }
-
-[target.'cfg(any(target_os = "windows",target_os = "macos",target_os = "linux",target_os = "dragonfly", target_os = "freebsd", target_os = "netbsd", target_os = "openbsd"))'.dependencies]
-muda = { workspace = true, default-features = false, features = ["serde"], optional = true }
 
 [target.'cfg(target_os = "android")'.dependencies]
 android-activity = { version = "0.6.0", features = ["native-activity"] }

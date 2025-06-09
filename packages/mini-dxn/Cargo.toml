@@ -12,12 +12,11 @@ edition = "2024"
 publish = false
 
 [features]
-default = ["accessibility", "hot-reload", "menu", "tracing", "net", "svg", "gpu_backend"]
+default = ["accessibility", "hot-reload", "tracing", "net", "svg", "gpu_backend"]
 svg = ["blitz-dom/svg", "blitz-paint/svg"]
 net = ["dep:tokio", "dep:blitz-net"]
 accessibility = ["blitz-shell/accessibility", "blitz-dom/accessibility"]
 autofocus = ["blitz-dom/autofocus"]
-menu = ["blitz-shell/menu"]
 tracing = ["dep:tracing", "blitz-shell/tracing", "blitz-dom/tracing"]
 hot-reload = ["dep:dioxus-cli-config", "dep:dioxus-devtools"]
 gpu_backend = ["dep:anyrender_vello"]
