@@ -3,7 +3,7 @@ use crate::color::{Color, ToColorColor};
 use crate::gradient::to_peniko_gradient;
 use crate::layers::maybe_with_layer;
 use blitz_dom::node::ImageData;
-use kurbo::{self, Affine, BezPath, Point, Rect, Shape, Size, Vec2};
+use kurbo::{self, BezPath, Point, Rect, Shape, Size, Vec2};
 use peniko::{self, Fill};
 use style::{
     properties::{
@@ -131,7 +131,7 @@ impl ElementCx<'_> {
             frame_h - bg_size.height as f32,
         );
 
-        let transform = Affine::translate((
+        let transform = kurbo::Affine::translate((
             (self.pos.x * self.scale) + bg_pos.x,
             (self.pos.y * self.scale) + bg_pos.y,
         ))

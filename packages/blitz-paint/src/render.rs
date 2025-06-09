@@ -29,7 +29,6 @@ use style::{
 
 use kurbo::{self, Affine, Point, Rect, Stroke, Vec2};
 use peniko::{self, Fill};
-use style::properties::generated::longhands::object_fit::computed_value::T as ObjectFit;
 use style::values::generics::color::GenericColor;
 use taffy::Layout;
 
@@ -506,6 +505,8 @@ impl ElementCx<'_> {
 
     #[cfg(feature = "svg")]
     fn draw_svg(&self, scene: &mut impl anyrender::Scene) {
+        use style::properties::generated::longhands::object_fit::computed_value::T as ObjectFit;
+
         let Some(svg) = self.svg else {
             return;
         };
