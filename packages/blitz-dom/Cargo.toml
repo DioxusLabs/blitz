@@ -36,8 +36,8 @@ style_config = { workspace = true }
 style_traits = { workspace = true }
 style_dom = { workspace = true }
 app_units = { workspace = true }
-euclid = { workspace = true, features = ["serde"] }
-atomic_refcell = { workspace = true, features = ["serde"] }
+euclid = { workspace = true }
+atomic_refcell = { workspace = true }
 string_cache = { workspace = true }
 markup5ever = { workspace = true }
 smallvec = { workspace = true }
@@ -64,7 +64,7 @@ html-escape = { workspace = true }
 percent-encoding = { workspace = true }
 
 # IO & Networking
-url = { workspace = true, features = ["serde"] }
+url = { workspace = true }
 
 # Input
 keyboard-types = { workspace = true }
