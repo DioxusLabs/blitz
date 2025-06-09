@@ -17,7 +17,7 @@ use cursor_icon::CursorIcon;
 use markup5ever::local_name;
 use parley::FontContext;
 use peniko::{Blob, kurbo};
-use string_cache::Atom;
+use style::Atom;
 use style::attr::{AttrIdentifier, AttrValue};
 use style::data::{ElementData, ElementStyles};
 use style::properties::ComputedValues;

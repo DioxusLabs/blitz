@@ -698,7 +698,6 @@ dependencies = [
  "selectors",
  "slab",
  "smallvec",
- "string_cache",
  "stylo",
  "stylo_config",
  "stylo_dom",

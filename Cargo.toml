@@ -35,7 +35,6 @@ markup5ever = "0.16.1" # needs to match stylo web_atoms version
 html5ever = "0.31" # needs to match stylo web_atoms version
 xml5ever = "0.22" # needs to match stylo web_atoms version
 euclid = "0.22"
-string_cache = "0.8.7"
 atomic_refcell = "0.1.13"
 app_units = "0.7.5"
 smallvec = "1"

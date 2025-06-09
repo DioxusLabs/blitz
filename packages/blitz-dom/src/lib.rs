@@ -44,13 +44,13 @@ mod accessibility;
 
 pub use document::{BaseDocument, Document};
 pub use markup5ever::{
-    Namespace, NamespaceStaticSet, Prefix, PrefixStaticSet, QualName, local_name, namespace_prefix,
-    namespace_url, ns,
+    LocalName, Namespace, NamespaceStaticSet, Prefix, PrefixStaticSet, QualName, local_name,
+    namespace_prefix, namespace_url, ns,
 };
 pub use mutator::DocumentMutator;
 pub use node::{Attribute, ElementNodeData, Node, NodeData, TextNodeData};
 pub use parley::FontContext;
-pub use string_cache::Atom;
+pub use style::Atom;
 pub use style::invalidation::element::restyle_hints::RestyleHint;
 pub type SelectorList = selectors::SelectorList<style::selector_parser::SelectorImpl>;
 pub use events::{EventDriver, EventHandler, NoopEventHandler};

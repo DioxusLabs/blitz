@@ -20,7 +20,7 @@ use anyrender_vello_cpu::VelloCpuWindowRenderer as VelloWindowRenderer;
 pub use dioxus_document::DioxusDocument;
 pub use mutation_writer::MutationWriter;
 
-use blitz_dom::{Atom, QualName, ns};
+use blitz_dom::{LocalName, Namespace, QualName, ns};
 use blitz_shell::{
     BlitzApplication, BlitzShellEvent, Config, WindowConfig, create_default_event_loop,
 };
@@ -86,8 +86,8 @@ pub fn launch_cfg_with_props<P: Clone + 'static, M: 'static>(
 pub(crate) fn qual_name(local_name: &str, namespace: Option<&str>) -> QualName {
     QualName {
         prefix: None,
-        ns: namespace.map(Atom::from).unwrap_or(ns!(html)),
-        local: Atom::from(local_name),
+        ns: namespace.map(Namespace::from).unwrap_or(ns!(html)),
+        local: LocalName::from(local_name),
     }
 }
 
