@@ -19,9 +19,6 @@ use winit::event_loop::{ActiveEventLoop, EventLoopProxy};
 use winit::window::{Theme, WindowAttributes, WindowId};
 use winit::{event::Modifiers, event::WindowEvent, keyboard::KeyCode, window::Window};
 
-#[cfg(all(feature = "menu", not(any(target_os = "android", target_os = "ios"))))]
-use crate::menu::init_menu;
-
 #[cfg(feature = "accessibility")]
 use crate::accessibility::AccessibilityState;
 
@@ -64,11 +61,6 @@ pub struct View<Rend: WindowRenderer> {
     #[cfg(feature = "accessibility")]
     /// Accessibility adapter for `accesskit`.
     accessibility: AccessibilityState,
-
-    /// Main menu bar of this view's window.
-    /// Field is _ prefixed because it is never read. But it needs to be stored here to prevent it from dropping.
-    #[cfg(all(feature = "menu", not(any(target_os = "android", target_os = "ios"))))]
-    _menu: muda::Menu,
 }
 
 impl<Rend: WindowRenderer> View<Rend> {
@@ -116,9 +108,6 @@ impl<Rend: WindowRenderer> View<Rend> {
             mouse_pos: Default::default(),
             #[cfg(feature = "accessibility")]
             accessibility: AccessibilityState::new(&winit_window, proxy.clone()),
-
-            #[cfg(all(feature = "menu", not(any(target_os = "android", target_os = "ios"))))]
-            _menu: init_menu(&winit_window),
         }
     }
 

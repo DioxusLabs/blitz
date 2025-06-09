@@ -13,8 +13,6 @@ pub struct BlitzApplication<Rend: WindowRenderer> {
     pub windows: HashMap<WindowId, View<Rend>>,
     pending_windows: Vec<WindowConfig<Rend>>,
     pub proxy: EventLoopProxy<BlitzShellEvent>,
-    #[cfg(all(feature = "menu", not(any(target_os = "android", target_os = "ios"))))]
-    menu_channel: muda::MenuEventReceiver,
 }
 
 impl<Rend: WindowRenderer> BlitzApplication<Rend> {
@@ -23,9 +21,6 @@ impl<Rend: WindowRenderer> BlitzApplication<Rend> {
             windows: HashMap::new(),
             pending_windows: Vec::new(),
             proxy,
-
-            #[cfg(all(feature = "menu", not(any(target_os = "android", target_os = "ios"))))]
-            menu_channel: muda::MenuEvent::receiver().clone(),
         }
     }
 
@@ -59,18 +54,6 @@ impl<Rend: WindowRenderer> ApplicationHandler<BlitzShellEvent> for BlitzApplicat
     fn suspended(&mut self, _event_loop: &ActiveEventLoop) {
         for (_, view) in self.windows.iter_mut() {
             view.suspend();
-        }
-    }
-
-    fn new_events(&mut self, _event_loop: &ActiveEventLoop, _cause: winit::event::StartCause) {
-        #[cfg(all(feature = "menu", not(any(target_os = "android", target_os = "ios"))))]
-        if let Ok(event) = self.menu_channel.try_recv() {
-            if event.id == muda::MenuId::new("dev.show_layout") {
-                for (_, view) in self.windows.iter_mut() {
-                    view.doc.as_mut().devtools_mut().toggle_show_layout();
-                    view.request_redraw();
-                }
-            }
         }
     }
 

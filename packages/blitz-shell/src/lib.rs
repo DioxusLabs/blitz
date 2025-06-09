@@ -6,16 +6,12 @@
 //!  - `default`: Enables the features listed below.
 //!  - `accessibility`: Enables [`accesskit`] accessibility support.
 //!  - `hot-reload`: Enables hot-reloading of Dioxus RSX.
-//!  - `menu`: Enables the [`muda`] menubar.
 //!  - `tracing`: Enables tracing support.
 
 mod application;
 mod convert_events;
 mod event;
 mod window;
-
-#[cfg(all(feature = "menu", not(any(target_os = "android", target_os = "ios"))))]
-mod menu;
 
 #[cfg(feature = "accessibility")]
 mod accessibility;
