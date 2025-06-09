@@ -9,7 +9,7 @@ license.workspace = true
 edition = "2024"
 
 [features]
-default = ["tracing", "svg", "woff-c", "clipboard", "accessibility", "system_fonts"]
+default = ["tracing", "svg", "woff-c", "accessibility", "system_fonts"]
 tracing = ["dep:tracing"]
 svg = ["dep:usvg"]
 # WOFF decoding using the "woff" crate which binds to C libraries
@@ -19,7 +19,6 @@ woff-c = ["dep:woff"]
 # WOFF decoding using the "woff2" crate which is pure Rust
 # Only woff2 is supported. Does not work correct with all woff2 fonts
 woff-rust = ["dep:woff2"]
-clipboard = ["dep:arboard"]
 accessibility = ["accesskit"]
 system_fonts = ["parley/system"]
 autofocus = []
@@ -69,9 +68,6 @@ url = { workspace = true }
 # Input
 keyboard-types = { workspace = true }
 cursor-icon = { workspace = true }
-
-[target.'cfg(any(target_os = "windows",target_os = "macos",target_os = "linux",target_os = "dragonfly", target_os = "freebsd", target_os = "netbsd", target_os = "openbsd"))'.dependencies]
-arboard = { workspace = true, optional = true }
 
 # HACK: Blitz doesn't need to depend on objc2 directly. But this feature flag is necessary
 # to prevent debug builds from panicking.

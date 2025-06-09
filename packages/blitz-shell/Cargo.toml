@@ -9,8 +9,9 @@ license.workspace = true
 edition = "2024"
 
 [features]
-default = ["accessibility", "tracing"]
+default = ["accessibility", "clipboard", "tracing"]
 accessibility = ["dep:accesskit", "dep:accesskit_winit", "blitz-dom/accessibility"]
+clipboard = ["dep:arboard"]
 tracing = ["dep:tracing", "blitz-dom/tracing"]
 
 [dependencies]
@@ -33,6 +34,9 @@ futures-util = { workspace = true }
 
 [target.'cfg(target_os = "android")'.dependencies]
 android-activity = { version = "0.6.0", features = ["native-activity"] }
+
+[target.'cfg(any(target_os = "windows",target_os = "macos",target_os = "linux",target_os = "dragonfly", target_os = "freebsd", target_os = "netbsd", target_os = "openbsd"))'.dependencies]
+arboard = { workspace = true, optional = true }
 
 [package.metadata.docs.rs]
 all-features = true

@@ -682,7 +682,6 @@ version = "0.1.0-alpha.2"
 dependencies = [
  "accesskit",
  "app_units",
- "arboard",
  "atomic_refcell",
  "blitz-traits",
  "color",
@@ -785,6 +784,7 @@ dependencies = [
  "accesskit_winit",
  "android-activity",
  "anyrender",
+ "arboard",
  "blitz-dom",
  "blitz-paint",
  "blitz-traits",

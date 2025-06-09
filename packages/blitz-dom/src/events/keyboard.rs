@@ -2,7 +2,9 @@ use crate::{
     BaseDocument,
     node::{TextBrush, TextInputData},
 };
-use blitz_traits::{BlitzKeyEvent, DomEvent, DomEventData, events::BlitzInputEvent};
+use blitz_traits::{
+    BlitzKeyEvent, DomEvent, DomEventData, events::BlitzInputEvent, shell::ShellProvider,
+};
 use keyboard_types::{Key, Modifiers};
 use markup5ever::local_name;
 use parley::{FontContext, LayoutContext};
@@ -35,8 +37,13 @@ pub(crate) fn handle_keypress<F: FnMut(DomEvent)>(
         };
 
         if let Some(input_data) = element_data.text_input_data_mut() {
-            let generated_event =
-                apply_keypress_event(input_data, &mut doc.font_ctx, &mut doc.layout_ctx, event);
+            let generated_event = apply_keypress_event(
+                input_data,
+                &mut doc.font_ctx,
+                &mut doc.layout_ctx,
+                &*doc.shell_provider,
+                event,
+            );
 
             if let Some(generated_event) = generated_event {
                 match generated_event {
@@ -66,6 +73,7 @@ fn apply_keypress_event(
     input_data: &mut TextInputData,
     font_ctx: &mut FontContext,
     layout_ctx: &mut LayoutContext<TextBrush>,
+    shell_provider: &dyn ShellProvider,
     event: BlitzKeyEvent,
 ) -> Option<GeneratedEvent> {
     // Do nothing if it is a keyup event
@@ -81,27 +89,21 @@ fn apply_keypress_event(
     let editor = &mut input_data.editor;
     let mut driver = editor.driver(font_ctx, layout_ctx);
     match event.key {
-        #[cfg(all(feature = "clipboard", not(target_os = "android")))]
         Key::Character(c) if action_mod && matches!(c.as_str(), "c" | "x" | "v") => {
-            use arboard::Clipboard;
-
             match c.to_lowercase().as_str() {
                 "c" => {
                     if let Some(text) = driver.editor.selected_text() {
-                        let mut cb = Clipboard::new().unwrap();
-                        cb.set_text(text.to_owned()).ok();
+                        let _ = shell_provider.set_clipboard_text(text.to_owned());
                     }
                 }
                 "x" => {
                     if let Some(text) = driver.editor.selected_text() {
-                        let mut cb = Clipboard::new().unwrap();
-                        cb.set_text(text.to_owned()).ok();
+                        let _ = shell_provider.set_clipboard_text(text.to_owned());
                         driver.delete_selection()
                     }
                 }
                 "v" => {
-                    let mut cb = Clipboard::new().unwrap();
-                    let text = cb.get_text().unwrap_or_default();
+                    let text = shell_provider.get_clipboard_text().unwrap_or_default();
                     driver.insert_or_replace_selection(&text)
                 }
                 _ => unreachable!(),
