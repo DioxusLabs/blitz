@@ -109,30 +109,36 @@ impl ShellProvider for BlitzShellProvider {
         self.window.set_title(&title);
     }
 
-    #[cfg(all(feature = "clipboard", any(
-        target_os = "windows",
-        target_os = "macos",
-        target_os = "linux",
-        target_os = "dragonfly",
-        target_os = "freebsd",
-        target_os = "netbsd",
-        target_os = "openbsd"
-    )))]
+    #[cfg(all(
+        feature = "clipboard",
+        any(
+            target_os = "windows",
+            target_os = "macos",
+            target_os = "linux",
+            target_os = "dragonfly",
+            target_os = "freebsd",
+            target_os = "netbsd",
+            target_os = "openbsd"
+        )
+    ))]
     fn get_clipboard_text(&self) -> Result<String, blitz_traits::shell::ClipboardError> {
         let mut cb = arboard::Clipboard::new().unwrap();
         cb.get_text()
             .map_err(|_| blitz_traits::shell::ClipboardError)
     }
 
-    #[cfg(all(feature = "clipboard", any(
-        target_os = "windows",
-        target_os = "macos",
-        target_os = "linux",
-        target_os = "dragonfly",
-        target_os = "freebsd",
-        target_os = "netbsd",
-        target_os = "openbsd"
-    )))]
+    #[cfg(all(
+        feature = "clipboard",
+        any(
+            target_os = "windows",
+            target_os = "macos",
+            target_os = "linux",
+            target_os = "dragonfly",
+            target_os = "freebsd",
+            target_os = "netbsd",
+            target_os = "openbsd"
+        )
+    ))]
     fn set_clipboard_text(&self, text: String) -> Result<(), blitz_traits::shell::ClipboardError> {
         let mut cb = arboard::Clipboard::new().unwrap();
         cb.set_text(text.to_owned())
