@@ -39,6 +39,8 @@ euclid = { workspace = true }
 atomic_refcell = { workspace = true }
 markup5ever = { workspace = true }
 smallvec = { workspace = true }
+cssparser = { workspace = true }
+mime = { workspace = true }
 
 # DioxusLabs dependencies
 taffy = { workspace = true }
