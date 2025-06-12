@@ -1,10 +1,6 @@
 use std::sync::Arc;
 
-#[cfg(feature = "gpu")]
-use anyrender_vello::VelloWindowRenderer;
-#[cfg(feature = "cpu")]
-use anyrender_vello_cpu::VelloCpuWindowRenderer as VelloWindowRenderer;
-
+use crate::WindowRenderer;
 use blitz_dom::net::Resource;
 use blitz_html::HtmlDocument;
 use blitz_net::Provider;
@@ -23,7 +19,7 @@ use crate::markdown::{BLITZ_MD_STYLES, GITHUB_MD_STYLES, markdown_to_html};
 pub struct ReadmeEvent;
 
 pub struct ReadmeApplication {
-    inner: BlitzApplication<VelloWindowRenderer>,
+    inner: BlitzApplication<WindowRenderer>,
     handle: tokio::runtime::Handle,
     net_provider: Arc<Provider<Resource>>,
     raw_url: String,
@@ -51,11 +47,11 @@ impl ReadmeApplication {
         }
     }
 
-    pub fn add_window(&mut self, window_config: WindowConfig<VelloWindowRenderer>) {
+    pub fn add_window(&mut self, window_config: WindowConfig<WindowRenderer>) {
         self.inner.add_window(window_config);
     }
 
-    fn window_mut(&mut self) -> &mut View<VelloWindowRenderer> {
+    fn window_mut(&mut self) -> &mut View<WindowRenderer> {
         self.inner.windows.values_mut().next().unwrap()
     }
 

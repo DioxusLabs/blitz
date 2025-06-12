@@ -11,7 +11,6 @@ use blitz_traits::events::UiEvent;
 use blitz_traits::{BlitzMouseButtonEvent, MouseEventButton, MouseEventButtons, Viewport};
 use winit::keyboard::PhysicalKey;
 
-use std::marker::PhantomData;
 use std::sync::Arc;
 use std::task::Waker;
 use winit::event::{ElementState, MouseButton};
@@ -25,19 +24,23 @@ use crate::accessibility::AccessibilityState;
 pub struct WindowConfig<Rend: WindowRenderer> {
     doc: Box<dyn Document>,
     attributes: WindowAttributes,
-    rend: PhantomData<Rend>,
+    renderer: Rend,
 }
 
 impl<Rend: WindowRenderer> WindowConfig<Rend> {
-    pub fn new(doc: Box<dyn Document>) -> Self {
-        Self::with_attributes(doc, Window::default_attributes())
+    pub fn new(doc: Box<dyn Document>, renderer: Rend) -> Self {
+        Self::with_attributes(doc, renderer, Window::default_attributes())
     }
 
-    pub fn with_attributes(doc: Box<dyn Document>, attributes: WindowAttributes) -> Self {
+    pub fn with_attributes(
+        doc: Box<dyn Document>,
+        renderer: Rend,
+        attributes: WindowAttributes,
+    ) -> Self {
         WindowConfig {
             doc,
             attributes,
-            rend: PhantomData,
+            renderer,
         }
     }
 }
@@ -97,7 +100,7 @@ impl<Rend: WindowRenderer> View<Rend> {
         }
 
         Self {
-            renderer: Rend::new(winit_window.clone()),
+            renderer: config.renderer,
             waker: None,
             keyboard_modifiers: Default::default(),
             event_loop_proxy: proxy.clone(),
@@ -154,7 +157,7 @@ impl<Rend: WindowRenderer> View<Rend> {
         // Resume renderer
         let (width, height) = self.doc.viewport().window_size;
         let scale = self.doc.viewport().scale_f64();
-        self.renderer.resume(width, height);
+        self.renderer.resume(self.window.clone(), width, height);
         if !self.renderer.is_active() {
             panic!("Renderer failed to resume");
         };
@@ -205,6 +208,9 @@ impl<Rend: WindowRenderer> View<Rend> {
         let scale = self.doc.viewport().scale_f64();
         self.renderer
             .render(|scene| paint_scene(scene, &self.doc, scale, width, height));
+
+        // TODO: animation timer
+        self.request_redraw();
     }
 
     pub fn window_id(&self) -> WindowId {

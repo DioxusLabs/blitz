@@ -25,40 +25,45 @@ pub struct VelloWindowRenderer {
     // The fields MUST be in this order, so that the surface is dropped before the window
     // Window is cached even when suspended so that it can be reused when the app is resumed after being suspended
     render_state: RenderState,
-    window_handle: Arc<dyn WindowHandle>,
+    window_handle: Option<Arc<dyn WindowHandle>>,
 
     // Vello
     render_context: RenderContext,
     scene: VelloAnyrenderScene,
 }
 
-impl WindowRenderer for VelloWindowRenderer {
-    type Scene = VelloAnyrenderScene;
-
-    fn new(window: Arc<dyn WindowHandle>) -> Self {
+impl VelloWindowRenderer {
+    #[allow(clippy::new_without_default)]
+    pub fn new() -> Self {
         // 2. Set up Vello specific stuff
         let render_context = RenderContext::new();
 
         Self {
             render_context,
             render_state: RenderState::Suspended,
-            window_handle: window,
+            window_handle: None,
             scene: VelloAnyrenderScene(Scene::new()),
         }
     }
+}
+
+impl WindowRenderer for VelloWindowRenderer {
+    type Scene = VelloAnyrenderScene;
 
     fn is_active(&self) -> bool {
         matches!(self.render_state, RenderState::Active(_))
     }
 
-    fn resume(&mut self, width: u32, height: u32) {
+    fn resume(&mut self, window_handle: Arc<dyn WindowHandle>, width: u32, height: u32) {
         let surface = pollster::block_on(self.render_context.create_surface(
-            self.window_handle.clone(),
+            window_handle.clone(),
             width,
             height,
             PresentMode::AutoVsync,
         ))
         .expect("Error creating surface");
+
+        self.window_handle = Some(window_handle);
 
         let options = RendererOptions {
             antialiasing_support: AaSupport::all(),

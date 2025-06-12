@@ -21,32 +21,36 @@ pub struct VelloCpuWindowRenderer {
     // The fields MUST be in this order, so that the surface is dropped before the window
     // Window is cached even when suspended so that it can be reused when the app is resumed after being suspended
     render_state: RenderState,
-    window_handle: Arc<dyn WindowHandle>,
+    window_handle: Option<Arc<dyn WindowHandle>>,
     render_context: VelloCpuAnyrenderScene,
+}
+
+impl VelloCpuWindowRenderer {
+    #[allow(clippy::new_without_default)]
+    pub fn new() -> Self {
+        Self {
+            render_state: RenderState::Suspended,
+            window_handle: None,
+            render_context: VelloCpuAnyrenderScene(RenderContext::new(0, 0)),
+        }
+    }
 }
 
 impl WindowRenderer for VelloCpuWindowRenderer {
     type Scene = VelloCpuAnyrenderScene;
 
-    fn new(window: Arc<dyn WindowHandle>) -> Self {
-        Self {
-            render_state: RenderState::Suspended,
-            window_handle: window,
-            render_context: VelloCpuAnyrenderScene(RenderContext::new(0, 0)),
-        }
-    }
-
     fn is_active(&self) -> bool {
         matches!(self.render_state, RenderState::Active(_))
     }
 
-    fn resume(&mut self, width: u32, height: u32) {
-        let context = Context::new(self.window_handle.clone()).unwrap();
-        let surface = Surface::new(&context, self.window_handle.clone()).unwrap();
+    fn resume(&mut self, window_handle: Arc<dyn WindowHandle>, width: u32, height: u32) {
+        let context = Context::new(window_handle.clone()).unwrap();
+        let surface = Surface::new(&context, window_handle.clone()).unwrap();
         self.render_state = RenderState::Active(ActiveRenderState {
             _context: context,
             surface,
         });
+        self.window_handle = Some(window_handle);
 
         self.set_size(width, height);
     }

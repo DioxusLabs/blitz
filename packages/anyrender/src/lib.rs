@@ -29,8 +29,7 @@ impl<T: HasWindowHandle + HasDisplayHandle + WasmNotSendSync> WindowHandle for T
 
 pub trait WindowRenderer {
     type Scene: Scene;
-    fn new(window: Arc<dyn WindowHandle>) -> Self;
-    fn resume(&mut self, width: u32, height: u32);
+    fn resume(&mut self, window: Arc<dyn WindowHandle>, width: u32, height: u32);
     fn suspend(&mut self);
     fn is_active(&self) -> bool;
     fn set_size(&mut self, width: u32, height: u32);

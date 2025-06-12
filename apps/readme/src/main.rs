@@ -15,6 +15,11 @@ mod markdown {
     pub(crate) use pulldown_cmark::*;
 }
 
+#[cfg(feature = "gpu")]
+use anyrender_vello::VelloWindowRenderer as WindowRenderer;
+#[cfg(feature = "cpu")]
+use anyrender_vello_cpu::VelloCpuWindowRenderer as WindowRenderer;
+
 use blitz_dom::net::Resource;
 use blitz_html::HtmlDocument;
 use blitz_net::Provider;
@@ -101,8 +106,9 @@ fn main() {
         None,
         navigation_provider.clone(),
     );
+    let renderer = WindowRenderer::new();
     let attrs = WindowAttributes::default().with_title(title);
-    let window = WindowConfig::with_attributes(Box::new(doc) as _, attrs);
+    let window = WindowConfig::with_attributes(Box::new(doc) as _, renderer, attrs);
 
     // Create application
     let mut application = ReadmeApplication::new(

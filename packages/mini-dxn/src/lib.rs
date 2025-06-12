@@ -13,9 +13,9 @@ mod events;
 mod mutation_writer;
 
 #[cfg(feature = "gpu_backend")]
-use anyrender_vello::VelloWindowRenderer;
+use anyrender_vello::VelloWindowRenderer as WindowRenderer;
 #[cfg(feature = "cpu_backend")]
-use anyrender_vello_cpu::VelloCpuWindowRenderer as VelloWindowRenderer;
+use anyrender_vello_cpu::VelloCpuWindowRenderer as WindowRenderer;
 
 pub use dioxus_document::DioxusDocument;
 pub use mutation_writer::MutationWriter;
@@ -73,10 +73,11 @@ pub fn launch_cfg_with_props<P: Clone + 'static, M: 'static>(
     // We're going to need to hit it with a special waker
     let vdom = VirtualDom::new_with_props(root, props);
     let doc = DioxusDocument::new(vdom, net_provider);
-    let window = WindowConfig::new(Box::new(doc) as _);
+    let renderer = WindowRenderer::new();
+    let window = WindowConfig::new(Box::new(doc) as _, renderer);
 
     // Create application
-    let mut application = BlitzApplication::<VelloWindowRenderer>::new(event_loop.create_proxy());
+    let mut application = BlitzApplication::<WindowRenderer>::new(event_loop.create_proxy());
     application.add_window(window);
 
     // Run event loop
