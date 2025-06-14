@@ -80,16 +80,14 @@ impl Scene for VelloAnyrenderScene<'_> {
             Paint::Gradient(gradient) => BrushRef::Gradient(gradient),
             Paint::Image(image) => BrushRef::Image(image),
             Paint::Custom(custom_paint) => {
-                if let Ok(custom_paint) = custom_paint.downcast::<CustomPaint>() {
-                    if let Some(image) = self.render_custom_source(*custom_paint) {
-                        dummy_image = image;
-                        BrushRef::Image(&dummy_image)
-                    } else {
-                        BrushRef::Solid(peniko::color::palette::css::TRANSPARENT)
-                    }
-                } else {
-                    BrushRef::Solid(peniko::color::palette::css::TRANSPARENT)
-                }
+                let Ok(custom_paint) = custom_paint.downcast::<CustomPaint>() else {
+                    return;
+                };
+                let Some(image) = self.render_custom_source(*custom_paint) else {
+                    return;
+                };
+                dummy_image = image;
+                BrushRef::Image(&dummy_image)
             }
         };
 

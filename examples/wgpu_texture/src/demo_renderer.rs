@@ -25,10 +25,6 @@ impl CustomPaintSource for DemoPaintSource {
         self.state = DemoRendererState::Suspended;
     }
 
-    fn set_size(&mut self, _width: u32, _height: u32) {
-        // Do nothing
-    }
-
     fn render(
         &mut self,
         ctx: CustomPaintCtx<'_>,

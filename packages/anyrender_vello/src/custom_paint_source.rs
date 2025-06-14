@@ -8,7 +8,6 @@ use wgpu::{Device, Queue, TexelCopyTextureInfoBase, Texture};
 pub trait CustomPaintSource: 'static {
     fn resume(&mut self, device: &Device, queue: &Queue);
     fn suspend(&mut self);
-    fn set_size(&mut self, width: u32, height: u32);
     fn render(
         &mut self,
         ctx: CustomPaintCtx<'_>,
@@ -41,16 +40,12 @@ impl CustomPaintCtx<'_> {
     }
 
     pub fn register_texture(&mut self, texture: Texture) -> TextureHandle {
-        // Create dummy image and set override_image
-        // TODO: better ovveride_image lifetime management
         let dummy_image = dummy_image(None, texture.width(), texture.height());
-
         let handle = TextureHandle {
             id: dummy_image.data.id(),
             width: texture.width(),
             height: texture.height(),
         };
-
         let base = TexelCopyTextureInfoBase {
             texture,
             mip_level: 0,
