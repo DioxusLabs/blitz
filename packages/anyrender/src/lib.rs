@@ -1,7 +1,7 @@
-use std::sync::Arc;
+use std::{any::Any, sync::Arc};
 
 use kurbo::{Affine, Rect, Shape, Stroke};
-use peniko::{BlendMode, BrushRef, Color, Fill, Font, Image, StyleRef};
+use peniko::{BlendMode, BrushRef, Color, Fill, Font, Gradient, Image, StyleRef};
 use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
 
 mod wasm_send_sync;
@@ -17,6 +17,55 @@ pub struct Glyph {
     pub y: f32,
 }
 
+#[derive(Copy, Clone, Debug)]
+pub struct CustomPaint {
+    pub source_id: u64,
+    pub width: u32,
+    pub height: u32,
+    pub scale: f64,
+}
+
+#[derive(Clone, Debug)]
+pub enum Paint<'a> {
+    /// Solid color brush.
+    Solid(Color),
+    /// Gradient brush.
+    Gradient(&'a Gradient),
+    /// Image brush.
+    Image(&'a Image),
+    /// Custom paint (type erased as each backend will have their own)
+    Custom(Arc<dyn Any + Send + Sync>),
+}
+impl From<Color> for Paint<'_> {
+    fn from(value: Color) -> Self {
+        Paint::Solid(value)
+    }
+}
+impl<'a> From<&'a Gradient> for Paint<'a> {
+    fn from(value: &'a Gradient) -> Self {
+        Paint::Gradient(value)
+    }
+}
+impl<'a> From<&'a Image> for Paint<'a> {
+    fn from(value: &'a Image) -> Self {
+        Paint::Image(value)
+    }
+}
+impl<'a> From<Arc<dyn Any + Send + Sync>> for Paint<'a> {
+    fn from(value: Arc<dyn Any + Send + Sync>) -> Self {
+        Paint::Custom(value)
+    }
+}
+impl<'a> From<BrushRef<'a>> for Paint<'a> {
+    fn from(value: BrushRef<'a>) -> Self {
+        match value {
+            BrushRef::Solid(color) => Paint::Solid(color),
+            BrushRef::Gradient(gradient) => Paint::Gradient(gradient),
+            BrushRef::Image(image) => Paint::Image(image),
+        }
+    }
+}
+
 // #[derive(Copy, Clone, Debug)]
 // pub struct Viewport {
 //     pub width: u32,
@@ -28,21 +77,25 @@ pub trait WindowHandle: HasWindowHandle + HasDisplayHandle + WasmNotSendSync {}
 impl<T: HasWindowHandle + HasDisplayHandle + WasmNotSendSync> WindowHandle for T {}
 
 pub trait WindowRenderer {
-    type Scene: Scene;
+    type Scene<'a>: Scene
+    where
+        Self: 'a;
     fn resume(&mut self, window: Arc<dyn WindowHandle>, width: u32, height: u32);
     fn suspend(&mut self);
     fn is_active(&self) -> bool;
     fn set_size(&mut self, width: u32, height: u32);
-    fn render<F: FnOnce(&mut Self::Scene)>(&mut self, draw_fn: F);
+    fn render<F: FnOnce(&mut Self::Scene<'_>)>(&mut self, draw_fn: F);
 }
 
 pub trait ImageRenderer {
-    type Scene: Scene;
+    type Scene<'a>: Scene
+    where
+        Self: 'a;
     fn new(width: u32, height: u32) -> Self;
-    fn render<F: FnOnce(&mut Self::Scene)>(&mut self, draw_fn: F, buffer: &mut Vec<u8>);
+    fn render<F: FnOnce(&mut Self::Scene<'_>)>(&mut self, draw_fn: F, buffer: &mut Vec<u8>);
 }
 
-pub fn render_to_buffer<R: ImageRenderer, F: FnOnce(&mut R::Scene)>(
+pub fn render_to_buffer<R: ImageRenderer, F: FnOnce(&mut R::Scene<'_>)>(
     draw_fn: F,
     width: u32,
     height: u32,
@@ -92,7 +145,7 @@ pub trait Scene {
         &mut self,
         style: Fill,
         transform: Affine,
-        brush: impl Into<BrushRef<'a>>,
+        brush: impl Into<Paint<'a>>,
         brush_transform: Option<Affine>,
         shape: &impl Shape,
     );

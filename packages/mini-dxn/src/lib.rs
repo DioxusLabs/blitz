@@ -12,37 +12,61 @@ mod dioxus_document;
 mod events;
 mod mutation_writer;
 
+mod dioxus_renderer;
+use std::any::Any;
+
 #[cfg(feature = "gpu_backend")]
-use anyrender_vello::VelloWindowRenderer as WindowRenderer;
-#[cfg(feature = "cpu_backend")]
-use anyrender_vello_cpu::VelloCpuWindowRenderer as WindowRenderer;
+pub use anyrender_vello::wgpu::{Features, Limits};
+#[cfg(feature = "gpu_backend")]
+pub use dioxus_renderer::use_wgpu;
 
 pub use dioxus_document::DioxusDocument;
+pub use dioxus_renderer::DxnWindowRenderer;
 pub use mutation_writer::MutationWriter;
 
 use blitz_dom::{LocalName, Namespace, QualName, ns};
-use blitz_shell::{
-    BlitzApplication, BlitzShellEvent, Config, WindowConfig, create_default_event_loop,
-};
-use dioxus_core::{ComponentFunction, Element, VirtualDom};
+use blitz_shell::{BlitzApplication, BlitzShellEvent, WindowConfig, create_default_event_loop};
+use dioxus_core::{Element, VirtualDom};
 
 type NodeId = usize;
 
 /// Launch an interactive HTML/CSS renderer driven by the Dioxus virtualdom
 pub fn launch(root: fn() -> Element) {
-    launch_cfg(root, Config::default())
+    launch_cfg(root, Vec::new(), Vec::new())
 }
 
-pub fn launch_cfg(root: fn() -> Element, cfg: Config) {
-    launch_cfg_with_props(root, (), cfg)
-}
-
-// todo: props shouldn't have the clone bound - should try and match dioxus-desktop behavior
-pub fn launch_cfg_with_props<P: Clone + 'static, M: 'static>(
-    root: impl ComponentFunction<P, M>,
-    props: P,
-    _cfg: Config,
+/// Launches the WebView and runs the event loop, with configuration and root props.
+pub fn launch_cfg(
+    root: fn() -> Element,
+    contexts: Vec<Box<dyn Fn() -> Box<dyn Any> + Send + Sync>>,
+    platform_config: Vec<Box<dyn Any>>,
 ) {
+    // Read config values
+    #[cfg(feature = "gpu_backend")]
+    let mut features = None;
+    #[cfg(feature = "gpu_backend")]
+    let mut limits = None;
+    for mut cfg in platform_config {
+        #[cfg(feature = "gpu_backend")]
+        {
+            cfg = match cfg.downcast::<Features>() {
+                Ok(value) => {
+                    features = Some(*value);
+                    continue;
+                }
+                Err(cfg) => cfg,
+            };
+            cfg = match cfg.downcast::<Limits>() {
+                Ok(value) => {
+                    limits = Some(*value);
+                    continue;
+                }
+                Err(cfg) => cfg,
+            };
+        }
+        let _ = cfg;
+    }
+
     let event_loop = create_default_event_loop::<BlitzShellEvent>();
 
     #[cfg(feature = "net")]
@@ -69,15 +93,25 @@ pub fn launch_cfg_with_props<P: Clone + 'static, M: 'static>(
     #[cfg(not(feature = "net"))]
     let net_provider = None;
 
+    // Create the renderer
+    #[cfg(feature = "gpu_backend")]
+    let renderer = DxnWindowRenderer::with_features_and_limits(features, limits);
+    #[cfg(feature = "cpu_backend")]
+    let renderer = DxnWindowRenderer::new();
+
     // Spin up the virtualdom
-    // We're going to need to hit it with a special waker
-    let vdom = VirtualDom::new_with_props(root, props);
+    let mut vdom = VirtualDom::new(root);
+    vdom.insert_any_root_context(Box::new(renderer.clone()));
+    for context in contexts {
+        vdom.insert_any_root_context(context());
+    }
+
+    // Create the document and renderer
     let doc = DioxusDocument::new(vdom, net_provider);
-    let renderer = WindowRenderer::new();
     let window = WindowConfig::new(Box::new(doc) as _, renderer);
 
     // Create application
-    let mut application = BlitzApplication::<WindowRenderer>::new(event_loop.create_proxy());
+    let mut application = BlitzApplication::<DxnWindowRenderer>::new(event_loop.create_proxy());
     application.add_window(window);
 
     // Run event loop

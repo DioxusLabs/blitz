@@ -2,11 +2,14 @@ mod background;
 mod box_shadow;
 mod form_controls;
 
+use std::sync::Arc;
+
 use super::multicolor_rounded_rect::{Edge, ElementFrame};
 use crate::color::{Color, ToColorColor};
 use crate::debug_overlay::render_debug_overlay;
 use crate::layers::{maybe_with_layer, reset_layer_stats};
 use crate::sizing::compute_object_fit;
+use anyrender::{CustomPaint, Paint};
 use blitz_dom::node::{
     ListItemLayout, ListItemLayoutPosition, Marker, NodeData, RasterImageData, TextInputData,
     TextNodeData,
@@ -273,6 +276,7 @@ impl BlitzDomPainter<'_> {
             cx.draw_image(scene);
             #[cfg(feature = "svg")]
             cx.draw_svg(scene);
+            cx.draw_canvas(scene);
             cx.draw_input(scene);
 
             cx.draw_text_input_text(scene, content_position);
@@ -591,6 +595,31 @@ impl ElementCx<'_> {
                 .then_translate(Vec2 { x, y });
 
             scene.draw_image(&to_peniko_image(image), transform);
+        }
+    }
+
+    fn draw_canvas(&self, scene: &mut impl anyrender::Scene) {
+        if let Some(custom_paint_source) = self.element.canvas_data() {
+            let width = self.frame.content_box.width() as u32;
+            let height = self.frame.content_box.height() as u32;
+            let x = self.frame.content_box.origin().x;
+            let y = self.frame.content_box.origin().y;
+
+            let transform = self.transform.then_translate(Vec2 { x, y });
+
+            scene.fill(
+                Fill::NonZero,
+                transform,
+                // TODO: replace `Arc<dyn Any>` with `CustomPaint` in API?
+                Paint::Custom(Arc::new(CustomPaint {
+                    source_id: custom_paint_source.custom_paint_source_id,
+                    width,
+                    height,
+                    scale: self.scale,
+                })),
+                None,
+                &Rect::from_origin_size((0.0, 0.0), (width as f64, height as f64)),
+            );
         }
     }
 

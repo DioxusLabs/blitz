@@ -564,7 +564,7 @@ impl ElementCx<'_> {
             self.scale,
             &current_color,
         );
-        let brush = peniko::BrushRef::Gradient(&gradient);
+        let brush = anyrender::Paint::Gradient(&gradient);
 
         for hc in 0..height_count {
             for wc in 0..width_count {
@@ -576,7 +576,7 @@ impl ElementCx<'_> {
                 scene.fill(
                     peniko::Fill::NonZero,
                     transform,
-                    brush,
+                    brush.clone(),
                     gradient_transform,
                     &origin_rect,
                 );

@@ -149,6 +149,8 @@ pub struct BaseDocument {
     pub(crate) active_node_id: Option<usize>,
     /// The node which recieved a mousedown event (if any)
     pub(crate) mousedown_node_id: Option<usize>,
+    /// Whether there are active animations (so we should re-render every frame)
+    pub(crate) is_animating: bool,
 
     pub changed: HashSet<usize>,
 
@@ -243,6 +245,7 @@ impl BaseDocument {
             focus_node_id: None,
             active_node_id: None,
             mousedown_node_id: None,
+            is_animating: false,
             changed: HashSet::new(),
             controls_to_form: HashMap::new(),
             net_provider: Arc::new(DummyNetProvider),
@@ -1061,6 +1064,10 @@ impl BaseDocument {
         &mut self.devtool_settings
     }
 
+    pub fn is_animating(&self) -> bool {
+        self.is_animating
+    }
+
     /// Update the device and reset the stylist to process the new size
     pub fn set_stylist_device(&mut self, device: Device) {
         let origins = {
@@ -1269,6 +1276,21 @@ impl BaseDocument {
                     .is_element_with_tag_name(&local_name!("title"))
             })
             .map(|node_id| &self.nodes[node_id])
+    }
+
+    pub(crate) fn compute_is_animating(&self) -> bool {
+        TreeTraverser::new(self).any(|node_id| {
+            let node = &self.nodes[node_id];
+            let Some(element) = node.element_data() else {
+                return false;
+            };
+            if element.name.local == local_name!("canvas") && element.has_attr(local_name!("data"))
+            {
+                return true;
+            }
+
+            false
+        })
     }
 
     /// Collect the nodes into a chain by traversing upwards

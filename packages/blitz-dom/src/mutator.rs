@@ -3,7 +3,7 @@ use std::ops::{Deref, DerefMut};
 
 use crate::document::make_device;
 use crate::net::{CssHandler, ImageHandler};
-use crate::node::NodeSpecificData;
+use crate::node::{CanvasData, NodeSpecificData};
 use crate::util::ImageType;
 use crate::{Attribute, BaseDocument, ElementNodeData, NodeData, QualName, local_name, ns};
 use blitz_traits::Viewport;
@@ -25,6 +25,10 @@ pub struct DocumentMutator<'doc> {
     title_node: Option<usize>,
     style_nodes: HashSet<usize>,
     form_nodes: HashSet<usize>,
+
+    /// Whether an element/attribute that affect animation status has been seen
+    recompute_is_animating: bool,
+
     /// The (latest) node which has been mounted in and had autofocus=true, if any
     #[cfg(feature = "autofocus")]
     node_to_autofocus: Option<usize>,
@@ -43,6 +47,7 @@ impl DocumentMutator<'_> {
             title_node: None,
             style_nodes: HashSet::new(),
             form_nodes: HashSet::new(),
+            recompute_is_animating: false,
             #[cfg(feature = "autofocus")]
             node_to_autofocus: None,
         }
@@ -111,6 +116,7 @@ impl DocumentMutator<'_> {
         self.maybe_record_parent_node(anchor_node_id);
         self.doc.insert_before(anchor_node_id, new_node_ids);
         self.doc.remove_node(anchor_node_id);
+        self.recompute_is_animating = true;
     }
 
     pub fn replace_placeholder_with_nodes(
@@ -124,6 +130,8 @@ impl DocumentMutator<'_> {
     }
 
     pub fn remove_node(&mut self, node_id: usize) {
+        // TODO: more reactivity when removing nodes
+        self.recompute_is_animating = true;
         self.doc.remove_node(node_id);
     }
 
@@ -153,6 +161,7 @@ impl DocumentMutator<'_> {
     pub fn remove_node_if_unparented(&mut self, node_id: usize) {
         if let Some(node) = self.doc.get_node(node_id) {
             if node.parent.is_none() {
+                self.recompute_is_animating = true;
                 self.doc.remove_and_drop_node(node_id);
             }
         }
@@ -218,6 +227,7 @@ impl DocumentMutator<'_> {
             "title" => self.title_node = Some(id),
             "link" => self.load_linked_stylesheet(id),
             "img" => self.load_image(id),
+            "canvas" => self.load_custom_paint_src(id),
             "style" => {
                 self.style_nodes.insert(id);
             }
@@ -263,6 +273,7 @@ impl DocumentMutator<'_> {
 
         let attr = name.local.as_ref();
         let load_image = element.name.local == local_name!("img") && attr == "src";
+        let set_custom_paint_src = element.name.local == local_name!("canvas") && attr == "data";
 
         if element.name.local == local_name!("input") && attr == "checked" {
             set_input_checked_state(element, value.to_string());
@@ -293,6 +304,10 @@ impl DocumentMutator<'_> {
         if load_image {
             self.load_image(node_id);
         }
+
+        if set_custom_paint_src {
+            self.load_custom_paint_src(node_id);
+        }
     }
 
     pub fn clear_attribute(&mut self, node_id: usize, name: QualName) {
@@ -313,6 +328,10 @@ impl DocumentMutator<'_> {
                 }
             }
 
+            if element.name.local == local_name!("canvas") && name.local == local_name!("data") {
+                self.recompute_is_animating = true;
+            }
+
             // FIXME: check namespace
             element.attrs.retain(|attr| attr.name.local != name.local);
         }
@@ -321,6 +340,10 @@ impl DocumentMutator<'_> {
 
 impl<'doc> DocumentMutator<'doc> {
     pub fn flush(&mut self) {
+        if self.recompute_is_animating {
+            self.doc.is_animating = self.doc.compute_is_animating();
+        }
+
         if let Some(id) = self.title_node {
             let title = self.doc.nodes[id].text_content();
             self.doc.shell_provider.set_window_title(title);
@@ -407,6 +430,19 @@ impl<'doc> DocumentMutator<'doc> {
                     Request::get(src),
                     Box::new(ImageHandler::new(target_id, ImageType::Image)),
                 );
+            }
+        }
+    }
+
+    fn load_custom_paint_src(&mut self, target_id: usize) {
+        let node = &mut self.doc.nodes[target_id];
+        if let Some(raw_src) = node.attr(local_name!("data")) {
+            if let Ok(custom_paint_source_id) = raw_src.parse::<u64>() {
+                self.recompute_is_animating = true;
+                let canvas_data = NodeSpecificData::Canvas(CanvasData {
+                    custom_paint_source_id,
+                });
+                node.element_data_mut().unwrap().node_specific_data = canvas_data;
             }
         }
     }

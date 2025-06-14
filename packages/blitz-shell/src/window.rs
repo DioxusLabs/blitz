@@ -209,8 +209,9 @@ impl<Rend: WindowRenderer> View<Rend> {
         self.renderer
             .render(|scene| paint_scene(scene, &self.doc, scale, width, height));
 
-        // TODO: animation timer
-        self.request_redraw();
+        if self.doc.is_animating() {
+            self.request_redraw();
+        }
     }
 
     pub fn window_id(&self) -> WindowId {
