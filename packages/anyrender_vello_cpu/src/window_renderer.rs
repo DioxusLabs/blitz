@@ -3,7 +3,8 @@ use crate::vello_cpu::{Pixmap, RenderContext, RenderMode};
 use anyrender::{WindowHandle, WindowRenderer};
 use peniko::color::PremulRgba8;
 use softbuffer::{Context, Surface};
-use std::{num::NonZero, sync::Arc};
+use std::{num::NonZero, sync::Arc, time::Instant};
+use vello_cpu::{Pixmap, RenderContext, RenderMode};
 
 // Simple struct to hold the state of the renderer
 pub struct ActiveRenderState {
@@ -83,14 +84,23 @@ impl WindowRenderer for VelloCpuWindowRenderer {
             return;
         };
 
+        let start = Instant::now();
+
         // Paint
         let width = self.render_context.0.width();
         let height = self.render_context.0.height();
         let mut pixmap = Pixmap::new(width, height);
         draw_fn(&mut self.render_context);
+
+        let command_time = start.elapsed().as_millis();
+        let command_ms = command_time;
+
         self.render_context
             .0
             .render_to_pixmap(&mut pixmap, RenderMode::OptimizeSpeed);
+
+        let render_time = start.elapsed().as_millis();
+        let render_ms = render_time - command_time;
 
         let out = surface_buffer.as_mut();
         assert_eq!(pixmap.data().len(), out.len());
@@ -103,9 +113,19 @@ impl WindowRenderer for VelloCpuWindowRenderer {
             }
         }
 
+        let swizel_time = start.elapsed().as_millis();
+        let swizel_ms = swizel_time - render_time;
+
         surface_buffer.present().unwrap();
+
+        let present_time = start.elapsed().as_millis();
+        let present_ms = present_time - render_time;
+
+        let overall_ms = present_time;
 
         // Empty the Vello render context (memory optimisation)
         self.render_context.0.reset();
+
+        println!("Frame time: {overall_ms}ms (cmd: {command_ms}ms, render: {render_ms}ms, swizel: {swizel_ms}ms, present: {present_ms}ms)");
     }
 }
