@@ -6471,8 +6471,7 @@ checksum = "accd4ea62f7bb7a82fe23066fb0957d48ef677f6eeb8215f372f52e48bb32426"
 [[package]]
 name = "vello"
 version = "0.5.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "df026e62e8b0d12d55ff5e91ae9114a20f82d9b856bedfdbf3abd5d1472dceed"
+source = "git+https://github.com/linebender/vello?rev=143a0458#143a0458b95170926b470b51a3039ec598a9e5db"
 dependencies = [
  "bytemuck",
  "futures-intrusive",
@@ -6512,8 +6511,7 @@ dependencies = [
 [[package]]
 name = "vello_encoding"
 version = "0.5.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3c5702642f6ea77eedc12d119e1eebead0dba3cf91fe5c5d1f3efc12bf0cfaf1"
+source = "git+https://github.com/linebender/vello?rev=143a0458#143a0458b95170926b470b51a3039ec598a9e5db"
 dependencies = [
  "bytemuck",
  "guillotiere",
@@ -6525,10 +6523,10 @@ dependencies = [
 [[package]]
 name = "vello_shaders"
 version = "0.5.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "381790a3779021edd9f88267c1b13b49546cb0fb164f329ee2f2587869ddf459"
+source = "git+https://github.com/linebender/vello?rev=143a0458#143a0458b95170926b470b51a3039ec598a9e5db"
 dependencies = [
  "bytemuck",
+ "log",
  "naga",
  "thiserror 2.0.12",
  "vello_encoding",

@@ -1,9 +1,5 @@
-use std::sync::Arc;
-
-use peniko::Blob;
 use vello::Renderer as VelloRenderer;
-use vello::peniko::Image;
-use wgpu::{Device, Queue, TexelCopyTextureInfoBase, Texture};
+use wgpu::{Device, Queue, Texture};
 
 pub trait CustomPaintSource: 'static {
     fn resume(&mut self, device: &Device, queue: &Queue);
@@ -23,15 +19,17 @@ pub struct CustomPaintCtx<'r> {
 }
 
 #[derive(Copy, Clone, PartialEq, Hash)]
-pub struct TextureHandle {
-    pub(crate) id: u64,
-    pub(crate) width: u32,
-    pub(crate) height: u32,
+pub struct TextureHandle(vello::TextureHandle);
+
+impl From<vello::TextureHandle> for TextureHandle {
+    fn from(value: vello::TextureHandle) -> Self {
+        TextureHandle(value)
+    }
 }
 
-impl TextureHandle {
-    pub(crate) fn dummy_image(&self) -> Image {
-        dummy_image(Some(self.id), self.width, self.height)
+impl From<TextureHandle> for vello::TextureHandle {
+    fn from(value: TextureHandle) -> Self {
+        value.0
     }
 }
 
@@ -41,48 +39,10 @@ impl CustomPaintCtx<'_> {
     }
 
     pub fn register_texture(&mut self, texture: Texture) -> TextureHandle {
-        // Create dummy image and set override_image
-        // TODO: better ovveride_image lifetime management
-        let dummy_image = dummy_image(None, texture.width(), texture.height());
-
-        let handle = TextureHandle {
-            id: dummy_image.data.id(),
-            width: texture.width(),
-            height: texture.height(),
-        };
-
-        let base = TexelCopyTextureInfoBase {
-            texture,
-            mip_level: 0,
-            origin: wgpu::Origin3d::ZERO,
-            aspect: wgpu::TextureAspect::All,
-        };
-        self.renderer.override_image(&dummy_image, Some(base));
-
-        handle
+        self.renderer.register_texture(texture).into()
     }
 
     pub fn unregister_texture(&mut self, handle: TextureHandle) {
-        let dummy_image = dummy_image(Some(handle.id), handle.width, handle.height);
-        self.renderer.override_image(&dummy_image, None);
-    }
-}
-
-// Everything except blob id, width, and height is ignored
-fn dummy_image(id: Option<u64>, width: u32, height: u32) -> Image {
-    let blob = match id {
-        Some(id) => Blob::from_raw_parts(Arc::new([]), id),
-        None => Blob::new(Arc::new([])),
-    };
-
-    Image {
-        data: blob,
-        width,
-        height,
-        format: vello::peniko::ImageFormat::Rgba8,
-        x_extend: vello::peniko::Extend::Pad,
-        y_extend: vello::peniko::Extend::Pad,
-        quality: vello::peniko::ImageQuality::High,
-        alpha: 1.0,
+        self.renderer.unregister_texture(handle.0);
     }
 }

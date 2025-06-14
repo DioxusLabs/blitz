@@ -56,7 +56,7 @@ kurbo = "0.11"
 parley = { version = "0.5", default-features = false, features = ["std"] }
 wgpu = "24"
 softbuffer = "0.4"
-vello = { version = "0.5", features = [ "wgpu" ] }
+vello = { git = "https://github.com/linebender/vello", rev = "143a0458", features = [ "wgpu" ] }
 vello_cpu = { version = "0.0.1" }
 usvg = "0.45.1"
 

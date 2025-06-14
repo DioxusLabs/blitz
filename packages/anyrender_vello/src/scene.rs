@@ -4,7 +4,7 @@ use peniko::{BlendMode, BrushRef, Color, Fill, Font, StyleRef};
 use rustc_hash::FxHashMap;
 use vello::Renderer as VelloRenderer;
 
-use crate::{CustomPaintSource, custom_paint_source::CustomPaintCtx};
+use crate::{CustomPaintSource, TextureHandle, custom_paint_source::CustomPaintCtx};
 
 pub struct VelloAnyrenderScene<'r> {
     pub(crate) renderer: &'r mut VelloRenderer,
@@ -13,7 +13,7 @@ pub struct VelloAnyrenderScene<'r> {
 }
 
 impl VelloAnyrenderScene<'_> {
-    fn render_custom_source(&mut self, custom_paint: CustomPaint) -> Option<peniko::Image> {
+    fn render_custom_source(&mut self, custom_paint: CustomPaint) -> Option<TextureHandle> {
         let CustomPaint {
             source_id,
             width,
@@ -27,7 +27,7 @@ impl VelloAnyrenderScene<'_> {
         let texture_handle = source.render(ctx, width, height, scale)?;
 
         // Return dummy image
-        Some(texture_handle.dummy_image())
+        Some(texture_handle)
     }
 }
 
@@ -73,23 +73,27 @@ impl Scene for VelloAnyrenderScene<'_> {
         shape: &impl Shape,
     ) {
         let paint: Paint<'_> = paint.into();
-
-        let dummy_image: peniko::Image;
         let brush_ref = match paint {
             Paint::Solid(color) => BrushRef::Solid(color),
             Paint::Gradient(gradient) => BrushRef::Gradient(gradient),
             Paint::Image(image) => BrushRef::Image(image),
             Paint::Custom(custom_paint) => {
-                if let Ok(custom_paint) = custom_paint.downcast::<CustomPaint>() {
-                    if let Some(image) = self.render_custom_source(*custom_paint) {
-                        dummy_image = image;
-                        BrushRef::Image(&dummy_image)
-                    } else {
-                        BrushRef::Solid(peniko::color::palette::css::TRANSPARENT)
-                    }
-                } else {
-                    BrushRef::Solid(peniko::color::palette::css::TRANSPARENT)
-                }
+                let Ok(custom_paint) = custom_paint.downcast::<CustomPaint>() else {
+                    return;
+                };
+                let Some(texture_handle) = self.render_custom_source(*custom_paint) else {
+                    return;
+                };
+                return self.inner.fill_texture(
+                    style,
+                    transform,
+                    1.0,
+                    texture_handle.into(),
+                    brush_transform,
+                    shape,
+                    peniko::Extend::Pad,
+                    peniko::Extend::Pad,
+                );
             }
         };
 
