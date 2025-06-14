@@ -5,10 +5,9 @@ use crate::{
 use anyrender::{WindowHandle, WindowRenderer};
 use peniko::Color;
 use rustc_hash::FxHashMap;
-use std::sync::{
-    Arc,
-    atomic::{self, AtomicU64},
-};
+use std::sync::Arc;
+use std::sync::atomic::{self, AtomicU64};
+use std::time::Instant;
 use vello::{
     AaSupport, RenderParams, Renderer as VelloRenderer, RendererOptions, Scene as VelloScene,
 };
@@ -160,6 +159,8 @@ impl WindowRenderer for VelloWindowRenderer {
             antialiasing_method: vello::AaConfig::Msaa16,
         };
 
+        let start = Instant::now();
+
         // Regenerate the vello scene
         let mut scene = VelloScenePainter {
             inner: self.scene.take().unwrap(),
@@ -168,6 +169,9 @@ impl WindowRenderer for VelloWindowRenderer {
         };
         draw_fn(&mut scene);
         self.scene = Some(scene.finish());
+
+        let command_time = start.elapsed().as_millis();
+        let command_ms = command_time;
 
         state
             .renderer
@@ -212,14 +216,29 @@ impl WindowRenderer for VelloWindowRenderer {
                 .create_view(&TextureViewDescriptor::default()),
         );
         device_handle.queue.submit([encoder.finish()]);
+
+        let render_time = start.elapsed().as_millis();
+        let render_ms = render_time - command_time;
+
         surface_texture.present();
+
+        let present_time = start.elapsed().as_millis();
+        let present_ms = present_time - render_time;
 
         device_handle.device.poll(wgpu::Maintain::Wait);
 
         // static COUNTER: AtomicU64 = AtomicU64::new(0);
         // println!("FRAME {}", COUNTER.fetch_add(1, atomic::Ordering::Relaxed));
 
+        let wait_time = start.elapsed().as_millis();
+        let wait_ms = wait_time - present_time;
+        let overall_ms = wait_time;
+
         // Empty the Vello scene (memory optimisation)
         self.scene.as_mut().unwrap().reset();
+
+        println!(
+            "Frame time: {overall_ms}ms (cmd: {command_ms}ms, render: {render_ms}ms, present: {present_ms}ms, wait: {wait_ms}ms)"
+        );
     }
 }
