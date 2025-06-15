@@ -48,7 +48,7 @@ pub use markup5ever::{
     namespace_prefix, namespace_url, ns,
 };
 pub use mutator::DocumentMutator;
-pub use node::{Attribute, ElementNodeData, Node, NodeData, TextNodeData};
+pub use node::{Attribute, ElementData, Node, NodeData, TextNodeData};
 pub use parley::FontContext;
 pub use style::Atom;
 pub use style::invalidation::element::restyle_hints::RestyleHint;

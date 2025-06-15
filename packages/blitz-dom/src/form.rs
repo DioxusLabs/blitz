@@ -1,7 +1,7 @@
 use markup5ever::{LocalName, local_name};
 
 use crate::{
-    BaseDocument, ElementNodeData,
+    BaseDocument, ElementData,
     traversal::{AncestorTraverser, TreeTraverser},
 };
 use blitz_traits::navigation::NavigationOptions;
@@ -356,7 +356,7 @@ fn normalize_line_endings(input: &str) -> String {
 
 fn get_form_attr<'a>(
     doc: &'a BaseDocument,
-    form: &'a ElementNodeData,
+    form: &'a ElementData,
     form_local: impl PartialEq<LocalName>,
     submitter_id: usize,
     submitter_local: impl PartialEq<LocalName>,

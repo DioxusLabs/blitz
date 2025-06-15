@@ -20,7 +20,7 @@ use style::stylesheets::UrlExtraData;
 use style::values::computed::Display;
 use style::values::specified::box_::{DisplayInside, DisplayOutside};
 use style::{
-    data::ElementData,
+    data::ElementData as StyloElementData,
     properties::{PropertyDeclarationBlock, parse_style_attribute},
     servo_arc::Arc as ServoArc,
     shared_lock::{Locked, SharedRwLock},
@@ -67,7 +67,7 @@ pub struct Node {
 
     // This little bundle of joy is our style data from stylo and a lock guard that allows access to it
     // TODO: See if guard can be hoisted to a higher level
-    pub stylo_element_data: AtomicRefCell<Option<ElementData>>,
+    pub stylo_element_data: AtomicRefCell<Option<StyloElementData>>,
     pub selector_flags: AtomicRefCell<ElementSelectorFlags>,
     pub guard: SharedRwLock,
     pub element_state: ElementState,
@@ -258,10 +258,10 @@ pub enum NodeData {
     Document,
 
     /// An element with attributes.
-    Element(ElementNodeData),
+    Element(ElementData),
 
     /// An anonymous block box
-    AnonymousBlock(ElementNodeData),
+    AnonymousBlock(ElementData),
 
     /// A text node.
     Text(TextNodeData),
@@ -279,7 +279,7 @@ pub enum NodeData {
 }
 
 impl NodeData {
-    pub fn downcast_element(&self) -> Option<&ElementNodeData> {
+    pub fn downcast_element(&self) -> Option<&ElementData> {
         match self {
             Self::Element(data) => Some(data),
             Self::AnonymousBlock(data) => Some(data),
@@ -287,7 +287,7 @@ impl NodeData {
         }
     }
 
-    pub fn downcast_element_mut(&mut self) -> Option<&mut ElementNodeData> {
+    pub fn downcast_element_mut(&mut self) -> Option<&mut ElementData> {
         match self {
             Self::Element(data) => Some(data),
             Self::AnonymousBlock(data) => Some(data),
@@ -341,7 +341,7 @@ pub struct Attribute {
 }
 
 #[derive(Debug, Clone)]
-pub struct ElementNodeData {
+pub struct ElementData {
     /// The elements tag name, namespace and prefix
     pub name: QualName,
 
@@ -369,8 +369,8 @@ pub struct ElementNodeData {
     /// Parley text layout (elements with inline inner display mode only)
     pub inline_layout_data: Option<Box<TextLayout>>,
 
-    //Data associated with display: list-item. Note that this display mode
-    // does not exclude inline_layout_data
+    /// Data associated with display: list-item. Note that this display mode
+    /// does not exclude inline_layout_data
     pub list_item_data: Option<Box<ListItemLayout>>,
 
     /// The element's template contents (\<template\> elements only)
@@ -379,7 +379,7 @@ pub struct ElementNodeData {
     // pub mathml_annotation_xml_integration_point: bool,
 }
 
-impl ElementNodeData {
+impl ElementData {
     pub fn new(name: QualName, attrs: Vec<Attribute>) -> Self {
         let id_attr_atom = attrs
             .iter()
@@ -387,7 +387,7 @@ impl ElementNodeData {
             .map(|attr| attr.value.as_ref())
             .map(|value: &str| Atom::from(value));
 
-        let mut data = ElementNodeData {
+        let mut data = ElementData {
             name,
             id: id_attr_atom,
             attrs,
@@ -863,7 +863,7 @@ impl Node {
         matches!(self.data, NodeData::Text { .. })
     }
 
-    pub fn element_data(&self) -> Option<&ElementNodeData> {
+    pub fn element_data(&self) -> Option<&ElementData> {
         match self.data {
             NodeData::Element(ref data) => Some(data),
             NodeData::AnonymousBlock(ref data) => Some(data),
@@ -871,7 +871,7 @@ impl Node {
         }
     }
 
-    pub fn element_data_mut(&mut self) -> Option<&mut ElementNodeData> {
+    pub fn element_data_mut(&mut self) -> Option<&mut ElementData> {
         match self.data {
             NodeData::Element(ref mut data) => Some(data),
             NodeData::AnonymousBlock(ref mut data) => Some(data),
@@ -1009,7 +1009,7 @@ impl Node {
         {
             Some(AtomicRef::map(
                 stylo_element_data,
-                |data: &Option<ElementData>| -> &ComputedValues {
+                |data: &Option<StyloElementData>| -> &ComputedValues {
                     data.as_ref().unwrap().styles.get_primary().unwrap()
                 },
             ))

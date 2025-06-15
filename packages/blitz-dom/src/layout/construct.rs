@@ -5,7 +5,7 @@ use markup5ever::{QualName, local_name, ns};
 use parley::{FontStack, InlineBox, StyleProperty, TreeBuilder, WhiteSpaceCollapse};
 use slab::Slab;
 use style::{
-    data::ElementData,
+    data::ElementData as StyloElementData,
     properties::longhands::{
         list_style_position::computed_value::T as ListStylePosition,
         list_style_type::computed_value::T as ListStyleType,
@@ -18,7 +18,7 @@ use style::{
 };
 
 use crate::{
-    BaseDocument, ElementNodeData, Node, NodeData,
+    BaseDocument, ElementData, Node, NodeData,
     node::{
         ListItemLayout, ListItemLayoutPosition, Marker, NodeKind, NodeSpecificData, TextBrush,
         TextInputData, TextLayout,
@@ -324,7 +324,7 @@ fn flush_pseudo_elements(doc: &mut BaseDocument, node_id: usize) {
 
         // Create pseudo element if it should exist but doesn't
         if let (None, Some(pe_style)) = (pe_node_id, &pe_style) {
-            let new_node_id = doc.create_node(NodeData::AnonymousBlock(ElementNodeData::new(
+            let new_node_id = doc.create_node(NodeData::AnonymousBlock(ElementData::new(
                 DUMMY_NAME,
                 Vec::new(),
             )));
@@ -344,7 +344,7 @@ fn flush_pseudo_elements(doc: &mut BaseDocument, node_id: usize) {
                 }
             }
 
-            let mut element_data = ElementData::default();
+            let mut element_data = StyloElementData::default();
             element_data.styles.primary = Some(pe_style.clone());
             element_data.set_restyled();
             *doc.nodes[new_node_id].stylo_element_data.borrow_mut() = Some(element_data);
@@ -625,10 +625,8 @@ fn collect_complex_layout_children(
                     ns: ns!(html),
                     local: local_name!("div"),
                 };
-                let node_id = doc.create_node(NodeData::AnonymousBlock(ElementNodeData::new(
-                    NAME,
-                    Vec::new(),
-                )));
+                let node_id =
+                    doc.create_node(NodeData::AnonymousBlock(ElementData::new(NAME, Vec::new())));
 
                 // Set style data
                 let parent_style = doc.nodes[container_node_id].primary_styles().unwrap();
@@ -639,10 +637,10 @@ fn collect_complex_layout_children(
                     &PseudoElement::ServoAnonymousBox,
                     &parent_style,
                 );
-                let mut element_data = ElementData::default();
-                element_data.styles.primary = Some(style);
-                element_data.set_restyled();
-                *doc.nodes[node_id].stylo_element_data.borrow_mut() = Some(element_data);
+                let mut stylo_element_data = StyloElementData::default();
+                stylo_element_data.styles.primary = Some(style);
+                stylo_element_data.set_restyled();
+                *doc.nodes[node_id].stylo_element_data.borrow_mut() = Some(stylo_element_data);
 
                 layout_children.push(node_id);
                 *anonymous_block_id = Some(node_id);

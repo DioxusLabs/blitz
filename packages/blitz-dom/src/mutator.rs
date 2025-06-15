@@ -5,7 +5,7 @@ use crate::document::make_device;
 use crate::net::{CssHandler, ImageHandler};
 use crate::node::{CanvasData, NodeSpecificData};
 use crate::util::ImageType;
-use crate::{Attribute, BaseDocument, ElementNodeData, NodeData, QualName, local_name, ns};
+use crate::{Attribute, BaseDocument, ElementData, NodeData, QualName, local_name, ns};
 use blitz_traits::Viewport;
 use blitz_traits::net::Request;
 use style::invalidation::element::restyle_hints::RestyleHint;
@@ -206,7 +206,7 @@ impl DocumentMutator<'_> {
     }
 
     pub fn create_element(&mut self, name: QualName, attrs: Vec<Attribute>) -> usize {
-        let mut data = ElementNodeData::new(name, attrs);
+        let mut data = ElementData::new(name, attrs);
         data.flush_style_attribute(self.doc.guard(), self.doc.base_url.clone());
 
         let id = self.doc.create_node(NodeData::Element(data));
@@ -470,7 +470,7 @@ impl<'doc> DocumentMutator<'doc> {
 }
 
 /// Set 'checked' state on an input based on given attributevalue
-fn set_input_checked_state(element: &mut ElementNodeData, value: String) {
+fn set_input_checked_state(element: &mut ElementData, value: String) {
     let Ok(checked) = value.parse() else {
         return;
     };

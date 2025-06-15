@@ -14,7 +14,7 @@ use blitz_dom::node::{
     ListItemLayout, ListItemLayoutPosition, Marker, NodeData, RasterImageData, TextInputData,
     TextNodeData,
 };
-use blitz_dom::{BaseDocument, ElementNodeData, Node, local_name};
+use blitz_dom::{BaseDocument, ElementData, Node, local_name};
 use blitz_traits::Devtools;
 
 use euclid::Transform3D;
@@ -408,7 +408,7 @@ struct ElementCx<'a> {
     pos: Point,
     scale: f64,
     node: &'a Node,
-    element: &'a ElementNodeData,
+    element: &'a ElementData,
     transform: Affine,
     #[cfg(feature = "svg")]
     svg: Option<&'a usvg::Tree>,

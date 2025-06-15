@@ -5,7 +5,7 @@ use crate::node::{ImageData, NodeSpecificData, RasterImageData, Status, TextBrus
 use crate::stylo_to_cursor_icon::stylo_to_cursor_icon;
 use crate::traversal::{AncestorTraverser, TreeTraverser};
 use crate::util::{ImageType, resolve_url};
-use crate::{DocumentMutator, ElementNodeData, Node, NodeData, TextNodeData};
+use crate::{DocumentMutator, ElementData, Node, NodeData, TextNodeData};
 use app_units::Au;
 use blitz_traits::events::UiEvent;
 use blitz_traits::navigation::{DummyNavigationProvider, NavigationProvider};
@@ -19,7 +19,7 @@ use parley::FontContext;
 use peniko::{Blob, kurbo};
 use style::Atom;
 use style::attr::{AttrIdentifier, AttrValue};
-use style::data::{ElementData, ElementStyles};
+use style::data::{ElementData as StyloElementData, ElementStyles};
 use style::properties::ComputedValues;
 use style::properties::style_structs::Font;
 use style::values::GenericAtomIdent;
@@ -257,7 +257,7 @@ impl BaseDocument {
         doc.create_node(NodeData::Document);
 
         // Stylo data on the root node container is needed to render the node
-        let stylo_element_data = ElementData {
+        let stylo_element_data = StyloElementData {
             styles: ElementStyles {
                 primary: Some(
                     ComputedValues::initial_values_with_font_override(Font::initial_values())
@@ -360,7 +360,7 @@ impl BaseDocument {
         }
     }
 
-    pub fn toggle_checkbox(el: &mut ElementNodeData) -> bool {
+    pub fn toggle_checkbox(el: &mut ElementData) -> bool {
         let Some(is_checked) = el.checkbox_input_checked_mut() else {
             return false;
         };
