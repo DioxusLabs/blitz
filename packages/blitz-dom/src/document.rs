@@ -1,7 +1,7 @@
 use crate::events::handle_event;
 use crate::layout::construct::collect_layout_children;
 use crate::mutator::ViewportMut;
-use crate::node::{ImageData, NodeSpecificData, RasterImageData, Status, TextBrush};
+use crate::node::{ImageData, RasterImageData, SpecialElementData, Status, TextBrush};
 use crate::stylo_to_cursor_icon::stylo_to_cursor_icon;
 use crate::traversal::{AncestorTraverser, TreeTraverser};
 use crate::util::{ImageType, resolve_url};
@@ -621,8 +621,8 @@ impl BaseDocument {
 
                 match kind {
                     ImageType::Image => {
-                        node.element_data_mut().unwrap().node_specific_data =
-                            NodeSpecificData::Image(Box::new(ImageData::Raster(
+                        node.element_data_mut().unwrap().special_data =
+                            SpecialElementData::Image(Box::new(ImageData::Raster(
                                 RasterImageData::new(width, height, image_data),
                             )));
 
@@ -647,8 +647,8 @@ impl BaseDocument {
 
                 match kind {
                     ImageType::Image => {
-                        node.element_data_mut().unwrap().node_specific_data =
-                            NodeSpecificData::Image(Box::new(ImageData::Svg(tree)));
+                        node.element_data_mut().unwrap().special_data =
+                            SpecialElementData::Image(Box::new(ImageData::Svg(tree)));
 
                         // Clear layout cache
                         node.cache.clear();

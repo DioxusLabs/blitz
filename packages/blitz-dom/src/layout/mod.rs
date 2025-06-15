@@ -4,7 +4,7 @@
 //! However, in Blitz, we do a style pass then a layout pass.
 //! This is slower, yes, but happens fast enough that it's not a huge issue.
 
-use crate::node::{ImageData, NodeData, NodeSpecificData};
+use crate::node::{ImageData, NodeData, SpecialElementData};
 use crate::{document::BaseDocument, node::Node};
 use markup5ever::local_name;
 use std::cell::Ref;
@@ -227,9 +227,9 @@ impl LayoutPartialTree for BaseDocument {
                                 .and_then(|val| val.parse::<f32>().ok()),
                         };
 
-                        // Get image's native size
-                        let inherent_size = match &element_data.node_specific_data {
-                            NodeSpecificData::Image(image_data) => match &**image_data {
+                        // Get image's native sizespecial_data
+                        let inherent_size = match &element_data.special_data {
+                            SpecialElementData::Image(image_data) => match &**image_data {
                                 ImageData::Raster(image) => taffy::Size {
                                     width: image.width as f32,
                                     height: image.height as f32,
@@ -244,8 +244,8 @@ impl LayoutPartialTree for BaseDocument {
                                 }
                                 ImageData::None => taffy::Size::ZERO,
                             },
-                            NodeSpecificData::Canvas(_) => taffy::Size::ZERO,
-                            NodeSpecificData::None => taffy::Size::ZERO,
+                            SpecialElementData::Canvas(_) => taffy::Size::ZERO,
+                            SpecialElementData::None => taffy::Size::ZERO,
                             _ => unreachable!(),
                         };
 
@@ -273,11 +273,11 @@ impl LayoutPartialTree for BaseDocument {
                     }
 
                     if node.is_table_root {
-                        let NodeSpecificData::TableRoot(context) = &tree.nodes[node_id.into()]
+                        let SpecialElementData::TableRoot(context) = &tree.nodes[node_id.into()]
                             .data
                             .downcast_element()
                             .unwrap()
-                            .node_specific_data
+                            .special_data
                         else {
                             panic!("Node marked as table root but doesn't have TableContext");
                         };

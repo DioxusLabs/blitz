@@ -4,7 +4,7 @@ use blitz_traits::{
 };
 use markup5ever::local_name;
 
-use crate::{BaseDocument, node::NodeSpecificData, util::resolve_url};
+use crate::{BaseDocument, node::SpecialElementData, util::resolve_url};
 
 pub(crate) fn handle_mousemove(
     doc: &mut BaseDocument,
@@ -33,7 +33,7 @@ pub(crate) fn handle_mousemove(
         return changed;
     }
 
-    if let NodeSpecificData::TextInput(ref mut text_input_data) = el.node_specific_data {
+    if let SpecialElementData::TextInput(ref mut text_input_data) = el.special_data {
         if buttons == MouseEventButtons::None {
             return changed;
         }
@@ -75,7 +75,7 @@ pub(crate) fn handle_mousedown(doc: &mut BaseDocument, target: usize, x: f32, y:
         return;
     }
 
-    if let NodeSpecificData::TextInput(ref mut text_input_data) = el.node_specific_data {
+    if let SpecialElementData::TextInput(ref mut text_input_data) = el.special_data {
         let content_box_offset = taffy::Point {
             x: node.final_layout.padding.left + node.final_layout.border.left,
             y: node.final_layout.padding.top + node.final_layout.border.top,
@@ -148,7 +148,7 @@ pub(crate) fn handle_click<F: FnMut(DomEvent)>(
             return;
         }
 
-        if let NodeSpecificData::TextInput(_) = el.node_specific_data {
+        if let SpecialElementData::TextInput(_) = el.special_data {
             return;
         } else if el.name.local == local_name!("input")
             && matches!(el.attr(local_name!("type")), Some("checkbox"))

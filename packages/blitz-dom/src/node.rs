@@ -362,7 +362,7 @@ pub struct ElementData {
     ///   - The image data for \<img\> elements.
     ///   - The parley Layout for inline roots.
     ///   - The text editor for input/textarea elements
-    pub node_specific_data: NodeSpecificData,
+    pub special_data: SpecialElementData,
 
     pub background_images: Vec<Option<BackgroundImageData>>,
 
@@ -395,7 +395,7 @@ impl ElementData {
             style_attribute: Default::default(),
             inline_layout_data: None,
             list_item_data: None,
-            node_specific_data: NodeSpecificData::None,
+            special_data: SpecialElementData::None,
             template_contents: None,
             background_images: Vec::new(),
         };
@@ -423,15 +423,15 @@ impl ElementData {
     }
 
     pub fn image_data(&self) -> Option<&ImageData> {
-        match &self.node_specific_data {
-            NodeSpecificData::Image(data) => Some(&**data),
+        match &self.special_data {
+            SpecialElementData::Image(data) => Some(&**data),
             _ => None,
         }
     }
 
     pub fn image_data_mut(&mut self) -> Option<&mut ImageData> {
-        match self.node_specific_data {
-            NodeSpecificData::Image(ref mut data) => Some(&mut **data),
+        match self.special_data {
+            SpecialElementData::Image(ref mut data) => Some(&mut **data),
             _ => None,
         }
     }
@@ -451,8 +451,8 @@ impl ElementData {
     }
 
     pub fn canvas_data(&self) -> Option<&CanvasData> {
-        match &self.node_specific_data {
-            NodeSpecificData::Canvas(data) => Some(data),
+        match &self.special_data {
+            SpecialElementData::Canvas(data) => Some(data),
             _ => None,
         }
     }
@@ -474,29 +474,29 @@ impl ElementData {
     }
 
     pub fn text_input_data(&self) -> Option<&TextInputData> {
-        match &self.node_specific_data {
-            NodeSpecificData::TextInput(data) => Some(data),
+        match &self.special_data {
+            SpecialElementData::TextInput(data) => Some(data),
             _ => None,
         }
     }
 
     pub fn text_input_data_mut(&mut self) -> Option<&mut TextInputData> {
-        match &mut self.node_specific_data {
-            NodeSpecificData::TextInput(data) => Some(data),
+        match &mut self.special_data {
+            SpecialElementData::TextInput(data) => Some(data),
             _ => None,
         }
     }
 
     pub fn checkbox_input_checked(&self) -> Option<bool> {
-        match self.node_specific_data {
-            NodeSpecificData::CheckboxInput(checked) => Some(checked),
+        match self.special_data {
+            SpecialElementData::CheckboxInput(checked) => Some(checked),
             _ => None,
         }
     }
 
     pub fn checkbox_input_checked_mut(&mut self) -> Option<&mut bool> {
-        match self.node_specific_data {
-            NodeSpecificData::CheckboxInput(ref mut checked) => Some(checked),
+        match self.special_data {
+            SpecialElementData::CheckboxInput(ref mut checked) => Some(checked),
             _ => None,
         }
     }
@@ -653,7 +653,7 @@ impl TextInputData {
 
 /// Heterogeneous data that depends on the element's type.
 #[derive(Clone)]
-pub enum NodeSpecificData {
+pub enum SpecialElementData {
     /// An \<img\> element's image data
     Image(Box<ImageData>),
     /// A \<canvas\> element's custom paint source
@@ -673,25 +673,25 @@ pub struct CanvasData {
     pub custom_paint_source_id: u64,
 }
 
-impl std::fmt::Debug for NodeSpecificData {
+impl std::fmt::Debug for SpecialElementData {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            NodeSpecificData::Image(data) => match **data {
+            SpecialElementData::Image(data) => match **data {
                 ImageData::Raster(_) => f.write_str("NodeSpecificData::Image(Raster)"),
                 #[cfg(feature = "svg")]
                 ImageData::Svg(_) => f.write_str("NodeSpecificData::Image(Svg)"),
                 ImageData::None => f.write_str("NodeSpecificData::Image(None)"),
             },
-            NodeSpecificData::Canvas(_) => f.write_str("NodeSpecificData::Canvas"),
-            NodeSpecificData::TableRoot(_) => f.write_str("NodeSpecificData::TableRoot"),
-            NodeSpecificData::TextInput(_) => f.write_str("NodeSpecificData::TextInput"),
-            NodeSpecificData::CheckboxInput(_) => f.write_str("NodeSpecificData::CheckboxInput"),
-            NodeSpecificData::None => f.write_str("NodeSpecificData::None"),
+            SpecialElementData::Canvas(_) => f.write_str("NodeSpecificData::Canvas"),
+            SpecialElementData::TableRoot(_) => f.write_str("NodeSpecificData::TableRoot"),
+            SpecialElementData::TextInput(_) => f.write_str("NodeSpecificData::TextInput"),
+            SpecialElementData::CheckboxInput(_) => f.write_str("NodeSpecificData::CheckboxInput"),
+            SpecialElementData::None => f.write_str("NodeSpecificData::None"),
         }
     }
 }
 
-impl Default for NodeSpecificData {
+impl Default for SpecialElementData {
     fn default() -> Self {
         Self::None
     }

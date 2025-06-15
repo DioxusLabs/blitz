@@ -3,7 +3,7 @@ use std::ops::{Deref, DerefMut};
 
 use crate::document::make_device;
 use crate::net::{CssHandler, ImageHandler};
-use crate::node::{CanvasData, NodeSpecificData};
+use crate::node::{CanvasData, SpecialElementData};
 use crate::util::ImageType;
 use crate::{Attribute, BaseDocument, ElementData, NodeData, QualName, local_name, ns};
 use blitz_traits::Viewport;
@@ -439,10 +439,10 @@ impl<'doc> DocumentMutator<'doc> {
         if let Some(raw_src) = node.attr(local_name!("data")) {
             if let Ok(custom_paint_source_id) = raw_src.parse::<u64>() {
                 self.recompute_is_animating = true;
-                let canvas_data = NodeSpecificData::Canvas(CanvasData {
+                let canvas_data = SpecialElementData::Canvas(CanvasData {
                     custom_paint_source_id,
                 });
-                node.element_data_mut().unwrap().node_specific_data = canvas_data;
+                node.element_data_mut().unwrap().special_data = canvas_data;
             }
         }
     }
@@ -474,13 +474,13 @@ fn set_input_checked_state(element: &mut ElementData, value: String) {
     let Ok(checked) = value.parse() else {
         return;
     };
-    match element.node_specific_data {
-        NodeSpecificData::CheckboxInput(ref mut checked_mut) => *checked_mut = checked,
+    match element.special_data {
+        SpecialElementData::CheckboxInput(ref mut checked_mut) => *checked_mut = checked,
         // If we have just constructed the element, set the node attribute,
         // and NodeSpecificData will be created from that later
         // this simulates the checked attribute being set in html,
         // and the element's checked property being set from that
-        NodeSpecificData::None => element.attrs.push(Attribute {
+        SpecialElementData::None => element.attrs.push(Attribute {
             name: QualName {
                 prefix: None,
                 ns: ns!(html),

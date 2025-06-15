@@ -20,7 +20,7 @@ use style::{
 use crate::{
     BaseDocument, ElementData, Node, NodeData,
     node::{
-        ListItemLayout, ListItemLayoutPosition, Marker, NodeKind, NodeSpecificData, TextBrush,
+        ListItemLayout, ListItemLayoutPosition, Marker, NodeKind, SpecialElementData, TextBrush,
         TextInputData, TextLayout,
     },
     stylo_to_parley,
@@ -108,7 +108,7 @@ pub(crate) fn collect_layout_children(
                         .unwrap()
                         .element_data_mut()
                         .unwrap()
-                        .node_specific_data = NodeSpecificData::Image(Box::new(svg.into()));
+                        .special_data = SpecialElementData::Image(Box::new(svg.into()));
                 }
                 Err(err) => {
                     println!("{container_node_id} SVG parse failed");
@@ -269,13 +269,13 @@ pub(crate) fn collect_layout_children(
         DisplayInside::Table => {
             let (table_context, tlayout_children) = build_table_context(doc, container_node_id);
             #[allow(clippy::arc_with_non_send_sync)]
-            let data = NodeSpecificData::TableRoot(Arc::new(table_context));
+            let data = SpecialElementData::TableRoot(Arc::new(table_context));
             doc.nodes[container_node_id].is_table_root = true;
             doc.nodes[container_node_id]
                 .data
                 .downcast_element_mut()
                 .unwrap()
-                .node_specific_data = data;
+                .special_data = data;
             if let Some(before) = doc.nodes[container_node_id].before {
                 layout_children.push(before);
             }
@@ -683,7 +683,7 @@ fn create_text_editor(doc: &mut BaseDocument, input_element_id: usize, is_multil
         .unwrap_or_default();
 
     let element = &mut node.data.downcast_element_mut().unwrap();
-    if !matches!(element.node_specific_data, NodeSpecificData::TextInput(_)) {
+    if !matches!(element.special_data, SpecialElementData::TextInput(_)) {
         let mut text_input_data = TextInputData::new(is_multiline);
         let editor = &mut text_input_data.editor;
 
@@ -698,7 +698,7 @@ fn create_text_editor(doc: &mut BaseDocument, input_element_id: usize, is_multil
 
         editor.refresh_layout(&mut doc.font_ctx, &mut doc.layout_ctx);
 
-        element.node_specific_data = NodeSpecificData::TextInput(text_input_data);
+        element.special_data = SpecialElementData::TextInput(text_input_data);
     }
 }
 
@@ -706,12 +706,9 @@ fn create_checkbox_input(doc: &mut BaseDocument, input_element_id: usize) {
     let node = &mut doc.nodes[input_element_id];
 
     let element = &mut node.data.downcast_element_mut().unwrap();
-    if !matches!(
-        element.node_specific_data,
-        NodeSpecificData::CheckboxInput(_)
-    ) {
+    if !matches!(element.special_data, SpecialElementData::CheckboxInput(_)) {
         let checked = element.has_attr(local_name!("checked"));
-        element.node_specific_data = NodeSpecificData::CheckboxInput(checked);
+        element.special_data = SpecialElementData::CheckboxInput(checked);
     }
 }
 
