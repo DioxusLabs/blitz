@@ -44,7 +44,6 @@ pub enum DisplayOuter {
     None,
 }
 
-// todo: might be faster to migrate this to ecs and split apart at a different boundary
 pub struct Node {
     // The actual tree we belong to. This is unsafe!!
     tree: *mut Slab<Node>,

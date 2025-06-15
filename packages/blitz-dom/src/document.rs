@@ -1108,10 +1108,9 @@ impl BaseDocument {
     }
 
     /// Walk the nodes now that they're properly styled and transfer their styles to the taffy style system
-    /// Ideally we could just break apart the styles into ECS bits, but alas
     ///
-    /// Todo: update taffy to use an associated type instead of slab key
-    /// Todo: update taffy to support traited styles so we don't even need to rely on taffy for storage
+    /// TODO: update taffy to use an associated type instead of slab key
+    /// TODO: update taffy to support traited styles so we don't even need to rely on taffy for storage
     pub fn resolve_layout(&mut self) {
         let size = self.stylist.device().au_viewport_size();
 

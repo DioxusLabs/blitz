@@ -19,8 +19,6 @@ pub(crate) const BULLET_FONT: &[u8] = include_bytes!("../assets/moz-bullet-font.
 mod document;
 
 /// The nodes themsleves, and their data.
-///
-/// todo: we want this to use ECS, but we're not done with the design yet.
 pub mod node;
 
 mod debug;

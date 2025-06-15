@@ -1,3 +1,6 @@
+//! Minimal example of using Stylo
+//! TODO: clean up and upstream to stylo repo
+
 // pub use blitz::style_impls::{BlitzNode, RealDom};
 // use dioxus::prelude::*;
 // use style::{
@@ -93,7 +96,7 @@
 // //     // The layout thread uses the ScriptReflow object to inform itself on what changes need to happen.
 // //     // Zooming and touching causes full reflows.
 // //     // For this demo we want to do complete reflows (have yet to figure it out)
-// //     // But eventually we'll want to queue up modifications to the ECS engine and then build the script-reflow type object.
+// //     // But eventually we'll want to queue up modifications and then build the script-reflow type object.
 // //     // Unfortunately, this API assumes nodes are backed by pointers which adds some unsafe where we wouldn't want it.
 // //     //
 // //     // Reflow allows us to specify a dirty root node and a list of nodes to reflow.
