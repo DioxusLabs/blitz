@@ -7,6 +7,8 @@ use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
 mod wasm_send_sync;
 pub use wasm_send_sync::*;
 
+pub mod recording;
+
 pub type NormalizedCoord = i16;
 
 /// A positioned glyph.
