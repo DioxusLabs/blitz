@@ -6,13 +6,13 @@ use vello::Renderer as VelloRenderer;
 
 use crate::{CustomPaintSource, custom_paint_source::CustomPaintCtx};
 
-pub struct VelloAnyrenderScene<'r> {
+pub struct VelloScenePainter<'r> {
     pub(crate) renderer: &'r mut VelloRenderer,
     pub(crate) custom_paint_sources: &'r mut FxHashMap<u64, Box<dyn CustomPaintSource>>,
     pub(crate) inner: vello::Scene,
 }
 
-impl VelloAnyrenderScene<'_> {
+impl VelloScenePainter<'_> {
     fn render_custom_source(&mut self, custom_paint: CustomPaint) -> Option<peniko::Image> {
         let CustomPaint {
             source_id,
@@ -31,7 +31,7 @@ impl VelloAnyrenderScene<'_> {
     }
 }
 
-impl PaintScene for VelloAnyrenderScene<'_> {
+impl PaintScene for VelloScenePainter<'_> {
     type Output = vello::Scene;
 
     fn reset(&mut self) {

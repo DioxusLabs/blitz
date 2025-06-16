@@ -8,7 +8,7 @@ pub mod wgpu_context;
 
 pub use custom_paint_source::{CustomPaintCtx, CustomPaintSource, TextureHandle};
 pub use image_renderer::VelloImageRenderer;
-pub use scene::VelloAnyrenderScene;
+pub use scene::VelloScenePainter;
 pub use window_renderer::VelloWindowRenderer;
 
 pub use wgpu;

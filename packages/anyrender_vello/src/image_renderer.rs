@@ -7,7 +7,7 @@ use wgpu::{
     TexelCopyBufferLayout, TextureDescriptor, TextureFormat, TextureUsages,
 };
 
-use crate::{DEFAULT_THREADS, VelloAnyrenderScene};
+use crate::{DEFAULT_THREADS, VelloScenePainter};
 
 pub struct VelloImageRenderer {
     size: Extent3d,
@@ -26,7 +26,7 @@ pub struct VelloImageRenderer {
 
 impl ImageRenderer for VelloImageRenderer {
     type Scene<'a>
-        = VelloAnyrenderScene<'a>
+        = VelloScenePainter<'a>
     where
         Self: 'a;
 
@@ -94,7 +94,7 @@ impl ImageRenderer for VelloImageRenderer {
     }
 
     fn render<F: FnOnce(&mut Self::Scene<'_>)>(&mut self, draw_fn: F, cpu_buffer: &mut Vec<u8>) {
-        let mut scene = VelloAnyrenderScene {
+        let mut scene = VelloScenePainter {
             inner: self.scene.take().unwrap(),
             renderer: &mut self.renderer,
             custom_paint_sources: &mut FxHashMap::default(),

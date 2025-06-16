@@ -16,7 +16,7 @@ use wgpu::{
     CommandEncoderDescriptor, Device, Features, Limits, PresentMode, Queue, TextureViewDescriptor,
 };
 
-use crate::{DEFAULT_THREADS, VelloAnyrenderScene};
+use crate::{DEFAULT_THREADS, VelloScenePainter};
 
 static PAINT_SOURCE_ID: AtomicU64 = AtomicU64::new(0);
 
@@ -100,7 +100,7 @@ impl VelloWindowRenderer {
 
 impl WindowRenderer for VelloWindowRenderer {
     type Scene<'a>
-        = VelloAnyrenderScene<'a>
+        = VelloScenePainter<'a>
     where
         Self: 'a;
 
@@ -166,7 +166,7 @@ impl WindowRenderer for VelloWindowRenderer {
         };
 
         // Regenerate the vello scene
-        let mut scene = VelloAnyrenderScene {
+        let mut scene = VelloScenePainter {
             inner: self.scene.take().unwrap(),
             renderer: &mut state.renderer,
             custom_paint_sources: &mut self.custom_paint_sources,
