@@ -1,4 +1,4 @@
-use anyrender::{NormalizedCoord, Paint, Scene};
+use anyrender::{NormalizedCoord, Paint, PaintScene};
 use kurbo::{Affine, Rect, Shape, Stroke};
 use peniko::{BlendMode, BrushRef, Color, Fill, Font, StyleRef, color::PremulRgba8};
 use std::sync::Arc;
@@ -66,7 +66,7 @@ fn premultiply(image: &peniko::Image) -> Vec<PremulRgba8> {
 
 pub struct VelloCpuAnyrenderScene(pub vello_cpu::RenderContext);
 
-impl Scene for VelloCpuAnyrenderScene {
+impl PaintScene for VelloCpuAnyrenderScene {
     type Output = vello_cpu::Pixmap;
 
     fn reset(&mut self) {

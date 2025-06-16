@@ -1,4 +1,4 @@
-use anyrender::Scene;
+use anyrender::PaintScene;
 use kurbo::{Affine, Shape};
 use peniko::Mix;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -17,7 +17,7 @@ pub(crate) fn reset_layer_stats() {
     LAYER_DEPTH_USED.store(0, Ordering::SeqCst);
 }
 
-pub(crate) fn maybe_with_layer<S: Scene, F: FnOnce(&mut S)>(
+pub(crate) fn maybe_with_layer<S: PaintScene, F: FnOnce(&mut S)>(
     scene: &mut S,
     condition: bool,
     opacity: f32,
@@ -31,7 +31,7 @@ pub(crate) fn maybe_with_layer<S: Scene, F: FnOnce(&mut S)>(
 }
 
 pub(crate) fn maybe_push_layer(
-    scene: &mut impl Scene,
+    scene: &mut impl PaintScene,
     condition: bool,
     opacity: f32,
     transform: Affine,
@@ -65,7 +65,7 @@ pub(crate) fn maybe_push_layer(
     true
 }
 
-pub(crate) fn maybe_pop_layer(scene: &mut impl Scene, condition: bool) {
+pub(crate) fn maybe_pop_layer(scene: &mut impl PaintScene, condition: bool) {
     if condition {
         scene.pop_layer();
         LAYER_DEPTH.fetch_sub(1, Ordering::SeqCst);

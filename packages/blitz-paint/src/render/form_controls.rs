@@ -1,13 +1,13 @@
 use super::ElementCx;
 use crate::color::{Color, ToColorColor as _};
-use anyrender::Scene;
+use anyrender::PaintScene;
 use blitz_dom::local_name;
 use kurbo::{Affine, BezPath, Cap, Circle, Join, Point, RoundedRect, Stroke, Vec2};
 use peniko::Fill;
 use style::dom::TElement as _;
 
 impl ElementCx<'_> {
-    pub(super) fn draw_input(&self, scene: &mut impl anyrender::Scene) {
+    pub(super) fn draw_input(&self, scene: &mut impl PaintScene) {
         if self.node.local_name() != "input" {
             return;
         }
@@ -46,7 +46,7 @@ impl ElementCx<'_> {
 }
 
 fn draw_checkbox(
-    scene: &mut impl Scene,
+    scene: &mut impl PaintScene,
     checked: bool,
     frame: RoundedRect,
     transform: Affine,
@@ -81,7 +81,7 @@ fn draw_checkbox(
 }
 
 fn draw_radio_button(
-    scene: &mut impl Scene,
+    scene: &mut impl PaintScene,
     checked: bool,
     center: Point,
     transform: Affine,

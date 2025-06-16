@@ -1,3 +1,4 @@
+use anyrender::PaintScene;
 use blitz_dom::node::TextBrush;
 use kurbo::{Affine, Point, Stroke};
 use parley::{Line, PositionedLayoutItem};
@@ -5,7 +6,7 @@ use peniko::Fill;
 
 pub(crate) fn stroke_text<'a>(
     scale: f64,
-    scene: &mut impl anyrender::Scene,
+    scene: &mut impl PaintScene,
     lines: impl Iterator<Item = Line<'a, TextBrush>>,
     pos: Point,
 ) {

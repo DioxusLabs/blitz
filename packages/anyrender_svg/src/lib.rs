@@ -47,13 +47,13 @@ pub mod util;
 /// Re-export usvg.
 pub use usvg;
 
-use anyrender::Scene;
+use anyrender::PaintScene;
 use kurbo::Affine;
 
 /// Append an SVG to a vello [`Scene`](vello::Scene), with default error handling.
 ///
 /// This will draw a red box over (some) unsupported elements.
-pub fn append<S: Scene>(scene: &mut S, svg: &str, transform: Affine) -> Result<(), Error> {
+pub fn append<S: PaintScene>(scene: &mut S, svg: &str, transform: Affine) -> Result<(), Error> {
     let opt = usvg::Options::default();
     let tree = usvg::Tree::from_str(svg, &opt)?;
     append_tree(scene, &tree, transform);
@@ -63,7 +63,7 @@ pub fn append<S: Scene>(scene: &mut S, svg: &str, transform: Affine) -> Result<(
 /// Append an SVG to a vello [`Scene`](vello::Scene), with user-provided error handling logic.
 ///
 /// See the [module level documentation](crate#unsupported-features) for a list of some unsupported svg features
-pub fn append_with<S: Scene, F: FnMut(&mut S, &usvg::Node)>(
+pub fn append_with<S: PaintScene, F: FnMut(&mut S, &usvg::Node)>(
     scene: &mut S,
     svg: &str,
     transform: Affine,
@@ -78,14 +78,14 @@ pub fn append_with<S: Scene, F: FnMut(&mut S, &usvg::Node)>(
 /// Append an [`usvg::Tree`] to a vello [`Scene`](vello::Scene), with default error handling.
 ///
 /// This will draw a red box over (some) unsupported elements.
-pub fn append_tree<S: Scene>(scene: &mut S, svg: &usvg::Tree, transform: Affine) {
+pub fn append_tree<S: PaintScene>(scene: &mut S, svg: &usvg::Tree, transform: Affine) {
     append_tree_with(scene, svg, transform, &mut util::default_error_handler);
 }
 
 /// Append an [`usvg::Tree`] to a vello [`Scene`](vello::Scene), with user-provided error handling logic.
 ///
 /// See the [module level documentation](crate#unsupported-features) for a list of some unsupported svg features
-pub fn append_tree_with<S: Scene, F: FnMut(&mut S, &usvg::Node)>(
+pub fn append_tree_with<S: PaintScene, F: FnMut(&mut S, &usvg::Node)>(
     scene: &mut S,
     svg: &usvg::Tree,
     transform: Affine,

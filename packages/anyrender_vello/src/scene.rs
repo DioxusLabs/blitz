@@ -1,4 +1,4 @@
-use anyrender::{CustomPaint, NormalizedCoord, Paint, Scene};
+use anyrender::{CustomPaint, NormalizedCoord, Paint, PaintScene};
 use kurbo::{Affine, Rect, Shape, Stroke};
 use peniko::{BlendMode, BrushRef, Color, Fill, Font, StyleRef};
 use rustc_hash::FxHashMap;
@@ -31,7 +31,7 @@ impl VelloAnyrenderScene<'_> {
     }
 }
 
-impl Scene for VelloAnyrenderScene<'_> {
+impl PaintScene for VelloAnyrenderScene<'_> {
     type Output = vello::Scene;
 
     fn reset(&mut self) {

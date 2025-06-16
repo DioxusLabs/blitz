@@ -77,7 +77,7 @@ pub trait WindowHandle: HasWindowHandle + HasDisplayHandle + WasmNotSendSync {}
 impl<T: HasWindowHandle + HasDisplayHandle + WasmNotSendSync> WindowHandle for T {}
 
 pub trait WindowRenderer {
-    type Scene<'a>: Scene
+    type Scene<'a>: PaintScene
     where
         Self: 'a;
     fn resume(&mut self, window: Arc<dyn WindowHandle>, width: u32, height: u32);
@@ -88,7 +88,7 @@ pub trait WindowRenderer {
 }
 
 pub trait ImageRenderer {
-    type Scene<'a>: Scene
+    type Scene<'a>: PaintScene
     where
         Self: 'a;
     fn new(width: u32, height: u32) -> Self;
@@ -108,7 +108,7 @@ pub fn render_to_buffer<R: ImageRenderer, F: FnOnce(&mut R::Scene<'_>)>(
 }
 
 /// The primary drawing abstraction for drawing a single 2D scene
-pub trait Scene {
+pub trait PaintScene {
     /// The output type.
     /// This will usually be either a rendered scene or an encoded set of instructions with which to render a scene.
     type Output: 'static;

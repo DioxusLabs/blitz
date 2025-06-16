@@ -1,7 +1,7 @@
 // Copyright 2023 the Vello Authors
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
-use anyrender::Scene;
+use anyrender::PaintScene;
 use kurbo::{Affine, BezPath, Point, Rect, Stroke};
 use peniko::color::{self, DynamicColor};
 use peniko::{Brush, Color, Fill};
@@ -189,7 +189,7 @@ pub fn to_brush(paint: &usvg::Paint, opacity: usvg::Opacity) -> Option<(Brush, A
 
 /// Error handler function for [`super::append_tree_with`] which draws a transparent red box
 /// instead of unsupported SVG features
-pub fn default_error_handler<S: Scene>(scene: &mut S, node: &usvg::Node) {
+pub fn default_error_handler<S: PaintScene>(scene: &mut S, node: &usvg::Node) {
     let bb = node.bounding_box();
     let rect = Rect {
         x0: bb.left() as f64,

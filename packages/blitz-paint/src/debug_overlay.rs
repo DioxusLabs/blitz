@@ -1,3 +1,4 @@
+use anyrender::PaintScene;
 use blitz_dom::BaseDocument;
 use kurbo::{Affine, Rect, Vec2};
 
@@ -6,7 +7,7 @@ use crate::color::Color;
 /// Renders a layout debugging overlay which visualises the content size, padding and border
 /// of the node with a transparent overlay.
 pub(crate) fn render_debug_overlay(
-    scene: &mut impl anyrender::Scene,
+    scene: &mut impl PaintScene,
     dom: &BaseDocument,
     node_id: usize,
     scale: f64,
@@ -96,7 +97,7 @@ pub(crate) fn render_debug_overlay(
 }
 
 fn draw_cutout_rect(
-    scene: &mut impl anyrender::Scene,
+    scene: &mut impl PaintScene,
     base_translation: Vec2,
     size: Vec2,
     edge_widths: taffy::Rect<f64>,

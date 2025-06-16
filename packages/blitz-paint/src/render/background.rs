@@ -2,6 +2,7 @@ use super::{ElementCx, to_peniko_image};
 use crate::color::{Color, ToColorColor};
 use crate::gradient::to_peniko_gradient;
 use crate::layers::maybe_with_layer;
+use anyrender::PaintScene;
 use blitz_dom::node::ImageData;
 use kurbo::{self, BezPath, Point, Rect, Shape, Size, Vec2};
 use peniko::{self, Fill};
@@ -21,7 +22,7 @@ use style::{
 };
 
 impl ElementCx<'_> {
-    pub(super) fn draw_background(&self, scene: &mut impl anyrender::Scene) {
+    pub(super) fn draw_background(&self, scene: &mut impl PaintScene) {
         use GenericImage::*;
         use StyloBackgroundClip::*;
 
@@ -78,7 +79,7 @@ impl ElementCx<'_> {
         }
     }
 
-    fn draw_solid_bg(&self, scene: &mut impl anyrender::Scene, shape: &BezPath) {
+    fn draw_solid_bg(&self, scene: &mut impl PaintScene, shape: &BezPath) {
         let current_color = self.style.clone_color();
         let background_color = &self.style.get_background().background_color;
         let bg_color = background_color
@@ -92,7 +93,7 @@ impl ElementCx<'_> {
     }
 
     #[cfg(feature = "svg")]
-    fn draw_svg_bg_image(&self, scene: &mut impl anyrender::Scene, idx: usize) {
+    fn draw_svg_bg_image(&self, scene: &mut impl PaintScene, idx: usize) {
         let bg_image = self.element.background_images.get(idx);
 
         let Some(Some(bg_image)) = bg_image.as_ref() else {
@@ -140,7 +141,7 @@ impl ElementCx<'_> {
         anyrender_svg::append_tree(scene, svg, transform);
     }
 
-    fn draw_raster_bg_image(&self, scene: &mut impl anyrender::Scene, idx: usize) {
+    fn draw_raster_bg_image(&self, scene: &mut impl PaintScene, idx: usize) {
         use BackgroundRepeatKeyword::*;
 
         let bg_image = self.element.background_images.get(idx);
@@ -323,7 +324,7 @@ impl ElementCx<'_> {
 
     fn draw_gradient_bg(
         &self,
-        scene: &mut impl anyrender::Scene,
+        scene: &mut impl PaintScene,
         gradient: &StyloGradient,
         idx: usize,
         background_clip: StyloBackgroundClip,

@@ -9,7 +9,7 @@ use crate::color::{Color, ToColorColor};
 use crate::debug_overlay::render_debug_overlay;
 use crate::layers::{maybe_with_layer, reset_layer_stats};
 use crate::sizing::compute_object_fit;
-use anyrender::{CustomPaint, Paint};
+use anyrender::{CustomPaint, Paint, PaintScene};
 use blitz_dom::node::{
     ListItemLayout, ListItemLayoutPosition, Marker, NodeData, RasterImageData, TextInputData,
     TextNodeData,
@@ -41,7 +41,7 @@ use taffy::Layout;
 /// This assumes styles are resolved and layout is complete.
 /// Make sure you do those before trying to render
 pub fn paint_scene(
-    scene: &mut impl anyrender::Scene,
+    scene: &mut impl PaintScene,
     dom: &BaseDocument,
     scale: f64,
     width: u32,
@@ -95,7 +95,7 @@ impl BlitzDomPainter<'_> {
     ///
     /// This assumes styles are resolved and layout is complete.
     /// Make sure you do those before trying to render
-    pub fn paint_scene(&self, scene: &mut impl anyrender::Scene) {
+    pub fn paint_scene(&self, scene: &mut impl PaintScene) {
         // Simply render the document (the root element (note that this is not the same as the root node)))
         scene.reset();
         let viewport_scroll = self.dom.as_ref().viewport_scroll();
@@ -165,7 +165,7 @@ impl BlitzDomPainter<'_> {
     ///
     /// Approaching rendering this way guarantees we have all the styles we need when rendering text with not having
     /// to traverse back to the parent for its styles, or needing to pass down styles
-    fn render_element(&self, scene: &mut impl anyrender::Scene, node_id: usize, location: Point) {
+    fn render_element(&self, scene: &mut impl PaintScene, node_id: usize, location: Point) {
         let node = &self.dom.as_ref().tree()[node_id];
 
         // Early return if the element is hidden
@@ -286,7 +286,7 @@ impl BlitzDomPainter<'_> {
         });
     }
 
-    fn render_node(&self, scene: &mut impl anyrender::Scene, node_id: usize, location: Point) {
+    fn render_node(&self, scene: &mut impl PaintScene, node_id: usize, location: Point) {
         let node = &self.dom.as_ref().tree()[node_id];
 
         match &node.data {
@@ -418,7 +418,7 @@ struct ElementCx<'a> {
 }
 
 impl ElementCx<'_> {
-    fn draw_inline_layout(&self, scene: &mut impl anyrender::Scene, pos: Point) {
+    fn draw_inline_layout(&self, scene: &mut impl PaintScene, pos: Point) {
         if self.node.is_inline_root {
             let text_layout = self.element
                 .inline_layout_data
@@ -432,7 +432,7 @@ impl ElementCx<'_> {
         }
     }
 
-    fn draw_text_input_text(&self, scene: &mut impl anyrender::Scene, pos: Point) {
+    fn draw_text_input_text(&self, scene: &mut impl PaintScene, pos: Point) {
         // Render the text in text inputs
         if let Some(input_data) = self.text_input {
             let transform = Affine::translate((pos.x * self.scale, pos.y * self.scale));
@@ -463,7 +463,7 @@ impl ElementCx<'_> {
         }
     }
 
-    fn draw_marker(&self, scene: &mut impl anyrender::Scene, pos: Point) {
+    fn draw_marker(&self, scene: &mut impl PaintScene, pos: Point) {
         if let Some(ListItemLayout {
             marker,
             position: ListItemLayoutPosition::Outside(layout),
@@ -499,7 +499,7 @@ impl ElementCx<'_> {
         }
     }
 
-    fn draw_children(&self, scene: &mut impl anyrender::Scene) {
+    fn draw_children(&self, scene: &mut impl PaintScene) {
         if let Some(children) = &*self.node.paint_children.borrow() {
             for child_id in children {
                 self.render_node(scene, *child_id, self.pos);
@@ -508,7 +508,7 @@ impl ElementCx<'_> {
     }
 
     #[cfg(feature = "svg")]
-    fn draw_svg(&self, scene: &mut impl anyrender::Scene) {
+    fn draw_svg(&self, scene: &mut impl PaintScene) {
         use style::properties::generated::longhands::object_fit::computed_value::T as ObjectFit;
 
         let Some(svg) = self.svg else {
@@ -556,7 +556,7 @@ impl ElementCx<'_> {
         anyrender_svg::append_tree(scene, svg, transform);
     }
 
-    fn draw_image(&self, scene: &mut impl anyrender::Scene) {
+    fn draw_image(&self, scene: &mut impl PaintScene) {
         if let Some(image) = self.element.raster_image_data() {
             let width = self.frame.content_box.width() as u32;
             let height = self.frame.content_box.height() as u32;
@@ -598,7 +598,7 @@ impl ElementCx<'_> {
         }
     }
 
-    fn draw_canvas(&self, scene: &mut impl anyrender::Scene) {
+    fn draw_canvas(&self, scene: &mut impl PaintScene) {
         if let Some(custom_paint_source) = self.element.canvas_data() {
             let width = self.frame.content_box.width() as u32;
             let height = self.frame.content_box.height() as u32;
@@ -623,7 +623,7 @@ impl ElementCx<'_> {
         }
     }
 
-    fn stroke_devtools(&self, scene: &mut impl anyrender::Scene) {
+    fn stroke_devtools(&self, scene: &mut impl PaintScene) {
         if self.devtools.show_layout {
             let shape = &self.frame.border_box;
             let stroke = Stroke::new(self.scale);
@@ -656,7 +656,7 @@ impl ElementCx<'_> {
     /// ✅ hidden - Defines a hidden border
     ///
     /// The border-style property can have from one to four values (for the top border, right border, bottom border, and the left border).
-    fn draw_border(&self, sb: &mut impl anyrender::Scene) {
+    fn draw_border(&self, sb: &mut impl PaintScene) {
         for edge in [Edge::Top, Edge::Right, Edge::Bottom, Edge::Left] {
             self.draw_border_edge(sb, edge);
         }
@@ -679,7 +679,7 @@ impl ElementCx<'_> {
     /// - ✅ hidden: Defines a hidden border
     ///
     /// [*] The effect depends on the border-color value
-    fn draw_border_edge(&self, sb: &mut impl anyrender::Scene, edge: Edge) {
+    fn draw_border_edge(&self, sb: &mut impl PaintScene, edge: Edge) {
         let style = &*self.style;
         let border = style.get_border();
         let path = self.frame.border_edge_shape(edge);
@@ -720,7 +720,7 @@ impl ElementCx<'_> {
     /// ❌ outset - Defines a 3D outset border. The effect depends on the border-color value
     /// ✅ none - Defines no border
     /// ✅ hidden - Defines a hidden border
-    fn draw_outline(&self, scene: &mut impl anyrender::Scene) {
+    fn draw_outline(&self, scene: &mut impl PaintScene) {
         let outline = self.style.get_outline();
 
         let current_color = self.style.clone_color();

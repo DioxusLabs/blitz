@@ -2,12 +2,12 @@
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
 use crate::util;
-use anyrender::Scene;
+use anyrender::PaintScene;
 use kurbo::{Affine, BezPath};
 use peniko::{BlendMode, BrushRef, Fill};
 use usvg::{Node, Path};
 
-pub(crate) fn render_group<S: Scene, F: FnMut(&mut S, &usvg::Node)>(
+pub(crate) fn render_group<S: PaintScene, F: FnMut(&mut S, &usvg::Node)>(
     scene: &mut S,
     group: &usvg::Group,
     transform: Affine,
@@ -111,7 +111,7 @@ pub(crate) fn render_group<S: Scene, F: FnMut(&mut S, &usvg::Node)>(
     }
 }
 
-fn fill<S: Scene, F: FnMut(&mut S, &usvg::Node)>(
+fn fill<S: PaintScene, F: FnMut(&mut S, &usvg::Node)>(
     scene: &mut S,
     error_handler: &mut F,
     path: &Path,
@@ -137,7 +137,7 @@ fn fill<S: Scene, F: FnMut(&mut S, &usvg::Node)>(
     }
 }
 
-fn stroke<S: Scene, F: FnMut(&mut S, &usvg::Node)>(
+fn stroke<S: PaintScene, F: FnMut(&mut S, &usvg::Node)>(
     scene: &mut S,
     error_handler: &mut F,
     path: &Path,
