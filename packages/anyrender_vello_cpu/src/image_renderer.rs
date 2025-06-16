@@ -1,17 +1,17 @@
-use crate::VelloCpuAnyrenderScene;
+use crate::VelloCpuScenePainter;
 use anyrender::ImageRenderer;
 use vello_cpu::{RenderContext, RenderMode};
 
 pub struct VelloCpuImageRenderer {
-    scene: VelloCpuAnyrenderScene,
+    scene: VelloCpuScenePainter,
 }
 
 impl ImageRenderer for VelloCpuImageRenderer {
-    type Scene<'a> = VelloCpuAnyrenderScene;
+    type Scene<'a> = VelloCpuScenePainter;
 
     fn new(width: u32, height: u32) -> Self {
         Self {
-            scene: VelloCpuAnyrenderScene(RenderContext::new(width as u16, height as u16)),
+            scene: VelloCpuScenePainter(RenderContext::new(width as u16, height as u16)),
         }
     }
 

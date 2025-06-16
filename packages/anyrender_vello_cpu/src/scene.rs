@@ -64,9 +64,9 @@ fn premultiply(image: &peniko::Image) -> Vec<PremulRgba8> {
         .collect()
 }
 
-pub struct VelloCpuAnyrenderScene(pub vello_cpu::RenderContext);
+pub struct VelloCpuScenePainter(pub vello_cpu::RenderContext);
 
-impl PaintScene for VelloCpuAnyrenderScene {
+impl PaintScene for VelloCpuScenePainter {
     type Output = vello_cpu::Pixmap;
 
     fn reset(&mut self) {

@@ -1,4 +1,4 @@
-use crate::VelloCpuAnyrenderScene;
+use crate::VelloCpuScenePainter;
 use anyrender::{WindowHandle, WindowRenderer};
 use peniko::color::PremulRgba8;
 use softbuffer::{Context, Surface};
@@ -22,7 +22,7 @@ pub struct VelloCpuWindowRenderer {
     // Window is cached even when suspended so that it can be reused when the app is resumed after being suspended
     render_state: RenderState,
     window_handle: Option<Arc<dyn WindowHandle>>,
-    render_context: VelloCpuAnyrenderScene,
+    render_context: VelloCpuScenePainter,
 }
 
 impl VelloCpuWindowRenderer {
@@ -31,13 +31,13 @@ impl VelloCpuWindowRenderer {
         Self {
             render_state: RenderState::Suspended,
             window_handle: None,
-            render_context: VelloCpuAnyrenderScene(RenderContext::new(0, 0)),
+            render_context: VelloCpuScenePainter(RenderContext::new(0, 0)),
         }
     }
 }
 
 impl WindowRenderer for VelloCpuWindowRenderer {
-    type Scene<'a> = VelloCpuAnyrenderScene;
+    type Scene<'a> = VelloCpuScenePainter;
 
     fn is_active(&self) -> bool {
         matches!(self.render_state, RenderState::Active(_))
@@ -68,7 +68,7 @@ impl WindowRenderer for VelloCpuWindowRenderer {
                     NonZero::new(physical_height.max(1)).unwrap(),
                 )
                 .unwrap();
-            self.render_context = VelloCpuAnyrenderScene(RenderContext::new(
+            self.render_context = VelloCpuScenePainter(RenderContext::new(
                 physical_width as u16,
                 physical_height as u16,
             ));

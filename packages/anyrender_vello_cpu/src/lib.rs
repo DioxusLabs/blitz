@@ -4,5 +4,5 @@ mod scene;
 mod window_renderer;
 
 pub use image_renderer::VelloCpuImageRenderer;
-pub use scene::VelloCpuAnyrenderScene;
+pub use scene::VelloCpuScenePainter;
 pub use window_renderer::VelloCpuWindowRenderer;
