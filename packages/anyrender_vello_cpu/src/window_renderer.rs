@@ -37,7 +37,7 @@ impl VelloCpuWindowRenderer {
 }
 
 impl WindowRenderer for VelloCpuWindowRenderer {
-    type Scene<'a> = VelloCpuScenePainter;
+    type ScenePainter<'a> = VelloCpuScenePainter;
 
     fn is_active(&self) -> bool {
         matches!(self.render_state, RenderState::Active(_))
@@ -75,7 +75,7 @@ impl WindowRenderer for VelloCpuWindowRenderer {
         };
     }
 
-    fn render<F: FnOnce(&mut Self::Scene<'_>)>(&mut self, draw_fn: F) {
+    fn render<F: FnOnce(&mut Self::ScenePainter<'_>)>(&mut self, draw_fn: F) {
         let RenderState::Active(state) = &mut self.render_state else {
             return;
         };

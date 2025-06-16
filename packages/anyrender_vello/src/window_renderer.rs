@@ -99,7 +99,7 @@ impl VelloWindowRenderer {
 }
 
 impl WindowRenderer for VelloWindowRenderer {
-    type Scene<'a>
+    type ScenePainter<'a>
         = VelloScenePainter<'a>
     where
         Self: 'a;
@@ -150,7 +150,7 @@ impl WindowRenderer for VelloWindowRenderer {
         };
     }
 
-    fn render<F: FnOnce(&mut Self::Scene<'_>)>(&mut self, draw_fn: F) {
+    fn render<F: FnOnce(&mut Self::ScenePainter<'_>)>(&mut self, draw_fn: F) {
         let RenderState::Active(state) = &mut self.render_state else {
             return;
         };

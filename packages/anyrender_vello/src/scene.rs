@@ -32,7 +32,7 @@ impl VelloScenePainter<'_> {
 }
 
 impl PaintScene for VelloScenePainter<'_> {
-    type Output = vello::Scene;
+    type Scene = vello::Scene;
 
     fn reset(&mut self) {
         self.inner.reset();
@@ -139,7 +139,7 @@ impl PaintScene for VelloScenePainter<'_> {
             .draw_blurred_rounded_rect(transform, rect, brush, radius, std_dev);
     }
 
-    fn finish(self) -> Self::Output {
+    fn finish(self) -> Self::Scene {
         self.inner
     }
 }

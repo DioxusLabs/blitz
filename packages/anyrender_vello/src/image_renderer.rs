@@ -25,7 +25,7 @@ pub struct VelloImageRenderer {
 }
 
 impl ImageRenderer for VelloImageRenderer {
-    type Scene<'a>
+    type ScenePainter<'a>
         = VelloScenePainter<'a>
     where
         Self: 'a;
@@ -93,7 +93,11 @@ impl ImageRenderer for VelloImageRenderer {
         }
     }
 
-    fn render<F: FnOnce(&mut Self::Scene<'_>)>(&mut self, draw_fn: F, cpu_buffer: &mut Vec<u8>) {
+    fn render<F: FnOnce(&mut Self::ScenePainter<'_>)>(
+        &mut self,
+        draw_fn: F,
+        cpu_buffer: &mut Vec<u8>,
+    ) {
         let mut scene = VelloScenePainter {
             inner: self.scene.take().unwrap(),
             renderer: &mut self.renderer,
