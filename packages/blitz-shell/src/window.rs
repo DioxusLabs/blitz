@@ -48,22 +48,22 @@ impl<Rend: WindowRenderer> WindowConfig<Rend> {
 pub struct View<Rend: WindowRenderer> {
     pub doc: Box<dyn Document>,
 
-    pub(crate) renderer: Rend,
-    pub(crate) waker: Option<Waker>,
+    pub renderer: Rend,
+    pub waker: Option<Waker>,
 
-    event_loop_proxy: EventLoopProxy<BlitzShellEvent>,
-    window: Arc<Window>,
+    pub event_loop_proxy: EventLoopProxy<BlitzShellEvent>,
+    pub window: Arc<Window>,
 
     /// The state of the keyboard modifiers (ctrl, shift, etc). Winit/Tao don't track these for us so we
     /// need to store them in order to have access to them when processing keypress events
-    theme_override: Option<Theme>,
-    keyboard_modifiers: Modifiers,
-    buttons: MouseEventButtons,
-    mouse_pos: (f32, f32),
+    pub theme_override: Option<Theme>,
+    pub keyboard_modifiers: Modifiers,
+    pub buttons: MouseEventButtons,
+    pub mouse_pos: (f32, f32),
 
     #[cfg(feature = "accessibility")]
     /// Accessibility adapter for `accesskit`.
-    accessibility: AccessibilityState,
+    pub accessibility: AccessibilityState,
 }
 
 impl<Rend: WindowRenderer> View<Rend> {
