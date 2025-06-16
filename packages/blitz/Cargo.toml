@@ -16,7 +16,7 @@ tracing = ["blitz-shell/tracing"]
 
 [dependencies]
 # Blitz dependencies
-anyrender_vello = { version = "0.1", path = "../anyrender_vello" }
+anyrender_vello = { version = "0.2", path = "../anyrender_vello" }
 blitz-html = { version = "0.1.0-alpha.2", path = "../blitz-html" }
 blitz-shell = { version = "0.1.0-alpha.2", path = "../blitz-shell" }
 blitz-net = { version = "0.1.0-alpha.2", path = "../blitz-net", optional = true }

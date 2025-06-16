@@ -262,7 +262,7 @@ checksum = "e16d2d3311acee920a9eb8d33b8cbc1787ce4a264e85f964c2404b969bdcd487"
 
 [[package]]
 name = "anyrender"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "kurbo",
  "peniko",
@@ -271,7 +271,7 @@ dependencies = [
 
 [[package]]
 name = "anyrender_svg"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyrender",
  "image",
@@ -283,7 +283,7 @@ dependencies = [
 
 [[package]]
 name = "anyrender_vello"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyrender",
  "futures-intrusive",
@@ -298,7 +298,7 @@ dependencies = [
 
 [[package]]
 name = "anyrender_vello_cpu"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyrender",
  "kurbo",

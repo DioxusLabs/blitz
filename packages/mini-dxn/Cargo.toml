@@ -24,14 +24,14 @@ cpu_backend = ["dep:anyrender_vello_cpu"]
 
 [dependencies]
 # Blitz dependencies
-anyrender = { version = "0.1", path = "../anyrender", default-features = false }
-anyrender_vello = { version = "0.1", path = "../anyrender_vello", default-features = false, optional = true }
-anyrender_vello_cpu = { version = "0.1", path = "../anyrender_vello_cpu", default-features = false, optional = true }
-blitz-paint = { version = "0.1.0-alpha.2", path = "../blitz-paint", default-features = false }
-blitz-dom = { version = "0.1.0-alpha.2", path = "../blitz-dom", default-features = false }
-blitz-net = { version = "0.1.0-alpha.2", path = "../blitz-net", optional = true }
-blitz-traits = { version = "0.1.0-alpha.2", path = "../blitz-traits" }
-blitz-shell = { version = "0.1.0-alpha.2", path = "../blitz-shell", default-features = false }
+anyrender = { path = "../anyrender", default-features = false }
+anyrender_vello = { path = "../anyrender_vello", default-features = false, optional = true }
+anyrender_vello_cpu = { path = "../anyrender_vello_cpu", default-features = false, optional = true }
+blitz-paint = { path = "../blitz-paint", default-features = false }
+blitz-dom = { path = "../blitz-dom", default-features = false }
+blitz-net = { path = "../blitz-net", optional = true }
+blitz-traits = { path = "../blitz-traits" }
+blitz-shell = { path = "../blitz-shell", default-features = false }
 
 # DioxusLabs dependencies
 dioxus-core = { workspace = true }

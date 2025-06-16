@@ -19,7 +19,7 @@ tracing = ["dep:tracing", "blitz-dom/tracing"]
 blitz-traits = { version = "0.1.0-alpha.2", path = "../blitz-traits" }
 blitz-dom = { version = "0.1.0-alpha.2", path = "../blitz-dom", default-features = false }
 blitz-paint = { version = "0.1.0-alpha.2", path = "../blitz-paint", default-features = false }
-anyrender = { version = "0.1", path = "../anyrender", default-features = false }
+anyrender = { version = "0.2", path = "../anyrender", default-features = false }
 
 # Windowing & Input
 winit = { workspace = true }

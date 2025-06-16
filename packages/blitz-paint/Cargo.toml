@@ -15,8 +15,8 @@ svg = ["dep:anyrender_svg", "dep:usvg", "blitz-dom/svg"]
 
 [dependencies]
 # Blitz dependencies
-anyrender = { version = "0.1", path = "../anyrender" }
-anyrender_svg = { version = "0.1", path = "../anyrender_svg", optional = true }
+anyrender = { version = "0.2", path = "../anyrender" }
+anyrender_svg = { version = "0.2", path = "../anyrender_svg", optional = true }
 blitz-traits = { version = "0.1.0-alpha.2", path = "../blitz-traits" }
 blitz-dom = {version = "0.1.0-alpha.2",  path = "../blitz-dom", default-features = false }
 
