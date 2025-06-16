@@ -1,10 +1,12 @@
-use std::{any::Any, sync::Arc};
+//! Anyrender is 2D drawing drawing that allows applications/frameworks to support many rendering backends through
+//! a unified API.
 
 use kurbo::{Affine, Rect, Shape, Stroke};
 use peniko::{BlendMode, BrushRef, Color, Fill, Font, Gradient, Image, StyleRef};
 use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
+use std::{any::Any, sync::Arc};
 
-mod wasm_send_sync;
+pub mod wasm_send_sync;
 pub use wasm_send_sync::*;
 
 pub type NormalizedCoord = i16;
@@ -66,16 +68,11 @@ impl<'a> From<BrushRef<'a>> for Paint<'a> {
     }
 }
 
-// #[derive(Copy, Clone, Debug)]
-// pub struct Viewport {
-//     pub width: u32,
-//     pub height: u32,
-//     pub scale: f64,
-// }
-
+/// A raw window handle that is `WasmNotSendSync`. For interop with wgpu.
 pub trait WindowHandle: HasWindowHandle + HasDisplayHandle + WasmNotSendSync {}
 impl<T: HasWindowHandle + HasDisplayHandle + WasmNotSendSync> WindowHandle for T {}
 
+/// Abstraction for rendering a scene to a window
 pub trait WindowRenderer {
     type ScenePainter<'a>: PaintScene
     where
@@ -87,6 +84,7 @@ pub trait WindowRenderer {
     fn render<F: FnOnce(&mut Self::ScenePainter<'_>)>(&mut self, draw_fn: F);
 }
 
+/// Abstraction for rendering a scene to an image buffer
 pub trait ImageRenderer {
     type ScenePainter<'a>: PaintScene
     where
@@ -95,6 +93,7 @@ pub trait ImageRenderer {
     fn render<F: FnOnce(&mut Self::ScenePainter<'_>)>(&mut self, draw_fn: F, buffer: &mut Vec<u8>);
 }
 
+/// Draw a scene to a buffer using an `ImageRenderer`
 pub fn render_to_buffer<R: ImageRenderer, F: FnOnce(&mut R::ScenePainter<'_>)>(
     draw_fn: F,
     width: u32,
@@ -107,7 +106,7 @@ pub fn render_to_buffer<R: ImageRenderer, F: FnOnce(&mut R::ScenePainter<'_>)>(
     buf
 }
 
-/// The primary drawing abstraction for drawing a single 2D scene
+/// Abstraction for drawing a 2D scene
 pub trait PaintScene {
     /// The output type.
     /// This will usually be either a rendered scene or an encoded set of instructions with which to render a scene.
