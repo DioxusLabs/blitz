@@ -11,7 +11,7 @@ use crate::{View, WindowConfig};
 
 pub struct BlitzApplication<Rend: WindowRenderer> {
     pub windows: HashMap<WindowId, View<Rend>>,
-    pending_windows: Vec<WindowConfig<Rend>>,
+    pub pending_windows: Vec<WindowConfig<Rend>>,
     pub proxy: EventLoopProxy<BlitzShellEvent>,
 }
 
