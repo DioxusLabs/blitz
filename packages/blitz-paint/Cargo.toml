@@ -1,7 +1,7 @@
 [package]
 name = "blitz-paint"
 description = "Paint a Blitz Document using anyrender"
-version = "0.1.0-alpha.2"
+version = "0.1.0-alpha.3"
 homepage = "https://github.com/dioxuslabs/blitz"
 repository = "https://github.com/dioxuslabs/blitz"
 documentation = "https://docs.rs/blitz-paint"
@@ -17,8 +17,8 @@ svg = ["dep:anyrender_svg", "dep:usvg", "blitz-dom/svg"]
 # Blitz dependencies
 anyrender = { version = "0.2", path = "../anyrender" }
 anyrender_svg = { version = "0.2", path = "../anyrender_svg", optional = true }
-blitz-traits = { version = "0.1.0-alpha.2", path = "../blitz-traits" }
-blitz-dom = {version = "0.1.0-alpha.2",  path = "../blitz-dom", default-features = false }
+blitz-traits = { version = "0.1.0-alpha.3", path = "../blitz-traits" }
+blitz-dom = {version = "0.1.0-alpha.3",  path = "../blitz-dom", default-features = false }
 
 # Servo dependencies
 style = { workspace = true }

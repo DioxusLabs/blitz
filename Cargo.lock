@@ -666,7 +666,7 @@ dependencies = [
 
 [[package]]
 name = "blitz"
-version = "0.1.0-alpha.2"
+version = "0.1.0-alpha.3"
 dependencies = [
  "anyrender_vello",
  "blitz-html",
@@ -679,7 +679,7 @@ dependencies = [
 
 [[package]]
 name = "blitz-dom"
-version = "0.1.0-alpha.2"
+version = "0.1.0-alpha.3"
 dependencies = [
  "accesskit",
  "app_units",
@@ -739,7 +739,7 @@ dependencies = [
 
 [[package]]
 name = "blitz-html"
-version = "0.1.0-alpha.2"
+version = "0.1.0-alpha.3"
 dependencies = [
  "blitz-dom",
  "blitz-traits",
@@ -749,7 +749,7 @@ dependencies = [
 
 [[package]]
 name = "blitz-net"
-version = "0.1.0-alpha.2"
+version = "0.1.0-alpha.3"
 dependencies = [
  "blitz-traits",
  "data-url",
@@ -759,7 +759,7 @@ dependencies = [
 
 [[package]]
 name = "blitz-paint"
-version = "0.1.0-alpha.2"
+version = "0.1.0-alpha.3"
 dependencies = [
  "anyrender",
  "anyrender_svg",
@@ -778,7 +778,7 @@ dependencies = [
 
 [[package]]
 name = "blitz-shell"
-version = "0.1.0-alpha.2"
+version = "0.1.0-alpha.3"
 dependencies = [
  "accesskit",
  "accesskit_winit",
@@ -796,7 +796,7 @@ dependencies = [
 
 [[package]]
 name = "blitz-traits"
-version = "0.1.0-alpha.2"
+version = "0.1.0-alpha.3"
 dependencies = [
  "bitflags 2.9.1",
  "bytes",
@@ -5617,7 +5617,7 @@ checksum = "9600d11cdad6c275426272f35fbe085c4362be1d67bb9775f378fd2be7942d3a"
 
 [[package]]
 name = "stylo_taffy"
-version = "0.1.0-alpha.2"
+version = "0.1.0-alpha.3"
 dependencies = [
  "stylo",
  "taffy",

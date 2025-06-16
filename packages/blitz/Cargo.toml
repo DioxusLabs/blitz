@@ -1,7 +1,7 @@
 [package]
 name = "blitz"
 description = "High-level APIs for rendering HTML with Blitz"
-version = "0.1.0-alpha.2"
+version = "0.1.0-alpha.3"
 homepage = "https://github.com/dioxuslabs/blitz"
 repository = "https://github.com/dioxuslabs/blitz"
 documentation = "https://docs.rs/blitz"
@@ -17,10 +17,10 @@ tracing = ["blitz-shell/tracing"]
 [dependencies]
 # Blitz dependencies
 anyrender_vello = { version = "0.2", path = "../anyrender_vello" }
-blitz-html = { version = "0.1.0-alpha.2", path = "../blitz-html" }
-blitz-shell = { version = "0.1.0-alpha.2", path = "../blitz-shell" }
-blitz-net = { version = "0.1.0-alpha.2", path = "../blitz-net", optional = true }
-blitz-traits = { version = "0.1.0-alpha.2", path = "../blitz-traits" }
+blitz-html = { version = "0.1.0-alpha.3", path = "../blitz-html" }
+blitz-shell = { version = "0.1.0-alpha.3", path = "../blitz-shell" }
+blitz-net = { version = "0.1.0-alpha.3", path = "../blitz-net", optional = true }
+blitz-traits = { version = "0.1.0-alpha.3", path = "../blitz-traits" }
 
 # IO & Networking
 url = { workspace = true, features = ["serde"], optional = true }

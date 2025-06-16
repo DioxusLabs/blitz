@@ -1,7 +1,7 @@
 [package]
 name = "blitz-net"
 description = "Blitz networking"
-version = "0.1.0-alpha.2"
+version = "0.1.0-alpha.3"
 homepage = "https://github.com/dioxuslabs/blitz"
 repository = "https://github.com/dioxuslabs/blitz"
 documentation = "https://docs.rs/blitz-net"
@@ -13,7 +13,7 @@ cookies = ["reqwest/cookies"]
 
 [dependencies]
 # Blitz dependencies
-blitz-traits = { version = "0.1.0-alpha.2", path = "../blitz-traits" }
+blitz-traits = { version = "0.1.0-alpha.3", path = "../blitz-traits" }
 
 # Networking dependencies
 tokio = { workspace = true }
