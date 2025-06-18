@@ -676,7 +676,7 @@ impl TextInputData {
 }
 
 /// Heterogeneous data that depends on the element's type.
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub enum SpecialElementData {
     /// An \<img\> element's image data
     Image(Box<ImageData>),
@@ -689,6 +689,7 @@ pub enum SpecialElementData {
     /// Checkbox checked state
     CheckboxInput(bool),
     /// No data (for nodes that don't need any node-specific data)
+    #[default]
     None,
 }
 
@@ -712,12 +713,6 @@ impl std::fmt::Debug for SpecialElementData {
             SpecialElementData::CheckboxInput(_) => f.write_str("NodeSpecificData::CheckboxInput"),
             SpecialElementData::None => f.write_str("NodeSpecificData::None"),
         }
-    }
-}
-
-impl Default for SpecialElementData {
-    fn default() -> Self {
-        Self::None
     }
 }
 
