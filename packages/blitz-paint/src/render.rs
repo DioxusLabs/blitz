@@ -419,7 +419,7 @@ struct ElementCx<'a> {
 
 impl ElementCx<'_> {
     fn draw_inline_layout(&self, scene: &mut impl PaintScene, pos: Point) {
-        if self.node.is_inline_root {
+        if self.node.flags.is_inline_root() {
             let text_layout = self.element
                 .inline_layout_data
                 .as_ref()

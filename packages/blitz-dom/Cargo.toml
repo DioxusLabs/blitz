@@ -51,6 +51,7 @@ color = { workspace = true }
 
 # Other dependencies
 slab = { workspace = true }
+bitflags = { workspace = true }
 tracing = { workspace = true, optional = true }
 
 # Media & Decoding

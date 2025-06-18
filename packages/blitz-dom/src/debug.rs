@@ -24,7 +24,7 @@ impl BaseDocument {
             println!("    {}: {}", attr.name.local, attr.value);
         }
 
-        if node.is_inline_root {
+        if node.flags.is_inline_root() {
             let inline_layout = &node
                 .data
                 .downcast_element()

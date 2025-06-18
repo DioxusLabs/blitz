@@ -272,7 +272,7 @@ impl LayoutPartialTree for BaseDocument {
                         };
                     }
 
-                    if node.is_table_root {
+                    if node.flags.is_table_root() {
                         let SpecialElementData::TableRoot(context) = &tree.nodes[node_id.into()]
                             .data
                             .downcast_element()
@@ -290,7 +290,7 @@ impl LayoutPartialTree for BaseDocument {
                         return compute_grid_layout(&mut table_wrapper, node_id, inputs);
                     }
 
-                    if node.is_inline_root {
+                    if node.flags.is_inline_root() {
                         return tree.compute_inline_layout(usize::from(node_id), inputs);
                     }
 

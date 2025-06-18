@@ -1,4 +1,5 @@
 use atomic_refcell::{AtomicRef, AtomicRefCell};
+use bitflags::bitflags;
 use color::{AlphaColor, Srgb};
 use keyboard_types::Modifiers;
 use markup5ever::{LocalName, QualName, local_name};
@@ -44,6 +45,25 @@ pub enum DisplayOuter {
     None,
 }
 
+bitflags! {
+    pub struct NodeFlags: u32 {
+        const IS_INLINE_ROOT = 0b00000001;
+        const IS_TABLE_ROOT = 0b00000010;
+    }
+}
+
+impl NodeFlags {
+    #[inline(always)]
+    pub fn is_inline_root(&self) -> bool {
+        self.contains(Self::IS_INLINE_ROOT)
+    }
+
+    #[inline(always)]
+    pub fn is_table_root(&self) -> bool {
+        self.contains(Self::IS_TABLE_ROOT)
+    }
+}
+
 pub struct Node {
     // The actual tree we belong to. This is unsafe!!
     tree: *mut Slab<Node>,
@@ -60,6 +80,9 @@ pub struct Node {
     pub layout_children: RefCell<Option<Vec<usize>>>,
     /// The same as layout_children, but sorted by z-index
     pub paint_children: RefCell<Option<Vec<usize>>>,
+
+    // Flags
+    pub flags: NodeFlags,
 
     /// Node type (Element, TextNode, etc) specific data
     pub data: NodeData,
@@ -84,10 +107,6 @@ pub struct Node {
     pub unrounded_layout: Layout,
     pub final_layout: Layout,
     pub scroll_offset: kurbo::Point,
-
-    // Flags
-    pub is_inline_root: bool,
-    pub is_table_root: bool,
 }
 
 impl Node {
@@ -107,7 +126,9 @@ impl Node {
             layout_children: RefCell::new(None),
             paint_children: RefCell::new(None),
 
+            flags: NodeFlags::empty(),
             data,
+
             stylo_element_data: Default::default(),
             selector_flags: AtomicRefCell::new(ElementSelectorFlags::empty()),
             guard,
@@ -124,8 +145,6 @@ impl Node {
             unrounded_layout: Layout::new(),
             final_layout: Layout::new(),
             scroll_offset: kurbo::Point::ZERO,
-            is_inline_root: false,
-            is_table_root: false,
         }
     }
 
@@ -1087,7 +1106,7 @@ impl Node {
             return None;
         }
 
-        if self.is_inline_root {
+        if self.flags.is_inline_root() {
             let content_box_offset = taffy::Point {
                 x: self.final_layout.padding.left + self.final_layout.border.left,
                 y: self.final_layout.padding.top + self.final_layout.border.top,
@@ -1104,7 +1123,7 @@ impl Node {
             .rev()
             .find_map(|&i| self.with(i).hit(x, y))
             .or_else(|| {
-                if self.is_inline_root {
+                if self.flags.is_inline_root() {
                     let element_data = &self.element_data().unwrap();
                     let layout = &element_data.inline_layout_data.as_ref().unwrap().layout;
                     let scale = layout.scale();
@@ -1173,7 +1192,7 @@ impl std::fmt::Debug for Node {
         f.debug_struct("NodeData")
             .field("parent", &self.parent)
             .field("id", &self.id)
-            .field("is_inline_root", &self.is_inline_root)
+            .field("is_inline_root", &self.flags.is_inline_root())
             .field("children", &self.children)
             .field("layout_children", &self.layout_children.borrow())
             // .field("style", &self.style)

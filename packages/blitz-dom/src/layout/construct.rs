@@ -20,8 +20,8 @@ use style::{
 use crate::{
     BaseDocument, ElementData, Node, NodeData,
     node::{
-        ListItemLayout, ListItemLayoutPosition, Marker, NodeKind, SpecialElementData, TextBrush,
-        TextInputData, TextLayout,
+        ListItemLayout, ListItemLayoutPosition, Marker, NodeFlags, NodeKind, SpecialElementData,
+        TextBrush, TextInputData, TextLayout,
     },
     stylo_to_parley,
 };
@@ -61,7 +61,9 @@ pub(crate) fn collect_layout_children(
 ) {
     // Reset inline layout
     // TODO: make incremental and only remove this if the element is no longer an inline root
-    doc.nodes[container_node_id].is_inline_root = false;
+    doc.nodes[container_node_id]
+        .flags
+        .remove(NodeFlags::IS_INLINE_ROOT);
     if let Some(element_data) = doc.nodes[container_node_id].element_data_mut() {
         element_data.take_inline_layout();
     }
@@ -197,7 +199,9 @@ pub(crate) fn collect_layout_children(
             // TODO: fix display:contents
             if all_inline {
                 let (inline_layout, ilayout_children) = build_inline_layout(doc, container_node_id);
-                doc.nodes[container_node_id].is_inline_root = true;
+                doc.nodes[container_node_id]
+                    .flags
+                    .insert(NodeFlags::IS_INLINE_ROOT);
                 doc.nodes[container_node_id]
                     .data
                     .downcast_element_mut()
@@ -270,7 +274,9 @@ pub(crate) fn collect_layout_children(
             let (table_context, tlayout_children) = build_table_context(doc, container_node_id);
             #[allow(clippy::arc_with_non_send_sync)]
             let data = SpecialElementData::TableRoot(Arc::new(table_context));
-            doc.nodes[container_node_id].is_table_root = true;
+            doc.nodes[container_node_id]
+                .flags
+                .insert(NodeFlags::IS_TABLE_ROOT);
             doc.nodes[container_node_id]
                 .data
                 .downcast_element_mut()
