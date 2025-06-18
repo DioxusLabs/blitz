@@ -59,11 +59,11 @@ pub(crate) fn collect_layout_children(
     layout_children: &mut Vec<usize>,
     anonymous_block_id: &mut Option<usize>,
 ) {
-    // Reset inline layout
+    // Reset construction flags
     // TODO: make incremental and only remove this if the element is no longer an inline root
     doc.nodes[container_node_id]
         .flags
-        .remove(NodeFlags::IS_INLINE_ROOT);
+        .reset_construction_flags();
     if let Some(element_data) = doc.nodes[container_node_id].element_data_mut() {
         element_data.take_inline_layout();
     }

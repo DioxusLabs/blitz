@@ -62,6 +62,12 @@ impl NodeFlags {
     pub fn is_table_root(&self) -> bool {
         self.contains(Self::IS_TABLE_ROOT)
     }
+
+    #[inline(always)]
+    pub fn reset_construction_flags(&mut self) {
+        self.remove(Self::IS_INLINE_ROOT);
+        self.remove(Self::IS_TABLE_ROOT);
+    }
 }
 
 pub struct Node {
