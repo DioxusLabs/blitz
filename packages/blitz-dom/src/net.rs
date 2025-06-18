@@ -104,10 +104,15 @@ impl ServoStylesheetLoader for StylesheetLoader {
                     callback.call(doc_id, Err(Some(String::from("Invalid UTF8"))));
                     return;
                 };
-                let escaped_css = html_escape::decode_html_entities(css);
+
+                // NOTE(Nico): I don't *think* external stylesheets should have HTML entities escaped
+                // let escaped_css = html_escape::decode_html_entities(css);
+
+                println!("{css}");
+
                 Stylesheet::update_from_str(
                     &self.sheet,
-                    &escaped_css,
+                    css,
                     UrlExtraData(self.url),
                     Some(&self.loader),
                     None,
@@ -140,9 +145,11 @@ impl NetHandler<Resource> for CssHandler {
             return;
         };
 
-        let escaped_css = html_escape::decode_html_entities(css);
+        // NOTE(Nico): I don't *think* external stylesheets should have HTML entities escaped
+        // let escaped_css = html_escape::decode_html_entities(css);
+
         let sheet = Stylesheet::from_str(
-            &escaped_css,
+            css,
             self.source_url.into(),
             Origin::Author,
             ServoArc::new(self.guard.wrap(MediaList::empty())),
