@@ -3,7 +3,7 @@ use std::ops::{Deref, DerefMut};
 
 use crate::document::make_device;
 use crate::net::{CssHandler, ImageHandler};
-use crate::node::{CanvasData, SpecialElementData};
+use crate::node::{CanvasData, NodeFlags, SpecialElementData};
 use crate::util::ImageType;
 use crate::{Attribute, BaseDocument, ElementData, NodeData, QualName, local_name, ns};
 use blitz_traits::Viewport;
@@ -98,14 +98,28 @@ impl DocumentMutator<'_> {
     }
 
     pub fn append_children(&mut self, parent_id: usize, child_ids: &[usize]) {
+        let new_parent = &mut self.doc.nodes[parent_id];
+        let new_parent_is_in_doc = new_parent.flags.is_in_document();
+        new_parent.children.extend_from_slice(child_ids);
+
         for child_id in child_ids.iter().copied() {
-            self.doc.nodes[parent_id].children.push(child_id);
-            let old_parent = self.doc.nodes[child_id].parent.replace(parent_id);
-            if let Some(old_parent_id) = old_parent {
-                self.doc.nodes[old_parent_id]
-                    .children
-                    .retain(|id| *id != child_id);
-                self.maybe_record_node(old_parent);
+            let child = &mut self.doc.nodes[child_id];
+            let old_parent_id = child.parent.replace(parent_id);
+
+            let child_was_in_doc = child.flags.is_in_document();
+            child
+                .flags
+                .set(NodeFlags::IS_IN_DOCUMENT, new_parent_is_in_doc);
+
+            if new_parent_is_in_doc != child_was_in_doc {
+                // HANDLE CHANGE
+            }
+
+            if let Some(old_parent_id) = old_parent_id {
+                let old_parent = &mut self.doc.nodes[old_parent_id];
+
+                old_parent.children.retain(|id| *id != child_id);
+                self.maybe_record_node(old_parent_id);
             }
         }
 

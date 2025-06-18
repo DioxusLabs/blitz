@@ -1,7 +1,7 @@
 use crate::events::handle_event;
 use crate::layout::construct::collect_layout_children;
 use crate::mutator::ViewportMut;
-use crate::node::{ImageData, RasterImageData, SpecialElementData, Status, TextBrush};
+use crate::node::{ImageData, NodeFlags, RasterImageData, SpecialElementData, Status, TextBrush};
 use crate::stylo_to_cursor_icon::stylo_to_cursor_icon;
 use crate::traversal::{AncestorTraverser, TreeTraverser};
 use crate::util::{ImageType, resolve_url};
@@ -22,6 +22,7 @@ use style::attr::{AttrIdentifier, AttrValue};
 use style::data::{ElementData as StyloElementData, ElementStyles};
 use style::properties::ComputedValues;
 use style::properties::style_structs::Font;
+use style::stylesheets::OriginSet;
 use style::values::GenericAtomIdent;
 use style::values::computed::Overflow;
 // use quadtree_rs::Quadtree;
@@ -255,6 +256,7 @@ impl BaseDocument {
 
         // Initialise document with root Document node
         doc.create_node(NodeData::Document);
+        doc.root_node_mut().flags.insert(NodeFlags::IS_IN_DOCUMENT);
 
         // Stylo data on the root node container is needed to render the node
         let stylo_element_data = StyloElementData {
@@ -388,6 +390,10 @@ impl BaseDocument {
         &self.nodes[0]
     }
 
+    pub fn root_node_mut(&mut self) -> &mut Node {
+        &mut self.nodes[0]
+    }
+
     pub fn try_root_element(&self) -> Option<&Node> {
         TDocument::as_node(&self.root_node()).first_element_child()
     }
@@ -499,6 +505,8 @@ impl BaseDocument {
             let parent = &mut self.nodes[parent_id];
             parent.children.retain(|id| *id != node_id);
         }
+
+        self.handle_node_removal(node_id);
     }
 
     pub fn remove_and_drop_node(&mut self, node_id: usize) -> Option<Node> {
@@ -509,6 +517,7 @@ impl BaseDocument {
                     remove_node_ignoring_parent(doc, child);
                 }
             }
+            doc.handle_node_removal(node_id);
             node
         }
 
@@ -521,6 +530,34 @@ impl BaseDocument {
         }
 
         node
+    }
+
+    fn handle_node_removal(&mut self, node_id: usize) {
+        let node = &mut self.nodes[node_id];
+        if !node.flags.is_in_document() {
+            return;
+        }
+
+        if let Some(element) = node.element_data_mut() {
+            match &element.special_data {
+                SpecialElementData::Stylesheet(_) => {
+                    let SpecialElementData::Stylesheet(stylesheet) = element.special_data.take()
+                    else {
+                        unreachable!();
+                    };
+                    let guard = self.guard.read();
+                    self.stylist.remove_stylesheet(stylesheet, &guard);
+                    self.stylist
+                        .force_stylesheet_origins_dirty(OriginSet::all());
+                }
+                SpecialElementData::Image(_) => {}
+                SpecialElementData::Canvas(_) => {}
+                SpecialElementData::TableRoot(_) => {}
+                SpecialElementData::TextInput(_) => {}
+                SpecialElementData::CheckboxInput(_) => {}
+                SpecialElementData::None => {}
+            }
+        }
     }
 
     pub fn resolve_url(&self, raw: &str) -> url::Url {

@@ -17,7 +17,7 @@ use style::invalidation::element::restyle_hints::RestyleHint;
 use style::properties::ComputedValues;
 use style::properties::generated::longhands::position::computed_value::T as Position;
 use style::selector_parser::PseudoElement;
-use style::stylesheets::UrlExtraData;
+use style::stylesheets::{DocumentStyleSheet, UrlExtraData};
 use style::values::computed::Display;
 use style::values::specified::box_::{DisplayInside, DisplayOutside};
 use style::{
@@ -47,8 +47,12 @@ pub enum DisplayOuter {
 
 bitflags! {
     pub struct NodeFlags: u32 {
+        /// Whether the node is the root node of an Inline Formatting Context
         const IS_INLINE_ROOT = 0b00000001;
+        /// Whether the node is the root node of an Table formatting context
         const IS_TABLE_ROOT = 0b00000010;
+        /// Whether the node is "in the document" (~= has a parent and isn't a template node)
+        const IS_IN_DOCUMENT = 0b00000100;
     }
 }
 
@@ -61,6 +65,11 @@ impl NodeFlags {
     #[inline(always)]
     pub fn is_table_root(&self) -> bool {
         self.contains(Self::IS_TABLE_ROOT)
+    }
+
+    #[inline(always)]
+    pub fn is_in_document(&self) -> bool {
+        self.contains(Self::IS_IN_DOCUMENT)
     }
 
     #[inline(always)]
@@ -678,6 +687,7 @@ impl TextInputData {
 /// Heterogeneous data that depends on the element's type.
 #[derive(Clone, Default)]
 pub enum SpecialElementData {
+    Stylesheet(DocumentStyleSheet),
     /// An \<img\> element's image data
     Image(Box<ImageData>),
     /// A \<canvas\> element's custom paint source
@@ -693,6 +703,12 @@ pub enum SpecialElementData {
     None,
 }
 
+impl SpecialElementData {
+    pub fn take(&mut self) -> Self {
+        std::mem::take(self)
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct CanvasData {
     pub custom_paint_source_id: u64,
@@ -701,6 +717,7 @@ pub struct CanvasData {
 impl std::fmt::Debug for SpecialElementData {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            SpecialElementData::Stylesheet(_) => f.write_str("NodeSpecificData::Stylesheet"),
             SpecialElementData::Image(data) => match **data {
                 ImageData::Raster(_) => f.write_str("NodeSpecificData::Image(Raster)"),
                 #[cfg(feature = "svg")]
