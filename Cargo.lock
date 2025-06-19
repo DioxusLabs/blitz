@@ -1476,9 +1476,18 @@ dependencies = [
 
 [[package]]
 name = "derive_more"
-version = "0.99.20"
+version = "2.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6edb4b64a43d977b8e99788fe3a04d483834fba1215a7e02caa415b626497f7f"
+checksum = "093242cf7570c207c83073cf82f79706fe7b8317e98620a47d5be7c3d8497678"
+dependencies = [
+ "derive_more-impl",
+]
+
+[[package]]
+name = "derive_more-impl"
+version = "2.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bda628edc44c4bb645fbe0f758797143e4e07926f7ebf4e9bdfbd3d2ce621df3"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -5022,9 +5031,9 @@ dependencies = [
 
 [[package]]
 name = "selectors"
-version = "0.28.0"
+version = "0.29.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "db3079aef7a4383aff1e60eca2818995d3de8168e85ae4b6ea8fb2804b182c54"
+checksum = "d61a96a0a2d04f964888e003ec83e3172159a16e81b35de9f6ab85d8767cf2b1"
 dependencies = [
  "bitflags 2.9.1",
  "cssparser",
@@ -5496,9 +5505,9 @@ dependencies = [
 
 [[package]]
 name = "stylo"
-version = "0.3.0"
+version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d6034deda3e062865c4011d70a97ba8691bb00777f14c4575bee41451e46594d"
+checksum = "d1cdb2ebcdd49e8e2524d3045202eb472c4261bb9956294fd52ccc1200b8e0af"
 dependencies = [
  "app_units",
  "arrayvec",
@@ -5546,7 +5555,6 @@ dependencies = [
  "to_shmem",
  "to_shmem_derive",
  "uluru",
- "unicode-bidi",
  "url",
  "void",
  "walkdir",
@@ -5555,9 +5563,9 @@ dependencies = [
 
 [[package]]
 name = "stylo_atoms"
-version = "0.3.0"
+version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4b7dacdd62700078300263cece93a9c41823305d461ee5b3b65a51d6cdce3d38"
+checksum = "4a2e2d0a6532ae003a87e9a44d35e74175af06cbba191ba80947ba8e9ea369b3"
 dependencies = [
  "string_cache",
  "string_cache_codegen",
@@ -5565,15 +5573,15 @@ dependencies = [
 
 [[package]]
 name = "stylo_config"
-version = "0.3.0"
+version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3fe07c673f8989e237e544c17723a8831d37d80b1a55437ac67bec8fe877e3cb"
+checksum = "1a308fdc37610b1b9c6dbce4244a91f7bdf88bf8a13ccfbc50c212e09b29bc7d"
 
 [[package]]
 name = "stylo_derive"
-version = "0.3.0"
+version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9a2c2bf677324ef587e97b8f5fc055f97a50bd26493411100e1442824ab289b8"
+checksum = "8384a2ebb61abbde4466dfc9d5dcda134dfa939b77bfb2df878d1c7dffe081f1"
 dependencies = [
  "darling",
  "proc-macro2",
@@ -5584,9 +5592,9 @@ dependencies = [
 
 [[package]]
 name = "stylo_dom"
-version = "0.3.0"
+version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "183a89dc60a136308a1c83056660692bb598b3a99db2ac79b1b53f935cf3c87d"
+checksum = "d6bce5a8c7b6d5657952caeeec50213d356d1ca2f2b042cf4594a897701282e9"
 dependencies = [
  "bitflags 2.9.1",
  "stylo_malloc_size_of",
@@ -5594,9 +5602,9 @@ dependencies = [
 
 [[package]]
 name = "stylo_malloc_size_of"
-version = "0.3.0"
+version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "150243bffdabaeafc7370354f6102559fec103b63d84875383fb657dd9c8549c"
+checksum = "fc88bd0d890c656478a8bfaab59e0e25d405149ef1117917d792540ab75b47cc"
 dependencies = [
  "app_units",
  "cssparser",
@@ -5612,9 +5620,9 @@ dependencies = [
 
 [[package]]
 name = "stylo_static_prefs"
-version = "0.3.0"
+version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9600d11cdad6c275426272f35fbe085c4362be1d67bb9775f378fd2be7942d3a"
+checksum = "500f379645e8a87fd03fe88607a5edcb0d8e4e423baa74ba52db198a06a0c261"
 
 [[package]]
 name = "stylo_taffy"
@@ -5626,9 +5634,9 @@ dependencies = [
 
 [[package]]
 name = "stylo_traits"
-version = "0.3.0"
+version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2a24b6eb257a1e68e184e113a3a426dd9e38e4a0017b805fcf43a44c939e5642"
+checksum = "244bfd473f321ff0258f5b2986e218d5f72507fa405fd131b8dbb5ebac166663"
 dependencies = [
  "app_units",
  "bitflags 2.9.1",

@@ -21,6 +21,9 @@ use style::{
     },
 };
 
+#[cfg(feature = "tracing")]
+use tracing::warn;
+
 impl ElementCx<'_> {
     pub(super) fn draw_background(&self, scene: &mut impl PaintScene) {
         use GenericImage::*;
@@ -68,11 +71,22 @@ impl ElementCx<'_> {
                             #[cfg(feature = "svg")]
                             self.draw_svg_bg_image(scene, idx);
                         }
-                        PaintWorklet(_) => {
-                            todo!("Implement background drawing for Image::PaintWorklet")
+                        LightDark(_) => {
+                            #[cfg(feature = "tracing")]
+                            warn!("Implement background drawing for ImageLightDark")
                         }
-                        CrossFade(_) => todo!("Implement background drawing for Image::CrossFade"),
-                        ImageSet(_) => todo!("Implement background drawing for Image::ImageSet"),
+                        PaintWorklet(_) => {
+                            #[cfg(feature = "tracing")]
+                            warn!("Implement background drawing for Image::PaintWorklet")
+                        }
+                        CrossFade(_) => {
+                            #[cfg(feature = "tracing")]
+                            warn!("Implement background drawing for Image::CrossFade")
+                        }
+                        ImageSet(_) => {
+                            #[cfg(feature = "tracing")]
+                            warn!("Implement background drawing for Image::ImageSet")
+                        }
                     }
                 },
             );
