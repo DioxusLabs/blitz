@@ -2,7 +2,7 @@ use atomic_refcell::{AtomicRef, AtomicRefCell};
 use bitflags::bitflags;
 use blitz_traits::{BlitzMouseButtonEvent, DomEventData, HitResult};
 use keyboard_types::Modifiers;
-use markup5ever::{LocalName, QualName, local_name};
+use markup5ever::{LocalName, local_name};
 use parley::Cluster;
 use peniko::kurbo;
 use selectors::matching::ElementSelectorFlags;
@@ -25,7 +25,7 @@ use taffy::{
 };
 use url::Url;
 
-use super::element::ElementData;
+use super::{Attribute, ElementData};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum DisplayOuter {
@@ -35,6 +35,7 @@ pub enum DisplayOuter {
 }
 
 bitflags! {
+    #[derive(Clone, Copy, PartialEq)]
     pub struct NodeFlags: u32 {
         /// Whether the node is the root node of an Inline Formatting Context
         const IS_INLINE_ROOT = 0b00000001;
@@ -348,20 +349,6 @@ impl NodeData {
     }
 }
 
-/// A tag attribute, e.g. `class="test"` in `<div class="test" ...>`.
-///
-/// The namespace on the attribute name is almost always ns!("").
-/// The tokenizer creates all attributes this way, but the tree
-/// builder will adjust certain attribute names inside foreign
-/// content (MathML, SVG).
-#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug)]
-pub struct Attribute {
-    /// The name of the attribute (e.g. the `class` in `<div class="test">`)
-    pub name: QualName,
-    /// The value of the attribute (e.g. the `"test"` in `<div class="test">`)
-    pub value: String,
-}
-
 #[derive(Debug, Clone)]
 pub struct TextNodeData {
     /// The textual content of the text node
@@ -422,6 +409,11 @@ impl Node {
             let child = self.with(*child_id);
             child.print_tree(level + 1)
         }
+    }
+
+    // Get the index of the current node in the parents child list
+    pub fn index_of_child(&self, child_id: usize) -> Option<usize> {
+        self.children.iter().position(|id| *id == child_id)
     }
 
     // Get the index of the current node in the parents child list

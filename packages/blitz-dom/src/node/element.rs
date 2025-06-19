@@ -14,7 +14,7 @@ use style::{
 };
 use url::Url;
 
-use super::Attribute;
+use super::{Attribute, Attributes};
 use crate::layout::table::TableContext;
 
 #[derive(Debug, Clone)]
@@ -26,7 +26,7 @@ pub struct ElementData {
     pub id: Option<Atom>,
 
     /// The element's attributes
-    pub attrs: Vec<Attribute>,
+    pub attrs: Attributes,
 
     /// Whether the element is focussable
     pub is_focussable: bool,
@@ -54,6 +54,18 @@ pub struct ElementData {
     pub template_contents: Option<usize>,
     // /// Whether the node is a [HTML integration point] (https://html.spec.whatwg.org/multipage/#html-integration-point)
     // pub mathml_annotation_xml_integration_point: bool,
+}
+
+#[derive(Copy, Clone, Default)]
+pub enum SpecialElementType {
+    Stylesheet,
+    Image,
+    Canvas,
+    TableRoot,
+    TextInput,
+    CheckboxInput,
+    #[default]
+    None,
 }
 
 /// Heterogeneous data that depends on the element's type.
@@ -92,7 +104,7 @@ impl ElementData {
         let mut data = ElementData {
             name,
             id: id_attr_atom,
-            attrs,
+            attrs: Attributes::new(attrs),
             is_focussable: false,
             style_attribute: Default::default(),
             inline_layout_data: None,

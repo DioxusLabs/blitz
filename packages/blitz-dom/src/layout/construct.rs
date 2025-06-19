@@ -324,7 +324,7 @@ fn flush_pseudo_elements(doc: &mut BaseDocument, node_id: usize) {
     ] {
         // Delete psuedo element if it exists but shouldn't
         if let (Some(pe_node_id), None) = (pe_node_id, &pe_style) {
-            doc.remove_and_drop_node(pe_node_id);
+            doc.remove_and_drop_pe(pe_node_id);
             doc.nodes[node_id].set_pe_by_index(idx, None);
         }
 

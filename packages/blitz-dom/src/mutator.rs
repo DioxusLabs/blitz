@@ -1,14 +1,22 @@
 use std::collections::HashSet;
+use std::mem;
 use std::ops::{Deref, DerefMut};
 
 use crate::document::make_device;
 use crate::net::{CssHandler, ImageHandler};
 use crate::node::{CanvasData, NodeFlags, SpecialElementData};
 use crate::util::ImageType;
-use crate::{Attribute, BaseDocument, ElementData, NodeData, QualName, local_name, ns};
+use crate::{Attribute, BaseDocument, ElementData, Node, NodeData, QualName, local_name, ns};
 use blitz_traits::Viewport;
 use blitz_traits::net::Request;
 use style::invalidation::element::restyle_hints::RestyleHint;
+use style::stylesheets::OriginSet;
+
+macro_rules! tag_and_attr {
+    ($tag:tt, $attr:tt) => {
+        (&local_name!($tag), &local_name!($tag))
+    };
+}
 
 #[derive(Debug, Clone)]
 pub enum AppendTextErr {
@@ -16,10 +24,22 @@ pub enum AppendTextErr {
     NotTextNode,
 }
 
+/// Operations that happen almost immediately, but are deferred within a
+/// function for borrow-checker reasons.
+enum SpecialOp {
+    LoadImage(usize),
+    LoadStylesheet(usize),
+    UnloadStylesheet(usize),
+    LoadCustomPaintSource(usize),
+    ProcessButtonInput(usize),
+}
+
 pub struct DocumentMutator<'doc> {
     /// Document is public as an escape hatch, but users of this API should ideally avoid using it
     /// and prefer exposing additional functionality in DocumentMutator.
     pub doc: &'doc mut BaseDocument,
+
+    eager_op_queue: Vec<SpecialOp>,
 
     // Tracked nodes for deferred processing when mutations have completed
     title_node: Option<usize>,
@@ -44,6 +64,7 @@ impl DocumentMutator<'_> {
     pub fn new<'doc>(doc: &'doc mut BaseDocument) -> DocumentMutator<'doc> {
         DocumentMutator {
             doc,
+            eager_op_queue: Vec::new(),
             title_node: None,
             style_nodes: HashSet::new(),
             form_nodes: HashSet::new(),
@@ -52,6 +73,8 @@ impl DocumentMutator<'_> {
             node_to_autofocus: None,
         }
     }
+
+    // Query methods
 
     pub fn node_has_parent(&self, node_id: usize) -> bool {
         self.doc.nodes[node_id].parent.is_some()
@@ -82,6 +105,8 @@ impl DocumentMutator<'_> {
         current.id
     }
 
+    // Node creation methods
+
     pub fn create_comment_node(&mut self) -> usize {
         self.doc.create_node(NodeData::Comment)
     }
@@ -90,106 +115,24 @@ impl DocumentMutator<'_> {
         self.doc.create_text_node(text)
     }
 
-    /// Remove all of the children from old_parent_id and append them to new_parent_id
-    pub fn reparent_children(&mut self, old_parent_id: usize, new_parent_id: usize) {
-        let child_ids = std::mem::take(&mut self.doc.nodes[old_parent_id].children);
-        self.maybe_record_node(old_parent_id);
-        self.append_children(new_parent_id, &child_ids);
+    pub fn create_element(&mut self, name: QualName, attrs: Vec<Attribute>) -> usize {
+        let mut data = ElementData::new(name, attrs);
+        data.flush_style_attribute(self.doc.guard(), self.doc.base_url.clone());
+
+        let id = self.doc.create_node(NodeData::Element(data));
+        let node = self.doc.get_node(id).unwrap();
+
+        // Initialise style data
+        *node.stylo_element_data.borrow_mut() = Some(Default::default());
+
+        id
     }
 
-    pub fn append_children(&mut self, parent_id: usize, child_ids: &[usize]) {
-        let new_parent = &mut self.doc.nodes[parent_id];
-        let new_parent_is_in_doc = new_parent.flags.is_in_document();
-        new_parent.children.extend_from_slice(child_ids);
-
-        for child_id in child_ids.iter().copied() {
-            let child = &mut self.doc.nodes[child_id];
-            let old_parent_id = child.parent.replace(parent_id);
-
-            let child_was_in_doc = child.flags.is_in_document();
-            child
-                .flags
-                .set(NodeFlags::IS_IN_DOCUMENT, new_parent_is_in_doc);
-
-            if new_parent_is_in_doc != child_was_in_doc {
-                // HANDLE CHANGE
-            }
-
-            if let Some(old_parent_id) = old_parent_id {
-                let old_parent = &mut self.doc.nodes[old_parent_id];
-
-                old_parent.children.retain(|id| *id != child_id);
-                self.maybe_record_node(old_parent_id);
-            }
-        }
-
-        self.maybe_record_node(parent_id);
+    pub fn deep_clone_node(&mut self, node_id: usize) -> usize {
+        self.doc.deep_clone_node(node_id)
     }
 
-    pub fn replace_node_with(&mut self, anchor_node_id: usize, new_node_ids: &[usize]) {
-        self.maybe_record_parent_node(anchor_node_id);
-        self.doc.insert_before(anchor_node_id, new_node_ids);
-        self.doc.remove_node(anchor_node_id);
-        self.recompute_is_animating = true;
-    }
-
-    pub fn replace_placeholder_with_nodes(
-        &mut self,
-        anchor_node_id: usize,
-        new_node_ids: &[usize],
-    ) {
-        self.maybe_record_parent_node(anchor_node_id);
-        self.doc.insert_before(anchor_node_id, new_node_ids);
-        self.doc.remove_node(anchor_node_id);
-    }
-
-    pub fn remove_node(&mut self, node_id: usize) {
-        // TODO: more reactivity when removing nodes
-        self.recompute_is_animating = true;
-        self.doc.remove_node(node_id);
-    }
-
-    pub fn insert_nodes_after(&mut self, anchor_node_id: usize, new_node_ids: &[usize]) {
-        let next_sibling_id = self
-            .doc
-            .get_node(anchor_node_id)
-            .unwrap()
-            .forward(1)
-            .map(|node| node.id);
-
-        match next_sibling_id {
-            Some(anchor_node_id) => {
-                self.doc.insert_before(anchor_node_id, new_node_ids);
-            }
-            None => self.doc.append(anchor_node_id, new_node_ids),
-        }
-
-        self.maybe_record_parent_node(anchor_node_id);
-    }
-
-    pub fn insert_nodes_before(&mut self, anchor_node_id: usize, new_node_ids: &[usize]) {
-        self.doc.insert_before(anchor_node_id, new_node_ids);
-        self.maybe_record_parent_node(anchor_node_id);
-    }
-
-    pub fn remove_node_if_unparented(&mut self, node_id: usize) {
-        if let Some(node) = self.doc.get_node(node_id) {
-            if node.parent.is_none() {
-                self.recompute_is_animating = true;
-                self.doc.remove_and_drop_node(node_id);
-            }
-        }
-    }
-
-    pub fn append_text_to_node(&mut self, node_id: usize, text: &str) -> Result<(), AppendTextErr> {
-        match self.doc.nodes[node_id].text_data_mut() {
-            Some(data) => {
-                data.content += text;
-                Ok(())
-            }
-            None => Err(AppendTextErr::NotTextNode),
-        }
-    }
+    // Node mutation methods
 
     pub fn set_node_text(&mut self, node_id: usize, value: &str) {
         let node = self.doc.get_node_mut(node_id).unwrap();
@@ -209,50 +152,14 @@ impl DocumentMutator<'_> {
         }
     }
 
-    pub fn deep_clone_node(&mut self, node_id: usize) -> usize {
-        // TODO: react to mutations
-        let clone_id = self.doc.deep_clone_node(node_id);
-
-        #[cfg(feature = "autofocus")]
-        process_cloned_node(self.doc, &mut self.node_to_autofocus, clone_id);
-
-        clone_id
-    }
-
-    pub fn create_element(&mut self, name: QualName, attrs: Vec<Attribute>) -> usize {
-        let mut data = ElementData::new(name, attrs);
-        data.flush_style_attribute(self.doc.guard(), self.doc.base_url.clone());
-
-        let id = self.doc.create_node(NodeData::Element(data));
-        let node = self.doc.get_node(id).unwrap();
-
-        // Initialise style data
-        *node.stylo_element_data.borrow_mut() = Some(Default::default());
-
-        // If the node has an "id" attribute, store it in the ID map.
-        if let Some(id_attr) = node.attr(local_name!("id")) {
-            self.doc.nodes_to_id.insert(id_attr.to_string(), id);
-        }
-
-        // Custom post-processing by element tag name
-        let node = &self.doc.nodes[id];
-        let tag = node.element_data().unwrap().name.local.as_ref();
-        match tag {
-            "title" => self.title_node = Some(id),
-            "link" => self.load_linked_stylesheet(id),
-            "img" => self.load_image(id),
-            "canvas" => self.load_custom_paint_src(id),
-            "style" => {
-                self.style_nodes.insert(id);
+    pub fn append_text_to_node(&mut self, node_id: usize, text: &str) -> Result<(), AppendTextErr> {
+        match self.doc.nodes[node_id].text_data_mut() {
+            Some(data) => {
+                data.content += text;
+                Ok(())
             }
-            "button" | "fieldset" | "input" | "select" | "textarea" | "object" | "output" => {
-                self.process_button_input(id);
-                self.form_nodes.insert(id);
-            }
-            _ => {}
+            None => Err(AppendTextErr::NotTextNode),
         }
-
-        id
     }
 
     pub fn add_attrs_if_missing(&mut self, node_id: usize, attrs: Vec<Attribute>) {
@@ -285,41 +192,32 @@ impl DocumentMutator<'_> {
             return;
         };
 
-        let attr = name.local.as_ref();
-        let load_image = element.name.local == local_name!("img") && attr == "src";
-        let set_custom_paint_src = element.name.local == local_name!("canvas") && attr == "data";
+        element.attrs.set(name.clone(), value);
 
-        if element.name.local == local_name!("input") && attr == "checked" {
-            set_input_checked_state(element, value.to_string());
-        } else {
-            if attr == "value" {
+        let tag = &element.name.local;
+        let attr = &name.local;
+
+        if *attr == local_name!("value") {
+            if let Some(input_data) = element.text_input_data_mut() {
                 // Update text input value
-                if let Some(input_data) = element.text_input_data_mut() {
-                    input_data.set_text(&mut self.doc.font_ctx, &mut self.doc.layout_ctx, value);
-                }
+                input_data.set_text(&mut self.doc.font_ctx, &mut self.doc.layout_ctx, value);
             }
-
-            let existing_attr = element.attrs.iter_mut().find(|a| a.name == name);
-            if let Some(existing_attr) = existing_attr {
-                existing_attr.value.clear();
-                existing_attr.value.push_str(value);
-            } else {
-                element.attrs.push(Attribute {
-                    name: name.clone(),
-                    value: value.to_string(),
-                });
-            }
-
-            if attr == "style" {
-                element.flush_style_attribute(&self.doc.guard, self.doc.base_url.clone());
-            }
+            return;
         }
 
-        if load_image {
+        // If node if not in the document, then don't apply any special behaviours
+        // and simply set the attribute value
+        if !node.flags.is_in_document() {
+            return;
+        }
+
+        if *attr == local_name!("style") {
+            element.flush_style_attribute(&self.doc.guard, self.doc.base_url.clone());
+        } else if (tag, attr) == tag_and_attr!("input", "checked") {
+            set_input_checked_state(element, value.to_string());
+        } else if (tag, attr) == tag_and_attr!("img", "src") {
             self.load_image(node_id);
-        }
-
-        if set_custom_paint_src {
+        } else if (tag, attr) == tag_and_attr!("canvas", "data") {
             self.load_custom_paint_src(node_id);
         }
     }
@@ -329,26 +227,153 @@ impl DocumentMutator<'_> {
 
         let node = &mut self.doc.nodes[node_id];
 
-        let stylo_element_data = &mut *node.stylo_element_data.borrow_mut();
-        if let Some(data) = stylo_element_data {
+        let mut stylo_element_data = node.stylo_element_data.borrow_mut();
+        if let Some(data) = &mut *stylo_element_data {
             data.hint |= RestyleHint::restyle_subtree();
         }
+        drop(stylo_element_data);
 
-        if let NodeData::Element(ref mut element) = node.data {
-            // Update text input value
-            if name.local == local_name!("value") {
-                if let Some(input_data) = element.text_input_data_mut() {
-                    input_data.set_text(&mut self.doc.font_ctx, &mut self.doc.layout_ctx, "");
+        let Some(element) = node.element_data_mut() else {
+            return;
+        };
+
+        let removed_attr = element.attrs.remove(&name);
+        let had_attr = removed_attr.is_some();
+        if !had_attr {
+            return;
+        }
+
+        // Update text input value
+        if name.local == local_name!("value") {
+            if let Some(input_data) = element.text_input_data_mut() {
+                input_data.set_text(&mut self.doc.font_ctx, &mut self.doc.layout_ctx, "");
+            }
+        }
+
+        let tag = &element.name.local;
+        let attr = &name.local;
+        if *attr == local_name!("style") {
+            element.flush_style_attribute(&self.doc.guard, self.doc.base_url.clone());
+        } else if (tag, attr) == tag_and_attr!("canvas", "data") {
+            self.recompute_is_animating = true;
+        } else if (tag, attr) == tag_and_attr!("link", "href") {
+            self.unload_stylesheet(node_id);
+        }
+    }
+
+    /// Remove the node from it's parent but don't drop it
+    pub fn remove_node(&mut self, node_id: usize) {
+        let node = &mut self.doc.nodes[node_id];
+
+        // Update child_idx values
+        if let Some(parent_id) = node.parent.take() {
+            let parent = &mut self.doc.nodes[parent_id];
+            parent.children.retain(|id| *id != node_id);
+            self.maybe_record_node(parent_id);
+        }
+
+        self.process_removed_subtree(node_id);
+    }
+
+    pub fn remove_and_drop_node(&mut self, node_id: usize) -> Option<Node> {
+        self.process_removed_subtree(node_id);
+
+        fn remove_node_ignoring_parent(mutr: &mut DocumentMutator, node_id: usize) -> Option<Node> {
+            let mut node = mutr.doc.nodes.try_remove(node_id);
+            if let Some(node) = &mut node {
+                for &child in &node.children {
+                    remove_node_ignoring_parent(mutr, child);
                 }
             }
+            node
+        }
 
-            if element.name.local == local_name!("canvas") && name.local == local_name!("data") {
-                self.recompute_is_animating = true;
+        let node = remove_node_ignoring_parent(self, node_id);
+
+        // Update child_idx values
+        if let Some(parent_id) = node.as_ref().and_then(|node| node.parent) {
+            let parent = &mut self.doc.nodes[parent_id];
+            parent.children.retain(|id| *id != node_id);
+            self.maybe_record_node(parent_id);
+        }
+
+        node
+    }
+
+    // Tree mutation methods
+    pub fn remove_node_if_unparented(&mut self, node_id: usize) {
+        if let Some(node) = self.doc.get_node(node_id) {
+            if node.parent.is_none() {
+                self.remove_and_drop_node(node_id);
+            }
+        }
+    }
+
+    /// Remove all of the children from old_parent_id and append them to new_parent_id
+    pub fn append_children(&mut self, parent_id: usize, child_ids: &[usize]) {
+        self.add_children_to_parent(parent_id, child_ids, &|parent, child_ids| {
+            parent.children.extend_from_slice(child_ids);
+        });
+    }
+
+    pub fn insert_nodes_before(&mut self, anchor_node_id: usize, new_node_ids: &[usize]) {
+        let parent_id = self.doc.nodes[anchor_node_id].parent.unwrap();
+        self.add_children_to_parent(parent_id, new_node_ids, &|parent, child_ids| {
+            let node_child_idx = parent.index_of_child(anchor_node_id).unwrap();
+            parent
+                .children
+                .splice(node_child_idx..node_child_idx, child_ids.iter().copied());
+        });
+    }
+
+    fn add_children_to_parent(
+        &mut self,
+        parent_id: usize,
+        child_ids: &[usize],
+        insert_children_fn: &dyn Fn(&mut Node, &[usize]),
+    ) {
+        let new_parent = &mut self.doc.nodes[parent_id];
+        let new_parent_is_in_doc = new_parent.flags.is_in_document();
+
+        insert_children_fn(new_parent, child_ids);
+
+        for child_id in child_ids.iter().copied() {
+            let child = &mut self.doc.nodes[child_id];
+            let old_parent_id = child.parent.replace(parent_id);
+
+            let child_was_in_doc = child.flags.is_in_document();
+            if new_parent_is_in_doc != child_was_in_doc {
+                self.process_added_subtree(child_id);
             }
 
-            // FIXME: check namespace
-            element.attrs.retain(|attr| attr.name.local != name.local);
+            if let Some(old_parent_id) = old_parent_id {
+                let old_parent = &mut self.doc.nodes[old_parent_id];
+
+                old_parent.children.retain(|id| *id != child_id);
+                self.maybe_record_node(old_parent_id);
+            }
         }
+
+        self.maybe_record_node(parent_id);
+    }
+
+    // Tree mutation methods (that defer to other methods)
+    pub fn insert_nodes_after(&mut self, anchor_node_id: usize, new_node_ids: &[usize]) {
+        match self.next_sibling_id(anchor_node_id) {
+            Some(id) => self.insert_nodes_before(id, new_node_ids),
+            None => self.append_children(anchor_node_id, new_node_ids),
+        }
+    }
+
+    pub fn reparent_children(&mut self, old_parent_id: usize, new_parent_id: usize) {
+        let child_ids = std::mem::take(&mut self.doc.nodes[old_parent_id].children);
+        self.maybe_record_node(old_parent_id);
+        self.append_children(new_parent_id, &child_ids);
+    }
+
+    pub fn replace_node_with(&mut self, anchor_node_id: usize, new_node_ids: &[usize]) {
+        self.insert_nodes_before(anchor_node_id, new_node_ids);
+        self.remove_node(anchor_node_id);
     }
 }
 
@@ -380,6 +405,103 @@ impl<'doc> DocumentMutator<'doc> {
         }
     }
 
+    fn flush_eager_ops(&mut self) {
+        let mut ops = mem::take(&mut self.eager_op_queue);
+        for op in ops.drain(0..) {
+            match op {
+                SpecialOp::LoadImage(node_id) => self.load_image(node_id),
+                SpecialOp::LoadStylesheet(node_id) => self.load_linked_stylesheet(node_id),
+                SpecialOp::UnloadStylesheet(node_id) => self.unload_stylesheet(node_id),
+                SpecialOp::LoadCustomPaintSource(node_id) => self.load_custom_paint_src(node_id),
+                SpecialOp::ProcessButtonInput(node_id) => self.process_button_input(node_id),
+            }
+        }
+
+        // Queue is empty, but put Vec back anyway so allocation can be reused.
+        self.eager_op_queue = ops;
+    }
+
+    fn process_added_subtree(&mut self, node_id: usize) {
+        self.doc.iter_subtree_mut(node_id, |node_id, doc| {
+            let node = &mut doc.nodes[node_id];
+            node.flags.set(NodeFlags::IS_IN_DOCUMENT, true);
+
+            // If the node has an "id" attribute, store it in the ID map.
+            if let Some(id_attr) = node.attr(local_name!("id")) {
+                doc.nodes_to_id.insert(id_attr.to_string(), node_id);
+            }
+
+            let NodeData::Element(ref mut element) = node.data else {
+                return;
+            };
+
+            // Custom post-processing by element tag name
+            let tag = element.name.local.as_ref();
+            match tag {
+                "title" => self.title_node = Some(node_id),
+                "link" => self.eager_op_queue.push(SpecialOp::LoadStylesheet(node_id)),
+                "img" => self.eager_op_queue.push(SpecialOp::LoadImage(node_id)),
+                "canvas" => self
+                    .eager_op_queue
+                    .push(SpecialOp::LoadCustomPaintSource(node_id)),
+                "style" => {
+                    self.style_nodes.insert(node_id);
+                }
+                "button" | "fieldset" | "input" | "select" | "textarea" | "object" | "output" => {
+                    self.eager_op_queue
+                        .push(SpecialOp::ProcessButtonInput(node_id));
+                    self.form_nodes.insert(node_id);
+                }
+                _ => {}
+            }
+
+            #[cfg(feature = "autofocus")]
+            if node.is_focussable() {
+                if let NodeData::Element(ref element) = node.data {
+                    if let Some(value) = element.attr(local_name!("autofocus")) {
+                        if value == "true" {
+                            self.node_to_autofocus = Some(node_id);
+                        }
+                    }
+                }
+            }
+        });
+
+        self.flush_eager_ops();
+    }
+
+    fn process_removed_subtree(&mut self, node_id: usize) {
+        self.doc.iter_subtree_mut(node_id, |node_id, doc| {
+            let node = &mut doc.nodes[node_id];
+            node.flags.set(NodeFlags::IS_IN_DOCUMENT, false);
+
+            // If the node has an "id" attribute remove it from the ID map.
+            if let Some(id_attr) = node.attr(local_name!("id")) {
+                doc.nodes_to_id.remove(id_attr);
+            }
+
+            let NodeData::Element(ref mut element) = node.data else {
+                return;
+            };
+
+            match &element.special_data {
+                SpecialElementData::Stylesheet(_) => self
+                    .eager_op_queue
+                    .push(SpecialOp::UnloadStylesheet(node_id)),
+                SpecialElementData::Image(_) => {}
+                SpecialElementData::Canvas(_) => {
+                    self.recompute_is_animating = true;
+                }
+                SpecialElementData::TableRoot(_) => {}
+                SpecialElementData::TextInput(_) => {}
+                SpecialElementData::CheckboxInput(_) => {}
+                SpecialElementData::None => {}
+            }
+        });
+
+        self.flush_eager_ops();
+    }
+
     fn maybe_record_node(&mut self, node_id: impl Into<Option<usize>>) {
         let Some(node_id) = node_id.into() else {
             return;
@@ -400,12 +522,6 @@ impl<'doc> DocumentMutator<'doc> {
             }
             _ => {}
         }
-    }
-
-    #[track_caller]
-    fn maybe_record_parent_node(&mut self, node_id: usize) {
-        let parent_id = self.doc.get_node(node_id).unwrap().parent;
-        self.maybe_record_node(parent_id);
     }
 
     fn load_linked_stylesheet(&mut self, target_id: usize) {
@@ -432,6 +548,24 @@ impl<'doc> DocumentMutator<'doc> {
                 provider: self.doc.net_provider.clone(),
             }),
         );
+    }
+
+    fn unload_stylesheet(&mut self, node_id: usize) {
+        let node = &mut self.doc.nodes[node_id];
+        let Some(element) = node.element_data_mut() else {
+            unreachable!();
+        };
+        let SpecialElementData::Stylesheet(stylesheet) = element.special_data.take() else {
+            unreachable!();
+        };
+
+        let guard = self.doc.guard.read();
+        self.doc.stylist.remove_stylesheet(stylesheet, &guard);
+        self.doc
+            .stylist
+            .force_stylesheet_origins_dirty(OriginSet::all());
+
+        self.doc.nodes_to_stylesheet.remove(&node_id);
     }
 
     fn load_image(&mut self, target_id: usize) {
@@ -503,25 +637,6 @@ fn set_input_checked_state(element: &mut ElementData, value: String) {
             value: checked.to_string(),
         }),
         _ => {}
-    }
-}
-
-#[cfg(feature = "autofocus")]
-fn process_cloned_node(doc: &BaseDocument, node_to_autofocus: &mut Option<usize>, node_id: usize) {
-    if let Some(node) = doc.get_node(node_id) {
-        if node.is_focussable() {
-            if let NodeData::Element(ref element) = node.data {
-                if let Some(value) = element.attr(local_name!("autofocus")) {
-                    if value == "true" {
-                        *node_to_autofocus = Some(node_id);
-                    }
-                }
-            }
-        }
-
-        for child_node_id in &node.children {
-            process_cloned_node(doc, node_to_autofocus, *child_node_id);
-        }
     }
 }
 

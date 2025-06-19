@@ -22,7 +22,6 @@ use style::attr::{AttrIdentifier, AttrValue};
 use style::data::{ElementData as StyloElementData, ElementStyles};
 use style::properties::ComputedValues;
 use style::properties::style_structs::Font;
-use style::stylesheets::OriginSet;
 use style::values::GenericAtomIdent;
 use style::values::computed::Overflow;
 // use quadtree_rs::Quadtree;
@@ -447,81 +446,18 @@ impl BaseDocument {
         new_node_id
     }
 
-    pub fn insert_before(&mut self, node_id: usize, inserted_node_ids: &[usize]) {
-        // let count = inserted_node_ids.len();
-
-        // self.print_tree();
-
-        let node = &self.nodes[node_id];
-
-        let parent_id = node.parent.unwrap();
-        let parent = &mut self.nodes[parent_id];
-        let node_child_idx = parent
-            .children
-            .iter()
-            .position(|id| *id == node_id)
-            .unwrap();
-
-        // Mark the node's parent as changed.
-        self.changed.insert(parent_id);
-
-        let mut children = std::mem::take(&mut parent.children);
-        children.splice(
-            node_child_idx..node_child_idx,
-            inserted_node_ids.iter().copied(),
-        );
-
-        // Update parent values
-        let mut child_idx = node_child_idx;
-        while child_idx < children.len() {
-            let child_id = children[child_idx];
-            let node = &mut self.nodes[child_id];
-            node.parent = Some(parent_id);
-            child_idx += 1;
-        }
-
-        self.nodes[parent_id].children = children;
-    }
-
-    pub fn append(&mut self, node_id: usize, appended_node_ids: &[usize]) {
-        let node = &self.nodes[node_id];
-        let parent_id = node.parent.unwrap();
-        self.nodes[parent_id]
-            .children
-            .extend_from_slice(appended_node_ids);
-
-        // Update parent values
-        for &child_id in appended_node_ids {
-            self.nodes[child_id].parent = Some(parent_id);
-        }
-    }
-
-    /// Remove the node from it's parent but don't drop it
-    pub fn remove_node(&mut self, node_id: usize) {
-        let node = &mut self.nodes[node_id];
-
-        // Update child_idx values
-        if let Some(parent_id) = node.parent.take() {
-            let parent = &mut self.nodes[parent_id];
-            parent.children.retain(|id| *id != node_id);
-        }
-
-        self.handle_node_removal(node_id);
-    }
-
-    pub fn remove_and_drop_node(&mut self, node_id: usize) -> Option<Node> {
-        fn remove_node_ignoring_parent(doc: &mut BaseDocument, node_id: usize) -> Option<Node> {
-            let node = doc.nodes.try_remove(node_id);
-            if let Some(node) = &node {
+    pub(crate) fn remove_and_drop_pe(&mut self, node_id: usize) -> Option<Node> {
+        fn remove_pe_ignoring_parent(doc: &mut BaseDocument, node_id: usize) -> Option<Node> {
+            let mut node = doc.nodes.try_remove(node_id);
+            if let Some(node) = &mut node {
                 for &child in &node.children {
-                    remove_node_ignoring_parent(doc, child);
+                    remove_pe_ignoring_parent(doc, child);
                 }
             }
-            doc.handle_node_removal(node_id);
             node
         }
 
-        let node = remove_node_ignoring_parent(self, node_id);
+        let node = remove_pe_ignoring_parent(self, node_id);
 
         // Update child_idx values
         if let Some(parent_id) = node.as_ref().and_then(|node| node.parent) {
@@ -530,34 +466,6 @@ impl BaseDocument {
         }
 
         node
-    }
-
-    fn handle_node_removal(&mut self, node_id: usize) {
-        let node = &mut self.nodes[node_id];
-        if !node.flags.is_in_document() {
-            return;
-        }
-
-        if let Some(element) = node.element_data_mut() {
-            match &element.special_data {
-                SpecialElementData::Stylesheet(_) => {
-                    let SpecialElementData::Stylesheet(stylesheet) = element.special_data.take()
-                    else {
-                        unreachable!();
-                    };
-                    let guard = self.guard.read();
-                    self.stylist.remove_stylesheet(stylesheet, &guard);
-                    self.stylist
-                        .force_stylesheet_origins_dirty(OriginSet::all());
-                }
-                SpecialElementData::Image(_) => {}
-                SpecialElementData::Canvas(_) => {}
-                SpecialElementData::TableRoot(_) => {}
-                SpecialElementData::TextInput(_) => {}
-                SpecialElementData::CheckboxInput(_) => {}
-                SpecialElementData::None => {}
-            }
-        }
     }
 
     pub fn resolve_url(&self, raw: &str) -> url::Url {
@@ -628,6 +536,10 @@ impl BaseDocument {
         if let Some(old) = old {
             self.stylist.remove_stylesheet(old, &self.guard.read())
         }
+
+        // Store data on element
+        let element = &mut self.nodes[node_id].element_data_mut().unwrap();
+        element.special_data = SpecialElementData::Stylesheet(stylesheet.clone());
 
         // TODO: Nodes could potentially get reused so ordering by node_id might be wrong.
         let insertion_point = self
