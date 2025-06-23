@@ -1,5 +1,5 @@
 use crate::{BaseDocument, DocumentMutator};
-use blitz_traits::{DomEvent, DomEventData, EventState, events::UiEvent};
+use blitz_traits::{BlitzMouseButtonEvent, DomEvent, DomEventData, EventState, events::UiEvent};
 use std::collections::VecDeque;
 
 pub trait EventHandler {
@@ -78,9 +78,21 @@ impl<'doc, Handler: EventHandler> EventDriver<'doc, Handler> {
         };
 
         let data = match event {
-            UiEvent::MouseMove(data) => DomEventData::MouseMove(data),
-            UiEvent::MouseUp(data) => DomEventData::MouseUp(data),
-            UiEvent::MouseDown(data) => DomEventData::MouseDown(data),
+            UiEvent::MouseMove(data) => DomEventData::MouseMove(BlitzMouseButtonEvent {
+                x: data.x + viewport_scroll.x as f32 / zoom,
+                y: data.y + viewport_scroll.y as f32 / zoom,
+                ..data
+            }),
+            UiEvent::MouseUp(data) => DomEventData::MouseUp(BlitzMouseButtonEvent {
+                x: data.x + viewport_scroll.x as f32 / zoom,
+                y: data.y + viewport_scroll.y as f32 / zoom,
+                ..data
+            }),
+            UiEvent::MouseDown(data) => DomEventData::MouseDown(BlitzMouseButtonEvent {
+                x: data.x + viewport_scroll.x as f32 / zoom,
+                y: data.y + viewport_scroll.y as f32 / zoom,
+                ..data
+            }),
             UiEvent::KeyUp(data) => DomEventData::KeyUp(data),
             UiEvent::KeyDown(data) => DomEventData::KeyDown(data),
             UiEvent::Ime(data) => DomEventData::Ime(data),
