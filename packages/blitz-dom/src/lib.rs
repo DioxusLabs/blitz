@@ -1,7 +1,20 @@
-//! Blitz-dom
+//! The core DOM abstraction in Blitz
 //!
-//! This crate implements a simple ECS-based DOM, with a focus on performance and ease of use. We don't attach bindings
-//! to languages here, simplifying the API and decreasing code size.
+//! This crate implements a headless DOM designed to emebedded in and "driven" by external code.
+//!
+//! It includes:
+//!  - A DOM tree respresentation
+//!  - CSS parsing and resolution
+//!  - Layout
+//!  - Event handling
+//!
+//! The following functionality is not included within blitz-dom. However there are extension points that can be used to implement this
+//! functionality using either another `blitz-*` crate or a custom implementation:
+//!  - Networking (see blitz_net)
+//!  - Windowing or an event loop (see blitz_shell)
+//!  - Rendering (see `blitz_paint`)
+//!
+//! `blitz-dom` has a native Rust API that is designed for higher-level abstractions to be built on top (although it can also be used directly).
 //!
 //! The goal behind this crate is that any implementor can interact with the DOM and render it out using any renderer
 //! they want.

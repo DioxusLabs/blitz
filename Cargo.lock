@@ -669,8 +669,10 @@ name = "blitz"
 version = "0.1.0-alpha.3"
 dependencies = [
  "anyrender_vello",
+ "blitz-dom",
  "blitz-html",
  "blitz-net",
+ "blitz-paint",
  "blitz-shell",
  "blitz-traits",
  "tokio",

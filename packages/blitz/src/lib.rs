@@ -1,12 +1,15 @@
 #![cfg_attr(docsrs, feature(doc_cfg))]
 
-//! A native renderer for Dioxus.
+//! Blitz is a modular, embeddable web engine with a native Rust API.
 //!
-//! ## Feature flags
-//!  - `default`: Enables the features listed below.
-//!  - `accessibility`: Enables [`accesskit`] accessibility support.
-//!  - `hot-reload`: Enables hot-reloading of Dioxus RSX.
-//!  - `tracing`: Enables tracing support.
+//! It powers the [`dioxus-native`] UI framework.
+//!
+//! This crate exists to collect the most important functionality for users together in one place.
+//! It does not bring any unique functionality, but rather, it re-exports the relevant crates as modules.
+//! The exported crate corresponding to each module is also available in a stand-alone manner, i.e. [`blitz-dom`] as [`blitz::dom`](crate::dom).
+//!
+//! [`dioxus-native`]: https://docs.rs/dioxus-native
+//! [`blitz-dom`]: https://docs.rs/blitz-dom
 
 use std::sync::Arc;
 
@@ -18,6 +21,26 @@ use blitz_shell::{
     create_default_event_loop,
 };
 use blitz_traits::navigation::DummyNavigationProvider;
+use blitz_traits::net::{NetProvider, Request};
+
+#[doc(inline)]
+/// Re-export of [`blitz_dom`].
+pub use blitz_dom as dom;
+#[doc(inline)]
+/// Re-export of [`blitz_html`]. HTML parsing on top of blitz-dom
+pub use blitz_html as html;
+#[doc(inline)]
+/// Re-export of [`blitz_net`]. Networking (HTTP, filesystem)
+pub use blitz_net as net;
+#[doc(inline)]
+/// Re-export of [`blitz_paint`].
+pub use blitz_paint as paint;
+#[doc(inline)]
+/// Re-export of [`blitz_shell`].
+pub use blitz_shell as shell;
+#[doc(inline)]
+/// Re-export of [`blitz_traits`](https://docs.rs/blitz-traits). Base types and traits for interoperability between modules
+pub use blitz_traits as traits;
 
 #[cfg(feature = "net")]
 pub fn launch_url(url: &str) {

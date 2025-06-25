@@ -17,10 +17,12 @@ tracing = ["blitz-shell/tracing"]
 [dependencies]
 # Blitz dependencies
 anyrender_vello = { version = "0.2", path = "../anyrender_vello" }
+blitz-traits = { version = "0.1.0-alpha.3", path = "../blitz-traits" }
+blitz-dom = { version = "0.1.0-alpha.3", path = "../blitz-dom" }
 blitz-html = { version = "0.1.0-alpha.3", path = "../blitz-html" }
 blitz-shell = { version = "0.1.0-alpha.3", path = "../blitz-shell" }
+blitz-paint = { version = "0.1.0-alpha.3", path = "../blitz-paint" }
 blitz-net = { version = "0.1.0-alpha.3", path = "../blitz-net", optional = true }
-blitz-traits = { version = "0.1.0-alpha.3", path = "../blitz-traits" }
 
 # IO & Networking
 url = { workspace = true, features = ["serde"], optional = true }

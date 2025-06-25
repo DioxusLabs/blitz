@@ -1,4 +1,4 @@
-//! A generic painter for blitz-dom using anyrender
+//! Translate a blitz-dom into [`anyrender`] drawing commands
 
 mod color;
 mod debug_overlay;

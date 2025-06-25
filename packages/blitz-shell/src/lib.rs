@@ -1,6 +1,6 @@
 #![cfg_attr(docsrs, feature(doc_cfg))]
 
-//! A native renderer for Dioxus.
+//! Event loop, windowing and system integration.
 //!
 //! ## Feature flags
 //!  - `default`: Enables the features listed below.
