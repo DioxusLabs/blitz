@@ -14,7 +14,7 @@ use style::stylesheets::OriginSet;
 
 macro_rules! tag_and_attr {
     ($tag:tt, $attr:tt) => {
-        (&local_name!($tag), &local_name!($tag))
+        (&local_name!($tag), &local_name!($attr))
     };
 }
 
@@ -217,7 +217,7 @@ impl DocumentMutator<'_> {
             set_input_checked_state(element, value.to_string());
         } else if (tag, attr) == tag_and_attr!("img", "src") {
             self.load_image(node_id);
-        } else if (tag, attr) == tag_and_attr!("canvas", "data") {
+        } else if (tag, attr) == tag_and_attr!("canvas", "src") {
             self.load_custom_paint_src(node_id);
         }
     }
@@ -254,7 +254,7 @@ impl DocumentMutator<'_> {
         let attr = &name.local;
         if *attr == local_name!("style") {
             element.flush_style_attribute(&self.doc.guard, self.doc.base_url.clone());
-        } else if (tag, attr) == tag_and_attr!("canvas", "data") {
+        } else if (tag, attr) == tag_and_attr!("canvas", "src") {
             self.recompute_is_animating = true;
         } else if (tag, attr) == tag_and_attr!("link", "href") {
             self.unload_stylesheet(node_id);
@@ -584,7 +584,7 @@ impl<'doc> DocumentMutator<'doc> {
 
     fn load_custom_paint_src(&mut self, target_id: usize) {
         let node = &mut self.doc.nodes[target_id];
-        if let Some(raw_src) = node.attr(local_name!("data")) {
+        if let Some(raw_src) = node.attr(local_name!("src")) {
             if let Ok(custom_paint_source_id) = raw_src.parse::<u64>() {
                 self.recompute_is_animating = true;
                 let canvas_data = SpecialElementData::Canvas(CanvasData {

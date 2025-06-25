@@ -1085,8 +1085,7 @@ impl BaseDocument {
             let Some(element) = node.element_data() else {
                 return false;
             };
-            if element.name.local == local_name!("canvas") && element.has_attr(local_name!("data"))
-            {
+            if element.name.local == local_name!("canvas") && element.has_attr(local_name!("src")) {
                 return true;
             }
 

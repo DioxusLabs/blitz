@@ -31,7 +31,7 @@ pub fn launch_html() {
     // Set the "src" attribute on the `<canvas>` element to the paint source's id
     // (`<canvas src=".." />` is proprietary blitz extension to HTML)
     let canvas_node_id = doc.query_selector("#demo-canvas").unwrap().unwrap();
-    let src_attr = QualName::new(None, ns!(), local_name!("data"));
+    let src_attr = QualName::new(None, ns!(), local_name!("src"));
     let src_str = paint_source_id.to_string();
     doc.mutate()
         .set_attribute(canvas_node_id, src_attr, &src_str);
