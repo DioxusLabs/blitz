@@ -72,10 +72,6 @@ pub fn render_to_buffer<R: ImageRenderer, F: FnOnce(&mut R::ScenePainter<'_>)>(
 
 /// Abstraction for drawing a 2D scene
 pub trait PaintScene {
-    /// The output type.
-    /// This will usually be either a rendered scene or an encoded set of instructions with which to render a scene.
-    type Scene: 'static;
-
     /// Removes all content from the scene
     fn reset(&mut self);
 
@@ -138,9 +134,6 @@ pub trait PaintScene {
         radius: f64,
         std_dev: f64,
     );
-
-    /// Turn the scene into it's output type.
-    fn finish(self) -> Self::Scene;
 
     // --- Provided methods
 

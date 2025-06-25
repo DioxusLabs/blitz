@@ -1,5 +1,5 @@
 use crate::wgpu_context::{WGPUContext, block_on_wgpu};
-use anyrender::{ImageRenderer, PaintScene as _};
+use anyrender::ImageRenderer;
 use rustc_hash::FxHashMap;
 use vello::{RendererOptions, Scene as VelloScene};
 use wgpu::{

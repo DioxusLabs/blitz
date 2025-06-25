@@ -2,7 +2,7 @@ use crate::{
     CustomPaintSource,
     wgpu_context::{RenderSurface, WGPUContext},
 };
-use anyrender::{PaintScene as _, WindowHandle, WindowRenderer};
+use anyrender::{WindowHandle, WindowRenderer};
 use peniko::Color;
 use rustc_hash::FxHashMap;
 use std::sync::{
