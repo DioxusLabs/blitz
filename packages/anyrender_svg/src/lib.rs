@@ -1,20 +1,10 @@
 // Copyright 2023 the Vello Authors
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
-//! Render an SVG document using [`anyrender`].
+//! Render an SVG into any impl of [`anyrender::PaintScene`].
 //!
-//! This currently lacks support for [some important SVG features](crate#unsupported-features).
-//!
-//! This crate re-exports [`usvg`] so you can easily use the specific version that is compatible with [`anyrender_svg`](self).
-//!
-//! # Unsupported features
-//!
-//! Missing features include:
-//! - masking
-//! - filter effects
-//! - group background
-//! - path shape-rendering
-//! - patterns
+//! This currently lacks support for some important SVG features. Known missing features include: masking, filter effects, group backgrounds
+//! path shape-rendering, and patterns.
 
 // LINEBENDER LINT SET - lib.rs - v1
 // See https://linebender.org/wiki/canonical-lints/
@@ -30,14 +20,11 @@
 #![allow(missing_docs, clippy::shadow_unrelated, clippy::missing_errors_doc)]
 #![cfg_attr(test, allow(unused_crate_dependencies))] // Some dev dependencies are only used in tests
 
-mod render;
-
 mod error;
+mod render;
+mod util;
+
 pub use error::Error;
-
-pub mod util;
-
-/// Re-export usvg.
 pub use usvg;
 
 use anyrender::PaintScene;

@@ -9,7 +9,7 @@ use peniko::{Brush, Color, Fill, Mix};
 #[cfg(feature = "image")]
 use peniko::{Blob, Image};
 
-pub fn to_affine(ts: &usvg::Transform) -> Affine {
+pub(crate) fn to_affine(ts: &usvg::Transform) -> Affine {
     let usvg::Transform {
         sx,
         kx,
@@ -21,7 +21,7 @@ pub fn to_affine(ts: &usvg::Transform) -> Affine {
     Affine::new([sx, ky, kx, sy, tx, ty].map(|&x| f64::from(x)))
 }
 
-pub fn to_stroke(stroke: &usvg::Stroke) -> Stroke {
+pub(crate) fn to_stroke(stroke: &usvg::Stroke) -> Stroke {
     let mut conv_stroke = Stroke::new(stroke.width().get() as f64)
         .with_caps(match stroke.linecap() {
             usvg::LineCap::Butt => kurbo::Cap::Butt,
@@ -43,7 +43,7 @@ pub fn to_stroke(stroke: &usvg::Stroke) -> Stroke {
     conv_stroke
 }
 
-pub fn to_mix(blend_mode: usvg::BlendMode, is_fully_opaque: bool) -> Mix {
+pub(crate) fn to_mix(blend_mode: usvg::BlendMode, is_fully_opaque: bool) -> Mix {
     match blend_mode {
         usvg::BlendMode::Normal => {
             if is_fully_opaque {
@@ -70,7 +70,7 @@ pub fn to_mix(blend_mode: usvg::BlendMode, is_fully_opaque: bool) -> Mix {
     }
 }
 
-pub fn to_bez_path(path: &usvg::Path) -> BezPath {
+pub(crate) fn to_bez_path(path: &usvg::Path) -> BezPath {
     let mut local_path = BezPath::new();
     // The semantics of SVG paths don't line up with `BezPath`; we
     // must manually track initial points
@@ -121,7 +121,7 @@ pub fn to_bez_path(path: &usvg::Path) -> BezPath {
 }
 
 #[cfg(feature = "image")]
-pub fn into_image(image: image::ImageBuffer<image::Rgba<u8>, Vec<u8>>) -> Image {
+pub(crate) fn into_image(image: image::ImageBuffer<image::Rgba<u8>, Vec<u8>>) -> Image {
     let (width, height) = (image.width(), image.height());
     let image_data: Vec<u8> = image.into_vec();
     Image::new(
@@ -132,7 +132,7 @@ pub fn into_image(image: image::ImageBuffer<image::Rgba<u8>, Vec<u8>>) -> Image 
     )
 }
 
-pub fn to_brush(paint: &usvg::Paint, opacity: usvg::Opacity) -> Option<(Brush, Affine)> {
+pub(crate) fn to_brush(paint: &usvg::Paint, opacity: usvg::Opacity) -> Option<(Brush, Affine)> {
     match paint {
         usvg::Paint::Color(color) => Some((
             Brush::Solid(Color::from_rgba8(
@@ -216,7 +216,7 @@ pub fn to_brush(paint: &usvg::Paint, opacity: usvg::Opacity) -> Option<(Brush, A
 
 /// Error handler function for [`super::append_tree_with`] which draws a transparent red box
 /// instead of unsupported SVG features
-pub fn default_error_handler<S: PaintScene>(scene: &mut S, node: &usvg::Node) {
+pub(crate) fn default_error_handler<S: PaintScene>(scene: &mut S, node: &usvg::Node) {
     let bb = node.bounding_box();
     let rect = Rect {
         x0: bb.left() as f64,
@@ -234,7 +234,7 @@ pub fn default_error_handler<S: PaintScene>(scene: &mut S, node: &usvg::Node) {
 }
 
 #[cfg(feature = "image")]
-pub fn decode_raw_raster_image(
+pub(crate) fn decode_raw_raster_image(
     img: &usvg::ImageKind,
 ) -> Result<image::RgbaImage, image::ImageError> {
     // All `image::ImageFormat` variants exist even if the feature in the image crate is disabled,
