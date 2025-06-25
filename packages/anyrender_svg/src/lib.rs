@@ -5,7 +5,7 @@
 //!
 //! This currently lacks support for [some important SVG features](crate#unsupported-features).
 //!
-//! This crate re-exports [`usvg`] so you can easily use the specific version that is compatible with [`anyrender_svg`].
+//! This crate re-exports [`usvg`] so you can easily use the specific version that is compatible with [`anyrender_svg`](self).
 //!
 //! # Unsupported features
 //!
@@ -43,7 +43,7 @@ pub use usvg;
 use anyrender::PaintScene;
 use kurbo::Affine;
 
-/// Append an SVG to a vello [`Scene`](vello::Scene), with default error handling.
+/// Append an SVG to an [`anyrender::PaintScene`], with default error handling.
 ///
 /// This will draw a red box over (some) unsupported elements.
 pub fn append<S: PaintScene>(scene: &mut S, svg: &str, transform: Affine) -> Result<(), Error> {
@@ -53,7 +53,7 @@ pub fn append<S: PaintScene>(scene: &mut S, svg: &str, transform: Affine) -> Res
     Ok(())
 }
 
-/// Append an SVG to a vello [`Scene`](vello::Scene), with user-provided error handling logic.
+/// Append an SVG to an [`anyrender::PaintScene`], with user-provided error handling logic.
 ///
 /// See the [module level documentation](crate#unsupported-features) for a list of some unsupported svg features
 pub fn append_with<S: PaintScene, F: FnMut(&mut S, &usvg::Node)>(
@@ -68,14 +68,14 @@ pub fn append_with<S: PaintScene, F: FnMut(&mut S, &usvg::Node)>(
     Ok(())
 }
 
-/// Append an [`usvg::Tree`] to a vello [`Scene`](vello::Scene), with default error handling.
+/// Append an [`usvg::Tree`] to an [`anyrender::PaintScene`], with default error handling.
 ///
 /// This will draw a red box over (some) unsupported elements.
 pub fn append_tree<S: PaintScene>(scene: &mut S, svg: &usvg::Tree, transform: Affine) {
     append_tree_with(scene, svg, transform, &mut util::default_error_handler);
 }
 
-/// Append an [`usvg::Tree`] to a vello [`Scene`](vello::Scene), with user-provided error handling logic.
+/// Append an [`usvg::Tree`] to an [`anyrender::PaintScene`], with user-provided error handling logic.
 ///
 /// See the [module level documentation](crate#unsupported-features) for a list of some unsupported svg features
 pub fn append_tree_with<S: PaintScene, F: FnMut(&mut S, &usvg::Node)>(
