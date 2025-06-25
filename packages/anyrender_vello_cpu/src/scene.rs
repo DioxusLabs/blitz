@@ -1,8 +1,8 @@
+use crate::vello_cpu::{self, PaintType, Pixmap, RenderMode};
 use anyrender::{NormalizedCoord, Paint, PaintScene};
 use kurbo::{Affine, Rect, Shape, Stroke};
 use peniko::{BlendMode, BrushRef, Color, Fill, Font, StyleRef, color::PremulRgba8};
 use std::sync::Arc;
-use vello_cpu::{PaintType, Pixmap, RenderMode};
 
 const DEFAULT_TOLERANCE: f64 = 0.1;
 
@@ -64,7 +64,7 @@ fn premultiply(image: &peniko::Image) -> Vec<PremulRgba8> {
         .collect()
 }
 
-pub struct VelloCpuScenePainter(pub vello_cpu::RenderContext);
+pub struct VelloCpuScenePainter(pub crate::vello_cpu::RenderContext);
 
 impl VelloCpuScenePainter {
     pub fn finish(self) -> Pixmap {
@@ -91,7 +91,7 @@ impl PaintScene for VelloCpuScenePainter {
         self.0.push_layer(
             Some(&clip.into_path(DEFAULT_TOLERANCE)),
             Some(blend.into()),
-            Some(alpha * 255.0),
+            Some(alpha),
             None,
         );
     }
@@ -149,8 +149,8 @@ impl PaintScene for VelloCpuScenePainter {
         self.0.set_transform(transform);
         self.0.set_paint(brush_ref_to_paint_type(brush.into()));
 
-        fn into_vello_cpu_glyph(g: anyrender::Glyph) -> vello_cpu::Glyph {
-            vello_cpu::Glyph {
+        fn into_vello_cpu_glyph(g: anyrender::Glyph) -> crate::vello_cpu::Glyph {
+            crate::vello_cpu::Glyph {
                 id: g.id,
                 x: g.x,
                 y: g.y,
