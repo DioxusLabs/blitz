@@ -1,19 +1,15 @@
 // Copyright 2023 the Vello Authors
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
-//! Render an SVG document to a Vello [`Scene`](vello::Scene).
+//! Render an SVG document using [`anyrender`].
 //!
-//! This currently lacks support for a [number of important](crate#unsupported-features) SVG features.
+//! This currently lacks support for [some important SVG features](crate#unsupported-features).
 //!
-//! This is also intended to be the preferred integration between Vello and [usvg], so [consider
-//! contributing](https://github.com/linebender/vello_svg) if you need a feature which is missing.
-//!
-//! This crate also re-exports [`usvg`] and [`vello`], so you can easily use the specific versions that are compatible with Vello SVG.
+//! This crate re-exports [`usvg`] so you can easily use the specific version that is compatible with [`anyrender_svg`].
 //!
 //! # Unsupported features
 //!
 //! Missing features include:
-//! - text
 //! - group opacity
 //! - mix-blend-modes
 //! - clipping
