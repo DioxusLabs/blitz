@@ -1,3 +1,7 @@
+//! Networking (HTTP, filesystem, Data URIs) for Blitz
+//!
+//! Provides an implementation of the [`blitz_traits::net::NetProvider`] trait.
+
 use blitz_traits::net::{BoxedHandler, Bytes, NetCallback, NetProvider, Request, SharedCallback};
 use data_url::DataUrl;
 use reqwest::Client;

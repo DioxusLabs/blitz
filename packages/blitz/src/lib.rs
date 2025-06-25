@@ -30,7 +30,7 @@ pub use blitz_dom as dom;
 /// Re-export of [`blitz_html`]. HTML parsing on top of blitz-dom
 pub use blitz_html as html;
 #[doc(inline)]
-/// Re-export of [`blitz_net`]. Networking (HTTP, filesystem)
+/// Re-export of [`blitz_net`].
 pub use blitz_net as net;
 #[doc(inline)]
 /// Re-export of [`blitz_paint`].
@@ -62,7 +62,7 @@ pub fn launch_url(url: &str) {
     let (url, bytes) = rt
         .block_on(net_provider.fetch_async(Request::get(url)))
         .unwrap();
-    let html = str::from_utf8(bytes.as_ref()).unwrap();
+    let html = std::str::from_utf8(bytes.as_ref()).unwrap();
 
     launch_internal(
         html,
