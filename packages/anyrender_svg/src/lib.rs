@@ -10,9 +10,6 @@
 //! # Unsupported features
 //!
 //! Missing features include:
-//! - group opacity
-//! - mix-blend-modes
-//! - clipping
 //! - masking
 //! - filter effects
 //! - group background

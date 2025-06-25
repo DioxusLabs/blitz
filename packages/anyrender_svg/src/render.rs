@@ -18,27 +18,58 @@ pub(crate) fn render_group<S: PaintScene, F: FnMut(&mut S, &usvg::Node)>(
         let transform = transform * util::to_affine(&node.abs_transform());
         match node {
             usvg::Node::Group(g) => {
-                let mut pushed_clip = false;
-                if let Some(clip_path) = g.clip_path() {
-                    if let Some(usvg::Node::Path(clip_path)) = clip_path.root().children().first() {
-                        // support clip-path with a single path
+                let alpha = g.opacity().get();
+                let is_fully_opaque = alpha >= 1.0;
+                let mix = util::to_mix(g.blend_mode(), is_fully_opaque);
+
+                // Support clip-path with a single path
+                let clip_path = g
+                    .clip_path()
+                    .and_then(|path| path.root().children().first());
+
+                let did_push_layer = match clip_path {
+                    // If there is a clip path, then push a layer that clips using it
+                    Some(usvg::Node::Path(clip_path)) => {
                         let local_path = util::to_bez_path(clip_path);
                         scene.push_layer(
                             BlendMode {
-                                mix: peniko::Mix::Clip,
+                                mix,
                                 compose: peniko::Compose::SrcOver,
                             },
-                            1.0,
+                            alpha,
                             global_transform * transform,
                             &local_path,
                         );
-                        pushed_clip = true;
+
+                        true
                     }
-                }
+                    // Else if there is blending to be done then push a layer with a rectangular clip
+                    _ if mix != peniko::Mix::Clip => {
+                        // Use bounding box as the clip path.
+                        let bounding_box = g.layer_bounding_box();
+                        let rect = kurbo::Rect::from_origin_size(
+                            (bounding_box.x(), bounding_box.y()),
+                            (bounding_box.width() as f64, bounding_box.height() as f64),
+                        );
+                        scene.push_layer(
+                            BlendMode {
+                                mix,
+                                compose: peniko::Compose::SrcOver,
+                            },
+                            alpha,
+                            global_transform * transform,
+                            &rect,
+                        );
+
+                        true
+                    }
+                    // Else if there is no clip or blending then don't push a layer
+                    _ => false,
+                };
 
                 render_group(scene, g, Affine::IDENTITY, global_transform, error_handler);
 
-                if pushed_clip {
+                if did_push_layer {
                     scene.pop_layer();
                 }
             }

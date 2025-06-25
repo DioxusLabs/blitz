@@ -4,7 +4,7 @@
 use anyrender::PaintScene;
 use kurbo::{Affine, BezPath, Point, Rect, Stroke};
 use peniko::color::{self, DynamicColor};
-use peniko::{Brush, Color, Fill};
+use peniko::{Brush, Color, Fill, Mix};
 
 #[cfg(feature = "image")]
 use peniko::{Blob, Image};
@@ -41,6 +41,33 @@ pub fn to_stroke(stroke: &usvg::Stroke) -> Stroke {
         );
     }
     conv_stroke
+}
+
+pub fn to_mix(blend_mode: usvg::BlendMode, is_fully_opaque: bool) -> Mix {
+    match blend_mode {
+        usvg::BlendMode::Normal => {
+            if is_fully_opaque {
+                Mix::Clip
+            } else {
+                Mix::Normal
+            }
+        }
+        usvg::BlendMode::Multiply => Mix::Multiply,
+        usvg::BlendMode::Screen => Mix::Screen,
+        usvg::BlendMode::Overlay => Mix::Overlay,
+        usvg::BlendMode::Darken => Mix::Darken,
+        usvg::BlendMode::Lighten => Mix::Lighten,
+        usvg::BlendMode::ColorDodge => Mix::ColorDodge,
+        usvg::BlendMode::ColorBurn => Mix::ColorBurn,
+        usvg::BlendMode::HardLight => Mix::HardLight,
+        usvg::BlendMode::SoftLight => Mix::SoftLight,
+        usvg::BlendMode::Difference => Mix::Difference,
+        usvg::BlendMode::Exclusion => Mix::Exclusion,
+        usvg::BlendMode::Hue => Mix::Hue,
+        usvg::BlendMode::Saturation => Mix::Saturation,
+        usvg::BlendMode::Color => Mix::Color,
+        usvg::BlendMode::Luminosity => Mix::Luminosity,
+    }
 }
 
 pub fn to_bez_path(path: &usvg::Path) -> BezPath {
