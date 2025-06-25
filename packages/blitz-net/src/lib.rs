@@ -9,18 +9,6 @@ use tokio::{
 
 const USER_AGENT: &str = "Mozilla/5.0 (X11; Linux x86_64; rv:60.0) Gecko/20100101 Firefox/81.0";
 
-pub async fn get_text(url: &str) -> String {
-    Client::new()
-        .get(url)
-        .header("User-Agent", USER_AGENT)
-        .send()
-        .await
-        .unwrap()
-        .text()
-        .await
-        .unwrap()
-}
-
 pub struct Provider<D> {
     rt: Handle,
     client: Client,
@@ -104,6 +92,18 @@ impl<D: 'static> Provider<D> {
             }
             callback(result);
         });
+    }
+
+    pub async fn fetch_async(&self, request: Request) -> Result<(String, Bytes), ProviderError> {
+        let client = self.client.clone();
+        let url = request.url.to_string();
+        let result = Self::fetch_inner(client, request).await;
+        if let Err(e) = &result {
+            eprintln!("Error fetching {url}: {e:?}");
+        } else {
+            println!("Success {url}");
+        }
+        result
     }
 }
 

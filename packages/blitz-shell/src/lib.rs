@@ -24,8 +24,8 @@ use blitz_dom::net::Resource;
 use blitz_traits::net::NetCallback;
 use blitz_traits::shell::ShellProvider;
 use std::sync::Arc;
-use winit::event_loop::{ControlFlow, EventLoop, EventLoopProxy};
-use winit::window::{CursorIcon, Window};
+pub use winit::event_loop::{ControlFlow, EventLoop, EventLoopProxy};
+pub use winit::window::{CursorIcon, Window};
 
 #[derive(Default)]
 pub struct Config {
