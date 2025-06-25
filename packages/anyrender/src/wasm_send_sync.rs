@@ -1,5 +1,11 @@
 //! Traits that imply `Send`/`Sync` only on non-wasm platforms. For interop with wgpu.
 
+use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
+
+/// A raw window handle that is `WasmNotSendSync`. For interop with wgpu.
+pub trait WindowHandle: HasWindowHandle + HasDisplayHandle + WasmNotSendSync {}
+impl<T: HasWindowHandle + HasDisplayHandle + WasmNotSendSync> WindowHandle for T {}
+
 /// Trait that implies `Send` and `Sync` on non-wasm platforms
 pub trait WasmNotSendSync: WasmNotSend + WasmNotSync {}
 impl<T: WasmNotSend + WasmNotSync> WasmNotSendSync for T {}
