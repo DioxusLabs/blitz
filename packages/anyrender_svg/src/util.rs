@@ -18,7 +18,7 @@ pub fn to_affine(ts: &usvg::Transform) -> Affine {
         tx,
         ty,
     } = ts;
-    Affine::new([sx, kx, ky, sy, tx, ty].map(|&x| f64::from(x)))
+    Affine::new([sx, ky, kx, sy, tx, ty].map(|&x| f64::from(x)))
 }
 
 pub fn to_stroke(stroke: &usvg::Stroke) -> Stroke {
