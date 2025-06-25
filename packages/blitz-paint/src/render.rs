@@ -553,7 +553,7 @@ impl ElementCx<'_> {
             Affine::translate((self.pos.x * self.scale + x, self.pos.y * self.scale + y))
                 .pre_scale_non_uniform(x_scale, y_scale);
 
-        anyrender_svg::append_tree(scene, svg, transform);
+        anyrender_svg::render_svg_tree(scene, svg, transform);
     }
 
     fn draw_image(&self, scene: &mut impl PaintScene) {

@@ -152,7 +152,7 @@ impl ElementCx<'_> {
         ))
         .pre_scale_non_uniform(x_ratio, y_ratio);
 
-        anyrender_svg::append_tree(scene, svg, transform);
+        anyrender_svg::render_svg_tree(scene, svg, transform);
     }
 
     fn draw_raster_bg_image(&self, scene: &mut impl PaintScene, idx: usize) {

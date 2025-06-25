@@ -30,20 +30,24 @@ pub use usvg;
 use anyrender::PaintScene;
 use kurbo::Affine;
 
-/// Append an SVG to an [`anyrender::PaintScene`], with default error handling.
+/// Append an SVG to an [`anyrender::PaintScene`].
 ///
 /// This will draw a red box over (some) unsupported elements.
-pub fn append<S: PaintScene>(scene: &mut S, svg: &str, transform: Affine) -> Result<(), Error> {
+pub fn render_svg_str<S: PaintScene>(
+    scene: &mut S,
+    svg: &str,
+    transform: Affine,
+) -> Result<(), Error> {
     let opt = usvg::Options::default();
     let tree = usvg::Tree::from_str(svg, &opt)?;
-    append_tree(scene, &tree, transform);
+    render_svg_tree(scene, &tree, transform);
     Ok(())
 }
 
-/// Append an SVG to an [`anyrender::PaintScene`], with user-provided error handling logic.
+/// Append an SVG to an [`anyrender::PaintScene`] (with custom error handling).
 ///
 /// See the [module level documentation](crate#unsupported-features) for a list of some unsupported svg features
-pub fn append_with<S: PaintScene, F: FnMut(&mut S, &usvg::Node)>(
+pub fn render_svg_str_with<S: PaintScene, F: FnMut(&mut S, &usvg::Node)>(
     scene: &mut S,
     svg: &str,
     transform: Affine,
@@ -51,21 +55,21 @@ pub fn append_with<S: PaintScene, F: FnMut(&mut S, &usvg::Node)>(
 ) -> Result<(), Error> {
     let opt = usvg::Options::default();
     let tree = usvg::Tree::from_str(svg, &opt)?;
-    append_tree_with(scene, &tree, transform, error_handler);
+    render_svg_tree_with(scene, &tree, transform, error_handler);
     Ok(())
 }
 
-/// Append an [`usvg::Tree`] to an [`anyrender::PaintScene`], with default error handling.
+/// Append a [`usvg::Tree`] to an [`anyrender::PaintScene`].
 ///
 /// This will draw a red box over (some) unsupported elements.
-pub fn append_tree<S: PaintScene>(scene: &mut S, svg: &usvg::Tree, transform: Affine) {
-    append_tree_with(scene, svg, transform, &mut util::default_error_handler);
+pub fn render_svg_tree<S: PaintScene>(scene: &mut S, svg: &usvg::Tree, transform: Affine) {
+    render_svg_tree_with(scene, svg, transform, &mut util::default_error_handler);
 }
 
-/// Append an [`usvg::Tree`] to an [`anyrender::PaintScene`], with user-provided error handling logic.
+/// Append a [`usvg::Tree`] to an [`anyrender::PaintScene`] (with custom error handling).
 ///
 /// See the [module level documentation](crate#unsupported-features) for a list of some unsupported svg features
-pub fn append_tree_with<S: PaintScene, F: FnMut(&mut S, &usvg::Node)>(
+pub fn render_svg_tree_with<S: PaintScene, F: FnMut(&mut S, &usvg::Node)>(
     scene: &mut S,
     svg: &usvg::Tree,
     transform: Affine,
