@@ -320,7 +320,7 @@ impl<'s> RenderSurface<'s> {
 ///
 /// This will deadlock if the future is awaiting anything other than GPU progress.
 #[cfg_attr(docsrs, doc(hidden))]
-pub fn block_on_wgpu<F: Future>(device: &Device, mut fut: F) -> F::Output {
+pub fn block_on_wgpu<F: Future>(device: &Device, fut: F) -> F::Output {
     if cfg!(target_arch = "wasm32") {
         panic!("WGPU is inherently async on WASM, so blocking doesn't work.");
     }
