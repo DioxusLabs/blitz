@@ -17,6 +17,7 @@ members = [
   "wpt/runner",
   "examples/counter",
   "examples/wgpu_texture",
+  "examples/anyrender",
 ]
 exclude = ["sites"]
 resolver = "2"
