@@ -227,23 +227,29 @@ impl LayoutPartialTree for BaseDocument {
                                 .and_then(|val| val.parse::<f32>().ok()),
                         };
 
-                        // Get image's native sizespecial_data
+                        // Get image's native size
                         let inherent_size = match &element_data.special_data {
-                            SpecialElementData::Image(image_data) => match &**image_data {
-                                ImageData::Raster(image) => taffy::Size {
-                                    width: image.width as f32,
-                                    height: image.height as f32,
-                                },
-                                #[cfg(feature = "svg")]
-                                ImageData::Svg(svg) => {
-                                    let size = svg.size();
-                                    taffy::Size {
-                                        width: size.width(),
-                                        height: size.height(),
+                            SpecialElementData::Image(context) => {
+                                if let Some(image_data) = &context.data {
+                                    match image_data {
+                                        ImageData::Raster(image) => taffy::Size {
+                                            width: image.width as f32,
+                                            height: image.height as f32,
+                                        },
+                                        #[cfg(feature = "svg")]
+                                        ImageData::Svg(svg) => {
+                                            let size = svg.size();
+                                            taffy::Size {
+                                                width: size.width(),
+                                                height: size.height(),
+                                            }
+                                        }
+                                        ImageData::None => taffy::Size::ZERO,
                                     }
+                                } else {
+                                    taffy::Size::ZERO
                                 }
-                                ImageData::None => taffy::Size::ZERO,
-                            },
+                            }
                             SpecialElementData::Canvas(_) => taffy::Size::ZERO,
                             SpecialElementData::None => taffy::Size::ZERO,
                             _ => unreachable!(),

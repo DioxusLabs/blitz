@@ -40,11 +40,15 @@ use style::values::computed::Overflow;
 use style::{
     dom::{TDocument, TNode},
     media_queries::{Device, MediaList},
+    parser::ParserContext,
     selector_parser::SnapshotMap,
     shared_lock::{SharedRwLock, StylesheetGuards},
-    stylesheets::{AllowImportRules, DocumentStyleSheet, Origin, Stylesheet, UrlExtraData},
+    stylesheets::{
+        AllowImportRules, CssRuleType, DocumentStyleSheet, Origin, Stylesheet, UrlExtraData,
+    },
     stylist::Stylist,
 };
+use style_traits::ParsingMode;
 use taffy::AvailableSpace;
 use url::Url;
 
@@ -153,6 +157,9 @@ pub struct BaseDocument {
 
     pub changed: HashSet<usize>,
 
+    // All image nodes.
+    image_nodes: HashSet<usize>,
+
     /// A map from control node ID's to their associated forms node ID's
     pub controls_to_form: HashMap<usize, usize>,
 
@@ -246,6 +253,7 @@ impl BaseDocument {
             mousedown_node_id: None,
             is_animating: false,
             changed: HashSet::new(),
+            image_nodes: HashSet::new(),
             controls_to_form: HashMap::new(),
             net_provider: Arc::new(DummyNetProvider),
             navigation_provider: Arc::new(DummyNavigationProvider),
@@ -414,6 +422,11 @@ impl BaseDocument {
 
         // Mark the new node as changed.
         self.changed.insert(id);
+
+        if self.is_img_node(id) {
+            self.image_nodes.insert(id);
+        }
+
         id
     }
 
@@ -569,10 +582,13 @@ impl BaseDocument {
 
                 match kind {
                     ImageType::Image => {
-                        node.element_data_mut().unwrap().special_data =
-                            SpecialElementData::Image(Box::new(ImageData::Raster(
-                                RasterImageData::new(width, height, image_data),
+                        if let SpecialElementData::Image(context) =
+                            &mut node.element_data_mut().unwrap().special_data
+                        {
+                            context.data = Some(ImageData::Raster(RasterImageData::new(
+                                width, height, image_data,
                             )));
+                        }
 
                         // Clear layout cache
                         node.cache.clear();
@@ -595,8 +611,11 @@ impl BaseDocument {
 
                 match kind {
                     ImageType::Image => {
-                        node.element_data_mut().unwrap().special_data =
-                            SpecialElementData::Image(Box::new(ImageData::Svg(tree)));
+                        if let SpecialElementData::Image(context) =
+                            &mut node.element_data_mut().unwrap().special_data
+                        {
+                            context.data = Some(ImageData::Svg(tree));
+                        }
 
                         // Clear layout cache
                         node.cache.clear();
@@ -892,6 +911,7 @@ impl BaseDocument {
             self.stylist.set_device(device, &guards)
         };
         self.stylist.force_stylesheet_origins_dirty(origins);
+        self.environment_changes();
     }
 
     pub fn stylist_device(&mut self) -> &Device {
@@ -1091,6 +1111,42 @@ impl BaseDocument {
 
             false
         })
+    }
+
+    /// Used to determine whether a document matches a media query string,
+    /// and to monitor a document to detect when it matches (or stops matching) that media query.
+    ///
+    /// https://developer.mozilla.org/en-US/docs/Web/API/Window/matchMedia
+    pub fn match_media(&self, media_query_string: &str) -> bool {
+        let mut input = cssparser::ParserInput::new(media_query_string);
+        let mut parser = cssparser::Parser::new(&mut input);
+
+        let url_data = UrlExtraData::from(
+            self.base_url
+                .clone()
+                .unwrap_or_else(|| "about:blank".parse::<Url>().unwrap()),
+        );
+        let quirks_mode = self.stylist.quirks_mode();
+        let context = ParserContext::new(
+            Origin::Author,
+            &url_data,
+            Some(CssRuleType::Style),
+            ParsingMode::all(),
+            quirks_mode,
+            Default::default(),
+            None,
+            None,
+        );
+
+        let media_list = MediaList::parse(&context, &mut parser);
+        media_list.evaluate(self.stylist.device(), quirks_mode)
+    }
+
+    fn environment_changes(&mut self) {
+        let image_nodes = self.image_nodes.clone();
+        for node_id in image_nodes.into_iter() {
+            self.environment_changes_with_image(node_id);
+        }
     }
 }
 

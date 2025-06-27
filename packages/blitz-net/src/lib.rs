@@ -2,10 +2,12 @@
 //!
 //! Provides an implementation of the [`blitz_traits::net::NetProvider`] trait.
 
-use blitz_traits::net::{BoxedHandler, Bytes, NetCallback, NetProvider, Request, SharedCallback};
+use blitz_traits::net::{
+    AbortSignal, BoxedHandler, Bytes, NetCallback, NetProvider, Request, SharedCallback,
+};
 use data_url::DataUrl;
 use reqwest::Client;
-use std::sync::Arc;
+use std::{marker::PhantomData, pin::Pin, sync::Arc, task::Poll};
 use tokio::{
     runtime::Handle,
     sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel},
@@ -67,18 +69,6 @@ impl<D: 'static> Provider<D> {
         })
     }
 
-    async fn fetch_with_handler(
-        client: Client,
-        doc_id: usize,
-        request: Request,
-        handler: BoxedHandler<D>,
-        res_callback: SharedCallback<D>,
-    ) -> Result<(), ProviderError> {
-        let (_response_url, bytes) = Self::fetch_inner(client, request).await?;
-        handler.bytes(doc_id, bytes, res_callback);
-        Ok(())
-    }
-
     #[allow(clippy::type_complexity)]
     pub fn fetch_with_callback(
         &self,
@@ -112,24 +102,78 @@ impl<D: 'static> Provider<D> {
 }
 
 impl<D: 'static> NetProvider<D> for Provider<D> {
-    fn fetch(&self, doc_id: usize, request: Request, handler: BoxedHandler<D>) {
+    fn fetch(&self, doc_id: usize, mut request: Request, handler: BoxedHandler<D>) {
         let client = self.client.clone();
         let callback = Arc::clone(&self.resource_callback);
         println!("Fetching {}", &request.url);
         self.rt.spawn(async move {
             let url = request.url.to_string();
-            let res = Self::fetch_with_handler(client, doc_id, request, handler, callback).await;
-            if let Err(e) = res {
-                eprintln!("Error fetching {url}: {e:?}");
+            let signal = request.signal.take();
+            let result = if let Some(signal) = signal {
+                AbortFetch::new(
+                    signal,
+                    Box::pin(async move { Self::fetch_inner(client, request).await }),
+                )
+                .await
             } else {
-                println!("Success {url}");
+                Self::fetch_inner(client, request).await
+            };
+
+            match result {
+                Ok((_response_url, bytes)) => {
+                    handler.bytes(doc_id, bytes, callback);
+                    println!("Success {url}");
+                }
+                Err(e) => {
+                    eprintln!("Error fetching {url}: {e:?}");
+                }
             }
         });
     }
 }
 
+struct AbortFetch<F, T> {
+    signal: AbortSignal,
+    future: F,
+    _rt: PhantomData<T>,
+}
+
+impl<F, T> AbortFetch<F, T> {
+    fn new(signal: AbortSignal, future: F) -> Self {
+        Self {
+            signal,
+            future,
+            _rt: PhantomData,
+        }
+    }
+}
+
+impl<F, T> Future for AbortFetch<F, T>
+where
+    F: Future + Unpin + Send + 'static,
+    F::Output: Send + Into<Result<T, ProviderError>> + 'static,
+    T: Unpin,
+{
+    type Output = Result<T, ProviderError>;
+
+    fn poll(
+        mut self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Self::Output> {
+        if self.signal.aborted() {
+            return Poll::Ready(Err(ProviderError::Abort));
+        }
+
+        match Pin::new(&mut self.future).poll(cx) {
+            Poll::Ready(output) => Poll::Ready(output.into()),
+            Poll::Pending => Poll::Pending,
+        }
+    }
+}
+
 #[derive(Debug)]
 pub enum ProviderError {
+    Abort,
     Io(std::io::Error),
     DataUrl(data_url::DataUrlError),
     DataUrlBase64(data_url::forgiving_base64::InvalidBase64),

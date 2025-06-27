@@ -1,3 +1,4 @@
+use super::{Attribute, ElementData};
 use atomic_refcell::{AtomicRef, AtomicRefCell};
 use bitflags::bitflags;
 use blitz_traits::{BlitzMouseButtonEvent, DomEventData, HitResult};
@@ -24,8 +25,6 @@ use taffy::{
     prelude::{Layout, Style},
 };
 use url::Url;
-
-use super::{Attribute, ElementData};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum DisplayOuter {
