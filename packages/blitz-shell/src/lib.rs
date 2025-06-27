@@ -144,4 +144,26 @@ impl ShellProvider for BlitzShellProvider {
         cb.set_text(text.to_owned())
             .map_err(|_| blitz_traits::shell::ClipboardError)
     }
+
+    #[cfg(all(
+        feature = "file_dialog",
+        any(target_os = "windows", target_os = "macos", target_os = "linux")
+    ))]
+    fn open_file_dialog(
+        &self,
+        multiple: bool,
+        filter: Option<(String, Vec<String>)>,
+    ) -> Vec<std::path::PathBuf> {
+        println!("Clicked file input");
+        let mut dialog = rfd::FileDialog::new();
+        if let Some((name, extensions)) = filter {
+            dialog = dialog.add_filter(&name, &extensions);
+        }
+        let files = if multiple {
+            dialog.pick_files()
+        } else {
+            dialog.pick_file().map(|file| vec![file])
+        };
+        files.unwrap_or_default()
+    }
 }

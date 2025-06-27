@@ -2,6 +2,8 @@ use color::{AlphaColor, Srgb};
 use markup5ever::{LocalName, QualName, local_name};
 use parley::{FontContext, LayoutContext};
 use selectors::matching::QuirksMode;
+use std::ops::{Deref, DerefMut};
+use std::path::PathBuf;
 use std::str::FromStr;
 use std::sync::Arc;
 use style::Atom;
@@ -64,6 +66,7 @@ pub enum SpecialElementType {
     TableRoot,
     TextInput,
     CheckboxInput,
+    FileInput,
     #[default]
     None,
 }
@@ -82,6 +85,8 @@ pub enum SpecialElementData {
     TextInput(TextInputData),
     /// Checkbox checked state
     CheckboxInput(bool),
+    /// Selected files
+    FileInput(FileData),
     /// No data (for nodes that don't need any node-specific data)
     #[default]
     None,
@@ -211,6 +216,20 @@ impl ElementData {
     pub fn checkbox_input_checked_mut(&mut self) -> Option<&mut bool> {
         match self.special_data {
             SpecialElementData::CheckboxInput(ref mut checked) => Some(checked),
+            _ => None,
+        }
+    }
+
+    pub fn file_data(&self) -> Option<&FileData> {
+        match &self.special_data {
+            SpecialElementData::FileInput(data) => Some(data),
+            _ => None,
+        }
+    }
+
+    pub fn file_data_mut(&mut self) -> Option<&mut FileData> {
+        match &mut self.special_data {
+            SpecialElementData::FileInput(data) => Some(data),
             _ => None,
         }
     }
@@ -378,6 +397,7 @@ impl std::fmt::Debug for SpecialElementData {
             SpecialElementData::TableRoot(_) => f.write_str("NodeSpecificData::TableRoot"),
             SpecialElementData::TextInput(_) => f.write_str("NodeSpecificData::TextInput"),
             SpecialElementData::CheckboxInput(_) => f.write_str("NodeSpecificData::CheckboxInput"),
+            SpecialElementData::FileInput(_) => f.write_str("NodeSpecificData::FileInput"),
             SpecialElementData::None => f.write_str("NodeSpecificData::None"),
         }
     }
@@ -443,5 +463,25 @@ pub struct TextLayout {
 impl std::fmt::Debug for TextLayout {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "TextLayout")
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct FileData(pub Vec<PathBuf>);
+impl Deref for FileData {
+    type Target = Vec<PathBuf>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+impl DerefMut for FileData {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+impl From<Vec<PathBuf>> for FileData {
+    fn from(files: Vec<PathBuf>) -> Self {
+        Self(files)
     }
 }

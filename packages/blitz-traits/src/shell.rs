@@ -23,6 +23,15 @@ pub trait ShellProvider {
         let _ = text;
         Err(ClipboardError)
     }
+    fn open_file_dialog(
+        &self,
+        multiple: bool,
+        filter: Option<(String, Vec<String>)>,
+    ) -> Vec<std::path::PathBuf> {
+        let _ = multiple;
+        let _ = filter;
+        vec![]
+    }
 }
 
 pub struct DummyShellProvider;

@@ -502,6 +502,7 @@ impl<'doc> DocumentMutator<'doc> {
                 SpecialElementData::TableRoot(_) => {}
                 SpecialElementData::TextInput(_) => {}
                 SpecialElementData::CheckboxInput(_) => {}
+                SpecialElementData::FileInput(_) => {}
                 SpecialElementData::None => {}
             }
         });
@@ -620,6 +621,19 @@ impl<'doc> DocumentMutator<'doc> {
             let value = value.to_string();
             let id = self.create_text_node(&value);
             self.append_children(target_id, &[id]);
+        } else if let ("input", Some("file")) = (tagname, type_attr) {
+            let button_id = self.create_element(
+                QualName {
+                    prefix: None,
+                    ns: ns!(html),
+                    local: local_name!("button"),
+                },
+                vec![],
+            );
+            let text_id = self.create_text_node("No File Selected");
+            let button_text_id = self.create_text_node("Browse");
+            self.append_children(target_id, &[button_id, text_id]);
+            self.append_children(button_id, &[button_text_id]);
         }
     }
 }

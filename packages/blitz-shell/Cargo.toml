@@ -10,10 +10,15 @@ categories.workspace = true
 edition.workspace = true
 
 [features]
-default = ["accessibility", "clipboard", "tracing"]
-accessibility = ["dep:accesskit", "dep:accesskit_winit", "blitz-dom/accessibility"]
+default = ["accessibility", "clipboard", "tracing", "file_dialog"]
+accessibility = [
+    "dep:accesskit",
+    "dep:accesskit_winit",
+    "blitz-dom/accessibility",
+]
 clipboard = ["dep:arboard"]
 tracing = ["dep:tracing", "blitz-dom/tracing"]
+file_dialog = ["dep:rfd"]
 
 [dependencies]
 # Blitz dependencies
@@ -27,7 +32,7 @@ winit = { workspace = true }
 keyboard-types = { workspace = true }
 
 accesskit = { workspace = true, optional = true }
-accesskit_winit = {workspace = true, optional = true }
+accesskit_winit = { workspace = true, optional = true }
 
 # Other dependencies
 tracing = { workspace = true, optional = true }
@@ -38,6 +43,10 @@ android-activity = { version = "0.6.0", features = ["native-activity"] }
 
 [target.'cfg(any(target_os = "windows",target_os = "macos",target_os = "linux",target_os = "dragonfly", target_os = "freebsd", target_os = "netbsd", target_os = "openbsd"))'.dependencies]
 arboard = { workspace = true, optional = true }
+
+
+[target.'cfg(any(target_os = "windows",target_os = "macos",target_os = "linux"))'.dependencies]
+rfd = { workspace = true, optional = true }
 
 [package.metadata.docs.rs]
 all-features = true

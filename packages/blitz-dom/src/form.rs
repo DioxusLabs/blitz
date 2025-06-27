@@ -6,7 +6,7 @@ use crate::{
 };
 use blitz_traits::navigation::NavigationOptions;
 use core::str::FromStr;
-use std::fmt::Display;
+use std::{borrow::Cow, fmt::Display, io::Write, path::Path};
 
 impl BaseDocument {
     /// Resets the form owner for a given node by either using an explicit form attribute
@@ -57,7 +57,7 @@ impl BaseDocument {
             return;
         };
 
-        let entry = construct_entry_list(self, node_id, submitter_id);
+        let mut entry = construct_entry_list(self, node_id, submitter_id);
 
         let method = get_form_attr(
             self,
@@ -82,7 +82,7 @@ impl BaseDocument {
 
         let scheme = parsed_action.scheme();
 
-        let enctype = get_form_attr(
+        let mut enctype = get_form_attr(
             self,
             element,
             local_name!("enctype"),
@@ -111,10 +111,11 @@ impl BaseDocument {
                     url::form_urlencoded::Serializer::new(&mut body).extend_pairs(pairs);
                     post_resource = Some(body.into());
                 }
-                RequestContentType::MultipartFormData => {
-                    #[cfg(feature = "tracing")]
-                    tracing::warn!("Multipart Forms are currently not supported");
-                    return;
+                RequestContentType::MultipartFormData(_) => {
+                    let (encoded, boundary) = entry.encode_multipart_form_data();
+                    post_resource = Some(encoded.into());
+
+                    enctype = RequestContentType::MultipartFormData(boundary);
                 }
                 RequestContentType::TextPlain => {
                     let pairs = entry.convert_to_list_of_name_value_pairs();
@@ -202,7 +203,7 @@ impl BaseDocument {
 fn construct_entry_list(doc: &BaseDocument, form_id: usize, submitter_id: usize) -> EntryList {
     let mut entry_list = EntryList::new();
 
-    let mut create_entry = |name: &str, value: &str| {
+    let mut create_entry = |name: &str, value: EntryValue| {
         entry_list.0.push(Entry::new(name, value));
     };
 
@@ -294,13 +295,27 @@ fn construct_entry_list(doc: &BaseDocument, form_id: usize, submitter_id: usize)
             // If the field element has a value attribute specified, then let value be the value of that attribute; otherwise, let value be the string "on".
             let value = element.attr(local_name!("value")).unwrap_or("on");
             //         Create an entry with name and value, and append it to entry list.
-            create_entry(name, value);
+            create_entry(name, value.into());
         }
-        // TODO: Otherwise, if the field element is an input element whose type attribute is in the File Upload state, then:
-        //
-        //        If there are no selected files, then create an entry with name and a new File object with an empty name, application/octet-stream as type, and an empty body, and append it to entry list.
-        //        Otherwise, for each file in selected files, create an entry with name and a File object representing the file, and append it to entry list.
+        // Otherwise, if the field element is an input element whose type attribute is in the File Upload state, then:
+        else if element.name.local == local_name!("input") && matches!(element_type, Some("file"))
+        {
+            //        If there are no selected files, then create an entry with name and a new File object with an empty name, application/octet-stream as type, and an empty body, and append it to entry list.
 
+            let Some(files) = element.file_data() else {
+                create_entry(name, File::empty().into());
+                continue;
+            };
+            if files.is_empty() {
+                create_entry(name, File::empty().into());
+            }
+            //        Otherwise, for each file in selected files, create an entry with name and a File object representing the file, and append it to entry list.
+            else {
+                for file in files.iter() {
+                    create_entry(name, File::from_path(file).into());
+                }
+            }
+        }
         //Otherwise, if the field element is an input element whose type attribute is in the Hidden state and name is an ASCII case-insensitive match for "_charset_":
         else if element.name.local == local_name!("input")
             && element_type == Some("hidden")
@@ -309,13 +324,13 @@ fn construct_entry_list(doc: &BaseDocument, form_id: usize, submitter_id: usize)
             // Let charset be the name of encoding.
             let charset = "UTF-8"; // TODO: Support multiple encodings.
             // Create an entry with name and charset, and append it to entry list.
-            create_entry(name, charset);
+            create_entry(name, charset.into());
         }
         // Otherwise, create an entry with name and the value of the field element, and append it to entry list.
         else if let Some(text) = element.text_input_data() {
-            create_entry(name, &text.editor.text().to_string());
+            create_entry(name, text.editor.text().to_string().into());
         } else if let Some(value) = element.attr(local_name!("value")) {
-            create_entry(name, value);
+            create_entry(name, value.into());
         }
     }
     entry_list
@@ -425,7 +440,7 @@ pub enum RequestContentType {
     /// application/x-www-form-urlencoded
     FormUrlEncoded,
     /// multipart/form-data
-    MultipartFormData,
+    MultipartFormData(String),
     /// text/plain
     TextPlain,
 }
@@ -435,7 +450,7 @@ impl FromStr for RequestContentType {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         Ok(match s {
             "application/x-www-form-urlencoded" => RequestContentType::FormUrlEncoded,
-            "multipart/form-data" => RequestContentType::MultipartFormData,
+            "multipart/form-data" => RequestContentType::MultipartFormData(String::new()),
             "text/plain" => RequestContentType::TextPlain,
             _ => return Err(()),
         })
@@ -446,7 +461,12 @@ impl Display for RequestContentType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             RequestContentType::FormUrlEncoded => write!(f, "application/x-www-form-urlencoded"),
-            RequestContentType::MultipartFormData => write!(f, "multipart/form-data"),
+            RequestContentType::MultipartFormData(boundary) if boundary.is_empty() => {
+                write!(f, "multipart/form-data")
+            }
+            RequestContentType::MultipartFormData(boundary) => {
+                write!(f, "multipart/form-data; boundary={}", boundary)
+            }
             RequestContentType::TextPlain => write!(f, "text/plain"),
         }
     }
@@ -462,30 +482,204 @@ impl EntryList {
     }
 
     /// Converts the entry list to a vector of name-value pairs with normalized line endings
+    /// https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#converting-an-entry-list-to-a-list-of-name-value-pairs
     pub fn convert_to_list_of_name_value_pairs(&self) -> Vec<(String, String)> {
         self.0
             .iter()
             .map(|entry| {
                 let name = normalize_line_endings(&entry.name);
-                let value = normalize_line_endings(&entry.value);
+
+                let value = match entry.value {
+                    EntryValue::String(ref value) => value,
+                    EntryValue::File(ref file) => &file.name,
+                };
+
+                let value = normalize_line_endings(value);
                 (name, value)
             })
             .collect()
     }
+
+    /// Encodes the entry list as multipart/form-data
+    ///
+    /// The multipart/form-data encoding algorithm, given an entry list entry list and an encoding encoding, is as follows:
+    /// https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#multipart-form-data
+    ///
+    /// NOTE: We don't have the encoding parameter as we only support UTF-8 encoding.
+    pub fn encode_multipart_form_data(&mut self) -> (Vec<u8>, String) {
+        let boundary = generate_boundary();
+        let mut output = Vec::new();
+
+        // 1. For each entry of entry list:
+        self.0
+            .drain(..)
+            .map(|Entry { name, value }| {
+                (
+                    // 1. Replace every occurrence of U+000D (CR) not followed by U+000A (LF), and every occurrence of U+000A (LF) not preceded by U+000D (CR), in entry's name, by a string consisting of a U+000D (CR) and U+000A (LF).
+                    normalize_line_endings(&name),
+                    // 2. If entry's value is not a File object, then replace every occurrence of U+000D (CR) not followed by U+000A (LF), and every occurrence of U+000A (LF) not preceded by U+000D (CR), in entry's value, by a string consisting of a U+000D (CR) and U+000A (LF).
+                    if let EntryValue::String(string) = value {
+                        EntryValue::String(normalize_line_endings(&string))
+                    } else {
+                        value
+                    },
+                )
+            })
+            // 2. Return the byte sequence resulting from encoding the entry list using the rules described by RFC 7578, Returning Values from Forms: multipart/form-data, given the following conditions: [https://www.rfc-editor.org/rfc/rfc7578]
+            //     1. Each entry in entry list is a field, the name of the entry is the field name and the value of the entry is the field value.
+            //     2. The order of parts must be the same as the order of fields in entry list. Multiple entries with the same name must be treated as distinct fields.
+            //     3. Field names, field values for non-file fields, and filenames for file fields, in the generated multipart/form-data resource must be set to the result of encoding the corresponding entry's name or value with encoding, converted to a byte sequence.
+            //     4. Field names and filenames for file fields, the result of the encoding in the previous bullet point must be escaped by replacing any 0x0A (LF) bytes with the byte sequence `%0A`, 0x0D (CR) with `%0D` and 0x22 (") with `%22`. The user agent must not perform any other escapes.
+            //     5. The parts of the generated multipart/form-data resource that correspond to non-file fields must not have a `Content-Type` header specified.
+            //     6. The boundary used by the user agent in generating the return value of this algorithm is the multipart/form-data boundary string. (This value is used to generate the MIME type of the form submission payload generated by this algorithm.)
+            .for_each(|(name, value)| create_part(&mut output, &name, &value, &boundary));
+
+        last_boundary(&mut output, &boundary);
+        (output, boundary)
+    }
 }
 
 /// A single form entry consisting of a name and value
-#[derive(Debug, Clone, PartialEq, Default)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Entry {
     pub name: String,
-    pub value: String,
+    pub value: EntryValue,
 }
 
 impl Entry {
-    pub fn new(name: &str, value: &str) -> Self {
+    pub fn new(name: &str, value: EntryValue) -> Self {
         Self {
             name: name.to_string(),
-            value: value.to_string(),
+            value,
         }
     }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+enum EntryValue {
+    String(String),
+    File(File),
+}
+
+impl From<String> for EntryValue {
+    fn from(value: String) -> Self {
+        EntryValue::String(value)
+    }
+}
+impl From<&str> for EntryValue {
+    fn from(value: &str) -> Self {
+        EntryValue::String(value.to_string())
+    }
+}
+impl From<File> for EntryValue {
+    fn from(value: File) -> Self {
+        EntryValue::File(value)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+struct File {
+    name: String,
+    content_type: String,
+    data: Vec<u8>,
+}
+impl File {
+    ///FIXME: Follow the spec https://w3c.github.io/FileAPI/#file-constructor
+    pub fn new(name: &str, ty: &str, data: Vec<u8>) -> Self {
+        Self {
+            name: name.to_string(),
+            content_type: ty.to_string(),
+            data,
+        }
+    }
+    pub fn empty() -> Self {
+        Self {
+            name: String::new(),
+            content_type: "application/octet-stream".to_string(),
+            data: Vec::new(),
+        }
+    }
+    pub fn from_path(path: &Path) -> Self {
+        let name = path.to_str().unwrap_or_default();
+        // TODO
+        Self::new(name, "", Vec::new())
+    }
+}
+
+/// Generates a random boundary string for multipart/form-data
+fn generate_boundary() -> String {
+    format!(
+        "BlitzFormBoundary-{}",
+        (0..10)
+            .map(|_| fastrand::alphanumeric())
+            .collect::<String>()
+    )
+}
+
+/// Creates a part of a multipart/form-data body
+fn create_part<W: std::io::Write>(w: &mut W, name: &str, value: &EntryValue, boundary: &str) {
+    //TODO: Either do this by removing from CONTROLS or encode this without the percent encoding crate
+    const MINIMAL_ENCODE_SET: percent_encoding::AsciiSet =
+        unsafe { std::mem::transmute::<_, percent_encoding::AsciiSet>([0u32; 4]) }
+            .add(b'\n')
+            .add(b'\r')
+            .add(b'"');
+
+    // --{boundary}\r\n
+    w.write_all(b"--").unwrap();
+    w.write_all(boundary.as_bytes()).unwrap();
+    w.write_all(b"\r\n").unwrap();
+
+    // Content-Disposition: form-data; name="{name}"
+    w.write_all(b"Content-Disposition: form-data; name=\"")
+        .unwrap();
+
+    let encoded_name = Cow::from(percent_encoding::utf8_percent_encode(
+        name,
+        &MINIMAL_ENCODE_SET,
+    ));
+    w.write_all(encoded_name.as_bytes()).unwrap();
+    w.write_all(b"\"").unwrap();
+
+    let content = match value {
+        EntryValue::String(content) => content.as_bytes(),
+        EntryValue::File(file) => {
+            if !file.name.is_empty() {
+                // ;filename="{file.name}"
+                w.write_all(b";filename=\"").unwrap();
+                let encoded_filename = Cow::from(percent_encoding::utf8_percent_encode(
+                    &file.name,
+                    &MINIMAL_ENCODE_SET,
+                ));
+                w.write_all(encoded_filename.as_bytes()).unwrap();
+                w.write_all(b"\"").unwrap();
+            }
+
+            // \r\n
+            w.write_all(b"\r\n").unwrap();
+
+            // Content-Type: {content_type}\r\n
+            w.write_all(b"Content-Type: ").unwrap();
+            w.write_all(file.content_type.as_bytes()).unwrap();
+            w.write_all(b"\r\n").unwrap();
+
+            &file.data
+        }
+    };
+    // \r\n
+    w.write_all(b"\r\n").unwrap();
+
+    // {data/content}
+    w.write_all(content).unwrap();
+
+    // \r\n
+    w.write_all(b"\r\n").unwrap();
+}
+
+/// Adds the end boundary to the multipart/form-data body
+fn last_boundary<W: std::io::Write>(w: &mut W, boundary: &str) {
+    // --{boundary}--
+    w.write_all(b"--").unwrap();
+    w.write_all(boundary.as_bytes()).unwrap();
+    w.write_all(b"--").unwrap();
 }

@@ -5,7 +5,7 @@ use blitz_traits::{
     },
     navigation::NavigationOptions,
 };
-use markup5ever::local_name;
+use markup5ever::{QualName, local_name, ns};
 
 use crate::{BaseDocument, node::SpecialElementData};
 
@@ -212,6 +212,49 @@ pub(crate) fn handle_click<F: FnMut(DomEvent)>(
             if let Some(form_owner) = doc.controls_to_form.get(&node_id) {
                 doc.submit_form(*form_owner, node_id);
             }
+        } else if el.name.local == local_name!("input")
+            && el.attr(local_name!("type")) == Some("file")
+        {
+            //TODO: Handle accept attribute https://developer.mozilla.org/en-US/docs/Web/HTML/Reference/Attributes/accept by passing an appropriate filter
+            let multiple = el.attr(local_name!("multiple")).is_some();
+            let files = doc.shell_provider.open_file_dialog(multiple, None);
+
+            if let Some(file) = files.first() {
+                el.attrs.set(
+                    QualName {
+                        prefix: None,
+                        ns: ns!(html),
+                        local: local_name!("value"),
+                    },
+                    file.to_str().expect("FilePath contains is not UTF-8"),
+                );
+            }
+            let text_content = match files.len() {
+                0 => "No Files Selected".to_string(),
+                1 => files
+                    .first()
+                    .unwrap()
+                    .file_name()
+                    .unwrap_or_default()
+                    .to_str()
+                    .expect("Filename is not UTF-8")
+                    .to_string(),
+                x => format!("{x} Files Selected"),
+            };
+
+            if files.is_empty() {
+                el.special_data = SpecialElementData::None;
+            } else {
+                el.special_data = SpecialElementData::FileInput(files.into())
+            }
+            let text_child_id = doc.nodes[node_id].children.get(1).copied();
+            let Some(text_child_id) = text_child_id else {
+                continue;
+            };
+            let Some(text_data) = doc.nodes[text_child_id].text_data_mut() else {
+                continue;
+            };
+            text_data.content = text_content;
         }
 
         // No match. Recurse up to parent.
