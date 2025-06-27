@@ -1,5 +1,5 @@
 [package]
-name = "anyrender_vello_example"
+name = "anyrender_example"
 version = "0.1.0"
 edition = "2024"
 license.workspace = true

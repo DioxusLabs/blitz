@@ -270,6 +270,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "anyrender_example"
+version = "0.1.0"
+dependencies = [
+ "anyrender",
+ "anyrender_vello",
+ "anyrender_vello_cpu",
+ "kurbo",
+ "peniko",
+ "wgpu",
+ "winit",
+]
+
+[[package]]
 name = "anyrender_svg"
 version = "0.2.0"
 dependencies = [
@@ -305,19 +318,6 @@ dependencies = [
  "peniko",
  "softbuffer",
  "vello_cpu",
-]
-
-[[package]]
-name = "anyrender_vello_example"
-version = "0.1.0"
-dependencies = [
- "anyrender",
- "anyrender_vello",
- "anyrender_vello_cpu",
- "kurbo",
- "peniko",
- "wgpu",
- "winit",
 ]
 
 [[package]]
