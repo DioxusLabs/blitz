@@ -19,8 +19,8 @@ struct App {
 }
 
 enum Renderer {
-    Gpu(VelloWindowRenderer),
-    Cpu(VelloCpuWindowRenderer),
+    Gpu(Box<VelloWindowRenderer>),
+    Cpu(Box<VelloCpuWindowRenderer>),
 }
 
 impl Renderer {
@@ -60,9 +60,8 @@ impl App {
             RenderState::Suspended(_) => None,
         };
 
-        match window {
-            Some(window) => window.request_redraw(),
-            None => (),
+        if let Some(window) = window {
+            window.request_redraw();
         }
     }
 
@@ -127,7 +126,9 @@ impl ApplicationHandler for App {
     }
 
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
-        self.set_backend(VelloCpuWindowRenderer::new(), event_loop, Renderer::Cpu);
+        self.set_backend(VelloCpuWindowRenderer::new(), event_loop, |r| {
+            Renderer::Cpu(Box::new(r))
+        });
     }
 
     fn window_event(
@@ -159,21 +160,22 @@ impl ApplicationHandler for App {
             WindowEvent::KeyboardInput {
                 event:
                     KeyEvent {
-                        logical_key,
+                        logical_key: Key::Named(NamedKey::Space),
                         state: ElementState::Pressed,
                         ..
                     },
                 ..
-            } => match logical_key {
-                Key::Named(NamedKey::Space) => match renderer {
-                    Renderer::Cpu(_) => {
-                        self.set_backend(VelloWindowRenderer::new(), event_loop, Renderer::Gpu);
-                    }
-                    Renderer::Gpu(_) => {
-                        self.set_backend(VelloCpuWindowRenderer::new(), event_loop, Renderer::Cpu);
-                    }
-                },
-                _ => {}
+            } => match renderer {
+                Renderer::Cpu(_) => {
+                    self.set_backend(VelloWindowRenderer::new(), event_loop, |r| {
+                        Renderer::Gpu(Box::new(r))
+                    });
+                }
+                Renderer::Gpu(_) => {
+                    self.set_backend(VelloCpuWindowRenderer::new(), event_loop, |r| {
+                        Renderer::Cpu(Box::new(r))
+                    });
+                }
             },
             _ => {}
         }
