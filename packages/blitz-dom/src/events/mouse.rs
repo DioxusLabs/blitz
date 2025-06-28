@@ -249,9 +249,9 @@ pub(crate) fn handle_click<F: FnMut(DomEvent)>(
             }
             let child_label_id = doc.nodes[node_id].children[1];
             let child_text_id = doc.nodes[child_label_id].children[0];
-            let Some(text_data) = doc.nodes[child_text_id].text_data_mut() else {
-                continue;
-            };
+            let text_data = doc.nodes[child_text_id]
+                .text_data_mut()
+                .expect("Text data not found");
             text_data.content = text_content;
         }
 
