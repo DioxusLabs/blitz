@@ -540,13 +540,13 @@ impl EntryList {
 
 /// A single form entry consisting of a name and value
 #[derive(Debug, Clone, PartialEq)]
-pub struct Entry {
-    pub name: String,
-    pub value: EntryValue,
+struct Entry {
+    name: String,
+    value: EntryValue,
 }
 
 impl Entry {
-    pub fn new(name: &str, value: EntryValue) -> Self {
+    fn new(name: &str, value: EntryValue) -> Self {
         Self {
             name: name.to_string(),
             value,
