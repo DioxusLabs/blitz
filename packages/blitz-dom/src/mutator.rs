@@ -630,9 +630,18 @@ impl<'doc> DocumentMutator<'doc> {
                 },
                 vec![],
             );
+            let label_id = self.create_element(
+                QualName {
+                    prefix: None,
+                    ns: ns!(html),
+                    local: local_name!("label"),
+                },
+                vec![],
+            );
             let text_id = self.create_text_node("No File Selected");
             let button_text_id = self.create_text_node("Browse");
-            self.append_children(target_id, &[button_id, text_id]);
+            self.append_children(target_id, &[button_id, label_id]);
+            self.append_children(label_id, &[text_id]);
             self.append_children(button_id, &[button_text_id]);
         }
     }

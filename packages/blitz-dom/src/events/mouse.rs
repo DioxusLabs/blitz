@@ -247,11 +247,9 @@ pub(crate) fn handle_click<F: FnMut(DomEvent)>(
             } else {
                 el.special_data = SpecialElementData::FileInput(files.into())
             }
-            let text_child_id = doc.nodes[node_id].children.get(1).copied();
-            let Some(text_child_id) = text_child_id else {
-                continue;
-            };
-            let Some(text_data) = doc.nodes[text_child_id].text_data_mut() else {
+            let child_label_id = doc.nodes[node_id].children[1];
+            let child_text_id = doc.nodes[child_label_id].children[0];
+            let Some(text_data) = doc.nodes[child_text_id].text_data_mut() else {
                 continue;
             };
             text_data.content = text_content;
