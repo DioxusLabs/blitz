@@ -65,22 +65,33 @@ input[type="radio"] {
     margin: 3px 3px 3px 4px;
 }
 
-input, textarea {
+input,
+textarea {
     border: 1px solid #999;
     padding: 2px;
     background-color: white;
 }
 
-input:focus, textarea:focus {
+input:focus,
+textarea:focus {
     outline: 2px #4D90FE;
 }
 
-button, input[type="submit"], input[type="reset"], input[type="button"] {
+button,
+input[type="submit"],
+input[type="reset"],
+input[type="button"] {
     border: 1px solid #999;
     border-radius: 1px;
     padding: 1px 6px;
     color: black;
     background-color: #EFEFEF;
+}
+
+input[type="file"] {
+    border: none;
+    padding: 0;
+    background-color: transparent;
 }
 
 /* To ensure http://www.w3.org/TR/REC-html40/struct/dirlang.html#style-bidi:
