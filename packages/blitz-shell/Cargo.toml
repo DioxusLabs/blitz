@@ -45,7 +45,7 @@ android-activity = { version = "0.6.0", features = ["native-activity"] }
 arboard = { workspace = true, optional = true }
 
 
-[target.'cfg(any(target_os = "windows",target_os = "macos",target_os = "linux"))'.dependencies]
+[target.'cfg(any(target_os = "windows",target_os = "macos",target_os = "linux",target_os = "freebsd", target_os = "dragonfly", target_os = "netbsd", target_os = "openbsd"))'.dependencies]
 rfd = { workspace = true, optional = true }
 
 [package.metadata.docs.rs]

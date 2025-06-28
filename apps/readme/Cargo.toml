@@ -31,8 +31,6 @@ reqwest = { workspace = true }
 url = { workspace = true }
 winit = { workspace = true }
 comrak = { version = "0.39", default-features = false, optional = true }
-pulldown-cmark = { version = "0.13", default-features = false, features = [
-    "html",
-], optional = true }
+pulldown-cmark = { version = "0.13", default-features = false, features = ["html"], optional = true }
 image = { workspace = true, default-features = false, optional = true }
 notify = "8.0.0"
