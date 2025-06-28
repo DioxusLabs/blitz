@@ -6,7 +6,7 @@ use crate::{
 };
 use blitz_traits::navigation::NavigationOptions;
 use core::str::FromStr;
-use std::{borrow::Cow, fmt::Display, io::Write, path::Path};
+use std::{borrow::Cow, fmt::Display, path::Path};
 
 impl BaseDocument {
     /// Resets the form owner for a given node by either using an explicit form attribute
@@ -114,7 +114,6 @@ impl BaseDocument {
                 RequestContentType::MultipartFormData(_) => {
                     let (encoded, boundary) = entry.encode_multipart_form_data();
                     post_resource = Some(encoded.into());
-
                     enctype = RequestContentType::MultipartFormData(boundary);
                 }
                 RequestContentType::TextPlain => {
@@ -600,9 +599,14 @@ impl File {
         }
     }
     pub fn from_path(path: &Path) -> Self {
-        let name = path.to_str().unwrap_or_default();
-        // TODO
-        Self::new(name, "", Vec::new())
+        let name = path
+            .file_name()
+            .unwrap_or_default()
+            .to_str()
+            .unwrap_or_default();
+        let file = std::fs::read(path).unwrap();
+        // TODO: use proper content type
+        Self::new(name, "application/octet-stream", file)
     }
 }
 
@@ -641,12 +645,18 @@ fn create_part<W: std::io::Write>(w: &mut W, name: &str, value: &EntryValue, bou
     w.write_all(encoded_name.as_bytes()).unwrap();
     w.write_all(b"\"").unwrap();
 
-    let content = match value {
-        EntryValue::String(content) => content.as_bytes(),
+    match value {
+        EntryValue::String(content) => {
+            // \r\n\r\n (end headers, then blank line before content)
+            w.write_all(b"\r\n\r\n").unwrap();
+
+            // {content}
+            w.write_all(content.as_bytes()).unwrap();
+        }
         EntryValue::File(file) => {
             if !file.name.is_empty() {
-                // ;filename="{file.name}"
-                w.write_all(b";filename=\"").unwrap();
+                // ; filename="{file.name}"
+                w.write_all(b"; filename=\"").unwrap();
                 let encoded_filename = Cow::from(percent_encoding::utf8_percent_encode(
                     &file.name,
                     &MINIMAL_ENCODE_SET,
@@ -658,21 +668,17 @@ fn create_part<W: std::io::Write>(w: &mut W, name: &str, value: &EntryValue, bou
             // \r\n
             w.write_all(b"\r\n").unwrap();
 
-            // Content-Type: {content_type}\r\n
+            // Content-Type: {content_type}\r\n\r\n
             w.write_all(b"Content-Type: ").unwrap();
             w.write_all(file.content_type.as_bytes()).unwrap();
-            w.write_all(b"\r\n").unwrap();
+            w.write_all(b"\r\n\r\n").unwrap();
 
-            &file.data
+            // {file data}
+            w.write_all(&file.data).unwrap();
         }
     };
-    // \r\n
-    w.write_all(b"\r\n").unwrap();
 
-    // {data/content}
-    w.write_all(content).unwrap();
-
-    // \r\n
+    // \r\n (end of part)
     w.write_all(b"\r\n").unwrap();
 }
 
@@ -681,5 +687,5 @@ fn last_boundary<W: std::io::Write>(w: &mut W, boundary: &str) {
     // --{boundary}--
     w.write_all(b"--").unwrap();
     w.write_all(boundary.as_bytes()).unwrap();
-    w.write_all(b"--").unwrap();
+    w.write_all(b"--\r\n").unwrap();
 }
