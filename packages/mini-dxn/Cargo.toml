@@ -24,14 +24,14 @@ cpu_backend = ["dep:anyrender_vello_cpu"]
 
 [dependencies]
 # Blitz dependencies
-anyrender = { path = "../anyrender", default-features = false }
-anyrender_vello = { path = "../anyrender_vello", default-features = false, optional = true }
-anyrender_vello_cpu = { path = "../anyrender_vello_cpu", default-features = false, optional = true }
-blitz-paint = { path = "../blitz-paint", default-features = false }
-blitz-dom = { path = "../blitz-dom", default-features = false }
-blitz-net = { path = "../blitz-net", optional = true }
-blitz-traits = { path = "../blitz-traits" }
-blitz-shell = { path = "../blitz-shell", default-features = false }
+anyrender = { workspace = true }
+anyrender_vello = { workspace = true, optional = true }
+anyrender_vello_cpu = { workspace = true, optional = true }
+blitz-paint = { workspace = true }
+blitz-dom =  { workspace = true }
+blitz-net = { workspace = true, optional = true }
+blitz-traits = { workspace = true }
+blitz-shell =  { workspace = true }
 
 # DioxusLabs dependencies
 dioxus-core = { workspace = true }

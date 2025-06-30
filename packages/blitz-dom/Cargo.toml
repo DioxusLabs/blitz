@@ -25,8 +25,8 @@ autofocus = []
 
 [dependencies]
 # Blitz dependencies
-blitz-traits = { version = "0.1.0-alpha.3", path = "../blitz-traits" }
-stylo_taffy = { version = "0.1.0-alpha.3", path = "../stylo_taffy" }
+blitz-traits = { workspace = true }
+stylo_taffy = { workspace = true, features = ["default"] }
 
 # Servo dependencies
 style = { workspace = true }

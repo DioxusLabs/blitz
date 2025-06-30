@@ -15,10 +15,10 @@ svg = ["dep:anyrender_svg", "dep:usvg", "blitz-dom/svg"]
 
 [dependencies]
 # Blitz dependencies
-anyrender = { version = "0.2", path = "../anyrender" }
-anyrender_svg = { version = "0.2", path = "../anyrender_svg", optional = true }
-blitz-traits = { version = "0.1.0-alpha.3", path = "../blitz-traits" }
-blitz-dom = {version = "0.1.0-alpha.3",  path = "../blitz-dom", default-features = false }
+anyrender = { workspace = true }
+anyrender_svg = { workspace = true, optional = true }
+blitz-traits = { workspace = true }
+blitz-dom = { workspace = true }
 
 # Servo dependencies
 style = { workspace = true }
