@@ -10,16 +10,17 @@ gpu = ["dep:anyrender_vello"]
 cpu = ["dep:anyrender_vello_cpu"]
 
 [dependencies]
-blitz-dom = { path = "../../packages/blitz-dom", default-features = false, features = ["svg", "woff-c"] }
-blitz-html = { path = "../../packages/blitz-html" }
-blitz-traits = { path = "../../packages/blitz-traits" }
-blitz-paint = { path = "../../packages/blitz-paint" }
-anyrender_vello = { path = "../../packages/anyrender_vello", optional = true }
-anyrender_vello_cpu = { path = "../../packages/anyrender_vello_cpu", optional = true }
-anyrender = { path = "../../packages/anyrender" }
+blitz-dom = { workspace = true, features = ["svg", "woff-c"] }
+blitz-html = {workspace = true }
+blitz-traits = { workspace = true }
+blitz-paint = { workspace = true, features = ["default"] }
+anyrender = { workspace = true }
+anyrender_vello = { workspace = true, optional = true }
+anyrender_vello_cpu = { workspace = true, optional = true }
+
 taffy = { workspace = true }
 parley = { workspace = true }
-image = { workspace = true }
+image = { workspace = true, features = ["png"] }
 url = { workspace = true }
 data-url = { workspace = true }
 png = { version = "0.17" }

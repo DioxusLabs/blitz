@@ -13,14 +13,15 @@ comrak = ["dep:comrak"]
 pulldown_cmark = ["dep:pulldown-cmark"]
 
 [dependencies]
-blitz-traits = { path = "../../packages/blitz-traits" }
-blitz-dom = { path = "../../packages/blitz-dom" }
-blitz-html = { path = "../../packages/blitz-html" }
-blitz-paint = { path = "../../packages/blitz-paint" }
-blitz-net = { path = "../../packages/blitz-net", features = ["cookies"] }
-blitz-shell = { path = "../../packages/blitz-shell", features = ["tracing"] }
-anyrender_vello = { path = "../../packages/anyrender_vello", optional = true }
-anyrender_vello_cpu = { path = "../../packages/anyrender_vello_cpu", optional = true }
+blitz-traits = { workspace = true }
+blitz-dom = { workspace = true, features = ["default"] }
+blitz-html = { workspace = true }
+blitz-paint = { workspace = true, features = ["default"] }
+blitz-net = { workspace = true, features = ["cookies"] }
+blitz-shell = { workspace = true, features = ["tracing", "default"] }
+anyrender_vello = { workspace = true, optional = true }
+anyrender_vello_cpu = { workspace = true, optional = true }
+
 tokio = { workspace = true, features = ["rt", "rt-multi-thread"] }
 reqwest = { workspace = true }
 url = { workspace = true }

@@ -13,7 +13,7 @@ cookies = ["reqwest/cookies"]
 
 [dependencies]
 # Blitz dependencies
-blitz-traits = { version = "0.1.0-alpha.3", path = "../blitz-traits" }
+blitz-traits = { workspace = true }
 
 # Networking dependencies
 tokio = { workspace = true }

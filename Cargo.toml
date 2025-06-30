@@ -26,6 +26,23 @@ resolver = "2"
 license = "MIT OR Apache-2.0"
 
 [workspace.dependencies]
+# Anyrender dependencies(in-repo)
+anyrender = { version = "0.2.0", path = "./packages/anyrender" }
+anyrender_vello = { version = "0.2.0", path = "./packages/anyrender_vello" }
+anyrender_vello_cpu = { version = "0.2.0", path = "./packages/anyrender_vello_cpu" }
+anyrender_svg = { version = "0.2.0", path = "./packages/anyrender_svg" }
+
+# Blitz dependencies(in-repo)
+blitz = { version = "0.1.0-alpha.3", path = "./packages/blitz" }
+blitz-dom = { version = "0.1.0-alpha.3", path = "./packages/blitz-dom", default-features = false }
+blitz-html = { version = "0.1.0-alpha.3", path = "./packages/blitz-html", default-features = false }
+blitz-net = { version = "0.1.0-alpha.3", path = "./packages/blitz-net", default-features = false }
+blitz-paint = { version = "0.1.0-alpha.3", path = "./packages/blitz-paint", default-features = false }
+blitz-shell = { version = "0.1.0-alpha.3", path = "./packages/blitz-shell", default-features = false }
+blitz-traits = { version = "0.1.0-alpha.3", path = "./packages/blitz-traits", default-features = false }
+stylo_taffy = { version = "0.1.0-alpha.3", path = "./packages/stylo_taffy", default-features = false }
+mini-dxn = { path = "./packages/mini-dxn", default-features = false }
+
 # Servo dependencies
 style = { version = "0.4", package = "stylo" }
 style_traits = { version = "0.4", package = "stylo_traits" }
@@ -128,17 +145,17 @@ rust-version = "1.85.1"
 publish = false
 
 [dev-dependencies]
-blitz-dom = { path = "./packages/blitz-dom" }
-blitz-html = { path = "./packages/blitz-html" }
-blitz-traits = { path = "./packages/blitz-traits" }
-blitz-paint = { path = "./packages/blitz-paint" }
-anyrender = { path = "./packages/anyrender" }
-anyrender_vello = { path = "./packages/anyrender_vello" }
-anyrender_vello_cpu = { path = "./packages/anyrender_vello_cpu" }
-blitz-shell = { path = "./packages/blitz-shell" }
-blitz-net = { path = "./packages/blitz-net" }
-blitz = { path = "./packages/blitz", features = ["net"] }
-mini-dxn = { path = "./packages/mini-dxn", features = ["tracing", "autofocus"] }
+anyrender = { workspace = true }
+anyrender_vello = { workspace = true }
+anyrender_vello_cpu = { workspace = true }
+blitz-dom = { workspace = true }
+blitz-html = { workspace = true }
+blitz-traits = { workspace = true }
+blitz-paint = { workspace = true }
+blitz-shell = { workspace = true }
+blitz-net = { workspace = true }
+blitz = { workspace = true, features = ["net"] }
+mini-dxn = { workspace = true, features = ["tracing", "autofocus"] }
 dioxus = { workspace = true }
 euclid = { workspace = true }
 reqwest = { workspace = true }

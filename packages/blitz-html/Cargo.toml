@@ -10,8 +10,8 @@ edition = "2024"
 
 [dependencies]
 # Blitz dependencies
-blitz-dom = { version = "0.1.0-alpha.3", path = "../blitz-dom", default-features = false }
-blitz-traits = { version = "0.1.0-alpha.3", path = "../blitz-traits" }
+blitz-dom = { workspace = true }
+blitz-traits = { workspace = true }
 
 # Servo dependencies
 html5ever = { workspace = true }
