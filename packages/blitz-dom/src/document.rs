@@ -146,7 +146,7 @@ pub struct BaseDocument {
     /// Map from form control node ID's to their associated forms node ID's
     pub(crate) controls_to_form: HashMap<usize, usize>,
     /// Set of changed nodes for updating the accessibility tree
-    pub changed: HashSet<usize>,
+    pub(crate) changed_nodes: HashSet<usize>,
 
     // Service providers
     /// Network provider. Can be used to fetch assets.
@@ -235,7 +235,7 @@ impl BaseDocument {
             active_node_id: None,
             mousedown_node_id: None,
             is_animating: false,
-            changed: HashSet::new(),
+            changed_nodes: HashSet::new(),
             controls_to_form: HashMap::new(),
             net_provider: Arc::new(DummyNetProvider),
             navigation_provider: Arc::new(DummyNavigationProvider),
@@ -403,8 +403,13 @@ impl BaseDocument {
         entry.insert(Node::new(slab_ptr, id, guard, node_data));
 
         // Mark the new node as changed.
-        self.changed.insert(id);
+        self.changed_nodes.insert(id);
         id
+    }
+
+    /// Whether the document has been mutated
+    pub fn has_changes(&self) -> bool {
+        self.changed_nodes.is_empty()
     }
 
     pub fn create_text_node(&mut self, text: &str) -> usize {

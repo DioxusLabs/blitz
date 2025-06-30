@@ -181,10 +181,8 @@ impl<Rend: WindowRenderer> View<Rend> {
             if self.doc.poll(cx) {
                 #[cfg(feature = "accessibility")]
                 {
-                    // TODO send fine grained accessibility tree updates.
-                    let changed = std::mem::take(&mut self.doc.changed);
-                    if !changed.is_empty() {
-                        self.accessibility.build_tree(&self.doc);
+                    if self.doc.has_changes() {
+                        self.accessibility.update_tree(&self.doc);
                     }
                 }
 
@@ -232,7 +230,7 @@ impl<Rend: WindowRenderer> View<Rend> {
 
     #[cfg(feature = "accessibility")]
     pub fn build_accessibility_tree(&mut self) {
-        self.accessibility.build_tree(&self.doc);
+        self.accessibility.update_tree(&self.doc);
     }
 
     pub fn handle_winit_event(&mut self, event: WindowEvent) {

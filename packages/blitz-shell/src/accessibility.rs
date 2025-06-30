@@ -15,7 +15,7 @@ impl AccessibilityState {
             adapter: Adapter::with_event_loop_proxy(window, proxy.clone()),
         }
     }
-    pub fn build_tree(&mut self, doc: &BaseDocument) {
+    pub fn update_tree(&mut self, doc: &BaseDocument) {
         self.adapter
             .update_if_active(|| doc.build_accessibility_tree());
     }
