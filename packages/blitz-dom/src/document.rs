@@ -10,7 +10,7 @@ use crate::{DocumentMutator, ElementData, Node, NodeData, TextNodeData};
 use app_units::Au;
 use blitz_traits::events::UiEvent;
 use blitz_traits::navigation::{DummyNavigationProvider, NavigationProvider};
-use blitz_traits::net::{DummyNetProvider, SharedProvider};
+use blitz_traits::net::{DummyNetProvider, NetProvider, SharedProvider};
 use blitz_traits::shell::{DummyShellProvider, ShellProvider};
 use blitz_traits::{ColorScheme, Devtools, Viewport};
 use blitz_traits::{DomEvent, HitResult};
@@ -92,53 +92,38 @@ impl FontMetricsProvider for DummyFontMetricsProvider {
 }
 
 pub struct BaseDocument {
+    /// ID of the document
     id: usize,
 
-    /// A bump-backed tree
-    ///
-    /// Both taffy and stylo traits are implemented for this.
-    /// We pin the tree to a guarantee to the nodes it creates that the tree is stable in memory.
-    ///
-    /// There is no way to create the tree - publicly or privately - that would invalidate that invariant.
-    pub nodes: Box<Slab<Node>>,
-
-    // TODO: encapsulate and make private again
-    pub guard: SharedRwLock,
-
-    /// The styling engine of firefox
-    pub(crate) stylist: Stylist,
-
-    // caching for the stylist
-    pub(crate) snapshots: SnapshotMap,
-
-    // TODO: encapsulate and make private again
-    pub nodes_to_id: HashMap<String, usize>,
-
+    // Config
     /// Base url for resolving linked resources (stylesheets, images, fonts, etc)
-    pub base_url: Option<url::Url>,
-
-    // /// The quadtree we use for hit-testing
-    // pub(crate) quadtree: Quadtree<u64, usize>,
-
-    // Viewport details such as the dimensions, HiDPI scale, and zoom factor,
-    pub(crate) viewport: Viewport,
+    pub(crate) base_url: Option<url::Url>,
     // Devtool settings. Currently used to render debug overlays
     pub(crate) devtool_settings: Devtools,
-
+    // Viewport details such as the dimensions, HiDPI scale, and zoom factor,
+    pub(crate) viewport: Viewport,
     // Scroll within our viewport
     pub(crate) viewport_scroll: kurbo::Point,
 
-    /// Stylesheets added by the useragent
-    /// where the key is the hashed CSS
-    pub(crate) ua_stylesheets: HashMap<String, DocumentStyleSheet>,
+    /// A slab-backed tree of nodes
+    ///
+    /// We pin the tree to a guarantee to the nodes it creates that the tree is stable in memory.
+    /// There is no way to create the tree - publicly or privately - that would invalidate that invariant.
+    pub(crate) nodes: Box<Slab<Node>>,
 
-    pub(crate) nodes_to_stylesheet: BTreeMap<usize, DocumentStyleSheet>,
+    // Stylo
+    /// The Stylo engine
+    pub(crate) stylist: Stylist,
+    /// Stylo shared lock
+    pub(crate) guard: SharedRwLock,
+    /// Stylo invalidation map. We insert into this map prior to mutating nodes.
+    pub(crate) snapshots: SnapshotMap,
 
+    // Parley contexts
     /// A Parley font context
-    pub font_ctx: parley::FontContext,
-
+    pub(crate) font_ctx: parley::FontContext,
     /// A Parley layout context
-    pub layout_ctx: parley::LayoutContext<TextBrush>,
+    pub(crate) layout_ctx: parley::LayoutContext<TextBrush>,
 
     /// The node which is currently hovered (if any)
     pub(crate) hover_node_id: Option<usize>,
@@ -151,18 +136,24 @@ pub struct BaseDocument {
     /// Whether there are active animations (so we should re-render every frame)
     pub(crate) is_animating: bool,
 
+    /// Map of node ID's for fast lookups
+    pub(crate) nodes_to_id: HashMap<String, usize>,
+    /// Map of `<style>` and `<link>` node IDs to their associated stylesheet
+    pub(crate) nodes_to_stylesheet: BTreeMap<usize, DocumentStyleSheet>,
+    /// Stylesheets added by the useragent
+    /// where the key is the hashed CSS
+    pub(crate) ua_stylesheets: HashMap<String, DocumentStyleSheet>,
+    /// Map from form control node ID's to their associated forms node ID's
+    pub(crate) controls_to_form: HashMap<usize, usize>,
+    /// Set of changed nodes for updating the accessibility tree
     pub changed: HashSet<usize>,
 
-    /// A map from control node ID's to their associated forms node ID's
-    pub controls_to_form: HashMap<usize, usize>,
-
+    // Service providers
     /// Network provider. Can be used to fetch assets.
-    pub net_provider: SharedProvider<Resource>,
-
+    pub net_provider: Arc<dyn NetProvider<Resource>>,
     /// Navigation provider. Can be used to navigate to a new page (bubbles up the event
     /// on e.g. clicking a Link)
     pub navigation_provider: Arc<dyn NavigationProvider>,
-
     /// Shell provider. Can be used to request a redraw or set the cursor icon
     pub shell_provider: Arc<dyn ShellProvider>,
 }
@@ -234,7 +225,6 @@ impl BaseDocument {
             devtool_settings: Devtools::default(),
             viewport_scroll: kurbo::Point::ZERO,
             base_url: None,
-            // quadtree: Quadtree::new(20),
             ua_stylesheets: HashMap::new(),
             nodes_to_stylesheet: BTreeMap::new(),
             font_ctx,
