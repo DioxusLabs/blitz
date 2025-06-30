@@ -16,6 +16,9 @@ screenshot *ARGS:
 open *ARGS:
   cargo run --release --package readme {{ARGS}}
 
+bump *ARGS:
+  cargo run --release --package bump {{ARGS}}
+
 todomvc:
   cargo run --release --example todomvc
 

@@ -14,6 +14,7 @@ members = [
   "packages/mini-dxn",
   "packages/stylo_taffy",
   "apps/readme",
+  "apps/bump",
   "wpt/runner",
   "examples/counter",
   "examples/wgpu_texture",

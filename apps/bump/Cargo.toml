@@ -1,0 +1,11 @@
+[package]
+name = "bump"
+version = "0.0.0"
+edition = "2024"
+description = "Utility to aid publishing blitz"
+license.workspace = true
+publish = false
+
+[dependencies]
+toml_edit = "0.22"
+semver = "1"
