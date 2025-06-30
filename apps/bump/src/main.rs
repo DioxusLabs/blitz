@@ -71,7 +71,7 @@ fn main() {
     let target = match target.as_deref() {
         Some(target @ ("blitz" | "anyrender")) => target,
         Some(target) => {
-            println!("{}", target);
+            println!("{target}");
             bail!("Invalid target. Must be 'blitz' or 'anyrender'")
         }
         _ => bail!("Missing target. Must be 'blitz' or 'anyrender'"),
