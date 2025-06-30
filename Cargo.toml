@@ -23,7 +23,12 @@ exclude = ["sites"]
 resolver = "2"
 
 [workspace.package]
+version = "0.1.0-alpha.3"
 license = "MIT OR Apache-2.0"
+homepage = "https://github.com/dioxuslabs/blitz"
+repository = "https://github.com/dioxuslabs/blitz"
+categories = ["gui"]
+edition = "2024"
 
 [workspace.dependencies]
 # Anyrender dependencies(in-repo)

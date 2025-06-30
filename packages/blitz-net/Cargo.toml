@@ -1,12 +1,13 @@
 [package]
 name = "blitz-net"
 description = "Blitz networking"
-version = "0.1.0-alpha.3"
-homepage = "https://github.com/dioxuslabs/blitz"
-repository = "https://github.com/dioxuslabs/blitz"
 documentation = "https://docs.rs/blitz-net"
+version.workspace = true
 license.workspace = true
-edition = "2024"
+homepage.workspace = true
+repository.workspace = true
+categories.workspace = true
+edition.workspace = true
 
 [features]
 cookies = ["reqwest/cookies"]
