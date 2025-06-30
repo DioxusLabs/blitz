@@ -10,8 +10,6 @@
     reason = "We cast u16s to u8 in various places where we know for sure that it's < 256"
 )]
 
-extern crate alloc;
-
 mod render;
 
 #[doc(hidden)]

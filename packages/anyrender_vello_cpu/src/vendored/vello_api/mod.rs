@@ -4,9 +4,7 @@
 //! This crate defines the public API types, providing a stable interface for CPU and hybrid
 //! CPU/GPU rendering implementations. It provides common interfaces and data structures used
 //! across different implementations
-
 #![forbid(unsafe_code)]
-extern crate alloc;
 
 pub use peniko;
 pub use peniko::color;

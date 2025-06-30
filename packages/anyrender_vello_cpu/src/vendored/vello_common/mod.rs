@@ -12,8 +12,6 @@
 only break in edge cases, and some of them are also only related to conversions from f64 to f32."
 )]
 
-extern crate alloc;
-
 pub mod blurred_rounded_rect;
 pub mod coarse;
 pub mod colr;
