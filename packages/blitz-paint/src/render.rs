@@ -35,11 +35,15 @@ use peniko::{self, Fill};
 use style::values::generics::color::GenericColor;
 use taffy::Layout;
 
-/// Draw the current tree to current render surface
-/// Eventually we'll want the surface itself to be passed into the render function, along with things like the viewport
+/// Paint a [`blitz_dom::BaseDocument`] by pushing drawing commands into
+/// an impl [`anyrender::PaintScene`].
 ///
-/// This assumes styles are resolved and layout is complete.
-/// Make sure you do those before trying to render
+/// This function assumes that the styles and layout in the [`BaseDocument`](blitz_dom::BaseDocument) are already
+/// resolved. Please ensure that this is the case before trying to paint.
+///
+/// The implementation of [`PaintScene`](anyrender::PaintScene) is responsible for handling the commands that are pushed into it.
+/// Generally this will involve executing them to draw a rasterized image/texture. But in some cases it may choose to
+/// transform them to a vector format (e.g. SVG/PDF) or serialize them in raw form for later use.
 pub fn paint_scene(
     scene: &mut impl PaintScene,
     dom: &BaseDocument,

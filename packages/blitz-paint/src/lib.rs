@@ -1,4 +1,5 @@
-//! Translate a blitz-dom into [`anyrender`] drawing commands
+//! Paint a [`blitz_dom::BaseDocument`] by pushing [`anyrender`] drawing commands into
+//! an impl [`anyrender::PaintScene`].
 
 mod color;
 mod debug_overlay;
@@ -10,4 +11,4 @@ mod render;
 mod sizing;
 mod text;
 
-pub use render::{BlitzDomPainter, paint_scene};
+pub use render::paint_scene;
