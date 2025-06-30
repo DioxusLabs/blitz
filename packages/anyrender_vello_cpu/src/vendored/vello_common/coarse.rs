@@ -1040,13 +1040,13 @@ impl BlendModeExt for BlendMode {
 
 #[cfg(test)]
 mod tests {
-    use crate::coarse::{Cmd, CmdFill, Wide, WideTile};
-    use crate::color::AlphaColor;
-    use crate::color::palette::css::TRANSPARENT;
-    use crate::peniko::{BlendMode, Compose, Fill, Mix};
-    use crate::strip::Strip;
+    use crate::vello_api::paint::{Paint, PremulColor};
+    use crate::vello_common::coarse::{Cmd, CmdFill, Wide, WideTile};
+    use crate::vello_common::color::AlphaColor;
+    use crate::vello_common::color::palette::css::TRANSPARENT;
+    use crate::vello_common::peniko::{BlendMode, Compose, Fill, Mix};
+    use crate::vello_common::strip::Strip;
     use alloc::{boxed::Box, vec};
-    use vello_api::paint::{Paint, PremulColor};
 
     #[test]
     fn optimize_empty_layers() {

@@ -488,8 +488,8 @@ impl ColrRenderer for RenderContext {
 
 #[cfg(test)]
 mod tests {
-    use crate::RenderContext;
-    use vello_common::kurbo::{Rect, Shape};
+    use crate::vello_common::kurbo::{Rect, Shape};
+    use crate::vello_cpu::RenderContext;
 
     #[test]
     fn reset_render_context() {

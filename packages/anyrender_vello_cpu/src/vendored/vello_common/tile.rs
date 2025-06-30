@@ -323,8 +323,8 @@ impl Tiles {
 
 #[cfg(test)]
 mod tests {
-    use crate::flatten::{Line, Point};
-    use crate::tile::{Tile, Tiles};
+    use crate::vello_common::flatten::{Line, Point};
+    use crate::vello_common::tile::{Tile, Tiles};
 
     #[test]
     fn cull_line_at_top() {
