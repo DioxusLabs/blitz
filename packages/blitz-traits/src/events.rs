@@ -249,8 +249,7 @@ pub enum BlitzImeEvent {
     /// Notifies when the IME was enabled.
     ///
     /// After getting this event you could receive [`Preedit`][Self::Preedit] and
-    /// [`Commit`][Self::Commit] events. You should also start performing IME related requests
-    /// like [`Window::set_ime_cursor_area`].
+    /// [`Commit`][Self::Commit] events.
     Enabled,
 
     /// Notifies when a new composing text should be set at the cursor position.
@@ -270,8 +269,6 @@ pub enum BlitzImeEvent {
     /// Notifies when the IME was disabled.
     ///
     /// After receiving this event you won't get any more [`Preedit`][Self::Preedit] or
-    /// [`Commit`][Self::Commit] events until the next [`Enabled`][Self::Enabled] event. You should
-    /// also stop issuing IME related requests like [`Window::set_ime_cursor_area`] and clear
-    /// pending preedit text.
+    /// [`Commit`][Self::Commit] events until the next [`Enabled`][Self::Enabled] event.
     Disabled,
 }

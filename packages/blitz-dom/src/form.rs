@@ -15,7 +15,7 @@ impl BaseDocument {
     /// # Arguments
     /// * `node_id` - The ID of the node whose form owner needs to be reset
     ///
-    /// https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#reset-the-form-owner
+    /// <https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#reset-the-form-owner>
     pub fn reset_form_owner(&mut self, node_id: usize) {
         let node = &self.nodes[node_id];
         let Some(element) = node.element_data() else {
@@ -50,7 +50,7 @@ impl BaseDocument {
     /// * `node_id` - The ID of the form node to submit
     /// * `submitter_id` - The ID of the node that triggered the submission
     ///
-    /// https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#form-submission-algorithm
+    /// <https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#form-submission-algorithm>
     pub fn submit_form(&self, node_id: usize, submitter_id: usize) {
         let node = &self.nodes[node_id];
         let Some(element) = node.element_data() else {

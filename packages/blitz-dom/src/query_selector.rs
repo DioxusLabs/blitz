@@ -38,8 +38,8 @@ impl BaseDocument {
 
     /// Find all nodes that match the selector specified as a string
     /// Returns:
-    ///   - Err(_) if parsing the selector fails
-    ///   - Ok(SmallVec<usize>) with all matching nodes otherwise
+    ///   - `Err(_)` if parsing the selector fails
+    ///   - `Ok(SmallVec<usize>)` with all matching nodes otherwise
     pub fn query_selector_all<'input>(
         &self,
         selector: &'input str,

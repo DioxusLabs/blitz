@@ -3,7 +3,7 @@ use std::ops::Deref;
 use style::properties::ComputedValues;
 use taffy::prelude::FromLength;
 
-/// A wrapper struct for anything that Deref's to a [`stylo::ComputedValues`], which implements Taffy's layout traits
+/// A wrapper struct for anything that Deref's to a [`style::ComputedValues`], which implements Taffy's layout traits
 /// and can used with Taffy's layout algorithms.
 pub struct TaffyStyloStyle<T: Deref<Target = ComputedValues>>(pub T);
 
