@@ -19,10 +19,10 @@ use render::BlitzDomPainter;
 /// Paint a [`blitz_dom::BaseDocument`] by pushing drawing commands into
 /// an impl [`anyrender::PaintScene`].
 ///
-/// This function assumes that the styles and layout in the [`BaseDocument`](blitz_dom::BaseDocument) are already
+/// This function assumes that the styles and layout in the [`BaseDocument`] are already
 /// resolved. Please ensure that this is the case before trying to paint.
 ///
-/// The implementation of [`PaintScene`](anyrender::PaintScene) is responsible for handling the commands that are pushed into it.
+/// The implementation of [`PaintScene`] is responsible for handling the commands that are pushed into it.
 /// Generally this will involve executing them to draw a rasterized image/texture. But in some cases it may choose to
 /// transform them to a vector format (e.g. SVG/PDF) or serialize them in raw form for later use.
 pub fn paint_scene(
