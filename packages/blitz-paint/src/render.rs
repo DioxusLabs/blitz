@@ -7,7 +7,7 @@ use std::sync::Arc;
 use super::multicolor_rounded_rect::{Edge, ElementFrame};
 use crate::color::{Color, ToColorColor};
 use crate::debug_overlay::render_debug_overlay;
-use crate::layers::{maybe_with_layer, reset_layer_stats};
+use crate::layers::maybe_with_layer;
 use crate::sizing::compute_object_fit;
 use anyrender::{CustomPaint, Paint, PaintScene};
 use blitz_dom::node::{
@@ -35,51 +35,15 @@ use peniko::{self, Fill};
 use style::values::generics::color::GenericColor;
 use taffy::Layout;
 
-/// Paint a [`blitz_dom::BaseDocument`] by pushing drawing commands into
-/// an impl [`anyrender::PaintScene`].
-///
-/// This function assumes that the styles and layout in the [`BaseDocument`](blitz_dom::BaseDocument) are already
-/// resolved. Please ensure that this is the case before trying to paint.
-///
-/// The implementation of [`PaintScene`](anyrender::PaintScene) is responsible for handling the commands that are pushed into it.
-/// Generally this will involve executing them to draw a rasterized image/texture. But in some cases it may choose to
-/// transform them to a vector format (e.g. SVG/PDF) or serialize them in raw form for later use.
-pub fn paint_scene(
-    scene: &mut impl PaintScene,
-    dom: &BaseDocument,
-    scale: f64,
-    width: u32,
-    height: u32,
-) {
-    reset_layer_stats();
-
-    let devtools = *dom.devtools();
-    let generator = BlitzDomPainter {
-        dom,
-        scale,
-        width,
-        height,
-        devtools,
-    };
-    generator.paint_scene(scene);
-
-    // println!(
-    //     "Rendered using {} clips (depth: {}) (wanted: {})",
-    //     CLIPS_USED.load(atomic::Ordering::SeqCst),
-    //     CLIP_DEPTH_USED.load(atomic::Ordering::SeqCst),
-    //     CLIPS_WANTED.load(atomic::Ordering::SeqCst)
-    // );
-}
-
 /// A short-lived struct which holds a bunch of parameters for rendering a scene so
 /// that we don't have to pass them down as parameters
 pub struct BlitzDomPainter<'dom> {
     /// Input parameters (read only) for generating the Scene
-    dom: &'dom BaseDocument,
-    scale: f64,
-    width: u32,
-    height: u32,
-    devtools: Devtools,
+    pub(crate) dom: &'dom BaseDocument,
+    pub(crate) scale: f64,
+    pub(crate) width: u32,
+    pub(crate) height: u32,
+    pub(crate) devtools: Devtools,
 }
 
 impl BlitzDomPainter<'_> {
