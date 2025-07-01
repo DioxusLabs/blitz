@@ -1,3 +1,5 @@
+//! Conversion functions from Stylo computed style types to Taffy equivalents
+
 /// Private module of type aliases so we can refer to stylo types with nicer names
 mod stylo {
     pub(crate) use style::properties::ComputedValues;
@@ -468,6 +470,7 @@ pub fn max_track(
     }
 }
 
+/// Eagerly convert an entire [`stylo::ComputedValues`] into a [`taffy::Style`]
 pub fn to_taffy_style(style: &stylo::ComputedValues) -> taffy::Style {
     let display = style.clone_display();
     let pos = style.get_position();
