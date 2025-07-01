@@ -6,7 +6,7 @@ pub mod shell;
 mod devtools;
 mod viewport;
 
-pub use devtools::Devtools;
+pub use devtools::DevtoolSettings;
 pub use events::{
     BlitzImeEvent, BlitzKeyEvent, BlitzMouseButtonEvent, DomEvent, DomEventData, EventState,
     HitResult, KeyState, MouseEventButton, MouseEventButtons,

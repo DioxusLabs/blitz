@@ -12,7 +12,7 @@ use blitz_traits::events::UiEvent;
 use blitz_traits::navigation::{DummyNavigationProvider, NavigationProvider};
 use blitz_traits::net::{DummyNetProvider, NetProvider, SharedProvider};
 use blitz_traits::shell::{DummyShellProvider, ShellProvider};
-use blitz_traits::{ColorScheme, Devtools, Viewport};
+use blitz_traits::{ColorScheme, DevtoolSettings, Viewport};
 use blitz_traits::{DomEvent, HitResult};
 use cursor_icon::CursorIcon;
 use markup5ever::local_name;
@@ -99,7 +99,7 @@ pub struct BaseDocument {
     /// Base url for resolving linked resources (stylesheets, images, fonts, etc)
     pub(crate) base_url: Option<url::Url>,
     // Devtool settings. Currently used to render debug overlays
-    pub(crate) devtool_settings: Devtools,
+    pub(crate) devtool_settings: DevtoolSettings,
     // Viewport details such as the dimensions, HiDPI scale, and zoom factor,
     pub(crate) viewport: Viewport,
     // Scroll within our viewport
@@ -222,7 +222,7 @@ impl BaseDocument {
             snapshots,
             nodes_to_id,
             viewport,
-            devtool_settings: Devtools::default(),
+            devtool_settings: DevtoolSettings::default(),
             viewport_scroll: kurbo::Point::ZERO,
             base_url: None,
             ua_stylesheets: HashMap::new(),
@@ -864,11 +864,11 @@ impl BaseDocument {
         self.viewport.clone()
     }
 
-    pub fn devtools(&self) -> &Devtools {
+    pub fn devtools(&self) -> &DevtoolSettings {
         &self.devtool_settings
     }
 
-    pub fn devtools_mut(&mut self) -> &mut Devtools {
+    pub fn devtools_mut(&mut self) -> &mut DevtoolSettings {
         &mut self.devtool_settings
     }
 

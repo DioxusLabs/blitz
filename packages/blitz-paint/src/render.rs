@@ -15,7 +15,7 @@ use blitz_dom::node::{
     TextNodeData,
 };
 use blitz_dom::{BaseDocument, ElementData, Node, local_name};
-use blitz_traits::Devtools;
+use blitz_traits::DevtoolSettings;
 
 use euclid::Transform3D;
 use style::{
@@ -43,7 +43,7 @@ pub struct BlitzDomPainter<'dom> {
     pub(crate) scale: f64,
     pub(crate) width: u32,
     pub(crate) height: u32,
-    pub(crate) devtools: Devtools,
+    pub(crate) devtools: DevtoolSettings,
 }
 
 impl BlitzDomPainter<'_> {
@@ -382,7 +382,7 @@ struct ElementCx<'a> {
     svg: Option<&'a usvg::Tree>,
     text_input: Option<&'a TextInputData>,
     list_item: Option<&'a ListItemLayout>,
-    devtools: &'a Devtools,
+    devtools: &'a DevtoolSettings,
 }
 
 impl ElementCx<'_> {
