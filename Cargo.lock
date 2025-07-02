@@ -1438,6 +1438,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "crossbeam-channel"
+version = "0.5.15"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "82b8f8f868b36967f9606790d1903570de9ceaf870a7bf9fbbd3016d636a2cb2"
+dependencies = [
+ "crossbeam-utils",
+]
+
+[[package]]
 name = "crossbeam-deque"
 version = "0.8.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2336,6 +2345,14 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1e6853b52649d4ac5c0bd02320cddc5ba956bdb407c4b75a2c6b75bf51500f8c"
 dependencies = [
  "simd-adler32",
+]
+
+[[package]]
+name = "fearless_simd"
+version = "0.2.0"
+source = "git+https://github.com/linebender/fearless_simd?rev=3d1a77c#3d1a77cfb4515c0da307d50dc782c08840b90c70"
+dependencies = [
+ "bytemuck",
 ]
 
 [[package]]
@@ -4447,6 +4464,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ba0b26cec2e24f08ed8bb31519a9333140a6599b867dac464bb150bdb796fd43"
 dependencies = [
  "libredox",
+]
+
+[[package]]
+name = "ordered-channel"
+version = "1.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "95be4d57809897b5a7539fc15a7dfe0e84141bc3dfaa2e9b1b27caa90acf61ab"
+dependencies = [
+ "crossbeam-channel",
 ]
 
 [[package]]
@@ -6894,10 +6920,11 @@ dependencies = [
 [[package]]
 name = "vello_common"
 version = "0.0.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6b5e49f2836e87b6bd3d8f70324696f22b5f7dfdc836caeab463fff05957c1b1"
+source = "git+https://github.com/linebender/vello?rev=ce8e7a9#ce8e7a9716b6114b755565bb6a5d7a3e3ce1817a"
 dependencies = [
  "bytemuck",
+ "fearless_simd",
+ "log",
  "peniko",
  "png",
  "skrifa",
@@ -6907,9 +6934,13 @@ dependencies = [
 [[package]]
 name = "vello_cpu"
 version = "0.0.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a45e0a6b777abb4354e15146ecf95bac03aada7a85024fd47762f56095b32896"
+source = "git+https://github.com/linebender/vello?rev=ce8e7a9#ce8e7a9716b6114b755565bb6a5d7a3e3ce1817a"
 dependencies = [
+ "bytemuck",
+ "crossbeam-channel",
+ "ordered-channel",
+ "rayon",
+ "thread_local",
  "vello_common",
 ]
 
