@@ -93,7 +93,7 @@ softbuffer = "0.4"
 pixels = "0.15"
 vello = { version = "=0.5.0", features = [ "wgpu" ] }
 vello_encoding = { version = "=0.5.0", default-features = false }
-vello_cpu = { version = "0.0.1" }
+vello_cpu = { version = "0.0.2", default-features = false, features = ["std", "text"]}
 usvg = "0.45.1"
 
 # Windowing & Input
@@ -180,7 +180,7 @@ publish = false
 [dev-dependencies]
 anyrender = { workspace = true }
 anyrender_vello = { workspace = true }
-anyrender_vello_cpu = { workspace = true }
+anyrender_vello_cpu = { workspace = true, features = ["multithreading"] }
 blitz-dom = { workspace = true, features = ["default"] }
 blitz-html = { workspace = true }
 blitz-traits = { workspace = true }

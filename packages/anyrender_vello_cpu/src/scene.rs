@@ -1,7 +1,7 @@
 use anyrender::{NormalizedCoord, Paint, PaintScene};
 use kurbo::{Affine, Rect, Shape, Stroke};
 use peniko::{BlendMode, BrushRef, Color, Fill, Font, StyleRef};
-use vello_cpu::{self, PaintType, Pixmap, RenderMode};
+use vello_cpu::{self, PaintType, Pixmap};
 
 const DEFAULT_TOLERANCE: f64 = 0.1;
 
@@ -42,8 +42,7 @@ pub struct VelloCpuScenePainter(pub vello_cpu::RenderContext);
 impl VelloCpuScenePainter {
     pub fn finish(self) -> Pixmap {
         let mut pixmap = Pixmap::new(self.0.width(), self.0.height());
-        self.0
-            .render_to_pixmap(&mut pixmap, RenderMode::OptimizeSpeed);
+        self.0.render_to_pixmap(&mut pixmap);
         pixmap
     }
 }

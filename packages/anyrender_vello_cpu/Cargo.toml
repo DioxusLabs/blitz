@@ -11,6 +11,7 @@ edition = "2024"
 [features]
 pixels_window_renderer = ["dep:pixels"]
 softbuffer_window_renderer = ["dep:softbuffer"]
+multithreading = ["vello_cpu/multithreading"]
 log_frame_times = ["debug_timer/enable"]
 
 [dependencies]
