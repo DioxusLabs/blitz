@@ -78,7 +78,6 @@ impl DocumentHtmlParser<'_> {
                     scripting_enabled: false, // Enables parsing of <noscript> tags
                     iframe_srcdoc: false,
                     drop_doctype: true,
-                    ignore_missing_rules: false,
                     quirks_mode: QuirksMode::NoQuirks,
                 },
             };
