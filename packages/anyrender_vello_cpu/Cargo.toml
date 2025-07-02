@@ -9,7 +9,7 @@ license.workspace = true
 edition = "2024"
 
 [features]
-default = ["vendored", "std"]
+default = ["external", "std"]
 vendored = ["dep:bytemuck", "dep:skrifa", "dep:smallvec", "peniko/bytemuck"]
 external = ["dep:vello_cpu"]
 png = ["dep:png"]
