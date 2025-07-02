@@ -94,6 +94,9 @@ impl WindowRenderer for VelloCpuPixelsWindowRenderer {
         draw_fn(&mut self.render_context);
         timer.record_time("cmd");
 
+        self.render_context.0.flush();
+        timer.record_time("flush");
+
         self.render_context.0.render_to_buffer(
             state.pixels.frame_mut(),
             width,

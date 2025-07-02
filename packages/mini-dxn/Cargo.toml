@@ -30,7 +30,7 @@ cpu-base = ["dep:anyrender_vello_cpu"]
 # Blitz dependencies
 anyrender = { workspace = true }
 anyrender_vello = { workspace = true, optional = true }
-anyrender_vello_cpu = { workspace = true, optional = true }
+anyrender_vello_cpu = { workspace = true, features = ["multithreading", "pixels_window_renderer"], optional = true }
 blitz-paint = { workspace = true }
 blitz-dom =  { workspace = true }
 blitz-net = { workspace = true, optional = true }

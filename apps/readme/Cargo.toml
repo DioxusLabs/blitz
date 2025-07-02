@@ -24,7 +24,7 @@ blitz-paint = { workspace = true, features = ["default"] }
 blitz-net = { workspace = true, features = ["cookies"] }
 blitz-shell = { workspace = true, features = ["tracing", "default"] }
 anyrender_vello = { workspace = true, optional = true }
-anyrender_vello_cpu = { workspace = true, optional = true }
+anyrender_vello_cpu = { workspace = true, features = ["multithreading", "pixels_window_renderer"], optional = true }
 
 tokio = { workspace = true, features = ["rt", "rt-multi-thread"] }
 reqwest = { workspace = true }
