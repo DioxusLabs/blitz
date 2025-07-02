@@ -26,7 +26,7 @@ use style::{
     },
     values::{
         computed::{CSSPixelLength, Overflow},
-        specified::{BorderStyle, OutlineStyle},
+        specified::{BorderStyle, OutlineStyle, image::ImageRendering},
     },
 };
 
@@ -354,8 +354,16 @@ impl BlitzDomPainter<'_> {
     }
 }
 
+fn to_image_quality(image_rendering: ImageRendering) -> peniko::ImageQuality {
+    match image_rendering {
+        ImageRendering::Auto => peniko::ImageQuality::Medium,
+        ImageRendering::CrispEdges => peniko::ImageQuality::Low,
+        ImageRendering::Pixelated => peniko::ImageQuality::Low,
+    }
+}
+
 /// Ensure that the `resized_image` field has a correctly sized image
-fn to_peniko_image(image: &RasterImageData) -> peniko::Image {
+fn to_peniko_image(image: &RasterImageData, quality: peniko::ImageQuality) -> peniko::Image {
     peniko::Image {
         data: peniko::Blob::new(image.data.clone()),
         format: peniko::ImageFormat::Rgba8,
@@ -364,7 +372,7 @@ fn to_peniko_image(image: &RasterImageData) -> peniko::Image {
         alpha: 1.0,
         x_extend: peniko::Extend::Repeat,
         y_extend: peniko::Extend::Repeat,
-        quality: peniko::ImageQuality::High,
+        quality,
     }
 }
 
@@ -533,6 +541,8 @@ impl ElementCx<'_> {
 
             let object_fit = self.style.clone_object_fit();
             let object_position = self.style.clone_object_position();
+            let image_rendering = self.style.clone_image_rendering();
+            let quality = to_image_quality(image_rendering);
 
             // Apply object-fit algorithm
             let container_size = taffy::Size {
@@ -562,7 +572,7 @@ impl ElementCx<'_> {
                 .pre_scale_non_uniform(x_scale, y_scale)
                 .then_translate(Vec2 { x, y });
 
-            scene.draw_image(&to_peniko_image(image), transform);
+            scene.draw_image(&to_peniko_image(image, quality), transform);
         }
     }
 

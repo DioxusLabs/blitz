@@ -1,4 +1,4 @@
-use super::{ElementCx, to_peniko_image};
+use super::{ElementCx, to_image_quality, to_peniko_image};
 use crate::color::{Color, ToColorColor};
 use crate::gradient::to_peniko_gradient;
 use crate::layers::maybe_with_layer;
@@ -167,6 +167,9 @@ impl ElementCx<'_> {
             return;
         };
 
+        let image_rendering = self.style.clone_image_rendering();
+        let quality = to_image_quality(image_rendering);
+
         let bg_styles = &self.style.get_background();
 
         let background_origin = get_cyclic(&bg_styles.background_origin.0, idx);
@@ -319,7 +322,7 @@ impl ElementCx<'_> {
                     scene.fill(
                         peniko::Fill::NonZero,
                         transform,
-                        &to_peniko_image(image_data),
+                        &to_peniko_image(image_data, quality),
                         None,
                         &Rect::new(0.0, 0.0, origin_rect.width(), origin_rect.height()),
                     );
@@ -329,7 +332,7 @@ impl ElementCx<'_> {
             scene.fill(
                 peniko::Fill::NonZero,
                 transform,
-                &to_peniko_image(image_data),
+                &to_peniko_image(image_data, quality),
                 None,
                 &Rect::new(0.0, 0.0, origin_rect.width(), origin_rect.height()),
             );

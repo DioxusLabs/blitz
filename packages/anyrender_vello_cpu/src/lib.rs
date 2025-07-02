@@ -8,6 +8,7 @@ pub use scene::VelloCpuScenePainter;
 pub use window_renderer::VelloCpuWindowRenderer;
 
 #[cfg(feature = "external")]
+#[allow(clippy::single_component_path_imports, reason = "false positive")]
 use vello_cpu;
 
 #[cfg(feature = "vendored")]
