@@ -11,11 +11,7 @@ fn brush_ref_to_paint_type<'a>(brush_ref: BrushRef<'a>) -> PaintType {
         BrushRef::Solid(alpha_color) => PaintType::Solid(alpha_color),
         BrushRef::Gradient(gradient) => PaintType::Gradient(gradient.clone()),
         BrushRef::Image(image) => PaintType::Image(vello_cpu::Image {
-            pixmap: Arc::new(Pixmap::from_parts(
-                premultiply(image),
-                image.width as u16,
-                image.height as u16,
-            )),
+            pixmap: convert_image(image),
             x_extend: image.x_extend,
             y_extend: image.y_extend,
             quality: image.quality,
@@ -28,11 +24,7 @@ fn anyrender_paint_to_vello_cpu_paint<'a>(paint: Paint<'a>) -> PaintType {
         Paint::Solid(alpha_color) => PaintType::Solid(alpha_color),
         Paint::Gradient(gradient) => PaintType::Gradient(gradient.clone()),
         Paint::Image(image) => PaintType::Image(vello_cpu::Image {
-            pixmap: Arc::new(Pixmap::from_parts(
-                premultiply(image),
-                image.width as u16,
-                image.height as u16,
-            )),
+            pixmap: convert_image(image),
             x_extend: image.x_extend,
             y_extend: image.y_extend,
             quality: image.quality,
@@ -40,6 +32,28 @@ fn anyrender_paint_to_vello_cpu_paint<'a>(paint: Paint<'a>) -> PaintType {
         // TODO: custom paint
         Paint::Custom(_) => PaintType::Solid(peniko::color::palette::css::TRANSPARENT),
     }
+}
+
+#[allow(unused)]
+fn convert_image_cached(image: &peniko::Image) -> Arc<Pixmap> {
+    use std::collections::HashMap;
+    use std::sync::{LazyLock, Mutex};
+    static CACHE: LazyLock<Mutex<HashMap<u64, Arc<Pixmap>>>> =
+        LazyLock::new(|| Mutex::new(HashMap::new()));
+
+    let mut map = CACHE.lock().unwrap();
+    let id = image.data.id();
+    let pixmap = map.entry(id).or_insert_with(|| convert_image(image));
+
+    Arc::clone(pixmap)
+}
+
+fn convert_image(image: &peniko::Image) -> Arc<Pixmap> {
+    Arc::new(Pixmap::from_parts(
+        premultiply(image),
+        image.width as u16,
+        image.height as u16,
+    ))
 }
 
 fn premultiply(image: &peniko::Image) -> Vec<PremulRgba8> {
