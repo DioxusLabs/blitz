@@ -171,7 +171,7 @@ impl WindowRenderer for VelloWindowRenderer {
         self.scene = Some(scene.finish());
 
         let command_time = start.elapsed().as_millis();
-        let command_ms = command_time;
+        let command_ms = start.elapsed().as_micros();
 
         state
             .renderer
@@ -238,7 +238,7 @@ impl WindowRenderer for VelloWindowRenderer {
         self.scene.as_mut().unwrap().reset();
 
         println!(
-            "Frame time: {overall_ms}ms (cmd: {command_ms}ms, render: {render_ms}ms, present: {present_ms}ms, wait: {wait_ms}ms)"
+            "Frame time: {overall_ms}ms (cmd: {command_ms}us, render: {render_ms}ms, present: {present_ms}ms, wait: {wait_ms}ms)"
         );
     }
 }
