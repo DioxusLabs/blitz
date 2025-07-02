@@ -765,7 +765,7 @@ dependencies = [
  "percent-encoding",
  "rayon",
  "selectors",
- "skrifa",
+ "skrifa 0.31.3",
  "slab",
  "smallvec",
  "stylo",
@@ -1419,6 +1419,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9481c1c90cbf2ac953f07c8d4a58aa3945c425b7185c9154d67a65e4230da511"
 dependencies = [
  "cfg-if",
+]
+
+[[package]]
+name = "crossbeam-channel"
+version = "0.5.15"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "82b8f8f868b36967f9606790d1903570de9ceaf870a7bf9fbbd3016d636a2cb2"
+dependencies = [
+ "crossbeam-utils",
 ]
 
 [[package]]
@@ -2375,6 +2384,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "fearless_simd"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "eb8f822f06d1b452a9207f11ce3292f7ee6c23d5d2e7ddfd07990a9107804850"
+dependencies = [
+ "bytemuck",
+]
+
+[[package]]
 name = "find-msvc-tools"
 version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2466,7 +2484,7 @@ dependencies = [
  "objc2-core-text",
  "objc2-foundation 0.3.1",
  "peniko",
- "read-fonts",
+ "read-fonts 0.29.3",
  "roxmltree",
  "smallvec",
  "windows 0.58.0",
@@ -4481,6 +4499,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "ordered-channel"
+version = "1.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "95be4d57809897b5a7539fc15a7dfe0e84141bc3dfaa2e9b1b27caa90acf61ab"
+dependencies = [
+ "crossbeam-channel",
+]
+
+[[package]]
 name = "ordered-float"
 version = "4.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4564,7 +4591,7 @@ dependencies = [
  "fontique",
  "hashbrown 0.15.5",
  "peniko",
- "skrifa",
+ "skrifa 0.31.3",
  "swash",
 ]
 
@@ -5022,6 +5049,16 @@ name = "read-fonts"
 version = "0.29.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "04ca636dac446b5664bd16c069c00a9621806895b8bb02c2dc68542b23b8f25d"
+dependencies = [
+ "bytemuck",
+ "font-types",
+]
+
+[[package]]
+name = "read-fonts"
+version = "0.34.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8941f8e9d5f8ad3aebea330d01ac68c0167600eb31a86ecd86e97be4d13b51f5"
 dependencies = [
  "bytemuck",
  "font-types",
@@ -5630,7 +5667,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "dbeb4ca4399663735553a09dd17ce7e49a0a0203f03b706b39628c4d913a8607"
 dependencies = [
  "bytemuck",
- "read-fonts",
+ "read-fonts 0.29.3",
+]
+
+[[package]]
+name = "skrifa"
+version = "0.36.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "37004372610e83ee2a4c69c7d896b41f33da6a3dc1a4fe07dd9b2629a549b1dc"
+dependencies = [
+ "bytemuck",
+ "read-fonts 0.34.0",
 ]
 
 [[package]]
@@ -6067,7 +6114,7 @@ version = "0.2.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f745de914febc7c9ab4388dfaf94bbc87e69f57bb41133a9b0c84d4be49856f3"
 dependencies = [
- "skrifa",
+ "skrifa 0.31.3",
  "yazi",
  "zeno",
 ]
@@ -6875,7 +6922,7 @@ dependencies = [
  "log",
  "peniko",
  "png",
- "skrifa",
+ "skrifa 0.31.3",
  "static_assertions",
  "thiserror 2.0.16",
  "vello_encoding",
@@ -6886,22 +6933,28 @@ dependencies = [
 [[package]]
 name = "vello_common"
 version = "0.0.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6b5e49f2836e87b6bd3d8f70324696f22b5f7dfdc836caeab463fff05957c1b1"
+source = "git+https://github.com/linebender/vello?rev=f39593e#f39593e8a42868a789630eb4ff99ecc5c50e17a9"
 dependencies = [
  "bytemuck",
+ "fearless_simd",
+ "log",
  "peniko",
  "png",
- "skrifa",
+ "skrifa 0.36.0",
  "smallvec",
 ]
 
 [[package]]
 name = "vello_cpu"
 version = "0.0.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a45e0a6b777abb4354e15146ecf95bac03aada7a85024fd47762f56095b32896"
+source = "git+https://github.com/linebender/vello?rev=f39593e#f39593e8a42868a789630eb4ff99ecc5c50e17a9"
 dependencies = [
+ "bytemuck",
+ "crossbeam-channel",
+ "ordered-channel",
+ "rayon",
+ "smallvec",
+ "thread_local",
  "vello_common",
 ]
 
@@ -6914,7 +6967,7 @@ dependencies = [
  "bytemuck",
  "guillotiere",
  "peniko",
- "skrifa",
+ "skrifa 0.31.3",
  "smallvec",
 ]
 
