@@ -82,7 +82,7 @@ skrifa = { version = "0.31" } # Should match parley version
 wgpu = "24"
 softbuffer = "0.4"
 vello = { version = "0.5", features = [ "wgpu" ] }
-vello_cpu = { version = "0.0.1" }
+vello_cpu = { git = "https://github.com/linebender/vello", rev= "0ecbd96" }
 usvg = "0.45.1"
 
 # Windowing & Input

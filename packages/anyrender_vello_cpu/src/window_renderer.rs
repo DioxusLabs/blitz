@@ -88,6 +88,7 @@ impl WindowRenderer for VelloCpuWindowRenderer {
         let height = self.render_context.0.height();
         let mut pixmap = Pixmap::new(width, height);
         draw_fn(&mut self.render_context);
+        self.render_context.0.flush();
         self.render_context
             .0
             .render_to_pixmap(&mut pixmap, RenderMode::OptimizeSpeed);

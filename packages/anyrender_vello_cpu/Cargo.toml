@@ -12,6 +12,7 @@ edition = "2024"
 default = ["external", "std"]
 vendored = ["dep:bytemuck", "dep:skrifa", "dep:smallvec", "peniko/bytemuck"]
 external = ["dep:vello_cpu"]
+multithreading = ["vello_cpu?/multithreading"]
 png = ["dep:png"]
 simd = []
 std = []

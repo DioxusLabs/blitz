@@ -20,6 +20,7 @@ impl ImageRenderer for VelloCpuImageRenderer {
         let height = self.scene.0.height();
         draw_fn(&mut self.scene);
         buffer.resize(width as usize * height as usize * 4, 0);
+        self.scene.0.flush();
         self.scene
             .0
             .render_to_buffer(&mut *buffer, width, height, RenderMode::OptimizeSpeed);
