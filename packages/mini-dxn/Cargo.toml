@@ -33,7 +33,7 @@ log_phase_times = ["blitz-dom/log_phase_times"]
 # Blitz dependencies
 anyrender = { workspace = true }
 anyrender_vello = { workspace = true, optional = true }
-anyrender_vello_cpu = { workspace = true, optional = true }
+anyrender_vello_cpu = { workspace = true, features = ["multithreading"], optional = true }
 blitz-paint = { workspace = true }
 blitz-dom =  { workspace = true }
 blitz-net = { workspace = true, optional = true }
