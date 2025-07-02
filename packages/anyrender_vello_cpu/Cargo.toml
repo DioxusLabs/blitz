@@ -12,6 +12,7 @@ edition = "2024"
 pixels_window_renderer = ["dep:pixels"]
 softbuffer_window_renderer = ["dep:softbuffer"]
 log_frame_times = []
+multithreading = ["vello_cpu/multithreading"]
 
 [dependencies]
 anyrender = { workspace = true }
