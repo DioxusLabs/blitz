@@ -163,7 +163,7 @@ blitz-paint = { workspace = true }
 blitz-shell = { workspace = true }
 blitz-net = { workspace = true }
 blitz = { workspace = true, features = ["net"] }
-mini-dxn = { workspace = true, features = ["tracing", "autofocus", "gpu_backend"] }
+mini-dxn = { workspace = true, features = ["default"] }
 dioxus = { workspace = true }
 euclid = { workspace = true }
 reqwest = { workspace = true }
