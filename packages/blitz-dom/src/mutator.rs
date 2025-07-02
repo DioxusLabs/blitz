@@ -88,6 +88,10 @@ impl DocumentMutator<'_> {
         self.doc.nodes[node_id].forward(1).map(|node| node.id)
     }
 
+    pub fn parent_id(&self, node_id: usize) -> Option<usize> {
+        self.doc.nodes[node_id].parent
+    }
+
     pub fn last_child_id(&self, node_id: usize) -> Option<usize> {
         self.doc.nodes[node_id].children.last().copied()
     }
@@ -361,7 +365,10 @@ impl DocumentMutator<'_> {
     pub fn insert_nodes_after(&mut self, anchor_node_id: usize, new_node_ids: &[usize]) {
         match self.next_sibling_id(anchor_node_id) {
             Some(id) => self.insert_nodes_before(id, new_node_ids),
-            None => self.append_children(anchor_node_id, new_node_ids),
+            None => {
+                let parent_id = self.parent_id(anchor_node_id).unwrap();
+                self.append_children(parent_id, new_node_ids)
+            }
         }
     }
 
