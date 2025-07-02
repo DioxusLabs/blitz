@@ -52,7 +52,7 @@ pub(crate) fn stroke_text<'a>(
                 scene.draw_glyphs(
                     font,
                     font_size,
-                    true, // hint
+                    false, // hint
                     run.normalized_coords(),
                     Fill::NonZero,
                     &peniko::Brush::from(text_color),
