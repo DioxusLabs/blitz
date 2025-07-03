@@ -1334,6 +1334,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "crossbeam-channel"
+version = "0.5.15"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "82b8f8f868b36967f9606790d1903570de9ceaf870a7bf9fbbd3016d636a2cb2"
+dependencies = [
+ "crossbeam-utils",
+]
+
+[[package]]
 name = "crossbeam-deque"
 version = "0.8.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4179,6 +4188,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "ordered-channel"
+version = "1.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "95be4d57809897b5a7539fc15a7dfe0e84141bc3dfaa2e9b1b27caa90acf61ab"
+dependencies = [
+ "crossbeam-channel",
+]
+
+[[package]]
 name = "ordered-float"
 version = "4.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6544,6 +6562,7 @@ source = "git+https://github.com/linebender/vello?rev=69e85c7aab28c78b060d4470d2
 dependencies = [
  "bytemuck",
  "fearless_simd",
+ "once_cell",
  "peniko",
  "png",
  "skrifa",
@@ -6556,6 +6575,10 @@ version = "0.0.1"
 source = "git+https://github.com/linebender/vello?rev=69e85c7aab28c78b060d4470d2f39d370d269134#69e85c7aab28c78b060d4470d2f39d370d269134"
 dependencies = [
  "bytemuck",
+ "crossbeam-channel",
+ "ordered-channel",
+ "rayon",
+ "thread_local",
  "vello_common",
 ]
 
