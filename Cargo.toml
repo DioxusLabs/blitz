@@ -59,6 +59,7 @@ style_atoms = { version = "0.6", package = "stylo_atoms" }
 style_config = { version = "0.6", package = "stylo_config" }
 style_dom = { version = "0.6", package = "stylo_dom" }
 selectors = { version = "0.31", package = "selectors" }
+cssparser = { version = "0.35" }
 
 # HTML5ever dependencies
 markup5ever = "0.35" # needs to match stylo web_atoms version
