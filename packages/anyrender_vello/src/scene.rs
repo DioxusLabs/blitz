@@ -7,9 +7,9 @@ use vello::Renderer as VelloRenderer;
 use crate::{CustomPaintSource, custom_paint_source::CustomPaintCtx};
 
 pub struct VelloScenePainter<'r> {
-    pub(crate) renderer: &'r mut VelloRenderer,
-    pub(crate) custom_paint_sources: &'r mut FxHashMap<u64, Box<dyn CustomPaintSource>>,
-    pub(crate) inner: vello::Scene,
+    pub renderer: &'r mut VelloRenderer,
+    pub custom_paint_sources: &'r mut FxHashMap<u64, Box<dyn CustomPaintSource>>,
+    pub inner: vello::Scene,
 }
 
 impl VelloScenePainter<'_> {
