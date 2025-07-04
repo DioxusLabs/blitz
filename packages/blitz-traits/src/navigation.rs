@@ -1,3 +1,5 @@
+//! Abstractions allow embedders to handle link clicks and form submissions
+
 use bytes::Bytes;
 use http::{HeaderMap, HeaderValue, Method};
 use url::Url;

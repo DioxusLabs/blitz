@@ -1,3 +1,5 @@
+//! Abstraction over windowing / operating system ("shell") functionality
+
 use cursor_icon::CursorIcon;
 
 /// Type representing an error performing a clipboard operation

@@ -1,3 +1,5 @@
+//! Types to represent UI and DOM events
+
 use bitflags::bitflags;
 use keyboard_types::{Code, Key, Location, Modifiers};
 use smol_str::SmolStr;

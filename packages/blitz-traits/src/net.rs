@@ -1,3 +1,5 @@
+//! Abstractions of networking so that custom networking implementations can be provided
+
 pub use bytes::Bytes;
 pub use http::{self, HeaderMap, Method};
 use std::sync::Arc;
