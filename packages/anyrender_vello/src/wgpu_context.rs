@@ -69,16 +69,9 @@ pub struct WGPUContext {
 /// Q: could we drop the adapter here? wgpu docs say adapters do not need to be kept around...
 #[derive(Clone, Debug)]
 pub struct DeviceHandle {
-    adapter: Adapter,
+    pub adapter: Adapter,
     pub device: Device,
     pub queue: Queue,
-}
-
-impl DeviceHandle {
-    /// Returns the adapter associated with the device.
-    pub fn adapter(&self) -> &Adapter {
-        &self.adapter
-    }
 }
 
 impl WGPUContext {

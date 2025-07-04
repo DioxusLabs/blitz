@@ -1,6 +1,6 @@
 use crate::{
     CustomPaintSource,
-    wgpu_context::{RenderSurface, WGPUContext},
+    wgpu_context::{DeviceHandle, RenderSurface, WGPUContext},
 };
 use anyrender::{WindowHandle, WindowRenderer};
 use peniko::Color;
@@ -12,9 +12,7 @@ use std::sync::{
 use vello::{
     AaSupport, RenderParams, Renderer as VelloRenderer, RendererOptions, Scene as VelloScene,
 };
-use wgpu::{
-    CommandEncoderDescriptor, Device, Features, Limits, PresentMode, Queue, TextureViewDescriptor,
-};
+use wgpu::{CommandEncoderDescriptor, Features, Limits, PresentMode, TextureViewDescriptor};
 
 use crate::{DEFAULT_THREADS, VelloScenePainter};
 
@@ -33,16 +31,11 @@ enum RenderState {
 }
 
 impl RenderState {
-    fn current_device_and_queue(&self) -> Option<(&Device, &Queue)> {
+    fn current_device_handle(&self) -> Option<&DeviceHandle> {
         let RenderState::Active(state) = self else {
             return None;
         };
-
-        let device_handle = &state.surface.device_handle;
-        let device = &device_handle.device;
-        let queue = &device_handle.queue;
-
-        Some((device, queue))
+        Some(&state.surface.device_handle)
     }
 }
 
@@ -76,13 +69,14 @@ impl VelloWindowRenderer {
         }
     }
 
-    pub fn current_device_and_queue(&self) -> Option<(&Device, &Queue)> {
-        self.render_state.current_device_and_queue()
+    pub fn current_device_handle(&self) -> Option<&DeviceHandle> {
+        self.render_state.current_device_handle()
     }
 
     pub fn register_custom_paint_source(&mut self, mut source: Box<dyn CustomPaintSource>) -> u64 {
-        if let Some((device, queue)) = self.render_state.current_device_and_queue() {
-            source.resume(device, queue);
+        if let Some(device_handle) = self.render_state.current_device_handle() {
+            let instance = &self.wgpu_context.instance;
+            source.resume(instance, device_handle);
         }
         let id = PAINT_SOURCE_ID.fetch_add(1, atomic::Ordering::SeqCst);
         self.custom_paint_sources.insert(id, source);
@@ -131,9 +125,10 @@ impl WindowRenderer for VelloWindowRenderer {
 
         self.render_state = RenderState::Active(ActiveRenderState { renderer, surface });
 
-        let (device, queue) = self.render_state.current_device_and_queue().unwrap();
+        let device_handle = self.render_state.current_device_handle().unwrap();
+        let instance = &self.wgpu_context.instance;
         for source in self.custom_paint_sources.values_mut() {
-            source.resume(device, queue)
+            source.resume(instance, device_handle)
         }
     }
 
