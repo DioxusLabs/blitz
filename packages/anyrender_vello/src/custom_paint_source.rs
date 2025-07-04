@@ -1,12 +1,13 @@
 use std::sync::Arc;
 
+use crate::wgpu_context::DeviceHandle;
 use peniko::Blob;
 use vello::Renderer as VelloRenderer;
 use vello::peniko::Image;
-use wgpu::{Device, Queue, TexelCopyTextureInfoBase, Texture};
+use wgpu::{Instance, TexelCopyTextureInfoBase, Texture};
 
 pub trait CustomPaintSource: 'static {
-    fn resume(&mut self, device: &Device, queue: &Queue);
+    fn resume(&mut self, instance: &Instance, device_handle: &DeviceHandle);
     fn suspend(&mut self);
     fn render(
         &mut self,
