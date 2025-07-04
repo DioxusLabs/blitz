@@ -1,6 +1,9 @@
 use blitz_traits::{
-    BlitzMouseButtonEvent, DomEvent, DomEventData, MouseEventButton, MouseEventButtons,
-    events::BlitzInputEvent, navigation::NavigationOptions,
+    events::{
+        BlitzInputEvent, BlitzMouseButtonEvent, DomEvent, DomEventData, MouseEventButton,
+        MouseEventButtons,
+    },
+    navigation::NavigationOptions,
 };
 use markup5ever::local_name;
 

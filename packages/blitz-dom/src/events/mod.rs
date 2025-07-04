@@ -3,7 +3,7 @@ mod ime;
 mod keyboard;
 mod mouse;
 
-use blitz_traits::{DomEvent, DomEventData};
+use blitz_traits::events::{DomEvent, DomEventData};
 pub use driver::{EventDriver, EventHandler, NoopEventHandler};
 pub(crate) use ime::handle_ime_event;
 pub(crate) use keyboard::handle_keypress;

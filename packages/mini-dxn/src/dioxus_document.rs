@@ -7,7 +7,9 @@ use blitz_dom::{
     BaseDocument, DEFAULT_CSS, Document, EventDriver, EventHandler, Node, net::Resource,
 };
 use blitz_traits::{
-    ColorScheme, DomEvent, DomEventData, EventState, Viewport, events::UiEvent, net::NetProvider,
+    events::{DomEvent, DomEventData, EventState, UiEvent},
+    net::NetProvider,
+    shell::{ColorScheme, Viewport},
 };
 
 use dioxus_core::{ElementId, Event, VirtualDom};

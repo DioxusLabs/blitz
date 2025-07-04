@@ -9,7 +9,10 @@ use blitz_dom::{
     BaseDocument, DEFAULT_CSS, Document, EventDriver, FontContext, NoopEventHandler, net::Resource,
 };
 use blitz_traits::{
-    ColorScheme, Viewport, events::UiEvent, navigation::NavigationProvider, net::SharedProvider,
+    events::UiEvent,
+    navigation::NavigationProvider,
+    net::SharedProvider,
+    shell::{ColorScheme, Viewport},
 };
 
 pub struct HtmlDocument {

@@ -7,8 +7,8 @@ use crate::event::{BlitzShellEvent, create_waker};
 use anyrender::WindowRenderer;
 use blitz_dom::Document;
 use blitz_paint::paint_scene;
-use blitz_traits::events::UiEvent;
-use blitz_traits::{BlitzMouseButtonEvent, MouseEventButton, MouseEventButtons, Viewport};
+use blitz_traits::events::{BlitzMouseButtonEvent, MouseEventButton, MouseEventButtons, UiEvent};
+use blitz_traits::shell::Viewport;
 use winit::keyboard::PhysicalKey;
 
 use std::sync::Arc;

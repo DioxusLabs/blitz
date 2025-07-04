@@ -1,5 +1,5 @@
 use crate::{BaseDocument, DocumentMutator};
-use blitz_traits::{BlitzMouseButtonEvent, DomEvent, DomEventData, EventState, events::UiEvent};
+use blitz_traits::events::{BlitzMouseButtonEvent, DomEvent, DomEventData, EventState, UiEvent};
 use std::collections::VecDeque;
 
 pub trait EventHandler {

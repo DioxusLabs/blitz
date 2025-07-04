@@ -1,5 +1,5 @@
-use blitz_traits::{BlitzImeEvent, BlitzKeyEvent};
-use blitz_traits::{ColorScheme, KeyState};
+use blitz_traits::events::{BlitzImeEvent, BlitzKeyEvent, KeyState};
+use blitz_traits::shell::ColorScheme;
 use keyboard_types::{Code, Key, Location, Modifiers};
 use winit::event::ElementState;
 use winit::event::Ime;

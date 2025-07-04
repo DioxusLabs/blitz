@@ -7,8 +7,8 @@ use crate::net::{CssHandler, ImageHandler};
 use crate::node::{CanvasData, NodeFlags, SpecialElementData};
 use crate::util::ImageType;
 use crate::{Attribute, BaseDocument, ElementData, Node, NodeData, QualName, local_name, ns};
-use blitz_traits::Viewport;
 use blitz_traits::net::Request;
+use blitz_traits::shell::Viewport;
 use style::invalidation::element::restyle_hints::RestyleHint;
 use style::stylesheets::OriginSet;
 

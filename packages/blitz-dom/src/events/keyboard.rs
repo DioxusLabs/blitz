@@ -3,7 +3,8 @@ use crate::{
     node::{TextBrush, TextInputData},
 };
 use blitz_traits::{
-    BlitzKeyEvent, DomEvent, DomEventData, events::BlitzInputEvent, shell::ShellProvider,
+    events::{BlitzInputEvent, BlitzKeyEvent, DomEvent, DomEventData},
+    shell::ShellProvider,
 };
 use keyboard_types::{Key, Modifiers};
 use markup5ever::local_name;

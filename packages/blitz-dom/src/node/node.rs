@@ -1,6 +1,6 @@
 use atomic_refcell::{AtomicRef, AtomicRefCell};
 use bitflags::bitflags;
-use blitz_traits::{BlitzMouseButtonEvent, DomEventData, HitResult};
+use blitz_traits::events::{BlitzMouseButtonEvent, DomEventData, HitResult};
 use keyboard_types::Modifiers;
 use markup5ever::{LocalName, local_name};
 use parley::Cluster;

@@ -15,7 +15,7 @@ use blitz_dom::node::{
     TextNodeData,
 };
 use blitz_dom::{BaseDocument, ElementData, Node, local_name};
-use blitz_traits::DevtoolSettings;
+use blitz_traits::devtools::DevtoolSettings;
 
 use euclid::Transform3D;
 use style::{

@@ -1,7 +1,7 @@
 use std::any::Any;
 use std::collections::HashMap;
 
-use blitz_traits::BlitzKeyEvent;
+use blitz_traits::events::BlitzKeyEvent;
 use dioxus_html::{
     AnimationData, ClipboardData, CompositionData, DragData, FocusData, FormData, FormValue,
     HasFileData, HasFormData, HasKeyboardData, HasMouseData, HtmlEventConverter, ImageData,

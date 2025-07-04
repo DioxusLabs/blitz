@@ -1,4 +1,4 @@
-use blitz_traits::BlitzImeEvent;
+use blitz_traits::events::BlitzImeEvent;
 
 use crate::BaseDocument;
 
