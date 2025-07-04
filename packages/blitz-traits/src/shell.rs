@@ -1,9 +1,11 @@
 use cursor_icon::CursorIcon;
 
 /// Type representing an error performing a clipboard operation
-/// TODO: fill out with meaningful errors
+// TODO: fill out with meaningful errors
 pub struct ClipboardError;
 
+/// Abstraction over windowing / operating system ("shell") functionality that allows a Blitz document
+/// to access that functionality without depending on a specific shell environment.
 pub trait ShellProvider {
     fn request_redraw(&self) {}
     fn set_cursor(&self, icon: CursorIcon) {
@@ -24,6 +26,7 @@ pub trait ShellProvider {
 pub struct DummyShellProvider;
 impl ShellProvider for DummyShellProvider {}
 
+/// The system color scheme (light and dark mode)
 #[derive(Default, Debug, Clone, Copy)]
 pub enum ColorScheme {
     #[default]
@@ -60,23 +63,26 @@ impl Viewport {
         }
     }
 
-    // Total scaling, the product of the zoom and hdpi scale
+    /// Total scaling, computed as `hidpi_scale_factor * zoom`
     pub fn scale(&self) -> f32 {
         self.hidpi_scale * self.zoom
     }
-    // Total scaling, the product of the zoom and hdpi scale
+    /// Same as [`scale`](Self::scale) but `f64` instead of `f32`
     pub fn scale_f64(&self) -> f64 {
         self.scale() as f64
     }
 
+    /// Set hidpi scale factor
     pub fn set_hidpi_scale(&mut self, scale: f32) {
         self.hidpi_scale = scale;
     }
 
+    /// Get document zoom level
     pub fn zoom(&self) -> f32 {
         self.zoom
     }
 
+    /// Set document zoom level (`1.0` is unzoomed)
     pub fn set_zoom(&mut self, zoom: f32) {
         self.zoom = zoom;
     }

@@ -1,3 +1,5 @@
+//! Types configure developer inspection and debug tools
+
 /// Configuration for debug overlays and other debugging tools
 #[derive(Debug, Default, Clone, Copy)]
 pub struct DevtoolSettings {
