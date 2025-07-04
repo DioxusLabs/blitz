@@ -5,7 +5,8 @@ use crate::net::{Resource, StylesheetLoader};
 use crate::node::{ImageData, NodeFlags, RasterImageData, SpecialElementData, Status, TextBrush};
 use crate::stylo_to_cursor_icon::stylo_to_cursor_icon;
 use crate::traversal::TreeTraverser;
-use crate::util::{ImageType, resolve_url};
+use crate::url::DocumentUrl;
+use crate::util::ImageType;
 use crate::{
     DEFAULT_CSS, DocumentConfig, DocumentMutator, ElementData, Node, NodeData, TextNodeData,
 };
@@ -24,6 +25,7 @@ use slab::Slab;
 use std::any::Any;
 use std::collections::{BTreeMap, Bound, HashMap, HashSet};
 use std::ops::{Deref, DerefMut};
+use std::str::FromStr;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use style::Atom;
@@ -43,7 +45,7 @@ use style::{
     media_queries::{Device, MediaList},
     selector_parser::SnapshotMap,
     shared_lock::{SharedRwLock, StylesheetGuards},
-    stylesheets::{AllowImportRules, DocumentStyleSheet, Origin, Stylesheet, UrlExtraData},
+    stylesheets::{AllowImportRules, DocumentStyleSheet, Origin, Stylesheet},
     stylist::Stylist,
 };
 use taffy::AvailableSpace;
@@ -98,7 +100,7 @@ pub struct BaseDocument {
 
     // Config
     /// Base url for resolving linked resources (stylesheets, images, fonts, etc)
-    pub(crate) base_url: Option<url::Url>,
+    pub(crate) url: DocumentUrl,
     // Devtool settings. Currently used to render debug overlays
     pub(crate) devtool_settings: DevtoolSettings,
     // Viewport details such as the dimensions, HiDPI scale, and zoom factor,
@@ -208,6 +210,11 @@ impl BaseDocument {
         style_config::set_bool("layout.unimplemented", true);
         style_config::set_bool("layout.columns.enabled", true);
 
+        let base_url = config
+            .base_url
+            .and_then(|url| DocumentUrl::from_str(&url).ok())
+            .unwrap_or_default();
+
         let font_ctx = config.font_ctx.unwrap_or_else(|| {
             let mut font_ctx = FontContext::default();
             font_ctx
@@ -236,7 +243,7 @@ impl BaseDocument {
             viewport,
             devtool_settings: DevtoolSettings::default(),
             viewport_scroll: kurbo::Point::ZERO,
-            base_url: None,
+            url: base_url,
             ua_stylesheets: HashMap::new(),
             nodes_to_stylesheet: BTreeMap::new(),
             font_ctx,
@@ -300,7 +307,7 @@ impl BaseDocument {
 
     /// Set base url for resolving linked resources (stylesheets, images, fonts, etc)
     pub fn set_base_url(&mut self, url: &str) {
-        self.base_url = Some(Url::parse(url).unwrap());
+        self.url = DocumentUrl::from(Url::parse(url).unwrap());
     }
 
     pub fn guard(&self) -> &SharedRwLock {
@@ -483,11 +490,11 @@ impl BaseDocument {
         node
     }
 
-    pub fn resolve_url(&self, raw: &str) -> url::Url {
-        resolve_url(&self.base_url, raw).unwrap_or_else(|| {
+    pub(crate) fn resolve_url(&self, raw: &str) -> url::Url {
+        self.url.resolve_relative(raw).unwrap_or_else(|| {
             panic!(
-                "to be able to resolve {raw} with the base_url: {base_url:?}",
-                base_url = self.base_url
+                "to be able to resolve {raw} with the base_url: {:?}",
+                *self.url
             )
         })
     }
@@ -522,11 +529,7 @@ impl BaseDocument {
     pub fn make_stylesheet(&self, css: impl AsRef<str>, origin: Origin) -> DocumentStyleSheet {
         let data = Stylesheet::from_str(
             css.as_ref(),
-            UrlExtraData::from(self.base_url.clone().unwrap_or_else(|| {
-                "data:text/css;charset=utf-8;base64,"
-                    .parse::<Url>()
-                    .unwrap()
-            })),
+            self.url.url_extra_data(),
             origin,
             ServoArc::new(self.guard.wrap(MediaList::empty())),
             self.guard.clone(),

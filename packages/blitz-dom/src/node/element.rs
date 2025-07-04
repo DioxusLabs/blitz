@@ -246,17 +246,11 @@ impl ElementData {
             }
     }
 
-    pub fn flush_style_attribute(&mut self, guard: &SharedRwLock, base_url: Option<Url>) {
+    pub fn flush_style_attribute(&mut self, guard: &SharedRwLock, url_extra_data: &UrlExtraData) {
         self.style_attribute = self.attr(local_name!("style")).map(|style_str| {
-            let url = UrlExtraData::from(base_url.clone().unwrap_or_else(|| {
-                "data:text/css;charset=utf-8;base64,"
-                    .parse::<Url>()
-                    .unwrap()
-            }));
-
             ServoArc::new(guard.wrap(parse_style_attribute(
                 style_str,
-                &url,
+                url_extra_data,
                 None,
                 QuirksMode::NoQuirks,
                 CssRuleType::Style,

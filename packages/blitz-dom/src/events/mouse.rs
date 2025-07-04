@@ -7,7 +7,7 @@ use blitz_traits::{
 };
 use markup5ever::local_name;
 
-use crate::{BaseDocument, node::SpecialElementData, util::resolve_url};
+use crate::{BaseDocument, node::SpecialElementData};
 
 pub(crate) fn handle_mousemove(
     doc: &mut BaseDocument,
@@ -192,17 +192,14 @@ pub(crate) fn handle_click<F: FnMut(DomEvent)>(
             }
         } else if el.name.local == local_name!("a") {
             if let Some(href) = el.attr(local_name!("href")) {
-                if let Some(url) = resolve_url(&doc.base_url, href) {
+                if let Some(url) = doc.url.resolve_relative(href) {
                     doc.navigation_provider.navigate_to(NavigationOptions::new(
                         url,
                         String::from("text/plain"),
                         doc.id(),
                     ));
                 } else {
-                    println!(
-                        "{href} is not parseable as a url. : {base_url:?}",
-                        base_url = doc.base_url
-                    )
+                    println!("{href} is not parseable as a url. : {:?}", *doc.url)
                 }
                 return;
             } else {

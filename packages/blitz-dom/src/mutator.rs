@@ -121,7 +121,7 @@ impl DocumentMutator<'_> {
 
     pub fn create_element(&mut self, name: QualName, attrs: Vec<Attribute>) -> usize {
         let mut data = ElementData::new(name, attrs);
-        data.flush_style_attribute(self.doc.guard(), self.doc.base_url.clone());
+        data.flush_style_attribute(self.doc.guard(), &self.doc.url.url_extra_data());
 
         let id = self.doc.create_node(NodeData::Element(data));
         let node = self.doc.get_node(id).unwrap();
@@ -216,7 +216,7 @@ impl DocumentMutator<'_> {
         }
 
         if *attr == local_name!("style") {
-            element.flush_style_attribute(&self.doc.guard, self.doc.base_url.clone());
+            element.flush_style_attribute(&self.doc.guard, &self.doc.url.url_extra_data());
         } else if (tag, attr) == tag_and_attr!("input", "checked") {
             set_input_checked_state(element, value.to_string());
         } else if (tag, attr) == tag_and_attr!("img", "src") {
@@ -257,7 +257,7 @@ impl DocumentMutator<'_> {
         let tag = &element.name.local;
         let attr = &name.local;
         if *attr == local_name!("style") {
-            element.flush_style_attribute(&self.doc.guard, self.doc.base_url.clone());
+            element.flush_style_attribute(&self.doc.guard, &self.doc.url.url_extra_data());
         } else if (tag, attr) == tag_and_attr!("canvas", "src") {
             self.recompute_is_animating = true;
         } else if (tag, attr) == tag_and_attr!("link", "href") {

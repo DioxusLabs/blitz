@@ -14,6 +14,7 @@ use style::invalidation::element::restyle_hints::RestyleHint;
 use style::properties::ComputedValues;
 use style::properties::generated::longhands::position::computed_value::T as Position;
 use style::selector_parser::PseudoElement;
+use style::stylesheets::UrlExtraData;
 use style::values::computed::Display;
 use style::values::specified::box_::{DisplayInside, DisplayOutside};
 use style::{data::ElementData as StyloElementData, shared_lock::SharedRwLock};
@@ -23,7 +24,6 @@ use taffy::{
     Cache,
     prelude::{Layout, Style},
 };
-use url::Url;
 
 use super::{Attribute, ElementData};
 
@@ -632,9 +632,9 @@ impl Node {
         }
     }
 
-    pub fn flush_style_attribute(&mut self, base_url: Option<Url>) {
+    pub fn flush_style_attribute(&mut self, url_extra_data: &UrlExtraData) {
         if let NodeData::Element(ref mut elem_data) = self.data {
-            elem_data.flush_style_attribute(&self.guard, base_url);
+            elem_data.flush_style_attribute(&self.guard, url_extra_data);
         }
     }
 

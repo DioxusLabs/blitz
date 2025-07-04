@@ -2,9 +2,7 @@ use selectors::SelectorList;
 use smallvec::SmallVec;
 use style::dom_apis::{MayUseInvalidation, QueryAll, QueryFirst, query_selector};
 use style::selector_parser::{SelectorImpl, SelectorParser};
-use style::stylesheets::UrlExtraData;
 use style_traits::ParseError;
-use url::Url;
 
 use crate::{BaseDocument, Node};
 
@@ -69,11 +67,7 @@ impl BaseDocument {
         &self,
         input: &'input str,
     ) -> Result<SelectorList<SelectorImpl>, ParseError<'input>> {
-        let url_extra_data = UrlExtraData::from(self.base_url.clone().unwrap_or_else(|| {
-            "data:text/css;charset=utf-8;base64,"
-                .parse::<Url>()
-                .unwrap()
-        }));
+        let url_extra_data = self.url.url_extra_data();
         SelectorParser::parse_author_origin_no_namespace(input, &url_extra_data)
     }
 }

@@ -47,6 +47,7 @@ mod stylo;
 mod stylo_to_cursor_icon;
 mod stylo_to_parley;
 mod traversal;
+mod url;
 
 pub mod net;
 pub mod util;
