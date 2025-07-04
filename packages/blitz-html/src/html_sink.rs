@@ -237,7 +237,7 @@ impl<'b> TreeSink for DocumentHtmlParser<'b> {
 
 #[test]
 fn parses_some_html() {
-    use blitz_traits::{ColorScheme, Viewport};
+    use blitz_traits::shell::{ColorScheme, Viewport};
 
     let html = "<!DOCTYPE html><html><body><h1>hello world</h1></body></html>";
     let viewport = Viewport::new(800, 600, 1.0, ColorScheme::Light);

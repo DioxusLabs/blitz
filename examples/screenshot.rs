@@ -9,7 +9,7 @@ use blitz_net::{MpscCallback, Provider};
 use blitz_paint::paint_scene;
 use blitz_traits::navigation::DummyNavigationProvider;
 use blitz_traits::net::SharedProvider;
-use blitz_traits::{ColorScheme, Viewport};
+use blitz_traits::shell::{ColorScheme, Viewport};
 use reqwest::Url;
 use std::sync::Arc;
 use std::{
