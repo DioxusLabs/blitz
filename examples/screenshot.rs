@@ -3,12 +3,10 @@
 use anyrender::render_to_buffer;
 use anyrender_vello::VelloImageRenderer;
 use anyrender_vello_cpu::VelloCpuImageRenderer;
-use blitz_dom::net::Resource;
+use blitz_dom::DocumentConfig;
 use blitz_html::HtmlDocument;
 use blitz_net::{MpscCallback, Provider};
 use blitz_paint::paint_scene;
-use blitz_traits::navigation::DummyNavigationProvider;
-use blitz_traits::net::SharedProvider;
 use blitz_traits::shell::{ColorScheme, Viewport};
 use reqwest::Url;
 use std::sync::Arc;
@@ -68,18 +66,16 @@ async fn main() {
     let callback = Arc::new(callback);
     let net = Arc::new(Provider::new(callback));
 
-    let navigation_provider = Arc::new(DummyNavigationProvider);
-
     timer.time("Setup document prerequisites");
 
     // Create HtmlDocument
     let mut document = HtmlDocument::from_html(
         &html,
-        Some(url_string.clone()),
-        Vec::new(),
-        Arc::clone(&net) as SharedProvider<Resource>,
-        None,
-        navigation_provider,
+        DocumentConfig {
+            base_url: Some(url_string.clone()),
+            net_provider: Some(Arc::clone(&net) as _),
+            ..Default::default()
+        },
     );
 
     timer.time("Parsed document");

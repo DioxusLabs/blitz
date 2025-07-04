@@ -6,7 +6,9 @@ use crate::node::{ImageData, NodeFlags, RasterImageData, SpecialElementData, Sta
 use crate::stylo_to_cursor_icon::stylo_to_cursor_icon;
 use crate::traversal::TreeTraverser;
 use crate::util::{ImageType, resolve_url};
-use crate::{DocumentMutator, ElementData, Node, NodeData, TextNodeData};
+use crate::{
+    DEFAULT_CSS, DocumentConfig, DocumentMutator, ElementData, Node, NodeData, TextNodeData,
+};
 use app_units::Au;
 use blitz_traits::devtools::DevtoolSettings;
 use blitz_traits::events::{DomEvent, HitResult, UiEvent};
@@ -187,14 +189,11 @@ impl BaseDocument {
 }
 
 impl BaseDocument {
-    pub fn new(viewport: Viewport) -> Self {
-        Self::with_font_ctx(viewport, parley::FontContext::default())
-    }
-
-    pub fn with_font_ctx(viewport: Viewport, mut font_ctx: FontContext) -> Self {
+    pub fn new(config: DocumentConfig) -> Self {
         static ID_GENERATOR: AtomicUsize = AtomicUsize::new(1);
 
         let id = ID_GENERATOR.fetch_add(1, Ordering::SeqCst);
+        let viewport = config.viewport.unwrap_or_default();
         let device = make_device(&viewport);
         let stylist = Stylist::new(device, QuirksMode::NoQuirks);
         let snapshots = SnapshotMap::new();
@@ -209,9 +208,23 @@ impl BaseDocument {
         style_config::set_bool("layout.unimplemented", true);
         style_config::set_bool("layout.columns.enabled", true);
 
-        font_ctx
-            .collection
-            .register_fonts(Blob::new(Arc::new(crate::BULLET_FONT) as _), None);
+        let font_ctx = config.font_ctx.unwrap_or_else(|| {
+            let mut font_ctx = FontContext::default();
+            font_ctx
+                .collection
+                .register_fonts(Blob::new(Arc::new(crate::BULLET_FONT) as _), None);
+            font_ctx
+        });
+
+        let net_provider = config
+            .net_provider
+            .unwrap_or_else(|| Arc::new(DummyNetProvider));
+        let navigation_provider = config
+            .navigation_provider
+            .unwrap_or_else(|| Arc::new(DummyNavigationProvider));
+        let shell_provider = config
+            .shell_provider
+            .unwrap_or_else(|| Arc::new(DummyShellProvider));
 
         let mut doc = Self {
             id,
@@ -236,14 +249,23 @@ impl BaseDocument {
             is_animating: false,
             changed_nodes: HashSet::new(),
             controls_to_form: HashMap::new(),
-            net_provider: Arc::new(DummyNetProvider),
-            navigation_provider: Arc::new(DummyNavigationProvider),
-            shell_provider: Arc::new(DummyShellProvider),
+            net_provider,
+            navigation_provider,
+            shell_provider,
         };
 
         // Initialise document with root Document node
         doc.create_node(NodeData::Document);
         doc.root_node_mut().flags.insert(NodeFlags::IS_IN_DOCUMENT);
+
+        match config.ua_stylesheets {
+            Some(stylesheets) => {
+                for ss in &stylesheets {
+                    doc.add_user_agent_stylesheet(ss);
+                }
+            }
+            None => doc.add_user_agent_stylesheet(DEFAULT_CSS),
+        }
 
         // Stylo data on the root node container is needed to render the node
         let stylo_element_data = StyloElementData {

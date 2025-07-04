@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use crate::WindowRenderer;
+use blitz_dom::DocumentConfig;
 use blitz_dom::net::Resource;
 use blitz_html::HtmlDocument;
 use blitz_net::Provider;
@@ -110,11 +111,13 @@ impl ReadmeApplication {
 
         let doc = HtmlDocument::from_html(
             &html,
-            Some(url),
-            stylesheets,
-            self.net_provider.clone(),
-            None,
-            self.navigation_provider.clone(),
+            DocumentConfig {
+                base_url: Some(url),
+                ua_stylesheets: Some(stylesheets),
+                net_provider: Some(self.net_provider.clone()),
+                navigation_provider: Some(self.navigation_provider.clone()),
+                ..Default::default()
+            },
         );
         self.window_mut()
             .replace_document(Box::new(doc) as _, retain_scroll_position);

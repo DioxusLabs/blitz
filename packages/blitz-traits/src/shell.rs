@@ -36,17 +36,23 @@ pub enum ColorScheme {
     Dark,
 }
 
-#[derive(Default, Debug, Clone)]
+#[derive(Debug, Clone)]
 pub struct Viewport {
-    pub window_size: (u32, u32),
-
-    hidpi_scale: f32,
-
-    zoom: f32,
-
-    pub font_size: f32,
-
     pub color_scheme: ColorScheme,
+    pub window_size: (u32, u32),
+    pub hidpi_scale: f32,
+    pub zoom: f32,
+}
+
+impl Default for Viewport {
+    fn default() -> Self {
+        Self {
+            window_size: (0, 0),
+            hidpi_scale: 1.0,
+            zoom: 1.0,
+            color_scheme: ColorScheme::Light,
+        }
+    }
 }
 
 impl Viewport {
@@ -60,7 +66,6 @@ impl Viewport {
             window_size: (physical_width, physical_height),
             hidpi_scale: scale_factor,
             zoom: 1.0,
-            font_size: 16.0,
             color_scheme,
         }
     }

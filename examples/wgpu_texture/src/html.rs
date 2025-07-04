@@ -1,10 +1,7 @@
-use std::sync::Arc;
-
 use anyrender_vello::VelloWindowRenderer;
-use blitz_dom::{local_name, ns, QualName};
+use blitz_dom::{local_name, ns, DocumentConfig, QualName};
 use blitz_html::HtmlDocument;
 use blitz_shell::{create_default_event_loop, BlitzApplication, BlitzShellEvent, WindowConfig};
-use blitz_traits::{navigation::DummyNavigationProvider, net::DummyNetProvider};
 
 use crate::{limits, DemoPaintSource, FEATURES, STYLES};
 
@@ -19,14 +16,7 @@ pub fn launch_html() {
 
     // Parse the HTML into a Blitz document
     let html = HTML.replace("{{STYLES_PLACEHOLDER}}", STYLES);
-    let mut doc = HtmlDocument::from_html(
-        &html,
-        None,
-        Vec::new(),
-        Arc::new(DummyNetProvider),
-        None,
-        Arc::new(DummyNavigationProvider),
-    );
+    let mut doc = HtmlDocument::from_html(&html, DocumentConfig::default());
 
     // Set the "src" attribute on the `<canvas>` element to the paint source's id
     // (`<canvas src=".." />` is proprietary blitz extension to HTML)

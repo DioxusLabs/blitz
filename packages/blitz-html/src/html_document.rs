@@ -1,19 +1,11 @@
-use std::{
-    ops::{Deref, DerefMut},
-    sync::Arc,
-};
+use std::ops::{Deref, DerefMut};
 
 use crate::DocumentHtmlParser;
 
 use blitz_dom::{
-    BaseDocument, DEFAULT_CSS, Document, EventDriver, FontContext, NoopEventHandler, net::Resource,
+    BaseDocument, DEFAULT_CSS, Document, DocumentConfig, EventDriver, NoopEventHandler,
 };
-use blitz_traits::{
-    events::UiEvent,
-    navigation::NavigationProvider,
-    net::SharedProvider,
-    shell::{ColorScheme, Viewport},
-};
+use blitz_traits::events::UiEvent;
 
 pub struct HtmlDocument {
     inner: BaseDocument,
@@ -52,41 +44,14 @@ impl Document for HtmlDocument {
 }
 
 impl HtmlDocument {
-    pub fn from_html(
-        html: &str,
-        base_url: Option<String>,
-        stylesheets: Vec<String>,
-        net_provider: SharedProvider<Resource>,
-        font_ctx: Option<FontContext>,
-        navigation_provider: Arc<dyn NavigationProvider>,
-    ) -> Self {
-        // Spin up the virtualdom and include the default stylesheet
-        let viewport = Viewport::new(0, 0, 1.0, ColorScheme::Light);
-        let mut doc = match font_ctx {
-            Some(font_ctx) => BaseDocument::with_font_ctx(viewport, font_ctx),
-            None => BaseDocument::new(viewport),
-        };
-
-        // Set base url if configured
-        if let Some(url) = &base_url {
-            doc.set_base_url(url);
+    pub fn from_html(html: &str, mut config: DocumentConfig) -> Self {
+        if let Some(ss) = &mut config.ua_stylesheets {
+            if !ss.iter().any(|s| s == DEFAULT_CSS) {
+                ss.push(String::from(DEFAULT_CSS));
+            }
         }
-
-        // Set the net provider
-        doc.set_net_provider(net_provider.clone());
-
-        // Set the navigation provider
-        doc.set_navigation_provider(navigation_provider.clone());
-
-        // Include default and user-specified stylesheets
-        doc.add_user_agent_stylesheet(DEFAULT_CSS);
-        for ss in &stylesheets {
-            doc.add_user_agent_stylesheet(ss);
-        }
-
-        // Parse HTML string into document
+        let mut doc = BaseDocument::new(config);
         DocumentHtmlParser::parse_into_doc(&mut doc, html);
-
         HtmlDocument { inner: doc }
     }
 }

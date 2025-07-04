@@ -20,6 +20,7 @@ use anyrender_vello::VelloWindowRenderer as WindowRenderer;
 #[cfg(feature = "cpu")]
 use anyrender_vello_cpu::VelloCpuWindowRenderer as WindowRenderer;
 
+use blitz_dom::DocumentConfig;
 use blitz_dom::net::Resource;
 use blitz_html::HtmlDocument;
 use blitz_net::Provider;
@@ -100,11 +101,13 @@ fn main() {
 
     let doc = HtmlDocument::from_html(
         &html,
-        Some(base_url),
-        stylesheets,
-        net_provider.clone(),
-        None,
-        navigation_provider.clone(),
+        DocumentConfig {
+            base_url: Some(base_url),
+            ua_stylesheets: Some(stylesheets),
+            net_provider: Some(net_provider.clone()),
+            navigation_provider: Some(navigation_provider.clone()),
+            ..Default::default()
+        },
     );
     let renderer = WindowRenderer::new();
     let attrs = WindowAttributes::default().with_title(title);

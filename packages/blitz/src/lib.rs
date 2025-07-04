@@ -14,13 +14,13 @@
 use std::sync::Arc;
 
 use anyrender_vello::VelloWindowRenderer as WindowRenderer;
+use blitz_dom::DocumentConfig;
 use blitz_dom::net::Resource;
 use blitz_html::HtmlDocument;
 use blitz_shell::{
     BlitzApplication, BlitzShellEvent, BlitzShellNetCallback, Config, EventLoop, WindowConfig,
     create_default_event_loop,
 };
-use blitz_traits::navigation::DummyNavigationProvider;
 use blitz_traits::net::{NetProvider, Request};
 
 #[doc(inline)]
@@ -101,14 +101,14 @@ fn launch_internal(
     event_loop: EventLoop<BlitzShellEvent>,
     net_provider: Arc<dyn NetProvider<Resource>>,
 ) {
-    let navigation_provider = Arc::new(DummyNavigationProvider);
     let doc = HtmlDocument::from_html(
         html,
-        cfg.base_url,
-        cfg.stylesheets,
-        net_provider,
-        None,
-        navigation_provider,
+        DocumentConfig {
+            base_url: cfg.base_url,
+            ua_stylesheets: Some(cfg.stylesheets),
+            net_provider: Some(net_provider),
+            ..Default::default()
+        },
     );
     let renderer = WindowRenderer::new();
     let window = WindowConfig::new(Box::new(doc) as _, renderer);

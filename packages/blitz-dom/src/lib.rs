@@ -34,6 +34,7 @@ mod document;
 /// The nodes themsleves, and their data.
 pub mod node;
 
+mod config;
 mod debug;
 mod events;
 mod form;
@@ -53,6 +54,7 @@ pub mod util;
 #[cfg(feature = "accessibility")]
 mod accessibility;
 
+pub use config::DocumentConfig;
 pub use document::{BaseDocument, Document};
 pub use markup5ever::{
     LocalName, Namespace, NamespaceStaticSet, Prefix, PrefixStaticSet, QualName, local_name,

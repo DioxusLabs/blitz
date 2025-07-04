@@ -1,8 +1,7 @@
 use std::{fs, sync::Arc, time::Instant};
 
-use blitz_dom::{BaseDocument, net::Resource};
+use blitz_dom::{BaseDocument, DocumentConfig};
 use blitz_html::HtmlDocument;
-use blitz_traits::net::SharedProvider;
 use log::info;
 
 use crate::{SubtestCounts, TestFlags, TestKind, TestStatus, ThreadCtx};
@@ -106,11 +105,13 @@ fn parse_and_resolve_document(
     ctx.net_provider.reset();
     let mut document = HtmlDocument::from_html(
         html,
-        Some(ctx.dummy_base_url.join(relative_path).unwrap().to_string()),
-        Vec::new(),
-        Arc::clone(&ctx.net_provider) as SharedProvider<Resource>,
-        Some(ctx.font_ctx.clone()),
-        ctx.navigation_provider.clone(),
+        DocumentConfig {
+            base_url: Some(ctx.dummy_base_url.join(relative_path).unwrap().to_string()),
+            font_ctx: Some(ctx.font_ctx.clone()),
+            net_provider: Some(Arc::clone(&ctx.net_provider) as _),
+            navigation_provider: Some(Arc::clone(&ctx.navigation_provider)),
+            ..Default::default()
+        },
     );
 
     document.as_mut().set_viewport(ctx.viewport.clone());

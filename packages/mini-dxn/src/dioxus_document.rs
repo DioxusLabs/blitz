@@ -1,4 +1,5 @@
 //! Integration between Dioxus and Blitz
+use blitz_dom::DocumentConfig;
 use futures_util::{FutureExt, pin_mut};
 use std::ops::{Deref, DerefMut};
 use std::{any::Any, collections::HashMap, rc::Rc, sync::Arc};
@@ -9,7 +10,6 @@ use blitz_dom::{
 use blitz_traits::{
     events::{DomEvent, DomEventData, EventState, UiEvent},
     net::NetProvider,
-    shell::{ColorScheme, Viewport},
 };
 
 use dioxus_core::{ElementId, Event, VirtualDom};
@@ -41,13 +41,10 @@ pub struct DioxusDocument {
 
 impl DioxusDocument {
     pub fn new(vdom: VirtualDom, net_provider: Option<Arc<dyn NetProvider<Resource>>>) -> Self {
-        let viewport = Viewport::new(0, 0, 1.0, ColorScheme::Light);
-        let mut doc = BaseDocument::new(viewport);
-
-        // Set net provider
-        if let Some(net_provider) = net_provider {
-            doc.set_net_provider(net_provider);
-        }
+        let mut doc = BaseDocument::new(DocumentConfig {
+            net_provider,
+            ..Default::default()
+        });
 
         // Create some minimal HTML to render the app into.
 
