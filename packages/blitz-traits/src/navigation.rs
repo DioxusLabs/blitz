@@ -4,7 +4,8 @@ use url::Url;
 
 use crate::net::Request;
 
-/// A provider to enable a document to bubble up navigation events (e.g. clicking a link)
+/// An abstraction to allow embedders to hook into "navigation events" such as clicking a link
+/// or submitting a form.
 pub trait NavigationProvider: Send + Sync + 'static {
     fn navigate_to(&self, options: NavigationOptions);
 }
