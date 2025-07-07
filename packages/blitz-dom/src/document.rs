@@ -182,15 +182,7 @@ pub(crate) fn make_device(viewport: &Viewport) -> Device {
 }
 
 impl BaseDocument {
-    pub fn handle_event<F: FnMut(DomEvent)>(&mut self, event: &mut DomEvent, dispatch_event: F) {
-        handle_event(self, event, dispatch_event)
-    }
-    pub fn as_any_mut(&mut self) -> &mut dyn Any {
-        self
-    }
-}
-
-impl BaseDocument {
+    /// Create a new (empty) [`BaseDocument`] with the specified configuration
     pub fn new(config: DocumentConfig) -> Self {
         static ID_GENERATOR: AtomicUsize = AtomicUsize::new(1);
 
@@ -337,6 +329,14 @@ impl BaseDocument {
 
     pub fn mutate<'doc>(&'doc mut self) -> DocumentMutator<'doc> {
         DocumentMutator::new(self)
+    }
+
+    pub fn handle_event<F: FnMut(DomEvent)>(&mut self, event: &mut DomEvent, dispatch_event: F) {
+        handle_event(self, event, dispatch_event)
+    }
+
+    pub fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
     }
 
     /// Find the label's bound input elements:
