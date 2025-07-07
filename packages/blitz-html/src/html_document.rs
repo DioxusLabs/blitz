@@ -44,6 +44,7 @@ impl Document for HtmlDocument {
 }
 
 impl HtmlDocument {
+    /// Parse HTML (or XHTML) into an [`HtmlDocument`]
     pub fn from_html(html: &str, mut config: DocumentConfig) -> Self {
         if let Some(ss) = &mut config.ua_stylesheets {
             if !ss.iter().any(|s| s == DEFAULT_CSS) {
@@ -53,5 +54,10 @@ impl HtmlDocument {
         let mut doc = BaseDocument::new(config);
         DocumentHtmlParser::parse_into_doc(&mut doc, html);
         HtmlDocument { inner: doc }
+    }
+
+    /// Convert the [`HtmlDocument`] into it's inner [`BaseDocument`]
+    pub fn into_inner(self) -> BaseDocument {
+        self.into()
     }
 }
