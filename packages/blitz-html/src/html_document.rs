@@ -2,10 +2,7 @@ use std::ops::{Deref, DerefMut};
 
 use crate::DocumentHtmlParser;
 
-use blitz_dom::{
-    BaseDocument, DEFAULT_CSS, Document, DocumentConfig, EventDriver, NoopEventHandler,
-};
-use blitz_traits::events::UiEvent;
+use blitz_dom::{BaseDocument, DEFAULT_CSS, Document, DocumentConfig};
 
 pub struct HtmlDocument {
     inner: BaseDocument,
@@ -29,15 +26,6 @@ impl From<HtmlDocument> for BaseDocument {
     }
 }
 impl Document for HtmlDocument {
-    fn handle_event(&mut self, event: UiEvent) {
-        let mut driver = EventDriver::new(self.inner.mutate(), NoopEventHandler);
-        driver.handle_ui_event(event);
-    }
-
-    fn id(&self) -> usize {
-        self.inner.id()
-    }
-
     fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
         self
     }

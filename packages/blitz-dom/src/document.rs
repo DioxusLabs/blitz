@@ -8,7 +8,8 @@ use crate::traversal::TreeTraverser;
 use crate::url::DocumentUrl;
 use crate::util::ImageType;
 use crate::{
-    DEFAULT_CSS, DocumentConfig, DocumentMutator, ElementData, Node, NodeData, TextNodeData,
+    DEFAULT_CSS, DocumentConfig, DocumentMutator, ElementData, EventDriver, Node, NodeData,
+    NoopEventHandler, TextNodeData,
 };
 use app_units::Au;
 use blitz_traits::devtools::DevtoolSettings;
@@ -28,6 +29,7 @@ use std::ops::{Deref, DerefMut};
 use std::str::FromStr;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::task::Context as TaskContext;
 use style::Atom;
 use style::attr::{AttrIdentifier, AttrValue};
 use style::data::{ElementData as StyloElementData, ElementStyles};
@@ -51,21 +53,28 @@ use style::{
 use taffy::AvailableSpace;
 use url::Url;
 
+/// Abstraction over wrappers around [`BaseDocument`] to allow for them all to
+/// be driven by [`blitz-shell`](https://docs.rs/blitz-shell)
 pub trait Document: Deref<Target = BaseDocument> + DerefMut + 'static {
-    fn poll(&mut self, cx: std::task::Context) -> bool {
-        // Default implementation does nothing
-        let _ = cx;
-        false
+    /// Update the [`Document`] in response to a [`UiEvent`] (click, keypress, etc)
+    fn handle_ui_event(&mut self, event: UiEvent) {
+        let mut driver = EventDriver::new((*self).mutate(), NoopEventHandler);
+        driver.handle_ui_event(event);
     }
 
-    fn handle_event(&mut self, event: UiEvent) {
+    /// Poll any pending async operations, and flush changes to the underlying [`BaseDocument`]
+    fn poll(&mut self, task_context: Option<TaskContext>) -> bool {
         // Default implementation does nothing
-        let _ = event;
+        let _ = task_context;
+        false
     }
 
     fn as_any_mut(&mut self) -> &mut dyn Any;
 
-    fn id(&self) -> usize;
+    /// Get the [`Document`]'s id
+    fn id(&self) -> usize {
+        self.id
+    }
 }
 
 // TODO: implement a proper font metrics provider

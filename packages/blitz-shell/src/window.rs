@@ -178,7 +178,7 @@ impl<Rend: WindowRenderer> View<Rend> {
     pub fn poll(&mut self) -> bool {
         if let Some(waker) = &self.waker {
             let cx = std::task::Context::from_waker(waker);
-            if self.doc.poll(cx) {
+            if self.doc.poll(Some(cx)) {
                 #[cfg(feature = "accessibility")]
                 {
                     if self.doc.has_changes() {
@@ -263,7 +263,7 @@ impl<Rend: WindowRenderer> View<Rend> {
 
             // Text / keyboard events
             WindowEvent::Ime(ime_event) => {
-                self.doc.handle_event(UiEvent::Ime(winit_ime_to_blitz(ime_event)));
+                self.doc.handle_ui_event(UiEvent::Ime(winit_ime_to_blitz(ime_event)));
                 self.request_redraw();
             },
             WindowEvent::ModifiersChanged(new_state) => {
@@ -316,7 +316,7 @@ impl<Rend: WindowRenderer> View<Rend> {
                     UiEvent::KeyUp(key_event_data)
                 };
 
-                self.doc.handle_event(event);
+                self.doc.handle_ui_event(event);
                 self.request_redraw();
             }
 
@@ -334,7 +334,7 @@ impl<Rend: WindowRenderer> View<Rend> {
                     buttons: self.buttons,
                     mods: winit_modifiers_to_kbt_modifiers(self.keyboard_modifiers.state()),
                 });
-                self.doc.handle_event(event);
+                self.doc.handle_ui_event(event);
                 self.request_redraw();
             }
             WindowEvent::MouseInput { button, state, .. } => {
@@ -361,7 +361,7 @@ impl<Rend: WindowRenderer> View<Rend> {
                     ElementState::Pressed => UiEvent::MouseDown(event),
                     ElementState::Released => UiEvent::MouseUp(event),
                 };
-                self.doc.handle_event(event);
+                self.doc.handle_ui_event(event);
                 self.request_redraw();
             }
             WindowEvent::MouseWheel { delta, .. } => {

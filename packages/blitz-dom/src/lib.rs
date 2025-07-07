@@ -9,7 +9,7 @@
 //!  - [`DioxusDocument`](https://docs.rs/dioxus-native/latest/dioxus_native/struct.DioxusDocument.html) from the [dioxus-native](https://docs.rs/dioxus-native) crate.
 //!    Combines a [`BaseDocument`] with a Dioxus `VirtualDom` to enable dynamic rendering and event handling.
 //!
-//! It includes: A DOM tree respresentation, CSS parsing and resolution, layout and event handling. Additional functionality is available in 
+//! It includes: A DOM tree respresentation, CSS parsing and resolution, layout and event handling. Additional functionality is available in
 //! separate crates, including html parsing ([blitz-html](https://docs.rs/blitz-html)), networking ([blitz-net](https://docs.rs/blitz-html)),
 //! rendering ([blitz-paint](https://docs.rs/blitz-paint)) and windowing ([blitz-shell](https://docs.rs/blitz-shell)).
 //!

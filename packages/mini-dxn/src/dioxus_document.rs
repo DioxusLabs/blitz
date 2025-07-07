@@ -1,7 +1,9 @@
 //! Integration between Dioxus and Blitz
 use blitz_dom::DocumentConfig;
-use futures_util::{FutureExt, pin_mut};
+use futures_util::{FutureExt, pin_mut, task::noop_waker};
 use std::ops::{Deref, DerefMut};
+use std::sync::LazyLock;
+use std::task::{Context as TaskContext, Waker};
 use std::{any::Any, collections::HashMap, rc::Rc, sync::Arc};
 
 use blitz_dom::{
@@ -94,21 +96,29 @@ impl DioxusDocument {
     }
 }
 
-// Implement DocumentLike and required traits for DioxusDocument
+// Implement Document and required traits for DioxusDocument
 impl Document for DioxusDocument {
-    fn id(&self) -> usize {
-        self.inner.id()
-    }
-
     fn as_any_mut(&mut self) -> &mut dyn Any {
         self
     }
 
-    fn poll(&mut self, mut cx: std::task::Context) -> bool {
+    fn handle_ui_event(&mut self, event: UiEvent) {
+        set_event_converter(Box::new(NativeConverter {}));
+        let handler = DioxusEventHandler {
+            vdom: &mut self.vdom,
+            vdom_state: &mut self.vdom_state,
+        };
+        let mut driver = EventDriver::new(self.inner.mutate(), handler);
+        driver.handle_ui_event(event);
+    }
+
+    fn poll(&mut self, cx: Option<TaskContext>) -> bool {
         {
             let fut = self.vdom.wait_for_work();
             pin_mut!(fut);
 
+            static NOOP_WAKER: LazyLock<Waker> = LazyLock::new(noop_waker);
+            let mut cx = cx.unwrap_or_else(|| TaskContext::from_waker(&NOOP_WAKER));
             match fut.poll_unpin(&mut cx) {
                 std::task::Poll::Ready(_) => {}
                 std::task::Poll::Pending => return false,
@@ -119,16 +129,6 @@ impl Document for DioxusDocument {
         self.vdom.render_immediate(&mut writer);
 
         true
-    }
-
-    fn handle_event(&mut self, event: UiEvent) {
-        set_event_converter(Box::new(NativeConverter {}));
-        let handler = DioxusEventHandler {
-            vdom: &mut self.vdom,
-            vdom_state: &mut self.vdom_state,
-        };
-        let mut driver = EventDriver::new(self.inner.mutate(), handler);
-        driver.handle_ui_event(event);
     }
 }
 
