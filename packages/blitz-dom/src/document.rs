@@ -1,4 +1,4 @@
-use crate::events::handle_event;
+use crate::events::handle_dom_event;
 use crate::layout::construct::collect_layout_children;
 use crate::mutator::ViewportMut;
 use crate::net::{Resource, StylesheetLoader};
@@ -340,8 +340,12 @@ impl BaseDocument {
         DocumentMutator::new(self)
     }
 
-    pub fn handle_event<F: FnMut(DomEvent)>(&mut self, event: &mut DomEvent, dispatch_event: F) {
-        handle_event(self, event, dispatch_event)
+    pub fn handle_dom_event<F: FnMut(DomEvent)>(
+        &mut self,
+        event: &mut DomEvent,
+        dispatch_event: F,
+    ) {
+        handle_dom_event(self, event, dispatch_event)
     }
 
     pub fn as_any_mut(&mut self) -> &mut dyn Any {

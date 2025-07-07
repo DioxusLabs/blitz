@@ -12,7 +12,7 @@ pub(crate) use mouse::{handle_click, handle_mousedown, handle_mousemove};
 
 use crate::BaseDocument;
 
-pub(crate) fn handle_event<F: FnMut(DomEvent)>(
+pub(crate) fn handle_dom_event<F: FnMut(DomEvent)>(
     doc: &mut BaseDocument,
     event: &mut DomEvent,
     dispatch_event: F,

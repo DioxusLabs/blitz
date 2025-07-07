@@ -121,7 +121,7 @@ impl<'doc, Handler: EventHandler> EventDriver<'doc, Handler> {
 
             if !event_state.is_cancelled() {
                 self.doc_mut()
-                    .handle_event(&mut event, |new_evt| queue.push_back(new_evt));
+                    .handle_dom_event(&mut event, |new_evt| queue.push_back(new_evt));
             }
         }
     }
