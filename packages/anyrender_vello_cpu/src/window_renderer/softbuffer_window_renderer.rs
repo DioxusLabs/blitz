@@ -90,12 +90,12 @@ impl WindowRenderer for VelloCpuSoftbufferWindowRenderer {
         let height = self.render_context.0.height();
         let mut pixmap = Pixmap::new(width, height);
         draw_fn(&mut self.render_context);
-        timer.time("cmd");
+        timer.record_time("cmd");
 
         self.render_context
             .0
             .render_to_pixmap(&mut pixmap, RenderMode::OptimizeSpeed);
-        timer.time("render");
+        timer.record_time("render");
 
         let out = surface_buffer.as_mut();
         assert_eq!(pixmap.data().len(), out.len());
@@ -107,10 +107,10 @@ impl WindowRenderer for VelloCpuSoftbufferWindowRenderer {
                 *dest = (r as u32) << 16 | (g as u32) << 8 | b as u32;
             }
         }
-        timer.time("swizel");
+        timer.record_time("swizel");
 
         surface_buffer.present().unwrap();
-        timer.time("present");
+        timer.record_time("present");
         timer.print_times("Frame time: ");
 
         // Empty the Vello render context (memory optimisation)
