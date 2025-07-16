@@ -9,11 +9,12 @@ license.workspace = true
 edition = "2024"
 
 [features]
-default = ["external", "std", "pixels"]
+default = ["external", "std"]
 vendored = ["dep:bytemuck", "dep:skrifa", "dep:smallvec", "peniko/bytemuck"]
 external = ["dep:vello_cpu"]
 multithreading = ["vello_cpu?/multithreading"]
-pixels = ["dep:pixels"]
+pixels_window_renderer = ["dep:pixels"]
+softbuffer_window_renderer = ["dep:softbuffer"]
 png = ["dep:png"]
 simd = []
 std = []
@@ -22,7 +23,9 @@ std = []
 anyrender = { workspace = true }
 kurbo = { workspace = true }
 peniko = { workspace = true }
-softbuffer = { workspace = true }
+
+# WindowRenderer backends
+softbuffer = { workspace = true, optional = true }
 pixels = { workspace = true, optional = true }
 
 # External vello_cpu
