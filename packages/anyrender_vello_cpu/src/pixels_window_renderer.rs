@@ -16,7 +16,7 @@ pub enum RenderState {
     Suspended,
 }
 
-pub struct VelloCpuWindowRenderer {
+pub struct VelloCpuPixelsWindowRenderer {
     // The fields MUST be in this order, so that the surface is dropped before the window
     // Window is cached even when suspended so that it can be reused when the app is resumed after being suspended
     render_state: RenderState,
@@ -24,7 +24,7 @@ pub struct VelloCpuWindowRenderer {
     render_context: VelloCpuScenePainter,
 }
 
-impl VelloCpuWindowRenderer {
+impl VelloCpuPixelsWindowRenderer {
     #[allow(clippy::new_without_default)]
     pub fn new() -> Self {
         Self {
@@ -35,7 +35,7 @@ impl VelloCpuWindowRenderer {
     }
 }
 
-impl WindowRenderer for VelloCpuWindowRenderer {
+impl WindowRenderer for VelloCpuPixelsWindowRenderer {
     type ScenePainter<'a> = VelloCpuScenePainter;
 
     fn is_active(&self) -> bool {

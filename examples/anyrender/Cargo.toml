@@ -11,5 +11,5 @@ peniko = { workspace = true }
 wgpu = { workspace = true }
 anyrender = { path = "../../packages/anyrender" }
 anyrender_vello = { path = "../../packages/anyrender_vello" }
-anyrender_vello_cpu = { path = "../../packages/anyrender_vello_cpu" }
+anyrender_vello_cpu = { path = "../../packages/anyrender_vello_cpu", features = ["pixels_window_renderer"] }
 

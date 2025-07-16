@@ -27,7 +27,7 @@ cpu_backend = ["dep:anyrender_vello_cpu"]
 # Blitz dependencies
 anyrender = { workspace = true }
 anyrender_vello = { workspace = true, optional = true }
-anyrender_vello_cpu = { workspace = true, optional = true }
+anyrender_vello_cpu = { workspace = true, features = ["pixels_window_renderer"], optional = true }
 blitz-paint = { workspace = true }
 blitz-dom =  { workspace = true, features = ["default"] }
 blitz-net = { workspace = true, optional = true }
