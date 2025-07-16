@@ -107,9 +107,6 @@ impl ServoStylesheetLoader for StylesheetLoader {
 
                 // NOTE(Nico): I don't *think* external stylesheets should have HTML entities escaped
                 // let escaped_css = html_escape::decode_html_entities(css);
-
-                println!("{css}");
-
                 Stylesheet::update_from_str(
                     &self.sheet,
                     css,
