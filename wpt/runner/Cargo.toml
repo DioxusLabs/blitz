@@ -5,7 +5,7 @@ edition = "2024"
 license.workspace = true
 
 [features]
-default = ["gpu"]
+default = ["cpu"]
 gpu = ["dep:anyrender_vello"]
 cpu = ["dep:anyrender_vello_cpu"]
 
