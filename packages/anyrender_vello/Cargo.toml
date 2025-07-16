@@ -8,6 +8,9 @@ documentation = "https://docs.rs/anyrender_vello"
 license.workspace = true
 edition = "2024"
 
+[features]
+log_frame_times = []
+
 [dependencies]
 anyrender = { workspace = true }
 kurbo = { workspace = true }

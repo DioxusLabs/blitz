@@ -1,5 +1,5 @@
 use crate::{
-    CustomPaintSource,
+    CustomPaintSource, DebugTimer,
     wgpu_context::{DeviceHandle, RenderSurface, WGPUContext},
 };
 use anyrender::{WindowHandle, WindowRenderer};
@@ -153,6 +153,8 @@ impl WindowRenderer for VelloWindowRenderer {
         let surface = &state.surface;
         let device_handle = &surface.device_handle;
 
+        let mut timer = DebugTimer::init();
+
         let render_params = RenderParams {
             base_color: Color::WHITE,
             width: state.surface.config.width,
@@ -168,6 +170,7 @@ impl WindowRenderer for VelloWindowRenderer {
         };
         draw_fn(&mut scene);
         self.scene = Some(scene.finish());
+        timer.record_time("cmd");
 
         state
             .renderer
@@ -179,6 +182,7 @@ impl WindowRenderer for VelloWindowRenderer {
                 &render_params,
             )
             .expect("failed to render to texture");
+        timer.record_time("render");
 
         // TODO: verify that handling of SurfaceError::Outdated is no longer required
         //
@@ -213,8 +217,12 @@ impl WindowRenderer for VelloWindowRenderer {
         );
         device_handle.queue.submit([encoder.finish()]);
         surface_texture.present();
+        timer.record_time("present");
 
         device_handle.device.poll(wgpu::Maintain::Wait);
+
+        timer.record_time("wait");
+        timer.print_times("Frame time: ");
 
         // static COUNTER: AtomicU64 = AtomicU64::new(0);
         // println!("FRAME {}", COUNTER.fetch_add(1, atomic::Ordering::Relaxed));

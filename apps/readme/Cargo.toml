@@ -11,7 +11,7 @@ cpu = ["dep:anyrender_vello_cpu"]
 avif = ["dep:image", "image?/avif-native"]
 comrak = ["dep:comrak"]
 pulldown_cmark = ["dep:pulldown-cmark"]
-log_frame_times = ["anyrender_vello_cpu?/log_frame_times"]
+log_frame_times = ["anyrender_vello_cpu?/log_frame_times", "anyrender_vello?/log_frame_times"]
 
 [dependencies]
 blitz-traits = { workspace = true }
