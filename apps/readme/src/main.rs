@@ -17,7 +17,7 @@ mod markdown {
 
 #[cfg(feature = "gpu")]
 use anyrender_vello::VelloWindowRenderer as WindowRenderer;
-#[cfg(feature = "cpu")]
+#[cfg(feature = "cpu-base")]
 use anyrender_vello_cpu::VelloCpuWindowRenderer as WindowRenderer;
 
 use blitz_dom::DocumentConfig;

@@ -96,7 +96,7 @@ pub fn launch_cfg(
     // Create the renderer
     #[cfg(feature = "gpu")]
     let renderer = DxnWindowRenderer::with_features_and_limits(features, limits);
-    #[cfg(feature = "cpu")]
+    #[cfg(feature = "cpu-base")]
     let renderer = DxnWindowRenderer::new();
 
     // Spin up the virtualdom

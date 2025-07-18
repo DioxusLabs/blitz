@@ -8,7 +8,9 @@ license.workspace = true
 default = ["system_fonts", "gpu"]
 system_fonts = ["blitz-dom/system_fonts"]
 gpu = ["mini-dxn/gpu"]
-cpu = ["mini-dxn/cpu"]
+cpu = ["cpu-pixels"]
+cpu-pixels = ["mini-dxn/cpu-pixels"]
+cpu-softbuffer = ["mini-dxn/cpu-softbuffer"]
 
 [dependencies]
 mini-dxn = { path = "../../packages/mini-dxn", default-features = false }

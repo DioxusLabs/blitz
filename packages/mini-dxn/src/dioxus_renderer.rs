@@ -10,7 +10,7 @@ pub use anyrender_vello::{
     wgpu::{Features, Limits},
 };
 
-#[cfg(feature = "cpu")]
+#[cfg(feature = "cpu-base")]
 use anyrender_vello_cpu::VelloCpuWindowRenderer as InnerRenderer;
 
 #[cfg(feature = "gpu")]
