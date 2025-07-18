@@ -23,4 +23,4 @@ todomvc:
   cargo run --release --example todomvc
 
 small:
-  cargo build --profile small -p counter --no-default-features --features cpu_backend,system_fonts
+  cargo build --profile small -p counter --no-default-features --features cpu,system_fonts

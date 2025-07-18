@@ -4,16 +4,16 @@ use std::sync::Arc;
 
 use anyrender::WindowRenderer;
 
-#[cfg(feature = "gpu_backend")]
+#[cfg(feature = "gpu")]
 pub use anyrender_vello::{
     CustomPaintSource, VelloWindowRenderer as InnerRenderer,
     wgpu::{Features, Limits},
 };
 
-#[cfg(feature = "cpu_backend")]
+#[cfg(feature = "cpu")]
 use anyrender_vello_cpu::VelloCpuWindowRenderer as InnerRenderer;
 
-#[cfg(feature = "gpu_backend")]
+#[cfg(feature = "gpu")]
 pub fn use_wgpu<T: CustomPaintSource>(create_source: impl FnOnce() -> T) -> u64 {
     use dioxus_core::prelude::{consume_context, use_hook_with_cleanup};
 
@@ -49,7 +49,7 @@ impl DxnWindowRenderer {
         Self::with_inner_renderer(vello_renderer)
     }
 
-    #[cfg(feature = "gpu_backend")]
+    #[cfg(feature = "gpu")]
     pub fn with_features_and_limits(features: Option<Features>, limits: Option<Limits>) -> Self {
         let vello_renderer = InnerRenderer::with_features_and_limits(features, limits);
         Self::with_inner_renderer(vello_renderer)
@@ -63,12 +63,12 @@ impl DxnWindowRenderer {
 }
 
 impl DxnWindowRenderer {
-    #[cfg(feature = "gpu_backend")]
+    #[cfg(feature = "gpu")]
     pub fn register_custom_paint_source(&self, source: Box<dyn CustomPaintSource>) -> u64 {
         self.inner.borrow_mut().register_custom_paint_source(source)
     }
 
-    #[cfg(feature = "gpu_backend")]
+    #[cfg(feature = "gpu")]
     pub fn unregister_custom_paint_source(&self, id: u64) {
         self.inner.borrow_mut().unregister_custom_paint_source(id)
     }

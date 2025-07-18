@@ -13,15 +13,15 @@ edition.workspace = true
 publish = false
 
 [features]
-default = ["accessibility", "hot-reload", "tracing", "net", "svg", "gpu_backend"]
+default = ["accessibility", "hot-reload", "tracing", "net", "svg", "gpu"]
 svg = ["blitz-dom/svg", "blitz-paint/svg"]
 net = ["dep:tokio", "dep:blitz-net"]
 accessibility = ["blitz-shell/accessibility", "blitz-dom/accessibility"]
 autofocus = ["blitz-dom/autofocus"]
 tracing = ["dep:tracing", "blitz-shell/tracing", "blitz-dom/tracing"]
 hot-reload = ["dep:dioxus-cli-config", "dep:dioxus-devtools"]
-gpu_backend = ["dep:anyrender_vello", "dep:wgpu"]
-cpu_backend = ["dep:anyrender_vello_cpu"]
+gpu = ["dep:anyrender_vello", "dep:wgpu"]
+cpu = ["dep:anyrender_vello_cpu"]
 
 [dependencies]
 # Blitz dependencies

@@ -5,10 +5,10 @@ edition = "2024"
 license.workspace = true
 
 [features]
-default = ["system_fonts", "gpu_backend"]
+default = ["system_fonts", "gpu"]
 system_fonts = ["blitz-dom/system_fonts"]
-gpu_backend = ["mini-dxn/gpu_backend"]
-cpu_backend = ["mini-dxn/cpu_backend"]
+gpu = ["mini-dxn/gpu"]
+cpu = ["mini-dxn/cpu"]
 
 [dependencies]
 mini-dxn = { path = "../../packages/mini-dxn", default-features = false }
