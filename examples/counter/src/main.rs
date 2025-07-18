@@ -35,6 +35,12 @@ fn app() -> Element {
 }
 
 const CSS: &str = r#"
+
+html, body {
+    padding: 0;
+    margin: 0;
+}
+
 .header {
     background-color: pink;
     padding: 20px;
