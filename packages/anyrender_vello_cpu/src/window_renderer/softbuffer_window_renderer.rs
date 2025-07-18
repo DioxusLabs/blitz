@@ -1,5 +1,5 @@
-use crate::{VelloCpuScenePainter, DebugTimer};
 use crate::vello_cpu::{Pixmap, RenderContext, RenderMode};
+use crate::{DebugTimer, VelloCpuScenePainter};
 use anyrender::{WindowHandle, WindowRenderer};
 use peniko::color::PremulRgba8;
 use softbuffer::{Context, Surface};
