@@ -1,5 +1,7 @@
 //! Types to represent UI and DOM events
 
+use std::str::FromStr;
+
 use bitflags::bitflags;
 use keyboard_types::{Code, Key, Location, Modifiers};
 use smol_str::SmolStr;
@@ -43,6 +45,7 @@ impl EventState {
 }
 
 #[derive(Debug, Clone)]
+#[repr(u8)]
 pub enum UiEvent {
     MouseMove(BlitzMouseButtonEvent),
     MouseUp(BlitzMouseButtonEvent),
@@ -50,6 +53,15 @@ pub enum UiEvent {
     KeyUp(BlitzKeyEvent),
     KeyDown(BlitzKeyEvent),
     Ime(BlitzImeEvent),
+}
+impl UiEvent {
+    pub fn discriminant(&self) -> u8 {
+        // SAFETY: Because `Self` is marked `repr(u8)`, its layout is a `repr(C)` `union`
+        // between `repr(C)` structs, each of which has the `u8` discriminant as its first
+        // field, so we can read the discriminant without offsetting the pointer.
+        // See: https://doc.rust-lang.org/stable/std/mem/fn.discriminant.html#accessing-the-numeric-value-of-the-discriminant
+        unsafe { *<*const _>::from(self).cast::<u8>() }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -81,7 +93,43 @@ impl DomEvent {
     }
 }
 
+#[derive(Copy, Clone, PartialEq)]
+pub enum DomEventKind {
+    MouseMove,
+    MouseDown,
+    MouseUp,
+    Click,
+    KeyPress,
+    KeyDown,
+    KeyUp,
+    Input,
+    Ime,
+}
+impl DomEventKind {
+    pub fn discriminant(self) -> u8 {
+        self as u8
+    }
+}
+impl FromStr for DomEventKind {
+    type Err = ();
+    fn from_str(s: &str) -> Result<Self, ()> {
+        match s.trim_start_matches("on") {
+            "mousemove" => Ok(Self::MouseMove),
+            "mousedown" => Ok(Self::MouseDown),
+            "mouseup" => Ok(Self::MouseUp),
+            "click" => Ok(Self::Click),
+            "keypress" => Ok(Self::KeyPress),
+            "keydown" => Ok(Self::KeyDown),
+            "keyup" => Ok(Self::KeyUp),
+            "composition" => Ok(Self::Input),
+            "input" => Ok(Self::Ime),
+            _ => Err(()),
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
+#[repr(u8)]
 pub enum DomEventData {
     MouseMove(BlitzMouseButtonEvent),
     MouseDown(BlitzMouseButtonEvent),
@@ -92,6 +140,15 @@ pub enum DomEventData {
     KeyUp(BlitzKeyEvent),
     Input(BlitzInputEvent),
     Ime(BlitzImeEvent),
+}
+impl DomEventData {
+    pub fn discriminant(&self) -> u8 {
+        // SAFETY: Because `Self` is marked `repr(u8)`, its layout is a `repr(C)` `union`
+        // between `repr(C)` structs, each of which has the `u8` discriminant as its first
+        // field, so we can read the discriminant without offsetting the pointer.
+        // See: https://doc.rust-lang.org/stable/std/mem/fn.discriminant.html#accessing-the-numeric-value-of-the-discriminant
+        unsafe { *<*const _>::from(self).cast::<u8>() }
+    }
 }
 
 impl DomEventData {
