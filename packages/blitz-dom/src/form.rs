@@ -464,7 +464,7 @@ impl Display for RequestContentType {
                 write!(f, "multipart/form-data")
             }
             RequestContentType::MultipartFormData(boundary) => {
-                write!(f, "multipart/form-data; boundary={}", boundary)
+                write!(f, "multipart/form-data; boundary={boundary}")
             }
             RequestContentType::TextPlain => write!(f, "text/plain"),
         }
@@ -473,7 +473,7 @@ impl Display for RequestContentType {
 
 /// A list of form entries used for form submission
 #[derive(Debug, Clone, PartialEq, Default)]
-pub struct EntryList(pub Vec<Entry>);
+pub struct EntryList(Vec<Entry>);
 impl EntryList {
     /// Creates a new empty EntryList
     pub fn new() -> Self {
@@ -618,7 +618,7 @@ fn generate_boundary() -> String {
 fn create_part<W: std::io::Write>(w: &mut W, name: &str, value: &EntryValue, boundary: &str) {
     //TODO: Either do this by removing from CONTROLS or encode this without the percent encoding crate
     const MINIMAL_ENCODE_SET: percent_encoding::AsciiSet =
-        unsafe { std::mem::transmute::<_, percent_encoding::AsciiSet>([0u32; 4]) }
+        unsafe { std::mem::transmute::<[u32; 4], percent_encoding::AsciiSet>([0u32; 4]) }
             .add(b'\n')
             .add(b'\r')
             .add(b'"');
