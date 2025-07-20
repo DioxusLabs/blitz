@@ -29,8 +29,7 @@ pub(crate) fn handle_dom_event<F: FnMut(DomEvent)>(
                 mouse_event.buttons,
             );
             if changed {
-                // TODO: request redraw
-                // event_state.request_redraw();
+                doc.shell_provider.request_redraw();
             }
         }
         DomEventData::MouseDown(event) => {
