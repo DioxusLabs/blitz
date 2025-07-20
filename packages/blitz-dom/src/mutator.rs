@@ -628,7 +628,24 @@ impl<'doc> DocumentMutator<'doc> {
                     ns: ns!(html),
                     local: local_name!("button"),
                 },
-                vec![],
+                vec![
+                    Attribute {
+                        name: QualName {
+                            prefix: None,
+                            ns: ns!(html),
+                            local: local_name!("type"),
+                        },
+                        value: "button".to_string(),
+                    },
+                    Attribute {
+                        name: QualName {
+                            prefix: None,
+                            ns: ns!(html),
+                            local: local_name!("tabindex"),
+                        },
+                        value: "-1".to_string(),
+                    },
+                ],
             );
             let label_id = self.create_element(
                 QualName {

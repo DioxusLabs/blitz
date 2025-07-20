@@ -207,7 +207,7 @@ pub(crate) fn handle_click<F: FnMut(DomEvent)>(
             }
         } else if el.name.local == local_name!("input")
             && el.attr(local_name!("type")) == Some("submit")
-            || el.name.local == local_name!("button")
+            || el.is_submit_button()
         {
             if let Some(form_owner) = doc.controls_to_form.get(&node_id) {
                 doc.submit_form(*form_owner, node_id);
