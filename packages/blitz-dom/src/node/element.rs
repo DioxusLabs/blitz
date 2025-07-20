@@ -282,13 +282,15 @@ impl ElementData {
     }
 
     pub fn is_submit_button(&self) -> bool {
-        let is_button = self.name.local == local_name!("button");
+        if self.name.local != local_name!("button") {
+            return false;
+        }
         let type_attr = self.attr(local_name!("type"));
         let is_submit = type_attr == Some("submit");
         let is_auto_submit = type_attr.is_none()
             && self.attr(LocalName::from("command")).is_none()
             && self.attr(LocalName::from("commandfor")).is_none();
-        is_button && (is_submit || is_auto_submit)
+        is_submit || is_auto_submit
     }
 }
 
