@@ -26,7 +26,7 @@ pub trait ShellProvider {
     fn open_file_dialog(
         &self,
         multiple: bool,
-        filter: Option<(String, Vec<String>)>,
+        filter: Option<FileDialogFilter>,
     ) -> Vec<std::path::PathBuf> {
         let _ = multiple;
         let _ = filter;
@@ -110,4 +110,10 @@ impl Viewport {
     pub fn zoom_mut(&mut self) -> &mut f32 {
         &mut self.zoom
     }
+}
+
+/// Filter provided by the dom for an file picker
+pub struct FileDialogFilter {
+    pub name: String,
+    pub extensions: Vec<String>,
 }

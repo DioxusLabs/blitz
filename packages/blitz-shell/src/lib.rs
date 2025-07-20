@@ -22,6 +22,19 @@ pub use crate::window::{View, WindowConfig};
 
 use blitz_dom::net::Resource;
 use blitz_traits::net::NetCallback;
+#[cfg(all(
+    feature = "file_dialog",
+    any(
+        target_os = "windows",
+        target_os = "macos",
+        target_os = "linux",
+        target_os = "dragonfly",
+        target_os = "freebsd",
+        target_os = "netbsd",
+        target_os = "openbsd"
+    )
+))]
+use blitz_traits::shell::FileDialogFilter;
 use blitz_traits::shell::ShellProvider;
 use std::sync::Arc;
 pub use winit::event_loop::{ControlFlow, EventLoop, EventLoopProxy};
@@ -147,16 +160,23 @@ impl ShellProvider for BlitzShellProvider {
 
     #[cfg(all(
         feature = "file_dialog",
-        any(target_os = "windows", target_os = "macos", target_os = "linux")
+        any(
+            target_os = "windows",
+            target_os = "macos",
+            target_os = "linux",
+            target_os = "dragonfly",
+            target_os = "freebsd",
+            target_os = "netbsd",
+            target_os = "openbsd"
+        )
     ))]
     fn open_file_dialog(
         &self,
         multiple: bool,
-        filter: Option<(String, Vec<String>)>,
+        filter: Option<FileDialogFilter>,
     ) -> Vec<std::path::PathBuf> {
-        println!("Clicked file input");
         let mut dialog = rfd::FileDialog::new();
-        if let Some((name, extensions)) = filter {
+        if let Some(FileDialogFilter { name, extensions }) = filter {
             dialog = dialog.add_filter(&name, &extensions);
         }
         let files = if multiple {
