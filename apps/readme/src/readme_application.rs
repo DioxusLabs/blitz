@@ -78,7 +78,7 @@ impl ReadmeApplication {
     fn navigate(&mut self, options: NavigationOptions) {
         let proxy = self.inner.proxy.clone();
         self.net_provider.fetch_with_callback(
-            dbg!(options.into_request()),
+            options.into_request(),
             Box::new(move |result| {
                 let (url, bytes) = result.unwrap();
                 let contents = std::str::from_utf8(&bytes).unwrap().to_string();
