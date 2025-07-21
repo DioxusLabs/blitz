@@ -5,9 +5,9 @@ use blitz_traits::{
     },
     navigation::NavigationOptions,
 };
-use markup5ever::{QualName, local_name, ns};
+use markup5ever::local_name;
 
-use crate::{BaseDocument, node::SpecialElementData};
+use crate::{BaseDocument, node::SpecialElementData, qual_name};
 
 pub(crate) fn handle_mousemove(
     doc: &mut BaseDocument,
@@ -221,11 +221,7 @@ pub(crate) fn handle_click<F: FnMut(DomEvent)>(
 
             if let Some(file) = files.first() {
                 el.attrs.set(
-                    QualName {
-                        prefix: None,
-                        ns: ns!(html),
-                        local: local_name!("value"),
-                    },
+                    qual_name!("value", html),
                     file.to_str().expect("FilePath contains is not UTF-8"),
                 );
             }

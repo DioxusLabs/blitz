@@ -111,3 +111,16 @@ impl ToColorColor for AbsoluteColor {
         )
     }
 }
+
+/// Creates an markup5ever::QualName.
+/// Given a local name and an optional namespace
+#[macro_export]
+macro_rules! qual_name {
+    ($local:tt $(, $ns:ident)?) => {
+        $crate::QualName {
+            prefix: None,
+            ns: $crate::ns!($($ns)?),
+            local: $crate::local_name!($local),
+        }
+    };
+}
