@@ -6,9 +6,12 @@ mod window_renderer;
 
 pub use image_renderer::VelloCpuImageRenderer;
 pub use scene::VelloCpuScenePainter;
-pub use window_renderer::*;
 
-use crate::debug::DebugTimer;
+#[cfg(any(
+    feature = "pixels_window_renderer",
+    feature = "softbuffer_window_renderer"
+))]
+pub use window_renderer::*;
 
 #[cfg(feature = "external")]
 #[allow(clippy::single_component_path_imports, reason = "false positive")]

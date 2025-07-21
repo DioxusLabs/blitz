@@ -1,3 +1,4 @@
+#[allow(unused_imports)]
 pub(crate) use debug_timer::*;
 
 #[cfg(feature = "log_frame_times")]
@@ -46,6 +47,7 @@ mod debug_timer {
 }
 
 #[cfg(not(feature = "log_frame_times"))]
+#[allow(dead_code)]
 mod debug_timer {
     pub(crate) struct DebugTimer;
     impl DebugTimer {

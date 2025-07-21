@@ -1,5 +1,6 @@
+use crate::VelloCpuScenePainter;
+use crate::debug::DebugTimer;
 use crate::vello_cpu::{RenderContext, RenderMode};
-use crate::{DebugTimer, VelloCpuScenePainter};
 use anyrender::{WindowHandle, WindowRenderer};
 use pixels::{Pixels, SurfaceTexture, wgpu::Color};
 use std::sync::Arc;
