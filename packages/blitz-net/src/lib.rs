@@ -2,7 +2,9 @@
 //!
 //! Provides an implementation of the [`blitz_traits::net::NetProvider`] trait.
 
-use blitz_traits::net::{BoxedHandler, Bytes, NetCallback, NetProvider, Request, SharedCallback};
+use blitz_traits::net::{
+    Body, BoxedHandler, Bytes, NetCallback, NetProvider, Request, SharedCallback,
+};
 use data_url::DataUrl;
 use reqwest::Client;
 use std::sync::Arc;
@@ -57,8 +59,10 @@ impl<D: 'static> Provider<D> {
                 let response = client
                     .request(request.method, request.url)
                     .headers(request.headers)
+                    .header("Content-Type", request.content_type.as_str())
                     .header("User-Agent", USER_AGENT)
-                    .body(request.body)
+                    .apply_body(request.body, request.content_type.as_str())
+                    .await
                     .send()
                     .await?;
 
@@ -172,6 +176,44 @@ impl<T: Send + Sync + 'static> NetCallback<T> for MpscCallback<T> {
         // TODO: handle error case
         if let Ok(data) = result {
             let _ = self.0.send((doc_id, data));
+        }
+    }
+}
+
+trait ReqwestExt {
+    async fn apply_body(self, body: Body, content_type: &str) -> Self;
+}
+impl ReqwestExt for reqwest::RequestBuilder {
+    async fn apply_body(self, body: Body, content_type: &str) -> Self {
+        match body {
+            Body::Bytes(bytes) => self.body(bytes),
+            Body::Form(mut form_data) => match content_type {
+                "application/x-www-form-urlencoded" => self.form(&form_data),
+                "multipart/form-data" => {
+                    use blitz_traits::net::Entry;
+                    use blitz_traits::net::EntryValue;
+
+                    let mut form = reqwest::multipart::Form::new();
+                    for Entry { name, value } in form_data.0.drain(..) {
+                        form = match value {
+                            EntryValue::String(value) => form.text(name, value),
+                            EntryValue::File(path_buf) => form
+                                .file(name, path_buf)
+                                .await
+                                .expect("Couldn't read form file from disk"),
+                            EntryValue::EmptyFile => form.part(
+                                name,
+                                reqwest::multipart::Part::bytes(&[])
+                                    .mime_str("application/octet-stream")
+                                    .unwrap(),
+                            ),
+                        };
+                    }
+                    self.multipart(form)
+                }
+                _ => self,
+            },
+            Body::Empty => self,
         }
     }
 }

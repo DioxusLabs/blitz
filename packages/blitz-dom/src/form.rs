@@ -4,9 +4,26 @@ use crate::{
     BaseDocument, ElementData,
     traversal::{AncestorTraverser, TreeTraverser},
 };
-use blitz_traits::navigation::NavigationOptions;
+use blitz_traits::{
+    navigation::NavigationOptions,
+    net::{Body, Entry, EntryValue, FormData, Method},
+};
 use core::str::FromStr;
-use std::{borrow::Cow, fmt::Display, path::Path};
+use std::fmt::Display;
+
+/// https://url.spec.whatwg.org/#default-encode-set
+const DEFAULT_ENCODE_SET: percent_encoding::AsciiSet = percent_encoding::CONTROLS
+    // Query Set
+    .add(b' ')
+    .add(b'"')
+    .add(b'#')
+    .add(b'<')
+    .add(b'>')
+    // Path Set
+    .add(b'?')
+    .add(b'`')
+    .add(b'{')
+    .add(b'}');
 
 impl BaseDocument {
     /// Resets the form owner for a given node by either using an explicit form attribute
@@ -57,7 +74,7 @@ impl BaseDocument {
             return;
         };
 
-        let mut entry = construct_entry_list(self, node_id, submitter_id);
+        let entry = construct_entry_list(self, node_id, submitter_id);
 
         let method = get_form_attr(
             self,
@@ -82,7 +99,7 @@ impl BaseDocument {
 
         let scheme = parsed_action.scheme();
 
-        let mut enctype = get_form_attr(
+        let enctype = get_form_attr(
             self,
             element,
             local_name!("enctype"),
@@ -92,63 +109,25 @@ impl BaseDocument {
         .and_then(|enctype| enctype.parse::<RequestContentType>().ok())
         .unwrap_or(RequestContentType::FormUrlEncoded);
 
-        let mut post_resource = None;
+        let mut post_resource = Body::Empty;
 
         match (scheme, method) {
             ("http" | "https" | "data", FormMethod::Get) => {
-                let pairs = entry.convert_to_list_of_name_value_pairs();
-
+                let pairs = convert_to_list_of_name_value_pairs(entry);
                 let mut query = String::new();
                 url::form_urlencoded::Serializer::new(&mut query).extend_pairs(pairs);
-
                 parsed_action.set_query(Some(&query));
             }
-
-            ("http" | "https", FormMethod::Post) => match enctype {
-                RequestContentType::FormUrlEncoded => {
-                    let pairs = entry.convert_to_list_of_name_value_pairs();
-                    let mut body = String::new();
-                    url::form_urlencoded::Serializer::new(&mut body).extend_pairs(pairs);
-                    post_resource = Some(body.into());
-                }
-                RequestContentType::MultipartFormData(_) => {
-                    let (encoded, boundary) = entry.encode_multipart_form_data();
-                    post_resource = Some(encoded.into());
-                    enctype = RequestContentType::MultipartFormData(boundary);
-                }
-                RequestContentType::TextPlain => {
-                    let pairs = entry.convert_to_list_of_name_value_pairs();
-                    let body = encode_text_plain(&pairs).into();
-                    post_resource = Some(body);
-                }
-            },
+            ("http" | "https", FormMethod::Post) => post_resource = Body::Form(entry),
             ("mailto", FormMethod::Get) => {
-                let pairs = entry.convert_to_list_of_name_value_pairs();
-
+                let pairs = convert_to_list_of_name_value_pairs(entry);
                 parsed_action.query_pairs_mut().extend_pairs(pairs);
             }
             ("mailto", FormMethod::Post) => {
-                let pairs = entry.convert_to_list_of_name_value_pairs();
+                let pairs = convert_to_list_of_name_value_pairs(entry);
                 let body = match enctype {
                     RequestContentType::TextPlain => {
                         let body = encode_text_plain(&pairs);
-
-                        /// https://url.spec.whatwg.org/#default-encode-set
-                        const DEFAULT_ENCODE_SET: percent_encoding::AsciiSet =
-                            percent_encoding::CONTROLS
-                                // Query Set
-                                .add(b' ')
-                                .add(b'"')
-                                .add(b'#')
-                                .add(b'<')
-                                .add(b'>')
-                                // Path Set
-                                .add(b'?')
-                                .add(b'`')
-                                .add(b'{')
-                                .add(b'}');
-
-                        // Set body to the result of running UTF-8 percent-encode on body using the default encode set. [URL]
                         percent_encoding::utf8_percent_encode(&body, &DEFAULT_ENCODE_SET)
                             .to_string()
                     }
@@ -180,9 +159,12 @@ impl BaseDocument {
             }
         }
 
+        let method = method.try_into().unwrap_or_default();
+
         let navigation_options =
             NavigationOptions::new(parsed_action, enctype.to_string(), self.id())
-                .set_document_resource(post_resource);
+                .set_document_resource(post_resource)
+                .set_method(method);
 
         self.navigation_provider.navigate_to(navigation_options)
     }
@@ -199,11 +181,14 @@ impl BaseDocument {
 /// Returns an EntryList containing all valid form control entries
 ///
 /// https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#constructing-the-form-data-set
-fn construct_entry_list(doc: &BaseDocument, form_id: usize, submitter_id: usize) -> EntryList {
-    let mut entry_list = EntryList::new();
+fn construct_entry_list(doc: &BaseDocument, form_id: usize, submitter_id: usize) -> FormData {
+    let mut entry_list = FormData::new();
 
     let mut create_entry = |name: &str, value: EntryValue| {
-        entry_list.0.push(Entry::new(name, value));
+        entry_list.0.push(Entry {
+            name: name.to_string(),
+            value,
+        });
     };
 
     fn datalist_ancestor(doc: &BaseDocument, node_id: usize) -> bool {
@@ -272,8 +257,8 @@ fn construct_entry_list(doc: &BaseDocument, form_id: usize, submitter_id: usize)
         //  then perform the entry construction algorithm given field and entry list,
         //  then continue.
 
-        //     If either the field element does not have a name attribute specified, or its name attribute's value is the empty string, then continue.
-        //     Let name be the value of the field element's name attribute.
+        // If either the field element does not have a name attribute specified, or its name attribute's value is the empty string, then continue.
+        // Let name be the value of the field element's name attribute.
         let Some(name) = element
             .attr(local_name!("name"))
             .filter(|str| !str.is_empty())
@@ -293,25 +278,24 @@ fn construct_entry_list(doc: &BaseDocument, form_id: usize, submitter_id: usize)
         {
             // If the field element has a value attribute specified, then let value be the value of that attribute; otherwise, let value be the string "on".
             let value = element.attr(local_name!("value")).unwrap_or("on");
-            //         Create an entry with name and value, and append it to entry list.
+            // Create an entry with name and value, and append it to entry list.
             create_entry(name, value.into());
         }
         // Otherwise, if the field element is an input element whose type attribute is in the File Upload state, then:
         else if element.name.local == local_name!("input") && matches!(element_type, Some("file"))
         {
-            //        If there are no selected files, then create an entry with name and a new File object with an empty name, application/octet-stream as type, and an empty body, and append it to entry list.
-
+            // If there are no selected files, then create an entry with name and a new File object with an empty name, application/octet-stream as type, and an empty body, and append it to entry list.
             let Some(files) = element.file_data() else {
-                create_entry(name, File::empty().into());
+                create_entry(name, EntryValue::EmptyFile);
                 continue;
             };
             if files.is_empty() {
-                create_entry(name, File::empty().into());
+                create_entry(name, EntryValue::EmptyFile);
             }
-            //        Otherwise, for each file in selected files, create an entry with name and a File object representing the file, and append it to entry list.
+            // Otherwise, for each file in selected files, create an entry with name and a File object representing the file, and append it to entry list.
             else {
-                for file in files.iter() {
-                    create_entry(name, File::from_path(file).into());
+                for path_buf in files.iter() {
+                    create_entry(name, path_buf.clone().into());
                 }
             }
         }
@@ -327,45 +311,12 @@ fn construct_entry_list(doc: &BaseDocument, form_id: usize, submitter_id: usize)
         }
         // Otherwise, create an entry with name and the value of the field element, and append it to entry list.
         else if let Some(text) = element.text_input_data() {
-            create_entry(name, text.editor.text().to_string().into());
+            create_entry(name, text.editor.text().to_string().as_str().into());
         } else if let Some(value) = element.attr(local_name!("value")) {
             create_entry(name, value.into());
         }
     }
     entry_list
-}
-
-/// Normalizes line endings in a string according to HTML spec
-///
-/// Converts single CR or LF to CRLF pairs according to HTML form submission requirements
-///
-/// # Arguments
-/// * `input` - The string whose line endings need to be normalized
-///
-/// # Returns
-/// A new string with normalized CRLF line endings
-fn normalize_line_endings(input: &str) -> String {
-    // Replace every occurrence of U+000D (CR) not followed by U+000A (LF),
-    // and every occurrence of U+000A (LF) not preceded by U+000D (CR),
-    // in value, by a string consisting of U+000D (CR) and U+000A (LF).
-
-    let mut result = String::with_capacity(input.len());
-    let mut chars = input.chars().peekable();
-
-    while let Some(current) = chars.next() {
-        match (current, chars.peek()) {
-            ('\r', Some('\n')) => {
-                result.push_str("\r\n");
-                chars.next();
-            }
-            ('\r' | '\n', _) => {
-                result.push_str("\r\n");
-            }
-            _ => result.push(current),
-        }
-    }
-
-    result
 }
 
 fn get_form_attr<'a>(
@@ -395,25 +346,6 @@ fn get_submitter_attr(
             }
         })
 }
-/// Encodes form data as text/plain according to HTML spec
-///
-/// # Arguments
-/// * `input` - Slice of name-value pairs to encode
-///
-/// # Returns
-/// A string with the encoded form data
-///
-/// https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#text/plain-encoding-algorithm
-fn encode_text_plain(input: &[(String, String)]) -> String {
-    let mut out = String::new();
-    for (name, value) in input {
-        out.push_str(name);
-        out.push('=');
-        out.push_str(value);
-        out.push_str("\r\n");
-    }
-    out
-}
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 enum FormMethod {
@@ -432,14 +364,23 @@ impl FromStr for FormMethod {
         })
     }
 }
-
+impl TryFrom<FormMethod> for Method {
+    type Error = &'static str;
+    fn try_from(method: FormMethod) -> Result<Self, Self::Error> {
+        Ok(match method {
+            FormMethod::Get => Method::GET,
+            FormMethod::Post => Method::POST,
+            FormMethod::Dialog => return Err("Dialog is not an HTTP method"),
+        })
+    }
+}
 /// Supported content types for HTTP requests
 #[derive(Debug, Clone)]
 pub enum RequestContentType {
     /// application/x-www-form-urlencoded
     FormUrlEncoded,
     /// multipart/form-data
-    MultipartFormData(String),
+    MultipartFormData,
     /// text/plain
     TextPlain,
 }
@@ -449,7 +390,7 @@ impl FromStr for RequestContentType {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         Ok(match s {
             "application/x-www-form-urlencoded" => RequestContentType::FormUrlEncoded,
-            "multipart/form-data" => RequestContentType::MultipartFormData(String::new()),
+            "multipart/form-data" => RequestContentType::MultipartFormData,
             "text/plain" => RequestContentType::TextPlain,
             _ => return Err(()),
         })
@@ -460,226 +401,60 @@ impl Display for RequestContentType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             RequestContentType::FormUrlEncoded => write!(f, "application/x-www-form-urlencoded"),
-            RequestContentType::MultipartFormData(boundary) if boundary.is_empty() => {
-                write!(f, "multipart/form-data")
-            }
-            RequestContentType::MultipartFormData(boundary) => {
-                write!(f, "multipart/form-data; boundary={boundary}")
-            }
+            RequestContentType::MultipartFormData => write!(f, "multipart/form-data"),
             RequestContentType::TextPlain => write!(f, "text/plain"),
         }
     }
 }
 
-/// A list of form entries used for form submission
-#[derive(Debug, Clone, PartialEq, Default)]
-pub struct EntryList(Vec<Entry>);
-impl EntryList {
-    /// Creates a new empty EntryList
-    pub fn new() -> Self {
-        EntryList(Vec::new())
-    }
-
-    /// Converts the entry list to a vector of name-value pairs with normalized line endings
-    /// https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#converting-an-entry-list-to-a-list-of-name-value-pairs
-    pub fn convert_to_list_of_name_value_pairs(&self) -> Vec<(String, String)> {
-        self.0
-            .iter()
-            .map(|entry| {
-                let name = normalize_line_endings(&entry.name);
-
-                let value = match entry.value {
-                    EntryValue::String(ref value) => value,
-                    EntryValue::File(ref file) => &file.name,
-                };
-
-                let value = normalize_line_endings(value);
-                (name, value)
-            })
-            .collect()
-    }
-
-    /// Encodes the entry list as multipart/form-data
-    ///
-    /// The multipart/form-data encoding algorithm, given an entry list entry list and an encoding encoding, is as follows:
-    /// https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#multipart-form-data
-    ///
-    /// NOTE: We don't have the encoding parameter as we only support UTF-8 encoding.
-    pub fn encode_multipart_form_data(&mut self) -> (Vec<u8>, String) {
-        let boundary = generate_boundary();
-        let mut output = Vec::new();
-
-        // 1. For each entry of entry list:
-        self.0
-            .drain(..)
-            .map(|Entry { name, value }| {
-                (
-                    // 1. Replace every occurrence of U+000D (CR) not followed by U+000A (LF), and every occurrence of U+000A (LF) not preceded by U+000D (CR), in entry's name, by a string consisting of a U+000D (CR) and U+000A (LF).
-                    normalize_line_endings(&name),
-                    // 2. If entry's value is not a File object, then replace every occurrence of U+000D (CR) not followed by U+000A (LF), and every occurrence of U+000A (LF) not preceded by U+000D (CR), in entry's value, by a string consisting of a U+000D (CR) and U+000A (LF).
-                    if let EntryValue::String(string) = value {
-                        EntryValue::String(normalize_line_endings(&string))
-                    } else {
-                        value
-                    },
-                )
-            })
-            // 2. Return the byte sequence resulting from encoding the entry list using the rules described by RFC 7578, Returning Values from Forms: multipart/form-data, given the following conditions: [https://www.rfc-editor.org/rfc/rfc7578]
-            .for_each(|(name, value)| create_part(&mut output, &name, &value, &boundary));
-
-        last_boundary(&mut output, &boundary);
-        (output, boundary)
-    }
+/// Converts the entry list to a vector of name-value pairs with normalized line endings
+/// https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#converting-an-entry-list-to-a-list-of-name-value-pairs
+fn convert_to_list_of_name_value_pairs(form_data: FormData) -> Vec<(String, String)> {
+    form_data
+        .iter()
+        .map(|Entry { name, value }| {
+            let name = normalize_line_endings(name.as_ref());
+            let value = normalize_line_endings(value.as_ref());
+            (name, value)
+        })
+        .collect()
 }
 
-/// A single form entry consisting of a name and value
-#[derive(Debug, Clone, PartialEq)]
-struct Entry {
-    name: String,
-    value: EntryValue,
-}
+/// Normalizes line endings in a string according to HTML spec
+/// Converts single CR or LF to CRLF pairs according to HTML form submission requirements
+fn normalize_line_endings(input: &str) -> String {
+    // Replace every occurrence of U+000D (CR) not followed by U+000A (LF),
+    // and every occurrence of U+000A (LF) not preceded by U+000D (CR),
+    // in value, by a string consisting of U+000D (CR) and U+000A (LF).
 
-impl Entry {
-    fn new(name: &str, value: EntryValue) -> Self {
-        Self {
-            name: name.to_string(),
-            value,
-        }
-    }
-}
+    let mut result = String::with_capacity(input.len());
+    let mut chars = input.chars().peekable();
 
-#[derive(Debug, Clone, PartialEq)]
-enum EntryValue {
-    String(String),
-    File(File),
-}
-
-impl From<String> for EntryValue {
-    fn from(value: String) -> Self {
-        EntryValue::String(value)
-    }
-}
-impl From<&str> for EntryValue {
-    fn from(value: &str) -> Self {
-        EntryValue::String(value.to_string())
-    }
-}
-impl From<File> for EntryValue {
-    fn from(value: File) -> Self {
-        EntryValue::File(value)
-    }
-}
-
-#[derive(Debug, Clone, PartialEq)]
-struct File {
-    name: String,
-    content_type: String,
-    data: Vec<u8>,
-}
-impl File {
-    ///FIXME: Follow the spec https://w3c.github.io/FileAPI/#file-constructor
-    pub fn new(name: &str, ty: &str, data: Vec<u8>) -> Self {
-        Self {
-            name: name.to_string(),
-            content_type: ty.to_string(),
-            data,
-        }
-    }
-    pub fn empty() -> Self {
-        Self {
-            name: String::new(),
-            content_type: "application/octet-stream".to_string(),
-            data: Vec::new(),
-        }
-    }
-    pub fn from_path(path: &Path) -> Self {
-        let name = path
-            .file_name()
-            .unwrap_or_default()
-            .to_str()
-            .unwrap_or_default();
-        let file = std::fs::read(path).unwrap();
-        // TODO: use proper content type
-        Self::new(name, "application/octet-stream", file)
-    }
-}
-
-/// Generates a random boundary string for multipart/form-data
-fn generate_boundary() -> String {
-    format!(
-        "BlitzFormBoundary-{}",
-        (0..10)
-            .map(|_| fastrand::alphanumeric())
-            .collect::<String>()
-    )
-}
-
-/// Creates a part of a multipart/form-data body
-fn create_part<W: std::io::Write>(w: &mut W, name: &str, value: &EntryValue, boundary: &str) {
-    //TODO: Either do this by removing from CONTROLS or encode this without the percent encoding crate
-    const MINIMAL_ENCODE_SET: percent_encoding::AsciiSet =
-        unsafe { std::mem::transmute::<[u32; 4], percent_encoding::AsciiSet>([0u32; 4]) }
-            .add(b'\n')
-            .add(b'\r')
-            .add(b'"');
-
-    // --{boundary}\r\n
-    w.write_all(b"--").unwrap();
-    w.write_all(boundary.as_bytes()).unwrap();
-    w.write_all(b"\r\n").unwrap();
-
-    // Content-Disposition: form-data; name="{name}"
-    w.write_all(b"Content-Disposition: form-data; name=\"")
-        .unwrap();
-
-    let encoded_name = Cow::from(percent_encoding::utf8_percent_encode(
-        name,
-        &MINIMAL_ENCODE_SET,
-    ));
-    w.write_all(encoded_name.as_bytes()).unwrap();
-    w.write_all(b"\"").unwrap();
-
-    match value {
-        EntryValue::String(content) => {
-            // \r\n\r\n (end headers, then blank line before content)
-            w.write_all(b"\r\n\r\n").unwrap();
-
-            // {content}
-            w.write_all(content.as_bytes()).unwrap();
-        }
-        EntryValue::File(file) => {
-            if !file.name.is_empty() {
-                // ; filename="{file.name}"
-                w.write_all(b"; filename=\"").unwrap();
-                let encoded_filename = Cow::from(percent_encoding::utf8_percent_encode(
-                    &file.name,
-                    &MINIMAL_ENCODE_SET,
-                ));
-                w.write_all(encoded_filename.as_bytes()).unwrap();
-                w.write_all(b"\"").unwrap();
+    while let Some(current) = chars.next() {
+        match (current, chars.peek()) {
+            ('\r', Some('\n')) => {
+                result.push_str("\r\n");
+                chars.next();
             }
-
-            // \r\n
-            w.write_all(b"\r\n").unwrap();
-
-            // Content-Type: {content_type}\r\n\r\n
-            w.write_all(b"Content-Type: ").unwrap();
-            w.write_all(file.content_type.as_bytes()).unwrap();
-            w.write_all(b"\r\n\r\n").unwrap();
-
-            // {file data}
-            w.write_all(&file.data).unwrap();
+            ('\r' | '\n', _) => {
+                result.push_str("\r\n");
+            }
+            _ => result.push(current),
         }
-    };
+    }
 
-    // \r\n (end of part)
-    w.write_all(b"\r\n").unwrap();
+    result
 }
 
-/// Adds the end boundary to the multipart/form-data body
-fn last_boundary<W: std::io::Write>(w: &mut W, boundary: &str) {
-    // --{boundary}--
-    w.write_all(b"--").unwrap();
-    w.write_all(boundary.as_bytes()).unwrap();
-    w.write_all(b"--\r\n").unwrap();
+/// Encodes form data as text/plain according to HTML spec given an slice of name-value pairs
+/// https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#text/plain-encoding-algorithm
+fn encode_text_plain<T: AsRef<str>, U: AsRef<str>>(input: &[(T, U)]) -> String {
+    let mut out = String::new();
+    for (name, value) in input {
+        out.push_str(name.as_ref());
+        out.push('=');
+        out.push_str(value.as_ref());
+        out.push_str("\r\n");
+    }
+    out
 }
