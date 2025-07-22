@@ -222,10 +222,8 @@ pub(crate) fn handle_click<F: FnMut(DomEvent)>(
                 let files = doc.shell_provider.open_file_dialog(multiple, None);
 
                 if let Some(file) = files.first() {
-                    el.attrs.set(
-                        qual_name!("value", html),
-                        file.to_str().expect("FilePath contains is not UTF-8"),
-                    );
+                    el.attrs
+                        .set(qual_name!("value", html), &file.to_string_lossy());
                 }
                 let text_content = match files.len() {
                     0 => "No Files Selected".to_string(),
@@ -234,8 +232,7 @@ pub(crate) fn handle_click<F: FnMut(DomEvent)>(
                         .unwrap()
                         .file_name()
                         .unwrap_or_default()
-                        .to_str()
-                        .expect("Filename is not UTF-8")
+                        .to_string_lossy()
                         .to_string(),
                     x => format!("{x} Files Selected"),
                 };
