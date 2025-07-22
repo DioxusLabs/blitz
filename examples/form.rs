@@ -92,6 +92,28 @@ fn app() -> Element {
                         "Radio Button 3"
                     }
                 }
+                div {
+                    input {
+                        type: "file",
+                        name: "single_file",
+                        id: "file1",
+                    }
+                    label {
+                        r#for: "file1",
+                        "File Select Single",
+                    }
+                }
+                div {
+                    input {
+                        type: "file",
+                        name: "single_multi",
+                        id: "file2",
+                    }
+                    label {
+                        r#for: "file2",
+                        "File Select Multiple",
+                    }
+                }
             }
             div { "Checkbox 1 checked: {checkbox_checked}" }
         }
