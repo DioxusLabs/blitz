@@ -106,8 +106,9 @@ fn app() -> Element {
                 div {
                     input {
                         type: "file",
-                        name: "single_multi",
+                        name: "multiple_files",
                         id: "file2",
+                        multiple: true,
                     }
                     label {
                         r#for: "file2",
