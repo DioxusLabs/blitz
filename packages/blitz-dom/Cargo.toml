@@ -10,7 +10,14 @@ categories.workspace = true
 edition.workspace = true
 
 [features]
-default = ["tracing", "svg", "woff-c", "accessibility", "system_fonts"]
+default = [
+    "tracing",
+    "svg",
+    "woff-c",
+    "accessibility",
+    "system_fonts",
+    "file_input",
+]
 tracing = ["dep:tracing"]
 svg = ["dep:usvg"]
 # WOFF decoding using the "woff" crate which binds to C libraries
@@ -23,6 +30,7 @@ woff-rust = ["dep:woff2"]
 accessibility = ["accesskit"]
 system_fonts = ["parley/system"]
 autofocus = []
+file_input = []
 
 [dependencies]
 # Blitz dependencies

@@ -2,8 +2,6 @@ use color::{AlphaColor, Srgb};
 use markup5ever::{LocalName, QualName, local_name};
 use parley::{FontContext, LayoutContext};
 use selectors::matching::QuirksMode;
-use std::ops::{Deref, DerefMut};
-use std::path::PathBuf;
 use std::str::FromStr;
 use std::sync::Arc;
 use style::Atom;
@@ -59,6 +57,7 @@ pub struct ElementData {
 }
 
 #[derive(Copy, Clone, Default)]
+#[non_exhaustive]
 pub enum SpecialElementType {
     Stylesheet,
     Image,
@@ -66,6 +65,7 @@ pub enum SpecialElementType {
     TableRoot,
     TextInput,
     CheckboxInput,
+    #[cfg(feature = "file_input")]
     FileInput,
     #[default]
     None,
@@ -86,6 +86,7 @@ pub enum SpecialElementData {
     /// Checkbox checked state
     CheckboxInput(bool),
     /// Selected files
+    #[cfg(feature = "file_input")]
     FileInput(FileData),
     /// No data (for nodes that don't need any node-specific data)
     #[default]
@@ -220,6 +221,7 @@ impl ElementData {
         }
     }
 
+    #[cfg(feature = "file_input")]
     pub fn file_data(&self) -> Option<&FileData> {
         match &self.special_data {
             SpecialElementData::FileInput(data) => Some(data),
@@ -227,6 +229,7 @@ impl ElementData {
         }
     }
 
+    #[cfg(feature = "file_input")]
     pub fn file_data_mut(&mut self) -> Option<&mut FileData> {
         match &mut self.special_data {
             SpecialElementData::FileInput(data) => Some(data),
@@ -409,6 +412,7 @@ impl std::fmt::Debug for SpecialElementData {
             SpecialElementData::TableRoot(_) => f.write_str("NodeSpecificData::TableRoot"),
             SpecialElementData::TextInput(_) => f.write_str("NodeSpecificData::TextInput"),
             SpecialElementData::CheckboxInput(_) => f.write_str("NodeSpecificData::CheckboxInput"),
+            #[cfg(feature = "file_input")]
             SpecialElementData::FileInput(_) => f.write_str("NodeSpecificData::FileInput"),
             SpecialElementData::None => f.write_str("NodeSpecificData::None"),
         }
@@ -478,22 +482,30 @@ impl std::fmt::Debug for TextLayout {
     }
 }
 
-#[derive(Clone, Debug)]
-pub struct FileData(pub Vec<PathBuf>);
-impl Deref for FileData {
-    type Target = Vec<PathBuf>;
+#[cfg(feature = "file_input")]
+mod file_data {
+    use std::ops::{Deref, DerefMut};
+    use std::path::PathBuf;
 
-    fn deref(&self) -> &Self::Target {
-        &self.0
+    #[derive(Clone, Debug)]
+    pub struct FileData(pub Vec<PathBuf>);
+    impl Deref for FileData {
+        type Target = Vec<PathBuf>;
+
+        fn deref(&self) -> &Self::Target {
+            &self.0
+        }
+    }
+    impl DerefMut for FileData {
+        fn deref_mut(&mut self) -> &mut Self::Target {
+            &mut self.0
+        }
+    }
+    impl From<Vec<PathBuf>> for FileData {
+        fn from(files: Vec<PathBuf>) -> Self {
+            Self(files)
+        }
     }
 }
-impl DerefMut for FileData {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.0
-    }
-}
-impl From<Vec<PathBuf>> for FileData {
-    fn from(files: Vec<PathBuf>) -> Self {
-        Self(files)
-    }
-}
+#[cfg(feature = "file_input")]
+pub use file_data::FileData;
