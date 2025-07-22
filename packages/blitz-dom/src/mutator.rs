@@ -6,7 +6,9 @@ use crate::document::make_device;
 use crate::net::{CssHandler, ImageHandler};
 use crate::node::{CanvasData, NodeFlags, SpecialElementData};
 use crate::util::ImageType;
-use crate::{Attribute, BaseDocument, ElementData, Node, NodeData, QualName, local_name, ns};
+use crate::{
+    Attribute, BaseDocument, ElementData, Node, NodeData, QualName, local_name, qual_name,
+};
 use blitz_traits::net::Request;
 use blitz_traits::shell::Viewport;
 use style::invalidation::element::restyle_hints::RestyleHint;
@@ -502,6 +504,8 @@ impl<'doc> DocumentMutator<'doc> {
                 SpecialElementData::TableRoot(_) => {}
                 SpecialElementData::TextInput(_) => {}
                 SpecialElementData::CheckboxInput(_) => {}
+                #[cfg(feature = "file_input")]
+                SpecialElementData::FileInput(_) => {}
                 SpecialElementData::None => {}
             }
         });
@@ -620,6 +624,29 @@ impl<'doc> DocumentMutator<'doc> {
             let value = value.to_string();
             let id = self.create_text_node(&value);
             self.append_children(target_id, &[id]);
+            return;
+        }
+        #[cfg(feature = "file_input")]
+        if let ("input", Some("file")) = (tagname, type_attr) {
+            let button_id = self.create_element(
+                qual_name!("button", html),
+                vec![
+                    Attribute {
+                        name: qual_name!("type", html),
+                        value: "button".to_string(),
+                    },
+                    Attribute {
+                        name: qual_name!("tabindex", html),
+                        value: "-1".to_string(),
+                    },
+                ],
+            );
+            let label_id = self.create_element(qual_name!("label", html), vec![]);
+            let text_id = self.create_text_node("No File Selected");
+            let button_text_id = self.create_text_node("Browse");
+            self.append_children(target_id, &[button_id, label_id]);
+            self.append_children(label_id, &[text_id]);
+            self.append_children(button_id, &[button_text_id]);
         }
     }
 }
@@ -636,11 +663,7 @@ fn set_input_checked_state(element: &mut ElementData, value: String) {
         // this simulates the checked attribute being set in html,
         // and the element's checked property being set from that
         SpecialElementData::None => element.attrs.push(Attribute {
-            name: QualName {
-                prefix: None,
-                ns: ns!(html),
-                local: local_name!("checked"),
-            },
+            name: qual_name!("checked", html),
             value: checked.to_string(),
         }),
         _ => {}

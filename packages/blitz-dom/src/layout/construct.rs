@@ -23,16 +23,12 @@ use crate::{
         ListItemLayout, ListItemLayoutPosition, Marker, NodeFlags, NodeKind, SpecialElementData,
         TextBrush, TextInputData, TextLayout,
     },
-    stylo_to_parley,
+    qual_name, stylo_to_parley,
 };
 
 use super::table::build_table_context;
 
-const DUMMY_NAME: QualName = QualName {
-    prefix: None,
-    ns: ns!(html),
-    local: local_name!("div"),
-};
+const DUMMY_NAME: QualName = qual_name!("div", html);
 
 fn push_children_and_pseudos(layout_children: &mut Vec<usize>, node: &Node) {
     if let Some(before) = node.before {

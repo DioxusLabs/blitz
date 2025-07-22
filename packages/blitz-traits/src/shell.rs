@@ -23,6 +23,15 @@ pub trait ShellProvider {
         let _ = text;
         Err(ClipboardError)
     }
+    fn open_file_dialog(
+        &self,
+        multiple: bool,
+        filter: Option<FileDialogFilter>,
+    ) -> Vec<std::path::PathBuf> {
+        let _ = multiple;
+        let _ = filter;
+        vec![]
+    }
 }
 
 pub struct DummyShellProvider;
@@ -101,4 +110,10 @@ impl Viewport {
     pub fn zoom_mut(&mut self) -> &mut f32 {
         &mut self.zoom
     }
+}
+
+/// Filter provided by the dom for an file picker
+pub struct FileDialogFilter {
+    pub name: String,
+    pub extensions: Vec<String>,
 }

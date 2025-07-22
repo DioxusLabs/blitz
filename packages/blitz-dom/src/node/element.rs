@@ -57,6 +57,7 @@ pub struct ElementData {
 }
 
 #[derive(Copy, Clone, Default)]
+#[non_exhaustive]
 pub enum SpecialElementType {
     Stylesheet,
     Image,
@@ -64,6 +65,8 @@ pub enum SpecialElementType {
     TableRoot,
     TextInput,
     CheckboxInput,
+    #[cfg(feature = "file_input")]
+    FileInput,
     #[default]
     None,
 }
@@ -82,6 +85,9 @@ pub enum SpecialElementData {
     TextInput(TextInputData),
     /// Checkbox checked state
     CheckboxInput(bool),
+    /// Selected files
+    #[cfg(feature = "file_input")]
+    FileInput(FileData),
     /// No data (for nodes that don't need any node-specific data)
     #[default]
     None,
@@ -215,6 +221,22 @@ impl ElementData {
         }
     }
 
+    #[cfg(feature = "file_input")]
+    pub fn file_data(&self) -> Option<&FileData> {
+        match &self.special_data {
+            SpecialElementData::FileInput(data) => Some(data),
+            _ => None,
+        }
+    }
+
+    #[cfg(feature = "file_input")]
+    pub fn file_data_mut(&mut self) -> Option<&mut FileData> {
+        match &mut self.special_data {
+            SpecialElementData::FileInput(data) => Some(data),
+            _ => None,
+        }
+    }
+
     pub fn flush_is_focussable(&mut self) {
         let disabled: bool = self.attr_parsed(local_name!("disabled")).unwrap_or(false);
         let tabindex: Option<i32> = self.attr_parsed(local_name!("tabindex"));
@@ -260,6 +282,18 @@ impl ElementData {
 
     pub fn take_inline_layout(&mut self) -> Option<Box<TextLayout>> {
         std::mem::take(&mut self.inline_layout_data)
+    }
+
+    pub fn is_submit_button(&self) -> bool {
+        if self.name.local != local_name!("button") {
+            return false;
+        }
+        let type_attr = self.attr(local_name!("type"));
+        let is_submit = type_attr == Some("submit");
+        let is_auto_submit = type_attr.is_none()
+            && self.attr(LocalName::from("command")).is_none()
+            && self.attr(LocalName::from("commandfor")).is_none();
+        is_submit || is_auto_submit
     }
 }
 
@@ -378,6 +412,8 @@ impl std::fmt::Debug for SpecialElementData {
             SpecialElementData::TableRoot(_) => f.write_str("NodeSpecificData::TableRoot"),
             SpecialElementData::TextInput(_) => f.write_str("NodeSpecificData::TextInput"),
             SpecialElementData::CheckboxInput(_) => f.write_str("NodeSpecificData::CheckboxInput"),
+            #[cfg(feature = "file_input")]
+            SpecialElementData::FileInput(_) => f.write_str("NodeSpecificData::FileInput"),
             SpecialElementData::None => f.write_str("NodeSpecificData::None"),
         }
     }
@@ -445,3 +481,31 @@ impl std::fmt::Debug for TextLayout {
         write!(f, "TextLayout")
     }
 }
+
+#[cfg(feature = "file_input")]
+mod file_data {
+    use std::ops::{Deref, DerefMut};
+    use std::path::PathBuf;
+
+    #[derive(Clone, Debug)]
+    pub struct FileData(pub Vec<PathBuf>);
+    impl Deref for FileData {
+        type Target = Vec<PathBuf>;
+
+        fn deref(&self) -> &Self::Target {
+            &self.0
+        }
+    }
+    impl DerefMut for FileData {
+        fn deref_mut(&mut self) -> &mut Self::Target {
+            &mut self.0
+        }
+    }
+    impl From<Vec<PathBuf>> for FileData {
+        fn from(files: Vec<PathBuf>) -> Self {
+            Self(files)
+        }
+    }
+}
+#[cfg(feature = "file_input")]
+pub use file_data::FileData;

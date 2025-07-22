@@ -153,65 +153,103 @@ pub(crate) fn handle_click<F: FnMut(DomEvent)>(
 
         if let SpecialElementData::TextInput(_) = el.special_data {
             return;
-        } else if el.name.local == local_name!("input")
-            && matches!(el.attr(local_name!("type")), Some("checkbox"))
-        {
-            let is_checked = BaseDocument::toggle_checkbox(el);
-            let value = is_checked.to_string();
-            dispatch_event(DomEvent::new(
-                node_id,
-                DomEventData::Input(BlitzInputEvent { value }),
-            ));
-            doc.set_focus_to(node_id);
-            return;
-        } else if el.name.local == local_name!("input")
-            && matches!(el.attr(local_name!("type")), Some("radio"))
-        {
-            let radio_set = el.attr(local_name!("name")).unwrap().to_string();
-            BaseDocument::toggle_radio(doc, radio_set, node_id);
-
-            // TODO: make input event conditional on value actually changing
-            let value = String::from("true");
-            dispatch_event(DomEvent::new(
-                node_id,
-                DomEventData::Input(BlitzInputEvent { value }),
-            ));
-
-            BaseDocument::set_focus_to(doc, node_id);
-
-            return;
         }
-        // Clicking labels triggers click, and possibly input event, of associated input
-        else if el.name.local == local_name!("label") {
-            if let Some(target_node_id) = doc.label_bound_input_element(node_id).map(|n| n.id) {
-                // Apply default click event action for target node
-                let target_node = doc.get_node_mut(target_node_id).unwrap();
-                let syn_event = target_node.synthetic_click_event_data(event.mods);
-                handle_click(doc, target_node_id, &syn_event, dispatch_event);
+
+        match el.name.local {
+            local_name!("input") if el.attr(local_name!("type")) == Some("checkbox") => {
+                let is_checked = BaseDocument::toggle_checkbox(el);
+                let value = is_checked.to_string();
+                dispatch_event(DomEvent::new(
+                    node_id,
+                    DomEventData::Input(BlitzInputEvent { value }),
+                ));
+                doc.set_focus_to(node_id);
                 return;
             }
-        } else if el.name.local == local_name!("a") {
-            if let Some(href) = el.attr(local_name!("href")) {
-                if let Some(url) = doc.url.resolve_relative(href) {
-                    doc.navigation_provider.navigate_to(NavigationOptions::new(
-                        url,
-                        String::from("text/plain"),
-                        doc.id(),
-                    ));
-                } else {
-                    println!("{href} is not parseable as a url. : {:?}", *doc.url)
+            local_name!("input") if el.attr(local_name!("type")) == Some("radio") => {
+                let radio_set = el.attr(local_name!("name")).unwrap().to_string();
+                BaseDocument::toggle_radio(doc, radio_set, node_id);
+
+                // TODO: make input event conditional on value actually changing
+                let value = String::from("true");
+                dispatch_event(DomEvent::new(
+                    node_id,
+                    DomEventData::Input(BlitzInputEvent { value }),
+                ));
+
+                BaseDocument::set_focus_to(doc, node_id);
+
+                return;
+            }
+            // Clicking labels triggers click, and possibly input event, of associated input
+            local_name!("label") => {
+                if let Some(target_node_id) = doc.label_bound_input_element(node_id).map(|n| n.id) {
+                    // Apply default click event action for target node
+                    let target_node = doc.get_node_mut(target_node_id).unwrap();
+                    let syn_event = target_node.synthetic_click_event_data(event.mods);
+                    handle_click(doc, target_node_id, &syn_event, dispatch_event);
+                    return;
                 }
-                return;
-            } else {
-                println!("Clicked link without href: {:?}", el.attrs());
             }
-        } else if el.name.local == local_name!("input")
-            && el.attr(local_name!("type")) == Some("submit")
-            || el.name.local == local_name!("button")
-        {
-            if let Some(form_owner) = doc.controls_to_form.get(&node_id) {
-                doc.submit_form(*form_owner, node_id);
+            local_name!("a") => {
+                if let Some(href) = el.attr(local_name!("href")) {
+                    if let Some(url) = doc.url.resolve_relative(href) {
+                        doc.navigation_provider.navigate_to(NavigationOptions::new(
+                            url,
+                            String::from("text/plain"),
+                            doc.id(),
+                        ));
+                    } else {
+                        println!("{href} is not parseable as a url. : {:?}", *doc.url)
+                    }
+                    return;
+                } else {
+                    println!("Clicked link without href: {:?}", el.attrs());
+                }
             }
+            local_name!("input")
+                if el.is_submit_button() || el.attr(local_name!("type")) == Some("submit") =>
+            {
+                if let Some(form_owner) = doc.controls_to_form.get(&node_id) {
+                    doc.submit_form(*form_owner, node_id);
+                }
+            }
+            #[cfg(feature = "file_input")]
+            local_name!("input") if el.attr(local_name!("type")) == Some("file") => {
+                use crate::qual_name;
+                //TODO: Handle accept attribute https://developer.mozilla.org/en-US/docs/Web/HTML/Reference/Attributes/accept by passing an appropriate filter
+                let multiple = el.attr(local_name!("multiple")).is_some();
+                let files = doc.shell_provider.open_file_dialog(multiple, None);
+
+                if let Some(file) = files.first() {
+                    el.attrs
+                        .set(qual_name!("value", html), &file.to_string_lossy());
+                }
+                let text_content = match files.len() {
+                    0 => "No Files Selected".to_string(),
+                    1 => files
+                        .first()
+                        .unwrap()
+                        .file_name()
+                        .unwrap_or_default()
+                        .to_string_lossy()
+                        .to_string(),
+                    x => format!("{x} Files Selected"),
+                };
+
+                if files.is_empty() {
+                    el.special_data = SpecialElementData::None;
+                } else {
+                    el.special_data = SpecialElementData::FileInput(files.into())
+                }
+                let child_label_id = doc.nodes[node_id].children[1];
+                let child_text_id = doc.nodes[child_label_id].children[0];
+                let text_data = doc.nodes[child_text_id]
+                    .text_data_mut()
+                    .expect("Text data not found");
+                text_data.content = text_content;
+            }
+            _ => {}
         }
 
         // No match. Recurse up to parent.

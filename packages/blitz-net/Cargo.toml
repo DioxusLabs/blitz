@@ -11,6 +11,7 @@ edition.workspace = true
 
 [features]
 cookies = ["reqwest/cookies"]
+multipart = ["reqwest/multipart", "reqwest/stream"]
 
 [dependencies]
 # Blitz dependencies
