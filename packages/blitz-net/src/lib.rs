@@ -187,12 +187,13 @@ impl ReqwestExt for reqwest::RequestBuilder {
     async fn apply_body(self, body: Body, content_type: &str) -> Self {
         match body {
             Body::Bytes(bytes) => self.body(bytes),
-            Body::Form(mut form_data) => match content_type {
+            Body::Form(form_data) => match content_type {
                 "application/x-www-form-urlencoded" => self.form(&form_data),
+                #[cfg(feature = "multipart")]
                 "multipart/form-data" => {
                     use blitz_traits::net::Entry;
                     use blitz_traits::net::EntryValue;
-
+                    let mut form_data = form_data;
                     let mut form = reqwest::multipart::Form::new();
                     for Entry { name, value } in form_data.0.drain(..) {
                         form = match value {
