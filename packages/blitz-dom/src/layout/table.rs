@@ -4,8 +4,8 @@ use markup5ever::local_name;
 use style::values::specified::box_::{DisplayInside, DisplayOutside};
 use style::{Atom, computed_values::table_layout::T as TableLayout};
 use taffy::{
-    Dimension, LayoutPartialTree as _, NonRepeatedTrackSizingFunction, ResolveOrZero,
-    compute_leaf_layout, style_helpers,
+    Dimension, LayoutPartialTree as _, ResolveOrZero, TrackSizingFunction, compute_leaf_layout,
+    style_helpers,
 };
 
 use crate::BaseDocument;
@@ -79,7 +79,7 @@ pub(crate) fn build_table_context(
 
     style.grid_template_columns = column_sizes
         .into_iter()
-        .map(|dim| NonRepeatedTrackSizingFunction::from(dim).into())
+        .map(|dim| TrackSizingFunction::from(dim).into())
         .collect();
     style.grid_template_rows = vec![style_helpers::auto(); row as usize];
 
