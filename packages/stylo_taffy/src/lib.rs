@@ -9,3 +9,5 @@ pub use wrapper::TaffyStyloStyle;
 pub mod convert;
 #[doc(inline)]
 pub use convert::to_taffy_style;
+
+pub use style::Atom;

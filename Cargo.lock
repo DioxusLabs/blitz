@@ -2882,9 +2882,9 @@ dependencies = [
 
 [[package]]
 name = "grid"
-version = "0.17.0"
+version = "0.16.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "71b01d27060ad58be4663b9e4ac9e2d4806918e8876af8912afbddd1a91d5eaa"
+checksum = "969d090eea77fac1be33f853ffc4b6b60cc6f312ddf4fd28b311a730e1dd8ebe"
 
 [[package]]
 name = "guillotiere"
@@ -5991,6 +5991,7 @@ name = "stylo_taffy"
 version = "0.1.0-rc.2"
 dependencies = [
  "stylo",
+ "stylo_atoms",
  "taffy",
 ]
 
@@ -6161,9 +6162,7 @@ dependencies = [
 
 [[package]]
 name = "taffy"
-version = "0.8.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7aaef0ac998e6527d6d0d5582f7e43953bb17221ac75bb8eb2fcc2db3396db1c"
+version = "0.8.1"
 dependencies = [
  "arrayvec",
  "grid",
