@@ -167,6 +167,20 @@ impl DomEventData {
         }
     }
 
+    pub fn kind(&self) -> DomEventKind {
+        match self {
+            Self::MouseMove { .. } => DomEventKind::MouseMove,
+            Self::MouseDown { .. } => DomEventKind::MouseDown,
+            Self::MouseUp { .. } => DomEventKind::MouseUp,
+            Self::Click { .. } => DomEventKind::Click,
+            Self::KeyPress { .. } => DomEventKind::KeyPress,
+            Self::KeyDown { .. } => DomEventKind::KeyDown,
+            Self::KeyUp { .. } => DomEventKind::KeyUp,
+            Self::Input { .. } => DomEventKind::Input,
+            Self::Ime { .. } => DomEventKind::Ime,
+        }
+    }
+
     pub fn cancelable(&self) -> bool {
         match self {
             Self::MouseMove { .. } => true,
