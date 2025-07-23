@@ -93,7 +93,8 @@ impl DomEvent {
     }
 }
 
-#[derive(Copy, Clone, PartialEq)]
+#[derive(Copy, Clone, Debug, PartialEq)]
+#[repr(u8)]
 pub enum DomEventKind {
     MouseMove,
     MouseDown,
