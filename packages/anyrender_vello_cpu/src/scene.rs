@@ -62,15 +62,18 @@ fn premultiply(image: &peniko::Image) -> Vec<PremulRgba8> {
         .as_ref()
         .chunks_exact(4)
         .map(|d| {
+            #[inline(always)]
+            fn premultiply(e: u8, alpha: u16) -> u8 {
+                ((e as u16 * alpha) / 255) as u8
+            }
             let alpha = d[3] as u16;
-            let premultiply = |e: u8| ((e as u16 * alpha) / 255) as u8;
             if alpha == 0 {
                 PremulRgba8::from_u8_array([0, 0, 0, 0])
             } else {
                 PremulRgba8 {
-                    r: premultiply(d[0]),
-                    b: premultiply(d[1]),
-                    g: premultiply(d[2]),
+                    r: premultiply(d[0], alpha),
+                    g: premultiply(d[1], alpha),
+                    b: premultiply(d[2], alpha),
                     a: d[3],
                 }
             }
