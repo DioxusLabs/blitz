@@ -122,8 +122,8 @@ impl FromStr for DomEventKind {
             "keypress" => Ok(Self::KeyPress),
             "keydown" => Ok(Self::KeyDown),
             "keyup" => Ok(Self::KeyUp),
-            "composition" => Ok(Self::Input),
-            "input" => Ok(Self::Ime),
+            "input" => Ok(Self::Input),
+            "composition" => Ok(Self::Ime),
             _ => Err(()),
         }
     }
@@ -162,8 +162,8 @@ impl DomEventData {
             Self::KeyPress { .. } => "keypress",
             Self::KeyDown { .. } => "keydown",
             Self::KeyUp { .. } => "keyup",
-            Self::Ime { .. } => "composition",
             Self::Input { .. } => "input",
+            Self::Ime { .. } => "composition",
         }
     }
 
