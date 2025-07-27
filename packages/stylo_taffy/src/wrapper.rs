@@ -251,7 +251,7 @@ impl<'a> IntoIterator for LineNameWrapper<'a> {
     }
 }
 
-impl<'a> taffy::TemplateLineNames<'a, Atom> for LineNameWrapper<'a> {
+impl<'a> taffy::TemplateLineNames<'a, Atom> for LineNameIter<'a> {
     type LineNameSet<'b>
         = SliceIdentIter<'b>
     where
@@ -262,14 +262,12 @@ impl<'a> taffy::TemplateLineNames<'a, Atom> for LineNameWrapper<'a> {
 pub struct LineNameIter<'a> {
     styles: &'a OwnedSlice<OwnedSlice<CustomIdent>>,
     line_idx: usize, // Outer slice
-    name_idx: usize, // Inner slice
 }
 impl<'a> LineNameIter<'a> {
     fn new(styles: &'a OwnedSlice<OwnedSlice<CustomIdent>>) -> Self {
         Self {
             styles,
             line_idx: 0,
-            name_idx: 0,
         }
     }
 }
