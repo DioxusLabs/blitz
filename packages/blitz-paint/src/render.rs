@@ -4,7 +4,7 @@ mod form_controls;
 
 use std::sync::Arc;
 
-use super::multicolor_rounded_rect::{Edge, ElementFrame};
+use super::multicolor_rounded_rect::{CssRect, Edge};
 use crate::color::{Color, ToColorColor};
 use crate::debug_overlay::render_debug_overlay;
 use crate::layers::maybe_with_layer;
@@ -292,7 +292,7 @@ impl BlitzDomPainter<'_> {
         // todo: maybe cache this so we don't need to constantly be figuring it out
         // It is quite a bit of math to calculate during render/traverse
         // Also! we can cache the bezpaths themselves, saving us a bunch of work
-        let frame = ElementFrame::new(&style, &layout, scale);
+        let frame = CssRect::new(&style, &layout, scale);
 
         // the bezpaths for every element are (potentially) cached (not yet, tbd)
         // By performing the transform, we prevent the cache from becoming invalid when the page shifts around
@@ -379,7 +379,7 @@ fn to_peniko_image(image: &RasterImageData, quality: peniko::ImageQuality) -> pe
 /// A context of loaded and hot data to draw the element from
 struct ElementCx<'a> {
     context: &'a BlitzDomPainter<'a>,
-    frame: ElementFrame,
+    frame: CssRect,
     style: style::servo_arc::Arc<ComputedValues>,
     pos: Point,
     scale: f64,

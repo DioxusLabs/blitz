@@ -63,7 +63,7 @@ fn get_corner_insets(insets: Insets, corner: Corner) -> Vec2 {
 /// It contains all the information needed to draw the frame, border, etc
 ///
 #[derive(Debug, Clone)]
-pub struct ElementFrame {
+pub struct CssRect {
     pub border_box: Rect,
     pub padding_box: Rect,
     pub content_box: Rect,
@@ -77,7 +77,7 @@ pub struct ElementFrame {
     pub border_radii: NonUniformRoundedRectRadii,
 }
 
-impl ElementFrame {
+impl CssRect {
     pub fn new(style: &ComputedValues, layout: &Layout, scale: f64) -> Self {
         let s_border = style.get_border();
         let outline = style.get_outline();
@@ -483,7 +483,7 @@ impl ElementFrame {
 
     fn ellipse(&self, corner: Corner, side: CssBox) -> Ellipse {
         use {Corner::*, CssBox::*};
-        let ElementFrame {
+        let CssRect {
             border_box,
             padding_width,
             border_width,
