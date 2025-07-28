@@ -14,10 +14,6 @@ fn app() -> Element {
         div { "padd           " }
         div { "padd           " }
         div { "padd           " }
-        div { "padd           " }
-        div { "padd           " }
-        div { "padd           " }
-        div { "padd           " }
         div {
             class: "colorful",
             id: "a",
@@ -52,8 +48,9 @@ const CSS: &str = r#"
     border-top: 10px solid #ff0;
     border-right:  3px solid #F01;
     border-bottom:  9px solid #0f0;
-    box-shadow: 10px 10px gray;
+    // box-shadow: 10px 10px gray;
 
+    margin: 100px;
     outline-width: 50px;
     outline-style: solid;
     outline-color: blue;
