@@ -1,15 +1,8 @@
 use kurbo::{Arc, BezPath, Ellipse, Insets, PathEl, Point, Rect, Shape as _, Vec2};
 use std::{f64::consts::FRAC_PI_2, f64::consts::PI};
-use style::{
-    properties::ComputedValues,
-    values::computed::{BorderCornerRadius, CSSPixelLength},
-};
-use taffy::prelude::Layout;
 
 use super::non_uniform_radii::NonUniformRoundedRectRadii;
-use super::{
-    Corner, CssBox, Direction, Edge, add_insets, get_corner_insets, insets_from_taffy_rect,
-};
+use super::{Corner, CssBox, Direction, Edge, add_insets, get_corner_insets};
 
 /// There are several nested boxes at play here:
 /// We have 4 boxes, 4 corners, and clockwise/anticlockwise for a total of 16 different options
@@ -42,47 +35,24 @@ pub struct CssRect {
     pub content_box: Rect,
     pub outline_box: Rect,
 
-    pub outline_width: f64,
-
     pub padding_width: Insets,
     pub border_width: Insets,
+    pub outline_width: f64,
 
     pub border_radii: NonUniformRoundedRectRadii,
 }
 
 impl CssRect {
-    pub fn new(style: &ComputedValues, layout: &Layout, scale: f64) -> Self {
-        let s_border = style.get_border();
-        let outline = style.get_outline();
-
-        // Resolve and rescale
-        // We have to scale since document pixels are not same same as rendered pixels
-        let width: f64 = layout.size.width as f64 * scale;
-        let height: f64 = layout.size.height as f64 * scale;
-        let border = insets_from_taffy_rect(layout.border.map(|p| p as f64 * scale));
-        let padding = insets_from_taffy_rect(layout.padding.map(|p| p as f64 * scale));
-        let outline_width = scale * outline.outline_width.to_f64_px();
-
-        let border_box = Rect::new(0.0, 0.0, width, height);
+    pub fn new(
+        border_box: Rect,
+        border: Insets,
+        padding: Insets,
+        outline_width: f64,
+        mut border_radii: NonUniformRoundedRectRadii,
+    ) -> Self {
         let padding_box = border_box - border;
         let content_box = padding_box - padding;
         let outline_box = border_box.inset(outline_width);
-
-        // Resolve the radii to a length. need to downscale since the radii are in document pixels
-        let resolve_w = CSSPixelLength::new((padding_box.width() / scale) as _);
-        let resolve_h = CSSPixelLength::new((padding_box.height() / scale) as _);
-        let resolve_radii = |radius: &BorderCornerRadius| -> Vec2 {
-            Vec2 {
-                x: scale * radius.0.width.0.resolve(resolve_w).px() as f64,
-                y: scale * radius.0.height.0.resolve(resolve_h).px() as f64,
-            }
-        };
-        let mut border_radii = NonUniformRoundedRectRadii {
-            top_left: resolve_radii(&s_border.border_top_left_radius),
-            top_right: resolve_radii(&s_border.border_top_right_radius),
-            bottom_right: resolve_radii(&s_border.border_bottom_right_radius),
-            bottom_left: resolve_radii(&s_border.border_bottom_left_radius),
-        };
 
         // Correct the border radii if they are too big if two border radii would intersect, then we need to shrink
         // ALL border radii by the same factor such that they do not

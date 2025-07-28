@@ -12,6 +12,7 @@ mod css_rect;
 mod non_uniform_radii;
 
 pub use css_rect::CssRect;
+pub use non_uniform_radii::NonUniformRoundedRectRadii;
 
 #[derive(Debug, Clone, Copy)]
 pub enum Edge {
@@ -42,15 +43,6 @@ pub(crate) enum CssBox {
 pub(crate) enum Direction {
     Clockwise,
     Anticlockwise,
-}
-
-fn insets_from_taffy_rect(input: taffy::Rect<f64>) -> Insets {
-    Insets {
-        x0: input.left,
-        y0: input.top,
-        x1: input.right,
-        y1: input.bottom,
-    }
 }
 
 fn add_insets(a: Insets, b: Insets) -> Insets {

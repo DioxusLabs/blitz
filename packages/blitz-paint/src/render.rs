@@ -7,6 +7,7 @@ use std::sync::Arc;
 use super::kurbo_css::{CssRect, Edge};
 use crate::color::{Color, ToColorColor};
 use crate::debug_overlay::render_debug_overlay;
+use crate::kurbo_css::NonUniformRoundedRectRadii;
 use crate::layers::maybe_with_layer;
 use crate::sizing::compute_object_fit;
 use anyrender::{CustomPaint, Paint, PaintScene};
@@ -18,6 +19,7 @@ use blitz_dom::{BaseDocument, ElementData, Node, local_name};
 use blitz_traits::devtools::DevtoolSettings;
 
 use euclid::Transform3D;
+use style::values::computed::BorderCornerRadius;
 use style::{
     dom::TElement,
     properties::{
@@ -30,7 +32,7 @@ use style::{
     },
 };
 
-use kurbo::{self, Affine, Point, Rect, Stroke, Vec2};
+use kurbo::{self, Affine, Insets, Point, Rect, Stroke, Vec2};
 use peniko::{self, Fill};
 use style::values::generics::color::GenericColor;
 use taffy::Layout;
@@ -292,7 +294,7 @@ impl BlitzDomPainter<'_> {
         // todo: maybe cache this so we don't need to constantly be figuring it out
         // It is quite a bit of math to calculate during render/traverse
         // Also! we can cache the bezpaths themselves, saving us a bunch of work
-        let frame = CssRect::new(&style, &layout, scale);
+        let frame = create_css_rect(&style, &layout, scale);
 
         // the bezpaths for every element are (potentially) cached (not yet, tbd)
         // By performing the transform, we prevent the cache from becoming invalid when the page shifts around
@@ -734,4 +736,44 @@ impl<'a> std::ops::Deref for ElementCx<'a> {
     fn deref(&self) -> &Self::Target {
         self.context
     }
+}
+
+fn insets_from_taffy_rect(input: taffy::Rect<f64>) -> Insets {
+    Insets {
+        x0: input.left,
+        y0: input.top,
+        x1: input.right,
+        y1: input.bottom,
+    }
+}
+
+/// Convert Stylo and Taffy types into Kurbo types
+fn create_css_rect(style: &ComputedValues, layout: &Layout, scale: f64) -> CssRect {
+    // Resolve and rescale
+    // We have to scale since document pixels are not same same as rendered pixels
+    let width: f64 = layout.size.width as f64;
+    let height: f64 = layout.size.height as f64;
+    let border_box = Rect::new(0.0, 0.0, width * scale, height * scale);
+    let border = insets_from_taffy_rect(layout.border.map(|p| p as f64 * scale));
+    let padding = insets_from_taffy_rect(layout.padding.map(|p| p as f64 * scale));
+    let outline_width = style.get_outline().outline_width.to_f64_px() * scale;
+
+    // Resolve the radii to a length. need to downscale since the radii are in document pixels
+    let resolve_w = CSSPixelLength::new(width as _);
+    let resolve_h = CSSPixelLength::new(height as _);
+    let resolve_radii = |radius: &BorderCornerRadius| -> Vec2 {
+        Vec2 {
+            x: scale * radius.0.width.0.resolve(resolve_w).px() as f64,
+            y: scale * radius.0.height.0.resolve(resolve_h).px() as f64,
+        }
+    };
+    let s_border = style.get_border();
+    let border_radii = NonUniformRoundedRectRadii {
+        top_left: resolve_radii(&s_border.border_top_left_radius),
+        top_right: resolve_radii(&s_border.border_top_right_radius),
+        bottom_right: resolve_radii(&s_border.border_bottom_right_radius),
+        bottom_left: resolve_radii(&s_border.border_bottom_left_radius),
+    };
+
+    CssRect::new(border_box, border, padding, outline_width, border_radii)
 }
