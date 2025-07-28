@@ -6,7 +6,7 @@
 //! Can I just say, this is a lot of work for a border
 //! HTML/css is annoyingly wild
 
-use kurbo::{Arc, BezPath, Ellipse, PathEl, Point, Rect, Shape, Vec2};
+use kurbo::{Arc, BezPath, Ellipse, Insets, PathEl, Point, Rect, Shape, Vec2};
 use std::{f64::consts::FRAC_PI_2, f64::consts::PI};
 use style::{
     properties::ComputedValues,
@@ -15,6 +15,46 @@ use style::{
 use taffy::prelude::Layout;
 
 use crate::non_uniform_rounded_rect::NonUniformRoundedRectRadii;
+
+fn insets_from_taffy_rect(input: taffy::Rect<f64>) -> Insets {
+    Insets {
+        x0: input.left,
+        y0: input.top,
+        x1: input.right,
+        y1: input.bottom,
+    }
+}
+
+fn add_insets(a: Insets, b: Insets) -> Insets {
+    Insets {
+        x0: a.x0 + b.x0,
+        y0: a.y0 + b.y0,
+        x1: a.x1 + b.x1,
+        y1: a.y1 + b.y1,
+    }
+}
+
+#[inline(always)]
+fn get_corner_insets(insets: Insets, corner: Corner) -> Vec2 {
+    match corner {
+        Corner::TopLeft => Vec2 {
+            x: insets.x0,
+            y: insets.y0,
+        },
+        Corner::TopRight => Vec2 {
+            x: insets.x1,
+            y: insets.y0,
+        },
+        Corner::BottomLeft => Vec2 {
+            x: insets.x0,
+            y: insets.y1,
+        },
+        Corner::BottomRight => Vec2 {
+            x: insets.x1,
+            y: insets.y1,
+        },
+    }
+}
 
 /// Resolved positions, thicknesses, and radii using the document scale and layout data
 ///
@@ -31,8 +71,8 @@ pub struct ElementFrame {
 
     pub outline_width: f64,
 
-    pub padding_width: taffy::Rect<f64>,
-    pub border_width: taffy::Rect<f64>,
+    pub padding_width: Insets,
+    pub border_width: Insets,
 
     pub border_radii: NonUniformRoundedRectRadii,
 }
@@ -46,29 +86,14 @@ impl ElementFrame {
         // We have to scale since document pixels are not same same as rendered pixels
         let width: f64 = layout.size.width as f64 * scale;
         let height: f64 = layout.size.height as f64 * scale;
-        let border = layout.border.map(|p| p as f64 * scale);
-        let padding = layout.padding.map(|p| p as f64 * scale);
+        let border = insets_from_taffy_rect(layout.border.map(|p| p as f64 * scale));
+        let padding = insets_from_taffy_rect(layout.padding.map(|p| p as f64 * scale));
         let outline_width = scale * outline.outline_width.to_f64_px();
 
         let border_box = Rect::new(0.0, 0.0, width, height);
-        let padding_box = Rect::new(
-            border.left,
-            border.top,
-            width - border.right,
-            height - border.bottom,
-        );
-        let content_box = Rect::new(
-            border.left + padding.left,
-            border.top + padding.top,
-            width - border.right - padding.right,
-            height - border.bottom - padding.bottom,
-        );
-        let outline_box = Rect::new(
-            border.left - outline_width,
-            border.top - outline_width,
-            width + (outline_width * 2.0),
-            height + (outline_width * 2.0),
-        );
+        let padding_box = border_box - border;
+        let content_box = padding_box - padding;
+        let outline_box = border_box.inset(outline_width);
 
         // Resolve the radii to a length. need to downscale since the radii are in document pixels
         let resolve_w = CSSPixelLength::new((padding_box.width() / scale) as _);
@@ -290,20 +315,20 @@ impl ElementFrame {
     fn corner_needs_infill(&self, corner: Corner) -> bool {
         match corner {
             Corner::TopLeft => {
-                self.border_radii.top_left.x > self.border_width.left
-                    && self.border_radii.top_left.y > self.border_width.top
+                self.border_radii.top_left.x > self.border_width.x0
+                    && self.border_radii.top_left.y > self.border_width.y0
             }
             Corner::TopRight => {
-                self.border_radii.top_right.x > self.border_width.right
-                    && self.border_radii.top_right.y > self.border_width.top
+                self.border_radii.top_right.x > self.border_width.x1
+                    && self.border_radii.top_right.y > self.border_width.y0
             }
             Corner::BottomRight => {
-                self.border_radii.bottom_right.x > self.border_width.right
-                    && self.border_radii.bottom_right.y > self.border_width.bottom
+                self.border_radii.bottom_right.x > self.border_width.x1
+                    && self.border_radii.bottom_right.y > self.border_width.y1
             }
             Corner::BottomLeft => {
-                self.border_radii.bottom_left.x > self.border_width.left
-                    && self.border_radii.bottom_left.y > self.border_width.bottom
+                self.border_radii.bottom_left.x > self.border_width.x0
+                    && self.border_radii.bottom_left.y > self.border_width.y1
             }
         }
     }
@@ -442,17 +467,17 @@ impl ElementFrame {
             return true;
         }
 
-        let css_box = match side {
+        let css_box: Insets = match side {
             OutlineBox => return false,
             BorderBox => return false,
             PaddingBox => self.border_width,
-            ContentBox => self.border_width + self.padding_width,
+            ContentBox => add_insets(self.border_width, self.padding_width),
         };
         match corner {
-            TopLeft => (corner_radii.x <= css_box.left) | (corner_radii.y <= css_box.top),
-            TopRight => (corner_radii.x <= css_box.right) | (corner_radii.y <= css_box.top),
-            BottomLeft => (corner_radii.x <= css_box.left) | (corner_radii.y <= css_box.bottom),
-            BottomRight => (corner_radii.x <= css_box.right) | (corner_radii.y <= css_box.bottom),
+            TopLeft => (corner_radii.x <= css_box.x0) | (corner_radii.y <= css_box.y0),
+            TopRight => (corner_radii.x <= css_box.x1) | (corner_radii.y <= css_box.y0),
+            BottomLeft => (corner_radii.x <= css_box.x0) | (corner_radii.y <= css_box.y1),
+            BottomRight => (corner_radii.x <= css_box.x1) | (corner_radii.y <= css_box.y1),
         }
     }
 
@@ -492,55 +517,18 @@ impl ElementFrame {
         let radii: Vec2 = match side {
             BorderBox => corner_radii,
             OutlineBox => corner_radii + Vec2::new(self.outline_width, self.outline_width),
-            PaddingBox => match corner {
-                TopLeft => Vec2 {
-                    x: corner_radii.x - border_width.left,
-                    y: corner_radii.y - border_width.top,
-                },
-                TopRight => Vec2 {
-                    x: corner_radii.x - border_width.right,
-                    y: corner_radii.y - border_width.top,
-                },
-                BottomRight => Vec2 {
-                    x: corner_radii.x - border_width.right,
-                    y: corner_radii.y - border_width.bottom,
-                },
-                BottomLeft => Vec2 {
-                    x: corner_radii.x - border_width.left,
-                    y: corner_radii.y - border_width.bottom,
-                },
-            },
-            ContentBox => match corner {
-                TopLeft => Vec2 {
-                    x: corner_radii.x - border_width.left - padding_width.left,
-                    y: corner_radii.y - border_width.top - padding_width.top,
-                },
-                TopRight => Vec2 {
-                    x: corner_radii.x - border_width.right - padding_width.right,
-                    y: corner_radii.y - border_width.top - padding_width.top,
-                },
-                BottomRight => Vec2 {
-                    x: corner_radii.x - border_width.right - padding_width.right,
-                    y: corner_radii.y - border_width.bottom - padding_width.bottom,
-                },
-                BottomLeft => Vec2 {
-                    x: corner_radii.x - border_width.left - padding_width.left,
-                    y: corner_radii.y - border_width.bottom - padding_width.bottom,
-                },
-            },
+            PaddingBox => corner_radii - get_corner_insets(*border_width, corner),
+            ContentBox => {
+                corner_radii - get_corner_insets(add_insets(*border_width, *padding_width), corner)
+            }
         };
 
         Ellipse::new(border_box.origin() + center, radii, 0.0)
     }
 
     fn start_angle(&self, corner: Corner, radii: Vec2) -> f64 {
-        use Corner::*;
-        match corner {
-            TopLeft => start_angle(self.border_width.top, self.border_width.left, radii),
-            TopRight => start_angle(self.border_width.top, self.border_width.right, radii),
-            BottomLeft => start_angle(self.border_width.bottom, self.border_width.left, radii),
-            BottomRight => start_angle(self.border_width.bottom, self.border_width.right, radii),
-        }
+        let corner_insets = get_corner_insets(self.border_width, corner);
+        start_angle(corner_insets.y, corner_insets.x, radii)
     }
 }
 
