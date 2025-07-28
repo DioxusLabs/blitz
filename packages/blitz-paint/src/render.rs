@@ -4,7 +4,7 @@ mod form_controls;
 
 use std::sync::Arc;
 
-use super::multicolor_rounded_rect::{CssRect, Edge};
+use super::kurbo_css::{CssRect, Edge};
 use crate::color::{Color, ToColorColor};
 use crate::debug_overlay::render_debug_overlay;
 use crate::layers::maybe_with_layer;

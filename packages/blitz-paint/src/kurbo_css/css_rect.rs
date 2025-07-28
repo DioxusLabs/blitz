@@ -1,12 +1,4 @@
-//! A rounded rect closer to the browser
-//! Implemented in such a way that splits the border into 4 parts at the midway of each radius
-//!
-//! This object is meant to be updated only when the data changes - BezPaths are expensive!
-//!
-//! Can I just say, this is a lot of work for a border
-//! HTML/css is annoyingly wild
-
-use kurbo::{Arc, BezPath, Ellipse, Insets, PathEl, Point, Rect, Shape, Vec2};
+use kurbo::{Arc, BezPath, Ellipse, Insets, PathEl, Point, Rect, Shape as _, Vec2};
 use std::{f64::consts::FRAC_PI_2, f64::consts::PI};
 use style::{
     properties::ComputedValues,
@@ -14,53 +6,34 @@ use style::{
 };
 use taffy::prelude::Layout;
 
-use crate::non_uniform_rounded_rect::NonUniformRoundedRectRadii;
+use super::non_uniform_radii::NonUniformRoundedRectRadii;
+use super::{
+    Corner, CssBox, Direction, Edge, add_insets, get_corner_insets, insets_from_taffy_rect,
+};
 
-fn insets_from_taffy_rect(input: taffy::Rect<f64>) -> Insets {
-    Insets {
-        x0: input.left,
-        y0: input.top,
-        x1: input.right,
-        y1: input.bottom,
-    }
-}
-
-fn add_insets(a: Insets, b: Insets) -> Insets {
-    Insets {
-        x0: a.x0 + b.x0,
-        y0: a.y0 + b.y0,
-        x1: a.x1 + b.x1,
-        y1: a.y1 + b.y1,
-    }
-}
-
-#[inline(always)]
-fn get_corner_insets(insets: Insets, corner: Corner) -> Vec2 {
-    match corner {
-        Corner::TopLeft => Vec2 {
-            x: insets.x0,
-            y: insets.y0,
-        },
-        Corner::TopRight => Vec2 {
-            x: insets.x1,
-            y: insets.y0,
-        },
-        Corner::BottomLeft => Vec2 {
-            x: insets.x0,
-            y: insets.y1,
-        },
-        Corner::BottomRight => Vec2 {
-            x: insets.x1,
-            y: insets.y1,
-        },
-    }
-}
-
-/// Resolved positions, thicknesses, and radii using the document scale and layout data
+/// There are several nested boxes at play here:
+/// We have 4 boxes, 4 corners, and clockwise/anticlockwise for a total of 16 different options
 ///
-/// This should be calculated once and then used to stroke borders, outlines, and frames
-///
-/// It contains all the information needed to draw the frame, border, etc
+/// ```a
+///    *--------------------------------------------------------*  <--- CssBox::OutlineBox
+///    |                         Outline                        |
+///    |    *----------------------------------------------*    |  <--- CssBox::BorderBox
+///    |    |                    Border                    |    |
+///    |    |    *------------------------------------*    |    |  <--- CssBox::PaddingBox
+///    |    |    |               Padding              |    |    |
+///    |    |    |    *--------------------------*    |    |    |  <--- CssBox::ContentBox
+///    |    |    |    |          Content         |    |    |    |
+///    |    |    |    |                          |    |    |    |
+///    |    |    |    |                          |    |    |    |
+///    |    |    |    |                          |    |    |    |
+///    |    |    |    *--------------------------*    |    |    |
+///    |    |    |                                    |    |    |
+///    |    |    *------------------------------------*    |    |
+///    |    |                                              |    |
+///    |    *----------------------------------------------*    |
+///    |                                                        |
+///    *--------------------------------------------------------*
+/// ```
 ///
 #[derive(Debug, Clone)]
 pub struct CssRect {
@@ -530,67 +503,6 @@ impl CssRect {
         let corner_insets = get_corner_insets(self.border_width, corner);
         start_angle(corner_insets.y, corner_insets.x, radii)
     }
-}
-
-#[derive(Debug, Clone, Copy)]
-pub enum Edge {
-    Top,
-    Right,
-    Bottom,
-    Left,
-}
-
-/// There are several corners at play here
-///
-/// - Outline
-/// - Border
-/// - Frame
-///
-/// So we have 4 corner distances, clockwise/anticlockwise, and 4 corners
-///
-/// We combine the corners and their distances to have twelve options here.
-///
-/// ```a
-///    *--------------------------------------------------------*  <--- ArcSide::Outline
-///    |                         Outline                        |
-///    |    *----------------------------------------------*    |  <--- ArcSide::Outer
-///    |    |                    Border                    |    |
-///    |    |    *------------------------------------*    |    |  <--- ArcSide::Inner
-///    |    |    |               Padding              |    |    |
-///    |    |    |    *--------------------------*    |    |    |  <--- ArcSide::Content
-///    |    |    |    |                          |    |    |    |
-///    |    |    |    |                          |    |    |    |
-///    |    |    |    |                          |    |    |    |
-///    |    |    |    |                          |    |    |    |
-///    |    |    |    *--------------------------*    |    |    |
-///    |    |    |                                    |    |    |
-///    |    |    *------------------------------------*    |    |
-///    |    |                                              |    |
-///    |    *----------------------------------------------*    |
-///    |                                                        |
-///    *--------------------------------------------------------*
-/// ```
-#[derive(Debug, Clone, Copy)]
-enum Corner {
-    TopLeft,
-    TopRight,
-    BottomLeft,
-    BottomRight,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq)]
-#[allow(clippy::enum_variant_names, reason = "Use CSS standard terminology")]
-enum CssBox {
-    OutlineBox,
-    BorderBox,
-    PaddingBox,
-    ContentBox,
-}
-
-#[derive(Debug, Clone, Copy)]
-enum Direction {
-    Clockwise,
-    Anticlockwise,
 }
 
 /// Makes it easier to insert objects into a bezpath without having to do checks

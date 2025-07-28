@@ -4,9 +4,8 @@
 mod color;
 mod debug_overlay;
 mod gradient;
+mod kurbo_css;
 mod layers;
-mod multicolor_rounded_rect;
-mod non_uniform_rounded_rect;
 mod render;
 mod sizing;
 mod text;

@@ -1,6 +1,5 @@
+use kurbo::Vec2;
 use std::ops::{Mul, MulAssign};
-
-use kurbo::{Rect, Vec2};
 
 /// Radii for each corner of a non-uniform rounded rectangle.
 ///
@@ -58,18 +57,4 @@ impl MulAssign<f64> for NonUniformRoundedRectRadii {
         self.bottom_left *= rhs;
         self.bottom_right *= rhs;
     }
-}
-
-/// A rectangle with  rounded corners.
-///
-/// By construction the rounded rectangle will have
-/// non-negative dimensions and radii clamped to half size of the rect.
-#[derive(Clone, Copy, Default, Debug, PartialEq)]
-// #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
-// #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub struct NonUniformRoundedRect {
-    /// Coordinates of the rectangle.
-    rect: Rect,
-    /// Radius of all four corners.
-    radii: NonUniformRoundedRectRadii,
 }
