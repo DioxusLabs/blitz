@@ -2,7 +2,7 @@ use kurbo::{Arc, BezPath, Ellipse, Insets, PathEl, Point, Rect, Shape as _, Vec2
 use std::{f64::consts::FRAC_PI_2, f64::consts::PI};
 
 use super::non_uniform_radii::NonUniformRoundedRectRadii;
-use super::{Corner, CssBox, Direction, Edge, add_insets, get_corner_insets};
+use super::{Corner, CssBoxKind, Direction, Edge, add_insets, get_corner_insets};
 
 /// There are several nested boxes at play here:
 /// We have 4 boxes, 4 corners, and clockwise/anticlockwise for a total of 16 different options
@@ -29,7 +29,7 @@ use super::{Corner, CssBox, Direction, Edge, add_insets, get_corner_insets};
 /// ```
 ///
 #[derive(Debug, Clone)]
-pub struct CssRect {
+pub struct CssBox {
     pub border_box: Rect,
     pub padding_box: Rect,
     pub content_box: Rect,
@@ -42,7 +42,7 @@ pub struct CssRect {
     pub border_radii: NonUniformRoundedRectRadii,
 }
 
-impl CssRect {
+impl CssBox {
     pub fn new(
         border_box: Rect,
         border: Insets,
@@ -96,7 +96,7 @@ impl CssRect {
     /// - jumping to the next outer arc (completing the edge with the previous)
     /// - drawing an inner arc
     pub fn border_edge_shape(&self, edge: Edge) -> BezPath {
-        use {Corner::*, CssBox::*, Direction::*, Edge::*};
+        use {Corner::*, CssBoxKind::*, Direction::*, Edge::*};
 
         let mut path = BezPath::new();
 
@@ -144,11 +144,11 @@ impl CssRect {
         let mut path = BezPath::new();
 
         // TODO: this has been known to produce quirky outputs with hugely rounded edges
-        self.shape(&mut path, CssBox::OutlineBox, Direction::Clockwise);
-        path.move_to(self.corner(Corner::TopLeft, CssBox::BorderBox));
+        self.shape(&mut path, CssBoxKind::OutlineBox, Direction::Clockwise);
+        path.move_to(self.corner(Corner::TopLeft, CssBoxKind::BorderBox));
 
-        self.shape(&mut path, CssBox::BorderBox, Direction::Anticlockwise);
-        path.move_to(self.corner(Corner::TopLeft, CssBox::BorderBox));
+        self.shape(&mut path, CssBoxKind::BorderBox, Direction::Anticlockwise);
+        path.move_to(self.corner(Corner::TopLeft, CssBoxKind::BorderBox));
 
         path
     }
@@ -156,25 +156,25 @@ impl CssRect {
     /// Construct a bezpath drawing the frame border
     pub fn border_box_path(&self) -> BezPath {
         let mut path = BezPath::new();
-        self.shape(&mut path, CssBox::BorderBox, Direction::Clockwise);
+        self.shape(&mut path, CssBoxKind::BorderBox, Direction::Clockwise);
         path
     }
 
     /// Construct a bezpath drawing the frame padding
     pub fn padding_box_path(&self) -> BezPath {
         let mut path = BezPath::new();
-        self.shape(&mut path, CssBox::PaddingBox, Direction::Clockwise);
+        self.shape(&mut path, CssBoxKind::PaddingBox, Direction::Clockwise);
         path
     }
 
     /// Construct a bezpath drawing the frame content
     pub fn content_box_path(&self) -> BezPath {
         let mut path = BezPath::new();
-        self.shape(&mut path, CssBox::ContentBox, Direction::Clockwise);
+        self.shape(&mut path, CssBoxKind::ContentBox, Direction::Clockwise);
         path
     }
 
-    fn shape(&self, path: &mut BezPath, line: CssBox, direction: Direction) {
+    fn shape(&self, path: &mut BezPath, line: CssBoxKind, direction: Direction) {
         use Corner::*;
 
         let route = match direction {
@@ -205,34 +205,34 @@ impl CssRect {
             path.insert_point(self.shadow_clip_corner(corner, shadow_rect));
         }
 
-        if self.is_sharp(TopLeft, CssBox::BorderBox) {
-            path.move_to(self.corner(TopLeft, CssBox::BorderBox));
+        if self.is_sharp(TopLeft, CssBoxKind::BorderBox) {
+            path.move_to(self.corner(TopLeft, CssBoxKind::BorderBox));
         } else {
             const TOLERANCE: f64 = 0.1;
-            let arc = self.corner_arc(TopLeft, CssBox::BorderBox, Direction::Anticlockwise);
+            let arc = self.corner_arc(TopLeft, CssBoxKind::BorderBox, Direction::Anticlockwise);
             let elements = arc.path_elements(TOLERANCE);
             path.extend(elements);
         }
 
         for corner in [/*TopLeft, */ BottomLeft, BottomRight, TopRight] {
-            if self.is_sharp(corner, CssBox::BorderBox) {
-                path.insert_point(self.corner(corner, CssBox::BorderBox));
+            if self.is_sharp(corner, CssBoxKind::BorderBox) {
+                path.insert_point(self.corner(corner, CssBoxKind::BorderBox));
             } else {
                 path.insert_arc(self.corner_arc(
                     corner,
-                    CssBox::BorderBox,
+                    CssBoxKind::BorderBox,
                     Direction::Anticlockwise,
                 ));
             }
         }
     }
 
-    fn corner(&self, corner: Corner, css_box: CssBox) -> Point {
+    fn corner(&self, corner: Corner, css_box: CssBoxKind) -> Point {
         let Rect { x0, y0, x1, y1 } = match css_box {
-            CssBox::OutlineBox => self.outline_box,
-            CssBox::BorderBox => self.border_box,
-            CssBox::PaddingBox => self.padding_box,
-            CssBox::ContentBox => self.content_box,
+            CssBoxKind::OutlineBox => self.outline_box,
+            CssBoxKind::BorderBox => self.border_box,
+            CssBoxKind::PaddingBox => self.padding_box,
+            CssBoxKind::ContentBox => self.content_box,
         };
         match corner {
             Corner::TopLeft => Point { x: x0, y: y0 },
@@ -277,7 +277,7 @@ impl CssRect {
     }
 
     /// Get the complete arc for a corner, skipping the need for splitting the arc into pieces
-    fn corner_arc(&self, corner: Corner, css_box: CssBox, direction: Direction) -> Arc {
+    fn corner_arc(&self, corner: Corner, css_box: CssBoxKind, direction: Direction) -> Arc {
         let ellipse = self.ellipse(corner, css_box);
 
         // Sweep clockwise for outer arcs, counter clockwise for inner arcs
@@ -318,12 +318,12 @@ impl CssRect {
     fn partial_corner_arc(
         &self,
         corner: Corner,
-        css_box: CssBox,
+        css_box: CssBoxKind,
         edge: Edge,
         direction: Direction,
     ) -> Arc {
         use Corner::*;
-        use CssBox::*;
+        use CssBoxKind::*;
         use Edge::*;
 
         let ellipse = self.ellipse(corner, css_box);
@@ -395,9 +395,9 @@ impl CssRect {
     }
 
     /// Check if a corner is sharp (IE the absolute radius is 0)
-    fn is_sharp(&self, corner: Corner, side: CssBox) -> bool {
+    fn is_sharp(&self, corner: Corner, side: CssBoxKind) -> bool {
         use Corner::*;
-        use CssBox::*;
+        use CssBoxKind::*;
 
         let corner_radii = match corner {
             TopLeft => self.border_radii.top_left,
@@ -424,9 +424,9 @@ impl CssRect {
         }
     }
 
-    fn ellipse(&self, corner: Corner, side: CssBox) -> Ellipse {
-        use {Corner::*, CssBox::*};
-        let CssRect {
+    fn ellipse(&self, corner: Corner, side: CssBoxKind) -> Ellipse {
+        use {Corner::*, CssBoxKind::*};
+        let CssBox {
             border_box,
             padding_width,
             border_width,

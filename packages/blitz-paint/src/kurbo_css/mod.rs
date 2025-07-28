@@ -8,10 +8,10 @@
 
 use kurbo::{Insets, Vec2};
 
-mod css_rect;
+mod css_box;
 mod non_uniform_radii;
 
-pub use css_rect::CssRect;
+pub use css_box::CssBox;
 pub use non_uniform_radii::NonUniformRoundedRectRadii;
 
 #[derive(Debug, Clone, Copy)]
@@ -32,7 +32,7 @@ pub(crate) enum Corner {
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 #[allow(clippy::enum_variant_names, reason = "Use CSS standard terminology")]
-pub(crate) enum CssBox {
+pub(crate) enum CssBoxKind {
     OutlineBox,
     BorderBox,
     PaddingBox,

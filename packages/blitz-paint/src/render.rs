@@ -4,7 +4,7 @@ mod form_controls;
 
 use std::sync::Arc;
 
-use super::kurbo_css::{CssRect, Edge};
+use super::kurbo_css::{CssBox, Edge};
 use crate::color::{Color, ToColorColor};
 use crate::debug_overlay::render_debug_overlay;
 use crate::kurbo_css::NonUniformRoundedRectRadii;
@@ -381,7 +381,7 @@ fn to_peniko_image(image: &RasterImageData, quality: peniko::ImageQuality) -> pe
 /// A context of loaded and hot data to draw the element from
 struct ElementCx<'a> {
     context: &'a BlitzDomPainter<'a>,
-    frame: CssRect,
+    frame: CssBox,
     style: style::servo_arc::Arc<ComputedValues>,
     pos: Point,
     scale: f64,
@@ -748,7 +748,7 @@ fn insets_from_taffy_rect(input: taffy::Rect<f64>) -> Insets {
 }
 
 /// Convert Stylo and Taffy types into Kurbo types
-fn create_css_rect(style: &ComputedValues, layout: &Layout, scale: f64) -> CssRect {
+fn create_css_rect(style: &ComputedValues, layout: &Layout, scale: f64) -> CssBox {
     // Resolve and rescale
     // We have to scale since document pixels are not same same as rendered pixels
     let width: f64 = layout.size.width as f64;
@@ -775,5 +775,5 @@ fn create_css_rect(style: &ComputedValues, layout: &Layout, scale: f64) -> CssRe
         bottom_left: resolve_radii(&s_border.border_bottom_left_radius),
     };
 
-    CssRect::new(border_box, border, padding, outline_width, border_radii)
+    CssBox::new(border_box, border, padding, outline_width, border_radii)
 }
