@@ -1,7 +1,7 @@
 use crate::color::{Color, ToColorColor};
 use color::DynamicColor;
 use kurbo::{self, Affine, Point, Rect, Vec2};
-use peniko::{self, Gradient};
+use peniko::{self, ColorStop, Gradient};
 use style::color::AbsoluteColor;
 use style::{
     OwnedSlice,
@@ -458,6 +458,17 @@ fn resolve_color_stops<T>(
         }
         (first_offset, last_offset)
     } else {
+        // Ensure that the gradient ends at offset 1.0
+        if gradient.stops.len() > 1 {
+            let last_stop = &gradient.stops.last().unwrap();
+            if last_stop.offset < 1.0 {
+                let last_stop = ColorStop {
+                    offset: 1.0,
+                    ..(**last_stop)
+                };
+                gradient.stops.push(last_stop);
+            }
+        }
         (0.0, 1.0)
     }
 }
