@@ -12,14 +12,3 @@ pub use scene::VelloCpuScenePainter;
     feature = "softbuffer_window_renderer"
 ))]
 pub use window_renderer::*;
-
-#[cfg(feature = "external")]
-#[allow(clippy::single_component_path_imports, reason = "false positive")]
-use vello_cpu;
-
-#[cfg(feature = "vendored")]
-mod vendored;
-#[cfg(feature = "vendored")]
-use vendored::{vello_api, vello_common, vello_cpu};
-#[cfg(feature = "vendored")]
-extern crate alloc;

@@ -1,6 +1,6 @@
 use crate::VelloCpuScenePainter;
-use crate::vello_cpu::{RenderContext, RenderMode};
 use anyrender::ImageRenderer;
+use vello_cpu::{RenderContext, RenderMode};
 
 pub struct VelloCpuImageRenderer {
     scene: VelloCpuScenePainter,

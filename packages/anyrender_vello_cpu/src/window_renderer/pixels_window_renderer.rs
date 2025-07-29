@@ -1,9 +1,9 @@
 use crate::VelloCpuScenePainter;
 use crate::debug::DebugTimer;
-use crate::vello_cpu::{RenderContext, RenderMode};
 use anyrender::{WindowHandle, WindowRenderer};
 use pixels::{Pixels, SurfaceTexture, wgpu::Color};
 use std::sync::Arc;
+use vello_cpu::{RenderContext, RenderMode};
 
 // Simple struct to hold the state of the renderer
 pub struct ActiveRenderState {
