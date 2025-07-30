@@ -30,7 +30,6 @@ jobs:
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: 1.85
-      - run: perl -pi.bak -e 's/opt-level = 2/opt-level = 0/g' Cargo.toml
       - run: sudo apt update; sudo apt install libgtk-3-dev libxdo-dev
       - run: cargo build --workspace
 
@@ -40,7 +39,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
-      - run: perl -pi.bak -e 's/opt-level = 2/opt-level = 0/g' Cargo.toml
       - run: sudo apt update; sudo apt install libgtk-3-dev libxdo-dev
       - run: cargo build --workspace
 
@@ -50,7 +48,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
-      - run: perl -pi.bak -e 's/opt-level = 2/opt-level = 0/g' Cargo.toml
       - run: sudo apt update; sudo apt install libgtk-3-dev libxdo-dev
       - run: cargo test --workspace
 
@@ -60,7 +57,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
-      - run: perl -pi.bak -e 's/opt-level = 2/opt-level = 0/g' Cargo.toml
       - run: sudo apt update; sudo apt install libgtk-3-dev libxdo-dev
       - run: cargo build -p counter
 
@@ -84,7 +80,6 @@ jobs:
         with:
           toolchain: stable
           components: clippy
-      - run: perl -pi.bak -e 's/opt-level = 2/opt-level = 0/g' Cargo.toml
       - run: sudo apt update; sudo apt install libgtk-3-dev libxdo-dev
       - run: cargo clippy --workspace -- -D warnings
 
@@ -150,6 +145,11 @@ jobs:
           toolchain: stable
           targets: ${{ matrix.platform.target }}
           components: rustfmt
+
+      - name: Setup Python 3
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13' 
 
       - name: Install cross
         if: ${{ matrix.platform.cross == true }}
