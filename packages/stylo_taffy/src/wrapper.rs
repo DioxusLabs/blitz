@@ -3,10 +3,12 @@ use convert::stylo;
 use std::ops::Deref;
 use style::properties::ComputedValues;
 use style::values::CustomIdent;
-use style::values::computed::GridTemplateAreas;
 use style::values::specified::position::NamedArea;
 use style::{Atom, OwnedSlice};
 use taffy::prelude::FromLength;
+
+#[cfg(feature = "grid")]
+use style::values::computed::GridTemplateAreas;
 
 /// A wrapper struct for anything that `Deref`s to a [`stylo::ComputedValues`](ComputedValues) (can be pointed to by an `&` reference, [`Arc`](std::sync::Arc),
 /// [`Ref`](std::cell::Ref), etc). It implements [`taffy`]'s [layout traits](taffy::traits) and can used with Taffy's [layout algorithms](taffy::compute).

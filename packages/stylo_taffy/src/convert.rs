@@ -404,7 +404,7 @@ pub fn grid_template_tracks(
 }
 
 #[inline]
-#[cfg(feature = "grid_named")]
+#[cfg(feature = "grid")]
 pub fn grid_template_line_names(input: &stylo::GridTemplateComponent) -> Option<LineNameWrapper> {
     match input {
         stylo::GenericGridTemplateComponent::None => None,
@@ -419,7 +419,7 @@ pub fn grid_template_line_names(input: &stylo::GridTemplateComponent) -> Option<
 }
 
 #[inline]
-#[cfg(feature = "grid_named")]
+#[cfg(feature = "grid")]
 pub fn grid_template_area(input: &stylo::NamedArea) -> taffy::GridTemplateArea<Atom> {
     taffy::GridTemplateArea {
         name: input.name.clone(),
@@ -431,7 +431,7 @@ pub fn grid_template_area(input: &stylo::NamedArea) -> taffy::GridTemplateArea<A
 }
 
 #[inline]
-#[cfg(feature = "grid_named")]
+#[cfg(feature = "grid")]
 fn grid_template_areas(input: &stylo::GridTemplateAreas) -> Vec<taffy::GridTemplateArea<Atom>> {
     match input {
         stylo::GridTemplateAreas::None => Vec::new(),
@@ -535,6 +535,7 @@ pub fn to_taffy_style(style: &stylo::ComputedValues) -> taffy::Style<Atom> {
     let border = style.get_border();
 
     taffy::Style {
+        dummy: core::marker::PhantomData,
         display: self::display(display),
         box_sizing: self::box_sizing(style.clone_box_sizing()),
         item_is_table: display.inside() == stylo::DisplayInside::Table,
@@ -654,7 +655,7 @@ pub fn to_taffy_style(style: &stylo::ComputedValues) -> taffy::Style<Atom> {
                 .collect::<Vec<_>>(),
             None => Vec::new(),
         },
-        #[cfg(feature = "grid_named")]
+        #[cfg(feature = "grid")]
         grid_template_areas: self::grid_template_areas(&pos.grid_template_areas),
         #[cfg(feature = "grid")]
         grid_auto_rows: self::grid_auto_tracks(&pos.grid_auto_rows),
