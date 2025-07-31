@@ -39,6 +39,7 @@ const CSS: &str = r#"
 html, body {
     padding: 0;
     margin: 0;
+    background-color: white;
 }
 
 .header {
