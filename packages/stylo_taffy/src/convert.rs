@@ -353,14 +353,17 @@ pub fn grid_line(input: &stylo::GridLine) -> taffy::GridPlacement<Atom> {
     if input.is_auto() {
         taffy::GridPlacement::Auto
     } else if input.is_span {
-        taffy::style_helpers::span(input.line_num.try_into().unwrap())
+        if input.ident.0 != stylo::atom!("") {
+            taffy::GridPlacement::NamedSpan(input.ident.0.clone(), input.line_num.try_into().unwrap())
+        } else {
+            taffy::GridPlacement::Span(input.line_num as u16)
+        }
     } else if input.ident.0 != stylo::atom!("") {
-        // TODO: handle case where these is both a custom-ident and a line number
-        taffy::GridPlacement::Named(input.ident.0.clone(), input.line_num as i16)
-    } else if input.line_num == 0 {
-        taffy::GridPlacement::Auto
+        taffy::GridPlacement::NamedLine(input.ident.0.clone(), input.line_num as i16)
+    } else if input.line_num != 0 {
+        taffy::style_helpers::line(input.line_num as i16)
     } else {
-        taffy::style_helpers::line(input.line_num.try_into().unwrap())
+        taffy::GridPlacement::Auto
     }
 }
 
