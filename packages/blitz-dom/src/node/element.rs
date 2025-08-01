@@ -1,17 +1,21 @@
 use color::{AlphaColor, Srgb};
+use cssparser::ParserInput;
 use markup5ever::{LocalName, QualName, local_name};
 use parley::{FontContext, LayoutContext};
 use selectors::matching::QuirksMode;
 use std::str::FromStr;
 use std::sync::Arc;
 use style::Atom;
-use style::stylesheets::{DocumentStyleSheet, UrlExtraData};
+use style::parser::ParserContext;
+use style::properties::{Importance, PropertyDeclaration, PropertyId, SourcePropertyDeclaration};
+use style::stylesheets::{DocumentStyleSheet, Origin, UrlExtraData};
 use style::{
     properties::{PropertyDeclarationBlock, parse_style_attribute},
     servo_arc::Arc as ServoArc,
     shared_lock::{Locked, SharedRwLock},
     stylesheets::CssRuleType,
 };
+use style_traits::ParsingMode;
 use url::Url;
 
 use super::{Attribute, Attributes};
@@ -278,6 +282,90 @@ impl ElementData {
                 CssRuleType::Style,
             )))
         });
+    }
+
+    pub fn set_style_property(
+        &mut self,
+        name: &str,
+        value: &str,
+        guard: &SharedRwLock,
+        base_url: Option<Url>,
+    ) {
+        let url_data = UrlExtraData::from(base_url.clone().unwrap_or_else(|| {
+            "data:text/css;charset=utf-8;base64,"
+                .parse::<Url>()
+                .unwrap()
+        }));
+        let context = ParserContext::new(
+            Origin::Author,
+            &url_data,
+            Some(CssRuleType::Style),
+            ParsingMode::DEFAULT,
+            QuirksMode::NoQuirks,
+            /* namespaces = */ Default::default(),
+            None,
+            None,
+        );
+
+        let Ok(property_id) = PropertyId::parse(name, &context) else {
+            eprintln!("Warning: unsupported property {name}");
+            return;
+        };
+        let mut source_property_declaration = SourcePropertyDeclaration::default();
+        let mut input = ParserInput::new(value);
+        let mut parser = style::values::Parser::new(&mut input);
+        let Ok(_) = PropertyDeclaration::parse_into(
+            &mut source_property_declaration,
+            property_id,
+            &context,
+            &mut parser,
+        ) else {
+            eprintln!("Warning: invalid property value for {name}: {value}");
+            return;
+        };
+
+        // TODO: instantiate style_attribute if not already instantiated
+        if let Some(style) = &mut self.style_attribute {
+            style
+                .write_with(&mut guard.write())
+                .extend(source_property_declaration.drain(), Importance::Normal);
+        }
+    }
+
+    pub fn remove_style_property(
+        &mut self,
+        name: &str,
+        guard: &SharedRwLock,
+        base_url: Option<Url>,
+    ) {
+        let url_data = UrlExtraData::from(base_url.clone().unwrap_or_else(|| {
+            "data:text/css;charset=utf-8;base64,"
+                .parse::<Url>()
+                .unwrap()
+        }));
+        let context = ParserContext::new(
+            Origin::Author,
+            &url_data,
+            Some(CssRuleType::Style),
+            ParsingMode::DEFAULT,
+            QuirksMode::NoQuirks,
+            /* namespaces = */ Default::default(),
+            None,
+            None,
+        );
+        let Ok(property_id) = PropertyId::parse(name, &context) else {
+            eprintln!("Warning: unsupported property {name}");
+            return;
+        };
+
+        // TODO: instantiate style_attribute if not already instantiated
+        if let Some(style) = &mut self.style_attribute {
+            let mut guard = guard.write();
+            let style = style.write_with(&mut guard);
+            if let Some(index) = style.first_declaration_to_remove(&property_id) {
+                style.remove_property(&property_id, index);
+            }
+        }
     }
 
     pub fn take_inline_layout(&mut self) -> Option<Box<TextLayout>> {
