@@ -10,6 +10,7 @@ use slab::Slab;
 use std::cell::{Cell, RefCell};
 use std::fmt::Write;
 use std::sync::atomic::AtomicBool;
+use style::Atom;
 use style::invalidation::element::restyle_hints::RestyleHint;
 use style::properties::ComputedValues;
 use style::properties::generated::longhands::position::computed_value::T as Position;
@@ -104,7 +105,7 @@ pub struct Node {
     pub after: Option<usize>,
 
     // Taffy layout data:
-    pub style: Style,
+    pub style: Style<Atom>,
     pub has_snapshot: bool,
     pub snapshot_handled: AtomicBool,
     pub display_outer: DisplayOuter,

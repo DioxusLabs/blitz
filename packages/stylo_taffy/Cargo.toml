@@ -13,6 +13,7 @@ edition.workspace = true
 [dependencies]
 taffy = { workspace = true }
 style = { workspace = true }
+style_atoms = { workspace = true }
 
 [features]
 default = ["std", "block", "flexbox", "grid"]
