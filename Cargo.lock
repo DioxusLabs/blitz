@@ -270,12 +270,14 @@ dependencies = [
 ]
 
 [[package]]
-name = "anyrender_example"
+name = "anyrender_bunnymark"
 version = "0.1.0"
 dependencies = [
  "anyrender",
  "anyrender_vello",
  "anyrender_vello_cpu",
+ "fastrand",
+ "image",
  "kurbo",
  "peniko",
  "wgpu 24.0.5",
