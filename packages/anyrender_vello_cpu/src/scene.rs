@@ -49,36 +49,7 @@ fn convert_image_cached(image: &peniko::Image) -> Arc<Pixmap> {
 }
 
 fn convert_image(image: &peniko::Image) -> Arc<Pixmap> {
-    Arc::new(Pixmap::from_parts(
-        premultiply(image),
-        image.width as u16,
-        image.height as u16,
-    ))
-}
-
-fn premultiply(image: &peniko::Image) -> Vec<PremulRgba8> {
-    image
-        .data
-        .as_ref()
-        .chunks_exact(4)
-        .map(|d| {
-            #[inline(always)]
-            fn premultiply(e: u8, alpha: u16) -> u8 {
-                ((e as u16 * alpha) / 255) as u8
-            }
-            let alpha = d[3] as u16;
-            if alpha == 0 {
-                PremulRgba8::from_u8_array([0, 0, 0, 0])
-            } else {
-                PremulRgba8 {
-                    r: premultiply(d[0], alpha),
-                    g: premultiply(d[1], alpha),
-                    b: premultiply(d[2], alpha),
-                    a: d[3],
-                }
-            }
-        })
-        .collect()
+    Arc::new(vello_cpu::Image::from_peniko_image(image).into())
 }
 
 pub struct VelloCpuScenePainter(pub vello_cpu::RenderContext);
