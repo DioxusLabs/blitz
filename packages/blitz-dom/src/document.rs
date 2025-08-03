@@ -34,8 +34,8 @@ use style::Atom;
 use style::attr::{AttrIdentifier, AttrValue};
 use style::data::{ElementData as StyloElementData, ElementStyles};
 use style::media_queries::MediaType;
-use style::properties::ComputedValues;
 use style::properties::style_structs::Font;
+use style::properties::{ComputedValues, PropertyId};
 use style::queries::values::PrefersColorScheme;
 use style::selector_parser::ServoElementSnapshot;
 use style::servo::media_queries::FontMetricsProvider;
@@ -413,6 +413,20 @@ impl BaseDocument {
                 }
             }
         }
+    }
+
+    pub fn set_style_property(&mut self, node_id: usize, name: &str, value: &str) {
+        self.nodes[node_id]
+            .element_data_mut()
+            .unwrap()
+            .set_style_property(name, value, &self.guard, self.base_url.clone());
+    }
+
+    pub fn remove_style_property(&mut self, node_id: usize, name: &str) {
+        self.nodes[node_id]
+            .element_data_mut()
+            .unwrap()
+            .remove_style_property(name, &self.guard, self.base_url.clone());
     }
 
     pub fn root_node(&self) -> &Node {
