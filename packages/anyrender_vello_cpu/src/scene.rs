@@ -1,7 +1,6 @@
 use anyrender::{NormalizedCoord, Paint, PaintScene};
 use kurbo::{Affine, Rect, Shape, Stroke};
-use peniko::{BlendMode, BrushRef, Color, Fill, Font, StyleRef, color::PremulRgba8};
-use std::sync::Arc;
+use peniko::{BlendMode, BrushRef, Color, Fill, Font, StyleRef};
 use vello_cpu::{self, PaintType, Pixmap, RenderMode};
 
 const DEFAULT_TOLERANCE: f64 = 0.1;
@@ -10,12 +9,7 @@ fn brush_ref_to_paint_type<'a>(brush_ref: BrushRef<'a>) -> PaintType {
     match brush_ref {
         BrushRef::Solid(alpha_color) => PaintType::Solid(alpha_color),
         BrushRef::Gradient(gradient) => PaintType::Gradient(gradient.clone()),
-        BrushRef::Image(image) => PaintType::Image(vello_cpu::Image {
-            pixmap: convert_image(image),
-            x_extend: image.x_extend,
-            y_extend: image.y_extend,
-            quality: image.quality,
-        }),
+        BrushRef::Image(image) => PaintType::Image(vello_cpu::Image::from_peniko_image(image)),
     }
 }
 
@@ -23,62 +17,24 @@ fn anyrender_paint_to_vello_cpu_paint<'a>(paint: Paint<'a>) -> PaintType {
     match paint {
         Paint::Solid(alpha_color) => PaintType::Solid(alpha_color),
         Paint::Gradient(gradient) => PaintType::Gradient(gradient.clone()),
-        Paint::Image(image) => PaintType::Image(vello_cpu::Image {
-            pixmap: convert_image(image),
-            x_extend: image.x_extend,
-            y_extend: image.y_extend,
-            quality: image.quality,
-        }),
+        Paint::Image(image) => PaintType::Image(vello_cpu::Image::from_peniko_image(image)),
         // TODO: custom paint
         Paint::Custom(_) => PaintType::Solid(peniko::color::palette::css::TRANSPARENT),
     }
 }
 
 #[allow(unused)]
-fn convert_image_cached(image: &peniko::Image) -> Arc<Pixmap> {
+fn convert_image_cached(image: &peniko::Image) -> vello_cpu::Image {
     use std::collections::HashMap;
     use std::sync::{LazyLock, Mutex};
-    static CACHE: LazyLock<Mutex<HashMap<u64, Arc<Pixmap>>>> =
+    static CACHE: LazyLock<Mutex<HashMap<u64, vello_cpu::Image>>> =
         LazyLock::new(|| Mutex::new(HashMap::new()));
 
     let mut map = CACHE.lock().unwrap();
     let id = image.data.id();
-    let pixmap = map.entry(id).or_insert_with(|| convert_image(image));
-
-    Arc::clone(pixmap)
-}
-
-fn convert_image(image: &peniko::Image) -> Arc<Pixmap> {
-    Arc::new(Pixmap::from_parts(
-        premultiply(image),
-        image.width as u16,
-        image.height as u16,
-    ))
-}
-
-fn premultiply(image: &peniko::Image) -> Vec<PremulRgba8> {
-    image
-        .data
-        .as_ref()
-        .chunks_exact(4)
-        .map(|d| {
-            #[inline(always)]
-            fn premultiply(e: u8, alpha: u16) -> u8 {
-                ((e as u16 * alpha) / 255) as u8
-            }
-            let alpha = d[3] as u16;
-            if alpha == 0 {
-                PremulRgba8::from_u8_array([0, 0, 0, 0])
-            } else {
-                PremulRgba8 {
-                    r: premultiply(d[0], alpha),
-                    g: premultiply(d[1], alpha),
-                    b: premultiply(d[2], alpha),
-                    a: d[3],
-                }
-            }
-        })
-        .collect()
+    map.entry(id)
+        .or_insert_with(|| vello_cpu::Image::from_peniko_image(image))
+        .clone()
 }
 
 pub struct VelloCpuScenePainter(pub vello_cpu::RenderContext);
