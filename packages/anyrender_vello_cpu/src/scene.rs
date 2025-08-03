@@ -10,12 +10,7 @@ fn brush_ref_to_paint_type<'a>(brush_ref: BrushRef<'a>) -> PaintType {
     match brush_ref {
         BrushRef::Solid(alpha_color) => PaintType::Solid(alpha_color),
         BrushRef::Gradient(gradient) => PaintType::Gradient(gradient.clone()),
-        BrushRef::Image(image) => PaintType::Image(vello_cpu::Image {
-            pixmap: convert_image(image),
-            x_extend: image.x_extend,
-            y_extend: image.y_extend,
-            quality: image.quality,
-        }),
+        BrushRef::Image(image) => PaintType::Image(vello_cpu::Image::from_peniko_image(image)),
     }
 }
 
@@ -23,12 +18,7 @@ fn anyrender_paint_to_vello_cpu_paint<'a>(paint: Paint<'a>) -> PaintType {
     match paint {
         Paint::Solid(alpha_color) => PaintType::Solid(alpha_color),
         Paint::Gradient(gradient) => PaintType::Gradient(gradient.clone()),
-        Paint::Image(image) => PaintType::Image(vello_cpu::Image {
-            pixmap: convert_image(image),
-            x_extend: image.x_extend,
-            y_extend: image.y_extend,
-            quality: image.quality,
-        }),
+        Paint::Image(image) => PaintType::Image(vello_cpu::Image::from_peniko_image(image)),
         // TODO: custom paint
         Paint::Custom(_) => PaintType::Solid(peniko::color::palette::css::TRANSPARENT),
     }
@@ -38,18 +28,14 @@ fn anyrender_paint_to_vello_cpu_paint<'a>(paint: Paint<'a>) -> PaintType {
 fn convert_image_cached(image: &peniko::Image) -> Arc<Pixmap> {
     use std::collections::HashMap;
     use std::sync::{LazyLock, Mutex};
-    static CACHE: LazyLock<Mutex<HashMap<u64, Arc<Pixmap>>>> =
+    static CACHE: LazyLock<Mutex<HashMap<u64, vello_cpu::Image>>> =
         LazyLock::new(|| Mutex::new(HashMap::new()));
 
     let mut map = CACHE.lock().unwrap();
     let id = image.data.id();
-    let pixmap = map.entry(id).or_insert_with(|| convert_image(image));
+    let pixmap = map.entry(id).or_insert_with(|| vello_cpu::Image::from_peniko_image(image));
 
     Arc::clone(pixmap)
-}
-
-fn convert_image(image: &peniko::Image) -> Arc<Pixmap> {
-    Arc::new(vello_cpu::Image::from_peniko_image(image).into())
 }
 
 pub struct VelloCpuScenePainter(pub vello_cpu::RenderContext);
