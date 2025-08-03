@@ -1,7 +1,6 @@
 use anyrender::{NormalizedCoord, Paint, PaintScene};
 use kurbo::{Affine, Rect, Shape, Stroke};
-use peniko::{BlendMode, BrushRef, Color, Fill, Font, StyleRef, color::PremulRgba8};
-use std::sync::Arc;
+use peniko::{BlendMode, BrushRef, Color, Fill, Font, StyleRef};
 use vello_cpu::{self, PaintType, Pixmap, RenderMode};
 
 const DEFAULT_TOLERANCE: f64 = 0.1;
@@ -33,7 +32,9 @@ fn convert_image_cached(image: &peniko::Image) -> vello_cpu::Image {
 
     let mut map = CACHE.lock().unwrap();
     let id = image.data.id();
-    map.entry(id).or_insert_with(|| vello_cpu::Image::from_peniko_image(image)).clone()
+    map.entry(id)
+        .or_insert_with(|| vello_cpu::Image::from_peniko_image(image))
+        .clone()
 }
 
 pub struct VelloCpuScenePainter(pub vello_cpu::RenderContext);
