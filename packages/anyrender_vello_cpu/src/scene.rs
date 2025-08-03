@@ -25,7 +25,7 @@ fn anyrender_paint_to_vello_cpu_paint<'a>(paint: Paint<'a>) -> PaintType {
 }
 
 #[allow(unused)]
-fn convert_image_cached(image: &peniko::Image) -> Arc<Pixmap> {
+fn convert_image_cached(image: &peniko::Image) -> vello_cpu::Image {
     use std::collections::HashMap;
     use std::sync::{LazyLock, Mutex};
     static CACHE: LazyLock<Mutex<HashMap<u64, vello_cpu::Image>>> =
@@ -33,9 +33,7 @@ fn convert_image_cached(image: &peniko::Image) -> Arc<Pixmap> {
 
     let mut map = CACHE.lock().unwrap();
     let id = image.data.id();
-    let pixmap = map.entry(id).or_insert_with(|| vello_cpu::Image::from_peniko_image(image));
-
-    Arc::clone(pixmap)
+    map.entry(id).or_insert_with(|| vello_cpu::Image::from_peniko_image(image)).clone()
 }
 
 pub struct VelloCpuScenePainter(pub vello_cpu::RenderContext);
