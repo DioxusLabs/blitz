@@ -1034,18 +1034,6 @@ impl<'a> TElement for BlitzNode<'a> {
         }
     }
 
-    fn before_pseudo_element(&self) -> Option<Self> {
-        self.before.map(|id| self.with(id))
-    }
-
-    fn after_pseudo_element(&self) -> Option<Self> {
-        self.after.map(|id| self.with(id))
-    }
-
-    fn marker_pseudo_element(&self) -> Option<Self> {
-        None
-    }
-
     // fn update_animations(
     //     &self,
     //     before_change_style: Option<Arc<ComputedValues>>,

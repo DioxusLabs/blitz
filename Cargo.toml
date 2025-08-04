@@ -50,11 +50,11 @@ stylo_taffy = { version = "0.1.0-rc.2", path = "./packages/stylo_taffy", default
 mini-dxn = { path = "./packages/mini-dxn", default-features = false }
 
 # Servo dependencies
-style = { version = "0.4", package = "stylo" }
-style_traits = { version = "0.4", package = "stylo_traits" }
-style_config = { version = "0.4", package = "stylo_config" }
-style_dom = { version = "0.4", package = "stylo_dom" }
-selectors = { version = "0.29", package = "selectors" }
+style = { version = "0.6", package = "stylo" }
+style_traits = { version = "0.6", package = "stylo_traits" }
+style_config = { version = "0.6", package = "stylo_config" }
+style_dom = { version = "0.6", package = "stylo_dom" }
+selectors = { version = "0.31", package = "selectors" }
 
 markup5ever = "0.35" # needs to match stylo web_atoms version
 html5ever = "0.35" # needs to match stylo web_atoms version
