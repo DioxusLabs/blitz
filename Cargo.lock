@@ -314,13 +314,9 @@ name = "anyrender_vello_cpu"
 version = "0.5.1"
 dependencies = [
  "anyrender",
- "bytemuck",
  "kurbo",
  "peniko",
  "pixels",
- "png",
- "skrifa",
- "smallvec",
  "softbuffer",
  "vello_cpu",
 ]

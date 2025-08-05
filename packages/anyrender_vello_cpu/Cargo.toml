@@ -9,13 +9,9 @@ license.workspace = true
 edition = "2024"
 
 [features]
-default = ["std"]
 pixels_window_renderer = ["dep:pixels"]
 softbuffer_window_renderer = ["dep:softbuffer"]
 log_frame_times = []
-png = ["dep:png"]
-simd = []
-std = []
 
 [dependencies]
 anyrender = { workspace = true }
@@ -28,9 +24,3 @@ pixels = { workspace = true, optional = true }
 
 # External vello_cpu
 vello_cpu = { workspace = true }
-
-# Vendored vello_cpu
-bytemuck = { workspace = true, features = [], optional = true }
-skrifa = { workspace = true, optional = true }
-smallvec = { workspace = true, optional = true }
-png = { workspace = true, optional = true }
