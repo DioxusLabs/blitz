@@ -1,10 +1,10 @@
 use crate::VelloCpuScenePainter;
 use crate::debug::DebugTimer;
-use crate::vello_cpu::{Pixmap, RenderContext, RenderMode};
 use anyrender::{WindowHandle, WindowRenderer};
 use peniko::color::PremulRgba8;
 use softbuffer::{Context, Surface};
 use std::{num::NonZero, sync::Arc};
+use vello_cpu::{Pixmap, RenderContext, RenderMode};
 
 // Simple struct to hold the state of the renderer
 pub struct ActiveRenderState {

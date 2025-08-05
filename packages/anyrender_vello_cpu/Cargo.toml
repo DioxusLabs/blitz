@@ -24,3 +24,6 @@ pixels = { workspace = true, optional = true }
 
 # External vello_cpu
 vello_cpu = { workspace = true }
+
+[package.metadata.docs.rs]
+features = ["pixels_window_renderer", "softbuffer_window_renderer"]
