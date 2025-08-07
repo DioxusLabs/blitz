@@ -231,7 +231,7 @@ impl<T: Deref<Target = ComputedValues>> taffy::FlexboxItemStyle for TaffyStyloSt
 }
 
 #[cfg(feature = "grid")]
-pub struct GridAreaWrapper<'a>(&'a [NamedArea]);
+pub struct GridAreaWrapper<'a>(pub &'a [NamedArea]);
 #[cfg(feature = "grid")]
 impl<'a> IntoIterator for GridAreaWrapper<'a> {
     type Item = taffy::GridTemplateArea<Atom>;

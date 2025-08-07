@@ -442,12 +442,11 @@ pub fn grid_template_area(input: &stylo::NamedArea) -> taffy::GridTemplateArea<A
 fn grid_template_areas(input: &stylo::GridTemplateAreas) -> Vec<taffy::GridTemplateArea<Atom>> {
     match input {
         stylo::GridTemplateAreas::None => Vec::new(),
-        stylo::GridTemplateAreas::Areas(template_areas_arc) => template_areas_arc
-            .0
-            .areas
-            .iter()
-            .map(self::grid_template_area)
-            .collect(),
+        stylo::GridTemplateAreas::Areas(template_areas_arc) => {
+            crate::wrapper::GridAreaWrapper(&template_areas_arc.0.areas)
+                .into_iter()
+                .collect()
+        }
     }
 }
 
