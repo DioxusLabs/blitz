@@ -3,12 +3,15 @@ use convert::stylo;
 use std::ops::Deref;
 use style::properties::ComputedValues;
 use style::values::CustomIdent;
-use style::values::specified::position::NamedArea;
 use style::{Atom, OwnedSlice};
 use taffy::prelude::FromLength;
 
 #[cfg(feature = "grid")]
-use style::values::computed::GridTemplateAreas;
+use style::values::{
+    computed::{GridTemplateAreas, LengthPercentage},
+    generics::grid::{TrackListValue, TrackRepeat, TrackSize},
+    specified::position::NamedArea,
+};
 
 /// A wrapper struct for anything that `Deref`s to a [`stylo::ComputedValues`](ComputedValues) (can be pointed to by an `&` reference, [`Arc`](std::sync::Arc),
 /// [`Ref`](std::cell::Ref), etc). It implements [`taffy`]'s [layout traits](taffy::traits) and can used with Taffy's [layout algorithms](taffy::compute).
@@ -227,7 +230,9 @@ impl<T: Deref<Target = ComputedValues>> taffy::FlexboxItemStyle for TaffyStyloSt
     }
 }
 
+#[cfg(feature = "grid")]
 pub struct GridAreaWrapper<'a>(&'a [NamedArea]);
+#[cfg(feature = "grid")]
 impl<'a> IntoIterator for GridAreaWrapper<'a> {
     type Item = taffy::GridTemplateArea<Atom>;
 
@@ -241,165 +246,246 @@ impl<'a> IntoIterator for GridAreaWrapper<'a> {
     }
 }
 
-pub type SliceIdentIter<'a> =
-    std::iter::Map<std::slice::Iter<'a, CustomIdent>, fn(&CustomIdent) -> &Atom>;
-pub struct LineNameWrapper<'a>(pub &'a OwnedSlice<OwnedSlice<CustomIdent>>);
+#[cfg(feature = "grid")]
+type SliceMapIter<'a, Input, Output> =
+    core::iter::Map<core::slice::Iter<'a, Input>, for<'c> fn(&'c Input) -> Output>;
+#[cfg(feature = "grid")]
+type SliceMapRefIter<'a, Input, Output> =
+    core::iter::Map<core::slice::Iter<'a, Input>, for<'c> fn(&'c Input) -> &'c Output>;
 
-impl<'a> IntoIterator for LineNameWrapper<'a> {
-    type Item = SliceIdentIter<'a>;
-    type IntoIter = LineNameIter<'a>;
-    fn into_iter(self) -> Self::IntoIter {
-        LineNameIter::new(self.0)
+// Line name iterator type aliases
+#[cfg(feature = "grid")]
+type LineNameSetIter<'a> = SliceMapRefIter<'a, CustomIdent, Atom>;
+#[cfg(feature = "grid")]
+type LineNameIter<'a> = core::iter::Map<
+    core::slice::Iter<'a, OwnedSlice<CustomIdent>>,
+    fn(&OwnedSlice<CustomIdent>) -> LineNameSetIter<'_>,
+>;
+
+#[derive(Clone)]
+#[cfg(feature = "grid")]
+pub struct StyloLineNameIter<'a>(LineNameIter<'a>);
+#[cfg(feature = "grid")]
+impl<'a> StyloLineNameIter<'a> {
+    /// Create a new StyloLineNameIter
+    pub fn new(names: &'a OwnedSlice<OwnedSlice<CustomIdent>>) -> Self {
+        Self(names.iter().map(|names| names.iter().map(|ident| &ident.0)))
     }
 }
-
-impl<'a> taffy::TemplateLineNames<'a, Atom> for LineNameIter<'a> {
+#[cfg(feature = "grid")]
+impl<'a> Iterator for StyloLineNameIter<'a> {
+    type Item = core::iter::Map<core::slice::Iter<'a, CustomIdent>, fn(&CustomIdent) -> &Atom>;
+    fn next(&mut self) -> Option<Self::Item> {
+        self.0.next()
+    }
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        self.0.size_hint()
+    }
+}
+#[cfg(feature = "grid")]
+impl ExactSizeIterator for StyloLineNameIter<'_> {}
+#[cfg(feature = "grid")]
+impl<'a> taffy::TemplateLineNames<'a, Atom> for StyloLineNameIter<'a> {
     type LineNameSet<'b>
-        = SliceIdentIter<'b>
+        = SliceMapRefIter<'b, CustomIdent, Atom>
     where
         Self: 'b;
 }
+#[cfg(feature = "grid")]
+pub struct RepetitionWrapper<'a>(&'a TrackRepeat<LengthPercentage, i32>);
+#[cfg(feature = "grid")]
+impl taffy::GenericRepetition for RepetitionWrapper<'_> {
+    type CustomIdent = Atom;
 
-#[derive(Clone)]
-pub struct LineNameIter<'a> {
-    styles: &'a OwnedSlice<OwnedSlice<CustomIdent>>,
-    line_idx: usize, // Outer slice
+    type RepetitionTrackList<'a>
+        = SliceMapIter<'a, stylo::TrackSize<LengthPercentage>, taffy::TrackSizingFunction>
+    where
+        Self: 'a;
+
+    type TemplateLineNames<'a>
+        = StyloLineNameIter<'a>
+    where
+        Self: 'a;
+
+    fn count(&self) -> taffy::RepetitionCount {
+        convert::track_repeat(self.0.count)
+    }
+
+    fn tracks(&self) -> Self::RepetitionTrackList<'_> {
+        self.0.track_sizes.iter().map(convert::track_size)
+    }
+
+    fn lines_names(&self) -> Self::TemplateLineNames<'_> {
+        StyloLineNameIter::new(&self.0.line_names)
+    }
 }
-impl<'a> LineNameIter<'a> {
-    fn new(styles: &'a OwnedSlice<OwnedSlice<CustomIdent>>) -> Self {
-        Self {
-            styles,
-            line_idx: 0,
+
+#[cfg(feature = "grid")]
+impl<T: Deref<Target = ComputedValues>> taffy::GridContainerStyle for TaffyStyloStyle<T> {
+    type Repetition<'a>
+        = RepetitionWrapper<'a>
+    where
+        Self: 'a;
+
+    type TemplateTrackList<'a>
+        = core::iter::Map<
+        core::slice::Iter<'a, TrackListValue<LengthPercentage, i32>>,
+        fn(
+            &'a TrackListValue<LengthPercentage, i32>,
+        ) -> taffy::GenericGridTemplateComponent<Atom, RepetitionWrapper<'a>>,
+    >
+    where
+        Self: 'a;
+
+    type AutoTrackList<'a>
+        = SliceMapIter<'a, TrackSize<LengthPercentage>, taffy::TrackSizingFunction>
+    where
+        Self: 'a;
+
+    type TemplateLineNames<'a>
+        = StyloLineNameIter<'a>
+    where
+        Self: 'a;
+    type GridTemplateAreas<'a>
+        = SliceMapIter<'a, NamedArea, taffy::GridTemplateArea<Atom>>
+    where
+        Self: 'a;
+
+    #[inline]
+    fn grid_template_rows(&self) -> Option<Self::TemplateTrackList<'_>> {
+        match &self.0.get_position().grid_template_rows {
+            stylo::GenericGridTemplateComponent::None => None,
+            stylo::GenericGridTemplateComponent::TrackList(list) => {
+                Some(list.values.iter().map(|track| match track {
+                    stylo::TrackListValue::TrackSize(size) => {
+                        taffy::GenericGridTemplateComponent::Single(convert::track_size(size))
+                    }
+                    stylo::TrackListValue::TrackRepeat(repeat) => {
+                        taffy::GenericGridTemplateComponent::Repeat(RepetitionWrapper(repeat))
+                    }
+                }))
+            }
+
+            // TODO: Implement subgrid and masonry
+            stylo::GenericGridTemplateComponent::Subgrid(_) => None,
+            stylo::GenericGridTemplateComponent::Masonry => None,
         }
     }
-}
-impl<'a> Iterator for LineNameIter<'a> {
-    type Item = SliceIdentIter<'a>;
-    fn next(&mut self) -> Option<Self::Item> {
-        let names = &self.styles.get(self.line_idx)?;
-        self.line_idx += 1;
-        Some(names.iter().map(|ident| &ident.0))
+
+    #[inline]
+    fn grid_template_columns(&self) -> Option<Self::TemplateTrackList<'_>> {
+        match &self.0.get_position().grid_template_columns {
+            stylo::GenericGridTemplateComponent::None => None,
+            stylo::GenericGridTemplateComponent::TrackList(list) => {
+                Some(list.values.iter().map(|track| match track {
+                    stylo::TrackListValue::TrackSize(size) => {
+                        taffy::GenericGridTemplateComponent::Single(convert::track_size(size))
+                    }
+                    stylo::TrackListValue::TrackRepeat(repeat) => {
+                        taffy::GenericGridTemplateComponent::Repeat(RepetitionWrapper(repeat))
+                    }
+                }))
+            }
+
+            // TODO: Implement subgrid and masonry
+            stylo::GenericGridTemplateComponent::Subgrid(_) => None,
+            stylo::GenericGridTemplateComponent::Masonry => None,
+        }
     }
-    fn size_hint(&self) -> (usize, Option<usize>) {
-        (self.styles.len(), Some(self.styles.len()))
+
+    #[inline]
+    fn grid_auto_rows(&self) -> Self::AutoTrackList<'_> {
+        self.0
+            .get_position()
+            .grid_auto_rows
+            .0
+            .iter()
+            .map(convert::track_size)
+    }
+
+    #[inline]
+    fn grid_auto_columns(&self) -> Self::AutoTrackList<'_> {
+        self.0
+            .get_position()
+            .grid_auto_columns
+            .0
+            .iter()
+            .map(convert::track_size)
+    }
+
+    fn grid_template_areas(&self) -> Option<Self::GridTemplateAreas<'_>> {
+        match &self.0.get_position().grid_template_areas {
+            GridTemplateAreas::Areas(areas) => {
+                Some(areas.0.areas.iter().map(|area| taffy::GridTemplateArea {
+                    name: area.name.clone(),
+                    row_start: area.rows.start as u16,
+                    row_end: area.rows.end as u16,
+                    column_start: area.columns.start as u16,
+                    column_end: area.columns.end as u16,
+                }))
+            }
+            GridTemplateAreas::None => None,
+        }
+    }
+
+    fn grid_template_column_names(&self) -> Option<Self::TemplateLineNames<'_>> {
+        match &self.0.get_position().grid_template_columns {
+            stylo::GenericGridTemplateComponent::None => None,
+            stylo::GenericGridTemplateComponent::TrackList(list) => {
+                Some(StyloLineNameIter::new(&list.line_names))
+            }
+            // TODO: Implement subgrid and masonry
+            stylo::GenericGridTemplateComponent::Subgrid(_) => None,
+            stylo::GenericGridTemplateComponent::Masonry => None,
+        }
+    }
+
+    fn grid_template_row_names(&self) -> Option<Self::TemplateLineNames<'_>> {
+        match &self.0.get_position().grid_template_rows {
+            stylo::GenericGridTemplateComponent::None => None,
+            stylo::GenericGridTemplateComponent::TrackList(list) => {
+                Some(StyloLineNameIter::new(&list.line_names))
+            }
+            // TODO: Implement subgrid and masonry
+            stylo::GenericGridTemplateComponent::Subgrid(_) => None,
+            stylo::GenericGridTemplateComponent::Masonry => None,
+        }
+    }
+
+    #[inline]
+    fn grid_auto_flow(&self) -> taffy::GridAutoFlow {
+        convert::grid_auto_flow(self.0.get_position().grid_auto_flow)
+    }
+
+    #[inline]
+    fn gap(&self) -> taffy::Size<taffy::LengthPercentage> {
+        let position_styles = self.0.get_position();
+        taffy::Size {
+            width: convert::gap(&position_styles.column_gap),
+            height: convert::gap(&position_styles.row_gap),
+        }
+    }
+
+    #[inline]
+    fn align_content(&self) -> Option<taffy::AlignContent> {
+        convert::content_alignment(self.0.get_position().align_content.0)
+    }
+
+    #[inline]
+    fn justify_content(&self) -> Option<taffy::JustifyContent> {
+        convert::content_alignment(self.0.get_position().justify_content.0)
+    }
+
+    #[inline]
+    fn align_items(&self) -> Option<taffy::AlignItems> {
+        convert::item_alignment(self.0.get_position().align_items.0)
+    }
+
+    #[inline]
+    fn justify_items(&self) -> Option<taffy::AlignItems> {
+        convert::item_alignment(self.0.get_position().justify_items.computed.0)
     }
 }
-impl<'a> ExactSizeIterator for LineNameIter<'a> {}
-
-struct AutoTrackWrapper<'a>(&'a [stylo::TrackSize<stylo::LengthPercentage>]);
-
-impl<'a> IntoIterator for AutoTrackWrapper<'a> {
-    type Item = taffy::TrackSizingFunction;
-    type IntoIter = std::iter::Map<
-        std::slice::Iter<'a, stylo::TrackSize<stylo::LengthPercentage>>,
-        fn(&stylo::TrackSize<stylo::LengthPercentage>) -> taffy::TrackSizingFunction,
-    >;
-    fn into_iter(self) -> Self::IntoIter {
-        self.0.iter().map(convert::track_size)
-    }
-}
-
-// GridContainerStyle impl
-// #[cfg(feature = "grid")]
-// impl<T: Deref<Target = ComputedValues>> taffy::GridContainerStyle for TaffyStyloStyle<T> {
-//     type TemplateTrackList<'a>
-//         = std::vec::IntoIter<taffy::GridTemplateComponent<Atom>>
-//     where
-//         Self: 'a;
-//     type AutoTrackList<'a>
-//         = AutoTrackWrapper<'a>
-//     where
-//         Self: 'a;
-
-//     type TemplateLineNames<'a>
-//         = LineNameWrapper<'a>
-//     where
-//         Self: 'a;
-
-//     type GridTemplateAreas<'a>
-//         = GridAreaWrapper<'a>
-//     where
-//         Self: 'a;
-
-//     #[inline]
-//     fn grid_template_rows(&self) -> Self::TemplateTrackList<'_> {
-//         convert::grid_template_tracks(&self.0.get_position().grid_template_rows).into_iter()
-//     }
-
-//     #[inline]
-//     fn grid_template_columns(&self) -> Self::TemplateTrackList<'_> {
-//         convert::grid_template_tracks(&self.0.get_position().grid_template_columns).into_iter()
-//     }
-
-//     #[inline]
-//     fn grid_template_areas(&self) -> Option<Self::GridTemplateAreas<'_>> {
-//         match &self.0.get_position().grid_template_areas {
-//             GridTemplateAreas::None => None,
-//             GridTemplateAreas::Areas(template_areas_arc) => {
-//                 Some(GridAreaWrapper(&template_areas_arc.0.areas))
-//             }
-//         }
-//     }
-
-//     #[inline]
-//     fn grid_template_column_names(&self) -> Option<Self::TemplateLineNames<'_>> {
-//         convert::grid_template_line_names(&self.0.get_position().grid_template_columns)
-//     }
-
-//     #[inline]
-//     fn grid_template_row_names(&self) -> Option<Self::TemplateLineNames<'_>> {
-//         convert::grid_template_line_names(&self.0.get_position().grid_template_rows)
-//     }
-
-//     #[inline]
-//     fn grid_auto_rows(&self) -> Self::AutoTrackList<'_> {
-//         AutoTrackWrapper(&*self.0.get_position().grid_auto_rows.0)
-//     }
-
-//     #[inline]
-//     fn grid_auto_columns(&self) -> Self::AutoTrackList<'_> {
-//         self.0
-//             .get_position()
-//             .grid_auto_columns
-//             .0
-//             .iter()
-//             .map(convert::track_size)
-//     }
-
-//     #[inline]
-//     fn grid_auto_flow(&self) -> taffy::GridAutoFlow {
-//         convert::grid_auto_flow(self.0.get_position().grid_auto_flow)
-//     }
-
-//     #[inline]
-//     fn gap(&self) -> taffy::Size<taffy::LengthPercentage> {
-//         let position_styles = self.0.get_position();
-//         taffy::Size {
-//             width: convert::gap(&position_styles.column_gap),
-//             height: convert::gap(&position_styles.row_gap),
-//         }
-//     }
-
-//     #[inline]
-//     fn align_content(&self) -> Option<taffy::AlignContent> {
-//         convert::content_alignment(self.0.get_position().align_content.0)
-//     }
-
-//     #[inline]
-//     fn justify_content(&self) -> Option<taffy::JustifyContent> {
-//         convert::content_alignment(self.0.get_position().justify_content.0)
-//     }
-
-//     #[inline]
-//     fn align_items(&self) -> Option<taffy::AlignItems> {
-//         convert::item_alignment(self.0.get_position().align_items.0)
-//     }
-
-//     #[inline]
-//     fn justify_items(&self) -> Option<taffy::AlignItems> {
-//         convert::item_alignment(self.0.get_position().justify_items.computed.0)
-//     }
-// }
 
 // GridItemStyle impl
 #[cfg(feature = "grid")]

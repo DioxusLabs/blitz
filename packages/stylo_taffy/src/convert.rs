@@ -50,7 +50,6 @@ pub(crate) mod stylo {
     };
 }
 
-use crate::wrapper::LineNameWrapper;
 use stylo::Atom;
 use taffy::CompactLength;
 use taffy::style_helpers::*;
@@ -354,7 +353,10 @@ pub fn grid_line(input: &stylo::GridLine) -> taffy::GridPlacement<Atom> {
         taffy::GridPlacement::Auto
     } else if input.is_span {
         if input.ident.0 != stylo::atom!("") {
-            taffy::GridPlacement::NamedSpan(input.ident.0.clone(), input.line_num.try_into().unwrap())
+            taffy::GridPlacement::NamedSpan(
+                input.ident.0.clone(),
+                input.line_num.try_into().unwrap(),
+            )
         } else {
             taffy::GridPlacement::Span(input.line_num as u16)
         }
@@ -408,11 +410,13 @@ pub fn grid_template_tracks(
 
 #[inline]
 #[cfg(feature = "grid")]
-pub fn grid_template_line_names(input: &stylo::GridTemplateComponent) -> Option<LineNameWrapper> {
+pub fn grid_template_line_names(
+    input: &stylo::GridTemplateComponent,
+) -> Option<crate::wrapper::StyloLineNameIter> {
     match input {
         stylo::GenericGridTemplateComponent::None => None,
         stylo::GenericGridTemplateComponent::TrackList(list) => {
-            Some(LineNameWrapper(&list.line_names))
+            Some(crate::wrapper::StyloLineNameIter::new(&list.line_names))
         }
 
         // TODO: Implement subgrid and masonry
@@ -633,28 +637,16 @@ pub fn to_taffy_style(style: &stylo::ComputedValues) -> taffy::Style<Atom> {
         grid_template_columns: self::grid_template_tracks(&pos.grid_template_columns),
         #[cfg(feature = "grid")]
         grid_template_row_names: match self::grid_template_line_names(&pos.grid_template_rows) {
-            Some(LineNameWrapper(line_name_sets)) => line_name_sets
-                .iter()
-                .map(|line_name_set| {
-                    line_name_set
-                        .iter()
-                        .map(|ident| ident.0.clone())
-                        .collect::<Vec<_>>()
-                })
+            Some(iter) => iter
+                .map(|line_name_set| line_name_set.cloned().collect::<Vec<_>>())
                 .collect::<Vec<_>>(),
             None => Vec::new(),
         },
         #[cfg(feature = "grid")]
         grid_template_column_names: match self::grid_template_line_names(&pos.grid_template_columns)
         {
-            Some(LineNameWrapper(line_name_sets)) => line_name_sets
-                .iter()
-                .map(|line_name_set| {
-                    line_name_set
-                        .iter()
-                        .map(|ident| ident.0.clone())
-                        .collect::<Vec<_>>()
-                })
+            Some(iter) => iter
+                .map(|line_name_set| line_name_set.cloned().collect::<Vec<_>>())
                 .collect::<Vec<_>>(),
             None => Vec::new(),
         },
