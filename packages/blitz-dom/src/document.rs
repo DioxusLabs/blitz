@@ -1,6 +1,9 @@
 use crate::events::handle_dom_event;
 use crate::font_metrics::BlitzFontMetricsProvider;
 use crate::layout::construct::collect_layout_children;
+use crate::layout::damage::{
+    ALL_DAMAGE, CONSTRUCT_BOX, CONSTRUCT_DESCENDENT, CONSTRUCT_FC, ONLY_RELAYOUT,
+};
 use crate::mutator::ViewportMut;
 use crate::net::{Resource, StylesheetLoader};
 use crate::node::{ImageData, NodeFlags, RasterImageData, SpecialElementData, Status, TextBrush};
@@ -38,7 +41,7 @@ use style::media_queries::MediaType;
 use style::properties::ComputedValues;
 use style::properties::style_structs::Font;
 use style::queries::values::PrefersColorScheme;
-use style::selector_parser::ServoElementSnapshot;
+use style::selector_parser::{RestyleDamage, ServoElementSnapshot};
 use style::servo_arc::Arc as ServoArc;
 use style::values::GenericAtomIdent;
 use style::values::computed::Overflow;
@@ -739,27 +742,39 @@ impl BaseDocument {
             return;
         }
 
+        let root_node_id = self.root_element().id;
         debug_timer!(timer, feature = "log_phase_times");
 
         // we need to resolve stylist first since it will need to drive our layout bits
         self.resolve_stylist();
-
         timer.record_time("style");
+
+        // Propagate damage flags (from mutation and restyles) up and down the tree
+        self.propagate_damage_flags(root_node_id, RestyleDamage::empty());
+        timer.record_time("damage");
 
         // Fix up tree for layout (insert anonymous blocks as necessary, etc)
         self.resolve_layout_children();
-
         timer.record_time("construct");
 
         // Merge stylo into taffy
-        self.flush_styles_to_layout(self.root_element().id);
-
+        self.flush_styles_to_layout(root_node_id);
         timer.record_time("flush");
+
+        // Clear construction flags
+        self.iter_subtree_mut(root_node_id, |id, doc| {
+            doc.nodes[id].remove_damage(CONSTRUCT_BOX | CONSTRUCT_DESCENDENT | CONSTRUCT_FC);
+        });
 
         // Next we resolve layout with the data resolved by stlist
         self.resolve_layout();
-
         timer.record_time("layout");
+
+        // Clear all layout damage
+        self.iter_subtree_mut(root_node_id, |id, doc| {
+            doc.nodes[id].remove_damage(ONLY_RELAYOUT);
+        });
+
         timer.print_times("Resolve: ");
     }
 
@@ -957,20 +972,48 @@ impl BaseDocument {
         resolve_layout_children_recursive(self, self.root_node().id);
 
         fn resolve_layout_children_recursive(doc: &mut BaseDocument, node_id: usize) {
-            // if doc.nodes[node_id].layout_children.borrow().is_none() {
-            let mut layout_children = Vec::new();
-            let mut anonymous_block: Option<usize> = None;
-            collect_layout_children(doc, node_id, &mut layout_children, &mut anonymous_block);
+            let mut damage = doc.nodes[node_id].damage().unwrap_or(ALL_DAMAGE);
+            let flags = doc.nodes[node_id].flags;
 
-            // Recurse into newly collected layout children
-            for child_id in layout_children.iter().copied() {
-                resolve_layout_children_recursive(doc, child_id);
-                doc.nodes[child_id].layout_parent.set(Some(node_id));
+            if damage.intersects(CONSTRUCT_FC | CONSTRUCT_BOX) {
+                //} || flags.contains(NodeFlags::IS_INLINE_ROOT) {
+                let mut layout_children = Vec::new();
+                let mut anonymous_block: Option<usize> = None;
+                collect_layout_children(doc, node_id, &mut layout_children, &mut anonymous_block);
+
+                // Recurse into newly collected layout children
+                for child_id in layout_children.iter().copied() {
+                    resolve_layout_children_recursive(doc, child_id);
+                    doc.nodes[child_id].layout_parent.set(Some(node_id));
+                    if let Some(data) = doc.nodes[child_id].stylo_element_data.get_mut() {
+                        data.damage
+                            .remove(CONSTRUCT_DESCENDENT | CONSTRUCT_FC | CONSTRUCT_BOX);
+                    }
+                }
+
+                *doc.nodes[node_id].layout_children.borrow_mut() = Some(layout_children.clone());
+                *doc.nodes[node_id].paint_children.borrow_mut() = Some(layout_children);
+
+                damage.remove(CONSTRUCT_DESCENDENT | CONSTRUCT_FC | CONSTRUCT_BOX);
+                // damage.insert(RestyleDamage::RELAYOUT | RestyleDamage::REPAINT);
+            } else {
+                //if damage.contains(CONSTRUCT_DESCENDENT) {
+                let layout_children = doc.nodes[node_id].layout_children.borrow_mut().take();
+                if let Some(layout_children) = layout_children {
+                    // Recurse into previously computed layout children
+                    for child_id in layout_children.iter().copied() {
+                        resolve_layout_children_recursive(doc, child_id);
+                        doc.nodes[child_id].layout_parent.set(Some(node_id));
+                    }
+
+                    *doc.nodes[node_id].layout_children.borrow_mut() = Some(layout_children);
+                }
+
+                // damage.remove(CONSTRUCT_DESCENDENT);
+                // damage.insert(RestyleDamage::RELAYOUT | RestyleDamage::REPAINT);
             }
 
-            *doc.nodes[node_id].layout_children.borrow_mut() = Some(layout_children.clone());
-            *doc.nodes[node_id].paint_children.borrow_mut() = Some(layout_children);
-            // }
+            doc.nodes[node_id].set_damage(damage);
         }
     }
 
