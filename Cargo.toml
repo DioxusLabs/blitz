@@ -53,13 +53,17 @@ mini-dxn = { path = "./packages/mini-dxn", default-features = false }
 # Servo dependencies
 style = { version = "0.6", package = "stylo" }
 style_traits = { version = "0.6", package = "stylo_traits" }
+style_atoms = { version = "0.6", package = "stylo_atoms" }
 style_config = { version = "0.6", package = "stylo_config" }
 style_dom = { version = "0.6", package = "stylo_dom" }
 selectors = { version = "0.31", package = "selectors" }
 
+# HTML5ever dependencies
 markup5ever = "0.35" # needs to match stylo web_atoms version
 html5ever = "0.35" # needs to match stylo web_atoms version
 xml5ever = "0.35" # needs to match stylo web_atoms version
+
+# Other Servo dependencies
 euclid = "0.22"
 atomic_refcell = "0.1.13"
 app_units = "0.7.5"
@@ -72,7 +76,7 @@ dioxus-html = { version = "=0.7.0-alpha.1" }
 dioxus-hooks = { version = "=0.7.0-alpha.1" }
 dioxus-cli-config = { version = "=0.7.0-alpha.1" }
 dioxus-devtools = { version = "=0.7.0-alpha.1" }
-taffy = { version = "0.8", default-features = false, features = ["std", "flexbox", "grid", "block_layout", "content_size", "calc"] }
+taffy = { version = "0.9", default-features = false, features = ["std", "flexbox", "grid", "block_layout", "content_size", "calc"] }
 
 # Linebender + WGPU + SVG
 color = "0.3"
