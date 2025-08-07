@@ -1,3 +1,4 @@
+use crate::debug::DebugTimer;
 use crate::events::handle_dom_event;
 use crate::layout::construct::collect_layout_children;
 use crate::mutator::ViewportMut;
@@ -733,17 +734,28 @@ impl BaseDocument {
             return;
         }
 
+        let mut timer = DebugTimer::init();
+
         // we need to resolve stylist first since it will need to drive our layout bits
         self.resolve_stylist();
+
+        timer.record_time("style");
 
         // Fix up tree for layout (insert anonymous blocks as necessary, etc)
         self.resolve_layout_children();
 
+        timer.record_time("construct");
+
         // Merge stylo into taffy
         self.flush_styles_to_layout(self.root_element().id);
 
+        timer.record_time("flush");
+
         // Next we resolve layout with the data resolved by stlist
         self.resolve_layout();
+
+        timer.record_time("layout");
+        timer.print_times("Resolve: ");
     }
 
     // Takes (x, y) co-ordinates (relative to the )
