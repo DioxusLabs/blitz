@@ -6,6 +6,7 @@ use parley::{InlineBox, StyleProperty, TreeBuilder, WhiteSpaceCollapse};
 use slab::Slab;
 use style::{
     data::ElementData as StyloElementData,
+    selector_parser::RestyleDamage,
     shared_lock::StylesheetGuards,
     values::{
         computed::{Content, ContentItem, Display},
@@ -15,6 +16,7 @@ use style::{
 
 use crate::{
     BaseDocument, ElementData, Node, NodeData,
+    layout::damage::{CONSTRUCT_BOX, CONSTRUCT_DESCENDENT, CONSTRUCT_FC},
     node::{
         ListItemLayout, ListItemLayoutPosition, Marker, NodeFlags, NodeKind, SpecialElementData,
         TextBrush, TextInputData, TextLayout,
@@ -22,7 +24,7 @@ use crate::{
     qual_name, stylo_to_parley,
 };
 
-use super::{list::collect_list_item_children, table::build_table_context};
+use super::{damage::ALL_DAMAGE, list::collect_list_item_children, table::build_table_context};
 
 const DUMMY_NAME: QualName = qual_name!("div", html);
 
@@ -96,6 +98,11 @@ pub(crate) fn collect_layout_children(
                     outer_html.replace("<svg", "<svg xmlns=\"http://www.w3.org/2000/svg\"");
             }
 
+            // Remove contruction damage from subtree
+            doc.iter_subtree_mut(container_node_id, |id: usize, doc: &mut BaseDocument| {
+                doc.nodes[id].remove_damage(CONSTRUCT_BOX | CONSTRUCT_DESCENDENT | CONSTRUCT_FC);
+            });
+
             match crate::util::parse_svg(outer_html.as_bytes()) {
                 Ok(svg) => {
                     doc.get_node_mut(container_node_id)
@@ -145,6 +152,8 @@ pub(crate) fn collect_layout_children(
     match container_display.inside() {
         DisplayInside::None => {}
         DisplayInside::Contents => {
+            doc.nodes[container_node_id]
+                .remove_damage(CONSTRUCT_BOX | CONSTRUCT_DESCENDENT | CONSTRUCT_FC);
             // Take children array from node to avoid borrow checker issues.
             let children = std::mem::take(&mut doc.nodes[container_node_id].children);
 
@@ -317,7 +326,9 @@ fn flush_pseudo_elements(doc: &mut BaseDocument, node_id: usize) {
         // Delete psuedo element if it exists but shouldn't
         if let (Some(pe_node_id), None) = (pe_node_id, &pe_style) {
             doc.remove_and_drop_pe(pe_node_id);
-            doc.nodes[node_id].set_pe_by_index(idx, None);
+            let node = &mut doc.nodes[node_id];
+            node.set_pe_by_index(idx, None);
+            node.insert_damage(ALL_DAMAGE);
         }
 
         // Create pseudo element if it should exist but doesn't
@@ -346,9 +357,12 @@ fn flush_pseudo_elements(doc: &mut BaseDocument, node_id: usize) {
             let mut element_data = StyloElementData::default();
             element_data.styles.primary = Some(pe_style.clone());
             element_data.set_restyled();
+            element_data.damage = RestyleDamage::all();
             *doc.nodes[new_node_id].stylo_element_data.borrow_mut() = Some(element_data);
 
-            doc.nodes[node_id].set_pe_by_index(idx, Some(new_node_id));
+            let node = &mut doc.nodes[node_id];
+            node.set_pe_by_index(idx, Some(new_node_id));
+            node.insert_damage(ALL_DAMAGE);
         }
 
         // Else: Update psuedo element
@@ -357,6 +371,7 @@ fn flush_pseudo_elements(doc: &mut BaseDocument, node_id: usize) {
 
             let mut node_styles = doc.nodes[pe_node_id].stylo_element_data.borrow_mut();
             let node_styles = &mut node_styles.as_mut().unwrap();
+            node_styles.damage.insert(RestyleDamage::all());
             let primary_styles = &mut node_styles.styles.primary;
 
             if !std::ptr::eq(&**primary_styles.as_ref().unwrap(), &*pe_style) {
@@ -671,9 +686,12 @@ pub(crate) fn build_inline_layout(
                 let display = node.display_style().unwrap_or(Display::inline());
 
                 match (display.outside(), display.inside()) {
-                    (DisplayOutside::None, DisplayInside::None) => {}
+                    (DisplayOutside::None, DisplayInside::None) => {
+                        node.remove_damage(CONSTRUCT_DESCENDENT | CONSTRUCT_FC | CONSTRUCT_BOX);
+                    }
                     (DisplayOutside::None, DisplayInside::Contents) => {
                         for child_id in node.children.iter().copied() {
+                            node.remove_damage(CONSTRUCT_DESCENDENT | CONSTRUCT_FC | CONSTRUCT_BOX);
                             build_inline_layout_recursive(
                                 builder,
                                 nodes,
@@ -702,6 +720,7 @@ pub(crate) fn build_inline_layout(
                                 height: 0.0,
                             });
                         } else if *tag_name == local_name!("br") {
+                            node.remove_damage(CONSTRUCT_DESCENDENT | CONSTRUCT_FC | CONSTRUCT_BOX);
                             // TODO: update span id for br spans
                             builder.push_style_modification_span(&[]);
                             builder.set_white_space_mode(WhiteSpaceCollapse::Preserve);
@@ -709,6 +728,7 @@ pub(crate) fn build_inline_layout(
                             builder.pop_style_span();
                             builder.set_white_space_mode(collapse_mode);
                         } else {
+                            node.remove_damage(CONSTRUCT_DESCENDENT | CONSTRUCT_FC | CONSTRUCT_BOX);
                             let mut style = node
                                 .primary_styles()
                                 .map(|s| stylo_to_parley::style(node.id, &s))
@@ -781,10 +801,13 @@ pub(crate) fn build_inline_layout(
                 };
             }
             NodeData::Text(data) => {
+                node.remove_damage(CONSTRUCT_DESCENDENT | CONSTRUCT_FC | CONSTRUCT_BOX);
                 // dbg!(&data.content);
                 builder.push_text(&data.content);
             }
-            NodeData::Comment => {}
+            NodeData::Comment => {
+                node.remove_damage(CONSTRUCT_DESCENDENT | CONSTRUCT_FC | CONSTRUCT_BOX);
+            }
             NodeData::Document => unreachable!(),
         }
     }

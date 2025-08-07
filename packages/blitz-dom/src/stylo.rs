@@ -4,6 +4,8 @@
 use std::ptr::NonNull;
 use std::sync::atomic::Ordering;
 
+use crate::layout::damage::ALL_DAMAGE;
+use crate::layout::damage::compute_layout_damage;
 use crate::node::Node;
 use crate::node::NodeData;
 use atomic_refcell::{AtomicRef, AtomicRefMut};
@@ -17,9 +19,11 @@ use selectors::{
 use style::CaseSensitivityExt;
 use style::applicable_declarations::ApplicableDeclarationBlock;
 use style::color::AbsoluteColor;
+use style::properties::ComputedValues;
 use style::properties::{Importance, PropertyDeclaration};
 use style::rule_tree::CascadeLevel;
 use style::selector_parser::PseudoElement;
+use style::selector_parser::RestyleDamage;
 use style::stylesheets::layer_rule::LayerOrder;
 use style::stylesheets::scope_rule::ImplicitScopeRoot;
 use style::values::AtomString;
@@ -637,7 +641,10 @@ impl<'a> TElement for BlitzNode<'a> {
     unsafe fn ensure_data(&self) -> AtomicRefMut<'_, style::data::ElementData> {
         let mut stylo_data = self.stylo_element_data.borrow_mut();
         if stylo_data.is_none() {
-            *stylo_data = Some(Default::default());
+            *stylo_data = Some(style::data::ElementData {
+                damage: ALL_DAMAGE,
+                ..Default::default()
+            });
         }
         AtomicRefMut::map(stylo_data, |sd| sd.as_mut().unwrap())
     }
@@ -910,6 +917,11 @@ impl<'a> TElement for BlitzNode<'a> {
         } else {
             ElementSelectorFlags::empty()
         }
+    }
+
+    fn compute_layout_damage(old: &ComputedValues, new: &ComputedValues) -> RestyleDamage {
+        compute_layout_damage(old, new)
+        // ALL_DAMAGE
     }
 
     // fn update_animations(
