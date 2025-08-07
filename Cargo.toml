@@ -76,7 +76,7 @@ dioxus-html = { version = "=0.7.0-alpha.1" }
 dioxus-hooks = { version = "=0.7.0-alpha.1" }
 dioxus-cli-config = { version = "=0.7.0-alpha.1" }
 dioxus-devtools = { version = "=0.7.0-alpha.1" }
-taffy = { path = "../taffy", version = "0.8", default-features = false, features = ["std", "flexbox", "grid", "block_layout", "content_size", "calc"] }
+taffy = { version = "0.9", default-features = false, features = ["std", "flexbox", "grid", "block_layout", "content_size", "calc"] }
 
 # Linebender + WGPU + SVG
 color = "0.3"
