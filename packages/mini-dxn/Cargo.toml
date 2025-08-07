@@ -8,6 +8,7 @@ homepage.workspace = true
 repository.workspace = true
 categories.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 # This crate is only for internal use when developing Blitz.
 # The main dioxus-native crate lives in the Dioxus repo.
 publish = false

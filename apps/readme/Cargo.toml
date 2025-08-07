@@ -3,6 +3,7 @@ name = "readme"
 version = "0.1.0"
 edition = "2024"
 license.workspace = true
+rust-version.workspace = true
 
 [features]
 default = ["gpu", "comrak"]

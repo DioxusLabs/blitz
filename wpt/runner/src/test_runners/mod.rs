@@ -77,6 +77,7 @@ pub fn process_test_file(
     let second = matches.next();
     if first.is_some() && second.is_none() {
         // TODO: handle tests with multiple calls to checkLayout.
+        #[allow(clippy::unnecessary_unwrap)]
         let captures = first.unwrap();
         let selector = captures.get(1).unwrap().as_str().to_string();
         drop(matches);

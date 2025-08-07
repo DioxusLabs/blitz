@@ -665,7 +665,7 @@ impl<'a> TElement for BlitzNode<'a> {
         false
     }
 
-    fn style_attribute(&self) -> Option<ArcBorrow<Locked<PropertyDeclarationBlock>>> {
+    fn style_attribute(&self) -> Option<ArcBorrow<'_, Locked<PropertyDeclarationBlock>>> {
         self.element_data()
             .expect("Not an element")
             .style_attribute
@@ -756,7 +756,7 @@ impl<'a> TElement for BlitzNode<'a> {
         unimplemented!()
     }
 
-    unsafe fn ensure_data(&self) -> AtomicRefMut<style::data::ElementData> {
+    unsafe fn ensure_data(&self) -> AtomicRefMut<'_, style::data::ElementData> {
         let mut stylo_data = self.stylo_element_data.borrow_mut();
         if stylo_data.is_none() {
             *stylo_data = Some(Default::default());
@@ -772,7 +772,7 @@ impl<'a> TElement for BlitzNode<'a> {
         self.stylo_element_data.borrow().is_some()
     }
 
-    fn borrow_data(&self) -> Option<AtomicRef<style::data::ElementData>> {
+    fn borrow_data(&self) -> Option<AtomicRef<'_, style::data::ElementData>> {
         let stylo_data = self.stylo_element_data.borrow();
         if stylo_data.is_some() {
             Some(AtomicRef::map(stylo_data, |sd| sd.as_ref().unwrap()))
@@ -781,7 +781,7 @@ impl<'a> TElement for BlitzNode<'a> {
         }
     }
 
-    fn mutate_data(&self) -> Option<AtomicRefMut<style::data::ElementData>> {
+    fn mutate_data(&self) -> Option<AtomicRefMut<'_, style::data::ElementData>> {
         let stylo_data = self.stylo_element_data.borrow_mut();
         if stylo_data.is_some() {
             Some(AtomicRefMut::map(stylo_data, |sd| sd.as_mut().unwrap()))
@@ -1139,7 +1139,7 @@ where
     }
 
     #[inline]
-    fn shared_context(&self) -> &SharedStyleContext {
+    fn shared_context(&self) -> &SharedStyleContext<'_> {
         &self.context
     }
 }

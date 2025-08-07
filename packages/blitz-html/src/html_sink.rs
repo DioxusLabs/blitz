@@ -43,7 +43,7 @@ impl<'doc> DocumentHtmlParser<'doc> {
 }
 
 impl DocumentHtmlParser<'_> {
-    pub fn new(doc: &mut BaseDocument) -> DocumentHtmlParser {
+    pub fn new(doc: &mut BaseDocument) -> DocumentHtmlParser<'_> {
         DocumentHtmlParser {
             document_mutator: RefCell::new(doc.mutate()),
             errors: RefCell::new(Vec::new()),
