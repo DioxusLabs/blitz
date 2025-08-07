@@ -412,7 +412,7 @@ pub fn grid_template_tracks(
 #[cfg(feature = "grid")]
 pub fn grid_template_line_names(
     input: &stylo::GridTemplateComponent,
-) -> Option<crate::wrapper::StyloLineNameIter> {
+) -> Option<crate::wrapper::StyloLineNameIter<'_>> {
     match input {
         stylo::GenericGridTemplateComponent::None => None,
         stylo::GenericGridTemplateComponent::TrackList(list) => {
