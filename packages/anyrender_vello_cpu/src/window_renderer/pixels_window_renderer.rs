@@ -1,6 +1,6 @@
 use crate::VelloCpuScenePainter;
-use crate::debug::DebugTimer;
 use anyrender::{WindowHandle, WindowRenderer};
+use debug_timer::debug_timer;
 use pixels::{Pixels, SurfaceTexture, wgpu::Color};
 use std::sync::Arc;
 use vello_cpu::{RenderContext, RenderMode};
@@ -85,7 +85,7 @@ impl WindowRenderer for VelloCpuPixelsWindowRenderer {
             return;
         };
 
-        let mut timer = DebugTimer::init();
+        debug_timer!(timer, feature = "log_frame_times");
 
         // Paint
         let width = self.render_context.0.width();

@@ -1,6 +1,6 @@
 use crate::VelloCpuScenePainter;
-use crate::debug::DebugTimer;
 use anyrender::{WindowHandle, WindowRenderer};
+use debug_timer::debug_timer;
 use peniko::color::PremulRgba8;
 use softbuffer::{Context, Surface};
 use std::{num::NonZero, sync::Arc};
@@ -84,7 +84,7 @@ impl WindowRenderer for VelloCpuSoftbufferWindowRenderer {
             return;
         };
 
-        let mut timer = DebugTimer::init();
+        debug_timer!(timer, feature = "log_frame_times");
 
         // Paint
         let width = self.render_context.0.width();

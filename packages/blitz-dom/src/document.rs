@@ -1,4 +1,3 @@
-use crate::debug::DebugTimer;
 use crate::events::handle_dom_event;
 use crate::layout::construct::collect_layout_children;
 use crate::mutator::ViewportMut;
@@ -19,6 +18,7 @@ use blitz_traits::navigation::{DummyNavigationProvider, NavigationProvider};
 use blitz_traits::net::{DummyNetProvider, NetProvider, SharedProvider};
 use blitz_traits::shell::{ColorScheme, DummyShellProvider, ShellProvider, Viewport};
 use cursor_icon::CursorIcon;
+use debug_timer::debug_timer;
 use markup5ever::local_name;
 use parley::FontContext;
 use peniko::{Blob, kurbo};
@@ -734,7 +734,7 @@ impl BaseDocument {
             return;
         }
 
-        let mut timer = DebugTimer::init();
+        debug_timer!(timer, feature = "log_phase_times");
 
         // we need to resolve stylist first since it will need to drive our layout bits
         self.resolve_stylist();

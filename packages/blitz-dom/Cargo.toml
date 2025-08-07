@@ -32,12 +32,13 @@ accessibility = ["accesskit"]
 system_fonts = ["parley/system"]
 autofocus = []
 file_input = []
-log_phase_times = []
+log_phase_times = ["debug_timer/enable"]
 
 [dependencies]
 # Blitz dependencies
 blitz-traits = { workspace = true }
 stylo_taffy = { workspace = true, features = ["default"] }
+debug_timer = { workspace = true }
 
 # Servo dependencies
 style = { workspace = true }

@@ -11,10 +11,11 @@ edition = "2024"
 [features]
 pixels_window_renderer = ["dep:pixels"]
 softbuffer_window_renderer = ["dep:softbuffer"]
-log_frame_times = []
+log_frame_times = ["debug_timer/enable"]
 
 [dependencies]
 anyrender = { workspace = true }
+debug_timer = { workspace = true }
 kurbo = { workspace = true }
 peniko = { workspace = true }
 

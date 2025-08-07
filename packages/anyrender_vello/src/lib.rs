@@ -1,5 +1,4 @@
 //! A [`vello`] backend for the [`anyrender`] 2D drawing abstraction
-mod debug;
 mod image_renderer;
 mod scene;
 mod window_renderer;
@@ -14,7 +13,6 @@ pub use window_renderer::VelloWindowRenderer;
 
 pub use wgpu;
 
-use debug::DebugTimer;
 use std::num::NonZeroUsize;
 
 #[cfg(target_os = "macos")]

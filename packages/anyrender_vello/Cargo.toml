@@ -9,10 +9,11 @@ license.workspace = true
 edition = "2024"
 
 [features]
-log_frame_times = []
+log_frame_times = ["debug_timer/enable"]
 
 [dependencies]
 anyrender = { workspace = true }
+debug_timer = { workspace = true }
 kurbo = { workspace = true }
 peniko = { workspace = true }
 vello = { workspace = true }

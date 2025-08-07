@@ -299,6 +299,7 @@ name = "anyrender_vello"
 version = "0.5.0"
 dependencies = [
  "anyrender",
+ "debug_timer",
  "futures-intrusive",
  "kurbo",
  "peniko",
@@ -314,6 +315,7 @@ name = "anyrender_vello_cpu"
 version = "0.5.1"
 dependencies = [
  "anyrender",
+ "debug_timer",
  "kurbo",
  "peniko",
  "pixels",
@@ -758,6 +760,7 @@ dependencies = [
  "blitz-traits",
  "color",
  "cursor-icon",
+ "debug_timer",
  "euclid",
  "fastrand",
  "html-escape",
@@ -1602,6 +1605,10 @@ dependencies = [
  "libc",
  "system-deps",
 ]
+
+[[package]]
+name = "debug_timer"
+version = "0.1.0"
 
 [[package]]
 name = "deranged"

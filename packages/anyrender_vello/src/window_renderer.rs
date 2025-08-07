@@ -1,8 +1,9 @@
 use crate::{
-    CustomPaintSource, DebugTimer,
+    CustomPaintSource,
     wgpu_context::{DeviceHandle, RenderSurface, WGPUContext},
 };
 use anyrender::{WindowHandle, WindowRenderer};
+use debug_timer::debug_timer;
 use peniko::Color;
 use rustc_hash::FxHashMap;
 use std::sync::{
@@ -153,7 +154,7 @@ impl WindowRenderer for VelloWindowRenderer {
         let surface = &state.surface;
         let device_handle = &surface.device_handle;
 
-        let mut timer = DebugTimer::init();
+        debug_timer!(timer, feature = "log_frame_times");
 
         let render_params = RenderParams {
             base_color: Color::WHITE,
