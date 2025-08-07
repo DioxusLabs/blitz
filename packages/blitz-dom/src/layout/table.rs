@@ -10,6 +10,7 @@ use taffy::{
 
 use crate::BaseDocument;
 
+use super::damage::{CONSTRUCT_BOX, CONSTRUCT_DESCENDENT, CONSTRUCT_FC};
 use super::resolve_calc_value;
 
 pub struct TableTreeWrapper<'doc> {
@@ -115,6 +116,7 @@ pub(crate) fn collect_table_cells(
     };
 
     if display.outside() == DisplayOutside::None {
+        node.remove_damage(CONSTRUCT_DESCENDENT | CONSTRUCT_FC | CONSTRUCT_BOX);
         return;
     }
 
@@ -125,11 +127,14 @@ pub(crate) fn collect_table_cells(
         | DisplayInside::Contents => {
             let children = std::mem::take(&mut doc.nodes[node_id].children);
             for child_id in children.iter().copied() {
+                doc.nodes[child_id]
+                    .remove_damage(CONSTRUCT_DESCENDENT | CONSTRUCT_FC | CONSTRUCT_BOX);
                 collect_table_cells(doc, child_id, is_fixed, row, col, cells, columns);
             }
             doc.nodes[node_id].children = children;
         }
         DisplayInside::TableRow => {
+            node.remove_damage(CONSTRUCT_DESCENDENT | CONSTRUCT_FC | CONSTRUCT_BOX);
             *row += 1;
             *col = 0;
 
@@ -158,6 +163,7 @@ pub(crate) fn collect_table_cells(
             doc.nodes[node_id].children = children;
         }
         DisplayInside::TableCell => {
+            // node.remove_damage(CONSTRUCT_DESCENDENT | CONSTRUCT_FC | CONSTRUCT_BOX);
             let stylo_style = &node.primary_styles().unwrap();
             let colspan: u16 = node
                 .attr(local_name!("colspan"))
@@ -212,14 +218,24 @@ pub(crate) fn collect_table_cells(
 
             *col += colspan;
         }
-        DisplayInside::None => {
-            // Ignore
+        DisplayInside::Flow
+        | DisplayInside::FlowRoot
+        | DisplayInside::Flex
+        | DisplayInside::Grid => {
+            node.remove_damage(CONSTRUCT_DESCENDENT | CONSTRUCT_FC | CONSTRUCT_BOX);
+            // Probably a table caption: ignore
+            // println!(
+            //     "Warning: ignoring non-table typed descendent of table ({:?})",
+            //     display.inside()
+            // );
         }
-        _ => {
-            println!(
-                "Warning: ignoring non-table typed descendent of table ({:?})",
-                display.inside()
-            );
+        DisplayInside::TableColumnGroup | DisplayInside::TableColumn | DisplayInside::Table => {
+            node.remove_damage(CONSTRUCT_DESCENDENT | CONSTRUCT_FC | CONSTRUCT_BOX);
+            //Ignore
+        }
+        DisplayInside::None => {
+            node.remove_damage(CONSTRUCT_DESCENDENT | CONSTRUCT_FC | CONSTRUCT_BOX);
+            // Ignore
         }
     }
 }
