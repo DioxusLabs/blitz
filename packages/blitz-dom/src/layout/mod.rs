@@ -20,6 +20,7 @@ use taffy::{
 
 pub(crate) mod construct;
 pub(crate) mod inline;
+pub(crate) mod list;
 pub(crate) mod replaced;
 pub(crate) mod table;
 
