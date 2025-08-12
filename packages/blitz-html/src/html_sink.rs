@@ -7,7 +7,7 @@ use std::borrow::Cow;
 use std::cell::{Cell, Ref, RefCell, RefMut};
 
 use blitz_dom::node::Attribute;
-use blitz_dom::{BaseDocument, DocumentMutator};
+use blitz_dom::{DocumentMutator, HtmlParserProvider};
 use html5ever::{
     QualName,
     tendril::{StrTendril, TendrilSink},
@@ -23,8 +23,22 @@ fn html5ever_to_blitz_attr(attr: html5ever::Attribute) -> Attribute {
     }
 }
 
-pub struct DocumentHtmlParser<'doc> {
-    document_mutator: RefCell<DocumentMutator<'doc>>,
+#[derive(Copy, Clone, Default, Debug)]
+pub struct HtmlProvider;
+
+impl HtmlParserProvider for HtmlProvider {
+    fn parse_inner_html<'m2, 'doc2>(
+        &self,
+        mutr: &'m2 mut DocumentMutator<'doc2>,
+        element_id: usize,
+        html: &str,
+    ) {
+        DocumentHtmlParser::parse_inner_html_into_mutator(mutr, element_id, html);
+    }
+}
+
+pub struct DocumentHtmlParser<'m, 'doc> {
+    document_mutator: RefCell<&'m mut DocumentMutator<'doc>>,
 
     /// Errors that occurred during parsing.
     pub errors: RefCell<Vec<Cow<'static, str>>>,
@@ -34,26 +48,26 @@ pub struct DocumentHtmlParser<'doc> {
     pub is_xml: bool,
 }
 
-impl<'doc> DocumentHtmlParser<'doc> {
+impl<'m, 'doc> DocumentHtmlParser<'m, 'doc> {
     #[track_caller]
     /// Get a mutable borrow of the DocumentMutator
-    fn mutr(&self) -> RefMut<'_, DocumentMutator<'doc>> {
+    fn mutr(&self) -> RefMut<'_, &'m mut DocumentMutator<'doc>> {
         self.document_mutator.borrow_mut()
     }
 }
 
-impl DocumentHtmlParser<'_> {
-    pub fn new(doc: &mut BaseDocument) -> DocumentHtmlParser<'_> {
+impl<'m, 'doc> DocumentHtmlParser<'m, 'doc> {
+    pub fn new(mutr: &'m mut DocumentMutator<'doc>) -> DocumentHtmlParser<'m, 'doc> {
         DocumentHtmlParser {
-            document_mutator: RefCell::new(doc.mutate()),
+            document_mutator: RefCell::new(mutr),
             errors: RefCell::new(Vec::new()),
             quirks_mode: Cell::new(QuirksMode::NoQuirks),
             is_xml: false,
         }
     }
 
-    pub fn parse_into_doc<'d>(doc: &'d mut BaseDocument, html: &str) -> &'d mut BaseDocument {
-        let mut sink = Self::new(doc);
+    pub fn parse_into_mutator<'a, 'd>(mutr: &'a mut DocumentMutator<'d>, html: &str) {
+        let mut sink = DocumentHtmlParser::new(mutr);
 
         let is_xhtml_doc = html.starts_with("<?xml")
             || html.starts_with("<!DOCTYPE") && {
@@ -86,12 +100,40 @@ impl DocumentHtmlParser<'_> {
                 .read_from(&mut html.as_bytes())
                 .unwrap();
         }
+    }
 
-        doc
+    pub fn parse_inner_html_into_mutator<'a, 'd>(
+        mutr: &'a mut DocumentMutator<'d>,
+        element_id: usize,
+        html: &str,
+    ) {
+        let sink = DocumentHtmlParser::new(mutr);
+
+        let opts = ParseOpts {
+            tokenizer: TokenizerOpts::default(),
+            tree_builder: TreeBuilderOpts {
+                exact_errors: false,
+                scripting_enabled: false, // Enables parsing of <noscript> tags
+                iframe_srcdoc: false,
+                drop_doctype: true,
+                quirks_mode: QuirksMode::NoQuirks,
+            },
+        };
+        html5ever::driver::parse_fragment_for_element(sink, opts, element_id, false, None)
+            .from_utf8()
+            .read_from(&mut html.as_bytes())
+            .unwrap();
+
+        // html5ever creates a new fragment root node under the document node and parses the nodes into that fragment root.
+        // So here we move the children of the fragment root to element_id and then remove the fragment root
+        let fragment_root_id = mutr.last_child_id(0).unwrap();
+        let child_ids = mutr.child_ids(fragment_root_id);
+        mutr.append_children(element_id, &child_ids);
+        mutr.remove_node(fragment_root_id);
     }
 }
 
-impl<'b> TreeSink for DocumentHtmlParser<'b> {
+impl<'m, 'doc> TreeSink for DocumentHtmlParser<'m, 'doc> {
     type Output = ();
 
     // we use the ID of the nodes in the tree as the handle
@@ -103,7 +145,6 @@ impl<'b> TreeSink for DocumentHtmlParser<'b> {
         Self: 'a;
 
     fn finish(self) -> Self::Output {
-        drop(self.document_mutator.into_inner());
         for error in self.errors.borrow().iter() {
             println!("ERROR: {error}");
         }
@@ -237,17 +278,19 @@ impl<'b> TreeSink for DocumentHtmlParser<'b> {
 
 #[test]
 fn parses_some_html() {
-    use blitz_dom::DocumentConfig;
+    use blitz_dom::{BaseDocument, DocumentConfig};
 
     let html = "<!DOCTYPE html><html><body><h1>hello world</h1></body></html>";
     let mut doc = BaseDocument::new(DocumentConfig::default());
-    let sink = DocumentHtmlParser::new(&mut doc);
+    let mut mutr = doc.mutate();
+    let sink = DocumentHtmlParser::new(&mut mutr);
 
     html5ever::parse_document(sink, Default::default())
         .from_utf8()
         .read_from(&mut html.as_bytes())
         .unwrap();
 
+    drop(mutr);
     doc.print_tree()
 
     // Now our tree should have some nodes in it

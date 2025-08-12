@@ -40,7 +40,9 @@ impl HtmlDocument {
             }
         }
         let mut doc = BaseDocument::new(config);
-        DocumentHtmlParser::parse_into_doc(&mut doc, html);
+        let mut mutr = doc.mutate();
+        DocumentHtmlParser::parse_into_mutator(&mut mutr, html);
+        drop(mutr);
         HtmlDocument { inner: doc }
     }
 

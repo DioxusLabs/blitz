@@ -8,8 +8,8 @@ use crate::traversal::TreeTraverser;
 use crate::url::DocumentUrl;
 use crate::util::ImageType;
 use crate::{
-    DEFAULT_CSS, DocumentConfig, DocumentMutator, ElementData, EventDriver, Node, NodeData,
-    NoopEventHandler, TextNodeData,
+    DEFAULT_CSS, DocumentConfig, DocumentMutator, DummyHtmlParserProvider, ElementData,
+    EventDriver, HtmlParserProvider, Node, NodeData, NoopEventHandler, TextNodeData,
 };
 use app_units::Au;
 use blitz_traits::devtools::DevtoolSettings;
@@ -169,6 +169,8 @@ pub struct BaseDocument {
     pub navigation_provider: Arc<dyn NavigationProvider>,
     /// Shell provider. Can be used to request a redraw or set the cursor icon
     pub shell_provider: Arc<dyn ShellProvider>,
+    /// HTML parser provider. Used to parse HTML for setInnerHTML
+    pub html_parser_provider: Arc<dyn HtmlParserProvider>,
 }
 
 pub(crate) fn make_device(viewport: &Viewport) -> Device {
@@ -234,6 +236,9 @@ impl BaseDocument {
         let shell_provider = config
             .shell_provider
             .unwrap_or_else(|| Arc::new(DummyShellProvider));
+        let html_parser_provider = config
+            .html_parser_provider
+            .unwrap_or_else(|| Arc::new(DummyHtmlParserProvider));
 
         let mut doc = Self {
             id,
@@ -261,6 +266,7 @@ impl BaseDocument {
             net_provider,
             navigation_provider,
             shell_provider,
+            html_parser_provider,
         };
 
         // Initialise document with root Document node
@@ -305,6 +311,11 @@ impl BaseDocument {
     /// Set the Document's shell provider
     pub fn set_shell_provider(&mut self, shell_provider: Arc<dyn ShellProvider>) {
         self.shell_provider = shell_provider;
+    }
+
+    /// Set the Document's html parser provider
+    pub fn set_html_parser_provider(&mut self, html_parser_provider: Arc<dyn HtmlParserProvider>) {
+        self.html_parser_provider = html_parser_provider;
     }
 
     /// Set base url for resolving linked resources (stylesheets, images, fonts, etc)

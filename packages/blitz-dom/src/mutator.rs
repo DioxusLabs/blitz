@@ -98,6 +98,10 @@ impl DocumentMutator<'_> {
         self.doc.nodes[node_id].children.last().copied()
     }
 
+    pub fn child_ids(&self, node_id: usize) -> Vec<usize> {
+        self.doc.nodes[node_id].children.clone()
+    }
+
     pub fn element_name(&self, node_id: usize) -> Option<&QualName> {
         self.doc.nodes[node_id].element_data().map(|el| &el.name)
     }
@@ -281,20 +285,20 @@ impl DocumentMutator<'_> {
         self.process_removed_subtree(node_id);
     }
 
+    fn remove_node_ignoring_parent(&mut self, node_id: usize) -> Option<Node> {
+        let mut node = self.doc.nodes.try_remove(node_id);
+        if let Some(node) = &mut node {
+            for &child in &node.children {
+                self.remove_node_ignoring_parent(child);
+            }
+        }
+        node
+    }
+
     pub fn remove_and_drop_node(&mut self, node_id: usize) -> Option<Node> {
         self.process_removed_subtree(node_id);
 
-        fn remove_node_ignoring_parent(mutr: &mut DocumentMutator, node_id: usize) -> Option<Node> {
-            let mut node = mutr.doc.nodes.try_remove(node_id);
-            if let Some(node) = &mut node {
-                for &child in &node.children {
-                    remove_node_ignoring_parent(mutr, child);
-                }
-            }
-            node
-        }
-
-        let node = remove_node_ignoring_parent(self, node_id);
+        let node = self.remove_node_ignoring_parent(node_id);
 
         // Update child_idx values
         if let Some(parent_id) = node.as_ref().and_then(|node| node.parent) {
@@ -304,6 +308,15 @@ impl DocumentMutator<'_> {
         }
 
         node
+    }
+
+    pub fn remove_and_drop_all_children(&mut self, node_id: usize) {
+        let children = mem::take(&mut self.doc.nodes[node_id].children);
+        for child_id in children {
+            self.process_removed_subtree(child_id);
+            let _ = self.remove_node_ignoring_parent(child_id);
+        }
+        self.maybe_record_node(node_id);
     }
 
     // Tree mutation methods
@@ -412,6 +425,14 @@ impl<'doc> DocumentMutator<'doc> {
                 self.doc.set_focus_to(node_id);
             }
         }
+    }
+
+    pub fn set_inner_html(&mut self, node_id: usize, html: &str) {
+        self.remove_and_drop_all_children(node_id);
+        self.doc
+            .html_parser_provider
+            .clone()
+            .parse_inner_html(self, node_id, html);
     }
 
     fn flush_eager_ops(&mut self) {

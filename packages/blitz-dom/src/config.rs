@@ -1,4 +1,4 @@
-use crate::net::Resource;
+use crate::{HtmlParserProvider, net::Resource};
 use blitz_traits::{
     navigation::NavigationProvider,
     net::NetProvider,
@@ -22,6 +22,8 @@ pub struct DocumentConfig {
     pub navigation_provider: Option<Arc<dyn NavigationProvider>>,
     /// Shell provider to redraw requests, clipboard, etc
     pub shell_provider: Option<Arc<dyn ShellProvider>>,
+    /// HTML parser provider. Used to parse HTML for setInnerHTML
+    pub html_parser_provider: Option<Arc<dyn HtmlParserProvider>>,
     /// Parley `FontContext`
     pub font_ctx: Option<FontContext>,
 }
