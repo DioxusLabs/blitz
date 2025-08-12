@@ -759,6 +759,7 @@ dependencies = [
  "bitflags 2.9.1",
  "blitz-traits",
  "color",
+ "cssparser",
  "cursor-icon",
  "debug_timer",
  "euclid",

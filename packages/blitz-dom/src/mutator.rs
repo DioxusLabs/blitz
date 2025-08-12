@@ -215,15 +215,18 @@ impl DocumentMutator<'_> {
             return;
         }
 
+        if *attr == local_name!("style") {
+            element.flush_style_attribute(&self.doc.guard, &self.doc.url.url_extra_data());
+            return;
+        }
+
         // If node if not in the document, then don't apply any special behaviours
         // and simply set the attribute value
         if !node.flags.is_in_document() {
             return;
         }
 
-        if *attr == local_name!("style") {
-            element.flush_style_attribute(&self.doc.guard, &self.doc.url.url_extra_data());
-        } else if (tag, attr) == tag_and_attr!("input", "checked") {
+        if (tag, attr) == tag_and_attr!("input", "checked") {
             set_input_checked_state(element, value.to_string());
         } else if (tag, attr) == tag_and_attr!("img", "src") {
             self.load_image(node_id);
@@ -269,6 +272,14 @@ impl DocumentMutator<'_> {
         } else if (tag, attr) == tag_and_attr!("link", "href") {
             self.unload_stylesheet(node_id);
         }
+    }
+
+    pub fn set_style_property(&mut self, node_id: usize, name: &str, value: &str) {
+        self.doc.set_style_property(node_id, name, value)
+    }
+
+    pub fn remove_style_property(&mut self, node_id: usize, name: &str) {
+        self.doc.remove_style_property(node_id, name)
     }
 
     /// Remove the node from it's parent but don't drop it

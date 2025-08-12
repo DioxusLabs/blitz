@@ -43,6 +43,7 @@ debug_timer = { workspace = true }
 # Servo dependencies
 style = { workspace = true }
 selectors = { workspace = true }
+cssparser = { workspace = true }
 style_config = { workspace = true }
 style_traits = { workspace = true }
 style_dom = { workspace = true }

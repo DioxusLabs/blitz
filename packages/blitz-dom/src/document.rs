@@ -427,6 +427,20 @@ impl BaseDocument {
         }
     }
 
+    pub fn set_style_property(&mut self, node_id: usize, name: &str, value: &str) {
+        self.nodes[node_id]
+            .element_data_mut()
+            .unwrap()
+            .set_style_property(name, value, &self.guard, self.url.url_extra_data());
+    }
+
+    pub fn remove_style_property(&mut self, node_id: usize, name: &str) {
+        self.nodes[node_id]
+            .element_data_mut()
+            .unwrap()
+            .remove_style_property(name, &self.guard, self.url.url_extra_data());
+    }
+
     pub fn root_node(&self) -> &Node {
         &self.nodes[0]
     }
