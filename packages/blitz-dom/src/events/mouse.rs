@@ -51,7 +51,7 @@ pub(crate) fn handle_mousemove(
 
         text_input_data
             .editor
-            .driver(&mut doc.font_ctx, &mut doc.layout_ctx)
+            .driver(&mut doc.font_ctx.lock().unwrap(), &mut doc.layout_ctx)
             .extend_selection_to_point(x as f32, y as f32);
 
         changed = true;
@@ -88,7 +88,7 @@ pub(crate) fn handle_mousedown(doc: &mut BaseDocument, target: usize, x: f32, y:
 
         text_input_data
             .editor
-            .driver(&mut doc.font_ctx, &mut doc.layout_ctx)
+            .driver(&mut doc.font_ctx.lock().unwrap(), &mut doc.layout_ctx)
             .move_to_point(x as f32, y as f32);
 
         doc.set_focus_to(hit.node_id);

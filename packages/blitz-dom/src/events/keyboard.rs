@@ -40,7 +40,7 @@ pub(crate) fn handle_keypress<F: FnMut(DomEvent)>(
         if let Some(input_data) = element_data.text_input_data_mut() {
             let generated_event = apply_keypress_event(
                 input_data,
-                &mut doc.font_ctx,
+                &mut doc.font_ctx.lock().unwrap(),
                 &mut doc.layout_ctx,
                 &*doc.shell_provider,
                 event,
