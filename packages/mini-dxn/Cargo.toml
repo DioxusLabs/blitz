@@ -26,6 +26,8 @@ cpu = ["cpu-pixels"]
 cpu-pixels = ["cpu-base", "anyrender_vello_cpu/pixels_window_renderer"]
 cpu-softbuffer = ["cpu-base", "anyrender_vello_cpu/softbuffer_window_renderer"]
 cpu-base = ["dep:anyrender_vello_cpu"]
+log_frame_times = ["anyrender_vello_cpu?/log_frame_times", "anyrender_vello?/log_frame_times"]
+log_phase_times = ["blitz-dom/log_phase_times"]
 
 [dependencies]
 # Blitz dependencies

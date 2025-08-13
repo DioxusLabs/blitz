@@ -11,6 +11,8 @@ gpu = ["mini-dxn/gpu"]
 cpu = ["cpu-pixels"]
 cpu-pixels = ["mini-dxn/cpu-pixels"]
 cpu-softbuffer = ["mini-dxn/cpu-softbuffer"]
+log_frame_times = ["mini-dxn/log_frame_times"]
+log_phase_times = ["mini-dxn/log_phase_times"]
 
 [dependencies]
 mini-dxn = { path = "../../packages/mini-dxn", default-features = false }
