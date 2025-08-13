@@ -80,11 +80,13 @@ impl WindowRenderer for VelloCpuSoftbufferWindowRenderer {
         let RenderState::Active(state) = &mut self.render_state else {
             return;
         };
+
+        debug_timer!(timer, feature = "log_frame_times");
+
         let Ok(mut surface_buffer) = state.surface.buffer_mut() else {
             return;
         };
-
-        debug_timer!(timer, feature = "log_frame_times");
+        timer.record_time("buffer_mut");
 
         // Paint
         let width = self.render_context.0.width();
