@@ -6413,6 +6413,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "todomvc"
+version = "0.1.0"
+dependencies = [
+ "blitz-dom",
+ "dioxus",
+ "idna_adapter",
+ "mini-dxn",
+]
+
+[[package]]
 name = "tokio"
 version = "1.45.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"

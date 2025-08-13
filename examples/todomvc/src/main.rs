@@ -4,7 +4,7 @@ use dioxus::prelude::*;
 use std::collections::HashMap;
 
 fn main() {
-    tracing_subscriber::fmt::init();
+    // tracing_subscriber::fmt::init();
 
     // Note: "mini-dxn" is a cut down version of the "dioxus-native" crate used internally for testing Blitz
     // In real apps you should prefer to use "dioxus-native" (or for a cross platform app, the main "dioxus" crate)
@@ -67,7 +67,7 @@ fn app() -> Element {
     };
 
     rsx!(body {
-        style { {include_str!("./assets/todomvc.css")} }
+        style { {include_str!("./todomvc.css")} }
         section { class: "todoapp",
             TodoHeader { todos }
             section { class: "main",
