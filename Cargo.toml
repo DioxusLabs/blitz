@@ -148,8 +148,12 @@ opt-level = 2
 
 [profile.small]
 inherits = "production"
-opt-level = "z"
+opt-level = "s"
 panic = "abort"
+
+[profile.tiny]
+inherits = "small"
+opt-level = "z"
 
 # This is a "virtual package"
 # It is not meant to be published, but is used so "cargo run --example XYZ" works properly
