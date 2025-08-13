@@ -40,6 +40,7 @@ pub mod node;
 mod config;
 mod debug;
 mod events;
+mod font_metrics;
 mod form;
 mod html;
 /// Integration of taffy and the DOM.

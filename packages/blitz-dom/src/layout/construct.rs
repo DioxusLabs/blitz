@@ -441,8 +441,9 @@ fn node_list_item_child(
             }
 
             // Create a parley tree builder
+            let mut font_ctx = doc.font_ctx.lock().unwrap();
             let mut builder = doc.layout_ctx.tree_builder(
-                &mut doc.font_ctx,
+                &mut font_ctx,
                 doc.viewport.scale(),
                 true,
                 &parley_style,
@@ -698,7 +699,7 @@ fn create_text_editor(doc: &mut BaseDocument, input_element_id: usize, is_multil
         styles.insert(StyleProperty::LineHeight(parley_style.line_height));
         styles.insert(StyleProperty::Brush(parley_style.brush));
 
-        editor.refresh_layout(&mut doc.font_ctx, &mut doc.layout_ctx);
+        editor.refresh_layout(&mut doc.font_ctx.lock().unwrap(), &mut doc.layout_ctx);
 
         element.special_data = SpecialElementData::TextInput(text_input_data);
     }
@@ -740,9 +741,10 @@ pub(crate) fn build_inline_layout(
     let root_line_height = resolve_line_height(parley_style.line_height, parley_style.font_size);
 
     // Create a parley tree builder
+    let mut font_ctx = doc.font_ctx.lock().unwrap();
     let mut builder =
         doc.layout_ctx
-            .tree_builder(&mut doc.font_ctx, doc.viewport.scale(), true, &parley_style);
+            .tree_builder(&mut font_ctx, doc.viewport.scale(), true, &parley_style);
 
     // Set whitespace collapsing mode
     let collapse_mode = root_node_style

@@ -1,4 +1,5 @@
 use crate::events::handle_dom_event;
+use crate::font_metrics::BlitzFontMetricsProvider;
 use crate::layout::construct::collect_layout_children;
 use crate::mutator::ViewportMut;
 use crate::net::{Resource, StylesheetLoader};
@@ -11,7 +12,6 @@ use crate::{
     DEFAULT_CSS, DocumentConfig, DocumentMutator, DummyHtmlParserProvider, ElementData,
     EventDriver, HtmlParserProvider, Node, NodeData, NoopEventHandler, TextNodeData,
 };
-use app_units::Au;
 use blitz_traits::devtools::DevtoolSettings;
 use blitz_traits::events::{DomEvent, HitResult, UiEvent};
 use blitz_traits::navigation::{DummyNavigationProvider, NavigationProvider};
@@ -28,8 +28,8 @@ use std::any::Any;
 use std::collections::{BTreeMap, Bound, HashMap, HashSet};
 use std::ops::{Deref, DerefMut};
 use std::str::FromStr;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex};
 use std::task::Context as TaskContext;
 use style::Atom;
 use style::attr::{AttrIdentifier, AttrValue};
@@ -39,7 +39,6 @@ use style::properties::ComputedValues;
 use style::properties::style_structs::Font;
 use style::queries::values::PrefersColorScheme;
 use style::selector_parser::ServoElementSnapshot;
-use style::servo::media_queries::FontMetricsProvider;
 use style::servo_arc::Arc as ServoArc;
 use style::values::GenericAtomIdent;
 use style::values::computed::Overflow;
@@ -78,32 +77,6 @@ pub trait Document: Deref<Target = BaseDocument> + DerefMut + 'static {
     }
 }
 
-// TODO: implement a proper font metrics provider
-#[derive(Debug, Clone)]
-struct DummyFontMetricsProvider;
-impl FontMetricsProvider for DummyFontMetricsProvider {
-    fn query_font_metrics(
-        &self,
-        _vertical: bool,
-        _font: &Font,
-        _base_size: style::values::computed::CSSPixelLength,
-        _flags: style::values::computed::font::QueryFontMetricsFlags,
-    ) -> style::font_metrics::FontMetrics {
-        Default::default()
-    }
-
-    fn base_size_for_generic(
-        &self,
-        generic: style::values::computed::font::GenericFontFamily,
-    ) -> style::values::computed::Length {
-        let size = match generic {
-            style::values::computed::font::GenericFontFamily::Monospace => 13.0,
-            _ => 16.0,
-        };
-        style::values::computed::Length::from(Au::from_f32_px(size))
-    }
-}
-
 pub struct BaseDocument {
     /// ID of the document
     id: usize,
@@ -134,7 +107,7 @@ pub struct BaseDocument {
 
     // Parley contexts
     /// A Parley font context
-    pub(crate) font_ctx: parley::FontContext,
+    pub(crate) font_ctx: Arc<Mutex<parley::FontContext>>,
     /// A Parley layout context
     pub(crate) layout_ctx: parley::LayoutContext<TextBrush>,
 
@@ -173,7 +146,7 @@ pub struct BaseDocument {
     pub html_parser_provider: Arc<dyn HtmlParserProvider>,
 }
 
-pub(crate) fn make_device(viewport: &Viewport) -> Device {
+pub(crate) fn make_device(viewport: &Viewport, font_ctx: Arc<Mutex<FontContext>>) -> Device {
     let width = viewport.window_size.0 as f32 / viewport.scale();
     let height = viewport.window_size.1 as f32 / viewport.scale();
     let viewport_size = euclid::Size2D::new(width, height);
@@ -184,7 +157,7 @@ pub(crate) fn make_device(viewport: &Viewport) -> Device {
         selectors::matching::QuirksMode::NoQuirks,
         viewport_size,
         device_pixel_ratio,
-        Box::new(DummyFontMetricsProvider),
+        Box::new(BlitzFontMetricsProvider { font_ctx }),
         ComputedValues::initial_values_with_font_override(Font::initial_values()),
         match viewport.color_scheme {
             ColorScheme::Light => PrefersColorScheme::Light,
@@ -199,8 +172,18 @@ impl BaseDocument {
         static ID_GENERATOR: AtomicUsize = AtomicUsize::new(1);
 
         let id = ID_GENERATOR.fetch_add(1, Ordering::SeqCst);
+
+        let font_ctx = config.font_ctx.unwrap_or_else(|| {
+            let mut font_ctx = FontContext::default();
+            font_ctx
+                .collection
+                .register_fonts(Blob::new(Arc::new(crate::BULLET_FONT) as _), None);
+            font_ctx
+        });
+        let font_ctx = Arc::new(Mutex::new(font_ctx));
+
         let viewport = config.viewport.unwrap_or_default();
-        let device = make_device(&viewport);
+        let device = make_device(&viewport, font_ctx.clone());
         let stylist = Stylist::new(device, QuirksMode::NoQuirks);
         let snapshots = SnapshotMap::new();
         let nodes = Box::new(Slab::new());
@@ -218,14 +201,6 @@ impl BaseDocument {
             .base_url
             .and_then(|url| DocumentUrl::from_str(&url).ok())
             .unwrap_or_default();
-
-        let font_ctx = config.font_ctx.unwrap_or_else(|| {
-            let mut font_ctx = FontContext::default();
-            font_ctx
-                .collection
-                .register_fonts(Blob::new(Arc::new(crate::BULLET_FONT) as _), None);
-            font_ctx
-        });
 
         let net_provider = config
             .net_provider
@@ -674,6 +649,8 @@ impl BaseDocument {
                 // TODO: Implement FontInfoOveride
                 // TODO: Investigate eliminating double-box
                 self.font_ctx
+                    .lock()
+                    .unwrap()
                     .collection
                     .register_fonts(Blob::new(Arc::new(bytes)) as _, None);
             }
@@ -912,7 +889,7 @@ impl BaseDocument {
 
     pub fn set_viewport(&mut self, viewport: Viewport) {
         self.viewport = viewport;
-        self.set_stylist_device(make_device(&self.viewport));
+        self.set_stylist_device(make_device(&self.viewport, self.font_ctx.clone()));
         self.scroll_viewport_by(0.0, 0.0); // Clamp scroll offset
     }
 

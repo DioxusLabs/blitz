@@ -56,9 +56,10 @@ smallvec = { workspace = true }
 # DioxusLabs dependencies
 taffy = { workspace = true }
 
-# Linebender dependencies
+# Linebender/Fontations dependencies
 accesskit = { workspace = true, optional = true }
 parley = { workspace = true }
+skrifa = { workspace = true }
 peniko = { workspace = true }
 color = { workspace = true }
 

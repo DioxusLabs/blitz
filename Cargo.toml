@@ -82,7 +82,7 @@ dioxus-cli-config = { version = "=0.7.0-alpha.1" }
 dioxus-devtools = { version = "=0.7.0-alpha.1" }
 taffy = { version = "0.9", default-features = false, features = ["std", "flexbox", "grid", "block_layout", "content_size", "calc"] }
 
-# Linebender + WGPU + SVG
+# Linebender + Fontations + WGPU + SVG
 color = "0.3"
 peniko = "0.4"
 kurbo = "0.11"

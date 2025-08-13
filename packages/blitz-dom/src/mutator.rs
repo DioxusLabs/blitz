@@ -210,7 +210,11 @@ impl DocumentMutator<'_> {
         if *attr == local_name!("value") {
             if let Some(input_data) = element.text_input_data_mut() {
                 // Update text input value
-                input_data.set_text(&mut self.doc.font_ctx, &mut self.doc.layout_ctx, value);
+                input_data.set_text(
+                    &mut self.doc.font_ctx.lock().unwrap(),
+                    &mut self.doc.layout_ctx,
+                    value,
+                );
             }
             return;
         }
@@ -259,7 +263,11 @@ impl DocumentMutator<'_> {
         // Update text input value
         if name.local == local_name!("value") {
             if let Some(input_data) = element.text_input_data_mut() {
-                input_data.set_text(&mut self.doc.font_ctx, &mut self.doc.layout_ctx, "");
+                input_data.set_text(
+                    &mut self.doc.font_ctx.lock().unwrap(),
+                    &mut self.doc.layout_ctx,
+                    "",
+                );
             }
         }
 
@@ -726,7 +734,8 @@ impl DerefMut for ViewportMut<'_> {
 }
 impl Drop for ViewportMut<'_> {
     fn drop(&mut self) {
-        self.doc.set_stylist_device(make_device(&self.doc.viewport));
+        self.doc
+            .set_stylist_device(make_device(&self.doc.viewport, self.doc.font_ctx.clone()));
         self.doc.scroll_viewport_by(0.0, 0.0); // Clamp scroll offset
     }
 }

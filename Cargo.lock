@@ -773,6 +773,7 @@ dependencies = [
  "peniko",
  "percent-encoding",
  "selectors",
+ "skrifa",
  "slab",
  "smallvec",
  "stylo",
