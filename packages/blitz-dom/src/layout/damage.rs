@@ -203,6 +203,20 @@ pub(crate) fn compute_layout_damage(old: &ComputedValues, new: &ComputedValues) 
 }
 
 impl BaseDocument {
+    pub(crate) fn invalidate_inline_contexts(&mut self) {
+        let root_node_id = self.root_node().id;
+        self.iter_subtree_mut(root_node_id, |node_id, doc| {
+            let node = &mut doc.nodes[node_id];
+            if node
+                .data
+                .downcast_element()
+                .is_some_and(|element| element.inline_layout_data.is_some())
+            {
+                node.insert_damage(CONSTRUCT_BOX);
+            }
+        });
+    }
+
     /// Walk the whole tree, converting styles to layout
     pub fn flush_styles_to_layout(&mut self, node_id: usize) {
         let doc_id = self.id();
