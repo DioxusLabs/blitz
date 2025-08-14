@@ -612,6 +612,7 @@ impl BaseDocument {
 
                         // Clear layout cache
                         node.cache.clear();
+                        node.insert_damage(CONSTRUCT_BOX);
                     }
                     ImageType::Background(idx) => {
                         if let Some(Some(bg_image)) = node
@@ -636,6 +637,7 @@ impl BaseDocument {
 
                         // Clear layout cache
                         node.cache.clear();
+                        node.insert_damage(CONSTRUCT_BOX);
                     }
                     ImageType::Background(idx) => {
                         if let Some(Some(bg_image)) = node
