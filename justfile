@@ -19,8 +19,8 @@ open *ARGS:
 bump *ARGS:
   cargo run --release --package bump {{ARGS}}
 
-todomvc:
-  cargo run --release --example todomvc
+todomvc *ARGS:
+  cargo run --release --package todomvc {{ARGS}}
 
 small:
   cargo build --profile small -p counter --no-default-features --features cpu,system_fonts
