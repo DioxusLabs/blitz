@@ -460,8 +460,10 @@ fn collect_complex_layout_children(
                     &PseudoElement::ServoAnonymousBox,
                     &parent_style,
                 );
-
-                let mut stylo_element_data = StyloElementData::default();
+                let mut stylo_element_data = StyloElementData {
+                    damage: ALL_DAMAGE,
+                    ..Default::default()
+                };
                 drop(parent_style);
 
                 stylo_element_data.styles.primary = Some(style);
