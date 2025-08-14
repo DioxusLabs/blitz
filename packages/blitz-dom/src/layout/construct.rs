@@ -459,7 +459,10 @@ fn collect_complex_layout_children(
                     &PseudoElement::ServoAnonymousBox,
                     &parent_style,
                 );
-                let mut stylo_element_data = StyloElementData::default();
+                let mut stylo_element_data = StyloElementData {
+                    damage: ALL_DAMAGE,
+                    ..Default::default()
+                };
                 stylo_element_data.styles.primary = Some(style);
                 stylo_element_data.set_restyled();
                 *doc.nodes[node_id].stylo_element_data.borrow_mut() = Some(stylo_element_data);
