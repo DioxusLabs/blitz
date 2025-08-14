@@ -656,6 +656,9 @@ impl BaseDocument {
                     .unwrap()
                     .collection
                     .register_fonts(Blob::new(Arc::new(bytes)) as _, None);
+
+                // TODO: see if we can only invalidate if resolved fonts may have changed
+                self.invalidate_inline_contexts();
             }
             Resource::None => {
                 // Do nothing
