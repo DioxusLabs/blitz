@@ -129,6 +129,29 @@ impl BaseDocument {
         }
     }
 
+    pub fn iter_layout_subtree_mut(
+        &mut self,
+        node_id: usize,
+        mut cb: impl FnMut(usize, &mut BaseDocument),
+    ) {
+        cb(node_id, self);
+        iter_subtree_mut_inner(self, node_id, &mut cb);
+        fn iter_subtree_mut_inner(
+            doc: &mut BaseDocument,
+            node_id: usize,
+            cb: &mut impl FnMut(usize, &mut BaseDocument),
+        ) {
+            let children = doc.nodes[node_id].layout_children.get_mut().take();
+            if let Some(children) = children {
+                for child_id in children.iter().cloned() {
+                    cb(child_id, doc);
+                    iter_subtree_mut_inner(doc, child_id, cb);
+                }
+                *doc.nodes[node_id].layout_children.get_mut() = Some(children);
+            }
+        }
+    }
+
     pub fn iter_children_and_pseudos_mut(
         &mut self,
         node_id: usize,

@@ -36,14 +36,22 @@ impl BaseDocument {
 
         let damage_for_children = RestyleDamage::empty();
         let children = mem::take(&mut self.nodes[node_id].children);
-        for child in children.iter() {
-            damage |= self.propagate_damage_flags(*child, damage_for_children);
+        let layout_children = mem::take(self.nodes[node_id].layout_children.get_mut());
+        if let Some(layout_children) = &layout_children {
+            for child in layout_children.iter() {
+                damage |= self.propagate_damage_flags(*child, damage_for_children);
+            }
+        } else {
+            for child in children.iter() {
+                damage |= self.propagate_damage_flags(*child, damage_for_children);
+            }
         }
 
         let node = &mut self.nodes[node_id];
 
         // Put children back
         node.children = children;
+        *node.layout_children.get_mut() = layout_children;
 
         // Compute damage to propagate to parent
         let mut damage_for_parent = damage & RestyleDamage::RELAYOUT;
@@ -205,7 +213,7 @@ pub(crate) fn compute_layout_damage(old: &ComputedValues, new: &ComputedValues) 
 impl BaseDocument {
     pub(crate) fn invalidate_inline_contexts(&mut self) {
         let root_node_id = self.root_node().id;
-        self.iter_subtree_mut(root_node_id, |node_id, doc| {
+        self.iter_layout_subtree_mut(root_node_id, |node_id, doc| {
             let node = &mut doc.nodes[node_id];
             if node
                 .data
