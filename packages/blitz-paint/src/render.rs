@@ -406,7 +406,13 @@ impl ElementCx<'_> {
                 });
 
             // Render text
-            crate::text::stroke_text(self.scale, scene, text_layout.layout.lines(), pos);
+            crate::text::stroke_text(
+                self.scale,
+                scene,
+                text_layout.layout.lines(),
+                self.context.dom,
+                pos,
+            );
         }
     }
 
@@ -436,6 +442,7 @@ impl ElementCx<'_> {
                 self.scale,
                 scene,
                 input_data.editor.try_layout().unwrap().lines(),
+                self.context.dom,
                 pos,
             );
         }
@@ -473,7 +480,7 @@ impl ElementCx<'_> {
                 y: pos.y + y_offset as f64,
             };
 
-            crate::text::stroke_text(self.scale, scene, layout.lines(), pos);
+            crate::text::stroke_text(self.scale, scene, layout.lines(), self.context.dom, pos);
         }
     }
 

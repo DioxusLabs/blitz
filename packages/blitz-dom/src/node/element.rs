@@ -1,4 +1,3 @@
-use color::{AlphaColor, Srgb};
 use cssparser::ParserInput;
 use markup5ever::{LocalName, QualName, local_name};
 use parley::{FontContext, LayoutContext};
@@ -525,27 +524,16 @@ impl std::fmt::Debug for ListItemLayout {
     }
 }
 
-#[derive(Debug, Clone, Default, PartialEq)]
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
 /// Parley Brush type for Blitz which contains a `peniko::Brush` and a Blitz node id
 pub struct TextBrush {
     /// The node id for the span
     pub id: usize,
-    /// Peniko brush for the span (represents text color)
-    pub brush: peniko::Brush,
 }
 
 impl TextBrush {
-    pub(crate) fn from_peniko_brush(brush: peniko::Brush) -> Self {
-        Self { id: 0, brush }
-    }
-    pub(crate) fn from_color(color: AlphaColor<Srgb>) -> Self {
-        Self::from_peniko_brush(peniko::Brush::Solid(color))
-    }
-    pub(crate) fn from_id_and_color(id: usize, color: AlphaColor<Srgb>) -> Self {
-        Self {
-            id,
-            brush: peniko::Brush::Solid(color),
-        }
+    pub(crate) fn from_id(id: usize) -> Self {
+        Self { id }
     }
 }
 
