@@ -6417,7 +6417,6 @@ dependencies = [
 name = "todomvc"
 version = "0.1.0"
 dependencies = [
- "blitz-dom",
  "dioxus",
  "idna_adapter",
  "mini-dxn",

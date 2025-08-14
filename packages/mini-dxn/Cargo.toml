@@ -16,6 +16,7 @@ publish = false
 [features]
 default = ["accessibility", "hot-reload", "tracing", "net", "svg", "gpu"]
 svg = ["blitz-dom/svg", "blitz-paint/svg"]
+system_fonts = ["blitz-dom/system_fonts"]
 net = ["dep:tokio", "dep:blitz-net"]
 accessibility = ["blitz-shell/accessibility", "blitz-dom/accessibility"]
 autofocus = ["blitz-dom/autofocus"]
