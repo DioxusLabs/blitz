@@ -1,10 +1,9 @@
 //! Conversion functions from Stylo types to Parley types
 use std::borrow::Cow;
 
-use style::values::computed::{Length, TextDecorationLine};
+use style::values::computed::Length;
 
 use crate::node::TextBrush;
-use crate::util::ToColorColor;
 
 // Module of type aliases so we can refer to stylo types with nicer names
 pub(crate) mod stylo {
@@ -108,7 +107,6 @@ pub(crate) fn style(
     style: &stylo::ComputedValues,
 ) -> parley::TextStyle<'static, TextBrush> {
     let font_styles = style.get_font();
-    let text_styles = style.get_text();
     let itext_styles = style.get_inherited_text();
 
     // Convert font size and line height
@@ -161,18 +159,6 @@ pub(crate) fn style(
         })
         .collect();
 
-    // Convert text colour
-    let color = itext_styles.color.as_color_color();
-
-    // Text decorations
-    let text_decoration_line = text_styles.text_decoration_line;
-    let decoration_brush = style
-        .get_text()
-        .text_decoration_color
-        .as_absolute()
-        .map(ToColorColor::as_color_color)
-        .map(TextBrush::from_color);
-
     // Wrapping and breaking
     let word_break = match itext_styles.word_break {
         stylo::WordBreak::Normal => parley::WordBreakStrength::Normal,
@@ -195,19 +181,27 @@ pub(crate) fn style(
         font_variations: parley::FontSettings::List(Cow::Owned(font_variations)),
         font_features: parley::FontSettings::List(Cow::Borrowed(&[])),
         locale: Default::default(),
-        brush: TextBrush::from_id_and_color(span_id, color),
-        has_underline: text_decoration_line.contains(TextDecorationLine::UNDERLINE),
-        underline_offset: Default::default(),
-        underline_size: Default::default(),
-        underline_brush: decoration_brush.clone(),
-        has_strikethrough: text_decoration_line.contains(TextDecorationLine::LINE_THROUGH),
-        strikethrough_offset: Default::default(),
-        strikethrough_size: Default::default(),
-        strikethrough_brush: decoration_brush,
         line_height,
         word_spacing: Default::default(),
         letter_spacing,
         overflow_wrap,
         word_break,
+
+        // Contains NodeId
+        brush: TextBrush::from_id(span_id),
+
+        // We avoid sending these styles through Parley because they don't affect layout
+        // and handling them separately allows us to update them without rebuilding the Parley layout.
+        //
+        // Instead of setting them here we pass the NodeId in the `brush` field and use that to read these
+        // styles lazily when rendering.
+        has_underline: Default::default(),
+        underline_offset: Default::default(),
+        underline_size: Default::default(),
+        underline_brush: Default::default(),
+        has_strikethrough: Default::default(),
+        strikethrough_offset: Default::default(),
+        strikethrough_size: Default::default(),
+        strikethrough_brush: Default::default(),
     }
 }
