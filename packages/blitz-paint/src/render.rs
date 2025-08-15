@@ -19,7 +19,9 @@ use blitz_dom::{BaseDocument, ElementData, Node, local_name};
 use blitz_traits::devtools::DevtoolSettings;
 
 use euclid::Transform3D;
+use style::values::computed::length_percentage::Unpacked;
 use style::values::computed::BorderCornerRadius;
+use style::values::specified::percentage::ToPercentage;
 use style::{
     dom::TElement,
     properties::{
@@ -34,7 +36,27 @@ use style::{
 
 use kurbo::{self, Affine, Insets, Point, Rect, Stroke, Vec2};
 use peniko::{self, Fill};
-use style::values::generics::color::GenericColor;
+use style::values::generics::{
+    color::GenericColor, 
+    position::GenericPositionOrAuto,
+    basic_shape::{
+        GenericClipPath, 
+        ShapeGeometryBox, 
+        ShapeBox, 
+        GenericBasicShape, 
+        InsetRect,
+        ShapeRadius
+    }
+};
+use style::values::computed::{
+    angle::Angle, 
+    position::Position, 
+    url::ComputedUrl,
+    length_percentage::{
+        LengthPercentage,
+        NonNegativeLengthPercentage,
+    },
+};
 use taffy::Layout;
 
 /// A short-lived struct which holds a bunch of parameters for rendering a scene so
@@ -224,7 +246,135 @@ impl BlitzDomPainter<'_> {
 
         // TODO: allow layers with opacity to be unclipped (overflow: visible)
         let wants_layer = should_clip | has_opacity;
-        let clip = &cx.frame.padding_box_path();
+
+        // Gaurav (get the clip_shape path here)
+        type StyloBasicShape = GenericBasicShape<
+            Angle,
+            Position,
+            LengthPercentage,
+            NonNegativeLengthPercentage,
+            InsetRect<LengthPercentage, NonNegativeLengthPercentage>
+        >;
+        type StyloClipPath = GenericClipPath<StyloBasicShape, ComputedUrl>;
+        let stylo_clip_path: StyloClipPath = node.primary_styles().unwrap().clone_clip_path();
+
+        // Gaurav map the clip_shape to kurbo shape here
+        let clip_path = match stylo_clip_path {
+            GenericClipPath::None => {
+                &cx.frame.padding_box_path()
+            },
+            // Gaurav this can be done using the svg support in stylo
+            GenericClipPath::Url(_u) => {
+                &cx.frame.padding_box_path()
+            },
+            GenericClipPath::Box(geometry_box) => {
+                match geometry_box {
+                    ShapeGeometryBox::ShapeBox(b) => {
+                        match b {
+                            ShapeBox::BorderBox => &cx.frame.border_box_path(),
+                            ShapeBox::PaddingBox => &cx.frame.padding_box_path(),
+                            ShapeBox::ContentBox => &cx.frame.content_box_path(),
+                            ShapeBox::MarginBox => &cx.frame.border_box_path(),
+                        }
+                    }
+                    _ => {
+                        &cx.frame.padding_box_path()
+                    },
+                }
+            },
+            GenericClipPath::Shape(generic_basic_shape, geometry_box) => {
+                let (box_width, box_height) = match geometry_box {
+                    ShapeGeometryBox::ShapeBox(b) => {
+                        match b {
+                            ShapeBox::BorderBox => (
+                                cx.frame.border_box.width(),
+                                cx.frame.border_box.height(),
+                            ),
+                            ShapeBox::PaddingBox => (
+                                cx.frame.padding_box.width(),
+                                cx.frame.padding_box.height(),
+                            ),
+                            ShapeBox::ContentBox => (
+                                cx.frame.content_box.width(),
+                                cx.frame.content_box.height(),
+                            ),
+                            ShapeBox::MarginBox => (
+                                cx.frame.border_box.width(),
+                                cx.frame.border_box.height(),
+                            ),
+                        }
+                    }
+                    _ => {
+                        (
+                            cx.frame.padding_box.width(),
+                            cx.frame.padding_box.height(),
+                        )
+                    },
+                };
+                match *generic_basic_shape {
+                   GenericBasicShape::Circle(c) => {
+                        let radius = match c.radius {
+                            ShapeRadius::Length(radius) => {
+                                match radius.0.unpack() {
+                                    Unpacked::Length(l) => l.px() as f64,
+                                    Unpacked::Percentage(p) => {
+                                        box_width * p.to_percentage() as f64 / 2.0
+                                    },
+                                    Unpacked::Calc(calc) => {
+                                        calc.resolve(CSSPixelLength::new(box_width as f32)).px() as f64 / 2.0
+                                    },
+                                }
+                            },
+                            _ => {
+                                let radius = box_width as f64 / 2.0;
+                                radius
+                            }
+                        };
+                        let center: Point = match c.position {
+                            GenericPositionOrAuto::Position(pos) => {
+                                let hor = match pos.horizontal.unpack() {
+                                    Unpacked::Length(l) => l.px() as f64,
+                                    Unpacked::Percentage(p) => {
+                                        box_width * p.to_percentage() as f64 / 2.0
+                                    },
+                                    Unpacked::Calc(calc) => {
+                                        calc.resolve(CSSPixelLength::new(box_width as f32)).px() as f64 / 2.0
+                                    }
+                                };
+
+                                let vert = match pos.vertical.unpack() {
+                                    Unpacked::Length(l) => l.px() as f64,
+                                    Unpacked::Percentage(p) => {
+                                        box_height * p.to_percentage() as f64 / 2.0
+                                    },
+                                    Unpacked::Calc(calc) => {
+                                        calc.resolve(CSSPixelLength::new(box_height as f32)).px() as f64 / 2.0
+                                    }
+                                };
+
+                                Point {
+                                    x: hor + cx.frame.padding_box.origin().x as f64,
+                                    y: vert + cx.frame.padding_box.origin().y as f64,
+                                }
+                            },
+                            GenericPositionOrAuto::Auto => {
+                                let center_x = box_width / 2.0;
+                                let center_y = box_height / 2.0;
+                                Point {
+                                    x: center_x as f64,
+                                    y: center_y as f64,
+                                }
+                            }
+                        };
+                        &cx.frame.circle_path(center, radius)
+                    },
+                   _ => &cx.frame.padding_box_path()
+                }
+            },
+        };
+        // Gaurav this path will become the kurbo path
+        // let clip = &cx.frame.padding_box_path();
+        let clip = clip_path;
 
         maybe_with_layer(scene, wants_layer, opacity, cx.transform, clip, |scene| {
             cx.draw_inset_box_shadow(scene);
