@@ -17,8 +17,25 @@ fn app() -> Element {
     }
 }
 
+// const CSS: &str = r#"
+// .image {
+//     clip-path: circle(40%);
+// }
+// "#;
+
+// const CSS: &str = r#"
+// .image {
+//     clip-path: ellipse(430px 440px at 40% 10%);
+// }
+// "#;
+
+// const CSS: &str = r#"
+// .image {
+//     clip-path: polygon(50% 0, 100% 50%, 50% 100%, 0 50%);
+// }
+
 const CSS: &str = r#"
 .image {
-    clip-path: circle(40%);
+    clip-path: rect(5px 145px 160px 5px round 20%);
 }
 "#;

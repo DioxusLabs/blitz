@@ -368,7 +368,124 @@ impl BlitzDomPainter<'_> {
                         };
                         &cx.frame.circle_path(center, radius)
                     },
-                   _ => &cx.frame.padding_box_path()
+                    GenericBasicShape::Ellipse(e) => {
+                        let center: Point = match e.position {
+                            GenericPositionOrAuto::Position(pos) => {
+                                let hor = match pos.horizontal.unpack() {
+                                    Unpacked::Length(l) => l.px() as f64,
+                                    Unpacked::Percentage(p) => box_width * p.to_percentage() as f64 / 2.0,
+                                    Unpacked::Calc(calc) => calc.resolve(CSSPixelLength::new(box_width as f32)).px() as f64 / 2.0,
+                                };
+
+                                let vert = match pos.vertical.unpack() {
+                                    Unpacked::Length(l) => l.px() as f64,
+                                    Unpacked::Percentage(p) => box_height * p.to_percentage() as f64 / 2.0,
+                                    Unpacked::Calc(calc) => calc.resolve(CSSPixelLength::new(box_height as f32)).px() as f64 / 2.0,
+                                };
+
+                                Point {
+                                    x: hor + cx.frame.padding_box.origin().x as f64,
+                                    y: vert + cx.frame.padding_box.origin().y as f64,
+                                }
+                            },
+                            GenericPositionOrAuto::Auto => {
+                                let center_x = box_width / 2.0;
+                                let center_y = box_height / 2.0;
+                                Point {
+                                    x: center_x as f64,
+                                    y: center_y as f64,
+                                }
+                            }
+                        };
+                        let radius_x = match e.semiaxis_x {
+                            ShapeRadius::Length(radius) => {
+                                match radius.0.unpack() {
+                                    Unpacked::Length(l) => l.px() as f64,
+                                    Unpacked::Percentage(p) => box_width * p.to_percentage() as f64 / 2.0,
+                                    Unpacked::Calc(calc) => calc.resolve(CSSPixelLength::new(box_width as f32)).px() as f64 / 2.0,
+                                }
+                            },
+                            _ => box_width as f64 / 2.0,
+                        };
+                        let radius_y = match e.semiaxis_y {
+                            ShapeRadius::Length(radius) => {
+                                match radius.0.unpack() {
+                                    Unpacked::Length(l) => l.px() as f64,
+                                    Unpacked::Percentage(p) => box_height * p.to_percentage() as f64 / 2.0,
+                                    Unpacked::Calc(calc) => calc.resolve(CSSPixelLength::new(box_height as f32)).px() as f64 / 2.0,
+                                }
+                            },
+                            _ => box_height as f64 / 2.0,
+                        };
+                        &cx.frame.ellipse_path(center, Vec2 { x: radius_x, y: radius_y })
+                    },
+                    GenericBasicShape::Rect(r) => {
+                        let x0 = match r.rect.0.unpack() {
+                            Unpacked::Length(l) => l.px() as f64,
+                            Unpacked::Percentage(p) => box_width * p.to_percentage() as f64,
+                            Unpacked::Calc(calc) => calc.resolve(CSSPixelLength::new(box_width as f32)).px() as f64 / 2.0,
+                        };
+                        let y0 = match r.rect.1.unpack() {
+                            Unpacked::Length(l) => l.px() as f64,
+                            Unpacked::Percentage(p) => box_height * p.to_percentage() as f64,
+                            Unpacked::Calc(calc) => calc.resolve(CSSPixelLength::new(box_height as f32)).px() as f64 / 2.0,
+                        };
+                        let x1 = match r.rect.2.unpack() {
+                            Unpacked::Length(l) => l.px() as f64,
+                            Unpacked::Percentage(p) => box_width * p.to_percentage() as f64,
+                            Unpacked::Calc(calc) => calc.resolve(CSSPixelLength::new(box_width as f32)).px() as f64 / 2.0,
+                        };
+                        let y1 = match r.rect.3.unpack() {
+                            Unpacked::Length(l) => l.px() as f64,
+                            Unpacked::Percentage(p) => box_height * p.to_percentage() as f64,
+                            Unpacked::Calc(calc) => calc.resolve(CSSPixelLength::new(box_height as f32)).px() as f64 / 2.0,
+                        };
+                        // Kurbo doesn't support rounded rect with elliptical radii,
+                        // so we ignore the y axes right now.
+                        let r_top_left = match r.round.top_left.0.width().0.unpack() {
+                            Unpacked::Length(l) => l.px() as f64,
+                            Unpacked::Percentage(p) => box_width * p.to_percentage() as f64 / 2.0,
+                            Unpacked::Calc(calc) => calc.resolve(CSSPixelLength::new(box_width as f32)).px() as f64 / 2.0,
+                        };
+                        let r_top_right = match r.round.top_right.0.width().0.unpack() {
+                            Unpacked::Length(l) => l.px() as f64,
+                            Unpacked::Percentage(p) => box_width * p.to_percentage() as f64 / 2.0,
+                            Unpacked::Calc(calc) => calc.resolve(CSSPixelLength::new(box_width as f32)).px() as f64 / 2.0,
+                        };
+                        let r_bottom_left = match r.round.bottom_left.0.width().0.unpack() {
+                            Unpacked::Length(l) => l.px() as f64,
+                            Unpacked::Percentage(p) => box_width * p.to_percentage() as f64 / 2.0,
+                            Unpacked::Calc(calc) => calc.resolve(CSSPixelLength::new(box_width as f32)).px() as f64 / 2.0,
+                        };
+                        let r_bottom_right = match r.round.bottom_right.0.width().0.unpack() {
+                            Unpacked::Length(l) => l.px() as f64,
+                            Unpacked::Percentage(p) => box_width * p.to_percentage() as f64 / 2.0,
+                            Unpacked::Calc(calc) => calc.resolve(CSSPixelLength::new(box_width as f32)).px() as f64 / 2.0,
+                        };
+                        &cx.frame.rect_path(x0, y0, x1, y1, (r_top_left, r_top_right, r_bottom_right, r_bottom_left))
+                    },
+                    // GenericBasicShape::PathOrShape(path) => {
+                    // }
+                    GenericBasicShape::Polygon(polygon) => {
+                        let points: Vec<Point> = polygon.coordinates
+                            .iter()
+                            .map(|point| {
+                                let x = match point.0.unpack() {
+                                    Unpacked::Length(l) => l.px() as f64,
+                                    Unpacked::Percentage(p) => box_width * p.to_percentage() as f64 / 2.0,
+                                    Unpacked::Calc(calc) => calc.resolve(CSSPixelLength::new(box_width as f32)).px() as f64 / 2.0,
+                                };
+                                let y = match point.1.unpack() {
+                                    Unpacked::Length(l) => l.px() as f64,
+                                    Unpacked::Percentage(p) => box_height * p.to_percentage() as f64 / 2.0,
+                                    Unpacked::Calc(calc) => calc.resolve(CSSPixelLength::new(box_height as f32)).px() as f64 / 2.0,
+                                };
+                                Point { x, y }
+                            })
+                            .collect();
+                        &cx.frame.polygon_path(&points)
+                    },
+                    _ => &cx.frame.padding_box_path()
                 }
             },
         };

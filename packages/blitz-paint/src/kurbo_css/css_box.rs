@@ -1,4 +1,4 @@
-use kurbo::{Arc, BezPath, Circle, Ellipse, Insets, PathEl, Point, Rect, Shape as _, Vec2};
+use kurbo::{Arc, BezPath, Circle, Ellipse, Insets, PathEl, Point, Rect, RoundedRect, Shape as _, Vec2};
 use std::{f64::consts::FRAC_PI_2, f64::consts::PI};
 
 use super::non_uniform_radii::NonUniformRoundedRectRadii;
@@ -176,6 +176,28 @@ impl CssBox {
 
     pub fn circle_path(&self, center: Point, radius: f64) -> BezPath {
         let path = Circle::new(center, radius).to_path(BezPath::TOLERANCE);
+        path
+    }
+
+    pub fn ellipse_path(&self, center: Point, radii: Vec2) -> BezPath {
+        let path = Ellipse::new(center, radii, 0.0).to_path(BezPath::TOLERANCE);
+        path
+    }
+
+    pub fn polygon_path(&self, points: &[Point]) -> BezPath {
+        let mut path = BezPath::new();
+        if !points.is_empty() {
+            path.move_to(points[0]);
+            for point in points.iter().skip(1) {
+                path.line_to(*point);
+            }
+            path.close_path();
+        }
+        path
+    }
+
+    pub fn rect_path(&self, x0: f64, y0: f64, x1: f64, y1: f64, radii: (f64, f64, f64, f64)) -> BezPath {
+        let path = RoundedRect::new(x0, y0, x1, y1, radii).to_path(BezPath::TOLERANCE);
         path
     }
 
