@@ -15,7 +15,7 @@ log_phase_times = ["mini-dxn/log_phase_times"]
 
 [dependencies]
 mini-dxn = { path = "../../packages/mini-dxn", default-features = false, features = ["net", "svg", "system_fonts"] }
-dioxus = { version = "=0.7.0-alpha.1", default-features = false, features = ["html", "hooks", "macro", "signals"] }
+dioxus = { version = "=0.7.0-rc.0", default-features = false, features = ["html", "hooks", "macro", "signals"] }
 
 # Disable unicode URL support
 # See https://github.com/hsivonen/idna_adapter
