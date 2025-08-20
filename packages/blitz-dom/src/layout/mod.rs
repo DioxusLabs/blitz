@@ -262,6 +262,7 @@ impl LayoutPartialTree for BaseDocument {
                         let computed = replaced_measure_function(
                             inputs.known_dimensions,
                             inputs.parent_size,
+                            inputs.available_space,
                             &replaced_context,
                             &node.style,
                             false,
