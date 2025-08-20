@@ -133,7 +133,7 @@ impl FontMetricsProvider for BlitzFontMetricsProvider {
         let zero_advance = advance_of(&mut query, '0', font_size, &variations);
         let ic_advance = advance_of(&mut query, '\u{6C34}', font_size, &variations);
         let (ascent, x_height, cap_height) =
-            metrics_of(&mut query, ' ', font_size, &variations).unwrap();
+            metrics_of(&mut query, ' ', font_size, &variations).unwrap_or((0.0, None, None));
 
         FontMetrics {
             ascent: CSSPixelLength::new(ascent),
