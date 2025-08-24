@@ -18,11 +18,16 @@ pub struct SubtestResult {
     pub errors: Vec<String>,
 }
 
-#[allow(clippy::too_many_arguments)]
 pub fn process_test_file(
     ctx: &mut ThreadCtx,
     relative_path: &str,
-) -> (TestKind, TestFlags, SubtestCounts, Vec<SubtestResult>) {
+) -> (
+    TestKind,
+    TestFlags,
+    TestStatus,
+    SubtestCounts,
+    Vec<SubtestResult>,
+) {
     info!("Processing test file: {relative_path}");
 
     let file_contents = fs::read_to_string(ctx.wpt_dir.join(relative_path)).unwrap();
@@ -68,7 +73,8 @@ pub fn process_test_file(
             &mut flags,
         );
 
-        return (TestKind::Ref, flags, counts, Vec::new());
+        let status = counts.as_status();
+        return (TestKind::Ref, flags, status, counts, Vec::new());
     }
 
     // Attr Test
@@ -84,15 +90,17 @@ pub fn process_test_file(
 
         println!("{selector}");
 
-        let (counts, results) = process_attr_test(ctx, &selector, &file_contents, relative_path);
+        let (status, counts, results) =
+            process_attr_test(ctx, &selector, &file_contents, relative_path);
 
-        return (TestKind::Attr, flags, counts, results);
+        return (TestKind::Attr, flags, status, counts, results);
     }
 
     // TODO: Handle other test formats.
     (
         TestKind::Unknown,
         flags,
+        TestStatus::Skip,
         SubtestCounts::ZERO_OF_ZERO,
         Vec::new(),
     )

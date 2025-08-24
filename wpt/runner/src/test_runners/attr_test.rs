@@ -16,14 +16,15 @@ pub fn process_attr_test(
     subtest_selector: &str,
     html: &str,
     relative_path: &str,
-) -> (SubtestCounts, Vec<SubtestResult>) {
+) -> (TestStatus, SubtestCounts, Vec<SubtestResult>) {
     let mut document = parse_and_resolve_document(ctx, html, relative_path);
 
     let Ok(subtest_roots) = document.query_selector_all(subtest_selector) else {
         panic!("Err parsing subtest selector \"{subtest_selector}\"");
     };
     if subtest_roots.is_empty() {
-        panic!("No matching nodes found for subtest selector \"{subtest_selector}\"");
+        println!("No matching nodes found for subtest selector \"{subtest_selector}\"");
+        return (TestStatus::Fail, SubtestCounts::ZERO_OF_ZERO, Vec::new());
     }
 
     let subtest_count = subtest_roots.len() as u32;
@@ -61,7 +62,8 @@ pub fn process_attr_test(
         total: subtest_count,
     };
 
-    (subtest_counts, subtest_results)
+    let status = subtest_counts.as_status();
+    (status, subtest_counts, subtest_results)
 }
 
 pub fn check_node_layout(node: &Node) -> Vec<String> {

@@ -487,8 +487,7 @@ fn main() {
                 panic_backtrace::backtrace_cutoff(|| process_test_file(&mut ctx, &relative_path))
             }));
             let (kind, flags, status, subtest_counts, panic_info, subtest_results) = match result {
-                Ok((kind, flags, subtest_counts, subtest_results)) => {
-                    let status = subtest_counts.as_status();
+                Ok((kind, flags, status, subtest_counts, subtest_results)) => {
                     (kind, flags, status, subtest_counts, None, subtest_results)
                 }
                 Err(_) => {
