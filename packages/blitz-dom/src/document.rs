@@ -989,7 +989,7 @@ impl BaseDocument {
 
         fn resolve_layout_children_recursive(doc: &mut BaseDocument, node_id: usize) {
             let mut damage = doc.nodes[node_id].damage().unwrap_or(ALL_DAMAGE);
-            let flags = doc.nodes[node_id].flags;
+            let _flags = doc.nodes[node_id].flags;
 
             if damage.intersects(CONSTRUCT_FC | CONSTRUCT_BOX) {
                 //} || flags.contains(NodeFlags::IS_INLINE_ROOT) {
