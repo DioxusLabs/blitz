@@ -115,6 +115,9 @@ pub struct Node {
     pub scroll_offset: kurbo::Point,
 }
 
+unsafe impl Send for Node {}
+unsafe impl Sync for Node {}
+
 impl Node {
     pub(crate) fn new(
         tree: *mut Slab<Node>,
