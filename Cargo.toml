@@ -86,7 +86,7 @@ taffy = { version = "0.9", default-features = false, features = ["std", "flexbox
 color = "0.3"
 peniko = "0.4"
 kurbo = "0.11"
-parley = { version = "0.5", default-features = false, features = ["std"] }
+parley = { git = "https://github.com/linebender/parley", rev = "29bcffe572cc726f976c76a2a607c69a123164bc", default-features = false, features = ["std"] }
 skrifa = { version = "0.31" } # Should match parley version
 wgpu = "24"
 softbuffer = "0.4"
