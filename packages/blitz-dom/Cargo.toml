@@ -29,6 +29,7 @@ accessibility = ["accesskit"]
 system_fonts = ["parley/system"]
 autofocus = []
 file_input = []
+incremental = []
 log_phase_times = ["debug_timer/enable"]
 
 [dependencies]

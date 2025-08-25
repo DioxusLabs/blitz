@@ -1,6 +1,6 @@
+use crate::NON_INCREMENTAL;
 use crate::{BaseDocument, net::ImageHandler, node::BackgroundImageData, util::ImageType};
 use blitz_traits::net::Request;
-use std::mem;
 use style::properties::ComputedValues;
 use style::properties::generated::longhands::position::computed_value::T as Position;
 use style::selector_parser::RestyleDamage;
@@ -24,6 +24,7 @@ pub(crate) const ALL_DAMAGE: RestyleDamage =
     RestyleDamage::from_bits_retain(0b_0000_0000_0111_1111);
 
 impl BaseDocument {
+    #[cfg(feature = "incremental")]
     pub(crate) fn propagate_damage_flags(
         &mut self,
         node_id: usize,
@@ -35,8 +36,8 @@ impl BaseDocument {
         damage |= damage_from_parent;
 
         let damage_for_children = RestyleDamage::empty();
-        let children = mem::take(&mut self.nodes[node_id].children);
-        let layout_children = mem::take(self.nodes[node_id].layout_children.get_mut());
+        let children = std::mem::take(&mut self.nodes[node_id].children);
+        let layout_children = std::mem::take(self.nodes[node_id].layout_children.get_mut());
         let use_layout_children = self.nodes[node_id].should_traverse_layout_children();
         if use_layout_children {
             let layout_children = layout_children.as_ref().unwrap();
@@ -92,6 +93,7 @@ impl BaseDocument {
     }
 }
 
+#[cfg(feature = "incremental")]
 fn is_fc_root(style: &ComputedValues) -> bool {
     let display = style.clone_display();
     let display_inside = display.inside();
@@ -294,6 +296,12 @@ impl BaseDocument {
                     // Element will always exist due to resize_with above
                     elem_bgs[idx] = new_bg_image;
                 }
+            }
+
+            // In non-incremental mode we unconditionally clear the Taffy cache.
+            // In incremental mode this is handled as part of damage propagation.
+            if NON_INCREMENTAL {
+                node.cache.clear();
             }
 
             node.style.display
