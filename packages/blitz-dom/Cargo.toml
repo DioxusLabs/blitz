@@ -66,6 +66,7 @@ slab = { workspace = true }
 bitflags = { workspace = true }
 tracing = { workspace = true, optional = true }
 fastrand = { workspace = true }
+rayon = { workspace = true }
 
 # Media & Decoding
 image = { workspace = true }

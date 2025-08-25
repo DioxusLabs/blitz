@@ -2,7 +2,9 @@ use core::str;
 use std::sync::Arc;
 
 use markup5ever::{QualName, local_name, ns};
-use parley::{InlineBox, StyleProperty, TreeBuilder, WhiteSpaceCollapse};
+use parley::{
+    FontContext, InlineBox, LayoutContext, StyleProperty, TreeBuilder, WhiteSpaceCollapse,
+};
 use slab::Slab;
 use style::{
     data::ElementData as StyloElementData,
@@ -28,6 +30,29 @@ use super::{damage::ALL_DAMAGE, list::collect_list_item_children, table::build_t
 
 const DUMMY_NAME: QualName = qual_name!("div", html);
 
+#[derive(Copy, Clone, PartialEq, Eq, Hash, Debug)]
+pub(crate) enum ConstructionTaskKind {
+    /// Construction a Parley inline layout for a subtree
+    InlineLayout,
+    // Construct an SVG for a subtree
+    // Svg,
+}
+
+#[derive(Copy, Clone, PartialEq, Eq, Hash, Debug)]
+pub(crate) struct ConstructionTask {
+    pub(crate) node_id: usize,
+    pub(crate) kind: ConstructionTaskKind,
+}
+
+pub(crate) struct ConstructionTaskResult {
+    pub(crate) node_id: usize,
+    pub(crate) data: ConstructionTaskResultData,
+}
+
+pub(crate) enum ConstructionTaskResultData {
+    InlineLayout(Box<TextLayout>),
+}
+
 fn push_children_and_pseudos(layout_children: &mut Vec<usize>, node: &Node) {
     if let Some(before) = node.before {
         layout_children.push(before);
@@ -43,7 +68,7 @@ fn resolve_line_height(line_height: parley::LineHeight, font_size: f32) -> f32 {
     match line_height {
         parley::LineHeight::FontSizeRelative(relative) => relative * font_size,
         parley::LineHeight::Absolute(absolute) => absolute,
-        parley::LineHeight::MetricsRelative(_) => unreachable!(),
+        parley::LineHeight::MetricsRelative(relative) => relative * font_size, //unreachable!(),
     }
 }
 
@@ -199,23 +224,25 @@ pub(crate) fn collect_layout_children(
 
             // TODO: fix display:contents
             if all_inline {
-                let (inline_layout, ilayout_children) = build_inline_layout(doc, container_node_id);
+                // Queue node for inline layout construction. Deferring construction of inline layouts to a
+                // dedicated phase allows us to multithread the expensive text shaping step.
+                doc.deferred_construction_nodes.push(ConstructionTask {
+                    node_id: container_node_id,
+                    kind: ConstructionTaskKind::InlineLayout,
+                });
                 doc.nodes[container_node_id]
                     .flags
                     .insert(NodeFlags::IS_INLINE_ROOT);
-                doc.nodes[container_node_id]
-                    .data
-                    .downcast_element_mut()
-                    .unwrap()
-                    .inline_layout_data = Some(Box::new(inline_layout));
-                if let Some(before) = doc.nodes[container_node_id].before {
-                    layout_children.push(before);
-                }
-                layout_children.extend_from_slice(&ilayout_children);
-                if let Some(after) = doc.nodes[container_node_id].after {
-                    layout_children.push(after);
-                }
+                find_inline_layout_embedded_boxes(doc, container_node_id, layout_children);
                 return;
+
+                // if let Some(before) = doc.nodes[container_node_id].before {
+                //     layout_children.push(before);
+                // }
+                // layout_children.extend_from_slice(&ilayout_children);
+                // if let Some(after) = doc.nodes[container_node_id].after {
+                //     layout_children.push(after);
+                // }
             }
 
             // If the children are either all inline or all block then simply return the regular children
@@ -544,20 +571,134 @@ fn create_checkbox_input(doc: &mut BaseDocument, input_element_id: usize) {
     }
 }
 
-pub(crate) fn build_inline_layout(
+/// Find and return the "layout_children" (inline boxes) for an inline layout
+/// without actually constructing the layout. This allows us to defer the expensive
+/// construction of the Parley layout (which invokes text shaping) to a paralell phase.
+pub(crate) fn find_inline_layout_embedded_boxes(
     doc: &mut BaseDocument,
+    inline_context_root_node_id: usize,
+    layout_children: &mut Vec<usize>,
+) {
+    flush_inline_pseudos_recursive(doc, inline_context_root_node_id);
+
+    let root_node = &doc.nodes[inline_context_root_node_id];
+    for child_id in root_node.children.iter().copied() {
+        find_inline_layout_embedded_boxes_recursive(
+            &doc.nodes,
+            inline_context_root_node_id,
+            child_id,
+            layout_children,
+        );
+    }
+
+    fn flush_inline_pseudos_recursive(doc: &mut BaseDocument, node_id: usize) {
+        doc.iter_children_mut(node_id, |child_id, doc| {
+            flush_pseudo_elements(doc, child_id);
+            let display = doc.nodes[node_id]
+                .display_style()
+                .unwrap_or(Display::inline());
+            let do_recurse = match (display.outside(), display.inside()) {
+                (DisplayOutside::None, DisplayInside::Contents) => true,
+                (DisplayOutside::Inline, DisplayInside::Flow) => true,
+                (_, _) => false,
+            };
+            if do_recurse {
+                flush_inline_pseudos_recursive(doc, child_id);
+            }
+        });
+    }
+
+    fn find_inline_layout_embedded_boxes_recursive(
+        nodes: &Slab<Node>,
+        parent_id: usize,
+        node_id: usize,
+        layout_children: &mut Vec<usize>,
+    ) {
+        let node = &nodes[node_id];
+
+        // Set layout_parent for node.
+        node.layout_parent.set(Some(parent_id));
+
+        match &node.data {
+            NodeData::Element(element_data) | NodeData::AnonymousBlock(element_data) => {
+                // if the input type is hidden, hide it
+                if *element_data.name.local == *"input" {
+                    if let Some("hidden") = element_data.attr(local_name!("type")) {
+                        return;
+                    }
+                }
+
+                let display = node.display_style().unwrap_or(Display::inline());
+
+                match (display.outside(), display.inside()) {
+                    (DisplayOutside::None, DisplayInside::None) => {
+                        node.remove_damage(CONSTRUCT_DESCENDENT | CONSTRUCT_FC | CONSTRUCT_BOX);
+                    }
+                    (DisplayOutside::None, DisplayInside::Contents) => {
+                        for child_id in node.children.iter().copied() {
+                            node.remove_damage(CONSTRUCT_DESCENDENT | CONSTRUCT_FC | CONSTRUCT_BOX);
+                            find_inline_layout_embedded_boxes_recursive(
+                                nodes,
+                                parent_id,
+                                child_id,
+                                layout_children,
+                            );
+                        }
+                    }
+                    (DisplayOutside::Inline, DisplayInside::Flow) => {
+                        let tag_name = &element_data.name.local;
+
+                        if *tag_name == local_name!("img")
+                            || *tag_name == local_name!("svg")
+                            || *tag_name == local_name!("input")
+                            || *tag_name == local_name!("textarea")
+                            || *tag_name == local_name!("button")
+                        {
+                            layout_children.push(node_id);
+                        } else if *tag_name == local_name!("br") {
+                            node.remove_damage(CONSTRUCT_DESCENDENT | CONSTRUCT_FC | CONSTRUCT_BOX);
+                        } else {
+                            node.remove_damage(CONSTRUCT_DESCENDENT | CONSTRUCT_FC | CONSTRUCT_BOX);
+
+                            for child_id in node.children.iter().copied() {
+                                find_inline_layout_embedded_boxes_recursive(
+                                    nodes,
+                                    node_id,
+                                    child_id,
+                                    layout_children,
+                                );
+                            }
+                        }
+                    }
+                    // Inline box
+                    (_, _) => {
+                        layout_children.push(node_id);
+                    }
+                };
+            }
+            NodeData::Comment | NodeData::Text(_) => {
+                node.remove_damage(CONSTRUCT_DESCENDENT | CONSTRUCT_FC | CONSTRUCT_BOX);
+            }
+            NodeData::Document => unreachable!(),
+        }
+    }
+}
+
+pub(crate) fn build_inline_layout(
+    nodes: &Slab<Node>,
+    layout_ctx: &mut LayoutContext<TextBrush>,
+    font_ctx: &mut FontContext,
+    scale: f32,
     inline_context_root_node_id: usize,
 ) -> (TextLayout, Vec<usize>) {
     // println!("Inline context {}", inline_context_root_node_id);
 
-    flush_inline_pseudos_recursive(doc, inline_context_root_node_id);
-
     // Get the inline context's root node's text styles
-    let root_node = &doc.nodes[inline_context_root_node_id];
+    let root_node = &nodes[inline_context_root_node_id];
     let root_node_style = root_node.primary_styles().or_else(|| {
         root_node
             .parent
-            .and_then(|parent_id| doc.nodes[parent_id].primary_styles())
+            .and_then(|parent_id| nodes[parent_id].primary_styles())
     });
 
     let parley_style = root_node_style
@@ -570,10 +711,7 @@ pub(crate) fn build_inline_layout(
     let root_line_height = resolve_line_height(parley_style.line_height, parley_style.font_size);
 
     // Create a parley tree builder
-    let mut font_ctx = doc.font_ctx.lock().unwrap();
-    let mut builder =
-        doc.layout_ctx
-            .tree_builder(&mut font_ctx, doc.viewport.scale(), true, &parley_style);
+    let mut builder = layout_ctx.tree_builder(font_ctx, scale, true, &parley_style);
 
     // Set whitespace collapsing mode
     let collapse_mode = root_node_style
@@ -599,7 +737,7 @@ pub(crate) fn build_inline_layout(
     if let Some(before_id) = root_node.before {
         build_inline_layout_recursive(
             &mut builder,
-            &doc.nodes,
+            nodes,
             inline_context_root_node_id,
             before_id,
             collapse_mode,
@@ -609,7 +747,7 @@ pub(crate) fn build_inline_layout(
     for child_id in root_node.children.iter().copied() {
         build_inline_layout_recursive(
             &mut builder,
-            &doc.nodes,
+            nodes,
             inline_context_root_node_id,
             child_id,
             collapse_mode,
@@ -619,7 +757,7 @@ pub(crate) fn build_inline_layout(
     if let Some(after_id) = root_node.after {
         build_inline_layout_recursive(
             &mut builder,
-            &doc.nodes,
+            nodes,
             inline_context_root_node_id,
             after_id,
             collapse_mode,
@@ -637,23 +775,6 @@ pub(crate) fn build_inline_layout(
         .collect();
 
     return (TextLayout { text, layout }, layout_children);
-
-    fn flush_inline_pseudos_recursive(doc: &mut BaseDocument, node_id: usize) {
-        doc.iter_children_mut(node_id, |child_id, doc| {
-            flush_pseudo_elements(doc, child_id);
-            let display = doc.nodes[node_id]
-                .display_style()
-                .unwrap_or(Display::inline());
-            let do_recurse = match (display.outside(), display.inside()) {
-                (DisplayOutside::None, DisplayInside::Contents) => true,
-                (DisplayOutside::Inline, DisplayInside::Flow) => true,
-                (_, _) => false,
-            };
-            if do_recurse {
-                flush_inline_pseudos_recursive(doc, child_id);
-            }
-        });
-    }
 
     fn build_inline_layout_recursive(
         builder: &mut TreeBuilder<TextBrush>,
@@ -689,11 +810,11 @@ pub(crate) fn build_inline_layout(
 
                 match (display.outside(), display.inside()) {
                     (DisplayOutside::None, DisplayInside::None) => {
-                        node.remove_damage(CONSTRUCT_DESCENDENT | CONSTRUCT_FC | CONSTRUCT_BOX);
+                        // node.remove_damage(CONSTRUCT_DESCENDENT | CONSTRUCT_FC | CONSTRUCT_BOX);
                     }
                     (DisplayOutside::None, DisplayInside::Contents) => {
                         for child_id in node.children.iter().copied() {
-                            node.remove_damage(CONSTRUCT_DESCENDENT | CONSTRUCT_FC | CONSTRUCT_BOX);
+                            // node.remove_damage(CONSTRUCT_DESCENDENT | CONSTRUCT_FC | CONSTRUCT_BOX);
                             build_inline_layout_recursive(
                                 builder,
                                 nodes,
@@ -722,7 +843,7 @@ pub(crate) fn build_inline_layout(
                                 height: 0.0,
                             });
                         } else if *tag_name == local_name!("br") {
-                            node.remove_damage(CONSTRUCT_DESCENDENT | CONSTRUCT_FC | CONSTRUCT_BOX);
+                            // node.remove_damage(CONSTRUCT_DESCENDENT | CONSTRUCT_FC | CONSTRUCT_BOX);
                             // TODO: update span id for br spans
                             builder.push_style_modification_span(&[]);
                             builder.set_white_space_mode(WhiteSpaceCollapse::Preserve);
@@ -730,7 +851,7 @@ pub(crate) fn build_inline_layout(
                             builder.pop_style_span();
                             builder.set_white_space_mode(collapse_mode);
                         } else {
-                            node.remove_damage(CONSTRUCT_DESCENDENT | CONSTRUCT_FC | CONSTRUCT_BOX);
+                            // node.remove_damage(CONSTRUCT_DESCENDENT | CONSTRUCT_FC | CONSTRUCT_BOX);
                             let mut style = node
                                 .primary_styles()
                                 .map(|s| stylo_to_parley::style(node.id, &s))
@@ -803,12 +924,12 @@ pub(crate) fn build_inline_layout(
                 };
             }
             NodeData::Text(data) => {
-                node.remove_damage(CONSTRUCT_DESCENDENT | CONSTRUCT_FC | CONSTRUCT_BOX);
+                // node.remove_damage(CONSTRUCT_DESCENDENT | CONSTRUCT_FC | CONSTRUCT_BOX);
                 // dbg!(&data.content);
                 builder.push_text(&data.content);
             }
             NodeData::Comment => {
-                node.remove_damage(CONSTRUCT_DESCENDENT | CONSTRUCT_FC | CONSTRUCT_BOX);
+                // node.remove_damage(CONSTRUCT_DESCENDENT | CONSTRUCT_FC | CONSTRUCT_BOX);
             }
             NodeData::Document => unreachable!(),
         }

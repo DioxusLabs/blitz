@@ -1,6 +1,9 @@
 use crate::events::handle_dom_event;
 use crate::font_metrics::BlitzFontMetricsProvider;
-use crate::layout::construct::collect_layout_children;
+use crate::layout::construct::{
+    ConstructionTask, ConstructionTaskKind, ConstructionTaskResult, ConstructionTaskResultData,
+    build_inline_layout, collect_layout_children,
+};
 use crate::layout::damage::{ALL_DAMAGE, CONSTRUCT_BOX, CONSTRUCT_DESCENDENT, CONSTRUCT_FC};
 use crate::mutator::ViewportMut;
 use crate::net::{Resource, StylesheetLoader};
@@ -22,11 +25,13 @@ use blitz_traits::shell::{ColorScheme, DummyShellProvider, ShellProvider, Viewpo
 use cursor_icon::CursorIcon;
 use debug_timer::debug_timer;
 use markup5ever::local_name;
-use parley::FontContext;
+use parley::{FontContext, LayoutContext};
 use peniko::{Blob, kurbo};
+use rayon::prelude::*;
 use selectors::{Element, matching::QuirksMode};
 use slab::Slab;
 use std::any::Any;
+use std::cell::RefCell;
 use std::collections::{BTreeMap, Bound, HashMap, HashSet};
 use std::ops::{Deref, DerefMut};
 use std::str::FromStr;
@@ -54,6 +59,11 @@ use style::{
 };
 use taffy::AvailableSpace;
 use url::Url;
+
+thread_local! {
+    static LAYOUT_CTX: RefCell<Option<Box<LayoutContext<TextBrush>>>> = const { RefCell::new(None) };
+    static FONT_CTX: RefCell<Option<Box<FontContext>>> = const { RefCell::new(None) };
+}
 
 #[cfg(feature = "incremental")]
 use {crate::layout::damage::ONLY_RELAYOUT, style::selector_parser::RestyleDamage};
@@ -138,6 +148,8 @@ pub struct BaseDocument {
     pub(crate) controls_to_form: HashMap<usize, usize>,
     /// Set of changed nodes for updating the accessibility tree
     pub(crate) changed_nodes: HashSet<usize>,
+    /// Set of changed nodes for updating the accessibility tree
+    pub(crate) deferred_construction_nodes: Vec<ConstructionTask>,
 
     // Service providers
     /// Network provider. Can be used to fetch assets.
@@ -178,13 +190,27 @@ impl BaseDocument {
 
         let id = ID_GENERATOR.fetch_add(1, Ordering::SeqCst);
 
-        let font_ctx = config.font_ctx.unwrap_or_else(|| {
-            let mut font_ctx = FontContext::default();
-            font_ctx
-                .collection
-                .register_fonts(Blob::new(Arc::new(crate::BULLET_FONT) as _), None);
-            font_ctx
-        });
+        let font_ctx = config
+            .font_ctx
+            // .map(|mut font_ctx| {
+            //     font_ctx.collection.make_shared();
+            //     font_ctx.source_cache.make_shared();
+            //     font_ctx
+            // })
+            .unwrap_or_else(|| {
+                // let mut font_ctx = FontContext {
+                //     source_cache: SourceCache::new_shared(),
+                //     collection: Collection::new(CollectionOptions {
+                //         shared: true,
+                //         system_fonts: true,
+                //     }),
+                // };
+                let mut font_ctx = FontContext::default();
+                font_ctx
+                    .collection
+                    .register_fonts(Blob::new(Arc::new(crate::BULLET_FONT) as _), None);
+                font_ctx
+            });
         let font_ctx = Arc::new(Mutex::new(font_ctx));
 
         let viewport = config.viewport.unwrap_or_default();
@@ -242,6 +268,7 @@ impl BaseDocument {
             mousedown_node_id: None,
             is_animating: false,
             changed_nodes: HashSet::new(),
+            deferred_construction_nodes: Vec::new(),
             controls_to_form: HashMap::new(),
             net_provider,
             navigation_provider,
@@ -763,6 +790,9 @@ impl BaseDocument {
         self.resolve_layout_children();
         timer.record_time("construct");
 
+        self.resolve_deferred_tasks();
+        timer.record_time("pconstruct");
+
         // Merge stylo into taffy
         self.flush_styles_to_layout(root_node_id);
         timer.record_time("flush");
@@ -1039,6 +1069,76 @@ impl BaseDocument {
 
             doc.nodes[node_id].set_damage(damage);
         }
+    }
+
+    pub fn resolve_deferred_tasks(&mut self) {
+        // Deduplicate deferred tasks by node_id to avoid redundant work
+        self.deferred_construction_nodes
+            .sort_unstable_by_key(|task| task.node_id);
+        self.deferred_construction_nodes
+            .dedup_by_key(|task| task.node_id);
+
+        // dbg!(&self.deferred_construction_nodes);
+        println!(
+            "Deferred task count: {}",
+            self.deferred_construction_nodes.len()
+        );
+
+        let results: Vec<ConstructionTaskResult> = self
+            .deferred_construction_nodes
+            .par_iter()
+            .map(|task: &ConstructionTask| match task.kind {
+                ConstructionTaskKind::InlineLayout => {
+                    let (inline_layout, _) = LAYOUT_CTX.with_borrow_mut(|layout_ctx| {
+                        if layout_ctx.is_none() {
+                            println!(
+                                "Initialising LayoutContext for thread {:?}",
+                                std::thread::current().id()
+                            );
+                            *layout_ctx = Some(Box::new(LayoutContext::new()));
+                        }
+                        let layout_ctx = &mut **layout_ctx.as_mut().unwrap();
+
+                        FONT_CTX.with_borrow_mut(|font_ctx| {
+                            if font_ctx.is_none() {
+                                println!(
+                                    "Initialising FontContext for thread {:?}",
+                                    std::thread::current().id()
+                                );
+                                *font_ctx = Some(Box::new(self.font_ctx.lock().unwrap().clone()));
+                            }
+                            let font_ctx = &mut **font_ctx.as_mut().unwrap();
+
+                            build_inline_layout(
+                                &self.nodes,
+                                layout_ctx,
+                                font_ctx,
+                                self.viewport.scale(),
+                                task.node_id,
+                            )
+                        })
+                    });
+
+                    ConstructionTaskResult {
+                        node_id: task.node_id,
+                        data: ConstructionTaskResultData::InlineLayout(Box::new(inline_layout)),
+                    }
+                }
+            })
+            .collect();
+
+        for result in results {
+            match result.data {
+                ConstructionTaskResultData::InlineLayout(layout) => {
+                    self.nodes[result.node_id]
+                        .element_data_mut()
+                        .unwrap()
+                        .inline_layout_data = Some(layout);
+                }
+            }
+        }
+
+        self.deferred_construction_nodes.clear();
     }
 
     /// Walk the nodes now that they're properly styled and transfer their styles to the taffy style system
