@@ -17,6 +17,7 @@ comrak = ["dep:comrak"]
 pulldown_cmark = ["dep:pulldown-cmark"]
 log_frame_times = ["anyrender_vello_cpu?/log_frame_times", "anyrender_vello?/log_frame_times"]
 log_phase_times = ["blitz-dom/log_phase_times"]
+incremental = ["blitz-dom/incremental"]
 
 [dependencies]
 blitz-traits = { workspace = true }

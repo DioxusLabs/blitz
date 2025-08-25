@@ -1,9 +1,7 @@
 use crate::events::handle_dom_event;
 use crate::font_metrics::BlitzFontMetricsProvider;
 use crate::layout::construct::collect_layout_children;
-use crate::layout::damage::{
-    ALL_DAMAGE, CONSTRUCT_BOX, CONSTRUCT_DESCENDENT, CONSTRUCT_FC, ONLY_RELAYOUT,
-};
+use crate::layout::damage::{ALL_DAMAGE, CONSTRUCT_BOX, CONSTRUCT_DESCENDENT, CONSTRUCT_FC};
 use crate::mutator::ViewportMut;
 use crate::net::{Resource, StylesheetLoader};
 use crate::node::{ImageData, NodeFlags, RasterImageData, SpecialElementData, Status, TextBrush};
@@ -13,7 +11,8 @@ use crate::url::DocumentUrl;
 use crate::util::ImageType;
 use crate::{
     DEFAULT_CSS, DocumentConfig, DocumentMutator, DummyHtmlParserProvider, ElementData,
-    EventDriver, HtmlParserProvider, Node, NodeData, NoopEventHandler, TextNodeData,
+    EventDriver, HtmlParserProvider, NON_INCREMENTAL, Node, NodeData, NoopEventHandler,
+    TextNodeData,
 };
 use blitz_traits::devtools::DevtoolSettings;
 use blitz_traits::events::{DomEvent, HitResult, UiEvent};
@@ -41,7 +40,7 @@ use style::media_queries::MediaType;
 use style::properties::ComputedValues;
 use style::properties::style_structs::Font;
 use style::queries::values::PrefersColorScheme;
-use style::selector_parser::{RestyleDamage, ServoElementSnapshot};
+use style::selector_parser::ServoElementSnapshot;
 use style::servo_arc::Arc as ServoArc;
 use style::values::GenericAtomIdent;
 use style::values::computed::Overflow;
@@ -55,6 +54,9 @@ use style::{
 };
 use taffy::AvailableSpace;
 use url::Url;
+
+#[cfg(feature = "incremental")]
+use {crate::layout::damage::ONLY_RELAYOUT, style::selector_parser::RestyleDamage};
 
 /// Abstraction over wrappers around [`BaseDocument`] to allow for them all to
 /// be driven by [`blitz-shell`](https://docs.rs/blitz-shell)
@@ -752,7 +754,9 @@ impl BaseDocument {
         timer.record_time("style");
 
         // Propagate damage flags (from mutation and restyles) up and down the tree
+        #[cfg(feature = "incremental")]
         self.propagate_damage_flags(root_node_id, RestyleDamage::empty());
+        #[cfg(feature = "incremental")]
         timer.record_time("damage");
 
         // Fix up tree for layout (insert anonymous blocks as necessary, etc)
@@ -764,32 +768,36 @@ impl BaseDocument {
         timer.record_time("flush");
 
         // Clear construction flags
+        #[cfg(feature = "incremental")]
         self.iter_subtree_incl_anon_mut(root_node_id, |id, doc| {
             doc.nodes[id].remove_damage(CONSTRUCT_BOX | CONSTRUCT_DESCENDENT | CONSTRUCT_FC);
         });
+        #[cfg(feature = "incremental")]
+        timer.record_time("c_construct");
         // self.iter_subtree_mut(root_node_id, |id, doc| {
         //     doc.nodes[id].remove_damage(CONSTRUCT_BOX | CONSTRUCT_DESCENDENT | CONSTRUCT_FC);
         // });
         // self.iter_layout_subtree_mut(root_node_id, |id, doc| {
         //     doc.nodes[id].remove_damage(CONSTRUCT_BOX | CONSTRUCT_DESCENDENT | CONSTRUCT_FC);
         // });
-        timer.record_time("c_construct");
 
         // Next we resolve layout with the data resolved by stlist
         self.resolve_layout();
         timer.record_time("layout");
 
         // Clear all layout damage
+        #[cfg(feature = "incremental")]
         self.iter_subtree_incl_anon_mut(root_node_id, |id, doc| {
             doc.nodes[id].remove_damage(ONLY_RELAYOUT);
         });
+        #[cfg(feature = "incremental")]
+        timer.record_time("c_layout");
         // self.iter_subtree_mut(root_node_id, |id, doc| {
         //     doc.nodes[id].remove_damage(ONLY_RELAYOUT);
         // });
         // self.iter_layout_subtree_mut(root_node_id, |id, doc| {
         //     doc.nodes[id].remove_damage(ONLY_RELAYOUT);
         // });
-        timer.record_time("c_layout");
 
         timer.print_times("Resolve: ");
     }
@@ -991,7 +999,7 @@ impl BaseDocument {
             let mut damage = doc.nodes[node_id].damage().unwrap_or(ALL_DAMAGE);
             let _flags = doc.nodes[node_id].flags;
 
-            if damage.intersects(CONSTRUCT_FC | CONSTRUCT_BOX) {
+            if NON_INCREMENTAL || damage.intersects(CONSTRUCT_FC | CONSTRUCT_BOX) {
                 //} || flags.contains(NodeFlags::IS_INLINE_ROOT) {
                 let mut layout_children = Vec::new();
                 let mut anonymous_block: Option<usize> = None;
