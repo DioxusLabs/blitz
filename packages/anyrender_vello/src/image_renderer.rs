@@ -112,7 +112,7 @@ impl ImageRenderer for VelloImageRenderer {
 impl VelloImageRenderer {
     fn render_internal_scene(&mut self, cpu_buffer: &mut Vec<u8>) {
         let render_params = vello::RenderParams {
-            base_color: vello::peniko::Color::WHITE,
+            base_color: vello::peniko::Color::TRANSPARENT,
             width: self.size.width,
             height: self.size.height,
             antialiasing_method: vello::AaConfig::Area,
