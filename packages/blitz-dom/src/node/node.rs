@@ -1,4 +1,4 @@
-use atomic_refcell::{AtomicRef, AtomicRefCell};
+use atomic_refcell::{AtomicRef, AtomicRefCell, AtomicRefMut};
 use bitflags::bitflags;
 use blitz_traits::events::{BlitzMouseButtonEvent, DomEventData, HitResult};
 use keyboard_types::Modifiers;
@@ -14,7 +14,7 @@ use style::Atom;
 use style::invalidation::element::restyle_hints::RestyleHint;
 use style::properties::ComputedValues;
 use style::properties::generated::longhands::position::computed_value::T as Position;
-use style::selector_parser::PseudoElement;
+use style::selector_parser::{PseudoElement, RestyleDamage};
 use style::stylesheets::UrlExtraData;
 use style::values::computed::Display as StyloDisplay;
 use style::values::specified::box_::{DisplayInside, DisplayOutside};
@@ -215,9 +215,46 @@ impl Node {
             .unwrap_or(false)
     }
 
-    pub fn set_restyle_hint(&mut self, hint: RestyleHint) {
+    pub fn set_restyle_hint(&self, hint: RestyleHint) {
         if let Some(element_data) = self.stylo_element_data.borrow_mut().as_mut() {
             element_data.hint.insert(hint);
+        }
+    }
+
+    pub fn damage_mut(&self) -> Option<AtomicRefMut<'_, RestyleDamage>> {
+        let element_data = self.stylo_element_data.borrow_mut();
+        #[allow(clippy::manual_map, reason = "false positive")]
+        match *element_data {
+            Some(_) => Some(AtomicRefMut::map(
+                element_data,
+                |data: &mut Option<StyloElementData>| &mut data.as_mut().unwrap().damage,
+            )),
+            None => None,
+        }
+    }
+
+    pub fn damage(&mut self) -> Option<RestyleDamage> {
+        self.stylo_element_data
+            .get_mut()
+            .as_ref()
+            .map(|data| data.damage)
+    }
+
+    pub fn set_damage(&self, damage: RestyleDamage) {
+        if let Some(data) = self.stylo_element_data.borrow_mut().as_mut() {
+            data.damage = damage;
+        }
+    }
+
+    pub fn insert_damage(&mut self, damage: RestyleDamage) {
+        if let Some(data) = self.stylo_element_data.get_mut().as_mut() {
+            data.damage |= damage;
+        }
+    }
+
+    pub fn remove_damage(&self, damage: RestyleDamage) {
+        if let Some(data) = self.stylo_element_data.borrow_mut().as_mut() {
+            data.damage.remove(damage);
         }
     }
 
