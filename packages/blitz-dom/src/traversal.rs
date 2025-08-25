@@ -1,4 +1,6 @@
-use style::dom::TNode as _;
+use std::mem;
+
+use style::{dom::TNode as _, values::specified::box_::DisplayInside};
 
 use crate::{BaseDocument, Node};
 
@@ -55,6 +57,31 @@ impl Iterator for AncestorTraverser<'_> {
         let current_node = self.doc.get_node(self.current)?;
         self.current = current_node.parent?;
         Some(self.current)
+    }
+}
+
+impl Node {
+    pub(crate) fn should_traverse_layout_children(&mut self) -> bool {
+        let prefer_layout_children = match self.display_constructed_as.inside() {
+            DisplayInside::None => return false,
+            DisplayInside::Contents => false,
+            DisplayInside::Flow | DisplayInside::FlowRoot | DisplayInside::TableCell => {
+                // Prefer layout children for "block" but not "inline" contexts
+                !self
+                    .element_data()
+                    .is_some_and(|el| el.inline_layout_data.is_some())
+            }
+            DisplayInside::Flex | DisplayInside::Grid => true,
+            DisplayInside::Table => false,
+            DisplayInside::TableRowGroup => false,
+            DisplayInside::TableColumn => false,
+            DisplayInside::TableColumnGroup => false,
+            DisplayInside::TableHeaderGroup => false,
+            DisplayInside::TableFooterGroup => false,
+            DisplayInside::TableRow => false,
+        };
+        let has_layout_children = self.layout_children.get_mut().is_some();
+        prefer_layout_children & has_layout_children
     }
 }
 
@@ -149,6 +176,38 @@ impl BaseDocument {
                 }
                 *doc.nodes[node_id].layout_children.get_mut() = Some(children);
             }
+        }
+    }
+
+    pub fn iter_subtree_incl_anon_mut(
+        &mut self,
+        node_id: usize,
+        mut cb: impl FnMut(usize, &mut BaseDocument),
+    ) {
+        cb(node_id, self);
+        iter_subtree_mut_inner(self, node_id, &mut cb);
+        fn iter_subtree_mut_inner(
+            doc: &mut BaseDocument,
+            node_id: usize,
+            cb: &mut impl FnMut(usize, &mut BaseDocument),
+        ) {
+            let children = mem::take(&mut doc.nodes[node_id].children);
+            let layout_children = doc.nodes[node_id].layout_children.get_mut().take();
+
+            let use_layout_children = doc.nodes[node_id].should_traverse_layout_children();
+            let child_ids = if use_layout_children {
+                layout_children.as_ref().unwrap()
+            } else {
+                &children
+            };
+
+            for child_id in child_ids.iter().cloned() {
+                cb(child_id, doc);
+                iter_subtree_mut_inner(doc, child_id, cb);
+            }
+
+            doc.nodes[node_id].children = children;
+            *doc.nodes[node_id].layout_children.get_mut() = layout_children;
         }
     }
 

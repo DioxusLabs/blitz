@@ -764,24 +764,32 @@ impl BaseDocument {
         timer.record_time("flush");
 
         // Clear construction flags
-        self.iter_subtree_mut(root_node_id, |id, doc| {
+        self.iter_subtree_incl_anon_mut(root_node_id, |id, doc| {
             doc.nodes[id].remove_damage(CONSTRUCT_BOX | CONSTRUCT_DESCENDENT | CONSTRUCT_FC);
         });
-        self.iter_layout_subtree_mut(root_node_id, |id, doc| {
-            doc.nodes[id].remove_damage(CONSTRUCT_BOX | CONSTRUCT_DESCENDENT | CONSTRUCT_FC);
-        });
+        // self.iter_subtree_mut(root_node_id, |id, doc| {
+        //     doc.nodes[id].remove_damage(CONSTRUCT_BOX | CONSTRUCT_DESCENDENT | CONSTRUCT_FC);
+        // });
+        // self.iter_layout_subtree_mut(root_node_id, |id, doc| {
+        //     doc.nodes[id].remove_damage(CONSTRUCT_BOX | CONSTRUCT_DESCENDENT | CONSTRUCT_FC);
+        // });
+        timer.record_time("c_construct");
 
         // Next we resolve layout with the data resolved by stlist
         self.resolve_layout();
         timer.record_time("layout");
 
         // Clear all layout damage
-        self.iter_subtree_mut(root_node_id, |id, doc| {
+        self.iter_subtree_incl_anon_mut(root_node_id, |id, doc| {
             doc.nodes[id].remove_damage(ONLY_RELAYOUT);
         });
-        self.iter_layout_subtree_mut(root_node_id, |id, doc| {
-            doc.nodes[id].remove_damage(ONLY_RELAYOUT);
-        });
+        // self.iter_subtree_mut(root_node_id, |id, doc| {
+        //     doc.nodes[id].remove_damage(ONLY_RELAYOUT);
+        // });
+        // self.iter_layout_subtree_mut(root_node_id, |id, doc| {
+        //     doc.nodes[id].remove_damage(ONLY_RELAYOUT);
+        // });
+        timer.record_time("c_layout");
 
         timer.print_times("Resolve: ");
     }

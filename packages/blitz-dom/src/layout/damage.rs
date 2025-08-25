@@ -37,7 +37,9 @@ impl BaseDocument {
         let damage_for_children = RestyleDamage::empty();
         let children = mem::take(&mut self.nodes[node_id].children);
         let layout_children = mem::take(self.nodes[node_id].layout_children.get_mut());
-        if let Some(layout_children) = &layout_children {
+        let use_layout_children = self.nodes[node_id].should_traverse_layout_children();
+        if use_layout_children {
+            let layout_children = layout_children.as_ref().unwrap();
             for child in layout_children.iter() {
                 damage |= self.propagate_damage_flags(*child, damage_for_children);
             }
