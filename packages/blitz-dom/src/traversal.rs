@@ -67,9 +67,8 @@ impl Node {
             DisplayInside::Contents => false,
             DisplayInside::Flow | DisplayInside::FlowRoot | DisplayInside::TableCell => {
                 // Prefer layout children for "block" but not "inline" contexts
-                !self
-                    .element_data()
-                    .is_some_and(|el| el.inline_layout_data.is_some())
+                self.element_data()
+                    .is_none_or(|el| el.inline_layout_data.is_none())
             }
             DisplayInside::Flex | DisplayInside::Grid => true,
             DisplayInside::Table => false,

@@ -68,7 +68,7 @@ impl BaseDocument {
         // Store damage for current node
         node.set_damage(damage);
 
-        let is_fc_root = node
+        let _is_fc_root = node
             .primary_styles()
             .map(|s| is_fc_root(&s))
             .unwrap_or(false);
@@ -200,6 +200,10 @@ pub(crate) fn compute_layout_damage(old: &ComputedValues, new: &ComputedValues) 
         false
     };
 
+    #[allow(
+        clippy::if_same_then_else,
+        reason = "these branches will soon be different"
+    )]
     if box_tree_needs_rebuild() {
         CONSTRUCT_BOX
     } else if text_shaping_needs_recollect() {
@@ -241,7 +245,7 @@ impl BaseDocument {
 
         let display = {
             let node = self.nodes.get_mut(node_id).unwrap();
-            let damage = node.damage().unwrap_or(ALL_DAMAGE);
+            let _damage = node.damage().unwrap_or(ALL_DAMAGE);
             let stylo_element_data = node.stylo_element_data.borrow();
             let primary_styles = stylo_element_data
                 .as_ref()
