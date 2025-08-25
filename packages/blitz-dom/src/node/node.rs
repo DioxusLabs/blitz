@@ -16,7 +16,7 @@ use style::properties::ComputedValues;
 use style::properties::generated::longhands::position::computed_value::T as Position;
 use style::selector_parser::PseudoElement;
 use style::stylesheets::UrlExtraData;
-use style::values::computed::Display;
+use style::values::computed::Display as StyloDisplay;
 use style::values::specified::box_::{DisplayInside, DisplayOutside};
 use style::{data::ElementData as StyloElementData, shared_lock::SharedRwLock};
 use style_dom::ElementState;
@@ -108,7 +108,7 @@ pub struct Node {
     pub style: Style<Atom>,
     pub has_snapshot: bool,
     pub snapshot_handled: AtomicBool,
-    pub display_outer: DisplayOuter,
+    pub display_constructed_as: StyloDisplay,
     pub cache: Cache,
     pub unrounded_layout: Layout,
     pub final_layout: Layout,
@@ -146,7 +146,7 @@ impl Node {
             style: Default::default(),
             has_snapshot: false,
             snapshot_handled: AtomicBool::new(false),
-            display_outer: DisplayOuter::Block,
+            display_constructed_as: StyloDisplay::Block,
             cache: Cache::new(),
             unrounded_layout: Layout::new(),
             final_layout: Layout::new(),
@@ -170,7 +170,7 @@ impl Node {
         }
     }
 
-    pub(crate) fn display_style(&self) -> Option<Display> {
+    pub(crate) fn display_style(&self) -> Option<StyloDisplay> {
         Some(self.primary_styles().as_ref()?.clone_display())
     }
 
@@ -191,7 +191,7 @@ impl Node {
         }
         let display = style
             .map(|s| s.clone_display())
-            .unwrap_or(Display::inline());
+            .unwrap_or(StyloDisplay::inline());
         match display.outside() {
             DisplayOutside::None => false,
             DisplayOutside::Block => true,
@@ -512,14 +512,11 @@ impl Node {
             NodeData::Element(data) => {
                 let name = &data.name;
                 let class = self.attr(local_name!("class")).unwrap_or("");
+                let display = self.display_constructed_as.to_css_string();
                 if !class.is_empty() {
-                    write!(
-                        s,
-                        "<{} class=\"{}\"> ({:?})",
-                        name.local, class, self.display_outer
-                    )
+                    write!(s, "<{} class=\"{}\"> ({})", name.local, class, display)
                 } else {
-                    write!(s, "<{}> ({:?})", name.local, self.display_outer)
+                    write!(s, "<{}> ({})", name.local, display)
                 }
             } // NodeData::ProcessingInstruction { .. } => write!(s, "ProcessingInstruction"),
         }

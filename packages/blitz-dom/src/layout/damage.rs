@@ -3,7 +3,6 @@ use blitz_traits::net::Request;
 use style::properties::generated::longhands::position::computed_value::T as Position;
 use style::servo::url::ComputedUrl;
 use style::values::generics::image::Image as StyloImage;
-use style::values::specified::box_::DisplayOutside;
 
 impl BaseDocument {
     /// Walk the whole tree, converting styles to layout
@@ -22,14 +21,7 @@ impl BaseDocument {
             };
 
             node.style = stylo_taffy::to_taffy_style(style);
-
-            node.display_outer = match style.clone_display().outside() {
-                DisplayOutside::None => crate::node::DisplayOuter::None,
-                DisplayOutside::Inline => crate::node::DisplayOuter::Inline,
-                DisplayOutside::Block => crate::node::DisplayOuter::Block,
-                DisplayOutside::TableCaption => crate::node::DisplayOuter::Block,
-                DisplayOutside::InternalTable => crate::node::DisplayOuter::Block,
-            };
+            node.display_constructed_as = style.clone_display();
 
             // Flush background image from style to dedicated storage on the node
             // TODO: handle multiple background images
