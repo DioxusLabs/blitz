@@ -171,25 +171,25 @@ impl NetHandler<Resource> for CssHandler {
 struct FontFaceHandler(FontFaceSourceFormatKeyword);
 impl NetHandler<Resource> for FontFaceHandler {
     fn bytes(mut self: Box<Self>, doc_id: usize, bytes: Bytes, callback: SharedCallback<Resource>) {
-        if self.0 == FontFaceSourceFormatKeyword::None {
-            self.0 = match bytes.as_ref() {
+        if self.0 == FontFaceSourceFormatKeyword::None && bytes.len() >= 4 {
+            self.0 = match &bytes.as_ref()[0..4] {
                 // WOFF (v1) files begin with 0x774F4646 ('wOFF' in ascii)
                 // See: <https://w3c.github.io/woff/woff1/spec/Overview.html#WOFFHeader>
-                // #[cfg(any(feature = "woff-c"))]
-                // [b'w', b'O', b'F', b'F', ..] => FontFaceSourceFormatKeyword::Woff,
+                #[cfg(any(feature = "woff-c", feature = "woff-rust"))]
+                b"wOFF" => FontFaceSourceFormatKeyword::Woff,
                 // WOFF2 files begin with 0x774F4632 ('wOF2' in ascii)
                 // See: <https://w3c.github.io/woff/woff2/#woff20Header>
                 #[cfg(any(feature = "woff-c", feature = "woff-rust"))]
-                [b'w', b'O', b'F', b'2', ..] => FontFaceSourceFormatKeyword::Woff2,
+                b"wOF2" => FontFaceSourceFormatKeyword::Woff2,
                 // Opentype fonts with CFF data begin with 0x4F54544F ('OTTO' in ascii)
                 // See: <https://learn.microsoft.com/en-us/typography/opentype/spec/otff#organization-of-an-opentype-font>
-                [b'O', b'T', b'T', b'O', ..] => FontFaceSourceFormatKeyword::Opentype,
+                b"OTTO" => FontFaceSourceFormatKeyword::Opentype,
                 // Opentype fonts truetype outlines begin with 0x00010000
                 // See: <https://learn.microsoft.com/en-us/typography/opentype/spec/otff#organization-of-an-opentype-font>
-                [0x00, 0x01, 0x00, 0x00, ..] => FontFaceSourceFormatKeyword::Truetype,
+                &[0x00, 0x01, 0x00, 0x00] => FontFaceSourceFormatKeyword::Truetype,
                 // Truetype fonts begin with 0x74727565 ('true' in ascii)
                 // See: <https://developer.apple.com/fonts/TrueType-Reference-Manual/RM06/Chap6.html#ScalerTypeNote>
-                [b't', b'r', b'u', b'e', ..] => FontFaceSourceFormatKeyword::Truetype,
+                b"true" => FontFaceSourceFormatKeyword::Truetype,
                 _ => FontFaceSourceFormatKeyword::None,
             }
         }
@@ -199,21 +199,26 @@ impl NetHandler<Resource> for FontFaceHandler {
         let mut bytes = bytes;
 
         match self.0 {
-            // #[cfg(feature = "woff-c")]
-            // FontFaceSourceFormatKeyword::Woff => {
-            //     #[cfg(feature = "tracing")]
-            //     tracing::info!("Decompressing woff1 font");
+            #[cfg(any(feature = "woff-c", feature = "woff-rust"))]
+            FontFaceSourceFormatKeyword::Woff => {
+                #[cfg(feature = "tracing")]
+                tracing::info!("Decompressing woff1 font");
 
-            //     // Use woff crate to decompress font
-            //     let decompressed = woff::version1::decompress(&bytes);
+                // Use woff crate to decompress font
+                #[cfg(feature = "woff-c")]
+                let decompressed = woff::version1::decompress(&bytes);
 
-            //     if let Some(decompressed) = decompressed {
-            //         bytes = Bytes::from(decompressed);
-            //     } else {
-            //         #[cfg(feature = "tracing")]
-            //         tracing::warn!("Failed to decompress woff1 font");
-            //     }
-            // }
+                // Use wuff crate to decompress font
+                #[cfg(feature = "woff-rust")]
+                let decompressed = wuff::decompress_woff1(&bytes).ok();
+
+                if let Some(decompressed) = decompressed {
+                    bytes = Bytes::from(decompressed);
+                } else {
+                    #[cfg(feature = "tracing")]
+                    tracing::warn!("Failed to decompress woff1 font");
+                }
+            }
             #[cfg(any(feature = "woff-c", feature = "woff-rust"))]
             FontFaceSourceFormatKeyword::Woff2 => {
                 #[cfg(feature = "tracing")]
@@ -223,9 +228,9 @@ impl NetHandler<Resource> for FontFaceHandler {
                 #[cfg(feature = "woff-c")]
                 let decompressed = woff::version2::decompress(&bytes);
 
-                // Use woff2 crate to decompress font
+                // Use wuff crate to decompress font
                 #[cfg(feature = "woff-rust")]
-                let decompressed = woff2::decode::convert_woff2_to_ttf(&mut bytes).ok();
+                let decompressed = wuff::decompress_woff2(&bytes).ok();
 
                 if let Some(decompressed) = decompressed {
                     bytes = Bytes::from(decompressed);

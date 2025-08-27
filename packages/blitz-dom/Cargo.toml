@@ -14,7 +14,7 @@ rust-version.workspace = true
 default = [
     "tracing",
     "svg",
-    "woff-c",
+    "woff-rust",
     "accessibility",
     "system_fonts",
     "file_input",
@@ -22,12 +22,9 @@ default = [
 tracing = ["dep:tracing"]
 svg = ["dep:usvg"]
 # WOFF decoding using the "woff" crate which binds to C libraries
-# ("woff" for woff2) and "sfnt2woff" for woff1).
-# Both woff1 and woff2 are supported
 woff-c = ["dep:woff"]
-# WOFF decoding using the "woff2" crate which is pure Rust
-# Only woff2 is supported. Does not work correct with all woff2 fonts
-woff-rust = ["dep:woff2"]
+# WOFF decoding using the "wuff" crate which is pure Rust
+woff-rust = ["dep:wuff"]
 accessibility = ["accesskit"]
 system_fonts = ["parley/system"]
 autofocus = []
@@ -72,8 +69,8 @@ fastrand = { workspace = true }
 # Media & Decoding
 image = { workspace = true }
 usvg = { workspace = true, optional = true }
-woff = { workspace = true, optional = true, features = ["version2"] }
-woff2 = { workspace = true, optional = true }
+woff = { workspace = true, optional = true, features = ["version1", "version2"] }
+wuff = { workspace = true, optional = true }
 html-escape = { workspace = true }
 percent-encoding = { workspace = true }
 

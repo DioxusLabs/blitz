@@ -116,6 +116,7 @@ reqwest = "0.12"
 image = { version = "0.25", default-features = false }
 woff = { version = "0.6", default-features = false }
 woff2 = "0.3"
+wuff = "0.2"
 html-escape = "0.2.13"
 percent-encoding = "2.3.1"
 png = "0.17"
