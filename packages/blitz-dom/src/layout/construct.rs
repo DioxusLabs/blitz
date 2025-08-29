@@ -327,6 +327,7 @@ fn flush_pseudo_elements(doc: &mut BaseDocument, node_id: usize) {
                 Vec::new(),
             )));
             doc.nodes[new_node_id].parent = Some(node_id);
+            doc.nodes[new_node_id].layout_parent.set(Some(node_id));
 
             let content = &pe_style.as_ref().get_counters().content;
             if let Content::Items(item_data) = content {
@@ -444,10 +445,17 @@ fn collect_complex_layout_children(
                     &PseudoElement::ServoAnonymousBox,
                     &parent_style,
                 );
+
                 let mut stylo_element_data = StyloElementData::default();
+                drop(parent_style);
+
                 stylo_element_data.styles.primary = Some(style);
                 stylo_element_data.set_restyled();
                 *doc.nodes[node_id].stylo_element_data.borrow_mut() = Some(stylo_element_data);
+                doc.nodes[node_id].parent = Some(container_node_id);
+                doc.nodes[node_id]
+                    .layout_parent
+                    .set(Some(container_node_id));
 
                 layout_children.push(node_id);
                 *anonymous_block_id = Some(node_id);
