@@ -680,13 +680,31 @@ impl BaseDocument {
                 }
             }
             Resource::Font(bytes) => {
+                let font = Blob::new(Arc::new(bytes));
+
                 // TODO: Implement FontInfoOveride
                 // TODO: Investigate eliminating double-box
-                self.font_ctx
-                    .lock()
-                    .unwrap()
-                    .collection
-                    .register_fonts(Blob::new(Arc::new(bytes)) as _, None);
+                let mut font_ctx = self.font_ctx.lock().unwrap();
+                font_ctx.collection.register_fonts(font.clone(), None);
+                let doc_font_ctx = &*font_ctx;
+
+                rayon::broadcast(|_ctx| {
+                    FONT_CTX.with_borrow_mut(|font_ctx| {
+                        match font_ctx {
+                            None => {
+                                println!(
+                                    "Initialising FontContext for thread {:?}",
+                                    std::thread::current().id()
+                                );
+                                *font_ctx = Some(Box::new(doc_font_ctx.clone()));
+                            }
+                            Some(font_ctx) => {
+                                font_ctx.collection.register_fonts(font.clone(), None);
+                            }
+                        };
+                    })
+                });
+                drop(font_ctx);
 
                 // TODO: see if we can only invalidate if resolved fonts may have changed
                 self.invalidate_inline_contexts();
