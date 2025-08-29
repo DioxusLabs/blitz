@@ -296,7 +296,7 @@ dependencies = [
 
 [[package]]
 name = "anyrender_vello"
-version = "0.5.1"
+version = "0.5.2"
 dependencies = [
  "anyrender",
  "debug_timer",
@@ -312,7 +312,7 @@ dependencies = [
 
 [[package]]
 name = "anyrender_vello_cpu"
-version = "0.5.2"
+version = "0.5.3"
 dependencies = [
  "anyrender",
  "debug_timer",
