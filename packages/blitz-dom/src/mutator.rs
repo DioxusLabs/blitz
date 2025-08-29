@@ -199,6 +199,17 @@ impl DocumentMutator<'_> {
             data.hint |= RestyleHint::restyle_subtree();
         }
 
+        // TODO: make this fine grained / conditional based on ElementSelectorFlags
+        let parent = node.parent;
+        if let Some(parent_id) = parent {
+            let parent = &mut self.doc.nodes[parent_id];
+            if let Some(data) = &mut *parent.stylo_element_data.borrow_mut() {
+                data.hint |= RestyleHint::restyle_subtree();
+            }
+        }
+
+        let node = &mut self.doc.nodes[node_id];
+
         let NodeData::Element(ref mut element) = node.data else {
             return;
         };
@@ -331,6 +342,15 @@ impl DocumentMutator<'_> {
         // Update child_idx values
         if let Some(parent_id) = node.as_ref().and_then(|node| node.parent) {
             let parent = &mut self.doc.nodes[parent_id];
+            let parent_is_in_doc = parent.flags.is_in_document();
+
+            // TODO: make this fine grained / conditional based on ElementSelectorFlags
+            if parent_is_in_doc {
+                if let Some(data) = &mut *parent.stylo_element_data.borrow_mut() {
+                    data.hint |= RestyleHint::restyle_subtree();
+                }
+            }
+
             parent.children.retain(|id| *id != node_id);
             self.maybe_record_node(parent_id);
         }
@@ -339,7 +359,17 @@ impl DocumentMutator<'_> {
     }
 
     pub fn remove_and_drop_all_children(&mut self, node_id: usize) {
-        let children = mem::take(&mut self.doc.nodes[node_id].children);
+        let parent = &mut self.doc.nodes[node_id];
+        let parent_is_in_doc = parent.flags.is_in_document();
+
+        // TODO: make this fine grained / conditional based on ElementSelectorFlags
+        if parent_is_in_doc {
+            if let Some(data) = &mut *parent.stylo_element_data.borrow_mut() {
+                data.hint |= RestyleHint::restyle_subtree();
+            }
+        }
+
+        let children = mem::take(&mut parent.children);
         for child_id in children {
             self.process_removed_subtree(child_id);
             let _ = self.remove_node_ignoring_parent(child_id);
@@ -382,6 +412,13 @@ impl DocumentMutator<'_> {
         let new_parent = &mut self.doc.nodes[parent_id];
         let new_parent_is_in_doc = new_parent.flags.is_in_document();
 
+        // TODO: make this fine grained / conditional based on ElementSelectorFlags
+        if new_parent_is_in_doc {
+            if let Some(data) = &mut *new_parent.stylo_element_data.borrow_mut() {
+                data.hint |= RestyleHint::restyle_subtree();
+            }
+        }
+
         insert_children_fn(new_parent, child_ids);
 
         for child_id in child_ids.iter().copied() {
@@ -395,6 +432,13 @@ impl DocumentMutator<'_> {
 
             if let Some(old_parent_id) = old_parent_id {
                 let old_parent = &mut self.doc.nodes[old_parent_id];
+
+                // TODO: make this fine grained / conditional based on ElementSelectorFlags
+                if child_was_in_doc {
+                    if let Some(data) = &mut *old_parent.stylo_element_data.borrow_mut() {
+                        data.hint |= RestyleHint::restyle_subtree();
+                    }
+                }
 
                 old_parent.children.retain(|id| *id != child_id);
                 self.maybe_record_node(old_parent_id);
