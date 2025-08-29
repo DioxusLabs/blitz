@@ -13,15 +13,15 @@ mod real_debug_timer {
         recorded_times: Vec<(&'static str, Duration)>,
     }
 
-    fn value_and_units(duration: Duration) -> (i32, &'static str) {
+    fn value_and_units(duration: Duration) -> (f32, &'static str) {
         if duration < MICROSECOND {
-            (duration.subsec_nanos() as i32, "ns")
+            (duration.subsec_nanos() as f32, "ns")
         } else if duration < MILLISECOND {
-            (duration.subsec_micros() as i32, "us")
+            (duration.subsec_nanos() as f32 / 1000.0, "us")
         } else if duration < SECOND {
-            (duration.subsec_millis() as i32, "ms")
+            (duration.subsec_micros() as f32 / 1000.0, "ms")
         } else {
-            (duration.as_secs() as i32, "s")
+            (duration.as_millis() as f32 / 1000.0, "s")
         }
     }
 
@@ -47,13 +47,21 @@ mod real_debug_timer {
             let (overall_val, overall_unit) = value_and_units(now - self.initial_time);
 
             let mut out = stdout().lock();
-            write!(out, "{message}{overall_val}{overall_unit} (").unwrap();
+            if overall_val < 10.0 {
+                write!(out, "{message}{overall_val:.1}{overall_unit} (").unwrap();
+            } else {
+                write!(out, "{message}{overall_val:.0}{overall_unit} (").unwrap();
+            }
             for (idx, time) in self.recorded_times.iter().enumerate() {
                 if idx != 0 {
                     write!(out, ", ").unwrap();
                 }
                 let (val, unit) = value_and_units(time.1);
-                write!(out, "{}: {val}{unit}", time.0).unwrap();
+                if val < 10.0 {
+                    write!(out, "{}: {val:.1}{unit}", time.0).unwrap();
+                } else {
+                    write!(out, "{}: {val:.0}{unit}", time.0).unwrap();
+                }
             }
             writeln!(out, ")").unwrap();
         }
