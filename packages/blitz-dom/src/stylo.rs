@@ -89,6 +89,8 @@ impl crate::document::BaseDocument {
             style::driver::traverse_dom(&traverser, token, None);
         }
 
+        self.snapshots.clear();
+
         style::thread_state::exit(ThreadState::LAYOUT);
     }
 }
