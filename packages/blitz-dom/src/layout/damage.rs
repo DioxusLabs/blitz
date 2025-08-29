@@ -360,23 +360,4 @@ impl BaseDocument {
                 })
         }
     }
-
-    pub(crate) fn invalidate_inline_contexts(&mut self) {
-        let root_node_id = self.root_node().id;
-        let scale = self.viewport.scale();
-        self.iter_subtree_mut(root_node_id, |node_id, doc| {
-            let node = &mut doc.nodes[node_id];
-            let Some(element) = node.data.downcast_element_mut() else {
-                return;
-            };
-
-            if let Some(input) = element.text_input_data_mut() {
-                input.editor.set_scale(scale);
-                let mut font_ctx = doc.font_ctx.lock().unwrap();
-                input
-                    .editor
-                    .refresh_layout(&mut font_ctx, &mut doc.layout_ctx);
-            }
-        });
-    }
 }
