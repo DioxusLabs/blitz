@@ -752,7 +752,7 @@ dependencies = [
 
 [[package]]
 name = "blitz-dom"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "accesskit",
  "app_units",
