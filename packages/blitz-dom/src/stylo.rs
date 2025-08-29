@@ -89,6 +89,12 @@ impl crate::document::BaseDocument {
             style::driver::traverse_dom(&traverser, token, None);
         }
 
+        for opaque in self.snapshots.keys() {
+            let id = opaque.id();
+            if let Some(node) = self.nodes.get_mut(id) {
+                node.has_snapshot = false;
+            }
+        }
         self.snapshots.clear();
 
         style::thread_state::exit(ThreadState::LAYOUT);
