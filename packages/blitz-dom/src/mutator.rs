@@ -723,10 +723,12 @@ fn set_input_checked_state(element: &mut ElementData, value: String) {
 /// And syncs it back to stylist on drop.
 pub struct ViewportMut<'doc> {
     doc: &'doc mut BaseDocument,
+    initial_scale: f64,
 }
 impl ViewportMut<'_> {
     pub fn new(doc: &mut BaseDocument) -> ViewportMut<'_> {
-        ViewportMut { doc }
+        let initial_scale = doc.viewport.scale_f64();
+        ViewportMut { doc, initial_scale }
     }
 }
 impl Deref for ViewportMut<'_> {
@@ -746,5 +748,10 @@ impl Drop for ViewportMut<'_> {
         self.doc
             .set_stylist_device(make_device(&self.doc.viewport, self.doc.font_ctx.clone()));
         self.doc.scroll_viewport_by(0.0, 0.0); // Clamp scroll offset
+
+        let scale_has_changed = self.doc.viewport().scale_f64() != self.initial_scale;
+        if scale_has_changed {
+            self.doc.invalidate_inline_contexts();
+        }
     }
 }

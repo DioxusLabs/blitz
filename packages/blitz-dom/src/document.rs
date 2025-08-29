@@ -653,6 +653,9 @@ impl BaseDocument {
                     .unwrap()
                     .collection
                     .register_fonts(Blob::new(Arc::new(bytes)) as _, None);
+
+                // TODO: see if we can only invalidate if resolved fonts may have changed
+                self.invalidate_inline_contexts();
             }
             Resource::None => {
                 // Do nothing
@@ -888,9 +891,14 @@ impl BaseDocument {
     }
 
     pub fn set_viewport(&mut self, viewport: Viewport) {
+        let scale_has_changed = viewport.scale_f64() != self.viewport.scale_f64();
         self.viewport = viewport;
         self.set_stylist_device(make_device(&self.viewport, self.font_ctx.clone()));
         self.scroll_viewport_by(0.0, 0.0); // Clamp scroll offset
+
+        if scale_has_changed {
+            self.invalidate_inline_contexts();
+        }
     }
 
     pub fn viewport(&self) -> &Viewport {
