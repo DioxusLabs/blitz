@@ -1077,12 +1077,6 @@ impl BaseDocument {
         self.deferred_construction_nodes
             .dedup_by_key(|task| task.node_id);
 
-        // dbg!(&self.deferred_construction_nodes);
-        println!(
-            "Deferred task count: {}",
-            self.deferred_construction_nodes.len()
-        );
-
         let results: Vec<ConstructionTaskResult> = self
             .deferred_construction_nodes
             .par_iter()
