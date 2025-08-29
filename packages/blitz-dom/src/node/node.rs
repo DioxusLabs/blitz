@@ -261,6 +261,12 @@ impl Node {
         }
     }
 
+    pub fn clear_damage_mut(&mut self) {
+        if let Some(data) = self.stylo_element_data.get_mut() {
+            data.damage = RestyleDamage::empty();
+        }
+    }
+
     pub fn hover(&mut self) {
         self.element_state.insert(ElementState::HOVER);
         self.set_restyle_hint(RestyleHint::restyle_subtree());
