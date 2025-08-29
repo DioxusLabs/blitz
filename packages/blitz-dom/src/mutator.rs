@@ -11,6 +11,7 @@ use crate::{
 };
 use blitz_traits::net::Request;
 use blitz_traits::shell::Viewport;
+use style::Atom;
 use style::invalidation::element::restyle_hints::RestyleHint;
 use style::stylesheets::OriginSet;
 
@@ -207,6 +208,10 @@ impl DocumentMutator<'_> {
         let tag = &element.name.local;
         let attr = &name.local;
 
+        if *attr == local_name!("id") {
+            element.id = Some(Atom::from(value))
+        }
+
         if *attr == local_name!("value") {
             if let Some(input_data) = element.text_input_data_mut() {
                 // Update text input value
@@ -258,6 +263,10 @@ impl DocumentMutator<'_> {
         let had_attr = removed_attr.is_some();
         if !had_attr {
             return;
+        }
+
+        if name.local == local_name!("id") {
+            element.id = None;
         }
 
         // Update text input value
