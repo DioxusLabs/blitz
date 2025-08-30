@@ -537,10 +537,16 @@ impl TextBrush {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct TextLayout {
     pub text: String,
     pub layout: parley::layout::Layout<TextBrush>,
+}
+
+impl TextLayout {
+    pub fn new() -> Self {
+        Default::default()
+    }
 }
 
 impl std::fmt::Debug for TextLayout {

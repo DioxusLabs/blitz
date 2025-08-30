@@ -1,8 +1,8 @@
 use crate::events::handle_dom_event;
 use crate::font_metrics::BlitzFontMetricsProvider;
 use crate::layout::construct::{
-    ConstructionTask, ConstructionTaskKind, ConstructionTaskResult, ConstructionTaskResultData,
-    build_inline_layout, collect_layout_children,
+    ConstructionTask, ConstructionTaskData, ConstructionTaskResult, ConstructionTaskResultData,
+    build_inline_layout_into, collect_layout_children,
 };
 use crate::layout::damage::{ALL_DAMAGE, CONSTRUCT_BOX, CONSTRUCT_DESCENDENT, CONSTRUCT_FC};
 use crate::mutator::ViewportMut;
@@ -1071,18 +1071,17 @@ impl BaseDocument {
     }
 
     pub fn resolve_deferred_tasks(&mut self) {
-        // Deduplicate deferred tasks by node_id to avoid redundant work
-        self.deferred_construction_nodes
-            .sort_unstable_by_key(|task| task.node_id);
-        self.deferred_construction_nodes
-            .dedup_by_key(|task| task.node_id);
+        let mut deferred_construction_nodes = std::mem::take(&mut self.deferred_construction_nodes);
 
-        let results: Vec<ConstructionTaskResult> = self
-            .deferred_construction_nodes
-            .par_iter()
-            .map(|task: &ConstructionTask| match task.kind {
-                ConstructionTaskKind::InlineLayout => {
-                    let (inline_layout, _) = LAYOUT_CTX.with_borrow_mut(|layout_ctx| {
+        // Deduplicate deferred tasks by node_id to avoid redundant work
+        deferred_construction_nodes.sort_unstable_by_key(|task| task.node_id);
+        deferred_construction_nodes.dedup_by_key(|task| task.node_id);
+
+        let results: Vec<ConstructionTaskResult> = deferred_construction_nodes
+            .into_par_iter()
+            .map(|task: ConstructionTask| match task.data {
+                ConstructionTaskData::InlineLayout(mut layout) => {
+                    let inline_layout = LAYOUT_CTX.with_borrow_mut(|layout_ctx| {
                         if layout_ctx.is_none() {
                             println!(
                                 "Initialising LayoutContext for thread {:?}",
@@ -1102,19 +1101,22 @@ impl BaseDocument {
                             }
                             let font_ctx = &mut **font_ctx.as_mut().unwrap();
 
-                            build_inline_layout(
+                            build_inline_layout_into(
                                 &self.nodes,
                                 layout_ctx,
                                 font_ctx,
+                                &mut layout,
                                 self.viewport.scale(),
                                 task.node_id,
-                            )
+                            );
+
+                            layout
                         })
                     });
 
                     ConstructionTaskResult {
                         node_id: task.node_id,
-                        data: ConstructionTaskResultData::InlineLayout(Box::new(inline_layout)),
+                        data: ConstructionTaskResultData::InlineLayout(inline_layout),
                     }
                 }
             })
