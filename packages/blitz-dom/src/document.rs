@@ -1,6 +1,10 @@
 use crate::events::handle_dom_event;
 use crate::font_metrics::BlitzFontMetricsProvider;
-use crate::layout::construct::collect_layout_children;
+use crate::layout::construct::{
+    ConstructionTask, ConstructionTaskData, ConstructionTaskResult, ConstructionTaskResultData,
+    build_inline_layout_into, collect_layout_children,
+};
+use crate::layout::damage::{ALL_DAMAGE, CONSTRUCT_BOX, CONSTRUCT_DESCENDENT, CONSTRUCT_FC};
 use crate::mutator::ViewportMut;
 use crate::net::{Resource, StylesheetLoader};
 use crate::node::{ImageData, NodeFlags, RasterImageData, SpecialElementData, Status, TextBrush};
@@ -10,7 +14,8 @@ use crate::url::DocumentUrl;
 use crate::util::ImageType;
 use crate::{
     DEFAULT_CSS, DocumentConfig, DocumentMutator, DummyHtmlParserProvider, ElementData,
-    EventDriver, HtmlParserProvider, Node, NodeData, NoopEventHandler, TextNodeData,
+    EventDriver, HtmlParserProvider, NON_INCREMENTAL, Node, NodeData, NoopEventHandler,
+    TextNodeData,
 };
 use blitz_traits::devtools::DevtoolSettings;
 use blitz_traits::events::{DomEvent, HitResult, UiEvent};
@@ -20,11 +25,13 @@ use blitz_traits::shell::{ColorScheme, DummyShellProvider, ShellProvider, Viewpo
 use cursor_icon::CursorIcon;
 use debug_timer::debug_timer;
 use markup5ever::local_name;
-use parley::FontContext;
+use parley::{FontContext, LayoutContext};
 use peniko::{Blob, kurbo};
+use rayon::prelude::*;
 use selectors::{Element, matching::QuirksMode};
 use slab::Slab;
 use std::any::Any;
+use std::cell::RefCell;
 use std::collections::{BTreeMap, Bound, HashMap, HashSet};
 use std::ops::{Deref, DerefMut};
 use std::str::FromStr;
@@ -52,6 +59,14 @@ use style::{
 };
 use taffy::AvailableSpace;
 use url::Url;
+
+thread_local! {
+    static LAYOUT_CTX: RefCell<Option<Box<LayoutContext<TextBrush>>>> = const { RefCell::new(None) };
+    static FONT_CTX: RefCell<Option<Box<FontContext>>> = const { RefCell::new(None) };
+}
+
+#[cfg(feature = "incremental")]
+use {crate::layout::damage::ONLY_RELAYOUT, style::selector_parser::RestyleDamage};
 
 /// Abstraction over wrappers around [`BaseDocument`] to allow for them all to
 /// be driven by [`blitz-shell`](https://docs.rs/blitz-shell)
@@ -133,6 +148,8 @@ pub struct BaseDocument {
     pub(crate) controls_to_form: HashMap<usize, usize>,
     /// Set of changed nodes for updating the accessibility tree
     pub(crate) changed_nodes: HashSet<usize>,
+    /// Set of changed nodes for updating the accessibility tree
+    pub(crate) deferred_construction_nodes: Vec<ConstructionTask>,
 
     // Service providers
     /// Network provider. Can be used to fetch assets.
@@ -173,13 +190,27 @@ impl BaseDocument {
 
         let id = ID_GENERATOR.fetch_add(1, Ordering::SeqCst);
 
-        let font_ctx = config.font_ctx.unwrap_or_else(|| {
-            let mut font_ctx = FontContext::default();
-            font_ctx
-                .collection
-                .register_fonts(Blob::new(Arc::new(crate::BULLET_FONT) as _), None);
-            font_ctx
-        });
+        let font_ctx = config
+            .font_ctx
+            // .map(|mut font_ctx| {
+            //     font_ctx.collection.make_shared();
+            //     font_ctx.source_cache.make_shared();
+            //     font_ctx
+            // })
+            .unwrap_or_else(|| {
+                // let mut font_ctx = FontContext {
+                //     source_cache: SourceCache::new_shared(),
+                //     collection: Collection::new(CollectionOptions {
+                //         shared: true,
+                //         system_fonts: true,
+                //     }),
+                // };
+                let mut font_ctx = FontContext::default();
+                font_ctx
+                    .collection
+                    .register_fonts(Blob::new(Arc::new(crate::BULLET_FONT) as _), None);
+                font_ctx
+            });
         let font_ctx = Arc::new(Mutex::new(font_ctx));
 
         let viewport = config.viewport.unwrap_or_default();
@@ -237,6 +268,7 @@ impl BaseDocument {
             mousedown_node_id: None,
             is_animating: false,
             changed_nodes: HashSet::new(),
+            deferred_construction_nodes: Vec::new(),
             controls_to_form: HashMap::new(),
             net_provider,
             navigation_provider,
@@ -609,6 +641,7 @@ impl BaseDocument {
 
                         // Clear layout cache
                         node.cache.clear();
+                        node.insert_damage(CONSTRUCT_BOX);
                     }
                     ImageType::Background(idx) => {
                         if let Some(Some(bg_image)) = node
@@ -633,6 +666,7 @@ impl BaseDocument {
 
                         // Clear layout cache
                         node.cache.clear();
+                        node.insert_damage(CONSTRUCT_BOX);
                     }
                     ImageType::Background(idx) => {
                         if let Some(Some(bg_image)) = node
@@ -646,13 +680,31 @@ impl BaseDocument {
                 }
             }
             Resource::Font(bytes) => {
+                let font = Blob::new(Arc::new(bytes));
+
                 // TODO: Implement FontInfoOveride
                 // TODO: Investigate eliminating double-box
-                self.font_ctx
-                    .lock()
-                    .unwrap()
-                    .collection
-                    .register_fonts(Blob::new(Arc::new(bytes)) as _, None);
+                let mut font_ctx = self.font_ctx.lock().unwrap();
+                font_ctx.collection.register_fonts(font.clone(), None);
+                let doc_font_ctx = &*font_ctx;
+
+                rayon::broadcast(|_ctx| {
+                    FONT_CTX.with_borrow_mut(|font_ctx| {
+                        match font_ctx {
+                            None => {
+                                println!(
+                                    "Initialising FontContext for thread {:?}",
+                                    std::thread::current().id()
+                                );
+                                *font_ctx = Some(Box::new(doc_font_ctx.clone()));
+                            }
+                            Some(font_ctx) => {
+                                font_ctx.collection.register_fonts(font.clone(), None);
+                            }
+                        };
+                    })
+                });
+                drop(font_ctx);
 
                 // TODO: see if we can only invalidate if resolved fonts may have changed
                 self.invalidate_inline_contexts();
@@ -739,27 +791,43 @@ impl BaseDocument {
             return;
         }
 
+        let root_node_id = self.root_element().id;
         debug_timer!(timer, feature = "log_phase_times");
 
         // we need to resolve stylist first since it will need to drive our layout bits
         self.resolve_stylist();
-
         timer.record_time("style");
+
+        // Propagate damage flags (from mutation and restyles) up and down the tree
+        #[cfg(feature = "incremental")]
+        self.propagate_damage_flags(root_node_id, RestyleDamage::empty());
+        #[cfg(feature = "incremental")]
+        timer.record_time("damage");
 
         // Fix up tree for layout (insert anonymous blocks as necessary, etc)
         self.resolve_layout_children();
-
         timer.record_time("construct");
 
-        // Merge stylo into taffy
-        self.flush_styles_to_layout(self.root_element().id);
+        self.resolve_deferred_tasks();
+        timer.record_time("pconstruct");
 
+        // Merge stylo into taffy
+        self.flush_styles_to_layout(root_node_id);
         timer.record_time("flush");
 
         // Next we resolve layout with the data resolved by stlist
         self.resolve_layout();
-
         timer.record_time("layout");
+
+        // Clear all damage
+        #[cfg(feature = "incremental")]
+        {
+            for (_, node) in self.nodes.iter_mut() {
+                node.clear_damage_mut();
+            }
+            timer.record_time("c_damage");
+        }
+
         timer.print_times("Resolve: ");
     }
 
@@ -957,21 +1025,122 @@ impl BaseDocument {
         resolve_layout_children_recursive(self, self.root_node().id);
 
         fn resolve_layout_children_recursive(doc: &mut BaseDocument, node_id: usize) {
-            // if doc.nodes[node_id].layout_children.borrow().is_none() {
-            let mut layout_children = Vec::new();
-            let mut anonymous_block: Option<usize> = None;
-            collect_layout_children(doc, node_id, &mut layout_children, &mut anonymous_block);
+            let mut damage = doc.nodes[node_id].damage().unwrap_or(ALL_DAMAGE);
+            let _flags = doc.nodes[node_id].flags;
 
-            // Recurse into newly collected layout children
-            for child_id in layout_children.iter().copied() {
-                resolve_layout_children_recursive(doc, child_id);
-                doc.nodes[child_id].layout_parent.set(Some(node_id));
+            if NON_INCREMENTAL || damage.intersects(CONSTRUCT_FC | CONSTRUCT_BOX) {
+                //} || flags.contains(NodeFlags::IS_INLINE_ROOT) {
+                let mut layout_children = Vec::new();
+                let mut anonymous_block: Option<usize> = None;
+                collect_layout_children(doc, node_id, &mut layout_children, &mut anonymous_block);
+
+                // Recurse into newly collected layout children
+                for child_id in layout_children.iter().copied() {
+                    resolve_layout_children_recursive(doc, child_id);
+                    doc.nodes[child_id].layout_parent.set(Some(node_id));
+                    if let Some(data) = doc.nodes[child_id].stylo_element_data.get_mut() {
+                        data.damage
+                            .remove(CONSTRUCT_DESCENDENT | CONSTRUCT_FC | CONSTRUCT_BOX);
+                    }
+                }
+
+                *doc.nodes[node_id].layout_children.borrow_mut() = Some(layout_children.clone());
+                *doc.nodes[node_id].paint_children.borrow_mut() = Some(layout_children);
+
+                damage.remove(CONSTRUCT_DESCENDENT | CONSTRUCT_FC | CONSTRUCT_BOX);
+                // damage.insert(RestyleDamage::RELAYOUT | RestyleDamage::REPAINT);
+            } else {
+                //if damage.contains(CONSTRUCT_DESCENDENT) {
+                let layout_children = doc.nodes[node_id].layout_children.borrow_mut().take();
+                if let Some(layout_children) = layout_children {
+                    // Recurse into previously computed layout children
+                    for child_id in layout_children.iter().copied() {
+                        resolve_layout_children_recursive(doc, child_id);
+                        doc.nodes[child_id].layout_parent.set(Some(node_id));
+                    }
+
+                    *doc.nodes[node_id].layout_children.borrow_mut() = Some(layout_children);
+                }
+
+                // damage.remove(CONSTRUCT_DESCENDENT);
+                // damage.insert(RestyleDamage::RELAYOUT | RestyleDamage::REPAINT);
             }
 
-            *doc.nodes[node_id].layout_children.borrow_mut() = Some(layout_children.clone());
-            *doc.nodes[node_id].paint_children.borrow_mut() = Some(layout_children);
-            // }
+            doc.nodes[node_id].set_damage(damage);
         }
+    }
+
+    pub fn resolve_deferred_tasks(&mut self) {
+        let mut deferred_construction_nodes = std::mem::take(&mut self.deferred_construction_nodes);
+
+        // Deduplicate deferred tasks by node_id to avoid redundant work
+        deferred_construction_nodes.sort_unstable_by_key(|task| task.node_id);
+        deferred_construction_nodes.dedup_by_key(|task| task.node_id);
+
+        let results: Vec<ConstructionTaskResult> = deferred_construction_nodes
+            .into_par_iter()
+            .map(|task: ConstructionTask| match task.data {
+                ConstructionTaskData::InlineLayout(mut layout) => {
+                    let inline_layout = LAYOUT_CTX.with_borrow_mut(|layout_ctx| {
+                        if layout_ctx.is_none() {
+                            println!(
+                                "Initialising LayoutContext for thread {:?}",
+                                std::thread::current().id()
+                            );
+                            *layout_ctx = Some(Box::new(LayoutContext::new()));
+                        }
+                        let layout_ctx = &mut **layout_ctx.as_mut().unwrap();
+
+                        FONT_CTX.with_borrow_mut(|font_ctx| {
+                            if font_ctx.is_none() {
+                                println!(
+                                    "Initialising FontContext for thread {:?}",
+                                    std::thread::current().id()
+                                );
+                                *font_ctx = Some(Box::new(self.font_ctx.lock().unwrap().clone()));
+                            }
+                            let font_ctx = &mut **font_ctx.as_mut().unwrap();
+
+                            layout.content_widths = None;
+                            build_inline_layout_into(
+                                &self.nodes,
+                                layout_ctx,
+                                font_ctx,
+                                &mut layout,
+                                self.viewport.scale(),
+                                task.node_id,
+                            );
+
+                            // If layout doesn't contain any inline boxes, then it is safe to populate the content_widths
+                            // cache during this parallelized stage.
+                            // if layout.layout.inline_boxes().is_empty() {
+                            //     layout.content_widths();
+                            // }
+
+                            layout
+                        })
+                    });
+
+                    ConstructionTaskResult {
+                        node_id: task.node_id,
+                        data: ConstructionTaskResultData::InlineLayout(inline_layout),
+                    }
+                }
+            })
+            .collect();
+
+        for result in results {
+            match result.data {
+                ConstructionTaskResultData::InlineLayout(layout) => {
+                    self.nodes[result.node_id]
+                        .element_data_mut()
+                        .unwrap()
+                        .inline_layout_data = Some(layout);
+                }
+            }
+        }
+
+        self.deferred_construction_nodes.clear();
     }
 
     /// Walk the nodes now that they're properly styled and transfer their styles to the taffy style system
@@ -1035,9 +1204,9 @@ impl BaseDocument {
     /// Scroll a node by given x and y
     /// Will bubble scrolling up to parent node once it can no longer scroll further
     /// If we're already at the root node, bubbles scrolling up to the viewport
-    pub fn scroll_node_by(&mut self, node_id: usize, x: f64, y: f64) {
+    pub fn scroll_node_by(&mut self, node_id: usize, x: f64, y: f64) -> bool {
         let Some(node) = self.nodes.get_mut(node_id) else {
-            return;
+            return false;
         };
 
         let is_html_or_body = node.data.downcast_element().is_some_and(|e| {
@@ -1056,6 +1225,7 @@ impl BaseDocument {
             })
             .unwrap_or((false, false));
 
+        let initial = node.scroll_offset;
         let new_x = node.scroll_offset.x - x;
         let new_y = node.scroll_offset.y - y;
 
@@ -1090,21 +1260,27 @@ impl BaseDocument {
             node.scroll_offset.y = new_y;
         }
 
+        let has_changed = node.scroll_offset != initial;
+
         if bubble_x != 0.0 || bubble_y != 0.0 {
             if let Some(parent) = node.parent {
-                self.scroll_node_by(parent, bubble_x, bubble_y);
+                return self.scroll_node_by(parent, bubble_x, bubble_y) | has_changed;
             } else {
-                self.scroll_viewport_by(bubble_x, bubble_y);
+                return self.scroll_viewport_by(bubble_x, bubble_y) | has_changed;
             }
         }
+
+        false
     }
 
     /// Scroll the viewport by the given values
-    pub fn scroll_viewport_by(&mut self, x: f64, y: f64) {
+    pub fn scroll_viewport_by(&mut self, x: f64, y: f64) -> bool {
         let content_size = self.root_element().final_layout.size;
         let new_scroll = (self.viewport_scroll.x - x, self.viewport_scroll.y - y);
         let window_width = self.viewport.window_size.0 as f64 / self.viewport.scale() as f64;
         let window_height = self.viewport.window_size.1 as f64 / self.viewport.scale() as f64;
+
+        let initial = self.viewport_scroll;
         self.viewport_scroll.x = f64::max(
             0.0,
             f64::min(new_scroll.0, content_size.width as f64 - window_width),
@@ -1112,7 +1288,9 @@ impl BaseDocument {
         self.viewport_scroll.y = f64::max(
             0.0,
             f64::min(new_scroll.1, content_size.height as f64 - window_height),
-        )
+        );
+
+        self.viewport_scroll != initial
     }
 
     pub fn viewport_scroll(&self) -> kurbo::Point {
