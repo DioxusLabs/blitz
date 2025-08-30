@@ -184,6 +184,11 @@ impl CssBox {
         path
     }
 
+    pub fn path_from_path_vec(&self, path: Vec<PathEl>) -> BezPath {
+        let path = BezPath::from_vec(path);
+        path
+    }
+
     pub fn polygon_path(&self, points: &[Point]) -> BezPath {
         let mut path = BezPath::new();
         if !points.is_empty() {
@@ -200,68 +205,6 @@ impl CssBox {
         let path = RoundedRect::new(x0, y0, x1, y1, radii).to_path(BezPath::TOLERANCE);
         path
     }
-
-    // pub fn from_stylo_generic_basic_shape(&self, s: &GenericBasicShape) -> BezPath {
-    //     let mut path = BezPath::new();
-    //     match s {
-    //         GenericBasicShape::Rect(rectangle) => {
-    //             let rect = Rect::new(rectangle.x0, rectangle.y0, rectangle.x1, rectangle.y1);
-    //             path = rect.to_path(BezPath::TOLERANCE);
-    //         },
-    //         GenericBasicShape::Circle(circle) => {
-    //             let center = Point {
-    //                 x: circle.center.x,
-    //                 y: circle.centery.y,
-    //             };
-    //             let radius = circle.radius.to_f64();
-    //             path = Circle::new(center, radius).to_path(BezPath::TOLERANCE);
-    //         },
-    //         GenericBasicShape::Polygon(polygon) => {
-    //             let points = polygon
-    //             .points
-    //             .iter()
-    //             .map(|p| {
-    //                 Point {
-    //                     x: p.x.to_f64(),
-    //                     y: p.y.to_f64(),
-    //                 }
-    //             })
-    //             .collect();
-    //             if !points.is_empty() {
-    //                 path.move_to(points[0]);
-    //                 for point in points.iter().skip(1) {
-    //                     path.line_to(*point);
-    //                 }        
-    //                 path.close_path();
-    //             }
-    //         },
-    //         GenericBasicShape::Ellipse(ellipse) => {
-    //             let center = Point {
-    //                 x: ellipse.center.x,
-    //                 y: ellipse.center.y
-    //             };
-    //             let radii = Vec2 {
-    //                 x: ellipse.radii.x.to_f64(),
-    //                 y: ellipse.radii.y.to_f64(),
-    //             };
-    //             path = Ellipse::new(center, radii, 0.0).to_path(BezPath::TOLERANCE);
-    //         },
-    //         GenericBasicShape::PathOrShape(path_or_shape) => {
-    //             if let Some(path) = path_or_shape.path.as_ref() {
-    //                 if let Some(bez_path) = path.as_bez_path() {
-    //                     return bez_path.clone();
-    //                 }
-    //                 path.to_bez_path(&mut path);
-    //             } else if let Some(shape) = path_or_shape.shape.as_ref() {
-    //                 if let Some(bez_path) = shape.as_bez_path() {
-    //                     return bez_path.clone();
-    //                 }
-    //                 shape.to_bez_path(&mut path);
-    //             }
-    //         },
-    //     }
-    //     path
-    // }
 
     fn shape(&self, path: &mut BezPath, line: CssBoxKind, direction: Direction) {
         use Corner::*;
