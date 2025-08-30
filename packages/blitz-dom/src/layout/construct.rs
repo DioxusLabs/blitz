@@ -30,23 +30,20 @@ use super::{damage::ALL_DAMAGE, list::collect_list_item_children, table::build_t
 
 const DUMMY_NAME: QualName = qual_name!("div", html);
 
-#[derive(Copy, Clone, PartialEq, Eq, Hash, Debug)]
-pub(crate) enum ConstructionTaskKind {
-    /// Construction a Parley inline layout for a subtree
-    InlineLayout,
-    // Construct an SVG for a subtree
-    // Svg,
-}
-
-#[derive(Copy, Clone, PartialEq, Eq, Hash, Debug)]
+#[derive(Clone)]
 pub(crate) struct ConstructionTask {
     pub(crate) node_id: usize,
-    pub(crate) kind: ConstructionTaskKind,
+    pub(crate) data: ConstructionTaskData,
 }
 
 pub(crate) struct ConstructionTaskResult {
     pub(crate) node_id: usize,
     pub(crate) data: ConstructionTaskResultData,
+}
+
+#[derive(Clone)]
+pub(crate) enum ConstructionTaskData {
+    InlineLayout(Box<TextLayout>),
 }
 
 pub(crate) enum ConstructionTaskResultData {
@@ -224,11 +221,16 @@ pub(crate) fn collect_layout_children(
 
             // TODO: fix display:contents
             if all_inline {
+                let existing_layout = doc.nodes[container_node_id]
+                    .element_data_mut()
+                    .and_then(|el| el.inline_layout_data.take());
+                let layout = existing_layout.unwrap_or_else(|| Box::new(TextLayout::new()));
+
                 // Queue node for inline layout construction. Deferring construction of inline layouts to a
                 // dedicated phase allows us to multithread the expensive text shaping step.
                 doc.deferred_construction_nodes.push(ConstructionTask {
                     node_id: container_node_id,
-                    kind: ConstructionTaskKind::InlineLayout,
+                    data: ConstructionTaskData::InlineLayout(layout),
                 });
                 doc.nodes[container_node_id]
                     .flags
@@ -684,13 +686,14 @@ pub(crate) fn find_inline_layout_embedded_boxes(
     }
 }
 
-pub(crate) fn build_inline_layout(
+pub(crate) fn build_inline_layout_into(
     nodes: &Slab<Node>,
     layout_ctx: &mut LayoutContext<TextBrush>,
     font_ctx: &mut FontContext,
+    text_layout: &mut TextLayout,
     scale: f32,
     inline_context_root_node_id: usize,
-) -> (TextLayout, Vec<usize>) {
+) {
     // println!("Inline context {}", inline_context_root_node_id);
 
     // Get the inline context's root node's text styles
@@ -765,16 +768,8 @@ pub(crate) fn build_inline_layout(
         );
     }
 
-    let (layout, text) = builder.build();
-
-    // Obtain layout children for the inline layout
-    let layout_children: Vec<usize> = layout
-        .inline_boxes()
-        .iter()
-        .map(|ibox| ibox.id as usize)
-        .collect();
-
-    return (TextLayout { text, layout }, layout_children);
+    text_layout.text = builder.build_into(&mut text_layout.layout);
+    return;
 
     fn build_inline_layout_recursive(
         builder: &mut TreeBuilder<TextBrush>,
