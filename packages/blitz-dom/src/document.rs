@@ -1035,9 +1035,9 @@ impl BaseDocument {
     /// Scroll a node by given x and y
     /// Will bubble scrolling up to parent node once it can no longer scroll further
     /// If we're already at the root node, bubbles scrolling up to the viewport
-    pub fn scroll_node_by(&mut self, node_id: usize, x: f64, y: f64) {
+    pub fn scroll_node_by(&mut self, node_id: usize, x: f64, y: f64) -> bool {
         let Some(node) = self.nodes.get_mut(node_id) else {
-            return;
+            return false;
         };
 
         let is_html_or_body = node.data.downcast_element().is_some_and(|e| {
@@ -1056,6 +1056,7 @@ impl BaseDocument {
             })
             .unwrap_or((false, false));
 
+        let initial = node.scroll_offset;
         let new_x = node.scroll_offset.x - x;
         let new_y = node.scroll_offset.y - y;
 
@@ -1090,21 +1091,27 @@ impl BaseDocument {
             node.scroll_offset.y = new_y;
         }
 
+        let has_changed = node.scroll_offset != initial;
+
         if bubble_x != 0.0 || bubble_y != 0.0 {
             if let Some(parent) = node.parent {
-                self.scroll_node_by(parent, bubble_x, bubble_y);
+                return self.scroll_node_by(parent, bubble_x, bubble_y) | has_changed;
             } else {
-                self.scroll_viewport_by(bubble_x, bubble_y);
+                return self.scroll_viewport_by(bubble_x, bubble_y) | has_changed;
             }
         }
+
+        has_changed
     }
 
     /// Scroll the viewport by the given values
-    pub fn scroll_viewport_by(&mut self, x: f64, y: f64) {
+    pub fn scroll_viewport_by(&mut self, x: f64, y: f64) -> bool {
         let content_size = self.root_element().final_layout.size;
         let new_scroll = (self.viewport_scroll.x - x, self.viewport_scroll.y - y);
         let window_width = self.viewport.window_size.0 as f64 / self.viewport.scale() as f64;
         let window_height = self.viewport.window_size.1 as f64 / self.viewport.scale() as f64;
+
+        let initial = self.viewport_scroll;
         self.viewport_scroll.x = f64::max(
             0.0,
             f64::min(new_scroll.0, content_size.width as f64 - window_width),
@@ -1112,7 +1119,9 @@ impl BaseDocument {
         self.viewport_scroll.y = f64::max(
             0.0,
             f64::min(new_scroll.1, content_size.height as f64 - window_height),
-        )
+        );
+
+        self.viewport_scroll != initial
     }
 
     pub fn viewport_scroll(&self) -> kurbo::Point {

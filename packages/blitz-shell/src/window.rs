@@ -335,7 +335,6 @@ impl<Rend: WindowRenderer> View<Rend> {
                     mods: winit_modifiers_to_kbt_modifiers(self.keyboard_modifiers.state()),
                 });
                 self.doc.handle_ui_event(event);
-                self.request_redraw();
             }
             WindowEvent::MouseInput { button, state, .. } => {
                 let button = match button {
@@ -370,12 +369,15 @@ impl<Rend: WindowRenderer> View<Rend> {
                     winit::event::MouseScrollDelta::PixelDelta(offsets) => (offsets.x, offsets.y)
                 };
 
-                if let Some(hover_node_id) = self.doc.get_hover_node_id() {
-                    self.doc.scroll_node_by(hover_node_id, scroll_x, scroll_y);
+                let has_changed = if let Some(hover_node_id) = self.doc.get_hover_node_id() {
+                    self.doc.scroll_node_by(hover_node_id, scroll_x, scroll_y)
                 } else {
-                    self.doc.scroll_viewport_by(scroll_x, scroll_y);
+                    self.doc.scroll_viewport_by(scroll_x, scroll_y)
+                };
+
+                if has_changed {
+                    self.request_redraw();
                 }
-                self.request_redraw();
             }
 
             // File events
