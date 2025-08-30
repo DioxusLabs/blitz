@@ -1101,6 +1101,7 @@ impl BaseDocument {
                             }
                             let font_ctx = &mut **font_ctx.as_mut().unwrap();
 
+                            layout.content_widths = None;
                             build_inline_layout_into(
                                 &self.nodes,
                                 layout_ctx,
@@ -1109,6 +1110,12 @@ impl BaseDocument {
                                 self.viewport.scale(),
                                 task.node_id,
                             );
+
+                            // If layout doesn't contain any inline boxes, then it is safe to populate the content_widths
+                            // cache during this parallelized stage.
+                            // if layout.layout.inline_boxes().is_empty() {
+                            //     layout.content_widths();
+                            // }
 
                             layout
                         })

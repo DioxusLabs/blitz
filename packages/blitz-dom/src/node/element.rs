@@ -1,6 +1,6 @@
 use cssparser::ParserInput;
 use markup5ever::{LocalName, QualName, local_name};
-use parley::{FontContext, LayoutContext};
+use parley::{ContentWidths, FontContext, LayoutContext};
 use selectors::matching::QuirksMode;
 use std::str::FromStr;
 use std::sync::Arc;
@@ -540,12 +540,19 @@ impl TextBrush {
 #[derive(Clone, Default)]
 pub struct TextLayout {
     pub text: String,
+    pub content_widths: Option<ContentWidths>,
     pub layout: parley::layout::Layout<TextBrush>,
 }
 
 impl TextLayout {
     pub fn new() -> Self {
         Default::default()
+    }
+
+    pub fn content_widths(&mut self) -> ContentWidths {
+        *self
+            .content_widths
+            .get_or_insert_with(|| self.layout.calculate_content_widths())
     }
 }
 

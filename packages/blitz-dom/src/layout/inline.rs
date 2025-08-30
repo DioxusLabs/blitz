@@ -74,8 +74,7 @@ impl BaseDocument {
                     .width
                     .map(|w| (w * scale) - pbw)
                     .unwrap_or_else(|| {
-                        // TODO: cache content widths
-                        let content_sizes = inline_layout.layout.calculate_content_widths();
+                        let content_sizes = inline_layout.content_widths();
                         let computed_width = match available_space.width {
                             AvailableSpace::MinContent => content_sizes.min,
                             AvailableSpace::MaxContent => content_sizes.max,
