@@ -169,6 +169,15 @@ impl EventHandler for DioxusEventHandler<'_> {
             | DomEventData::MouseUp { .. }
             | DomEventData::Click(_) => Some(wrap_event_data(NativeClickData)),
 
+            // Map touch events to mouse events - simple approach that works
+            DomEventData::TouchStart(_)
+            | DomEventData::TouchEnd(_)
+            | DomEventData::TouchMove(_)
+            | DomEventData::TouchCancel(_) => {
+                println!("🔥 BLITZ: Touch event converted to mouse event");
+                Some(wrap_event_data(NativeClickData))
+            },
+
             DomEventData::KeyDown(kevent)
             | DomEventData::KeyUp(kevent)
             | DomEventData::KeyPress(kevent) => {
