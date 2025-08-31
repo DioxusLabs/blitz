@@ -1,7 +1,7 @@
-use blitz_traits::events::{BlitzImeEvent, BlitzKeyEvent, KeyState};
+use blitz_traits::events::{BlitzImeEvent, BlitzKeyEvent, BlitzTouchEvent, KeyState};
 use blitz_traits::shell::ColorScheme;
 use keyboard_types::{Code, Key, Location, Modifiers};
-use winit::event::ElementState;
+use winit::event::{ElementState, Touch, TouchPhase};
 use winit::event::Ime;
 use winit::event::KeyEvent as WinitKeyEvent;
 use winit::keyboard::Key as WinitKey;
@@ -599,5 +599,30 @@ pub(crate) fn winit_key_to_kbt_key(winit_key: &WinitKey) -> Key {
             WinitNamedKey::F35 => Key::F35,
             _ => Key::Unidentified,
         },
+    }
+}
+
+/// Convert Winit Touch event to Blitz touch event
+pub(crate) fn winit_touch_event_to_blitz(
+    touch: &Touch,
+    mods: WinitModifiers,
+    scale_factor: f64,
+) -> BlitzTouchEvent {
+    let winit::dpi::LogicalPosition { x, y } = touch.location.to_logical(scale_factor);
+    
+    BlitzTouchEvent {
+        x,
+        y,
+        identifier: touch.id as i32,
+        force: touch.force.map(|f| match f {
+            // Convert different force types to a 0.0-1.0 range
+            winit::event::Force::Calibrated { force, .. } => force as f32,
+            winit::event::Force::Normalized(normalized) => normalized as f32,
+        }),
+        // Winit doesn't provide radius information, so we use reasonable defaults
+        radius_x: None,
+        radius_y: None,
+        rotation_angle: None,
+        mods: winit_modifiers_to_kbt_modifiers(mods),
     }
 }

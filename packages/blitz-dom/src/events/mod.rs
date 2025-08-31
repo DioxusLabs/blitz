@@ -2,6 +2,7 @@ mod driver;
 mod ime;
 mod keyboard;
 mod mouse;
+mod touch;
 
 use blitz_traits::events::{DomEvent, DomEventData};
 pub use driver::{EventDriver, EventHandler, NoopEventHandler};
@@ -55,6 +56,21 @@ pub(crate) fn handle_dom_event<F: FnMut(DomEvent)>(
         }
         DomEventData::Input(_) => {
             // Do nothing (no default action)
+        }
+        DomEventData::TouchStart(event) => {
+            touch::handle_touch_start(doc, target_node_id, event.x, event.y);
+        }
+        DomEventData::TouchEnd(event) => {
+            touch::handle_touch_end(doc, target_node_id, event, dispatch_event);
+        }
+        DomEventData::TouchMove(event) => {
+            let changed = touch::handle_touch_move(doc, target_node_id, event.x, event.y);
+            if changed {
+                doc.shell_provider.request_redraw();
+            }
+        }
+        DomEventData::TouchCancel(event) => {
+            touch::handle_touch_cancel(doc, target_node_id, event, dispatch_event);
         }
     }
 }

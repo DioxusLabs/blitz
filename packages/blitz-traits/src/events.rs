@@ -50,6 +50,10 @@ pub enum UiEvent {
     MouseMove(BlitzMouseButtonEvent),
     MouseUp(BlitzMouseButtonEvent),
     MouseDown(BlitzMouseButtonEvent),
+    TouchStart(BlitzTouchEvent),
+    TouchEnd(BlitzTouchEvent),
+    TouchMove(BlitzTouchEvent),
+    TouchCancel(BlitzTouchEvent),
     KeyUp(BlitzKeyEvent),
     KeyDown(BlitzKeyEvent),
     Ime(BlitzImeEvent),
@@ -100,6 +104,10 @@ pub enum DomEventKind {
     MouseDown,
     MouseUp,
     Click,
+    TouchStart,
+    TouchEnd,
+    TouchMove,
+    TouchCancel,
     KeyPress,
     KeyDown,
     KeyUp,
@@ -119,6 +127,10 @@ impl FromStr for DomEventKind {
             "mousedown" => Ok(Self::MouseDown),
             "mouseup" => Ok(Self::MouseUp),
             "click" => Ok(Self::Click),
+            "touchstart" => Ok(Self::TouchStart),
+            "touchend" => Ok(Self::TouchEnd),
+            "touchmove" => Ok(Self::TouchMove),
+            "touchcancel" => Ok(Self::TouchCancel),
             "keypress" => Ok(Self::KeyPress),
             "keydown" => Ok(Self::KeyDown),
             "keyup" => Ok(Self::KeyUp),
@@ -136,6 +148,10 @@ pub enum DomEventData {
     MouseDown(BlitzMouseButtonEvent),
     MouseUp(BlitzMouseButtonEvent),
     Click(BlitzMouseButtonEvent),
+    TouchStart(BlitzTouchEvent),
+    TouchEnd(BlitzTouchEvent),
+    TouchMove(BlitzTouchEvent),
+    TouchCancel(BlitzTouchEvent),
     KeyPress(BlitzKeyEvent),
     KeyDown(BlitzKeyEvent),
     KeyUp(BlitzKeyEvent),
@@ -159,6 +175,10 @@ impl DomEventData {
             Self::MouseDown { .. } => "mousedown",
             Self::MouseUp { .. } => "mouseup",
             Self::Click { .. } => "click",
+            Self::TouchStart { .. } => "touchstart",
+            Self::TouchEnd { .. } => "touchend",
+            Self::TouchMove { .. } => "touchmove",
+            Self::TouchCancel { .. } => "touchcancel",
             Self::KeyPress { .. } => "keypress",
             Self::KeyDown { .. } => "keydown",
             Self::KeyUp { .. } => "keyup",
@@ -173,6 +193,10 @@ impl DomEventData {
             Self::MouseDown { .. } => DomEventKind::MouseDown,
             Self::MouseUp { .. } => DomEventKind::MouseUp,
             Self::Click { .. } => DomEventKind::Click,
+            Self::TouchStart { .. } => DomEventKind::TouchStart,
+            Self::TouchEnd { .. } => DomEventKind::TouchEnd,
+            Self::TouchMove { .. } => DomEventKind::TouchMove,
+            Self::TouchCancel { .. } => DomEventKind::TouchCancel,
             Self::KeyPress { .. } => DomEventKind::KeyPress,
             Self::KeyDown { .. } => DomEventKind::KeyDown,
             Self::KeyUp { .. } => DomEventKind::KeyUp,
@@ -187,6 +211,10 @@ impl DomEventData {
             Self::MouseDown { .. } => true,
             Self::MouseUp { .. } => true,
             Self::Click { .. } => true,
+            Self::TouchStart { .. } => true,
+            Self::TouchEnd { .. } => true,
+            Self::TouchMove { .. } => true,
+            Self::TouchCancel { .. } => false, // touchcancel cannot be prevented
             Self::KeyDown { .. } => true,
             Self::KeyUp { .. } => true,
             Self::KeyPress { .. } => true,
@@ -201,6 +229,10 @@ impl DomEventData {
             Self::MouseDown { .. } => true,
             Self::MouseUp { .. } => true,
             Self::Click { .. } => true,
+            Self::TouchStart { .. } => true,
+            Self::TouchEnd { .. } => true,
+            Self::TouchMove { .. } => true,
+            Self::TouchCancel { .. } => true,
             Self::KeyDown { .. } => true,
             Self::KeyUp { .. } => true,
             Self::KeyPress { .. } => true,
@@ -315,6 +347,28 @@ pub struct BlitzKeyEvent {
 #[derive(Clone, Debug)]
 pub struct BlitzInputEvent {
     pub value: String,
+}
+
+/// Touch event data based on Web API TouchEvent
+/// [MDN Documentation](https://developer.mozilla.org/en-US/docs/Web/API/TouchEvent)
+#[derive(Clone, Debug)]
+pub struct BlitzTouchEvent {
+    /// The x coordinate of the touch point
+    pub x: f32,
+    /// The y coordinate of the touch point
+    pub y: f32,
+    /// A unique identifier for the touch point
+    pub identifier: i32,
+    /// The amount of pressure applied (0.0 to 1.0, with 1.0 being maximum pressure)
+    pub force: Option<f32>,
+    /// The approximate radius of the touch area in CSS pixels (X-axis)
+    pub radius_x: Option<f32>,
+    /// The approximate radius of the touch area in CSS pixels (Y-axis)
+    pub radius_y: Option<f32>,
+    /// The angle of the touch area ellipse in degrees (0 to 90)
+    pub rotation_angle: Option<f32>,
+    /// Keyboard modifiers active during the touch event
+    pub mods: Modifiers,
 }
 
 /// Copy of Winit IME event to avoid lower-level Blitz crates depending on winit

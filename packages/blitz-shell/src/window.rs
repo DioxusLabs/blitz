@@ -1,7 +1,7 @@
 use crate::BlitzShellProvider;
 use crate::convert_events::{
     color_scheme_to_theme, theme_to_color_scheme, winit_ime_to_blitz, winit_key_event_to_blitz,
-    winit_modifiers_to_kbt_modifiers,
+    winit_modifiers_to_kbt_modifiers, winit_touch_event_to_blitz,
 };
 use crate::event::{BlitzShellEvent, create_waker};
 use anyrender::WindowRenderer;
@@ -385,8 +385,23 @@ impl<Rend: WindowRenderer> View<Rend> {
             WindowEvent::Focused(_) => {}
 
             // Touch and motion events
-            // Todo implement touch scrolling
-            WindowEvent::Touch(_) => {}
+            WindowEvent::Touch(touch) => {
+                let touch_event_data = winit_touch_event_to_blitz(
+                    &touch,
+                    self.keyboard_modifiers.state(),
+                    self.window.scale_factor(),
+                );
+
+                let ui_event = match touch.phase {
+                    winit::event::TouchPhase::Started => UiEvent::TouchStart(touch_event_data),
+                    winit::event::TouchPhase::Moved => UiEvent::TouchMove(touch_event_data),
+                    winit::event::TouchPhase::Ended => UiEvent::TouchEnd(touch_event_data),
+                    winit::event::TouchPhase::Cancelled => UiEvent::TouchCancel(touch_event_data),
+                };
+
+                self.doc.handle_ui_event(ui_event);
+                self.request_redraw();
+            },
             WindowEvent::TouchpadPressure { .. } => {}
             WindowEvent::AxisMotion { .. } => {}
             WindowEvent::PinchGesture { .. } => {},
