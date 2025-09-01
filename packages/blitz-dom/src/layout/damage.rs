@@ -49,6 +49,12 @@ impl BaseDocument {
             for child in children.iter() {
                 damage |= self.propagate_damage_flags(*child, damage_for_children);
             }
+            if let Some(before_id) = self.nodes[node_id].before {
+                damage |= self.propagate_damage_flags(before_id, damage_for_children);
+            }
+            if let Some(after_id) = self.nodes[node_id].after {
+                damage |= self.propagate_damage_flags(after_id, damage_for_children);
+            }
         }
 
         let node = &mut self.nodes[node_id];
@@ -57,8 +63,12 @@ impl BaseDocument {
         node.children = children;
         *node.layout_children.get_mut() = layout_children;
 
+        if damage.contains(CONSTRUCT_BOX) {
+            damage.insert(RestyleDamage::RELAYOUT);
+        }
+
         // Compute damage to propagate to parent
-        let mut damage_for_parent = damage & RestyleDamage::RELAYOUT;
+        let mut damage_for_parent = damage; // & RestyleDamage::RELAYOUT;
 
         // If the node or any of it's children have been mutated or their layout styles
         // have changed, then we should clear it's layout cache.
@@ -77,22 +87,22 @@ impl BaseDocument {
         // Store damage for current node
         node.set_damage(damage);
 
-        let _is_fc_root = node
-            .primary_styles()
-            .map(|s| is_fc_root(&s))
-            .unwrap_or(false);
+        // let _is_fc_root = node
+        //     .primary_styles()
+        //     .map(|s| is_fc_root(&s))
+        //     .unwrap_or(false);
 
-        if damage.contains(CONSTRUCT_BOX) {
-            damage_for_parent.insert(CONSTRUCT_FC | CONSTRUCT_DESCENDENT);
-            // damage_for_parent.insert(CONSTRUCT_BOX);
-        }
+        // if damage.contains(CONSTRUCT_BOX) {
+        //     // damage_for_parent.insert(CONSTRUCT_FC | CONSTRUCT_DESCENDENT);
+        //     damage_for_parent.insert(CONSTRUCT_BOX);
+        // }
 
-        if damage.contains(CONSTRUCT_FC) {
-            damage_for_parent.insert(CONSTRUCT_DESCENDENT);
-            // if !is_fc_root {
-            damage_for_parent.insert(CONSTRUCT_FC);
-            // }
-        }
+        // if damage.contains(CONSTRUCT_FC) {
+        //     damage_for_parent.insert(CONSTRUCT_DESCENDENT);
+        //     // if !is_fc_root {
+        //     damage_for_parent.insert(CONSTRUCT_FC);
+        //     // }
+        // }
 
         // Propagate damage to parent
         // damage_for_parent
@@ -101,33 +111,33 @@ impl BaseDocument {
     }
 }
 
-#[cfg(feature = "incremental")]
-fn is_fc_root(style: &ComputedValues) -> bool {
-    let display = style.clone_display();
-    let display_inside = display.inside();
+// #[cfg(feature = "incremental")]
+// fn is_fc_root(style: &ComputedValues) -> bool {
+//     let display = style.clone_display();
+//     let display_inside = display.inside();
 
-    match display_inside {
-        DisplayInside::Flow => {
-            // Depends on parent context
-            false
-        }
+//     match display_inside {
+//         DisplayInside::Flow => {
+//             // Depends on parent context
+//             false
+//         }
 
-        DisplayInside::None => true,
-        DisplayInside::FlowRoot => true,
-        DisplayInside::Flex => true,
-        DisplayInside::Grid => true,
-        DisplayInside::Table => true,
-        DisplayInside::TableCell => true,
+//         DisplayInside::None => true,
+//         DisplayInside::FlowRoot => true,
+//         DisplayInside::Flex => true,
+//         DisplayInside::Grid => true,
+//         DisplayInside::Table => true,
+//         DisplayInside::TableCell => true,
 
-        DisplayInside::Contents => false,
-        DisplayInside::TableRowGroup => false,
-        DisplayInside::TableColumn => false,
-        DisplayInside::TableColumnGroup => false,
-        DisplayInside::TableHeaderGroup => false,
-        DisplayInside::TableFooterGroup => false,
-        DisplayInside::TableRow => false,
-    }
-}
+//         DisplayInside::Contents => false,
+//         DisplayInside::TableRowGroup => false,
+//         DisplayInside::TableColumn => false,
+//         DisplayInside::TableColumnGroup => false,
+//         DisplayInside::TableHeaderGroup => false,
+//         DisplayInside::TableFooterGroup => false,
+//         DisplayInside::TableRow => false,
+//     }
+// }
 
 pub(crate) fn compute_layout_damage(old: &ComputedValues, new: &ComputedValues) -> RestyleDamage {
     let box_tree_needs_rebuild = || {
@@ -215,9 +225,9 @@ pub(crate) fn compute_layout_damage(old: &ComputedValues, new: &ComputedValues) 
         reason = "these branches will soon be different"
     )]
     if box_tree_needs_rebuild() {
-        CONSTRUCT_BOX
+        ALL_DAMAGE
     } else if text_shaping_needs_recollect() {
-        CONSTRUCT_BOX
+        ALL_DAMAGE
     } else {
         // This element needs to be laid out again, but does not have any damage to
         // its box. In the future, we will distinguish between types of damage to the

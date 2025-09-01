@@ -643,7 +643,7 @@ impl BaseDocument {
 
                         // Clear layout cache
                         node.cache.clear();
-                        node.insert_damage(CONSTRUCT_BOX);
+                        node.insert_damage(ALL_DAMAGE);
                     }
                     ImageType::Background(idx) => {
                         if let Some(Some(bg_image)) = node
@@ -668,7 +668,7 @@ impl BaseDocument {
 
                         // Clear layout cache
                         node.cache.clear();
-                        node.insert_damage(CONSTRUCT_BOX);
+                        node.insert_damage(ALL_DAMAGE);
                     }
                     ImageType::Background(idx) => {
                         if let Some(Some(bg_image)) = node
@@ -1141,6 +1141,7 @@ impl BaseDocument {
         for result in results {
             match result.data {
                 ConstructionTaskResultData::InlineLayout(layout) => {
+                    self.nodes[result.node_id].cache.clear();
                     self.nodes[result.node_id]
                         .element_data_mut()
                         .unwrap()
