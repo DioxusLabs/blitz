@@ -72,6 +72,11 @@ pub fn process_ref_test(
         &ref_html,
     );
 
+    let image_is_blank = ctx.buffers.test_buffer.iter().all(|x| *x == 0);
+    if image_is_blank {
+        return SubtestCounts::ZERO_OF_ONE;
+    }
+
     if ctx.buffers.test_buffer == ctx.buffers.ref_buffer {
         return SubtestCounts::ONE_OF_ONE;
     }
