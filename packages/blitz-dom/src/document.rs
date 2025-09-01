@@ -68,7 +68,7 @@ thread_local! {
 }
 
 #[cfg(feature = "incremental")]
-use {crate::layout::damage::ONLY_RELAYOUT, style::selector_parser::RestyleDamage};
+use style::selector_parser::RestyleDamage;
 
 /// Abstraction over wrappers around [`BaseDocument`] to allow for them all to
 /// be driven by [`blitz-shell`](https://docs.rs/blitz-shell)
