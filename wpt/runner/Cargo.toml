@@ -9,6 +9,7 @@ rust-version.workspace = true
 default = ["cpu"]
 gpu = ["dep:anyrender_vello"]
 cpu = ["dep:anyrender_vello_cpu"]
+incremental = ["blitz-dom/incremental"]
 
 [dependencies]
 blitz-dom = { workspace = true, features = ["svg", "system_fonts", "woff-rust"] }
