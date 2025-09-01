@@ -1,7 +1,7 @@
 use parley::AlignmentOptions;
 use taffy::{
     AvailableSpace, LayoutPartialTree as _, MaybeMath as _, MaybeResolve as _, NodeId, Position,
-    RequestedAxis, ResolveOrZero as _, Size, compute_leaf_layout,
+    ResolveOrZero as _, Size, compute_leaf_layout,
 };
 
 use super::resolve_calc_value;
@@ -106,13 +106,22 @@ impl BaseDocument {
                             - pbw
                     });
 
-                if inputs.run_mode == taffy::RunMode::ComputeSize
-                    && inputs.axis == RequestedAxis::Horizontal
-                {
+                if inputs.run_mode == taffy::RunMode::ComputeSize {
+                    // Height SHOULD be ignored if RequestedAxis is Horizontal, but currently that doesn't
+                    // always seem to be the case. So we perform layout to obtain a height every time. We
+                    // perform layout on a clone of the Layout to avoid clobbering the actual layout which
+                    // was causing https://github.com/DioxusLabs/blitz/pull/247#issuecomment-3235111617
+                    //
+                    // Doing this does seem to be as slow as one might expect, and if it enables correct
+                    // incremental layout then that is overall a big performance win.
+                    //
+                    // FIXME: avoid the need to clone the layout each time
+                    let mut layout = inline_layout.clone();
+                    layout.layout.break_all_lines(Some(width));
+
                     return taffy::Size {
                         width: width.ceil() / scale,
-                        // Height will be ignored in RequestedAxis is Horizontal
-                        height: 0.0,
+                        height: layout.layout.height() / scale,
                     };
                 }
 
