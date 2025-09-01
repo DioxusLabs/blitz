@@ -1090,49 +1090,50 @@ impl BaseDocument {
         let results: Vec<ConstructionTaskResult> = iter
             .map(|task: ConstructionTask| match task.data {
                 ConstructionTaskData::InlineLayout(mut layout) => {
-                    let inline_layout = LAYOUT_CTX.with_borrow_mut(|layout_ctx| {
-                        if layout_ctx.is_none() {
-                            println!(
-                                "Initialising LayoutContext for thread {:?}",
-                                std::thread::current().id()
-                            );
-                            *layout_ctx = Some(Box::new(LayoutContext::new()));
-                        }
-                        let layout_ctx = &mut **layout_ctx.as_mut().unwrap();
+                    #[cfg(feature = "parallel-construct")]
+                    let mut layout_ctx = LAYOUT_CTX
+                        .take()
+                        .unwrap_or_else(|| Box::new(LayoutContext::new()));
+                    #[cfg(feature = "parallel-construct")]
+                    let layout_ctx_mut = &mut layout_ctx;
 
-                        FONT_CTX.with_borrow_mut(|font_ctx| {
-                            if font_ctx.is_none() {
-                                println!(
-                                    "Initialising FontContext for thread {:?}",
-                                    std::thread::current().id()
-                                );
-                                *font_ctx = Some(Box::new(self.font_ctx.lock().unwrap().clone()));
-                            }
-                            let font_ctx = &mut **font_ctx.as_mut().unwrap();
+                    #[cfg(feature = "parallel-construct")]
+                    let mut font_ctx = FONT_CTX
+                        .take()
+                        .unwrap_or_else(|| Box::new(self.font_ctx.lock().unwrap().clone()));
+                    #[cfg(feature = "parallel-construct")]
+                    let font_ctx_mut = &mut font_ctx;
 
-                            layout.content_widths = None;
-                            build_inline_layout_into(
-                                &self.nodes,
-                                layout_ctx,
-                                font_ctx,
-                                &mut layout,
-                                self.viewport.scale(),
-                                task.node_id,
-                            );
+                    #[cfg(not(feature = "parallel-construct"))]
+                    let layout_ctx_mut = &mut self.layout_ctx;
+                    #[cfg(not(feature = "parallel-construct"))]
+                    let font_ctx_mut = &mut *self.font_ctx.lock().unwrap();
 
-                            // If layout doesn't contain any inline boxes, then it is safe to populate the content_widths
-                            // cache during this parallelized stage.
-                            // if layout.layout.inline_boxes().is_empty() {
-                            //     layout.content_widths();
-                            // }
+                    layout.content_widths = None;
+                    build_inline_layout_into(
+                        &self.nodes,
+                        layout_ctx_mut,
+                        font_ctx_mut,
+                        &mut layout,
+                        self.viewport.scale(),
+                        task.node_id,
+                    );
 
-                            layout
-                        })
-                    });
+                    #[cfg(feature = "parallel-construct")]
+                    {
+                        LAYOUT_CTX.set(Some(layout_ctx));
+                        FONT_CTX.set(Some(font_ctx));
+                    }
+
+                    // If layout doesn't contain any inline boxes, then it is safe to populate the content_widths
+                    // cache during this parallelized stage.
+                    // if layout.layout.inline_boxes().is_empty() {
+                    //     layout.content_widths();
+                    // }
 
                     ConstructionTaskResult {
                         node_id: task.node_id,
-                        data: ConstructionTaskResultData::InlineLayout(inline_layout),
+                        data: ConstructionTaskResultData::InlineLayout(layout),
                     }
                 }
             })
