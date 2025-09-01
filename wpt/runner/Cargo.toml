@@ -11,7 +11,7 @@ gpu = ["dep:anyrender_vello"]
 cpu = ["dep:anyrender_vello_cpu"]
 
 [dependencies]
-blitz-dom = { workspace = true, features = ["svg", "woff-rust"] }
+blitz-dom = { workspace = true, features = ["svg", "system_fonts", "woff-rust"] }
 blitz-html = {workspace = true }
 blitz-traits = { workspace = true }
 blitz-paint = { workspace = true, features = ["default"] }
