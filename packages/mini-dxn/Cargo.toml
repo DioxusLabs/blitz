@@ -36,7 +36,7 @@ anyrender = { workspace = true }
 anyrender_vello = { workspace = true, optional = true }
 anyrender_vello_cpu = { workspace = true, optional = true }
 blitz-paint = { workspace = true }
-blitz-dom =  { workspace = true }
+blitz-dom =  { workspace = true, features = ["parallel-construct"] }
 blitz-net = { workspace = true, optional = true }
 blitz-traits = { workspace = true }
 blitz-shell =  { workspace = true }

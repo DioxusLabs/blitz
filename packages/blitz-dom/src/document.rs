@@ -27,7 +27,6 @@ use debug_timer::debug_timer;
 use markup5ever::local_name;
 use parley::{FontContext, LayoutContext};
 use peniko::{Blob, kurbo};
-use rayon::prelude::*;
 use selectors::{Element, matching::QuirksMode};
 use slab::Slab;
 use std::any::Any;
@@ -59,6 +58,9 @@ use style::{
 };
 use taffy::AvailableSpace;
 use url::Url;
+
+#[cfg(feature = "parallel-construct")]
+use rayon::prelude::*;
 
 thread_local! {
     static LAYOUT_CTX: RefCell<Option<Box<LayoutContext<TextBrush>>>> = const { RefCell::new(None) };
@@ -686,24 +688,27 @@ impl BaseDocument {
                 // TODO: Investigate eliminating double-box
                 let mut font_ctx = self.font_ctx.lock().unwrap();
                 font_ctx.collection.register_fonts(font.clone(), None);
-                let doc_font_ctx = &*font_ctx;
 
-                rayon::broadcast(|_ctx| {
-                    FONT_CTX.with_borrow_mut(|font_ctx| {
-                        match font_ctx {
-                            None => {
-                                println!(
-                                    "Initialising FontContext for thread {:?}",
-                                    std::thread::current().id()
-                                );
-                                *font_ctx = Some(Box::new(doc_font_ctx.clone()));
-                            }
-                            Some(font_ctx) => {
-                                font_ctx.collection.register_fonts(font.clone(), None);
-                            }
-                        };
-                    })
-                });
+                #[cfg(feature = "parallel-construct")]
+                {
+                    let doc_font_ctx = &*font_ctx;
+                    rayon::broadcast(|_ctx| {
+                        FONT_CTX.with_borrow_mut(|font_ctx| {
+                            match font_ctx {
+                                None => {
+                                    println!(
+                                        "Initialising FontContext for thread {:?}",
+                                        std::thread::current().id()
+                                    );
+                                    *font_ctx = Some(Box::new(doc_font_ctx.clone()));
+                                }
+                                Some(font_ctx) => {
+                                    font_ctx.collection.register_fonts(font.clone(), None);
+                                }
+                            };
+                        })
+                    });
+                }
                 drop(font_ctx);
 
                 // TODO: see if we can only invalidate if resolved fonts may have changed
@@ -1077,8 +1082,12 @@ impl BaseDocument {
         deferred_construction_nodes.sort_unstable_by_key(|task| task.node_id);
         deferred_construction_nodes.dedup_by_key(|task| task.node_id);
 
-        let results: Vec<ConstructionTaskResult> = deferred_construction_nodes
-            .into_par_iter()
+        #[cfg(feature = "parallel-construct")]
+        let iter = deferred_construction_nodes.into_par_iter();
+        #[cfg(not(feature = "parallel-construct"))]
+        let iter = deferred_construction_nodes.into_iter();
+
+        let results: Vec<ConstructionTaskResult> = iter
             .map(|task: ConstructionTask| match task.data {
                 ConstructionTaskData::InlineLayout(mut layout) => {
                     let inline_layout = LAYOUT_CTX.with_borrow_mut(|layout_ctx| {

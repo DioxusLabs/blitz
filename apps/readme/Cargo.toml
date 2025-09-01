@@ -21,7 +21,7 @@ incremental = ["blitz-dom/incremental"]
 
 [dependencies]
 blitz-traits = { workspace = true }
-blitz-dom = { workspace = true, features = ["default"] }
+blitz-dom = { workspace = true, features = ["default", "parallel-construct"] }
 blitz-html = { workspace = true }
 blitz-paint = { workspace = true, features = ["default"] }
 blitz-net = { workspace = true, features = ["cookies"] }
