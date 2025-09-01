@@ -68,7 +68,7 @@ impl BaseDocument {
         }
 
         // Compute damage to propagate to parent
-        let mut damage_for_parent = damage; // & RestyleDamage::RELAYOUT;
+        let damage_for_parent = damage; // & RestyleDamage::RELAYOUT;
 
         // If the node or any of it's children have been mutated or their layout styles
         // have changed, then we should clear it's layout cache.
@@ -105,9 +105,7 @@ impl BaseDocument {
         // }
 
         // Propagate damage to parent
-        // damage_for_parent
-
-        damage
+        damage_for_parent
     }
 }
 
