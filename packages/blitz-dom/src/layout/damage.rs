@@ -1,4 +1,5 @@
 use crate::NON_INCREMENTAL;
+use crate::node::NodeFlags;
 use crate::{BaseDocument, net::ImageHandler, node::BackgroundImageData, util::ImageType};
 use blitz_traits::net::Request;
 use style::properties::ComputedValues;
@@ -227,25 +228,28 @@ pub(crate) fn compute_layout_damage(old: &ComputedValues, new: &ComputedValues) 
 
 impl BaseDocument {
     pub(crate) fn invalidate_inline_contexts(&mut self) {
-        let root_node_id = self.root_node().id;
         let scale = self.viewport.scale();
-        self.iter_layout_subtree_mut(root_node_id, |node_id, doc| {
-            let node = &mut doc.nodes[node_id];
+
+        let font_ctx = &self.font_ctx;
+        let layout_ctx = &mut self.layout_ctx;
+
+        for (_, node) in self.nodes.iter_mut() {
+            if !(node.flags.contains(NodeFlags::IS_IN_DOCUMENT)) {
+                continue;
+            }
             let Some(element) = node.data.downcast_element_mut() else {
-                return;
+                continue;
             };
 
             if element.inline_layout_data.is_some() {
                 node.insert_damage(CONSTRUCT_BOX);
             } else if let Some(input) = element.text_input_data_mut() {
                 input.editor.set_scale(scale);
-                let mut font_ctx = doc.font_ctx.lock().unwrap();
-                input
-                    .editor
-                    .refresh_layout(&mut font_ctx, &mut doc.layout_ctx);
+                let mut font_ctx = font_ctx.lock().unwrap();
+                input.editor.refresh_layout(&mut font_ctx, layout_ctx);
                 node.insert_damage(ONLY_RELAYOUT);
             }
-        });
+        }
     }
 
     /// Walk the whole tree, converting styles to layout
