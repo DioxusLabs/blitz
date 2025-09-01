@@ -1,7 +1,7 @@
 use parley::AlignmentOptions;
 use taffy::{
     AvailableSpace, LayoutPartialTree as _, MaybeMath as _, MaybeResolve as _, NodeId, Position,
-    ResolveOrZero as _, Size, compute_leaf_layout,
+    RequestedAxis, ResolveOrZero as _, Size, compute_leaf_layout,
 };
 
 use super::resolve_calc_value;
@@ -106,16 +106,18 @@ impl BaseDocument {
                             - pbw
                     });
 
-                // Perform inline layout
-                inline_layout.layout.break_all_lines(Some(width));
-
-                if inputs.run_mode == taffy::RunMode::ComputeSize {
+                if inputs.run_mode == taffy::RunMode::ComputeSize
+                    && inputs.axis == RequestedAxis::Horizontal
+                {
                     return taffy::Size {
                         width: width.ceil() / scale,
                         // Height will be ignored in RequestedAxis is Horizontal
-                        height: inline_layout.layout.height() / scale,
+                        height: 0.0,
                     };
                 }
+
+                // Perform inline layout
+                inline_layout.layout.break_all_lines(Some(width));
 
                 let alignment = self.nodes[node_id]
                     .primary_styles()
