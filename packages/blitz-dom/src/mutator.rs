@@ -3,6 +3,7 @@ use std::mem;
 use std::ops::{Deref, DerefMut};
 
 use crate::document::make_device;
+use crate::layout::damage::ALL_DAMAGE;
 use crate::net::{CssHandler, ImageHandler};
 use crate::node::{CanvasData, NodeFlags, SpecialElementData};
 use crate::util::ImageType;
@@ -134,7 +135,10 @@ impl DocumentMutator<'_> {
         let node = self.doc.get_node(id).unwrap();
 
         // Initialise style data
-        *node.stylo_element_data.borrow_mut() = Some(Default::default());
+        *node.stylo_element_data.borrow_mut() = Some(style::data::ElementData {
+            damage: ALL_DAMAGE,
+            ..Default::default()
+        });
 
         id
     }
@@ -158,6 +162,7 @@ impl DocumentMutator<'_> {
         if changed {
             text.content.clear();
             text.content.push_str(value);
+            node.insert_damage(ALL_DAMAGE);
             let parent = node.parent;
             self.maybe_record_node(parent);
         }
@@ -175,6 +180,7 @@ impl DocumentMutator<'_> {
 
     pub fn add_attrs_if_missing(&mut self, node_id: usize, attrs: Vec<Attribute>) {
         let node = &mut self.doc.nodes[node_id];
+        node.insert_damage(ALL_DAMAGE);
         let element_data = node.element_data_mut().expect("Not an element");
 
         let existing_names = element_data
@@ -197,6 +203,7 @@ impl DocumentMutator<'_> {
         let node = &mut self.doc.nodes[node_id];
         if let Some(data) = &mut *node.stylo_element_data.borrow_mut() {
             data.hint |= RestyleHint::restyle_subtree();
+            data.damage.insert(ALL_DAMAGE);
         }
 
         // TODO: make this fine grained / conditional based on ElementSelectorFlags
@@ -263,6 +270,7 @@ impl DocumentMutator<'_> {
         let mut stylo_element_data = node.stylo_element_data.borrow_mut();
         if let Some(data) = &mut *stylo_element_data {
             data.hint |= RestyleHint::restyle_subtree();
+            data.damage.insert(ALL_DAMAGE);
         }
         drop(stylo_element_data);
 
@@ -317,6 +325,7 @@ impl DocumentMutator<'_> {
         // Update child_idx values
         if let Some(parent_id) = node.parent.take() {
             let parent = &mut self.doc.nodes[parent_id];
+            parent.insert_damage(ALL_DAMAGE);
             parent.children.retain(|id| *id != node_id);
             self.maybe_record_node(parent_id);
         }
@@ -342,6 +351,7 @@ impl DocumentMutator<'_> {
         // Update child_idx values
         if let Some(parent_id) = node.as_ref().and_then(|node| node.parent) {
             let parent = &mut self.doc.nodes[parent_id];
+            parent.insert_damage(ALL_DAMAGE);
             let parent_is_in_doc = parent.flags.is_in_document();
 
             // TODO: make this fine grained / conditional based on ElementSelectorFlags
@@ -410,6 +420,7 @@ impl DocumentMutator<'_> {
         insert_children_fn: &dyn Fn(&mut Node, &[usize]),
     ) {
         let new_parent = &mut self.doc.nodes[parent_id];
+        new_parent.insert_damage(ALL_DAMAGE);
         let new_parent_is_in_doc = new_parent.flags.is_in_document();
 
         // TODO: make this fine grained / conditional based on ElementSelectorFlags
@@ -432,6 +443,7 @@ impl DocumentMutator<'_> {
 
             if let Some(old_parent_id) = old_parent_id {
                 let old_parent = &mut self.doc.nodes[old_parent_id];
+                old_parent.insert_damage(ALL_DAMAGE);
 
                 // TODO: make this fine grained / conditional based on ElementSelectorFlags
                 if child_was_in_doc {
@@ -527,6 +539,7 @@ impl<'doc> DocumentMutator<'doc> {
         self.doc.iter_subtree_mut(node_id, |node_id, doc| {
             let node = &mut doc.nodes[node_id];
             node.flags.set(NodeFlags::IS_IN_DOCUMENT, true);
+            node.insert_damage(ALL_DAMAGE);
 
             // If the node has an "id" attribute, store it in the ID map.
             if let Some(id_attr) = node.attr(local_name!("id")) {

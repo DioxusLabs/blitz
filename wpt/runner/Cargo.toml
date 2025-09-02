@@ -9,6 +9,7 @@ rust-version.workspace = true
 default = ["cpu"]
 gpu = ["dep:anyrender_vello"]
 cpu = ["dep:anyrender_vello_cpu"]
+incremental = ["blitz-dom/incremental"]
 
 [dependencies]
 blitz-dom = { workspace = true, features = ["svg", "system_fonts", "woff-rust"] }
@@ -31,8 +32,8 @@ env_logger = { version = "0.11.5" }
 owo-colors = "4.1.0"
 log = "0.4.22"
 regex = "1.11.1"
-rayon = "1.10.0"
-thread_local = "1.1.8"
+rayon = { workspace = true }
+thread_local = { workspace = true }
 bitflags = "2.6.0"
 pollster = "0.4.0"
 atomic_float = "1"

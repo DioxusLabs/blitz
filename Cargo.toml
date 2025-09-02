@@ -134,6 +134,8 @@ smol_str = "0.2"
 bitflags = "2.8.0"
 bytemuck = "1"
 fastrand = "2.3.0"
+rayon = "1"
+thread_local = "1"
 
 [profile.production]
 inherits = "release"

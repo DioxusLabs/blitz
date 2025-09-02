@@ -29,6 +29,9 @@
 pub const DEFAULT_CSS: &str = include_str!("../assets/default.css");
 pub(crate) const BULLET_FONT: &[u8] = include_bytes!("../assets/moz-bullet-font.otf");
 
+const INCREMENTAL: bool = cfg!(feature = "incremental");
+const NON_INCREMENTAL: bool = !INCREMENTAL;
+
 /// The DOM implementation.
 ///
 /// This is the primary entry point for this crate.

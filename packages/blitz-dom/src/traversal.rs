@@ -1,4 +1,4 @@
-use style::dom::TNode as _;
+use style::{dom::TNode as _, values::specified::box_::DisplayInside};
 
 use crate::{BaseDocument, Node};
 
@@ -55,6 +55,31 @@ impl Iterator for AncestorTraverser<'_> {
         let current_node = self.doc.get_node(self.current)?;
         self.current = current_node.parent?;
         Some(self.current)
+    }
+}
+
+impl Node {
+    #[allow(dead_code)]
+    pub(crate) fn should_traverse_layout_children(&mut self) -> bool {
+        let prefer_layout_children = match self.display_constructed_as.inside() {
+            DisplayInside::None => return false,
+            DisplayInside::Contents => false,
+            DisplayInside::Flow | DisplayInside::FlowRoot | DisplayInside::TableCell => {
+                // Prefer layout children for "block" but not "inline" contexts
+                self.element_data()
+                    .is_none_or(|el| el.inline_layout_data.is_none())
+            }
+            DisplayInside::Flex | DisplayInside::Grid => true,
+            DisplayInside::Table => false,
+            DisplayInside::TableRowGroup => false,
+            DisplayInside::TableColumn => false,
+            DisplayInside::TableColumnGroup => false,
+            DisplayInside::TableHeaderGroup => false,
+            DisplayInside::TableFooterGroup => false,
+            DisplayInside::TableRow => false,
+        };
+        let has_layout_children = self.layout_children.get_mut().is_some();
+        prefer_layout_children & has_layout_children
     }
 }
 

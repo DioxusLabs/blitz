@@ -74,7 +74,11 @@ impl BaseDocument {
                     .width
                     .map(|w| (w * scale) - pbw)
                     .unwrap_or_else(|| {
-                        // TODO: cache content widths
+                        // TODO: Cache content widths.
+                        //
+                        // This is a little tricky as the size of the inline boxes may depend on whether we are sizing under
+                        // and a min-content or max-content constraint. So if we want to compute both widths in one pass then
+                        // we need to store both a min-content and max-content size on each box.
                         let content_sizes = inline_layout.layout.calculate_content_widths();
                         let computed_width = match available_space.width {
                             AvailableSpace::MinContent => content_sizes.min,
@@ -107,16 +111,27 @@ impl BaseDocument {
                             - pbw
                     });
 
-                // Perform inline layout
-                inline_layout.layout.break_all_lines(Some(width));
-
                 if inputs.run_mode == taffy::RunMode::ComputeSize {
+                    // Height SHOULD be ignored if RequestedAxis is Horizontal, but currently that doesn't
+                    // always seem to be the case. So we perform layout to obtain a height every time. We
+                    // perform layout on a clone of the Layout to avoid clobbering the actual layout which
+                    // was causing https://github.com/DioxusLabs/blitz/pull/247#issuecomment-3235111617
+                    //
+                    // Doing this does seem to be as slow as one might expect, and if it enables correct
+                    // incremental layout then that is overall a big performance win.
+                    //
+                    // FIXME: avoid the need to clone the layout each time
+                    let mut layout = inline_layout.clone();
+                    layout.layout.break_all_lines(Some(width));
+
                     return taffy::Size {
                         width: width.ceil() / scale,
-                        // Height will be ignored in RequestedAxis is Horizontal
-                        height: inline_layout.layout.height() / scale,
+                        height: layout.layout.height() / scale,
                     };
                 }
+
+                // Perform inline layout
+                inline_layout.layout.break_all_lines(Some(width));
 
                 let alignment = self.nodes[node_id]
                     .primary_styles()
