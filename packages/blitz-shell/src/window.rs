@@ -370,9 +370,9 @@ impl<Rend: WindowRenderer> View<Rend> {
                 };
 
                 let has_changed = if let Some(hover_node_id) = self.doc.get_hover_node_id() {
-                    self.doc.scroll_node_by(hover_node_id, scroll_x, scroll_y)
+                    self.doc.scroll_node_by_has_changed(hover_node_id, scroll_x, scroll_y)
                 } else {
-                    self.doc.scroll_viewport_by(scroll_x, scroll_y)
+                    self.doc.scroll_viewport_by_has_changed(scroll_x, scroll_y)
                 };
 
                 if has_changed {

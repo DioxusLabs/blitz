@@ -1032,10 +1032,14 @@ impl BaseDocument {
         Some(CursorIcon::Default)
     }
 
+    pub fn scroll_node_by(&mut self, node_id: usize, x: f64, y: f64) {
+        self.scroll_node_by_has_changed(node_id, x, y);
+    }
+
     /// Scroll a node by given x and y
     /// Will bubble scrolling up to parent node once it can no longer scroll further
     /// If we're already at the root node, bubbles scrolling up to the viewport
-    pub fn scroll_node_by(&mut self, node_id: usize, x: f64, y: f64) -> bool {
+    pub fn scroll_node_by_has_changed(&mut self, node_id: usize, x: f64, y: f64) -> bool {
         let Some(node) = self.nodes.get_mut(node_id) else {
             return false;
         };
@@ -1095,17 +1099,21 @@ impl BaseDocument {
 
         if bubble_x != 0.0 || bubble_y != 0.0 {
             if let Some(parent) = node.parent {
-                return self.scroll_node_by(parent, bubble_x, bubble_y) | has_changed;
+                return self.scroll_node_by_has_changed(parent, bubble_x, bubble_y) | has_changed;
             } else {
-                return self.scroll_viewport_by(bubble_x, bubble_y) | has_changed;
+                return self.scroll_viewport_by_has_changed(bubble_x, bubble_y) | has_changed;
             }
         }
 
         has_changed
     }
 
+    pub fn scroll_viewport_by(&mut self, x: f64, y: f64) {
+        self.scroll_viewport_by_has_changed(x, y);
+    }
+
     /// Scroll the viewport by the given values
-    pub fn scroll_viewport_by(&mut self, x: f64, y: f64) -> bool {
+    pub fn scroll_viewport_by_has_changed(&mut self, x: f64, y: f64) -> bool {
         let content_size = self.root_element().final_layout.size;
         let new_scroll = (self.viewport_scroll.x - x, self.viewport_scroll.y - y);
         let window_width = self.viewport.window_size.0 as f64 / self.viewport.scale() as f64;
