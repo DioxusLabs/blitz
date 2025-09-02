@@ -558,12 +558,20 @@ impl Node {
             NodeData::Element(data) => {
                 let name = &data.name;
                 let class = self.attr(local_name!("class")).unwrap_or("");
+                let id = self.attr(local_name!("id")).unwrap_or("");
                 let display = self.display_constructed_as.to_css_string();
-                if !class.is_empty() {
-                    write!(s, "<{} class=\"{}\"> ({})", name.local, class, display)
-                } else {
-                    write!(s, "<{}> ({})", name.local, display)
+                write!(s, "<{}", name.local).unwrap();
+                if !id.is_empty() {
+                    write!(s, " #{id}").unwrap();
                 }
+                if !class.is_empty() {
+                    if class.contains(' ') {
+                        write!(s, " class=\"{class}\"").unwrap()
+                    } else {
+                        write!(s, " .{class}").unwrap()
+                    }
+                }
+                write!(s, "> ({display})")
             } // NodeData::ProcessingInstruction { .. } => write!(s, "ProcessingInstruction"),
         }
         .unwrap();
