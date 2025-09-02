@@ -153,9 +153,6 @@ pub(crate) fn compute_layout_damage(old: &ComputedValues, new: &ComputedValues) 
             return true;
         }
 
-        // NOTE: This should be kept in sync with the checks in `impl
-        // StyleExt::establishes_block_formatting_context` for `ComputedValues` in
-        // `components/layout/style_ext.rs`.
         if new_box.display.outside() == DisplayOutside::Block
             && new_box.display.inside() == DisplayInside::Flow
         {

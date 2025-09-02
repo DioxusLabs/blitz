@@ -1,5 +1,3 @@
-use std::mem;
-
 use style::{dom::TNode as _, values::specified::box_::DisplayInside};
 
 use crate::{BaseDocument, Node};
@@ -61,6 +59,7 @@ impl Iterator for AncestorTraverser<'_> {
 }
 
 impl Node {
+    #[allow(dead_code)]
     pub(crate) fn should_traverse_layout_children(&mut self) -> bool {
         let prefer_layout_children = match self.display_constructed_as.inside() {
             DisplayInside::None => return false,
@@ -152,61 +151,6 @@ impl BaseDocument {
                 iter_subtree_mut_inner(doc, child_id, cb);
             }
             doc.nodes[node_id].children = children;
-        }
-    }
-
-    pub fn iter_layout_subtree_mut(
-        &mut self,
-        node_id: usize,
-        mut cb: impl FnMut(usize, &mut BaseDocument),
-    ) {
-        cb(node_id, self);
-        iter_subtree_mut_inner(self, node_id, &mut cb);
-        fn iter_subtree_mut_inner(
-            doc: &mut BaseDocument,
-            node_id: usize,
-            cb: &mut impl FnMut(usize, &mut BaseDocument),
-        ) {
-            let children = doc.nodes[node_id].layout_children.get_mut().take();
-            if let Some(children) = children {
-                for child_id in children.iter().cloned() {
-                    cb(child_id, doc);
-                    iter_subtree_mut_inner(doc, child_id, cb);
-                }
-                *doc.nodes[node_id].layout_children.get_mut() = Some(children);
-            }
-        }
-    }
-
-    pub fn iter_subtree_incl_anon_mut(
-        &mut self,
-        node_id: usize,
-        mut cb: impl FnMut(usize, &mut BaseDocument),
-    ) {
-        cb(node_id, self);
-        iter_subtree_mut_inner(self, node_id, &mut cb);
-        fn iter_subtree_mut_inner(
-            doc: &mut BaseDocument,
-            node_id: usize,
-            cb: &mut impl FnMut(usize, &mut BaseDocument),
-        ) {
-            let children = mem::take(&mut doc.nodes[node_id].children);
-            let layout_children = doc.nodes[node_id].layout_children.get_mut().take();
-
-            let use_layout_children = doc.nodes[node_id].should_traverse_layout_children();
-            let child_ids = if use_layout_children {
-                layout_children.as_ref().unwrap()
-            } else {
-                &children
-            };
-
-            for child_id in child_ids.iter().cloned() {
-                cb(child_id, doc);
-                iter_subtree_mut_inner(doc, child_id, cb);
-            }
-
-            doc.nodes[node_id].children = children;
-            *doc.nodes[node_id].layout_children.get_mut() = layout_children;
         }
     }
 

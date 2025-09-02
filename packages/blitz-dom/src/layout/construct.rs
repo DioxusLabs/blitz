@@ -237,14 +237,6 @@ pub(crate) fn collect_layout_children(
                     .insert(NodeFlags::IS_INLINE_ROOT);
                 find_inline_layout_embedded_boxes(doc, container_node_id, layout_children);
                 return;
-
-                // if let Some(before) = doc.nodes[container_node_id].before {
-                //     layout_children.push(before);
-                // }
-                // layout_children.extend_from_slice(&ilayout_children);
-                // if let Some(after) = doc.nodes[container_node_id].after {
-                //     layout_children.push(after);
-                // }
             }
 
             // If the children are either all inline or all block then simply return the regular children
@@ -726,8 +718,6 @@ pub(crate) fn build_inline_layout_into(
     scale: f32,
     inline_context_root_node_id: usize,
 ) {
-    // println!("Inline context {}", inline_context_root_node_id);
-
     // Get the inline context's root node's text styles
     let root_node = &nodes[inline_context_root_node_id];
     let root_node_style = root_node.primary_styles().or_else(|| {
@@ -740,8 +730,6 @@ pub(crate) fn build_inline_layout_into(
         .as_ref()
         .map(|s| stylo_to_parley::style(inline_context_root_node_id, s))
         .unwrap_or_default();
-
-    // dbg!(&parley_style);
 
     let root_line_height = resolve_line_height(parley_style.line_height, parley_style.font_size);
 
