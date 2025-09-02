@@ -584,11 +584,27 @@ pub(crate) fn find_inline_layout_embedded_boxes(
     flush_inline_pseudos_recursive(doc, inline_context_root_node_id);
 
     let root_node = &doc.nodes[inline_context_root_node_id];
+    if let Some(before_id) = root_node.before {
+        find_inline_layout_embedded_boxes_recursive(
+            &doc.nodes,
+            inline_context_root_node_id,
+            before_id,
+            layout_children,
+        );
+    }
     for child_id in root_node.children.iter().copied() {
         find_inline_layout_embedded_boxes_recursive(
             &doc.nodes,
             inline_context_root_node_id,
             child_id,
+            layout_children,
+        );
+    }
+    if let Some(after_id) = root_node.after {
+        find_inline_layout_embedded_boxes_recursive(
+            &doc.nodes,
+            inline_context_root_node_id,
+            after_id,
             layout_children,
         );
     }
@@ -662,11 +678,27 @@ pub(crate) fn find_inline_layout_embedded_boxes(
                         } else {
                             node.remove_damage(CONSTRUCT_DESCENDENT | CONSTRUCT_FC | CONSTRUCT_BOX);
 
+                            if let Some(before_id) = node.before {
+                                find_inline_layout_embedded_boxes_recursive(
+                                    nodes,
+                                    node_id,
+                                    before_id,
+                                    layout_children,
+                                );
+                            }
                             for child_id in node.children.iter().copied() {
                                 find_inline_layout_embedded_boxes_recursive(
                                     nodes,
                                     node_id,
                                     child_id,
+                                    layout_children,
+                                );
+                            }
+                            if let Some(after_id) = node.after {
+                                find_inline_layout_embedded_boxes_recursive(
+                                    nodes,
+                                    node_id,
+                                    after_id,
                                     layout_children,
                                 );
                             }
