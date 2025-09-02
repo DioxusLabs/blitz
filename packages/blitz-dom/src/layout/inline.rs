@@ -74,7 +74,12 @@ impl BaseDocument {
                     .width
                     .map(|w| (w * scale) - pbw)
                     .unwrap_or_else(|| {
-                        let content_sizes = inline_layout.content_widths();
+                        // TODO: Cache content widths.
+                        //
+                        // This is a little tricky as the size of the inline boxes may depend on whether we are sizing under
+                        // and a min-content or max-content constraint. So if we want to compute both widths in one pass then
+                        // we need to store both a min-content and max-content size on each box.
+                        let content_sizes = inline_layout.layout.calculate_content_widths();
                         let computed_width = match available_space.width {
                             AvailableSpace::MinContent => content_sizes.min,
                             AvailableSpace::MaxContent => content_sizes.max,
