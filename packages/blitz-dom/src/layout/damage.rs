@@ -321,6 +321,13 @@ impl BaseDocument {
             // In incremental mode this is handled as part of damage propagation.
             if NON_INCREMENTAL {
                 node.cache.clear();
+                if let Some(inline_layout) = node
+                    .data
+                    .downcast_element_mut()
+                    .and_then(|el| el.inline_layout_data.as_mut())
+                {
+                    inline_layout.content_widths = None;
+                }
             }
 
             node.style.display
