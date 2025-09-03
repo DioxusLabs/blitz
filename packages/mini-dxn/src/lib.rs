@@ -78,19 +78,23 @@ pub fn launch_cfg(
     #[cfg(feature = "net")]
     let _guard = rt.enter();
 
-    #[cfg(feature = "net")]
+    #[cfg(any(feature = "data-uri", feature = "net"))]
     let net_provider = {
-        use blitz_net::Provider;
+        #[cfg(feature = "net")]
+        use blitz_net::Provider as NetProvider;
+        #[cfg(all(feature = "data-uri", not(feature = "net")))]
+        use blitz_shell::DataUriNetProvider as NetProvider;
+
         use blitz_shell::BlitzShellNetCallback;
 
         let proxy = event_loop.create_proxy();
         let net_callback = BlitzShellNetCallback::shared(proxy);
-        let net_provider = Provider::shared(net_callback);
+        let net_provider = NetProvider::shared(net_callback);
 
         Some(net_provider)
     };
 
-    #[cfg(not(feature = "net"))]
+    #[cfg(all(not(feature = "net"), not(feature = "data-uri")))]
     let net_provider = None;
 
     // Create the renderer

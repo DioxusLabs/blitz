@@ -856,6 +856,7 @@ dependencies = [
  "blitz-dom",
  "blitz-paint",
  "blitz-traits",
+ "data-url",
  "futures-util",
  "keyboard-types",
  "rfd",

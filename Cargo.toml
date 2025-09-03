@@ -155,6 +155,10 @@ inherits = "production"
 opt-level = "s"
 panic = "abort"
 
+[profile.small-panic]
+inherits = "small"
+panic = "unwind"
+
 [profile.tiny]
 inherits = "small"
 opt-level = "z"

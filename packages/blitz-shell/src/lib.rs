@@ -11,6 +11,7 @@
 mod application;
 mod convert_events;
 mod event;
+mod net;
 mod window;
 
 #[cfg(feature = "accessibility")]
@@ -18,10 +19,12 @@ mod accessibility;
 
 pub use crate::application::BlitzApplication;
 pub use crate::event::BlitzShellEvent;
+pub use crate::net::BlitzShellNetCallback;
 pub use crate::window::{View, WindowConfig};
 
-use blitz_dom::net::Resource;
-use blitz_traits::net::NetCallback;
+#[cfg(feature = "data-uri")]
+pub use crate::net::DataUriNetProvider;
+
 #[cfg(all(
     feature = "file_dialog",
     any(
@@ -77,29 +80,6 @@ pub fn set_android_app(app: android_activity::AndroidApp) {
 /// This will panic if the android activity has not been setup with [`set_android_app`].
 pub fn current_android_app() -> android_activity::AndroidApp {
     ANDROID_APP.get().unwrap().clone()
-}
-
-/// A NetCallback that injects the fetched Resource into our winit event loop
-pub struct BlitzShellNetCallback(EventLoopProxy<BlitzShellEvent>);
-
-impl BlitzShellNetCallback {
-    pub fn new(proxy: EventLoopProxy<BlitzShellEvent>) -> Self {
-        Self(proxy)
-    }
-
-    pub fn shared(proxy: EventLoopProxy<BlitzShellEvent>) -> Arc<dyn NetCallback<Resource>> {
-        Arc::new(Self(proxy))
-    }
-}
-impl NetCallback<Resource> for BlitzShellNetCallback {
-    fn call(&self, doc_id: usize, result: Result<Resource, Option<String>>) {
-        // TODO: handle error case
-        if let Ok(data) = result {
-            self.0
-                .send_event(BlitzShellEvent::ResourceLoad { doc_id, data })
-                .unwrap()
-        }
-    }
 }
 
 pub struct BlitzShellProvider {

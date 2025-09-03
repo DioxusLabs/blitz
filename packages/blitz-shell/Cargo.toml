@@ -20,6 +20,8 @@ accessibility = [
 clipboard = ["dep:arboard"]
 tracing = ["dep:tracing", "blitz-dom/tracing"]
 file_dialog = ["dep:rfd"]
+# Enables a data-uri-only NetProvider. Only needed if you aren't using the regular NetProvider
+data-uri = ["dep:data-url"]
 
 [dependencies]
 # Blitz dependencies
@@ -31,13 +33,13 @@ anyrender = { workspace = true }
 # Windowing & Input
 winit = { workspace = true }
 keyboard-types = { workspace = true }
-
 accesskit = { workspace = true, optional = true }
 accesskit_winit = { workspace = true, optional = true }
 
 # Other dependencies
 tracing = { workspace = true, optional = true }
 futures-util = { workspace = true }
+data-url = { workspace = true, optional = true }
 
 [target.'cfg(target_os = "android")'.dependencies]
 android-activity = { version = "0.6.0", features = ["native-activity"] }
