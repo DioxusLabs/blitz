@@ -91,7 +91,8 @@ skrifa = { version = "0.31" } # Should match parley version
 wgpu = "24"
 softbuffer = "0.4"
 pixels = "0.15"
-vello = { version = "0.5", features = [ "wgpu" ] }
+vello = { version = "=0.5.0", features = [ "wgpu" ] }
+vello_encoding = { version = "=0.5.0", default-features = false }
 vello_cpu = { version = "0.0.1" }
 usvg = "0.45.1"
 

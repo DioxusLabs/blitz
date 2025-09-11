@@ -17,6 +17,7 @@ debug_timer = { workspace = true }
 kurbo = { workspace = true }
 peniko = { workspace = true }
 vello = { workspace = true }
+vello_encoding = { workspace = true } # Pin skrifa version
 raw-window-handle = { workspace = true }
 wgpu = { workspace = true }
 futures-intrusive = { workspace = true }
