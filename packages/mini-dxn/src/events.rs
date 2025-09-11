@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use blitz_traits::events::BlitzKeyEvent;
 use dioxus_html::{
     AnimationData, ClipboardData, CompositionData, DragData, FocusData, FormData, FormValue,
-    HasFileData, HasFormData, HasKeyboardData, HasMouseData, HtmlEventConverter, ImageData,
+    HasFileData, HasFormData, HasKeyboardData, HasMouseData, HasTouchData, HtmlEventConverter, ImageData,
     KeyboardData, MediaData, MountedData, MouseData, PlatformEventData, PointerData, ResizeData,
     ScrollData, SelectionData, ToggleData, TouchData, TransitionData, VisibleData, WheelData,
     geometry::{ClientPoint, ElementPoint, PagePoint, ScreenPoint},
@@ -14,6 +14,34 @@ use dioxus_html::{
     },
 };
 use keyboard_types::{Code, Key, Location, Modifiers};
+
+// Empty touch data structure for basic TouchData creation
+#[derive(Clone, Debug)]
+pub struct EmptyTouchData;
+
+impl ModifiersInteraction for EmptyTouchData {
+    fn modifiers(&self) -> Modifiers {
+        Modifiers::empty()
+    }
+}
+
+impl HasTouchData for EmptyTouchData {
+    fn as_any(&self) -> &dyn std::any::Any {
+        self as &dyn std::any::Any
+    }
+
+    fn touches(&self) -> Vec<dioxus_html::TouchPoint> {
+        Vec::new()
+    }
+
+    fn touches_changed(&self) -> Vec<dioxus_html::TouchPoint> {
+        Vec::new()
+    }
+
+    fn target_touches(&self) -> Vec<dioxus_html::TouchPoint> {
+        Vec::new()
+    }
+}
 
 #[derive(Clone)]
 pub struct NativeClickData;
@@ -124,7 +152,9 @@ impl HtmlEventConverter for NativeConverter {
     }
 
     fn convert_touch_data(&self, _event: &PlatformEventData) -> TouchData {
-        todo!()
+        println!("🔥 BLITZ: TouchData converter called - creating empty TouchData");
+        // Create empty TouchData since touch events are handled as mouse events 
+        TouchData::new(EmptyTouchData {})
     }
 
     fn convert_transition_data(&self, _event: &PlatformEventData) -> TransitionData {
