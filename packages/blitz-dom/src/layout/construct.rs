@@ -3,15 +3,17 @@ use std::sync::Arc;
 
 use markup5ever::{QualName, local_name, ns};
 use parley::{
-    FontContext, InlineBox, LayoutContext, StyleProperty, TreeBuilder, WhiteSpaceCollapse,
+    FontContext, InlineBox, InlineBoxKind, LayoutContext, StyleProperty, TreeBuilder,
+    WhiteSpaceCollapse,
 };
 use slab::Slab;
 use style::{
+    computed_values::position::T as PositionProperty,
     data::ElementData as StyloElementData,
     selector_parser::RestyleDamage,
     shared_lock::StylesheetGuards,
     values::{
-        computed::{Content, ContentItem, Display},
+        computed::{Content, ContentItem, Display, Float},
         specified::box_::{DisplayInside, DisplayOutside},
     },
 };
@@ -55,6 +57,21 @@ fn push_children_and_pseudos(layout_children: &mut Vec<usize>, node: &Node) {
         layout_children.push(before);
     }
     layout_children.extend_from_slice(&node.children);
+    if let Some(after) = node.after {
+        layout_children.push(after);
+    }
+}
+
+fn push_non_whitespace_children_and_pseudos(layout_children: &mut Vec<usize>, node: &Node) {
+    if let Some(before) = node.before {
+        layout_children.push(before);
+    }
+    layout_children.extend(
+        node.children
+            .iter()
+            .copied()
+            .filter(|child_id| !node.with(*child_id).is_whitespace_node()),
+    );
     if let Some(after) = node.after {
         layout_children.push(after);
     }
@@ -190,6 +207,7 @@ pub(crate) fn collect_layout_children(
             // TODO: make "all_inline" detection work in the presence of display:contents nodes
             let mut all_block = true;
             let mut all_inline = true;
+            let mut all_out_of_flow = true;
             let mut has_contents = false;
             for child in doc.nodes[container_node_id]
                 .children
@@ -198,10 +216,37 @@ pub(crate) fn collect_layout_children(
                 .map(|child_id| &doc.nodes[child_id])
             {
                 // Unwraps on Text and SVG nodes
-                let display = child.display_style().unwrap_or(Display::inline());
+                let style = child.primary_styles();
+                let style = style.as_ref();
+                let display = style
+                    .map(|s| s.clone_display())
+                    .unwrap_or(Display::inline());
                 if matches!(display.inside(), DisplayInside::Contents) {
                     has_contents = true;
+                    all_out_of_flow = false;
                 } else {
+                    let position = style
+                        .map(|s| s.clone_position())
+                        .unwrap_or(PositionProperty::Static);
+                    let float = style.map(|s| s.clone_float()).unwrap_or(Float::None);
+
+                    // Ignore nodes that are entirely whitespace
+                    if child.is_whitespace_node() {
+                        continue;
+                    }
+
+                    let is_in_flow = matches!(
+                        position,
+                        PositionProperty::Static
+                            | PositionProperty::Relative
+                            | PositionProperty::Sticky
+                    ) && matches!(float, Float::None);
+
+                    if !is_in_flow {
+                        continue;
+                    }
+
+                    all_out_of_flow = false;
                     match display.outside() {
                         DisplayOutside::None => {}
                         DisplayOutside::Block
@@ -217,6 +262,13 @@ pub(crate) fn collect_layout_children(
                         }
                     }
                 }
+            }
+
+            if all_out_of_flow {
+                return push_non_whitespace_children_and_pseudos(
+                    layout_children,
+                    &doc.nodes[container_node_id],
+                );
             }
 
             // TODO: fix display:contents
@@ -241,7 +293,12 @@ pub(crate) fn collect_layout_children(
 
             // If the children are either all inline or all block then simply return the regular children
             // as the layout children
-            if (all_block | all_inline) & !has_contents {
+            if all_block & !has_contents {
+                return push_non_whitespace_children_and_pseudos(
+                    layout_children,
+                    &doc.nodes[container_node_id],
+                );
+            } else if all_inline & !has_contents {
                 return push_children_and_pseudos(layout_children, &doc.nodes[container_node_id]);
             }
 
@@ -273,7 +330,10 @@ pub(crate) fn collect_layout_children(
                 });
 
             if !has_text_node_or_contents {
-                return push_children_and_pseudos(layout_children, &doc.nodes[container_node_id]);
+                return push_non_whitespace_children_and_pseudos(
+                    layout_children,
+                    &doc.nodes[container_node_id],
+                );
             }
 
             fn flex_or_grid_item_needs_wrap(
@@ -314,7 +374,10 @@ pub(crate) fn collect_layout_children(
         }
 
         _ => {
-            push_children_and_pseudos(layout_children, &doc.nodes[container_node_id]);
+            push_non_whitespace_children_and_pseudos(
+                layout_children,
+                &doc.nodes[container_node_id],
+            );
         }
     }
 }
@@ -415,10 +478,7 @@ fn collect_complex_layout_children(
     fn block_is_only_whitespace(doc: &BaseDocument, node_id: usize) -> bool {
         for child_id in doc.nodes[node_id].children.iter().copied() {
             let child = &doc.nodes[child_id];
-            if child
-                .text_data()
-                .is_none_or(|text_data| !text_data.content.chars().all(|c| c.is_ascii_whitespace()))
-            {
+            if !child.is_whitespace_node() {
                 return false;
             }
         }
@@ -442,10 +502,7 @@ fn collect_complex_layout_children(
             child_display.outside()
         };
 
-        let is_whitespace_node = match &doc.nodes[child_id].data {
-            NodeData::Text(data) => data.content.chars().all(|c| c.is_ascii_whitespace()),
-            _ => false,
-        };
+        let is_whitespace_node = doc.nodes[child_id].is_whitespace_node();
 
         // Skip comment nodes. Note that we do *not* skip `Display::None` nodes as they may need to be hidden.
         // Taffy knows how to deal with `Display::None` children.
@@ -806,10 +863,12 @@ pub(crate) fn build_inline_layout_into(
         // Set layout_parent for node.
         node.layout_parent.set(Some(parent_id));
 
+        let style = node.primary_styles();
+        let style = style.as_ref();
+
         // Set whitespace collapsing mode
-        let collapse_mode = node
-            .primary_styles()
-            .map(|s| s.get_inherited_text().white_space_collapse)
+        let collapse_mode = style
+            .map(|s| s.clone_white_space_collapse())
             .map(stylo_to_parley::white_space_collapse)
             .unwrap_or(collapse_mode);
         builder.set_white_space_mode(collapse_mode);
@@ -824,6 +883,15 @@ pub(crate) fn build_inline_layout_into(
                 }
 
                 let display = node.display_style().unwrap_or(Display::inline());
+                let position = style
+                    .map(|s| s.clone_position())
+                    .unwrap_or(PositionProperty::Static);
+                let float = style.map(|s| s.clone_float()).unwrap_or(Float::None);
+                let box_kind = if position.is_absolutely_positioned() || float.is_floating() {
+                    InlineBoxKind::OutOfFlow
+                } else {
+                    InlineBoxKind::InFlow
+                };
 
                 match (display.outside(), display.inside()) {
                     (DisplayOutside::None, DisplayInside::None) => {
@@ -853,6 +921,8 @@ pub(crate) fn build_inline_layout_into(
                         {
                             builder.push_inline_box(InlineBox {
                                 id: node_id as u64,
+                                kind: box_kind,
+                                break_on_box: false,
                                 // Overridden by push_inline_box method
                                 index: 0,
                                 // Width and height are set during layout
@@ -929,6 +999,8 @@ pub(crate) fn build_inline_layout_into(
                     (_, _) => {
                         builder.push_inline_box(InlineBox {
                             id: node_id as u64,
+                            kind: box_kind,
+                            break_on_box: false,
                             // Overridden by push_inline_box method
                             index: 0,
                             // Width and height are set during layout

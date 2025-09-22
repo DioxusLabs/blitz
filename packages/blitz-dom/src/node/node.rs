@@ -217,6 +217,13 @@ impl Node {
         }
     }
 
+    pub fn is_whitespace_node(&self) -> bool {
+        match &self.data {
+            NodeData::Text(data) => data.content.chars().all(|c| c.is_ascii_whitespace()),
+            _ => false,
+        }
+    }
+
     pub fn is_focussable(&self) -> bool {
         self.data
             .downcast_element()

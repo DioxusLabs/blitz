@@ -1,7 +1,8 @@
-use parley::AlignmentOptions;
+use parley::{AlignmentOptions, BreakerState, YieldData};
 use taffy::{
-    AvailableSpace, LayoutPartialTree as _, MaybeMath as _, MaybeResolve as _, NodeId, Position,
-    ResolveOrZero as _, Size, compute_leaf_layout,
+    AvailableSpace, BlockContext, BlockFormattingContext, Clear, Float, LayoutPartialTree as _,
+    MaybeMath as _, MaybeResolve as _, NodeId, Position, ResolveOrZero as _, Size,
+    compute_leaf_layout, prelude::TaffyMaxContent,
 };
 
 use super::resolve_calc_value;
@@ -12,6 +13,24 @@ impl BaseDocument {
         &mut self,
         node_id: usize,
         inputs: taffy::tree::LayoutInput,
+        block_ctx: Option<&mut BlockContext<'_>>,
+    ) -> taffy::LayoutOutput {
+        // Unwrap the block formatting context if one was passed, or else create a new one
+        match block_ctx {
+            Some(inherited_bfc) => self.compute_inline_layout_inner(node_id, inputs, inherited_bfc),
+            None => {
+                let mut root_bfc = BlockFormattingContext::new(inputs.available_space.width);
+                let mut root_ctx = root_bfc.root_block_context();
+                self.compute_inline_layout_inner(node_id, inputs, &mut root_ctx)
+            }
+        }
+    }
+
+    fn compute_inline_layout_inner(
+        &mut self,
+        node_id: usize,
+        inputs: taffy::tree::LayoutInput,
+        block_ctx: &mut BlockContext<'_>,
     ) -> taffy::LayoutOutput {
         let scale = self.viewport.scale();
 
@@ -30,7 +49,7 @@ impl BaseDocument {
             inputs,
             &style,
             resolve_calc_value,
-            |_known_dimensions, available_space| {
+            |known_dimensions, available_space| {
                 // Short circuit if inline context contains no text or inline boxes
                 if inline_layout.text.is_empty() && inline_layout.layout.inline_boxes().is_empty() {
                     return Size::ZERO;
@@ -43,13 +62,22 @@ impl BaseDocument {
                     parent_size: available_space.into_options(),
                     ..inputs
                 };
+                let float_child_inputs = taffy::tree::LayoutInput {
+                    available_space: Size::MAX_CONTENT,
+                    ..child_inputs
+                };
                 for ibox in inline_layout.layout.inline_boxes_mut() {
                     let style = &self.nodes[ibox.id as usize].style;
                     let margin = style
                         .margin
                         .resolve_or_zero(inputs.parent_size, resolve_calc_value);
 
+                    ibox.break_on_box = style.float.is_floated();
+
                     if style.position == Position::Absolute {
+                        ibox.width = 0.0;
+                        ibox.height = 0.0;
+                    } else if style.float.is_floated() {
                         ibox.width = 0.0;
                         ibox.height = 0.0;
                     } else {
@@ -69,8 +97,7 @@ impl BaseDocument {
                 let container_pb = padding + border;
                 let pbw = container_pb.horizontal_components().sum() * scale;
 
-                let width = inputs
-                    .known_dimensions
+                let width = known_dimensions
                     .width
                     .map(|w| (w * scale) - pbw)
                     .unwrap_or_else(|| {
@@ -111,27 +138,103 @@ impl BaseDocument {
                             - pbw
                     });
 
-                if inputs.run_mode == taffy::RunMode::ComputeSize {
-                    // Height SHOULD be ignored if RequestedAxis is Horizontal, but currently that doesn't
-                    // always seem to be the case. So we perform layout to obtain a height every time. We
-                    // perform layout on a clone of the Layout to avoid clobbering the actual layout which
-                    // was causing https://github.com/DioxusLabs/blitz/pull/247#issuecomment-3235111617
-                    //
-                    // Doing this does seem to be as slow as one might expect, and if it enables correct
-                    // incremental layout then that is overall a big performance win.
-                    //
-                    // FIXME: avoid the need to clone the layout each time
-                    let mut layout = inline_layout.clone();
-                    layout.layout.break_all_lines(Some(width));
+                // if inputs.run_mode == taffy::RunMode::ComputeSize {
+                //     // Height SHOULD be ignored if RequestedAxis is Horizontal, but currently that doesn't
+                //     // always seem to be the case. So we perform layout to obtain a height every time. We
+                //     // perform layout on a clone of the Layout to avoid clobbering the actual layout which
+                //     // was causing https://github.com/DioxusLabs/blitz/pull/247#issuecomment-3235111617
+                //     //
+                //     // Doing this does seem to be as slow as one might expect, and if it enables correct
+                //     // incremental layout then that is overall a big performance win.
+                //     //
+                //     // FIXME: avoid the need to clone the layout each time
+                //     let mut layout = inline_layout.clone();
+                //     layout.layout.break_all_lines(Some(width));
 
-                    return taffy::Size {
-                        width: width.ceil() / scale,
-                        height: layout.layout.height() / scale,
-                    };
-                }
+                //     return taffy::Size {
+                //         width: width.ceil() / scale,
+                //         height: layout.layout.height() / scale,
+                //     };
+                // }
 
                 // Perform inline layout
-                inline_layout.layout.break_all_lines(Some(width));
+                let mut breaker = inline_layout.layout.break_lines();
+                let mut line_width = width;
+                let initial_slot = block_ctx.find_content_slot(0.0, Clear::None, None);
+                let state = breaker.state_mut();
+                state.set_layout_max_advance(width);
+                state.set_line_max_advance(initial_slot.width * scale);
+                state.set_line_x(initial_slot.x * scale);
+                state.set_line_y((initial_slot.y * scale) as f64);
+
+                // Save initial state. Saved state is used to revert the layout to a previous state if needed
+                // (e.g. to revert a line that doesn't fit in the space it was laid out into)
+                let mut saved_state: BreakerState = breaker.state().clone();
+
+                while let Some(yield_data) = breaker.break_next() {
+                    match yield_data {
+                        YieldData::LineBreak(line_break_data) => {
+                            let state = breaker.state_mut();
+                            saved_state = state.clone();
+
+                            let min_y = (state.line_y() + line_break_data.line_height as f64)
+                                / scale as f64;
+                            let next_slot =
+                                block_ctx.find_content_slot(min_y as f32, Clear::None, None);
+
+                            state.set_line_max_advance(next_slot.width * scale);
+                            state.set_line_x(next_slot.x * scale);
+                            state.set_line_y((next_slot.y * scale) as f64);
+
+                            continue;
+                        }
+                        YieldData::InlineBoxBreak(box_break_data) => {
+                            let state = breaker.state_mut();
+                            let node_id = box_break_data.inline_box_id as usize;
+                            let node = &mut self.nodes[node_id];
+
+                            // We can assume that the box is a float because we only set `break_on_box: true` for floats
+                            let direction = match node.style.float {
+                                Float::Left => taffy::FloatDirection::Left,
+                                Float::Right => taffy::FloatDirection::Right,
+                                Float::None => unreachable!(),
+                            };
+                            let clear = node.style.clear;
+                            let output = self
+                                .compute_child_layout(NodeId::from(node_id), float_child_inputs);
+                            let min_y = (state.line_y() as f32 / scale) + container_pb.top;
+                            let pos =
+                                block_ctx.place_floated_box(output.size, min_y, direction, clear);
+
+                            let min_y = (state.line_y() / scale as f64); //.max(pos.y as f64);
+                            let next_slot =
+                                block_ctx.find_content_slot(min_y as f32, Clear::None, None);
+
+                            state.set_line_max_advance(next_slot.width * scale);
+                            state.set_line_x(next_slot.x * scale);
+                            state.set_line_y((next_slot.y * scale) as f64);
+
+                            let layout = &mut self.nodes[node_id].unrounded_layout;
+                            layout.size = output.size;
+                            layout.location.x = pos.x;
+                            layout.location.y = pos.y;
+
+                            // dbg!(&layout.size);
+                            // dbg!(&layout.location);
+
+                            state.append_inline_box_to_line(box_break_data.advance);
+
+                            // if float.is_floated() {
+                            //     println!("INLINE FLOATED BOX ({}) {:?}", ibox.id, float);
+                            //     println!(
+                            //         "w:{} h:{} x:{}, y:{}",
+                            //         layout.size.width, layout.size.height, 0, 0
+                            //     );
+                            // }
+                        }
+                    }
+                }
+                breaker.finish();
 
                 let alignment = self.nodes[node_id]
                     .primary_styles()
@@ -201,6 +304,7 @@ impl BaseDocument {
                                 .bottom
                                 .maybe_resolve(child_inputs.parent_size.height, resolve_calc_value);
 
+                            let float = node.style.float;
                             if node.style.position == Position::Absolute {
                                 let output =
                                     self.compute_child_layout(NodeId::from(ibox.id), child_inputs);
@@ -228,6 +332,10 @@ impl BaseDocument {
                                     })
                                     .unwrap_or((ibox.y / scale) + margin.top + container_pb.top);
 
+                                layout.padding = padding; //.map(|p| p / scale);
+                                layout.border = border; //.map(|p| p / scale);
+                            } else if float != Float::None {
+                                let layout = &mut self.nodes[ibox.id as usize].unrounded_layout;
                                 layout.padding = padding; //.map(|p| p / scale);
                                 layout.border = border; //.map(|p| p / scale);
                             } else {
