@@ -38,7 +38,7 @@ rust-version = "1.85.1"
 # Anyrender dependencies(in-repo)
 anyrender = { version = "0.5.0", path = "./packages/anyrender" }
 anyrender_vello = { version = "0.5.1", path = "./packages/anyrender_vello" }
-anyrender_vello_cpu = { version = "0.5.2", path = "./packages/anyrender_vello_cpu" }
+anyrender_vello_cpu = { version = "0.6.0", path = "./packages/anyrender_vello_cpu" }
 anyrender_svg = { version = "0.5.0", path = "./packages/anyrender_svg" }
 debug_timer = { version = "0.1.0", path = "./packages/debug_timer" }
 
