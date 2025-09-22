@@ -2476,7 +2476,6 @@ dependencies = [
 [[package]]
 name = "fontique"
 version = "0.6.0"
-source = "git+https://github.com/linebender/parley?rev=3a9380f2e12eb451ef08c87fa98333831e7dea35#3a9380f2e12eb451ef08c87fa98333831e7dea35"
 dependencies = [
  "bytemuck",
  "hashbrown 0.15.5",
@@ -2933,9 +2932,9 @@ dependencies = [
 
 [[package]]
 name = "grid"
-version = "0.18.0"
+version = "1.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "12101ecc8225ea6d675bc70263074eab6169079621c2186fe0c66590b2df9681"
+checksum = "f9e2d4c0a8296178d8802098410ca05d86b17a10bb5ab559b3fb404c1f948220"
 
 [[package]]
 name = "guillotiere"
@@ -4690,7 +4689,6 @@ dependencies = [
 [[package]]
 name = "parley"
 version = "0.6.0"
-source = "git+https://github.com/linebender/parley?rev=3a9380f2e12eb451ef08c87fa98333831e7dea35#3a9380f2e12eb451ef08c87fa98333831e7dea35"
 dependencies = [
  "fontique",
  "harfrust",
@@ -6291,8 +6289,6 @@ dependencies = [
 [[package]]
 name = "taffy"
 version = "0.9.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b25026fb8cc9ab51ab9fdabe5d11706796966f6d1c78e19871ef63be2b8f0644"
 dependencies = [
  "arrayvec",
  "grid",
