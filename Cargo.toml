@@ -138,6 +138,10 @@ fastrand = "2.3.0"
 rayon = "1"
 thread_local = "1"
 
+[profile.profile]
+inherits = "release"
+debug = true
+
 [profile.production]
 inherits = "release"
 opt-level = 3
