@@ -80,13 +80,13 @@ dioxus-html = { version = "=0.7.0-rc.0" }
 dioxus-hooks = { version = "=0.7.0-rc.0" }
 dioxus-cli-config = { version = "=0.7.0-rc.0" }
 dioxus-devtools = { version = "=0.7.0-rc.0" }
-taffy = { version = "0.9", default-features = false, features = ["std", "flexbox", "grid", "block_layout", "content_size", "calc"] }
+taffy = { path = "../taffy", default-features = false, features = ["std", "flexbox", "grid", "block_layout", "float_layout", "content_size", "calc"] }
 
 # Linebender + Fontations + WGPU + SVG
 color = "0.3"
 peniko = "0.4"
 kurbo = "0.11"
-parley = { version = "0.5", default-features = false, features = ["std"] }
+parley = { path = "../parley/parley", default-features = false, features = ["std"] }
 skrifa = { version = "0.31" } # Should match parley version
 wgpu = "24"
 softbuffer = "0.4"
