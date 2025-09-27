@@ -19,7 +19,10 @@ use blitz_dom::{BaseDocument, ElementData, Node, local_name};
 use blitz_traits::devtools::DevtoolSettings;
 
 use euclid::Transform3D;
+use style::values::computed::length_percentage::Unpacked;
 use style::values::computed::BorderCornerRadius;
+use style::values::generics::basic_shape::{ArcSweep, ArcSize, CoordinatePair};
+use style::values::specified::percentage::ToPercentage;
 use style::{
     dom::TElement,
     properties::{
@@ -29,13 +32,212 @@ use style::{
     values::{
         computed::{CSSPixelLength, Overflow},
         specified::{BorderStyle, OutlineStyle, image::ImageRendering},
+        generics::basic_shape::{
+            ByTo, GenericPathOrShapeFunction, GenericShapeCommand, Path
+        }
     },
 };
 
-use kurbo::{self, Affine, Insets, Point, Rect, Stroke, Vec2};
+use kurbo::{self, Affine, Insets, PathEl, Point, Rect, Shape, Stroke, Vec2};
 use peniko::{self, Fill};
-use style::values::generics::color::GenericColor;
+use style::values::generics::{
+    color::GenericColor,
+    position::GenericPositionOrAuto,
+    basic_shape::{
+        GenericClipPath,
+        ShapeGeometryBox,
+        ShapeBox,
+        GenericBasicShape,
+        InsetRect,
+        ShapeRadius
+    }
+};
+use style::values::computed::{
+    angle::Angle,
+    position::Position,
+    url::ComputedUrl,
+    length_percentage::{
+        LengthPercentage,
+        NonNegativeLengthPercentage,
+    },
+};
 use taffy::Layout;
+
+/**
+ * The stylo draw command in GenericShapeCommand::Arc uses endpoint parametrization
+ * whereas the kurbo::Arc expects the centerpoint parametrization as described here:
+ * https://www.w3.org/TR/SVG/implnote.html#ArcImplementationNotes
+ *
+ * This function implements the conversion of parameters from endpoint to center
+ * parametrization as described in the section B.2.4 in the same document.
+ */
+fn stylo_to_kurbo(
+  start: Point,
+  end: &CoordinatePair<f32>,
+  radii: &CoordinatePair<f32>,
+  arc_sweep: &ArcSweep,
+  arc_size: &ArcSize,
+  x_axis_rotation: f64
+) -> kurbo::Arc {
+  let end = Point {
+    x: end.x as f64,
+    y: end.y as f64
+  };
+  let rx = radii.x as f64;
+  let ry = radii.y as f64;
+  let sweep = match &arc_sweep {
+    ArcSweep::Ccw => false,
+    ArcSweep::Cw => true
+  };
+  let large_arc =  match &arc_size {
+    ArcSize::Large => true,
+    ArcSize::Small => false
+  };
+  let phi = x_axis_rotation.to_radians();
+
+  // Step1: Compute (x1', y1')
+  let half_del_x = (start.x - end.x) / 2.0;
+  let half_del_y = (start.y - end.y) /  2.0;
+  let x1_prime = phi.cos() * half_del_x + phi.sin() * half_del_y;
+  let y1_prime = -phi.sin() * half_del_x + phi.cos() * half_del_y;
+
+  // Step2: Compute (cx', cy')
+  let mut coeff = (
+    ((rx * ry).powf(2.0) - (rx * y1_prime).powf(2.0) - (ry * x1_prime).powf(2.0))/
+    ((rx * y1_prime).powf(2.0) + (ry * x1_prime).powf(2.0))
+    ).sqrt();
+  if sweep == large_arc {
+    coeff = -coeff;
+  }
+
+  let cx_prime = coeff * rx * y1_prime / ry;
+  let cy_prime = -coeff * ry * x1_prime / rx;
+
+  // Step3: Compute cx and cy
+  let mean_x = (start.x + end.x) / 2.0;
+  let mean_y = (start.y + end.y) / 2.0;
+  let cx = phi.cos() * cx_prime - phi.sin() * cy_prime + mean_x;
+  let cy = phi.sin() * cx_prime + phi.cos() * cy_prime + mean_y;
+
+  // Step4: Compute theta1 and delTheta
+  let u = Vec2::new(1.0, 0.0);
+  let v = Vec2::new((x1_prime -  cx_prime)/rx, (y1_prime - cy_prime)/ry);
+  let theta1 = angle(u, v);
+
+  let u = v;
+  let v = Vec2::new((-x1_prime - cx_prime)/rx, (-y1_prime  - cy_prime/ry));
+  let angle_degree = angle(u, v);
+
+  let del_theta = if sweep && angle_degree > 0.0 {
+    angle_degree - 360.0
+  } else if !sweep && angle_degree < 0.0 {
+    angle_degree + 360.0
+  } else {
+    angle_degree
+  };
+
+  kurbo::Arc::new(
+    Point {x: cx, y: cy},
+    Vec2 {x: rx, y: ry},
+    theta1,
+    del_theta,
+    x_axis_rotation
+  )
+}
+
+
+pub fn angle(u: Vec2, v: Vec2) -> f64 {
+  let sign = (u.x * v.y - u.y * v.x).signum();
+  sign * (u.dot(v) / (u.length() * v.length())).acos()
+}
+
+fn stylo_to_kurbo_path(cmds: &[GenericShapeCommand<f32, f32>]) -> Vec<PathEl> {
+  // let cmds = p.commands();
+  let num_commands = cmds.len();
+  let mut result = vec![];
+  let mut prev_point: Option<Point> = None;
+  for i in 0..num_commands {
+    let cmd = &cmds[i];
+    match cmd {
+      GenericShapeCommand::Move { by_to, point } => {
+        let x = point.x as f64;
+        let y = point.y as f64;
+        let point = Point {x, y};
+        prev_point = Some(point);
+        result.push(PathEl::MoveTo(point));
+      },
+      GenericShapeCommand::Line {by_to, point} => {
+        let x = point.x as f64;
+        let y = point.y as f64;
+        let point = Point {x, y};
+        prev_point = Some(point);
+        result.push(PathEl::LineTo(point));
+      },
+      GenericShapeCommand::VLine {by_to, y} => {
+        let y = *y as f64;
+        if let Some(prev) = prev_point {
+          let point = Point {x: prev.x, y};
+          prev_point = Some(point);
+          result.push(PathEl::LineTo(point));
+        } else {
+          let point = Point{x: 0.0, y};
+          prev_point = Some(point);
+          result.push(PathEl::LineTo(point));
+        }
+      },
+      GenericShapeCommand::HLine {by_to, x} => {
+        let x = *x as f64;
+        if let Some(prev) = prev_point {
+          let point = Point {x, y: prev.y};
+          prev_point = Some(point);
+          result.push(PathEl::LineTo(point));
+        } else {
+          let point = Point {x, y: 0.0};
+          prev_point = Some(point);
+          result.push(PathEl::LineTo(point));
+        }
+      },
+      GenericShapeCommand::Close => {
+        result.push(PathEl::ClosePath);
+      },
+      GenericShapeCommand::Arc {
+        by_to,
+        point,
+        radii,
+        arc_sweep,
+        arc_size,
+        rotate
+      } => {
+        if let Some(start_point) = prev_point {
+          let kurbo_arc = stylo_to_kurbo(start_point, point, radii, arc_sweep, arc_size, *rotate as f64);
+          let bez_arc = kurbo_arc.to_path(1e-3);
+          bez_arc.iter().for_each(|seg| result.push(seg));
+        }
+      },
+      GenericShapeCommand::QuadCurve { by_to, point, control1 } => {
+        let end = Point { x: point.x as  f64, y: point.y as f64};
+        let control = Point {x: control1.x as f64, y: control1.y as f64};
+        result.push(PathEl::QuadTo(end, control));
+      },
+      GenericShapeCommand::CubicCurve { by_to, point, control1, control2 } => {
+        let end = Point {x: point.x as f64, y: point.y as f64};
+        let control1 = Point {x: control1.x as f64, y: control1.y as f64};
+        let control2 = Point {x: control2.x as f64, y: control2.y as f64};
+        result.push(PathEl::CurveTo(end, control1, control2));
+      },
+      // I guess this means the control point should be placed such that the tangent to the
+      // curve at the starting point must be overlapping the slope of the curve before the start
+      // point. I don't know how to do this
+      GenericShapeCommand::SmoothQuad { by_to, point } => {
+
+      },
+      GenericShapeCommand::SmoothCubic { by_to, point, control2 } => {
+
+      }
+    }
+  }
+  result
+}
 
 /// A short-lived struct which holds a bunch of parameters for rendering a scene so
 /// that we don't have to pass them down as parameters
@@ -224,7 +426,341 @@ impl BlitzDomPainter<'_> {
 
         // TODO: allow layers with opacity to be unclipped (overflow: visible)
         let wants_layer = should_clip | has_opacity;
-        let clip = &cx.frame.padding_box_path();
+
+        // Gaurav (get the clip_shape path here)
+        type StyloBasicShape = GenericBasicShape<
+            Angle,
+            Position,
+            LengthPercentage,
+            NonNegativeLengthPercentage,
+            InsetRect<LengthPercentage, NonNegativeLengthPercentage>
+        >;
+        type StyloClipPath = GenericClipPath<StyloBasicShape, ComputedUrl>;
+        let stylo_clip_path: StyloClipPath = node.primary_styles().unwrap().clone_clip_path();
+
+        // Gaurav map the clip_shape to kurbo shape here
+        let clip_path = match stylo_clip_path {
+            GenericClipPath::None => {
+                &cx.frame.padding_box_path()
+            },
+            // Gaurav this can be done using the svg support in stylo
+            GenericClipPath::Url(_u) => {
+                &cx.frame.padding_box_path()
+            },
+            GenericClipPath::Box(geometry_box) => {
+                match geometry_box {
+                    ShapeGeometryBox::ShapeBox(b) => {
+                        match b {
+                            ShapeBox::BorderBox => &cx.frame.border_box_path(),
+                            ShapeBox::PaddingBox => &cx.frame.padding_box_path(),
+                            ShapeBox::ContentBox => &cx.frame.content_box_path(),
+                            ShapeBox::MarginBox => &cx.frame.border_box_path(),
+                        }
+                    }
+                    _ => {
+                        &cx.frame.padding_box_path()
+                    },
+                }
+            },
+            GenericClipPath::Shape(generic_basic_shape, geometry_box) => {
+                let (box_width, box_height) = match geometry_box {
+                    ShapeGeometryBox::ShapeBox(b) => {
+                        match b {
+                            ShapeBox::BorderBox => (
+                                cx.frame.border_box.width(),
+                                cx.frame.border_box.height(),
+                            ),
+                            ShapeBox::PaddingBox => (
+                                cx.frame.padding_box.width(),
+                                cx.frame.padding_box.height(),
+                            ),
+                            ShapeBox::ContentBox => (
+                                cx.frame.content_box.width(),
+                                cx.frame.content_box.height(),
+                            ),
+                            ShapeBox::MarginBox => (
+                                cx.frame.border_box.width(),
+                                cx.frame.border_box.height(),
+                            ),
+                        }
+                    }
+                    _ => {
+                        (
+                            cx.frame.padding_box.width(),
+                            cx.frame.padding_box.height(),
+                        )
+                    },
+                };
+                match *generic_basic_shape {
+                   GenericBasicShape::Circle(c) => {
+                        let radius = match c.radius {
+                            ShapeRadius::Length(radius) => {
+                                match radius.0.unpack() {
+                                    Unpacked::Length(l) => l.px() as f64,
+                                    Unpacked::Percentage(p) => {
+                                        box_width * p.to_percentage() as f64 / 2.0
+                                    },
+                                    Unpacked::Calc(calc) => {
+                                        calc.resolve(CSSPixelLength::new(box_width as f32)).px() as f64 / 2.0
+                                    },
+                                }
+                            },
+                            _ => {
+                                let radius = box_width as f64 / 2.0;
+                                radius
+                            }
+                        };
+                        let center: Point = match c.position {
+                            GenericPositionOrAuto::Position(pos) => {
+                                let hor = match pos.horizontal.unpack() {
+                                    Unpacked::Length(l) => l.px() as f64,
+                                    Unpacked::Percentage(p) => {
+                                        box_width * p.to_percentage() as f64 / 2.0
+                                    },
+                                    Unpacked::Calc(calc) => {
+                                        calc.resolve(CSSPixelLength::new(box_width as f32)).px() as f64 / 2.0
+                                    }
+                                };
+
+                                let vert = match pos.vertical.unpack() {
+                                    Unpacked::Length(l) => l.px() as f64,
+                                    Unpacked::Percentage(p) => {
+                                        box_height * p.to_percentage() as f64 / 2.0
+                                    },
+                                    Unpacked::Calc(calc) => {
+                                        calc.resolve(CSSPixelLength::new(box_height as f32)).px() as f64 / 2.0
+                                    }
+                                };
+
+                                Point {
+                                    x: hor + cx.frame.padding_box.origin().x as f64,
+                                    y: vert + cx.frame.padding_box.origin().y as f64,
+                                }
+                            },
+                            GenericPositionOrAuto::Auto => {
+                                let center_x = box_width / 2.0;
+                                let center_y = box_height / 2.0;
+                                Point {
+                                    x: center_x as f64,
+                                    y: center_y as f64,
+                                }
+                            }
+                        };
+                        &cx.frame.circle_path(center, radius)
+                    },
+                    GenericBasicShape::Ellipse(e) => {
+                        let center: Point = match e.position {
+                            GenericPositionOrAuto::Position(pos) => {
+                                let hor = match pos.horizontal.unpack() {
+                                    Unpacked::Length(l) => l.px() as f64,
+                                    Unpacked::Percentage(p) => box_width * p.to_percentage() as f64 / 2.0,
+                                    Unpacked::Calc(calc) => calc.resolve(CSSPixelLength::new(box_width as f32)).px() as f64 / 2.0,
+                                };
+
+                                let vert = match pos.vertical.unpack() {
+                                    Unpacked::Length(l) => l.px() as f64,
+                                    Unpacked::Percentage(p) => box_height * p.to_percentage() as f64 / 2.0,
+                                    Unpacked::Calc(calc) => calc.resolve(CSSPixelLength::new(box_height as f32)).px() as f64 / 2.0,
+                                };
+
+                                Point {
+                                    x: hor + cx.frame.padding_box.origin().x as f64,
+                                    y: vert + cx.frame.padding_box.origin().y as f64,
+                                }
+                            },
+                            GenericPositionOrAuto::Auto => {
+                                let center_x = box_width / 2.0;
+                                let center_y = box_height / 2.0;
+                                Point {
+                                    x: center_x as f64,
+                                    y: center_y as f64,
+                                }
+                            }
+                        };
+                        let radius_x = match e.semiaxis_x {
+                            ShapeRadius::Length(radius) => {
+                                match radius.0.unpack() {
+                                    Unpacked::Length(l) => l.px() as f64,
+                                    Unpacked::Percentage(p) => box_width * p.to_percentage() as f64 / 2.0,
+                                    Unpacked::Calc(calc) => calc.resolve(CSSPixelLength::new(box_width as f32)).px() as f64 / 2.0,
+                                }
+                            },
+                            _ => box_width as f64 / 2.0,
+                        };
+                        let radius_y = match e.semiaxis_y {
+                            ShapeRadius::Length(radius) => {
+                                match radius.0.unpack() {
+                                    Unpacked::Length(l) => l.px() as f64,
+                                    Unpacked::Percentage(p) => box_height * p.to_percentage() as f64 / 2.0,
+                                    Unpacked::Calc(calc) => calc.resolve(CSSPixelLength::new(box_height as f32)).px() as f64 / 2.0,
+                                }
+                            },
+                            _ => box_height as f64 / 2.0,
+                        };
+                        &cx.frame.ellipse_path(center, Vec2 { x: radius_x, y: radius_y })
+                    },
+                    GenericBasicShape::Rect(r) => {
+                        let x0 = match r.rect.0.unpack() {
+                            Unpacked::Length(l) => l.px() as f64,
+                            Unpacked::Percentage(p) => box_width * p.to_percentage() as f64,
+                            Unpacked::Calc(calc) => calc.resolve(CSSPixelLength::new(box_width as f32)).px() as f64 / 2.0,
+                        };
+                        let y0 = match r.rect.1.unpack() {
+                            Unpacked::Length(l) => l.px() as f64,
+                            Unpacked::Percentage(p) => box_height * p.to_percentage() as f64,
+                            Unpacked::Calc(calc) => calc.resolve(CSSPixelLength::new(box_height as f32)).px() as f64 / 2.0,
+                        };
+                        let x1 = match r.rect.2.unpack() {
+                            Unpacked::Length(l) => l.px() as f64,
+                            Unpacked::Percentage(p) => box_width * p.to_percentage() as f64,
+                            Unpacked::Calc(calc) => calc.resolve(CSSPixelLength::new(box_width as f32)).px() as f64 / 2.0,
+                        };
+                        let y1 = match r.rect.3.unpack() {
+                            Unpacked::Length(l) => l.px() as f64,
+                            Unpacked::Percentage(p) => box_height * p.to_percentage() as f64,
+                            Unpacked::Calc(calc) => calc.resolve(CSSPixelLength::new(box_height as f32)).px() as f64 / 2.0,
+                        };
+                        // Kurbo doesn't support rounded rect with elliptical radii,
+                        // so we ignore the y axes right now.
+                        let r_top_left = match r.round.top_left.0.width().0.unpack() {
+                            Unpacked::Length(l) => l.px() as f64,
+                            Unpacked::Percentage(p) => box_width * p.to_percentage() as f64 / 2.0,
+                            Unpacked::Calc(calc) => calc.resolve(CSSPixelLength::new(box_width as f32)).px() as f64 / 2.0,
+                        };
+                        let r_top_right = match r.round.top_right.0.width().0.unpack() {
+                            Unpacked::Length(l) => l.px() as f64,
+                            Unpacked::Percentage(p) => box_width * p.to_percentage() as f64 / 2.0,
+                            Unpacked::Calc(calc) => calc.resolve(CSSPixelLength::new(box_width as f32)).px() as f64 / 2.0,
+                        };
+                        let r_bottom_left = match r.round.bottom_left.0.width().0.unpack() {
+                            Unpacked::Length(l) => l.px() as f64,
+                            Unpacked::Percentage(p) => box_width * p.to_percentage() as f64 / 2.0,
+                            Unpacked::Calc(calc) => calc.resolve(CSSPixelLength::new(box_width as f32)).px() as f64 / 2.0,
+                        };
+                        let r_bottom_right = match r.round.bottom_right.0.width().0.unpack() {
+                            Unpacked::Length(l) => l.px() as f64,
+                            Unpacked::Percentage(p) => box_width * p.to_percentage() as f64 / 2.0,
+                            Unpacked::Calc(calc) => calc.resolve(CSSPixelLength::new(box_width as f32)).px() as f64 / 2.0,
+                        };
+                        &cx.frame.rect_path(x0, y0, x1, y1, (r_top_left, r_top_right, r_bottom_right, r_bottom_left))
+                    },
+                    GenericBasicShape::PathOrShape(path) => {
+                      let path_vec: Vec<PathEl> = match path {
+                        GenericPathOrShapeFunction::Path(p) => {
+                          let cmds = p.commands();
+                          stylo_to_kurbo_path(cmds)
+                        },
+                        // Ignore the fillrule for now
+                        GenericPathOrShapeFunction::Shape(s) => {
+                          let cmds = s.commands();
+                          let mut commands:Vec<GenericShapeCommand<f32, f32>> = Vec::new();
+                          for cmd_ref in cmds.iter() {
+                            let cmd = cmd_ref.clone();
+                            match cmd {
+                              GenericShapeCommand::Move { by_to, point } => {
+                                let point = CoordinatePair::new(
+                                  (box_width as f32) * (point.x.to_percentage().unwrap_or_default().to_percentage()),
+                                  (box_height as f32) * (point.y.to_percentage().unwrap_or_default().to_percentage())
+                                );
+                                commands.push(GenericShapeCommand::Move { by_to, point })
+                              },
+                              GenericShapeCommand::Line { by_to, point } => {
+                                let point = CoordinatePair::new(
+                                  (box_width as f32) * (point.x.to_percentage().unwrap_or_default().to_percentage()),
+                                  (box_height as f32) * (point.y.to_percentage().unwrap_or_default().to_percentage())
+                                );
+                                commands.push(GenericShapeCommand::Line { by_to, point })
+                              }
+                              GenericShapeCommand::VLine { by_to, y } => {
+                                let y = (box_height as f32) * (y.to_percentage().unwrap_or_default().to_percentage());
+                                commands.push(GenericShapeCommand::VLine { by_to, y })
+                              },
+                              GenericShapeCommand::HLine { by_to, x } => {
+                                let x = (box_height as f32) * (x.to_percentage().unwrap_or_default().to_percentage());
+                                commands.push(GenericShapeCommand::HLine { by_to, x })
+                              },
+                              GenericShapeCommand::Arc { by_to, point, radii, arc_sweep, arc_size, rotate } => {
+                                let point = CoordinatePair::new(
+                                  (box_width as f32) * (point.x.to_percentage().unwrap_or_default().to_percentage()),
+                                  (box_height as f32) * (point.y.to_percentage().unwrap_or_default().to_percentage())
+                                );
+
+                                let radii = CoordinatePair::new(
+                                  (box_width as f32) * (radii.x.to_percentage().unwrap_or_default().to_percentage()),
+                                  (box_height as f32) * (radii.y.to_percentage().unwrap_or_default().to_percentage())
+                                );
+
+                                let rotate = rotate.degrees();
+                                commands.push(GenericShapeCommand::Arc { by_to, point, radii, arc_sweep, arc_size, rotate });
+                              },
+                              GenericShapeCommand::QuadCurve { by_to, point, control1 } => {
+                                let point = CoordinatePair::new(
+                                  (box_width as f32) * (point.x.to_percentage().unwrap_or_default().to_percentage()),
+                                  (box_height as f32) * (point.y.to_percentage().unwrap_or_default().to_percentage())
+                                );
+
+                                let control1 = CoordinatePair::new(
+                                  (box_width as f32) * (control1.x.to_percentage().unwrap_or_default().to_percentage()),
+                                  (box_height as f32) * (control1.y.to_percentage().unwrap_or_default().to_percentage())
+                                );
+                                commands.push(GenericShapeCommand::QuadCurve { by_to, point, control1 });
+                              },
+                              GenericShapeCommand::CubicCurve { by_to, point, control1, control2 } => {
+                                let point = CoordinatePair::new(
+                                  (box_width as f32) * (point.x.to_percentage().unwrap_or_default().to_percentage()),
+                                  (box_height as f32) * (point.y.to_percentage().unwrap_or_default().to_percentage())
+                                );
+
+                                let control1 = CoordinatePair::new(
+                                  (box_width as f32) * (control1.x.to_percentage().unwrap_or_default().to_percentage()),
+                                  (box_height as f32) * (control1.y.to_percentage().unwrap_or_default().to_percentage())
+                                );
+
+                                let control2 = CoordinatePair::new(
+                                  (box_width as f32) * (control2.x.to_percentage().unwrap_or_default().to_percentage()),
+                                  (box_height as f32) * (control2.y.to_percentage().unwrap_or_default().to_percentage())
+                                );
+                                commands.push(GenericShapeCommand::CubicCurve { by_to, point, control1, control2 });
+                              },
+                              GenericShapeCommand::Close => {
+                                commands.push(GenericShapeCommand::Close);
+                              },
+                              GenericShapeCommand::SmoothQuad { by_to, point } => {},
+                              GenericShapeCommand::SmoothCubic { by_to, point, control2 } => {},
+                            }
+                          }
+                          stylo_to_kurbo_path(&commands)
+                        }
+                      };
+
+                      &cx.frame.path_from_path_vec(path_vec)
+                    },
+                    GenericBasicShape::Polygon(polygon) => {
+                        let points: Vec<Point> = polygon.coordinates
+                            .iter()
+                            .map(|point| {
+                                let x = match point.0.unpack() {
+                                    Unpacked::Length(l) => l.px() as f64,
+                                    Unpacked::Percentage(p) => box_width * p.to_percentage() as f64 / 2.0,
+                                    Unpacked::Calc(calc) => calc.resolve(CSSPixelLength::new(box_width as f32)).px() as f64 / 2.0,
+                                };
+                                let y = match point.1.unpack() {
+                                    Unpacked::Length(l) => l.px() as f64,
+                                    Unpacked::Percentage(p) => box_height * p.to_percentage() as f64 / 2.0,
+                                    Unpacked::Calc(calc) => calc.resolve(CSSPixelLength::new(box_height as f32)).px() as f64 / 2.0,
+                                };
+                                Point { x, y }
+                            })
+                            .collect();
+                        &cx.frame.polygon_path(&points)
+                    },
+                    _ => &cx.frame.padding_box_path()
+                }
+            },
+        };
+        // Gaurav this path will become the kurbo path
+        // let clip = &cx.frame.padding_box_path();
+        let clip = clip_path;
 
         maybe_with_layer(scene, wants_layer, opacity, cx.transform, clip, |scene| {
             cx.draw_inset_box_shadow(scene);
