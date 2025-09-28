@@ -4,7 +4,6 @@ mod scene;
 mod window_renderer;
 
 pub mod custom_paint_source;
-pub mod wgpu_context;
 
 pub use custom_paint_source::*;
 pub use image_renderer::VelloImageRenderer;

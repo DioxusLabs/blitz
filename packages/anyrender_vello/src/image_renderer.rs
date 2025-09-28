@@ -1,4 +1,3 @@
-use crate::wgpu_context::{WGPUContext, block_on_wgpu};
 use anyrender::ImageRenderer;
 use rustc_hash::FxHashMap;
 use vello::{RendererOptions, Scene as VelloScene};
@@ -6,6 +5,7 @@ use wgpu::{
     BufferDescriptor, BufferUsages, CommandEncoderDescriptor, Extent3d, TexelCopyBufferInfo,
     TexelCopyBufferLayout, TextureDescriptor, TextureFormat, TextureUsages,
 };
+use wgpu_context::{WGPUContext, block_on_wgpu};
 
 use crate::{DEFAULT_THREADS, VelloScenePainter};
 

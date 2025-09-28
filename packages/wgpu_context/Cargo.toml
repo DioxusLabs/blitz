@@ -1,0 +1,12 @@
+[package]
+name = "wgpu_context"
+description = "Context for managing WGPU surfaces"
+version = "0.1.0"
+homepage = "https://github.com/dioxuslabs/blitz"
+repository = "https://github.com/dioxuslabs/blitz"
+documentation = "https://docs.rs/wgpu_context"
+license.workspace = true
+edition = "2024"
+
+[dependencies]
+wgpu = { workspace = true }

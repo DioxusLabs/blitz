@@ -13,6 +13,8 @@ log_frame_times = ["debug_timer/enable"]
 
 [dependencies]
 anyrender = { workspace = true }
+wgpu_context = { workspace = true }
+
 debug_timer = { workspace = true }
 kurbo = { workspace = true }
 peniko = { workspace = true }

@@ -1,4 +1,4 @@
-use crate::wgpu_context::DeviceHandle;
+use wgpu_context::DeviceHandle;
 use peniko::ImageData;
 use vello::Renderer as VelloRenderer;
 use wgpu::{Instance, Texture};

@@ -1,7 +1,3 @@
-use crate::{
-    CustomPaintSource,
-    wgpu_context::{DeviceHandle, RenderSurface, WGPUContext},
-};
 use anyrender::{WindowHandle, WindowRenderer};
 use debug_timer::debug_timer;
 use peniko::Color;
@@ -14,8 +10,9 @@ use vello::{
     AaSupport, RenderParams, Renderer as VelloRenderer, RendererOptions, Scene as VelloScene,
 };
 use wgpu::{CommandEncoderDescriptor, Features, Limits, PresentMode, TextureViewDescriptor};
+use wgpu_context::{DeviceHandle, RenderSurface, WGPUContext};
 
-use crate::{DEFAULT_THREADS, VelloScenePainter};
+use crate::{CustomPaintSource, DEFAULT_THREADS, VelloScenePainter};
 
 static PAINT_SOURCE_ID: AtomicU64 = AtomicU64::new(0);
 

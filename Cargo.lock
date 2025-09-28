@@ -309,6 +309,7 @@ dependencies = [
  "vello",
  "vello_encoding",
  "wgpu 26.0.1",
+ "wgpu_context",
 ]
 
 [[package]]
@@ -7620,6 +7621,13 @@ dependencies = [
  "log",
  "thiserror 2.0.17",
  "web-sys",
+]
+
+[[package]]
+name = "wgpu_context"
+version = "0.1.0"
+dependencies = [
+ "wgpu 26.0.1",
 ]
 
 [[package]]
