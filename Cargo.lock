@@ -7646,6 +7646,7 @@ dependencies = [
  "mini-dxn",
  "pollster 0.4.0",
  "wgpu 26.0.1",
+ "wgpu_context",
 ]
 
 [[package]]

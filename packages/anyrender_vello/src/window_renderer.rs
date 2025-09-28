@@ -9,7 +9,7 @@ use std::sync::{
 use vello::{
     AaSupport, RenderParams, Renderer as VelloRenderer, RendererOptions, Scene as VelloScene,
 };
-use wgpu::{CommandEncoderDescriptor, Features, Limits, PresentMode, TextureViewDescriptor};
+use wgpu::{Features, Limits, PresentMode};
 use wgpu_context::{DeviceHandle, RenderSurface, WGPUContext};
 
 use crate::{CustomPaintSource, DEFAULT_THREADS, VelloScenePainter};
@@ -176,45 +176,15 @@ impl WindowRenderer for VelloWindowRenderer {
                 &device_handle.device,
                 &device_handle.queue,
                 self.scene.as_ref().unwrap(),
-                &surface.target_view,
+                &surface.intermediate_texture_view,
                 &render_params,
             )
             .expect("failed to render to texture");
         timer.record_time("render");
 
-        // TODO: verify that handling of SurfaceError::Outdated is no longer required
-        //
-        // let surface_texture = match state.surface.surface.get_current_texture() {
-        //     Ok(surface) => surface,
-        //     // When resizing too aggresively, the surface can get outdated (another resize) before being rendered into
-        //     Err(SurfaceError::Outdated) => return,
-        //     Err(_) => panic!("failed to get surface texture"),
-        // };
-
-        let surface_texture = state
-            .surface
-            .surface
-            .get_current_texture()
-            .expect("failed to get surface texture");
-
-        // Perform the copy
-        // (TODO: Does it improve throughput to acquire the surface after the previous texture render has happened?)
-        let mut encoder = device_handle
-            .device
-            .create_command_encoder(&CommandEncoderDescriptor {
-                label: Some("Surface Blit"),
-            });
-
-        state.surface.blitter.copy(
-            &device_handle.device,
-            &mut encoder,
-            &surface.target_view,
-            &surface_texture
-                .texture
-                .create_view(&TextureViewDescriptor::default()),
-        );
-        device_handle.queue.submit([encoder.finish()]);
+        let surface_texture = state.surface.blit_from_intermediate_texture_to_surface();
         surface_texture.present();
+
         timer.record_time("present");
 
         device_handle.device.poll(wgpu::PollType::Wait).unwrap();

@@ -1,11 +1,11 @@
 // Copyright © SixtyFPS GmbH <info@slint.dev>
 // SPDX-License-Identifier: MIT
 use crate::Color;
-use anyrender_vello::wgpu_context::DeviceHandle;
 use anyrender_vello::{CustomPaintCtx, CustomPaintSource, TextureHandle};
 use std::sync::mpsc::{channel, Receiver, Sender};
 use std::time::Instant;
 use wgpu::Instance;
+use wgpu_context::DeviceHandle;
 
 pub struct DemoPaintSource {
     state: DemoRendererState,

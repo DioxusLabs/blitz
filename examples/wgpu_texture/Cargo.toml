@@ -16,6 +16,7 @@ blitz-dom = { path = "../../packages/blitz-dom" }
 blitz-html = { path = "../../packages/blitz-html" }
 blitz-shell = { path = "../../packages/blitz-shell" }
 mini-dxn = { path = "../../packages/mini-dxn" }
+wgpu_context = { path = "../../packages/wgpu_context" }
 dioxus = { workspace = true }
 wgpu = { workspace = true }
 color = { workspace = true }

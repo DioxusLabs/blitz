@@ -7,9 +7,10 @@ use std::error::Error;
 use std::fmt::Display;
 use std::future::Future;
 use wgpu::{
-    Adapter, Device, Features, Instance, Limits, MemoryHints, PollError, Queue,
-    RequestAdapterError, RequestDeviceError, Surface, SurfaceConfiguration, SurfaceTarget, Texture,
-    TextureFormat, TextureView, util::TextureBlitter,
+    Adapter, CommandEncoderDescriptor, Device, Features, Instance, Limits, MemoryHints, PollError,
+    Queue, RequestAdapterError, RequestDeviceError, Surface, SurfaceConfiguration, SurfaceTarget,
+    SurfaceTexture, Texture, TextureFormat, TextureView, TextureViewDescriptor,
+    util::TextureBlitter,
 };
 
 // Errors that can occur in WgpuContext.
@@ -259,9 +260,8 @@ pub struct RenderSurface<'s> {
 
     // Intermediate Texture which we render to because compute shaders cannot always render directly
     // to surfaces, and associated TextureView.
-    pub target_texture: Texture,
-    pub target_view: TextureView,
-
+    pub intermediate_texture: Texture,
+    pub intermediate_texture_view: TextureView,
     // Blitter for blitting from the intermediate texture to the surface.
     pub blitter: TextureBlitter,
 }
@@ -273,8 +273,8 @@ impl std::fmt::Debug for RenderSurface<'_> {
             .field("config", &self.config)
             .field("device_handle", &self.device_handle)
             .field("format", &self.format)
-            .field("target_texture", &self.target_texture)
-            .field("target_view", &self.target_view)
+            .field("target_texture", &self.intermediate_texture)
+            .field("target_view", &self.intermediate_texture_view)
             .field("blitter", &"(Not Debug)")
             .finish()
     }
@@ -316,8 +316,8 @@ impl<'s> RenderSurface<'s> {
             surface,
             config,
             format,
-            target_texture,
-            target_view,
+            intermediate_texture: target_texture,
+            intermediate_texture_view: target_view,
             blitter,
         };
         surface.configure();
@@ -330,8 +330,8 @@ impl<'s> RenderSurface<'s> {
             create_intermediate_texture(width, height, &self.device_handle.device);
         // TODO: Use clever resize semantics to avoid thrashing the memory allocator during a resize
         // especially important on metal.
-        self.target_texture = texture;
-        self.target_view = view;
+        self.intermediate_texture = texture;
+        self.intermediate_texture_view = view;
         self.config.width = width;
         self.config.height = height;
         self.configure();
@@ -345,6 +345,44 @@ impl<'s> RenderSurface<'s> {
     fn configure(&self) {
         self.surface
             .configure(&self.device_handle.device, &self.config);
+    }
+
+    /// Blit from the intermediate texture to the surface texture
+    pub fn blit_from_intermediate_texture_to_surface(&self) -> SurfaceTexture {
+        let surface_texture = self
+            .surface
+            .get_current_texture()
+            .expect("failed to get surface texture");
+
+        // TODO: verify that handling of SurfaceError::Outdated is no longer required
+        //
+        // let surface_texture = match state.surface.surface.get_current_texture() {
+        //     Ok(surface) => surface,
+        //     // When resizing too aggresively, the surface can get outdated (another resize) before being rendered into
+        //     Err(SurfaceError::Outdated) => return,
+        //     Err(_) => panic!("failed to get surface texture"),
+        // };
+
+        // Perform the copy
+        // (TODO: Does it improve throughput to acquire the surface after the previous texture render has happened?)
+        let mut encoder =
+            self.device_handle
+                .device
+                .create_command_encoder(&CommandEncoderDescriptor {
+                    label: Some("Surface Blit"),
+                });
+
+        self.blitter.copy(
+            &self.device_handle.device,
+            &mut encoder,
+            &self.intermediate_texture_view,
+            &surface_texture
+                .texture
+                .create_view(&TextureViewDescriptor::default()),
+        );
+        self.device_handle.queue.submit([encoder.finish()]);
+
+        surface_texture
     }
 }
 
