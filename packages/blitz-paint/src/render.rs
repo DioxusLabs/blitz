@@ -15,7 +15,7 @@ use blitz_dom::node::{
     ListItemLayout, ListItemLayoutPosition, Marker, NodeData, RasterImageData, TextInputData,
     TextNodeData,
 };
-use blitz_dom::{BaseDocument, ElementData, Node, local_name};
+use blitz_dom::{local_name, BaseDocument, ElementData, Node};
 use blitz_traits::devtools::DevtoolSettings;
 
 use euclid::Transform3D;
@@ -23,16 +23,17 @@ use style::values::computed::BorderCornerRadius;
 use style::{
     dom::TElement,
     properties::{
-        ComputedValues, generated::longhands::visibility::computed_value::T as StyloVisibility,
-        style_structs::Font,
+        generated::longhands::visibility::computed_value::T as StyloVisibility,
+        style_structs::Font, ComputedValues,
     },
     values::{
         computed::{CSSPixelLength, Overflow},
-        specified::{BorderStyle, OutlineStyle, image::ImageRendering},
+        specified::{image::ImageRendering, BorderStyle, OutlineStyle},
     },
 };
 
 use kurbo::{self, Affine, Insets, Point, Rect, Stroke, Vec2};
+use parley::BoundingBox;
 use peniko::{self, Fill, ImageData, ImageSampler};
 use style::values::generics::color::GenericColor;
 use taffy::Layout;
@@ -400,9 +401,9 @@ struct ElementCx<'a> {
     devtools: &'a DevtoolSettings,
 }
 
-/// Converts parley BoundingBox into peniko Rect
+/// Convert `parley::BoundingBox` to `kurbo::Rect`
 fn convert_rect(rect: &parley::BoundingBox) -> kurbo::Rect {
-    peniko::kurbo::Rect::new(rect.x0, rect.y0, rect.x1, rect.y1)
+    kurbo::Rect::new(rect.x0, rect.y0, rect.x1, rect.y1)
 }
 
 impl ElementCx<'_> {
@@ -433,13 +434,13 @@ impl ElementCx<'_> {
 
             if self.node.is_focussed() {
                 // Render selection/caret
-                for (rect, _line_idx) in input_data.editor.selection_geometry().iter() {
+                for (bb, _line_idx) in input_data.editor.selection_geometry().iter() {
                     scene.fill(
                         Fill::NonZero,
                         transform,
                         color::palette::css::STEEL_BLUE,
                         None,
-                        &convert_rect(rect),
+                        &convert_rect(bb),
                     );
                 }
                 if let Some(cursor) = input_data.editor.cursor_geometry(1.5) {
