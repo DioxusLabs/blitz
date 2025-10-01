@@ -38,6 +38,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::task::Context as TaskContext;
 use style::Atom;
+use style::animation::DocumentAnimationSet;
 use style::attr::{AttrIdentifier, AttrValue};
 use style::data::{ElementData as StyloElementData, ElementStyles};
 use style::media_queries::MediaType;
@@ -117,6 +118,7 @@ pub struct BaseDocument {
     // Stylo
     /// The Stylo engine
     pub(crate) stylist: Stylist,
+    pub(crate) animations: DocumentAnimationSet,
     /// Stylo shared lock
     pub(crate) guard: SharedRwLock,
     /// Stylo invalidation map. We insert into this map prior to mutating nodes.
@@ -136,8 +138,11 @@ pub struct BaseDocument {
     pub(crate) active_node_id: Option<usize>,
     /// The node which recieved a mousedown event (if any)
     pub(crate) mousedown_node_id: Option<usize>,
-    /// Whether there are active animations (so we should re-render every frame)
-    pub(crate) is_animating: bool,
+
+    /// Whether there are active CSS animations/transitions (so we should re-render every frame)
+    pub(crate) has_active_animations: bool,
+    /// Whether there is a <canvas> element in the DOM (so we should re-render every frame)
+    pub(crate) has_canvas: bool,
 
     /// Map of node ID's for fast lookups
     pub(crate) nodes_to_id: HashMap<String, usize>,
@@ -253,6 +258,7 @@ impl BaseDocument {
             guard,
             nodes,
             stylist,
+            animations: DocumentAnimationSet::default(),
             snapshots,
             nodes_to_id,
             viewport,
@@ -268,7 +274,8 @@ impl BaseDocument {
             focus_node_id: None,
             active_node_id: None,
             mousedown_node_id: None,
-            is_animating: false,
+            has_active_animations: false,
+            has_canvas: false,
             changed_nodes: HashSet::new(),
             deferred_construction_nodes: Vec::new(),
             controls_to_form: HashMap::new(),
@@ -787,7 +794,7 @@ impl BaseDocument {
     }
 
     /// Restyle the tree and then relayout it
-    pub fn resolve(&mut self) {
+    pub fn resolve(&mut self, current_time_for_animations: f64) {
         if TDocument::as_node(&&self.nodes[0])
             .first_element_child()
             .is_none()
@@ -800,7 +807,7 @@ impl BaseDocument {
         debug_timer!(timer, feature = "log_phase_times");
 
         // we need to resolve stylist first since it will need to drive our layout bits
-        self.resolve_stylist();
+        self.resolve_stylist(current_time_for_animations);
         timer.record_time("style");
 
         // Propagate damage flags (from mutation and restyles) up and down the tree
@@ -1005,7 +1012,7 @@ impl BaseDocument {
     }
 
     pub fn is_animating(&self) -> bool {
-        self.is_animating
+        self.has_canvas | self.has_active_animations
     }
 
     /// Update the device and reset the stylist to process the new size
@@ -1330,7 +1337,7 @@ impl BaseDocument {
             .map(|node_id| &self.nodes[node_id])
     }
 
-    pub(crate) fn compute_is_animating(&self) -> bool {
+    pub(crate) fn compute_has_canvas(&self) -> bool {
         TreeTraverser::new(self).any(|node_id| {
             let node = &self.nodes[node_id];
             let Some(element) = node.element_data() else {

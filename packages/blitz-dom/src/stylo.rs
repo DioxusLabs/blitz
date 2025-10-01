@@ -17,8 +17,11 @@ use selectors::{
     sink::Push,
 };
 use style::CaseSensitivityExt;
+use style::animation::AnimationSetKey;
+use style::animation::AnimationState;
 use style::applicable_declarations::ApplicableDeclarationBlock;
 use style::color::AbsoluteColor;
+use style::invalidation::element::restyle_hints::RestyleHint;
 use style::properties::ComputedValues;
 use style::properties::{Importance, PropertyDeclaration};
 use style::rule_tree::CascadeLevel;
@@ -30,7 +33,6 @@ use style::values::AtomString;
 use style::values::computed::Percentage;
 use style::{
     Atom,
-    animation::DocumentAnimationSet,
     context::{
         QuirksMode, RegisteredSpeculativePainter, RegisteredSpeculativePainters,
         SharedStyleContext, StyleContext,
@@ -51,7 +53,7 @@ use style_dom::ElementState;
 use style::values::computed::text::TextAlign as StyloTextAlign;
 
 impl crate::document::BaseDocument {
-    pub fn resolve_stylist(&mut self) {
+    pub fn resolve_stylist(&mut self, now: f64) {
         style::thread_state::enter(ThreadState::LAYOUT);
 
         let guard = &self.guard;
@@ -69,6 +71,34 @@ impl crate::document::BaseDocument {
         self.stylist
             .flush(&guards, Some(root), Some(&self.snapshots));
 
+        // Mark actively animating nodes as dirty
+        let mut sets = self.animations.sets.write();
+        for (key, set) in sets.iter_mut() {
+            let node_id = key.node.id();
+            self.nodes[node_id].set_restyle_hint(RestyleHint::RESTYLE_SELF);
+
+            for animation in set.animations.iter_mut() {
+                if animation.state == AnimationState::Pending && animation.started_at <= now {
+                    animation.state = AnimationState::Running;
+                }
+                animation.iterate_if_necessary(now);
+
+                if animation.state == AnimationState::Running && animation.has_ended(now) {
+                    animation.state = AnimationState::Finished;
+                }
+            }
+
+            for transition in set.transitions.iter_mut() {
+                if transition.state == AnimationState::Pending && transition.start_time <= now {
+                    transition.state = AnimationState::Running;
+                }
+                if transition.state == AnimationState::Running && transition.has_ended(now) {
+                    transition.state = AnimationState::Finished;
+                }
+            }
+        }
+        drop(sets);
+
         // Build the style context used by the style traversal
         let context = SharedStyleContext {
             traversal_flags: TraversalFlags::empty(),
@@ -76,8 +106,8 @@ impl crate::document::BaseDocument {
             options: GLOBAL_STYLE_DATA.options.clone(),
             guards,
             visited_styles_enabled: false,
-            animations: DocumentAnimationSet::default().clone(),
-            current_time_for_animations: 0.0,
+            animations: self.animations.clone(),
+            current_time_for_animations: now,
             snapshot_map: &self.snapshots,
             registered_speculative_painters: &RegisteredPaintersImpl,
         };
@@ -100,6 +130,19 @@ impl crate::document::BaseDocument {
             }
         }
         self.snapshots.clear();
+
+        let mut sets = self.animations.sets.write();
+        for set in sets.values_mut() {
+            set.clear_canceled_animations();
+            for animation in set.animations.iter_mut() {
+                animation.is_new = false;
+            }
+            for transition in set.transitions.iter_mut() {
+                transition.is_new = false;
+            }
+        }
+        sets.retain(|_, state| !state.is_empty());
+        self.has_active_animations = !sets.is_empty();
 
         style::thread_state::exit(ThreadState::LAYOUT);
     }
@@ -555,20 +598,6 @@ impl<'a> TElement for BlitzNode<'a> {
             .map(|f| f.borrow_arc())
     }
 
-    fn animation_rule(
-        &self,
-        _: &SharedStyleContext,
-    ) -> Option<Arc<Locked<PropertyDeclarationBlock>>> {
-        None
-    }
-
-    fn transition_rule(
-        &self,
-        _context: &SharedStyleContext,
-    ) -> Option<Arc<Locked<PropertyDeclarationBlock>>> {
-        None
-    }
-
     fn state(&self) -> ElementState {
         self.element_state
     }
@@ -680,27 +709,53 @@ impl<'a> TElement for BlitzNode<'a> {
     }
 
     fn may_have_animations(&self) -> bool {
-        false
+        true
     }
 
-    fn has_animations(&self, _context: &SharedStyleContext) -> bool {
-        false
+    fn has_animations(&self, context: &SharedStyleContext) -> bool {
+        self.has_css_animations(context, None) || self.has_css_transitions(context, None)
     }
 
     fn has_css_animations(
         &self,
-        _context: &SharedStyleContext,
-        _pseudo_element: Option<style::selector_parser::PseudoElement>,
+        context: &SharedStyleContext,
+        pseudo_element: Option<PseudoElement>,
     ) -> bool {
-        false
+        let key = AnimationSetKey::new(TNode::opaque(&TElement::as_node(self)), pseudo_element);
+        context.animations.has_active_animations(&key)
     }
 
     fn has_css_transitions(
         &self,
-        _context: &SharedStyleContext,
-        _pseudo_element: Option<style::selector_parser::PseudoElement>,
+        context: &SharedStyleContext,
+        pseudo_element: Option<PseudoElement>,
     ) -> bool {
-        false
+        let key = AnimationSetKey::new(TNode::opaque(&TElement::as_node(self)), pseudo_element);
+        context.animations.has_active_transitions(&key)
+    }
+
+    fn animation_rule(
+        &self,
+        context: &SharedStyleContext,
+    ) -> Option<Arc<Locked<PropertyDeclarationBlock>>> {
+        let opaque = TNode::opaque(&TElement::as_node(self));
+        context.animations.get_animation_declarations(
+            &AnimationSetKey::new_for_non_pseudo(opaque),
+            context.current_time_for_animations,
+            &self.guard,
+        )
+    }
+
+    fn transition_rule(
+        &self,
+        context: &SharedStyleContext,
+    ) -> Option<Arc<Locked<PropertyDeclarationBlock>>> {
+        let opaque = TNode::opaque(&TElement::as_node(self));
+        context.animations.get_transition_declarations(
+            &AnimationSetKey::new_for_non_pseudo(opaque),
+            context.current_time_for_animations,
+            &self.guard,
+        )
     }
 
     fn shadow_root(&self) -> Option<<Self::ConcreteNode as TNode>::ConcreteShadowRoot> {
