@@ -486,7 +486,7 @@ impl DocumentMutator<'_> {
 impl<'doc> DocumentMutator<'doc> {
     pub fn flush(&mut self) {
         if self.recompute_is_animating {
-            self.doc.is_animating = self.doc.compute_is_animating();
+            self.doc.has_canvas = self.doc.compute_has_canvas();
         }
 
         if let Some(id) = self.title_node {

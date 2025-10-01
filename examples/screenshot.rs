@@ -97,7 +97,7 @@ async fn main() {
     timer.time("Fetched assets");
 
     // Compute style, layout, etc for HtmlDocument
-    document.as_mut().resolve();
+    document.as_mut().resolve(0.0);
 
     timer.time("Resolved styles and layout");
 

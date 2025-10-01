@@ -13,6 +13,7 @@ use winit::keyboard::PhysicalKey;
 
 use std::sync::Arc;
 use std::task::Waker;
+use std::time::Instant;
 use winit::event::{ElementState, MouseButton};
 use winit::event_loop::{ActiveEventLoop, EventLoopProxy};
 use winit::window::{Theme, WindowAttributes, WindowId};
@@ -60,6 +61,7 @@ pub struct View<Rend: WindowRenderer> {
     pub keyboard_modifiers: Modifiers,
     pub buttons: MouseEventButtons,
     pub mouse_pos: (f32, f32),
+    pub animation_timer: Option<Instant>,
 
     #[cfg(feature = "accessibility")]
     /// Accessibility adapter for `accesskit`.
@@ -102,6 +104,7 @@ impl<Rend: WindowRenderer> View<Rend> {
         Self {
             renderer: config.renderer,
             waker: None,
+            animation_timer: None,
             keyboard_modifiers: Default::default(),
             event_loop_proxy: proxy.clone(),
             window: winit_window.clone(),
@@ -147,12 +150,23 @@ impl<Rend: WindowRenderer> View<Rend> {
     pub fn downcast_doc_mut<T: 'static>(&mut self) -> &mut T {
         self.doc.as_any_mut().downcast_mut::<T>().unwrap()
     }
+
+    pub fn current_animation_time(&mut self) -> f64 {
+        match &self.animation_timer {
+            Some(start) => Instant::now().duration_since(*start).as_secs_f64(),
+            None => {
+                self.animation_timer = Some(Instant::now());
+                0.0
+            }
+        }
+    }
 }
 
 impl<Rend: WindowRenderer> View<Rend> {
     pub fn resume(&mut self) {
         // Resolve dom
-        self.doc.resolve();
+        let animation_time = self.current_animation_time();
+        self.doc.resolve(animation_time);
 
         // Resume renderer
         let (width, height) = self.doc.viewport().window_size;
@@ -201,7 +215,8 @@ impl<Rend: WindowRenderer> View<Rend> {
     }
 
     pub fn redraw(&mut self) {
-        self.doc.resolve();
+        let animation_time = self.current_animation_time();
+        self.doc.resolve(animation_time);
         let (width, height) = self.doc.viewport().window_size;
         let scale = self.doc.viewport().scale_f64();
         self.renderer
