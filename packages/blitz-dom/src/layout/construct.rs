@@ -874,8 +874,6 @@ pub(crate) fn build_inline_layout_into(
 
                             // dbg!(&style);
 
-                            // style.brush = peniko::Brush::Solid(peniko::Color::WHITE);
-
                             let font_size = style.font_size;
 
                             // Floor the line-height of the span by the line-height of the inline context

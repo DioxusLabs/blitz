@@ -84,7 +84,8 @@ taffy = { version = "0.9", default-features = false, features = ["std", "flexbox
 
 # Linebender + Fontations + WGPU + SVG
 color = "0.3"
-peniko = "0.4"
+linebender_resource_handle = "0.1"
+peniko = "0.4.1"
 kurbo = "0.11"
 parley = { version = "0.5", default-features = false, features = ["std"] }
 skrifa = { version = "0.31" } # Should match parley version

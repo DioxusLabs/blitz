@@ -525,7 +525,7 @@ impl std::fmt::Debug for ListItemLayout {
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
-/// Parley Brush type for Blitz which contains a `peniko::Brush` and a Blitz node id
+/// Parley Brush type for Blitz which contains the Blitz node id
 pub struct TextBrush {
     /// The node id for the span
     pub id: usize,
