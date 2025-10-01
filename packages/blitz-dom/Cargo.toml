@@ -60,7 +60,6 @@ accesskit = { workspace = true, optional = true }
 parley = { workspace = true }
 skrifa = { workspace = true }
 linebender_resource_handle = { workspace = true }
-kurbo = { workspace = true }
 color = { workspace = true }
 
 # Other dependencies

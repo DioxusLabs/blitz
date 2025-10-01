@@ -24,7 +24,6 @@ use blitz_traits::net::{DummyNetProvider, NetProvider, SharedProvider};
 use blitz_traits::shell::{ColorScheme, DummyShellProvider, ShellProvider, Viewport};
 use cursor_icon::CursorIcon;
 use debug_timer::debug_timer;
-use kurbo;
 use linebender_resource_handle::Blob;
 use markup5ever::local_name;
 use parley::{FontContext, LayoutContext};
@@ -108,7 +107,7 @@ pub struct BaseDocument {
     // Viewport details such as the dimensions, HiDPI scale, and zoom factor,
     pub(crate) viewport: Viewport,
     // Scroll within our viewport
-    pub(crate) viewport_scroll: kurbo::Point,
+    pub(crate) viewport_scroll: crate::Point<f64>,
 
     /// A slab-backed tree of nodes
     ///
@@ -264,7 +263,7 @@ impl BaseDocument {
             nodes_to_id,
             viewport,
             devtool_settings: DevtoolSettings::default(),
-            viewport_scroll: kurbo::Point::ZERO,
+            viewport_scroll: crate::Point::ZERO,
             url: base_url,
             ua_stylesheets: HashMap::new(),
             nodes_to_stylesheet: BTreeMap::new(),
@@ -1320,11 +1319,11 @@ impl BaseDocument {
         self.viewport_scroll != initial
     }
 
-    pub fn viewport_scroll(&self) -> kurbo::Point {
+    pub fn viewport_scroll(&self) -> crate::Point<f64> {
         self.viewport_scroll
     }
 
-    pub fn set_viewport_scroll(&mut self, scroll: kurbo::Point) {
+    pub fn set_viewport_scroll(&mut self, scroll: crate::Point<f64>) {
         self.viewport_scroll = scroll;
     }
 

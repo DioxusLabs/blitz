@@ -758,7 +758,6 @@ dependencies = [
  "html-escape",
  "image",
  "keyboard-types",
- "kurbo",
  "linebender_resource_handle",
  "markup5ever",
  "objc2 0.6.2",

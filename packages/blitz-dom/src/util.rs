@@ -21,6 +21,19 @@ pub enum ImageType {
     Background(usize),
 }
 
+/// A point
+#[derive(Clone, Debug, Copy, Eq, PartialEq)]
+pub struct Point<T> {
+    /// The x coordinate
+    pub x: T,
+    /// The y coordinate
+    pub y: T,
+}
+
+impl Point<f64> {
+    pub const ZERO: Self = Point { x: 0.0, y: 0.0 };
+}
+
 // Debug print an RcDom
 pub fn walk_tree(indent: usize, node: &Node) {
     // Skip all-whitespace text nodes entirely
