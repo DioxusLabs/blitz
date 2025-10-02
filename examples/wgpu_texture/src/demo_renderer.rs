@@ -172,7 +172,7 @@ impl ActiveDemoRenderer {
         // If "next texture" size doesn't match specified size then unregister and drop texture
         if let Some(next) = &self.next_texture {
             if next.texture.width() != width || next.texture.height() != height {
-                ctx.unregister_texture(next.handle);
+                ctx.unregister_texture(next.handle.clone());
                 self.next_texture = None;
             }
         }
@@ -189,7 +189,7 @@ impl ActiveDemoRenderer {
         };
 
         let next_texture = &texture_and_handle.texture;
-        let next_texture_handle = texture_and_handle.handle;
+        let next_texture_handle = texture_and_handle.handle.clone();
 
         let elapsed: f32 = start_time.elapsed().as_millis() as f32 / 500.;
         let [light_red, light_green, light_blue] = light;

@@ -158,17 +158,7 @@ impl VelloImageRenderer {
                 panic!("channel inaccessible: {:#}", err);
             })
         {
-            let result = match recv_result {
-                Some(result) => result,
-                None => panic!("channel closed"),
-            };
-            match result {
-                Ok(_) => {}
-                Err(_err) => {
-                    // rydb: Should this be an panic? There is no logging crate to make this less severe.
-                    // panic!("channel buffer async error: {:#}", err)
-                }
-            }
+            let _ = recv_result.unwrap();
         }
 
         let data = buf_slice.get_mapped_range();

@@ -1,19 +1,9 @@
 use anyrender::{NormalizedCoord, Paint, PaintScene};
 use kurbo::{Affine, Rect, Shape, Stroke};
-use peniko::{
-    BlendMode, Brush, BrushRef, Color, Fill, FontData, ImageBrush, ImageSampler, StyleRef,
-};
-use vello_cpu::{ImageSource, PaintType, Pixmap};
-// use vello_cpu::{self, ImageSource, PaintType, Pixmap};
+use peniko::{BlendMode, Brush, BrushRef, Color, Fill, FontData, ImageBrush, ImageData, StyleRef};
+use vello_cpu::{PaintType, Pixmap};
 
 const DEFAULT_TOLERANCE: f64 = 0.1;
-
-fn image_source_to_image_brush(image_source: ImageSource) -> ImageBrush<ImageSource> {
-    ImageBrush::<ImageSource> {
-        image: image_source,
-        sampler: ImageSampler::default(),
-    }
-}
 
 fn brush_ref_to_paint_type<'a>(brush_ref: BrushRef<'a>) -> PaintType {
     match brush_ref {
@@ -21,17 +11,12 @@ fn brush_ref_to_paint_type<'a>(brush_ref: BrushRef<'a>) -> PaintType {
         Brush::Gradient(gradient) => PaintType::Gradient(gradient.clone()),
         Brush::Image(image) => {
             let image_source = vello_cpu::ImageSource::from_peniko_image_data(&image.image);
-            let brush = image_source_to_image_brush(image_source);
-            PaintType::Image(brush)
+            PaintType::Image(ImageBrush {
+                image: image_source,
+                sampler: image.sampler,
+            })
         }
     }
-    // match brush_ref {
-    //     BrushRef::Solid(alpha_color) => PaintType::Solid(alpha_color),
-    //     BrushRef::Gradient(gradient) => PaintType::Gradient(gradient.clone()),
-    //     BrushRef::Image(image) => {
-    //         PaintType::Image(vello_cpu::Image::from_peniko_image(&image))
-    //     },
-    // }
 }
 
 fn anyrender_paint_to_vello_cpu_paint<'a>(paint: Paint<'a>) -> PaintType {
@@ -40,8 +25,10 @@ fn anyrender_paint_to_vello_cpu_paint<'a>(paint: Paint<'a>) -> PaintType {
         Paint::Gradient(gradient) => PaintType::Gradient(gradient.clone()),
         Paint::Image(image) => {
             let image_source = vello_cpu::ImageSource::from_peniko_image_data(&image.image);
-            let brush = image_source_to_image_brush(image_source);
-            PaintType::Image(brush)
+            PaintType::Image(ImageBrush {
+                image: image_source,
+                sampler: image.sampler,
+            })
         }
         // TODO: custom paint
         Paint::Custom(_) => PaintType::Solid(peniko::color::palette::css::TRANSPARENT),
@@ -49,19 +36,18 @@ fn anyrender_paint_to_vello_cpu_paint<'a>(paint: Paint<'a>) -> PaintType {
 }
 
 #[allow(unused)]
-fn convert_image_cached(image: &ImageBrush) -> vello_cpu::Image {
+fn convert_image_cached(image: &ImageData) -> vello_cpu::ImageSource {
     use std::collections::HashMap;
     use std::sync::{LazyLock, Mutex};
-    static CACHE: LazyLock<Mutex<HashMap<u64, vello_cpu::Image>>> =
+    static CACHE: LazyLock<Mutex<HashMap<u64, vello_cpu::ImageSource>>> =
         LazyLock::new(|| Mutex::new(HashMap::new()));
 
     let mut map = CACHE.lock().unwrap();
-    let id = image.image.data.id();
+    let id = image.data.id();
     map.entry(id)
         .or_insert_with(|| {
-            let image_source = vello_cpu::ImageSource::from_peniko_image_data(&image.image);
-            let brush = image_source_to_image_brush(image_source);
-            brush
+            let image_source = vello_cpu::ImageSource::from_peniko_image_data(&image);
+            image_source
         })
         .clone()
 }

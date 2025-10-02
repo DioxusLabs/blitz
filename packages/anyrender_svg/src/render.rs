@@ -44,7 +44,7 @@ pub(crate) fn render_group<S: PaintScene, F: FnMut(&mut S, &usvg::Node)>(
                         true
                     }
                     // Else if there is blending to be done then push a layer with a rectangular clip
-                    // rydb: push_layer_clip() doesn't exist?
+                    #[allow(deprecated)]
                     _ if mix != peniko::Mix::Clip => {
                         // Use bounding box as the clip path.
                         let bounding_box = g.layer_bounding_box();

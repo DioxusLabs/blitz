@@ -1,6 +1,6 @@
 use anyrender::{CustomPaint, NormalizedCoord, Paint, PaintScene};
 use kurbo::{Affine, Rect, Shape, Stroke};
-use peniko::{BlendMode, BrushRef, Color, Fill, FontData, StyleRef};
+use peniko::{BlendMode, BrushRef, Color, Fill, FontData, ImageBrush, StyleRef};
 use rustc_hash::FxHashMap;
 use vello::Renderer as VelloRenderer;
 
@@ -27,7 +27,7 @@ impl VelloScenePainter<'_> {
         let texture_handle = source.render(ctx, width, height, scale)?;
 
         // Return dummy image
-        Some(texture_handle.dummy_image())
+        Some(ImageBrush::new(texture_handle.0))
     }
 }
 

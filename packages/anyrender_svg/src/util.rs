@@ -47,7 +47,7 @@ pub(crate) fn to_mix(blend_mode: usvg::BlendMode, is_fully_opaque: bool) -> Mix 
     match blend_mode {
         usvg::BlendMode::Normal => {
             if is_fully_opaque {
-                // rydb: push_layer_clip doesn't exist?
+                #[allow(deprecated)]
                 Mix::Clip
             } else {
                 Mix::Normal

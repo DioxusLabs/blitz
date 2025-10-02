@@ -400,8 +400,8 @@ struct ElementCx<'a> {
     devtools: &'a DevtoolSettings,
 }
 
-///TODO: If BoundingBox implements `Shape`, remove this. This exists to side-step it not currently doing that.
-fn convert_rect(rect: &parley::BoundingBox) -> peniko::kurbo::Rect {
+/// Converts parley BoundingBox into peniko Rect
+fn convert_rect(rect: &parley::BoundingBox) -> kurbo::Rect {
     peniko::kurbo::Rect::new(rect.x0, rect.y0, rect.x1, rect.y1)
 }
 

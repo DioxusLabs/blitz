@@ -48,7 +48,7 @@ pub(crate) fn maybe_push_layer(
         return false;
     }
     let blend_mode = if opacity == 1.0 {
-        // rydb: `Mix::Clip` deprecation warning recommends using `push_clip_layer`, but peniko doesn't have that function?
+        #[allow(deprecated)]
         Mix::Clip
     } else {
         Mix::Normal
