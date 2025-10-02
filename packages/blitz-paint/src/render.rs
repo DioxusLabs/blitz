@@ -33,7 +33,7 @@ use style::{
 };
 
 use kurbo::{self, Affine, Insets, Point, Rect, Stroke, Vec2};
-use peniko::{self, Fill};
+use peniko::{self, Fill, ImageData, ImageSampler};
 use style::values::generics::color::GenericColor;
 use taffy::Layout;
 
@@ -365,16 +365,21 @@ fn to_image_quality(image_rendering: ImageRendering) -> peniko::ImageQuality {
 }
 
 /// Ensure that the `resized_image` field has a correctly sized image
-fn to_peniko_image(image: &RasterImageData, quality: peniko::ImageQuality) -> peniko::Image {
-    peniko::Image {
-        data: peniko::Blob::new(image.data.clone()),
-        format: peniko::ImageFormat::Rgba8,
-        width: image.width,
-        height: image.height,
-        alpha: 1.0,
-        x_extend: peniko::Extend::Repeat,
-        y_extend: peniko::Extend::Repeat,
-        quality,
+fn to_peniko_image(image: &RasterImageData, quality: peniko::ImageQuality) -> peniko::ImageBrush {
+    peniko::ImageBrush {
+        image: ImageData {
+            data: peniko::Blob::new(image.data.clone()),
+            format: peniko::ImageFormat::Rgba8,
+            width: image.width,
+            height: image.height,
+            alpha_type: peniko::ImageAlphaType::Alpha,
+        },
+        sampler: ImageSampler {
+            x_extend: peniko::Extend::Repeat,
+            y_extend: peniko::Extend::Repeat,
+            quality,
+            alpha: 1.0,
+        },
     }
 }
 
@@ -393,6 +398,11 @@ struct ElementCx<'a> {
     text_input: Option<&'a TextInputData>,
     list_item: Option<&'a ListItemLayout>,
     devtools: &'a DevtoolSettings,
+}
+
+///TODO: If BoundingBox implements `Shape`, remove this. This exists to side-step it not currently doing that.
+fn convert_rect(rect: &parley::BoundingBox) -> peniko::kurbo::Rect {
+    peniko::kurbo::Rect::new(rect.x0, rect.y0, rect.x1, rect.y1)
 }
 
 impl ElementCx<'_> {
@@ -429,11 +439,17 @@ impl ElementCx<'_> {
                         transform,
                         color::palette::css::STEEL_BLUE,
                         None,
-                        &rect,
+                        &convert_rect(rect),
                     );
                 }
                 if let Some(cursor) = input_data.editor.cursor_geometry(1.5) {
-                    scene.fill(Fill::NonZero, transform, Color::BLACK, None, &cursor);
+                    scene.fill(
+                        Fill::NonZero,
+                        transform,
+                        Color::BLACK,
+                        None,
+                        &convert_rect(&cursor),
+                    );
                 };
             }
 
@@ -581,7 +597,7 @@ impl ElementCx<'_> {
                 .pre_scale_non_uniform(x_scale, y_scale)
                 .then_translate(Vec2 { x, y });
 
-            scene.draw_image(&to_peniko_image(image, quality), transform);
+            scene.draw_image(to_peniko_image(image, quality).as_ref(), transform);
         }
     }
 

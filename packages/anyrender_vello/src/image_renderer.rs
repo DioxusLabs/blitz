@@ -152,10 +152,23 @@ impl VelloImageRenderer {
 
         let (sender, receiver) = futures_intrusive::channel::shared::oneshot_channel();
         buf_slice.map_async(wgpu::MapMode::Read, move |v| sender.send(v).unwrap());
-        if let Some(recv_result) = block_on_wgpu(&self.device, receiver.receive()) {
-            recv_result.unwrap();
-        } else {
-            panic!("channel was closed");
+
+        if let Ok(recv_result) =
+            block_on_wgpu(&self.device, receiver.receive()).inspect_err(|err| {
+                panic!("channel inaccessible: {:#}", err);
+            })
+        {
+            let result = match recv_result {
+                Some(result) => result,
+                None => panic!("channel closed"),
+            };
+            match result {
+                Ok(_) => {}
+                Err(_err) => {
+                    // rydb: Should this be an panic? There is no logging crate to make this less severe.
+                    // panic!("channel buffer async error: {:#}", err)
+                }
+            }
         }
 
         let data = buf_slice.get_mapped_range();

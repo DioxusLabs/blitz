@@ -28,7 +28,7 @@
 //!  - [anyrender_vello_cpu](https://docs.rs/anyrender_vello_cpu)
 
 use kurbo::{Affine, Rect, Shape, Stroke};
-use peniko::{BlendMode, BrushRef, Color, Fill, Font, Image, StyleRef};
+use peniko::{BlendMode, BrushRef, Color, Fill, FontData, ImageBrushRef, StyleRef};
 use std::sync::Arc;
 
 pub mod wasm_send_sync;
@@ -113,7 +113,7 @@ pub trait PaintScene {
     #[allow(clippy::too_many_arguments)]
     fn draw_glyphs<'a, 's: 'a>(
         &'s mut self,
-        font: &'a Font,
+        font: &'a FontData,
         font_size: f32,
         hint: bool,
         normalized_coords: &'a [NormalizedCoord],
@@ -138,13 +138,18 @@ pub trait PaintScene {
     // --- Provided methods
 
     /// Utility method to draw an image at it's natural size. For more advanced image drawing use the `fill` method
-    fn draw_image(&mut self, image: &Image, transform: Affine) {
+    fn draw_image(&mut self, image: ImageBrushRef, transform: Affine) {
         self.fill(
             Fill::NonZero,
             transform,
             image,
             None,
-            &Rect::new(0.0, 0.0, image.width as f64, image.height as f64),
+            &Rect::new(
+                0.0,
+                0.0,
+                image.image.width as f64,
+                image.image.height as f64,
+            ),
         );
     }
 }

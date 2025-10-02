@@ -1,6 +1,6 @@
 use anyrender::{CustomPaint, NormalizedCoord, Paint, PaintScene};
 use kurbo::{Affine, Rect, Shape, Stroke};
-use peniko::{BlendMode, BrushRef, Color, Fill, Font, StyleRef};
+use peniko::{BlendMode, BrushRef, Color, Fill, FontData, StyleRef};
 use rustc_hash::FxHashMap;
 use vello::Renderer as VelloRenderer;
 
@@ -13,7 +13,7 @@ pub struct VelloScenePainter<'r> {
 }
 
 impl VelloScenePainter<'_> {
-    fn render_custom_source(&mut self, custom_paint: CustomPaint) -> Option<peniko::Image> {
+    fn render_custom_source(&mut self, custom_paint: CustomPaint) -> Option<peniko::ImageBrush> {
         let CustomPaint {
             source_id,
             width,
@@ -78,8 +78,8 @@ impl PaintScene for VelloScenePainter<'_> {
     ) {
         let paint: Paint<'_> = paint.into();
 
-        let dummy_image: peniko::Image;
-        let brush_ref = match paint {
+        let dummy_image: peniko::ImageBrush;
+        let brush_ref: BrushRef<'_> = match paint {
             Paint::Solid(color) => BrushRef::Solid(color),
             Paint::Gradient(gradient) => BrushRef::Gradient(gradient),
             Paint::Image(image) => BrushRef::Image(image),
@@ -91,7 +91,7 @@ impl PaintScene for VelloScenePainter<'_> {
                     return;
                 };
                 dummy_image = image;
-                BrushRef::Image(&dummy_image)
+                BrushRef::Image(dummy_image.as_ref())
             }
         };
 
@@ -101,7 +101,7 @@ impl PaintScene for VelloScenePainter<'_> {
 
     fn draw_glyphs<'a, 's: 'a>(
         &'a mut self,
-        font: &'a Font,
+        font: &'a FontData,
         font_size: f32,
         hint: bool,
         normalized_coords: &'a [NormalizedCoord],

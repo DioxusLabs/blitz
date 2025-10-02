@@ -85,16 +85,16 @@ taffy = { version = "0.9", default-features = false, features = ["std", "flexbox
 # Linebender + Fontations + WGPU + SVG
 color = "0.3"
 linebender_resource_handle = "0.1"
-peniko = "0.4.1"
-kurbo = "0.11"
-parley = { version = "0.5", default-features = false, features = ["std"] }
-skrifa = { version = "0.31" } # Should match parley version
-wgpu = "24"
+peniko = "0.5.0"
+kurbo = "0.12"
+parley = { git = "https://github.com/rydb/parley", rev = "e8a7111", default-features = false, features = ["std"] }
+skrifa = { version = "0.37" } # Should match parley version
+wgpu = "26"
 softbuffer = "0.4"
 pixels = "0.15"
-vello = { version = "=0.5.0", features = [ "wgpu" ] }
-vello_encoding = { version = "=0.5.0", default-features = false }
-vello_cpu = { version = "0.0.2", default-features = false, features = ["std", "text"]}
+vello = { git = "https://github.com/linebender/vello", rev = "462fd4e", features = [ "wgpu" ] }
+vello_encoding = { git = "https://github.com/linebender/vello", rev = "462fd4e", default-features = false }
+vello_cpu = { git = "https://github.com/linebender/vello", rev = "462fd4e", default-features = false, features = ["std", "text"]}
 usvg = "0.45.1"
 
 # Windowing & Input

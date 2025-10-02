@@ -322,7 +322,7 @@ impl ElementCx<'_> {
                     scene.fill(
                         peniko::Fill::NonZero,
                         transform,
-                        &to_peniko_image(image_data, quality),
+                        to_peniko_image(image_data, quality).as_ref(),
                         None,
                         &Rect::new(0.0, 0.0, origin_rect.width(), origin_rect.height()),
                     );
@@ -332,7 +332,7 @@ impl ElementCx<'_> {
             scene.fill(
                 peniko::Fill::NonZero,
                 transform,
-                &to_peniko_image(image_data, quality),
+                to_peniko_image(image_data, quality).as_ref(),
                 None,
                 &Rect::new(0.0, 0.0, origin_rect.width(), origin_rect.height()),
             );

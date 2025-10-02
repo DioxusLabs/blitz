@@ -1,9 +1,8 @@
 use std::sync::Arc;
 
 use crate::wgpu_context::DeviceHandle;
-use peniko::Blob;
+use peniko::{Blob, ImageBrush, ImageData};
 use vello::Renderer as VelloRenderer;
-use vello::peniko::Image;
 use wgpu::{Instance, TexelCopyTextureInfoBase, Texture};
 
 pub trait CustomPaintSource: 'static {
@@ -30,7 +29,7 @@ pub struct TextureHandle {
 }
 
 impl TextureHandle {
-    pub(crate) fn dummy_image(&self) -> Image {
+    pub(crate) fn dummy_image(&self) -> ImageBrush {
         dummy_image(Some(self.id), self.width, self.height)
     }
 }
@@ -43,7 +42,7 @@ impl CustomPaintCtx<'_> {
     pub fn register_texture(&mut self, texture: Texture) -> TextureHandle {
         let dummy_image = dummy_image(None, texture.width(), texture.height());
         let handle = TextureHandle {
-            id: dummy_image.data.id(),
+            id: dummy_image.image.data.id(),
             width: texture.width(),
             height: texture.height(),
         };
@@ -53,32 +52,29 @@ impl CustomPaintCtx<'_> {
             origin: wgpu::Origin3d::ZERO,
             aspect: wgpu::TextureAspect::All,
         };
-        self.renderer.override_image(&dummy_image, Some(base));
+        self.renderer.override_image(&dummy_image.image, Some(base));
 
         handle
     }
 
     pub fn unregister_texture(&mut self, handle: TextureHandle) {
         let dummy_image = dummy_image(Some(handle.id), handle.width, handle.height);
-        self.renderer.override_image(&dummy_image, None);
+        self.renderer.override_image(&dummy_image.image, None);
     }
 }
 
 // Everything except blob id, width, and height is ignored
-fn dummy_image(id: Option<u64>, width: u32, height: u32) -> Image {
+fn dummy_image(id: Option<u64>, width: u32, height: u32) -> ImageBrush {
     let blob = match id {
         Some(id) => Blob::from_raw_parts(Arc::new([]), id),
         None => Blob::new(Arc::new([])),
     };
 
-    Image {
+    ImageBrush::new(ImageData {
         data: blob,
         width,
         height,
         format: vello::peniko::ImageFormat::Rgba8,
-        x_extend: vello::peniko::Extend::Pad,
-        y_extend: vello::peniko::Extend::Pad,
-        quality: vello::peniko::ImageQuality::High,
-        alpha: 1.0,
-    }
+        alpha_type: vello::peniko::ImageAlphaType::Alpha,
+    })
 }

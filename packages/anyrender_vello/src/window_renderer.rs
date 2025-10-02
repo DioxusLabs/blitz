@@ -220,7 +220,8 @@ impl WindowRenderer for VelloWindowRenderer {
         surface_texture.present();
         timer.record_time("present");
 
-        device_handle.device.poll(wgpu::Maintain::Wait);
+        // rydb: should this return an error somewhere?
+        let _ = device_handle.device.poll(wgpu::PollType::Wait);
 
         timer.record_time("wait");
         timer.print_times("Frame time: ");
