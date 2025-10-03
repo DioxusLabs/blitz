@@ -143,10 +143,10 @@ impl BaseDocument {
                             TextAlignKeyword::Start => Alignment::Start,
                             TextAlignKeyword::Left => Alignment::Left,
                             TextAlignKeyword::Right => Alignment::Right,
-                            TextAlignKeyword::Center => Alignment::Middle,
-                            TextAlignKeyword::Justify => Alignment::Justified,
+                            TextAlignKeyword::Center => Alignment::Center,
+                            TextAlignKeyword::Justify => Alignment::Justify,
                             TextAlignKeyword::End => Alignment::End,
-                            TextAlignKeyword::MozCenter => Alignment::Middle,
+                            TextAlignKeyword::MozCenter => Alignment::Center,
                             TextAlignKeyword::MozLeft => Alignment::Left,
                             TextAlignKeyword::MozRight => Alignment::Right,
                         }

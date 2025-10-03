@@ -44,6 +44,7 @@ pub(crate) fn render_group<S: PaintScene, F: FnMut(&mut S, &usvg::Node)>(
                         true
                     }
                     // Else if there is blending to be done then push a layer with a rectangular clip
+                    #[allow(deprecated)]
                     _ if mix != peniko::Mix::Clip => {
                         // Use bounding box as the clip path.
                         let bounding_box = g.layer_bounding_box();
@@ -109,7 +110,7 @@ pub(crate) fn render_group<S: PaintScene, F: FnMut(&mut S, &usvg::Node)>(
                             };
                             let image = util::into_image(decoded_image);
                             let image_ts = global_transform * util::to_affine(&img.abs_transform());
-                            scene.draw_image(&image, image_ts);
+                            scene.draw_image(image.as_ref(), image_ts);
                         }
 
                         #[cfg(not(feature = "image"))]

@@ -7,8 +7,9 @@ use std::error::Error;
 use std::fmt::Display;
 use std::future::Future;
 use wgpu::{
-    Adapter, Device, Features, Instance, Limits, MemoryHints, Queue, Surface, SurfaceConfiguration,
-    SurfaceTarget, Texture, TextureFormat, TextureView, util::TextureBlitter,
+    Adapter, Device, Features, Instance, Limits, MemoryHints, PollError, Queue,
+    RequestAdapterError, RequestDeviceError, Surface, SurfaceConfiguration, SurfaceTarget, Texture,
+    TextureFormat, TextureView, util::TextureBlitter,
 };
 
 // Errors that can occur in WgpuContext.
@@ -25,6 +26,12 @@ pub enum WgpuContextError {
     /// or [`TextureFormat::Bgra8Unorm`] as texture formats.
     // TODO: Why does this restriction exist?
     UnsupportedSurfaceFormat,
+    /// Wgpu failed to request an adapter
+    RequestAdapterError(RequestAdapterError),
+    /// Wgpu failed to request a device
+    RequestDeviceError(RequestDeviceError),
+    /// Wgpu failed to poll a device
+    PollError(PollError),
 }
 
 impl Display for WgpuContextError {
@@ -41,6 +48,15 @@ impl Display for WgpuContextError {
                     "Couldn't find `Rgba8Unorm` or `Bgra8Unorm` texture formats for surface"
                 )
             }
+            Self::RequestAdapterError(inner) => {
+                writeln!(f, "Couldn't request an adapter: {:#}", inner)
+            }
+            Self::RequestDeviceError(inner) => {
+                writeln!(f, "Couldn't request a device: {:#}", inner)
+            }
+            Self::PollError(inner) => {
+                writeln!(f, "Couldn't poll a device: {:#}", inner)
+            }
         }
     }
 }
@@ -49,6 +65,24 @@ impl Error for WgpuContextError {}
 impl From<wgpu::CreateSurfaceError> for WgpuContextError {
     fn from(value: wgpu::CreateSurfaceError) -> Self {
         Self::WgpuCreateSurfaceError(value)
+    }
+}
+
+impl From<RequestAdapterError> for WgpuContextError {
+    fn from(value: RequestAdapterError) -> Self {
+        Self::RequestAdapterError(value)
+    }
+}
+
+impl From<RequestDeviceError> for WgpuContextError {
+    fn from(value: RequestDeviceError) -> Self {
+        Self::RequestDeviceError(value)
+    }
+}
+
+impl From<PollError> for WgpuContextError {
+    fn from(value: PollError) -> Self {
+        Self::PollError(value)
     }
 }
 
@@ -88,6 +122,7 @@ impl WGPUContext {
                 backends: wgpu::Backends::from_env().unwrap_or_default(),
                 flags: wgpu::InstanceFlags::from_build_config().with_env(),
                 backend_options: wgpu::BackendOptions::from_env_or_default(),
+                memory_budget_thresholds: wgpu::MemoryBudgetThresholds::default(),
             }),
             device_pool: Vec::new(),
             extra_features,
@@ -110,7 +145,7 @@ impl WGPUContext {
         let dev_id = self
             .find_or_create_device(Some(&surface))
             .await
-            .ok_or(WgpuContextError::NoCompatibleDevice)?;
+            .or(Err(WgpuContextError::NoCompatibleDevice))?;
         let device_handle = self.device_pool[dev_id].clone();
 
         RenderSurface::new(surface, device_handle, dev_id, width, height, present_mode).await
@@ -120,9 +155,9 @@ impl WGPUContext {
     pub async fn find_or_create_device(
         &mut self,
         compatible_surface: Option<&Surface<'_>>,
-    ) -> Option<usize> {
+    ) -> Result<usize, WgpuContextError> {
         match self.find_existing_device(compatible_surface) {
-            Some(device_id) => Some(device_id),
+            Some(device_id) => Ok(device_id),
             None => self.create_device(compatible_surface).await,
         }
     }
@@ -141,7 +176,10 @@ impl WGPUContext {
     }
 
     /// Creates a compatible device handle id.
-    async fn create_device(&mut self, compatible_surface: Option<&Surface<'_>>) -> Option<usize> {
+    async fn create_device(
+        &mut self,
+        compatible_surface: Option<&Surface<'_>>,
+    ) -> Result<usize, WgpuContextError> {
         let adapter =
             wgpu::util::initialize_adapter_from_env_or_default(&self.instance, compatible_surface)
                 .await?;
@@ -162,8 +200,9 @@ impl WGPUContext {
             required_features,
             required_limits,
             memory_hints: MemoryHints::default(),
+            trace: wgpu::Trace::default(),
         };
-        let (device, queue) = adapter.request_device(&descripter, None).await.ok()?;
+        let (device, queue) = adapter.request_device(&descripter).await?;
 
         // Create the device handle and store in the pool
         let device_handle = DeviceHandle {
@@ -174,7 +213,7 @@ impl WGPUContext {
         self.device_pool.push(device_handle);
 
         // Return the ID
-        Some(self.device_pool.len() - 1)
+        Ok(self.device_pool.len() - 1)
     }
 }
 
@@ -313,7 +352,7 @@ impl<'s> RenderSurface<'s> {
 ///
 /// This will deadlock if the future is awaiting anything other than GPU progress.
 #[cfg_attr(docsrs, doc(hidden))]
-pub fn block_on_wgpu<F: Future>(device: &Device, fut: F) -> F::Output {
+pub fn block_on_wgpu<F: Future>(device: &Device, fut: F) -> Result<F::Output, WgpuContextError> {
     if cfg!(target_arch = "wasm32") {
         panic!("WGPU is inherently async on WASM, so blocking doesn't work.");
     }
@@ -333,9 +372,9 @@ pub fn block_on_wgpu<F: Future>(device: &Device, fut: F) -> F::Output {
     loop {
         match fut.as_mut().poll(&mut context) {
             std::task::Poll::Pending => {
-                device.poll(wgpu::Maintain::Wait);
+                device.poll(wgpu::PollType::Wait)?;
             }
-            std::task::Poll::Ready(item) => break item,
+            std::task::Poll::Ready(item) => break Ok(item),
         }
     }
 }

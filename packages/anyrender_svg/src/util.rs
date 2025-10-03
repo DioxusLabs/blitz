@@ -7,7 +7,7 @@ use peniko::color::{self, DynamicColor};
 use peniko::{Brush, Color, Fill, Mix};
 
 #[cfg(feature = "image")]
-use peniko::{Blob, Image};
+use peniko::{Blob, ImageBrush};
 
 pub(crate) fn to_affine(ts: &usvg::Transform) -> Affine {
     let usvg::Transform {
@@ -47,6 +47,7 @@ pub(crate) fn to_mix(blend_mode: usvg::BlendMode, is_fully_opaque: bool) -> Mix 
     match blend_mode {
         usvg::BlendMode::Normal => {
             if is_fully_opaque {
+                #[allow(deprecated)]
                 Mix::Clip
             } else {
                 Mix::Normal
@@ -121,15 +122,18 @@ pub(crate) fn to_bez_path(path: &usvg::Path) -> BezPath {
 }
 
 #[cfg(feature = "image")]
-pub(crate) fn into_image(image: image::ImageBuffer<image::Rgba<u8>, Vec<u8>>) -> Image {
+pub(crate) fn into_image(image: image::ImageBuffer<image::Rgba<u8>, Vec<u8>>) -> ImageBrush {
+    use peniko::ImageData;
+
     let (width, height) = (image.width(), image.height());
     let image_data: Vec<u8> = image.into_vec();
-    Image::new(
-        Blob::new(std::sync::Arc::new(image_data)),
-        peniko::ImageFormat::Rgba8,
+    ImageBrush::new(ImageData {
+        data: Blob::new(std::sync::Arc::new(image_data)),
+        format: peniko::ImageFormat::Rgba8,
+        alpha_type: peniko::ImageAlphaType::Alpha,
         width,
         height,
-    )
+    })
 }
 
 pub(crate) fn to_brush(paint: &usvg::Paint, opacity: usvg::Opacity) -> Option<(Brush, Affine)> {

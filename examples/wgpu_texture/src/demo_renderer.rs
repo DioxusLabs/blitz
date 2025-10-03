@@ -170,11 +170,13 @@ impl ActiveDemoRenderer {
         start_time: &Instant,
     ) -> Option<TextureHandle> {
         // If "next texture" size doesn't match specified size then unregister and drop texture
-        if let Some(next) = &self.next_texture {
-            if next.texture.width() != width || next.texture.height() != height {
-                ctx.unregister_texture(next.handle);
-                self.next_texture = None;
-            }
+        if self
+            .next_texture
+            .as_ref()
+            .is_some_and(|tex| tex.texture.width() != width || tex.texture.height() != height)
+        {
+            let handle = self.next_texture.take().unwrap().handle;
+            ctx.unregister_texture(handle);
         }
 
         // If there is no "next texture" then create one and register it.
@@ -189,7 +191,7 @@ impl ActiveDemoRenderer {
         };
 
         let next_texture = &texture_and_handle.texture;
-        let next_texture_handle = texture_and_handle.handle;
+        let next_texture_handle = texture_and_handle.handle.clone();
 
         let elapsed: f32 = start_time.elapsed().as_millis() as f32 / 500.;
         let [light_red, light_green, light_blue] = light;
@@ -210,6 +212,7 @@ impl ActiveDemoRenderer {
                         load: wgpu::LoadOp::Clear(wgpu::Color::GREEN),
                         store: wgpu::StoreOp::Store,
                     },
+                    depth_slice: None,
                 })],
                 depth_stencil_attachment: None,
                 timestamp_writes: None,

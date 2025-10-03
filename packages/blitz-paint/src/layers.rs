@@ -47,8 +47,8 @@ pub(crate) fn maybe_push_layer(
     if !layers_available {
         return false;
     }
-
     let blend_mode = if opacity == 1.0 {
+        #[allow(deprecated)]
         Mix::Clip
     } else {
         Mix::Normal

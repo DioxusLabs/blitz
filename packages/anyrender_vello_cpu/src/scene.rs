@@ -1,15 +1,18 @@
 use anyrender::{NormalizedCoord, Paint, PaintScene};
 use kurbo::{Affine, Rect, Shape, Stroke};
-use peniko::{BlendMode, BrushRef, Color, Fill, Font, StyleRef};
-use vello_cpu::{self, PaintType, Pixmap};
+use peniko::{BlendMode, Brush, BrushRef, Color, Fill, FontData, ImageBrush, ImageData, StyleRef};
+use vello_cpu::{ImageSource, PaintType, Pixmap};
 
 const DEFAULT_TOLERANCE: f64 = 0.1;
 
 fn brush_ref_to_paint_type<'a>(brush_ref: BrushRef<'a>) -> PaintType {
     match brush_ref {
-        BrushRef::Solid(alpha_color) => PaintType::Solid(alpha_color),
-        BrushRef::Gradient(gradient) => PaintType::Gradient(gradient.clone()),
-        BrushRef::Image(image) => PaintType::Image(vello_cpu::Image::from_peniko_image(image)),
+        Brush::Solid(alpha_color) => PaintType::Solid(alpha_color),
+        Brush::Gradient(gradient) => PaintType::Gradient(gradient.clone()),
+        Brush::Image(image) => PaintType::Image(ImageBrush {
+            image: ImageSource::from_peniko_image_data(image.image),
+            sampler: image.sampler,
+        }),
     }
 }
 
@@ -17,23 +20,26 @@ fn anyrender_paint_to_vello_cpu_paint<'a>(paint: Paint<'a>) -> PaintType {
     match paint {
         Paint::Solid(alpha_color) => PaintType::Solid(alpha_color),
         Paint::Gradient(gradient) => PaintType::Gradient(gradient.clone()),
-        Paint::Image(image) => PaintType::Image(vello_cpu::Image::from_peniko_image(image)),
+        Paint::Image(image) => PaintType::Image(ImageBrush {
+            image: ImageSource::from_peniko_image_data(image.image),
+            sampler: image.sampler,
+        }),
         // TODO: custom paint
         Paint::Custom(_) => PaintType::Solid(peniko::color::palette::css::TRANSPARENT),
     }
 }
 
 #[allow(unused)]
-fn convert_image_cached(image: &peniko::Image) -> vello_cpu::Image {
+fn convert_image_cached(image: &ImageData) -> ImageSource {
     use std::collections::HashMap;
     use std::sync::{LazyLock, Mutex};
-    static CACHE: LazyLock<Mutex<HashMap<u64, vello_cpu::Image>>> =
+    static CACHE: LazyLock<Mutex<HashMap<u64, ImageSource>>> =
         LazyLock::new(|| Mutex::new(HashMap::new()));
 
     let mut map = CACHE.lock().unwrap();
     let id = image.data.id();
     map.entry(id)
-        .or_insert_with(|| vello_cpu::Image::from_peniko_image(image))
+        .or_insert_with(|| ImageSource::from_peniko_image_data(image))
         .clone()
 }
 
@@ -107,7 +113,7 @@ impl PaintScene for VelloCpuScenePainter {
 
     fn draw_glyphs<'a, 's: 'a>(
         &'a mut self,
-        font: &'a Font,
+        font: &'a FontData,
         font_size: f32,
         hint: bool,
         normalized_coords: &'a [NormalizedCoord],

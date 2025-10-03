@@ -1,6 +1,6 @@
 //! Types that are used within the Anyrender traits
 
-use peniko::{BrushRef, Color, Gradient, Image};
+use peniko::{BrushRef, Color, Gradient, ImageBrushRef};
 use std::{any::Any, sync::Arc};
 
 pub type NormalizedCoord = i16;
@@ -28,7 +28,7 @@ pub enum Paint<'a> {
     /// Gradient brush.
     Gradient(&'a Gradient),
     /// Image brush.
-    Image(&'a Image),
+    Image(ImageBrushRef<'a>),
     /// Custom paint (type erased as each backend will have their own)
     Custom(Arc<dyn Any + Send + Sync>),
 }
@@ -42,8 +42,8 @@ impl<'a> From<&'a Gradient> for Paint<'a> {
         Paint::Gradient(value)
     }
 }
-impl<'a> From<&'a Image> for Paint<'a> {
-    fn from(value: &'a Image) -> Self {
+impl<'a> From<ImageBrushRef<'a>> for Paint<'a> {
+    fn from(value: ImageBrushRef<'a>) -> Self {
         Paint::Image(value)
     }
 }
