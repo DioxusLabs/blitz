@@ -220,7 +220,7 @@ impl WindowRenderer for VelloWindowRenderer {
         surface_texture.present();
         timer.record_time("present");
 
-        let _ = device_handle.device.poll(wgpu::PollType::Wait);
+        device_handle.device.poll(wgpu::PollType::Wait).unwrap();
 
         timer.record_time("wait");
         timer.print_times("Frame time: ");
