@@ -80,6 +80,12 @@ impl From<RequestDeviceError> for WgpuContextError {
     }
 }
 
+impl From<PollError> for WgpuContextError {
+    fn from(value: PollError) -> Self {
+        Self::PollError(value)
+    }
+}
+
 /// Simple render context that maintains wgpu state for rendering the pipeline.
 pub struct WGPUContext {
     /// A WGPU `Instance`. This only needs to be created once per application.
@@ -365,10 +371,9 @@ pub fn block_on_wgpu<F: Future>(device: &Device, fut: F) -> Result<F::Output, Wg
     let mut fut = std::pin::pin!(fut);
     loop {
         match fut.as_mut().poll(&mut context) {
-            std::task::Poll::Pending => match device.poll(wgpu::PollType::Wait) {
-                Ok(_) => continue,
-                Err(err) => return Err(WgpuContextError::PollError(err)),
-            },
+            std::task::Poll::Pending => {
+                device.poll(wgpu::PollType::Wait)?;
+            }
             std::task::Poll::Ready(item) => break Ok(item),
         }
     }
