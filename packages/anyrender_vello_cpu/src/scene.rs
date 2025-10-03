@@ -1,7 +1,7 @@
 use anyrender::{NormalizedCoord, Paint, PaintScene};
 use kurbo::{Affine, Rect, Shape, Stroke};
 use peniko::{BlendMode, Brush, BrushRef, Color, Fill, FontData, ImageBrush, ImageData, StyleRef};
-use vello_cpu::{PaintType, Pixmap};
+use vello_cpu::{ImageSource, PaintType, Pixmap};
 
 const DEFAULT_TOLERANCE: f64 = 0.1;
 
@@ -9,13 +9,10 @@ fn brush_ref_to_paint_type<'a>(brush_ref: BrushRef<'a>) -> PaintType {
     match brush_ref {
         Brush::Solid(alpha_color) => PaintType::Solid(alpha_color),
         Brush::Gradient(gradient) => PaintType::Gradient(gradient.clone()),
-        Brush::Image(image) => {
-            let image_source = vello_cpu::ImageSource::from_peniko_image_data(&image.image);
-            PaintType::Image(ImageBrush {
-                image: image_source,
-                sampler: image.sampler,
-            })
-        }
+        Brush::Image(image) => PaintType::Image(ImageBrush {
+            image: ImageSource::from_peniko_image_data(image.image),
+            sampler: image.sampler,
+        }),
     }
 }
 
@@ -23,32 +20,26 @@ fn anyrender_paint_to_vello_cpu_paint<'a>(paint: Paint<'a>) -> PaintType {
     match paint {
         Paint::Solid(alpha_color) => PaintType::Solid(alpha_color),
         Paint::Gradient(gradient) => PaintType::Gradient(gradient.clone()),
-        Paint::Image(image) => {
-            let image_source = vello_cpu::ImageSource::from_peniko_image_data(&image.image);
-            PaintType::Image(ImageBrush {
-                image: image_source,
-                sampler: image.sampler,
-            })
-        }
+        Paint::Image(image) => PaintType::Image(ImageBrush {
+            image: ImageSource::from_peniko_image_data(image.image),
+            sampler: image.sampler,
+        }),
         // TODO: custom paint
         Paint::Custom(_) => PaintType::Solid(peniko::color::palette::css::TRANSPARENT),
     }
 }
 
 #[allow(unused)]
-fn convert_image_cached(image: &ImageData) -> vello_cpu::ImageSource {
+fn convert_image_cached(image: &ImageData) -> ImageSource {
     use std::collections::HashMap;
     use std::sync::{LazyLock, Mutex};
-    static CACHE: LazyLock<Mutex<HashMap<u64, vello_cpu::ImageSource>>> =
+    static CACHE: LazyLock<Mutex<HashMap<u64, ImageSource>>> =
         LazyLock::new(|| Mutex::new(HashMap::new()));
 
     let mut map = CACHE.lock().unwrap();
     let id = image.data.id();
     map.entry(id)
-        .or_insert_with(|| {
-            let image_source = vello_cpu::ImageSource::from_peniko_image_data(&image);
-            image_source
-        })
+        .or_insert_with(|| ImageSource::from_peniko_image_data(image))
         .clone()
 }
 
