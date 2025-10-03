@@ -170,11 +170,13 @@ impl ActiveDemoRenderer {
         start_time: &Instant,
     ) -> Option<TextureHandle> {
         // If "next texture" size doesn't match specified size then unregister and drop texture
-        if let Some(next) = &self.next_texture {
-            if next.texture.width() != width || next.texture.height() != height {
-                ctx.unregister_texture(next.handle.clone());
-                self.next_texture = None;
-            }
+        if self
+            .next_texture
+            .as_ref()
+            .is_some_and(|tex| tex.texture.width() != width || tex.texture.height() != height)
+        {
+            let handle = self.next_texture.take().unwrap().handle;
+            ctx.unregister_texture(handle);
         }
 
         // If there is no "next texture" then create one and register it.

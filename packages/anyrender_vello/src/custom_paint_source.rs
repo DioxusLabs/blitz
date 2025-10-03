@@ -1,7 +1,7 @@
 use crate::wgpu_context::DeviceHandle;
 use peniko::ImageData;
 use vello::Renderer as VelloRenderer;
-use wgpu::{Instance, TexelCopyTextureInfoBase, Texture};
+use wgpu::{Instance, Texture};
 
 pub trait CustomPaintSource: 'static {
     fn resume(&mut self, instance: &Instance, device_handle: &DeviceHandle);
@@ -28,20 +28,10 @@ impl CustomPaintCtx<'_> {
     }
 
     pub fn register_texture(&mut self, texture: Texture) -> TextureHandle {
-        let dummy_image = self.renderer.register_texture(texture.clone());
-
-        let base = TexelCopyTextureInfoBase {
-            texture: texture,
-            mip_level: 0,
-            origin: wgpu::Origin3d::ZERO,
-            aspect: wgpu::TextureAspect::All,
-        };
-        self.renderer.override_image(&dummy_image, Some(base));
-
-        TextureHandle(dummy_image)
+        TextureHandle(self.renderer.register_texture(texture))
     }
 
     pub fn unregister_texture(&mut self, handle: TextureHandle) {
-        self.renderer.override_image(&handle.0, None);
+        self.renderer.unregister_texture(handle.0);
     }
 }

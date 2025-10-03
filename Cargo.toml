@@ -92,9 +92,9 @@ skrifa = { version = "0.37" } # Should match parley version
 wgpu = "26"
 softbuffer = "0.4"
 pixels = "0.15"
-vello = { git = "https://github.com/linebender/vello", rev = "462fd4e", features = [ "wgpu" ] }
-vello_encoding = { git = "https://github.com/linebender/vello", rev = "462fd4e", default-features = false }
-vello_cpu = { git = "https://github.com/linebender/vello", rev = "462fd4e", default-features = false, features = ["std", "text"]}
+vello = { version = "0.6", features = [ "wgpu" ] }
+vello_encoding = { version = "0.6", default-features = false }
+vello_cpu = { version = "0.0.3", default-features = false, features = ["std", "text"]}
 usvg = "0.45.1"
 
 # Windowing & Input

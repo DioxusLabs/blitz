@@ -7024,8 +7024,9 @@ checksum = "accd4ea62f7bb7a82fe23066fb0957d48ef677f6eeb8215f372f52e48bb32426"
 
 [[package]]
 name = "vello"
-version = "0.5.0"
-source = "git+https://github.com/linebender/vello?rev=462fd4e#462fd4e88297e96a74164aa1c4150e8dd8616e0d"
+version = "0.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "71acbd6b5f7f19841425845c113a89a54bbf60556ae39e7d0182a6f80ce37f5b"
 dependencies = [
  "bytemuck",
  "futures-intrusive",
@@ -7042,8 +7043,9 @@ dependencies = [
 
 [[package]]
 name = "vello_common"
-version = "0.0.1"
-source = "git+https://github.com/linebender/vello?rev=462fd4e#462fd4e88297e96a74164aa1c4150e8dd8616e0d"
+version = "0.0.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1a368a0edbbe19080297a7bbd9e24860ba3a224226b189d6bf14cf8187459921"
 dependencies = [
  "bytemuck",
  "fearless_simd",
@@ -7056,8 +7058,9 @@ dependencies = [
 
 [[package]]
 name = "vello_cpu"
-version = "0.0.1"
-source = "git+https://github.com/linebender/vello?rev=462fd4e#462fd4e88297e96a74164aa1c4150e8dd8616e0d"
+version = "0.0.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "401cfde7308b9193bdfe53649648b10020664c556f2e17724c39366cc220b9d1"
 dependencies = [
  "bytemuck",
  "crossbeam-channel",
@@ -7069,8 +7072,9 @@ dependencies = [
 
 [[package]]
 name = "vello_encoding"
-version = "0.5.0"
-source = "git+https://github.com/linebender/vello?rev=462fd4e#462fd4e88297e96a74164aa1c4150e8dd8616e0d"
+version = "0.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cfd5e0b9fec91df34a09fbcbbed474cec68d05691b590a911c7af83c4860ae42"
 dependencies = [
  "bytemuck",
  "guillotiere",
@@ -7081,8 +7085,9 @@ dependencies = [
 
 [[package]]
 name = "vello_shaders"
-version = "0.5.0"
-source = "git+https://github.com/linebender/vello?rev=462fd4e#462fd4e88297e96a74164aa1c4150e8dd8616e0d"
+version = "0.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8c381dde4e7d0d7957df0c0e3f8a7cc0976762d3972d97da5c71464e57ffefd3"
 dependencies = [
  "bytemuck",
  "log",
