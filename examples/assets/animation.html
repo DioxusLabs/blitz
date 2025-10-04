@@ -36,10 +36,26 @@
                 from { transform:rotate(0deg); }
                 to { transform:rotate(360deg); }
             }
+
+            .button {
+                background: blue;
+                color: white;
+                border-radius: 4px;
+                border: 1px solid black;
+                transform: translateY(-4px);
+                transition: transform 0.2s;
+                cursor: pointer;
+
+                &:active {
+                    transform: none;
+                }
+            }
         </style>
     </head>
     <body>
         <div class="box"></div>
         <div class="box2"></div>
+
+        <div class="button">Submit</div>
     </body>
 </html>
