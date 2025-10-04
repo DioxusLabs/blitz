@@ -4,7 +4,7 @@ use debug_timer::debug_timer;
 use peniko::color::PremulRgba8;
 use softbuffer::{Context, Surface};
 use std::{num::NonZero, sync::Arc};
-use vello_cpu::{Pixmap, RenderContext, RenderMode};
+use vello_cpu::{Pixmap, RenderContext};
 
 // Simple struct to hold the state of the renderer
 pub struct ActiveRenderState {
@@ -98,9 +98,7 @@ impl WindowRenderer for VelloCpuSoftbufferWindowRenderer {
         self.render_context.0.flush();
         timer.record_time("flush");
 
-        self.render_context
-            .0
-            .render_to_pixmap(&mut pixmap, RenderMode::OptimizeSpeed);
+        self.render_context.0.render_to_pixmap(&mut pixmap);
         timer.record_time("render");
 
         let out = surface_buffer.as_mut();
