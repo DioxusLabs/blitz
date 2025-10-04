@@ -115,7 +115,7 @@ tokio = "1.42"
 reqwest = "0.12"
 
 # Media & Decoding
-image = { version = "0.25", default-features = false }
+image = { version = "=0.25.6", default-features = false }
 woff = { version = "0.6", default-features = false }
 woff2 = "0.3"
 wuff = "0.2"

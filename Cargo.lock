@@ -800,7 +800,7 @@ dependencies = [
  "euclid",
  "image",
  "mini-dxn",
- "png 0.17.16",
+ "png",
  "reqwest",
  "tokio",
  "tracing-subscriber",
@@ -3301,9 +3301,9 @@ checksum = "cfdf4f5d937a025381f5ab13624b1c5f51414bfe5c9885663226eae8d6d39560"
 
 [[package]]
 name = "image"
-version = "0.25.8"
+version = "0.25.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "529feb3e6769d234375c4cf1ee2ce713682b8e76538cb13f9fc23e1400a591e7"
+checksum = "db35664ce6b9810857a38a906215e75a9c879f0696556a39f59c62829710251a"
 dependencies = [
  "bytemuck",
  "byteorder-lite",
@@ -3311,10 +3311,9 @@ dependencies = [
  "dav1d",
  "gif",
  "image-webp",
- "moxcms",
  "mp4parse",
  "num-traits",
- "png 0.18.0",
+ "png",
  "zune-core",
  "zune-jpeg",
 ]
@@ -3906,16 +3905,6 @@ dependencies = [
  "log",
  "wasi 0.11.1+wasi-snapshot-preview1",
  "windows-sys 0.59.0",
-]
-
-[[package]]
-name = "moxcms"
-version = "0.7.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ddd32fa8935aeadb8a8a6b6b351e40225570a37c43de67690383d87ef170cd08"
-dependencies = [
- "num-traits",
- "pxfm",
 ]
 
 [[package]]
@@ -4832,19 +4821,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "png"
-version = "0.18.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "97baced388464909d42d89643fe4361939af9b7ce7a31ee32a168f832a70f2a0"
-dependencies = [
- "bitflags 2.9.4",
- "crc32fast",
- "fdeflate",
- "flate2",
- "miniz_oxide",
-]
-
-[[package]]
 name = "polling"
 version = "3.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4991,15 +4967,6 @@ name = "pulldown-cmark-escape"
 version = "0.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "007d8adb5ddab6f8e3f491ac63566a7d5002cc7ed73901f72057943fa71ae1ae"
-
-[[package]]
-name = "pxfm"
-version = "0.1.24"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "83f9b339b02259ada5c0f4a389b7fb472f933aa17ce176fd2ad98f28bb401fde"
-dependencies = [
- "num-traits",
-]
 
 [[package]]
 name = "quick-error"
@@ -7020,7 +6987,7 @@ dependencies = [
  "futures-intrusive",
  "log",
  "peniko",
- "png 0.17.16",
+ "png",
  "skrifa",
  "static_assertions",
  "thiserror 2.0.17",
@@ -8174,7 +8141,7 @@ dependencies = [
  "os_info",
  "owo-colors",
  "parley",
- "png 0.17.16",
+ "png",
  "pollster 0.4.0",
  "rayon",
  "regex",
