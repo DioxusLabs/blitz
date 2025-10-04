@@ -2478,7 +2478,7 @@ dependencies = [
 [[package]]
 name = "fontique"
 version = "0.5.0"
-source = "git+https://github.com/rydb/parley?rev=e8a7111#e8a71119aa12c3096c11bdac51092330ae3be26d"
+source = "git+https://github.com/linebender/parley?rev=dcfa3a1#dcfa3a1a7927fa10c28e510cf1f7cc01b2a2a830"
 dependencies = [
  "bytemuck",
  "hashbrown 0.15.5",
@@ -4649,7 +4649,7 @@ dependencies = [
 [[package]]
 name = "parley"
 version = "0.5.0"
-source = "git+https://github.com/rydb/parley?rev=e8a7111#e8a71119aa12c3096c11bdac51092330ae3be26d"
+source = "git+https://github.com/linebender/parley?rev=dcfa3a1#dcfa3a1a7927fa10c28e510cf1f7cc01b2a2a830"
 dependencies = [
  "fontique",
  "harfrust",
