@@ -153,13 +153,6 @@ impl WindowRenderer for VelloWindowRenderer {
 
         debug_timer!(timer, feature = "log_frame_times");
 
-        let render_params = RenderParams {
-            base_color: Color::WHITE,
-            width: state.surface.config.width,
-            height: state.surface.config.height,
-            antialiasing_method: vello::AaConfig::Msaa16,
-        };
-
         // Regenerate the vello scene
         let mut scene = VelloScenePainter {
             inner: self.scene.take().unwrap(),
@@ -177,7 +170,12 @@ impl WindowRenderer for VelloWindowRenderer {
                 &device_handle.queue,
                 self.scene.as_ref().unwrap(),
                 &surface.intermediate_texture_view,
-                &render_params,
+                &RenderParams {
+                    base_color: Color::WHITE,
+                    width: state.surface.config.width,
+                    height: state.surface.config.height,
+                    antialiasing_method: vello::AaConfig::Msaa16,
+                },
             )
             .expect("failed to render to texture");
         timer.record_time("render");

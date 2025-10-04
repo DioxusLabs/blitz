@@ -111,20 +111,18 @@ impl ImageRenderer for VelloImageRenderer {
 
 impl VelloImageRenderer {
     fn render_internal_scene(&mut self, cpu_buffer: &mut Vec<u8>) {
-        let render_params = vello::RenderParams {
-            base_color: vello::peniko::Color::TRANSPARENT,
-            width: self.size.width,
-            height: self.size.height,
-            antialiasing_method: vello::AaConfig::Area,
-        };
-
         self.renderer
             .render_to_texture(
                 &self.device,
                 &self.queue,
                 self.scene.as_ref().unwrap(),
                 &self.texture_view,
-                &render_params,
+                &vello::RenderParams {
+                    base_color: vello::peniko::Color::TRANSPARENT,
+                    width: self.size.width,
+                    height: self.size.height,
+                    antialiasing_method: vello::AaConfig::Area,
+                },
             )
             .expect("Got non-Send/Sync error from rendering");
 
