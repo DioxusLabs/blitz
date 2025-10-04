@@ -51,7 +51,7 @@ pub(crate) fn handle_dom_event<F: FnMut(DomEvent)>(
             // Do nothing (no default action)
         }
         DomEventData::Ime(event) => {
-            handle_ime_event(doc, event.clone());
+            handle_ime_event(doc, event.clone(), dispatch_event);
         }
         DomEventData::Input(_) => {
             // Do nothing (no default action)

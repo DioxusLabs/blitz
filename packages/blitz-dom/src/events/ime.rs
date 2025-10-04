@@ -1,8 +1,12 @@
-use blitz_traits::events::BlitzImeEvent;
+use blitz_traits::events::{BlitzImeEvent, BlitzInputEvent, DomEvent, DomEventData};
 
 use crate::BaseDocument;
 
-pub(crate) fn handle_ime_event(doc: &mut BaseDocument, event: BlitzImeEvent) {
+pub(crate) fn handle_ime_event<F: FnMut(DomEvent)>(
+    doc: &mut BaseDocument,
+    event: BlitzImeEvent,
+    mut dispatch_event: F,
+) {
     if let Some(node_id) = doc.focus_node_id {
         let node = &mut doc.nodes[node_id];
         let text_input_data = node
@@ -21,6 +25,11 @@ pub(crate) fn handle_ime_event(doc: &mut BaseDocument, event: BlitzImeEvent) {
                 }
                 BlitzImeEvent::Commit(text) => {
                     driver.insert_or_replace_selection(&text);
+                    let value = input_data.editor.raw_text().to_string();
+                    dispatch_event(DomEvent::new(
+                        node_id,
+                        DomEventData::Input(BlitzInputEvent { value }),
+                    ));
                 }
                 BlitzImeEvent::Preedit(text, cursor) => {
                     if text.is_empty() {
