@@ -7,7 +7,8 @@ use std::sync::{
     atomic::{self, AtomicU64},
 };
 use vello::{
-    AaSupport, RenderParams, Renderer as VelloRenderer, RendererOptions, Scene as VelloScene,
+    AaConfig, AaSupport, RenderParams, Renderer as VelloRenderer, RendererOptions,
+    Scene as VelloScene,
 };
 use wgpu::{Features, Limits, PresentMode, TextureFormat, TextureUsages};
 use wgpu_context::{
@@ -39,6 +40,25 @@ impl RenderState {
     }
 }
 
+#[derive(Clone)]
+pub struct VelloRendererOptions {
+    pub features: Option<Features>,
+    pub limits: Option<Limits>,
+    pub base_color: Color,
+    pub antialiasing_method: AaConfig,
+}
+
+impl Default for VelloRendererOptions {
+    fn default() -> Self {
+        Self {
+            features: None,
+            limits: None,
+            base_color: Color::WHITE,
+            antialiasing_method: AaConfig::Msaa16,
+        }
+    }
+}
+
 pub struct VelloWindowRenderer {
     // The fields MUST be in this order, so that the surface is dropped before the window
     // Window is cached even when suspended so that it can be reused when the app is resumed after being suspended
@@ -48,20 +68,26 @@ pub struct VelloWindowRenderer {
     // Vello
     wgpu_context: WGPUContext,
     scene: Option<VelloScene>,
+    config: VelloRendererOptions,
 
     custom_paint_sources: FxHashMap<u64, Box<dyn CustomPaintSource>>,
 }
 impl VelloWindowRenderer {
     #[allow(clippy::new_without_default)]
     pub fn new() -> Self {
-        Self::with_features_and_limits(None, None)
+        Self::with_options(VelloRendererOptions::default())
     }
 
-    pub fn with_features_and_limits(features: Option<Features>, limits: Option<Limits>) -> Self {
-        let features =
-            features.unwrap_or_default() | Features::CLEAR_TEXTURE | Features::PIPELINE_CACHE;
+    pub fn with_options(config: VelloRendererOptions) -> Self {
+        let features = config.features.unwrap_or_default()
+            | Features::CLEAR_TEXTURE
+            | Features::PIPELINE_CACHE;
         Self {
-            wgpu_context: WGPUContext::with_features_and_limits(Some(features), limits),
+            wgpu_context: WGPUContext::with_features_and_limits(
+                Some(features),
+                config.limits.clone(),
+            ),
+            config,
             render_state: RenderState::Suspended,
             window_handle: None,
             scene: Some(VelloScene::new()),
@@ -183,10 +209,10 @@ impl WindowRenderer for VelloWindowRenderer {
                 self.scene.as_ref().unwrap(),
                 &render_surface.target_texture_view(),
                 &RenderParams {
-                    base_color: Color::WHITE,
+                    base_color: self.config.base_color,
                     width: render_surface.config.width,
                     height: render_surface.config.height,
-                    antialiasing_method: vello::AaConfig::Msaa16,
+                    antialiasing_method: self.config.antialiasing_method,
                 },
             )
             .expect("failed to render to texture");

@@ -1,4 +1,4 @@
-use anyrender_vello::VelloWindowRenderer;
+use anyrender_vello::{VelloRendererOptions, VelloWindowRenderer};
 use blitz_dom::{qual_name, DocumentConfig};
 use blitz_html::HtmlDocument;
 use blitz_shell::{create_default_event_loop, BlitzApplication, BlitzShellEvent, WindowConfig};
@@ -7,8 +7,11 @@ use crate::{limits, DemoPaintSource, FEATURES, STYLES};
 
 pub fn launch_html() {
     // Create renderer
-    let mut renderer =
-        VelloWindowRenderer::with_features_and_limits(Some(FEATURES), Some(limits()));
+    let mut renderer = VelloWindowRenderer::with_options(VelloRendererOptions {
+        features: Some(FEATURES),
+        limits: Some(limits()),
+        ..VelloRendererOptions::default()
+    });
 
     // Create custom paint source and register it with the renderer
     let demo_paint_source = Box::new(DemoPaintSource::new());
