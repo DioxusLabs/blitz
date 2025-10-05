@@ -5,13 +5,23 @@
 
 use std::future::Future;
 use wgpu::{
-    Adapter, CommandEncoderDescriptor, CompositeAlphaMode, Device, Features, Instance, Limits,
-    MemoryHints, PresentMode, Queue, Surface, SurfaceConfiguration, SurfaceTarget, SurfaceTexture,
-    TextureFormat, TextureUsages, TextureView, TextureViewDescriptor, util::TextureBlitter,
+    Adapter, Device, Features, Instance, Limits, MemoryHints, Queue, Surface, SurfaceTarget,
 };
 
 mod error;
+mod surface_renderer;
+
 pub use error::WgpuContextError;
+pub use surface_renderer::{SurfaceRenderer, SurfaceRendererConfiguration};
+
+/// A wgpu `Device`, it's associated `Queue`, and the `Adapter` and `Instance` used to create them
+#[derive(Clone, Debug)]
+pub struct DeviceHandle {
+    pub instance: Instance,
+    pub adapter: Adapter,
+    pub device: Device,
+    pub queue: Queue,
+}
 
 /// Simple render context that maintains wgpu state for rendering the pipeline.
 pub struct WGPUContext {
@@ -26,13 +36,10 @@ pub struct WGPUContext {
     override_limits: Option<Limits>,
 }
 
-/// A wgpu `Device`, it's associated `Queue`, and the `Adapter` and `Instance` used to create them
-#[derive(Clone, Debug)]
-pub struct DeviceHandle {
-    pub instance: Instance,
-    pub adapter: Adapter,
-    pub device: Device,
-    pub queue: Queue,
+impl Default for WGPUContext {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl WGPUContext {
@@ -141,220 +148,6 @@ impl WGPUContext {
 
         // Return the ID
         Ok(self.device_pool.len() - 1)
-    }
-}
-
-/// Vello uses a compute shader to render to the provided texture, which means that it can't bind the surface
-/// texture in most cases.
-///
-/// Because of this, we need to create an "intermediate" texture which we render to, and then blit to the surface.
-fn create_intermediate_texture(width: u32, height: u32, device: &Device) -> TextureView {
-    let texture = device.create_texture(&wgpu::TextureDescriptor {
-        label: None,
-        size: wgpu::Extent3d {
-            width,
-            height,
-            depth_or_array_layers: 1,
-        },
-        mip_level_count: 1,
-        sample_count: 1,
-        dimension: wgpu::TextureDimension::D2,
-        usage: wgpu::TextureUsages::STORAGE_BINDING | wgpu::TextureUsages::TEXTURE_BINDING,
-        format: TextureFormat::Rgba8Unorm,
-        view_formats: &[],
-    });
-
-    texture.create_view(&wgpu::TextureViewDescriptor::default())
-}
-
-impl Default for WGPUContext {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-pub struct SurfaceRendererConfiguration {
-    /// The usage of the swap chain. The only usage guaranteed to be supported is [`TextureUsages::RENDER_ATTACHMENT`].
-    pub usage: TextureUsages,
-    /// The texture format of the swap chain. The only formats that are guaranteed are
-    /// [`TextureFormat::Bgra8Unorm`] and [`TextureFormat::Bgra8UnormSrgb`].
-    pub formats: Vec<TextureFormat>,
-    /// Width of the swap chain. Must be the same size as the surface, and nonzero.
-    ///
-    /// If this is not the same size as the underlying surface (e.g. if it is
-    /// set once, and the window is later resized), the behaviour is defined
-    /// but platform-specific, and may change in the future (currently macOS
-    /// scales the surface, other platforms may do something else).
-    pub width: u32,
-    /// Height of the swap chain. Must be the same size as the surface, and nonzero.
-    ///
-    /// If this is not the same size as the underlying surface (e.g. if it is
-    /// set once, and the window is later resized), the behaviour is defined
-    /// but platform-specific, and may change in the future (currently macOS
-    /// scales the surface, other platforms may do something else).
-    pub height: u32,
-    /// Presentation mode of the swap chain. Fifo is the only mode guaranteed to be supported.
-    /// `FifoRelaxed`, `Immediate`, and `Mailbox` will crash if unsupported, while `AutoVsync` and
-    /// `AutoNoVsync` will gracefully do a designed sets of fallbacks if their primary modes are
-    /// unsupported.
-    pub present_mode: PresentMode,
-    /// Desired maximum number of frames that the presentation engine should queue in advance.
-    ///
-    /// This is a hint to the backend implementation and will always be clamped to the supported range.
-    /// As a consequence, either the maximum frame latency is set directly on the swap chain,
-    /// or waits on present are scheduled to avoid exceeding the maximum frame latency if supported,
-    /// or the swap chain size is set to (max-latency + 1).
-    ///
-    /// Defaults to 2 when created via `Surface::get_default_config`.
-    ///
-    /// Typical values range from 3 to 1, but higher values are possible:
-    /// * Choose 2 or higher for potentially smoother frame display, as it allows to be at least one frame
-    ///   to be queued up. This typically avoids starving the GPU's work queue.
-    ///   Higher values are useful for achieving a constant flow of frames to the display under varying load.
-    /// * Choose 1 for low latency from frame recording to frame display.
-    ///   ⚠️ If the backend does not support waiting on present, this will cause the CPU to wait for the GPU
-    ///   to finish all work related to the previous frame when calling `Surface::get_current_texture`,
-    ///   causing CPU-GPU serialization (i.e. when `Surface::get_current_texture` returns, the GPU might be idle).
-    ///   It is currently not possible to query this. See <https://github.com/gfx-rs/wgpu/issues/2869>.
-    /// * A value of 0 is generally not supported and always clamped to a higher value.
-    pub desired_maximum_frame_latency: u32,
-    /// Specifies how the alpha channel of the textures should be handled during compositing.
-    pub alpha_mode: CompositeAlphaMode,
-    /// Specifies what view formats will be allowed when calling `Texture::create_view` on the texture returned by `Surface::get_current_texture`.
-    ///
-    /// View formats of the same format as the texture are always allowed.
-    ///
-    /// Note: currently, only the srgb-ness is allowed to change. (ex: `Rgba8Unorm` texture + `Rgba8UnormSrgb` view)
-    pub view_formats: Vec<TextureFormat>,
-}
-
-/// Combination of surface and its configuration.
-pub struct SurfaceRenderer<'s> {
-    // The device and queue for rendering to the surface
-    pub dev_id: usize,
-    pub device_handle: DeviceHandle,
-
-    // The surface and it's configuration
-    pub surface: Surface<'s>,
-    pub config: SurfaceConfiguration,
-
-    // TextureView for the intermediate Texture which we sometimes render to because compute shaders
-    // cannot always render directly to surfaces. Since WGPU 26, the underlying Texture can be accessed
-    // from the TextureView so we don't need to store both.
-    pub intermediate_texture_view: TextureView,
-    // Blitter for blitting from the intermediate texture to the surface.
-    pub blitter: TextureBlitter,
-}
-
-impl std::fmt::Debug for SurfaceRenderer<'_> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("SurfaceRenderer")
-            .field("dev_id", &self.dev_id)
-            .field("surface_config", &self.config)
-            .field("has_intermediate_texture", &true)
-            .finish()
-    }
-}
-
-impl<'s> SurfaceRenderer<'s> {
-    /// Creates a new render surface for the specified window and dimensions.
-    pub async fn new<'w>(
-        surface: Surface<'w>,
-        config: SurfaceRendererConfiguration,
-        device_handle: DeviceHandle,
-        dev_id: usize,
-    ) -> Result<SurfaceRenderer<'w>, WgpuContextError> {
-        // Convert SurfaceRendererConfiguration to SurfaceConfiguration.
-        // The difference is that `format` is a Vec in SurfaceRendererConfiguration and a single value in SurfaceConfiguration
-        let config = SurfaceConfiguration {
-            usage: config.usage,
-            format: surface
-                .get_capabilities(&device_handle.adapter)
-                .formats
-                .into_iter()
-                .find(|it| config.formats.contains(it))
-                .ok_or(WgpuContextError::UnsupportedSurfaceFormat)?,
-            width: config.width,
-            height: config.height,
-            present_mode: config.present_mode,
-            desired_maximum_frame_latency: config.desired_maximum_frame_latency,
-            alpha_mode: config.alpha_mode,
-            view_formats: config.view_formats,
-        };
-
-        let intermediate_texture_view =
-            create_intermediate_texture(config.width, config.height, &device_handle.device);
-        let blitter = TextureBlitter::new(&device_handle.device, config.format);
-
-        let surface = SurfaceRenderer {
-            dev_id,
-            device_handle,
-            surface,
-            config,
-            intermediate_texture_view,
-            blitter,
-        };
-        surface.configure();
-        Ok(surface)
-    }
-
-    /// Resizes the surface to the new dimensions.
-    pub fn resize(&mut self, width: u32, height: u32) {
-        let texture_view = create_intermediate_texture(width, height, &self.device_handle.device);
-        // TODO: Use clever resize semantics to avoid thrashing the memory allocator during a resize
-        // especially important on metal.
-        self.intermediate_texture_view = texture_view;
-        self.config.width = width;
-        self.config.height = height;
-        self.configure();
-    }
-
-    pub fn set_present_mode(&mut self, present_mode: wgpu::PresentMode) {
-        self.config.present_mode = present_mode;
-        self.configure();
-    }
-
-    fn configure(&self) {
-        self.surface
-            .configure(&self.device_handle.device, &self.config);
-    }
-
-    /// Blit from the intermediate texture to the surface texture
-    pub fn blit_from_intermediate_texture_to_surface(&self) -> SurfaceTexture {
-        let surface_texture = self
-            .surface
-            .get_current_texture()
-            .expect("failed to get surface texture");
-
-        // TODO: verify that handling of SurfaceError::Outdated is no longer required
-        //
-        // let surface_texture = match state.surface.surface.get_current_texture() {
-        //     Ok(surface) => surface,
-        //     // When resizing too aggresively, the surface can get outdated (another resize) before being rendered into
-        //     Err(SurfaceError::Outdated) => return,
-        //     Err(_) => panic!("failed to get surface texture"),
-        // };
-
-        // Perform the copy
-        // (TODO: Does it improve throughput to acquire the surface after the previous texture render has happened?)
-        let mut encoder =
-            self.device_handle
-                .device
-                .create_command_encoder(&CommandEncoderDescriptor {
-                    label: Some("Surface Blit"),
-                });
-
-        self.blitter.copy(
-            &self.device_handle.device,
-            &mut encoder,
-            &self.intermediate_texture_view,
-            &surface_texture
-                .texture
-                .create_view(&TextureViewDescriptor::default()),
-        );
-        self.device_handle.queue.submit([encoder.finish()]);
-
-        surface_texture
     }
 }
 
