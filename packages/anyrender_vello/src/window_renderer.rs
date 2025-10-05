@@ -9,8 +9,8 @@ use std::sync::{
 use vello::{
     AaSupport, RenderParams, Renderer as VelloRenderer, RendererOptions, Scene as VelloScene,
 };
-use wgpu::{Features, Limits, PresentMode};
-use wgpu_context::{DeviceHandle, SurfaceRenderer, WGPUContext};
+use wgpu::{Features, Limits, PresentMode, TextureFormat};
+use wgpu_context::{DeviceHandle, SurfaceRenderer, SurfaceRendererConfiguration, WGPUContext};
 
 use crate::{CustomPaintSource, DEFAULT_THREADS, VelloScenePainter};
 
@@ -102,9 +102,16 @@ impl WindowRenderer for VelloWindowRenderer {
     fn resume(&mut self, window_handle: Arc<dyn WindowHandle>, width: u32, height: u32) {
         let surface = pollster::block_on(self.wgpu_context.create_surface(
             window_handle.clone(),
-            width,
-            height,
-            PresentMode::AutoVsync,
+            SurfaceRendererConfiguration {
+                usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+                formats: vec![TextureFormat::Rgba8Unorm, TextureFormat::Bgra8Unorm],
+                width,
+                height,
+                present_mode: PresentMode::AutoVsync,
+                desired_maximum_frame_latency: 2,
+                alpha_mode: wgpu::CompositeAlphaMode::Auto,
+                view_formats: vec![],
+            },
         ))
         .expect("Error creating surface");
 

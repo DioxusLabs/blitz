@@ -5,9 +5,9 @@
 
 use std::future::Future;
 use wgpu::{
-    Adapter, CommandEncoderDescriptor, Device, Features, Instance, Limits, MemoryHints, Queue,
-    Surface, SurfaceConfiguration, SurfaceTarget, SurfaceTexture, TextureFormat, TextureView,
-    TextureViewDescriptor, util::TextureBlitter,
+    Adapter, CommandEncoderDescriptor, CompositeAlphaMode, Device, Features, Instance, Limits,
+    MemoryHints, PresentMode, Queue, Surface, SurfaceConfiguration, SurfaceTarget, SurfaceTexture,
+    TextureFormat, TextureUsages, TextureView, TextureViewDescriptor, util::TextureBlitter,
 };
 
 mod error;
@@ -61,9 +61,7 @@ impl WGPUContext {
     pub async fn create_surface<'w>(
         &mut self,
         window: impl Into<SurfaceTarget<'w>>,
-        width: u32,
-        height: u32,
-        present_mode: wgpu::PresentMode,
+        config: SurfaceRendererConfiguration,
     ) -> Result<SurfaceRenderer<'w>, WgpuContextError> {
         // Create a surface from the window handle
         let surface = self.instance.create_surface(window.into())?;
@@ -75,7 +73,7 @@ impl WGPUContext {
             .or(Err(WgpuContextError::NoCompatibleDevice))?;
         let device_handle = self.device_pool[dev_id].clone();
 
-        SurfaceRenderer::new(surface, device_handle, dev_id, width, height, present_mode).await
+        SurfaceRenderer::new(surface, config, device_handle, dev_id).await
     }
 
     /// Finds or creates a compatible device handle id.
@@ -175,6 +173,61 @@ impl Default for WGPUContext {
     }
 }
 
+pub struct SurfaceRendererConfiguration {
+    /// The usage of the swap chain. The only usage guaranteed to be supported is [`TextureUsages::RENDER_ATTACHMENT`].
+    pub usage: TextureUsages,
+    /// The texture format of the swap chain. The only formats that are guaranteed are
+    /// [`TextureFormat::Bgra8Unorm`] and [`TextureFormat::Bgra8UnormSrgb`].
+    pub formats: Vec<TextureFormat>,
+    /// Width of the swap chain. Must be the same size as the surface, and nonzero.
+    ///
+    /// If this is not the same size as the underlying surface (e.g. if it is
+    /// set once, and the window is later resized), the behaviour is defined
+    /// but platform-specific, and may change in the future (currently macOS
+    /// scales the surface, other platforms may do something else).
+    pub width: u32,
+    /// Height of the swap chain. Must be the same size as the surface, and nonzero.
+    ///
+    /// If this is not the same size as the underlying surface (e.g. if it is
+    /// set once, and the window is later resized), the behaviour is defined
+    /// but platform-specific, and may change in the future (currently macOS
+    /// scales the surface, other platforms may do something else).
+    pub height: u32,
+    /// Presentation mode of the swap chain. Fifo is the only mode guaranteed to be supported.
+    /// `FifoRelaxed`, `Immediate`, and `Mailbox` will crash if unsupported, while `AutoVsync` and
+    /// `AutoNoVsync` will gracefully do a designed sets of fallbacks if their primary modes are
+    /// unsupported.
+    pub present_mode: PresentMode,
+    /// Desired maximum number of frames that the presentation engine should queue in advance.
+    ///
+    /// This is a hint to the backend implementation and will always be clamped to the supported range.
+    /// As a consequence, either the maximum frame latency is set directly on the swap chain,
+    /// or waits on present are scheduled to avoid exceeding the maximum frame latency if supported,
+    /// or the swap chain size is set to (max-latency + 1).
+    ///
+    /// Defaults to 2 when created via `Surface::get_default_config`.
+    ///
+    /// Typical values range from 3 to 1, but higher values are possible:
+    /// * Choose 2 or higher for potentially smoother frame display, as it allows to be at least one frame
+    ///   to be queued up. This typically avoids starving the GPU's work queue.
+    ///   Higher values are useful for achieving a constant flow of frames to the display under varying load.
+    /// * Choose 1 for low latency from frame recording to frame display.
+    ///   ⚠️ If the backend does not support waiting on present, this will cause the CPU to wait for the GPU
+    ///   to finish all work related to the previous frame when calling `Surface::get_current_texture`,
+    ///   causing CPU-GPU serialization (i.e. when `Surface::get_current_texture` returns, the GPU might be idle).
+    ///   It is currently not possible to query this. See <https://github.com/gfx-rs/wgpu/issues/2869>.
+    /// * A value of 0 is generally not supported and always clamped to a higher value.
+    pub desired_maximum_frame_latency: u32,
+    /// Specifies how the alpha channel of the textures should be handled during compositing.
+    pub alpha_mode: CompositeAlphaMode,
+    /// Specifies what view formats will be allowed when calling `Texture::create_view` on the texture returned by `Surface::get_current_texture`.
+    ///
+    /// View formats of the same format as the texture are always allowed.
+    ///
+    /// Note: currently, only the srgb-ness is allowed to change. (ex: `Rgba8Unorm` texture + `Rgba8UnormSrgb` view)
+    pub view_formats: Vec<TextureFormat>,
+}
+
 /// Combination of surface and its configuration.
 pub struct SurfaceRenderer<'s> {
     // The device and queue for rendering to the surface
@@ -207,32 +260,32 @@ impl<'s> SurfaceRenderer<'s> {
     /// Creates a new render surface for the specified window and dimensions.
     pub async fn new<'w>(
         surface: Surface<'w>,
+        config: SurfaceRendererConfiguration,
         device_handle: DeviceHandle,
         dev_id: usize,
-        width: u32,
-        height: u32,
-        present_mode: wgpu::PresentMode,
     ) -> Result<SurfaceRenderer<'w>, WgpuContextError> {
-        let capabilities = surface.get_capabilities(&device_handle.adapter);
-        let format = capabilities
-            .formats
-            .into_iter()
-            .find(|it| matches!(it, TextureFormat::Rgba8Unorm | TextureFormat::Bgra8Unorm))
-            .ok_or(WgpuContextError::UnsupportedSurfaceFormat)?;
-
+        // Convert SurfaceRendererConfiguration to SurfaceConfiguration.
+        // The difference is that `format` is a Vec in SurfaceRendererConfiguration and a single value in SurfaceConfiguration
         let config = SurfaceConfiguration {
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
-            format,
-            width,
-            height,
-            present_mode,
-            desired_maximum_frame_latency: 2,
-            alpha_mode: wgpu::CompositeAlphaMode::Auto,
-            view_formats: vec![],
+            usage: config.usage,
+            format: surface
+                .get_capabilities(&device_handle.adapter)
+                .formats
+                .into_iter()
+                .find(|it| config.formats.contains(it))
+                .ok_or(WgpuContextError::UnsupportedSurfaceFormat)?,
+            width: config.width,
+            height: config.height,
+            present_mode: config.present_mode,
+            desired_maximum_frame_latency: config.desired_maximum_frame_latency,
+            alpha_mode: config.alpha_mode,
+            view_formats: config.view_formats,
         };
+
         let intermediate_texture_view =
-            create_intermediate_texture(width, height, &device_handle.device);
-        let blitter = TextureBlitter::new(&device_handle.device, format);
+            create_intermediate_texture(config.width, config.height, &device_handle.device);
+        let blitter = TextureBlitter::new(&device_handle.device, config.format);
+
         let surface = SurfaceRenderer {
             dev_id,
             device_handle,
