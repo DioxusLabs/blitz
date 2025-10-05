@@ -128,7 +128,8 @@ impl WindowRenderer for VelloWindowRenderer {
     }
 
     fn resume(&mut self, window_handle: Arc<dyn WindowHandle>, width: u32, height: u32) {
-        let surface = pollster::block_on(self.wgpu_context.create_surface(
+        // Create wgpu_context::SurfaceRenderer
+        let render_surface = pollster::block_on(self.wgpu_context.create_surface(
             window_handle.clone(),
             SurfaceRendererConfiguration {
                 usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
@@ -146,33 +147,40 @@ impl WindowRenderer for VelloWindowRenderer {
         ))
         .expect("Error creating surface");
 
-        self.window_handle = Some(window_handle);
+        // Create vello::Renderer
+        let renderer = VelloRenderer::new(
+            render_surface.device(),
+            RendererOptions {
+                antialiasing_support: AaSupport::all(),
+                use_cpu: false,
+                num_init_threads: DEFAULT_THREADS,
+                // TODO: add pipeline cache
+                pipeline_cache: None,
+            },
+        )
+        .unwrap();
 
-        let options = RendererOptions {
-            antialiasing_support: AaSupport::all(),
-            use_cpu: false,
-            num_init_threads: DEFAULT_THREADS,
-            // TODO: add pipeline cache
-            pipeline_cache: None,
-        };
-
-        let renderer = VelloRenderer::new(&surface.device_handle.device, options).unwrap();
-
-        self.render_state = RenderState::Active(ActiveRenderState {
-            renderer,
-            render_surface: surface,
-        });
-
-        let device_handle = self.render_state.current_device_handle().unwrap();
+        // Resume custom paint sources
+        let device_handle = &render_surface.device_handle;
         for source in self.custom_paint_sources.values_mut() {
             source.resume(device_handle)
         }
+
+        // Set state to Active
+        self.window_handle = Some(window_handle);
+        self.render_state = RenderState::Active(ActiveRenderState {
+            renderer,
+            render_surface,
+        });
     }
 
     fn suspend(&mut self) {
+        // Suspend custom paint sources
         for source in self.custom_paint_sources.values_mut() {
             source.suspend()
         }
+
+        // Set state to Suspended
         self.render_state = RenderState::Suspended;
     }
 
