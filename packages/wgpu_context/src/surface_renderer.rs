@@ -9,7 +9,12 @@ use wgpu::{
 /// texture in most cases.
 ///
 /// Because of this, we need to create an "intermediate" texture which we render to, and then blit to the surface.
-fn create_intermediate_texture(width: u32, height: u32, device: &Device) -> TextureView {
+fn create_intermediate_texture(
+    width: u32,
+    height: u32,
+    usage: TextureUsages,
+    device: &Device,
+) -> TextureView {
     let texture = device.create_texture(&wgpu::TextureDescriptor {
         label: None,
         size: wgpu::Extent3d {
@@ -20,7 +25,7 @@ fn create_intermediate_texture(width: u32, height: u32, device: &Device) -> Text
         mip_level_count: 1,
         sample_count: 1,
         dimension: wgpu::TextureDimension::D2,
-        usage: wgpu::TextureUsages::STORAGE_BINDING | wgpu::TextureUsages::TEXTURE_BINDING,
+        usage,
         format: TextureFormat::Rgba8Unorm,
         view_formats: &[],
     });
@@ -28,6 +33,12 @@ fn create_intermediate_texture(width: u32, height: u32, device: &Device) -> Text
     texture.create_view(&wgpu::TextureViewDescriptor::default())
 }
 
+#[derive(Clone)]
+pub struct TextureConfiguration {
+    pub usage: TextureUsages,
+}
+
+#[derive(Clone)]
 pub struct SurfaceRendererConfiguration {
     /// The usage of the swap chain. The only usage guaranteed to be supported is [`TextureUsages::RENDER_ATTACHMENT`].
     pub usage: TextureUsages,
@@ -83,6 +94,16 @@ pub struct SurfaceRendererConfiguration {
     pub view_formats: Vec<TextureFormat>,
 }
 
+struct IntermediateTextureStuff {
+    pub config: TextureConfiguration,
+    // TextureView for the intermediate Texture which we sometimes render to because compute shaders
+    // cannot always render directly to surfaces. Since WGPU 26, the underlying Texture can be accessed
+    // from the TextureView so we don't need to store both.
+    pub texture_view: TextureView,
+    // Blitter for blitting from the intermediate texture to the surface.
+    pub blitter: TextureBlitter,
+}
+
 /// Combination of surface and its configuration.
 pub struct SurfaceRenderer<'s> {
     // The device and queue for rendering to the surface
@@ -93,12 +114,7 @@ pub struct SurfaceRenderer<'s> {
     pub surface: Surface<'s>,
     pub config: SurfaceConfiguration,
 
-    // TextureView for the intermediate Texture which we sometimes render to because compute shaders
-    // cannot always render directly to surfaces. Since WGPU 26, the underlying Texture can be accessed
-    // from the TextureView so we don't need to store both.
-    pub intermediate_texture_view: TextureView,
-    // Blitter for blitting from the intermediate texture to the surface.
-    pub blitter: TextureBlitter,
+    intermediate_texture: Option<Box<IntermediateTextureStuff>>,
 }
 
 impl std::fmt::Debug for SurfaceRenderer<'_> {
@@ -115,39 +131,48 @@ impl<'s> SurfaceRenderer<'s> {
     /// Creates a new render surface for the specified window and dimensions.
     pub async fn new<'w>(
         surface: Surface<'w>,
-        config: SurfaceRendererConfiguration,
+        surface_renderer_config: SurfaceRendererConfiguration,
+        intermediate_texture_config: Option<TextureConfiguration>,
         device_handle: DeviceHandle,
         dev_id: usize,
     ) -> Result<SurfaceRenderer<'w>, WgpuContextError> {
         // Convert SurfaceRendererConfiguration to SurfaceConfiguration.
         // The difference is that `format` is a Vec in SurfaceRendererConfiguration and a single value in SurfaceConfiguration
-        let config = SurfaceConfiguration {
-            usage: config.usage,
+        let surface_config = SurfaceConfiguration {
+            usage: surface_renderer_config.usage,
             format: surface
                 .get_capabilities(&device_handle.adapter)
                 .formats
                 .into_iter()
-                .find(|it| config.formats.contains(it))
+                .find(|it| surface_renderer_config.formats.contains(it))
                 .ok_or(WgpuContextError::UnsupportedSurfaceFormat)?,
-            width: config.width,
-            height: config.height,
-            present_mode: config.present_mode,
-            desired_maximum_frame_latency: config.desired_maximum_frame_latency,
-            alpha_mode: config.alpha_mode,
-            view_formats: config.view_formats,
+            width: surface_renderer_config.width,
+            height: surface_renderer_config.height,
+            present_mode: surface_renderer_config.present_mode,
+            desired_maximum_frame_latency: surface_renderer_config.desired_maximum_frame_latency,
+            alpha_mode: surface_renderer_config.alpha_mode,
+            view_formats: surface_renderer_config.view_formats,
         };
 
-        let intermediate_texture_view =
-            create_intermediate_texture(config.width, config.height, &device_handle.device);
-        let blitter = TextureBlitter::new(&device_handle.device, config.format);
+        let intermediate_texture = intermediate_texture_config.map(|texture_config| {
+            Box::new(IntermediateTextureStuff {
+                config: texture_config.clone(),
+                texture_view: create_intermediate_texture(
+                    surface_renderer_config.width,
+                    surface_renderer_config.height,
+                    texture_config.usage,
+                    &device_handle.device,
+                ),
+                blitter: TextureBlitter::new(&device_handle.device, surface_config.format),
+            })
+        });
 
         let surface = SurfaceRenderer {
             dev_id,
             device_handle,
             surface,
-            config,
-            intermediate_texture_view,
-            blitter,
+            config: surface_config,
+            intermediate_texture,
         };
         surface.configure();
         Ok(surface)
@@ -155,10 +180,16 @@ impl<'s> SurfaceRenderer<'s> {
 
     /// Resizes the surface to the new dimensions.
     pub fn resize(&mut self, width: u32, height: u32) {
-        let texture_view = create_intermediate_texture(width, height, &self.device_handle.device);
         // TODO: Use clever resize semantics to avoid thrashing the memory allocator during a resize
         // especially important on metal.
-        self.intermediate_texture_view = texture_view;
+        if let Some(intermediate_texture_stuff) = &mut self.intermediate_texture {
+            intermediate_texture_stuff.texture_view = create_intermediate_texture(
+                width,
+                height,
+                intermediate_texture_stuff.config.usage,
+                &self.device_handle.device,
+            );
+        }
         self.config.width = width;
         self.config.height = height;
         self.configure();
@@ -174,13 +205,40 @@ impl<'s> SurfaceRenderer<'s> {
             .configure(&self.device_handle.device, &self.config);
     }
 
-    /// Blit from the intermediate texture to the surface texture
-    pub fn blit_from_intermediate_texture_to_surface(&self) -> SurfaceTexture {
+    pub fn target_texture_view(&self) -> TextureView {
+        match &self.intermediate_texture {
+            Some(intermediate_texture) => intermediate_texture.texture_view.clone(),
+            None => {
+                let surface_texture = self
+                    .surface
+                    .get_current_texture()
+                    .expect("failed to get surface texture");
+                surface_texture
+                    .texture
+                    .create_view(&TextureViewDescriptor::default())
+            }
+        }
+    }
+
+    pub fn maybe_blit_and_present(&self) {
         let surface_texture = self
             .surface
             .get_current_texture()
             .expect("failed to get surface texture");
 
+        if let Some(its) = &self.intermediate_texture {
+            self.blit_from_intermediate_texture_to_surface(&surface_texture, its);
+        }
+
+        surface_texture.present();
+    }
+
+    /// Blit from the intermediate texture to the surface texture
+    fn blit_from_intermediate_texture_to_surface(
+        &self,
+        surface_texture: &SurfaceTexture,
+        intermediate_texture_stuff: &IntermediateTextureStuff,
+    ) {
         // TODO: verify that handling of SurfaceError::Outdated is no longer required
         //
         // let surface_texture = match state.surface.surface.get_current_texture() {
@@ -199,16 +257,14 @@ impl<'s> SurfaceRenderer<'s> {
                     label: Some("Surface Blit"),
                 });
 
-        self.blitter.copy(
+        intermediate_texture_stuff.blitter.copy(
             &self.device_handle.device,
             &mut encoder,
-            &self.intermediate_texture_view,
+            &intermediate_texture_stuff.texture_view,
             &surface_texture
                 .texture
                 .create_view(&TextureViewDescriptor::default()),
         );
         self.device_handle.queue.submit([encoder.finish()]);
-
-        surface_texture
     }
 }

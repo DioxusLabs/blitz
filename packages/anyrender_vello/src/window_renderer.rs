@@ -9,8 +9,10 @@ use std::sync::{
 use vello::{
     AaSupport, RenderParams, Renderer as VelloRenderer, RendererOptions, Scene as VelloScene,
 };
-use wgpu::{Features, Limits, PresentMode, TextureFormat};
-use wgpu_context::{DeviceHandle, SurfaceRenderer, SurfaceRendererConfiguration, WGPUContext};
+use wgpu::{Features, Limits, PresentMode, TextureFormat, TextureUsages};
+use wgpu_context::{
+    DeviceHandle, SurfaceRenderer, SurfaceRendererConfiguration, TextureConfiguration, WGPUContext,
+};
 
 use crate::{CustomPaintSource, DEFAULT_THREADS, VelloScenePainter};
 
@@ -112,6 +114,9 @@ impl WindowRenderer for VelloWindowRenderer {
                 alpha_mode: wgpu::CompositeAlphaMode::Auto,
                 view_formats: vec![],
             },
+            Some(TextureConfiguration {
+                usage: TextureUsages::STORAGE_BINDING | TextureUsages::TEXTURE_BINDING,
+            }),
         ))
         .expect("Error creating surface");
 
@@ -174,7 +179,7 @@ impl WindowRenderer for VelloWindowRenderer {
                 &device_handle.device,
                 &device_handle.queue,
                 self.scene.as_ref().unwrap(),
-                &surface.intermediate_texture_view,
+                &surface.target_texture_view(),
                 &RenderParams {
                     base_color: Color::WHITE,
                     width: state.surface.config.width,
@@ -185,9 +190,7 @@ impl WindowRenderer for VelloWindowRenderer {
             .expect("failed to render to texture");
         timer.record_time("render");
 
-        let surface_texture = state.surface.blit_from_intermediate_texture_to_surface();
-        surface_texture.present();
-
+        state.surface.maybe_blit_and_present();
         timer.record_time("present");
 
         device_handle.device.poll(wgpu::PollType::Wait).unwrap();

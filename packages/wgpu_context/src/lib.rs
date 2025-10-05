@@ -12,7 +12,7 @@ mod surface_renderer;
 mod util;
 
 pub use error::WgpuContextError;
-pub use surface_renderer::{SurfaceRenderer, SurfaceRendererConfiguration};
+pub use surface_renderer::{SurfaceRenderer, SurfaceRendererConfiguration, TextureConfiguration};
 pub use util::block_on_wgpu;
 
 /// A wgpu `Device`, it's associated `Queue`, and the `Adapter` and `Instance` used to create them
@@ -69,7 +69,8 @@ impl WGPUContext {
     pub async fn create_surface<'w>(
         &mut self,
         window: impl Into<SurfaceTarget<'w>>,
-        config: SurfaceRendererConfiguration,
+        surface_config: SurfaceRendererConfiguration,
+        intermediate_texture_config: Option<TextureConfiguration>,
     ) -> Result<SurfaceRenderer<'w>, WgpuContextError> {
         // Create a surface from the window handle
         let surface = self.instance.create_surface(window.into())?;
@@ -81,7 +82,14 @@ impl WGPUContext {
             .or(Err(WgpuContextError::NoCompatibleDevice))?;
         let device_handle = self.device_pool[dev_id].clone();
 
-        SurfaceRenderer::new(surface, config, device_handle, dev_id).await
+        SurfaceRenderer::new(
+            surface,
+            surface_config,
+            intermediate_texture_config,
+            device_handle,
+            dev_id,
+        )
+        .await
     }
 
     /// Finds or creates a compatible device handle id.
