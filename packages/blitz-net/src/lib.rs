@@ -39,6 +39,9 @@ impl<D: 'static> Provider<D> {
     pub fn is_empty(&self) -> bool {
         Arc::strong_count(&self.resource_callback) == 1
     }
+    pub fn count(&self) -> usize {
+        Arc::strong_count(&self.resource_callback) - 1
+    }
 }
 impl<D: 'static> Provider<D> {
     async fn fetch_inner(
