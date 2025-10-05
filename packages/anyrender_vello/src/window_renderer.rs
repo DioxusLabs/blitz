@@ -21,7 +21,7 @@ static PAINT_SOURCE_ID: AtomicU64 = AtomicU64::new(0);
 // Simple struct to hold the state of the renderer
 struct ActiveRenderState {
     renderer: VelloRenderer,
-    surface: SurfaceRenderer<'static>,
+    render_surface: SurfaceRenderer<'static>,
 }
 
 #[allow(clippy::large_enum_variant)]
@@ -35,7 +35,7 @@ impl RenderState {
         let RenderState::Active(state) = self else {
             return None;
         };
-        Some(&state.surface.device_handle)
+        Some(&state.render_surface.device_handle)
     }
 }
 
@@ -132,7 +132,10 @@ impl WindowRenderer for VelloWindowRenderer {
 
         let renderer = VelloRenderer::new(&surface.device_handle.device, options).unwrap();
 
-        self.render_state = RenderState::Active(ActiveRenderState { renderer, surface });
+        self.render_state = RenderState::Active(ActiveRenderState {
+            renderer,
+            render_surface: surface,
+        });
 
         let device_handle = self.render_state.current_device_handle().unwrap();
         for source in self.custom_paint_sources.values_mut() {
@@ -149,7 +152,7 @@ impl WindowRenderer for VelloWindowRenderer {
 
     fn set_size(&mut self, width: u32, height: u32) {
         if let RenderState::Active(state) = &mut self.render_state {
-            state.surface.resize(width, height);
+            state.render_surface.resize(width, height);
         };
     }
 
@@ -158,8 +161,7 @@ impl WindowRenderer for VelloWindowRenderer {
             return;
         };
 
-        let surface = &state.surface;
-        let device_handle = &surface.device_handle;
+        let render_surface = &state.render_surface;
 
         debug_timer!(timer, feature = "log_frame_times");
 
@@ -176,24 +178,24 @@ impl WindowRenderer for VelloWindowRenderer {
         state
             .renderer
             .render_to_texture(
-                &device_handle.device,
-                &device_handle.queue,
+                render_surface.device(),
+                render_surface.queue(),
                 self.scene.as_ref().unwrap(),
-                &surface.target_texture_view(),
+                &render_surface.target_texture_view(),
                 &RenderParams {
                     base_color: Color::WHITE,
-                    width: state.surface.config.width,
-                    height: state.surface.config.height,
+                    width: render_surface.config.width,
+                    height: render_surface.config.height,
                     antialiasing_method: vello::AaConfig::Msaa16,
                 },
             )
             .expect("failed to render to texture");
         timer.record_time("render");
 
-        state.surface.maybe_blit_and_present();
+        render_surface.maybe_blit_and_present();
         timer.record_time("present");
 
-        device_handle.device.poll(wgpu::PollType::Wait).unwrap();
+        render_surface.device().poll(wgpu::PollType::Wait).unwrap();
 
         timer.record_time("wait");
         timer.print_times("Frame time: ");

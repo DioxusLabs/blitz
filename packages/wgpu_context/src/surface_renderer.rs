@@ -1,6 +1,6 @@
 use crate::{DeviceHandle, WgpuContextError};
 use wgpu::{
-    CommandEncoderDescriptor, CompositeAlphaMode, Device, PresentMode, Surface,
+    CommandEncoderDescriptor, CompositeAlphaMode, Device, PresentMode, Queue, Surface,
     SurfaceConfiguration, SurfaceTexture, TextureFormat, TextureUsages, TextureView,
     TextureViewDescriptor, util::TextureBlitter,
 };
@@ -176,6 +176,14 @@ impl<'s> SurfaceRenderer<'s> {
         };
         surface.configure();
         Ok(surface)
+    }
+
+    pub fn device(&self) -> &Device {
+        &self.device_handle.device
+    }
+
+    pub fn queue(&self) -> &Queue {
+        &self.device_handle.queue
     }
 
     /// Resizes the surface to the new dimensions.
