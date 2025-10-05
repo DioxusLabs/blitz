@@ -179,10 +179,9 @@ pub struct SurfaceRenderer<'s> {
     pub dev_id: usize,
     pub device_handle: DeviceHandle,
 
-    // The surface, it's configuration and format
+    // The surface and it's configuration
     pub surface: Surface<'s>,
     pub config: SurfaceConfiguration,
-    pub format: TextureFormat,
 
     // TextureView for the intermediate Texture which we sometimes render to because compute shaders
     // cannot always render directly to surfaces. Since WGPU 26, the underlying Texture can be accessed
@@ -194,13 +193,10 @@ pub struct SurfaceRenderer<'s> {
 
 impl std::fmt::Debug for SurfaceRenderer<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("RenderSurface")
-            .field("surface", &self.surface)
-            .field("config", &self.config)
-            .field("device_handle", &self.device_handle)
-            .field("format", &self.format)
-            .field("intermediate_texture_view", &self.intermediate_texture_view)
-            .field("blitter", &"(Not Debug)")
+        f.debug_struct("SurfaceRenderer")
+            .field("dev_id", &self.dev_id)
+            .field("surface_config", &self.config)
+            .field("has_intermediate_texture", &true)
             .finish()
     }
 }
@@ -240,7 +236,6 @@ impl<'s> SurfaceRenderer<'s> {
             device_handle,
             surface,
             config,
-            format,
             intermediate_texture_view,
             blitter,
         };
