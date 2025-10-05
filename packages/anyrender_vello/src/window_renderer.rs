@@ -73,8 +73,7 @@ impl VelloWindowRenderer {
 
     pub fn register_custom_paint_source(&mut self, mut source: Box<dyn CustomPaintSource>) -> u64 {
         if let Some(device_handle) = self.render_state.current_device_handle() {
-            let instance = &self.wgpu_context.instance;
-            source.resume(instance, device_handle);
+            source.resume(device_handle);
         }
         let id = PAINT_SOURCE_ID.fetch_add(1, atomic::Ordering::SeqCst);
         self.custom_paint_sources.insert(id, source);
@@ -124,9 +123,8 @@ impl WindowRenderer for VelloWindowRenderer {
         self.render_state = RenderState::Active(ActiveRenderState { renderer, surface });
 
         let device_handle = self.render_state.current_device_handle().unwrap();
-        let instance = &self.wgpu_context.instance;
         for source in self.custom_paint_sources.values_mut() {
-            source.resume(instance, device_handle)
+            source.resume(device_handle)
         }
     }
 

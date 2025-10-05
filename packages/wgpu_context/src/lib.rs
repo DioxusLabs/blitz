@@ -26,10 +26,10 @@ pub struct WGPUContext {
     override_limits: Option<Limits>,
 }
 
-/// A wgpu `Device`, it's associated `Queue`, and the adapter used to create it.
-/// Q: could we drop the adapter here? wgpu docs say adapters do not need to be kept around...
+/// A wgpu `Device`, it's associated `Queue`, and the `Adapter` and `Instance` used to create them
 #[derive(Clone, Debug)]
 pub struct DeviceHandle {
+    pub instance: Instance,
     pub adapter: Adapter,
     pub device: Device,
     pub queue: Queue,
@@ -107,8 +107,9 @@ impl WGPUContext {
         &mut self,
         compatible_surface: Option<&Surface<'_>>,
     ) -> Result<usize, WgpuContextError> {
+        let instance = self.instance.clone();
         let adapter =
-            wgpu::util::initialize_adapter_from_env_or_default(&self.instance, compatible_surface)
+            wgpu::util::initialize_adapter_from_env_or_default(&instance, compatible_surface)
                 .await?;
 
         // Determine features to request
@@ -133,6 +134,7 @@ impl WGPUContext {
 
         // Create the device handle and store in the pool
         let device_handle = DeviceHandle {
+            instance,
             adapter,
             device,
             queue,
