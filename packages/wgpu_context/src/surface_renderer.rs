@@ -1,37 +1,9 @@
-use crate::{DeviceHandle, WgpuContextError};
+use crate::{DeviceHandle, WgpuContextError, util::create_texture};
 use wgpu::{
     CommandEncoderDescriptor, CompositeAlphaMode, Device, PresentMode, Queue, Surface,
     SurfaceConfiguration, SurfaceTexture, TextureFormat, TextureUsages, TextureView,
     TextureViewDescriptor, util::TextureBlitter,
 };
-
-/// Vello uses a compute shader to render to the provided texture, which means that it can't bind the surface
-/// texture in most cases.
-///
-/// Because of this, we need to create an "intermediate" texture which we render to, and then blit to the surface.
-fn create_intermediate_texture(
-    width: u32,
-    height: u32,
-    usage: TextureUsages,
-    device: &Device,
-) -> TextureView {
-    let texture = device.create_texture(&wgpu::TextureDescriptor {
-        label: None,
-        size: wgpu::Extent3d {
-            width,
-            height,
-            depth_or_array_layers: 1,
-        },
-        mip_level_count: 1,
-        sample_count: 1,
-        dimension: wgpu::TextureDimension::D2,
-        usage,
-        format: TextureFormat::Rgba8Unorm,
-        view_formats: &[],
-    });
-
-    texture.create_view(&wgpu::TextureViewDescriptor::default())
-}
 
 #[derive(Clone)]
 pub struct TextureConfiguration {
@@ -157,9 +129,10 @@ impl<'s> SurfaceRenderer<'s> {
         let intermediate_texture = intermediate_texture_config.map(|texture_config| {
             Box::new(IntermediateTextureStuff {
                 config: texture_config.clone(),
-                texture_view: create_intermediate_texture(
+                texture_view: create_texture(
                     surface_renderer_config.width,
                     surface_renderer_config.height,
+                    TextureFormat::Rgba8Unorm,
                     texture_config.usage,
                     &device_handle.device,
                 ),
@@ -191,9 +164,10 @@ impl<'s> SurfaceRenderer<'s> {
         // TODO: Use clever resize semantics to avoid thrashing the memory allocator during a resize
         // especially important on metal.
         if let Some(intermediate_texture_stuff) = &mut self.intermediate_texture {
-            intermediate_texture_stuff.texture_view = create_intermediate_texture(
+            intermediate_texture_stuff.texture_view = create_texture(
                 width,
                 height,
+                TextureFormat::Rgba8Unorm,
                 intermediate_texture_stuff.config.usage,
                 &self.device_handle.device,
             );

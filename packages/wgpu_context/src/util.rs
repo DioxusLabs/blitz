@@ -1,5 +1,5 @@
 use crate::WgpuContextError;
-use wgpu::Device;
+use wgpu::{Device, TextureFormat, TextureUsages, TextureView};
 
 /// Block on a future, polling the device as needed.
 ///
@@ -30,4 +30,30 @@ pub fn block_on_wgpu<F: Future>(device: &Device, fut: F) -> Result<F::Output, Wg
             std::task::Poll::Ready(item) => break Ok(item),
         }
     }
+}
+
+/// Create a WGPU Texture, returning a default TextureView
+pub(crate) fn create_texture(
+    width: u32,
+    height: u32,
+    format: TextureFormat,
+    usage: TextureUsages,
+    device: &Device,
+) -> TextureView {
+    let texture = device.create_texture(&wgpu::TextureDescriptor {
+        label: None,
+        size: wgpu::Extent3d {
+            width,
+            height,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D2,
+        usage,
+        format,
+        view_formats: &[],
+    });
+
+    texture.create_view(&wgpu::TextureViewDescriptor::default())
 }
