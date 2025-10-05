@@ -6,8 +6,8 @@
 use std::future::Future;
 use wgpu::{
     Adapter, CommandEncoderDescriptor, Device, Features, Instance, Limits, MemoryHints, Queue,
-    Surface, SurfaceConfiguration, SurfaceTarget, SurfaceTexture, Texture, TextureFormat,
-    TextureView, TextureViewDescriptor, util::TextureBlitter,
+    Surface, SurfaceConfiguration, SurfaceTarget, SurfaceTexture, TextureFormat, TextureView,
+    TextureViewDescriptor, util::TextureBlitter,
 };
 
 mod error;
@@ -148,8 +148,8 @@ impl WGPUContext {
 /// texture in most cases.
 ///
 /// Because of this, we need to create an "intermediate" texture which we render to, and then blit to the surface.
-fn create_intermediate_texture(width: u32, height: u32, device: &Device) -> (Texture, TextureView) {
-    let target_texture = device.create_texture(&wgpu::TextureDescriptor {
+fn create_intermediate_texture(width: u32, height: u32, device: &Device) -> TextureView {
+    let texture = device.create_texture(&wgpu::TextureDescriptor {
         label: None,
         size: wgpu::Extent3d {
             width,
@@ -163,8 +163,8 @@ fn create_intermediate_texture(width: u32, height: u32, device: &Device) -> (Tex
         format: TextureFormat::Rgba8Unorm,
         view_formats: &[],
     });
-    let target_view = target_texture.create_view(&wgpu::TextureViewDescriptor::default());
-    (target_texture, target_view)
+
+    texture.create_view(&wgpu::TextureViewDescriptor::default())
 }
 
 impl Default for WGPUContext {
@@ -184,9 +184,9 @@ pub struct SurfaceRenderer<'s> {
     pub config: SurfaceConfiguration,
     pub format: TextureFormat,
 
-    // Intermediate Texture which we render to because compute shaders cannot always render directly
-    // to surfaces, and associated TextureView.
-    pub intermediate_texture: Texture,
+    // TextureView for the intermediate Texture which we sometimes render to because compute shaders
+    // cannot always render directly to surfaces. Since WGPU 26, the underlying Texture can be accessed
+    // from the TextureView so we don't need to store both.
     pub intermediate_texture_view: TextureView,
     // Blitter for blitting from the intermediate texture to the surface.
     pub blitter: TextureBlitter,
@@ -199,8 +199,7 @@ impl std::fmt::Debug for SurfaceRenderer<'_> {
             .field("config", &self.config)
             .field("device_handle", &self.device_handle)
             .field("format", &self.format)
-            .field("target_texture", &self.intermediate_texture)
-            .field("target_view", &self.intermediate_texture_view)
+            .field("intermediate_texture_view", &self.intermediate_texture_view)
             .field("blitter", &"(Not Debug)")
             .finish()
     }
@@ -233,7 +232,7 @@ impl<'s> SurfaceRenderer<'s> {
             alpha_mode: wgpu::CompositeAlphaMode::Auto,
             view_formats: vec![],
         };
-        let (target_texture, target_view) =
+        let intermediate_texture_view =
             create_intermediate_texture(width, height, &device_handle.device);
         let blitter = TextureBlitter::new(&device_handle.device, format);
         let surface = SurfaceRenderer {
@@ -242,8 +241,7 @@ impl<'s> SurfaceRenderer<'s> {
             surface,
             config,
             format,
-            intermediate_texture: target_texture,
-            intermediate_texture_view: target_view,
+            intermediate_texture_view,
             blitter,
         };
         surface.configure();
@@ -252,12 +250,10 @@ impl<'s> SurfaceRenderer<'s> {
 
     /// Resizes the surface to the new dimensions.
     pub fn resize(&mut self, width: u32, height: u32) {
-        let (texture, view) =
-            create_intermediate_texture(width, height, &self.device_handle.device);
+        let texture_view = create_intermediate_texture(width, height, &self.device_handle.device);
         // TODO: Use clever resize semantics to avoid thrashing the memory allocator during a resize
         // especially important on metal.
-        self.intermediate_texture = texture;
-        self.intermediate_texture_view = view;
+        self.intermediate_texture_view = texture_view;
         self.config.width = width;
         self.config.height = height;
         self.configure();
