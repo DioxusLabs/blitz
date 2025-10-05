@@ -7627,6 +7627,7 @@ dependencies = [
 name = "wgpu_context"
 version = "0.1.0"
 dependencies = [
+ "futures-intrusive",
  "wgpu 26.0.1",
 ]
 

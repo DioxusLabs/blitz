@@ -10,3 +10,4 @@ edition = "2024"
 
 [dependencies]
 wgpu = { workspace = true }
+futures-intrusive = { workspace = true }

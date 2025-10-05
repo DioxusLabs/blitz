@@ -7,10 +7,12 @@ use wgpu::{
     Adapter, Device, Features, Instance, Limits, MemoryHints, Queue, Surface, SurfaceTarget,
 };
 
+mod buffer_renderer;
 mod error;
 mod surface_renderer;
 mod util;
 
+pub use buffer_renderer::{BufferRenderer, BufferRendererConfig};
 pub use error::WgpuContextError;
 pub use surface_renderer::{SurfaceRenderer, SurfaceRendererConfiguration, TextureConfiguration};
 pub use util::block_on_wgpu;
@@ -90,6 +92,21 @@ impl WGPUContext {
             dev_id,
         )
         .await
+    }
+
+    /// Creates a new `BufferRenderer` for the specified dimensions.
+    pub async fn create_buffer_renderer(
+        &mut self,
+        config: BufferRendererConfig,
+    ) -> Result<BufferRenderer, WgpuContextError> {
+        // Find or create a suitable device for rendering to the surface
+        let dev_id = self
+            .find_or_create_device(None)
+            .await
+            .or(Err(WgpuContextError::NoCompatibleDevice))?;
+        let device_handle = self.device_pool[dev_id].clone();
+
+        Ok(BufferRenderer::new(config, device_handle, dev_id))
     }
 
     /// Finds or creates a compatible device handle id.
