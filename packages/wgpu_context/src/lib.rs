@@ -64,7 +64,7 @@ impl WGPUContext {
         width: u32,
         height: u32,
         present_mode: wgpu::PresentMode,
-    ) -> Result<RenderSurface<'w>, WgpuContextError> {
+    ) -> Result<SurfaceRenderer<'w>, WgpuContextError> {
         // Create a surface from the window handle
         let surface = self.instance.create_surface(window.into())?;
 
@@ -75,7 +75,7 @@ impl WGPUContext {
             .or(Err(WgpuContextError::NoCompatibleDevice))?;
         let device_handle = self.device_pool[dev_id].clone();
 
-        RenderSurface::new(surface, device_handle, dev_id, width, height, present_mode).await
+        SurfaceRenderer::new(surface, device_handle, dev_id, width, height, present_mode).await
     }
 
     /// Finds or creates a compatible device handle id.
@@ -174,7 +174,7 @@ impl Default for WGPUContext {
 }
 
 /// Combination of surface and its configuration.
-pub struct RenderSurface<'s> {
+pub struct SurfaceRenderer<'s> {
     // The device and queue for rendering to the surface
     pub dev_id: usize,
     pub device_handle: DeviceHandle,
@@ -192,7 +192,7 @@ pub struct RenderSurface<'s> {
     pub blitter: TextureBlitter,
 }
 
-impl std::fmt::Debug for RenderSurface<'_> {
+impl std::fmt::Debug for SurfaceRenderer<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("RenderSurface")
             .field("surface", &self.surface)
@@ -206,7 +206,7 @@ impl std::fmt::Debug for RenderSurface<'_> {
     }
 }
 
-impl<'s> RenderSurface<'s> {
+impl<'s> SurfaceRenderer<'s> {
     /// Creates a new render surface for the specified window and dimensions.
     pub async fn new<'w>(
         surface: Surface<'w>,
@@ -215,7 +215,7 @@ impl<'s> RenderSurface<'s> {
         width: u32,
         height: u32,
         present_mode: wgpu::PresentMode,
-    ) -> Result<RenderSurface<'w>, WgpuContextError> {
+    ) -> Result<SurfaceRenderer<'w>, WgpuContextError> {
         let capabilities = surface.get_capabilities(&device_handle.adapter);
         let format = capabilities
             .formats
@@ -236,7 +236,7 @@ impl<'s> RenderSurface<'s> {
         let (target_texture, target_view) =
             create_intermediate_texture(width, height, &device_handle.device);
         let blitter = TextureBlitter::new(&device_handle.device, format);
-        let surface = RenderSurface {
+        let surface = SurfaceRenderer {
             dev_id,
             device_handle,
             surface,

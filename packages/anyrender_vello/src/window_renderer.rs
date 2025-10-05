@@ -10,7 +10,7 @@ use vello::{
     AaSupport, RenderParams, Renderer as VelloRenderer, RendererOptions, Scene as VelloScene,
 };
 use wgpu::{Features, Limits, PresentMode};
-use wgpu_context::{DeviceHandle, RenderSurface, WGPUContext};
+use wgpu_context::{DeviceHandle, SurfaceRenderer, WGPUContext};
 
 use crate::{CustomPaintSource, DEFAULT_THREADS, VelloScenePainter};
 
@@ -19,7 +19,7 @@ static PAINT_SOURCE_ID: AtomicU64 = AtomicU64::new(0);
 // Simple struct to hold the state of the renderer
 struct ActiveRenderState {
     renderer: VelloRenderer,
-    surface: RenderSurface<'static>,
+    surface: SurfaceRenderer<'static>,
 }
 
 #[allow(clippy::large_enum_variant)]
