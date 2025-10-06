@@ -263,6 +263,7 @@ checksum = "a23eb6b1614318a8071c9b2521f36b424b2c83db5eb3a0fead4a6c0809af6e61"
 [[package]]
 name = "anyrender"
 version = "0.5.0"
+source = "git+https://github.com/dioxuslabs/anyrender?rev=94830dea#94830deaa9da2fa47f67f315d535383f363b9431"
 dependencies = [
  "kurbo 0.12.0",
  "peniko",
@@ -270,21 +271,9 @@ dependencies = [
 ]
 
 [[package]]
-name = "anyrender_example"
-version = "0.1.0"
-dependencies = [
- "anyrender",
- "anyrender_vello",
- "anyrender_vello_cpu",
- "kurbo 0.12.0",
- "peniko",
- "wgpu 26.0.1",
- "winit",
-]
-
-[[package]]
 name = "anyrender_svg"
 version = "0.5.0"
+source = "git+https://github.com/dioxuslabs/anyrender?rev=94830dea#94830deaa9da2fa47f67f315d535383f363b9431"
 dependencies = [
  "anyrender",
  "image",
@@ -297,9 +286,10 @@ dependencies = [
 [[package]]
 name = "anyrender_vello"
 version = "0.5.2"
+source = "git+https://github.com/dioxuslabs/anyrender?rev=94830dea#94830deaa9da2fa47f67f315d535383f363b9431"
 dependencies = [
  "anyrender",
- "debug_timer",
+ "debug_timer 0.1.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "futures-intrusive",
  "kurbo 0.12.0",
  "peniko",
@@ -307,7 +297,6 @@ dependencies = [
  "raw-window-handle",
  "rustc-hash 1.1.0",
  "vello",
- "vello_encoding",
  "wgpu 26.0.1",
  "wgpu_context",
 ]
@@ -315,9 +304,10 @@ dependencies = [
 [[package]]
 name = "anyrender_vello_cpu"
 version = "0.6.0"
+source = "git+https://github.com/dioxuslabs/anyrender?rev=94830dea#94830deaa9da2fa47f67f315d535383f363b9431"
 dependencies = [
  "anyrender",
- "debug_timer",
+ "debug_timer 0.1.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "kurbo 0.12.0",
  "peniko",
  "pixels",
@@ -753,7 +743,7 @@ dependencies = [
  "color",
  "cssparser",
  "cursor-icon",
- "debug_timer",
+ "debug_timer 0.1.1",
  "euclid",
  "fastrand",
  "html-escape",
@@ -1649,6 +1639,12 @@ dependencies = [
 [[package]]
 name = "debug_timer"
 version = "0.1.1"
+
+[[package]]
+name = "debug_timer"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "666ffd4494c077ad572420cc52aded853e1cac859147455f82b0bc578b442076"
 
 [[package]]
 name = "deranged"
@@ -7626,6 +7622,7 @@ dependencies = [
 [[package]]
 name = "wgpu_context"
 version = "0.1.0"
+source = "git+https://github.com/dioxuslabs/anyrender?rev=94830dea#94830deaa9da2fa47f67f315d535383f363b9431"
 dependencies = [
  "futures-intrusive",
  "wgpu 26.0.1",

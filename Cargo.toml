@@ -1,10 +1,5 @@
 [workspace]
 members = [
-  "packages/anyrender",
-  "packages/anyrender_vello",
-  "packages/anyrender_vello_cpu",
-  "packages/anyrender_svg",
-  "packages/wgpu_context",
   "packages/debug_timer",
   "packages/blitz-traits",
   "packages/blitz-dom",
@@ -21,7 +16,6 @@ members = [
   "examples/counter",
   "examples/todomvc",
   "examples/wgpu_texture",
-  "examples/anyrender",
 ]
 exclude = ["sites"]
 resolver = "2"
@@ -36,14 +30,6 @@ edition = "2024"
 rust-version = "1.86.0"
 
 [workspace.dependencies]
-# Anyrender dependencies(in-repo)
-wgpu_context = { version = "0.1.0", path = "./packages/wgpu_context" }
-anyrender = { version = "0.5.0", path = "./packages/anyrender" }
-anyrender_vello = { version = "0.5.1", path = "./packages/anyrender_vello" }
-anyrender_vello_cpu = { version = "0.6.0", path = "./packages/anyrender_vello_cpu" }
-anyrender_svg = { version = "0.5.0", path = "./packages/anyrender_svg" }
-debug_timer = { version = "0.1.0", path = "./packages/debug_timer" }
-
 # Blitz dependencies(in-repo)
 blitz = { version = "0.1.0", path = "./packages/blitz" }
 blitz-dom = { version = "0.1.0", path = "./packages/blitz-dom", default-features = false }
@@ -54,6 +40,7 @@ blitz-shell = { version = "0.1.0", path = "./packages/blitz-shell", default-feat
 blitz-traits = { version = "0.1.0", path = "./packages/blitz-traits", default-features = false }
 stylo_taffy = { version = "0.1.0", path = "./packages/stylo_taffy", default-features = false }
 mini-dxn = { path = "./packages/mini-dxn", default-features = false }
+debug_timer = { version = "0.1.0", path = "./packages/debug_timer" }
 
 # Servo dependencies
 style = { version = "0.8", package = "stylo" }
@@ -83,6 +70,13 @@ dioxus-hooks = { version = "=0.7.0-rc.0" }
 dioxus-cli-config = { version = "=0.7.0-rc.0" }
 dioxus-devtools = { version = "=0.7.0-rc.0" }
 taffy = { version = "0.9", default-features = false, features = ["std", "flexbox", "grid", "block_layout", "content_size", "calc"] }
+
+# AnyRender
+anyrender = { git = "https://github.com/dioxuslabs/anyrender", rev = "94830dea" }
+anyrender_vello = { git = "https://github.com/dioxuslabs/anyrender", rev = "94830dea" }
+anyrender_vello_cpu = { git = "https://github.com/dioxuslabs/anyrender", rev = "94830dea" }
+anyrender_svg = { git = "https://github.com/dioxuslabs/anyrender", rev = "94830dea" }
+wgpu_context = { git = "https://github.com/dioxuslabs/anyrender", rev = "94830dea" }
 
 # Linebender + Fontations + WGPU + SVG
 color = "0.3"
