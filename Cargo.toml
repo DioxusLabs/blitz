@@ -72,11 +72,11 @@ dioxus-devtools = { version = "=0.7.0-rc.0" }
 taffy = { version = "0.9", default-features = false, features = ["std", "flexbox", "grid", "block_layout", "content_size", "calc"] }
 
 # AnyRender
-anyrender = { git = "https://github.com/dioxuslabs/anyrender", rev = "94830dea" }
-anyrender_vello = { git = "https://github.com/dioxuslabs/anyrender", rev = "94830dea" }
-anyrender_vello_cpu = { git = "https://github.com/dioxuslabs/anyrender", rev = "94830dea" }
-anyrender_svg = { git = "https://github.com/dioxuslabs/anyrender", rev = "94830dea" }
-wgpu_context = { git = "https://github.com/dioxuslabs/anyrender", rev = "94830dea" }
+anyrender = { version = "0.6" }
+anyrender_vello = { version = "0.6" }
+anyrender_vello_cpu = { version = "0.7" }
+anyrender_svg = { version = "0.6" }
+wgpu_context = { version = "0.1" }
 
 # Linebender + Fontations + WGPU + SVG
 color = "0.3"

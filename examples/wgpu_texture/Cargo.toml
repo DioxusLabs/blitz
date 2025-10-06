@@ -15,7 +15,7 @@ blitz-traits = { workspace = true }
 blitz-dom = { workspace = true }
 blitz-html = { workspace = true }
 blitz-shell = { workspace = true }
-mini-dxn = { workspace = true }
+mini-dxn = { workspace = true, features = ["gpu", "system_fonts"] }
 wgpu_context = { workspace = true }
 dioxus = { workspace = true }
 wgpu = { workspace = true }

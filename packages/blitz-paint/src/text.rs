@@ -43,7 +43,7 @@ pub(crate) fn stroke_text<'a>(
                     .as_absolute()
                     .map(ToColorColor::as_color_color)
                     .unwrap_or(text_color);
-                let text_decoration_brush = peniko::Brush::from(text_decoration_color);
+                let text_decoration_brush = anyrender::Paint::from(text_decoration_color);
                 let text_decoration_line = text_styles.text_decoration_line;
                 let has_underline = text_decoration_line.contains(TextDecorationLine::UNDERLINE);
                 let has_strikethrough =
@@ -55,7 +55,7 @@ pub(crate) fn stroke_text<'a>(
                     true, // hint
                     run.normalized_coords(),
                     Fill::NonZero,
-                    &peniko::Brush::from(text_color),
+                    &anyrender::Paint::from(text_color),
                     1.0, // alpha
                     transform,
                     glyph_xform,
@@ -72,13 +72,14 @@ pub(crate) fn stroke_text<'a>(
                     }),
                 );
 
-                let mut draw_decoration_line = |offset: f32, size: f32, brush: &peniko::Brush| {
-                    let x = glyph_run.offset() as f64;
-                    let w = glyph_run.advance() as f64;
-                    let y = (glyph_run.baseline() - offset + size / 2.0) as f64;
-                    let line = kurbo::Line::new((x, y), (x + w, y));
-                    scene.stroke(&Stroke::new(size as f64), transform, brush, None, &line)
-                };
+                let mut draw_decoration_line =
+                    |offset: f32, size: f32, brush: &anyrender::Paint| {
+                        let x = glyph_run.offset() as f64;
+                        let w = glyph_run.advance() as f64;
+                        let y = (glyph_run.baseline() - offset + size / 2.0) as f64;
+                        let line = kurbo::Line::new((x, y), (x + w, y));
+                        scene.stroke(&Stroke::new(size as f64), transform, brush, None, &line)
+                    };
 
                 if has_underline {
                     let offset = metrics.underline_offset;

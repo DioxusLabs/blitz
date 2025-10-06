@@ -2,7 +2,7 @@ mod background;
 mod box_shadow;
 mod form_controls;
 
-use std::sync::Arc;
+use std::any::Any;
 
 use super::kurbo_css::{CssBox, Edge};
 use crate::color::{Color, ToColorColor};
@@ -614,12 +614,12 @@ impl ElementCx<'_> {
                 Fill::NonZero,
                 transform,
                 // TODO: replace `Arc<dyn Any>` with `CustomPaint` in API?
-                Paint::Custom(Arc::new(CustomPaint {
+                Paint::Custom(&CustomPaint {
                     source_id: custom_paint_source.custom_paint_source_id,
                     width,
                     height,
                     scale: self.scale,
-                })),
+                } as &(dyn Any + Send + Sync)),
                 None,
                 &Rect::from_origin_size((0.0, 0.0), (width as f64, height as f64)),
             );
