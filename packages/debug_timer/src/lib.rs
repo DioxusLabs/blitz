@@ -98,11 +98,30 @@ macro_rules! debug_timer {
     };
 }
 
+#[cfg(feature = "enable")]
+#[macro_export]
+macro_rules! debug_timer_type {
+    ($id:ident, $($cond:tt)*) => {
+        #[cfg($($cond)*)]
+        pub type $id = $crate::RealDebugTimer;
+        #[cfg(not($($cond)*))]
+        pub type $id = $crate::DummyDebugTimer;
+    };
+}
+
 #[cfg(not(feature = "enable"))]
 #[macro_export]
 macro_rules! debug_timer {
     ($id:ident, $($cond:tt)*) => {
         let mut $id = $crate::DummyDebugTimer::init();
+    };
+}
+
+#[cfg(not(feature = "enable"))]
+#[macro_export]
+macro_rules! debug_timer_type {
+    ($id:ident, $($cond:tt)*) => {
+        pub type $id = $crate::DummyDebugTimer;
     };
 }
 
