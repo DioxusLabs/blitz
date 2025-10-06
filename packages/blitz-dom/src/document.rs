@@ -874,11 +874,7 @@ impl BaseDocument {
     pub fn set_mousedown_node_id(&mut self, node_id: Option<usize>) {
         self.mousedown_node_id = node_id;
     }
-    pub fn set_focus_to(&mut self, focus_node_id: usize) -> bool {
-        if Some(focus_node_id) == self.focus_node_id {
-            return false;
-        }
-
+    
     pub fn set_focus_to(&mut self, focus_node_id: usize) -> bool {
         println!("Focussed node {focus_node_id}");
 
@@ -971,7 +967,7 @@ impl BaseDocument {
         if let Some(id) = self.hover_node_id {
             self.snapshot_node_and(id, |node| node.unhover());
             self.hover_node_id = None;
-            self.changed.insert(id);
+            self.changed_nodes.insert(id);
         }
     }
 

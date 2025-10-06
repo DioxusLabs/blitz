@@ -144,6 +144,7 @@ pub enum DomEventData {
     MouseOver(BlitzMousePositionEvent),
     MouseEnter(BlitzMousePositionEvent),
     MouseOut(BlitzMousePositionEvent),
+    MouseLeave(BlitzMousePositionEvent),
 }
 impl DomEventData {
     pub fn discriminant(&self) -> u8 {
