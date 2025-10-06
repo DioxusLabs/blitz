@@ -1,0 +1,396 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  
+  <title>Servo aims to empower developers with a lightweight, high-performance alternative for embedding web technologies in applications.</title>
+  <meta property="og:title" content="Servo aims to empower developers with a lightweight, high-performance alternative for embedding web technologies in applications.">
+  
+
+  
+  <meta name="description" content="Servo is a web rendering engine written in Rust, with WebGL and WebGPU support, and adaptable to desktop, mobile, and embedded applications.">
+  <meta property="og:description" content="Servo is a web rendering engine written in Rust, with WebGL and WebGPU support, and adaptable to desktop, mobile, and embedded applications.">
+  
+  <meta name="keywords" content="servo, servo engine, servo rendering engine, web engine, web rendering engine, web browser, web browser engine, rust">
+  <meta name="author" content="The Servo Project Developers">
+
+  <link rel="stylesheet" href="https://servo.org/css/style.css">
+  <link rel="shortcut icon" href="/img/servo-symbol-color-no-container.png">
+  <link href="https://unpkg.com/prismjs@1.20.0/themes/prism-okaidia.css" rel="stylesheet">
+  <link rel="alternate" href="/blog/feed.xml" title="Servo Blog" type="application/atom+xml">
+</head>
+
+  <body class="is-page">
+    <nav class="navbar" role="navigation" aria-label="main navigation">
+  <div class="container">
+    <div class="inner-container">
+      <div class="navbar-brand">
+        <a href="/">
+          <img src="https://servo.org/img/servo-color.png" alt="Home">
+        </a>
+
+        <button id="hamburgerMenu" class="navbar-burger" data-target="navbar-menu" aria-label="menu" aria-expanded="false" type="button">
+          <span aria-hidden="true"></span>
+          <span aria-hidden="true"></span>
+          <span aria-hidden="true"></span>
+        </button>
+      </div>
+
+      <div class="navbar-menu" id="navbar-menu">
+        
+          
+          
+            
+            <div class="navbar-item has-dropdown is-hoverable">
+              <a
+                class="navbar-link
+              
+                
+              
+                
+              
+                
+              
+                
+              
+            "
+                href="#"
+                
+              >
+                Get Involved
+              </a>
+              <div class="navbar-dropdown">
+                
+                  <a
+                    class="navbar-item"
+                    href="/contributing/"
+                    
+                  >
+                    Contributing
+                  </a>
+                
+                  <a
+                    class="navbar-item"
+                    href="https://book.servo.org"
+                     target="_blank"
+                  >
+                    Servo Book<span style="font-size: 0.8em;display:inline-block;margin-left: 4px"><i class="fa-solid fa-up-right-from-square"></i></span>
+                  </a>
+                
+                  <a
+                    class="navbar-item"
+                    href="/wpt/"
+                    
+                  >
+                    WPT pass rates
+                  </a>
+                
+                  <a
+                    class="navbar-item"
+                    href="/coc/"
+                    
+                  >
+                    Code of Conduct
+                  </a>
+                
+              </div>
+            </div>
+          
+        
+          
+          
+            <a
+              class="navbar-item"
+              href="/download/"
+              
+            >
+              Download
+            </a>
+          
+        
+          
+          
+            <a
+              class="navbar-item"
+              href="/blog/"
+              
+            >
+              Blog
+            </a>
+          
+        
+          
+          
+            <a
+              class="navbar-item"
+              href="https://demo.servo.org/"
+               target="_blank"
+            >
+              Demos<span style="font-size: 0.8em;display:inline-block;margin-left: 4px"><i class="fa-solid fa-up-right-from-square"></i></span>
+            </a>
+          
+        
+          
+          
+            
+            <div class="navbar-item has-dropdown is-hoverable">
+              <a
+                class="navbar-link
+              
+                
+              
+                
+              
+                
+              
+                
+              
+                
+              
+            "
+                href="#"
+                
+              >
+                About
+              </a>
+              <div class="navbar-dropdown">
+                
+                  <a
+                    class="navbar-item"
+                    href="/about/"
+                    
+                  >
+                    About Servo
+                  </a>
+                
+                  <a
+                    class="navbar-item"
+                    href="/made-with/"
+                    
+                  >
+                    Made with Servo
+                  </a>
+                
+                  <a
+                    class="navbar-item"
+                    href="https://github.com/servo/project/blob/main/governance/README.md"
+                     target="_blank"
+                  >
+                    Governance<span style="font-size: 0.8em;display:inline-block;margin-left: 4px"><i class="fa-solid fa-up-right-from-square"></i></span>
+                  </a>
+                
+                  <a
+                    class="navbar-item"
+                    href="/sponsorship/"
+                    
+                  >
+                    Sponsorship
+                  </a>
+                
+                  <a
+                    class="navbar-item"
+                    href="/acknowledgements/"
+                    
+                  >
+                    Acknowledgements
+                  </a>
+                
+              </div>
+            </div>
+          
+        
+        <div class="navbar-end">
+    
+      <a class="social-link is-github-color" title="GitHub" href="https://github.com/servo/servo">
+        <span class="icon"><i class="fab fa-github"></i></span>
+      </a>
+    
+      <a class="social-link is-mastodon-color" title="Mastodon" href="https://floss.social/@servo" rel="me">
+        <span class="icon"><i class="fab fa-mastodon"></i></span>
+      </a>
+    
+      <a class="social-link is-bluesky-color" title="Bluesky" href="https://bsky.app/profile/servo.org">
+        <span class="icon"><i class="fab fa-bluesky"></i></span>
+      </a>
+    
+      <a class="social-link is-linkedin-color" title="LinkedIn" href="https://www.linkedin.com/company/servo-project/">
+        <span class="icon"><i class="fab fa-linkedin"></i></span>
+      </a>
+    
+</div>
+
+      </div>
+    </div>
+  </div>
+</nav>
+
+<script>
+  const hamburger = document.getElementById('hamburgerMenu');
+  const menu = document.getElementById('navbar-menu');
+
+  const toggleMenu = () => {
+    const isExpanded = hamburger.getAttribute('aria-expanded') === 'true';
+    hamburger.setAttribute('aria-expanded', !isExpanded);
+    menu.classList.toggle('is-active', isExpanded);
+  };
+
+  // Toggle on click
+  hamburger.addEventListener('click', toggleMenu);
+
+
+</script>
+    <main>
+      <section class="section" id="homeHero" aria-label="What is Servo">
+  <div class="hero-body">
+    <div class="container">
+      <img class="hero-img" src="https://servo.org/img/servo-color-positive-no-container.png" alt="Home">
+      <h1 class="title center-text">
+        Servo aims to empower developers with a lightweight, high-performance alternative for embedding web technologies in applications.
+      </h1>
+      <div class="center-text cta-container">
+        <a class="button button--hero" href="/contributing/">Get Involved</a>
+        <a class="button button--hero" target="_blank" href="https://opencollective.com/servo">Donate</a>
+      </div>
+    </div>
+    <div class="gradient-back">
+      <img src="https://servo.org/img/home-servo-hero.png" alt="" />
+    </div>
+  </div>
+  <div class="container">
+    <p class="subtitle center-text cta-text">
+      Servo is a web browser rendering engine written in Rust, with WebGL and WebGPU support, and adaptable to desktop, mobile, and embedded applications.
+    </p>
+    <div class="features">
+      <div class="section-feature center-text">
+        <img src="https://servo.org/img/home-embeddable.png" alt="" />
+        <p class="subtitle green">Embeddable</p>
+        <p>Servo provides a <strong>WebView API</strong> so other applications can use it to embed web content.</p>
+      </div>
+      <div class="section-feature center-text">
+        <img src="https://servo.org/img/home-memory-safe.png" alt="" />
+        <p class="subtitle pink">Memory-safe</p>
+        <p>Servo takes advantage of the memory safety features of the <strong>Rust programming language</strong>, resulting in fewer vulnerabilities related to memory and concurrency.</p>
+      </div>
+      <div class="section-feature center-text">
+        <img src="https://servo.org/img/home-modular.png" alt="" />
+        <p class="subtitle orange">Modular</p>
+        <p>Built with a modular architecture and powered by widely-used Rust crates, Servo makes it <strong>easier to customize and adapt</strong> a high-performance browser engine to your needs.</p>
+      </div>
+    </div>
+    <div class="features">
+      <div class="section-feature center-text">
+        <img src="https://servo.org/img/home-parallel.png" alt="" />
+        <p class="subtitle yellow">Parallel</p>
+        <p>Servo uses concurrency and parallelism for <strong>faster and more energy-efficient rendering of web content</strong> on multi-core devices.</p>
+      </div>
+      <div class="section-feature center-text">
+        <img src="https://servo.org/img/home-multi-platform.png" alt="" />
+        <p class="subtitle purple">Cross platform</p>
+        <p>Servo has <strong>multi-platform support</strong>, including Windows, macOS, Linux, Android, and OpenHarmony. In addition, Servo can be ported and adapted to <strong>embedded devices</strong>.</p>
+      </div>
+      <div class="section-feature center-text">
+        <img src="https://servo.org/img/home-independent.png" alt="" />
+        <p class="subtitle mid-turquoise">Independent</p>
+        <p>Servo is a project managed with <strong>open governance under Linux Foundation Europe</strong> through our Technical Steering Committee.</p>
+      </div>
+    </div>
+  </div>
+</section>
+<section class="section container" aria-label="Latest posts from the Servo blog">
+  <div class="blog">
+    <div class="inner-container">
+    <h2>Latest on the blog</h2>
+    <div class="blog-grid">
+            <div class="card">
+              <div class="card-content">
+                <span class="tag">2025-07-17</span>
+                <p class="post-title"><a href="/blog/2025/07/17/this-month-in-servo/">This month in Servo: network inspector, a11y first steps, WebDriver, and more!</a></p>
+                <p class="post-summary">Plus some big perf gains, thanks to our incremental layout work.</p>
+              </div>
+            </div>
+            <div class="card">
+              <div class="card-content">
+                <span class="tag">2025-06-18</span>
+                <p class="post-title"><a href="/blog/2025/06/18/this-month-in-servo/">This month in Servo: color inputs, SVG, embedder JS, and more!</a></p>
+                <p class="post-summary">Plus animated GIF support, incremental layout, and two new Outreachy internships.</p>
+              </div>
+            </div>
+            <div class="card">
+              <div class="card-content">
+                <span class="tag">2025-05-09</span>
+                <p class="post-title"><a href="/blog/2025/05/09/this-month-in-servo/">Two months in Servo: CSS nesting, Shadow DOM, Clipboard API, and more!</a></p>
+                <p class="post-summary">Try our new about:memory page and --enable-experimental-web-platform-features.</p>
+              </div>
+            </div>
+            <div class="card">
+              <div class="card-content">
+                <span class="tag">2025-03-10</span>
+                <p class="post-title"><a href="/blog/2025/03/10/this-month-in-servo/">This month in Servo: new elements, IME support, delegate API, and more!</a></p>
+                <p class="post-summary">A huge month for both Servo the browser and Servo the engine.</p>
+              </div>
+            </div>
+        <a class="archive-nav" href="/blog/">View older posts</a>
+      </div>
+    </div>
+  </div>
+</section>
+<section class="section" aria-label="How to Sponsor Servo">
+  <div class="sponsorship container">
+    <div class="inner-container">
+        <h2>Sponsorship</h2>
+        <p>You can now help fund the Servo project by <a href="https://github.com/sponsors/servo">sponsoring us on GitHub</a> or <a href="https://opencollective.com/servo">Open Collective</a>.</p>
+        <p>For more information about how to sponsor the project, visit <a href="/sponsorship/">the sponsorship page</a>.</p>
+    </div>
+</div>
+</section>
+    </main>
+    <div class="contact" aria-label="Contact information">
+    <div class="container">
+        <div class="inner-container two-column">
+            <div class="column">
+                <h2>Contact</h2>
+            </div>
+            <div class="column">
+                <ul>
+                    <li><a class="footer-link" href="https://servo.zulipchat.com/">Zulip chat</a></li>
+                    <li><a class="footer-link" href="https://github.com/servo/servo/discussions">GitHub discussions</a></li>
+                    <li><a class="footer-link" href="/cdn-cgi/l/email-protection#7a13141c153a091f080c155415081d">Email: <span class="__cf_email__" data-cfemail="bdd4d3dbd2fdced8cfcbd293d2cfda">[email&#160;protected]</span></a></li>
+                    <li><a class="footer-link" href="https://floss.social/@servo">Mastodon</a></li>
+                    <li><a class="footer-link" href="https://bsky.app/profile/servo.org">Bluesky</a></li>
+                </ul>
+            </div>
+        </div>
+    </div>
+</div>
+    <footer>
+     <div class="footer">
+  <div class="container">
+    <div class="two-column inner-container">
+      <div class="column">
+        <div class="logo"><a href="https://linuxfoundation.eu"><img src="https://servo.org/img/lf-europe-logo.png" alt="Linux Foundation Europe logo" width="250"></a></div>
+        <p>&copy; 2025 The Servo Project Developers</p>
+        <p>Copyright &copy; Servo is a project of <a class="footer-link" href="https://linuxfoundation.eu/">Linux Foundation Europe</a>.</p>
+        <p>For website terms of use, trademark policy and other project policies please see <a class="footer-link" href="https://lfprojects.org">https://lfprojects.org</a>.</p>
+        <p>The source code for this website can be found at <a class="footer-link" href="https://github.com/servo/servo.org">https://github.com/servo/servo.org</a>.</p>
+      </div>
+      <div class="column code-of-conduct">
+        <a class="footer-link" href="/coc/">Code of Conduct</a>
+      </div>
+  </div>
+</div>
+
+<script data-cfasync="false" src="https://servo.org/cdn-cgi/scripts/5c5dd728/cloudflare-static/email-decode.min.js"></script><script>
+  (() => {
+    const burger = document.querySelector(".navbar-burger");
+    const menu = document.querySelector(".navbar-menu");
+    burger.onclick = () => {
+      burger.classList.toggle('is-active');
+      menu.classList.toggle('is-active');
+    };
+  })();
+</script>
+
+    </footer>
+  </body>
+</html>

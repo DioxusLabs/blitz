@@ -1,15 +1,14 @@
 use core::str;
 use std::sync::Arc;
 
-use markup5ever::{QualName, local_name, namespace_url, ns};
-use parley::{FontStack, InlineBox, StyleProperty, TreeBuilder, WhiteSpaceCollapse};
+use markup5ever::{QualName, local_name, ns};
+use parley::{
+    FontContext, InlineBox, LayoutContext, StyleProperty, TreeBuilder, WhiteSpaceCollapse,
+};
 use slab::Slab;
 use style::{
-    data::ElementData,
-    properties::longhands::{
-        list_style_position::computed_value::T as ListStylePosition,
-        list_style_type::computed_value::T as ListStyleType,
-    },
+    data::ElementData as StyloElementData,
+    selector_parser::RestyleDamage,
     shared_lock::StylesheetGuards,
     values::{
         computed::{Content, ContentItem, Display},
@@ -18,21 +17,38 @@ use style::{
 };
 
 use crate::{
-    BaseDocument, ElementNodeData, Node, NodeData,
+    BaseDocument, ElementData, Node, NodeData,
+    layout::damage::{CONSTRUCT_BOX, CONSTRUCT_DESCENDENT, CONSTRUCT_FC},
     node::{
-        ListItemLayout, ListItemLayoutPosition, Marker, NodeKind, NodeSpecificData, TextBrush,
-        TextInputData, TextLayout,
+        ListItemLayout, ListItemLayoutPosition, Marker, NodeFlags, NodeKind, SpecialElementData,
+        TextBrush, TextInputData, TextLayout,
     },
-    stylo_to_parley,
+    qual_name, stylo_to_parley,
 };
 
-use super::table::build_table_context;
+use super::{damage::ALL_DAMAGE, list::collect_list_item_children, table::build_table_context};
 
-const DUMMY_NAME: QualName = QualName {
-    prefix: None,
-    ns: ns!(html),
-    local: local_name!("div"),
-};
+const DUMMY_NAME: QualName = qual_name!("div", html);
+
+#[derive(Clone)]
+pub(crate) struct ConstructionTask {
+    pub(crate) node_id: usize,
+    pub(crate) data: ConstructionTaskData,
+}
+
+pub(crate) struct ConstructionTaskResult {
+    pub(crate) node_id: usize,
+    pub(crate) data: ConstructionTaskResultData,
+}
+
+#[derive(Clone)]
+pub(crate) enum ConstructionTaskData {
+    InlineLayout(Box<TextLayout>),
+}
+
+pub(crate) enum ConstructionTaskResultData {
+    InlineLayout(Box<TextLayout>),
+}
 
 fn push_children_and_pseudos(layout_children: &mut Vec<usize>, node: &Node) {
     if let Some(before) = node.before {
@@ -44,15 +60,26 @@ fn push_children_and_pseudos(layout_children: &mut Vec<usize>, node: &Node) {
     }
 }
 
+/// Convert a relative line height to an absolute one
+fn resolve_line_height(line_height: parley::LineHeight, font_size: f32) -> f32 {
+    match line_height {
+        parley::LineHeight::FontSizeRelative(relative) => relative * font_size,
+        parley::LineHeight::Absolute(absolute) => absolute,
+        parley::LineHeight::MetricsRelative(relative) => relative * font_size, //unreachable!(),
+    }
+}
+
 pub(crate) fn collect_layout_children(
     doc: &mut BaseDocument,
     container_node_id: usize,
     layout_children: &mut Vec<usize>,
     anonymous_block_id: &mut Option<usize>,
 ) {
-    // Reset inline layout
+    // Reset construction flags
     // TODO: make incremental and only remove this if the element is no longer an inline root
-    doc.nodes[container_node_id].is_inline_root = false;
+    doc.nodes[container_node_id]
+        .flags
+        .reset_construction_flags();
     if let Some(element_data) = doc.nodes[container_node_id].element_data_mut() {
         element_data.take_inline_layout();
     }
@@ -72,7 +99,7 @@ pub(crate) fn collect_layout_children(
                 return;
             } else if matches!(
                 type_attr,
-                Some("text" | "password" | "email" | "number" | "search" | "tel" | "url")
+                None | Some("text" | "password" | "email" | "number" | "search" | "tel" | "url")
             ) {
                 create_text_editor(doc, container_node_id, false);
                 return;
@@ -93,17 +120,22 @@ pub(crate) fn collect_layout_children(
                     outer_html.replace("<svg", "<svg xmlns=\"http://www.w3.org/2000/svg\"");
             }
 
+            // Remove contruction damage from subtree
+            doc.iter_subtree_mut(container_node_id, |id: usize, doc: &mut BaseDocument| {
+                doc.nodes[id].remove_damage(CONSTRUCT_BOX | CONSTRUCT_DESCENDENT | CONSTRUCT_FC);
+            });
+
             match crate::util::parse_svg(outer_html.as_bytes()) {
                 Ok(svg) => {
                     doc.get_node_mut(container_node_id)
                         .unwrap()
                         .element_data_mut()
                         .unwrap()
-                        .node_specific_data = NodeSpecificData::Image(Box::new(svg.into()));
+                        .special_data = SpecialElementData::Image(Box::new(svg.into()));
                 }
                 Err(err) => {
-                    println!("{} SVG parse failed", container_node_id);
-                    println!("{}", outer_html);
+                    println!("{container_node_id} SVG parse failed");
+                    println!("{outer_html}");
                     dbg!(err);
                 }
             };
@@ -142,6 +174,8 @@ pub(crate) fn collect_layout_children(
     match container_display.inside() {
         DisplayInside::None => {}
         DisplayInside::Contents => {
+            doc.nodes[container_node_id]
+                .remove_damage(CONSTRUCT_BOX | CONSTRUCT_DESCENDENT | CONSTRUCT_FC);
             // Take children array from node to avoid borrow checker issues.
             let children = std::mem::take(&mut doc.nodes[container_node_id].children);
 
@@ -187,20 +221,21 @@ pub(crate) fn collect_layout_children(
 
             // TODO: fix display:contents
             if all_inline {
-                let (inline_layout, ilayout_children) = build_inline_layout(doc, container_node_id);
-                doc.nodes[container_node_id].is_inline_root = true;
+                let existing_layout = doc.nodes[container_node_id]
+                    .element_data_mut()
+                    .and_then(|el| el.inline_layout_data.take());
+                let layout = existing_layout.unwrap_or_else(|| Box::new(TextLayout::new()));
+
+                // Queue node for inline layout construction. Deferring construction of inline layouts to a
+                // dedicated phase allows us to multithread the expensive text shaping step.
+                doc.deferred_construction_nodes.push(ConstructionTask {
+                    node_id: container_node_id,
+                    data: ConstructionTaskData::InlineLayout(layout),
+                });
                 doc.nodes[container_node_id]
-                    .data
-                    .downcast_element_mut()
-                    .unwrap()
-                    .inline_layout_data = Some(Box::new(inline_layout));
-                if let Some(before) = doc.nodes[container_node_id].before {
-                    layout_children.push(before);
-                }
-                layout_children.extend_from_slice(&ilayout_children);
-                if let Some(after) = doc.nodes[container_node_id].after {
-                    layout_children.push(after);
-                }
+                    .flags
+                    .insert(NodeFlags::IS_INLINE_ROOT);
+                find_inline_layout_embedded_boxes(doc, container_node_id, layout_children);
                 return;
             }
 
@@ -260,13 +295,15 @@ pub(crate) fn collect_layout_children(
         DisplayInside::Table => {
             let (table_context, tlayout_children) = build_table_context(doc, container_node_id);
             #[allow(clippy::arc_with_non_send_sync)]
-            let data = NodeSpecificData::TableRoot(Arc::new(table_context));
-            doc.nodes[container_node_id].is_table_root = true;
+            let data = SpecialElementData::TableRoot(Arc::new(table_context));
+            doc.nodes[container_node_id]
+                .flags
+                .insert(NodeFlags::IS_TABLE_ROOT);
             doc.nodes[container_node_id]
                 .data
                 .downcast_element_mut()
                 .unwrap()
-                .node_specific_data = data;
+                .special_data = data;
             if let Some(before) = doc.nodes[container_node_id].before {
                 layout_children.push(before);
             }
@@ -309,17 +346,20 @@ fn flush_pseudo_elements(doc: &mut BaseDocument, node_id: usize) {
     ] {
         // Delete psuedo element if it exists but shouldn't
         if let (Some(pe_node_id), None) = (pe_node_id, &pe_style) {
-            doc.remove_and_drop_node(pe_node_id);
-            doc.nodes[node_id].set_pe_by_index(idx, None);
+            doc.remove_and_drop_pe(pe_node_id);
+            let node = &mut doc.nodes[node_id];
+            node.set_pe_by_index(idx, None);
+            node.insert_damage(ALL_DAMAGE);
         }
 
         // Create pseudo element if it should exist but doesn't
         if let (None, Some(pe_style)) = (pe_node_id, &pe_style) {
-            let new_node_id = doc.create_node(NodeData::AnonymousBlock(ElementNodeData::new(
+            let new_node_id = doc.create_node(NodeData::AnonymousBlock(ElementData::new(
                 DUMMY_NAME,
                 Vec::new(),
             )));
             doc.nodes[new_node_id].parent = Some(node_id);
+            doc.nodes[new_node_id].layout_parent.set(Some(node_id));
 
             let content = &pe_style.as_ref().get_counters().content;
             if let Content::Items(item_data) = content {
@@ -335,12 +375,15 @@ fn flush_pseudo_elements(doc: &mut BaseDocument, node_id: usize) {
                 }
             }
 
-            let mut element_data = ElementData::default();
+            let mut element_data = StyloElementData::default();
             element_data.styles.primary = Some(pe_style.clone());
             element_data.set_restyled();
+            element_data.damage = RestyleDamage::all();
             *doc.nodes[new_node_id].stylo_element_data.borrow_mut() = Some(element_data);
 
-            doc.nodes[node_id].set_pe_by_index(idx, Some(new_node_id));
+            let node = &mut doc.nodes[node_id];
+            node.set_pe_by_index(idx, Some(new_node_id));
+            node.insert_damage(ALL_DAMAGE);
         }
 
         // Else: Update psuedo element
@@ -349,6 +392,7 @@ fn flush_pseudo_elements(doc: &mut BaseDocument, node_id: usize) {
 
             let mut node_styles = doc.nodes[pe_node_id].stylo_element_data.borrow_mut();
             let node_styles = &mut node_styles.as_mut().unwrap();
+            node_styles.damage.insert(RestyleDamage::all());
             let primary_styles = &mut node_styles.styles.primary;
 
             if !std::ptr::eq(&**primary_styles.as_ref().unwrap(), &*pe_style) {
@@ -357,191 +401,6 @@ fn flush_pseudo_elements(doc: &mut BaseDocument, node_id: usize) {
             }
         }
     }
-}
-
-fn collect_list_item_children(
-    doc: &mut BaseDocument,
-    index: &mut usize,
-    reversed: bool,
-    node_id: usize,
-) {
-    let mut children = doc.nodes[node_id].children.clone();
-    if reversed {
-        children.reverse();
-    }
-    for child in children.into_iter() {
-        if let Some(layout) = node_list_item_child(doc, child, *index) {
-            let node = &mut doc.nodes[child];
-            node.element_data_mut().unwrap().list_item_data = Some(Box::new(layout));
-            *index += 1;
-            collect_list_item_children(doc, index, reversed, child);
-        } else {
-            // Unset marker in case it was previously set
-            let node = &mut doc.nodes[child];
-            if let Some(element_data) = node.element_data_mut() {
-                element_data.list_item_data = None;
-            }
-        }
-    }
-}
-
-// Return a child node which is of display: list-item
-fn node_list_item_child(
-    doc: &mut BaseDocument,
-    child_id: usize,
-    index: usize,
-) -> Option<ListItemLayout> {
-    let node = &doc.nodes[child_id];
-
-    // We only care about elements with display: list-item (li's have this automatically)
-    if !node
-        .primary_styles()
-        .is_some_and(|style| style.get_box().display.is_list_item())
-    {
-        return None;
-    }
-
-    //Break on container elements when already in a list
-    if node
-        .element_data()
-        .map(|element_data| {
-            matches!(
-                element_data.name.local,
-                local_name!("ol") | local_name!("ul"),
-            )
-        })
-        .unwrap_or(false)
-    {
-        return None;
-    };
-
-    let styles = node.primary_styles().unwrap();
-    let list_style_type = styles.clone_list_style_type();
-    let list_style_position = styles.clone_list_style_position();
-    let marker = marker_for_style(list_style_type, index)?;
-
-    let position = match list_style_position {
-        ListStylePosition::Inside => ListItemLayoutPosition::Inside,
-        ListStylePosition::Outside => {
-            let mut parley_style = stylo_to_parley::style(child_id, &styles);
-
-            if let Some(font_stack) = font_for_bullet_style(list_style_type) {
-                parley_style.font_stack = font_stack;
-            }
-
-            // Create a parley tree builder
-            let mut builder =
-                doc.layout_ctx
-                    .tree_builder(&mut doc.font_ctx, doc.viewport.scale(), &parley_style);
-
-            match &marker {
-                Marker::Char(char) => builder.push_text(&char.to_string()),
-                Marker::String(str) => builder.push_text(str),
-            };
-
-            let mut layout = builder.build().0;
-
-            layout.break_all_lines(Some(0.0));
-
-            ListItemLayoutPosition::Outside(Box::new(layout))
-        }
-    };
-
-    Some(ListItemLayout { marker, position })
-}
-
-// Determine the marker to render for a given list style type
-fn marker_for_style(list_style_type: ListStyleType, index: usize) -> Option<Marker> {
-    if list_style_type == ListStyleType::None {
-        return None;
-    }
-
-    Some(match list_style_type {
-        ListStyleType::LowerAlpha => {
-            let mut marker = String::new();
-            build_alpha_marker(index, &mut marker);
-            Marker::String(format!("{}. ", marker))
-        }
-        ListStyleType::UpperAlpha => {
-            let mut marker = String::new();
-            build_alpha_marker(index, &mut marker);
-            Marker::String(format!("{}. ", marker.to_ascii_uppercase()))
-        }
-        ListStyleType::Decimal => Marker::String(format!("{}. ", index + 1)),
-        ListStyleType::Disc => Marker::Char('•'),
-        ListStyleType::Circle => Marker::Char('◦'),
-        ListStyleType::Square => Marker::Char('▪'),
-        ListStyleType::DisclosureOpen => Marker::Char('▾'),
-        ListStyleType::DisclosureClosed => Marker::Char('▸'),
-        _ => Marker::Char('□'),
-    })
-}
-
-// Override the font to our specific bullet font when rendering bullets
-fn font_for_bullet_style(list_style_type: ListStyleType) -> Option<FontStack<'static>> {
-    let bullet_font = Some("Bullet, monospace, sans-serif".into());
-    match list_style_type {
-        ListStyleType::Disc
-        | ListStyleType::Circle
-        | ListStyleType::Square
-        | ListStyleType::DisclosureOpen
-        | ListStyleType::DisclosureClosed => bullet_font,
-        _ => None,
-    }
-}
-
-const ALPHABET: [char; 26] = [
-    'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q', 'r', 's',
-    't', 'u', 'v', 'w', 'x', 'y', 'z',
-];
-
-// Construct alphanumeric marker from index, appending characters when index exceeds powers of 26
-fn build_alpha_marker(index: usize, str: &mut String) {
-    let rem = index % 26;
-    let sym = ALPHABET[rem];
-    str.insert(0, sym);
-    let rest = (index - rem) as i64 / 26 - 1;
-    if rest >= 0 {
-        build_alpha_marker(rest as usize, str);
-    }
-}
-
-#[test]
-fn test_marker_for_disc() {
-    let result = marker_for_style(ListStyleType::Disc, 0);
-    assert_eq!(result, Some(Marker::Char('•')));
-}
-
-#[test]
-fn test_marker_for_decimal() {
-    let result_1 = marker_for_style(ListStyleType::Decimal, 0);
-    let result_2 = marker_for_style(ListStyleType::Decimal, 1);
-    assert_eq!(result_1, Some(Marker::String("1. ".to_string())));
-    assert_eq!(result_2, Some(Marker::String("2. ".to_string())));
-}
-
-#[test]
-fn test_marker_for_lower_alpha() {
-    let result_1 = marker_for_style(ListStyleType::LowerAlpha, 0);
-    let result_2 = marker_for_style(ListStyleType::LowerAlpha, 1);
-    let result_extended_1 = marker_for_style(ListStyleType::LowerAlpha, 26);
-    let result_extended_2 = marker_for_style(ListStyleType::LowerAlpha, 27);
-    assert_eq!(result_1, Some(Marker::String("a. ".to_string())));
-    assert_eq!(result_2, Some(Marker::String("b. ".to_string())));
-    assert_eq!(result_extended_1, Some(Marker::String("aa. ".to_string())));
-    assert_eq!(result_extended_2, Some(Marker::String("ab. ".to_string())));
-}
-
-#[test]
-fn test_marker_for_upper_alpha() {
-    let result_1 = marker_for_style(ListStyleType::UpperAlpha, 0);
-    let result_2 = marker_for_style(ListStyleType::UpperAlpha, 1);
-    let result_extended_1 = marker_for_style(ListStyleType::UpperAlpha, 26);
-    let result_extended_2 = marker_for_style(ListStyleType::UpperAlpha, 27);
-    assert_eq!(result_1, Some(Marker::String("A. ".to_string())));
-    assert_eq!(result_2, Some(Marker::String("B. ".to_string())));
-    assert_eq!(result_extended_1, Some(Marker::String("AA. ".to_string())));
-    assert_eq!(result_extended_2, Some(Marker::String("AB. ".to_string())));
 }
 
 /// Handles the cases where there are text nodes or inline nodes that need to be wrapped in an anonymous block node
@@ -610,10 +469,8 @@ fn collect_complex_layout_children(
                     ns: ns!(html),
                     local: local_name!("div"),
                 };
-                let node_id = doc.create_node(NodeData::AnonymousBlock(ElementNodeData::new(
-                    NAME,
-                    Vec::new(),
-                )));
+                let node_id =
+                    doc.create_node(NodeData::AnonymousBlock(ElementData::new(NAME, Vec::new())));
 
                 // Set style data
                 let parent_style = doc.nodes[container_node_id].primary_styles().unwrap();
@@ -624,10 +481,19 @@ fn collect_complex_layout_children(
                     &PseudoElement::ServoAnonymousBox,
                     &parent_style,
                 );
-                let mut element_data = ElementData::default();
-                element_data.styles.primary = Some(style);
-                element_data.set_restyled();
-                *doc.nodes[node_id].stylo_element_data.borrow_mut() = Some(element_data);
+                let mut stylo_element_data = StyloElementData {
+                    damage: ALL_DAMAGE,
+                    ..Default::default()
+                };
+                drop(parent_style);
+
+                stylo_element_data.styles.primary = Some(style);
+                stylo_element_data.set_restyled();
+                *doc.nodes[node_id].stylo_element_data.borrow_mut() = Some(stylo_element_data);
+                doc.nodes[node_id].parent = Some(container_node_id);
+                doc.nodes[node_id]
+                    .layout_parent
+                    .set(Some(container_node_id));
 
                 layout_children.push(node_id);
                 *anonymous_block_id = Some(node_id);
@@ -670,7 +536,7 @@ fn create_text_editor(doc: &mut BaseDocument, input_element_id: usize, is_multil
         .unwrap_or_default();
 
     let element = &mut node.data.downcast_element_mut().unwrap();
-    if !matches!(element.node_specific_data, NodeSpecificData::TextInput(_)) {
+    if !matches!(element.special_data, SpecialElementData::TextInput(_)) {
         let mut text_input_data = TextInputData::new(is_multiline);
         let editor = &mut text_input_data.editor;
 
@@ -683,9 +549,9 @@ fn create_text_editor(doc: &mut BaseDocument, input_element_id: usize, is_multil
         styles.insert(StyleProperty::LineHeight(parley_style.line_height));
         styles.insert(StyleProperty::Brush(parley_style.brush));
 
-        editor.refresh_layout(&mut doc.font_ctx, &mut doc.layout_ctx);
+        editor.refresh_layout(&mut doc.font_ctx.lock().unwrap(), &mut doc.layout_ctx);
 
-        element.node_specific_data = NodeSpecificData::TextInput(text_input_data);
+        element.special_data = SpecialElementData::TextInput(text_input_data);
     }
 }
 
@@ -693,108 +559,47 @@ fn create_checkbox_input(doc: &mut BaseDocument, input_element_id: usize) {
     let node = &mut doc.nodes[input_element_id];
 
     let element = &mut node.data.downcast_element_mut().unwrap();
-    if !matches!(
-        element.node_specific_data,
-        NodeSpecificData::CheckboxInput(_)
-    ) {
-        let checked = element.attr_parsed(local_name!("checked")).unwrap_or(false);
-
-        element.node_specific_data = NodeSpecificData::CheckboxInput(checked);
+    if !matches!(element.special_data, SpecialElementData::CheckboxInput(_)) {
+        let checked = element.has_attr(local_name!("checked"));
+        element.special_data = SpecialElementData::CheckboxInput(checked);
     }
 }
 
-pub(crate) fn build_inline_layout(
+/// Find and return the "layout_children" (inline boxes) for an inline layout
+/// without actually constructing the layout. This allows us to defer the expensive
+/// construction of the Parley layout (which invokes text shaping) to a paralell phase.
+pub(crate) fn find_inline_layout_embedded_boxes(
     doc: &mut BaseDocument,
     inline_context_root_node_id: usize,
-) -> (TextLayout, Vec<usize>) {
-    // println!("Inline context {}", inline_context_root_node_id);
-
+    layout_children: &mut Vec<usize>,
+) {
     flush_inline_pseudos_recursive(doc, inline_context_root_node_id);
 
-    // Get the inline context's root node's text styles
     let root_node = &doc.nodes[inline_context_root_node_id];
-    let root_node_style = root_node.primary_styles().or_else(|| {
-        root_node
-            .parent
-            .and_then(|parent_id| doc.nodes[parent_id].primary_styles())
-    });
-
-    let parley_style = root_node_style
-        .as_ref()
-        .map(|s| stylo_to_parley::style(inline_context_root_node_id, s))
-        .unwrap_or_default();
-
-    // dbg!(&parley_style);
-
-    let root_line_height = parley_style.line_height;
-
-    // Create a parley tree builder
-    let mut builder =
-        doc.layout_ctx
-            .tree_builder(&mut doc.font_ctx, doc.viewport.scale(), &parley_style);
-
-    // Set whitespace collapsing mode
-    let collapse_mode = root_node_style
-        .map(|s| s.get_inherited_text().white_space_collapse)
-        .map(stylo_to_parley::white_space_collapse)
-        .unwrap_or(WhiteSpaceCollapse::Collapse);
-    builder.set_white_space_mode(collapse_mode);
-
-    // Render position-inside list items
-    if let Some(ListItemLayout {
-        marker,
-        position: ListItemLayoutPosition::Inside,
-    }) = root_node
-        .element_data()
-        .and_then(|el| el.list_item_data.as_deref())
-    {
-        match marker {
-            Marker::Char(char) => builder.push_text(&format!("{} ", char)),
-            Marker::String(str) => builder.push_text(str),
-        }
-    };
-
     if let Some(before_id) = root_node.before {
-        build_inline_layout_recursive(
-            &mut builder,
+        find_inline_layout_embedded_boxes_recursive(
             &doc.nodes,
             inline_context_root_node_id,
             before_id,
-            collapse_mode,
-            root_line_height,
+            layout_children,
         );
     }
     for child_id in root_node.children.iter().copied() {
-        build_inline_layout_recursive(
-            &mut builder,
+        find_inline_layout_embedded_boxes_recursive(
             &doc.nodes,
             inline_context_root_node_id,
             child_id,
-            collapse_mode,
-            root_line_height,
+            layout_children,
         );
     }
     if let Some(after_id) = root_node.after {
-        build_inline_layout_recursive(
-            &mut builder,
+        find_inline_layout_embedded_boxes_recursive(
             &doc.nodes,
             inline_context_root_node_id,
             after_id,
-            collapse_mode,
-            root_line_height,
+            layout_children,
         );
     }
-
-    let (layout, text) = builder.build();
-
-    // Obtain layout children for the inline layout
-    let layout_children: Vec<usize> = layout
-        .inline_boxes()
-        .iter()
-        .map(|ibox| ibox.id as usize)
-        .collect();
-
-    return (TextLayout { text, layout }, layout_children);
 
     fn flush_inline_pseudos_recursive(doc: &mut BaseDocument, node_id: usize) {
         doc.iter_children_mut(node_id, |child_id, doc| {
@@ -812,6 +617,179 @@ pub(crate) fn build_inline_layout(
             }
         });
     }
+
+    fn find_inline_layout_embedded_boxes_recursive(
+        nodes: &Slab<Node>,
+        parent_id: usize,
+        node_id: usize,
+        layout_children: &mut Vec<usize>,
+    ) {
+        let node = &nodes[node_id];
+
+        // Set layout_parent for node.
+        node.layout_parent.set(Some(parent_id));
+
+        match &node.data {
+            NodeData::Element(element_data) | NodeData::AnonymousBlock(element_data) => {
+                // if the input type is hidden, hide it
+                if *element_data.name.local == *"input" {
+                    if let Some("hidden") = element_data.attr(local_name!("type")) {
+                        return;
+                    }
+                }
+
+                let display = node.display_style().unwrap_or(Display::inline());
+
+                match (display.outside(), display.inside()) {
+                    (DisplayOutside::None, DisplayInside::None) => {
+                        node.remove_damage(CONSTRUCT_DESCENDENT | CONSTRUCT_FC | CONSTRUCT_BOX);
+                    }
+                    (DisplayOutside::None, DisplayInside::Contents) => {
+                        for child_id in node.children.iter().copied() {
+                            node.remove_damage(CONSTRUCT_DESCENDENT | CONSTRUCT_FC | CONSTRUCT_BOX);
+                            find_inline_layout_embedded_boxes_recursive(
+                                nodes,
+                                parent_id,
+                                child_id,
+                                layout_children,
+                            );
+                        }
+                    }
+                    (DisplayOutside::Inline, DisplayInside::Flow) => {
+                        let tag_name = &element_data.name.local;
+
+                        if *tag_name == local_name!("img")
+                            || *tag_name == local_name!("svg")
+                            || *tag_name == local_name!("input")
+                            || *tag_name == local_name!("textarea")
+                            || *tag_name == local_name!("button")
+                        {
+                            layout_children.push(node_id);
+                        } else if *tag_name == local_name!("br") {
+                            node.remove_damage(CONSTRUCT_DESCENDENT | CONSTRUCT_FC | CONSTRUCT_BOX);
+                        } else {
+                            node.remove_damage(CONSTRUCT_DESCENDENT | CONSTRUCT_FC | CONSTRUCT_BOX);
+
+                            if let Some(before_id) = node.before {
+                                find_inline_layout_embedded_boxes_recursive(
+                                    nodes,
+                                    node_id,
+                                    before_id,
+                                    layout_children,
+                                );
+                            }
+                            for child_id in node.children.iter().copied() {
+                                find_inline_layout_embedded_boxes_recursive(
+                                    nodes,
+                                    node_id,
+                                    child_id,
+                                    layout_children,
+                                );
+                            }
+                            if let Some(after_id) = node.after {
+                                find_inline_layout_embedded_boxes_recursive(
+                                    nodes,
+                                    node_id,
+                                    after_id,
+                                    layout_children,
+                                );
+                            }
+                        }
+                    }
+                    // Inline box
+                    (_, _) => {
+                        layout_children.push(node_id);
+                    }
+                };
+            }
+            NodeData::Comment | NodeData::Text(_) => {
+                node.remove_damage(CONSTRUCT_DESCENDENT | CONSTRUCT_FC | CONSTRUCT_BOX);
+            }
+            NodeData::Document => unreachable!(),
+        }
+    }
+}
+
+pub(crate) fn build_inline_layout_into(
+    nodes: &Slab<Node>,
+    layout_ctx: &mut LayoutContext<TextBrush>,
+    font_ctx: &mut FontContext,
+    text_layout: &mut TextLayout,
+    scale: f32,
+    inline_context_root_node_id: usize,
+) {
+    // Get the inline context's root node's text styles
+    let root_node = &nodes[inline_context_root_node_id];
+    let root_node_style = root_node.primary_styles().or_else(|| {
+        root_node
+            .parent
+            .and_then(|parent_id| nodes[parent_id].primary_styles())
+    });
+
+    let parley_style = root_node_style
+        .as_ref()
+        .map(|s| stylo_to_parley::style(inline_context_root_node_id, s))
+        .unwrap_or_default();
+
+    let root_line_height = resolve_line_height(parley_style.line_height, parley_style.font_size);
+
+    // Create a parley tree builder
+    let mut builder = layout_ctx.tree_builder(font_ctx, scale, true, &parley_style);
+
+    // Set whitespace collapsing mode
+    let collapse_mode = root_node_style
+        .map(|s| s.get_inherited_text().white_space_collapse)
+        .map(stylo_to_parley::white_space_collapse)
+        .unwrap_or(WhiteSpaceCollapse::Collapse);
+    builder.set_white_space_mode(collapse_mode);
+
+    // Render position-inside list items
+    if let Some(ListItemLayout {
+        marker,
+        position: ListItemLayoutPosition::Inside,
+    }) = root_node
+        .element_data()
+        .and_then(|el| el.list_item_data.as_deref())
+    {
+        match marker {
+            Marker::Char(char) => builder.push_text(&format!("{char} ")),
+            Marker::String(str) => builder.push_text(str),
+        }
+    };
+
+    if let Some(before_id) = root_node.before {
+        build_inline_layout_recursive(
+            &mut builder,
+            nodes,
+            inline_context_root_node_id,
+            before_id,
+            collapse_mode,
+            root_line_height,
+        );
+    }
+    for child_id in root_node.children.iter().copied() {
+        build_inline_layout_recursive(
+            &mut builder,
+            nodes,
+            inline_context_root_node_id,
+            child_id,
+            collapse_mode,
+            root_line_height,
+        );
+    }
+    if let Some(after_id) = root_node.after {
+        build_inline_layout_recursive(
+            &mut builder,
+            nodes,
+            inline_context_root_node_id,
+            after_id,
+            collapse_mode,
+            root_line_height,
+        );
+    }
+
+    text_layout.text = builder.build_into(&mut text_layout.layout);
+    return;
 
     fn build_inline_layout_recursive(
         builder: &mut TreeBuilder<TextBrush>,
@@ -836,11 +814,6 @@ pub(crate) fn build_inline_layout(
 
         match &node.data {
             NodeData::Element(element_data) | NodeData::AnonymousBlock(element_data) => {
-                // Hide hidden nodes
-                if let Some("hidden" | "") = element_data.attr(local_name!("hidden")) {
-                    return;
-                }
-
                 // if the input type is hidden, hide it
                 if *element_data.name.local == *"input" {
                     if let Some("hidden") = element_data.attr(local_name!("type")) {
@@ -851,9 +824,12 @@ pub(crate) fn build_inline_layout(
                 let display = node.display_style().unwrap_or(Display::inline());
 
                 match (display.outside(), display.inside()) {
-                    (DisplayOutside::None, DisplayInside::None) => {}
+                    (DisplayOutside::None, DisplayInside::None) => {
+                        // node.remove_damage(CONSTRUCT_DESCENDENT | CONSTRUCT_FC | CONSTRUCT_BOX);
+                    }
                     (DisplayOutside::None, DisplayInside::Contents) => {
                         for child_id in node.children.iter().copied() {
+                            // node.remove_damage(CONSTRUCT_DESCENDENT | CONSTRUCT_FC | CONSTRUCT_BOX);
                             build_inline_layout_recursive(
                                 builder,
                                 nodes,
@@ -871,6 +847,7 @@ pub(crate) fn build_inline_layout(
                             || *tag_name == local_name!("svg")
                             || *tag_name == local_name!("input")
                             || *tag_name == local_name!("textarea")
+                            || *tag_name == local_name!("button")
                         {
                             builder.push_inline_box(InlineBox {
                                 id: node_id as u64,
@@ -881,6 +858,7 @@ pub(crate) fn build_inline_layout(
                                 height: 0.0,
                             });
                         } else if *tag_name == local_name!("br") {
+                            // node.remove_damage(CONSTRUCT_DESCENDENT | CONSTRUCT_FC | CONSTRUCT_BOX);
                             // TODO: update span id for br spans
                             builder.push_style_modification_span(&[]);
                             builder.set_white_space_mode(WhiteSpaceCollapse::Preserve);
@@ -888,6 +866,7 @@ pub(crate) fn build_inline_layout(
                             builder.pop_style_span();
                             builder.set_white_space_mode(collapse_mode);
                         } else {
+                            // node.remove_damage(CONSTRUCT_DESCENDENT | CONSTRUCT_FC | CONSTRUCT_BOX);
                             let mut style = node
                                 .primary_styles()
                                 .map(|s| stylo_to_parley::style(node.id, &s))
@@ -895,11 +874,14 @@ pub(crate) fn build_inline_layout(
 
                             // dbg!(&style);
 
-                            // style.brush = peniko::Brush::Solid(peniko::Color::WHITE);
+                            let font_size = style.font_size;
 
                             // Floor the line-height of the span by the line-height of the inline context
                             // See https://www.w3.org/TR/CSS21/visudet.html#line-height
-                            style.line_height = style.line_height.max(root_line_height);
+                            style.line_height = parley::LineHeight::Absolute(
+                                resolve_line_height(style.line_height, font_size)
+                                    .max(root_line_height),
+                            );
 
                             // dbg!(node_id);
                             // dbg!(&style);
@@ -955,10 +937,13 @@ pub(crate) fn build_inline_layout(
                 };
             }
             NodeData::Text(data) => {
+                // node.remove_damage(CONSTRUCT_DESCENDENT | CONSTRUCT_FC | CONSTRUCT_BOX);
                 // dbg!(&data.content);
                 builder.push_text(&data.content);
             }
-            NodeData::Comment => {}
+            NodeData::Comment => {
+                // node.remove_damage(CONSTRUCT_DESCENDENT | CONSTRUCT_FC | CONSTRUCT_BOX);
+            }
             NodeData::Document => unreachable!(),
         }
     }

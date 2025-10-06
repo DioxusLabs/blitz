@@ -1,7 +1,6 @@
 use crate::event::BlitzShellEvent;
 
-use blitz_dom::BaseDocument;
-use blitz_traits::{Document, DocumentRenderer};
+use anyrender::WindowRenderer;
 use std::collections::HashMap;
 use winit::application::ApplicationHandler;
 use winit::event::WindowEvent;
@@ -10,42 +9,31 @@ use winit::window::WindowId;
 
 use crate::{View, WindowConfig};
 
-// TODO: make generic
-type D = BaseDocument;
-
-pub struct BlitzApplication<Doc: Document<Doc = D>, Rend: DocumentRenderer<Doc = D>> {
-    pub windows: HashMap<WindowId, View<Doc, Rend>>,
-    pending_windows: Vec<WindowConfig<Doc, Rend>>,
-    proxy: EventLoopProxy<BlitzShellEvent>,
-
-    #[cfg(all(feature = "menu", not(any(target_os = "android", target_os = "ios"))))]
-    menu_channel: muda::MenuEventReceiver,
+pub struct BlitzApplication<Rend: WindowRenderer> {
+    pub windows: HashMap<WindowId, View<Rend>>,
+    pub pending_windows: Vec<WindowConfig<Rend>>,
+    pub proxy: EventLoopProxy<BlitzShellEvent>,
 }
 
-impl<Doc: Document<Doc = D>, Rend: DocumentRenderer<Doc = D>> BlitzApplication<Doc, Rend> {
+impl<Rend: WindowRenderer> BlitzApplication<Rend> {
     pub fn new(proxy: EventLoopProxy<BlitzShellEvent>) -> Self {
         BlitzApplication {
             windows: HashMap::new(),
             pending_windows: Vec::new(),
             proxy,
-
-            #[cfg(all(feature = "menu", not(any(target_os = "android", target_os = "ios"))))]
-            menu_channel: muda::MenuEvent::receiver().clone(),
         }
     }
 
-    pub fn add_window(&mut self, window_config: WindowConfig<Doc, Rend>) {
+    pub fn add_window(&mut self, window_config: WindowConfig<Rend>) {
         self.pending_windows.push(window_config);
     }
 
-    fn window_mut_by_doc_id(&mut self, doc_id: usize) -> Option<&mut View<Doc, Rend>> {
+    fn window_mut_by_doc_id(&mut self, doc_id: usize) -> Option<&mut View<Rend>> {
         self.windows.values_mut().find(|w| w.doc.id() == doc_id)
     }
 }
 
-impl<Doc: Document<Doc = D>, Rend: DocumentRenderer<Doc = D>> ApplicationHandler<BlitzShellEvent>
-    for BlitzApplication<Doc, Rend>
-{
+impl<Rend: WindowRenderer> ApplicationHandler<BlitzShellEvent> for BlitzApplication<Rend> {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
         // Resume existing windows
         for (_, view) in self.windows.iter_mut() {
@@ -66,18 +54,6 @@ impl<Doc: Document<Doc = D>, Rend: DocumentRenderer<Doc = D>> ApplicationHandler
     fn suspended(&mut self, _event_loop: &ActiveEventLoop) {
         for (_, view) in self.windows.iter_mut() {
             view.suspend();
-        }
-    }
-
-    fn new_events(&mut self, _event_loop: &ActiveEventLoop, _cause: winit::event::StartCause) {
-        #[cfg(all(feature = "menu", not(any(target_os = "android", target_os = "ios"))))]
-        if let Ok(event) = self.menu_channel.try_recv() {
-            if event.id == muda::MenuId::new("dev.show_layout") {
-                for (_, view) in self.windows.iter_mut() {
-                    view.devtools.show_layout = !view.devtools.show_layout;
-                    view.request_redraw();
-                }
-            }
         }
     }
 
@@ -113,7 +89,6 @@ impl<Doc: Document<Doc = D>, Rend: DocumentRenderer<Doc = D>> ApplicationHandler
                     window.poll();
                 };
             }
-
             BlitzShellEvent::ResourceLoad { doc_id, data } => {
                 // TODO: Handle multiple documents per window
                 if let Some(window) = self.window_mut_by_doc_id(doc_id) {
@@ -142,7 +117,10 @@ impl<Doc: Document<Doc = D>, Rend: DocumentRenderer<Doc = D>> ApplicationHandler
             BlitzShellEvent::Embedder(_) => {
                 // Do nothing. Should be handled by embedders (if required).
             }
-            BlitzShellEvent::Navigate(_url) => {
+            BlitzShellEvent::Navigate(_opts) => {
+                // Do nothing. Should be handled by embedders (if required).
+            }
+            BlitzShellEvent::NavigationLoad { .. } => {
                 // Do nothing. Should be handled by embedders (if required).
             }
         }

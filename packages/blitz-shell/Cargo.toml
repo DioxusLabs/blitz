@@ -1,40 +1,55 @@
 [package]
 name = "blitz-shell"
 description = "Blitz application shell"
-version = "0.1.0-alpha.1"
-homepage = "https://github.com/dioxuslabs/blitz"
-repository = "https://github.com/dioxuslabs/blitz"
 documentation = "https://docs.rs/blitz-shell"
+version.workspace = true
 license.workspace = true
-edition = "2024"
+homepage.workspace = true
+repository.workspace = true
+categories.workspace = true
+edition.workspace = true
+rust-version.workspace = true
 
 [features]
-default = ["accessibility", "menu", "tracing"]
-accessibility = ["dep:accesskit", "dep:accesskit_winit", "blitz-dom/accessibility"]
-menu = ["dep:muda"]
+default = ["accessibility", "clipboard", "tracing", "file_dialog"]
+accessibility = [
+    "dep:accesskit",
+    "dep:accesskit_winit",
+    "blitz-dom/accessibility",
+]
+clipboard = ["dep:arboard"]
 tracing = ["dep:tracing", "blitz-dom/tracing"]
+file_dialog = ["dep:rfd"]
+# Enables a data-uri-only NetProvider. Only needed if you aren't using the regular NetProvider
+data-uri = ["dep:data-url"]
 
 [dependencies]
 # Blitz dependencies
-blitz-traits = { version = "0.1.0-alpha.1", path = "../blitz-traits" }
-blitz-dom = { version = "0.1.0-alpha.1", path = "../blitz-dom", default-features = false }
+blitz-traits = { workspace = true }
+blitz-dom = { workspace = true }
+blitz-paint = { workspace = true }
+anyrender = { workspace = true }
 
 # Windowing & Input
 winit = { workspace = true }
 keyboard-types = { workspace = true }
-
 accesskit = { workspace = true, optional = true }
-accesskit_winit = {workspace = true, optional = true }
+accesskit_winit = { workspace = true, optional = true }
 
 # Other dependencies
 tracing = { workspace = true, optional = true }
 futures-util = { workspace = true }
-
-[target.'cfg(any(target_os = "windows",target_os = "macos",target_os = "linux",target_os = "dragonfly", target_os = "freebsd", target_os = "netbsd", target_os = "openbsd"))'.dependencies]
-muda = { workspace = true, default-features = false, features = ["serde"], optional = true }
+data-url = { workspace = true, optional = true }
 
 [target.'cfg(target_os = "android")'.dependencies]
 android-activity = { version = "0.6.0", features = ["native-activity"] }
+
+[target.'cfg(any(target_os = "windows",target_os = "macos",target_os = "linux",target_os = "dragonfly", target_os = "freebsd", target_os = "netbsd", target_os = "openbsd"))'.dependencies]
+arboard = { workspace = true, optional = true }
+
+
+[target.'cfg(any(target_os = "windows",target_os = "macos",target_os = "linux",target_os = "freebsd", target_os = "dragonfly", target_os = "netbsd", target_os = "openbsd"))'.dependencies]
+rfd = { workspace = true, optional = true }
 
 [package.metadata.docs.rs]
 all-features = true

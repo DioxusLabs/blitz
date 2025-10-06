@@ -1,15 +1,13 @@
-use blitz_traits::{HitResult, MouseEventButtons};
+use blitz_traits::{
+    events::{
+        BlitzInputEvent, BlitzMouseButtonEvent, DomEvent, DomEventData, MouseEventButton,
+        MouseEventButtons,
+    },
+    navigation::NavigationOptions,
+};
 use markup5ever::local_name;
 
-use crate::{BaseDocument, Node, node::NodeSpecificData, util::resolve_url};
-
-fn parent_hit(node: &Node, x: f32, y: f32) -> Option<HitResult> {
-    node.layout_parent.get().map(|parent_id| HitResult {
-        node_id: parent_id,
-        x: x + node.final_layout.location.x,
-        y: y + node.final_layout.location.y,
-    })
-}
+use crate::{BaseDocument, node::SpecialElementData};
 
 /// Handles both mouseover and mouseenter events
 pub(crate) fn handle_mouse_hover(doc: &mut BaseDocument, _target: usize, x: f32, y: f32) {
@@ -63,27 +61,29 @@ pub(crate) fn handle_mousemove(
     y: f32,
     buttons: MouseEventButtons,
 ) -> bool {
+    let mut changed = doc.set_hover_to(x, y);
+
     let Some(hit) = doc.hit(x, y) else {
-        return false;
+        return changed;
     };
 
     if hit.node_id != target {
-        return false;
+        return changed;
     }
 
     let node = &mut doc.nodes[target];
     let Some(el) = node.data.downcast_element_mut() else {
-        return false;
+        return changed;
     };
 
     let disabled = el.attr(local_name!("disabled")).is_some();
     if disabled {
-        return false;
+        return changed;
     }
 
-    if let NodeSpecificData::TextInput(ref mut text_input_data) = el.node_specific_data {
+    if let SpecialElementData::TextInput(ref mut text_input_data) = el.special_data {
         if buttons == MouseEventButtons::None {
-            return false;
+            return changed;
         }
 
         let content_box_offset = taffy::Point {
@@ -96,13 +96,13 @@ pub(crate) fn handle_mousemove(
 
         text_input_data
             .editor
-            .driver(&mut doc.font_ctx, &mut doc.layout_ctx)
+            .driver(&mut doc.font_ctx.lock().unwrap(), &mut doc.layout_ctx)
             .extend_selection_to_point(x as f32, y as f32);
 
-        return true;
+        changed = true;
     }
 
-    false
+    changed
 }
 
 pub(crate) fn handle_mousedown(doc: &mut BaseDocument, target: usize, x: f32, y: f32) {
@@ -123,7 +123,7 @@ pub(crate) fn handle_mousedown(doc: &mut BaseDocument, target: usize, x: f32, y:
         return;
     }
 
-    if let NodeSpecificData::TextInput(ref mut text_input_data) = el.node_specific_data {
+    if let SpecialElementData::TextInput(ref mut text_input_data) = el.special_data {
         let content_box_offset = taffy::Point {
             x: node.final_layout.padding.left + node.final_layout.border.left,
             y: node.final_layout.padding.top + node.final_layout.border.top,
@@ -133,21 +133,61 @@ pub(crate) fn handle_mousedown(doc: &mut BaseDocument, target: usize, x: f32, y:
 
         text_input_data
             .editor
-            .driver(&mut doc.font_ctx, &mut doc.layout_ctx)
+            .driver(&mut doc.font_ctx.lock().unwrap(), &mut doc.layout_ctx)
             .move_to_point(x as f32, y as f32);
 
         doc.set_focus_to(hit.node_id);
     }
 }
 
-pub(crate) fn handle_click(doc: &mut BaseDocument, _target: usize, x: f32, y: f32) {
-    let mut maybe_hit = doc.hit(x, y);
+pub(crate) fn handle_mouseup<F: FnMut(DomEvent)>(
+    doc: &mut BaseDocument,
+    target: usize,
+    event: &BlitzMouseButtonEvent,
+    mut dispatch_event: F,
+) {
+    if doc.devtools().highlight_hover {
+        let mut node = doc.get_node(target).unwrap();
+        if event.button == MouseEventButton::Secondary {
+            if let Some(parent_id) = node.layout_parent.get() {
+                node = doc.get_node(parent_id).unwrap();
+            }
+        }
+        doc.debug_log_node(node.id);
+        doc.devtools_mut().highlight_hover = false;
+        return;
+    }
 
-    while let Some(hit) = maybe_hit {
-        let node = &mut doc.nodes[hit.node_id];
+    // Determine whether to dispatch a click event
+    let do_click = true;
+    // let do_click = doc.mouse_down_node.is_some_and(|mouse_down_id| {
+    //     // Anonymous node ids are unstable due to tree reconstruction. So we compare the id
+    //     // of the first non-anonymous ancestor.
+    //     mouse_down_id == target
+    //         || doc.non_anon_ancestor_if_anon(mouse_down_id) == doc.non_anon_ancestor_if_anon(target)
+    // });
 
-        let Some(el) = node.data.downcast_element_mut() else {
-            maybe_hit = parent_hit(node, x, y);
+    // Dispatch a click event
+    if do_click && event.button == MouseEventButton::Main {
+        dispatch_event(DomEvent::new(target, DomEventData::Click(event.clone())));
+    }
+}
+
+pub(crate) fn handle_click<F: FnMut(DomEvent)>(
+    doc: &mut BaseDocument,
+    target: usize,
+    event: &BlitzMouseButtonEvent,
+    mut dispatch_event: F,
+) {
+    let mut maybe_node_id = Some(target);
+    while let Some(node_id) = maybe_node_id {
+        let maybe_element = {
+            let node = &mut doc.nodes[node_id];
+            node.data.downcast_element_mut()
+        };
+
+        let Some(el) = maybe_element else {
+            maybe_node_id = doc.nodes[node_id].parent;
             continue;
         };
 
@@ -156,56 +196,109 @@ pub(crate) fn handle_click(doc: &mut BaseDocument, _target: usize, x: f32, y: f3
             return;
         }
 
-        if let NodeSpecificData::TextInput(_) = el.node_specific_data {
-            return;
-        } else if el.name.local == local_name!("input")
-            && matches!(el.attr(local_name!("type")), Some("checkbox"))
-        {
-            BaseDocument::toggle_checkbox(el);
-            doc.set_focus_to(hit.node_id);
-            return;
-        } else if el.name.local == local_name!("input")
-            && matches!(el.attr(local_name!("type")), Some("radio"))
-        {
-            let node_id = node.id;
-            let radio_set = el.attr(local_name!("name")).unwrap().to_string();
-            BaseDocument::toggle_radio(doc, radio_set, node_id);
-            BaseDocument::set_focus_to(doc, hit.node_id);
+        if let SpecialElementData::TextInput(_) = el.special_data {
             return;
         }
-        // Clicking labels triggers click, and possibly input event, of associated input
-        else if el.name.local == local_name!("label") {
-            let node_id = node.id;
-            if let Some(target_node_id) = doc
-                .label_bound_input_elements(node_id)
-                .first()
-                .map(|n| n.id)
-            {
-                let target_node = doc.get_node_mut(target_node_id).unwrap();
-                if let Some(target_element) = target_node.element_data_mut() {
-                    BaseDocument::toggle_checkbox(target_element);
-                }
+
+        match el.name.local {
+            local_name!("input") if el.attr(local_name!("type")) == Some("checkbox") => {
+                let is_checked = BaseDocument::toggle_checkbox(el);
+                let value = is_checked.to_string();
+                dispatch_event(DomEvent::new(
+                    node_id,
+                    DomEventData::Input(BlitzInputEvent { value }),
+                ));
                 doc.set_focus_to(node_id);
                 return;
             }
-        } else if el.name.local == local_name!("a") {
-            if let Some(href) = el.attr(local_name!("href")) {
-                if let Some(url) = resolve_url(&doc.base_url, href) {
-                    doc.navigation_provider.navigate_new_page(url.into());
-                } else {
-                    println!(
-                        "{href} is not parseable as a url. : {base_url:?}",
-                        base_url = doc.base_url
-                    )
-                }
+            local_name!("input") if el.attr(local_name!("type")) == Some("radio") => {
+                let radio_set = el.attr(local_name!("name")).unwrap().to_string();
+                BaseDocument::toggle_radio(doc, radio_set, node_id);
+
+                // TODO: make input event conditional on value actually changing
+                let value = String::from("true");
+                dispatch_event(DomEvent::new(
+                    node_id,
+                    DomEventData::Input(BlitzInputEvent { value }),
+                ));
+
+                BaseDocument::set_focus_to(doc, node_id);
+
                 return;
-            } else {
-                println!("Clicked link without href: {:?}", el.attrs());
             }
+            // Clicking labels triggers click, and possibly input event, of associated input
+            local_name!("label") => {
+                if let Some(target_node_id) = doc.label_bound_input_element(node_id).map(|n| n.id) {
+                    // Apply default click event action for target node
+                    let target_node = doc.get_node_mut(target_node_id).unwrap();
+                    let syn_event = target_node.synthetic_click_event_data(event.mods);
+                    handle_click(doc, target_node_id, &syn_event, dispatch_event);
+                    return;
+                }
+            }
+            local_name!("a") => {
+                if let Some(href) = el.attr(local_name!("href")) {
+                    if let Some(url) = doc.url.resolve_relative(href) {
+                        doc.navigation_provider.navigate_to(NavigationOptions::new(
+                            url,
+                            String::from("text/plain"),
+                            doc.id(),
+                        ));
+                    } else {
+                        println!("{href} is not parseable as a url. : {:?}", *doc.url)
+                    }
+                    return;
+                } else {
+                    println!("Clicked link without href: {:?}", el.attrs());
+                }
+            }
+            local_name!("input")
+                if el.is_submit_button() || el.attr(local_name!("type")) == Some("submit") =>
+            {
+                if let Some(form_owner) = doc.controls_to_form.get(&node_id) {
+                    doc.submit_form(*form_owner, node_id);
+                }
+            }
+            #[cfg(feature = "file_input")]
+            local_name!("input") if el.attr(local_name!("type")) == Some("file") => {
+                use crate::qual_name;
+                //TODO: Handle accept attribute https://developer.mozilla.org/en-US/docs/Web/HTML/Reference/Attributes/accept by passing an appropriate filter
+                let multiple = el.attr(local_name!("multiple")).is_some();
+                let files = doc.shell_provider.open_file_dialog(multiple, None);
+
+                if let Some(file) = files.first() {
+                    el.attrs
+                        .set(qual_name!("value", html), &file.to_string_lossy());
+                }
+                let text_content = match files.len() {
+                    0 => "No Files Selected".to_string(),
+                    1 => files
+                        .first()
+                        .unwrap()
+                        .file_name()
+                        .unwrap_or_default()
+                        .to_string_lossy()
+                        .to_string(),
+                    x => format!("{x} Files Selected"),
+                };
+
+                if files.is_empty() {
+                    el.special_data = SpecialElementData::None;
+                } else {
+                    el.special_data = SpecialElementData::FileInput(files.into())
+                }
+                let child_label_id = doc.nodes[node_id].children[1];
+                let child_text_id = doc.nodes[child_label_id].children[0];
+                let text_data = doc.nodes[child_text_id]
+                    .text_data_mut()
+                    .expect("Text data not found");
+                text_data.content = text_content;
+            }
+            _ => {}
         }
 
         // No match. Recurse up to parent.
-        maybe_hit = parent_hit(&doc.nodes[hit.node_id], x, y)
+        maybe_node_id = doc.nodes[node_id].parent;
     }
 
     // If nothing is matched then clear focus

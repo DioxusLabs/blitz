@@ -4,11 +4,12 @@
 //! However, in Blitz, we do a style pass then a layout pass.
 //! This is slower, yes, but happens fast enough that it's not a huge issue.
 
-use crate::node::{ImageData, NodeData, NodeSpecificData};
+use crate::node::{ImageData, NodeData, SpecialElementData};
 use crate::{document::BaseDocument, node::Node};
 use markup5ever::local_name;
 use std::cell::Ref;
 use std::sync::Arc;
+use style::Atom;
 use style::values::computed::CSSPixelLength;
 use style::values::computed::length_percentage::CalcLengthPercentage;
 use taffy::{
@@ -18,7 +19,9 @@ use taffy::{
 };
 
 pub(crate) mod construct;
+pub(crate) mod damage;
 pub(crate) mod inline;
+pub(crate) mod list;
 pub(crate) mod replaced;
 pub(crate) mod table;
 
@@ -27,8 +30,8 @@ use self::table::TableTreeWrapper;
 
 pub(crate) fn resolve_calc_value(calc_ptr: *const (), parent_size: f32) -> f32 {
     let calc = unsafe { &*(calc_ptr as *const CalcLengthPercentage) };
-    let result = calc.resolve(CSSPixelLength::new(parent_size), None);
-    result.unwrap().result.px()
+    let result = calc.resolve(CSSPixelLength::new(parent_size));
+    result.px()
 }
 
 impl BaseDocument {
@@ -73,11 +76,13 @@ impl TraverseTree for BaseDocument {}
 
 impl LayoutPartialTree for BaseDocument {
     type CoreContainerStyle<'a>
-        = &'a taffy::Style
+        = &'a taffy::Style<Atom>
     where
         Self: 'a;
 
-    fn get_core_container_style(&self, node_id: NodeId) -> &Style {
+    type CustomIdent = Atom;
+
+    fn get_core_container_style(&self, node_id: NodeId) -> &Style<Atom> {
         &self.node_from_id(node_id).style
     }
 
@@ -142,12 +147,6 @@ impl LayoutPartialTree for BaseDocument {
                     // })
                 }
                 NodeData::Element(element_data) | NodeData::AnonymousBlock(element_data) => {
-                    // Hide hidden nodes
-                    if let Some("hidden" | "") = element_data.attr(local_name!("hidden")) {
-                        node.style.display = Display::None;
-                        return taffy::LayoutOutput::HIDDEN;
-                    }
-
                     // TODO: deduplicate with single-line text input
                     if *element_data.name.local == *"textarea" {
                         let rows = element_data
@@ -217,6 +216,7 @@ impl LayoutPartialTree for BaseDocument {
                     }
 
                     if *element_data.name.local == *"img"
+                        || *element_data.name.local == *"canvas"
                         || (cfg!(feature = "svg") && *element_data.name.local == *"svg")
                     {
                         // Get width and height attributes on image element
@@ -232,9 +232,9 @@ impl LayoutPartialTree for BaseDocument {
                                 .and_then(|val| val.parse::<f32>().ok()),
                         };
 
-                        // Get image's native size
-                        let inherent_size = match &element_data.node_specific_data {
-                            NodeSpecificData::Image(image_data) => match &**image_data {
+                        // Get image's native sizespecial_data
+                        let inherent_size = match &element_data.special_data {
+                            SpecialElementData::Image(image_data) => match &**image_data {
                                 ImageData::Raster(image) => taffy::Size {
                                     width: image.width as f32,
                                     height: image.height as f32,
@@ -249,7 +249,8 @@ impl LayoutPartialTree for BaseDocument {
                                 }
                                 ImageData::None => taffy::Size::ZERO,
                             },
-                            NodeSpecificData::None => taffy::Size::ZERO,
+                            SpecialElementData::Canvas(_) => taffy::Size::ZERO,
+                            SpecialElementData::None => taffy::Size::ZERO,
                             _ => unreachable!(),
                         };
 
@@ -261,6 +262,7 @@ impl LayoutPartialTree for BaseDocument {
                         let computed = replaced_measure_function(
                             inputs.known_dimensions,
                             inputs.parent_size,
+                            inputs.available_space,
                             &replaced_context,
                             &node.style,
                             false,
@@ -276,12 +278,12 @@ impl LayoutPartialTree for BaseDocument {
                         };
                     }
 
-                    if node.is_table_root {
-                        let NodeSpecificData::TableRoot(context) = &tree.nodes[node_id.into()]
+                    if node.flags.is_table_root() {
+                        let SpecialElementData::TableRoot(context) = &tree.nodes[node_id.into()]
                             .data
                             .downcast_element()
                             .unwrap()
-                            .node_specific_data
+                            .special_data
                         else {
                             panic!("Node marked as table root but doesn't have TableContext");
                         };
@@ -294,7 +296,7 @@ impl LayoutPartialTree for BaseDocument {
                         return compute_grid_layout(&mut table_wrapper, node_id, inputs);
                     }
 
-                    if node.is_inline_root {
+                    if node.flags.is_inline_root() {
                         return tree.compute_inline_layout(usize::from(node_id), inputs);
                     }
 
@@ -353,12 +355,12 @@ impl taffy::CacheTree for BaseDocument {
 
 impl taffy::LayoutBlockContainer for BaseDocument {
     type BlockContainerStyle<'a>
-        = &'a Style
+        = &'a Style<Atom>
     where
         Self: 'a;
 
     type BlockItemStyle<'a>
-        = &'a Style
+        = &'a Style<Atom>
     where
         Self: 'a;
 
@@ -373,12 +375,12 @@ impl taffy::LayoutBlockContainer for BaseDocument {
 
 impl taffy::LayoutFlexboxContainer for BaseDocument {
     type FlexboxContainerStyle<'a>
-        = &'a Style
+        = &'a Style<Atom>
     where
         Self: 'a;
 
     type FlexboxItemStyle<'a>
-        = &'a Style
+        = &'a Style<Atom>
     where
         Self: 'a;
 
@@ -393,12 +395,12 @@ impl taffy::LayoutFlexboxContainer for BaseDocument {
 
 impl taffy::LayoutGridContainer for BaseDocument {
     type GridContainerStyle<'a>
-        = &'a Style
+        = &'a Style<Atom>
     where
         Self: 'a;
 
     type GridItemStyle<'a>
-        = &'a Style
+        = &'a Style<Atom>
     where
         Self: 'a;
 
@@ -412,8 +414,8 @@ impl taffy::LayoutGridContainer for BaseDocument {
 }
 
 impl RoundTree for BaseDocument {
-    fn get_unrounded_layout(&self, node_id: NodeId) -> &Layout {
-        &self.node_from_id(node_id).unrounded_layout
+    fn get_unrounded_layout(&self, node_id: NodeId) -> Layout {
+        self.node_from_id(node_id).unrounded_layout
     }
 
     fn set_final_layout(&mut self, node_id: NodeId, layout: &Layout) {
@@ -447,8 +449,8 @@ impl PrintTree for BaseDocument {
         }
     }
 
-    fn get_final_layout(&self, node_id: NodeId) -> &Layout {
-        &self.node_from_id(node_id).final_layout
+    fn get_final_layout(&self, node_id: NodeId) -> Layout {
+        self.node_from_id(node_id).final_layout
     }
 }
 

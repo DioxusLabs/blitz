@@ -1,0 +1,12 @@
+[package]
+name = "debug_timer"
+description = "Utilities for simple timings"
+version = "0.1.1"
+homepage = "https://github.com/dioxuslabs/blitz"
+repository = "https://github.com/dioxuslabs/blitz"
+documentation = "https://docs.rs/debug_timer"
+license.workspace = true
+edition = "2021"
+
+[features]
+enable = []

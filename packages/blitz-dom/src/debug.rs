@@ -24,7 +24,7 @@ impl BaseDocument {
             println!("    {}: {}", attr.name.local, attr.value);
         }
 
-        if node.is_inline_root {
+        if node.flags.is_inline_root() {
             let inline_layout = &node
                 .data
                 .downcast_element()
@@ -111,7 +111,7 @@ impl BaseDocument {
             .map(|id| &self.nodes[*id])
             .map(|node| (node.id, node.order(), node.node_debug_str()))
             .collect();
-        println!("Children: {:?}", children);
+        println!("Children: {children:?}");
 
         println!("Layout Parent: {:?}", node.layout_parent.get());
 
@@ -122,7 +122,7 @@ impl BaseDocument {
                 .collect()
         });
         if let Some(layout_children) = layout_children {
-            println!("Layout Children: {:?}", layout_children);
+            println!("Layout Children: {layout_children:?}");
         }
 
         let paint_children: Option<Vec<_>> = node.paint_children.borrow().as_ref().map(|lc| {
@@ -132,7 +132,7 @@ impl BaseDocument {
                 .collect()
         });
         if let Some(paint_children) = paint_children {
-            println!("Paint Children: {:?}", paint_children);
+            println!("Paint Children: {paint_children:?}");
         }
         // taffy::print_tree(&self.dom, node_id.into());
     }

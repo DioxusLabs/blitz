@@ -1,0 +1,24 @@
+# Copyright © SixtyFPS GmbH <info@slint.dev>
+# SPDX-License-Identifier: MIT
+
+[package]
+name = "wgpu_texture"
+version = "0.0.0"
+edition = "2021"
+license = "MIT"
+publish = false
+
+[dependencies]
+anyrender = { workspace = true }
+anyrender_vello = { workspace = true }
+blitz-traits = { workspace = true }
+blitz-dom = { workspace = true }
+blitz-html = { workspace = true }
+blitz-shell = { workspace = true }
+mini-dxn = { workspace = true }
+wgpu_context = { workspace = true }
+dioxus = { workspace = true }
+wgpu = { workspace = true }
+color = { workspace = true }
+bytemuck = { workspace = true }
+pollster = { workspace = true }

@@ -1,14 +1,8 @@
 //! Drive the renderer from Dioxus
-
-// use dioxus_core::prelude::*;
-// use dioxus_html::elements::*;
-// use dioxus_core_macro::*;
-// use dioxus_hooks::*;
-
 use dioxus::prelude::*;
 
 fn main() {
-    dioxus_native::launch(app);
+    mini_dxn::launch(app);
 }
 
 fn app() -> Element {
@@ -41,6 +35,13 @@ fn app() -> Element {
 }
 
 const CSS: &str = r#"
+
+html, body {
+    padding: 0;
+    margin: 0;
+    background-color: white;
+}
+
 .header {
     background-color: pink;
     padding: 20px;

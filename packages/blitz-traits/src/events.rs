@@ -1,6 +1,68 @@
+//! Types to represent UI and DOM events
+
+use std::str::FromStr;
+
 use bitflags::bitflags;
 use keyboard_types::{Code, Key, Location, Modifiers};
 use smol_str::SmolStr;
+
+#[derive(Default)]
+pub struct EventState {
+    cancelled: bool,
+    propagation_stopped: bool,
+    redraw_requested: bool,
+}
+impl EventState {
+    #[inline(always)]
+    pub fn prevent_default(&mut self) {
+        self.cancelled = true;
+    }
+
+    #[inline(always)]
+    pub fn stop_propagation(&mut self) {
+        self.propagation_stopped = true;
+    }
+
+    #[inline(always)]
+    pub fn request_redraw(&mut self) {
+        self.redraw_requested = true;
+    }
+
+    #[inline(always)]
+    pub fn is_cancelled(&self) -> bool {
+        self.cancelled
+    }
+
+    #[inline(always)]
+    pub fn propagation_is_stopped(&self) -> bool {
+        self.propagation_stopped
+    }
+
+    #[inline(always)]
+    pub fn redraw_is_requested(&self) -> bool {
+        self.redraw_requested
+    }
+}
+
+#[derive(Debug, Clone)]
+#[repr(u8)]
+pub enum UiEvent {
+    MouseMove(BlitzMouseButtonEvent),
+    MouseUp(BlitzMouseButtonEvent),
+    MouseDown(BlitzMouseButtonEvent),
+    KeyUp(BlitzKeyEvent),
+    KeyDown(BlitzKeyEvent),
+    Ime(BlitzImeEvent),
+}
+impl UiEvent {
+    pub fn discriminant(&self) -> u8 {
+        // SAFETY: Because `Self` is marked `repr(u8)`, its layout is a `repr(C)` `union`
+        // between `repr(C)` structs, each of which has the `u8` discriminant as its first
+        // field, so we can read the discriminant without offsetting the pointer.
+        // See: https://doc.rust-lang.org/stable/std/mem/fn.discriminant.html#accessing-the-numeric-value-of-the-discriminant
+        unsafe { *<*const _>::from(self).cast::<u8>() }
+    }
+}
 
 #[derive(Debug, Clone)]
 pub struct DomEvent {
@@ -31,18 +93,66 @@ impl DomEvent {
     }
 }
 
+#[derive(Copy, Clone, Debug, PartialEq)]
+#[repr(u8)]
+pub enum DomEventKind {
+    MouseMove,
+    MouseDown,
+    MouseUp,
+    Click,
+    KeyPress,
+    KeyDown,
+    KeyUp,
+    Input,
+    Ime,
+}
+impl DomEventKind {
+    pub fn discriminant(self) -> u8 {
+        self as u8
+    }
+}
+impl FromStr for DomEventKind {
+    type Err = ();
+    fn from_str(s: &str) -> Result<Self, ()> {
+        match s.trim_start_matches("on") {
+            "mousemove" => Ok(Self::MouseMove),
+            "mousedown" => Ok(Self::MouseDown),
+            "mouseup" => Ok(Self::MouseUp),
+            "click" => Ok(Self::Click),
+            "keypress" => Ok(Self::KeyPress),
+            "keydown" => Ok(Self::KeyDown),
+            "keyup" => Ok(Self::KeyUp),
+            "input" => Ok(Self::Input),
+            "composition" => Ok(Self::Ime),
+            _ => Err(()),
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
+#[repr(u8)]
 pub enum DomEventData {
     MouseMove(BlitzMouseButtonEvent),
     MouseDown(BlitzMouseButtonEvent),
     MouseUp(BlitzMouseButtonEvent),
     Click(BlitzMouseButtonEvent),
     KeyPress(BlitzKeyEvent),
+    KeyDown(BlitzKeyEvent),
+    KeyUp(BlitzKeyEvent),
+    Input(BlitzInputEvent),
     Ime(BlitzImeEvent),
     MouseOver(BlitzMousePositionEvent),
     MouseEnter(BlitzMousePositionEvent),
     MouseOut(BlitzMousePositionEvent),
-    MouseLeave(BlitzMousePositionEvent),
+}
+impl DomEventData {
+    pub fn discriminant(&self) -> u8 {
+        // SAFETY: Because `Self` is marked `repr(u8)`, its layout is a `repr(C)` `union`
+        // between `repr(C)` structs, each of which has the `u8` discriminant as its first
+        // field, so we can read the discriminant without offsetting the pointer.
+        // See: https://doc.rust-lang.org/stable/std/mem/fn.discriminant.html#accessing-the-numeric-value-of-the-discriminant
+        unsafe { *<*const _>::from(self).cast::<u8>() }
+    }
 }
 
 impl DomEventData {
@@ -53,11 +163,32 @@ impl DomEventData {
             Self::MouseUp { .. } => "mouseup",
             Self::Click { .. } => "click",
             Self::KeyPress { .. } => "keypress",
-            Self::Ime { .. } => "input",
+            Self::KeyDown { .. } => "keydown",
+            Self::KeyUp { .. } => "keyup",
+            Self::Input { .. } => "input",
+            Self::Ime { .. } => "composition",
             Self::MouseOver { .. } => "mouseover",
             Self::MouseEnter { .. } => "mouseenter",
             Self::MouseOut { .. } => "mouseout",
             Self::MouseLeave { .. } => "mouseleave",
+        }
+    }
+
+    pub fn kind(&self) -> DomEventKind {
+        match self {
+            Self::MouseMove { .. } => DomEventKind::MouseMove,
+            Self::MouseDown { .. } => DomEventKind::MouseDown,
+            Self::MouseUp { .. } => DomEventKind::MouseUp,
+            Self::Click { .. } => DomEventKind::Click,
+            Self::KeyPress { .. } => DomEventKind::KeyPress,
+            Self::KeyDown { .. } => DomEventKind::KeyDown,
+            Self::KeyUp { .. } => DomEventKind::KeyUp,
+            Self::Input { .. } => DomEventKind::Input,
+            Self::Ime { .. } => DomEventKind::Ime,
+            Self::MouseOver { .. } => DomEventKind::MouseMove, // No specific enum for these
+            Self::MouseEnter { .. } => DomEventKind::MouseMove,
+            Self::MouseOut { .. } => DomEventKind::MouseMove,
+            Self::MouseLeave { .. } => DomEventKind::MouseMove,
         }
     }
 
@@ -67,8 +198,11 @@ impl DomEventData {
             Self::MouseDown { .. } => true,
             Self::MouseUp { .. } => true,
             Self::Click { .. } => true,
+            Self::KeyDown { .. } => true,
+            Self::KeyUp { .. } => true,
             Self::KeyPress { .. } => true,
             Self::Ime { .. } => true,
+            Self::Input { .. } => false,
             Self::MouseOver { .. } => true,
             Self::MouseEnter { .. } => false,
             Self::MouseOut { .. } => true,
@@ -82,12 +216,15 @@ impl DomEventData {
             Self::MouseDown { .. } => true,
             Self::MouseUp { .. } => true,
             Self::Click { .. } => true,
+            Self::KeyDown { .. } => true,
+            Self::KeyUp { .. } => true,
             Self::KeyPress { .. } => true,
             Self::Ime { .. } => true,
+            Self::Input { .. } => true,
             Self::MouseOver { .. } => true,
             Self::MouseEnter { .. } => false,
             Self::MouseOut { .. } => true,
-            Self::MouseLeave { .. } => true,
+            Self::MouseLeave { .. } => false,
         }
     }
 }
@@ -200,14 +337,18 @@ pub struct BlitzKeyEvent {
     pub text: Option<SmolStr>,
 }
 
+#[derive(Clone, Debug)]
+pub struct BlitzInputEvent {
+    pub value: String,
+}
+
 /// Copy of Winit IME event to avoid lower-level Blitz crates depending on winit
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum BlitzImeEvent {
     /// Notifies when the IME was enabled.
     ///
     /// After getting this event you could receive [`Preedit`][Self::Preedit] and
-    /// [`Commit`][Self::Commit] events. You should also start performing IME related requests
-    /// like [`Window::set_ime_cursor_area`].
+    /// [`Commit`][Self::Commit] events.
     Enabled,
 
     /// Notifies when a new composing text should be set at the cursor position.
@@ -227,8 +368,6 @@ pub enum BlitzImeEvent {
     /// Notifies when the IME was disabled.
     ///
     /// After receiving this event you won't get any more [`Preedit`][Self::Preedit] or
-    /// [`Commit`][Self::Commit] events until the next [`Enabled`][Self::Enabled] event. You should
-    /// also stop issuing IME related requests like [`Window::set_ime_cursor_area`] and clear
-    /// pending preedit text.
+    /// [`Commit`][Self::Commit] events until the next [`Enabled`][Self::Enabled] event.
     Disabled,
 }

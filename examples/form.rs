@@ -3,7 +3,7 @@
 use dioxus::prelude::*;
 
 fn main() {
-    dioxus_native::launch(app);
+    mini_dxn::launch(app);
 }
 
 fn app() -> Element {
@@ -90,6 +90,29 @@ fn app() -> Element {
                             value: "radiovalue3",
                         }
                         "Radio Button 3"
+                    }
+                }
+                div {
+                    input {
+                        type: "file",
+                        name: "single_file",
+                        id: "file1",
+                    }
+                    label {
+                        r#for: "file1",
+                        "File Select Single",
+                    }
+                }
+                div {
+                    input {
+                        type: "file",
+                        name: "multiple_files",
+                        id: "file2",
+                        multiple: true,
+                    }
+                    label {
+                        r#for: "file2",
+                        "File Select Multiple",
                     }
                 }
             }

@@ -1,12 +1,13 @@
 //! Load first CLI argument as a url. Fallback to google.com if no CLI argument is provided.
 
-use blitz_dom::net::Resource;
+use anyrender::render_to_buffer;
+use anyrender_vello::VelloImageRenderer;
+use anyrender_vello_cpu::VelloCpuImageRenderer;
+use blitz_dom::DocumentConfig;
 use blitz_html::HtmlDocument;
 use blitz_net::{MpscCallback, Provider};
-use blitz_renderer_vello::render_to_buffer;
-use blitz_traits::navigation::DummyNavigationProvider;
-use blitz_traits::net::SharedProvider;
-use blitz_traits::{ColorScheme, Viewport};
+use blitz_paint::paint_scene;
+use blitz_traits::shell::{ColorScheme, Viewport};
 use reqwest::Url;
 use std::sync::Arc;
 use std::{
@@ -22,9 +23,10 @@ const USER_AGENT: &str = "Mozilla/5.0 (X11; Linux x86_64; rv:60.0) Gecko/2010010
 async fn main() {
     let mut timer = Timer::init();
 
+    let use_cpu_renderer = std::env::args().any(|arg| arg == "--cpu");
+
     let url_string = std::env::args()
-        .skip(1)
-        .next()
+        .nth(1)
         .unwrap_or_else(|| "https://www.google.com".into());
 
     println!("{}", url_string);
@@ -53,11 +55,10 @@ async fn main() {
     timer.time("Fetched HTML");
 
     // Setup viewport. TODO: make configurable.
-    let scale = 2;
+    let scale = 2.0;
     let height = 800;
     let width: u32 = std::env::args()
-        .skip(2)
-        .next()
+        .nth(2)
         .and_then(|arg| arg.parse().ok())
         .unwrap_or(1200);
 
@@ -65,25 +66,23 @@ async fn main() {
     let callback = Arc::new(callback);
     let net = Arc::new(Provider::new(callback));
 
-    let navigation_provider = Arc::new(DummyNavigationProvider);
-
     timer.time("Setup document prerequisites");
 
     // Create HtmlDocument
     let mut document = HtmlDocument::from_html(
         &html,
-        Some(url_string.clone()),
-        Vec::new(),
-        Arc::clone(&net) as SharedProvider<Resource>,
-        None,
-        navigation_provider,
+        DocumentConfig {
+            base_url: Some(url_string.clone()),
+            net_provider: Some(Arc::clone(&net) as _),
+            ..Default::default()
+        },
     );
 
     timer.time("Parsed document");
 
     document.as_mut().set_viewport(Viewport::new(
-        width * scale,
-        height * scale,
+        width * (scale as u32),
+        height * (scale as u32),
         scale as f32,
         ColorScheme::Light,
     ));
@@ -93,30 +92,37 @@ async fn main() {
             break;
         };
         document.as_mut().load_resource(res);
+
+        // HACK: this fixes a deadlock by forcing thread synchronisation.
+        println!("{} resources remaining {}", net.count(), net.is_empty());
     }
 
     timer.time("Fetched assets");
 
     // Compute style, layout, etc for HtmlDocument
-    document.as_mut().resolve();
+    document.as_mut().resolve(0.0);
 
     timer.time("Resolved styles and layout");
 
     // Determine height to render
     let computed_height = document.as_ref().root_element().final_layout.size.height;
-    let render_height = (computed_height as u32).max(height).min(4000);
+    let render_width = (width as f64 * scale) as u32;
+    let render_height = ((computed_height as f64).max(height as f64).min(4000.0) * scale) as u32;
 
     // Render document to RGBA buffer
-    let buffer = render_to_buffer(
-        document.as_ref(),
-        Viewport::new(
-            width * scale,
-            render_height * scale,
-            scale as f32,
-            ColorScheme::Light,
-        ),
-    )
-    .await;
+    let buffer = if use_cpu_renderer {
+        render_to_buffer::<VelloCpuImageRenderer, _>(
+            |scene| paint_scene(scene, document.as_ref(), scale, render_width, render_height),
+            render_width,
+            render_height,
+        )
+    } else {
+        render_to_buffer::<VelloImageRenderer, _>(
+            |scene| paint_scene(scene, document.as_ref(), scale, render_width, render_height),
+            render_width,
+            render_height,
+        )
+    };
 
     timer.time("Rendered to buffer");
 
@@ -125,7 +131,7 @@ async fn main() {
     let mut file = File::create(&out_path).unwrap();
 
     // Encode buffer as PNG and write it to a file
-    write_png(&mut file, &buffer, width * scale, render_height * scale);
+    write_png(&mut file, &buffer, render_width, render_height);
 
     timer.time("Wrote out png");
 
@@ -151,7 +157,7 @@ fn write_png<W: Write>(writer: W, buffer: &[u8], width: u32, height: u32) {
 
     // Write PNG data to writer
     let mut writer = encoder.write_header().unwrap();
-    writer.write_image_data(&buffer).unwrap();
+    writer.write_image_data(buffer).unwrap();
     writer.finish().unwrap();
 }
 

@@ -1,71 +1,90 @@
 [package]
 name = "blitz-dom"
 description = "Blitz DOM implementation"
-version = "0.1.0-alpha.1"
-homepage = "https://github.com/dioxuslabs/blitz"
-repository = "https://github.com/dioxuslabs/blitz"
 documentation = "https://docs.rs/blitz-dom"
+version = "0.1.4"
 license.workspace = true
-edition = "2024"
+homepage.workspace = true
+repository.workspace = true
+categories.workspace = true
+edition.workspace = true
+rust-version.workspace = true
 
 [features]
-default = ["tracing", "svg", "woff-c", "clipboard", "accessibility"]
+default = [
+    "tracing",
+    "svg",
+    "woff-rust",
+    "accessibility",
+    "system_fonts",
+    "file_input",
+]
 tracing = ["dep:tracing"]
 svg = ["dep:usvg"]
 # WOFF decoding using the "woff" crate which binds to C libraries
-# ("woff" for woff2) and "sfnt2woff" for woff1).
-# Both woff1 and woff2 are supported
 woff-c = ["dep:woff"]
-# WOFF decoding using the "woff2" crate which is pure Rust
-# Only woff2 is supported. Does not work correct with all woff2 fonts
-woff-rust = ["dep:woff2"]
-clipboard = ["dep:arboard"]
+# WOFF decoding using the "wuff" crate which is pure Rust
+woff-rust = ["dep:wuff"]
 accessibility = ["accesskit"]
+system_fonts = ["parley/system"]
+autofocus = []
+file_input = []
+incremental = []
+parallel-construct = []
+log_phase_times = ["debug_timer/enable"]
 
 [dependencies]
 # Blitz dependencies
-blitz-traits = { version = "0.1.0-alpha.1", path = "../blitz-traits" }
-stylo_taffy = { version = "0.1.0-alpha.1", path = "../stylo_taffy" }
+blitz-traits = { workspace = true }
+stylo_taffy = { workspace = true, features = ["default"] }
+debug_timer = { workspace = true }
 
 # Servo dependencies
 style = { workspace = true }
 selectors = { workspace = true }
+cssparser = { workspace = true }
 style_config = { workspace = true }
 style_traits = { workspace = true }
 style_dom = { workspace = true }
 app_units = { workspace = true }
-euclid = { workspace = true, features = ["serde"] }
-atomic_refcell = { workspace = true, features = ["serde"] }
-string_cache = { workspace = true }
+euclid = { workspace = true }
+atomic_refcell = { workspace = true }
 markup5ever = { workspace = true }
 smallvec = { workspace = true }
 
 # DioxusLabs dependencies
 taffy = { workspace = true }
 
-# Linebender dependencies
+# Linebender/Fontations dependencies
 accesskit = { workspace = true, optional = true }
 parley = { workspace = true }
-peniko = { workspace = true }
+skrifa = { workspace = true }
+linebender_resource_handle = { workspace = true }
 color = { workspace = true }
 
 # Other dependencies
 slab = { workspace = true }
+bitflags = { workspace = true }
 tracing = { workspace = true, optional = true }
+fastrand = { workspace = true }
+rayon = { workspace = true }
 
 # Media & Decoding
 image = { workspace = true }
 usvg = { workspace = true, optional = true }
-woff = { workspace = true, optional = true, features = ["version2"] }
-woff2 = { workspace = true, optional = true }
+woff = { workspace = true, optional = true, features = ["version1", "version2"] }
+wuff = { workspace = true, optional = true }
 html-escape = { workspace = true }
+percent-encoding = { workspace = true }
 
 # IO & Networking
-url = { workspace = true, features = ["serde"] }
+url = { workspace = true }
 
 # Input
 keyboard-types = { workspace = true }
 cursor-icon = { workspace = true }
 
-[target.'cfg(any(target_os = "windows",target_os = "macos",target_os = "linux",target_os = "dragonfly", target_os = "freebsd", target_os = "netbsd", target_os = "openbsd"))'.dependencies]
-arboard = { workspace = true, optional = true }
+# HACK: Blitz doesn't need to depend on objc2 directly. But this feature flag is necessary
+# to prevent debug builds from panicking.
+[target.'cfg(any(target_vendor = "apple"))'.dependencies]
+objc2 = { version = "0.6", features = ["disable-encoding-assertions"] }

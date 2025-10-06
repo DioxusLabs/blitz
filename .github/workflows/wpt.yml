@@ -1,0 +1,42 @@
+name: WPT
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  RUSTDOCFLAGS: "-D warnings"
+  CARGO_REGISTRIES_CRATES_IO_PROTOCOL: "sparse"
+  WPT_DIR: "./wpt/tests"
+
+jobs:
+  wpt:
+    name: "Run WPT Tests"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: "blitz-wpt-linux"
+          cache-all-crates: "true"
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - name: Clone WPT tests
+        run: git clone --depth 1 --single-branch https://github.com/web-platform-tests/wpt ./wpt/tests
+      - name: Build WPT runner
+        run: cargo build -rp wpt
+      - name: Run WPT tests
+        run: cargo run -rp wpt css
+      - name: Compress report (zstd)
+        run: zstd -22 --ultra -o ./wpt/output/wptreport.json.zst ./wpt/output/wptreport.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wpt-report.json.zst
+          path: ./wpt/output/wptreport.json.zst
+          compression: 0 # We are already using zstd compression

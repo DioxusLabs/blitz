@@ -1,28 +1,30 @@
 [package]
 name = "blitz"
 description = "High-level APIs for rendering HTML with Blitz"
-version = "0.1.0-alpha.1"
-homepage = "https://github.com/dioxuslabs/blitz"
-repository = "https://github.com/dioxuslabs/blitz"
 documentation = "https://docs.rs/blitz"
+version = "0.1.1"
 license.workspace = true
-edition = "2024"
+homepage.workspace = true
+repository.workspace = true
+categories.workspace = true
+edition.workspace = true
+rust-version.workspace = true
 
 [features]
-default = ["net", "accessibility", "menu", "tracing", "svg"]
-svg = ["blitz-renderer-vello/svg"]
+default = ["net", "accessibility", "tracing"]
 net = ["dep:tokio", "dep:url", "dep:blitz-net"]
 accessibility = ["blitz-shell/accessibility"]
-menu = ["blitz-shell/menu"]
 tracing = ["blitz-shell/tracing"]
 
 [dependencies]
 # Blitz dependencies
-blitz-renderer-vello = { version = "0.1.0-alpha.1", path = "../blitz-renderer-vello" }
-blitz-html = { version = "0.1.0-alpha.1", path = "../blitz-html" }
-blitz-shell = { version = "0.1.0-alpha.1", path = "../blitz-shell" }
-blitz-net = { version = "0.1.0-alpha.1", path = "../blitz-net", optional = true }
-blitz-traits = { version = "0.1.0-alpha.1", path = "../blitz-traits" }
+anyrender_vello = { workspace = true }
+blitz-traits = { workspace = true }
+blitz-dom = { workspace = true }
+blitz-html = { workspace = true }
+blitz-shell = { workspace = true }
+blitz-paint = { workspace = true }
+blitz-net = { workspace = true, optional = true }
 
 # IO & Networking
 url = { workspace = true, features = ["serde"], optional = true }

@@ -1,15 +1,16 @@
 use std::{ops::Range, sync::Arc};
 
 use markup5ever::local_name;
-use style::computed_values::table_layout::T as TableLayout;
-use style::values::specified::box_::DisplayInside;
+use style::values::specified::box_::{DisplayInside, DisplayOutside};
+use style::{Atom, computed_values::table_layout::T as TableLayout};
 use taffy::{
-    Dimension, LayoutPartialTree as _, NonRepeatedTrackSizingFunction, ResolveOrZero,
-    compute_leaf_layout, style_helpers,
+    Dimension, LayoutPartialTree as _, ResolveOrZero, TrackSizingFunction, compute_leaf_layout,
+    style_helpers,
 };
 
 use crate::BaseDocument;
 
+use super::damage::{CONSTRUCT_BOX, CONSTRUCT_DESCENDENT, CONSTRUCT_FC};
 use super::resolve_calc_value;
 
 pub struct TableTreeWrapper<'doc> {
@@ -19,7 +20,7 @@ pub struct TableTreeWrapper<'doc> {
 
 #[derive(Debug, Clone)]
 pub struct TableContext {
-    style: taffy::Style,
+    style: taffy::Style<Atom>,
     items: Vec<TableItem>,
 }
 
@@ -33,7 +34,7 @@ pub enum TableItemKind {
 pub struct TableItem {
     kind: TableItemKind,
     node_id: usize,
-    style: taffy::Style,
+    style: taffy::Style<Atom>,
 }
 
 pub(crate) fn build_table_context(
@@ -79,7 +80,7 @@ pub(crate) fn build_table_context(
 
     style.grid_template_columns = column_sizes
         .into_iter()
-        .map(|dim| NonRepeatedTrackSizingFunction::from(dim).into())
+        .map(|dim| TrackSizingFunction::from(dim).into())
         .collect();
     style.grid_template_rows = vec![style_helpers::auto(); row as usize];
 
@@ -114,6 +115,11 @@ pub(crate) fn collect_table_cells(
         return;
     };
 
+    if display.outside() == DisplayOutside::None {
+        node.remove_damage(CONSTRUCT_DESCENDENT | CONSTRUCT_FC | CONSTRUCT_BOX);
+        return;
+    }
+
     match display.inside() {
         DisplayInside::TableRowGroup
         | DisplayInside::TableHeaderGroup
@@ -121,11 +127,14 @@ pub(crate) fn collect_table_cells(
         | DisplayInside::Contents => {
             let children = std::mem::take(&mut doc.nodes[node_id].children);
             for child_id in children.iter().copied() {
+                doc.nodes[child_id]
+                    .remove_damage(CONSTRUCT_DESCENDENT | CONSTRUCT_FC | CONSTRUCT_BOX);
                 collect_table_cells(doc, child_id, is_fixed, row, col, cells, columns);
             }
             doc.nodes[node_id].children = children;
         }
         DisplayInside::TableRow => {
+            node.remove_damage(CONSTRUCT_DESCENDENT | CONSTRUCT_FC | CONSTRUCT_BOX);
             *row += 1;
             *col = 0;
 
@@ -154,6 +163,7 @@ pub(crate) fn collect_table_cells(
             doc.nodes[node_id].children = children;
         }
         DisplayInside::TableCell => {
+            // node.remove_damage(CONSTRUCT_DESCENDENT | CONSTRUCT_FC | CONSTRUCT_BOX);
             let stylo_style = &node.primary_styles().unwrap();
             let colspan: u16 = node
                 .attr(local_name!("colspan"))
@@ -208,8 +218,24 @@ pub(crate) fn collect_table_cells(
 
             *col += colspan;
         }
-        _ => {
-            println!("Warning: ignoring non-table typed descendent of table");
+        DisplayInside::Flow
+        | DisplayInside::FlowRoot
+        | DisplayInside::Flex
+        | DisplayInside::Grid => {
+            node.remove_damage(CONSTRUCT_DESCENDENT | CONSTRUCT_FC | CONSTRUCT_BOX);
+            // Probably a table caption: ignore
+            // println!(
+            //     "Warning: ignoring non-table typed descendent of table ({:?})",
+            //     display.inside()
+            // );
+        }
+        DisplayInside::TableColumnGroup | DisplayInside::TableColumn | DisplayInside::Table => {
+            node.remove_damage(CONSTRUCT_DESCENDENT | CONSTRUCT_FC | CONSTRUCT_BOX);
+            //Ignore
+        }
+        DisplayInside::None => {
+            node.remove_damage(CONSTRUCT_DESCENDENT | CONSTRUCT_FC | CONSTRUCT_BOX);
+            // Ignore
         }
     }
 }
@@ -249,11 +275,13 @@ impl taffy::TraverseTree for TableTreeWrapper<'_> {}
 
 impl taffy::LayoutPartialTree for TableTreeWrapper<'_> {
     type CoreContainerStyle<'a>
-        = &'a taffy::Style
+        = &'a taffy::Style<Atom>
     where
         Self: 'a;
 
-    fn get_core_container_style(&self, _node_id: taffy::NodeId) -> &taffy::Style {
+    type CustomIdent = Atom;
+
+    fn get_core_container_style(&self, _node_id: taffy::NodeId) -> &taffy::Style<Atom> {
         &self.ctx.style
     }
 
@@ -288,12 +316,12 @@ impl taffy::LayoutPartialTree for TableTreeWrapper<'_> {
 
 impl taffy::LayoutGridContainer for TableTreeWrapper<'_> {
     type GridContainerStyle<'a>
-        = &'a taffy::Style
+        = &'a taffy::Style<Atom>
     where
         Self: 'a;
 
     type GridItemStyle<'a>
-        = &'a taffy::Style
+        = &'a taffy::Style<Atom>
     where
         Self: 'a;
 

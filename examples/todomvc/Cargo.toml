@@ -1,0 +1,23 @@
+[package]
+name = "todomvc"
+version = "0.1.0"
+edition = "2024"
+license.workspace = true
+
+[features]
+default = ["gpu"]
+gpu = ["mini-dxn/gpu"]
+cpu = ["cpu-pixels"]
+cpu-pixels = ["mini-dxn/cpu-pixels"]
+cpu-softbuffer = ["mini-dxn/cpu-softbuffer"]
+incremental = ["mini-dxn/incremental"]
+log_frame_times = ["mini-dxn/log_frame_times"]
+log_phase_times = ["mini-dxn/log_phase_times"]
+
+[dependencies]
+mini-dxn = { path = "../../packages/mini-dxn", default-features = false, features = ["data-uri", "svg", "system_fonts"] }
+dioxus = { version = "=0.7.0-rc.0", default-features = false, features = ["html", "hooks", "macro", "signals"] }
+
+# Disable unicode URL support
+# See https://github.com/hsivonen/idna_adapter
+idna_adapter = "=1.0.0"

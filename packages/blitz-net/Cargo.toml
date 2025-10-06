@@ -1,16 +1,22 @@
 [package]
 name = "blitz-net"
 description = "Blitz networking"
-version = "0.1.0-alpha.1"
-homepage = "https://github.com/dioxuslabs/blitz"
-repository = "https://github.com/dioxuslabs/blitz"
 documentation = "https://docs.rs/blitz-net"
+version.workspace = true
 license.workspace = true
-edition = "2024"
+homepage.workspace = true
+repository.workspace = true
+categories.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[features]
+cookies = ["reqwest/cookies"]
+multipart = ["reqwest/multipart", "reqwest/stream"]
 
 [dependencies]
 # Blitz dependencies
-blitz-traits = { version = "0.1.0-alpha.1", path = "../blitz-traits" }
+blitz-traits = { workspace = true }
 
 # Networking dependencies
 tokio = { workspace = true }

@@ -1,18 +1,21 @@
 [package]
 name = "blitz-traits"
 description = "Shared traits and types for Blitz"
-version = "0.1.0-alpha.1"
-homepage = "https://github.com/dioxuslabs/blitz"
-repository = "https://github.com/dioxuslabs/blitz"
 documentation = "https://docs.rs/blitz-traits"
+version.workspace = true
 license.workspace = true
-edition = "2024"
+homepage.workspace = true
+repository.workspace = true
+categories.workspace = true
+edition.workspace = true
+rust-version.workspace = true
 
 [dependencies]
 http = { workspace = true }
 url = { workspace = true }
 bytes = { workspace = true }
 keyboard-types = { workspace = true }
-raw-window-handle = { workspace = true }
 smol_str = { workspace = true }
 bitflags = { workspace = true }
+cursor-icon = { workspace = true }
+serde = { workspace = true }

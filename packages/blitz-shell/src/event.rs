@@ -1,3 +1,4 @@
+use blitz_traits::navigation::NavigationOptions;
 use futures_util::task::ArcWake;
 use std::{any::Any, sync::Arc};
 use winit::{event_loop::EventLoopProxy, window::WindowId};
@@ -28,7 +29,15 @@ pub enum BlitzShellEvent {
     Embedder(Arc<dyn Any + Send + Sync>),
 
     /// Navigate to another URL (triggered by e.g. clicking a link)
-    Navigate(String),
+    Navigate(Box<NavigationOptions>),
+
+    /// Navigate to another URL (triggered by e.g. clicking a link)
+    NavigationLoad {
+        url: String,
+        contents: String,
+        retain_scroll_position: bool,
+        is_md: bool,
+    },
 }
 impl BlitzShellEvent {
     pub fn embedder_event<T: Any + Send + Sync>(value: T) -> Self {

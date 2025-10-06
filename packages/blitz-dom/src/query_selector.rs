@@ -2,9 +2,7 @@ use selectors::SelectorList;
 use smallvec::SmallVec;
 use style::dom_apis::{MayUseInvalidation, QueryAll, QueryFirst, query_selector};
 use style::selector_parser::{SelectorImpl, SelectorParser};
-use style::stylesheets::UrlExtraData;
 use style_traits::ParseError;
-use url::Url;
 
 use crate::{BaseDocument, Node};
 
@@ -38,8 +36,8 @@ impl BaseDocument {
 
     /// Find all nodes that match the selector specified as a string
     /// Returns:
-    ///   - Err(_) if parsing the selector fails
-    ///   - Ok(SmallVec<usize>) with all matching nodes otherwise
+    ///   - `Err(_)` if parsing the selector fails
+    ///   - `Ok(SmallVec<usize>)` with all matching nodes otherwise
     pub fn query_selector_all<'input>(
         &self,
         selector: &'input str,
@@ -69,11 +67,7 @@ impl BaseDocument {
         &self,
         input: &'input str,
     ) -> Result<SelectorList<SelectorImpl>, ParseError<'input>> {
-        let url_extra_data = UrlExtraData::from(self.base_url.clone().unwrap_or_else(|| {
-            "data:text/css;charset=utf-8;base64,"
-                .parse::<Url>()
-                .unwrap()
-        }));
+        let url_extra_data = self.url.url_extra_data();
         SelectorParser::parse_author_origin_no_namespace(input, &url_extra_data)
     }
 }

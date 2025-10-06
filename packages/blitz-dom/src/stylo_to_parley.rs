@@ -4,20 +4,91 @@ use std::borrow::Cow;
 use style::values::computed::Length;
 
 use crate::node::TextBrush;
-use crate::util::ToColorColor;
 
 // Module of type aliases so we can refer to stylo types with nicer names
 pub(crate) mod stylo {
     pub(crate) use style::computed_values::white_space_collapse::T as WhiteSpaceCollapse;
     pub(crate) use style::properties::ComputedValues;
+    pub(crate) use style::values::computed::OverflowWrap;
+    pub(crate) use style::values::computed::WordBreak;
+    pub(crate) use style::values::computed::font::FontStretch;
     pub(crate) use style::values::computed::font::FontStyle;
+    pub(crate) use style::values::computed::font::FontVariationSettings;
+    pub(crate) use style::values::computed::font::FontWeight;
     pub(crate) use style::values::computed::font::GenericFontFamily;
     pub(crate) use style::values::computed::font::LineHeight;
     pub(crate) use style::values::computed::font::SingleFontFamily;
 }
 
 pub(crate) mod parley {
+    pub(crate) use parley::FontVariation;
+    pub(crate) use parley::fontique::QueryFamily;
     pub(crate) use parley::style::*;
+}
+
+pub(crate) fn generic_font_family(input: stylo::GenericFontFamily) -> parley::GenericFamily {
+    match input {
+        stylo::GenericFontFamily::None => parley::GenericFamily::SansSerif,
+        stylo::GenericFontFamily::Serif => parley::GenericFamily::Serif,
+        stylo::GenericFontFamily::SansSerif => parley::GenericFamily::SansSerif,
+        stylo::GenericFontFamily::Monospace => parley::GenericFamily::Monospace,
+        stylo::GenericFontFamily::Cursive => parley::GenericFamily::Cursive,
+        stylo::GenericFontFamily::Fantasy => parley::GenericFamily::Fantasy,
+        stylo::GenericFontFamily::SystemUi => parley::GenericFamily::SystemUi,
+    }
+}
+
+#[allow(dead_code)]
+pub(crate) fn query_font_family(input: &stylo::SingleFontFamily) -> parley::QueryFamily<'_> {
+    match input {
+        stylo::SingleFontFamily::FamilyName(name) => {
+            'ret: {
+                let name = name.name.as_ref();
+
+                // Legacy web compatibility
+                #[cfg(target_vendor = "apple")]
+                if name == "-apple-system" {
+                    break 'ret parley::QueryFamily::Generic(parley::GenericFamily::SystemUi);
+                }
+                #[cfg(target_os = "macos")]
+                if name == "BlinkMacSystemFont" {
+                    break 'ret parley::QueryFamily::Generic(parley::GenericFamily::SystemUi);
+                }
+
+                break 'ret parley::QueryFamily::Named(name);
+            }
+        }
+        stylo::SingleFontFamily::Generic(generic) => {
+            parley::QueryFamily::Generic(self::generic_font_family(*generic))
+        }
+    }
+}
+
+pub(crate) fn font_weight(input: stylo::FontWeight) -> parley::FontWeight {
+    parley::FontWeight::new(input.value())
+}
+
+pub(crate) fn font_width(input: stylo::FontStretch) -> parley::FontWidth {
+    parley::FontWidth::from_percentage(input.0.to_float())
+}
+
+pub(crate) fn font_style(input: stylo::FontStyle) -> parley::FontStyle {
+    match input {
+        stylo::FontStyle::NORMAL => parley::FontStyle::Normal,
+        stylo::FontStyle::ITALIC => parley::FontStyle::Italic,
+        val => parley::FontStyle::Oblique(Some(val.oblique_degrees())),
+    }
+}
+
+pub(crate) fn font_variations(input: &stylo::FontVariationSettings) -> Vec<parley::FontVariation> {
+    input
+        .0
+        .iter()
+        .map(|v| parley::FontVariation {
+            tag: v.tag.0,
+            value: v.value,
+        })
+        .collect()
 }
 
 pub(crate) fn white_space_collapse(input: stylo::WhiteSpaceCollapse) -> parley::WhiteSpaceCollapse {
@@ -36,18 +107,15 @@ pub(crate) fn style(
     style: &stylo::ComputedValues,
 ) -> parley::TextStyle<'static, TextBrush> {
     let font_styles = style.get_font();
-    // let text_styles = style.get_text();
     let itext_styles = style.get_inherited_text();
 
     // Convert font size and line height
     let font_size = font_styles.font_size.used_size.0.px();
-    let line_height: f32 = match font_styles.line_height {
-        stylo::LineHeight::Normal => font_size * 1.2,
-        stylo::LineHeight::Number(num) => font_size * num.0,
-        stylo::LineHeight::Length(value) => value.0.px(),
+    let line_height = match font_styles.line_height {
+        stylo::LineHeight::Normal => parley::LineHeight::FontSizeRelative(1.2),
+        stylo::LineHeight::Number(num) => parley::LineHeight::FontSizeRelative(num.0),
+        stylo::LineHeight::Length(value) => parley::LineHeight::Absolute(value.0.px()),
     };
-    // Parley expects line height as a multiple of font size!
-    let line_height = line_height / font_size;
 
     let letter_spacing = itext_styles
         .letter_spacing
@@ -56,22 +124,10 @@ pub(crate) fn style(
         .px();
 
     // Convert Bold/Italic
-    let font_weight = parley::FontWeight::new(font_styles.font_weight.value());
-    let font_style = match font_styles.font_style {
-        stylo::FontStyle::NORMAL => parley::FontStyle::Normal,
-        stylo::FontStyle::ITALIC => parley::FontStyle::Italic,
-        val => parley::FontStyle::Oblique(Some(val.oblique_degrees())),
-    };
-    let font_width = parley::FontWidth::from_percentage(font_styles.font_stretch.0.to_float());
-    let font_variations: Vec<_> = font_styles
-        .font_variation_settings
-        .0
-        .iter()
-        .map(|v| parley::FontVariation {
-            tag: v.tag.0,
-            value: v.value,
-        })
-        .collect();
+    let font_weight = self::font_weight(font_styles.font_weight);
+    let font_style = self::font_style(font_styles.font_style);
+    let font_width = self::font_width(font_styles.font_stretch);
+    let font_variations = self::font_variations(&font_styles.font_variation_settings);
 
     // Convert font family
     let families: Vec<_> = font_styles
@@ -98,28 +154,22 @@ pub(crate) fn style(
                 }
             }
             stylo::SingleFontFamily::Generic(generic) => {
-                parley::FontFamily::Generic(match generic {
-                    stylo::GenericFontFamily::None => parley::GenericFamily::SansSerif,
-                    stylo::GenericFontFamily::Serif => parley::GenericFamily::Serif,
-                    stylo::GenericFontFamily::SansSerif => parley::GenericFamily::SansSerif,
-                    stylo::GenericFontFamily::Monospace => parley::GenericFamily::Monospace,
-                    stylo::GenericFontFamily::Cursive => parley::GenericFamily::Cursive,
-                    stylo::GenericFontFamily::Fantasy => parley::GenericFamily::Fantasy,
-                    stylo::GenericFontFamily::SystemUi => parley::GenericFamily::SystemUi,
-                })
+                parley::FontFamily::Generic(self::generic_font_family(*generic))
             }
         })
         .collect();
 
-    // Convert text colour
-    let color = itext_styles.color.as_color_color();
-
-    let decoration_brush = style
-        .get_text()
-        .text_decoration_color
-        .as_absolute()
-        .map(ToColorColor::as_color_color)
-        .map(TextBrush::from_color);
+    // Wrapping and breaking
+    let word_break = match itext_styles.word_break {
+        stylo::WordBreak::Normal => parley::WordBreakStrength::Normal,
+        stylo::WordBreak::BreakAll => parley::WordBreakStrength::BreakAll,
+        stylo::WordBreak::KeepAll => parley::WordBreakStrength::KeepAll,
+    };
+    let overflow_wrap = match itext_styles.overflow_wrap {
+        stylo::OverflowWrap::Normal => parley::OverflowWrap::Normal,
+        stylo::OverflowWrap::BreakWord => parley::OverflowWrap::BreakWord,
+        stylo::OverflowWrap::Anywhere => parley::OverflowWrap::Anywhere,
+    };
 
     parley::TextStyle {
         // font_stack: parley::FontStack::Single(FontFamily::Generic(GenericFamily::SystemUi)),
@@ -131,17 +181,27 @@ pub(crate) fn style(
         font_variations: parley::FontSettings::List(Cow::Owned(font_variations)),
         font_features: parley::FontSettings::List(Cow::Borrowed(&[])),
         locale: Default::default(),
-        brush: TextBrush::from_id_and_color(span_id, color),
-        has_underline: itext_styles.text_decorations_in_effect.underline,
-        underline_offset: Default::default(),
-        underline_size: Default::default(),
-        underline_brush: decoration_brush.clone(),
-        has_strikethrough: itext_styles.text_decorations_in_effect.line_through,
-        strikethrough_offset: Default::default(),
-        strikethrough_size: Default::default(),
-        strikethrough_brush: decoration_brush,
         line_height,
         word_spacing: Default::default(),
         letter_spacing,
+        overflow_wrap,
+        word_break,
+
+        // Contains NodeId
+        brush: TextBrush::from_id(span_id),
+
+        // We avoid sending these styles through Parley because they don't affect layout
+        // and handling them separately allows us to update them without rebuilding the Parley layout.
+        //
+        // Instead of setting them here we pass the NodeId in the `brush` field and use that to read these
+        // styles lazily when rendering.
+        has_underline: Default::default(),
+        underline_offset: Default::default(),
+        underline_size: Default::default(),
+        underline_brush: Default::default(),
+        has_strikethrough: Default::default(),
+        strikethrough_offset: Default::default(),
+        strikethrough_size: Default::default(),
+        strikethrough_brush: Default::default(),
     }
 }

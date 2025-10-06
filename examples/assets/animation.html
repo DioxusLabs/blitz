@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <meta charset="UTF-8">
+        <meta content="origin" name="referrer">
+        <base href="https://www.google.com/" />
+        <title>Google</title>
+        <style type="text/css">
+            .box {
+                width: 60px;
+                height: 60px;
+                position: absolute;
+                top: 200px;
+                left: 200px;
+                background: red;
+                transform: scale(1);
+                transition: transform 2s;
+
+                &:hover {
+                    transform: scale(3);
+                }
+            }
+
+            .box2 {
+                width: 60px;
+                height: 60px;
+                position: absolute;
+                top: 300px;
+                left: 300px;
+                background: blue;
+
+                animation: spin 4s infinite linear;
+            }
+
+            @keyframes spin {
+                from { transform:rotate(0deg); }
+                to { transform:rotate(360deg); }
+            }
+
+            .button {
+                background: blue;
+                color: white;
+                border-radius: 4px;
+                border: 1px solid black;
+                transform: translateY(-4px);
+                transition: transform 0.2s;
+                cursor: pointer;
+
+                &:active {
+                    transform: none;
+                }
+            }
+        </style>
+    </head>
+    <body>
+        <div class="box"></div>
+        <div class="box2"></div>
+
+        <div class="button">Submit</div>
+    </body>
+</html>

@@ -1,5 +1,5 @@
-use blitz_traits::KeyState;
-use blitz_traits::{BlitzImeEvent, BlitzKeyEvent};
+use blitz_traits::events::{BlitzImeEvent, BlitzKeyEvent, KeyState};
+use blitz_traits::shell::ColorScheme;
 use keyboard_types::{Code, Key, Location, Modifiers};
 use winit::event::ElementState;
 use winit::event::Ime;
@@ -10,6 +10,21 @@ use winit::keyboard::KeyLocation as WinitKeyLocation;
 use winit::keyboard::ModifiersState as WinitModifiers;
 use winit::keyboard::NamedKey as WinitNamedKey;
 use winit::keyboard::PhysicalKey as WinitPhysicalKey;
+use winit::window::Theme;
+
+pub(crate) fn theme_to_color_scheme(theme: Theme) -> ColorScheme {
+    match theme {
+        Theme::Light => ColorScheme::Light,
+        Theme::Dark => ColorScheme::Dark,
+    }
+}
+
+pub(crate) fn color_scheme_to_theme(scheme: ColorScheme) -> Theme {
+    match scheme {
+        ColorScheme::Light => Theme::Light,
+        ColorScheme::Dark => Theme::Dark,
+    }
+}
 
 pub(crate) fn winit_ime_to_blitz(event: Ime) -> BlitzImeEvent {
     match event {

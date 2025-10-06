@@ -1,0 +1,40 @@
+[package]
+name = "blitz-paint"
+description = "Paint a Blitz Document using anyrender"
+documentation = "https://docs.rs/blitz-paint"
+version.workspace = true
+license.workspace = true
+homepage.workspace = true
+repository.workspace = true
+categories.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[features]
+default = ["tracing", "svg"]
+tracing = ["dep:tracing"]
+svg = ["dep:anyrender_svg", "dep:usvg", "blitz-dom/svg"]
+
+[dependencies]
+# Blitz dependencies
+anyrender = { workspace = true }
+anyrender_svg = { workspace = true, optional = true }
+blitz-traits = { workspace = true }
+blitz-dom = { workspace = true }
+
+# Servo dependencies
+style = { workspace = true }
+euclid = { workspace = true }
+
+# DioxusLabs dependencies
+taffy = { workspace = true }
+
+# Linebender + WGPU dependencies
+parley = { workspace = true }
+color = { workspace = true }
+peniko = { workspace = true }
+kurbo = { workspace = true }
+usvg = { workspace = true, optional = true }
+
+# Other dependencies
+tracing = { workspace = true, optional = true }

@@ -21,12 +21,17 @@ pub enum ImageType {
     Background(usize),
 }
 
-pub(crate) fn resolve_url(base_url: &Option<url::Url>, raw: &str) -> Option<url::Url> {
-    match base_url {
-        Some(base_url) => base_url.join(raw),
-        None => url::Url::parse(raw),
-    }
-    .ok()
+/// A point
+#[derive(Clone, Debug, Copy, Eq, PartialEq)]
+pub struct Point<T> {
+    /// The x coordinate
+    pub x: T,
+    /// The y coordinate
+    pub y: T,
+}
+
+impl Point<f64> {
+    pub const ZERO: Self = Point { x: 0.0, y: 0.0 };
 }
 
 // Debug print an RcDom
@@ -118,4 +123,17 @@ impl ToColorColor for AbsoluteColor {
                 .raw_components(),
         )
     }
+}
+
+/// Creates an markup5ever::QualName.
+/// Given a local name and an optional namespace
+#[macro_export]
+macro_rules! qual_name {
+    ($local:tt $(, $ns:ident)?) => {
+        $crate::QualName {
+            prefix: None,
+            ns: $crate::ns!($($ns)?),
+            local: $crate::local_name!($local),
+        }
+    };
 }

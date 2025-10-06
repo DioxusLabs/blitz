@@ -4,12 +4,10 @@
 use std::ptr::NonNull;
 use std::sync::atomic::Ordering;
 
-use crate::node::BackgroundImageData;
+use crate::layout::damage::ALL_DAMAGE;
+use crate::layout::damage::compute_layout_damage;
 use crate::node::Node;
-
-use crate::net::ImageHandler;
 use crate::node::NodeData;
-use crate::util::ImageType;
 use atomic_refcell::{AtomicRef, AtomicRefMut};
 use markup5ever::{LocalName, LocalNameStaticSet, Namespace, NamespaceStaticSet, local_name};
 use selectors::{
@@ -19,21 +17,22 @@ use selectors::{
     sink::Push,
 };
 use style::CaseSensitivityExt;
+use style::animation::AnimationSetKey;
+use style::animation::AnimationState;
 use style::applicable_declarations::ApplicableDeclarationBlock;
 use style::color::AbsoluteColor;
+use style::invalidation::element::restyle_hints::RestyleHint;
+use style::properties::ComputedValues;
 use style::properties::{Importance, PropertyDeclaration};
 use style::rule_tree::CascadeLevel;
 use style::selector_parser::PseudoElement;
-use style::servo::url::ComputedUrl;
+use style::selector_parser::RestyleDamage;
 use style::stylesheets::layer_rule::LayerOrder;
 use style::stylesheets::scope_rule::ImplicitScopeRoot;
 use style::values::AtomString;
 use style::values::computed::Percentage;
-use style::values::generics::image::Image as StyloImage;
-use style::values::specified::box_::DisplayOutside;
 use style::{
     Atom,
-    animation::DocumentAnimationSet,
     context::{
         QuirksMode, RegisteredSpeculativePainter, RegisteredSpeculativePainters,
         SharedStyleContext, StyleContext,
@@ -41,7 +40,6 @@ use style::{
     dom::{LayoutIterator, NodeInfo, OpaqueNode, TDocument, TElement, TNode, TShadowRoot},
     global_style_data::GLOBAL_STYLE_DATA,
     properties::PropertyDeclarationBlock,
-    properties::generated::longhands::position::computed_value::T as Position,
     selector_parser::{NonTSPseudoClass, SelectorImpl},
     servo_arc::{Arc, ArcBorrow},
     shared_lock::{Locked, SharedRwLock, StylesheetGuards},
@@ -55,129 +53,7 @@ use style_dom::ElementState;
 use style::values::computed::text::TextAlign as StyloTextAlign;
 
 impl crate::document::BaseDocument {
-    /// Walk the whole tree, converting styles to layout
-    pub fn flush_styles_to_layout(&mut self, node_id: usize) {
-        let doc_id = self.id();
-
-        let display = {
-            let node = self.nodes.get_mut(node_id).unwrap();
-            let stylo_element_data = node.stylo_element_data.borrow();
-            let primary_styles = stylo_element_data
-                .as_ref()
-                .and_then(|data| data.styles.get_primary());
-
-            let Some(style) = primary_styles else {
-                return;
-            };
-
-            node.style = stylo_taffy::to_taffy_style(style);
-
-            node.display_outer = match style.clone_display().outside() {
-                DisplayOutside::None => crate::node::DisplayOuter::None,
-                DisplayOutside::Inline => crate::node::DisplayOuter::Inline,
-                DisplayOutside::Block => crate::node::DisplayOuter::Block,
-                DisplayOutside::TableCaption => crate::node::DisplayOuter::Block,
-                DisplayOutside::InternalTable => crate::node::DisplayOuter::Block,
-            };
-
-            // Flush background image from style to dedicated storage on the node
-            // TODO: handle multiple background images
-            if let Some(elem) = node.data.downcast_element_mut() {
-                let style_bgs = &style.get_background().background_image.0;
-                let elem_bgs = &mut elem.background_images;
-
-                let len = style_bgs.len();
-                elem_bgs.resize_with(len, || None);
-
-                for idx in 0..len {
-                    let background_image = &style_bgs[idx];
-                    let new_bg_image = match background_image {
-                        StyloImage::Url(ComputedUrl::Valid(new_url)) => {
-                            let old_bg_image = elem_bgs[idx].as_ref();
-                            let old_bg_image_url = old_bg_image.map(|data| &data.url);
-                            if old_bg_image_url.is_some_and(|old_url| **new_url == **old_url) {
-                                break;
-                            }
-
-                            self.net_provider.fetch(
-                                doc_id,
-                                Request::get((**new_url).clone()),
-                                Box::new(ImageHandler::new(node_id, ImageType::Background(idx))),
-                            );
-
-                            let bg_image_data = BackgroundImageData::new(new_url.clone());
-                            Some(bg_image_data)
-                        }
-                        _ => None,
-                    };
-
-                    // Element will always exist due to resize_with above
-                    elem_bgs[idx] = new_bg_image;
-                }
-            }
-
-            // Clear Taffy cache
-            // TODO: smarter cache invalidation
-            node.cache.clear();
-
-            node.style.display
-        };
-
-        // If the node has children, then take those children and...
-        let children = self.nodes[node_id].layout_children.borrow_mut().take();
-        if let Some(mut children) = children {
-            // Recursively call flush_styles_to_layout on each child
-            for child in children.iter() {
-                self.flush_styles_to_layout(*child);
-            }
-
-            // If the node is a Flexbox or Grid node then sort by css order property
-            if matches!(display, taffy::Display::Flex | taffy::Display::Grid) {
-                children.sort_by(|left, right| {
-                    let left_node = self.nodes.get(*left).unwrap();
-                    let right_node = self.nodes.get(*right).unwrap();
-                    left_node.order().cmp(&right_node.order())
-                });
-            }
-
-            // Put children back
-            *self.nodes[node_id].layout_children.borrow_mut() = Some(children);
-
-            // Sort paint_children in place
-            self.nodes[node_id]
-                .paint_children
-                .borrow_mut()
-                .as_mut()
-                .unwrap()
-                .sort_by(|left, right| {
-                    let left_node = self.nodes.get(*left).unwrap();
-                    let right_node = self.nodes.get(*right).unwrap();
-                    left_node
-                        .z_index()
-                        .cmp(&right_node.z_index())
-                        .then_with(|| {
-                            fn position_to_order(pos: Position) -> u8 {
-                                match pos {
-                                    Position::Static | Position::Relative | Position::Sticky => 0,
-                                    Position::Absolute | Position::Fixed => 1,
-                                }
-                            }
-                            let left_position = left_node
-                                .primary_styles()
-                                .map(|s| position_to_order(s.clone_position()))
-                                .unwrap_or(0);
-                            let right_position = right_node
-                                .primary_styles()
-                                .map(|s| position_to_order(s.clone_position()))
-                                .unwrap_or(0);
-
-                            left_position.cmp(&right_position)
-                        })
-                })
-        }
-    }
-
-    pub fn resolve_stylist(&mut self) {
+    pub fn resolve_stylist(&mut self, now: f64) {
         style::thread_state::enter(ThreadState::LAYOUT);
 
         let guard = &self.guard;
@@ -195,6 +71,34 @@ impl crate::document::BaseDocument {
         self.stylist
             .flush(&guards, Some(root), Some(&self.snapshots));
 
+        // Mark actively animating nodes as dirty
+        let mut sets = self.animations.sets.write();
+        for (key, set) in sets.iter_mut() {
+            let node_id = key.node.id();
+            self.nodes[node_id].set_restyle_hint(RestyleHint::RESTYLE_SELF);
+
+            for animation in set.animations.iter_mut() {
+                if animation.state == AnimationState::Pending && animation.started_at <= now {
+                    animation.state = AnimationState::Running;
+                }
+                animation.iterate_if_necessary(now);
+
+                if animation.state == AnimationState::Running && animation.has_ended(now) {
+                    animation.state = AnimationState::Finished;
+                }
+            }
+
+            for transition in set.transitions.iter_mut() {
+                if transition.state == AnimationState::Pending && transition.start_time <= now {
+                    transition.state = AnimationState::Running;
+                }
+                if transition.state == AnimationState::Running && transition.has_ended(now) {
+                    transition.state = AnimationState::Finished;
+                }
+            }
+        }
+        drop(sets);
+
         // Build the style context used by the style traversal
         let context = SharedStyleContext {
             traversal_flags: TraversalFlags::empty(),
@@ -202,8 +106,8 @@ impl crate::document::BaseDocument {
             options: GLOBAL_STYLE_DATA.options.clone(),
             guards,
             visited_styles_enabled: false,
-            animations: DocumentAnimationSet::default().clone(),
-            current_time_for_animations: 0.0,
+            animations: self.animations.clone(),
+            current_time_for_animations: now,
             snapshot_map: &self.snapshots,
             registered_speculative_painters: &RegisteredPaintersImpl,
         };
@@ -218,6 +122,27 @@ impl crate::document::BaseDocument {
             let traverser = RecalcStyle::new(context);
             style::driver::traverse_dom(&traverser, token, None);
         }
+
+        for opaque in self.snapshots.keys() {
+            let id = opaque.id();
+            if let Some(node) = self.nodes.get_mut(id) {
+                node.has_snapshot = false;
+            }
+        }
+        self.snapshots.clear();
+
+        let mut sets = self.animations.sets.write();
+        for set in sets.values_mut() {
+            set.clear_canceled_animations();
+            for animation in set.animations.iter_mut() {
+                animation.is_new = false;
+            }
+            for transition in set.transitions.iter_mut() {
+                transition.is_new = false;
+            }
+        }
+        sets.retain(|_, state| !state.is_empty());
+        self.has_active_animations = !sets.is_empty();
 
         style::thread_state::exit(ThreadState::LAYOUT);
     }
@@ -665,26 +590,12 @@ impl<'a> TElement for BlitzNode<'a> {
         false
     }
 
-    fn style_attribute(&self) -> Option<ArcBorrow<Locked<PropertyDeclarationBlock>>> {
+    fn style_attribute(&self) -> Option<ArcBorrow<'_, Locked<PropertyDeclarationBlock>>> {
         self.element_data()
             .expect("Not an element")
             .style_attribute
             .as_ref()
             .map(|f| f.borrow_arc())
-    }
-
-    fn animation_rule(
-        &self,
-        _: &SharedStyleContext,
-    ) -> Option<Arc<Locked<PropertyDeclarationBlock>>> {
-        None
-    }
-
-    fn transition_rule(
-        &self,
-        _context: &SharedStyleContext,
-    ) -> Option<Arc<Locked<PropertyDeclarationBlock>>> {
-        None
     }
 
     fn state(&self) -> ElementState {
@@ -756,10 +667,13 @@ impl<'a> TElement for BlitzNode<'a> {
         unimplemented!()
     }
 
-    unsafe fn ensure_data(&self) -> AtomicRefMut<style::data::ElementData> {
+    unsafe fn ensure_data(&self) -> AtomicRefMut<'_, style::data::ElementData> {
         let mut stylo_data = self.stylo_element_data.borrow_mut();
         if stylo_data.is_none() {
-            *stylo_data = Some(Default::default());
+            *stylo_data = Some(style::data::ElementData {
+                damage: ALL_DAMAGE,
+                ..Default::default()
+            });
         }
         AtomicRefMut::map(stylo_data, |sd| sd.as_mut().unwrap())
     }
@@ -772,7 +686,7 @@ impl<'a> TElement for BlitzNode<'a> {
         self.stylo_element_data.borrow().is_some()
     }
 
-    fn borrow_data(&self) -> Option<AtomicRef<style::data::ElementData>> {
+    fn borrow_data(&self) -> Option<AtomicRef<'_, style::data::ElementData>> {
         let stylo_data = self.stylo_element_data.borrow();
         if stylo_data.is_some() {
             Some(AtomicRef::map(stylo_data, |sd| sd.as_ref().unwrap()))
@@ -781,7 +695,7 @@ impl<'a> TElement for BlitzNode<'a> {
         }
     }
 
-    fn mutate_data(&self) -> Option<AtomicRefMut<style::data::ElementData>> {
+    fn mutate_data(&self) -> Option<AtomicRefMut<'_, style::data::ElementData>> {
         let stylo_data = self.stylo_element_data.borrow_mut();
         if stylo_data.is_some() {
             Some(AtomicRefMut::map(stylo_data, |sd| sd.as_mut().unwrap()))
@@ -795,27 +709,53 @@ impl<'a> TElement for BlitzNode<'a> {
     }
 
     fn may_have_animations(&self) -> bool {
-        false
+        true
     }
 
-    fn has_animations(&self, _context: &SharedStyleContext) -> bool {
-        false
+    fn has_animations(&self, context: &SharedStyleContext) -> bool {
+        self.has_css_animations(context, None) || self.has_css_transitions(context, None)
     }
 
     fn has_css_animations(
         &self,
-        _context: &SharedStyleContext,
-        _pseudo_element: Option<style::selector_parser::PseudoElement>,
+        context: &SharedStyleContext,
+        pseudo_element: Option<PseudoElement>,
     ) -> bool {
-        false
+        let key = AnimationSetKey::new(TNode::opaque(&TElement::as_node(self)), pseudo_element);
+        context.animations.has_active_animations(&key)
     }
 
     fn has_css_transitions(
         &self,
-        _context: &SharedStyleContext,
-        _pseudo_element: Option<style::selector_parser::PseudoElement>,
+        context: &SharedStyleContext,
+        pseudo_element: Option<PseudoElement>,
     ) -> bool {
-        false
+        let key = AnimationSetKey::new(TNode::opaque(&TElement::as_node(self)), pseudo_element);
+        context.animations.has_active_transitions(&key)
+    }
+
+    fn animation_rule(
+        &self,
+        context: &SharedStyleContext,
+    ) -> Option<Arc<Locked<PropertyDeclarationBlock>>> {
+        let opaque = TNode::opaque(&TElement::as_node(self));
+        context.animations.get_animation_declarations(
+            &AnimationSetKey::new_for_non_pseudo(opaque),
+            context.current_time_for_animations,
+            &self.guard,
+        )
+    }
+
+    fn transition_rule(
+        &self,
+        context: &SharedStyleContext,
+    ) -> Option<Arc<Locked<PropertyDeclarationBlock>>> {
+        let opaque = TNode::opaque(&TElement::as_node(self));
+        context.animations.get_transition_declarations(
+            &AnimationSetKey::new_for_non_pseudo(opaque),
+            context.current_time_for_animations,
+            &self.guard,
+        )
     }
 
     fn shadow_root(&self) -> Option<<Self::ConcreteNode as TNode>::ConcreteShadowRoot> {
@@ -866,6 +806,8 @@ impl<'a> TElement for BlitzNode<'a> {
             return;
         };
 
+        let tag = &elem.name.local;
+
         let mut push_style = |decl: PropertyDeclaration| {
             hints.push(ApplicableDeclarationBlock::from_declarations(
                 Arc::new(
@@ -900,7 +842,10 @@ impl<'a> TElement for BlitzNode<'a> {
             None
         }
 
-        fn parse_size_attr(value: &str) -> Option<style::values::specified::LengthPercentage> {
+        fn parse_size_attr(
+            value: &str,
+            filter_fn: impl FnOnce(&f32) -> bool,
+        ) -> Option<style::values::specified::LengthPercentage> {
             use style::values::specified::{AbsoluteLength, LengthPercentage, NoCalcLength};
             if let Some(value) = value.strip_suffix("px") {
                 let val: f32 = value.parse().ok()?;
@@ -914,7 +859,7 @@ impl<'a> TElement for BlitzNode<'a> {
                 return Some(LengthPercentage::Percentage(Percentage(val / 100.0)));
             }
 
-            let val: f32 = value.parse().ok()?;
+            let val: f32 = value.parse().ok().filter(filter_fn)?;
             Some(LengthPercentage::Length(NoCalcLength::Absolute(
                 AbsoluteLength::Px(val),
             )))
@@ -938,17 +883,32 @@ impl<'a> TElement for BlitzNode<'a> {
                 }
             }
 
-            if *name == local_name!("width") {
-                if let Some(width) = parse_size_attr(value) {
+            // https://html.spec.whatwg.org/multipage/rendering.html#dimRendering
+            if *name == local_name!("width")
+                && (*tag == local_name!("table")
+                    || *tag == local_name!("col")
+                    || *tag == local_name!("tr")
+                    || *tag == local_name!("td")
+                    || *tag == local_name!("th")
+                    || *tag == local_name!("hr"))
+            {
+                let is_table = *tag == local_name!("table");
+                if let Some(width) = parse_size_attr(value, |v| !is_table || *v != 0.0) {
                     use style::values::generics::{NonNegative, length::Size};
+
                     push_style(PropertyDeclaration::Width(Size::LengthPercentage(
                         NonNegative(width),
                     )));
                 }
             }
 
-            if *name == local_name!("height") {
-                if let Some(height) = parse_size_attr(value) {
+            if *name == local_name!("height")
+                && (*tag == local_name!("table")
+                    || *tag == local_name!("thead")
+                    || *tag == local_name!("tbody")
+                    || *tag == local_name!("tfoot"))
+            {
+                if let Some(height) = parse_size_attr(value, |_| true) {
                     use style::values::generics::{NonNegative, length::Size};
                     push_style(PropertyDeclaration::Height(Size::LengthPercentage(
                         NonNegative(height),
@@ -963,6 +923,11 @@ impl<'a> TElement for BlitzNode<'a> {
                         Color::from_absolute_color(AbsoluteColor::srgb_legacy(r, g, b, a)),
                     ));
                 }
+            }
+
+            if *name == local_name!("hidden") {
+                use style::values::specified::Display;
+                push_style(PropertyDeclaration::Display(Display::None));
             }
         }
     }
@@ -1009,16 +974,9 @@ impl<'a> TElement for BlitzNode<'a> {
         }
     }
 
-    fn before_pseudo_element(&self) -> Option<Self> {
-        self.before.map(|id| self.with(id))
-    }
-
-    fn after_pseudo_element(&self) -> Option<Self> {
-        self.after.map(|id| self.with(id))
-    }
-
-    fn marker_pseudo_element(&self) -> Option<Self> {
-        None
+    fn compute_layout_damage(old: &ComputedValues, new: &ComputedValues) -> RestyleDamage {
+        compute_layout_damage(old, new)
+        // ALL_DAMAGE
     }
 
     // fn update_animations(
@@ -1077,7 +1035,6 @@ impl RegisteredSpeculativePainters for RegisteredPaintersImpl {
     }
 }
 
-use blitz_traits::net::Request;
 use style::traversal::recalc_style_at;
 
 pub struct RecalcStyle<'a> {
@@ -1126,7 +1083,7 @@ where
     }
 
     #[inline]
-    fn shared_context(&self) -> &SharedStyleContext {
+    fn shared_context(&self) -> &SharedStyleContext<'_> {
         &self.context
     }
 }
