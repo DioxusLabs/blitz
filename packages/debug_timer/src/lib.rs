@@ -9,8 +9,7 @@ mod real_debug_timer {
 
     pub struct DebugTimer {
         initial_time: Instant,
-        last_time: Instant,
-        recorded_times: Vec<(&'static str, Duration)>,
+        recorded_times: Vec<(&'static str, Instant)>,
     }
 
     fn value_and_units(duration: Duration) -> (f32, &'static str) {
@@ -30,16 +29,12 @@ mod real_debug_timer {
             let time = Instant::now();
             Self {
                 initial_time: time,
-                last_time: time,
                 recorded_times: Vec::new(),
             }
         }
 
         pub fn record_time(&mut self, message: &'static str) {
-            let now = Instant::now();
-            let diff = now - self.last_time;
-            self.recorded_times.push((message, diff));
-            self.last_time = now;
+            self.recorded_times.push((message, Instant::now()));
         }
 
         pub fn print_times(&self, message: &str) {
@@ -52,15 +47,22 @@ mod real_debug_timer {
             } else {
                 write!(out, "{message}{overall_val:.0}{overall_unit} (").unwrap();
             }
-            for (idx, time) in self.recorded_times.iter().enumerate() {
+
+            for (idx, times) in self.recorded_times.windows(2).enumerate() {
+                let last = times[0];
+                let current = times[1];
+
                 if idx != 0 {
                     write!(out, ", ").unwrap();
                 }
-                let (val, unit) = value_and_units(time.1);
+
+                let duration = current.1.duration_since(last.1);
+
+                let (val, unit) = value_and_units(duration);
                 if val < 10.0 {
-                    write!(out, "{}: {val:.1}{unit}", time.0).unwrap();
+                    write!(out, "{}: {val:.1}{unit}", current.0).unwrap();
                 } else {
-                    write!(out, "{}: {val:.0}{unit}", time.0).unwrap();
+                    write!(out, "{}: {val:.0}{unit}", current.0).unwrap();
                 }
             }
             writeln!(out, ")").unwrap();
