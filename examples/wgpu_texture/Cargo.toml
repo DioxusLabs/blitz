@@ -11,10 +11,10 @@ publish = false
 [dependencies]
 anyrender = { workspace = true }
 anyrender_vello = { workspace = true }
-blitz-traits = { workspace = true }
-blitz-dom = { workspace = true }
+blitz-traits = { workspace = true}
+blitz-dom = { workspace = true, features = ["tracing"]}
 blitz-html = { workspace = true }
-blitz-shell = { workspace = true }
+blitz-shell = { workspace = true, features = ["tracing"] }
 mini-dxn = { workspace = true, features = ["gpu", "system_fonts"] }
 wgpu_context = { workspace = true }
 dioxus = { workspace = true }
