@@ -62,6 +62,7 @@ pub struct View<Rend: WindowRenderer> {
     pub buttons: MouseEventButtons,
     pub mouse_pos: (f32, f32),
     pub animation_timer: Option<Instant>,
+    pub is_visible: bool,
 
     #[cfg(feature = "accessibility")]
     /// Accessibility adapter for `accesskit`.
@@ -112,6 +113,7 @@ impl<Rend: WindowRenderer> View<Rend> {
             theme_override: None,
             buttons: MouseEventButtons::None,
             mouse_pos: Default::default(),
+            is_visible: winit_window.is_visible().unwrap_or(true),
             #[cfg(feature = "accessibility")]
             accessibility: AccessibilityState::new(&winit_window, proxy.clone()),
         }
@@ -222,7 +224,7 @@ impl<Rend: WindowRenderer> View<Rend> {
         self.renderer
             .render(|scene| paint_scene(scene, &self.doc, scale, width, height));
 
-        if self.doc.is_animating() {
+        if self.is_visible && self.doc.is_animating() {
             self.request_redraw();
         }
     }
@@ -262,7 +264,12 @@ impl<Rend: WindowRenderer> View<Rend> {
 
             // Window size/position events
             WindowEvent::Moved(_) => {}
-            WindowEvent::Occluded(_) => {},
+            WindowEvent::Occluded(is_occluded) => {
+                self.is_visible = !is_occluded;
+                if self.is_visible {
+                    self.request_redraw();
+                }
+            },
             WindowEvent::Resized(physical_size) => {
                 self.with_viewport(|v| v.window_size = (physical_size.width, physical_size.height));
             }
