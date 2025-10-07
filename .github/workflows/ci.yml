@@ -139,7 +139,6 @@ jobs:
               cross: false,
               command: "test",
               args: "--all --tests",
-              setup: perl -pi.bak -e 's/opt-level = 2/opt-level = 0/g' Cargo.toml
             }
           - {
               name: macos,
@@ -148,7 +147,6 @@ jobs:
               cross: false,
               command: "test",
               args: "--all --tests",
-              setup: perl -pi.bak -e 's/opt-level = 2/opt-level = 0/g' Cargo.toml
             }
           - {
               name: linux,
@@ -157,14 +155,6 @@ jobs:
               cross: false,
               command: "test",
               args: "--all --tests",
-              setup: "sudo apt update; sudo apt install --no-install-recommends \
-                libasound2-dev \
-                libatk1.0-dev \
-                libgtk-3-dev \
-                libudev-dev \
-                libpango1.0-dev \
-                libxdo-dev;
-                perl -pi.bak -e 's/opt-level = 2/opt-level = 0/g' Cargo.toml"
             }
 
     name: Test (${{ matrix.platform.name }})
@@ -195,6 +185,13 @@ jobs:
           key: "${{ matrix.platform.target }}"
           cache-all-crates: "true"
           save-if: ${{ github.ref == 'refs/heads/main' }}
+
+      - name: Install apt deps
+        if: ${{ matrix.platform.os == 'ubuntu-latest' }}
+        uses: awalsh128/cache-apt-pkgs-action@latest
+        with:
+          packages: libasound2-dev libatk1.0-dev libgtk-3-dev libudev-dev libpango1.0-dev libxdo-dev
+          version: 1.0
 
       - name: Setup
         run: ${{ matrix.platform.setup }} 
