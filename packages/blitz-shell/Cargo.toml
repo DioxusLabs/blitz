@@ -11,7 +11,7 @@ edition.workspace = true
 rust-version.workspace = true
 
 [features]
-default = ["accessibility", "clipboard", "tracing", "file_dialog"]
+default = ["accessibility", "clipboard", "file_dialog"]
 accessibility = [
     "dep:accesskit",
     "dep:accesskit_winit",
