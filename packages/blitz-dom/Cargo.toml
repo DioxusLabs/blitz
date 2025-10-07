@@ -12,7 +12,6 @@ rust-version.workspace = true
 
 [features]
 default = [
-    "tracing",
     "svg",
     "woff-rust",
     "accessibility",

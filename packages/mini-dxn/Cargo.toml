@@ -14,7 +14,7 @@ rust-version.workspace = true
 publish = false
 
 [features]
-default = ["accessibility", "hot-reload", "tracing", "net", "svg", "gpu"]
+default = ["accessibility", "hot-reload", "net", "svg", "gpu"]
 svg = ["blitz-dom/svg", "blitz-paint/svg"]
 system_fonts = ["blitz-dom/system_fonts"]
 net = ["dep:tokio", "dep:blitz-net"]

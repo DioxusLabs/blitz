@@ -11,7 +11,7 @@ edition.workspace = true
 rust-version.workspace = true
 
 [features]
-default = ["net", "accessibility", "tracing"]
+default = ["net", "accessibility"]
 net = ["dep:tokio", "dep:url", "dep:blitz-net"]
 accessibility = ["blitz-shell/accessibility"]
 tracing = ["blitz-shell/tracing"]
