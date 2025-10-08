@@ -4,25 +4,46 @@
         <meta charset="UTF-8">
         <meta content="origin" name="referrer">
         <base href="https://www.google.com/" />
-        <title>Google</title>
+        <title>CSS Animation demo</title>
         <style type="text/css">
+
+            html, body {
+                height: 100%;
+                margin: 0;
+                padding: 0;
+                overflow: hidden;
+            }
+
             .box {
                 margin: 0 auto;
                 margin-top: 12.5vh;
                 width: 20px;
-                animation: big-small 1s infinite ease-in-out alternate;
+                animation: big-small 2s infinite ease-in-out alternate;
                 border: 2px solid black;
                 padding: 12px;
                 font-family: sans-serif;
+                background: white;
             }
 
             @keyframes big-small {
                 from { width: 20px; }
                 to { width: 80% }
             }
+
+            .gradient-background {
+              background: linear-gradient(273deg,#1bbddc,#75928f,#24e472,#9257e4,#e5345b);
+              background-size: 300% 300%;
+              animation: gradient-animation 20s ease infinite;
+            }
+
+            @keyframes gradient-animation {
+              0% { background-position: 0% 50%; }
+              50% { background-position: 100% 50%; }
+              100% { background-position: 0% 50%; }
+            }
         </style>
     </head>
-    <body>
+    <body class="gradient-background">
         <div class="box">
              Lorem ipsum dolor sit amet, consectetur adipiscing elit. Nam faucibus tortor orci, nec tempus nisl rhoncus nec. Suspendisse egestas dictum suscipit. Suspendisse semper lectus ex, id pretium nisl sollicitudin mattis. Morbi ligula augue, auctor in aliquet quis, venenatis consectetur enim. Mauris non ligula euismod, semper mauris nec, mattis lectus. Integer facilisis ultricies orci, a mollis velit sodales a. Sed ac nulla vitae massa rhoncus fermentum. Pellentesque maximus neque nisi, eu malesuada eros tincidunt vitae. Morbi sed condimentum risus. Ut vel dui lacinia, pulvinar odio sit amet, lacinia ligula. Sed posuere odio augue, quis maximus sapien ullamcorper nec.
         </div>
