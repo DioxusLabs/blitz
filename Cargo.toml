@@ -72,11 +72,19 @@ dioxus-devtools = { version = "=0.7.0-rc.1" }
 taffy = { version = "0.9", default-features = false, features = ["std", "flexbox", "grid", "block_layout", "content_size", "calc"] }
 
 # AnyRender
-anyrender = { version = "0.6" }
-anyrender_vello = { version = "0.6" }
-anyrender_vello_cpu = { version = "0.7" }
-anyrender_svg = { version = "0.6" }
-wgpu_context = { version = "0.1" }
+anyrender = { git = "https://github.com/dioxuslabs/anyrender", rev = "ea75ac1ff" }
+anyrender_vello = { git = "https://github.com/dioxuslabs/anyrender", rev = "ea75ac1ff" }
+anyrender_vello_cpu = { git = "https://github.com/dioxuslabs/anyrender", rev = "ea75ac1ff" }
+anyrender_vello_hybrid = { git = "https://github.com/dioxuslabs/anyrender", rev = "ea75ac1ff" }
+anyrender_svg = { git = "https://github.com/dioxuslabs/anyrender", rev = "ea75ac1ff" }
+wgpu_context = { git = "https://github.com/dioxuslabs/anyrender", rev = "ea75ac1ff" }
+
+# anyrender = { path = "../anyrender/crates/anyrender" }
+# anyrender_vello = { path = "../anyrender/crates/anyrender_vello" }
+# anyrender_vello_cpu = { path = "../anyrender/crates/anyrender_vello_cpu" }
+# anyrender_vello_hybrid = { path = "../anyrender/crates/anyrender_vello_hybrid" }
+# anyrender_svg = { path = "../anyrender/crates/anyrender_svg" }
+# wgpu_context = { path = "../anyrender/crates/wgpu_context" }
 
 # Linebender + Fontations + WGPU + SVG
 color = "0.3"
