@@ -292,7 +292,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ab3c79655b730ce2ad2461e1770bf2786adcb8b411429cb4730748592325416b"
 dependencies = [
  "anyrender",
- "debug_timer 0.1.2",
+ "debug_timer 0.1.3 (registry+https://github.com/rust-lang/crates.io-index)",
  "futures-intrusive",
  "kurbo 0.12.0",
  "peniko",
@@ -311,7 +311,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2afeaca48847ad1f7cdf8e4b73f72ae63dd2e6b604a8193d026474e7ffdfdc35"
 dependencies = [
  "anyrender",
- "debug_timer 0.1.2",
+ "debug_timer 0.1.3 (registry+https://github.com/rust-lang/crates.io-index)",
  "kurbo 0.12.0",
  "peniko",
  "pixels_window_renderer",
@@ -1577,13 +1577,13 @@ dependencies = [
 
 [[package]]
 name = "debug_timer"
-version = "0.1.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "601b64630ed8e9306553e4b97e33516f9b4a69f520d0b25c5c7e93e5e93043d3"
+version = "0.1.3"
 
 [[package]]
 name = "debug_timer"
 version = "0.1.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "da220af51a1a335e9a930beaaef53d261e41ea9eecfb3d973a3ddae1a7284b9c"
 
 [[package]]
 name = "deranged"
@@ -4640,7 +4640,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c5973b55d585de980b6a1db68b116c8c741c18ab5a5699621aee7cac343aea58"
 dependencies = [
  "anyrender",
- "debug_timer 0.1.2",
+ "debug_timer 0.1.3 (registry+https://github.com/rust-lang/crates.io-index)",
  "pixels",
 ]
 
@@ -5680,7 +5680,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7a236ad05a51c7e73329e415aa5d83855ca92813dbcd9c2e8cb4d263a706837a"
 dependencies = [
  "anyrender",
- "debug_timer 0.1.2",
+ "debug_timer 0.1.3 (registry+https://github.com/rust-lang/crates.io-index)",
  "softbuffer",
 ]
 
