@@ -2,7 +2,7 @@
 name = "blitz-paint"
 description = "Paint a Blitz Document using anyrender"
 documentation = "https://docs.rs/blitz-paint"
-version.workspace = true
+version = "0.2.1"
 license.workspace = true
 homepage.workspace = true
 repository.workspace = true

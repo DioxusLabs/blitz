@@ -710,7 +710,7 @@ dependencies = [
 
 [[package]]
 name = "blitz"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "anyrender_vello",
  "blitz-dom",
@@ -725,7 +725,7 @@ dependencies = [
 
 [[package]]
 name = "blitz-dom"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "accesskit",
  "app_units",
@@ -811,7 +811,7 @@ dependencies = [
 
 [[package]]
 name = "blitz-paint"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "anyrender",
  "anyrender_svg",
@@ -830,7 +830,7 @@ dependencies = [
 
 [[package]]
 name = "blitz-shell"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "accesskit",
  "accesskit_winit",

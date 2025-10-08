@@ -2,7 +2,7 @@
 name = "blitz-shell"
 description = "Blitz application shell"
 documentation = "https://docs.rs/blitz-shell"
-version = "0.2.1"
+version = "0.2.2"
 license.workspace = true
 homepage.workspace = true
 repository.workspace = true
