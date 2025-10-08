@@ -801,7 +801,7 @@ dependencies = [
 
 [[package]]
 name = "blitz-net"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "blitz-traits",
  "data-url",
