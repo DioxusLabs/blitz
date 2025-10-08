@@ -2,7 +2,7 @@
 name = "blitz-dom"
 description = "Blitz DOM implementation"
 documentation = "https://docs.rs/blitz-dom"
-version = "0.2.1"
+version = "0.2.2"
 license.workspace = true
 homepage.workspace = true
 repository.workspace = true
