@@ -368,7 +368,7 @@ fn to_image_quality(image_rendering: ImageRendering) -> peniko::ImageQuality {
 fn to_peniko_image(image: &RasterImageData, quality: peniko::ImageQuality) -> peniko::ImageBrush {
     peniko::ImageBrush {
         image: ImageData {
-            data: peniko::Blob::new(image.data.clone()),
+            data: image.data.clone(),
             format: peniko::ImageFormat::Rgba8,
             width: image.width,
             height: image.height,

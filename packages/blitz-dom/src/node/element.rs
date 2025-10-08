@@ -1,4 +1,5 @@
 use cssparser::ParserInput;
+use linebender_resource_handle::Blob;
 use markup5ever::{LocalName, QualName, local_name};
 use parley::{ContentWidths, FontContext, LayoutContext};
 use selectors::matching::QuirksMode;
@@ -375,21 +376,21 @@ impl ElementData {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Default)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct RasterImageData {
     /// The width of the image
     pub width: u32,
     /// The height of the image
     pub height: u32,
     /// The raw image data in RGBA8 format
-    pub data: Arc<Vec<u8>>,
+    pub data: Blob<u8>,
 }
 impl RasterImageData {
     pub fn new(width: u32, height: u32, data: Arc<Vec<u8>>) -> Self {
         Self {
             width,
             height,
-            data,
+            data: Blob::new(data),
         }
     }
 }
