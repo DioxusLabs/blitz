@@ -8,7 +8,6 @@ mod real_debug_timer {
     const MICROSECOND: Duration = Duration::from_micros(1);
 
     pub struct DebugTimer {
-        initial_time: Instant,
         recorded_times: Vec<(&'static str, Instant)>,
     }
 
@@ -26,10 +25,8 @@ mod real_debug_timer {
 
     impl DebugTimer {
         pub fn init() -> Self {
-            let time = Instant::now();
             Self {
-                initial_time: time,
-                recorded_times: Vec::new(),
+                recorded_times: vec![("start", Instant::now())],
             }
         }
 
@@ -39,7 +36,7 @@ mod real_debug_timer {
 
         pub fn print_times(&self, message: &str) {
             let now = Instant::now();
-            let (overall_val, overall_unit) = value_and_units(now - self.initial_time);
+            let (overall_val, overall_unit) = value_and_units(now - self.recorded_times[0].1);
 
             let mut out = stdout().lock();
             if overall_val < 10.0 {
