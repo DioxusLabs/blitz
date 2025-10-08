@@ -4,7 +4,7 @@ use futures_util::{FutureExt, pin_mut, task::noop_waker};
 use std::ops::{Deref, DerefMut};
 use std::sync::LazyLock;
 use std::task::{Context as TaskContext, Waker};
-use std::{any::Any, collections::HashMap, rc::Rc, sync::Arc};
+use std::{any::Any, rc::Rc, sync::Arc};
 
 use blitz_dom::{
     BaseDocument, DEFAULT_CSS, Document, EventDriver, EventHandler, Node, net::Resource,
@@ -179,7 +179,7 @@ impl EventHandler for DioxusEventHandler<'_> {
 
             DomEventData::Input(data) => Some(wrap_event_data(NativeFormData {
                 value: data.value.clone(),
-                values: HashMap::new(),
+                values: Vec::new(),
             })),
 
             // TODO: Implement IME handling

@@ -1,5 +1,4 @@
 use std::any::Any;
-use std::collections::HashMap;
 
 use blitz_traits::events::BlitzKeyEvent;
 use dioxus_html::{
@@ -142,12 +141,16 @@ impl HtmlEventConverter for NativeConverter {
     fn convert_visible_data(&self, _event: &PlatformEventData) -> VisibleData {
         todo!()
     }
+
+    fn convert_cancel_data(&self, _event: &PlatformEventData) -> dioxus_html::CancelData {
+        todo!()
+    }
 }
 
 #[derive(Clone, Debug)]
 pub struct NativeFormData {
     pub value: String,
-    pub values: HashMap<String, FormValue>,
+    pub values: Vec<(String, FormValue)>,
 }
 
 impl HasFormData for NativeFormData {
@@ -159,12 +162,20 @@ impl HasFormData for NativeFormData {
         self.value.clone()
     }
 
-    fn values(&self) -> HashMap<String, FormValue> {
+    fn values(&self) -> Vec<(String, FormValue)> {
         self.values.clone()
+    }
+
+    fn valid(&self) -> bool {
+        true
     }
 }
 
-impl HasFileData for NativeFormData {}
+impl HasFileData for NativeFormData {
+    fn files(&self) -> Vec<dioxus_html::FileData> {
+        Vec::new()
+    }
+}
 
 #[derive(Clone, Debug)]
 pub(crate) struct BlitzKeyboardData(pub(crate) BlitzKeyEvent);
