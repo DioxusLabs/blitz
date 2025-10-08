@@ -7,6 +7,11 @@ use style_traits::ParseError;
 use crate::{BaseDocument, Node};
 
 impl BaseDocument {
+    /// Find the node with the specified id attribute (if one exists)
+    pub fn get_element_by_id(&self, id: &str) -> Option<usize> {
+        self.nodes_to_id.get(id).copied()
+    }
+
     /// Find the first node that matches the selector specified as a string
     /// Returns:
     ///   - Err(_) if parsing the selector fails
