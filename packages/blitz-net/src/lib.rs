@@ -92,28 +92,38 @@ impl<D: 'static> Provider<D> {
         request: Request,
         callback: Box<dyn FnOnce(Result<(String, Bytes), ProviderError>) + Send + Sync + 'static>,
     ) {
+        #[cfg(feature = "debug_log")]
+        let url = request.url.to_string();
+
         let client = self.client.clone();
         self.rt.spawn(async move {
-            let url = request.url.to_string();
             let result = Self::fetch_inner(client, request).await;
+
+            #[cfg(feature = "debug_log")]
             if let Err(e) = &result {
                 eprintln!("Error fetching {url}: {e:?}");
             } else {
                 println!("Success {url}");
             }
+
             callback(result);
         });
     }
 
     pub async fn fetch_async(&self, request: Request) -> Result<(String, Bytes), ProviderError> {
-        let client = self.client.clone();
+        #[cfg(feature = "debug_log")]
         let url = request.url.to_string();
+
+        let client = self.client.clone();
         let result = Self::fetch_inner(client, request).await;
+
+        #[cfg(feature = "debug_log")]
         if let Err(e) = &result {
             eprintln!("Error fetching {url}: {e:?}");
         } else {
             println!("Success {url}");
         }
+
         result
     }
 }
@@ -122,11 +132,18 @@ impl<D: 'static> NetProvider<D> for Provider<D> {
     fn fetch(&self, doc_id: usize, request: Request, handler: BoxedHandler<D>) {
         let client = self.client.clone();
         let callback = Arc::clone(&self.resource_callback);
+
+        #[cfg(feature = "debug_log")]
         println!("Fetching {}", &request.url);
+
         self.rt.spawn(async move {
+            #[cfg(feature = "debug_log")]
             let url = request.url.to_string();
-            let res = Self::fetch_with_handler(client, doc_id, request, handler, callback).await;
-            if let Err(e) = res {
+
+            let _res = Self::fetch_with_handler(client, doc_id, request, handler, callback).await;
+
+            #[cfg(feature = "debug_log")]
+            if let Err(e) = _res {
                 eprintln!("Error fetching {url}: {e:?}");
             } else {
                 println!("Success {url}");

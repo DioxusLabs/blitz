@@ -25,7 +25,7 @@ blitz-traits = { workspace = true }
 blitz-dom = { workspace = true, features = ["default", "parallel-construct"] }
 blitz-html = { workspace = true }
 blitz-paint = { workspace = true, features = ["default"] }
-blitz-net = { workspace = true, features = ["cookies"] }
+blitz-net = { workspace = true, features = ["cookies", "debug_log"] }
 blitz-shell = { workspace = true, features = ["tracing", "default"] }
 anyrender_vello = { workspace = true, optional = true }
 anyrender_vello_cpu = { workspace = true, features = ["multithreading"], optional = true }
