@@ -85,6 +85,8 @@ impl DioxusDocument {
 
         doc.inner.set_base_url("dioxus://index.html");
         doc.initial_build();
+
+        #[cfg(feature = "tracing")]
         doc.inner.print_tree();
 
         doc

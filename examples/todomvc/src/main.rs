@@ -4,7 +4,8 @@ use dioxus::prelude::*;
 use std::collections::HashMap;
 
 fn main() {
-    // tracing_subscriber::fmt::init();
+    #[cfg(feature = "tracing")]
+    tracing_subscriber::fmt::init();
 
     // Note: "mini-dxn" is a cut down version of the "dioxus-native" crate used internally for testing Blitz
     // In real apps you should prefer to use "dioxus-native" (or for a cross platform app, the main "dioxus" crate)
