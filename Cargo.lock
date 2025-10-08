@@ -1392,6 +1392,7 @@ name = "counter"
 version = "0.1.0"
 dependencies = [
  "blitz-dom",
+ "blitz-paint",
  "dioxus",
  "idna_adapter",
  "mini-dxn",
