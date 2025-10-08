@@ -1,6 +1,7 @@
 use atomic_refcell::{AtomicRef, AtomicRefCell, AtomicRefMut};
 use bitflags::bitflags;
 use blitz_traits::events::{BlitzMouseButtonEvent, DomEventData, HitResult};
+use html_escape::encode_quoted_attribute_to_string;
 use keyboard_types::Modifiers;
 use markup5ever::{LocalName, local_name};
 use parley::Cluster;
@@ -608,13 +609,12 @@ impl Node {
                     writer.push_str("=\"");
                     #[allow(clippy::unnecessary_unwrap)] // Convert to if-let chain once stabilised
                     if current_color.is_some() && attr.value.contains("currentColor") {
-                        writer.push_str(
-                            &attr
-                                .value
-                                .replace("currentColor", current_color.as_ref().unwrap()),
-                        );
+                        let value = attr
+                            .value
+                            .replace("currentColor", current_color.as_ref().unwrap());
+                        encode_quoted_attribute_to_string(&value, writer);
                     } else {
-                        writer.push_str(&attr.value);
+                        encode_quoted_attribute_to_string(&attr.value, writer);
                     }
                     writer.push('"');
                 }
