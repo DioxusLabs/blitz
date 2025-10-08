@@ -9,6 +9,7 @@ use blitz_dom::Document;
 use blitz_paint::paint_scene;
 use blitz_traits::events::{BlitzMouseButtonEvent, MouseEventButton, MouseEventButtons, UiEvent};
 use blitz_traits::shell::Viewport;
+use blitz_traits::devtools::DevtoolSettings;
 use winit::keyboard::PhysicalKey;
 
 use std::sync::Arc;

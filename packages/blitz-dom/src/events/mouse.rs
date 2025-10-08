@@ -9,6 +9,51 @@ use markup5ever::local_name;
 
 use crate::{BaseDocument, node::SpecialElementData};
 
+/// Handles both mouseover and mouseenter events
+pub(crate) fn handle_mouse_hover(doc: &mut BaseDocument, _target: usize, x: f32, y: f32) {
+    if let Some(node) = doc.get_node_mut(_target) {
+        // Set hover state on the node
+        node.hover();
+
+        doc.set_focus_to(_target);
+
+        doc.set_hover_to(x, y);
+    }
+}
+
+/// Handles both mouseout and mouseleave events
+///
+/// For mouseout: Clears hover state on the current node but updates hover state with new coordinates
+/// For mouseleave: Clears hover state completely including focus if needed
+pub(crate) fn handle_mouse_unhover(
+    doc: &mut BaseDocument,
+    target: usize,
+    is_leave: bool,
+    x: Option<f32>,
+    y: Option<f32>,
+) -> bool {
+    if let Some(node) = doc.get_node_mut(target) {
+        // Clear hover state
+        node.unhover();
+
+        if is_leave {
+            // If this was the focused node, clear focus (only for mouseleave)
+            if doc.get_focussed_node_id() == Some(target) {
+                doc.clear_focus();
+            }
+
+            // Clear hover position (only for mouseleave)
+            doc.clear_hover_state();
+        } else if let (Some(x_val), Some(y_val)) = (x, y) {
+            // Update hover state with new coordinates (only for mouseout)
+            doc.set_hover_to(x_val, y_val);
+        }
+
+        return true;
+    }
+    false
+}
+
 pub(crate) fn handle_mousemove(
     doc: &mut BaseDocument,
     target: usize,

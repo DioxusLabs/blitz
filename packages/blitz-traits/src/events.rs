@@ -141,6 +141,10 @@ pub enum DomEventData {
     KeyUp(BlitzKeyEvent),
     Input(BlitzInputEvent),
     Ime(BlitzImeEvent),
+    MouseOver(BlitzMousePositionEvent),
+    MouseEnter(BlitzMousePositionEvent),
+    MouseOut(BlitzMousePositionEvent),
+    MouseLeave(BlitzMousePositionEvent),
 }
 impl DomEventData {
     pub fn discriminant(&self) -> u8 {
@@ -164,6 +168,10 @@ impl DomEventData {
             Self::KeyUp { .. } => "keyup",
             Self::Input { .. } => "input",
             Self::Ime { .. } => "composition",
+            Self::MouseOver { .. } => "mouseover",
+            Self::MouseEnter { .. } => "mouseenter",
+            Self::MouseOut { .. } => "mouseout",
+            Self::MouseLeave { .. } => "mouseleave",
         }
     }
 
@@ -178,6 +186,10 @@ impl DomEventData {
             Self::KeyUp { .. } => DomEventKind::KeyUp,
             Self::Input { .. } => DomEventKind::Input,
             Self::Ime { .. } => DomEventKind::Ime,
+            Self::MouseOver { .. } => DomEventKind::MouseMove, // No specific enum for these
+            Self::MouseEnter { .. } => DomEventKind::MouseMove,
+            Self::MouseOut { .. } => DomEventKind::MouseMove,
+            Self::MouseLeave { .. } => DomEventKind::MouseMove,
         }
     }
 
@@ -192,6 +204,10 @@ impl DomEventData {
             Self::KeyPress { .. } => true,
             Self::Ime { .. } => true,
             Self::Input { .. } => false,
+            Self::MouseOver { .. } => true,
+            Self::MouseEnter { .. } => false,
+            Self::MouseOut { .. } => true,
+            Self::MouseLeave { .. } => false,
         }
     }
 
@@ -206,8 +222,18 @@ impl DomEventData {
             Self::KeyPress { .. } => true,
             Self::Ime { .. } => true,
             Self::Input { .. } => true,
+            Self::MouseOver { .. } => true,
+            Self::MouseEnter { .. } => false,
+            Self::MouseOut { .. } => true,
+            Self::MouseLeave { .. } => false,
         }
     }
+}
+
+#[derive(Clone, Debug)]
+pub struct BlitzMousePositionEvent {
+    pub x: f32,
+    pub y: f32,
 }
 
 #[derive(Debug, Clone, Copy)]

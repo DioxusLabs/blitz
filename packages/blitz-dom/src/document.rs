@@ -874,11 +874,8 @@ impl BaseDocument {
     pub fn set_mousedown_node_id(&mut self, node_id: Option<usize>) {
         self.mousedown_node_id = node_id;
     }
+    
     pub fn set_focus_to(&mut self, focus_node_id: usize) -> bool {
-        if Some(focus_node_id) == self.focus_node_id {
-            return false;
-        }
-
         println!("Focussed node {focus_node_id}");
 
         // Remove focus from the old node
@@ -964,6 +961,14 @@ impl BaseDocument {
         self.shell_provider.request_redraw();
 
         true
+    }
+
+    pub fn clear_hover_state(&mut self) {
+        if let Some(id) = self.hover_node_id {
+            self.snapshot_node_and(id, |node| node.unhover());
+            self.hover_node_id = None;
+            self.changed_nodes.insert(id);
+        }
     }
 
     pub fn get_hover_node_id(&self) -> Option<usize> {
