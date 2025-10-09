@@ -142,7 +142,7 @@ impl crate::document::BaseDocument {
             }
         }
         sets.retain(|_, state| !state.is_empty());
-        self.has_active_animations = !sets.is_empty();
+        self.has_active_animations = sets.values().any(|state| state.needs_animation_ticks());
 
         style::thread_state::exit(ThreadState::LAYOUT);
     }
