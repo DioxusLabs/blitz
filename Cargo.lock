@@ -262,9 +262,9 @@ checksum = "a23eb6b1614318a8071c9b2521f36b424b2c83db5eb3a0fead4a6c0809af6e61"
 
 [[package]]
 name = "anyrender"
-version = "0.6.0"
+version = "0.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4391b0294ad7b5a1d794e26600e56bde02bf4feee99e2c33de50df02817b60e3"
+checksum = "13df215023d4e8c644b39202b468be3ee6d098dcfef1bb3ab7c259dfaf48d7f1"
 dependencies = [
  "kurbo 0.12.0",
  "peniko",
