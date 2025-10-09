@@ -263,8 +263,7 @@ checksum = "a23eb6b1614318a8071c9b2521f36b424b2c83db5eb3a0fead4a6c0809af6e61"
 [[package]]
 name = "anyrender"
 version = "0.6.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4391b0294ad7b5a1d794e26600e56bde02bf4feee99e2c33de50df02817b60e3"
+source = "git+https://github.com/dioxuslabs/anyrender?rev=ea75ac1ff#ea75ac1ffe0ba9ea92f2c4b6c3a82f5a3a07bdd4"
 dependencies = [
  "kurbo 0.12.0",
  "peniko",
@@ -274,8 +273,7 @@ dependencies = [
 [[package]]
 name = "anyrender_svg"
 version = "0.6.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bfac9c4fd03fce2567350bc6ac736f90e4251978028e3b89152b32734c3e7738"
+source = "git+https://github.com/dioxuslabs/anyrender?rev=ea75ac1ff#ea75ac1ffe0ba9ea92f2c4b6c3a82f5a3a07bdd4"
 dependencies = [
  "anyrender",
  "image",
@@ -288,8 +286,7 @@ dependencies = [
 [[package]]
 name = "anyrender_vello"
 version = "0.6.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ab3c79655b730ce2ad2461e1770bf2786adcb8b411429cb4730748592325416b"
+source = "git+https://github.com/dioxuslabs/anyrender?rev=ea75ac1ff#ea75ac1ffe0ba9ea92f2c4b6c3a82f5a3a07bdd4"
 dependencies = [
  "anyrender",
  "debug_timer 0.1.3 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -307,8 +304,7 @@ dependencies = [
 [[package]]
 name = "anyrender_vello_cpu"
 version = "0.7.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2afeaca48847ad1f7cdf8e4b73f72ae63dd2e6b604a8193d026474e7ffdfdc35"
+source = "git+https://github.com/dioxuslabs/anyrender?rev=ea75ac1ff#ea75ac1ffe0ba9ea92f2c4b6c3a82f5a3a07bdd4"
 dependencies = [
  "anyrender",
  "debug_timer 0.1.3 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -317,6 +313,25 @@ dependencies = [
  "pixels_window_renderer",
  "softbuffer_window_renderer",
  "vello_cpu",
+]
+
+[[package]]
+name = "anyrender_vello_hybrid"
+version = "0.1.0"
+source = "git+https://github.com/dioxuslabs/anyrender?rev=ea75ac1ff#ea75ac1ffe0ba9ea92f2c4b6c3a82f5a3a07bdd4"
+dependencies = [
+ "anyrender",
+ "debug_timer 0.1.3 (registry+https://github.com/rust-lang/crates.io-index)",
+ "futures-intrusive",
+ "kurbo 0.12.0",
+ "peniko",
+ "pollster 0.4.0",
+ "raw-window-handle",
+ "rustc-hash 1.1.0",
+ "vello_common 0.0.1",
+ "vello_hybrid",
+ "wgpu 26.0.1",
+ "wgpu_context",
 ]
 
 [[package]]
@@ -2270,6 +2285,14 @@ name = "fearless_simd"
 version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "eb8f822f06d1b452a9207f11ce3292f7ee6c23d5d2e7ddfd07990a9107804850"
+dependencies = [
+ "bytemuck",
+]
+
+[[package]]
+name = "fearless_simd"
+version = "0.2.0"
+source = "git+https://github.com/linebender/fearless_simd?rev=a6723a80adeba198ab8b1323caff3ca75a080e48#a6723a80adeba198ab8b1323caff3ca75a080e48"
 dependencies = [
  "bytemuck",
 ]
@@ -4636,8 +4659,7 @@ dependencies = [
 [[package]]
 name = "pixels_window_renderer"
 version = "0.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c5973b55d585de980b6a1db68b116c8c741c18ab5a5699621aee7cac343aea58"
+source = "git+https://github.com/dioxuslabs/anyrender?rev=ea75ac1ff#ea75ac1ffe0ba9ea92f2c4b6c3a82f5a3a07bdd4"
 dependencies = [
  "anyrender",
  "debug_timer 0.1.3 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -4981,6 +5003,7 @@ version = "0.1.0"
 dependencies = [
  "anyrender_vello",
  "anyrender_vello_cpu",
+ "anyrender_vello_hybrid",
  "blitz-dom",
  "blitz-html",
  "blitz-net",
@@ -5676,8 +5699,7 @@ dependencies = [
 [[package]]
 name = "softbuffer_window_renderer"
 version = "0.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7a236ad05a51c7e73329e415aa5d83855ca92813dbcd9c2e8cb4d263a706837a"
+source = "git+https://github.com/dioxuslabs/anyrender?rev=ea75ac1ff#ea75ac1ffe0ba9ea92f2c4b6c3a82f5a3a07bdd4"
 dependencies = [
  "anyrender",
  "debug_timer 0.1.3 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -6797,12 +6819,27 @@ dependencies = [
 
 [[package]]
 name = "vello_common"
+version = "0.0.1"
+source = "git+https://github.com/linebender/vello?rev=59460521d4487f1d285cad45c7b4daabf0d95161#59460521d4487f1d285cad45c7b4daabf0d95161"
+dependencies = [
+ "bytemuck",
+ "fearless_simd 0.2.0 (git+https://github.com/linebender/fearless_simd?rev=a6723a80adeba198ab8b1323caff3ca75a080e48)",
+ "hashbrown 0.15.5",
+ "log",
+ "peniko",
+ "png",
+ "skrifa",
+ "smallvec",
+]
+
+[[package]]
+name = "vello_common"
 version = "0.0.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1a368a0edbbe19080297a7bbd9e24860ba3a224226b189d6bf14cf8187459921"
 dependencies = [
  "bytemuck",
- "fearless_simd",
+ "fearless_simd 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "hashbrown 0.15.5",
  "log",
  "peniko",
@@ -6821,7 +6858,7 @@ dependencies = [
  "ordered-channel",
  "rayon",
  "thread_local",
- "vello_common",
+ "vello_common 0.0.3",
 ]
 
 [[package]]
@@ -6838,6 +6875,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "vello_hybrid"
+version = "0.6.0"
+source = "git+https://github.com/linebender/vello?rev=59460521d4487f1d285cad45c7b4daabf0d95161#59460521d4487f1d285cad45c7b4daabf0d95161"
+dependencies = [
+ "bytemuck",
+ "guillotiere",
+ "hashbrown 0.15.5",
+ "log",
+ "thiserror 2.0.17",
+ "vello_common 0.0.1",
+ "vello_sparse_shaders",
+ "wgpu 26.0.1",
+]
+
+[[package]]
 name = "vello_shaders"
 version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6849,6 +6901,11 @@ dependencies = [
  "thiserror 2.0.17",
  "vello_encoding",
 ]
+
+[[package]]
+name = "vello_sparse_shaders"
+version = "0.0.1"
+source = "git+https://github.com/linebender/vello?rev=59460521d4487f1d285cad45c7b4daabf0d95161#59460521d4487f1d285cad45c7b4daabf0d95161"
 
 [[package]]
 name = "version-compare"
@@ -7424,8 +7481,7 @@ dependencies = [
 [[package]]
 name = "wgpu_context"
 version = "0.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3837d08820916c002e9aa38ad162a00cf9f6340bdc88cd31c47b1f3ace8b5b40"
+source = "git+https://github.com/dioxuslabs/anyrender?rev=ea75ac1ff#ea75ac1ffe0ba9ea92f2c4b6c3a82f5a3a07bdd4"
 dependencies = [
  "futures-intrusive",
  "wgpu 26.0.1",

@@ -19,6 +19,8 @@ mod markdown {
 use anyrender_vello::VelloWindowRenderer as WindowRenderer;
 #[cfg(feature = "cpu-base")]
 use anyrender_vello_cpu::VelloCpuWindowRenderer as WindowRenderer;
+#[cfg(feature = "hybrid")]
+use anyrender_vello_hybrid::VelloHybridWindowRenderer as WindowRenderer;
 
 use blitz_dom::DocumentConfig;
 use blitz_dom::net::Resource;
