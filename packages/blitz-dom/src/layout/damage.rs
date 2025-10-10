@@ -13,6 +13,7 @@ use style::values::generics::image::Image as StyloImage;
 use style::values::specified::align::AlignFlags;
 use style::values::specified::box_::DisplayInside;
 use style::values::specified::box_::DisplayOutside;
+use taffy::Rect;
 
 pub(crate) const CONSTRUCT_BOX: RestyleDamage =
     RestyleDamage::from_bits_retain(0b_0000_0000_0001_0000);
@@ -247,6 +248,8 @@ pub struct HoistedPaintChildren {
     pub children: Vec<HoistedPaintChild>,
     /// The number of hoisted point children with negative z_index
     pub negative_z_count: u32,
+
+    pub content_area: taffy::Rect<f32>,
 }
 
 impl HoistedPaintChildren {
@@ -254,12 +257,43 @@ impl HoistedPaintChildren {
         Self {
             children: Vec::new(),
             negative_z_count: 0,
+            content_area: taffy::Rect::ZERO,
         }
     }
 
     pub fn reset(&mut self) {
         self.children.clear();
         self.negative_z_count = 0;
+    }
+
+    pub fn compute_content_size(&mut self, doc: &BaseDocument) {
+        fn child_pos(child: &HoistedPaintChild, doc: &BaseDocument) -> Rect<f32> {
+            let node = &doc.nodes[child.node_id];
+            let left = child.position.x + node.final_layout.location.x;
+            let top = child.position.y + node.final_layout.location.y;
+            let right = left + node.final_layout.size.width;
+            let bottom = top + node.final_layout.size.height;
+
+            taffy::Rect {
+                top,
+                left,
+                bottom,
+                right,
+            }
+        }
+
+        if self.children.is_empty() {
+            self.content_area = taffy::Rect::ZERO;
+        } else {
+            self.content_area = child_pos(&self.children[0], doc);
+            for child in self.children[1..].iter() {
+                let pos = child_pos(child, doc);
+                self.content_area.left = self.content_area.left.min(pos.left);
+                self.content_area.top = self.content_area.top.min(pos.top);
+                self.content_area.right = self.content_area.right.max(pos.right);
+                self.content_area.bottom = self.content_area.bottom.max(pos.bottom);
+            }
+        }
     }
 
     pub fn sort(&mut self) {
@@ -461,6 +495,7 @@ impl BaseDocument {
                 .extend(stacking_context.children.iter().cloned());
         } else {
             stacking_context.sort();
+            stacking_context.compute_content_size(self);
             self.nodes[node_id].stacking_context = Some(Box::new(new_stacking_context));
         }
     }

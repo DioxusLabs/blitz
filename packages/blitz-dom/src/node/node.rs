@@ -751,6 +751,18 @@ impl Node {
     /// TODO: z-index
     /// (If multiple children are positioned at the position then a random one will be recursed into)
     pub fn hit(&self, x: f32, y: f32) -> Option<HitResult> {
+        use style::computed_values::visibility::T as Visibility;
+
+        // Don't hit on visbility:hidden elements
+        if let Some(style) = self.primary_styles() {
+            if matches!(
+                style.clone_visibility(),
+                Visibility::Hidden | Visibility::Collapse
+            ) {
+                return None;
+            }
+        }
+
         let mut x = x - self.final_layout.location.x + self.scroll_offset.x as f32;
         let mut y = y - self.final_layout.location.y + self.scroll_offset.y as f32;
 
@@ -766,7 +778,18 @@ impl Node {
             || y < 0.0
             || y > content_size.height + self.scroll_offset.y as f32);
 
-        if !matches_self && !matches_content {
+        let matches_hoisted_content = match &self.stacking_context {
+            Some(sc) => {
+                let content_area = sc.content_area;
+                x >= content_area.left + self.scroll_offset.x as f32
+                    && x <= content_area.right + self.scroll_offset.x as f32
+                    && y >= content_area.top + self.scroll_offset.y as f32
+                    && y <= content_area.bottom + self.scroll_offset.y as f32
+            }
+            None => false,
+        };
+
+        if !matches_self && !matches_content && !matches_hoisted_content {
             return None;
         }
 
@@ -780,12 +803,14 @@ impl Node {
         }
 
         // Positive z_index hoisted children
-        if let Some(hoisted) = &self.stacking_context {
-            for hoisted_child in hoisted.pos_z_hoisted_children().rev() {
-                let x = x - hoisted_child.position.x;
-                let y = y - hoisted_child.position.y;
-                if let Some(hit) = self.with(hoisted_child.node_id).hit(x, y) {
-                    return Some(hit);
+        if matches_hoisted_content {
+            if let Some(hoisted) = &self.stacking_context {
+                for hoisted_child in hoisted.pos_z_hoisted_children().rev() {
+                    let x = x - hoisted_child.position.x;
+                    let y = y - hoisted_child.position.y;
+                    if let Some(hit) = self.with(hoisted_child.node_id).hit(x, y) {
+                        return Some(hit);
+                    }
                 }
             }
         }
@@ -798,12 +823,14 @@ impl Node {
         }
 
         // Negative z_index hoisted children
-        if let Some(hoisted) = &self.stacking_context {
-            for hoisted_child in hoisted.neg_z_hoisted_children().rev() {
-                let x = x - hoisted_child.position.x;
-                let y = y - hoisted_child.position.y;
-                if let Some(hit) = self.with(hoisted_child.node_id).hit(x, y) {
-                    return Some(hit);
+        if matches_hoisted_content {
+            if let Some(hoisted) = &self.stacking_context {
+                for hoisted_child in hoisted.neg_z_hoisted_children().rev() {
+                    let x = x - hoisted_child.position.x;
+                    let y = y - hoisted_child.position.y;
+                    if let Some(hit) = self.with(hoisted_child.node_id).hit(x, y) {
+                        return Some(hit);
+                    }
                 }
             }
         }
