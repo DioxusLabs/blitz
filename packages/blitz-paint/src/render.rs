@@ -501,9 +501,39 @@ impl ElementCx<'_> {
     }
 
     fn draw_children(&self, scene: &mut impl PaintScene) {
+        // Negative z_index hoisted nodes
+        if let Some(hoisted) = &self.node.stacking_context {
+            dbg!(hoisted);
+            let neg_range = 0..(hoisted.negative_z_count as usize);
+            for hoisted_child in hoisted.children[neg_range].iter() {
+                let pos = kurbo::Point {
+                    x: self.pos.x + hoisted_child.position.x as f64,
+                    y: self.pos.y + hoisted_child.position.y as f64,
+                };
+                self.render_node(scene, hoisted_child.node_id, pos);
+            }
+        }
+
+        // Regular children
         if let Some(children) = &*self.node.paint_children.borrow() {
             for child_id in children {
                 self.render_node(scene, *child_id, self.pos);
+            }
+        }
+
+        // Positive z_index hoisted nodes
+        if let Some(hoisted) = &self.node.stacking_context {
+            let pos_range = (hoisted.negative_z_count as usize)..;
+            for hoisted_child in hoisted.children[pos_range].iter() {
+                let pos = kurbo::Point {
+                    x: self.pos.x + hoisted_child.position.x as f64,
+                    y: self.pos.y + hoisted_child.position.y as f64,
+                };
+                println!(
+                    "Render hoisted {} {} {}",
+                    hoisted_child.node_id, pos.x, pos.y
+                );
+                self.render_node(scene, hoisted_child.node_id, pos);
             }
         }
     }

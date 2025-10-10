@@ -109,7 +109,7 @@ impl BaseDocument {
                 }
 
                 *doc.nodes[node_id].layout_children.borrow_mut() = Some(layout_children.clone());
-                *doc.nodes[node_id].paint_children.borrow_mut() = Some(layout_children);
+                // *doc.nodes[node_id].paint_children.borrow_mut() = Some(layout_children);
 
                 damage.remove(CONSTRUCT_DESCENDENT | CONSTRUCT_FC | CONSTRUCT_BOX);
                 // damage.insert(RestyleDamage::RELAYOUT | RestyleDamage::REPAINT);

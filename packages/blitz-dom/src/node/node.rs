@@ -26,6 +26,8 @@ use taffy::{
     prelude::{Layout, Style},
 };
 
+use crate::layout::damage::HoistedPaintChildren;
+
 use super::{Attribute, ElementData};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -86,6 +88,7 @@ pub struct Node {
     pub layout_children: RefCell<Option<Vec<usize>>>,
     /// The same as layout_children, but sorted by z-index
     pub paint_children: RefCell<Option<Vec<usize>>>,
+    pub stacking_context: Option<Box<HoistedPaintChildren>>,
 
     // Flags
     pub flags: NodeFlags,
@@ -134,6 +137,7 @@ impl Node {
             layout_parent: Cell::new(None),
             layout_children: RefCell::new(None),
             paint_children: RefCell::new(None),
+            stacking_context: None,
 
             flags: NodeFlags::empty(),
             data,
@@ -703,6 +707,39 @@ impl Node {
         self.primary_styles()
             .map(|s| s.clone_z_index().integer_or(0))
             .unwrap_or(0)
+    }
+
+    // https://developer.mozilla.org/en-US/docs/Web/CSS/CSS_positioned_layout/Stacking_context#features_creating_stacking_contexts
+    pub fn is_stacking_context_root(&self, is_flex_or_grid_item: bool) -> bool {
+        let Some(style) = self.primary_styles() else {
+            return false;
+        };
+
+        let position = style.clone_position();
+        let has_z_index = !style.clone_z_index().is_auto();
+
+        if style.clone_opacity() != 1.0 {
+            return true;
+        }
+
+        let position_based = match position {
+            Position::Fixed | Position::Sticky => true,
+            Position::Relative | Position::Absolute => has_z_index,
+            Position::Static => has_z_index && is_flex_or_grid_item,
+        };
+        if position_based {
+            return true;
+        }
+
+        // TODO: mix-blend-mode
+        // TODO: transforms
+        // TODO: filter
+        // TODO: clip-path
+        // TODO: mask
+        // TODO: isolation
+        // TODO: contain
+
+        false
     }
 
     /// Takes an (x, y) position (relative to the *parent's* top-left corner) and returns:
