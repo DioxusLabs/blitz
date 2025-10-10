@@ -779,34 +779,58 @@ impl Node {
             y -= content_box_offset.y;
         }
 
-        // Call `.hit()` on each child in turn. If any return `Some` then return that value. Else return `Some(self.id).
-        self.paint_children
-            .borrow()
-            .iter()
-            .flatten()
-            .rev()
-            .find_map(|&i| self.with(i).hit(x, y))
-            .or_else(|| {
-                if self.flags.is_inline_root() {
-                    let element_data = &self.element_data().unwrap();
-                    let layout = &element_data.inline_layout_data.as_ref().unwrap().layout;
-                    let scale = layout.scale();
-
-                    Cluster::from_point(layout, x * scale, y * scale).and_then(|(cluster, _)| {
-                        let style_index = cluster.glyphs().next()?.style_index();
-                        let node_id = layout.styles()[style_index].brush.id;
-                        Some(HitResult { node_id, x, y })
-                    })
-                } else {
-                    None
+        // Positive z_index hoisted children
+        if let Some(hoisted) = &self.stacking_context {
+            for hoisted_child in hoisted.pos_z_hoisted_children().rev() {
+                let x = x - hoisted_child.position.x;
+                let y = y - hoisted_child.position.y;
+                if let Some(hit) = self.with(hoisted_child.node_id).hit(x, y) {
+                    return Some(hit);
                 }
-            })
-            .or(Some(HitResult {
+            }
+        }
+
+        // Call `.hit()` on each child in turn. If any return `Some` then return that value. Else return `Some(self.id).
+        for child_id in self.paint_children.borrow().iter().flatten().rev() {
+            if let Some(hit) = self.with(*child_id).hit(x, y) {
+                return Some(hit);
+            }
+        }
+
+        // Negative z_index hoisted children
+        if let Some(hoisted) = &self.stacking_context {
+            for hoisted_child in hoisted.neg_z_hoisted_children().rev() {
+                let x = x - hoisted_child.position.x;
+                let y = y - hoisted_child.position.y;
+                if let Some(hit) = self.with(hoisted_child.node_id).hit(x, y) {
+                    return Some(hit);
+                }
+            }
+        }
+
+        // Inline children
+        if self.flags.is_inline_root() {
+            let element_data = &self.element_data().unwrap();
+            let layout = &element_data.inline_layout_data.as_ref().unwrap().layout;
+            let scale = layout.scale();
+
+            if let Some((cluster, _side)) = Cluster::from_point(layout, x * scale, y * scale) {
+                let style_index = cluster.glyphs().next()?.style_index();
+                let node_id = layout.styles()[style_index].brush.id;
+                return Some(HitResult { node_id, x, y });
+            }
+        }
+
+        // Self (this node)
+        if matches_self {
+            return Some(HitResult {
                 node_id: self.id,
                 x,
                 y,
-            })
-            .filter(|_| matches_self))
+            });
+        }
+
+        None
     }
 
     /// Computes the Document-relative coordinates of the Node

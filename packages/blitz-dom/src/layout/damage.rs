@@ -1,3 +1,5 @@
+use std::ops::Range;
+
 use crate::node::NodeFlags;
 use crate::{BaseDocument, net::ImageHandler, node::BackgroundImageData, util::ImageType};
 use crate::{NON_INCREMENTAL, Node};
@@ -255,14 +257,34 @@ impl HoistedPaintChildren {
         }
     }
 
-    fn reset(&mut self) {
+    pub fn reset(&mut self) {
         self.children.clear();
         self.negative_z_count = 0;
     }
 
-    fn sort(&mut self) {
+    pub fn sort(&mut self) {
         self.children.sort_by_key(|c| c.z_index);
         self.negative_z_count = self.children.iter().take_while(|c| c.z_index < 0).count() as u32;
+    }
+
+    pub fn neg_z_range(&self) -> Range<usize> {
+        0..(self.negative_z_count as usize)
+    }
+
+    pub fn pos_z_range(&self) -> Range<usize> {
+        (self.negative_z_count as usize)..self.children.len()
+    }
+
+    pub fn neg_z_hoisted_children(
+        &self,
+    ) -> impl ExactSizeIterator<Item = &HoistedPaintChild> + DoubleEndedIterator {
+        self.children[self.neg_z_range()].iter()
+    }
+
+    pub fn pos_z_hoisted_children(
+        &self,
+    ) -> impl ExactSizeIterator<Item = &HoistedPaintChild> + DoubleEndedIterator {
+        self.children[self.pos_z_range()].iter()
     }
 }
 
@@ -304,25 +326,6 @@ impl BaseDocument {
     ) {
         let doc_id = self.id();
 
-        // let is_stacking_context_root: bool;
-        // let mut new_stacking_context: Option<Box<HoistedPaintChildren>> = None;
-        // let stacking_context = match parent_stacking_context {
-        //     Some(ctx) => {
-        //         is_stacking_context_root = false;
-        //         &mut *ctx
-        //     }
-        //     None => {
-        //         is_stacking_context_root = true;
-        //         let mut sc = self.nodes[node_id]
-        //             .stacking_context
-        //             .take()
-        //             .unwrap_or_else(|| Box::new(HoistedPaintChildren::new()));
-        //         sc.reset();
-        //         new_stacking_context = Some(sc);
-        //         new_stacking_context.as_mut().unwrap()
-        //     }
-        // };
-        let is_stacking_context_root = parent_stacking_context.is_some();
         let mut new_stacking_context: HoistedPaintChildren = HoistedPaintChildren::new();
         let stacking_context = &mut new_stacking_context;
 
@@ -433,7 +436,6 @@ impl BaseDocument {
                 let child = &self.nodes[child_id];
                 let z_index = child.z_index();
                 if z_index != 0 {
-                    println!("Push hoisted {node_id} {z_index}");
                     stacking_context.children.push(HoistedPaintChild {
                         node_id: child_id,
                         z_index,
@@ -461,15 +463,6 @@ impl BaseDocument {
             stacking_context.sort();
             self.nodes[node_id].stacking_context = Some(Box::new(new_stacking_context));
         }
-
-        // if is_stacking_context_root {
-        //     stacking_context.sort();
-        //     self.nodes[node_id].stacking_context = Some(Box::new(new_stacking_context));
-        // } else {
-        //     if !stacking_context.children.is_empty() {
-        //         println!("{node_id} {} {}", position.x, position.y);
-        //     }
-        // }
     }
 }
 
