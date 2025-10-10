@@ -21,7 +21,17 @@ thread_local! {
 use style::selector_parser::RestyleDamage;
 use taffy::AvailableSpace;
 
-use crate::{layout::{construct::{build_inline_layout_into, collect_layout_children, ConstructionTask, ConstructionTaskData, ConstructionTaskResult, ConstructionTaskResultData}, damage::{ALL_DAMAGE, CONSTRUCT_BOX, CONSTRUCT_DESCENDENT, CONSTRUCT_FC}}, node::TextBrush, BaseDocument, NON_INCREMENTAL};
+use crate::{
+    BaseDocument, NON_INCREMENTAL,
+    layout::{
+        construct::{
+            ConstructionTask, ConstructionTaskData, ConstructionTaskResult,
+            ConstructionTaskResultData, build_inline_layout_into, collect_layout_children,
+        },
+        damage::{ALL_DAMAGE, CONSTRUCT_BOX, CONSTRUCT_DESCENDENT, CONSTRUCT_FC},
+    },
+    node::TextBrush,
+};
 
 impl BaseDocument {
     /// Restyle the tree and then relayout it

@@ -41,7 +41,6 @@ mod document;
 pub mod node;
 
 mod config;
-mod resolve;
 mod debug;
 mod events;
 mod font_metrics;
@@ -51,6 +50,7 @@ mod html;
 mod layout;
 mod mutator;
 mod query_selector;
+mod resolve;
 /// Implementations that interact with servo's style engine
 mod stylo;
 mod stylo_to_cursor_icon;
