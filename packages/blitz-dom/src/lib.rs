@@ -41,6 +41,7 @@ mod document;
 pub mod node;
 
 mod config;
+mod resolve;
 mod debug;
 mod events;
 mod font_metrics;
