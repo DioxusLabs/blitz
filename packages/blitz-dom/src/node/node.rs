@@ -26,6 +26,8 @@ use taffy::{
     prelude::{Layout, Style},
 };
 
+use crate::layout::damage::HoistedPaintChildren;
+
 use super::{Attribute, ElementData};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -86,6 +88,7 @@ pub struct Node {
     pub layout_children: RefCell<Option<Vec<usize>>>,
     /// The same as layout_children, but sorted by z-index
     pub paint_children: RefCell<Option<Vec<usize>>>,
+    pub stacking_context: Option<Box<HoistedPaintChildren>>,
 
     // Flags
     pub flags: NodeFlags,
@@ -134,6 +137,7 @@ impl Node {
             layout_parent: Cell::new(None),
             layout_children: RefCell::new(None),
             paint_children: RefCell::new(None),
+            stacking_context: None,
 
             flags: NodeFlags::empty(),
             data,
@@ -705,6 +709,39 @@ impl Node {
             .unwrap_or(0)
     }
 
+    // https://developer.mozilla.org/en-US/docs/Web/CSS/CSS_positioned_layout/Stacking_context#features_creating_stacking_contexts
+    pub fn is_stacking_context_root(&self, is_flex_or_grid_item: bool) -> bool {
+        let Some(style) = self.primary_styles() else {
+            return false;
+        };
+
+        let position = style.clone_position();
+        let has_z_index = !style.clone_z_index().is_auto();
+
+        if style.clone_opacity() != 1.0 {
+            return true;
+        }
+
+        let position_based = match position {
+            Position::Fixed | Position::Sticky => true,
+            Position::Relative | Position::Absolute => has_z_index,
+            Position::Static => has_z_index && is_flex_or_grid_item,
+        };
+        if position_based {
+            return true;
+        }
+
+        // TODO: mix-blend-mode
+        // TODO: transforms
+        // TODO: filter
+        // TODO: clip-path
+        // TODO: mask
+        // TODO: isolation
+        // TODO: contain
+
+        false
+    }
+
     /// Takes an (x, y) position (relative to the *parent's* top-left corner) and returns:
     ///    - None if the position is outside of this node's bounds
     ///    - Some(HitResult) if the position is within the node but doesn't match any children
@@ -714,6 +751,18 @@ impl Node {
     /// TODO: z-index
     /// (If multiple children are positioned at the position then a random one will be recursed into)
     pub fn hit(&self, x: f32, y: f32) -> Option<HitResult> {
+        use style::computed_values::visibility::T as Visibility;
+
+        // Don't hit on visbility:hidden elements
+        if let Some(style) = self.primary_styles() {
+            if matches!(
+                style.clone_visibility(),
+                Visibility::Hidden | Visibility::Collapse
+            ) {
+                return None;
+            }
+        }
+
         let mut x = x - self.final_layout.location.x + self.scroll_offset.x as f32;
         let mut y = y - self.final_layout.location.y + self.scroll_offset.y as f32;
 
@@ -729,7 +778,18 @@ impl Node {
             || y < 0.0
             || y > content_size.height + self.scroll_offset.y as f32);
 
-        if !matches_self && !matches_content {
+        let matches_hoisted_content = match &self.stacking_context {
+            Some(sc) => {
+                let content_area = sc.content_area;
+                x >= content_area.left + self.scroll_offset.x as f32
+                    && x <= content_area.right + self.scroll_offset.x as f32
+                    && y >= content_area.top + self.scroll_offset.y as f32
+                    && y <= content_area.bottom + self.scroll_offset.y as f32
+            }
+            None => false,
+        };
+
+        if !matches_self && !matches_content && !matches_hoisted_content {
             return None;
         }
 
@@ -742,34 +802,62 @@ impl Node {
             y -= content_box_offset.y;
         }
 
-        // Call `.hit()` on each child in turn. If any return `Some` then return that value. Else return `Some(self.id).
-        self.paint_children
-            .borrow()
-            .iter()
-            .flatten()
-            .rev()
-            .find_map(|&i| self.with(i).hit(x, y))
-            .or_else(|| {
-                if self.flags.is_inline_root() {
-                    let element_data = &self.element_data().unwrap();
-                    let layout = &element_data.inline_layout_data.as_ref().unwrap().layout;
-                    let scale = layout.scale();
-
-                    Cluster::from_point(layout, x * scale, y * scale).and_then(|(cluster, _)| {
-                        let style_index = cluster.glyphs().next()?.style_index();
-                        let node_id = layout.styles()[style_index].brush.id;
-                        Some(HitResult { node_id, x, y })
-                    })
-                } else {
-                    None
+        // Positive z_index hoisted children
+        if matches_hoisted_content {
+            if let Some(hoisted) = &self.stacking_context {
+                for hoisted_child in hoisted.pos_z_hoisted_children().rev() {
+                    let x = x - hoisted_child.position.x;
+                    let y = y - hoisted_child.position.y;
+                    if let Some(hit) = self.with(hoisted_child.node_id).hit(x, y) {
+                        return Some(hit);
+                    }
                 }
-            })
-            .or(Some(HitResult {
+            }
+        }
+
+        // Call `.hit()` on each child in turn. If any return `Some` then return that value. Else return `Some(self.id).
+        for child_id in self.paint_children.borrow().iter().flatten().rev() {
+            if let Some(hit) = self.with(*child_id).hit(x, y) {
+                return Some(hit);
+            }
+        }
+
+        // Negative z_index hoisted children
+        if matches_hoisted_content {
+            if let Some(hoisted) = &self.stacking_context {
+                for hoisted_child in hoisted.neg_z_hoisted_children().rev() {
+                    let x = x - hoisted_child.position.x;
+                    let y = y - hoisted_child.position.y;
+                    if let Some(hit) = self.with(hoisted_child.node_id).hit(x, y) {
+                        return Some(hit);
+                    }
+                }
+            }
+        }
+
+        // Inline children
+        if self.flags.is_inline_root() {
+            let element_data = &self.element_data().unwrap();
+            let layout = &element_data.inline_layout_data.as_ref().unwrap().layout;
+            let scale = layout.scale();
+
+            if let Some((cluster, _side)) = Cluster::from_point(layout, x * scale, y * scale) {
+                let style_index = cluster.glyphs().next()?.style_index();
+                let node_id = layout.styles()[style_index].brush.id;
+                return Some(HitResult { node_id, x, y });
+            }
+        }
+
+        // Self (this node)
+        if matches_self {
+            return Some(HitResult {
                 node_id: self.id,
                 x,
                 y,
-            })
-            .filter(|_| matches_self))
+            });
+        }
+
+        None
     }
 
     /// Computes the Document-relative coordinates of the Node

@@ -1,15 +1,19 @@
-use crate::NON_INCREMENTAL;
+use std::ops::Range;
+
 use crate::node::NodeFlags;
 use crate::{BaseDocument, net::ImageHandler, node::BackgroundImageData, util::ImageType};
+use crate::{NON_INCREMENTAL, Node};
 use blitz_traits::net::Request;
 use style::properties::ComputedValues;
 use style::properties::generated::longhands::position::computed_value::T as Position;
 use style::selector_parser::RestyleDamage;
 use style::servo::url::ComputedUrl;
+use style::values::computed::Float;
 use style::values::generics::image::Image as StyloImage;
 use style::values::specified::align::AlignFlags;
 use style::values::specified::box_::DisplayInside;
 use style::values::specified::box_::DisplayOutside;
+use taffy::Rect;
 
 pub(crate) const CONSTRUCT_BOX: RestyleDamage =
     RestyleDamage::from_bits_retain(0b_0000_0000_0001_0000);
@@ -231,6 +235,93 @@ pub(crate) fn compute_layout_damage(old: &ComputedValues, new: &ComputedValues) 
     }
 }
 
+/// A child with a z_index that is hoisted up to it's containing Stacking Context for paint purposes
+#[derive(Debug, Clone)]
+pub struct HoistedPaintChild {
+    pub node_id: usize,
+    pub z_index: i32,
+    pub position: taffy::Point<f32>,
+}
+
+#[derive(Debug)]
+pub struct HoistedPaintChildren {
+    pub children: Vec<HoistedPaintChild>,
+    /// The number of hoisted point children with negative z_index
+    pub negative_z_count: u32,
+
+    pub content_area: taffy::Rect<f32>,
+}
+
+impl HoistedPaintChildren {
+    fn new() -> Self {
+        Self {
+            children: Vec::new(),
+            negative_z_count: 0,
+            content_area: taffy::Rect::ZERO,
+        }
+    }
+
+    pub fn reset(&mut self) {
+        self.children.clear();
+        self.negative_z_count = 0;
+    }
+
+    pub fn compute_content_size(&mut self, doc: &BaseDocument) {
+        fn child_pos(child: &HoistedPaintChild, doc: &BaseDocument) -> Rect<f32> {
+            let node = &doc.nodes[child.node_id];
+            let left = child.position.x + node.final_layout.location.x;
+            let top = child.position.y + node.final_layout.location.y;
+            let right = left + node.final_layout.size.width;
+            let bottom = top + node.final_layout.size.height;
+
+            taffy::Rect {
+                top,
+                left,
+                bottom,
+                right,
+            }
+        }
+
+        if self.children.is_empty() {
+            self.content_area = taffy::Rect::ZERO;
+        } else {
+            self.content_area = child_pos(&self.children[0], doc);
+            for child in self.children[1..].iter() {
+                let pos = child_pos(child, doc);
+                self.content_area.left = self.content_area.left.min(pos.left);
+                self.content_area.top = self.content_area.top.min(pos.top);
+                self.content_area.right = self.content_area.right.max(pos.right);
+                self.content_area.bottom = self.content_area.bottom.max(pos.bottom);
+            }
+        }
+    }
+
+    pub fn sort(&mut self) {
+        self.children.sort_by_key(|c| c.z_index);
+        self.negative_z_count = self.children.iter().take_while(|c| c.z_index < 0).count() as u32;
+    }
+
+    pub fn neg_z_range(&self) -> Range<usize> {
+        0..(self.negative_z_count as usize)
+    }
+
+    pub fn pos_z_range(&self) -> Range<usize> {
+        (self.negative_z_count as usize)..self.children.len()
+    }
+
+    pub fn neg_z_hoisted_children(
+        &self,
+    ) -> impl ExactSizeIterator<Item = &HoistedPaintChild> + DoubleEndedIterator {
+        self.children[self.neg_z_range()].iter()
+    }
+
+    pub fn pos_z_hoisted_children(
+        &self,
+    ) -> impl ExactSizeIterator<Item = &HoistedPaintChild> + DoubleEndedIterator {
+        self.children[self.pos_z_range()].iter()
+    }
+}
+
 impl BaseDocument {
     pub(crate) fn invalidate_inline_contexts(&mut self) {
         let scale = self.viewport.scale();
@@ -257,9 +348,20 @@ impl BaseDocument {
         }
     }
 
-    /// Walk the whole tree, converting styles to layout
     pub fn flush_styles_to_layout(&mut self, node_id: usize) {
+        self.flush_styles_to_layout_impl(node_id, None);
+    }
+
+    /// Walk the whole tree, converting styles to layout
+    fn flush_styles_to_layout_impl(
+        &mut self,
+        node_id: usize,
+        parent_stacking_context: Option<&mut HoistedPaintChildren>,
+    ) {
         let doc_id = self.id();
+
+        let mut new_stacking_context: HoistedPaintChildren = HoistedPaintChildren::new();
+        let stacking_context = &mut new_stacking_context;
 
         let display = {
             let node = self.nodes.get_mut(node_id).unwrap();
@@ -333,54 +435,98 @@ impl BaseDocument {
         // If the node has children, then take those children and...
         let children = self.nodes[node_id].layout_children.borrow_mut().take();
         if let Some(mut children) = children {
+            let is_flex_or_grid = matches!(display, taffy::Display::Flex | taffy::Display::Grid);
+
             // Recursively call flush_styles_to_layout on each child
-            for child in children.iter() {
-                self.flush_styles_to_layout(*child);
+            for &child in children.iter() {
+                self.flush_styles_to_layout_impl(
+                    child,
+                    match self.nodes[child].is_stacking_context_root(is_flex_or_grid) {
+                        true => None,
+                        false => Some(stacking_context),
+                    },
+                );
             }
 
-            // If the node is a Flexbox or Grid node then sort by css order property
-            if matches!(display, taffy::Display::Flex | taffy::Display::Grid) {
-                children.sort_by(|left, right| {
-                    let left_node = self.nodes.get(*left).unwrap();
-                    let right_node = self.nodes.get(*right).unwrap();
-                    left_node.order().cmp(&right_node.order())
-                });
+            // Sort layout_children
+            children.sort_by(|left, right| {
+                let left_node = self.nodes.get(*left).unwrap();
+                let right_node = self.nodes.get(*right).unwrap();
+                node_to_order(left_node, is_flex_or_grid)
+                    .cmp(&node_to_order(right_node, is_flex_or_grid))
+            });
+
+            // Reserve space for paint_children
+            let mut paint_children = self.nodes[node_id].paint_children.borrow_mut();
+            if paint_children.is_none() {
+                *paint_children = Some(Vec::new());
+            }
+            let paint_children = paint_children.as_mut().unwrap();
+            paint_children.clear();
+            paint_children.reserve(children.len());
+
+            // Push children to either paint_children or layout_children depending on
+            for &child_id in children.iter() {
+                let child = &self.nodes[child_id];
+                let z_index = child.z_index();
+                if z_index != 0 {
+                    stacking_context.children.push(HoistedPaintChild {
+                        node_id: child_id,
+                        z_index,
+                        position: taffy::Point::ZERO, //child.final_layout.location,
+                    })
+                } else {
+                    paint_children.push(child_id);
+                }
             }
 
             // Put children back
             *self.nodes[node_id].layout_children.borrow_mut() = Some(children);
-
-            // Sort paint_children in place
-            self.nodes[node_id]
-                .paint_children
-                .borrow_mut()
-                .as_mut()
-                .unwrap()
-                .sort_by(|left, right| {
-                    let left_node = self.nodes.get(*left).unwrap();
-                    let right_node = self.nodes.get(*right).unwrap();
-                    left_node
-                        .z_index()
-                        .cmp(&right_node.z_index())
-                        .then_with(|| {
-                            fn position_to_order(pos: Position) -> u8 {
-                                match pos {
-                                    Position::Static | Position::Relative | Position::Sticky => 0,
-                                    Position::Absolute | Position::Fixed => 1,
-                                }
-                            }
-                            let left_position = left_node
-                                .primary_styles()
-                                .map(|s| position_to_order(s.clone_position()))
-                                .unwrap_or(0);
-                            let right_position = right_node
-                                .primary_styles()
-                                .map(|s| position_to_order(s.clone_position()))
-                                .unwrap_or(0);
-
-                            left_position.cmp(&right_position)
-                        })
-                })
         }
+
+        if let Some(parent_stacking_context) = parent_stacking_context {
+            let position = self.nodes[node_id].final_layout.location;
+            for hoisted in stacking_context.children.iter_mut() {
+                hoisted.position.x += position.x;
+                hoisted.position.y += position.y;
+            }
+            parent_stacking_context
+                .children
+                .extend(stacking_context.children.iter().cloned());
+        } else {
+            stacking_context.sort();
+            stacking_context.compute_content_size(self);
+            self.nodes[node_id].stacking_context = Some(Box::new(new_stacking_context));
+        }
+    }
+}
+
+#[inline(always)]
+fn position_to_order(pos: Position) -> i32 {
+    match pos {
+        Position::Static | Position::Relative | Position::Sticky => 0,
+        Position::Absolute | Position::Fixed => 2,
+    }
+}
+#[inline(always)]
+fn float_to_order(pos: Float) -> i32 {
+    match pos {
+        Float::None => 0,
+        _ => 1,
+    }
+}
+
+#[inline(always)]
+fn node_to_order(node: &Node, is_flex_or_grid: bool) -> i32 {
+    let Some(style) = node.primary_styles() else {
+        return 0;
+    };
+    if is_flex_or_grid {
+        match style.clone_position() {
+            Position::Static | Position::Relative | Position::Sticky => style.clone_order(),
+            Position::Absolute | Position::Fixed => 0,
+        }
+    } else {
+        position_to_order(style.clone_position()) + float_to_order(style.clone_float())
     }
 }
