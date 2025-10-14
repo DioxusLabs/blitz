@@ -206,11 +206,11 @@ impl BaseDocument {
                             let clear = node.style.clear;
                             let output = self
                                 .compute_child_layout(NodeId::from(node_id), float_child_inputs);
-                            let min_y = (state.line_y() as f32 / scale) + container_pb.top;
+                            let min_y = state.line_y() as f32 / scale;
                             let pos =
                                 block_ctx.place_floated_box(output.size, min_y, direction, clear);
 
-                            let min_y = (state.line_y() / scale as f64); //.max(pos.y as f64);
+                            let min_y = state.line_y() / scale as f64; //.max(pos.y as f64);
                             let next_slot =
                                 block_ctx.find_content_slot(min_y as f32, Clear::None, None);
 
@@ -268,6 +268,11 @@ impl BaseDocument {
                     },
                 );
 
+                let final_size = inputs.known_dimensions.unwrap_or(taffy::Size {
+                    width: inline_layout.layout.width().ceil() / scale,
+                    height: inline_layout.layout.height() / scale,
+                });
+
                 // Store sizes and positions of inline boxes
                 for line in inline_layout.layout.lines() {
                     for item in line.items() {
@@ -291,22 +296,22 @@ impl BaseDocument {
                                 .style
                                 .inset
                                 .left
-                                .maybe_resolve(child_inputs.parent_size.width, resolve_calc_value);
+                                .maybe_resolve(final_size.width, resolve_calc_value);
                             let right = node
                                 .style
                                 .inset
                                 .right
-                                .maybe_resolve(child_inputs.parent_size.width, resolve_calc_value);
+                                .maybe_resolve(final_size.width, resolve_calc_value);
                             let top = node
                                 .style
                                 .inset
                                 .top
-                                .maybe_resolve(child_inputs.parent_size.height, resolve_calc_value);
+                                .maybe_resolve(final_size.height, resolve_calc_value);
                             let bottom = node
                                 .style
                                 .inset
                                 .bottom
-                                .maybe_resolve(child_inputs.parent_size.height, resolve_calc_value);
+                                .maybe_resolve(final_size.height, resolve_calc_value);
 
                             let float = node.style.float;
                             if node.style.position == Position::Absolute {
@@ -318,21 +323,25 @@ impl BaseDocument {
 
                                 // TODO: Implement absolute positioning
                                 layout.location.x = left
+                                    .map(|left| left + margin.left)
                                     .or_else(|| {
-                                        child_inputs
-                                            .parent_size
-                                            .width
-                                            .zip(right)
-                                            .map(|(w, r)| w - r)
+                                        right.map(|right| {
+                                            final_size.width
+                                                - right
+                                                - output.size.width
+                                                - margin.right
+                                        })
                                     })
                                     .unwrap_or((ibox.x / scale) + margin.left + container_pb.left);
                                 layout.location.y = top
+                                    .map(|top| top + margin.top)
                                     .or_else(|| {
-                                        child_inputs
-                                            .parent_size
-                                            .height
-                                            .zip(bottom)
-                                            .map(|(w, r)| w - r)
+                                        bottom.map(|bottom| {
+                                            final_size.height
+                                                - bottom
+                                                - output.size.height
+                                                - margin.bottom
+                                        })
                                     })
                                     .unwrap_or((ibox.y / scale) + margin.top + container_pb.top);
 
@@ -365,10 +374,7 @@ impl BaseDocument {
                 // println!("known_dimensions: w: {:?} h: {:?}", inputs.known_dimensions.width, inputs.known_dimensions.height);
                 // println!("\n");
 
-                inputs.known_dimensions.unwrap_or(taffy::Size {
-                    width: inline_layout.layout.width().ceil() / scale,
-                    height: inline_layout.layout.height() / scale,
-                })
+                final_size
             },
         );
 
