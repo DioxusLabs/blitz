@@ -452,8 +452,8 @@ impl BaseDocument {
             children.sort_by(|left, right| {
                 let left_node = self.nodes.get(*left).unwrap();
                 let right_node = self.nodes.get(*right).unwrap();
-                node_to_order(left_node, is_flex_or_grid)
-                    .cmp(&node_to_order(right_node, is_flex_or_grid))
+                node_to_layout_order(left_node, is_flex_or_grid)
+                    .cmp(&node_to_layout_order(right_node, is_flex_or_grid))
             });
 
             // Reserve space for paint_children
@@ -479,6 +479,14 @@ impl BaseDocument {
                     paint_children.push(child_id);
                 }
             }
+
+            // Sort paint_children
+            paint_children.sort_by(|left, right| {
+                let left_node = self.nodes.get(*left).unwrap();
+                let right_node = self.nodes.get(*right).unwrap();
+                node_to_paint_order(left_node, is_flex_or_grid)
+                    .cmp(&node_to_paint_order(right_node, is_flex_or_grid))
+            });
 
             // Put children back
             *self.nodes[node_id].layout_children.borrow_mut() = Some(children);
@@ -517,7 +525,22 @@ fn float_to_order(pos: Float) -> i32 {
 }
 
 #[inline(always)]
-fn node_to_order(node: &Node, is_flex_or_grid: bool) -> i32 {
+fn node_to_layout_order(node: &Node, is_flex_or_grid: bool) -> i32 {
+    let Some(style) = node.primary_styles() else {
+        return 0;
+    };
+    if is_flex_or_grid {
+        match style.clone_position() {
+            Position::Static | Position::Relative | Position::Sticky => style.clone_order(),
+            Position::Absolute | Position::Fixed => 0,
+        }
+    } else {
+        position_to_order(style.clone_position())
+    }
+}
+
+#[inline(always)]
+fn node_to_paint_order(node: &Node, is_flex_or_grid: bool) -> i32 {
     let Some(style) = node.primary_styles() else {
         return 0;
     };
