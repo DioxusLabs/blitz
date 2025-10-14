@@ -97,6 +97,10 @@ impl BaseDocument {
                 let container_pb = padding + border;
                 let pbw = container_pb.horizontal_components().sum() * scale;
 
+                // Create sub-context to account for the inline layout's padding/border
+                let mut block_ctx = block_ctx
+                    .sub_context(container_pb.top, [container_pb.left, container_pb.right]);
+
                 let width = known_dimensions
                     .width
                     .map(|w| (w * scale) - pbw)
