@@ -449,12 +449,13 @@ impl BaseDocument {
             }
 
             // Sort layout_children
-            children.sort_by(|left, right| {
-                let left_node = self.nodes.get(*left).unwrap();
-                let right_node = self.nodes.get(*right).unwrap();
-                node_to_layout_order(left_node, is_flex_or_grid)
-                    .cmp(&node_to_layout_order(right_node, is_flex_or_grid))
-            });
+            if is_flex_or_grid {
+                children.sort_by(|left, right| {
+                    let left_node = self.nodes.get(*left).unwrap();
+                    let right_node = self.nodes.get(*right).unwrap();
+                    left_node.order().cmp(&right_node.order())
+                });
+            }
 
             // Reserve space for paint_children
             let mut paint_children = self.nodes[node_id].paint_children.borrow_mut();
@@ -521,21 +522,6 @@ fn float_to_order(pos: Float) -> i32 {
     match pos {
         Float::None => 0,
         _ => 1,
-    }
-}
-
-#[inline(always)]
-fn node_to_layout_order(node: &Node, is_flex_or_grid: bool) -> i32 {
-    let Some(style) = node.primary_styles() else {
-        return 0;
-    };
-    if is_flex_or_grid {
-        match style.clone_position() {
-            Position::Static | Position::Relative | Position::Sticky => style.clone_order(),
-            Position::Absolute | Position::Fixed => 0,
-        }
-    } else {
-        position_to_order(style.clone_position())
     }
 }
 
