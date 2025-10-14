@@ -16,6 +16,9 @@ screenshot *ARGS:
 open *ARGS:
   cargo run --release --package readme --features log_frame_times,log_phase_times {{ARGS}}
 
+dev *ARGS:
+  cargo run --package readme --features log_frame_times,log_phase_times {{ARGS}}
+
 incr *ARGS:
   cargo run --release --package readme --features incremental,log_frame_times,log_phase_times {{ARGS}}
 
