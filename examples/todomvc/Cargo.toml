@@ -18,7 +18,7 @@ tracing = ["mini-dxn/tracing", "dep:tracing-subscriber"]
 
 [dependencies]
 mini-dxn = { path = "../../packages/mini-dxn", default-features = false, features = ["data-uri", "svg", "system_fonts"] }
-dioxus = { version = "=0.7.0-rc.1", default-features = false, features = ["html", "hooks", "macro", "signals"] }
+dioxus = { version = "=0.7.0-rc.2", default-features = false, features = ["html", "hooks", "macro", "signals"] }
 tracing-subscriber = { workspace = true, optional = true}
 
 # Disable unicode URL support
