@@ -469,12 +469,21 @@ impl BaseDocument {
             // Push children to either paint_children or layout_children depending on
             for &child_id in children.iter() {
                 let child = &self.nodes[child_id];
-                let z_index = child.z_index();
-                if z_index != 0 {
+
+                let Some(style) = child.primary_styles() else {
+                    paint_children.push(child_id);
+                    continue;
+                };
+
+                let position = style.clone_position();
+                let z_index = style.clone_z_index().integer_or(0);
+
+                // TODO: more complete hoisting detection
+                if position != Position::Static && z_index != 0 {
                     stacking_context.children.push(HoistedPaintChild {
                         node_id: child_id,
                         z_index,
-                        position: taffy::Point::ZERO, //child.final_layout.location,
+                        position: taffy::Point::ZERO,
                     })
                 } else {
                     paint_children.push(child_id);
