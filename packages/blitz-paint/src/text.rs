@@ -14,6 +14,9 @@ pub(crate) fn stroke_text<'a>(
 ) {
     let transform = Affine::translate((pos.x * scale, pos.y * scale));
     for line in lines {
+        let line_metrics = line.metrics();
+        let line_x = line_metrics.inline_min_coord;
+
         for item in line.items() {
             if let PositionedLayoutItem::GlyphRun(glyph_run) = item {
                 let mut x = glyph_run.offset();
