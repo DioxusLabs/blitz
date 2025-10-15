@@ -510,6 +510,7 @@ fn collect_complex_layout_children(
                 if block_is_only_whitespace(doc, anon_id) {
                     layout_children.pop();
                     doc.nodes.remove(anon_id);
+                    *anonymous_block_id = None;
                 }
             }
 
@@ -523,6 +524,7 @@ fn collect_complex_layout_children(
         if block_is_only_whitespace(doc, anon_id) {
             layout_children.pop();
             doc.nodes.remove(anon_id);
+            *anonymous_block_id = None;
         }
     }
 }
