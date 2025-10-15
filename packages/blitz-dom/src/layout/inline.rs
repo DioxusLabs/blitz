@@ -275,6 +275,9 @@ impl BaseDocument {
 
                 // Store sizes and positions of inline boxes
                 for line in inline_layout.layout.lines() {
+                    let line_metrics = line.metrics();
+                    let line_x = line_metrics.inline_min_coord / scale;
+
                     for item in line.items() {
                         if let parley::layout::PositionedLayoutItem::InlineBox(ibox) = item {
                             let node = &mut self.nodes[ibox.id as usize];
@@ -358,7 +361,7 @@ impl BaseDocument {
                                 layout.size.height =
                                     (ibox.height / scale) - margin.top - margin.bottom;
                                 layout.location.x =
-                                    (ibox.x / scale) + margin.left + container_pb.left;
+                                    line_x + (ibox.x / scale) + margin.left + container_pb.left;
                                 layout.location.y =
                                     (ibox.y / scale) + margin.top + container_pb.top;
                                 layout.padding = padding; //.map(|p| p / scale);
