@@ -17,11 +17,13 @@ impl BaseDocument {
     ) -> taffy::LayoutOutput {
         // Unwrap the block formatting context if one was passed, or else create a new one
         match block_ctx {
-            Some(inherited_bfc) => self.compute_inline_layout_inner(node_id, inputs, inherited_bfc),
+            Some(inherited_bfc) => {
+                self.compute_inline_layout_inner(node_id, inputs, inherited_bfc, false)
+            }
             None => {
                 let mut root_bfc = BlockFormattingContext::new(inputs.available_space.width);
                 let mut root_ctx = root_bfc.root_block_context();
-                self.compute_inline_layout_inner(node_id, inputs, &mut root_ctx)
+                self.compute_inline_layout_inner(node_id, inputs, &mut root_ctx, true)
             }
         }
     }
@@ -31,6 +33,7 @@ impl BaseDocument {
         node_id: usize,
         inputs: taffy::tree::LayoutInput,
         block_ctx: &mut BlockContext<'_>,
+        is_root_bfc: bool,
     ) -> taffy::LayoutOutput {
         let scale = self.viewport.scale();
 
@@ -97,10 +100,6 @@ impl BaseDocument {
                 let container_pb = padding + border;
                 let pbw = container_pb.horizontal_components().sum() * scale;
 
-                // Create sub-context to account for the inline layout's padding/border
-                let mut block_ctx = block_ctx
-                    .sub_context(container_pb.top, [container_pb.left, container_pb.right]);
-
                 let width = known_dimensions
                     .width
                     .map(|w| (w * scale) - pbw)
@@ -141,6 +140,16 @@ impl BaseDocument {
                             .maybe_clamp(min_width, max_width)
                             - pbw
                     });
+
+                // Set block context width if this is a block context root
+                if is_root_bfc {
+                    block_ctx.set_width(AvailableSpace::Definite((width + pbw) / scale));
+                }
+
+                // Create sub-context to account for the inline layout's padding/border
+                let mut block_ctx = block_ctx
+                    .sub_context(container_pb.top, [container_pb.left, container_pb.right]);
+                // block_ctx.apply_content_box_inset([container_pb.left, container_pb.right]);
 
                 // if inputs.run_mode == taffy::RunMode::ComputeSize {
                 //     // Height SHOULD be ignored if RequestedAxis is Horizontal, but currently that doesn't
