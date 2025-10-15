@@ -201,6 +201,13 @@ env_logger = "0.11"
 tracing-subscriber = "0.3"
 
 # [patch.crates-io]
+# anyrender = { path = "../anyrender/crates/anyrender" }
+# anyrender_vello = { path = "../anyrender/crates/anyrender_vello" }
+# anyrender_vello_cpu = { path = "../anyrender/crates/anyrender_vello_cpu" }
+# anyrender_svg = { path = "../anyrender/crates/anyrender_svg" }
+# wgpu_context = { path = "../anyrender/crates/wgpu_context" }
+
+# [patch.crates-io]
 # [patch."https://github.com/dioxuslabs/taffy"]
 # taffy = { path = "../taffy" }
 
