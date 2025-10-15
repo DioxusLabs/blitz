@@ -172,7 +172,6 @@ impl BaseDocument {
 
                 // Perform inline layout
                 let mut breaker = inline_layout.layout.break_lines();
-                let mut line_width = width;
                 let initial_slot = block_ctx.find_content_slot(0.0, Clear::None, None);
                 let state = breaker.state_mut();
                 state.set_layout_max_advance(width);
@@ -270,7 +269,6 @@ impl BaseDocument {
                     .unwrap_or(parley::layout::Alignment::Start);
 
                 inline_layout.layout.align(
-                    Some(width),
                     alignment,
                     AlignmentOptions {
                         align_when_overflowing: false,
