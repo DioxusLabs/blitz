@@ -15,6 +15,8 @@ mod markdown {
     pub(crate) use pulldown_cmark::*;
 }
 
+#[cfg(feature = "skia")]
+use anyrender_skia::SkiaWindowRenderer as WindowRenderer;
 #[cfg(feature = "gpu")]
 use anyrender_vello::VelloWindowRenderer as WindowRenderer;
 #[cfg(feature = "cpu-base")]
