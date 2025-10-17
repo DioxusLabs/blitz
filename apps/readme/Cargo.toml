@@ -7,7 +7,7 @@ rust-version.workspace = true
 publish = false
 
 [features]
-default = ["hybrid", "comrak"]
+default = ["gpu", "comrak"]
 gpu = ["dep:anyrender_vello"]
 hybrid = ["dep:anyrender_vello_hybrid"]
 cpu = ["cpu-pixels"]
