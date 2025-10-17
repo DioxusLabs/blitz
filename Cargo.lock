@@ -3731,6 +3731,7 @@ dependencies = [
  "anyrender",
  "anyrender_vello",
  "anyrender_vello_cpu",
+ "anyrender_vello_hybrid",
  "blitz-dom",
  "blitz-net",
  "blitz-paint",
