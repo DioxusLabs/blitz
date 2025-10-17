@@ -74,9 +74,10 @@ taffy = { version = "0.9", default-features = false, features = ["std", "flexbox
 # AnyRender
 anyrender = { version = "0.6" }
 anyrender_vello = { version = "0.6" }
-anyrender_vello_cpu = { version = "0.7" }
+anyrender_vello_cpu = { version = "0.8" }
+anyrender_vello_hybrid = { version = "0.1" }
 anyrender_svg = { version = "0.6" }
-wgpu_context = { version = "0.1" }
+wgpu_context = { version = "0.1.1" }
 
 # Linebender + Fontations + WGPU + SVG
 color = "0.3"
@@ -183,6 +184,7 @@ publish = false
 anyrender = { workspace = true }
 anyrender_vello = { workspace = true }
 anyrender_vello_cpu = { workspace = true, features = ["multithreading"] }
+anyrender_vello_hybrid = { workspace = true }
 blitz-dom = { workspace = true, features = ["default"] }
 blitz-html = { workspace = true }
 blitz-traits = { workspace = true }

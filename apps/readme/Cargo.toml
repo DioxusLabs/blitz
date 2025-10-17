@@ -9,6 +9,7 @@ publish = false
 [features]
 default = ["gpu", "comrak"]
 gpu = ["dep:anyrender_vello"]
+hybrid = ["dep:anyrender_vello_hybrid"]
 cpu = ["cpu-pixels"]
 cpu-pixels = ["cpu-base", "anyrender_vello_cpu/pixels_window_renderer"]
 cpu-softbuffer = ["cpu-base", "anyrender_vello_cpu/softbuffer_window_renderer"]
@@ -16,7 +17,7 @@ cpu-base = ["dep:anyrender_vello_cpu"]
 avif = ["dep:image", "image?/avif-native"]
 comrak = ["dep:comrak"]
 pulldown_cmark = ["dep:pulldown-cmark"]
-log_frame_times = ["anyrender_vello_cpu?/log_frame_times", "anyrender_vello?/log_frame_times"]
+log_frame_times = ["anyrender_vello_cpu?/log_frame_times", "anyrender_vello_hybrid?/log_frame_times", "anyrender_vello?/log_frame_times"]
 log_phase_times = ["blitz-dom/log_phase_times"]
 incremental = ["blitz-dom/incremental"]
 
@@ -29,6 +30,7 @@ blitz-net = { workspace = true, features = ["cookies", "debug_log"] }
 blitz-shell = { workspace = true, features = ["tracing", "default"] }
 anyrender_vello = { workspace = true, optional = true }
 anyrender_vello_cpu = { workspace = true, features = ["multithreading"], optional = true }
+anyrender_vello_hybrid = { workspace = true, optional = true }
 
 tokio = { workspace = true, features = ["rt", "rt-multi-thread"] }
 reqwest = { workspace = true }
