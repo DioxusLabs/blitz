@@ -215,8 +215,10 @@ impl BaseDocument {
                             let output = self
                                 .compute_child_layout(NodeId::from(node_id), float_child_inputs);
                             let min_y = state.line_y() as f32 / scale;
-                            let pos =
+                            let mut pos =
                                 block_ctx.place_floated_box(output.size, min_y, direction, clear);
+                            pos.x += container_pb.left;
+                            pos.y += container_pb.top;
 
                             let min_y = state.line_y() / scale as f64; //.max(pos.y as f64);
                             let next_slot =
