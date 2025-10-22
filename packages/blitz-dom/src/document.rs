@@ -3,7 +3,7 @@ use crate::font_metrics::BlitzFontMetricsProvider;
 use crate::layout::construct::ConstructionTask;
 use crate::layout::damage::ALL_DAMAGE;
 use crate::mutator::ViewportMut;
-use crate::net::{Resource, StylesheetLoader};
+use crate::net::{CssHandler, Resource, StylesheetLoader};
 use crate::node::{ImageData, NodeFlags, RasterImageData, SpecialElementData, Status, TextBrush};
 use crate::stylo_to_cursor_icon::stylo_to_cursor_icon;
 use crate::traversal::TreeTraverser;
@@ -16,7 +16,7 @@ use crate::{
 use blitz_traits::devtools::DevtoolSettings;
 use blitz_traits::events::{DomEvent, HitResult, UiEvent};
 use blitz_traits::navigation::{DummyNavigationProvider, NavigationProvider};
-use blitz_traits::net::{DummyNetProvider, NetProvider, SharedProvider};
+use blitz_traits::net::{DummyNetProvider, NetProvider, Request, SharedProvider};
 use blitz_traits::shell::{ColorScheme, DummyShellProvider, ShellProvider, Viewport};
 use cursor_icon::CursorIcon;
 use linebender_resource_handle::Blob;
@@ -544,6 +544,34 @@ impl BaseDocument {
 
     pub fn print_subtree(&self, node_id: usize) {
         crate::util::walk_tree(0, &self.nodes[node_id]);
+    }
+
+    pub fn reload_resource_by_href(&mut self, href_to_reload: &str) {
+        for &node_id in self.nodes_to_stylesheet.keys() {
+            let node = &self.nodes[node_id];
+            let Some(element) = node.element_data() else {
+                continue;
+            };
+
+            if element.name.local == local_name!("link") {
+                if let Some(href) = element.attr(local_name!("href")) {
+                    // println!("Node {node_id} {href} {href_to_reload} {} {}", resolved_href.as_str(), resolved_href.as_str() == url_to_reload);
+                    if href == href_to_reload {
+                        let resolved_href = self.resolve_url(href);
+                        self.net_provider.fetch(
+                            self.id(),
+                            Request::get(resolved_href.clone()),
+                            Box::new(CssHandler {
+                                node: node_id,
+                                source_url: resolved_href,
+                                guard: self.guard.clone(),
+                                provider: self.net_provider.clone(),
+                            }),
+                        );
+                    }
+                }
+            }
+        }
     }
 
     pub fn process_style_element(&mut self, target_id: usize) {
