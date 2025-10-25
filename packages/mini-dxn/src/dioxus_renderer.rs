@@ -16,6 +16,9 @@ use anyrender_vello_cpu::VelloCpuWindowRenderer as InnerRenderer;
 #[cfg(feature = "hybrid")]
 use anyrender_vello_hybrid::VelloHybridWindowRenderer as InnerRenderer;
 
+#[cfg(feature = "skia")]
+use anyrender_skia::SkiaWindowRenderer as InnerRenderer;
+
 #[cfg(feature = "gpu")]
 pub fn use_wgpu<T: CustomPaintSource>(create_source: impl FnOnce() -> T) -> u64 {
     use dioxus_core::{consume_context, use_hook_with_cleanup};

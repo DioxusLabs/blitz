@@ -26,6 +26,7 @@ incremental = ["blitz-dom/incremental"]
 hot-reload = ["dep:dioxus-cli-config", "dep:dioxus-devtools"]
 gpu = ["dep:anyrender_vello", "dep:wgpu"]
 hybrid = ["dep:anyrender_vello_hybrid"]
+skia = ["dep:anyrender_skia"]
 cpu = ["cpu-pixels"]
 cpu-pixels = ["cpu-base", "anyrender_vello_cpu/pixels_window_renderer"]
 cpu-softbuffer = ["cpu-base", "anyrender_vello_cpu/softbuffer_window_renderer"]
@@ -38,6 +39,7 @@ log_phase_times = ["blitz-dom/log_phase_times"]
 anyrender = { workspace = true }
 anyrender_vello = { workspace = true, optional = true }
 anyrender_vello_hybrid = { workspace = true, optional = true }
+anyrender_skia = { workspace = true, optional = true }
 anyrender_vello_cpu = { workspace = true, features = ["multithreading"], optional = true }
 blitz-paint = { workspace = true }
 blitz-dom =  { workspace = true, features = ["parallel-construct"] }

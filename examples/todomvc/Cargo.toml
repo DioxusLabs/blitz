@@ -9,6 +9,7 @@ publish = false
 default = ["gpu"]
 gpu = ["mini-dxn/gpu"]
 hybrid = ["mini-dxn/hybrid"]
+skia = ["mini-dxn/skia"]
 cpu = ["cpu-pixels"]
 cpu-pixels = ["mini-dxn/cpu-pixels"]
 cpu-softbuffer = ["mini-dxn/cpu-softbuffer"]
