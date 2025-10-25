@@ -53,8 +53,6 @@ use style::{
 };
 use url::Url;
 
-use crate::resolve::FONT_CTX;
-
 /// Abstraction over wrappers around [`BaseDocument`] to allow for them all to
 /// be driven by [`blitz-shell`](https://docs.rs/blitz-shell)
 pub trait Document: Deref<Target = BaseDocument> + DerefMut + 'static {
@@ -710,6 +708,8 @@ impl BaseDocument {
 
                 #[cfg(feature = "parallel-construct")]
                 {
+                    use crate::resolve::FONT_CTX;
+
                     let doc_font_ctx = &*font_ctx;
                     rayon::broadcast(|_ctx| {
                         FONT_CTX.with_borrow_mut(|font_ctx| {
