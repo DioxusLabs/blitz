@@ -18,10 +18,9 @@ use blitz_dom::DocumentConfig;
 use blitz_dom::net::Resource;
 use blitz_html::HtmlDocument;
 use blitz_shell::{
-    BlitzApplication, BlitzShellEvent, BlitzShellNetCallback, Config, EventLoop, WindowConfig,
-    create_default_event_loop,
+    BlitzApplication, BlitzShellEvent, Config, EventLoop, WindowConfig, create_default_event_loop,
 };
-use blitz_traits::net::{NetProvider, Request};
+use blitz_traits::net::NetProvider;
 
 #[doc(inline)]
 /// Re-export of [`blitz_dom`].
@@ -29,6 +28,7 @@ pub use blitz_dom as dom;
 #[doc(inline)]
 /// Re-export of [`blitz_html`]. HTML parsing on top of blitz-dom
 pub use blitz_html as html;
+#[cfg(feature = "net")]
 #[doc(inline)]
 /// Re-export of [`blitz_net`].
 pub use blitz_net as net;
@@ -60,7 +60,7 @@ pub fn launch_url(url: &str) {
     let net_provider = create_net_provider(&event_loop);
 
     let (url, bytes) = rt
-        .block_on(net_provider.fetch_async(Request::get(url)))
+        .block_on(net_provider.fetch_async(blitz_traits::net::Request::get(url)))
         .unwrap();
     let html = std::str::from_utf8(bytes.as_ref()).unwrap();
 
@@ -132,12 +132,16 @@ fn create_net_provider(
     #[cfg(feature = "net")]
     let net_provider = {
         let proxy = event_loop.create_proxy();
-        let callback = BlitzShellNetCallback::shared(proxy);
+        let callback = blitz_shell::BlitzShellNetCallback::shared(proxy);
         Arc::new(blitz_net::Provider::new(callback))
     };
     #[cfg(not(feature = "net"))]
     let net_provider = {
         use blitz_traits::net::DummyNetProvider;
+
+        // This isn't used without the net feature, so ignore it here to not
+        // get unnused warnings.
+        let _ = event_loop;
         Arc::new(DummyNetProvider::default())
     };
 
