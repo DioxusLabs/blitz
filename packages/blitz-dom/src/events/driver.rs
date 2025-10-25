@@ -65,6 +65,26 @@ impl<'doc, Handler: EventHandler> EventDriver<'doc, Handler> {
             UiEvent::MouseUp(_) => {
                 self.doc_mut().unactive_node();
             }
+            UiEvent::TouchStart(event) => {
+                let dom_x = event.x + viewport_scroll.x as f32 / zoom;
+                let dom_y = event.y + viewport_scroll.y as f32 / zoom;
+                self.doc_mut().set_hover_to(dom_x, dom_y);
+                hover_node_id = self.doc().hover_node_id;
+                self.doc_mut().active_node();
+                self.doc_mut().set_mousedown_node_id(hover_node_id);
+            }
+            UiEvent::TouchEnd(_) => {
+                self.doc_mut().unactive_node();
+            }
+            UiEvent::TouchMove(event) => {
+                let dom_x = event.x + viewport_scroll.x as f32 / zoom;
+                let dom_y = event.y + viewport_scroll.y as f32 / zoom;
+                self.doc_mut().set_hover_to(dom_x, dom_y);
+                hover_node_id = self.doc().hover_node_id;
+            }
+            UiEvent::TouchCancel(_) => {
+                self.doc_mut().unactive_node();
+            }
             _ => {}
         };
 
@@ -72,6 +92,10 @@ impl<'doc, Handler: EventHandler> EventDriver<'doc, Handler> {
             UiEvent::MouseMove(_) => hover_node_id,
             UiEvent::MouseUp(_) => hover_node_id,
             UiEvent::MouseDown(_) => hover_node_id,
+            UiEvent::TouchStart(_) => hover_node_id,
+            UiEvent::TouchEnd(_) => hover_node_id,
+            UiEvent::TouchMove(_) => hover_node_id,
+            UiEvent::TouchCancel(_) => hover_node_id,
             UiEvent::KeyUp(_) => focussed_node_id,
             UiEvent::KeyDown(_) => focussed_node_id,
             UiEvent::Ime(_) => focussed_node_id,
@@ -93,6 +117,26 @@ impl<'doc, Handler: EventHandler> EventDriver<'doc, Handler> {
                 y: data.y + viewport_scroll.y as f32 / zoom,
                 ..data
             }),
+            UiEvent::TouchStart(mut data) => {
+                data.x += viewport_scroll.x as f32 / zoom;
+                data.y += viewport_scroll.y as f32 / zoom;
+                DomEventData::TouchStart(data)
+            }
+            UiEvent::TouchEnd(mut data) => {
+                data.x += viewport_scroll.x as f32 / zoom;
+                data.y += viewport_scroll.y as f32 / zoom;
+                DomEventData::TouchEnd(data)
+            }
+            UiEvent::TouchMove(mut data) => {
+                data.x += viewport_scroll.x as f32 / zoom;
+                data.y += viewport_scroll.y as f32 / zoom;
+                DomEventData::TouchMove(data)
+            }
+            UiEvent::TouchCancel(mut data) => {
+                data.x += viewport_scroll.x as f32 / zoom;
+                data.y += viewport_scroll.y as f32 / zoom;
+                DomEventData::TouchCancel(data)
+            }
             UiEvent::KeyUp(data) => DomEventData::KeyUp(data),
             UiEvent::KeyDown(data) => DomEventData::KeyDown(data),
             UiEvent::Ime(data) => DomEventData::Ime(data),

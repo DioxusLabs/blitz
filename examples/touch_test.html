@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Touch Events Test</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 20px;
+            font-family: Arial, sans-serif;
+            background: #f0f0f0;
+        }
+        .touch-area {
+            width: 400px;
+            height: 300px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-radius: 10px;
+            margin: 20px auto;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-size: 24px;
+            font-weight: bold;
+            text-shadow: 0 2px 4px rgba(0,0,0,0.3);
+            box-shadow: 0 8px 16px rgba(0,0,0,0.1);
+            position: relative;
+            overflow: hidden;
+        }
+        .touch-info {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            background: rgba(0,0,0,0.7);
+            color: white;
+            padding: 10px;
+            border-radius: 5px;
+            font-size: 14px;
+            font-family: monospace;
+            white-space: pre-line;
+        }
+        .touch-point {
+            position: absolute;
+            width: 20px;
+            height: 20px;
+            background: rgba(255,255,255,0.8);
+            border: 2px solid white;
+            border-radius: 50%;
+            transform: translate(-50%, -50%);
+            pointer-events: none;
+        }
+        h1 {
+            text-align: center;
+            color: #333;
+        }
+        .log {
+            max-height: 200px;
+            overflow-y: auto;
+            background: #333;
+            color: #0f0;
+            font-family: monospace;
+            padding: 10px;
+            margin: 20px;
+            border-radius: 5px;
+        }
+    </style>
+</head>
+<body>
+    <h1>Touch Events Test</h1>
+    <div class="touch-area" id="touchArea">
+        Touch Here!
+        <div class="touch-info" id="touchInfo">
+            Touch Status: Ready
+            Touch Count: 0
+        </div>
+    </div>
+    
+    <div class="log" id="eventLog">
+        Event log will appear here...
+    </div>
+
+    <script>
+        const touchArea = document.getElementById('touchArea');
+        const touchInfo = document.getElementById('touchInfo');
+        const eventLog = document.getElementById('eventLog');
+        
+        let activeTouches = new Map();
+        
+        function logEvent(message) {
+            const timestamp = new Date().toLocaleTimeString();
+            eventLog.textContent += `[${timestamp}] ${message}\n`;
+            eventLog.scrollTop = eventLog.scrollHeight;
+        }
+        
+        function updateTouchInfo() {
+            const touchCount = activeTouches.size;
+            let infoText = `Touch Status: ${touchCount > 0 ? 'Active' : 'Ready'}\n`;
+            infoText += `Touch Count: ${touchCount}\n`;
+            
+            if (touchCount > 0) {
+                infoText += `Active Touches:\n`;
+                activeTouches.forEach((touch, id) => {
+                    infoText += `  ID ${id}: (${touch.x.toFixed(0)}, ${touch.y.toFixed(0)})\n`;
+                });
+            }
+            
+            touchInfo.textContent = infoText;
+        }
+        
+        function createTouchPoint(x, y, id) {
+            const point = document.createElement('div');
+            point.className = 'touch-point';
+            point.style.left = x + 'px';
+            point.style.top = y + 'px';
+            point.id = `touch-${id}`;
+            touchArea.appendChild(point);
+        }
+        
+        function updateTouchPoint(x, y, id) {
+            const point = document.getElementById(`touch-${id}`);
+            if (point) {
+                point.style.left = x + 'px';
+                point.style.top = y + 'px';
+            }
+        }
+        
+        function removeTouchPoint(id) {
+            const point = document.getElementById(`touch-${id}`);
+            if (point) {
+                point.remove();
+            }
+        }
+        
+        touchArea.addEventListener('touchstart', function(e) {
+            e.preventDefault();
+            
+            Array.from(e.changedTouches).forEach(touch => {
+                const rect = touchArea.getBoundingClientRect();
+                const x = touch.clientX - rect.left;
+                const y = touch.clientY - rect.top;
+                
+                activeTouches.set(touch.identifier, { x, y });
+                createTouchPoint(x, y, touch.identifier);
+                
+                logEvent(`TouchStart: ID ${touch.identifier} at (${x.toFixed(0)}, ${y.toFixed(0)})`);
+            });
+            
+            updateTouchInfo();
+        });
+        
+        touchArea.addEventListener('touchmove', function(e) {
+            e.preventDefault();
+            
+            Array.from(e.changedTouches).forEach(touch => {
+                const rect = touchArea.getBoundingClientRect();
+                const x = touch.clientX - rect.left;
+                const y = touch.clientY - rect.top;
+                
+                if (activeTouches.has(touch.identifier)) {
+                    activeTouches.set(touch.identifier, { x, y });
+                    updateTouchPoint(x, y, touch.identifier);
+                    
+                    logEvent(`TouchMove: ID ${touch.identifier} at (${x.toFixed(0)}, ${y.toFixed(0)})`);
+                }
+            });
+            
+            updateTouchInfo();
+        });
+        
+        touchArea.addEventListener('touchend', function(e) {
+            e.preventDefault();
+            
+            Array.from(e.changedTouches).forEach(touch => {
+                if (activeTouches.has(touch.identifier)) {
+                    const touchData = activeTouches.get(touch.identifier);
+                    activeTouches.delete(touch.identifier);
+                    removeTouchPoint(touch.identifier);
+                    
+                    logEvent(`TouchEnd: ID ${touch.identifier} at (${touchData.x.toFixed(0)}, ${touchData.y.toFixed(0)})`);
+                }
+            });
+            
+            updateTouchInfo();
+        });
+        
+        touchArea.addEventListener('touchcancel', function(e) {
+            e.preventDefault();
+            
+            Array.from(e.changedTouches).forEach(touch => {
+                if (activeTouches.has(touch.identifier)) {
+                    const touchData = activeTouches.get(touch.identifier);
+                    activeTouches.delete(touch.identifier);
+                    removeTouchPoint(touch.identifier);
+                    
+                    logEvent(`TouchCancel: ID ${touch.identifier} at (${touchData.x.toFixed(0)}, ${touchData.y.toFixed(0)})`);
+                }
+            });
+            
+            updateTouchInfo();
+        });
+        
+        // Initial log message
+        logEvent('Touch event test loaded. Try touching the blue area!');
+    </script>
+</body>
+</html>
