@@ -69,7 +69,7 @@ dioxus-html = { version = "=0.7.0-rc.2" }
 dioxus-hooks = { version = "=0.7.0-rc.2" }
 dioxus-cli-config = { version = "=0.7.0-rc.2" }
 dioxus-devtools = { version = "=0.7.0-rc.2" }
-taffy = { version = "0.9", default-features = false, features = ["std", "flexbox", "grid", "block_layout", "content_size", "calc"] }
+taffy = { path = "../taffy", default-features = false, features = ["std", "flexbox", "grid", "block_layout", "float_layout", "content_size", "calc"] }
 
 # AnyRender
 anyrender = { version = "0.6" }
@@ -85,7 +85,7 @@ color = "0.3"
 linebender_resource_handle = "0.1"
 peniko = "0.5.0"
 kurbo = "0.12"
-parley = { version = "0.6.0", default-features = false, features = ["std"] }
+parley = { path = "../parley/parley", default-features = false, features = ["std"] }
 skrifa = { version = "0.37", default-features = false, features = ["std"] } # Should match parley version
 wgpu = "26"
 softbuffer = "0.4"
