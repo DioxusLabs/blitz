@@ -273,9 +273,9 @@ dependencies = [
 
 [[package]]
 name = "anyrender_skia"
-version = "0.1.0-beta.1"
+version = "0.1.0-beta.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "33e53cf42a21200c86606e05101665467e284c34615295b3814a9a4860593b10"
+checksum = "52a42dec4baeb6191baff4ac7b6094bf3b712d9f9a1c7b39d020130fed3879dd"
 dependencies = [
  "anyrender",
  "ash 0.38.0+1.3.281",
@@ -285,6 +285,7 @@ dependencies = [
  "gl",
  "glutin",
  "kurbo 0.12.0",
+ "oaty",
  "objc2 0.6.3",
  "objc2-app-kit 0.3.2",
  "objc2-core-foundation",
@@ -4249,6 +4250,15 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.106",
+]
+
+[[package]]
+name = "oaty"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cd7890d4a4c9205ee57a5e200658e78ed7d51c9cd48d0f7066596a19cc20e5d2"
+dependencies = [
+ "font-types 0.10.0",
 ]
 
 [[package]]
