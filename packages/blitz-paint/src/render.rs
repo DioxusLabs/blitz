@@ -56,8 +56,8 @@ impl BlitzDomPainter<'_> {
     }
 
     fn layout(&self, child: usize) -> Layout {
-        self.dom.as_ref().tree()[child].unrounded_layout
-        // self.dom.tree()[child].final_layout
+        // self.dom.as_ref().tree()[child].unrounded_layout
+        self.dom.as_ref().tree()[child].final_layout
     }
 
     /// Draw the current tree to current render surface
