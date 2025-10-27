@@ -76,7 +76,7 @@ anyrender = { version = "0.6" }
 anyrender_vello = { version = "0.6" }
 anyrender_vello_cpu = { version = "0.8" }
 anyrender_vello_hybrid = { version = "0.1" }
-anyrender_skia = { version = "=0.1.0-beta.3" }
+anyrender_skia = { version = "=0.1.0-beta.4" }
 anyrender_svg = { version = "0.6" }
 wgpu_context = { version = "0.1.1" }
 
