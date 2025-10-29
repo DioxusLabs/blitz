@@ -264,15 +264,14 @@ dependencies = [
 
 [[package]]
 name = "anyrender_skia"
-version = "0.1.1"
+version = "0.1.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "99256824210f7153d12be9f73609c3b56c1bb224be96ba4b6092a4e71c7fbef0"
+checksum = "f0e75f36ed6dd08003335bd0435827756bf8f4f1449a54d0db30681393c2ce71"
 dependencies = [
  "anyrender",
  "ash 0.38.0+1.3.281",
  "ash-window",
  "debug_timer 0.1.3 (registry+https://github.com/rust-lang/crates.io-index)",
- "futures-intrusive",
  "gl",
  "glutin",
  "hashbrown 0.16.0",
@@ -284,10 +283,10 @@ dependencies = [
  "objc2-metal 0.3.2",
  "objc2-quartz-core 0.3.2",
  "peniko",
- "pollster 0.4.0",
+ "pixels_window_renderer",
  "raw-window-handle",
- "rustc-hash 1.1.0",
  "skia-safe",
+ "softbuffer_window_renderer",
 ]
 
 [[package]]

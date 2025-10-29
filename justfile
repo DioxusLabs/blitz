@@ -41,6 +41,12 @@ hybrid *ARGS:
 skia *ARGS:
   cargo run --release --package readme --no-default-features --features skia,comrak,incremental,log_frame_times,log_phase_times {{ARGS}}
 
+skia-pixels *ARGS:
+  cargo run --release --package readme --no-default-features --features skia-pixels,comrak,incremental,log_frame_times,log_phase_times {{ARGS}}
+
+skia-softbuffer *ARGS:
+  cargo run --release --package readme --no-default-features --features skia-softbuffer,comrak,incremental,log_frame_times,log_phase_times {{ARGS}}
+
 ## TodoMVC commands
 
 todomvc *ARGS:

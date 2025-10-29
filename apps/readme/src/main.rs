@@ -17,6 +17,10 @@ mod markdown {
 
 #[cfg(feature = "skia")]
 use anyrender_skia::SkiaWindowRenderer as WindowRenderer;
+#[cfg(feature = "skia-pixels")]
+use anyrender_skia::raster::SkiaRasterWindowRenderer as WindowRenderer;
+#[cfg(feature = "skia-softbuffer")]
+use anyrender_skia::raster::SkiaRasterWindowRenderer as WindowRenderer;
 #[cfg(feature = "gpu")]
 use anyrender_vello::VelloWindowRenderer as WindowRenderer;
 #[cfg(feature = "cpu-base")]
