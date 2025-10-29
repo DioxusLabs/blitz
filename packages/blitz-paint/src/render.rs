@@ -452,10 +452,13 @@ impl ElementCx<'_> {
                     );
                 }
                 if let Some(cursor) = input_data.editor.cursor_geometry(1.5) {
+                    // TODO: Use the `caret-color` attribute here if present.
+                    let color = self.style.get_inherited_text().color;
+
                     scene.fill(
                         Fill::NonZero,
                         transform,
-                        Color::BLACK,
+                        color.as_srgb_color(),
                         None,
                         &convert_rect(&cursor),
                     );
