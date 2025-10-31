@@ -1,5 +1,4 @@
 use parley::{AlignmentOptions, BreakerState, YieldData};
-use style::computed_values::width;
 use taffy::{
     AvailableSpace, BlockContext, BlockFormattingContext, Clear, Float, LayoutPartialTree as _,
     MaybeMath as _, MaybeResolve as _, NodeId, Position, ResolveOrZero as _, Size,
@@ -284,7 +283,7 @@ impl BaseDocument {
                             // dbg!(&layout.size);
                             // dbg!(&layout.location);
 
-                            state.append_inline_box_to_line(box_break_data.advance);
+                            state.append_inline_box_to_line(box_break_data.advance, 0.0);
 
                             // if float.is_floated() {
                             //     println!("INLINE FLOATED BOX ({}) {:?}", ibox.id, float);
