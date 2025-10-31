@@ -63,12 +63,12 @@ app_units = "0.7.5"
 smallvec = "1"
 
 # DioxusLabs dependencies
-dioxus = { version = "=0.7.0-rc.3" }
-dioxus-core = { version = "=0.7.0-rc.3" }
-dioxus-html = { version = "=0.7.0-rc.3" }
-dioxus-hooks = { version = "=0.7.0-rc.3" }
-dioxus-cli-config = { version = "=0.7.0-rc.3" }
-dioxus-devtools = { version = "=0.7.0-rc.3" }
+dioxus = { version = "0.7" }
+dioxus-core = { version = "0.7" }
+dioxus-html = { version = "0.7" }
+dioxus-hooks = { version = "0.7" }
+dioxus-cli-config = { version = "0.7" }
+dioxus-devtools = { version = "0.7" }
 taffy = { version = "0.9", default-features = false, features = ["std", "flexbox", "grid", "block_layout", "content_size", "calc"] }
 
 # AnyRender
