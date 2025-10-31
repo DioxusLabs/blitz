@@ -247,6 +247,10 @@ impl BaseDocument {
 
                             continue;
                         }
+                        YieldData::MaxHeightExceeded(data) => {
+                            // TODO
+                            continue;
+                        }
                         YieldData::InlineBoxBreak(box_break_data) => {
                             let state = breaker.state_mut();
                             let node_id = box_break_data.inline_box_id as usize;
