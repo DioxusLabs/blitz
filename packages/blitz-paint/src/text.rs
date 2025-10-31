@@ -16,9 +16,6 @@ pub(crate) fn stroke_text<'a>(
     for line in lines {
         for item in line.items() {
             if let PositionedLayoutItem::GlyphRun(glyph_run) = item {
-                let mut x = glyph_run.offset();
-                let y = glyph_run.baseline();
-
                 let run = glyph_run.run();
                 let font = run.font();
                 let font_size = run.font_size();
@@ -59,16 +56,10 @@ pub(crate) fn stroke_text<'a>(
                     1.0, // alpha
                     transform,
                     glyph_xform,
-                    glyph_run.glyphs().map(|glyph| {
-                        let gx = x + glyph.x;
-                        let gy = y - glyph.y;
-                        x += glyph.advance;
-
-                        anyrender::Glyph {
-                            id: glyph.id as _,
-                            x: gx,
-                            y: gy,
-                        }
+                    glyph_run.positioned_glyphs().map(|glyph| anyrender::Glyph {
+                        id: glyph.id as _,
+                        x: glyph.x,
+                        y: glyph.y,
                     }),
                 );
 
