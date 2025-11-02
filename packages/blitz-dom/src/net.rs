@@ -252,6 +252,7 @@ fn fetch_font_face(
     read_guard: &SharedRwLockReadGuard,
 ) {
     sheet
+        .contents(read_guard)
         .rules(read_guard)
         .iter()
         .filter_map(|rule| match rule {
