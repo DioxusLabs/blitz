@@ -16,6 +16,15 @@ pub trait ShellProvider {
     fn set_window_title(&self, title: String) {
         let _ = title;
     }
+    fn set_ime_enabled(&self, is_enabled: bool) {
+        let _ = is_enabled;
+    }
+    fn set_ime_cursor_area(&self, x: f32, y: f32, width: f32, height: f32) {
+        let _ = x;
+        let _ = y;
+        let _ = width;
+        let _ = height;
+    }
     fn get_clipboard_text(&self) -> Result<String, ClipboardError> {
         Err(ClipboardError)
     }

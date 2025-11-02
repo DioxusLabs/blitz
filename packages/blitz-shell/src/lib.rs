@@ -40,6 +40,7 @@ pub use crate::net::DataUriNetProvider;
 use blitz_traits::shell::FileDialogFilter;
 use blitz_traits::shell::ShellProvider;
 use std::sync::Arc;
+use winit::dpi::{LogicalPosition, LogicalSize};
 pub use winit::event_loop::{ControlFlow, EventLoop, EventLoopProxy};
 pub use winit::window::{CursorIcon, Window};
 
@@ -100,6 +101,13 @@ impl ShellProvider for BlitzShellProvider {
     }
     fn set_window_title(&self, title: String) {
         self.window.set_title(&title);
+    }
+    fn set_ime_enabled(&self, is_enabled: bool) {
+        self.window.set_ime_allowed(is_enabled);
+    }
+    fn set_ime_cursor_area(&self, x: f32, y: f32, width: f32, height: f32) {
+        self.window
+            .set_ime_cursor_area(LogicalPosition::new(x, y), LogicalSize::new(width, height));
     }
 
     #[cfg(all(

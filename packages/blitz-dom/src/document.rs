@@ -828,7 +828,8 @@ impl BaseDocument {
     /// Clear the focussed node
     pub fn clear_focus(&mut self) {
         if let Some(id) = self.focus_node_id {
-            self.snapshot_node_and(id, |node| node.blur());
+            let shell_provider = self.shell_provider.clone();
+            self.snapshot_node_and(id, |node| node.blur(shell_provider));
             self.focus_node_id = None;
         }
     }
@@ -844,13 +845,15 @@ impl BaseDocument {
         #[cfg(feature = "tracing")]
         tracing::info!("Focussed node {focus_node_id}");
 
+        let shell_provider = self.shell_provider.clone();
+
         // Remove focus from the old node
         if let Some(id) = self.focus_node_id {
-            self.snapshot_node_and(id, |node| node.blur());
+            self.snapshot_node_and(id, |node| node.blur(shell_provider.clone()));
         }
 
         // Focus the new node
-        self.snapshot_node_and(focus_node_id, |node| node.focus());
+        self.snapshot_node_and(focus_node_id, |node| node.focus(shell_provider));
 
         self.focus_node_id = Some(focus_node_id);
 
