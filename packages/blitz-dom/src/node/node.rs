@@ -1,6 +1,7 @@
 use atomic_refcell::{AtomicRef, AtomicRefCell, AtomicRefMut};
 use bitflags::bitflags;
 use blitz_traits::events::{BlitzMouseButtonEvent, DomEventData, HitResult};
+use blitz_traits::shell::ShellProvider;
 use html_escape::encode_quoted_attribute_to_string;
 use keyboard_types::Modifiers;
 use markup5ever::{LocalName, local_name};
@@ -9,6 +10,7 @@ use selectors::matching::ElementSelectorFlags;
 use slab::Slab;
 use std::cell::{Cell, RefCell};
 use std::fmt::Write;
+use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 use style::Atom;
 use style::invalidation::element::restyle_hints::RestyleHint;
@@ -285,16 +287,40 @@ impl Node {
         self.element_state.contains(ElementState::HOVER)
     }
 
-    pub fn focus(&mut self) {
+    pub fn focus(&mut self, shell_provider: Arc<dyn ShellProvider>) {
         self.element_state
             .insert(ElementState::FOCUS | ElementState::FOCUSRING);
         self.set_restyle_hint(RestyleHint::restyle_subtree());
+
+        // If focussing a text input, enable IME and set IME area
+        if self
+            .element_data()
+            .and_then(|elem| elem.text_input_data())
+            .is_some()
+        {
+            shell_provider.set_ime_enabled(true);
+            let mut pos = self.absolute_position(0.0, 0.0);
+            pos.x += self.final_layout.content_box_x();
+            pos.y += self.final_layout.content_box_y();
+            let width = self.final_layout.content_box_width();
+            let height = self.final_layout.content_box_height();
+            shell_provider.set_ime_cursor_area(pos.x, pos.y, width, height);
+        }
     }
 
-    pub fn blur(&mut self) {
+    pub fn blur(&mut self, shell_provider: Arc<dyn ShellProvider>) {
         self.element_state
             .remove(ElementState::FOCUS | ElementState::FOCUSRING);
         self.set_restyle_hint(RestyleHint::restyle_subtree());
+
+        // If blurring a text input, disable IME
+        if self
+            .element_data()
+            .and_then(|elem| elem.text_input_data())
+            .is_some()
+        {
+            shell_provider.set_ime_enabled(false);
+        }
     }
 
     pub fn is_focussed(&self) -> bool {

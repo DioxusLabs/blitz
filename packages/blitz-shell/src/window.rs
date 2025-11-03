@@ -77,9 +77,6 @@ impl<Rend: WindowRenderer> View<Rend> {
     ) -> Self {
         let winit_window = Arc::from(event_loop.create_window(config.attributes).unwrap());
 
-        // TODO: make this conditional on text input focus
-        winit_window.set_ime_allowed(true);
-
         // Create viewport
         let size = winit_window.inner_size();
         let scale = winit_window.scale_factor() as f32;
