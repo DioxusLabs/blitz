@@ -43,12 +43,12 @@ mini-dxn = { path = "./packages/mini-dxn", default-features = false }
 debug_timer = { version = "0.1.2", path = "./packages/debug_timer" }
 
 # Servo dependencies
-style = { version = "0.8", package = "stylo" }
-style_traits = { version = "0.8", package = "stylo_traits" }
-style_atoms = { version = "0.8", package = "stylo_atoms" }
-style_config = { version = "0.8", package = "stylo_config" }
-style_dom = { version = "0.8", package = "stylo_dom" }
-selectors = { version = "0.32", package = "selectors" }
+style = { git = "https://github.com/servo/stylo", rev = "85ae0b1", package = "stylo" }
+style_traits = { git = "https://github.com/servo/stylo", rev = "85ae0b1", package = "stylo_traits" }
+style_atoms = { git = "https://github.com/servo/stylo", rev = "85ae0b1", package = "stylo_atoms" }
+style_config = { git = "https://github.com/servo/stylo", rev = "85ae0b1", package = "stylo_config" }
+style_dom = { git = "https://github.com/servo/stylo", rev = "85ae0b1", package = "stylo_dom" }
+selectors = { git = "https://github.com/servo/stylo", rev = "85ae0b1", package = "selectors" }
 cssparser = { version = "0.35" }
 
 # HTML5ever dependencies

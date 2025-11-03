@@ -1,16 +1,14 @@
 use selectors::context::QuirksMode;
-use std::{io::Cursor, sync::Arc, sync::atomic::AtomicBool};
+use std::{io::Cursor, sync::Arc};
 use style::{
     font_face::{FontFaceSourceFormat, FontFaceSourceFormatKeyword, Source},
     media_queries::MediaList,
-    parser::ParserContext,
     servo_arc::Arc as ServoArc,
     shared_lock::SharedRwLock,
     shared_lock::{Locked, SharedRwLockReadGuard},
     stylesheets::{
-        AllowImportRules, CssRule, CssRules, DocumentStyleSheet, ImportRule, Origin, Stylesheet,
-        StylesheetContents, StylesheetInDocument, StylesheetLoader as ServoStylesheetLoader,
-        UrlExtraData,
+        AllowImportRules, CssRule, DocumentStyleSheet, ImportRule, Origin, Stylesheet,
+        StylesheetInDocument, StylesheetLoader as ServoStylesheetLoader, UrlExtraData,
         import_rule::{ImportLayer, ImportSheet, ImportSupportsCondition},
     },
     values::{CssUrl, SourceLocation},
@@ -49,7 +47,6 @@ impl ServoStylesheetLoader for StylesheetLoader {
         &self,
         url: CssUrl,
         location: SourceLocation,
-        context: &ParserContext,
         lock: &SharedRwLock,
         media: ServoArc<Locked<MediaList>>,
         supports: Option<ImportSupportsCondition>,
@@ -65,76 +62,74 @@ impl ServoStylesheetLoader for StylesheetLoader {
             }));
         }
 
-        let sheet = ServoArc::new(Stylesheet {
-            contents: StylesheetContents::from_data(
-                CssRules::new(Vec::new(), lock),
-                context.stylesheet_origin,
-                context.url_data.clone(),
-                context.quirks_mode,
-            ),
-            media,
-            shared_lock: lock.clone(),
-            disabled: AtomicBool::new(false),
-        });
-
-        let stylesheet = ImportSheet::new(sheet.clone());
         let import = ImportRule {
             url,
-            stylesheet,
+            stylesheet: ImportSheet::new_pending(),
             supports,
             layer,
             source_location: location,
         };
 
-        struct StylesheetLoaderInner {
-            loader: StylesheetLoader,
-            read_lock: SharedRwLock,
-            url: ServoArc<Url>,
-            sheet: ServoArc<Stylesheet>,
-            provider: SharedProvider<Resource>,
-        }
-        impl NetHandler<Resource> for StylesheetLoaderInner {
-            fn bytes(
-                self: Box<Self>,
-                doc_id: usize,
-                bytes: Bytes,
-                callback: SharedCallback<Resource>,
-            ) {
-                let Ok(css) = std::str::from_utf8(&bytes) else {
-                    callback.call(doc_id, Err(Some(String::from("Invalid UTF8"))));
-                    return;
-                };
-
-                // NOTE(Nico): I don't *think* external stylesheets should have HTML entities escaped
-                // let escaped_css = html_escape::decode_html_entities(css);
-                Stylesheet::update_from_str(
-                    &self.sheet,
-                    css,
-                    UrlExtraData(self.url),
-                    Some(&self.loader),
-                    None,
-                    AllowImportRules::Yes,
-                );
-                fetch_font_face(doc_id, &self.sheet, &self.provider, &self.read_lock.read());
-                callback.call(doc_id, Ok(Resource::None))
-            }
-        }
-        let url = import.url.url().unwrap();
+        let url = import.url.url().unwrap().clone();
+        let import = ServoArc::new(lock.wrap(import));
         self.1.fetch(
             self.0,
             Request::get(url.as_ref().clone()),
             Box::new(StylesheetLoaderInner {
                 url: url.clone(),
                 loader: self.clone(),
-                read_lock: lock.clone(),
-                sheet: sheet.clone(),
+                lock: lock.clone(),
+                media,
+                import_rule: import.clone(),
                 provider: self.1.clone(),
             }),
         );
 
-        ServoArc::new(lock.wrap(import))
+        import
     }
 }
+
+struct StylesheetLoaderInner {
+    loader: StylesheetLoader,
+    lock: SharedRwLock,
+    url: ServoArc<Url>,
+    media: ServoArc<Locked<MediaList>>,
+    import_rule: ServoArc<Locked<ImportRule>>,
+    provider: SharedProvider<Resource>,
+}
+
+impl NetHandler<Resource> for StylesheetLoaderInner {
+    fn bytes(self: Box<Self>, doc_id: usize, bytes: Bytes, callback: SharedCallback<Resource>) {
+        let Ok(css) = std::str::from_utf8(&bytes) else {
+            callback.call(doc_id, Err(Some(String::from("Invalid UTF8"))));
+            return;
+        };
+
+        // NOTE(Nico): I don't *think* external stylesheets should have HTML entities escaped
+        // let escaped_css = html_escape::decode_html_entities(css);
+
+        let sheet = ServoArc::new(Stylesheet::from_str(
+            css,
+            UrlExtraData(self.url),
+            Origin::Author,
+            self.media.clone(),
+            self.lock.clone(),
+            Some(&self.loader),
+            None, // error_reporter
+            QuirksMode::NoQuirks,
+            AllowImportRules::Yes,
+        ));
+
+        // Fetch @font-face fonts
+        fetch_font_face(doc_id, &sheet, &self.provider, &self.lock.read());
+
+        let mut guard = self.lock.write();
+        self.import_rule.write_with(&mut guard).stylesheet = ImportSheet::Sheet(sheet);
+
+        callback.call(doc_id, Ok(Resource::None))
+    }
+}
+
 impl NetHandler<Resource> for CssHandler {
     fn bytes(self: Box<Self>, doc_id: usize, bytes: Bytes, callback: SharedCallback<Resource>) {
         let Ok(css) = std::str::from_utf8(&bytes) else {
@@ -152,12 +147,13 @@ impl NetHandler<Resource> for CssHandler {
             ServoArc::new(self.guard.wrap(MediaList::empty())),
             self.guard.clone(),
             Some(&StylesheetLoader(doc_id, self.provider.clone())),
-            None,
+            None, // error_reporter
             QuirksMode::NoQuirks,
             AllowImportRules::Yes,
         );
-        let read_guard = self.guard.read();
-        fetch_font_face(doc_id, &sheet, &self.provider, &read_guard);
+
+        // Fetch @font-face fonts
+        fetch_font_face(doc_id, &sheet, &self.provider, &self.guard.read());
 
         callback.call(
             doc_id,
@@ -256,6 +252,7 @@ fn fetch_font_face(
     read_guard: &SharedRwLockReadGuard,
 ) {
     sheet
+        .contents(read_guard)
         .rules(read_guard)
         .iter()
         .filter_map(|rule| match rule {
