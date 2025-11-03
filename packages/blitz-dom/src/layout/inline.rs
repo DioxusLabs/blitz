@@ -1,12 +1,13 @@
-use parley::{AlignmentOptions, BreakerState, YieldData};
+use parley::AlignmentOptions;
 use taffy::{
     AvailableSpace, BlockContext, BlockFormattingContext, LayoutPartialTree as _, MaybeMath as _,
     MaybeResolve as _, NodeId, Position, ResolveOrZero as _, Size, compute_leaf_layout,
-    prelude::TaffyMaxContent,
 };
 
 #[cfg(feature = "floats")]
-use taffy::{Clear, Float};
+use parley::{BreakerState, YieldData};
+#[cfg(feature = "floats")]
+use taffy::{Clear, Float, prelude::TaffyMaxContent};
 
 use super::resolve_calc_value;
 use crate::BaseDocument;
