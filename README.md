@@ -10,7 +10,7 @@
 [![Build Status](https://github.com/dioxuslabs/blitz/actions/workflows/ci.yml/badge.svg)](https://github.com/dioxuslabs/blitz/actions)
 [![Crates.io](https://img.shields.io/crates/v/blitz.svg)](https://crates.io/crates/blitz)
 [![Docs](https://docs.rs/blitz/badge.svg)](https://docs.rs/blitz)
-![Crates.io License](https://img.shields.io/crates/l/blitz)
+[![Crates.io License](https://img.shields.io/crates/l/blitz)](#license)
 [![dependency status](https://deps.rs/repo/github/dioxuslabs/blitz/status.svg)](https://deps.rs/repo/github/dioxuslabs/blitz)
 
 Talk to us in: the [#native](https://discord.gg/AnNPqT95pu) channel in the [Dioxus Discord](https://discord.gg/AnNPqT95pu)
