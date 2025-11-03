@@ -30,22 +30,22 @@ dev *ARGS:
   cargo run --package readme --features log_frame_times,log_phase_times {{ARGS}}
 
 incr *ARGS:
-  cargo run --release --package readme --features incremental,log_frame_times,log_phase_times {{ARGS}}
+  cargo run --release --package readme --features incremental,comrak,floats,log_frame_times,log_phase_times {{ARGS}}
 
 cpu *ARGS:
-  cargo run --release --package readme --no-default-features --features cpu,comrak,incremental,log_frame_times,log_phase_times {{ARGS}}
+  cargo run --release --package readme --no-default-features --features cpu,comrak,incremental,floats,log_frame_times,log_phase_times {{ARGS}}
 
 hybrid *ARGS:
-  cargo run --release --package readme --no-default-features --features hybrid,comrak,incremental,log_frame_times,log_phase_times {{ARGS}}
+  cargo run --release --package readme --no-default-features --features hybrid,comrak,incremental,floats,log_frame_times,log_phase_times {{ARGS}}
 
 skia *ARGS:
-  cargo run --release --package readme --no-default-features --features skia,comrak,incremental,log_frame_times,log_phase_times {{ARGS}}
+  cargo run --release --package readme --no-default-features --features skia,comrak,incremental,floats,log_frame_times,log_phase_times {{ARGS}}
 
 skia-pixels *ARGS:
-  cargo run --release --package readme --no-default-features --features skia-pixels,comrak,incremental,log_frame_times,log_phase_times {{ARGS}}
+  cargo run --release --package readme --no-default-features --features skia-pixels,comrak,floats,incremental,log_frame_times,log_phase_times {{ARGS}}
 
 skia-softbuffer *ARGS:
-  cargo run --release --package readme --no-default-features --features skia-softbuffer,comrak,incremental,log_frame_times,log_phase_times {{ARGS}}
+  cargo run --release --package readme --no-default-features --features skia-softbuffer,comrak,floats,incremental,log_frame_times,log_phase_times {{ARGS}}
 
 ## TodoMVC commands
 
