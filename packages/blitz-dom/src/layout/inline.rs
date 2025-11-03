@@ -68,6 +68,7 @@ impl BaseDocument {
                     parent_size: available_space.into_options(),
                     ..inputs
                 };
+                #[cfg(feature = "floats")]
                 let float_child_inputs = taffy::tree::LayoutInput {
                     available_space: Size::MAX_CONTENT,
                     ..child_inputs
@@ -123,10 +124,10 @@ impl BaseDocument {
                             AvailableSpace::Definite(_) => 0.0,
                             AvailableSpace::MinContent => {
                                 let mut width: f32 = 0.0;
+                                #[cfg(feature = "floats")]
                                 for ibox in inline_layout.layout.inline_boxes_mut() {
                                     let style = &self.nodes[ibox.id as usize].style;
 
-                                    #[cfg(feature = "floats")]
                                     if let Some(direction) = style.float.float_direction() {
                                         let margin = style.margin.resolve_or_zero(
                                             inputs.parent_size,
@@ -145,10 +146,10 @@ impl BaseDocument {
                             }
                             AvailableSpace::MaxContent => {
                                 let mut width: f32 = 0.0;
+                                #[cfg(feature = "floats")]
                                 for ibox in inline_layout.layout.inline_boxes_mut() {
                                     let style = &self.nodes[ibox.id as usize].style;
 
-                                    #[cfg(feature = "floats")]
                                     if let Some(direction) = style.float.float_direction() {
                                         let margin = style.margin.resolve_or_zero(
                                             inputs.parent_size,
