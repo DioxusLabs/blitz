@@ -220,6 +220,7 @@ impl BaseDocument {
                 // Perform inline layout
                 let mut breaker = inline_layout.layout.break_lines();
                 let initial_slot = block_ctx.find_content_slot(0.0, Clear::None, None);
+                let mut has_active_floats = initial_slot.segment_id.is_some();
                 let state = breaker.state_mut();
                 state.set_layout_max_advance(width);
                 state.set_line_max_advance(initial_slot.width * scale);
@@ -234,16 +235,26 @@ impl BaseDocument {
                     match yield_data {
                         YieldData::LineBreak(line_break_data) => {
                             let state = breaker.state_mut();
-                            saved_state = state.clone();
 
-                            let min_y = (state.line_y() + line_break_data.line_height as f64)
-                                / scale as f64;
-                            let next_slot =
-                                block_ctx.find_content_slot(min_y as f32, Clear::None, None);
+                            if has_active_floats {
+                                saved_state = state.clone();
 
-                            state.set_line_max_advance(next_slot.width * scale);
-                            state.set_line_x(next_slot.x * scale);
-                            state.set_line_y((next_slot.y * scale) as f64);
+                                let min_y = (state.line_y() + line_break_data.line_height as f64)
+                                    / scale as f64;
+                                let next_slot =
+                                    block_ctx.find_content_slot(min_y as f32, Clear::None, None);
+                                has_active_floats = next_slot.segment_id.is_some();
+
+                                state.set_line_max_advance(next_slot.width * scale);
+                                state.set_line_x(next_slot.x * scale);
+                                state.set_line_y((next_slot.y * scale) as f64);
+                            } else {
+                                state.set_line_x(0.0);
+                                state.set_line_max_advance(width);
+                                state.set_line_y(
+                                    state.line_y() + line_break_data.line_height as f64,
+                                );
+                            }
 
                             continue;
                         }
@@ -274,6 +285,7 @@ impl BaseDocument {
                             let min_y = state.line_y() / scale as f64; //.max(pos.y as f64);
                             let next_slot =
                                 block_ctx.find_content_slot(min_y as f32, Clear::None, None);
+                            has_active_floats = next_slot.segment_id.is_some();
 
                             state.set_line_max_advance(next_slot.width * scale);
                             state.set_line_x(next_slot.x * scale);
