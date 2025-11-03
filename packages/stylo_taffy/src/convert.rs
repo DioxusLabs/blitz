@@ -7,8 +7,6 @@ pub(crate) mod stylo {
     pub(crate) use style::properties::generated::longhands::box_sizing::computed_value::T as BoxSizing;
     pub(crate) use style::properties::longhands::aspect_ratio::computed_value::T as AspectRatio;
     pub(crate) use style::properties::longhands::position::computed_value::T as Position;
-    pub(crate) use style::values::computed::Clear;
-    pub(crate) use style::values::computed::Float;
     pub(crate) use style::values::computed::length_percentage::CalcLengthPercentage;
     pub(crate) use style::values::computed::length_percentage::Unpacked as UnpackedLengthPercentage;
     pub(crate) use style::values::computed::{LengthPercentage, Percentage};
@@ -30,6 +28,9 @@ pub(crate) mod stylo {
     pub(crate) type MaxSize = GenericMaxSize<NonNegative<LengthPercentage>>;
 
     pub(crate) type Gap = GenericLengthPercentageOrNormal<NonNegative<LengthPercentage>>;
+
+    #[cfg(feature = "floats")]
+    pub(crate) use style::values::computed::{Clear, Float};
 
     #[cfg(feature = "flexbox")]
     pub(crate) use style::{
@@ -334,7 +335,7 @@ pub fn flex_wrap(input: stylo::FlexWrap) -> taffy::FlexWrap {
 }
 
 #[inline]
-#[cfg(feature = "float")]
+#[cfg(feature = "floats")]
 pub fn float(input: stylo::Float) -> taffy::Float {
     match input {
         stylo::Float::Left => taffy::Float::Left,
@@ -347,7 +348,7 @@ pub fn float(input: stylo::Float) -> taffy::Float {
 }
 
 #[inline]
-#[cfg(feature = "float")]
+#[cfg(feature = "floats")]
 pub fn clear(input: stylo::Clear) -> taffy::Clear {
     match input {
         stylo::Clear::Left => taffy::Clear::Left,
@@ -584,9 +585,9 @@ pub fn to_taffy_style(style: &stylo::ComputedValues) -> taffy::Style<Atom> {
         },
         scrollbar_width: 0.0,
 
-        #[cfg(feature = "float")]
+        #[cfg(feature = "floats")]
         float: self::float(style.clone_float()),
-        #[cfg(feature = "float")]
+        #[cfg(feature = "floats")]
         clear: self::clear(style.clone_clear()),
 
         size: taffy::Size {

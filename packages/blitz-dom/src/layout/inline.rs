@@ -1,9 +1,12 @@
 use parley::{AlignmentOptions, BreakerState, YieldData};
 use taffy::{
-    AvailableSpace, BlockContext, BlockFormattingContext, Clear, Float, LayoutPartialTree as _,
-    MaybeMath as _, MaybeResolve as _, NodeId, Position, ResolveOrZero as _, Size,
-    compute_leaf_layout, prelude::TaffyMaxContent,
+    AvailableSpace, BlockContext, BlockFormattingContext, LayoutPartialTree as _, MaybeMath as _,
+    MaybeResolve as _, NodeId, Position, ResolveOrZero as _, Size, compute_leaf_layout,
+    prelude::TaffyMaxContent,
 };
+
+#[cfg(feature = "floats")]
+use taffy::{Clear, Float};
 
 use super::resolve_calc_value;
 use crate::BaseDocument;
@@ -75,12 +78,17 @@ impl BaseDocument {
                         .margin
                         .resolve_or_zero(inputs.parent_size, resolve_calc_value);
 
-                    ibox.break_on_box = style.float.is_floated();
+                    #[cfg(feature = "floats")]
+                    let is_floated = style.float.is_floated();
+                    #[cfg(feature = "floats")]
+                    {
+                        ibox.break_on_box = is_floated;
+                    }
 
-                    if style.position == Position::Absolute {
-                        ibox.width = 0.0;
-                        ibox.height = 0.0;
-                    } else if style.float.is_floated() {
+                    #[cfg(not(feature = "floats"))]
+                    let is_floated = false;
+
+                    if style.position == Position::Absolute || is_floated {
                         ibox.width = 0.0;
                         ibox.height = 0.0;
                     } else {
@@ -118,6 +126,7 @@ impl BaseDocument {
                                 for ibox in inline_layout.layout.inline_boxes_mut() {
                                     let style = &self.nodes[ibox.id as usize].style;
 
+                                    #[cfg(feature = "floats")]
                                     if let Some(direction) = style.float.float_direction() {
                                         let margin = style.margin.resolve_or_zero(
                                             inputs.parent_size,
@@ -139,6 +148,7 @@ impl BaseDocument {
                                 for ibox in inline_layout.layout.inline_boxes_mut() {
                                     let style = &self.nodes[ibox.id as usize].style;
 
+                                    #[cfg(feature = "floats")]
                                     if let Some(direction) = style.float.float_direction() {
                                         let margin = style.margin.resolve_or_zero(
                                             inputs.parent_size,
@@ -189,11 +199,13 @@ impl BaseDocument {
                     });
 
                 // Set block context width if this is a block context root
+                #[cfg(feature = "floats")]
                 if is_root_bfc {
                     block_ctx.set_width(AvailableSpace::Definite((width + pbw) / scale));
                 }
 
                 // Create sub-context to account for the inline layout's padding/border
+                #[cfg(feature = "floats")]
                 let mut block_ctx = block_ctx
                     .sub_context(container_pb.top, [container_pb.left, container_pb.right]);
                 // block_ctx.apply_content_box_inset([container_pb.left, container_pb.right]);
@@ -217,30 +229,89 @@ impl BaseDocument {
                 //     };
                 // }
 
+                #[cfg(not(feature = "floats"))]
+                {
+                    inline_layout.layout.break_all_lines(Some(width));
+                }
+
                 // Perform inline layout
-                let mut breaker = inline_layout.layout.break_lines();
-                let initial_slot = block_ctx.find_content_slot(0.0, Clear::None, None);
-                let mut has_active_floats = initial_slot.segment_id.is_some();
-                let state = breaker.state_mut();
-                state.set_layout_max_advance(width);
-                state.set_line_max_advance(initial_slot.width * scale);
-                state.set_line_x(initial_slot.x * scale);
-                state.set_line_y((initial_slot.y * scale) as f64);
+                #[cfg(feature = "floats")]
+                {
+                    let mut breaker = inline_layout.layout.break_lines();
+                    let initial_slot = block_ctx.find_content_slot(0.0, Clear::None, None);
+                    let mut has_active_floats = initial_slot.segment_id.is_some();
+                    let state = breaker.state_mut();
+                    state.set_layout_max_advance(width);
+                    state.set_line_max_advance(initial_slot.width * scale);
+                    state.set_line_x(initial_slot.x * scale);
+                    state.set_line_y((initial_slot.y * scale) as f64);
 
-                // Save initial state. Saved state is used to revert the layout to a previous state if needed
-                // (e.g. to revert a line that doesn't fit in the space it was laid out into)
-                let mut saved_state: BreakerState = breaker.state().clone();
+                    // Save initial state. Saved state is used to revert the layout to a previous state if needed
+                    // (e.g. to revert a line that doesn't fit in the space it was laid out into)
+                    let mut saved_state: BreakerState = breaker.state().clone();
 
-                while let Some(yield_data) = breaker.break_next() {
-                    match yield_data {
-                        YieldData::LineBreak(line_break_data) => {
-                            let state = breaker.state_mut();
+                    while let Some(yield_data) = breaker.break_next() {
+                        match yield_data {
+                            YieldData::LineBreak(line_break_data) => {
+                                let state = breaker.state_mut();
 
-                            if has_active_floats {
-                                saved_state = state.clone();
+                                if has_active_floats {
+                                    saved_state = state.clone();
 
-                                let min_y = (state.line_y() + line_break_data.line_height as f64)
-                                    / scale as f64;
+                                    let min_y = (state.line_y()
+                                        + line_break_data.line_height as f64)
+                                        / scale as f64;
+                                    let next_slot = block_ctx.find_content_slot(
+                                        min_y as f32,
+                                        Clear::None,
+                                        None,
+                                    );
+                                    has_active_floats = next_slot.segment_id.is_some();
+
+                                    state.set_line_max_advance(next_slot.width * scale);
+                                    state.set_line_x(next_slot.x * scale);
+                                    state.set_line_y((next_slot.y * scale) as f64);
+                                } else {
+                                    state.set_line_x(0.0);
+                                    state.set_line_max_advance(width);
+                                    state.set_line_y(
+                                        state.line_y() + line_break_data.line_height as f64,
+                                    );
+                                }
+
+                                continue;
+                            }
+                            YieldData::MaxHeightExceeded(data) => {
+                                // TODO
+                                continue;
+                            }
+                            YieldData::InlineBoxBreak(box_break_data) => {
+                                let state = breaker.state_mut();
+                                let node_id = box_break_data.inline_box_id as usize;
+                                let node = &mut self.nodes[node_id];
+
+                                // We can assume that the box is a float because we only set `break_on_box: true` for floats
+                                let direction = match node.style.float {
+                                    Float::Left => taffy::FloatDirection::Left,
+                                    Float::Right => taffy::FloatDirection::Right,
+                                    Float::None => unreachable!(),
+                                };
+                                let clear = node.style.clear;
+                                let output = self.compute_child_layout(
+                                    NodeId::from(node_id),
+                                    float_child_inputs,
+                                );
+                                let min_y = state.line_y() as f32 / scale;
+                                let mut pos = block_ctx.place_floated_box(
+                                    output.size,
+                                    min_y,
+                                    direction,
+                                    clear,
+                                );
+                                pos.x += container_pb.left;
+                                pos.y += container_pb.top;
+
+                                let min_y = state.line_y() / scale as f64; //.max(pos.y as f64);
                                 let next_slot =
                                     block_ctx.find_content_slot(min_y as f32, Clear::None, None);
                                 has_active_floats = next_slot.segment_id.is_some();
@@ -248,70 +319,29 @@ impl BaseDocument {
                                 state.set_line_max_advance(next_slot.width * scale);
                                 state.set_line_x(next_slot.x * scale);
                                 state.set_line_y((next_slot.y * scale) as f64);
-                            } else {
-                                state.set_line_x(0.0);
-                                state.set_line_max_advance(width);
-                                state.set_line_y(
-                                    state.line_y() + line_break_data.line_height as f64,
-                                );
+
+                                let layout = &mut self.nodes[node_id].unrounded_layout;
+                                layout.size = output.size;
+                                layout.location.x = pos.x;
+                                layout.location.y = pos.y;
+
+                                // dbg!(&layout.size);
+                                // dbg!(&layout.location);
+
+                                state.append_inline_box_to_line(box_break_data.advance, 0.0);
+
+                                // if float.is_floated() {
+                                //     println!("INLINE FLOATED BOX ({}) {:?}", ibox.id, float);
+                                //     println!(
+                                //         "w:{} h:{} x:{}, y:{}",
+                                //         layout.size.width, layout.size.height, 0, 0
+                                //     );
+                                // }
                             }
-
-                            continue;
-                        }
-                        YieldData::MaxHeightExceeded(data) => {
-                            // TODO
-                            continue;
-                        }
-                        YieldData::InlineBoxBreak(box_break_data) => {
-                            let state = breaker.state_mut();
-                            let node_id = box_break_data.inline_box_id as usize;
-                            let node = &mut self.nodes[node_id];
-
-                            // We can assume that the box is a float because we only set `break_on_box: true` for floats
-                            let direction = match node.style.float {
-                                Float::Left => taffy::FloatDirection::Left,
-                                Float::Right => taffy::FloatDirection::Right,
-                                Float::None => unreachable!(),
-                            };
-                            let clear = node.style.clear;
-                            let output = self
-                                .compute_child_layout(NodeId::from(node_id), float_child_inputs);
-                            let min_y = state.line_y() as f32 / scale;
-                            let mut pos =
-                                block_ctx.place_floated_box(output.size, min_y, direction, clear);
-                            pos.x += container_pb.left;
-                            pos.y += container_pb.top;
-
-                            let min_y = state.line_y() / scale as f64; //.max(pos.y as f64);
-                            let next_slot =
-                                block_ctx.find_content_slot(min_y as f32, Clear::None, None);
-                            has_active_floats = next_slot.segment_id.is_some();
-
-                            state.set_line_max_advance(next_slot.width * scale);
-                            state.set_line_x(next_slot.x * scale);
-                            state.set_line_y((next_slot.y * scale) as f64);
-
-                            let layout = &mut self.nodes[node_id].unrounded_layout;
-                            layout.size = output.size;
-                            layout.location.x = pos.x;
-                            layout.location.y = pos.y;
-
-                            // dbg!(&layout.size);
-                            // dbg!(&layout.location);
-
-                            state.append_inline_box_to_line(box_break_data.advance, 0.0);
-
-                            // if float.is_floated() {
-                            //     println!("INLINE FLOATED BOX ({}) {:?}", ibox.id, float);
-                            //     println!(
-                            //         "w:{} h:{} x:{}, y:{}",
-                            //         layout.size.width, layout.size.height, 0, 0
-                            //     );
-                            // }
                         }
                     }
+                    breaker.finish();
                 }
-                breaker.finish();
 
                 let alignment = self.nodes[node_id]
                     .primary_styles()
@@ -388,7 +418,11 @@ impl BaseDocument {
                                 .bottom
                                 .maybe_resolve(final_size.height, resolve_calc_value);
 
-                            let float = node.style.float;
+                            #[cfg(feature = "floats")]
+                            let is_floated = node.style.float != Float::None;
+                            #[cfg(not(feature = "floats"))]
+                            let is_floated = false;
+
                             if node.style.position == Position::Absolute {
                                 let output =
                                     self.compute_child_layout(NodeId::from(ibox.id), child_inputs);
@@ -422,7 +456,7 @@ impl BaseDocument {
 
                                 layout.padding = padding; //.map(|p| p / scale);
                                 layout.border = border; //.map(|p| p / scale);
-                            } else if float != Float::None {
+                            } else if is_floated {
                                 let layout = &mut self.nodes[ibox.id as usize].unrounded_layout;
                                 layout.padding = padding; //.map(|p| p / scale);
                                 layout.border = border; //.map(|p| p / scale);
