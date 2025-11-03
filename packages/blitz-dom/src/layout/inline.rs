@@ -120,16 +120,18 @@ impl BaseDocument {
                         // and a min-content or max-content constraint. So if we want to compute both widths in one pass then
                         // we need to store both a min-content and max-content size on each box.
                         let content_sizes = inline_layout.layout.calculate_content_widths();
+                        let min_content_width = content_sizes.min * scale;
+                        let max_content_width = content_sizes.max * scale;
 
+                        #[cfg(feature = "floats")]
                         let float_width = match available_space.width {
                             AvailableSpace::Definite(_) => 0.0,
                             AvailableSpace::MinContent => {
                                 let mut width: f32 = 0.0;
-                                #[cfg(feature = "floats")]
                                 for ibox in inline_layout.layout.inline_boxes_mut() {
                                     let style = &self.nodes[ibox.id as usize].style;
 
-                                    if let Some(direction) = style.float.float_direction() {
+                                    if style.float.is_floated() {
                                         let margin = style.margin.resolve_or_zero(
                                             inputs.parent_size,
                                             resolve_calc_value,
@@ -147,11 +149,10 @@ impl BaseDocument {
                             }
                             AvailableSpace::MaxContent => {
                                 let mut width: f32 = 0.0;
-                                #[cfg(feature = "floats")]
                                 for ibox in inline_layout.layout.inline_boxes_mut() {
                                     let style = &self.nodes[ibox.id as usize].style;
 
-                                    if let Some(direction) = style.float.float_direction() {
+                                    if style.float.is_floated() {
                                         let margin = style.margin.resolve_or_zero(
                                             inputs.parent_size,
                                             resolve_calc_value,
@@ -168,12 +169,15 @@ impl BaseDocument {
                             }
                         };
 
+                        #[cfg(not(feature = "floats"))]
+                        let float_width = 0.0;
+
                         let computed_width = match available_space.width {
-                            AvailableSpace::MinContent => content_sizes.min.max(float_width),
-                            AvailableSpace::MaxContent => content_sizes.max + float_width,
+                            AvailableSpace::MinContent => min_content_width.max(float_width),
+                            AvailableSpace::MaxContent => max_content_width + float_width,
                             AvailableSpace::Definite(limit) => (limit * scale)
-                                .min(content_sizes.max + float_width)
-                                .max(content_sizes.min),
+                                .min(max_content_width + float_width)
+                                .max(min_content_width),
                         }
                         .ceil();
 
