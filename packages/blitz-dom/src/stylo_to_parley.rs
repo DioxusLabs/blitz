@@ -7,6 +7,7 @@ use crate::node::TextBrush;
 
 // Module of type aliases so we can refer to stylo types with nicer names
 pub(crate) mod stylo {
+    pub(crate) use style::computed_values::text_wrap_mode::T as TextWrapMode;
     pub(crate) use style::computed_values::white_space_collapse::T as WhiteSpaceCollapse;
     pub(crate) use style::properties::ComputedValues;
     pub(crate) use style::values::computed::OverflowWrap;
@@ -170,6 +171,10 @@ pub(crate) fn style(
         stylo::OverflowWrap::BreakWord => parley::OverflowWrap::BreakWord,
         stylo::OverflowWrap::Anywhere => parley::OverflowWrap::Anywhere,
     };
+    let text_wrap_mode = match itext_styles.text_wrap_mode {
+        stylo::TextWrapMode::Wrap => parley::TextWrapMode::Wrap,
+        stylo::TextWrapMode::Nowrap => parley::TextWrapMode::NoWrap,
+    };
 
     parley::TextStyle {
         // font_stack: parley::FontStack::Single(FontFamily::Generic(GenericFamily::SystemUi)),
@@ -184,6 +189,7 @@ pub(crate) fn style(
         line_height,
         word_spacing: Default::default(),
         letter_spacing,
+        text_wrap_mode,
         overflow_wrap,
         word_break,
 

@@ -85,7 +85,7 @@ color = "0.3"
 linebender_resource_handle = "0.1"
 peniko = "0.5.0"
 kurbo = "0.12"
-parley = { git = "https://github.com/linebender/parley", rev = "37a99ef6e30d387035a2d3afe5d31aeb0ddab637", default-features = false, features = ["std"] }
+parley = { git = "https://github.com/linebender/parley", rev = "3a9380f2e12eb451ef08c87fa98333831e7dea35", default-features = false, features = ["std"] }
 skrifa = { version = "0.37", default-features = false, features = ["std"] } # Should match parley version
 wgpu = "26"
 softbuffer = "0.4"
