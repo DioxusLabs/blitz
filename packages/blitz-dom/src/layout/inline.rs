@@ -245,8 +245,8 @@ impl BaseDocument {
                 // and a min-content or max-content constraint. So if we want to compute both widths in one pass then
                 // we need to store both a min-content and max-content size on each box.
                 let content_sizes = inline_layout.layout.calculate_content_widths();
-                let min_content_width = content_sizes.min * scale;
-                let max_content_width = content_sizes.max * scale;
+                let min_content_width = content_sizes.min;
+                let max_content_width = content_sizes.max;
 
                 #[cfg(feature = "floats")]
                 let float_width = match available_space.width {
