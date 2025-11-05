@@ -21,61 +21,57 @@ impl BaseDocument {
         inputs: taffy::tree::LayoutInput,
         block_ctx: Option<&mut BlockContext<'_>>,
     ) -> taffy::LayoutOutput {
-        // Unwrap the block formatting context if one was passed, or else create a new one
-        match block_ctx {
-            Some(inherited_bfc) => {
-                self.compute_inline_layout_inner(node_id, inputs, inherited_bfc, false)
-            }
-            None => {
-                let mut root_bfc = BlockFormattingContext::new(inputs.available_space.width);
-                let mut root_ctx = root_bfc.root_block_context();
-                self.compute_inline_layout_inner(node_id, inputs, &mut root_ctx, true)
-            }
-        }
-    }
-
-    fn compute_inline_layout_inner(
-        &mut self,
-        node_id: usize,
-        inputs: taffy::tree::LayoutInput,
-        block_ctx: &mut BlockContext<'_>,
-        is_root_bfc: bool,
-    ) -> taffy::LayoutOutput {
-        let scale = self.viewport.scale();
         let LayoutInput {
             known_dimensions,
             parent_size,
-            available_space,
-            sizing_mode,
             run_mode,
             ..
         } = inputs;
-
         let style = &self.nodes[node_id].style;
 
-        // Note: both horizontal and vertical percentage padding/borders are resolved against the container's inline size (i.e. width).
-        // This is not a bug, but is how CSS is specified (see: https://developer.mozilla.org/en-US/docs/Web/CSS/padding#values)
-        let position = style.position();
-        let margin = style
-            .margin()
-            .resolve_or_zero(parent_size.width, &resolve_calc_value);
+        // Pull these out earlier to avoid borrowing issues
+        let aspect_ratio = style.aspect_ratio();
         let padding = style
             .padding()
-            .resolve_or_zero(parent_size.width, &resolve_calc_value);
+            .resolve_or_zero(parent_size.width, |val, basis| {
+                resolve_calc_value(val, basis)
+            });
         let border = style
             .border()
-            .resolve_or_zero(parent_size.width, &resolve_calc_value);
-        let container_pb = padding + border;
-        let pb_sum = container_pb.sum_axes();
+            .resolve_or_zero(parent_size.width, |val, basis| {
+                resolve_calc_value(val, basis)
+            });
+        let padding_border_size = (padding + border).sum_axes();
         let box_sizing_adjustment = if style.box_sizing() == BoxSizing::ContentBox {
-            pb_sum
+            padding_border_size
         } else {
             Size::ZERO
         };
 
+        // let min_size = style
+        //     .min_size()
+        //     .maybe_resolve(parent_size, |val, basis| resolve_calc_value(val, basis))
+        //     .maybe_apply_aspect_ratio(aspect_ratio)
+        //     .maybe_add(box_sizing_adjustment);
+        // let max_size = style
+        //     .max_size()
+        //     .maybe_resolve(parent_size, |val, basis| resolve_calc_value(val, basis))
+        //     .maybe_apply_aspect_ratio(aspect_ratio)
+        //     .maybe_add(box_sizing_adjustment);
+        // let clamped_style_size = if inputs.sizing_mode == SizingMode::InherentSize {
+        //     style
+        //         .size()
+        //         .maybe_resolve(parent_size, |val, basis| resolve_calc_value(val, basis))
+        //         .maybe_apply_aspect_ratio(aspect_ratio)
+        //         .maybe_add(box_sizing_adjustment)
+        //         .maybe_clamp(min_size, max_size)
+        // } else {
+        //     Size::NONE
+        // };
+
         // Resolve node's preferred/min/max sizes (width/heights) against the available space (percentages resolve to pixel values)
         // For ContentSize mode, we pretend that the node has no size styles as these should be ignored.
-        let (node_size, node_min_size, node_max_size, aspect_ratio) = match sizing_mode {
+        let (clamped_style_size, min_size, max_size, _aspect_ratio) = match inputs.sizing_mode {
             SizingMode::ContentSize => {
                 let node_size = known_dimensions;
                 let node_min_size = Size::NONE;
@@ -99,9 +95,109 @@ impl BaseDocument {
                     .maybe_resolve(parent_size, &resolve_calc_value)
                     .maybe_add(box_sizing_adjustment);
 
-                let node_size = known_dimensions.or(style_size);
+                let node_size =
+                    known_dimensions.or(style_size.maybe_clamp(style_min_size, style_max_size));
                 (node_size, style_min_size, style_max_size, aspect_ratio)
             }
+        };
+
+        // If both min and max in a given axis are set and max <= min then this determines the size in that axis
+        let min_max_definite_size = min_size.zip_map(max_size, |min, max| match (min, max) {
+            (Some(min), Some(max)) if max <= min => Some(min),
+            _ => None,
+        });
+
+        let styled_based_known_dimensions = known_dimensions
+            .or(min_max_definite_size)
+            .or(clamped_style_size)
+            .maybe_max(padding_border_size);
+
+        // Short-circuit layout if the container's size is fully determined by the container's size and the run mode
+        // is ComputeSize (and thus the container's size is all that we're interested in)
+        if run_mode == RunMode::ComputeSize {
+            if let Size {
+                width: Some(width),
+                height: Some(height),
+            } = styled_based_known_dimensions
+            {
+                return LayoutOutput::from_outer_size(Size { width, height });
+            }
+        }
+
+        // Unwrap the block formatting context if one was passed, or else create a new one
+        match block_ctx {
+            Some(inherited_bfc) => self.compute_inline_layout_inner(
+                node_id,
+                LayoutInput {
+                    known_dimensions: styled_based_known_dimensions,
+                    ..inputs
+                },
+                inherited_bfc,
+            ),
+            None => {
+                let mut root_bfc = BlockFormattingContext::new(
+                    styled_based_known_dimensions
+                        .width
+                        .map(AvailableSpace::Definite)
+                        .unwrap_or(AvailableSpace::MaxContent),
+                );
+                let mut root_ctx = root_bfc.root_block_context();
+                self.compute_inline_layout_inner(
+                    node_id,
+                    LayoutInput {
+                        known_dimensions: styled_based_known_dimensions,
+                        ..inputs
+                    },
+                    &mut root_ctx,
+                )
+            }
+        }
+    }
+
+    fn compute_inline_layout_inner(
+        &mut self,
+        node_id: usize,
+        inputs: taffy::tree::LayoutInput,
+        block_ctx: &mut BlockContext<'_>,
+    ) -> taffy::LayoutOutput {
+        let scale = self.viewport.scale();
+        let LayoutInput {
+            known_dimensions,
+            parent_size,
+            available_space,
+            sizing_mode,
+            run_mode,
+            ..
+        } = inputs;
+
+        // Take inline layout to satisfy borrow checker
+        let mut inline_layout = self.nodes[node_id]
+            .data
+            .downcast_element_mut()
+            .unwrap()
+            .take_inline_layout()
+            .unwrap();
+
+        let style = &self.nodes[node_id].style;
+
+        // Note: both horizontal and vertical percentage padding/borders are resolved against the container's inline size (i.e. width).
+        // This is not a bug, but is how CSS is specified (see: https://developer.mozilla.org/en-US/docs/Web/CSS/padding#values)
+        let position = style.position();
+        let margin = style
+            .margin()
+            .resolve_or_zero(parent_size.width, &resolve_calc_value);
+        let padding = style
+            .padding()
+            .resolve_or_zero(parent_size.width, &resolve_calc_value);
+        let border = style
+            .border()
+            .resolve_or_zero(parent_size.width, &resolve_calc_value);
+        let container_pb = padding + border;
+        let pb_sum = container_pb.sum_axes();
+        let box_sizing_adjustment = if style.box_sizing() == BoxSizing::ContentBox {
+            pb_sum
+        } else {
+            Size::ZERO
         };
 
         // Scrollbar gutters are reserved when the `overflow` property is set to `Overflow::Scroll`.
@@ -123,41 +219,17 @@ impl BaseDocument {
             || padding.top > 0.0
             || padding.bottom > 0.0
             || border.top > 0.0
-            || border.bottom > 0.0
-            || matches!(node_size.height, Some(h) if h > 0.0)
-            || matches!(node_min_size.height, Some(h) if h > 0.0);
-
-        // Return early if both width and height are known
-        if run_mode == RunMode::ComputeSize && has_styles_preventing_being_collapsed_through {
-            if let Size {
-                width: Some(width),
-                height: Some(height),
-            } = node_size
-            {
-                let size = Size { width, height }
-                    .maybe_clamp(node_min_size, node_max_size)
-                    .maybe_max(container_pb.sum_axes().map(Some));
-                return LayoutOutput {
-                    size,
-                    content_size: Size::ZERO,
-                    first_baselines: Point::NONE,
-                    top_margin: CollapsibleMarginSet::ZERO,
-                    bottom_margin: CollapsibleMarginSet::ZERO,
-                    margins_can_collapse_through: false,
-                };
-            };
-        }
-
-        // Take inline layout to satisfy borrow checker
-        let mut inline_layout = self.nodes[node_id]
-            .data
-            .downcast_element_mut()
-            .unwrap()
-            .take_inline_layout()
-            .unwrap();
+            || border.bottom > 0.0;
+        // || matches!(node_size.height, Some(h) if h > 0.0)
+        // || matches!(node_min_size.height, Some(h) if h > 0.0)
+        // || !inline_layout.text.is_empty();
+        // || !inline_layout.layout.inline_boxes().is_empty();
 
         // Short circuit if inline context contains no text or inline boxes
-        if inline_layout.text.is_empty() && inline_layout.layout.inline_boxes().is_empty() {
+        if !has_styles_preventing_being_collapsed_through
+            && inline_layout.text.is_empty()
+            && inline_layout.layout.inline_boxes().is_empty()
+        {
             // Put layout back
             self.nodes[node_id]
                 .data
@@ -168,6 +240,38 @@ impl BaseDocument {
                 Size::ZERO.maybe_max(container_pb.sum_axes().map(Some)),
             );
         }
+
+        // Resolve node's preferred/min/max sizes (width/heights) against the available space (percentages resolve to pixel values)
+        // For ContentSize mode, we pretend that the node has no size styles as these should be ignored.
+        let (node_size, node_min_size, node_max_size, aspect_ratio) = match inputs.sizing_mode {
+            SizingMode::ContentSize => {
+                let node_size = known_dimensions;
+                let node_min_size = Size::NONE;
+                let node_max_size = Size::NONE;
+                (node_size, node_min_size, node_max_size, None)
+            }
+            SizingMode::InherentSize => {
+                let aspect_ratio = style.aspect_ratio();
+                let style_size = style
+                    .size()
+                    .maybe_resolve(parent_size, &resolve_calc_value)
+                    .maybe_apply_aspect_ratio(aspect_ratio)
+                    .maybe_add(box_sizing_adjustment);
+                let style_min_size = style
+                    .min_size()
+                    .maybe_resolve(parent_size, &resolve_calc_value)
+                    .maybe_apply_aspect_ratio(aspect_ratio)
+                    .maybe_add(box_sizing_adjustment);
+                let style_max_size = style
+                    .max_size()
+                    .maybe_resolve(parent_size, &resolve_calc_value)
+                    .maybe_add(box_sizing_adjustment);
+
+                let node_size =
+                    known_dimensions.or(style_size.maybe_clamp(style_min_size, style_max_size));
+                (node_size, style_min_size, style_max_size, aspect_ratio)
+            }
+        };
 
         // Compute available space
         let available_space = Size {
@@ -312,7 +416,7 @@ impl BaseDocument {
 
         // Set block context width if this is a block context root
         #[cfg(feature = "floats")]
-        if is_root_bfc {
+        if block_ctx.is_bfc_root() {
             block_ctx.set_width(AvailableSpace::Definite((width + pbw) / scale));
         }
 
