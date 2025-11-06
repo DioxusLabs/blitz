@@ -887,8 +887,10 @@ pub(crate) fn build_inline_layout_into(
                     .map(|s| s.clone_position())
                     .unwrap_or(PositionProperty::Static);
                 let float = style.map(|s| s.clone_float()).unwrap_or(Float::None);
-                let box_kind = if position.is_absolutely_positioned() || float.is_floating() {
+                let box_kind = if position.is_absolutely_positioned() {
                     InlineBoxKind::OutOfFlow
+                } else if float.is_floating() {
+                    InlineBoxKind::CustomOutOfFlow
                 } else {
                     InlineBoxKind::InFlow
                 };
@@ -922,7 +924,6 @@ pub(crate) fn build_inline_layout_into(
                             builder.push_inline_box(InlineBox {
                                 id: node_id as u64,
                                 kind: box_kind,
-                                break_on_box: false,
                                 // Overridden by push_inline_box method
                                 index: 0,
                                 // Width and height are set during layout
@@ -1000,7 +1001,6 @@ pub(crate) fn build_inline_layout_into(
                         builder.push_inline_box(InlineBox {
                             id: node_id as u64,
                             kind: box_kind,
-                            break_on_box: false,
                             // Overridden by push_inline_box method
                             index: 0,
                             // Width and height are set during layout

@@ -320,11 +320,6 @@ impl BaseDocument {
 
             #[cfg(feature = "floats")]
             let is_floated = style.float.is_floated();
-            #[cfg(feature = "floats")]
-            {
-                ibox.break_on_box = is_floated;
-            }
-
             #[cfg(not(feature = "floats"))]
             let is_floated = false;
 
