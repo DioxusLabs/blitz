@@ -134,12 +134,7 @@ impl BaseDocument {
                 inherited_bfc,
             ),
             None => {
-                let mut root_bfc = BlockFormattingContext::new(
-                    styled_based_known_dimensions
-                        .width
-                        .map(AvailableSpace::Definite)
-                        .unwrap_or(AvailableSpace::MaxContent),
-                );
+                let mut root_bfc = BlockFormattingContext::new();
                 let mut root_ctx = root_bfc.root_block_context();
                 self.compute_inline_layout_inner(
                     node_id,
@@ -411,7 +406,7 @@ impl BaseDocument {
         // Set block context width if this is a block context root
         #[cfg(feature = "floats")]
         if block_ctx.is_bfc_root() {
-            block_ctx.set_width(AvailableSpace::Definite((width + pbw) / scale));
+            block_ctx.set_width((width + pbw) / scale);
         }
 
         // Create sub-context to account for the inline layout's padding/border
