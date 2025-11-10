@@ -303,6 +303,7 @@ impl BaseDocument {
         let child_inputs = taffy::tree::LayoutInput {
             known_dimensions: Size::NONE,
             available_space,
+            sizing_mode: SizingMode::InherentSize,
             parent_size: available_space.into_options(),
             ..inputs
         };
