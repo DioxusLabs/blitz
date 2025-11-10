@@ -30,7 +30,6 @@ impl BaseDocument {
         let style = &self.nodes[node_id].style;
 
         // Pull these out earlier to avoid borrowing issues
-        let aspect_ratio = style.aspect_ratio();
         let padding = style
             .padding()
             .resolve_or_zero(parent_size.width, |val, basis| {
@@ -166,7 +165,6 @@ impl BaseDocument {
             parent_size,
             available_space,
             sizing_mode,
-            run_mode,
             ..
         } = inputs;
 
@@ -243,7 +241,7 @@ impl BaseDocument {
 
         // Resolve node's preferred/min/max sizes (width/heights) against the available space (percentages resolve to pixel values)
         // For ContentSize mode, we pretend that the node has no size styles as these should be ignored.
-        let (node_size, node_min_size, node_max_size, aspect_ratio) = match inputs.sizing_mode {
+        let (node_size, node_min_size, node_max_size, aspect_ratio) = match sizing_mode {
             SizingMode::ContentSize => {
                 let node_size = known_dimensions;
                 let node_min_size = Size::NONE;
