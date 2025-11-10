@@ -570,7 +570,7 @@ impl BaseDocument {
         );
 
         let final_size = inputs.known_dimensions.unwrap_or(taffy::Size {
-            width: inline_layout.layout.width().ceil() / scale,
+            width: width / scale,
             height: inline_layout.layout.height() / scale,
         });
 
