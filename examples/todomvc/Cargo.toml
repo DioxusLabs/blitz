@@ -16,6 +16,7 @@ cpu-softbuffer = ["mini-dxn/cpu-softbuffer"]
 incremental = ["mini-dxn/incremental"]
 log_frame_times = ["mini-dxn/log_frame_times"]
 log_phase_times = ["mini-dxn/log_phase_times"]
+floats = ["mini-dxn/floats"]
 tracing = ["mini-dxn/tracing", "dep:tracing-subscriber"]
 
 [dependencies]
