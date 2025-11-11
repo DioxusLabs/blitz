@@ -177,7 +177,6 @@ impl BaseDocument {
 
         // Note: both horizontal and vertical percentage padding/borders are resolved against the container's inline size (i.e. width).
         // This is not a bug, but is how CSS is specified (see: https://developer.mozilla.org/en-US/docs/Web/CSS/padding#values)
-        let position = style.position();
         let margin = style
             .margin()
             .resolve_or_zero(parent_size.width, &resolve_calc_value);
@@ -319,7 +318,7 @@ impl BaseDocument {
             #[cfg(not(feature = "floats"))]
             let is_floated = false;
 
-            if position == Position::Absolute || is_floated {
+            if style.position == Position::Absolute || is_floated {
                 ibox.width = 0.0;
                 ibox.height = 0.0;
             } else {
