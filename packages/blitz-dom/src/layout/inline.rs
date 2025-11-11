@@ -409,6 +409,8 @@ impl BaseDocument {
             block_ctx.set_width((width + pbw) / scale);
         }
 
+        let is_bfc_root = block_ctx.is_bfc_root();
+
         // Create sub-context to account for the inline layout's padding/border
         #[cfg(feature = "floats")]
         let mut block_ctx =
@@ -526,8 +528,8 @@ impl BaseDocument {
 
                         let layout = &mut self.nodes[node_id].unrounded_layout;
                         layout.size = output.size;
-                        layout.location.x = pos.x + margin.left;
-                        layout.location.y = pos.y + margin.top;
+                        layout.location.x = pos.x + margin.left + container_pb.left;
+                        layout.location.y = pos.y + margin.top + container_pb.top;
 
                         // dbg!(&layout.size);
                         // dbg!(&layout.location);
@@ -574,9 +576,19 @@ impl BaseDocument {
             },
         );
 
+        let contains_floats = is_bfc_root;
+        let height = if contains_floats {
+            inline_layout
+                .layout
+                .height()
+                .max((block_ctx.floated_content_height_contribution() + container_pb.top) * scale)
+        } else {
+            inline_layout.layout.height()
+        };
+
         let final_size = inputs.known_dimensions.unwrap_or(taffy::Size {
             width: width / scale,
-            height: inline_layout.layout.height() / scale,
+            height: height / scale,
         });
 
         // Store sizes and positions of inline boxes
