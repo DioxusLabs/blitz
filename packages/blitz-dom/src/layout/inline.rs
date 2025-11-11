@@ -496,11 +496,22 @@ impl BaseDocument {
                             Float::None => unreachable!(),
                         };
                         let clear = node.style.clear;
+                        let margin = node
+                            .style
+                            .margin
+                            .resolve_or_zero(inputs.parent_size, resolve_calc_value);
+
+                        let margin_sum = margin.sum_axes();
+
                         let output =
                             self.compute_child_layout(NodeId::from(node_id), float_child_inputs);
                         let min_y = state.line_y() as f32 / scale;
-                        let mut pos =
-                            block_ctx.place_floated_box(output.size, min_y, direction, clear);
+                        let mut pos = block_ctx.place_floated_box(
+                            output.size + margin_sum,
+                            min_y,
+                            direction,
+                            clear,
+                        );
                         pos.x += container_pb.left;
                         pos.y += container_pb.top;
 
@@ -515,8 +526,8 @@ impl BaseDocument {
 
                         let layout = &mut self.nodes[node_id].unrounded_layout;
                         layout.size = output.size;
-                        layout.location.x = pos.x;
-                        layout.location.y = pos.y;
+                        layout.location.x = pos.x + margin.left;
+                        layout.location.y = pos.y + margin.top;
 
                         // dbg!(&layout.size);
                         // dbg!(&layout.location);
