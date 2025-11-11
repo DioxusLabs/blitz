@@ -30,6 +30,8 @@ impl BaseDocument {
         let style = &self.nodes[node_id].style;
 
         // Pull these out earlier to avoid borrowing issues
+        let is_scroll_container =
+            style.overflow.x.is_scroll_container() || style.overflow.y.is_scroll_container();
         let padding = style
             .padding()
             .resolve_or_zero(parent_size.width, |val, basis| {
@@ -125,7 +127,7 @@ impl BaseDocument {
 
         // Unwrap the block formatting context if one was passed, or else create a new one
         match block_ctx {
-            Some(inherited_bfc) => self.compute_inline_layout_inner(
+            Some(inherited_bfc) if !is_scroll_container => self.compute_inline_layout_inner(
                 node_id,
                 LayoutInput {
                     known_dimensions: styled_based_known_dimensions,
@@ -133,7 +135,7 @@ impl BaseDocument {
                 },
                 inherited_bfc,
             ),
-            None => {
+            _ => {
                 let mut root_bfc = BlockFormattingContext::new();
                 let mut root_ctx = root_bfc.root_block_context();
                 self.compute_inline_layout_inner(
