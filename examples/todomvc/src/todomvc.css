@@ -240,10 +240,12 @@ body {
 
 .todo-list li .destroy:after {
     content: '×';
+    line-height: 1;
 }
 
 .todo-list li:hover .destroy {
-    display: block;
+    display: grid;
+    place-items: center;
 }
 
 .todo-list li .edit {
