@@ -598,20 +598,25 @@ fn create_text_editor(doc: &mut BaseDocument, input_element_id: usize, is_multil
     if !matches!(element.special_data, SpecialElementData::TextInput(_)) {
         let mut text_input_data = TextInputData::new(is_multiline);
         let editor = &mut text_input_data.editor;
-
         editor.set_text(element.attr(local_name!("value")).unwrap_or(" "));
-        editor.set_scale(doc.viewport.scale_f64() as f32);
-        editor.set_width(None);
-
-        let styles = editor.edit_styles();
-        styles.insert(StyleProperty::FontSize(parley_style.font_size));
-        styles.insert(StyleProperty::LineHeight(parley_style.line_height));
-        styles.insert(StyleProperty::Brush(parley_style.brush));
-
-        editor.refresh_layout(&mut doc.font_ctx.lock().unwrap(), &mut doc.layout_ctx);
-
         element.special_data = SpecialElementData::TextInput(text_input_data);
     }
+
+    let SpecialElementData::TextInput(text_input_data) = &mut element.special_data else {
+        unreachable!();
+    };
+
+    let editor = &mut text_input_data.editor;
+    editor.set_scale(doc.viewport.scale_f64() as f32);
+    editor.set_width(None);
+
+    let styles = editor.edit_styles();
+    styles.retain(|_| false);
+    styles.insert(StyleProperty::FontSize(parley_style.font_size));
+    styles.insert(StyleProperty::LineHeight(parley_style.line_height));
+    styles.insert(StyleProperty::Brush(parley_style.brush));
+
+    editor.refresh_layout(&mut doc.font_ctx.lock().unwrap(), &mut doc.layout_ctx);
 }
 
 fn create_checkbox_input(doc: &mut BaseDocument, input_element_id: usize) {
