@@ -151,7 +151,7 @@ impl BaseDocument {
                                 },
                             );
                         }
-                        None | Some("text" | "password" | "email") => {
+                        None | Some("text" | "password" | "email" | "tel" | "url" | "search") => {
                             return compute_leaf_layout(
                                 inputs,
                                 &node.style,
