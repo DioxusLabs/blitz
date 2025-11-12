@@ -20,6 +20,7 @@ cpu-base = ["dep:anyrender_vello_cpu"]
 avif = ["dep:image", "image?/avif-native"]
 comrak = ["dep:comrak"]
 pulldown_cmark = ["dep:pulldown-cmark"]
+cache = ["blitz-net/cache"]
 log_frame_times = [
   "anyrender_vello_cpu?/log_frame_times",
   "anyrender_vello_hybrid?/log_frame_times",
