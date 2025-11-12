@@ -603,17 +603,17 @@ pub fn to_taffy_style(style: &stylo::ComputedValues) -> taffy::Style<Atom> {
 
         // Alignment
         #[cfg(any(feature = "flexbox", feature = "grid"))]
-        align_content: self::content_alignment(pos.align_content.0),
+        align_content: self::content_alignment(pos.align_content),
         #[cfg(any(feature = "flexbox", feature = "grid"))]
-        justify_content: self::content_alignment(pos.justify_content.0),
+        justify_content: self::content_alignment(pos.justify_content),
         #[cfg(any(feature = "flexbox", feature = "grid"))]
         align_items: self::item_alignment(pos.align_items.0),
         #[cfg(any(feature = "flexbox", feature = "grid"))]
-        align_self: self::item_alignment((pos.align_self.0).0),
+        align_self: self::item_alignment(pos.align_self.0),
         #[cfg(feature = "grid")]
-        justify_items: self::item_alignment(pos.justify_items.computed.0),
+        justify_items: self::item_alignment((pos.justify_items.computed.0).0),
         #[cfg(feature = "grid")]
-        justify_self: self::item_alignment((pos.justify_self.0).0),
+        justify_self: self::item_alignment(pos.justify_self.0),
         #[cfg(feature = "block")]
         text_align: self::text_align(style.clone_text_align()),
 
