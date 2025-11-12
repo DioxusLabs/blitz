@@ -24,6 +24,7 @@ avif = ["dep:image", "image?/avif-native"]
 comrak = ["dep:comrak"]
 pulldown_cmark = ["dep:pulldown-cmark"]
 floats = ["blitz-dom/floats"]
+cache = ["blitz-net/cache"]
 log_frame_times = [
   "anyrender_vello_cpu?/log_frame_times",
   "anyrender_vello_hybrid?/log_frame_times",

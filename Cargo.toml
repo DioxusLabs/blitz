@@ -126,6 +126,8 @@ http = "1.1.0"
 data-url = "0.3.1"
 tokio = "1.42"
 reqwest = "0.12"
+reqwest-middleware = { version = "0.4.2", default-features = false }
+http-cache-reqwest = { version = "=1.0.0-alpha.2", default-features = false }
 
 # Media & Decoding
 image = { version = "=0.25.6", default-features = false }

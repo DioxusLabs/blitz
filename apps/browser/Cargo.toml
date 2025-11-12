@@ -17,6 +17,7 @@ incremental = ["dioxus-native/incremental"]
 log_frame_times = ["dioxus-native/log-frame-times"]
 log_phase_times = ["dioxus-native/log-phase-times"]
 floats = ["dioxus-native/floats"]
+cache = ["blitz-net/cache"]
 tracing = ["dioxus-native/tracing", "dep:tracing-subscriber"]
 hot-reload = ["dioxus-native/hot-reload"]
 
