@@ -13,6 +13,7 @@ rust-version.workspace = true
 [features]
 cookies = ["reqwest/cookies"]
 multipart = ["reqwest/multipart", "reqwest/stream"]
+cache = ["dep:reqwest-middleware", "dep:http-cache-reqwest"]
 debug_log = []
 
 [dependencies]
@@ -23,3 +24,7 @@ blitz-traits = { workspace = true }
 tokio = { workspace = true }
 reqwest = { workspace = true }
 data-url = { workspace = true }
+
+# Caching
+reqwest-middleware = { workspace = true, optional = true }
+http-cache-reqwest = { workspace = true, optional = true, features = ["manager-cacache"] }
