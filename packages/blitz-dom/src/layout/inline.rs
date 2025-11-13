@@ -7,7 +7,7 @@ use taffy::{
 };
 
 #[cfg(feature = "floats")]
-use parley::{BreakerState, YieldData};
+use parley::YieldData;
 #[cfg(feature = "floats")]
 use taffy::{Clear, Float, prelude::TaffyMaxContent};
 
@@ -432,9 +432,12 @@ impl BaseDocument {
             state.set_line_x(initial_slot.x * scale);
             state.set_line_y((initial_slot.y * scale) as f64);
 
+            // TODO: revert state and retry layout if a line doesn't fit
+            //
             // Save initial state. Saved state is used to revert the layout to a previous state if needed
             // (e.g. to revert a line that doesn't fit in the space it was laid out into)
-            let mut saved_state: BreakerState = breaker.state().clone();
+            //
+            // let mut saved_state = breaker.state().clone();
 
             while let Some(yield_data) = breaker.break_next() {
                 match yield_data {
@@ -442,7 +445,8 @@ impl BaseDocument {
                         let state = breaker.state_mut();
 
                         if has_active_floats {
-                            saved_state = state.clone();
+                            // TODO: revert state and retry layout if a line doesn't fit
+                            // saved_state = state.clone();
 
                             let min_y = (state.line_y() + line_break_data.line_height as f64)
                                 / scale as f64;
@@ -461,7 +465,7 @@ impl BaseDocument {
 
                         continue;
                     }
-                    YieldData::MaxHeightExceeded(data) => {
+                    YieldData::MaxHeightExceeded(_data) => {
                         // TODO
                         continue;
                     }
