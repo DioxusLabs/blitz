@@ -2476,6 +2476,7 @@ dependencies = [
 [[package]]
 name = "fontique"
 version = "0.6.0"
+source = "git+https://github.com/linebender/parley?rev=00fdba71d2d35f4f6af04cb42eaa4d5b22c828ef#00fdba71d2d35f4f6af04cb42eaa4d5b22c828ef"
 dependencies = [
  "bytemuck",
  "hashbrown 0.15.5",
@@ -4689,6 +4690,7 @@ dependencies = [
 [[package]]
 name = "parley"
 version = "0.6.0"
+source = "git+https://github.com/linebender/parley?rev=00fdba71d2d35f4f6af04cb42eaa4d5b22c828ef#00fdba71d2d35f4f6af04cb42eaa4d5b22c828ef"
 dependencies = [
  "fontique",
  "harfrust",
@@ -6289,6 +6291,7 @@ dependencies = [
 [[package]]
 name = "taffy"
 version = "0.9.1"
+source = "git+https://github.com/DioxusLabs/taffy?rev=fff4ea6e71e4f6ec29d0ea560a77545ad611470a#fff4ea6e71e4f6ec29d0ea560a77545ad611470a"
 dependencies = [
  "arrayvec",
  "grid",
