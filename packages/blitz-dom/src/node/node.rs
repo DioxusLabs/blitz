@@ -217,6 +217,13 @@ impl Node {
         }
     }
 
+    pub fn is_whitespace_node(&self) -> bool {
+        match &self.data {
+            NodeData::Text(data) => data.content.chars().all(|c| c.is_ascii_whitespace()),
+            _ => false,
+        }
+    }
+
     pub fn is_focussable(&self) -> bool {
         self.data
             .downcast_element()
@@ -867,7 +874,8 @@ impl Node {
             let layout = &element_data.inline_layout_data.as_ref().unwrap().layout;
             let scale = layout.scale();
 
-            if let Some((cluster, _side)) = Cluster::from_point(layout, x * scale, y * scale) {
+            if let Some((cluster, _side)) = Cluster::from_point_exact(layout, x * scale, y * scale)
+            {
                 let style_index = cluster.glyphs().next()?.style_index();
                 let node_id = layout.styles()[style_index].brush.id;
                 return Some(HitResult { node_id, x, y });

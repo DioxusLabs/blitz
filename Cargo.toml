@@ -69,7 +69,7 @@ dioxus-html = { version = "0.7" }
 dioxus-hooks = { version = "0.7" }
 dioxus-cli-config = { version = "0.7" }
 dioxus-devtools = { version = "0.7" }
-taffy = { version = "0.9", default-features = false, features = ["std", "flexbox", "grid", "block_layout", "content_size", "calc"] }
+taffy = { git = "https://github.com/DioxusLabs/taffy", rev = "fff4ea6e71e4f6ec29d0ea560a77545ad611470a", default-features = false, features = ["std", "flexbox", "grid", "block_layout", "content_size", "calc"] }
 
 # AnyRender
 anyrender = { version = "0.6" }
@@ -85,7 +85,7 @@ color = "0.3"
 linebender_resource_handle = "0.1"
 peniko = "0.5.0"
 kurbo = "0.12"
-parley = { git = "https://github.com/linebender/parley", rev = "3a9380f2e12eb451ef08c87fa98333831e7dea35", default-features = false, features = ["std"] }
+parley = { git = "https://github.com/linebender/parley", rev = "00fdba71d2d35f4f6af04cb42eaa4d5b22c828ef", default-features = false, features = ["std"] }
 skrifa = { version = "0.37", default-features = false, features = ["std"] } # Should match parley version
 wgpu = "26"
 softbuffer = "0.4"

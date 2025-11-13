@@ -46,7 +46,12 @@ impl BaseDocument {
             println!();
             println!("Lines:");
             for (i, line) in inline_layout.layout.lines().enumerate() {
-                println!("Line {i}:");
+                let metrics = line.metrics();
+                let x = metrics.inline_min_coord;
+                let y = metrics.block_min_coord;
+                let w = metrics.inline_max_coord - metrics.inline_min_coord;
+                let h = metrics.block_max_coord - metrics.block_min_coord;
+                println!("Line {i}: x:{x} y:{y} width:{w} height:{h}");
                 for item in line.items() {
                     print!("  ");
                     match item {
@@ -58,7 +63,8 @@ impl BaseDocument {
                             )
                         }
                         PositionedLayoutItem::InlineBox(ibox) => print!(
-                            "BOX (id: {} x: {} y: {} w: {}, h: {})",
+                            "BOX {:?} (id: {} x: {} y: {} w: {}, h: {})",
+                            ibox.kind,
                             ibox.id,
                             ibox.x.round(),
                             ibox.y.round(),

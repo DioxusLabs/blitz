@@ -29,6 +29,9 @@ pub(crate) mod stylo {
 
     pub(crate) type Gap = GenericLengthPercentageOrNormal<NonNegative<LengthPercentage>>;
 
+    #[cfg(feature = "floats")]
+    pub(crate) use style::values::computed::{Clear, Float};
+
     #[cfg(feature = "flexbox")]
     pub(crate) use style::{
         computed_values::{flex_direction::T as FlexDirection, flex_wrap::T as FlexWrap},
@@ -331,6 +334,33 @@ pub fn flex_wrap(input: stylo::FlexWrap) -> taffy::FlexWrap {
     }
 }
 
+#[inline]
+#[cfg(feature = "floats")]
+pub fn float(input: stylo::Float) -> taffy::Float {
+    match input {
+        stylo::Float::Left => taffy::Float::Left,
+        stylo::Float::Right => taffy::Float::Right,
+        stylo::Float::None => taffy::Float::None,
+
+        stylo::Float::InlineStart => taffy::Float::Left,
+        stylo::Float::InlineEnd => taffy::Float::Right,
+    }
+}
+
+#[inline]
+#[cfg(feature = "floats")]
+pub fn clear(input: stylo::Clear) -> taffy::Clear {
+    match input {
+        stylo::Clear::Left => taffy::Clear::Left,
+        stylo::Clear::Right => taffy::Clear::Right,
+        stylo::Clear::Both => taffy::Clear::Both,
+        stylo::Clear::None => taffy::Clear::None,
+
+        stylo::Clear::InlineStart => taffy::Clear::Left,
+        stylo::Clear::InlineEnd => taffy::Clear::Right,
+    }
+}
+
 // CSS Grid styles
 // ===============
 
@@ -554,6 +584,11 @@ pub fn to_taffy_style(style: &stylo::ComputedValues) -> taffy::Style<Atom> {
             y: self::overflow(style.clone_overflow_y()),
         },
         scrollbar_width: 0.0,
+
+        #[cfg(feature = "floats")]
+        float: self::float(style.clone_float()),
+        #[cfg(feature = "floats")]
+        clear: self::clear(style.clone_clear()),
 
         size: taffy::Size {
             width: self::dimension(&pos.width),

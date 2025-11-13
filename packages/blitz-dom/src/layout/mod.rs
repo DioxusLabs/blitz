@@ -13,9 +13,10 @@ use style::Atom;
 use style::values::computed::CSSPixelLength;
 use style::values::computed::length_percentage::CalcLengthPercentage;
 use taffy::{
-    CollapsibleMarginSet, FlexDirection, LayoutPartialTree, NodeId, ResolveOrZero, RoundTree,
-    Style, TraversePartialTree, TraverseTree, compute_block_layout, compute_cached_layout,
-    compute_flexbox_layout, compute_grid_layout, compute_leaf_layout, prelude::*,
+    BlockContext, CollapsibleMarginSet, FlexDirection, LayoutPartialTree, NodeId, ResolveOrZero,
+    RoundTree, Style, TraversePartialTree, TraverseTree, compute_block_layout,
+    compute_cached_layout, compute_flexbox_layout, compute_grid_layout, compute_leaf_layout,
+    prelude::*,
 };
 
 pub(crate) mod construct;
@@ -40,6 +41,228 @@ impl BaseDocument {
     }
     fn node_from_id_mut(&mut self, node_id: taffy::prelude::NodeId) -> &mut Node {
         &mut self.nodes[node_id.into()]
+    }
+}
+
+impl BaseDocument {
+    fn compute_child_layout_internal(
+        &mut self,
+        node_id: NodeId,
+        inputs: taffy::tree::LayoutInput,
+        block_ctx: Option<&mut BlockContext<'_>>,
+    ) -> taffy::tree::LayoutOutput {
+        let node = &mut self.nodes[node_id.into()];
+
+        let font_styles = node.primary_styles().map(|style| {
+            use style::values::computed::font::LineHeight;
+
+            let font_size = style.clone_font_size().used_size().px();
+            let line_height = match style.clone_line_height() {
+                LineHeight::Normal => font_size * 1.2,
+                LineHeight::Number(num) => font_size * num.0,
+                LineHeight::Length(value) => value.0.px(),
+            };
+
+            (font_size, line_height)
+        });
+        let font_size = font_styles.map(|s| s.0);
+        let resolved_line_height = font_styles.map(|s| s.1);
+
+        match &mut node.data {
+            NodeData::Text(data) => {
+                // With the new "inline context" architecture all text nodes should be wrapped in an "inline layout context"
+                // and should therefore never be measured individually.
+                println!(
+                    "ERROR: Tried to lay out text node individually ({})",
+                    usize::from(node_id)
+                );
+                dbg!(data);
+                taffy::LayoutOutput::HIDDEN
+                // unreachable!();
+
+                // compute_leaf_layout(inputs, &node.style, |known_dimensions, available_space| {
+                //     let context = TextContext {
+                //         text_content: &data.content.trim(),
+                //         writing_mode: WritingMode::Horizontal,
+                //     };
+                //     let font_metrics = FontMetrics {
+                //         char_width: 8.0,
+                //         char_height: 16.0,
+                //     };
+                //     text_measure_function(
+                //         known_dimensions,
+                //         available_space,
+                //         &context,
+                //         &font_metrics,
+                //     )
+                // })
+            }
+            NodeData::Element(element_data) | NodeData::AnonymousBlock(element_data) => {
+                // TODO: deduplicate with single-line text input
+                if *element_data.name.local == *"textarea" {
+                    let rows = element_data
+                        .attr(local_name!("rows"))
+                        .and_then(|val| val.parse::<f32>().ok())
+                        .unwrap_or(2.0);
+
+                    let cols = element_data
+                        .attr(local_name!("cols"))
+                        .and_then(|val| val.parse::<f32>().ok());
+
+                    return compute_leaf_layout(
+                        inputs,
+                        &node.style,
+                        resolve_calc_value,
+                        |_known_size, _available_space| taffy::Size {
+                            width: cols
+                                .map(|cols| cols * font_size.unwrap_or(16.0) * 0.6)
+                                .unwrap_or(300.0),
+                            height: resolved_line_height.unwrap_or(16.0) * rows,
+                        },
+                    );
+                }
+
+                if *element_data.name.local == *"input" {
+                    match element_data.attr(local_name!("type")) {
+                        // if the input type is hidden, hide it
+                        Some("hidden") => {
+                            node.style.display = Display::None;
+                            return taffy::LayoutOutput::HIDDEN;
+                        }
+                        Some("checkbox") => {
+                            return compute_leaf_layout(
+                                inputs,
+                                &node.style,
+                                resolve_calc_value,
+                                |_known_size, _available_space| {
+                                    let width = node.style.size.width.resolve_or_zero(
+                                        inputs.parent_size.width,
+                                        resolve_calc_value,
+                                    );
+                                    let height = node.style.size.height.resolve_or_zero(
+                                        inputs.parent_size.height,
+                                        resolve_calc_value,
+                                    );
+                                    let min_size = width.min(height);
+                                    taffy::Size {
+                                        width: min_size,
+                                        height: min_size,
+                                    }
+                                },
+                            );
+                        }
+                        None | Some("text" | "password" | "email" | "tel" | "url" | "search") => {
+                            return compute_leaf_layout(
+                                inputs,
+                                &node.style,
+                                resolve_calc_value,
+                                |_known_size, _available_space| taffy::Size {
+                                    width: 300.0,
+                                    height: resolved_line_height.unwrap_or(16.0),
+                                },
+                            );
+                        }
+                        _ => {}
+                    }
+                }
+
+                if *element_data.name.local == *"img"
+                    || *element_data.name.local == *"canvas"
+                    || (cfg!(feature = "svg") && *element_data.name.local == *"svg")
+                {
+                    // Get width and height attributes on image element
+                    //
+                    // TODO: smarter sizing using these (depending on object-fit, they shouldn't
+                    // necessarily just override the native size)
+                    let attr_size = taffy::Size {
+                        width: element_data
+                            .attr(local_name!("width"))
+                            .and_then(|val| val.parse::<f32>().ok()),
+                        height: element_data
+                            .attr(local_name!("height"))
+                            .and_then(|val| val.parse::<f32>().ok()),
+                    };
+
+                    // Get image's native sizespecial_data
+                    let inherent_size = match &element_data.special_data {
+                        SpecialElementData::Image(image_data) => match &**image_data {
+                            ImageData::Raster(image) => taffy::Size {
+                                width: image.width as f32,
+                                height: image.height as f32,
+                            },
+                            #[cfg(feature = "svg")]
+                            ImageData::Svg(svg) => {
+                                let size = svg.size();
+                                taffy::Size {
+                                    width: size.width(),
+                                    height: size.height(),
+                                }
+                            }
+                            ImageData::None => taffy::Size::ZERO,
+                        },
+                        SpecialElementData::Canvas(_) => taffy::Size::ZERO,
+                        SpecialElementData::None => taffy::Size::ZERO,
+                        _ => unreachable!(),
+                    };
+
+                    let replaced_context = ReplacedContext {
+                        inherent_size,
+                        attr_size,
+                    };
+
+                    let computed = replaced_measure_function(
+                        inputs.known_dimensions,
+                        inputs.parent_size,
+                        inputs.available_space,
+                        &replaced_context,
+                        &node.style,
+                        false,
+                    );
+
+                    return taffy::LayoutOutput {
+                        size: computed,
+                        content_size: computed,
+                        first_baselines: taffy::Point::NONE,
+                        top_margin: CollapsibleMarginSet::ZERO,
+                        bottom_margin: CollapsibleMarginSet::ZERO,
+                        margins_can_collapse_through: false,
+                    };
+                }
+
+                if node.flags.is_table_root() {
+                    let SpecialElementData::TableRoot(context) = &self.nodes[node_id.into()]
+                        .data
+                        .downcast_element()
+                        .unwrap()
+                        .special_data
+                    else {
+                        panic!("Node marked as table root but doesn't have TableContext");
+                    };
+                    let context = Arc::clone(context);
+
+                    let mut table_wrapper = TableTreeWrapper {
+                        doc: self,
+                        ctx: context,
+                    };
+                    return compute_grid_layout(&mut table_wrapper, node_id, inputs);
+                }
+
+                if node.flags.is_inline_root() {
+                    return self.compute_inline_layout(usize::from(node_id), inputs, block_ctx);
+                }
+
+                // The default CSS file will set
+                match node.style.display {
+                    Display::Block => compute_block_layout(self, node_id, inputs, block_ctx),
+                    Display::Flex => compute_flexbox_layout(self, node_id, inputs),
+                    Display::Grid => compute_grid_layout(self, node_id, inputs),
+                    Display::None => taffy::LayoutOutput::HIDDEN,
+                }
+            }
+            NodeData::Document => compute_block_layout(self, node_id, inputs, None),
+
+            _ => taffy::LayoutOutput::HIDDEN,
+        }
     }
 }
 
@@ -94,224 +317,14 @@ impl LayoutPartialTree for BaseDocument {
         resolve_calc_value(calc_ptr, parent_size)
     }
 
+    #[inline(always)]
     fn compute_child_layout(
         &mut self,
         node_id: NodeId,
-        inputs: taffy::tree::LayoutInput,
-    ) -> taffy::tree::LayoutOutput {
+        inputs: taffy::LayoutInput,
+    ) -> taffy::LayoutOutput {
         compute_cached_layout(self, node_id, inputs, |tree, node_id, inputs| {
-            let node = &mut tree.nodes[node_id.into()];
-
-            let font_styles = node.primary_styles().map(|style| {
-                use style::values::computed::font::LineHeight;
-
-                let font_size = style.clone_font_size().used_size().px();
-                let line_height = match style.clone_line_height() {
-                    LineHeight::Normal => font_size * 1.2,
-                    LineHeight::Number(num) => font_size * num.0,
-                    LineHeight::Length(value) => value.0.px(),
-                };
-
-                (font_size, line_height)
-            });
-            let font_size = font_styles.map(|s| s.0);
-            let resolved_line_height = font_styles.map(|s| s.1);
-
-            match &mut node.data {
-                NodeData::Text(data) => {
-                    // With the new "inline context" architecture all text nodes should be wrapped in an "inline layout context"
-                    // and should therefore never be measured individually.
-                    println!(
-                        "ERROR: Tried to lay out text node individually ({})",
-                        usize::from(node_id)
-                    );
-                    dbg!(data);
-                    taffy::LayoutOutput::HIDDEN
-                    // unreachable!();
-
-                    // compute_leaf_layout(inputs, &node.style, |known_dimensions, available_space| {
-                    //     let context = TextContext {
-                    //         text_content: &data.content.trim(),
-                    //         writing_mode: WritingMode::Horizontal,
-                    //     };
-                    //     let font_metrics = FontMetrics {
-                    //         char_width: 8.0,
-                    //         char_height: 16.0,
-                    //     };
-                    //     text_measure_function(
-                    //         known_dimensions,
-                    //         available_space,
-                    //         &context,
-                    //         &font_metrics,
-                    //     )
-                    // })
-                }
-                NodeData::Element(element_data) | NodeData::AnonymousBlock(element_data) => {
-                    // TODO: deduplicate with single-line text input
-                    if *element_data.name.local == *"textarea" {
-                        let rows = element_data
-                            .attr(local_name!("rows"))
-                            .and_then(|val| val.parse::<f32>().ok())
-                            .unwrap_or(2.0);
-
-                        let cols = element_data
-                            .attr(local_name!("cols"))
-                            .and_then(|val| val.parse::<f32>().ok());
-
-                        return compute_leaf_layout(
-                            inputs,
-                            &node.style,
-                            resolve_calc_value,
-                            |_known_size, _available_space| taffy::Size {
-                                width: cols
-                                    .map(|cols| cols * font_size.unwrap_or(16.0) * 0.6)
-                                    .unwrap_or(300.0),
-                                height: resolved_line_height.unwrap_or(16.0) * rows,
-                            },
-                        );
-                    }
-
-                    if *element_data.name.local == *"input" {
-                        match element_data.attr(local_name!("type")) {
-                            // if the input type is hidden, hide it
-                            Some("hidden") => {
-                                node.style.display = Display::None;
-                                return taffy::LayoutOutput::HIDDEN;
-                            }
-                            Some("checkbox") => {
-                                return compute_leaf_layout(
-                                    inputs,
-                                    &node.style,
-                                    resolve_calc_value,
-                                    |_known_size, _available_space| {
-                                        let width = node.style.size.width.resolve_or_zero(
-                                            inputs.parent_size.width,
-                                            resolve_calc_value,
-                                        );
-                                        let height = node.style.size.height.resolve_or_zero(
-                                            inputs.parent_size.height,
-                                            resolve_calc_value,
-                                        );
-                                        let min_size = width.min(height);
-                                        taffy::Size {
-                                            width: min_size,
-                                            height: min_size,
-                                        }
-                                    },
-                                );
-                            }
-                            None | Some("text" | "password" | "email") => {
-                                return compute_leaf_layout(
-                                    inputs,
-                                    &node.style,
-                                    resolve_calc_value,
-                                    |_known_size, _available_space| taffy::Size {
-                                        width: 300.0,
-                                        height: resolved_line_height.unwrap_or(16.0),
-                                    },
-                                );
-                            }
-                            _ => {}
-                        }
-                    }
-
-                    if *element_data.name.local == *"img"
-                        || *element_data.name.local == *"canvas"
-                        || (cfg!(feature = "svg") && *element_data.name.local == *"svg")
-                    {
-                        // Get width and height attributes on image element
-                        //
-                        // TODO: smarter sizing using these (depending on object-fit, they shouldn't
-                        // necessarily just override the native size)
-                        let attr_size = taffy::Size {
-                            width: element_data
-                                .attr(local_name!("width"))
-                                .and_then(|val| val.parse::<f32>().ok()),
-                            height: element_data
-                                .attr(local_name!("height"))
-                                .and_then(|val| val.parse::<f32>().ok()),
-                        };
-
-                        // Get image's native sizespecial_data
-                        let inherent_size = match &element_data.special_data {
-                            SpecialElementData::Image(image_data) => match &**image_data {
-                                ImageData::Raster(image) => taffy::Size {
-                                    width: image.width as f32,
-                                    height: image.height as f32,
-                                },
-                                #[cfg(feature = "svg")]
-                                ImageData::Svg(svg) => {
-                                    let size = svg.size();
-                                    taffy::Size {
-                                        width: size.width(),
-                                        height: size.height(),
-                                    }
-                                }
-                                ImageData::None => taffy::Size::ZERO,
-                            },
-                            SpecialElementData::Canvas(_) => taffy::Size::ZERO,
-                            SpecialElementData::None => taffy::Size::ZERO,
-                            _ => unreachable!(),
-                        };
-
-                        let replaced_context = ReplacedContext {
-                            inherent_size,
-                            attr_size,
-                        };
-
-                        let computed = replaced_measure_function(
-                            inputs.known_dimensions,
-                            inputs.parent_size,
-                            inputs.available_space,
-                            &replaced_context,
-                            &node.style,
-                            false,
-                        );
-
-                        return taffy::LayoutOutput {
-                            size: computed,
-                            content_size: computed,
-                            first_baselines: taffy::Point::NONE,
-                            top_margin: CollapsibleMarginSet::ZERO,
-                            bottom_margin: CollapsibleMarginSet::ZERO,
-                            margins_can_collapse_through: false,
-                        };
-                    }
-
-                    if node.flags.is_table_root() {
-                        let SpecialElementData::TableRoot(context) = &tree.nodes[node_id.into()]
-                            .data
-                            .downcast_element()
-                            .unwrap()
-                            .special_data
-                        else {
-                            panic!("Node marked as table root but doesn't have TableContext");
-                        };
-                        let context = Arc::clone(context);
-
-                        let mut table_wrapper = TableTreeWrapper {
-                            doc: tree,
-                            ctx: context,
-                        };
-                        return compute_grid_layout(&mut table_wrapper, node_id, inputs);
-                    }
-
-                    if node.flags.is_inline_root() {
-                        return tree.compute_inline_layout(usize::from(node_id), inputs);
-                    }
-
-                    // The default CSS file will set
-                    match node.style.display {
-                        Display::Block => compute_block_layout(tree, node_id, inputs),
-                        Display::Flex => compute_flexbox_layout(tree, node_id, inputs),
-                        Display::Grid => compute_grid_layout(tree, node_id, inputs),
-                        Display::None => taffy::LayoutOutput::HIDDEN,
-                    }
-                }
-                NodeData::Document => compute_block_layout(tree, node_id, inputs),
-
-                _ => taffy::LayoutOutput::HIDDEN,
-            }
+            tree.compute_child_layout_internal(node_id, inputs, None)
         })
     }
 }
@@ -370,6 +383,18 @@ impl taffy::LayoutBlockContainer for BaseDocument {
 
     fn get_block_child_style(&self, child_node_id: NodeId) -> Self::BlockItemStyle<'_> {
         self.get_core_container_style(child_node_id)
+    }
+
+    #[inline(always)]
+    fn compute_block_child_layout(
+        &mut self,
+        node_id: NodeId,
+        inputs: taffy::LayoutInput,
+        block_ctx: Option<&mut BlockContext<'_>>,
+    ) -> taffy::LayoutOutput {
+        compute_cached_layout(self, node_id, inputs, |tree, node_id, inputs| {
+            tree.compute_child_layout_internal(node_id, inputs, block_ctx)
+        })
     }
 }
 
