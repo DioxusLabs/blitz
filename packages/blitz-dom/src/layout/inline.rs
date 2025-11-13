@@ -34,41 +34,16 @@ impl BaseDocument {
             style.overflow.x.is_scroll_container() || style.overflow.y.is_scroll_container();
         let padding = style
             .padding()
-            .resolve_or_zero(parent_size.width, |val, basis| {
-                resolve_calc_value(val, basis)
-            });
+            .resolve_or_zero(parent_size.width, resolve_calc_value);
         let border = style
             .border()
-            .resolve_or_zero(parent_size.width, |val, basis| {
-                resolve_calc_value(val, basis)
-            });
+            .resolve_or_zero(parent_size.width, resolve_calc_value);
         let padding_border_size = (padding + border).sum_axes();
         let box_sizing_adjustment = if style.box_sizing() == BoxSizing::ContentBox {
             padding_border_size
         } else {
             Size::ZERO
         };
-
-        // let min_size = style
-        //     .min_size()
-        //     .maybe_resolve(parent_size, |val, basis| resolve_calc_value(val, basis))
-        //     .maybe_apply_aspect_ratio(aspect_ratio)
-        //     .maybe_add(box_sizing_adjustment);
-        // let max_size = style
-        //     .max_size()
-        //     .maybe_resolve(parent_size, |val, basis| resolve_calc_value(val, basis))
-        //     .maybe_apply_aspect_ratio(aspect_ratio)
-        //     .maybe_add(box_sizing_adjustment);
-        // let clamped_style_size = if inputs.sizing_mode == SizingMode::InherentSize {
-        //     style
-        //         .size()
-        //         .maybe_resolve(parent_size, |val, basis| resolve_calc_value(val, basis))
-        //         .maybe_apply_aspect_ratio(aspect_ratio)
-        //         .maybe_add(box_sizing_adjustment)
-        //         .maybe_clamp(min_size, max_size)
-        // } else {
-        //     Size::NONE
-        // };
 
         // Resolve node's preferred/min/max sizes (width/heights) against the available space (percentages resolve to pixel values)
         // For ContentSize mode, we pretend that the node has no size styles as these should be ignored.
@@ -83,17 +58,17 @@ impl BaseDocument {
                 let aspect_ratio = style.aspect_ratio();
                 let style_size = style
                     .size()
-                    .maybe_resolve(parent_size, &resolve_calc_value)
+                    .maybe_resolve(parent_size, resolve_calc_value)
                     .maybe_apply_aspect_ratio(aspect_ratio)
                     .maybe_add(box_sizing_adjustment);
                 let style_min_size = style
                     .min_size()
-                    .maybe_resolve(parent_size, &resolve_calc_value)
+                    .maybe_resolve(parent_size, resolve_calc_value)
                     .maybe_apply_aspect_ratio(aspect_ratio)
                     .maybe_add(box_sizing_adjustment);
                 let style_max_size = style
                     .max_size()
-                    .maybe_resolve(parent_size, &resolve_calc_value)
+                    .maybe_resolve(parent_size, resolve_calc_value)
                     .maybe_add(box_sizing_adjustment);
 
                 let node_size =
@@ -179,13 +154,13 @@ impl BaseDocument {
         // This is not a bug, but is how CSS is specified (see: https://developer.mozilla.org/en-US/docs/Web/CSS/padding#values)
         let margin = style
             .margin()
-            .resolve_or_zero(parent_size.width, &resolve_calc_value);
+            .resolve_or_zero(parent_size.width, resolve_calc_value);
         let padding = style
             .padding()
-            .resolve_or_zero(parent_size.width, &resolve_calc_value);
+            .resolve_or_zero(parent_size.width, resolve_calc_value);
         let border = style
             .border()
-            .resolve_or_zero(parent_size.width, &resolve_calc_value);
+            .resolve_or_zero(parent_size.width, resolve_calc_value);
         let container_pb = padding + border;
         let pb_sum = container_pb.sum_axes();
         let box_sizing_adjustment = if style.box_sizing() == BoxSizing::ContentBox {
@@ -248,17 +223,17 @@ impl BaseDocument {
                 let aspect_ratio = style.aspect_ratio();
                 let style_size = style
                     .size()
-                    .maybe_resolve(parent_size, &resolve_calc_value)
+                    .maybe_resolve(parent_size, resolve_calc_value)
                     .maybe_apply_aspect_ratio(aspect_ratio)
                     .maybe_add(box_sizing_adjustment);
                 let style_min_size = style
                     .min_size()
-                    .maybe_resolve(parent_size, &resolve_calc_value)
+                    .maybe_resolve(parent_size, resolve_calc_value)
                     .maybe_apply_aspect_ratio(aspect_ratio)
                     .maybe_add(box_sizing_adjustment);
                 let style_max_size = style
                     .max_size()
-                    .maybe_resolve(parent_size, &resolve_calc_value)
+                    .maybe_resolve(parent_size, resolve_calc_value)
                     .maybe_add(box_sizing_adjustment);
 
                 let node_size =
