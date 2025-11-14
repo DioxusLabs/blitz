@@ -1093,6 +1093,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "cfb"
+version = "0.7.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d38f2da7a0a2c4ccf0065be06397cc26a81f4e528be095826eee9d4adbb8c60f"
+dependencies = [
+ "byteorder",
+ "fnv",
+ "uuid",
+]
+
+[[package]]
 name = "cfg-expr"
 version = "0.20.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1785,11 +1796,16 @@ version = "0.7.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7f6a124667ce5565c39fe2f33af45c21fe459c5bfcf7a8074ad12c9e9da5817c"
 dependencies = [
+ "dioxus-cli-config",
+ "http",
+ "infer",
  "jni",
  "ndk",
  "ndk-context",
  "ndk-sys 0.6.0+11769913",
+ "percent-encoding",
  "thiserror 2.0.17",
+ "tokio",
 ]
 
 [[package]]
@@ -2000,6 +2016,51 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "tracing-wasm",
+]
+
+[[package]]
+name = "dioxus-native"
+version = "0.7.0"
+dependencies = [
+ "anyrender",
+ "anyrender_vello",
+ "anyrender_vello_cpu",
+ "blitz-dom",
+ "blitz-html",
+ "blitz-net",
+ "blitz-paint",
+ "blitz-shell",
+ "blitz-traits",
+ "dioxus-asset-resolver",
+ "dioxus-cli-config",
+ "dioxus-core",
+ "dioxus-devtools",
+ "dioxus-document",
+ "dioxus-history",
+ "dioxus-html",
+ "dioxus-native-dom",
+ "futures-util",
+ "keyboard-types",
+ "rustc-hash 1.1.0",
+ "tokio",
+ "tracing",
+ "webbrowser",
+ "winit",
+]
+
+[[package]]
+name = "dioxus-native-dom"
+version = "0.7.0"
+dependencies = [
+ "blitz-dom",
+ "blitz-traits",
+ "dioxus",
+ "dioxus-core",
+ "dioxus-html",
+ "futures-util",
+ "keyboard-types",
+ "rustc-hash 1.1.0",
+ "tracing",
 ]
 
 [[package]]
@@ -3372,6 +3433,15 @@ checksum = "0ad4bb2b565bca0645f4d68c5c9af97fba094e9791da685bf83cb5f3ce74acf2"
 dependencies = [
  "equivalent",
  "hashbrown 0.16.1",
+]
+
+[[package]]
+name = "infer"
+version = "0.19.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a588916bfdfd92e71cacef98a63d9b1f0d74d6599980d11894290e7ddefffcf7"
+dependencies = [
+ "cfb",
 ]
 
 [[package]]
@@ -7501,6 +7571,22 @@ dependencies = [
  "phf_codegen",
  "string_cache",
  "string_cache_codegen",
+]
+
+[[package]]
+name = "webbrowser"
+version = "1.0.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "00f1243ef785213e3a32fa0396093424a3a6ea566f9948497e5a2309261a4c97"
+dependencies = [
+ "core-foundation 0.10.1",
+ "jni",
+ "log",
+ "ndk-context",
+ "objc2 0.6.3",
+ "objc2-foundation 0.3.2",
+ "url",
+ "web-sys",
 ]
 
 [[package]]
