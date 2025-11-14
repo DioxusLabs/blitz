@@ -11,27 +11,62 @@ keywords = ["dom", "ui", "gui", "react"]
 
 [features]
 default = ["accessibility", "hot-reload", "net", "html", "svg", "system-fonts", "clipboard", "file_dialog"]
-clipboard = ["blitz-shell/clipboard"]
-file_dialog = ["blitz-shell/file_dialog"]
+
+# DOM features
 svg = ["blitz-dom/svg", "blitz-paint/svg"]
+floats = ["blitz-dom/floats"]
+incremental = ["blitz-dom/incremental"]
+autofocus = ["blitz-dom/autofocus"]
+system-fonts = ["blitz-dom/system_fonts"]
+
+# Shell Features
+clipboard = ["blitz-shell/clipboard"]
+file_dialog = ["file-dialog"] # Backwards compat. Remove in next breaking version
+file-dialog = ["blitz-shell/file_dialog"]
+accessibility = ["blitz-shell/accessibility", "blitz-dom/accessibility"]
+
+# Renderer features
+vello = ["dep:anyrender_vello"]
+vello-hybrid = ["dep:anyrender_vello_hybrid"]
+skia = ["dep:anyrender_skia"]
+vello-cpu = ["vello-cpu-pixels"]
+vello-cpu-pixels = ["vello-cpu-base", "anyrender_vello_cpu/pixels_window_renderer"]
+vello-cpu-softbuffer = ["vello-cpu-base", "anyrender_vello_cpu/softbuffer_window_renderer"]
+vello-cpu-base = ["dep:anyrender_vello_cpu"]
+
+# Other features
 net = ["dep:tokio", "dep:blitz-net"]
 html = ["dep:blitz-html"]
-accessibility = ["blitz-shell/accessibility", "blitz-dom/accessibility"]
-tracing = ["dep:tracing", "dioxus-native-dom/tracing", "blitz-shell/tracing", "blitz-dom/tracing"]
+
+# Dev
 hot-reload = ["dep:dioxus-cli-config", "dep:dioxus-devtools"]
-system-fonts = ["blitz-dom/system_fonts"]
-autofocus = []
+
+# Debug/Logging
+log-times = ["log-phase-times", "log-frame-times"]
+log-phase-times = ["blitz-dom/log_phase_times"]
+log-frame-times = [
+  "anyrender_vello_cpu?/log_frame_times",
+  "anyrender_vello?/log_frame_times",
+  "anyrender_vello_hybrid?/log_frame_times",
+  "anyrender_skia?/log_frame_times",
+]
+tracing = ["dep:tracing", "dioxus-native-dom/tracing", "blitz-shell/tracing", "blitz-dom/tracing"]
 
 [dependencies]
 # Blitz dependencies
-anyrender = { workspace = true }
-anyrender_vello = { workspace = true }
 blitz-dom = { workspace = true }
 blitz-html = { workspace = true, optional = true }
 blitz-net = { workspace = true, optional = true }
 blitz-paint = { workspace = true, optional = true }
 blitz-traits = { workspace = true }
 blitz-shell = { workspace = true }
+
+# AnyRender dependencies
+anyrender = { workspace = true }
+anyrender_vello = { workspace = true, optional = true}
+anyrender_vello_hybrid = { workspace = true, optional = true}
+anyrender_vello_cpu = { workspace = true, optional = true}
+anyrender_skia = { workspace = true, optional = true}
 
 # DioxusLabs dependencies
 dioxus-core = { workspace = true }

@@ -12,7 +12,7 @@ fn main() {
 
     // Note: "mini-dxn" is a cut down version of the "dioxus-native" crate used internally for testing Blitz
     // In real apps you should prefer to use "dioxus-native" (or for a cross platform app, the main "dioxus" crate)
-    mini_dxn::launch(app)
+    dioxus_native::launch(app)
 }
 
 #[derive(PartialEq, Eq, Clone, Copy)]
