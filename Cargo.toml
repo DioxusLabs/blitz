@@ -10,6 +10,8 @@ members = [
   "packages/blitz",
   "packages/mini-dxn",
   "packages/stylo_taffy",
+  "packages/dioxus-native",
+  "packages/dioxus-native-dom",
   "apps/readme",
   "apps/bump",
   "wpt/runner",
@@ -39,6 +41,8 @@ blitz-paint = { version = "0.2.0", path = "./packages/blitz-paint", default-feat
 blitz-shell = { version = "0.2.0", path = "./packages/blitz-shell", default-features = false }
 blitz-traits = { version = "0.2.0", path = "./packages/blitz-traits", default-features = false }
 stylo_taffy = { version = "0.2.0", path = "./packages/stylo_taffy", default-features = false }
+dioxus-native = { version = "0.7.0", path = "./packages/dioxus-native", default-features = false }
+dioxus-native-dom = { version = "0.7.0", path = "./packages/dioxus-native-dom", default-features = false }
 mini-dxn = { path = "./packages/mini-dxn", default-features = false }
 debug_timer = { version = "0.1.2", path = "./packages/debug_timer" }
 
@@ -69,6 +73,9 @@ dioxus-html = { version = "0.7" }
 dioxus-hooks = { version = "0.7" }
 dioxus-cli-config = { version = "0.7" }
 dioxus-devtools = { version = "0.7" }
+dioxus-asset-resolver = { version = "0.7" }
+dioxus-document = { version = "0.7" }
+dioxus-history = { version = "0.7" }
 taffy = { git = "https://github.com/DioxusLabs/taffy", rev = "22868d2812bf903cc4d1dc514cf82197d9849a0b", default-features = false, features = ["std", "flexbox", "grid", "block_layout", "content_size", "calc"] }
 
 # AnyRender
@@ -121,6 +128,9 @@ html-escape = "0.2.13"
 percent-encoding = "2.3.1"
 png = "0.17"
 serde = "1"
+
+# Dioxus Native
+webbrowser = "1.0"
 
 # Other dependencies
 rustc-hash = "1.1.0"
