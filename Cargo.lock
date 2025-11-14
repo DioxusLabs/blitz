@@ -2023,8 +2023,10 @@ name = "dioxus-native"
 version = "0.7.0"
 dependencies = [
  "anyrender",
+ "anyrender_skia",
  "anyrender_vello",
  "anyrender_vello_cpu",
+ "anyrender_vello_hybrid",
  "blitz-dom",
  "blitz-html",
  "blitz-net",
@@ -6674,8 +6676,8 @@ name = "todomvc"
 version = "0.1.0"
 dependencies = [
  "dioxus",
+ "dioxus-native",
  "idna_adapter",
- "mini-dxn",
  "tracing-subscriber",
 ]
 
