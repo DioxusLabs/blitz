@@ -7700,9 +7700,9 @@ dependencies = [
 
 [[package]]
 name = "wgpu_context"
-version = "0.1.1"
+version = "0.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "066bd52170313ca33ba22c7cdc442bf9dbc06a1539eed1719ff7ae63386c0cae"
+checksum = "a0f49e6f733fcc61e41a5ecdb36910baa5148497036784bca319289bfdca6141"
 dependencies = [
  "futures-intrusive",
  "wgpu 26.0.1",
