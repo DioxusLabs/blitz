@@ -40,8 +40,8 @@ pub(crate) fn render_debug_overlay(
     while let Some(parent_id) = node.layout_parent.get() {
         node = &dom.as_ref().tree()[parent_id];
         let taffy::Point { x, y } = node.final_layout.location;
-        abs_x += x;
-        abs_y += y;
+        abs_x += x - node.scroll_offset.x as f32;
+        abs_y += y - node.scroll_offset.y as f32;
     }
 
     abs_x -= viewport_scroll.x as f32;
