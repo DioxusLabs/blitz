@@ -1,6 +1,7 @@
 use crate::event::BlitzShellEvent;
 
 use anyrender::WindowRenderer;
+use blitz_devtools_server::DevtoolsServer;
 use std::collections::HashMap;
 use winit::application::ApplicationHandler;
 use winit::event::WindowEvent;
@@ -13,6 +14,10 @@ pub struct BlitzApplication<Rend: WindowRenderer> {
     pub windows: HashMap<WindowId, View<Rend>>,
     pub pending_windows: Vec<WindowConfig<Rend>>,
     pub proxy: EventLoopProxy<BlitzShellEvent>,
+
+    #[cfg(feature = "devtools")]
+    /// Devtools server
+    pub devtools_server: DevtoolsServer,
 }
 
 impl<Rend: WindowRenderer> BlitzApplication<Rend> {

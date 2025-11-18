@@ -21,3 +21,4 @@ tokio = { workspace = true }
 tokio-util = { workspace = true }
 bytes = { workspace = true }
 bytestring = { workspace = true }
+tokio-stream = "0.1.17"

@@ -41,6 +41,7 @@ blitz-net = { version = "0.2.0", path = "./packages/blitz-net", default-features
 blitz-paint = { version = "0.2.0", path = "./packages/blitz-paint", default-features = false }
 blitz-shell = { version = "0.2.0", path = "./packages/blitz-shell", default-features = false }
 blitz-traits = { version = "0.2.0", path = "./packages/blitz-traits", default-features = false }
+blitz-devtools-server = { version = "0.2.0", path = "./packages/blitz-devtools-server", default-features = false }
 stylo_taffy = { version = "0.2.0", path = "./packages/stylo_taffy", default-features = false }
 dioxus-native = { version = "0.7.0", path = "./packages/dioxus-native", default-features = false }
 dioxus-native-dom = { version = "0.7.0", path = "./packages/dioxus-native-dom", default-features = false }

@@ -799,6 +799,7 @@ dependencies = [
  "serde_derive",
  "serde_json",
  "tokio",
+ "tokio-stream",
  "tokio-util",
 ]
 
@@ -919,6 +920,7 @@ dependencies = [
  "android-activity",
  "anyrender",
  "arboard",
+ "blitz-devtools-server",
  "blitz-dom",
  "blitz-paint",
  "blitz-traits",

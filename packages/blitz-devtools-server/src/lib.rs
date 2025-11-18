@@ -4,34 +4,85 @@ use bytes::{Bytes, BytesMut};
 use bytestring::ByteString;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
+use std::sync::atomic::{AtomicUsize, Ordering as Ao};
 // use futures::SinkExt;
 // use tokio_stream::StreamExt;
-use std::error::Error;
-use string::String as GenericString;
-use tokio::net::{TcpListener, TcpStream};
-use tokio_util::codec::{Decoder, Encoder, Framed};
+use std::{error::Error, fmt::Display, sync::Arc};
+// use string::String as GenericString;
+use tokio::sync::mpsc::{Receiver, Sender, channel};
+use tokio::{
+    net::{
+        TcpListener, TcpStream,
+        tcp::{OwnedReadHalf, OwnedWriteHalf},
+    },
+    spawn,
+};
+use tokio_stream::StreamExt;
+use tokio_util::codec::{Decoder, Encoder, Framed, FramedRead};
 
-async fn start_devtools_server() -> Result<(), Box<dyn Error>> {
+pub struct DevtoolsServer;
+
+pub enum DevtoolsEvent {
+    NewConnection(TcpStream),
+    ClientMessage(usize, RawMozRdpClientPacket),
+    ServerMessage(usize, MozRdpServerPacket),
+}
+
+type ClientMessageCallback = Arc<dyn Fn(usize, RawMozRdpClientPacket) + Send + Sync>;
+
+async fn start_devtools_server(
+    msg_cb: ClientMessageCallback,
+) -> Result<Sender<MozRdpServerPacket>, Box<dyn Error>> {
     // Parse the arguments, bind the TCP socket we'll be listening to, spin up
     // our worker threads, and start shipping sockets to those worker threads.
     let addr = "127.0.0.1:6080";
     let server = TcpListener::bind(&addr).await?;
     println!("Listening on: {addr}");
 
+    static CONNECTION_ID_COUNTER: AtomicUsize = AtomicUsize::new(0);
+
+    let (write_sender, writer_recv) = channel::<(usize, MozRdpServerPacket)>(100);
+
     loop {
         let (stream, _) = server.accept().await?;
+        let (reader, writer) = stream.into_split();
+
+        let connection_id = CONNECTION_ID_COUNTER.fetch_add(1, Ao::Relaxed);
+        let msg_cb = Arc::clone(&msg_cb);
+
+        // Spawn stream reader task
         tokio::spawn(async move {
-            if let Err(e) = process(stream).await {
-                println!("failed to process connection; error = {e}");
+            let mut framed_reader = FramedRead::new(reader, MozRdpStreamTransport::default());
+            while let Some(msg) = framed_reader.next().await {
+                match msg {
+                    Ok(msg) => msg_cb(connection_id, msg),
+                    Err(e) => {
+                        println!("Err parsing devtools packet {:?}", e);
+                    }
+                }
+            }
+        });
+
+        // Spawn stream writer task
+        tokio::spawn(async move {
+            while let Some(msg) = writer_recv.recv().await {
+                match writer.try_write(&serde_json::to_vec(&msg).unwrap()) {
+                    Ok(request) => continue,
+                    Err(e) => {
+                        println!("Err writing devtools packet {:?}", e);
+                    }
+                }
             }
         });
     }
 }
 
-async fn process(stream: TcpStream) -> Result<(), Box<dyn Error>> {
-    let mut transport = Framed::new(stream, Http);
-
-    while let Some(request) = transport.next().await {
+async fn stream_reader(
+    reader: OwnedReadHalf,
+    msg_cb: ClientMessageCallback,
+) -> Result<(), Box<dyn Error>> {
+    let mut framed_reader = FramedRead::new(reader, MozRdpStreamTransport::default());
+    while let Some(request) = framed_reader.next().await {
         match request {
             Ok(request) => {
                 let response = respond(request).await?;
@@ -44,14 +95,34 @@ async fn process(stream: TcpStream) -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
+/// A MozRdp message sent from the server
+#[derive(Serialize)]
+struct MozRdpServerPacket {
+    from: String,
+    msg: serde_json::Value,
+}
+
+async fn stream_writer(
+    writer: OwnedWriteHalf,
+    channel: tokio::sync::mpsc::Receiver<MozRdpServerPacket>,
+) -> Result<(), Box<dyn Error>> {
+    // let mut framed_reader = FramedRead::new(reader, MozRdpStreamTransport::default());
+    while let Some(msg) = channel.recv().await {
+        writer.try_write(msg)
+    }
+
+    Ok(())
+}
+
+#[derive(Default)]
 struct MozRdpStreamTransport {
     header: Option<MozRdpHeader>,
 }
 
 impl Decoder for MozRdpStreamTransport {
-    type Item = RawMozRdpPacket;
+    type Item = RawMozRdpClientPacket;
 
-    type Error = ();
+    type Error = Box<dyn Error>;
 
     fn decode(&mut self, src: &mut BytesMut) -> Result<Option<Self::Item>, Self::Error> {
         let header = match &self.header {
@@ -101,6 +172,17 @@ impl Decoder for MozRdpStreamTransport {
         }
     }
 }
+
+#[derive(Debug)]
+struct MozRdpPacketErr;
+
+impl Display for MozRdpPacketErr {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "MozRdpPacketErr")
+    }
+}
+
+impl core::error::Error for MozRdpPacketErr {}
 
 #[derive(Clone)]
 enum MozRdpPacketKind {
@@ -155,17 +237,18 @@ impl MozRdpHeader {
 }
 
 /// A Mozilla Remote Debugging Protocol packet with unparsed data field
-enum RawMozRdpClientPacket {
+pub enum RawMozRdpClientPacket {
     Json(ByteString),
     Bulk(MozRdpClientPacket<Bytes>),
 }
 
+/// A MozRdp message sent from the client
 #[derive(Serialize, Deserialize)]
-struct MozRdpClientPacket<T> {
+pub struct MozRdpClientPacket<T> {
     #[serde(rename = "to")]
-    target_actor: String,
+    pub target_actor: String,
     #[serde(rename = "type")]
-    packet_type: String,
+    pub packet_type: String,
     #[serde(flatten)]
-    data: T,
+    pub data: T,
 }
