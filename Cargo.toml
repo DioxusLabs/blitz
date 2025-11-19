@@ -11,6 +11,7 @@ members = [
   "packages/stylo_taffy",
   "packages/dioxus-native",
   "packages/dioxus-native-dom",
+  "apps/browser",
   "apps/readme",
   "apps/bump",
   "wpt/runner",
