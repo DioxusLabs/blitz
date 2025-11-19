@@ -6,20 +6,19 @@ license.workspace = true
 publish = false
 
 [features]
-default = ["system_fonts", "gpu"]
+default = ["system_fonts", "vello"]
 system_fonts = ["blitz-dom/system_fonts"]
-gpu = ["mini-dxn/gpu"]
+vello = ["dioxus-native/vello"]
 cpu = ["cpu-pixels"]
 svg = ["blitz-paint/svg"]
-cpu-pixels = ["mini-dxn/cpu-pixels"]
-cpu-softbuffer = ["mini-dxn/cpu-softbuffer"]
-incremental = ["mini-dxn/incremental"]
-log_frame_times = ["mini-dxn/log_frame_times"]
-log_phase_times = ["mini-dxn/log_phase_times"]
+cpu-pixels = ["dioxus-native/vello-cpu-pixels"]
+cpu-softbuffer = ["dioxus-native/vello-cpu-softbuffer"]
+incremental = ["dioxus-native/incremental"]
+log_frame_times = ["dioxus-native/log-frame-times"]
+log_phase_times = ["dioxus-native/log-phase-times"]
 
 [dependencies]
-mini-dxn = { path = "../../packages/mini-dxn", default-features = false }
-dioxus = { version = "0.7", default-features = false, features = ["html", "hooks", "macro", "signals"] }
+dioxus-native = { workspace = true, default-features = false, features = ["prelude"]}
 
 # Control whether system font support is enabled
 blitz-dom = { workspace = true, default-features = false }
