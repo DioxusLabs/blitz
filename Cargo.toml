@@ -8,7 +8,6 @@ members = [
   "packages/blitz-paint",
   "packages/blitz-shell",
   "packages/blitz",
-  "packages/mini-dxn",
   "packages/stylo_taffy",
   "packages/dioxus-native",
   "packages/dioxus-native-dom",
@@ -43,7 +42,6 @@ blitz-traits = { version = "0.2.0", path = "./packages/blitz-traits", default-fe
 stylo_taffy = { version = "0.2.0", path = "./packages/stylo_taffy", default-features = false }
 dioxus-native = { version = "0.7.0", path = "./packages/dioxus-native", default-features = false }
 dioxus-native-dom = { version = "0.7.0", path = "./packages/dioxus-native-dom", default-features = false }
-mini-dxn = { path = "./packages/mini-dxn", default-features = false }
 debug_timer = { version = "0.1.2", path = "./packages/debug_timer" }
 
 # Servo dependencies
@@ -212,7 +210,6 @@ blitz-paint = { workspace = true }
 blitz-shell = { workspace = true }
 blitz-net = { workspace = true }
 blitz = { workspace = true, features = ["net"] }
-mini-dxn = { workspace = true, features = ["default"] }
 dioxus = { workspace = true }
 euclid = { workspace = true }
 reqwest = { workspace = true }

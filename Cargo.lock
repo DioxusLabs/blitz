@@ -833,7 +833,6 @@ dependencies = [
  "env_logger",
  "euclid",
  "image",
- "mini-dxn",
  "png",
  "reqwest",
  "tokio",
@@ -3941,34 +3940,6 @@ checksum = "f7c44f8e672c00fe5308fa235f821cb4198414e1c77935c1ab6948d3fd78550e"
 dependencies = [
  "mime",
  "unicase",
-]
-
-[[package]]
-name = "mini-dxn"
-version = "0.0.0"
-dependencies = [
- "anyrender",
- "anyrender_skia",
- "anyrender_vello",
- "anyrender_vello_cpu",
- "anyrender_vello_hybrid",
- "blitz-dom",
- "blitz-net",
- "blitz-paint",
- "blitz-shell",
- "blitz-traits",
- "dioxus-cli-config",
- "dioxus-core",
- "dioxus-devtools",
- "dioxus-hooks",
- "dioxus-html",
- "futures-util",
- "keyboard-types",
- "rustc-hash 1.1.0",
- "tokio",
- "tracing",
- "wgpu 26.0.1",
- "winit",
 ]
 
 [[package]]
