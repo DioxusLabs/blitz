@@ -1474,9 +1474,8 @@ version = "0.1.0"
 dependencies = [
  "blitz-dom",
  "blitz-paint",
- "dioxus",
+ "dioxus-native",
  "idna_adapter",
- "mini-dxn",
 ]
 
 [[package]]

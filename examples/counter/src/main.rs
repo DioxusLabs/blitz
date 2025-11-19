@@ -1,8 +1,8 @@
 //! Drive the renderer from Dioxus
-use dioxus::prelude::*;
+use dioxus_native::prelude::*;
 
 fn main() {
-    mini_dxn::launch(app);
+    dioxus_native::launch(app);
 }
 
 fn app() -> Element {
