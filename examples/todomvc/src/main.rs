@@ -3,7 +3,7 @@
 
 //! The typical TodoMVC app, implemented in Dioxus.
 
-use dioxus::prelude::*;
+use dioxus_native::prelude::*;
 use std::collections::HashMap;
 
 fn main() {
