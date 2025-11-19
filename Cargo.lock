@@ -2036,13 +2036,18 @@ dependencies = [
  "dioxus-asset-resolver",
  "dioxus-cli-config",
  "dioxus-core",
+ "dioxus-core-macro",
  "dioxus-devtools",
  "dioxus-document",
  "dioxus-history",
+ "dioxus-hooks",
  "dioxus-html",
  "dioxus-native-dom",
+ "dioxus-signals",
+ "dioxus-stores",
  "futures-util",
  "keyboard-types",
+ "manganis",
  "rustc-hash 1.1.0",
  "tokio",
  "tracing",
@@ -6675,7 +6680,6 @@ dependencies = [
 name = "todomvc"
 version = "0.1.0"
 dependencies = [
- "dioxus",
  "dioxus-native",
  "idna_adapter",
  "tracing-subscriber",
