@@ -16,6 +16,8 @@ fn main() {
 }
 
 fn app() -> Element {
+    let mut url = use_signal(|| String::from("https://startpage.com"));
+
     rsx!(
         body {
             title { "Blitz Browser" }
@@ -25,7 +27,14 @@ fn app() -> Element {
                 IconButton { icon: icons::FORWARDS_ICON }
                 IconButton { icon: icons::REFRESH_ICON }
                 IconButton { icon: icons::HOME_ICON }
-                input { class: "urlbar-input", "type": "text" }
+                input {
+                    class: "urlbar-input",
+                    "type": "text",
+                    value: url(),
+                    oninput: move |evt| {
+                        *url.write() = evt.value()
+                    },
+                }
                 IconButton { icon: icons::MENU_ICON }
             }
         }
