@@ -1,0 +1,40 @@
+
+* {
+    box-sizing: border-box;
+}
+
+html, body {
+    margin: 0;
+    padding: 0;
+    height: 100%;
+}
+
+.urlbar {
+    padding: 6px 6px;
+    gap: 6px;
+    background: #EEE;
+    display: flex;
+}
+
+.urlbar-input {
+    flex: 1 1 60px;
+    border: 1px solid #CCC;
+    border-radius: 4px;
+    line-height: 1;
+    padding: 4px;
+    min-width: 60px;
+}
+
+.iconbutton {
+    padding: 4px;
+    cursor: pointer;
+    border-radius: 4px;
+
+    &:hover {
+        background: #CCC;
+    }
+
+    > .urlbar-icon {
+        height: 20px;
+    }
+}
