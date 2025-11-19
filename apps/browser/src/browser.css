@@ -21,8 +21,9 @@ html, body {
     border: 1px solid #CCC;
     border-radius: 4px;
     line-height: 1;
-    padding: 4px;
+    padding: 6px;
     min-width: 60px;
+    font-size: 14px;
 }
 
 .iconbutton {
