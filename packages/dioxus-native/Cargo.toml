@@ -86,7 +86,7 @@ dioxus-hooks = { workspace = true, optional = true }
 dioxus-signals = { workspace = true, optional = true }
 dioxus-stores = { workspace = true, optional = true }
 dioxus-core-macro = { workspace = true, optional = true }
-manganis = { workspace = true, optional = true }
+manganis = { workspace = true, features = ["dioxus"], optional = true }
 
 # Windowing & Input
 winit = { workspace = true }
