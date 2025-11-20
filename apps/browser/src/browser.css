@@ -35,6 +35,10 @@ html, body {
         background: #CCC;
     }
 
+    &:active {
+        background: #BBB;
+    }
+
     > .urlbar-icon {
         height: 20px;
     }
