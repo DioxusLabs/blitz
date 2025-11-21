@@ -27,10 +27,6 @@ pub enum Resource {
     Svg(usize, ImageType, Box<usvg::Tree>),
     Css(usize, DocumentStyleSheet),
     Font(Bytes),
-    Navigation {
-        url: String,
-        document: Bytes,
-    },
     None,
 }
 pub struct CssHandler {
