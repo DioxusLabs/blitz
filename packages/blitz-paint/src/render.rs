@@ -65,9 +65,9 @@ impl BlitzDomPainter<'_> {
     ///
     /// This assumes styles are resolved and layout is complete.
     /// Make sure you do those before trying to render
-    pub fn paint_scene(&self, scene: &mut impl PaintScene) {
+    pub fn paint_scene(&self, scene: &mut impl PaintScene, initial_x: f64, initial_y: f64) {
         // Simply render the document (the root element (note that this is not the same as the root node)))
-        scene.reset();
+        // scene.reset();
         let viewport_scroll = self.dom.as_ref().viewport_scroll();
 
         let root_element = self.dom.as_ref().root_element();
@@ -113,8 +113,8 @@ impl BlitzDomPainter<'_> {
             scene,
             root_id,
             Point {
-                x: -viewport_scroll.x,
-                y: -viewport_scroll.y,
+                x: initial_x - viewport_scroll.x,
+                y: initial_y - viewport_scroll.y,
             },
         );
 
@@ -180,7 +180,12 @@ impl BlitzDomPainter<'_> {
             .element_data()
             .and_then(|e| e.raster_image_data())
             .is_some();
+        let is_sub_doc = node
+            .element_data()
+            .and_then(|el| el.sub_doc_data())
+            .is_some();
         let should_clip = is_image
+            || is_sub_doc
             || !matches!(overflow_x, Overflow::Visible)
             || !matches!(overflow_y, Overflow::Visible);
 
@@ -247,6 +252,7 @@ impl BlitzDomPainter<'_> {
             #[cfg(feature = "svg")]
             cx.draw_svg(scene);
             cx.draw_canvas(scene);
+            cx.draw_sub_document(scene);
             cx.draw_input(scene);
 
             cx.draw_text_input_text(scene, content_position);
@@ -658,6 +664,27 @@ impl ElementCx<'_> {
                 None,
                 &Rect::from_origin_size((0.0, 0.0), (width as f64, height as f64)),
             );
+        }
+    }
+
+    fn draw_sub_document(&self, scene: &mut impl PaintScene) {
+        if let Some(sub_doc) = self.element.sub_doc_data() {
+            let scale = self.scale;
+            let width = self.frame.content_box.width() as u32;
+            let height = self.frame.content_box.height() as u32;
+            let x = self.pos.x + self.frame.content_box.origin().x;
+            let y = self.pos.y + self.frame.content_box.origin().y;
+            // let transform = self.transform.then_translate(Vec2 { x, y });
+
+            let painter = BlitzDomPainter {
+                dom: &*sub_doc,
+                scale,
+                width,
+                height,
+                devtools: DevtoolSettings::default(),
+            };
+
+            painter.paint_scene(scene, x, y);
         }
     }
 

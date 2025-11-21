@@ -1,5 +1,5 @@
 //! Integration between Dioxus and Blitz
-use crate::{qual_name, trace, NodeId};
+use crate::{qual_name, trace, NodeId, SubDocumentAttr};
 use blitz_dom::{BaseDocument, DocumentMutator};
 use blitz_traits::events::DomEventKind;
 use dioxus_core::{
@@ -191,6 +191,21 @@ impl WriteMutations for MutationWriter<'_> {
                 AttributeValue::Int(val) => *val == 0,
                 AttributeValue::Float(val) => *val == 0.0,
                 _ => false,
+            }
+        }
+
+        if local_name == "__webview_document" {
+            match value {
+                AttributeValue::Any(sub_doc_attr) => {
+                    if let Some(sub_doc_attr) =
+                        sub_doc_attr.as_any().downcast_ref::<SubDocumentAttr>()
+                    {
+                        if let Some(sub_document) = sub_doc_attr.take_document() {
+                            self.docm.set_sub_document(node_id, sub_document as _);
+                        }
+                    }
+                }
+                _ => self.docm.remove_sub_document(node_id),
             }
         }
 

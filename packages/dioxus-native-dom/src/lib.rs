@@ -12,8 +12,10 @@
 mod dioxus_document;
 mod events;
 mod mutation_writer;
+mod sub_document;
 pub use blitz_dom::DocumentConfig;
 pub use dioxus_document::DioxusDocument;
+pub use sub_document::SubDocumentAttr;
 
 use blitz_dom::{ns, LocalName, Namespace, QualName};
 type NodeId = usize;
