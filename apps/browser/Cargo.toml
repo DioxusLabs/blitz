@@ -21,5 +21,9 @@ tracing = ["dioxus-native/tracing", "dep:tracing-subscriber"]
 hot-reload = ["dioxus-native/hot-reload"]
 
 [dependencies]
-dioxus-native = { workspace = true, features = ["svg", "system-fonts", "prelude"] }
+dioxus-native = { workspace = true, features = ["svg", "system-fonts", "net", "prelude"] }
+blitz-traits = { workspace = true }
+blitz-dom = { workspace = true }
+blitz-net = { workspace = true }
+blitz-html = { workspace = true }
 tracing-subscriber = { workspace = true, optional = true}

@@ -8,8 +8,7 @@ use winit::event_loop::EventLoopProxy;
 
 pub struct DioxusNativeNetProvider {
     callback: Arc<dyn NetCallback<Resource> + 'static>,
-    #[cfg(feature = "net")]
-    inner_net_provider: Arc<dyn NetProvider<Resource> + 'static>,
+    inner_net_provider: Option<Arc<dyn NetProvider<Resource> + 'static>>,
 }
 impl DioxusNativeNetProvider {
     pub fn shared(proxy: EventLoopProxy<BlitzShellEvent>) -> Arc<dyn NetProvider<Resource>> {
@@ -20,13 +19,29 @@ impl DioxusNativeNetProvider {
         let net_callback = BlitzShellNetCallback::shared(proxy);
 
         #[cfg(feature = "net")]
-        let net_provider = blitz_net::Provider::shared(net_callback.clone());
+        let inner_net_provider = Some(blitz_net::Provider::shared(net_callback.clone()));
+        #[cfg(not(feature = "net"))]
+        let inner_net_provider = None;
 
         Self {
             callback: net_callback,
-            #[cfg(feature = "net")]
-            inner_net_provider: net_provider,
+            inner_net_provider,
         }
+    }
+
+    pub fn with_inner(
+        proxy: EventLoopProxy<BlitzShellEvent>,
+        inner: Arc<dyn NetProvider<Resource>>,
+    ) -> Self {
+        let net_callback = BlitzShellNetCallback::shared(proxy);
+        Self {
+            callback: net_callback,
+            inner_net_provider: Some(inner),
+        }
+    }
+
+    pub fn inner(&self) -> Option<&Arc<dyn NetProvider<Resource>>> {
+        self.inner_net_provider.as_ref()
     }
 }
 
@@ -50,11 +65,12 @@ impl NetProvider<Resource> for DioxusNativeNetProvider {
                 }
             }
         } else {
-            #[cfg(feature = "net")]
-            self.inner_net_provider.fetch(doc_id, request, handler);
-
-            #[cfg(all(not(feature = "net"), feature = "tracing"))]
-            tracing::warn!("net feature not enabled, cannot fetch {request:#?}");
+            if let Some(inner) = &self.inner_net_provider {
+                inner.fetch(doc_id, request, handler);
+            } else {
+                #[cfg(feature = "tracing")]
+                tracing::warn!("net feature not enabled, cannot fetch {request:#?}");
+            }
         }
     }
 }

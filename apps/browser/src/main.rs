@@ -3,9 +3,16 @@
 
 //! A web browser with UI powered by Dioxus Native and content rendering powered by Blitz
 
-mod icons;
+use std::future::Future;
+use std::sync::Mutex;
+use std::sync::{Arc, atomic::AtomicUsize, atomic::Ordering as Ao};
+
 use dioxus_native::prelude::*;
 
+
+type StdNetProvider = blitz_net::Provider<blitz_dom::net::Resource>;
+
+mod icons;
 use icons::IconButton;
 
 fn main() {
@@ -16,7 +23,10 @@ fn main() {
 }
 
 fn app() -> Element {
-    let mut url = use_signal(|| String::from("https://startpage.com"));
+    let mut url_input_value = use_signal(|| String::from("https://startpage.com"));
+    let mut url: Signal<Option<String>> = use_signal(|| None);
+
+    let net_provider = use_context::<Arc<StdNetProvider>>();
 
     rsx!(
         body {
@@ -30,13 +40,24 @@ fn app() -> Element {
                 input {
                     class: "urlbar-input",
                     "type": "text",
-                    value: url(),
+                    name: "url",
+                    value: url_input_value(),
+                    onkeydown: move |evt| {
+                        if evt.key() == Key::Enter {
+                            evt.prevent_default();
+                            *url.write() = Some(url_input_value());
+                        }
+                    },
                     oninput: move |evt| {
-                        *url.write() = evt.value()
+                        *url_input_value.write() = evt.value()
                     },
                 }
                 IconButton { icon: icons::MENU_ICON }
             }
         }
     )
+}
+
+fn load_page() {
+    // TODO: load document
 }

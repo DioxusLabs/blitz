@@ -18,6 +18,10 @@ mod link_handler;
 #[cfg(feature = "prelude")]
 pub mod prelude;
 
+#[cfg(feature = "net")]
+use blitz_dom::net::Resource;
+#[cfg(feature = "net")]
+use blitz_traits::net::NetProvider;
 #[doc(inline)]
 pub use dioxus_native_dom::*;
 
@@ -122,10 +126,33 @@ pub fn launch_cfg_with_props<P: Clone + 'static, M: 'static>(
         vdom.insert_any_root_context(context());
     }
 
-    let net_provider = Some(DioxusNativeNetProvider::shared(event_loop.create_proxy()));
+    #[cfg(feature = "net")]
+    let net_provider = {
+        use blitz_shell::BlitzShellNetCallback;
+
+        let proxy = event_loop.create_proxy();
+        let net_callback = BlitzShellNetCallback::shared(proxy.clone());
+
+        let inner_net_provider = Arc::new(blitz_net::Provider::new(net_callback.clone()));
+        vdom.provide_root_context(Arc::clone(&inner_net_provider));
+
+        Arc::new(DioxusNativeNetProvider::with_inner(
+            proxy,
+            inner_net_provider as _,
+        )) as Arc<dyn NetProvider<Resource>>
+    };
+
+    #[cfg(not(feature = "net"))]
+    let net_provider = DioxusNativeNetProvider::shared(event_loop.create_proxy());
+
+    vdom.provide_root_context(Arc::clone(&net_provider));
 
     #[cfg(feature = "html")]
-    let html_parser_provider = Some(Arc::new(blitz_html::HtmlProvider) as _);
+    let html_parser_provider = {
+        let html_parser = Arc::new(blitz_html::HtmlProvider) as _;
+        vdom.provide_root_context(Arc::clone(&html_parser));
+        Some(html_parser)
+    };
     #[cfg(not(feature = "html"))]
     let html_parser_provider = None;
 
@@ -135,7 +162,7 @@ pub fn launch_cfg_with_props<P: Clone + 'static, M: 'static>(
     let doc = DioxusDocument::new(
         vdom,
         DocumentConfig {
-            net_provider,
+            net_provider: Some(net_provider),
             html_parser_provider,
             navigation_provider,
             ..Default::default()
