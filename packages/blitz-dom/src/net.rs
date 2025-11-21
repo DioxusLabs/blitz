@@ -132,7 +132,7 @@ impl NetHandler for ResourceHandler<StylesheetHandler> {
         fetch_font_face(
             self.tx.clone(),
             self.doc_id,
-            self.node_id.unwrap(),
+            self.node_id,
             &sheet,
             &self.data.net_provider,
             &self.shell_provider,
@@ -240,7 +240,7 @@ impl NetHandler for ResourceHandler<NestedStylesheetHandler> {
         fetch_font_face(
             self.tx.clone(),
             self.doc_id,
-            self.node_id.unwrap(),
+            self.node_id,
             &sheet,
             &self.data.net_provider,
             &self.shell_provider,
@@ -346,7 +346,7 @@ impl FontFaceHandler {
 fn fetch_font_face(
     tx: Sender<DocumentEvent>,
     doc_id: usize,
-    node_id: usize,
+    node_id: Option<usize>,
     sheet: &Stylesheet,
     network_provider: &Arc<dyn NetProvider<Resource>>,
     shell_provider: &Arc<dyn ShellProvider>,
@@ -405,7 +405,7 @@ fn fetch_font_face(
                 ResourceHandler::boxed(
                     tx.clone(),
                     doc_id,
-                    Some(node_id),
+                    node_id,
                     shell_provider.clone(),
                     FontFaceHandler(format),
                 ),
