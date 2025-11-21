@@ -9,6 +9,7 @@ use std::rc::Rc;
 use std::sync::Mutex;
 use std::sync::{Arc, atomic::AtomicUsize, atomic::Ordering as Ao};
 
+use blitz_traits::shell::ShellProvider;
 use dioxus_core::Task;
 use dioxus_native::prelude::dioxus_core::{AttributeValue, IntoAttributeValue};
 use dioxus_native::{SubDocumentAttr, prelude::*};
@@ -139,6 +140,7 @@ impl DocumentLoader {
                         net_provider: Some(net_provider as _), // FIXME
                         navigation_provider: None,
                         shell_provider: None,
+                        shell_provider: Some(consume_context::<Arc<dyn ShellProvider>>()),
                         html_parser_provider: Some(Arc::new(HtmlProvider)),
                         font_ctx: None,
                     };

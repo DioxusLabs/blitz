@@ -8,7 +8,7 @@ pub struct ClipboardError;
 
 /// Abstraction over windowing / operating system ("shell") functionality that allows a Blitz document
 /// to access that functionality without depending on a specific shell environment.
-pub trait ShellProvider {
+pub trait ShellProvider: Send + Sync + 'static {
     fn request_redraw(&self) {}
     fn set_cursor(&self, icon: CursorIcon) {
         let _ = icon;

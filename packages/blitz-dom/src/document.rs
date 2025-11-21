@@ -617,6 +617,7 @@ impl BaseDocument {
                                 self.tx.clone(),
                                 self.id,
                                 Some(node_id),
+                                self.shell_provider.clone(),
                                 StylesheetHandler {
                                     source_url: resolved_href,
                                     guard: self.guard.clone(),
@@ -660,6 +661,7 @@ impl BaseDocument {
                 tx: self.tx.clone(),
                 doc_id: self.id,
                 net_provider: self.net_provider.clone(),
+                shell_provider: self.shell_provider.clone(),
             }),
             None,
             QuirksMode::NoQuirks,
