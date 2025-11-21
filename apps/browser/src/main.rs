@@ -27,7 +27,9 @@ fn main() {
 }
 
 fn app() -> Element {
-    let mut url_input_value = use_signal(|| String::from("https://wikipedia.org"));
+    let home_url = use_hook(|| String::from("https://wikipedia.org"));
+
+    let mut url_input_value = use_signal(|| home_url.clone());
     let history: SyncSignal<Vec<String>> = use_signal_sync(|| Vec::new());
     let mut url: SyncSignal<Option<String>> = use_signal_sync(|| Some(url_input_value()));
 
@@ -35,7 +37,7 @@ fn app() -> Element {
     let loader = use_hook(|| DocumentLoader::new(net_provider, url.clone(), history.clone()));
     let content_doc = loader.doc.clone();
 
-    use_effect(move || {
+    let refresh = use_callback(move |_| {
         if let Some(url_s) = url() {
             println!("Loading {}...", url_s);
             if let Ok(url) = Url::parse(&url_s) {
@@ -45,10 +47,21 @@ fn app() -> Element {
         }
     });
 
+    use_effect(move || refresh(()));
+
     let back_action = use_callback(move |_| {
         if let Some(prev) = history.write_unchecked().pop() {
             *url.write_unchecked() = Some(prev);
         }
+    });
+
+    let refresh_action = refresh;
+
+    let home_action = use_callback(move |_| {
+        if let Some(prev) = url.read().as_ref() {
+            history.write_unchecked().push(prev.clone());
+        }
+        *url.write_unchecked() = Some(home_url.clone())
     });
 
     rsx!(
@@ -61,8 +74,8 @@ fn app() -> Element {
             div { class: "urlbar",
                 IconButton { icon: icons::BACK_ICON, action: back_action }
                 IconButton { icon: icons::FORWARDS_ICON }
-                IconButton { icon: icons::REFRESH_ICON }
-                IconButton { icon: icons::HOME_ICON }
+                IconButton { icon: icons::REFRESH_ICON, action: refresh_action }
+                IconButton { icon: icons::HOME_ICON, action: home_action }
                 input {
                     class: "urlbar-input",
                     "type": "text",
