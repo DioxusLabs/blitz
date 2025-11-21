@@ -1108,6 +1108,18 @@ impl BaseDocument {
         let scroll_width = node.final_layout.scroll_width() as f64;
         let scroll_height = node.final_layout.scroll_height() as f64;
 
+        // Handle sub document case
+        if let Some(sub_doc) = node.subdoc_mut() {
+            let has_changed = if let Some(hover_node_id) = sub_doc.get_hover_node_id() {
+                sub_doc.scroll_node_by_has_changed(hover_node_id, x, y)
+            } else {
+                sub_doc.scroll_viewport_by_has_changed(x, y)
+            };
+
+            // TODO: propagate remaining scroll to parent
+            return has_changed;
+        }
+
         // If we're past our scroll bounds, transfer remainder of scrolling to parent/viewport
         if !can_x_scroll {
             bubble_x = x

@@ -383,7 +383,7 @@ impl<Rend: WindowRenderer> View<Rend> {
                 self.request_redraw();
             }
             WindowEvent::MouseWheel { delta, .. } => {
-                let (scroll_x, scroll_y)= match delta {
+                let (scroll_x, scroll_y) = match delta {
                     winit::event::MouseScrollDelta::LineDelta(x, y) => (x as f64 * 20.0, y as f64 * 20.0),
                     winit::event::MouseScrollDelta::PixelDelta(offsets) => (offsets.x, offsets.y)
                 };

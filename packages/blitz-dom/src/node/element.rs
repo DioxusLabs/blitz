@@ -208,6 +208,13 @@ impl ElementData {
         }
     }
 
+    pub fn sub_doc_data_mut(&mut self) -> Option<&mut Box<dyn Document>> {
+        match &mut self.special_data {
+            SpecialElementData::SubDocument(data) => Some(data),
+            _ => None,
+        }
+    }
+
     #[cfg(feature = "svg")]
     pub fn svg_data(&self) -> Option<&usvg::Tree> {
         match self.image_data()? {

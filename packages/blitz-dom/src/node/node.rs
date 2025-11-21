@@ -28,6 +28,7 @@ use taffy::{
     prelude::{Layout, Style},
 };
 
+use crate::Document;
 use crate::layout::damage::HoistedPaintChildren;
 
 use super::{Attribute, ElementData};
@@ -346,6 +347,14 @@ impl Node {
 
     pub fn is_active(&self) -> bool {
         self.element_state.contains(ElementState::ACTIVE)
+    }
+
+    pub fn subdoc(&self) -> Option<&Box<dyn Document>> {
+        self.element_data().and_then(|el| el.sub_doc_data())
+    }
+
+    pub fn subdoc_mut(&mut self) -> Option<&mut Box<dyn Document>> {
+        self.element_data_mut().and_then(|el| el.sub_doc_data_mut())
     }
 }
 
