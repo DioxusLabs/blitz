@@ -200,7 +200,8 @@ impl WriteMutations for MutationWriter<'_> {
                     if let Some(sub_doc_attr) =
                         sub_doc_attr.as_any().downcast_ref::<SubDocumentAttr>()
                     {
-                        if let Some(sub_document) = sub_doc_attr.take_document() {
+                        if let Some(mut sub_document) = sub_doc_attr.take_document() {
+                            sub_document.set_shell_provider(self.docm.doc.shell_provider.clone());
                             self.docm.set_sub_document(node_id, sub_document as _);
                         }
                     }
