@@ -84,9 +84,7 @@ impl BaseDocument {
         for &node_id in &self.sub_document_nodes {
             let node = &mut self.nodes[node_id];
             let size = node.final_layout.size;
-            if let SpecialElementData::SubDocument(sub_doc) =
-                &mut node.element_data_mut().unwrap().special_data
-            {
+            if let Some(sub_doc) = node.subdoc_mut() {
                 // Set viewport
                 // viewport_mut handles change detection. So we just unconditionally set the values;
                 let mut sub_viewport = sub_doc.viewport_mut();
