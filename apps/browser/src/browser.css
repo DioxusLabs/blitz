@@ -24,6 +24,11 @@ html, body {
     padding: 6px;
     min-width: 60px;
     font-size: 14px;
+
+    &:focus {
+        border-color: #5E9ED6;
+        outline: 1px solid #5E9ED6;
+    }
 }
 
 .iconbutton {
