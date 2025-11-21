@@ -23,7 +23,7 @@ hot-reload = ["dioxus-native/hot-reload"]
 [dependencies]
 dioxus-native = { workspace = true, features = ["svg", "system-fonts", "net", "prelude"] }
 blitz-traits = { workspace = true }
-blitz-dom = { workspace = true }
+blitz-dom = { workspace = true, features = ["woff-rust"]}
 blitz-net = { workspace = true }
 blitz-html = { workspace = true }
 tracing-subscriber = { workspace = true, optional = true}
