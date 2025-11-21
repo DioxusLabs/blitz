@@ -3,20 +3,16 @@
 
 //! A web browser with UI powered by Dioxus Native and content rendering powered by Blitz
 
-use std::cell::RefCell;
-use std::future::Future;
-use std::rc::Rc;
-use std::sync::Mutex;
 use std::sync::{Arc, atomic::AtomicUsize, atomic::Ordering as Ao};
 
 use blitz_traits::shell::ShellProvider;
 use dioxus_core::Task;
-use dioxus_native::prelude::dioxus_core::{AttributeValue, IntoAttributeValue};
 use dioxus_native::{SubDocumentAttr, prelude::*};
 
-use blitz_dom::{BaseDocument, DocumentConfig};
+use blitz_dom::DocumentConfig;
 use blitz_html::{HtmlDocument, HtmlProvider};
-use blitz_traits::net::{Request, Url};
+use blitz_traits::navigation::{NavigationOptions, NavigationProvider};
+use blitz_traits::net::{Method, Request, Url};
 
 type StdNetProvider = blitz_net::Provider<blitz_dom::net::Resource>;
 
@@ -32,25 +28,28 @@ fn main() {
 
 fn app() -> Element {
     let mut url_input_value = use_signal(|| String::from("https://nicoburns.com"));
-    let mut url: Signal<Option<String>> = use_signal(|| Some(url_input_value()));
+    let history: SyncSignal<Vec<String>> = use_signal_sync(|| Vec::new());
+    let mut url: SyncSignal<Option<String>> = use_signal_sync(|| Some(url_input_value()));
 
     let net_provider = use_context::<Arc<StdNetProvider>>();
-    let loader = use_hook(|| DocumentLoader::new(net_provider));
+    let loader = use_hook(|| DocumentLoader::new(net_provider, url.clone(), history.clone()));
     let content_doc = loader.doc.clone();
 
     use_effect(move || {
-        if let Some(url) = url() {
-            println!("Loading {}...", url);
-            if let Ok(url) = Url::parse(&url) {
+        if let Some(url_s) = url() {
+            println!("Loading {}...", url_s);
+            if let Ok(url) = Url::parse(&url_s) {
+                *url_input_value.write_unchecked() = url_s;
                 loader.load_document(url);
             }
         }
     });
 
-    // use_effect(move || {
-    //     let doc = content_doc();
-    //     println!("NEW CONTENT DOC {}", doc.is_some());
-    // });
+    let back_action = use_callback(move |_| {
+        if let Some(prev) = history.write_unchecked().pop() {
+            *url.write_unchecked() = Some(prev);
+        }
+    });
 
     rsx!(
         div {
@@ -60,7 +59,7 @@ fn app() -> Element {
 
             // Toolbar
             div { class: "urlbar",
-                IconButton { icon: icons::BACK_ICON }
+                IconButton { icon: icons::BACK_ICON, action: back_action }
                 IconButton { icon: icons::FORWARDS_ICON }
                 IconButton { icon: icons::REFRESH_ICON }
                 IconButton { icon: icons::HOME_ICON }
@@ -91,6 +90,23 @@ fn app() -> Element {
     )
 }
 
+struct BrowserNavProvider {
+    url_signal: SyncSignal<Option<String>>,
+    history: SyncSignal<Vec<String>>,
+}
+
+impl NavigationProvider for BrowserNavProvider {
+    fn navigate_to(&self, options: NavigationOptions) {
+        if options.method == Method::GET {
+            if let Some(prev) = self.url_signal.read().as_ref() {
+                self.history.write_unchecked().push(prev.clone());
+            }
+            let url = options.url.to_string();
+            *self.url_signal.write_unchecked() = Some(url.clone());
+        }
+    }
+}
+
 enum DocumentLoaderStatus {
     Loading { request_id: usize, task: Task },
     Idle,
@@ -101,6 +117,8 @@ struct DocumentLoader {
     status: Signal<DocumentLoaderStatus>,
     request_id_counter: AtomicUsize,
     doc: Signal<Option<SubDocumentAttr>>,
+    url_signal: SyncSignal<Option<String>>,
+    history: SyncSignal<Vec<String>>,
 }
 
 impl Clone for DocumentLoader {
@@ -110,17 +128,25 @@ impl Clone for DocumentLoader {
             status: self.status.clone(),
             request_id_counter: AtomicUsize::new(self.request_id_counter.load(Ao::SeqCst)),
             doc: self.doc.clone(),
+            url_signal: self.url_signal.clone(),
+            history: self.history.clone(),
         }
     }
 }
 
 impl DocumentLoader {
-    fn new(net_provider: Arc<StdNetProvider>) -> Self {
+    fn new(
+        net_provider: Arc<StdNetProvider>,
+        url_signal: SyncSignal<Option<String>>,
+        history: SyncSignal<Vec<String>>,
+    ) -> Self {
         Self {
             net_provider,
             status: Signal::new(DocumentLoaderStatus::Idle),
             request_id_counter: AtomicUsize::new(0),
             doc: Signal::new(None),
+            url_signal,
+            history,
         }
     }
 
@@ -128,6 +154,8 @@ impl DocumentLoader {
         let request_id = self.request_id_counter.fetch_add(1, Ao::Relaxed);
         let net_provider = Arc::clone(&self.net_provider);
         let doc_signal = self.doc.clone();
+        let url_signal = self.url_signal.clone();
+        let history = self.history.clone();
         let task = spawn(async move {
             let request = net_provider.fetch_async(Request::get(url));
             match request.await {
@@ -138,8 +166,10 @@ impl DocumentLoader {
                         base_url: Some(resolved_url),
                         ua_stylesheets: None,
                         net_provider: Some(net_provider as _), // FIXME
-                        navigation_provider: None,
-                        shell_provider: None,
+                        navigation_provider: Some(Arc::new(BrowserNavProvider {
+                            url_signal,
+                            history,
+                        })),
                         shell_provider: Some(consume_context::<Arc<dyn ShellProvider>>()),
                         html_parser_provider: Some(Arc::new(HtmlProvider)),
                         font_ctx: None,
