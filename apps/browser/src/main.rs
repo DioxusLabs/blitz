@@ -27,7 +27,7 @@ fn main() {
 }
 
 fn app() -> Element {
-    let mut url_input_value = use_signal(|| String::from("https://nicoburns.com"));
+    let mut url_input_value = use_signal(|| String::from("https://wikipedia.org"));
     let history: SyncSignal<Vec<String>> = use_signal_sync(|| Vec::new());
     let mut url: SyncSignal<Option<String>> = use_signal_sync(|| Some(url_input_value()));
 
