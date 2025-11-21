@@ -20,10 +20,16 @@ pub(crate) fn handle_dom_event<F: FnMut(DomEvent)>(
     let target_node_id = event.target;
 
     // Handle forwarding event sub-document
-    if let Some(sub_doc) = doc.nodes[target_node_id].subdoc_mut() {
+    let node = &mut doc.nodes[target_node_id];
+    let pos = node.absolute_position(0.0, 0.0);
+    if let Some(sub_doc) = node.subdoc_mut() {
         // TODO: eliminate clone
         let ui_event = match event.data.clone() {
-            DomEventData::MouseMove(data) => Some(UiEvent::MouseMove(data)),
+            DomEventData::MouseMove(mut mouse_event) => {
+                mouse_event.x -= pos.x;
+                mouse_event.y -= pos.y;
+                Some(UiEvent::MouseMove(mouse_event))
+            }
             DomEventData::MouseDown(data) => Some(UiEvent::MouseDown(data)),
             DomEventData::MouseUp(data) => Some(UiEvent::MouseUp(data)),
             DomEventData::KeyDown(data) => Some(UiEvent::KeyDown(data)),

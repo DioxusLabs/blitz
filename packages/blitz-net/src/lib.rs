@@ -76,13 +76,11 @@ impl<D: 'static> Provider<D> {
 
     async fn fetch_with_handler(
         client: Client,
-        doc_id: usize,
         request: Request,
-        handler: BoxedHandler<D>,
-        res_callback: SharedCallback<D>,
+        handler: BoxedHandler,
     ) -> Result<(), ProviderError> {
-        let (_response_url, bytes) = Self::fetch_inner(client, request).await?;
-        handler.bytes(doc_id, bytes, res_callback);
+        let (response_url, bytes) = Self::fetch_inner(client, request).await?;
+        handler.bytes(response_url, bytes);
         Ok(())
     }
 
@@ -129,9 +127,8 @@ impl<D: 'static> Provider<D> {
 }
 
 impl<D: 'static> NetProvider<D> for Provider<D> {
-    fn fetch(&self, doc_id: usize, request: Request, handler: BoxedHandler<D>) {
+    fn fetch(&self, _doc_id: usize, request: Request, handler: BoxedHandler) {
         let client = self.client.clone();
-        let callback = Arc::clone(&self.resource_callback);
 
         #[cfg(feature = "debug_log")]
         println!("Fetching {}", &request.url);
@@ -140,7 +137,7 @@ impl<D: 'static> NetProvider<D> for Provider<D> {
             #[cfg(feature = "debug_log")]
             let url = request.url.to_string();
 
-            let _res = Self::fetch_with_handler(client, doc_id, request, handler, callback).await;
+            let _res = Self::fetch_with_handler(client, request, handler).await;
 
             #[cfg(feature = "debug_log")]
             if let Err(e) = _res {

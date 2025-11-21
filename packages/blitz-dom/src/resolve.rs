@@ -30,7 +30,7 @@ use crate::{
         },
         damage::{ALL_DAMAGE, CONSTRUCT_BOX, CONSTRUCT_DESCENDENT, CONSTRUCT_FC},
     },
-    node::{SpecialElementData, TextBrush},
+    node::TextBrush,
 };
 
 impl BaseDocument {
@@ -43,6 +43,9 @@ impl BaseDocument {
             println!("No DOM - not resolving");
             return;
         }
+
+        // Process messages that have been sent to our message channel (e.g. loaded resource)
+        self.handle_messages();
 
         let root_node_id = self.root_element().id;
         debug_timer!(timer, feature = "log_phase_times");

@@ -4,7 +4,7 @@ use std::ops::{Deref, DerefMut};
 
 use crate::document::make_device;
 use crate::layout::damage::ALL_DAMAGE;
-use crate::net::{CssHandler, ImageHandler};
+use crate::net::{ImageHandler, ResourceHandler, StylesheetHandler};
 use crate::node::{CanvasData, NodeFlags, SpecialElementData};
 use crate::util::ImageType;
 use crate::{
@@ -669,12 +669,16 @@ impl<'doc> DocumentMutator<'doc> {
         self.doc.net_provider.fetch(
             self.doc.id(),
             Request::get(url.clone()),
-            Box::new(CssHandler {
-                node: target_id,
-                source_url: url,
-                guard: self.doc.guard.clone(),
-                provider: self.doc.net_provider.clone(),
-            }),
+            ResourceHandler::boxed(
+                self.doc.tx.clone(),
+                self.doc.id(),
+                Some(node.id),
+                StylesheetHandler {
+                    source_url: url,
+                    guard: self.doc.guard.clone(),
+                    net_provider: self.doc.net_provider.clone(),
+                },
+            ),
         );
     }
 
@@ -704,7 +708,12 @@ impl<'doc> DocumentMutator<'doc> {
                 self.doc.net_provider.fetch(
                     self.doc.id(),
                     Request::get(src),
-                    Box::new(ImageHandler::new(target_id, ImageType::Image)),
+                    ResourceHandler::boxed(
+                        self.doc.tx.clone(),
+                        self.doc.id(),
+                        Some(target_id),
+                        ImageHandler::new(ImageType::Image),
+                    ),
                 );
             }
         }

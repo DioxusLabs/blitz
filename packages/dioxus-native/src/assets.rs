@@ -7,7 +7,6 @@ use blitz_traits::net::{NetCallback, NetProvider};
 use winit::event_loop::EventLoopProxy;
 
 pub struct DioxusNativeNetProvider {
-    callback: Arc<dyn NetCallback<Resource> + 'static>,
     inner_net_provider: Option<Arc<dyn NetProvider<Resource> + 'static>>,
 }
 impl DioxusNativeNetProvider {
@@ -23,19 +22,14 @@ impl DioxusNativeNetProvider {
         #[cfg(not(feature = "net"))]
         let inner_net_provider = None;
 
-        Self {
-            callback: net_callback,
-            inner_net_provider,
-        }
+        Self { inner_net_provider }
     }
 
     pub fn with_inner(
         proxy: EventLoopProxy<BlitzShellEvent>,
         inner: Arc<dyn NetProvider<Resource>>,
     ) -> Self {
-        let net_callback = BlitzShellNetCallback::shared(proxy);
         Self {
-            callback: net_callback,
             inner_net_provider: Some(inner),
         }
     }
@@ -50,14 +44,14 @@ impl NetProvider<Resource> for DioxusNativeNetProvider {
         &self,
         doc_id: usize,
         request: blitz_traits::net::Request,
-        handler: blitz_traits::net::BoxedHandler<Resource>,
+        handler: blitz_traits::net::BoxedHandler,
     ) {
         if request.url.scheme() == "dioxus" {
             match dioxus_asset_resolver::native::serve_asset(request.url.path()) {
                 Ok(res) => {
                     #[cfg(feature = "tracing")]
                     tracing::trace!("fetching asset from file system success {request:#?}");
-                    handler.bytes(doc_id, res.into_body().into(), self.callback.clone())
+                    handler.bytes(request.url.to_string(), res.into_body().into())
                 }
                 Err(_) => {
                     #[cfg(feature = "tracing")]
