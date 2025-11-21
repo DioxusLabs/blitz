@@ -18,7 +18,8 @@ use style::{
     values::{CssUrl, SourceLocation},
 };
 
-use blitz_traits::net::{Bytes, NetHandler, Request, SharedProvider};
+use blitz_traits::net::{Bytes, NetHandler, NetProvider, Request};
+use blitz_traits::shell::ShellProvider;
 
 use url::Url;
 
@@ -39,6 +40,7 @@ pub(crate) struct ResourceHandler<T: Send + Sync + 'static> {
     request_id: usize,
     node_id: Option<usize>,
     tx: Sender<DocumentEvent>,
+    shell_provider: Arc<dyn ShellProvider>,
     data: T,
 }
 
@@ -47,6 +49,7 @@ impl<T: Send + Sync + 'static> ResourceHandler<T> {
         tx: Sender<DocumentEvent>,
         doc_id: usize,
         node_id: Option<usize>,
+        shell_provider: Arc<dyn ShellProvider>,
         data: T,
     ) -> Self {
         static REQUEST_ID_COUNTER: AtomicUsize = AtomicUsize::new(0);
@@ -55,6 +58,7 @@ impl<T: Send + Sync + 'static> ResourceHandler<T> {
             doc_id,
             node_id,
             tx,
+            shell_provider,
             data,
         }
     }
@@ -63,22 +67,14 @@ impl<T: Send + Sync + 'static> ResourceHandler<T> {
         tx: Sender<DocumentEvent>,
         doc_id: usize,
         node_id: Option<usize>,
+        shell_provider: Arc<dyn ShellProvider>,
         data: T,
     ) -> Box<dyn NetHandler>
     where
         ResourceHandler<T>: NetHandler,
     {
-        Box::new(Self::new(tx, doc_id, node_id, data)) as _
+        Box::new(Self::new(tx, doc_id, node_id, shell_provider, data)) as _
     }
-
-    // fn handle(self: Box<Self>, resolved_url: String, bytes: Bytes) -> ResourceLoadResponse {
-    //     ResourceLoadResponse {
-    //         request_id: self.request_id,
-    //         node_id: self.node_id,
-    //         resolved_url: Some(resolved_url),
-    //         result: self.data.parse(bytes, self.doc_id),
-    //     }
-    // }
 
     fn respond(self: Box<Self>, resolved_url: String, result: Result<Resource, String>) {
         let response = ResourceLoadResponse {
@@ -88,14 +84,9 @@ impl<T: Send + Sync + 'static> ResourceHandler<T> {
             result,
         };
         let _ = self.tx.send(DocumentEvent::ResourceLoad(response));
+        self.shell_provider.request_redraw();
     }
 }
-
-// impl<T: ParseResource> NetHandler for ResourceHandler<T> {
-//     fn bytes(self: Box<Self>, resolved_url: String, bytes: Bytes) {
-//         self.tx.send(DocumentEvent::ResourceLoad(self.handle(resolved_url, bytes)));
-//     }
-// }
 
 #[allow(unused)]
 pub struct ResourceLoadResponse {
@@ -108,7 +99,7 @@ pub struct ResourceLoadResponse {
 pub struct StylesheetHandler {
     pub source_url: Url,
     pub guard: SharedRwLock,
-    pub net_provider: SharedProvider<Resource>,
+    pub net_provider: Arc<dyn NetProvider<Resource>>,
 }
 
 impl NetHandler for ResourceHandler<StylesheetHandler> {
@@ -130,6 +121,7 @@ impl NetHandler for ResourceHandler<StylesheetHandler> {
                 tx: self.tx.clone(),
                 doc_id: self.doc_id,
                 net_provider: self.data.net_provider.clone(),
+                shell_provider: self.shell_provider.clone(),
             }),
             None, // error_reporter
             QuirksMode::NoQuirks,
@@ -143,6 +135,7 @@ impl NetHandler for ResourceHandler<StylesheetHandler> {
             self.node_id.unwrap(),
             &sheet,
             &self.data.net_provider,
+            &self.shell_provider,
             &self.data.guard.read(),
         );
 
@@ -157,7 +150,8 @@ impl NetHandler for ResourceHandler<StylesheetHandler> {
 pub(crate) struct StylesheetLoader {
     pub(crate) tx: Sender<DocumentEvent>,
     pub(crate) doc_id: usize,
-    pub(crate) net_provider: SharedProvider<Resource>,
+    pub(crate) net_provider: Arc<dyn NetProvider<Resource>>,
+    pub(crate) shell_provider: Arc<dyn ShellProvider>,
 }
 impl ServoStylesheetLoader for StylesheetLoader {
     fn request_stylesheet(
@@ -196,13 +190,14 @@ impl ServoStylesheetLoader for StylesheetLoader {
                 self.tx.clone(),
                 self.doc_id,
                 None, // node_id
+                self.shell_provider.clone(),
                 NestedStylesheetHandler {
                     url: url.clone(),
                     loader: self.clone(),
                     lock: lock.clone(),
                     media,
                     import_rule: import.clone(),
-                    provider: self.net_provider.clone(),
+                    net_provider: self.net_provider.clone(),
                 },
             ),
         );
@@ -217,7 +212,7 @@ struct NestedStylesheetHandler {
     url: ServoArc<Url>,
     media: ServoArc<Locked<MediaList>>,
     import_rule: ServoArc<Locked<ImportRule>>,
-    provider: SharedProvider<Resource>,
+    net_provider: Arc<dyn NetProvider<Resource>>,
 }
 
 impl NetHandler for ResourceHandler<NestedStylesheetHandler> {
@@ -247,7 +242,8 @@ impl NetHandler for ResourceHandler<NestedStylesheetHandler> {
             self.doc_id,
             self.node_id.unwrap(),
             &sheet,
-            &self.data.provider,
+            &self.data.net_provider,
+            &self.shell_provider,
             &self.data.lock.read(),
         );
 
@@ -352,7 +348,8 @@ fn fetch_font_face(
     doc_id: usize,
     node_id: usize,
     sheet: &Stylesheet,
-    network_provider: &SharedProvider<Resource>,
+    network_provider: &Arc<dyn NetProvider<Resource>>,
+    shell_provider: &Arc<dyn ShellProvider>,
     read_guard: &SharedRwLockReadGuard,
 ) {
     sheet
@@ -405,7 +402,13 @@ fn fetch_font_face(
             network_provider.fetch(
                 doc_id,
                 Request::get(url),
-                ResourceHandler::boxed(tx.clone(), doc_id, Some(node_id), FontFaceHandler(format)),
+                ResourceHandler::boxed(
+                    tx.clone(),
+                    doc_id,
+                    Some(node_id),
+                    shell_provider.clone(),
+                    FontFaceHandler(format),
+                ),
             );
         });
 }

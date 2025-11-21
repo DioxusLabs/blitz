@@ -137,6 +137,11 @@ impl ApplicationHandler<BlitzShellEvent> for DioxusNativeApplication {
                 provide_context(shared);
             });
 
+            // Add shell provider
+            let shell_provider = doc.as_ref().shell_provider.clone();
+            doc.vdom
+                .in_scope(ScopeId::ROOT, move || provide_context(shell_provider));
+
             // Add history
             let history_provider: Rc<dyn History> = Rc::new(MemoryHistory::default());
             doc.vdom

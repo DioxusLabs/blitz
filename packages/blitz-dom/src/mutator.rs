@@ -673,6 +673,7 @@ impl<'doc> DocumentMutator<'doc> {
                 self.doc.tx.clone(),
                 self.doc.id(),
                 Some(node.id),
+                self.doc.shell_provider.clone(),
                 StylesheetHandler {
                     source_url: url,
                     guard: self.doc.guard.clone(),
@@ -712,6 +713,7 @@ impl<'doc> DocumentMutator<'doc> {
                         self.doc.tx.clone(),
                         self.doc.id(),
                         Some(target_id),
+                        self.doc.shell_provider.clone(),
                         ImageHandler::new(ImageType::Image),
                     ),
                 );

@@ -407,6 +407,7 @@ impl BaseDocument {
                                     self.tx.clone(),
                                     doc_id,
                                     Some(node_id),
+                                    self.shell_provider.clone(),
                                     ImageHandler::new(ImageType::Background(idx)),
                                 ),
                             );
