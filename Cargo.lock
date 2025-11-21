@@ -972,6 +972,10 @@ dependencies = [
 name = "browser"
 version = "0.0.0"
 dependencies = [
+ "blitz-dom",
+ "blitz-html",
+ "blitz-net",
+ "blitz-traits",
  "dioxus-native",
  "tracing-subscriber",
 ]
