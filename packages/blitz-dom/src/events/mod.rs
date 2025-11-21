@@ -3,7 +3,7 @@ mod ime;
 mod keyboard;
 mod mouse;
 
-use blitz_traits::events::{DomEvent, DomEventData};
+use blitz_traits::events::{DomEvent, DomEventData, UiEvent};
 pub use driver::{EventDriver, EventHandler, NoopEventHandler};
 pub(crate) use ime::handle_ime_event;
 pub(crate) use keyboard::handle_keypress;
@@ -18,6 +18,30 @@ pub(crate) fn handle_dom_event<F: FnMut(DomEvent)>(
     dispatch_event: F,
 ) {
     let target_node_id = event.target;
+
+    // Handle forwarding event sub-document
+    if let Some(sub_doc) = doc.nodes[target_node_id].subdoc_mut() {
+        // TODO: eliminate clone
+        let ui_event = match event.data.clone() {
+            DomEventData::MouseMove(data) => Some(UiEvent::MouseMove(data)),
+            DomEventData::MouseDown(data) => Some(UiEvent::MouseDown(data)),
+            DomEventData::MouseUp(data) => Some(UiEvent::MouseUp(data)),
+            DomEventData::KeyDown(data) => Some(UiEvent::KeyDown(data)),
+            DomEventData::KeyUp(data) => Some(UiEvent::KeyUp(data)),
+            DomEventData::Ime(data) => Some(UiEvent::Ime(data)),
+
+            // Derived events do not map to a UiEvent. We simply ignore them.
+            // The sub document will generate it's own versions of these events.
+            DomEventData::KeyPress(_) => None,
+            DomEventData::Click(_) => None,
+            DomEventData::Input(_) => None,
+        };
+
+        if let Some(ui_event) = ui_event {
+            sub_doc.handle_ui_event(ui_event);
+            doc.shell_provider.request_redraw();
+        }
+    }
 
     match &event.data {
         DomEventData::MouseMove(mouse_event) => {
