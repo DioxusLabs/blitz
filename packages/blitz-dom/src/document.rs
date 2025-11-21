@@ -773,7 +773,6 @@ impl BaseDocument {
             Resource::None => {
                 // Do nothing
             }
-            _ => {}
         }
     }
 
