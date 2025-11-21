@@ -3,10 +3,15 @@
     box-sizing: border-box;
 }
 
-html, body {
+html, body, #main, #frame {
     margin: 0;
     padding: 0;
     height: 100%;
+}
+
+#frame {
+    display: flex;
+    flex-direction: column;
 }
 
 .urlbar {
@@ -47,4 +52,10 @@ html, body {
     > .urlbar-icon {
         height: 20px;
     }
+}
+
+.webview {
+    flex: 1 1 0px;
+    height: 100%;
+    width: 100%;
 }

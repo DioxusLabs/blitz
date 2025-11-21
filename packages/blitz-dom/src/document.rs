@@ -77,6 +77,24 @@ pub trait Document: Deref<Target = BaseDocument> + DerefMut + 'static {
     }
 }
 
+pub struct PlainDocument(pub BaseDocument);
+impl Deref for PlainDocument {
+    type Target = BaseDocument;
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+impl DerefMut for PlainDocument {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+impl Document for PlainDocument {
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
+    }
+}
+
 pub struct BaseDocument {
     /// ID of the document
     id: usize,
@@ -135,6 +153,8 @@ pub struct BaseDocument {
     pub(crate) ua_stylesheets: HashMap<String, DocumentStyleSheet>,
     /// Map from form control node ID's to their associated forms node ID's
     pub(crate) controls_to_form: HashMap<usize, usize>,
+    /// Nodes that contain sub documents
+    pub(crate) sub_document_nodes: HashSet<usize>,
     /// Set of changed nodes for updating the accessibility tree
     pub(crate) changed_nodes: HashSet<usize>,
     /// Set of changed nodes for updating the accessibility tree
@@ -258,6 +278,7 @@ impl BaseDocument {
             mousedown_node_id: None,
             has_active_animations: false,
             has_canvas: false,
+            sub_document_nodes: HashSet::new(),
             changed_nodes: HashSet::new(),
             deferred_construction_nodes: Vec::new(),
             controls_to_form: HashMap::new(),
@@ -437,6 +458,22 @@ impl BaseDocument {
             .element_data_mut()
             .unwrap()
             .remove_style_property(name, &self.guard, self.url.url_extra_data());
+    }
+
+    pub fn set_sub_document(&mut self, node_id: usize, sub_document: Box<dyn Document>) {
+        self.nodes[node_id]
+            .element_data_mut()
+            .unwrap()
+            .set_sub_document(sub_document);
+        self.sub_document_nodes.insert(node_id);
+    }
+
+    pub fn remove_sub_document(&mut self, node_id: usize) {
+        self.nodes[node_id]
+            .element_data_mut()
+            .unwrap()
+            .remove_sub_document();
+        self.sub_document_nodes.remove(&node_id);
     }
 
     pub fn root_node(&self) -> &Node {

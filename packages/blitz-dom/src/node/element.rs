@@ -19,6 +19,7 @@ use style_traits::ParsingMode;
 use url::Url;
 
 use super::{Attribute, Attributes};
+use crate::Document;
 use crate::layout::table::TableContext;
 
 #[derive(Debug, Clone)]
@@ -76,8 +77,10 @@ pub enum SpecialElementType {
 }
 
 /// Heterogeneous data that depends on the element's type.
-#[derive(Clone, Default)]
+#[derive(Default)]
 pub enum SpecialElementData {
+    SubDocument(Box<dyn Document>),
+    /// A stylesheet
     Stylesheet(DocumentStyleSheet),
     /// An \<img\> element's image data
     Image(Box<ImageData>),
@@ -95,6 +98,23 @@ pub enum SpecialElementData {
     /// No data (for nodes that don't need any node-specific data)
     #[default]
     None,
+}
+
+impl Clone for SpecialElementData {
+    fn clone(&self) -> Self {
+        match self {
+            Self::SubDocument(_) => Self::None, // TODO
+            Self::Stylesheet(data) => Self::Stylesheet(data.clone()),
+            Self::Image(data) => Self::Image(data.clone()),
+            Self::Canvas(data) => Self::Canvas(data.clone()),
+            Self::TableRoot(data) => Self::TableRoot(data.clone()),
+            Self::TextInput(data) => Self::TextInput(data.clone()),
+            Self::CheckboxInput(data) => Self::CheckboxInput(data.clone()),
+            #[cfg(feature = "file_input")]
+            Self::FileInput(data) => Self::FileInput(data.clone()),
+            Self::None => Self::None,
+        }
+    }
 }
 
 impl SpecialElementData {
@@ -177,6 +197,13 @@ impl ElementData {
     pub fn canvas_data(&self) -> Option<&CanvasData> {
         match &self.special_data {
             SpecialElementData::Canvas(data) => Some(data),
+            _ => None,
+        }
+    }
+
+    pub fn sub_doc_data(&self) -> Option<&Box<dyn Document>> {
+        match &self.special_data {
+            SpecialElementData::SubDocument(data) => Some(data),
             _ => None,
         }
     }
@@ -359,6 +386,14 @@ impl ElementData {
         }
     }
 
+    pub fn set_sub_document(&mut self, sub_document: Box<dyn Document>) {
+        self.special_data = SpecialElementData::SubDocument(sub_document);
+    }
+
+    pub fn remove_sub_document(&mut self) {
+        self.special_data = SpecialElementData::None;
+    }
+
     pub fn take_inline_layout(&mut self) -> Option<Box<TextLayout>> {
         std::mem::take(&mut self.inline_layout_data)
     }
@@ -480,6 +515,7 @@ pub struct CanvasData {
 impl std::fmt::Debug for SpecialElementData {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            SpecialElementData::SubDocument(_) => f.write_str("NodeSpecificData::SubDocument"),
             SpecialElementData::Stylesheet(_) => f.write_str("NodeSpecificData::Stylesheet"),
             SpecialElementData::Image(data) => match **data {
                 ImageData::Raster(_) => f.write_str("NodeSpecificData::Image(Raster)"),

@@ -47,14 +47,14 @@ pub struct DummyShellProvider;
 impl ShellProvider for DummyShellProvider {}
 
 /// The system color scheme (light and dark mode)
-#[derive(Default, Debug, Clone, Copy)]
+#[derive(Default, Debug, Clone, Copy, PartialEq)]
 pub enum ColorScheme {
     #[default]
     Light,
     Dark,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Viewport {
     pub color_scheme: ColorScheme,
     pub window_size: (u32, u32),

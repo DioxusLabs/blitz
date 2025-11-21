@@ -41,7 +41,7 @@ pub fn paint_scene(
         height,
         devtools,
     };
-    generator.paint_scene(scene);
+    generator.paint_scene(scene, 0.0, 0.0);
 
     // println!(
     //     "Rendered using {} clips (depth: {}) (wanted: {})",
