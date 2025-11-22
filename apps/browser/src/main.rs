@@ -209,11 +209,32 @@ impl DocumentLoader {
     fn load_document(&self, url: Url) {
         let request_id = self.request_id_counter.fetch_add(1, Ao::Relaxed);
         let net_provider = Arc::clone(&self.net_provider);
+        let status = self.status.clone();
         let doc_signal = self.doc.clone();
         let history = self.history.clone();
+
+        if let DocumentLoaderStatus::Loading { task, .. } = *self.status.peek() {
+            task.cancel();
+        };
+
         let task = spawn(async move {
             let request = net_provider.fetch_async(Request::get(url));
-            match request.await {
+
+            let response = request.await;
+
+            match *status.peek() {
+                DocumentLoaderStatus::Loading {
+                    request_id: stored_req_id,
+                    ..
+                } if request_id == stored_req_id => {
+                    // Do nothing
+                }
+                _ => {
+                    println!("Ignoring load as it is not the most recent navigation request");
+                }
+            };
+
+            match response {
                 Ok((resolved_url, bytes)) => {
                     println!("Loaded {}", resolved_url);
                     let config = DocumentConfig {
