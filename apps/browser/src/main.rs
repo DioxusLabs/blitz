@@ -70,8 +70,7 @@ fn app() -> Element {
     });
 
     rsx!(
-        div {
-            id: "frame",
+        div { id: "frame",
             title { "Blitz Browser" }
             style { {include_str!("./browser.css")} }
 
@@ -92,18 +91,13 @@ fn app() -> Element {
                             *url.write() = Some(url_input_value());
                         }
                     },
-                    oninput: move |evt| {
-                        *url_input_value.write() = evt.value()
-                    },
+                    oninput: move |evt| { *url_input_value.write() = evt.value() },
                 }
                 IconButton { icon: icons::MENU_ICON }
             }
 
             // Web content
-            web-view {
-                class: "webview",
-                "__webview_document": content_doc()
-            }
+            web-view { class: "webview", "__webview_document": content_doc() }
         }
     )
 }
