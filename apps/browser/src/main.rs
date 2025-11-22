@@ -43,6 +43,11 @@ fn app() -> Element {
             if let Ok(url) = Url::parse(&url_s) {
                 *url_input_value.write_unchecked() = url_s;
                 loader.load_document(url);
+            } else if let Ok(url) = Url::parse(&format!("https://{url_s}")) {
+                *url_input_value.write_unchecked() = format!("https://{url_s}");
+                loader.load_document(url);
+            } else {
+                println!("Error parsing URL {}", url_s);
             }
         }
     });
