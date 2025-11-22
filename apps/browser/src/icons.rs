@@ -1,10 +1,10 @@
 use dioxus_native::prelude::*;
 
-pub const REFRESH_ICON: Asset = asset!("/assets/rotate-cw.svg");
-pub const HOME_ICON: Asset = asset!("/assets/house.svg");
-pub const BACK_ICON: Asset = asset!("/assets/arrow-left.svg");
-pub const FORWARDS_ICON: Asset = asset!("/assets/arrow-right.svg");
-pub const MENU_ICON: Asset = asset!("/assets/ellipsis-vertical.svg");
+pub const REFRESH_ICON: Asset = asset!("/assets/icons/rotate-cw.svg");
+pub const HOME_ICON: Asset = asset!("/assets/icons/house.svg");
+pub const BACK_ICON: Asset = asset!("/assets/icons/arrow-left.svg");
+pub const FORWARDS_ICON: Asset = asset!("/assets/icons/arrow-right.svg");
+pub const MENU_ICON: Asset = asset!("/assets/icons/ellipsis-vertical.svg");
 
 #[component]
 pub fn IconButton(icon: Asset, action: Option<Callback>) -> Element {

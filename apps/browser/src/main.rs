@@ -66,7 +66,7 @@ fn app() -> Element {
     rsx!(
         div { id: "frame",
             title { "Blitz Browser" }
-            style { {include_str!("./browser.css")} }
+            style { {include_str!("../assets/browser.css")} }
 
             // Toolbar
             div { class: "urlbar",
