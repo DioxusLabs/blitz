@@ -184,8 +184,13 @@ impl BlitzDomPainter<'_> {
             .element_data()
             .and_then(|el| el.sub_doc_data())
             .is_some();
+        let is_text_input = node
+            .element_data()
+            .and_then(|el| el.text_input_data())
+            .is_some();
         let should_clip = is_image
             || is_sub_doc
+            || is_text_input
             || !matches!(overflow_x, Overflow::Visible)
             || !matches!(overflow_y, Overflow::Visible);
 
@@ -229,7 +234,11 @@ impl BlitzDomPainter<'_> {
 
         // TODO: allow layers with opacity to be unclipped (overflow: visible)
         let wants_layer = should_clip | has_opacity;
-        let clip = &cx.frame.padding_box_path();
+        let clip = if is_text_input {
+            &cx.frame.content_box_path()
+        } else {
+            &cx.frame.padding_box_path()
+        };
 
         maybe_with_layer(scene, wants_layer, opacity, cx.transform, clip, |scene| {
             cx.draw_inset_box_shadow(scene);
