@@ -278,32 +278,34 @@ impl ElementData {
     pub fn flush_is_focussable(&mut self) {
         let disabled: bool = self.attr_parsed(local_name!("disabled")).unwrap_or(false);
         let tabindex: Option<i32> = self.attr_parsed(local_name!("tabindex"));
+        let contains_sub_document: bool = self.sub_doc_data().is_some();
 
-        self.is_focussable = !disabled
-            && match tabindex {
-                Some(index) => index >= 0,
-                None => {
-                    // Some focusable HTML elements have a default tabindex value of 0 set under the hood by the user agent.
-                    // These elements are:
-                    //   - <a> or <area> with href attribute
-                    //   - <button>, <frame>, <iframe>, <input>, <object>, <select>, <textarea>, and SVG <a> element
-                    //   - <summary> element that provides summary for a <details> element.
+        self.is_focussable = contains_sub_document
+            || (!disabled
+                && match tabindex {
+                    Some(index) => index >= 0,
+                    None => {
+                        // Some focusable HTML elements have a default tabindex value of 0 set under the hood by the user agent.
+                        // These elements are:
+                        //   - <a> or <area> with href attribute
+                        //   - <button>, <frame>, <iframe>, <input>, <object>, <select>, <textarea>, and SVG <a> element
+                        //   - <summary> element that provides summary for a <details> element.
 
-                    if [local_name!("a"), local_name!("area")].contains(&self.name.local) {
-                        self.attr(local_name!("href")).is_some()
-                    } else {
-                        const DEFAULT_FOCUSSABLE_ELEMENTS: [LocalName; 6] = [
-                            local_name!("button"),
-                            local_name!("input"),
-                            local_name!("select"),
-                            local_name!("textarea"),
-                            local_name!("frame"),
-                            local_name!("iframe"),
-                        ];
-                        DEFAULT_FOCUSSABLE_ELEMENTS.contains(&self.name.local)
+                        if [local_name!("a"), local_name!("area")].contains(&self.name.local) {
+                            self.attr(local_name!("href")).is_some()
+                        } else {
+                            const DEFAULT_FOCUSSABLE_ELEMENTS: [LocalName; 6] = [
+                                local_name!("button"),
+                                local_name!("input"),
+                                local_name!("select"),
+                                local_name!("textarea"),
+                                local_name!("frame"),
+                                local_name!("iframe"),
+                            ];
+                            DEFAULT_FOCUSSABLE_ELEMENTS.contains(&self.name.local)
+                        }
                     }
-                }
-            }
+                })
     }
 
     pub fn flush_style_attribute(&mut self, guard: &SharedRwLock, url_extra_data: &UrlExtraData) {
