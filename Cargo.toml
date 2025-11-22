@@ -69,7 +69,7 @@ dioxus-html = { version = "0.7" }
 dioxus-hooks = { version = "0.7" }
 dioxus-cli-config = { version = "0.7" }
 dioxus-devtools = { version = "0.7" }
-taffy = { git = "https://github.com/DioxusLabs/taffy", rev = "fff4ea6e71e4f6ec29d0ea560a77545ad611470a", default-features = false, features = ["std", "flexbox", "grid", "block_layout", "content_size", "calc"] }
+taffy = { git = "https://github.com/DioxusLabs/taffy", rev = "22868d2812bf903cc4d1dc514cf82197d9849a0b", default-features = false, features = ["std", "flexbox", "grid", "block_layout", "content_size", "calc"] }
 
 # AnyRender
 anyrender = { version = "0.6" }
