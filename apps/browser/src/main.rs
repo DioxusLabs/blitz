@@ -248,7 +248,12 @@ impl DocumentLoader {
                         font_ctx: None,
                     };
 
-                    let html = str::from_utf8(&bytes).unwrap();
+                    let html = if bytes.len() == 0 {
+                        include_str!("../assets/404.html")
+                    } else {
+                        str::from_utf8(&bytes).unwrap()
+                    };
+
                     // println!("{}", html);
 
                     let document = HtmlDocument::from_html(html, config).into_inner();
