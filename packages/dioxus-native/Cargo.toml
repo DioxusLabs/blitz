@@ -27,13 +27,14 @@ file-dialog = ["blitz-shell/file_dialog"]
 accessibility = ["blitz-shell/accessibility", "blitz-dom/accessibility"]
 
 # Renderer features
-vello = ["dep:anyrender_vello"]
-vello-hybrid = ["dep:anyrender_vello_hybrid"]
-skia = ["dep:anyrender_skia"]
-vello-cpu = ["vello-cpu-pixels"]
-vello-cpu-pixels = ["vello-cpu-base", "anyrender_vello_cpu/pixels_window_renderer"]
-vello-cpu-softbuffer = ["vello-cpu-base", "anyrender_vello_cpu/softbuffer_window_renderer"]
-vello-cpu-base = ["dep:anyrender_vello_cpu"]
+vello = ["alt-renderer", "dep:anyrender_vello"]
+vello-hybrid = ["alt-renderer", "dep:anyrender_vello_hybrid"]
+skia = ["alt-renderer", "dep:anyrender_skia"]
+vello-cpu = ["alt-renderer", "vello-cpu-pixels"]
+vello-cpu-pixels = ["alt-renderer", "vello-cpu-base", "anyrender_vello_cpu/pixels_window_renderer"]
+vello-cpu-softbuffer = ["alt-renderer", "vello-cpu-base", "anyrender_vello_cpu/softbuffer_window_renderer"]
+vello-cpu-base = ["alt-renderer", "dep:anyrender_vello_cpu"]
+alt-renderer = []
 
 # Other features
 net = ["dep:tokio", "dep:blitz-net"]

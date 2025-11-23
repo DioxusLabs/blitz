@@ -25,13 +25,21 @@ use blitz_traits::net::NetProvider;
 #[doc(inline)]
 pub use dioxus_native_dom::*;
 
-pub use anyrender_vello::{CustomPaintCtx, CustomPaintSource, DeviceHandle, TextureHandle};
 use assets::DioxusNativeNetProvider;
 pub use dioxus_application::{DioxusNativeApplication, DioxusNativeEvent};
-pub use dioxus_renderer::{DioxusNativeWindowRenderer, Features, Limits};
+pub use dioxus_renderer::DioxusNativeWindowRenderer;
 
-#[cfg(not(all(target_os = "ios", target_abi = "sim")))]
-pub use dioxus_renderer::use_wgpu;
+#[cfg(any(
+    feature = "vello",
+    all(
+        not(feature = "alt-renderer"),
+        not(all(target_os = "ios", target_abi = "sim"))
+    )
+))]
+pub use {
+    anyrender_vello::{CustomPaintCtx, CustomPaintSource, DeviceHandle, TextureHandle},
+    dioxus_renderer::{use_wgpu, Features, Limits},
+};
 
 use blitz_shell::{create_default_event_loop, BlitzShellEvent, Config, WindowConfig};
 use dioxus_core::{ComponentFunction, Element, VirtualDom};
@@ -78,13 +86,28 @@ pub fn launch_cfg_with_props<P: Clone + 'static, M: 'static>(
     }
 
     // Read config values
-    let mut features = None;
-    let mut limits = None;
+    #[cfg(any(
+        feature = "vello",
+        all(
+            not(feature = "alt-renderer"),
+            not(all(target_os = "ios", target_abi = "sim"))
+        )
+    ))]
+    let (mut features, mut limits) = (None, None);
     let mut window_attributes = None;
     let mut _config = None;
     for mut cfg in configs {
-        cfg = try_read_config!(cfg, features, Features);
-        cfg = try_read_config!(cfg, limits, Limits);
+        #[cfg(any(
+            feature = "vello",
+            all(
+                not(feature = "alt-renderer"),
+                not(all(target_os = "ios", target_abi = "sim"))
+            )
+        ))]
+        {
+            cfg = try_read_config!(cfg, features, Features);
+            cfg = try_read_config!(cfg, limits, Limits);
+        }
         cfg = try_read_config!(cfg, window_attributes, WindowAttributes);
         cfg = try_read_config!(cfg, _config, Config);
         let _ = cfg;
@@ -168,9 +191,21 @@ pub fn launch_cfg_with_props<P: Clone + 'static, M: 'static>(
             ..Default::default()
         },
     );
-    #[cfg(not(all(target_os = "ios", target_abi = "sim")))]
+    #[cfg(any(
+        feature = "vello",
+        all(
+            not(feature = "alt-renderer"),
+            not(all(target_os = "ios", target_abi = "sim"))
+        )
+    ))]
     let renderer = DioxusNativeWindowRenderer::with_features_and_limits(features, limits);
-    #[cfg(all(target_os = "ios", target_abi = "sim"))]
+    #[cfg(not(any(
+        feature = "vello",
+        all(
+            not(feature = "alt-renderer"),
+            not(all(target_os = "ios", target_abi = "sim"))
+        )
+    )))]
     let renderer = DioxusNativeWindowRenderer::new();
     let config = WindowConfig::with_attributes(
         Box::new(doc) as _,
