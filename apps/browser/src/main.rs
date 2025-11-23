@@ -12,7 +12,7 @@ use dioxus_native::{SubDocumentAttr, prelude::*};
 use blitz_dom::DocumentConfig;
 use blitz_html::{HtmlDocument, HtmlProvider};
 use blitz_traits::navigation::{NavigationOptions, NavigationProvider};
-use blitz_traits::net::{Method, Request, Url};
+use blitz_traits::net::{Body, Entry, EntryValue, FormData, Method, Request, Url};
 
 type StdNetProvider = blitz_net::Provider<blitz_dom::net::Resource>;
 
@@ -96,12 +96,32 @@ fn app() -> Element {
 
 fn req_from_string(url_s: &str) -> Option<Request> {
     if let Ok(url) = Url::parse(&url_s) {
-        Some(Request::get(url))
-    } else if let Ok(url) = Url::parse(&format!("https://{}", &url_s)) {
-        Some(Request::get(url))
-    } else {
-        None
+        return Some(Request::get(url));
+    };
+
+    let contains_space = url_s.contains(' ');
+    let contains_dot = url_s.contains('.');
+    if contains_dot && !contains_space {
+        if let Ok(url) = Url::parse(&format!("https://{}", &url_s)) {
+            return Some(Request::get(url));
+        }
     }
+
+    Some(synthesize_duckduckgo_search_req(url_s))
+}
+
+fn synthesize_duckduckgo_search_req(query: &str) -> Request {
+    NavigationOptions::new(
+        Url::parse("https://html.duckduckgo.com/html/").unwrap(),
+        String::from("application/x-www-form-urlencoded"),
+        0,
+    )
+    .set_method(Method::POST)
+    .set_document_resource(Body::Form(FormData(vec![Entry {
+        name: String::from("q"),
+        value: EntryValue::String(query.to_string()),
+    }])))
+    .into_request()
 }
 
 #[derive(Store)]
