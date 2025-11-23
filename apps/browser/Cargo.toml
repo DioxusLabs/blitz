@@ -22,9 +22,16 @@ tracing = ["dioxus-native/tracing", "dep:tracing-subscriber"]
 hot-reload = ["dioxus-native/hot-reload"]
 
 [dependencies]
-dioxus-native = { workspace = true, features = ["svg", "system-fonts", "net", "clipboard", "prelude"] }
+dioxus-native = { workspace = true, features = [
+  "svg",
+  "system-fonts",
+  "net",
+  "clipboard",
+  "prelude",
+] }
 blitz-traits = { workspace = true }
-blitz-dom = { workspace = true, features = ["woff-rust"]}
+blitz-dom = { workspace = true, features = ["woff-rust"] }
 blitz-net = { workspace = true }
 blitz-html = { workspace = true }
-tracing-subscriber = { workspace = true, optional = true}
+tracing-subscriber = { workspace = true, optional = true }
+webbrowser = { workspace = true }

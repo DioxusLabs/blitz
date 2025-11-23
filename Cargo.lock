@@ -995,6 +995,7 @@ dependencies = [
  "blitz-traits",
  "dioxus-native",
  "tracing-subscriber",
+ "webbrowser",
 ]
 
 [[package]]

@@ -55,6 +55,8 @@ fn app() -> Element {
     let forward_action = use_callback(move |_| history.go_forward());
     let home_action = use_callback(move |_| history.navigate(Request::get(home_url.clone())));
     let refresh_action = load_current_url;
+    let open_action =
+        use_callback(move |_| open_in_external_browser(&*history.current_url().read()));
 
     rsx!(
         div { id: "frame",
@@ -85,6 +87,7 @@ fn app() -> Element {
                     },
                     oninput: move |evt| { *url_input_value.write() = evt.value() },
                 }
+                IconButton { icon: icons::EXTERNAL_LINK_ICON, action: open_action }
                 IconButton { icon: icons::MENU_ICON }
             }
 
@@ -122,6 +125,14 @@ fn synthesize_duckduckgo_search_req(query: &str) -> Request {
         value: EntryValue::String(query.to_string()),
     }])))
     .into_request()
+}
+
+fn open_in_external_browser(req: &Request) {
+    if req.method == Method::GET && matches!(req.url.scheme(), "http" | "https" | "mailto") {
+        if let Err(err) = webbrowser::open(req.url.as_str()) {
+            println!("Failed to open URL: {}", err);
+        }
+    }
 }
 
 #[derive(Store)]
