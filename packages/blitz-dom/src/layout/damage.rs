@@ -1,5 +1,6 @@
 use std::ops::Range;
 
+use crate::net::ResourceHandler;
 use crate::node::NodeFlags;
 use crate::{BaseDocument, net::ImageHandler, node::BackgroundImageData, util::ImageType};
 use crate::{NON_INCREMENTAL, Node};
@@ -402,7 +403,13 @@ impl BaseDocument {
                             self.net_provider.fetch(
                                 doc_id,
                                 Request::get((**new_url).clone()),
-                                Box::new(ImageHandler::new(node_id, ImageType::Background(idx))),
+                                ResourceHandler::boxed(
+                                    self.tx.clone(),
+                                    doc_id,
+                                    Some(node_id),
+                                    self.shell_provider.clone(),
+                                    ImageHandler::new(ImageType::Background(idx)),
+                                ),
                             );
 
                             let bg_image_data = BackgroundImageData::new(new_url.clone());

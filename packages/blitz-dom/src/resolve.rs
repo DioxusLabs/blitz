@@ -44,6 +44,9 @@ impl BaseDocument {
             return;
         }
 
+        // Process messages that have been sent to our message channel (e.g. loaded resource)
+        self.handle_messages();
+
         let root_node_id = self.root_element().id;
         debug_timer!(timer, feature = "log_phase_times");
 
@@ -80,6 +83,26 @@ impl BaseDocument {
             }
             timer.record_time("c_damage");
         }
+
+        for &node_id in &self.sub_document_nodes {
+            let node = &mut self.nodes[node_id];
+            let size = node.final_layout.size;
+            if let Some(sub_doc) = node.subdoc_mut() {
+                // Set viewport
+                // viewport_mut handles change detection. So we just unconditionally set the values;
+                let mut sub_viewport = sub_doc.viewport_mut();
+                sub_viewport.hidpi_scale = self.viewport.hidpi_scale;
+                sub_viewport.color_scheme = self.viewport.color_scheme;
+                sub_viewport.window_size = (
+                    (size.width * self.viewport.hidpi_scale) as u32,
+                    (size.height * self.viewport.hidpi_scale) as u32,
+                );
+                drop(sub_viewport);
+
+                sub_doc.resolve(current_time_for_animations);
+            }
+        }
+        timer.record_time("subdocs");
 
         timer.print_times("Resolve: ");
     }

@@ -1,21 +1,24 @@
 //! Integration between Dioxus and Blitz
-
-use crate::{NodeId, qual_name, trace};
-use blitz_dom::{Attribute, BaseDocument, DocumentMutator};
+use crate::{qual_name, trace, NodeId, SubDocumentAttr};
+use blitz_dom::{BaseDocument, DocumentMutator};
+use blitz_traits::events::DomEventKind;
 use dioxus_core::{
     AttributeValue, ElementId, Template, TemplateAttribute, TemplateNode, WriteMutations,
 };
 use rustc_hash::FxHashMap;
+use std::str::FromStr as _;
 
 /// The state of the Dioxus integration with the RealDom
 #[derive(Debug)]
 pub struct DioxusState {
     /// Store of templates keyed by unique name
-    templates: FxHashMap<Template, Vec<NodeId>>,
+    pub(crate) templates: FxHashMap<Template, Vec<NodeId>>,
     /// Stack machine state for applying dioxus mutations
-    stack: Vec<NodeId>,
+    pub(crate) stack: Vec<NodeId>,
     /// Mapping from vdom ElementId -> rdom NodeId
-    node_id_mapping: Vec<Option<NodeId>>,
+    pub(crate) node_id_mapping: Vec<Option<NodeId>>,
+    /// Count of each handler type
+    pub(crate) event_handler_counts: [u32; 32],
 }
 
 impl DioxusState {
@@ -25,6 +28,7 @@ impl DioxusState {
             templates: FxHashMap::default(),
             stack: vec![root_id],
             node_id_mapping: vec![Some(root_id)],
+            event_handler_counts: [0; 32],
         }
     }
 
@@ -179,14 +183,6 @@ impl WriteMutations for MutationWriter<'_> {
         id: ElementId,
     ) {
         let node_id = self.state.element_to_node_id(id);
-        trace!("set_attribute node_id:{node_id} ns: {ns:?} name:{local_name}, value:{value:?}");
-
-        // Dioxus has overloaded the style namespace to accumulate style attributes without a `style` block
-        // TODO: accumulate style attributes into a single style element.
-        if ns == Some("style") {
-            return;
-        }
-
         fn is_falsy(val: &AttributeValue) -> bool {
             match val {
                 AttributeValue::None => true,
@@ -198,31 +194,46 @@ impl WriteMutations for MutationWriter<'_> {
             }
         }
 
-        let name = qual_name(local_name, ns);
-
-        // FIXME: more principled handling of special case attributes
-        if value == &AttributeValue::None || (local_name == "checked" && is_falsy(value)) {
-            self.docm.clear_attribute(node_id, name);
-        } else {
+        if local_name == "__webview_document" {
             match value {
-                AttributeValue::Text(value) => self.docm.set_attribute(node_id, name, value),
-                AttributeValue::Float(value) => {
-                    let value = value.to_string();
-                    self.docm.set_attribute(node_id, name, &value);
+                AttributeValue::Any(sub_doc_attr) => {
+                    if let Some(sub_doc_attr) =
+                        sub_doc_attr.as_any().downcast_ref::<SubDocumentAttr>()
+                    {
+                        if let Some(mut sub_document) = sub_doc_attr.take_document() {
+                            sub_document.set_shell_provider(self.docm.doc.shell_provider.clone());
+                            self.docm.set_sub_document(node_id, sub_document as _);
+                        }
+                    }
                 }
-                AttributeValue::Int(value) => {
-                    let value = value.to_string();
-                    self.docm.set_attribute(node_id, name, &value);
-                }
-                AttributeValue::Bool(value) => {
-                    let value = value.to_string();
-                    self.docm.set_attribute(node_id, name, &value);
-                }
-                _ => {
-                    // FIXME: support all attribute types
-                }
-            };
+                _ => self.docm.remove_sub_document(node_id),
+            }
         }
+
+        let falsy = is_falsy(value);
+        match value {
+            AttributeValue::None => {
+                set_attribute_inner(&mut self.docm, local_name, ns, None, falsy, node_id)
+            }
+            AttributeValue::Text(value) => {
+                set_attribute_inner(&mut self.docm, local_name, ns, Some(value), falsy, node_id)
+            }
+            AttributeValue::Float(value) => {
+                let value = value.to_string();
+                set_attribute_inner(&mut self.docm, local_name, ns, Some(&value), falsy, node_id);
+            }
+            AttributeValue::Int(value) => {
+                let value = value.to_string();
+                set_attribute_inner(&mut self.docm, local_name, ns, Some(&value), falsy, node_id);
+            }
+            AttributeValue::Bool(value) => {
+                let value = value.to_string();
+                set_attribute_inner(&mut self.docm, local_name, ns, Some(&value), falsy, node_id);
+            }
+            _ => {
+                // FIXME: support all attribute types
+            }
+        };
     }
 
     fn load_template(&mut self, template: Template, index: usize, id: ElementId) {
@@ -255,10 +266,18 @@ impl WriteMutations for MutationWriter<'_> {
         self.set_attribute("data-dioxus-id", None, &value, id);
 
         // node.add_event_listener(name);
+
+        if let Ok(kind) = DomEventKind::from_str(name) {
+            let idx = kind.discriminant() as usize;
+            self.state.event_handler_counts[idx] += 1;
+        }
     }
 
-    fn remove_event_listener(&mut self, _name: &'static str, _id: ElementId) {
-        // node.remove_event_listener(name);
+    fn remove_event_listener(&mut self, name: &'static str, _id: ElementId) {
+        if let Ok(kind) = DomEventKind::from_str(name) {
+            let idx = kind.discriminant() as usize;
+            self.state.event_handler_counts[idx] -= 1;
+        }
     }
 }
 
@@ -271,8 +290,21 @@ fn create_template_node(docm: &mut DocumentMutator<'_>, node: &TemplateNode) -> 
             children,
         } => {
             let name = qual_name(tag, *namespace);
-            let attrs = attrs.iter().filter_map(map_template_attr).collect();
-            let node_id = docm.create_element(name, attrs);
+            // let attrs = attrs.iter().filter_map(map_template_attr).collect();
+            let node_id = docm.create_element(name, Vec::new());
+
+            for attr in attrs.iter() {
+                let TemplateAttribute::Static {
+                    name,
+                    value,
+                    namespace,
+                } = attr
+                else {
+                    continue;
+                };
+                let falsy = *value == "false";
+                set_attribute_inner(docm, name, *namespace, Some(value), falsy, node_id);
+            }
 
             let child_ids: Vec<NodeId> = children
                 .iter()
@@ -288,17 +320,39 @@ fn create_template_node(docm: &mut DocumentMutator<'_>, node: &TemplateNode) -> 
     }
 }
 
-fn map_template_attr(attr: &TemplateAttribute) -> Option<Attribute> {
-    let TemplateAttribute::Static {
-        name,
-        value,
-        namespace,
-    } = attr
-    else {
-        return None;
-    };
+fn set_attribute_inner(
+    docm: &mut DocumentMutator<'_>,
+    local_name: &'static str,
+    ns: Option<&'static str>,
+    value: Option<&str>,
+    is_falsy: bool,
+    node_id: usize,
+) {
+    trace!("set_attribute node_id:{node_id} ns: {ns:?} name:{local_name}, value:{value:?}");
 
-    let name = qual_name(name, *namespace);
-    let value = value.to_string();
-    Some(Attribute { name, value })
+    // Dioxus has overloaded the style namespace to accumulate style attributes without a `style` block
+    // TODO: accumulate style attributes into a single style element.
+    if ns == Some("style") {
+        match value {
+            Some(value) => docm.set_style_property(node_id, local_name, value),
+            None => docm.remove_style_property(node_id, local_name),
+        }
+        return;
+    }
+
+    let name = qual_name(local_name, ns);
+
+    // FIXME: more principled handling of special case attributes
+    match value {
+        None => docm.clear_attribute(node_id, name),
+        Some(value) => {
+            if local_name == "checked" && is_falsy {
+                docm.clear_attribute(node_id, name);
+            } else if local_name == "dangerous_inner_html" {
+                docm.set_inner_html(node_id, value);
+            } else {
+                docm.set_attribute(node_id, name, value);
+            }
+        }
+    }
 }
