@@ -144,9 +144,9 @@ impl BlitzDomPainter<'_> {
         }
 
         // Only draw elements with a style
-        if node.primary_styles().is_none() {
+        let Some(styles) = node.primary_styles() else {
             return;
-        }
+        };
 
         // Hide inputs with type=hidden
         // Implemented here rather than using the style engine for performance reasons
@@ -155,25 +155,18 @@ impl BlitzDomPainter<'_> {
         }
 
         // Hide elements with a visibility style other than visible
-        if node
-            .primary_styles()
-            .unwrap()
-            .get_inherited_box()
-            .visibility
-            != StyloVisibility::Visible
-        {
+        if styles.get_inherited_box().visibility != StyloVisibility::Visible {
             return;
         }
 
         // We can't fully support opacity yet, but we can hide elements with opacity 0
-        let opacity = node.primary_styles().unwrap().get_effects().opacity;
+        let opacity = styles.get_effects().opacity;
         if opacity == 0.0 {
             return;
         }
         let has_opacity = opacity < 1.0;
 
         // TODO: account for overflow_x vs overflow_y
-        let styles = &node.primary_styles().unwrap();
         let overflow_x = styles.get_box().overflow_x;
         let overflow_y = styles.get_box().overflow_y;
         let is_image = node
