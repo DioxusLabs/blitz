@@ -130,8 +130,7 @@ fn parse_and_resolve_document(
     // Loop because loading a resource may result in further resources being requested
     let start = Instant::now();
     while ctx.net_provider.pending_item_count() > 0 {
-        ctx.net_provider
-            .for_each(|res| document.as_mut().load_resource(res));
+        ctx.net_provider.for_each(|_| {});
         document.as_mut().resolve(0.0);
         if Instant::now().duration_since(start).as_millis() > 500 {
             ctx.net_provider.log_pending_items();
@@ -142,8 +141,6 @@ fn parse_and_resolve_document(
         }
     }
 
-    ctx.net_provider
-        .for_each(|res| document.as_mut().load_resource(res));
     document.as_mut().resolve(0.0);
 
     document.into()
