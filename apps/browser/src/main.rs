@@ -33,9 +33,9 @@ fn use_sync_store<T: Send + Sync + 'static>(value: impl FnOnce() -> T) -> SyncSt
 }
 
 fn app() -> Element {
-    let home_url = use_hook(|| String::from("https://wikipedia.org"));
+    let home_url = use_hook(|| Url::parse("https://wikipedia.org").unwrap());
 
-    let mut url_input_value = use_signal(|| home_url.clone());
+    let mut url_input_value = use_signal(|| home_url.to_string());
     let mut history: SyncStore<History> = use_sync_store(|| History::new(home_url.clone()));
 
     let net_provider = use_context::<Arc<StdNetProvider>>();
@@ -43,24 +43,17 @@ fn app() -> Element {
     let content_doc = loader.doc.clone();
 
     let load_current_url = use_callback(move |_| {
-        let url_s = history.current_url().read().clone();
-        println!("Loading {}...", &url_s);
-        if let Ok(url) = Url::parse(&url_s) {
-            *url_input_value.write_unchecked() = url_s.clone();
-            loader.load_document(url);
-        } else if let Ok(url) = Url::parse(&format!("https://{}", &url_s)) {
-            *url_input_value.write_unchecked() = format!("https://{}", &url_s);
-            loader.load_document(url);
-        } else {
-            println!("Error parsing URL {}", &url_s);
-        }
+        let request = (*history.current_url().read()).clone();
+        *url_input_value.write_unchecked() = request.url.to_string();
+        println!("Loading {}...", &request.url.as_str());
+        loader.load_document(request);
     });
 
     use_effect(move || load_current_url(()));
 
     let back_action = use_callback(move |_| history.go_back());
     let forward_action = use_callback(move |_| history.go_forward());
-    let home_action = use_callback(move |_| history.navigate_to(home_url.clone()));
+    let home_action = use_callback(move |_| history.navigate(Request::get(home_url.clone())));
     let refresh_action = load_current_url;
 
     rsx!(
@@ -82,7 +75,12 @@ fn app() -> Element {
                     onkeydown: move |evt| {
                         if evt.key() == Key::Enter {
                             evt.prevent_default();
-                            history.navigate_to(url_input_value());
+                            let req = req_from_string(&*url_input_value.read());
+                            if let Some(req) = req {
+                                history.navigate(req);
+                            } else {
+                                println!("Error parsing URL {}", &*url_input_value.read());
+                            }
                         }
                     },
                     oninput: move |evt| { *url_input_value.write() = evt.value() },
@@ -96,16 +94,26 @@ fn app() -> Element {
     )
 }
 
+fn req_from_string(url_s: &str) -> Option<Request> {
+    if let Ok(url) = Url::parse(&url_s) {
+        Some(Request::get(url))
+    } else if let Ok(url) = Url::parse(&format!("https://{}", &url_s)) {
+        Some(Request::get(url))
+    } else {
+        None
+    }
+}
+
 #[derive(Store)]
 struct History {
-    urls: Vec<String>,
+    urls: Vec<Request>,
     current: usize,
 }
 
 impl History {
-    fn new(initial_url: String) -> Self {
+    fn new(initial_url: Url) -> Self {
         Self {
-            urls: vec![initial_url],
+            urls: vec![Request::get(initial_url)],
             current: 0,
         }
     }
@@ -117,7 +125,7 @@ impl<Lens> Store<History, Lens> {
         *self.current().read()
     }
 
-    fn current_url(&self) -> impl Readable<Target = String> {
+    fn current_url(&self) -> impl Readable<Target = Request> {
         self.urls().get(self.current_idx()).unwrap()
     }
 
@@ -141,13 +149,13 @@ impl<Lens> Store<History, Lens> {
         }
     }
 
-    fn navigate_to(&self, new_url: String)
+    fn navigate(&self, req: Request)
     where
         Lens: Writable,
     {
         let idx = self.current_idx();
         self.urls().write().truncate(idx + 1);
-        self.urls().push(new_url);
+        self.urls().push(req);
         *self.current().write() += 1;
     }
 
@@ -163,10 +171,7 @@ struct BrowserNavProvider {
 
 impl NavigationProvider for BrowserNavProvider {
     fn navigate_to(&self, options: NavigationOptions) {
-        if options.method == Method::GET {
-            let url = options.url.to_string();
-            self.history.navigate_to(url);
-        }
+        self.history.navigate(options.into_request());
     }
 }
 
@@ -206,7 +211,7 @@ impl DocumentLoader {
         }
     }
 
-    fn load_document(&self, url: Url) {
+    fn load_document(&self, req: Request) {
         let request_id = self.request_id_counter.fetch_add(1, Ao::Relaxed);
         let net_provider = Arc::clone(&self.net_provider);
         let status = self.status.clone();
@@ -218,7 +223,7 @@ impl DocumentLoader {
         };
 
         let task = spawn(async move {
-            let request = net_provider.fetch_async(Request::get(url));
+            let request = net_provider.fetch_async(req);
 
             let response = request.await;
 

@@ -39,7 +39,7 @@ impl<D, F: Fn(usize, Result<D, Option<String>>) + Send + Sync + 'static> NetCall
 }
 
 #[non_exhaustive]
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 /// A request type loosely representing <https://fetch.spec.whatwg.org/#requests>
 pub struct Request {
     pub url: Url,
