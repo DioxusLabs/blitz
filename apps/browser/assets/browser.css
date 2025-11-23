@@ -17,7 +17,8 @@ html, body, #main, #frame {
 .urlbar {
     padding: 6px 6px;
     gap: 6px;
-    background: #EEE;
+    background: #F9F9F9;
+    border-bottom: 1px solid #EEE;
     display: flex;
 }
 
