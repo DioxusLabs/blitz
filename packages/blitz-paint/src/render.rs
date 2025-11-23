@@ -223,6 +223,7 @@ impl BlitzDomPainter<'_> {
         cx.draw_outline(scene);
         cx.draw_outset_box_shadow(scene);
         cx.draw_background(scene);
+        cx.draw_inset_box_shadow(scene);
         cx.draw_border(scene);
 
         // TODO: allow layers with opacity to be unclipped (overflow: visible)
@@ -234,7 +235,6 @@ impl BlitzDomPainter<'_> {
         };
 
         maybe_with_layer(scene, wants_layer, opacity, cx.transform, clip, |scene| {
-            cx.draw_inset_box_shadow(scene);
             cx.stroke_devtools(scene);
 
             // Now that background has been drawn, offset pos and cx in order to draw our contents scrolled
