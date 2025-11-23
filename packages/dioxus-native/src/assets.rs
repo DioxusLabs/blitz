@@ -19,7 +19,11 @@ impl DioxusNativeNetProvider {
 
         #[cfg(feature = "net")]
         let inner_net_provider = Some(blitz_net::Provider::shared(net_callback.clone()));
-        #[cfg(not(feature = "net"))]
+        #[cfg(all(feature = "data-uri", not(feature = "net")))]
+        let inner_net_provider = Some(blitz_shell::DataUriNetProvider::shared(
+            net_callback.clone(),
+        ));
+        #[cfg(all(not(feature = "data-uri"), not(feature = "net")))]
         let inner_net_provider = None;
 
         Self { inner_net_provider }

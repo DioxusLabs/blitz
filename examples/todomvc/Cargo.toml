@@ -21,7 +21,7 @@ tracing = ["dioxus-native/tracing", "dep:tracing-subscriber"]
 hot-reload = ["dioxus-native/hot-reload"]
 
 [dependencies]
-dioxus-native = { workspace = true, features = ["svg", "system-fonts", "prelude"] }
+dioxus-native = { workspace = true, features = ["svg", "system-fonts", "data-uri", "prelude"] }
 tracing-subscriber = { workspace = true, optional = true}
 
 # Disable unicode URL support

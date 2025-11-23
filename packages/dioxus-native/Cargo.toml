@@ -25,6 +25,7 @@ clipboard = ["blitz-shell/clipboard"]
 file_dialog = ["file-dialog"] # Backwards compat. Remove in next breaking version
 file-dialog = ["blitz-shell/file_dialog"]
 accessibility = ["blitz-shell/accessibility", "blitz-dom/accessibility"]
+data-uri = ["blitz-shell/data-uri"]
 
 # Renderer features
 vello = ["alt-renderer", "dep:anyrender_vello"]

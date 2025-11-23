@@ -52,23 +52,23 @@ mod data_uri_net_provider {
     }
 
     impl<D: 'static> NetProvider<D> for DataUriNetProvider<D> {
-        fn fetch(&self, doc_id: usize, request: Request, handler: Box<dyn NetHandler<D>>) {
-            let callback = &self.resource_callback;
+        fn fetch(&self, doc_id: usize, request: Request, handler: Box<dyn NetHandler>) {
+            // let callback = &self.resource_callback;
             match request.url.scheme() {
                 "data" => {
                     let Ok(data_url) = DataUrl::process(request.url.as_str()) else {
-                        callback.call(doc_id, Err(Some(String::from("Failed to parse data uri"))));
+                        // callback.call(doc_id, Err(Some(String::from("Failed to parse data uri"))));
                         return;
                     };
                     let Ok(decoded) = data_url.decode_to_vec() else {
-                        callback.call(doc_id, Err(Some(String::from("Failed to decode data uri"))));
+                        // callback.call(doc_id, Err(Some(String::from("Failed to decode data uri"))));
                         return;
                     };
                     let bytes = Bytes::from(decoded.0);
-                    handler.bytes(doc_id, bytes, Arc::clone(callback));
+                    handler.bytes(request.url.to_string(), bytes);
                 }
                 _ => {
-                    callback.call(doc_id, Err(Some(String::from("UnsupportedScheme"))));
+                    // callback.call(doc_id, Err(Some(String::from("UnsupportedScheme"))));
                 }
             };
         }
