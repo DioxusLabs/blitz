@@ -3,12 +3,14 @@ use std::sync::Arc;
 
 use blitz_dom::net::Resource;
 use blitz_shell::BlitzShellEvent;
-use blitz_traits::net::{NetCallback, NetProvider};
+use blitz_traits::net::NetProvider;
 use winit::event_loop::EventLoopProxy;
 
 pub struct DioxusNativeNetProvider {
     inner_net_provider: Option<Arc<dyn NetProvider<Resource> + 'static>>,
 }
+
+#[allow(unused)]
 impl DioxusNativeNetProvider {
     pub fn shared(proxy: EventLoopProxy<BlitzShellEvent>) -> Arc<dyn NetProvider<Resource>> {
         Arc::new(Self::new(proxy)) as Arc<dyn NetProvider<Resource>>

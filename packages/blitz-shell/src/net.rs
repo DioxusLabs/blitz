@@ -40,6 +40,7 @@ mod data_uri_net_provider {
     use std::sync::Arc;
 
     pub struct DataUriNetProvider<D> {
+        #[allow(unused)]
         resource_callback: Arc<dyn NetCallback<D>>,
     }
     impl<D: 'static> DataUriNetProvider<D> {
@@ -52,7 +53,7 @@ mod data_uri_net_provider {
     }
 
     impl<D: 'static> NetProvider<D> for DataUriNetProvider<D> {
-        fn fetch(&self, doc_id: usize, request: Request, handler: Box<dyn NetHandler>) {
+        fn fetch(&self, _doc_id: usize, request: Request, handler: Box<dyn NetHandler>) {
             // let callback = &self.resource_callback;
             match request.url.scheme() {
                 "data" => {
