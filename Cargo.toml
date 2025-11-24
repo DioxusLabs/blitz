@@ -29,7 +29,7 @@ homepage = "https://github.com/dioxuslabs/blitz"
 repository = "https://github.com/dioxuslabs/blitz"
 categories = ["gui"]
 edition = "2024"
-rust-version = "1.86.0"
+rust-version = "1.88.0"
 
 [workspace.dependencies]
 # Blitz dependencies(in-repo)
