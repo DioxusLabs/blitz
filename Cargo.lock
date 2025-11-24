@@ -845,6 +845,7 @@ dependencies = [
  "blitz-shell",
  "blitz-traits",
  "dioxus",
+ "dioxus-native",
  "env_logger",
  "euclid",
  "image",

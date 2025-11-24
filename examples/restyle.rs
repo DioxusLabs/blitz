@@ -9,7 +9,7 @@ fn main() {
         .unwrap();
     let _guard = rt.enter();
 
-    mini_dxn::launch(app);
+    dioxus_native::launch(app);
 }
 
 #[derive(Copy, Clone)]

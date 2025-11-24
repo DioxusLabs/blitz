@@ -62,7 +62,7 @@ async fn main() {
         .and_then(|arg| arg.parse().ok())
         .unwrap_or(1200);
 
-    let (mut recv, callback) = MpscCallback::new();
+    let (_recv, callback) = MpscCallback::new();
     let callback = Arc::new(callback);
     let net = Arc::new(Provider::new(callback));
 
@@ -86,12 +86,10 @@ async fn main() {
         scale as f32,
         ColorScheme::Light,
     ));
+    document.resolve(0.0);
 
     while !net.is_empty() {
-        let Some((_, res)) = recv.recv().await else {
-            break;
-        };
-        document.as_mut().load_resource(res);
+        document.resolve(0.0);
 
         // HACK: this fixes a deadlock by forcing thread synchronisation.
         println!("{} resources remaining {}", net.count(), net.is_empty());
