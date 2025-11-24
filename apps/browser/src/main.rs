@@ -20,6 +20,8 @@ type StdNetProvider = blitz_net::Provider<blitz_dom::net::Resource>;
 mod icons;
 use icons::IconButton;
 
+static BROWSER_UI_STYLES: Asset = asset!("../assets/browser.css");
+
 fn main() {
     #[cfg(feature = "tracing")]
     tracing_subscriber::fmt::init();
@@ -62,7 +64,7 @@ fn app() -> Element {
     rsx!(
         div { id: "frame",
             title { "Blitz Browser" }
-            style { {include_str!("../assets/browser.css")} }
+            document::Link { rel: "stylesheet", href: BROWSER_UI_STYLES }
 
             // Toolbar
             div { class: "urlbar",
