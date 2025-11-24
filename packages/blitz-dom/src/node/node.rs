@@ -349,11 +349,11 @@ impl Node {
         self.element_state.contains(ElementState::ACTIVE)
     }
 
-    pub fn subdoc(&self) -> Option<&Box<dyn Document>> {
+    pub fn subdoc(&self) -> Option<&dyn Document> {
         self.element_data().and_then(|el| el.sub_doc_data())
     }
 
-    pub fn subdoc_mut(&mut self) -> Option<&mut Box<dyn Document>> {
+    pub fn subdoc_mut(&mut self) -> Option<&mut dyn Document> {
         self.element_data_mut().and_then(|el| el.sub_doc_data_mut())
     }
 }

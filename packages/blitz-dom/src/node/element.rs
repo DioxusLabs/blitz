@@ -109,7 +109,7 @@ impl Clone for SpecialElementData {
             Self::Canvas(data) => Self::Canvas(data.clone()),
             Self::TableRoot(data) => Self::TableRoot(data.clone()),
             Self::TextInput(data) => Self::TextInput(data.clone()),
-            Self::CheckboxInput(data) => Self::CheckboxInput(data.clone()),
+            Self::CheckboxInput(data) => Self::CheckboxInput(*data),
             #[cfg(feature = "file_input")]
             Self::FileInput(data) => Self::FileInput(data.clone()),
             Self::None => Self::None,
@@ -201,16 +201,16 @@ impl ElementData {
         }
     }
 
-    pub fn sub_doc_data(&self) -> Option<&Box<dyn Document>> {
+    pub fn sub_doc_data(&self) -> Option<&dyn Document> {
         match &self.special_data {
-            SpecialElementData::SubDocument(data) => Some(data),
+            SpecialElementData::SubDocument(data) => Some(data.as_ref()),
             _ => None,
         }
     }
 
-    pub fn sub_doc_data_mut(&mut self) -> Option<&mut Box<dyn Document>> {
+    pub fn sub_doc_data_mut(&mut self) -> Option<&mut dyn Document> {
         match &mut self.special_data {
-            SpecialElementData::SubDocument(data) => Some(data),
+            SpecialElementData::SubDocument(data) => Some(data.as_mut()),
             _ => None,
         }
     }

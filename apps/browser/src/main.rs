@@ -1,5 +1,6 @@
 // On Windows do NOT show a console window when opening the app
 #![cfg_attr(all(not(test), target_os = "windows"), windows_subsystem = "windows")]
+#![allow(clippy::collapsible_if)]
 
 //! A web browser with UI powered by Dioxus Native and content rendering powered by Blitz
 
@@ -39,8 +40,8 @@ fn app() -> Element {
     let mut history: SyncStore<History> = use_sync_store(|| History::new(home_url.clone()));
 
     let net_provider = use_context::<Arc<StdNetProvider>>();
-    let loader = use_hook(|| DocumentLoader::new(net_provider, history.clone()));
-    let content_doc = loader.doc.clone();
+    let loader = use_hook(|| DocumentLoader::new(net_provider, history));
+    let content_doc = loader.doc;
 
     let load_current_url = use_callback(move |_| {
         let request = (*history.current_url().read()).clone();
@@ -56,7 +57,7 @@ fn app() -> Element {
     let home_action = use_callback(move |_| history.navigate(Request::get(home_url.clone())));
     let refresh_action = load_current_url;
     let open_action =
-        use_callback(move |_| open_in_external_browser(&*history.current_url().read()));
+        use_callback(move |_| open_in_external_browser(&history.current_url().read()));
 
     rsx!(
         div { id: "frame",
@@ -77,7 +78,7 @@ fn app() -> Element {
                     onkeydown: move |evt| {
                         if evt.key() == Key::Enter {
                             evt.prevent_default();
-                            let req = req_from_string(&*url_input_value.read());
+                            let req = req_from_string(&url_input_value.read());
                             if let Some(req) = req {
                                 history.navigate(req);
                             } else {
@@ -98,7 +99,7 @@ fn app() -> Element {
 }
 
 fn req_from_string(url_s: &str) -> Option<Request> {
-    if let Ok(url) = Url::parse(&url_s) {
+    if let Ok(url) = Url::parse(url_s) {
         return Some(Request::get(url));
     };
 
@@ -223,10 +224,10 @@ impl Clone for DocumentLoader {
     fn clone(&self) -> Self {
         Self {
             net_provider: self.net_provider.clone(),
-            status: self.status.clone(),
+            status: self.status,
             request_id_counter: AtomicUsize::new(self.request_id_counter.load(Ao::SeqCst)),
-            doc: self.doc.clone(),
-            history: self.history.clone(),
+            doc: self.doc,
+            history: self.history,
         }
     }
 }
@@ -245,9 +246,9 @@ impl DocumentLoader {
     fn load_document(&self, req: Request) {
         let request_id = self.request_id_counter.fetch_add(1, Ao::Relaxed);
         let net_provider = Arc::clone(&self.net_provider);
-        let status = self.status.clone();
-        let doc_signal = self.doc.clone();
-        let history = self.history.clone();
+        let status = self.status;
+        let doc_signal = self.doc;
+        let history = self.history;
 
         if let DocumentLoaderStatus::Loading { task, .. } = *self.status.peek() {
             task.cancel();
@@ -284,7 +285,7 @@ impl DocumentLoader {
                         font_ctx: None,
                     };
 
-                    let html = if bytes.len() == 0 {
+                    let html = if bytes.is_empty() {
                         include_str!("../assets/404.html")
                     } else {
                         str::from_utf8(&bytes).unwrap()

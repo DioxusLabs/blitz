@@ -76,7 +76,7 @@ impl<T: Send + Sync + 'static> ResourceHandler<T> {
         Box::new(Self::new(tx, doc_id, node_id, shell_provider, data)) as _
     }
 
-    fn respond(self: Box<Self>, resolved_url: String, result: Result<Resource, String>) {
+    fn respond(&self, resolved_url: String, result: Result<Resource, String>) {
         let response = ResourceLoadResponse {
             request_id: self.request_id,
             node_id: self.node_id,
@@ -339,7 +339,7 @@ impl FontFaceHandler {
             _ => {}
         }
 
-        return Ok(Resource::Font(bytes));
+        Ok(Resource::Font(bytes))
     }
 }
 
@@ -454,6 +454,6 @@ impl ImageHandler {
             }
         }
 
-        return Err(String::from("Could not parse image"));
+        Err(String::from("Could not parse image"))
     }
 }

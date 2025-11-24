@@ -53,6 +53,7 @@ impl NetProvider<Resource> for DioxusNativeNetProvider {
         handler: blitz_traits::net::BoxedHandler,
     ) {
         if request.url.scheme() == "dioxus" {
+            #[allow(clippy::single_match)] // cfg'd code
             match dioxus_asset_resolver::native::serve_asset(request.url.path()) {
                 Ok(res) => {
                     #[cfg(feature = "tracing")]
@@ -64,13 +65,11 @@ impl NetProvider<Resource> for DioxusNativeNetProvider {
                     tracing::warn!("fetching asset from file system error {request:#?}");
                 }
             }
+        } else if let Some(inner) = &self.inner_net_provider {
+            inner.fetch(doc_id, request, handler);
         } else {
-            if let Some(inner) = &self.inner_net_provider {
-                inner.fetch(doc_id, request, handler);
-            } else {
-                #[cfg(feature = "tracing")]
-                tracing::warn!("net feature not enabled, cannot fetch {request:#?}");
-            }
+            #[cfg(feature = "tracing")]
+            tracing::warn!("net feature not enabled, cannot fetch {request:#?}");
         }
     }
 }

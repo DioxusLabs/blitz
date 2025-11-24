@@ -679,7 +679,7 @@ impl ElementCx<'_> {
             // let transform = self.transform.then_translate(Vec2 { x, y });
 
             let painter = BlitzDomPainter {
-                dom: &*sub_doc,
+                dom: sub_doc,
                 scale,
                 width,
                 height,
