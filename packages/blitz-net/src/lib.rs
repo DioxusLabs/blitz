@@ -166,6 +166,7 @@ impl<D: 'static> NetProvider<D> for Provider<D> {
         #[cfg(feature = "debug_log")]
         println!("Fetching {}", &request.url);
 
+        let callback = Arc::clone(&self.resource_callback);
         self.rt.spawn(async move {
             #[cfg(feature = "debug_log")]
             let url = request.url.to_string();
@@ -178,6 +179,12 @@ impl<D: 'static> NetProvider<D> for Provider<D> {
             } else {
                 println!("Success {url}");
             }
+
+            // Callback isn't actually used in closure, but the refcount of the Arc is used to
+            // count the number of inflight requests.
+            //
+            // TODO: better request tracking.
+            drop(callback)
         });
     }
 }
