@@ -1,6 +1,8 @@
 //! Paint a [`blitz_dom::BaseDocument`] by pushing [`anyrender`] drawing commands into
 //! an impl [`anyrender::PaintScene`].
 
+#![allow(clippy::collapsible_if)]
+
 mod color;
 mod debug_overlay;
 mod gradient;

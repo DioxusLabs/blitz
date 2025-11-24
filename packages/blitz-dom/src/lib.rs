@@ -21,6 +21,8 @@
 //! they want.
 //!
 
+#![allow(clippy::collapsible_if)]
+
 // TODO: Document features
 // ## Feature flags
 //  - `default`: Enables the features listed below.

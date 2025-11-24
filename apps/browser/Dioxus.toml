@@ -3,4 +3,4 @@
 [bundle]
 publisher = "DioxusLabs"
 identifier = "com.dioxuslabs.blitz"
-icon = ["assets/blitz-logo.png"]
+icon = ["./assets/blitz-logo.png"]
