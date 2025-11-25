@@ -64,12 +64,6 @@ pub fn create_waker(proxy: &EventLoopProxy<BlitzShellEvent>, id: WindowId) -> st
         proxy: EventLoopProxy<BlitzShellEvent>,
         id: WindowId,
     }
-
-    // this should be implemented by most platforms, but ios is missing this until
-    // https://github.com/tauri-apps/wry/issues/830 is resolved
-    unsafe impl Send for DomHandle {}
-    unsafe impl Sync for DomHandle {}
-
     impl ArcWake for DomHandle {
         fn wake_by_ref(arc_self: &Arc<Self>) {
             _ = arc_self.proxy.send_event(BlitzShellEvent::Poll {
@@ -78,8 +72,6 @@ pub fn create_waker(proxy: &EventLoopProxy<BlitzShellEvent>, id: WindowId) -> st
         }
     }
 
-    futures_util::task::waker(Arc::new(DomHandle {
-        id,
-        proxy: proxy.clone(),
-    }))
+    let proxy = proxy.clone();
+    futures_util::task::waker(Arc::new(DomHandle { id, proxy }))
 }
