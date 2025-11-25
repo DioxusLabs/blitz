@@ -132,7 +132,7 @@ fn create_net_provider(
     let net_provider = {
         let proxy = event_loop.create_proxy();
         let waker = blitz_shell::BlitzShellNetWaker::shared(proxy);
-        Arc::new(blitz_net::Provider::new(waker))
+        Arc::new(blitz_net::Provider::new(Some(waker)))
     };
     #[cfg(not(feature = "net"))]
     let net_provider = {

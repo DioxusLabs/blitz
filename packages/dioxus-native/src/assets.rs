@@ -16,7 +16,7 @@ impl DioxusNativeNetProvider {
     }
 
     pub fn new(proxy: EventLoopProxy<BlitzShellEvent>) -> Self {
-        let net_waker = BlitzShellNetWaker::shared(proxy);
+        let net_waker = Some(BlitzShellNetWaker::shared(proxy));
 
         #[cfg(feature = "net")]
         let inner_net_provider = Some(blitz_net::Provider::shared(net_waker.clone()));

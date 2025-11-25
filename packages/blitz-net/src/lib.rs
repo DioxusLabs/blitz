@@ -40,7 +40,7 @@ pub struct Provider {
     waker: Arc<dyn NetWaker>,
 }
 impl Provider {
-    pub fn new(waker: Arc<dyn NetWaker>) -> Self {
+    pub fn new(waker: Option<Arc<dyn NetWaker>>) -> Self {
         let builder = reqwest::Client::builder();
         #[cfg(feature = "cookies")]
         let builder = builder.cookie_store(true);
@@ -55,14 +55,15 @@ impl Provider {
             }))
             .build();
 
+        let waker = waker.unwrap_or(Arc::new(DummyNetWaker));
         Self {
             rt: Handle::current(),
             client,
             waker,
         }
     }
-    pub fn shared(res_callback: Arc<dyn NetWaker>) -> Arc<dyn NetProvider> {
-        Arc::new(Self::new(res_callback))
+    pub fn shared(waker: Option<Arc<dyn NetWaker>>) -> Arc<dyn NetProvider> {
+        Arc::new(Self::new(waker))
     }
     pub fn is_empty(&self) -> bool {
         Arc::strong_count(&self.waker) == 1
@@ -259,4 +260,9 @@ impl ReqwestExt for RequestBuilder {
             Body::Empty => self,
         }
     }
+}
+
+struct DummyNetWaker;
+impl NetWaker for DummyNetWaker {
+    fn wake(&self, _client_id: usize) {}
 }

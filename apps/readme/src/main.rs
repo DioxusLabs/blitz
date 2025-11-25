@@ -76,7 +76,7 @@ fn main() {
     let event_loop = create_default_event_loop();
     let proxy = event_loop.create_proxy();
 
-    let net_waker = BlitzShellNetWaker::shared(proxy.clone());
+    let net_waker = Some(BlitzShellNetWaker::shared(proxy.clone()));
     let net_provider = Arc::new(Provider::new(net_waker));
 
     let (base_url, contents, is_md, file_path) =
