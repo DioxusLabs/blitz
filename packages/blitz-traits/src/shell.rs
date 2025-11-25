@@ -8,7 +8,7 @@ pub struct ClipboardError;
 
 /// Abstraction over windowing / operating system ("shell") functionality that allows a Blitz document
 /// to access that functionality without depending on a specific shell environment.
-pub trait ShellProvider {
+pub trait ShellProvider: Send + Sync + 'static {
     fn request_redraw(&self) {}
     fn set_cursor(&self, icon: CursorIcon) {
         let _ = icon;
@@ -47,14 +47,14 @@ pub struct DummyShellProvider;
 impl ShellProvider for DummyShellProvider {}
 
 /// The system color scheme (light and dark mode)
-#[derive(Default, Debug, Clone, Copy)]
+#[derive(Default, Debug, Clone, Copy, PartialEq)]
 pub enum ColorScheme {
     #[default]
     Light,
     Dark,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Viewport {
     pub color_scheme: ColorScheme,
     pub window_size: (u32, u32),

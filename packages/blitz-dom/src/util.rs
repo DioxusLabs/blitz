@@ -15,7 +15,7 @@ pub(crate) static FONT_DB: LazyLock<Arc<fontdb::Database>> = LazyLock::new(|| {
     Arc::new(db)
 });
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Copy, Debug)]
 pub enum ImageType {
     Image,
     Background(usize),

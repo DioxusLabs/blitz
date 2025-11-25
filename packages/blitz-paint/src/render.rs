@@ -65,9 +65,9 @@ impl BlitzDomPainter<'_> {
     ///
     /// This assumes styles are resolved and layout is complete.
     /// Make sure you do those before trying to render
-    pub fn paint_scene(&self, scene: &mut impl PaintScene) {
+    pub fn paint_scene(&self, scene: &mut impl PaintScene, initial_x: f64, initial_y: f64) {
         // Simply render the document (the root element (note that this is not the same as the root node)))
-        scene.reset();
+        // scene.reset();
         let viewport_scroll = self.dom.as_ref().viewport_scroll();
 
         let root_element = self.dom.as_ref().root_element();
@@ -113,8 +113,8 @@ impl BlitzDomPainter<'_> {
             scene,
             root_id,
             Point {
-                x: -viewport_scroll.x,
-                y: -viewport_scroll.y,
+                x: initial_x - viewport_scroll.x,
+                y: initial_y - viewport_scroll.y,
             },
         );
 
@@ -144,9 +144,9 @@ impl BlitzDomPainter<'_> {
         }
 
         // Only draw elements with a style
-        if node.primary_styles().is_none() {
+        let Some(styles) = node.primary_styles() else {
             return;
-        }
+        };
 
         // Hide inputs with type=hidden
         // Implemented here rather than using the style engine for performance reasons
@@ -155,32 +155,35 @@ impl BlitzDomPainter<'_> {
         }
 
         // Hide elements with a visibility style other than visible
-        if node
-            .primary_styles()
-            .unwrap()
-            .get_inherited_box()
-            .visibility
-            != StyloVisibility::Visible
-        {
+        if styles.get_inherited_box().visibility != StyloVisibility::Visible {
             return;
         }
 
         // We can't fully support opacity yet, but we can hide elements with opacity 0
-        let opacity = node.primary_styles().unwrap().get_effects().opacity;
+        let opacity = styles.get_effects().opacity;
         if opacity == 0.0 {
             return;
         }
         let has_opacity = opacity < 1.0;
 
         // TODO: account for overflow_x vs overflow_y
-        let styles = &node.primary_styles().unwrap();
         let overflow_x = styles.get_box().overflow_x;
         let overflow_y = styles.get_box().overflow_y;
         let is_image = node
             .element_data()
             .and_then(|e| e.raster_image_data())
             .is_some();
+        let is_sub_doc = node
+            .element_data()
+            .and_then(|el| el.sub_doc_data())
+            .is_some();
+        let is_text_input = node
+            .element_data()
+            .and_then(|el| el.text_input_data())
+            .is_some();
         let should_clip = is_image
+            || is_sub_doc
+            || is_text_input
             || !matches!(overflow_x, Overflow::Visible)
             || !matches!(overflow_y, Overflow::Visible);
 
@@ -220,14 +223,18 @@ impl BlitzDomPainter<'_> {
         cx.draw_outline(scene);
         cx.draw_outset_box_shadow(scene);
         cx.draw_background(scene);
+        cx.draw_inset_box_shadow(scene);
         cx.draw_border(scene);
 
         // TODO: allow layers with opacity to be unclipped (overflow: visible)
         let wants_layer = should_clip | has_opacity;
-        let clip = &cx.frame.padding_box_path();
+        let clip = if is_text_input {
+            &cx.frame.content_box_path()
+        } else {
+            &cx.frame.padding_box_path()
+        };
 
         maybe_with_layer(scene, wants_layer, opacity, cx.transform, clip, |scene| {
-            cx.draw_inset_box_shadow(scene);
             cx.stroke_devtools(scene);
 
             // Now that background has been drawn, offset pos and cx in order to draw our contents scrolled
@@ -247,6 +254,7 @@ impl BlitzDomPainter<'_> {
             #[cfg(feature = "svg")]
             cx.draw_svg(scene);
             cx.draw_canvas(scene);
+            cx.draw_sub_document(scene);
             cx.draw_input(scene);
 
             cx.draw_text_input_text(scene, content_position);
@@ -658,6 +666,27 @@ impl ElementCx<'_> {
                 None,
                 &Rect::from_origin_size((0.0, 0.0), (width as f64, height as f64)),
             );
+        }
+    }
+
+    fn draw_sub_document(&self, scene: &mut impl PaintScene) {
+        if let Some(sub_doc) = self.element.sub_doc_data() {
+            let scale = self.scale;
+            let width = self.frame.content_box.width() as u32;
+            let height = self.frame.content_box.height() as u32;
+            let x = self.pos.x + self.frame.content_box.origin().x;
+            let y = self.pos.y + self.frame.content_box.origin().y;
+            // let transform = self.transform.then_translate(Vec2 { x, y });
+
+            let painter = BlitzDomPainter {
+                dom: sub_doc,
+                scale,
+                width,
+                height,
+                devtools: DevtoolSettings::default(),
+            };
+
+            painter.paint_scene(scene, x, y);
         }
     }
 

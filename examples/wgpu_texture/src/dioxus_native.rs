@@ -1,13 +1,13 @@
 use color::{palette::css::WHITE, parse_color};
-use dioxus::prelude::*;
-use mini_dxn::use_wgpu;
+use dioxus_native::prelude::*;
+use dioxus_native::use_wgpu;
 use std::any::Any;
 
 use crate::{limits, Color, DemoMessage, DemoPaintSource, FEATURES, STYLES};
 
 pub fn launch_dx_native() {
     let config: Vec<Box<dyn Any>> = vec![Box::new(FEATURES), Box::new(limits())];
-    mini_dxn::launch_cfg(app, Vec::new(), config);
+    dioxus_native::launch_cfg(app, Vec::new(), config);
 }
 
 fn app() -> Element {

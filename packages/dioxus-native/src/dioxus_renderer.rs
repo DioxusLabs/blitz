@@ -4,28 +4,46 @@ use std::sync::Arc;
 
 use anyrender::WindowRenderer;
 
-#[cfg(feature = "gpu")]
+#[cfg(any(
+    feature = "vello",
+    all(
+        not(feature = "alt-renderer"),
+        not(all(target_os = "ios", target_abi = "sim"))
+    )
+))]
 pub use anyrender_vello::{
-    CustomPaintSource, VelloRendererOptions, VelloWindowRenderer as InnerRenderer,
     wgpu::{Features, Limits},
+    CustomPaintSource, VelloRendererOptions, VelloWindowRenderer as InnerRenderer,
 };
 
-#[cfg(feature = "cpu-base")]
+#[cfg(any(
+    feature = "vello-cpu-base",
+    all(
+        not(feature = "alt-renderer"),
+        all(target_os = "ios", target_abi = "sim")
+    )
+))]
 use anyrender_vello_cpu::VelloCpuWindowRenderer as InnerRenderer;
 
-#[cfg(feature = "hybrid")]
+#[cfg(feature = "vello-hybrid")]
 use anyrender_vello_hybrid::VelloHybridWindowRenderer as InnerRenderer;
 
 #[cfg(feature = "skia")]
 use anyrender_skia::SkiaWindowRenderer as InnerRenderer;
 
-#[cfg(feature = "gpu")]
+#[cfg(any(
+    feature = "vello",
+    all(
+        not(feature = "alt-renderer"),
+        not(all(target_os = "ios", target_abi = "sim"))
+    )
+))]
 pub fn use_wgpu<T: CustomPaintSource>(create_source: impl FnOnce() -> T) -> u64 {
     use dioxus_core::{consume_context, use_hook_with_cleanup};
 
     let (_renderer, id) = use_hook_with_cleanup(
         || {
-            let renderer = consume_context::<DxnWindowRenderer>();
+            let renderer = consume_context::<DioxusNativeWindowRenderer>();
             let source = Box::new(create_source());
             let id = renderer.register_custom_paint_source(source);
             (renderer, id)
@@ -39,28 +57,34 @@ pub fn use_wgpu<T: CustomPaintSource>(create_source: impl FnOnce() -> T) -> u64 
 }
 
 #[derive(Clone)]
-pub struct DxnWindowRenderer {
+pub struct DioxusNativeWindowRenderer {
     inner: Rc<RefCell<InnerRenderer>>,
 }
 
-impl Default for DxnWindowRenderer {
+impl Default for DioxusNativeWindowRenderer {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl DxnWindowRenderer {
+impl DioxusNativeWindowRenderer {
     pub fn new() -> Self {
         let vello_renderer = InnerRenderer::new();
         Self::with_inner_renderer(vello_renderer)
     }
 
-    #[cfg(feature = "gpu")]
+    #[cfg(any(
+        feature = "vello",
+        all(
+            not(feature = "alt-renderer"),
+            not(all(target_os = "ios", target_abi = "sim"))
+        )
+    ))]
     pub fn with_features_and_limits(features: Option<Features>, limits: Option<Limits>) -> Self {
         let vello_renderer = InnerRenderer::with_options(VelloRendererOptions {
             features,
             limits,
-            ..VelloRendererOptions::default()
+            ..Default::default()
         });
         Self::with_inner_renderer(vello_renderer)
     }
@@ -72,19 +96,24 @@ impl DxnWindowRenderer {
     }
 }
 
-impl DxnWindowRenderer {
-    #[cfg(feature = "gpu")]
+#[cfg(any(
+    feature = "vello",
+    all(
+        not(feature = "alt-renderer"),
+        not(all(target_os = "ios", target_abi = "sim"))
+    )
+))]
+impl DioxusNativeWindowRenderer {
     pub fn register_custom_paint_source(&self, source: Box<dyn CustomPaintSource>) -> u64 {
         self.inner.borrow_mut().register_custom_paint_source(source)
     }
 
-    #[cfg(feature = "gpu")]
     pub fn unregister_custom_paint_source(&self, id: u64) {
         self.inner.borrow_mut().unregister_custom_paint_source(id)
     }
 }
 
-impl WindowRenderer for DxnWindowRenderer {
+impl WindowRenderer for DioxusNativeWindowRenderer {
     type ScenePainter<'a>
         = <InnerRenderer as WindowRenderer>::ScenePainter<'a>
     where

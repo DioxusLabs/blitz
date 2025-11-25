@@ -19,6 +19,7 @@ use style_traits::ParsingMode;
 use url::Url;
 
 use super::{Attribute, Attributes};
+use crate::Document;
 use crate::layout::table::TableContext;
 
 #[derive(Debug, Clone)]
@@ -76,8 +77,10 @@ pub enum SpecialElementType {
 }
 
 /// Heterogeneous data that depends on the element's type.
-#[derive(Clone, Default)]
+#[derive(Default)]
 pub enum SpecialElementData {
+    SubDocument(Box<dyn Document>),
+    /// A stylesheet
     Stylesheet(DocumentStyleSheet),
     /// An \<img\> element's image data
     Image(Box<ImageData>),
@@ -95,6 +98,23 @@ pub enum SpecialElementData {
     /// No data (for nodes that don't need any node-specific data)
     #[default]
     None,
+}
+
+impl Clone for SpecialElementData {
+    fn clone(&self) -> Self {
+        match self {
+            Self::SubDocument(_) => Self::None, // TODO
+            Self::Stylesheet(data) => Self::Stylesheet(data.clone()),
+            Self::Image(data) => Self::Image(data.clone()),
+            Self::Canvas(data) => Self::Canvas(data.clone()),
+            Self::TableRoot(data) => Self::TableRoot(data.clone()),
+            Self::TextInput(data) => Self::TextInput(data.clone()),
+            Self::CheckboxInput(data) => Self::CheckboxInput(*data),
+            #[cfg(feature = "file_input")]
+            Self::FileInput(data) => Self::FileInput(data.clone()),
+            Self::None => Self::None,
+        }
+    }
 }
 
 impl SpecialElementData {
@@ -181,6 +201,20 @@ impl ElementData {
         }
     }
 
+    pub fn sub_doc_data(&self) -> Option<&dyn Document> {
+        match &self.special_data {
+            SpecialElementData::SubDocument(data) => Some(data.as_ref()),
+            _ => None,
+        }
+    }
+
+    pub fn sub_doc_data_mut(&mut self) -> Option<&mut dyn Document> {
+        match &mut self.special_data {
+            SpecialElementData::SubDocument(data) => Some(data.as_mut()),
+            _ => None,
+        }
+    }
+
     #[cfg(feature = "svg")]
     pub fn svg_data(&self) -> Option<&usvg::Tree> {
         match self.image_data()? {
@@ -244,32 +278,34 @@ impl ElementData {
     pub fn flush_is_focussable(&mut self) {
         let disabled: bool = self.attr_parsed(local_name!("disabled")).unwrap_or(false);
         let tabindex: Option<i32> = self.attr_parsed(local_name!("tabindex"));
+        let contains_sub_document: bool = self.sub_doc_data().is_some();
 
-        self.is_focussable = !disabled
-            && match tabindex {
-                Some(index) => index >= 0,
-                None => {
-                    // Some focusable HTML elements have a default tabindex value of 0 set under the hood by the user agent.
-                    // These elements are:
-                    //   - <a> or <area> with href attribute
-                    //   - <button>, <frame>, <iframe>, <input>, <object>, <select>, <textarea>, and SVG <a> element
-                    //   - <summary> element that provides summary for a <details> element.
+        self.is_focussable = contains_sub_document
+            || (!disabled
+                && match tabindex {
+                    Some(index) => index >= 0,
+                    None => {
+                        // Some focusable HTML elements have a default tabindex value of 0 set under the hood by the user agent.
+                        // These elements are:
+                        //   - <a> or <area> with href attribute
+                        //   - <button>, <frame>, <iframe>, <input>, <object>, <select>, <textarea>, and SVG <a> element
+                        //   - <summary> element that provides summary for a <details> element.
 
-                    if [local_name!("a"), local_name!("area")].contains(&self.name.local) {
-                        self.attr(local_name!("href")).is_some()
-                    } else {
-                        const DEFAULT_FOCUSSABLE_ELEMENTS: [LocalName; 6] = [
-                            local_name!("button"),
-                            local_name!("input"),
-                            local_name!("select"),
-                            local_name!("textarea"),
-                            local_name!("frame"),
-                            local_name!("iframe"),
-                        ];
-                        DEFAULT_FOCUSSABLE_ELEMENTS.contains(&self.name.local)
+                        if [local_name!("a"), local_name!("area")].contains(&self.name.local) {
+                            self.attr(local_name!("href")).is_some()
+                        } else {
+                            const DEFAULT_FOCUSSABLE_ELEMENTS: [LocalName; 6] = [
+                                local_name!("button"),
+                                local_name!("input"),
+                                local_name!("select"),
+                                local_name!("textarea"),
+                                local_name!("frame"),
+                                local_name!("iframe"),
+                            ];
+                            DEFAULT_FOCUSSABLE_ELEMENTS.contains(&self.name.local)
+                        }
                     }
-                }
-            }
+                })
     }
 
     pub fn flush_style_attribute(&mut self, guard: &SharedRwLock, url_extra_data: &UrlExtraData) {
@@ -357,6 +393,14 @@ impl ElementData {
                 style.remove_property(&property_id, index);
             }
         }
+    }
+
+    pub fn set_sub_document(&mut self, sub_document: Box<dyn Document>) {
+        self.special_data = SpecialElementData::SubDocument(sub_document);
+    }
+
+    pub fn remove_sub_document(&mut self) {
+        self.special_data = SpecialElementData::None;
     }
 
     pub fn take_inline_layout(&mut self) -> Option<Box<TextLayout>> {
@@ -480,6 +524,7 @@ pub struct CanvasData {
 impl std::fmt::Debug for SpecialElementData {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            SpecialElementData::SubDocument(_) => f.write_str("NodeSpecificData::SubDocument"),
             SpecialElementData::Stylesheet(_) => f.write_str("NodeSpecificData::Stylesheet"),
             SpecialElementData::Image(data) => match **data {
                 ImageData::Raster(_) => f.write_str("NodeSpecificData::Image(Raster)"),

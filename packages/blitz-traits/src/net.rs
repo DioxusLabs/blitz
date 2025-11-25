@@ -10,20 +10,20 @@ use std::{ops::Deref, path::PathBuf, sync::Arc};
 pub use url::Url;
 
 pub type SharedProvider<D> = Arc<dyn NetProvider<D>>;
-pub type BoxedHandler<D> = Box<dyn NetHandler<D>>;
+pub type BoxedHandler = Box<dyn NetHandler>;
 pub type SharedCallback<D> = Arc<dyn NetCallback<D>>;
 
 /// A type that fetches resources for a Document.
 ///
 /// This may be over the network via http(s), via the filesystem, or some other method.
 pub trait NetProvider<Data>: Send + Sync + 'static {
-    fn fetch(&self, doc_id: usize, request: Request, handler: BoxedHandler<Data>);
+    fn fetch(&self, doc_id: usize, request: Request, handler: BoxedHandler);
 }
 
 /// A type that parses raw bytes from a network request into a Data and then calls
 /// the NetCallack with the result.
-pub trait NetHandler<Data>: Send + Sync + 'static {
-    fn bytes(self: Box<Self>, doc_id: usize, bytes: Bytes, callback: SharedCallback<Data>);
+pub trait NetHandler: Send + Sync + 'static {
+    fn bytes(self: Box<Self>, resolved_url: String, bytes: Bytes);
 }
 
 /// A type which accepts the parsed result of a network request and sends it back to the Document
@@ -39,7 +39,7 @@ impl<D, F: Fn(usize, Result<D, Option<String>>) + Send + Sync + 'static> NetCall
 }
 
 #[non_exhaustive]
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 /// A request type loosely representing <https://fetch.spec.whatwg.org/#requests>
 pub struct Request {
     pub url: Url,
@@ -150,7 +150,7 @@ impl From<PathBuf> for EntryValue {
 #[derive(Default)]
 pub struct DummyNetProvider;
 impl<D: Send + Sync + 'static> NetProvider<D> for DummyNetProvider {
-    fn fetch(&self, _doc_id: usize, _request: Request, _handler: BoxedHandler<D>) {}
+    fn fetch(&self, _doc_id: usize, _request: Request, _handler: BoxedHandler) {}
 }
 
 /// A default noop NetCallback

@@ -3,16 +3,14 @@
 
 //! The typical TodoMVC app, implemented in Dioxus.
 
-use dioxus::prelude::*;
+use dioxus_native::prelude::*;
 use std::collections::HashMap;
 
 fn main() {
     #[cfg(feature = "tracing")]
     tracing_subscriber::fmt::init();
 
-    // Note: "mini-dxn" is a cut down version of the "dioxus-native" crate used internally for testing Blitz
-    // In real apps you should prefer to use "dioxus-native" (or for a cross platform app, the main "dioxus" crate)
-    mini_dxn::launch(app)
+    dioxus_native::launch(app)
 }
 
 #[derive(PartialEq, Eq, Clone, Copy)]

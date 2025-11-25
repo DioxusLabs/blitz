@@ -3,7 +3,9 @@ use crate::font_metrics::BlitzFontMetricsProvider;
 use crate::layout::construct::ConstructionTask;
 use crate::layout::damage::ALL_DAMAGE;
 use crate::mutator::ViewportMut;
-use crate::net::{CssHandler, Resource, StylesheetLoader};
+use crate::net::{
+    Resource, ResourceHandler, ResourceLoadResponse, StylesheetHandler, StylesheetLoader,
+};
 use crate::node::{ImageData, NodeFlags, RasterImageData, SpecialElementData, Status, TextBrush};
 use crate::stylo_to_cursor_icon::stylo_to_cursor_icon;
 use crate::traversal::TreeTraverser;
@@ -29,6 +31,7 @@ use std::collections::{BTreeMap, Bound, HashMap, HashSet};
 use std::ops::{Deref, DerefMut};
 use std::str::FromStr;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::mpsc::{Receiver, Sender, channel};
 use std::sync::{Arc, Mutex};
 use std::task::Context as TaskContext;
 use style::Atom;
@@ -77,6 +80,28 @@ pub trait Document: Deref<Target = BaseDocument> + DerefMut + 'static {
     }
 }
 
+pub struct PlainDocument(pub BaseDocument);
+impl Deref for PlainDocument {
+    type Target = BaseDocument;
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+impl DerefMut for PlainDocument {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+impl Document for PlainDocument {
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
+    }
+}
+
+pub enum DocumentEvent {
+    ResourceLoad(ResourceLoadResponse),
+}
+
 pub struct BaseDocument {
     /// ID of the document
     id: usize,
@@ -90,6 +115,11 @@ pub struct BaseDocument {
     pub(crate) viewport: Viewport,
     // Scroll within our viewport
     pub(crate) viewport_scroll: crate::Point<f64>,
+
+    // Events
+    pub(crate) tx: Sender<DocumentEvent>,
+    // rx will always be Some, except temporarily while processing events
+    pub(crate) rx: Option<Receiver<DocumentEvent>>,
 
     /// A slab-backed tree of nodes
     ///
@@ -135,6 +165,8 @@ pub struct BaseDocument {
     pub(crate) ua_stylesheets: HashMap<String, DocumentStyleSheet>,
     /// Map from form control node ID's to their associated forms node ID's
     pub(crate) controls_to_form: HashMap<usize, usize>,
+    /// Nodes that contain sub documents
+    pub(crate) sub_document_nodes: HashSet<usize>,
     /// Set of changed nodes for updating the accessibility tree
     pub(crate) changed_nodes: HashSet<usize>,
     /// Set of changed nodes for updating the accessibility tree
@@ -235,8 +267,13 @@ impl BaseDocument {
             .html_parser_provider
             .unwrap_or_else(|| Arc::new(DummyHtmlParserProvider));
 
+        let (tx, rx) = channel();
+
         let mut doc = Self {
             id,
+            tx,
+            rx: Some(rx),
+
             guard,
             nodes,
             stylist,
@@ -258,6 +295,7 @@ impl BaseDocument {
             mousedown_node_id: None,
             has_active_animations: false,
             has_canvas: false,
+            sub_document_nodes: HashSet::new(),
             changed_nodes: HashSet::new(),
             deferred_construction_nodes: Vec::new(),
             controls_to_form: HashMap::new(),
@@ -439,6 +477,22 @@ impl BaseDocument {
             .remove_style_property(name, &self.guard, self.url.url_extra_data());
     }
 
+    pub fn set_sub_document(&mut self, node_id: usize, sub_document: Box<dyn Document>) {
+        self.nodes[node_id]
+            .element_data_mut()
+            .unwrap()
+            .set_sub_document(sub_document);
+        self.sub_document_nodes.insert(node_id);
+    }
+
+    pub fn remove_sub_document(&mut self, node_id: usize) {
+        self.nodes[node_id]
+            .element_data_mut()
+            .unwrap()
+            .remove_sub_document();
+        self.sub_document_nodes.remove(&node_id);
+    }
+
     pub fn root_node(&self) -> &Node {
         &self.nodes[0]
     }
@@ -559,12 +613,17 @@ impl BaseDocument {
                         self.net_provider.fetch(
                             self.id(),
                             Request::get(resolved_href.clone()),
-                            Box::new(CssHandler {
-                                node: node_id,
-                                source_url: resolved_href,
-                                guard: self.guard.clone(),
-                                provider: self.net_provider.clone(),
-                            }),
+                            ResourceHandler::boxed(
+                                self.tx.clone(),
+                                self.id,
+                                Some(node_id),
+                                self.shell_provider.clone(),
+                                StylesheetHandler {
+                                    source_url: resolved_href,
+                                    guard: self.guard.clone(),
+                                    net_provider: self.net_provider.clone(),
+                                },
+                            ),
                         );
                     }
                 }
@@ -598,7 +657,12 @@ impl BaseDocument {
             origin,
             ServoArc::new(self.guard.wrap(MediaList::empty())),
             self.guard.clone(),
-            Some(&StylesheetLoader(self.id, self.net_provider.clone())),
+            Some(&StylesheetLoader {
+                tx: self.tx.clone(),
+                doc_id: self.id,
+                net_provider: self.net_provider.clone(),
+                shell_provider: self.shell_provider.clone(),
+            }),
             None,
             QuirksMode::NoQuirks,
             AllowImportRules::Yes,
@@ -643,12 +707,38 @@ impl BaseDocument {
         }
     }
 
-    pub fn load_resource(&mut self, resource: Resource) {
+    pub fn handle_messages(&mut self) {
+        // Remove event Reciever from the Document so that we can process events
+        // without holding a borrow to the Document
+        let rx = self.rx.take().unwrap();
+
+        while let Ok(msg) = rx.try_recv() {
+            self.handle_message(msg);
+        }
+
+        // Put Reciever back
+        self.rx = Some(rx);
+    }
+
+    pub fn handle_message(&mut self, msg: DocumentEvent) {
+        match msg {
+            DocumentEvent::ResourceLoad(resource) => self.load_resource(resource),
+        }
+    }
+
+    pub fn load_resource(&mut self, res: ResourceLoadResponse) {
+        let Ok(resource) = res.result else {
+            // TODO: handle error
+            return;
+        };
+
         match resource {
-            Resource::Css(node_id, css) => {
+            Resource::Css(css) => {
+                let node_id = res.node_id.unwrap();
                 self.add_stylesheet_for_node(css, node_id);
             }
-            Resource::Image(node_id, kind, width, height, image_data) => {
+            Resource::Image(kind, width, height, image_data) => {
+                let node_id = res.node_id.unwrap();
                 let node = self.get_node_mut(node_id).unwrap();
 
                 match kind {
@@ -675,7 +765,8 @@ impl BaseDocument {
                 }
             }
             #[cfg(feature = "svg")]
-            Resource::Svg(node_id, kind, tree) => {
+            Resource::Svg(kind, tree) => {
+                let node_id = res.node_id.unwrap();
                 let node = self.get_node_mut(node_id).unwrap();
 
                 match kind {
@@ -736,7 +827,6 @@ impl BaseDocument {
             Resource::None => {
                 // Do nothing
             }
-            _ => {}
         }
     }
 
@@ -1070,6 +1160,18 @@ impl BaseDocument {
 
         let scroll_width = node.final_layout.scroll_width() as f64;
         let scroll_height = node.final_layout.scroll_height() as f64;
+
+        // Handle sub document case
+        if let Some(sub_doc) = node.subdoc_mut() {
+            let has_changed = if let Some(hover_node_id) = sub_doc.get_hover_node_id() {
+                sub_doc.scroll_node_by_has_changed(hover_node_id, x, y)
+            } else {
+                sub_doc.scroll_viewport_by_has_changed(x, y)
+            };
+
+            // TODO: propagate remaining scroll to parent
+            return has_changed;
+        }
 
         // If we're past our scroll bounds, transfer remainder of scrolling to parent/viewport
         if !can_x_scroll {

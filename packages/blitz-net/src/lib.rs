@@ -6,14 +6,38 @@ use blitz_traits::net::{
     Body, BoxedHandler, Bytes, NetCallback, NetProvider, Request, SharedCallback,
 };
 use data_url::DataUrl;
-use reqwest::Client;
 use std::sync::Arc;
 use tokio::{
     runtime::Handle,
     sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel},
 };
 
+#[cfg(feature = "cache")]
+use http_cache_reqwest::{CACacheManager, Cache, CacheMode, HttpCache, HttpCacheOptions};
+
 const USER_AGENT: &str = "Mozilla/5.0 (X11; Linux x86_64; rv:60.0) Gecko/20100101 Firefox/81.0";
+
+#[cfg(feature = "cache")]
+type Client = reqwest_middleware::ClientWithMiddleware;
+#[cfg(not(feature = "cache"))]
+type Client = reqwest::Client;
+
+#[cfg(feature = "cache")]
+type RequestBuilder = reqwest_middleware::RequestBuilder;
+#[cfg(not(feature = "cache"))]
+type RequestBuilder = reqwest::RequestBuilder;
+
+#[cfg(feature = "cache")]
+fn get_cache_path() -> std::path::PathBuf {
+    let cwd = std::env::current_dir().unwrap();
+    let cache_dir = cwd.join(".blitz-cache");
+
+    if !std::fs::exists(&cache_dir).unwrap() {
+        std::fs::create_dir(&cache_dir).unwrap();
+    }
+
+    cache_dir
+}
 
 pub struct Provider<D> {
     rt: Handle,
@@ -22,10 +46,19 @@ pub struct Provider<D> {
 }
 impl<D: 'static> Provider<D> {
     pub fn new(resource_callback: SharedCallback<D>) -> Self {
+        let builder = reqwest::Client::builder();
         #[cfg(feature = "cookies")]
-        let client = Client::builder().cookie_store(true).build().unwrap();
-        #[cfg(not(feature = "cookies"))]
-        let client = Client::new();
+        let builder = builder.cookie_store(true);
+        let client = builder.build().unwrap();
+
+        #[cfg(feature = "cache")]
+        let client = reqwest_middleware::ClientBuilder::new(client)
+            .with(Cache(HttpCache {
+                mode: CacheMode::Default,
+                manager: CACacheManager::new(get_cache_path(), true),
+                options: HttpCacheOptions::default(),
+            }))
+            .build();
 
         Self {
             rt: Handle::current(),
@@ -76,13 +109,11 @@ impl<D: 'static> Provider<D> {
 
     async fn fetch_with_handler(
         client: Client,
-        doc_id: usize,
         request: Request,
-        handler: BoxedHandler<D>,
-        res_callback: SharedCallback<D>,
+        handler: BoxedHandler,
     ) -> Result<(), ProviderError> {
-        let (_response_url, bytes) = Self::fetch_inner(client, request).await?;
-        handler.bytes(doc_id, bytes, res_callback);
+        let (response_url, bytes) = Self::fetch_inner(client, request).await?;
+        handler.bytes(response_url, bytes);
         Ok(())
     }
 
@@ -129,18 +160,18 @@ impl<D: 'static> Provider<D> {
 }
 
 impl<D: 'static> NetProvider<D> for Provider<D> {
-    fn fetch(&self, doc_id: usize, request: Request, handler: BoxedHandler<D>) {
+    fn fetch(&self, _doc_id: usize, request: Request, handler: BoxedHandler) {
         let client = self.client.clone();
-        let callback = Arc::clone(&self.resource_callback);
 
         #[cfg(feature = "debug_log")]
         println!("Fetching {}", &request.url);
 
+        let callback = Arc::clone(&self.resource_callback);
         self.rt.spawn(async move {
             #[cfg(feature = "debug_log")]
             let url = request.url.to_string();
 
-            let _res = Self::fetch_with_handler(client, doc_id, request, handler, callback).await;
+            let _res = Self::fetch_with_handler(client, request, handler).await;
 
             #[cfg(feature = "debug_log")]
             if let Err(e) = _res {
@@ -148,6 +179,12 @@ impl<D: 'static> NetProvider<D> for Provider<D> {
             } else {
                 println!("Success {url}");
             }
+
+            // Callback isn't actually used in closure, but the refcount of the Arc is used to
+            // count the number of inflight requests.
+            //
+            // TODO: better request tracking.
+            drop(callback)
         });
     }
 }
@@ -158,6 +195,8 @@ pub enum ProviderError {
     DataUrl(data_url::DataUrlError),
     DataUrlBase64(data_url::forgiving_base64::InvalidBase64),
     ReqwestError(reqwest::Error),
+    #[cfg(feature = "cache")]
+    ReqwestMiddlewareError(reqwest_middleware::Error),
 }
 
 impl From<std::io::Error> for ProviderError {
@@ -184,6 +223,13 @@ impl From<reqwest::Error> for ProviderError {
     }
 }
 
+#[cfg(feature = "cache")]
+impl From<reqwest_middleware::Error> for ProviderError {
+    fn from(value: reqwest_middleware::Error) -> Self {
+        Self::ReqwestMiddlewareError(value)
+    }
+}
+
 pub struct MpscCallback<T>(UnboundedSender<(usize, T)>);
 impl<T> MpscCallback<T> {
     pub fn new() -> (UnboundedReceiver<(usize, T)>, Self) {
@@ -203,7 +249,7 @@ impl<T: Send + Sync + 'static> NetCallback<T> for MpscCallback<T> {
 trait ReqwestExt {
     async fn apply_body(self, body: Body, content_type: &str) -> Self;
 }
-impl ReqwestExt for reqwest::RequestBuilder {
+impl ReqwestExt for RequestBuilder {
     async fn apply_body(self, body: Body, content_type: &str) -> Self {
         match body {
             Body::Bytes(bytes) => self.body(bytes),

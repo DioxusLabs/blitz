@@ -8,8 +8,10 @@ members = [
   "packages/blitz-paint",
   "packages/blitz-shell",
   "packages/blitz",
-  "packages/mini-dxn",
   "packages/stylo_taffy",
+  "packages/dioxus-native",
+  "packages/dioxus-native-dom",
+  "apps/browser",
   "apps/readme",
   "apps/bump",
   "wpt/runner",
@@ -27,7 +29,7 @@ homepage = "https://github.com/dioxuslabs/blitz"
 repository = "https://github.com/dioxuslabs/blitz"
 categories = ["gui"]
 edition = "2024"
-rust-version = "1.86.0"
+rust-version = "1.88.0"
 
 [workspace.dependencies]
 # Blitz dependencies(in-repo)
@@ -39,7 +41,8 @@ blitz-paint = { version = "0.2.0", path = "./packages/blitz-paint", default-feat
 blitz-shell = { version = "0.2.0", path = "./packages/blitz-shell", default-features = false }
 blitz-traits = { version = "0.2.0", path = "./packages/blitz-traits", default-features = false }
 stylo_taffy = { version = "0.2.0", path = "./packages/stylo_taffy", default-features = false }
-mini-dxn = { path = "./packages/mini-dxn", default-features = false }
+dioxus-native = { version = "0.7.0", path = "./packages/dioxus-native", default-features = false }
+dioxus-native-dom = { version = "0.7.0", path = "./packages/dioxus-native-dom", default-features = false }
 debug_timer = { version = "0.1.2", path = "./packages/debug_timer" }
 
 # Servo dependencies
@@ -67,8 +70,20 @@ dioxus = { version = "0.7" }
 dioxus-core = { version = "0.7" }
 dioxus-html = { version = "0.7" }
 dioxus-hooks = { version = "0.7" }
-dioxus-cli-config = { version = "0.7" }
+dioxus-signals = { version = "0.7" }
+dioxus-stores = { version = "0.7" }
+dioxus-asset-resolver = { version = "0.7" }
+manganis = { version = "0.7" }
+dioxus-document = { version = "0.7" }
+dioxus-history = { version = "0.7" }
+
+# Dioxus hot reload
 dioxus-devtools = { version = "0.7" }
+dioxus-cli-config = { version = "0.7" }
+
+# Dioxus Prelude
+dioxus-core-macro = { version = "0.7" }
+
 taffy = { git = "https://github.com/DioxusLabs/taffy", rev = "22868d2812bf903cc4d1dc514cf82197d9849a0b", default-features = false, features = ["std", "flexbox", "grid", "block_layout", "content_size", "calc"] }
 
 # AnyRender
@@ -111,6 +126,8 @@ http = "1.1.0"
 data-url = "0.3.1"
 tokio = "1.42"
 reqwest = "0.12"
+reqwest-middleware = { version = "0.4.2", default-features = false }
+http-cache-reqwest = { version = "=1.0.0-alpha.2", default-features = false }
 
 # Media & Decoding
 image = { version = "=0.25.6", default-features = false }
@@ -121,6 +138,9 @@ html-escape = "0.2.13"
 percent-encoding = "2.3.1"
 png = "0.17"
 serde = "1"
+
+# Dioxus Native
+webbrowser = "1.0"
 
 # Other dependencies
 rustc-hash = "1.1.0"
@@ -193,8 +213,8 @@ blitz-paint = { workspace = true }
 blitz-shell = { workspace = true }
 blitz-net = { workspace = true }
 blitz = { workspace = true, features = ["net"] }
-mini-dxn = { workspace = true, features = ["default"] }
 dioxus = { workspace = true }
+dioxus-native = { workspace = true, features = ["vello", "floats", "svg"] }
 euclid = { workspace = true }
 reqwest = { workspace = true }
 tokio = { workspace = true, features = ["macros"] }

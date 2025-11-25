@@ -1,6 +1,8 @@
 //! Paint a [`blitz_dom::BaseDocument`] by pushing [`anyrender`] drawing commands into
 //! an impl [`anyrender::PaintScene`].
 
+#![allow(clippy::collapsible_if)]
+
 mod color;
 mod debug_overlay;
 mod gradient;
@@ -41,7 +43,7 @@ pub fn paint_scene(
         height,
         devtools,
     };
-    generator.paint_scene(scene);
+    generator.paint_scene(scene, 0.0, 0.0);
 
     // println!(
     //     "Rendered using {} clips (depth: {}) (wanted: {})",

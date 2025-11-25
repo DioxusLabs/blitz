@@ -1,4 +1,4 @@
-use anyrender::ImageRenderer as _;
+use anyrender::{ImageRenderer as _, PaintScene as _};
 use blitz_paint::paint_scene;
 use image::{ImageBuffer, ImageFormat};
 use std::fs;
@@ -116,7 +116,10 @@ fn render_html_to_buffer(
     // Render document to RGBA buffer
     let buf = ctx.buffers.get_mut(buffer_kind);
     ctx.renderer.render_to_vec(
-        |scene| paint_scene(scene, document.as_ref(), SCALE, WIDTH, HEIGHT),
+        |scene| {
+            scene.reset();
+            paint_scene(scene, document.as_ref(), SCALE, WIDTH, HEIGHT);
+        },
         buf,
     );
 

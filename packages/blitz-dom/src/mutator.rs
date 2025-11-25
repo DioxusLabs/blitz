@@ -4,11 +4,11 @@ use std::ops::{Deref, DerefMut};
 
 use crate::document::make_device;
 use crate::layout::damage::ALL_DAMAGE;
-use crate::net::{CssHandler, ImageHandler};
+use crate::net::{ImageHandler, ResourceHandler, StylesheetHandler};
 use crate::node::{CanvasData, NodeFlags, SpecialElementData};
 use crate::util::ImageType;
 use crate::{
-    Attribute, BaseDocument, ElementData, Node, NodeData, QualName, local_name, qual_name,
+    Attribute, BaseDocument, Document, ElementData, Node, NodeData, QualName, local_name, qual_name,
 };
 use blitz_traits::net::Request;
 use blitz_traits::shell::Viewport;
@@ -320,6 +320,14 @@ impl DocumentMutator<'_> {
         self.doc.remove_style_property(node_id, name)
     }
 
+    pub fn set_sub_document(&mut self, node_id: usize, sub_document: Box<dyn Document>) {
+        self.doc.set_sub_document(node_id, sub_document)
+    }
+
+    pub fn remove_sub_document(&mut self, node_id: usize) {
+        self.doc.remove_sub_document(node_id)
+    }
+
     /// Remove the node from it's parent but don't drop it
     pub fn remove_node(&mut self, node_id: usize) {
         let node = &mut self.doc.nodes[node_id];
@@ -602,6 +610,7 @@ impl<'doc> DocumentMutator<'doc> {
             };
 
             match &element.special_data {
+                SpecialElementData::SubDocument(_) => {}
                 SpecialElementData::Stylesheet(_) => self
                     .eager_op_queue
                     .push(SpecialOp::UnloadStylesheet(node_id)),
@@ -660,12 +669,17 @@ impl<'doc> DocumentMutator<'doc> {
         self.doc.net_provider.fetch(
             self.doc.id(),
             Request::get(url.clone()),
-            Box::new(CssHandler {
-                node: target_id,
-                source_url: url,
-                guard: self.doc.guard.clone(),
-                provider: self.doc.net_provider.clone(),
-            }),
+            ResourceHandler::boxed(
+                self.doc.tx.clone(),
+                self.doc.id(),
+                Some(node.id),
+                self.doc.shell_provider.clone(),
+                StylesheetHandler {
+                    source_url: url,
+                    guard: self.doc.guard.clone(),
+                    net_provider: self.doc.net_provider.clone(),
+                },
+            ),
         );
     }
 
@@ -695,7 +709,13 @@ impl<'doc> DocumentMutator<'doc> {
                 self.doc.net_provider.fetch(
                     self.doc.id(),
                     Request::get(src),
-                    Box::new(ImageHandler::new(target_id, ImageType::Image)),
+                    ResourceHandler::boxed(
+                        self.doc.tx.clone(),
+                        self.doc.id(),
+                        Some(target_id),
+                        self.doc.shell_provider.clone(),
+                        ImageHandler::new(ImageType::Image),
+                    ),
                 );
             }
         }
@@ -782,12 +802,15 @@ fn set_input_checked_state(element: &mut ElementData, value: String) {
 /// And syncs it back to stylist on drop.
 pub struct ViewportMut<'doc> {
     doc: &'doc mut BaseDocument,
-    initial_scale: f64,
+    initial_viewport: Viewport,
 }
 impl ViewportMut<'_> {
     pub fn new(doc: &mut BaseDocument) -> ViewportMut<'_> {
-        let initial_scale = doc.viewport.scale_f64();
-        ViewportMut { doc, initial_scale }
+        let initial_viewport = doc.viewport.clone();
+        ViewportMut {
+            doc,
+            initial_viewport,
+        }
     }
 }
 impl Deref for ViewportMut<'_> {
@@ -804,11 +827,16 @@ impl DerefMut for ViewportMut<'_> {
 }
 impl Drop for ViewportMut<'_> {
     fn drop(&mut self) {
+        if self.doc.viewport == self.initial_viewport {
+            return;
+        }
+
         self.doc
             .set_stylist_device(make_device(&self.doc.viewport, self.doc.font_ctx.clone()));
         self.doc.scroll_viewport_by(0.0, 0.0); // Clamp scroll offset
 
-        let scale_has_changed = self.doc.viewport().scale_f64() != self.initial_scale;
+        let scale_has_changed =
+            self.doc.viewport().scale_f64() != self.initial_viewport.scale_f64();
         if scale_has_changed {
             self.doc.invalidate_inline_contexts();
         }

@@ -44,10 +44,10 @@ impl<D: Send + Sync + 'static> WptNetProvider<D> {
 
     fn fetch_inner(
         &self,
-        doc_id: usize,
+        _doc_id: usize,
         request_id: usize,
         request: Request,
-        handler: BoxedHandler<D>,
+        handler: BoxedHandler,
     ) -> Result<(), WptNetProviderError> {
         let callback = Arc::new(Callback {
             queue: self.queue.clone(),
@@ -56,9 +56,16 @@ impl<D: Send + Sync + 'static> WptNetProvider<D> {
 
         match request.url.scheme() {
             "data" => {
-                let data_url = DataUrl::process(request.url.as_str())?;
-                let decoded = data_url.decode_to_vec()?;
-                handler.bytes(doc_id, Bytes::from(decoded.0), callback);
+                let url = request.url.as_str().to_string();
+                let data_url = DataUrl::process(request.url.as_str()).inspect_err(|_| {
+                    callback.queue.record_failure(request_id);
+                })?;
+                let decoded = data_url.decode_to_vec().inspect_err(|_| {
+                    callback.queue.record_failure(request_id);
+                })?;
+                handler.bytes(url, Bytes::from(decoded.0));
+
+                callback.queue.record_success(None, request_id);
             }
             _ => {
                 // TODO: Should we resolve path differently if it does not begin with '/'
@@ -70,23 +77,27 @@ impl<D: Send + Sync + 'static> WptNetProvider<D> {
                 let path = self.base_path.join(relative_path);
                 let file_content = std::fs::read(&path).inspect_err(|err| {
                     eprintln!("Error loading {}: {}", path.display(), &err);
+                    callback.queue.record_failure(request_id);
                 })?;
                 catch_unwind(AssertUnwindSafe(|| {
-                    handler.bytes(doc_id, Bytes::from(file_content), callback)
+                    handler.bytes(request.url.to_string(), Bytes::from(file_content))
                 }))
                 .map_err(|err| {
                     let str_msg = err.downcast_ref::<&str>().map(|s| s.to_string());
                     let string_msg = err.downcast_ref::<String>().map(|s| s.to_string());
                     let panic_msg = str_msg.or(string_msg);
+                    callback.queue.record_failure(request_id);
                     WptNetProviderError::HandlerPanic(panic_msg)
                 })?;
+
+                callback.queue.record_success(None, request_id);
             }
         }
         Ok(())
     }
 }
 impl<D: Send + Sync + 'static> NetProvider<D> for WptNetProvider<D> {
-    fn fetch(&self, doc_id: usize, request: Request, handler: BoxedHandler<D>) {
+    fn fetch(&self, doc_id: usize, request: Request, handler: BoxedHandler) {
         let url = request.url.to_string();
 
         // println!("Loading {url}");
@@ -179,12 +190,12 @@ impl<T> InternalQueue<T> {
         request_id
     }
 
-    pub fn record_success(&self, data: T, request_id: usize) {
+    pub fn record_success(&self, data: Option<T>, request_id: usize) {
         let mut requests = self.requests.lock().unwrap_or_else(|err| err.into_inner());
         if let Some(req) = requests.get_mut(&request_id) {
             // println!("Loaded {}", req.url);
             req.status = RequestStatus::Success;
-            req.data = Some(data);
+            req.data = data;
         }
     }
 
@@ -220,8 +231,8 @@ impl<T> InternalQueue<T> {
         requests.retain(|_id, req| match req.status {
             RequestStatus::InProgress => true,
             RequestStatus::Success => {
-                let data = req.data.take().unwrap();
-                completed.push(Ok(data));
+                let data = req.data.take().ok_or(());
+                completed.push(data);
                 false
             }
             RequestStatus::Error => {
@@ -245,7 +256,7 @@ struct Callback<T> {
 impl<T: Send + Sync + 'static> NetCallback<T> for Callback<T> {
     fn call(&self, _doc_id: usize, result: Result<T, Option<String>>) {
         match result {
-            Ok(data) => self.queue.record_success(data, self.request_id),
+            Ok(data) => self.queue.record_success(Some(data), self.request_id),
             Err(err) => {
                 if let Some(msg) = err {
                     eprintln!("{msg}");

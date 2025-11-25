@@ -1,0 +1,37 @@
+[package]
+name = "browser"
+version = "0.0.0"
+edition = "2024"
+license.workspace = true
+publish = false
+
+[features]
+default = ["vello", "floats", "incremental"]
+vello = ["dioxus-native/vello"]
+hybrid = ["dioxus-native/vello-hybrid"]
+skia = ["dioxus-native/skia"]
+cpu = ["cpu-pixels"]
+cpu-pixels = ["dioxus-native/vello-cpu-pixels"]
+cpu-softbuffer = ["dioxus-native/vello-cpu-softbuffer"]
+incremental = ["dioxus-native/incremental"]
+log_frame_times = ["dioxus-native/log-frame-times"]
+log_phase_times = ["dioxus-native/log-phase-times"]
+floats = ["dioxus-native/floats"]
+cache = ["blitz-net/cache"]
+tracing = ["dioxus-native/tracing", "dep:tracing-subscriber"]
+hot-reload = ["dioxus-native/hot-reload"]
+
+[dependencies]
+dioxus-native = { workspace = true, features = [
+  "svg",
+  "system-fonts",
+  "net",
+  "clipboard",
+  "prelude",
+] }
+blitz-traits = { workspace = true }
+blitz-dom = { workspace = true, features = ["woff-rust"] }
+blitz-net = { workspace = true }
+blitz-html = { workspace = true }
+tracing-subscriber = { workspace = true, optional = true }
+webbrowser = { workspace = true }
