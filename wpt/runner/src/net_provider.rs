@@ -1,4 +1,4 @@
-use blitz_traits::net::{BoxedHandler, Bytes, NetCallback, NetProvider, Request};
+use blitz_traits::net::{Bytes, NetCallback, NetHandler, NetProvider, Request};
 use data_url::DataUrl;
 use std::{
     collections::HashMap,
@@ -47,7 +47,7 @@ impl<D: Send + Sync + 'static> WptNetProvider<D> {
         _doc_id: usize,
         request_id: usize,
         request: Request,
-        handler: BoxedHandler,
+        handler: Box<dyn NetHandler>,
     ) -> Result<(), WptNetProviderError> {
         let callback = Arc::new(Callback {
             queue: self.queue.clone(),
@@ -97,7 +97,7 @@ impl<D: Send + Sync + 'static> WptNetProvider<D> {
     }
 }
 impl<D: Send + Sync + 'static> NetProvider<D> for WptNetProvider<D> {
-    fn fetch(&self, doc_id: usize, request: Request, handler: BoxedHandler) {
+    fn fetch(&self, doc_id: usize, request: Request, handler: Box<dyn NetHandler>) {
         let url = request.url.to_string();
 
         // println!("Loading {url}");

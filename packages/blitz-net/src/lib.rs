@@ -2,9 +2,7 @@
 //!
 //! Provides an implementation of the [`blitz_traits::net::NetProvider`] trait.
 
-use blitz_traits::net::{
-    Body, BoxedHandler, Bytes, NetCallback, NetProvider, Request, SharedCallback,
-};
+use blitz_traits::net::{Body, Bytes, NetCallback, NetHandler, NetProvider, Request};
 use data_url::DataUrl;
 use std::sync::Arc;
 use tokio::{
@@ -42,10 +40,10 @@ fn get_cache_path() -> std::path::PathBuf {
 pub struct Provider<D> {
     rt: Handle,
     client: Client,
-    resource_callback: SharedCallback<D>,
+    resource_callback: Arc<dyn NetCallback<D>>,
 }
 impl<D: 'static> Provider<D> {
-    pub fn new(resource_callback: SharedCallback<D>) -> Self {
+    pub fn new(resource_callback: Arc<dyn NetCallback<D>>) -> Self {
         let builder = reqwest::Client::builder();
         #[cfg(feature = "cookies")]
         let builder = builder.cookie_store(true);
@@ -66,7 +64,7 @@ impl<D: 'static> Provider<D> {
             resource_callback,
         }
     }
-    pub fn shared(res_callback: SharedCallback<D>) -> Arc<dyn NetProvider<D>> {
+    pub fn shared(res_callback: Arc<dyn NetCallback<D>>) -> Arc<dyn NetProvider<D>> {
         Arc::new(Self::new(res_callback))
     }
     pub fn is_empty(&self) -> bool {
@@ -110,7 +108,7 @@ impl<D: 'static> Provider<D> {
     async fn fetch_with_handler(
         client: Client,
         request: Request,
-        handler: BoxedHandler,
+        handler: Box<dyn NetHandler>,
     ) -> Result<(), ProviderError> {
         let (response_url, bytes) = Self::fetch_inner(client, request).await?;
         handler.bytes(response_url, bytes);
@@ -160,7 +158,7 @@ impl<D: 'static> Provider<D> {
 }
 
 impl<D: 'static> NetProvider<D> for Provider<D> {
-    fn fetch(&self, _doc_id: usize, request: Request, handler: BoxedHandler) {
+    fn fetch(&self, _doc_id: usize, request: Request, handler: Box<dyn NetHandler>) {
         let client = self.client.clone();
 
         #[cfg(feature = "debug_log")]

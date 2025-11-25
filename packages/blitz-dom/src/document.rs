@@ -18,7 +18,7 @@ use crate::{
 use blitz_traits::devtools::DevtoolSettings;
 use blitz_traits::events::{DomEvent, HitResult, UiEvent};
 use blitz_traits::navigation::{DummyNavigationProvider, NavigationProvider};
-use blitz_traits::net::{DummyNetProvider, NetProvider, Request, SharedProvider};
+use blitz_traits::net::{DummyNetProvider, NetProvider, Request};
 use blitz_traits::shell::{ColorScheme, DummyShellProvider, ShellProvider, Viewport};
 use cursor_icon::CursorIcon;
 use linebender_resource_handle::Blob;
@@ -335,7 +335,7 @@ impl BaseDocument {
     }
 
     /// Set the Document's networking provider
-    pub fn set_net_provider(&mut self, net_provider: SharedProvider<Resource>) {
+    pub fn set_net_provider(&mut self, net_provider: Arc<dyn NetProvider<Resource>>) {
         self.net_provider = net_provider;
     }
 

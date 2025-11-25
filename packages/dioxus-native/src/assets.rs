@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use blitz_dom::net::Resource;
 use blitz_shell::BlitzShellEvent;
-use blitz_traits::net::NetProvider;
+use blitz_traits::net::{NetHandler, NetProvider, Request};
 use winit::event_loop::EventLoopProxy;
 
 pub struct DioxusNativeNetProvider {
@@ -46,12 +46,7 @@ impl DioxusNativeNetProvider {
 }
 
 impl NetProvider<Resource> for DioxusNativeNetProvider {
-    fn fetch(
-        &self,
-        doc_id: usize,
-        request: blitz_traits::net::Request,
-        handler: blitz_traits::net::BoxedHandler,
-    ) {
+    fn fetch(&self, doc_id: usize, request: Request, handler: Box<dyn NetHandler>) {
         if request.url.scheme() == "dioxus" {
             #[allow(clippy::single_match)] // cfg'd code
             match dioxus_asset_resolver::native::serve_asset(request.url.path()) {

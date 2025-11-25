@@ -6,18 +6,14 @@ use serde::{
     Serialize,
     ser::{SerializeSeq, SerializeTuple},
 };
-use std::{ops::Deref, path::PathBuf, sync::Arc};
+use std::{ops::Deref, path::PathBuf};
 pub use url::Url;
-
-pub type SharedProvider<D> = Arc<dyn NetProvider<D>>;
-pub type BoxedHandler = Box<dyn NetHandler>;
-pub type SharedCallback<D> = Arc<dyn NetCallback<D>>;
 
 /// A type that fetches resources for a Document.
 ///
 /// This may be over the network via http(s), via the filesystem, or some other method.
 pub trait NetProvider<Data>: Send + Sync + 'static {
-    fn fetch(&self, doc_id: usize, request: Request, handler: BoxedHandler);
+    fn fetch(&self, doc_id: usize, request: Request, handler: Box<dyn NetHandler>);
 }
 
 /// A type that parses raw bytes from a network request into a Data and then calls
@@ -150,7 +146,7 @@ impl From<PathBuf> for EntryValue {
 #[derive(Default)]
 pub struct DummyNetProvider;
 impl<D: Send + Sync + 'static> NetProvider<D> for DummyNetProvider {
-    fn fetch(&self, _doc_id: usize, _request: Request, _handler: BoxedHandler) {}
+    fn fetch(&self, _doc_id: usize, _request: Request, _handler: Box<dyn NetHandler>) {}
 }
 
 /// A default noop NetCallback
