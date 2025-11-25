@@ -1,4 +1,4 @@
-use crate::{HtmlParserProvider, net::Resource};
+use crate::HtmlParserProvider;
 use blitz_traits::{
     navigation::NavigationProvider,
     net::NetProvider,
@@ -17,7 +17,7 @@ pub struct DocumentConfig {
     /// User Agent stylesheets
     pub ua_stylesheets: Option<Vec<String>>,
     /// Net provider to handle network requests for resources
-    pub net_provider: Option<Arc<dyn NetProvider<Resource>>>,
+    pub net_provider: Option<Arc<dyn NetProvider>>,
     /// Navigation provider to handle link clicks and form submissions
     pub navigation_provider: Option<Arc<dyn NavigationProvider>>,
     /// Shell provider to redraw requests, clipboard, etc

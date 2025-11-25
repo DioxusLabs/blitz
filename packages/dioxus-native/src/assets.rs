@@ -1,51 +1,45 @@
-use blitz_shell::BlitzShellNetCallback;
+use blitz_shell::BlitzShellNetWaker;
 use std::sync::Arc;
 
-use blitz_dom::net::Resource;
 use blitz_shell::BlitzShellEvent;
 use blitz_traits::net::{NetHandler, NetProvider, Request};
 use winit::event_loop::EventLoopProxy;
 
 pub struct DioxusNativeNetProvider {
-    inner_net_provider: Option<Arc<dyn NetProvider<Resource> + 'static>>,
+    inner_net_provider: Option<Arc<dyn NetProvider + 'static>>,
 }
 
 #[allow(unused)]
 impl DioxusNativeNetProvider {
-    pub fn shared(proxy: EventLoopProxy<BlitzShellEvent>) -> Arc<dyn NetProvider<Resource>> {
-        Arc::new(Self::new(proxy)) as Arc<dyn NetProvider<Resource>>
+    pub fn shared(proxy: EventLoopProxy<BlitzShellEvent>) -> Arc<dyn NetProvider> {
+        Arc::new(Self::new(proxy)) as Arc<dyn NetProvider>
     }
 
     pub fn new(proxy: EventLoopProxy<BlitzShellEvent>) -> Self {
-        let net_callback = BlitzShellNetCallback::shared(proxy);
+        let net_waker = BlitzShellNetWaker::shared(proxy);
 
         #[cfg(feature = "net")]
-        let inner_net_provider = Some(blitz_net::Provider::shared(net_callback.clone()));
+        let inner_net_provider = Some(blitz_net::Provider::shared(net_waker.clone()));
         #[cfg(all(feature = "data-uri", not(feature = "net")))]
-        let inner_net_provider = Some(blitz_shell::DataUriNetProvider::shared(
-            net_callback.clone(),
-        ));
+        let inner_net_provider = Some(blitz_shell::DataUriNetProvider::shared(net_waker.clone()));
         #[cfg(all(not(feature = "data-uri"), not(feature = "net")))]
         let inner_net_provider = None;
 
         Self { inner_net_provider }
     }
 
-    pub fn with_inner(
-        proxy: EventLoopProxy<BlitzShellEvent>,
-        inner: Arc<dyn NetProvider<Resource>>,
-    ) -> Self {
+    pub fn with_inner(proxy: EventLoopProxy<BlitzShellEvent>, inner: Arc<dyn NetProvider>) -> Self {
         Self {
             inner_net_provider: Some(inner),
         }
     }
 
-    pub fn inner(&self) -> Option<&Arc<dyn NetProvider<Resource>>> {
+    pub fn inner(&self) -> Option<&Arc<dyn NetProvider>> {
         self.inner_net_provider.as_ref()
     }
 }
 
-impl NetProvider<Resource> for DioxusNativeNetProvider {
+impl NetProvider for DioxusNativeNetProvider {
     fn fetch(&self, doc_id: usize, request: Request, handler: Box<dyn NetHandler>) {
         if request.url.scheme() == "dioxus" {
             #[allow(clippy::single_match)] // cfg'd code

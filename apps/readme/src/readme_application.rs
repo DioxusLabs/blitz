@@ -2,7 +2,6 @@ use std::sync::Arc;
 
 use crate::WindowRenderer;
 use blitz_dom::DocumentConfig;
-use blitz_dom::net::Resource;
 use blitz_html::HtmlDocument;
 use blitz_net::Provider;
 use blitz_shell::{BlitzApplication, BlitzShellEvent, View, WindowConfig};
@@ -22,7 +21,7 @@ pub struct ReadmeEvent;
 pub struct ReadmeApplication {
     inner: BlitzApplication<WindowRenderer>,
     handle: tokio::runtime::Handle,
-    net_provider: Arc<Provider<Resource>>,
+    net_provider: Arc<Provider>,
     raw_url: String,
     keyboard_modifiers: Modifiers,
     navigation_provider: Arc<dyn NavigationProvider>,
@@ -33,7 +32,7 @@ impl ReadmeApplication {
     pub fn new(
         proxy: EventLoopProxy<BlitzShellEvent>,
         raw_url: String,
-        net_provider: Arc<Provider<Resource>>,
+        net_provider: Arc<Provider>,
         navigation_provider: Arc<dyn NavigationProvider>,
     ) -> Self {
         let handle = Handle::current();

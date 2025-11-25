@@ -15,7 +15,6 @@ use std::sync::Arc;
 
 use anyrender_vello::VelloWindowRenderer as WindowRenderer;
 use blitz_dom::DocumentConfig;
-use blitz_dom::net::Resource;
 use blitz_html::HtmlDocument;
 use blitz_shell::{
     BlitzApplication, BlitzShellEvent, Config, EventLoop, WindowConfig, create_default_event_loop,
@@ -99,7 +98,7 @@ fn launch_internal(
     html: &str,
     cfg: Config,
     event_loop: EventLoop<BlitzShellEvent>,
-    net_provider: Arc<dyn NetProvider<Resource>>,
+    net_provider: Arc<dyn NetProvider>,
 ) {
     let doc = HtmlDocument::from_html(
         html,
@@ -122,7 +121,7 @@ fn launch_internal(
 }
 
 #[cfg(feature = "net")]
-type EnabledNetProvider = blitz_net::Provider<Resource>;
+type EnabledNetProvider = blitz_net::Provider;
 #[cfg(not(feature = "net"))]
 type EnabledNetProvider = blitz_traits::net::DummyNetProvider;
 
@@ -132,8 +131,8 @@ fn create_net_provider(
     #[cfg(feature = "net")]
     let net_provider = {
         let proxy = event_loop.create_proxy();
-        let callback = blitz_shell::BlitzShellNetCallback::shared(proxy);
-        Arc::new(blitz_net::Provider::new(callback))
+        let waker = blitz_shell::BlitzShellNetWaker::shared(proxy);
+        Arc::new(blitz_net::Provider::new(waker))
     };
     #[cfg(not(feature = "net"))]
     let net_provider = {

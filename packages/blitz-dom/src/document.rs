@@ -174,7 +174,7 @@ pub struct BaseDocument {
 
     // Service providers
     /// Network provider. Can be used to fetch assets.
-    pub net_provider: Arc<dyn NetProvider<Resource>>,
+    pub net_provider: Arc<dyn NetProvider>,
     /// Navigation provider. Can be used to navigate to a new page (bubbles up the event
     /// on e.g. clicking a Link)
     pub navigation_provider: Arc<dyn NavigationProvider>,
@@ -335,7 +335,7 @@ impl BaseDocument {
     }
 
     /// Set the Document's networking provider
-    pub fn set_net_provider(&mut self, net_provider: Arc<dyn NetProvider<Resource>>) {
+    pub fn set_net_provider(&mut self, net_provider: Arc<dyn NetProvider>) {
         self.net_provider = net_provider;
     }
 

@@ -5,7 +5,6 @@ use winit::{event_loop::EventLoopProxy, window::WindowId};
 
 #[cfg(feature = "accessibility")]
 use accesskit_winit::{Event as AccessKitEvent, WindowEvent as AccessKitWindowEvent};
-use blitz_dom::net::Resource;
 
 #[derive(Debug, Clone)]
 pub enum BlitzShellEvent {
@@ -13,9 +12,8 @@ pub enum BlitzShellEvent {
         window_id: WindowId,
     },
 
-    ResourceLoad {
+    RequestRedraw {
         doc_id: usize,
-        data: Resource,
     },
 
     /// An accessibility event from `accesskit`.
@@ -43,11 +41,6 @@ impl BlitzShellEvent {
     pub fn embedder_event<T: Any + Send + Sync>(value: T) -> Self {
         let boxed = Arc::new(value) as Arc<dyn Any + Send + Sync>;
         Self::Embedder(boxed)
-    }
-}
-impl From<(usize, Resource)> for BlitzShellEvent {
-    fn from((doc_id, data): (usize, Resource)) -> Self {
-        BlitzShellEvent::ResourceLoad { doc_id, data }
     }
 }
 

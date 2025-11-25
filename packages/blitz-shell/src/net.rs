@@ -1,31 +1,27 @@
 use std::sync::Arc;
 
-use blitz_dom::net::Resource;
-use blitz_traits::net::NetCallback;
+use blitz_traits::net::NetWaker;
 use winit::event_loop::EventLoopProxy;
 
 use crate::BlitzShellEvent;
 
-/// A NetCallback that injects the fetched Resource into our winit event loop
-pub struct BlitzShellNetCallback(EventLoopProxy<BlitzShellEvent>);
+/// A NetWaker that wakes up our winit event loop
+pub struct BlitzShellNetWaker(EventLoopProxy<BlitzShellEvent>);
 
-impl BlitzShellNetCallback {
+impl BlitzShellNetWaker {
     pub fn new(proxy: EventLoopProxy<BlitzShellEvent>) -> Self {
         Self(proxy)
     }
 
-    pub fn shared(proxy: EventLoopProxy<BlitzShellEvent>) -> Arc<dyn NetCallback<Resource>> {
+    pub fn shared(proxy: EventLoopProxy<BlitzShellEvent>) -> Arc<dyn NetWaker> {
         Arc::new(Self(proxy))
     }
 }
-impl NetCallback<Resource> for BlitzShellNetCallback {
-    fn call(&self, doc_id: usize, result: Result<Resource, Option<String>>) {
-        // TODO: handle error case
-        if let Ok(data) = result {
-            self.0
-                .send_event(BlitzShellEvent::ResourceLoad { doc_id, data })
-                .unwrap()
-        }
+impl NetWaker for BlitzShellNetWaker {
+    fn wake(&self, doc_id: usize) {
+        self.0
+            .send_event(BlitzShellEvent::RequestRedraw { doc_id })
+            .unwrap()
     }
 }
 
@@ -35,24 +31,24 @@ mod data_uri_net_provider {
     //!
     //! Provides an implementation of the [`blitz_traits::net::NetProvider`] trait.
 
-    use blitz_traits::net::{Bytes, NetCallback, NetHandler, NetProvider, Request};
+    use blitz_traits::net::{Bytes, NetHandler, NetProvider, NetWaker, Request};
     use data_url::DataUrl;
     use std::sync::Arc;
 
-    pub struct DataUriNetProvider<D> {
+    pub struct DataUriNetProvider {
         #[allow(unused)]
-        resource_callback: Arc<dyn NetCallback<D>>,
+        waker: Option<Arc<dyn NetWaker>>,
     }
-    impl<D: 'static> DataUriNetProvider<D> {
-        pub fn new(resource_callback: Arc<dyn NetCallback<D>>) -> Self {
-            Self { resource_callback }
+    impl DataUriNetProvider {
+        pub fn new(waker: Option<Arc<dyn NetWaker>>) -> Self {
+            Self { waker }
         }
-        pub fn shared(res_callback: Arc<dyn NetCallback<D>>) -> Arc<dyn NetProvider<D>> {
-            Arc::new(Self::new(res_callback))
+        pub fn shared(waker: Option<Arc<dyn NetWaker>>) -> Arc<dyn NetProvider> {
+            Arc::new(Self::new(waker))
         }
     }
 
-    impl<D: 'static> NetProvider<D> for DataUriNetProvider<D> {
+    impl NetProvider for DataUriNetProvider {
         fn fetch(&self, _doc_id: usize, request: Request, handler: Box<dyn NetHandler>) {
             // let callback = &self.resource_callback;
             match request.url.scheme() {

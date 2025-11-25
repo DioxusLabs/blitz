@@ -15,7 +15,7 @@ use blitz_html::{HtmlDocument, HtmlProvider};
 use blitz_traits::navigation::{NavigationOptions, NavigationProvider};
 use blitz_traits::net::{Body, Entry, EntryValue, FormData, Method, Request, Url};
 
-type StdNetProvider = blitz_net::Provider<blitz_dom::net::Resource>;
+type StdNetProvider = blitz_net::Provider;
 
 mod icons;
 use icons::IconButton;

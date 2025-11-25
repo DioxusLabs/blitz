@@ -29,7 +29,6 @@ use anyrender_vello_cpu::VelloCpuWindowRenderer as WindowRenderer;
 use anyrender_vello_hybrid::VelloHybridWindowRenderer as WindowRenderer;
 
 use blitz_dom::DocumentConfig;
-use blitz_dom::net::Resource;
 use blitz_html::HtmlDocument;
 use blitz_net::Provider;
 use blitz_traits::navigation::{NavigationOptions, NavigationProvider};
@@ -38,9 +37,7 @@ use markdown::{BLITZ_MD_STYLES, GITHUB_MD_STYLES, markdown_to_html};
 use notify::{Error as NotifyError, Event as NotifyEvent, RecursiveMode, Watcher as _};
 use readme_application::{ReadmeApplication, ReadmeEvent};
 
-use blitz_shell::{
-    BlitzShellEvent, BlitzShellNetCallback, WindowConfig, create_default_event_loop,
-};
+use blitz_shell::{BlitzShellEvent, BlitzShellNetWaker, WindowConfig, create_default_event_loop};
 use std::env::current_dir;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -79,8 +76,8 @@ fn main() {
     let event_loop = create_default_event_loop();
     let proxy = event_loop.create_proxy();
 
-    let net_callback = BlitzShellNetCallback::shared(proxy.clone());
-    let net_provider = Arc::new(Provider::new(net_callback));
+    let net_waker = BlitzShellNetWaker::shared(proxy.clone());
+    let net_provider = Arc::new(Provider::new(net_waker));
 
     let (base_url, contents, is_md, file_path) =
         rt.block_on(fetch(&raw_url, Arc::clone(&net_provider)));
@@ -153,7 +150,7 @@ fn main() {
 
 async fn fetch(
     raw_url: &str,
-    net_provider: Arc<Provider<Resource>>,
+    net_provider: Arc<Provider>,
 ) -> (String, String, bool, Option<PathBuf>) {
     if let Ok(url) = Url::parse(raw_url) {
         match url.scheme() {
@@ -172,7 +169,7 @@ async fn fetch(
 
 async fn fetch_url(
     url: Url,
-    net_provider: Arc<Provider<Resource>>,
+    net_provider: Arc<Provider>,
 ) -> (String, String, bool, Option<PathBuf>) {
     let (tx, rx) = oneshot::channel();
 

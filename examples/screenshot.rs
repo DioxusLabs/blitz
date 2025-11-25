@@ -5,7 +5,7 @@ use anyrender_vello::VelloImageRenderer;
 use anyrender_vello_cpu::VelloCpuImageRenderer;
 use blitz_dom::DocumentConfig;
 use blitz_html::HtmlDocument;
-use blitz_net::{MpscCallback, Provider};
+use blitz_net::Provider;
 use blitz_paint::paint_scene;
 use blitz_traits::shell::{ColorScheme, Viewport};
 use reqwest::Url;
@@ -62,9 +62,7 @@ async fn main() {
         .and_then(|arg| arg.parse().ok())
         .unwrap_or(1200);
 
-    let (_recv, callback) = MpscCallback::new();
-    let callback = Arc::new(callback);
-    let net = Arc::new(Provider::new(callback));
+    let net = Arc::new(Provider::new(None));
 
     timer.time("Setup document prerequisites");
 

@@ -99,7 +99,7 @@ pub struct ResourceLoadResponse {
 pub struct StylesheetHandler {
     pub source_url: Url,
     pub guard: SharedRwLock,
-    pub net_provider: Arc<dyn NetProvider<Resource>>,
+    pub net_provider: Arc<dyn NetProvider>,
 }
 
 impl NetHandler for ResourceHandler<StylesheetHandler> {
@@ -150,7 +150,7 @@ impl NetHandler for ResourceHandler<StylesheetHandler> {
 pub(crate) struct StylesheetLoader {
     pub(crate) tx: Sender<DocumentEvent>,
     pub(crate) doc_id: usize,
-    pub(crate) net_provider: Arc<dyn NetProvider<Resource>>,
+    pub(crate) net_provider: Arc<dyn NetProvider>,
     pub(crate) shell_provider: Arc<dyn ShellProvider>,
 }
 impl ServoStylesheetLoader for StylesheetLoader {
@@ -212,7 +212,7 @@ struct NestedStylesheetHandler {
     url: ServoArc<Url>,
     media: ServoArc<Locked<MediaList>>,
     import_rule: ServoArc<Locked<ImportRule>>,
-    net_provider: Arc<dyn NetProvider<Resource>>,
+    net_provider: Arc<dyn NetProvider>,
 }
 
 impl NetHandler for ResourceHandler<NestedStylesheetHandler> {
@@ -348,7 +348,7 @@ fn fetch_font_face(
     doc_id: usize,
     node_id: Option<usize>,
     sheet: &Stylesheet,
-    network_provider: &Arc<dyn NetProvider<Resource>>,
+    network_provider: &Arc<dyn NetProvider>,
     shell_provider: &Arc<dyn ShellProvider>,
     read_guard: &SharedRwLockReadGuard,
 ) {

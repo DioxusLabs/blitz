@@ -89,7 +89,7 @@ impl<Rend: WindowRenderer> ApplicationHandler<BlitzShellEvent> for BlitzApplicat
                     window.poll();
                 };
             }
-            BlitzShellEvent::ResourceLoad { doc_id, .. } => {
+            BlitzShellEvent::RequestRedraw { doc_id } => {
                 // TODO: Handle multiple documents per window
                 if let Some(window) = self.window_mut_by_doc_id(doc_id) {
                     window.request_redraw();

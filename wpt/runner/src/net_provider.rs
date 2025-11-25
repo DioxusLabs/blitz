@@ -1,4 +1,4 @@
-use blitz_traits::net::{Bytes, NetCallback, NetHandler, NetProvider, Request};
+use blitz_traits::net::{Bytes, NetHandler, NetProvider, Request};
 use data_url::DataUrl;
 use std::{
     collections::HashMap,
@@ -49,10 +49,9 @@ impl<D: Send + Sync + 'static> WptNetProvider<D> {
         request: Request,
         handler: Box<dyn NetHandler>,
     ) -> Result<(), WptNetProviderError> {
-        let callback = Arc::new(Callback {
+        let callback = InternalCallback {
             queue: self.queue.clone(),
-            request_id,
-        });
+        };
 
         match request.url.scheme() {
             "data" => {
@@ -96,7 +95,7 @@ impl<D: Send + Sync + 'static> WptNetProvider<D> {
         Ok(())
     }
 }
-impl<D: Send + Sync + 'static> NetProvider<D> for WptNetProvider<D> {
+impl<D: Send + Sync + 'static> NetProvider for WptNetProvider<D> {
     fn fetch(&self, doc_id: usize, request: Request, handler: Box<dyn NetHandler>) {
         let url = request.url.to_string();
 
@@ -248,21 +247,20 @@ impl<T> InternalQueue<T> {
     }
 }
 
-struct Callback<T> {
+struct InternalCallback<T> {
     queue: Arc<InternalQueue<T>>,
-    request_id: usize,
 }
 
-impl<T: Send + Sync + 'static> NetCallback<T> for Callback<T> {
-    fn call(&self, _doc_id: usize, result: Result<T, Option<String>>) {
-        match result {
-            Ok(data) => self.queue.record_success(Some(data), self.request_id),
-            Err(err) => {
-                if let Some(msg) = err {
-                    eprintln!("{msg}");
-                }
-                self.queue.record_failure(self.request_id);
-            }
-        }
-    }
-}
+// impl<T: Send + Sync + 'static<T> for InternalCallback<T> {
+//     fn call(&self, _doc_id: usize, result: Result<T, Option<String>>) {
+//         match result {
+//             Ok(data) => self.queue.record_success(Some(data), self.request_id),
+//             Err(err) => {
+//                 if let Some(msg) = err {
+//                     eprintln!("{msg}");
+//                 }
+//                 self.queue.record_failure(self.request_id);
+//             }
+//         }
+//     }
+// }

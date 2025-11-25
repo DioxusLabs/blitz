@@ -19,8 +19,6 @@ mod link_handler;
 pub mod prelude;
 
 #[cfg(feature = "net")]
-use blitz_dom::net::Resource;
-#[cfg(feature = "net")]
 use blitz_traits::net::NetProvider;
 #[doc(inline)]
 pub use dioxus_native_dom::*;
@@ -151,18 +149,18 @@ pub fn launch_cfg_with_props<P: Clone + 'static, M: 'static>(
 
     #[cfg(feature = "net")]
     let net_provider = {
-        use blitz_shell::BlitzShellNetCallback;
+        use blitz_shell::BlitzShellNetWaker;
 
         let proxy = event_loop.create_proxy();
-        let net_callback = BlitzShellNetCallback::shared(proxy.clone());
+        let net_waker = BlitzShellNetWaker::shared(proxy.clone());
 
-        let inner_net_provider = Arc::new(blitz_net::Provider::new(net_callback.clone()));
+        let inner_net_provider = Arc::new(blitz_net::Provider::new(net_waker.clone()));
         vdom.provide_root_context(Arc::clone(&inner_net_provider));
 
         Arc::new(DioxusNativeNetProvider::with_inner(
             proxy,
             inner_net_provider as _,
-        )) as Arc<dyn NetProvider<Resource>>
+        )) as Arc<dyn NetProvider>
     };
 
     #[cfg(not(feature = "net"))]

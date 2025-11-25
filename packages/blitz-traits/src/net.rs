@@ -12,7 +12,7 @@ pub use url::Url;
 /// A type that fetches resources for a Document.
 ///
 /// This may be over the network via http(s), via the filesystem, or some other method.
-pub trait NetProvider<Data>: Send + Sync + 'static {
+pub trait NetProvider: Send + Sync + 'static {
     fn fetch(&self, doc_id: usize, request: Request, handler: Box<dyn NetHandler>);
 }
 
@@ -22,15 +22,15 @@ pub trait NetHandler: Send + Sync + 'static {
     fn bytes(self: Box<Self>, resolved_url: String, bytes: Bytes);
 }
 
-/// A type which accepts the parsed result of a network request and sends it back to the Document
-/// (or does arbitrary things with it)
-pub trait NetCallback<Data>: Send + Sync + 'static {
-    fn call(&self, doc_id: usize, result: Result<Data, Option<String>>);
+/// A callback which gets called every time a network request completes
+// Q: Should we use std::task::Waker for this?
+pub trait NetWaker: Send + Sync + 'static {
+    fn wake(&self, client_id: usize);
 }
 
-impl<D, F: Fn(usize, Result<D, Option<String>>) + Send + Sync + 'static> NetCallback<D> for F {
-    fn call(&self, doc_id: usize, result: Result<D, Option<String>>) {
-        self(doc_id, result)
+impl<F: Fn(usize) + Send + Sync + 'static> NetWaker for F {
+    fn wake(&self, doc_id: usize) {
+        self(doc_id)
     }
 }
 
@@ -145,13 +145,6 @@ impl From<PathBuf> for EntryValue {
 /// A default noop NetProvider
 #[derive(Default)]
 pub struct DummyNetProvider;
-impl<D: Send + Sync + 'static> NetProvider<D> for DummyNetProvider {
+impl NetProvider for DummyNetProvider {
     fn fetch(&self, _doc_id: usize, _request: Request, _handler: Box<dyn NetHandler>) {}
-}
-
-/// A default noop NetCallback
-#[derive(Default)]
-pub struct DummyNetCallback;
-impl<D: Send + Sync + 'static> NetCallback<D> for DummyNetCallback {
-    fn call(&self, _doc_id: usize, _result: Result<D, Option<String>>) {}
 }

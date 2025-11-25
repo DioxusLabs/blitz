@@ -2,13 +2,10 @@
 //!
 //! Provides an implementation of the [`blitz_traits::net::NetProvider`] trait.
 
-use blitz_traits::net::{Body, Bytes, NetCallback, NetHandler, NetProvider, Request};
+use blitz_traits::net::{Body, Bytes, NetHandler, NetProvider, NetWaker, Request};
 use data_url::DataUrl;
 use std::sync::Arc;
-use tokio::{
-    runtime::Handle,
-    sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel},
-};
+use tokio::runtime::Handle;
 
 #[cfg(feature = "cache")]
 use http_cache_reqwest::{CACacheManager, Cache, CacheMode, HttpCache, HttpCacheOptions};
@@ -37,13 +34,13 @@ fn get_cache_path() -> std::path::PathBuf {
     cache_dir
 }
 
-pub struct Provider<D> {
+pub struct Provider {
     rt: Handle,
     client: Client,
-    resource_callback: Arc<dyn NetCallback<D>>,
+    waker: Arc<dyn NetWaker>,
 }
-impl<D: 'static> Provider<D> {
-    pub fn new(resource_callback: Arc<dyn NetCallback<D>>) -> Self {
+impl Provider {
+    pub fn new(waker: Arc<dyn NetWaker>) -> Self {
         let builder = reqwest::Client::builder();
         #[cfg(feature = "cookies")]
         let builder = builder.cookie_store(true);
@@ -61,20 +58,20 @@ impl<D: 'static> Provider<D> {
         Self {
             rt: Handle::current(),
             client,
-            resource_callback,
+            waker,
         }
     }
-    pub fn shared(res_callback: Arc<dyn NetCallback<D>>) -> Arc<dyn NetProvider<D>> {
+    pub fn shared(res_callback: Arc<dyn NetWaker>) -> Arc<dyn NetProvider> {
         Arc::new(Self::new(res_callback))
     }
     pub fn is_empty(&self) -> bool {
-        Arc::strong_count(&self.resource_callback) == 1
+        Arc::strong_count(&self.waker) == 1
     }
     pub fn count(&self) -> usize {
-        Arc::strong_count(&self.resource_callback) - 1
+        Arc::strong_count(&self.waker) - 1
     }
 }
-impl<D: 'static> Provider<D> {
+impl Provider {
     async fn fetch_inner(
         client: Client,
         request: Request,
@@ -157,14 +154,14 @@ impl<D: 'static> Provider<D> {
     }
 }
 
-impl<D: 'static> NetProvider<D> for Provider<D> {
-    fn fetch(&self, _doc_id: usize, request: Request, handler: Box<dyn NetHandler>) {
+impl NetProvider for Provider {
+    fn fetch(&self, doc_id: usize, request: Request, handler: Box<dyn NetHandler>) {
         let client = self.client.clone();
 
         #[cfg(feature = "debug_log")]
         println!("Fetching {}", &request.url);
 
-        let callback = Arc::clone(&self.resource_callback);
+        let waker = self.waker.clone();
         self.rt.spawn(async move {
             #[cfg(feature = "debug_log")]
             let url = request.url.to_string();
@@ -178,11 +175,8 @@ impl<D: 'static> NetProvider<D> for Provider<D> {
                 println!("Success {url}");
             }
 
-            // Callback isn't actually used in closure, but the refcount of the Arc is used to
-            // count the number of inflight requests.
-            //
-            // TODO: better request tracking.
-            drop(callback)
+            // Call the waker to notify of completed network request
+            waker.wake(doc_id)
         });
     }
 }
@@ -225,22 +219,6 @@ impl From<reqwest::Error> for ProviderError {
 impl From<reqwest_middleware::Error> for ProviderError {
     fn from(value: reqwest_middleware::Error) -> Self {
         Self::ReqwestMiddlewareError(value)
-    }
-}
-
-pub struct MpscCallback<T>(UnboundedSender<(usize, T)>);
-impl<T> MpscCallback<T> {
-    pub fn new() -> (UnboundedReceiver<(usize, T)>, Self) {
-        let (send, recv) = unbounded_channel();
-        (recv, Self(send))
-    }
-}
-impl<T: Send + Sync + 'static> NetCallback<T> for MpscCallback<T> {
-    fn call(&self, doc_id: usize, result: Result<T, Option<String>>) {
-        // TODO: handle error case
-        if let Ok(data) = result {
-            let _ = self.0.send((doc_id, data));
-        }
     }
 }
 
