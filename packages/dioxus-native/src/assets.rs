@@ -1,4 +1,4 @@
-use blitz_shell::BlitzShellNetWaker;
+use blitz_shell::BlitzShellWaker;
 use std::sync::Arc;
 
 use blitz_shell::BlitzShellEvent;
@@ -16,7 +16,7 @@ impl DioxusNativeNetProvider {
     }
 
     pub fn new(proxy: EventLoopProxy<BlitzShellEvent>) -> Self {
-        let net_waker = Some(BlitzShellNetWaker::shared(proxy));
+        let net_waker = Some(BlitzShellWaker::net_waker(proxy));
 
         #[cfg(feature = "net")]
         let inner_net_provider = Some(blitz_net::Provider::shared(net_waker.clone()));

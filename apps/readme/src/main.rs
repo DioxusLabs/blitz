@@ -37,7 +37,7 @@ use markdown::{BLITZ_MD_STYLES, GITHUB_MD_STYLES, markdown_to_html};
 use notify::{Error as NotifyError, Event as NotifyEvent, RecursiveMode, Watcher as _};
 use readme_application::{ReadmeApplication, ReadmeEvent};
 
-use blitz_shell::{BlitzShellEvent, BlitzShellNetWaker, WindowConfig, create_default_event_loop};
+use blitz_shell::{BlitzShellEvent, BlitzShellWaker, WindowConfig, create_default_event_loop};
 use std::env::current_dir;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -76,7 +76,7 @@ fn main() {
     let event_loop = create_default_event_loop();
     let proxy = event_loop.create_proxy();
 
-    let net_waker = Some(BlitzShellNetWaker::shared(proxy.clone()));
+    let net_waker = Some(BlitzShellWaker::net_waker(proxy.clone()));
     let net_provider = Arc::new(Provider::new(net_waker));
 
     let (base_url, contents, is_md, file_path) =
