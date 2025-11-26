@@ -17,6 +17,9 @@ pub enum BlitzShellEvent {
         doc_id: usize,
     },
 
+    #[cfg(feature = "devtools")]
+    ProcessDevtoolMessages,
+
     /// An accessibility event from `accesskit`.
     #[cfg(feature = "accessibility")]
     Accessibility {

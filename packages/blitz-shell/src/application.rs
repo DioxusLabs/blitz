@@ -25,7 +25,17 @@ impl<Rend: WindowRenderer> BlitzApplication<Rend> {
         BlitzApplication {
             windows: HashMap::new(),
             pending_windows: Vec::new(),
-            proxy,
+            proxy: proxy.clone(),
+
+            #[cfg(feature = "devtools")]
+            devtools_server: {
+                println!("INITIALIZE DEVTOOL SERVER");
+                use crate::BlitzShellWaker;
+                let waker = BlitzShellWaker::devtools_waker(proxy);
+                let mut server = DevtoolsServer::new(waker);
+                server.start_listening("127.0.0.1:6080");
+                server
+            },
         }
     }
 
@@ -99,6 +109,11 @@ impl<Rend: WindowRenderer> ApplicationHandler<BlitzShellEvent> for BlitzApplicat
                 if let Some(window) = self.window_mut_by_doc_id(doc_id) {
                     window.request_redraw();
                 }
+            }
+
+            #[cfg(feature = "devtools")]
+            BlitzShellEvent::ProcessDevtoolMessages => {
+                self.devtools_server.process_messages();
             }
 
             #[cfg(feature = "accessibility")]
