@@ -4,7 +4,7 @@ use blitz_traits::shell::EventLoopWaker;
 use bytes::{Bytes, BytesMut};
 use bytestring::ByteString;
 use serde::{Deserialize, Serialize};
-use serde_json::Value as JsonValue;
+use serde_json::{Value as JsonValue, json};
 use std::collections::HashMap;
 use std::io::IoSlice;
 use std::sync::atomic::{AtomicUsize, Ordering as Ao};
@@ -74,7 +74,7 @@ impl DevtoolsServer {
             }
             DevtoolsEventData::ClientMessage(msg) => match msg {
                 GenericClientMessage::Json(msg) => println!(
-                    ">> TO:{} TYPE:{} {}",
+                    ">>   TO:{} {} {}",
                     msg.to,
                     msg.type_,
                     serde_json::to_string(&msg.data).unwrap()
@@ -117,15 +117,19 @@ enum DevtoolsEventData {
 pub(crate) struct MessageWriter(OwnedWriteHalf);
 
 impl MessageWriter {
-    async fn write_msg(&mut self, msg: &str) {
+    async fn write_msg(&mut self, from: String, data: &JsonValue) {
         self.0.writable().await.unwrap();
 
-        println!("<< {msg}");
+        println!("<< FROM:{} {}", from, data);
 
-        let len = msg.len();
+        let encoded = serde_json::to_string(&ServerMessage { from, data }).unwrap();
+        let len = encoded.len();
         let len_s = format!("{len}:");
         self.0
-            .write_vectored(&[IoSlice::new(len_s.as_bytes()), IoSlice::new(msg.as_bytes())])
+            .write_vectored(&[
+                IoSlice::new(len_s.as_bytes()),
+                IoSlice::new(encoded.as_bytes()),
+            ])
             .await
             .unwrap();
     }
@@ -195,7 +199,10 @@ async fn start_devtools_server(
         let mut writer = MessageWriter(writer);
 
         // Send inital message
-        writer.write_msg(r#"{ "from": "root", "applicationType": "browser", "traits": { "sources": false, "highlightable": true, "customHighlighters": true, "networkMonitor": false } }"#).await;
+        writer.write_msg(String::from("root"), &json!({
+            "applicationType": "browser",
+            "traits": { "sources": false, "highlightable": true, "customHighlighters": true, "networkMonitor": false }
+        })).await;
 
         // Send event with new connection
         sender(DevtoolsEvent {
@@ -441,6 +448,16 @@ pub struct ClientMessage<T> {
     pub to: String,
     #[serde(rename = "type")]
     pub type_: String,
+    #[serde(flatten)]
+    pub data: T,
+}
+
+type JsonServerMessage = ServerMessage<JsonValue>;
+
+/// A MozRdp message sent from the client
+#[derive(Serialize, Deserialize)]
+pub struct ServerMessage<T> {
+    pub from: String,
     #[serde(flatten)]
     pub data: T,
 }
