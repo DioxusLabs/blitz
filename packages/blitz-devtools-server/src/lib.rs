@@ -1,30 +1,26 @@
 //! (Firefox) devtools protocol server implementation
 
+use actors::{Actor, ActorId, ActorMessageErr};
 use blitz_traits::shell::EventLoopWaker;
 use bytes::{Bytes, BytesMut};
-use bytestring::ByteString;
 use serde::{Deserialize, Serialize};
-use serde_json::{Value as JsonValue, json};
+use serde_json::json;
 use std::collections::HashMap;
 use std::io::IoSlice;
-use std::sync::atomic::{AtomicUsize, Ordering as Ao};
-use tokio::io::{AsyncReadExt, AsyncWriteExt, Interest};
-// use futures::SinkExt;
-// use tokio_stream::StreamExt;
-use std::{error::Error, fmt::Display, sync::Arc};
-// use string::String as GenericString;
-// use tokio::sync::mpsc::{Receiver, Sender, channel};
 use std::sync::mpsc::{Receiver, Sender, channel};
+use std::{error::Error, fmt::Display, sync::Arc};
+use tokio::io::AsyncWriteExt;
+use tokio::sync::mpsc::{Receiver as TokioReceiver, Sender as TokioSender};
 use tokio::{
-    net::{
-        TcpListener, TcpStream,
-        tcp::{OwnedReadHalf, OwnedWriteHalf},
-    },
-    spawn,
+    net::{TcpListener, tcp::OwnedWriteHalf},
     task::JoinHandle,
 };
 use tokio_stream::StreamExt;
-use tokio_util::codec::{Decoder, Encoder, Framed, FramedRead};
+use tokio_util::codec::{Decoder, FramedRead};
+
+mod actors;
+
+pub(crate) type JsonValue = serde_json::Value;
 
 pub struct DevtoolsServer {
     listener: Option<JoinHandle<()>>,
@@ -72,17 +68,16 @@ impl DevtoolsServer {
             DevtoolsEventData::ConnectionClosed => {
                 self.connections.remove(&event.connection_id);
             }
-            DevtoolsEventData::ClientMessage(msg) => match msg {
-                GenericClientMessage::Json(msg) => println!(
-                    ">>   TO:{} {} {}",
-                    msg.to,
-                    msg.type_,
-                    serde_json::to_string(&msg.data).unwrap()
-                ),
-                GenericClientMessage::Bulk(msg) => {
-                    println!(">> bulk to:{} type:{}", msg.to, msg.type_)
-                }
-            },
+            DevtoolsEventData::ClientMessage(msg) => {
+                msg.debug_log();
+
+                let Some(conn) = self.connections.get_mut(&event.connection_id) else {
+                    println!("Error: Devtools message from closed connection");
+                    return;
+                };
+
+                conn.handle_message(msg);
+            }
             DevtoolsEventData::ServerMessage(msg) => {
                 let _ = msg;
             }
@@ -93,7 +88,9 @@ impl DevtoolsServer {
 struct Connection {
     id: usize,
     reader_task: JoinHandle<()>,
+    writer_task: JoinHandle<()>,
     writer: MessageWriter,
+    actors: HashMap<ActorId, Box<dyn Actor>>,
 }
 
 pub struct DevtoolsEvent {
@@ -114,24 +111,15 @@ enum DevtoolsEventData {
     ServerMessage(MozRdpServerPacket),
 }
 
-pub(crate) struct MessageWriter(OwnedWriteHalf);
+pub(crate) struct MessageWriter(TokioSender<ServerMessage<JsonValue>>);
 
 impl MessageWriter {
-    async fn write_msg(&mut self, from: String, data: &JsonValue) {
-        self.0.writable().await.unwrap();
-
-        println!("<< FROM:{} {}", from, data);
-
-        let encoded = serde_json::to_string(&ServerMessage { from, data }).unwrap();
-        let len = encoded.len();
-        let len_s = format!("{len}:");
-        self.0
-            .write_vectored(&[
-                IoSlice::new(len_s.as_bytes()),
-                IoSlice::new(encoded.as_bytes()),
-            ])
-            .await
-            .unwrap();
+    fn write_msg(&mut self, from: String, data: JsonValue) {
+        self.0.try_send(ServerMessage { from, data }).unwrap();
+    }
+    fn write_err(&mut self, from: String, err: ActorMessageErr) {
+        let data = json!({ "error": err.as_str() });
+        self.0.try_send(ServerMessage { from, data }).unwrap();
     }
 }
 
@@ -159,7 +147,7 @@ async fn start_devtools_server(
 
     loop {
         let (stream, _) = server.accept().await?;
-        let (reader, writer) = stream.into_split();
+        let (reader, mut writer) = stream.into_split();
 
         connection_id_counter += 1;
         let connection_id = connection_id_counter;
@@ -167,7 +155,7 @@ async fn start_devtools_server(
         println!("Devtools: new connection (id: {})", connection_id);
 
         // Spawn stream reader task
-        let task = tokio::spawn({
+        let reader_task = tokio::spawn({
             let sender = Arc::clone(&sender);
             async move {
                 let mut framed_reader = FramedRead::new(reader, MozRdpStreamTransport::default());
@@ -196,35 +184,49 @@ async fn start_devtools_server(
             }
         });
 
-        let mut writer = MessageWriter(writer);
+        // Spawn stream writer task
+        let (outgoing_sender, mut outgoing_reciever) =
+            tokio::sync::mpsc::channel::<ServerMessage<JsonValue>>(20);
+        let writer_task = tokio::spawn(async move {
+            while let Some(msg) = outgoing_reciever.recv().await {
+                writer.writable().await.unwrap();
+
+                println!("<< FROM:{} {}", msg.from, msg.data);
+
+                let encoded = serde_json::to_string(&msg).unwrap();
+                let len = encoded.len();
+                let len_s = format!("{len}:");
+                writer
+                    .write_vectored(&[
+                        IoSlice::new(len_s.as_bytes()),
+                        IoSlice::new(encoded.as_bytes()),
+                    ])
+                    .await
+                    .unwrap();
+            }
+        });
 
         // Send inital message
-        writer.write_msg(String::from("root"), &json!({
+        let mut writer = MessageWriter(outgoing_sender);
+        writer.write_msg(String::from("root"), json!({
             "applicationType": "browser",
             "traits": { "sources": false, "highlightable": true, "customHighlighters": true, "networkMonitor": false }
-        })).await;
+        }));
+
+        let mut connection = Connection {
+            id: connection_id,
+            reader_task,
+            writer_task,
+            writer,
+            actors: HashMap::new(),
+        };
+        connection.init();
 
         // Send event with new connection
         sender(DevtoolsEvent {
             connection_id,
-            data: DevtoolsEventData::ConnectionOpened(Connection {
-                id: connection_id,
-                reader_task: task,
-                writer,
-            }),
+            data: DevtoolsEventData::ConnectionOpened(connection),
         });
-
-        // // Spawn stream writer task
-        // tokio::spawn(async move {
-        //     while let Some(msg) = writer.recv().await {
-        //         match writer.try_write(&serde_json::to_vec(&msg).unwrap()) {
-        //             Ok(request) => continue,
-        //             Err(e) => {
-        //                 println!("Err writing devtools packet {:?}", e);
-        //             }
-        //         }
-        //     }
-        // });
     }
 }
 
@@ -356,15 +358,11 @@ impl Decoder for MozRdpStreamTransport {
                 let data = src.split_to(header.expected_data_length).freeze();
                 let msg: ClientMessage<JsonValue> =
                     serde_json::from_slice(&data).map_err(|_| PacketDecodeErr::InvalidJson)?;
-                Ok(Some(GenericClientMessage::Json(msg)))
+                Ok(Some(msg.into()))
             }
             MozRdpPacketKind::Bulk { to, type_ } => {
                 let data = src.split_to(header.expected_data_length).freeze();
-                Ok(Some(GenericClientMessage::Bulk(ClientMessage {
-                    to,
-                    type_,
-                    data,
-                })))
+                Ok(Some(ClientMessage { to, type_, data }.into()))
             }
         }
     }
@@ -434,13 +432,71 @@ impl MozRdpHeader {
 }
 
 /// A Mozilla Remote Debugging Protocol packet with unparsed data field
-pub enum GenericClientMessage {
-    Json(JsonClientMessage),
-    Bulk(BulkClientMessage),
+
+pub enum GenericClientData {
+    Json(JsonValue),
+    Bulk(Bytes),
 }
 
-type JsonClientMessage = ClientMessage<JsonValue>;
-type BulkClientMessage = ClientMessage<Bytes>;
+pub(crate) type GenericClientMessage = ClientMessage<GenericClientData>;
+pub(crate) type JsonClientMessage = ClientMessage<JsonValue>;
+pub(crate) type BulkClientMessage = ClientMessage<Bytes>;
+
+impl From<JsonClientMessage> for GenericClientMessage {
+    fn from(value: JsonClientMessage) -> Self {
+        ClientMessage {
+            to: value.to,
+            type_: value.type_,
+            data: GenericClientData::Json(value.data),
+        }
+    }
+}
+
+impl From<BulkClientMessage> for GenericClientMessage {
+    fn from(value: BulkClientMessage) -> Self {
+        ClientMessage {
+            to: value.to,
+            type_: value.type_,
+            data: GenericClientData::Bulk(value.data),
+        }
+    }
+}
+
+impl GenericClientData {
+    pub(crate) fn json(self) -> Result<JsonValue, ActorMessageErr> {
+        match self {
+            GenericClientData::Json(value) => Ok(value),
+            GenericClientData::Bulk(_) => Err(ActorMessageErr::BadParameterType),
+        }
+    }
+    pub(crate) fn bulk(self) -> Result<Bytes, ActorMessageErr> {
+        match self {
+            GenericClientData::Json(_) => Err(ActorMessageErr::BadParameterType),
+            GenericClientData::Bulk(value) => Ok(value),
+        }
+    }
+}
+
+impl GenericClientMessage {
+    pub(crate) fn debug_log(&self) {
+        match &self.data {
+            GenericClientData::Json(json) => println!(
+                ">>   TO:{} {} {}",
+                self.to,
+                self.type_,
+                serde_json::to_string(&json).unwrap()
+            ),
+            GenericClientData::Bulk(bytes) => {
+                println!(
+                    ">> bulk to:{} type:{} ({} bytes)",
+                    self.to,
+                    self.type_,
+                    bytes.len()
+                )
+            }
+        }
+    }
+}
 
 /// A MozRdp message sent from the client
 #[derive(Serialize, Deserialize)]
