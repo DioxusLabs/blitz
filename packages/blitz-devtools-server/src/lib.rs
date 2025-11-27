@@ -4,7 +4,7 @@ use blitz_traits::shell::EventLoopWaker;
 use bytes::{Bytes, BytesMut};
 use bytestring::ByteString;
 use serde::{Deserialize, Serialize};
-use serde_json::json;
+use serde_json::Value as JsonValue;
 use std::collections::HashMap;
 use std::io::IoSlice;
 use std::sync::atomic::{AtomicUsize, Ordering as Ao};
@@ -73,8 +73,13 @@ impl DevtoolsServer {
                 self.connections.remove(&event.connection_id);
             }
             DevtoolsEventData::ClientMessage(msg) => match msg {
-                RawMozRdpClientPacket::Json(byte_string) => println!(">> {}", byte_string),
-                RawMozRdpClientPacket::Bulk(msg) => {
+                GenericClientMessage::Json(msg) => println!(
+                    ">> TO:{} TYPE:{} {}",
+                    msg.to,
+                    msg.type_,
+                    serde_json::to_string(&msg.data).unwrap()
+                ),
+                GenericClientMessage::Bulk(msg) => {
                     println!(">> bulk to:{} type:{}", msg.to, msg.type_)
                 }
             },
@@ -104,7 +109,7 @@ enum DevtoolsEventData {
     /// Connection was closed and should be cleaned up
     ConnectionClosed,
     /// A message recieved from the client
-    ClientMessage(RawMozRdpClientPacket),
+    ClientMessage(GenericClientMessage),
     /// A message from Blitz to send to the client
     ServerMessage(MozRdpServerPacket),
 }
@@ -126,7 +131,7 @@ impl MessageWriter {
     }
 }
 
-// type ClientMessageCallback = Arc<dyn Fn(usize, RawMozRdpClientPacket) + Send + Sync>;
+// type ClientMessageCallback = Arc<dyn Fn(usize, ClientMessage) + Send + Sync>;
 
 async fn start_devtools_server_no_err(
     addr: String,
@@ -263,6 +268,7 @@ enum PacketDecodeErr {
     HeaderTooLong,
     InvalidHeader,
     InvalidUtf8,
+    InvalidJson,
     IoError(std::io::Error),
 }
 
@@ -272,6 +278,7 @@ impl Display for PacketDecodeErr {
             PacketDecodeErr::HeaderTooLong => write!(f, "Header too long"),
             PacketDecodeErr::InvalidHeader => write!(f, "InvalidHeader"),
             PacketDecodeErr::InvalidUtf8 => write!(f, "InvalidUTF8"),
+            PacketDecodeErr::InvalidJson => write!(f, "InvalidJson"),
             PacketDecodeErr::IoError(err) => err.fmt(f),
         }
     }
@@ -286,7 +293,7 @@ impl From<std::io::Error> for PacketDecodeErr {
 }
 
 impl Decoder for MozRdpStreamTransport {
-    type Item = RawMozRdpClientPacket;
+    type Item = GenericClientMessage;
 
     type Error = PacketDecodeErr;
 
@@ -340,12 +347,13 @@ impl Decoder for MozRdpStreamTransport {
         match header.header_kind {
             MozRdpPacketKind::Json => {
                 let data = src.split_to(header.expected_data_length).freeze();
-                let data = ByteString::try_from(data).map_err(|_| PacketDecodeErr::InvalidUtf8)?;
-                Ok(Some(RawMozRdpClientPacket::Json(data)))
+                let msg: ClientMessage<JsonValue> =
+                    serde_json::from_slice(&data).map_err(|_| PacketDecodeErr::InvalidJson)?;
+                Ok(Some(GenericClientMessage::Json(msg)))
             }
             MozRdpPacketKind::Bulk { to, type_ } => {
                 let data = src.split_to(header.expected_data_length).freeze();
-                Ok(Some(RawMozRdpClientPacket::Bulk(MozRdpClientPacket {
+                Ok(Some(GenericClientMessage::Bulk(ClientMessage {
                     to,
                     type_,
                     data,
@@ -419,14 +427,17 @@ impl MozRdpHeader {
 }
 
 /// A Mozilla Remote Debugging Protocol packet with unparsed data field
-pub enum RawMozRdpClientPacket {
-    Json(ByteString),
-    Bulk(MozRdpClientPacket<Bytes>),
+pub enum GenericClientMessage {
+    Json(JsonClientMessage),
+    Bulk(BulkClientMessage),
 }
+
+type JsonClientMessage = ClientMessage<JsonValue>;
+type BulkClientMessage = ClientMessage<Bytes>;
 
 /// A MozRdp message sent from the client
 #[derive(Serialize, Deserialize)]
-pub struct MozRdpClientPacket<T> {
+pub struct ClientMessage<T> {
     pub to: String,
     #[serde(rename = "type")]
     pub type_: String,
