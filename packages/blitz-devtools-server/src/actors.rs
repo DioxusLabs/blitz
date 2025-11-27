@@ -1,14 +1,15 @@
 pub mod device;
 pub mod preference;
+pub mod process;
 pub mod root;
+use std::any::Any;
 use std::collections::HashMap;
-use std::fmt::Display;
 use std::sync::atomic::{AtomicUsize, Ordering as Ao};
 
 pub(crate) use device::DeviceActor;
 pub(crate) use preference::PreferenceActor;
+pub(crate) use process::ProcessActor;
 pub(crate) use root::RootActor;
-use serde_json::json;
 
 use crate::{Connection, DevtoolsServer, GenericClientMessage, JsonValue, MessageWriter};
 
@@ -60,7 +61,7 @@ impl ActorMessageErr {
     }
 }
 
-pub(crate) trait Actor: Send + 'static {
+pub(crate) trait Actor: Any + Send + 'static {
     fn name(&self) -> String;
 
     fn handle_message<'a>(
@@ -74,9 +75,11 @@ impl Connection {
     pub(crate) fn init(&mut self) {
         let pref = PreferenceActor::new();
         let device = DeviceActor::new();
-        let root = RootActor::new(pref.name(), device.name());
+        let process = ProcessActor::new();
+        let root = RootActor::new(pref.name(), device.name(), process.name());
         self.insert_actor(Box::new(pref));
         self.insert_actor(Box::new(device));
+        self.insert_actor(Box::new(process));
         self.insert_actor(Box::new(root));
     }
 
@@ -128,5 +131,9 @@ impl DevtoolContext<'_> {
     }
     fn write_err(&mut self, from: String, err: ActorMessageErr) {
         self.writer.write_err(from, err);
+    }
+
+    fn actor<T: Actor>(&self, name: &str) -> &T {
+        (&*self.actors[name] as &dyn Any).downcast_ref().unwrap()
     }
 }
