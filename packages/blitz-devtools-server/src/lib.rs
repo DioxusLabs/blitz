@@ -3,6 +3,7 @@
 use actors::{Actor, ActorId, ActorMessageErr};
 use blitz_traits::shell::EventLoopWaker;
 use bytes::{Bytes, BytesMut};
+use colored::Colorize as _;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::collections::HashMap;
@@ -191,7 +192,12 @@ async fn start_devtools_server(
             while let Some(msg) = outgoing_reciever.recv().await {
                 writer.writable().await.unwrap();
 
-                println!("<< FROM:{} {}", msg.from, msg.data);
+                if msg.data.get("error").is_some() {
+                    let s = format!("<< FROM:{} {}", msg.from, msg.data);
+                    println!("{}", s.red());
+                } else {
+                    println!("<< FROM:{} {}", msg.from, msg.data);
+                }
 
                 let encoded = serde_json::to_string(&msg).unwrap();
                 let len = encoded.len();
