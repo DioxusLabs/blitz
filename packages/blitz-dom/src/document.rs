@@ -22,6 +22,7 @@ use style::values::computed::Overflow;
 use style::values::GenericAtomIdent;
 // use quadtree_rs::Quadtree;
 use crate::net::{Resource, StylesheetLoader};
+use debug_timer::debug_timer;
 use selectors::{matching::QuirksMode, Element};
 use slab::Slab;
 use std::collections::{BTreeMap, Bound, HashMap, HashSet, VecDeque};
@@ -706,17 +707,25 @@ impl BaseDocument {
             return;
         }
 
+        debug_timer!(timer, feature = "log_phase_times");
+
         // we need to resolve stylist first since it will need to drive our layout bits
         self.resolve_stylist();
+        timer.record_time("style");
 
         // Fix up tree for layout (insert anonymous blocks as necessary, etc)
         self.resolve_layout_children();
+        timer.record_time("construct");
 
         // Merge stylo into taffy
         self.flush_styles_to_layout(self.root_element().id);
+        timer.record_time("flush");
 
         // Next we resolve layout with the data resolved by stlist
         self.resolve_layout();
+        timer.record_time("layout");
+
+        timer.print_times("Resolve: ");
     }
 
     // Takes (x, y) co-ordinates (relative to the )

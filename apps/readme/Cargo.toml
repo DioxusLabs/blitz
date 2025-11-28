@@ -4,6 +4,9 @@ version = "0.1.0"
 edition = "2021"
 license.workspace = true
 
+[features]
+log_phase_times = ["blitz-dom/log_phase_times"]
+
 [dependencies]
 blitz-dom = { path = "../../packages/blitz-dom" }
 blitz-net = { path = "../../packages/blitz-net" }

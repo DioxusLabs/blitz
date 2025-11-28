@@ -12,6 +12,7 @@ woff = ["dep:woff"]
 woff2 = ["dep:woff2"]
 clipboard = ["dep:arboard"]
 accessibility = ["accesskit"]
+log_phase_times = ["debug_timer/enable"]
 
 [dependencies]
 # Blitz dependencies
@@ -60,3 +61,5 @@ cursor-icon = { workspace = true }
 
 [target.'cfg(any(target_os = "windows",target_os = "macos",target_os = "linux",target_os = "dragonfly", target_os = "freebsd", target_os = "netbsd", target_os = "openbsd"))'.dependencies]
 arboard = { workspace = true, optional = true }
+
+debug_timer = { version = "0.1.3" }
