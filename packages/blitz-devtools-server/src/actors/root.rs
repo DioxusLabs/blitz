@@ -52,7 +52,16 @@ impl Actor for RootActor {
                 Ok(())
             }
             "listTabs" => {
-                ctx.write_msg(self.name(), json!({ "tabs": [] }));
+                let tab = json!({
+                  "actor": "server0-tab4",
+                  "title": "Ladybird",
+                  "url": "https://ladybird.org/",
+                  "browserId": 1,
+                  "browsingContextID": 1,
+                  "outerWindowID": 1,
+                  "traits": { "watcher":true, "supportsReloadDescriptor":true }
+                });
+                ctx.write_msg(self.name(), json!({ "tabs": [tab] }));
                 Ok(())
             }
             "listWorkers" => {
