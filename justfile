@@ -18,6 +18,9 @@ small:
 wpt *ARGS:
   cargo run --release --package wpt {{ARGS}}
 
+browser:
+  cargo run --release --package browser
+
 ## Browser
 
 screenshot *ARGS:
