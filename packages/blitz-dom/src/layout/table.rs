@@ -110,7 +110,7 @@ pub(crate) fn collect_table_cells(
     }
 
     let Some(display) = node.primary_styles().map(|s| s.clone_display()) else {
-        println!("Ignoring table descendent because it has no styles");
+        // println!("Ignoring table descendent because it has no styles");
         return;
     };
 
@@ -209,7 +209,7 @@ pub(crate) fn collect_table_cells(
             *col += colspan;
         }
         _ => {
-            println!("Warning: ignoring non-table typed descendent of table");
+            // println!("Warning: ignoring non-table typed descendent of table");
         }
     }
 }
