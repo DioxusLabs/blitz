@@ -8,3 +8,6 @@ experiments
 /out
 /apps/wpt/output
 /sites
+/scratch
+/wpt/output
+.blitz-cache
