@@ -718,6 +718,7 @@ dependencies = [
  "blitz-dom",
  "blitz-traits",
  "color",
+ "debug_timer",
  "euclid",
  "futures-intrusive",
  "image",

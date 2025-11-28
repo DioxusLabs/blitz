@@ -44,7 +44,7 @@ impl DocumentHtmlParser<'_> {
     pub fn new(
         doc: &mut BaseDocument,
         net_provider: SharedProvider<Resource>,
-    ) -> DocumentHtmlParser {
+    ) -> DocumentHtmlParser<'_> {
         DocumentHtmlParser {
             doc_id: doc.id(),
             doc: RefCell::new(doc),
@@ -93,12 +93,12 @@ impl DocumentHtmlParser<'_> {
     }
 
     #[track_caller]
-    fn node(&self, id: usize) -> Ref<Node> {
+    fn node(&self, id: usize) -> Ref<'_, Node> {
         Ref::map(self.doc.borrow(), |doc| &doc.nodes[id])
     }
 
     #[track_caller]
-    fn node_mut(&self, id: usize) -> RefMut<Node> {
+    fn node_mut(&self, id: usize) -> RefMut<'_, Node> {
         RefMut::map(self.doc.borrow_mut(), |doc| &mut doc.nodes[id])
     }
 

@@ -8,6 +8,7 @@ edition = "2021"
 default = ["tracing", "svg"]
 tracing = ["dep:tracing"]
 svg = ["dep:vello_svg", "blitz-dom/svg"]
+log_frame_times = ["debug_timer/enable"]
 
 [dependencies]
 blitz-traits = { path = "../blitz-traits" }
@@ -25,3 +26,5 @@ raw-window-handle = { workspace = true }
 image = { workspace = true }
 futures-intrusive = { workspace = true }
 pollster = { workspace = true }
+
+debug_timer = "0.1.3"

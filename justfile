@@ -11,7 +11,7 @@ screenshot target:
   cargo run --release --example screenshot {{target}}
 
 open target:
-  cargo run --release --package readme --features log_phase_times {{target}} 
+  cargo run --release --package readme --features log_phase_times,log_frame_times {{target}} 
 
 todomvc:
   cargo run --release --example todomvc

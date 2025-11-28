@@ -5,6 +5,7 @@ use crate::renderer::render::generate_vello_scene;
 use crate::Color;
 use blitz_dom::BaseDocument;
 use blitz_traits::{BlitzWindowHandle, Devtools, DocumentRenderer, Viewport};
+use debug_timer::debug_timer;
 use std::num::NonZeroUsize;
 use std::sync::Arc;
 use vello::{
@@ -128,8 +129,11 @@ impl DocumentRenderer for BlitzVelloRenderer {
             antialiasing_method: vello::AaConfig::Msaa16,
         };
 
+        debug_timer!(timer, feature = "log_frame_times");
+
         // Regenerate the vello scene
         render::generate_vello_scene(&mut self.scene, doc, scale, width, height, devtools);
+        timer.record_time("cmd");
 
         state
             .renderer
@@ -141,9 +145,15 @@ impl DocumentRenderer for BlitzVelloRenderer {
                 &render_params,
             )
             .expect("failed to render to surface");
+        timer.record_time("render");
 
         surface_texture.present();
+        timer.record_time("present");
+
         device.device.poll(wgpu::Maintain::Wait);
+        timer.record_time("wait");
+
+        timer.print_times("vello: ");
 
         // Empty the Vello scene (memory optimisation)
         self.scene.reset();

@@ -6,6 +6,7 @@ license.workspace = true
 
 [features]
 log_phase_times = ["blitz-dom/log_phase_times"]
+log_frame_times = ["blitz-renderer-vello/log_frame_times"]
 
 [dependencies]
 blitz-dom = { path = "../../packages/blitz-dom" }
