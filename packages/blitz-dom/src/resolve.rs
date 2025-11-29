@@ -104,7 +104,7 @@ impl BaseDocument {
         }
         timer.record_time("subdocs");
 
-        timer.print_times("Resolve: ");
+        timer.print_times(&format!("Resolve({}): ", self.id()));
     }
 
     /// Ensure that the layout_children field is populated for all nodes
