@@ -253,7 +253,7 @@ pub(crate) fn collect_table_cells(
             }
 
             // TODO: account for padding/border/margin
-            if *row == 1 {
+            if is_fixed && *row == 1 {
                 let column = match style.size.width.tag() {
                     taffy::CompactLength::LENGTH_TAG => {
                         let len = style.size.width.value();
@@ -267,19 +267,6 @@ pub(crate) fn collect_table_cells(
                     _ => unreachable!(),
                 };
                 columns.push(column);
-            } else if !is_fixed
-                && (*col as usize) < columns.len()
-                && taffy::CompactLength::LENGTH_TAG == style.size.width.tag()
-            {
-                let new_len = style.size.width.value();
-                let tag = columns[*col as usize].tag();
-                let value = columns[*col as usize].value();
-                columns[*col as usize] = match tag {
-                    taffy::CompactLength::LENGTH_TAG => style_helpers::length(value.max(new_len)),
-                    taffy::CompactLength::AUTO_TAG => style_helpers::length(new_len),
-                    taffy::CompactLength::PERCENT_TAG => style_helpers::percent(value),
-                    _ => unreachable!(),
-                }
             }
 
             // Zero-out cell borders is BorderCollapse is Collapse
