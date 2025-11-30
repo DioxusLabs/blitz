@@ -2,8 +2,13 @@ use std::{ops::Range, sync::Arc};
 
 use atomic_refcell::AtomicRefCell;
 use markup5ever::local_name;
+use style::properties::style_structs::Border;
+use style::servo_arc::Arc as ServoArc;
 use style::values::specified::box_::{DisplayInside, DisplayOutside};
-use style::{Atom, computed_values::table_layout::T as TableLayout};
+use style::{
+    Atom, computed_values::border_collapse::T as BorderCollapse,
+    computed_values::table_layout::T as TableLayout,
+};
 use taffy::{
     DetailedGridInfo, Dimension, LayoutPartialTree as _, ResolveOrZero, TrackSizingFunction,
     style_helpers,
@@ -25,6 +30,8 @@ pub struct TableContext {
     pub cells: Vec<TableCell>,
     pub rows: Vec<TableRow>,
     pub computed_grid_info: AtomicRefCell<Option<DetailedGridInfo>>,
+    pub border_style: Option<ServoArc<Border>>,
+    pub border_collapse: BorderCollapse,
 }
 
 // #[derive(Debug, Clone, Eq, PartialEq)]
@@ -73,19 +80,25 @@ pub(crate) fn build_table_context(
         TableLayout::Auto => false,
     };
 
+    let border_collapse = stylo_styles.clone_border_collapse();
+    let border_spacing = stylo_styles.clone_border_spacing().0;
+
     drop(stylo_styles);
 
     let mut column_sizes: Vec<taffy::Dimension> = Vec::new();
+    let mut first_cell_border: Option<ServoArc<Border>> = None;
     for child_id in children.iter().copied() {
         collect_table_cells(
             doc,
             child_id,
             is_fixed,
+            border_collapse,
             &mut row,
             &mut col,
             &mut cells,
             &mut rows,
             &mut column_sizes,
+            &mut first_cell_border,
         );
     }
     column_sizes.resize(col as usize, style_helpers::auto());
@@ -95,6 +108,39 @@ pub(crate) fn build_table_context(
         .map(|dim| TrackSizingFunction::from(dim).into())
         .collect();
     style.grid_template_rows = vec![style_helpers::auto(); row as usize];
+
+    style.gap = match border_collapse {
+        BorderCollapse::Separate => taffy::Size {
+            width: style_helpers::length(border_spacing.width.px()),
+            height: style_helpers::length(border_spacing.height.px()),
+        },
+        BorderCollapse::Collapse => first_cell_border
+            .as_ref()
+            .map(|border| {
+                let x = border
+                    .border_left_width
+                    .max(border.border_right_width)
+                    .to_f32_px();
+                let y = border
+                    .border_top_width
+                    .max(border.border_bottom_width)
+                    .to_f32_px();
+                taffy::Size {
+                    width: style_helpers::length(x),
+                    height: style_helpers::length(y),
+                }
+            })
+            .unwrap_or(taffy::Size::ZERO.map(style_helpers::length)),
+    };
+
+    if border_collapse == BorderCollapse::Collapse {
+        style.border = taffy::Rect {
+            left: style.gap.width,
+            right: style.gap.width,
+            top: style.gap.height,
+            bottom: style.gap.height,
+        };
+    }
 
     let layout_children = cells.iter().map(|cell| cell.node_id).collect();
     let root_node = &mut doc.nodes[table_root_node_id];
@@ -106,6 +152,8 @@ pub(crate) fn build_table_context(
             cells,
             rows,
             computed_grid_info: AtomicRefCell::new(None),
+            border_collapse,
+            border_style: first_cell_border,
         },
         layout_children,
     )
@@ -116,11 +164,13 @@ pub(crate) fn collect_table_cells(
     doc: &mut BaseDocument,
     node_id: usize,
     is_fixed: bool,
+    border_collapse: BorderCollapse,
     row: &mut u16,
     col: &mut u16,
     cells: &mut Vec<TableCell>,
     rows: &mut Vec<TableRow>,
     columns: &mut Vec<Dimension>,
+    first_cell_border: &mut Option<ServoArc<Border>>,
 ) {
     let node = &doc.nodes[node_id];
 
@@ -147,7 +197,18 @@ pub(crate) fn collect_table_cells(
             for child_id in children.iter().copied() {
                 doc.nodes[child_id]
                     .remove_damage(CONSTRUCT_DESCENDENT | CONSTRUCT_FC | CONSTRUCT_BOX);
-                collect_table_cells(doc, child_id, is_fixed, row, col, cells, rows, columns);
+                collect_table_cells(
+                    doc,
+                    child_id,
+                    is_fixed,
+                    border_collapse,
+                    row,
+                    col,
+                    cells,
+                    rows,
+                    columns,
+                    first_cell_border,
+                );
             }
             doc.nodes[node_id].children = children;
         }
@@ -163,7 +224,18 @@ pub(crate) fn collect_table_cells(
 
             let children = std::mem::take(&mut doc.nodes[node_id].children);
             for child_id in children.iter().copied() {
-                collect_table_cells(doc, child_id, is_fixed, row, col, cells, rows, columns);
+                collect_table_cells(
+                    doc,
+                    child_id,
+                    is_fixed,
+                    border_collapse,
+                    row,
+                    col,
+                    cells,
+                    rows,
+                    columns,
+                    first_cell_border,
+                );
             }
             doc.nodes[node_id].children = children;
         }
@@ -175,6 +247,10 @@ pub(crate) fn collect_table_cells(
                 .and_then(|val| val.parse().ok())
                 .unwrap_or(1);
             let mut style = stylo_taffy::to_taffy_style(stylo_style);
+
+            if first_cell_border.is_none() {
+                *first_cell_border = Some(stylo_style.clone_border());
+            }
 
             // TODO: account for padding/border/margin
             if *row == 1 {
@@ -204,6 +280,12 @@ pub(crate) fn collect_table_cells(
                     taffy::CompactLength::PERCENT_TAG => style_helpers::percent(value),
                     _ => unreachable!(),
                 }
+            }
+
+            // Zero-out cell borders is BorderCollapse is Collapse
+            // Borders are handled at the table level in this mode
+            if border_collapse == BorderCollapse::Collapse {
+                style.border = taffy::Rect::ZERO.map(style_helpers::length);
             }
 
             style.grid_column = taffy::Line {
