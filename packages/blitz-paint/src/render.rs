@@ -12,8 +12,8 @@ use crate::layers::maybe_with_layer;
 use crate::sizing::compute_object_fit;
 use anyrender::{CustomPaint, Paint, PaintScene};
 use blitz_dom::node::{
-    ListItemLayout, ListItemLayoutPosition, Marker, NodeData, RasterImageData, TextInputData,
-    TextNodeData,
+    ListItemLayout, ListItemLayoutPosition, Marker, NodeData, RasterImageData, SpecialElementData,
+    TextInputData, TextNodeData,
 };
 use blitz_dom::{BaseDocument, ElementData, Node, local_name};
 use blitz_traits::devtools::DevtoolSettings;
@@ -21,6 +21,7 @@ use blitz_traits::devtools::DevtoolSettings;
 use euclid::Transform3D;
 use style::values::computed::BorderCornerRadius;
 use style::{
+    computed_values::border_collapse::T as BorderCollapse,
     dom::TElement,
     properties::{
         ComputedValues, generated::longhands::visibility::computed_value::T as StyloVisibility,
@@ -223,8 +224,9 @@ impl BlitzDomPainter<'_> {
         cx.draw_outline(scene);
         cx.draw_outset_box_shadow(scene);
         cx.draw_background(scene);
-        cx.draw_table_row_backgrounds(scene);
         cx.draw_inset_box_shadow(scene);
+        cx.draw_table_row_backgrounds(scene);
+        cx.draw_table_borders(scene);
         cx.draw_border(scene);
 
         // TODO: allow layers with opacity to be unclipped (overflow: visible)
@@ -707,47 +709,92 @@ impl ElementCx<'_> {
         }
     }
 
-    /// Stroke a border
-    ///
-    /// The border-style property specifies what kind of border to display.
-    ///
-    /// The following values are allowed:
-    /// ❌ dotted - Defines a dotted border
-    /// ❌ dashed - Defines a dashed border
-    /// ✅ solid - Defines a solid border
-    /// ❌ double - Defines a double border
-    /// ❌ groove - Defines a 3D grooved border.
-    /// ❌ ridge - Defines a 3D ridged border.
-    /// ❌ inset - Defines a 3D inset border.
-    /// ❌ outset - Defines a 3D outset border.
-    /// ✅ none - Defines no border
-    /// ✅ hidden - Defines a hidden border
-    ///
-    /// The border-style property can have from one to four values (for the top border, right border, bottom border, and the left border).
-    fn draw_border(&self, sb: &mut impl PaintScene) {
+    /// Draw all borders for a node
+    fn draw_border(&self, scene: &mut impl PaintScene) {
         for edge in [Edge::Top, Edge::Right, Edge::Bottom, Edge::Left] {
-            self.draw_border_edge(sb, edge);
+            self.draw_border_edge(scene, edge);
         }
     }
 
-    /// The border-style property specifies what kind of border to display.
-    ///
-    /// [Border](https://www.w3schools.com/css/css_border.asp)
-    ///
-    /// The following values are allowed:
-    /// - ❌ dotted: Defines a dotted border
-    /// - ❌ dashed: Defines a dashed border
-    /// - ✅ solid: Defines a solid border
-    /// - ❌ double: Defines a double border
-    /// - ❌ groove: Defines a 3D grooved border*
-    /// - ❌ ridge: Defines a 3D ridged border*
-    /// - ❌ inset: Defines a 3D inset border*
-    /// - ❌ outset: Defines a 3D outset border*
-    /// - ✅ none: Defines no border
-    /// - ✅ hidden: Defines a hidden border
-    ///
-    /// [*] The effect depends on the border-color value
-    fn draw_border_edge(&self, sb: &mut impl PaintScene, edge: Edge) {
+    fn draw_table_borders(&self, scene: &mut impl PaintScene) {
+        let SpecialElementData::TableRoot(table) = &self.element.special_data else {
+            return;
+        };
+        // Borders are only handled at the table level when BorderCollapse::Collapse
+        if table.border_collapse != BorderCollapse::Collapse {
+            return;
+        }
+
+        let Some(grid_info) = &mut *table.computed_grid_info.borrow_mut() else {
+            return;
+        };
+        let Some(border_style) = table.border_style.as_deref() else {
+            return;
+        };
+
+        let cols = &grid_info.columns;
+        let rows = &grid_info.rows;
+
+        let inner_width =
+            (cols.sizes.iter().sum::<f32>() + cols.gutters.iter().sum::<f32>()) as f64;
+        let inner_height =
+            (rows.sizes.iter().sum::<f32>() + rows.gutters.iter().sum::<f32>()) as f64;
+
+        // TODO: support different colors for different borders
+        let current_color = self.style.clone_color();
+        let border_color = border_style
+            .border_top_color
+            .resolve_to_absolute(&current_color)
+            .as_srgb_color();
+
+        // No need to draw transparent borders (as they won't be visible anyway)
+        if border_color == Color::TRANSPARENT {
+            return;
+        }
+
+        let border_width = border_style.border_top_width.to_f64_px();
+
+        // Draw horizontal inner borders
+        let mut y = 0.0;
+        for (&height, &gutter) in rows.sizes.iter().zip(rows.gutters.iter()) {
+            let shape =
+                Rect::new(0.0, y, inner_width, y + gutter as f64).scale_from_origin(self.scale);
+            scene.fill(Fill::NonZero, self.transform, border_color, None, &shape);
+
+            y += (height + gutter) as f64;
+        }
+
+        // Draw horizontal outer borders
+        // Top border
+        let shape = Rect::new(0.0, 0.0, inner_width, border_width).scale_from_origin(self.scale);
+        scene.fill(Fill::NonZero, self.transform, border_color, None, &shape);
+        // Bottom border
+        let shape = Rect::new(0.0, inner_height, inner_width, inner_height + border_width)
+            .scale_from_origin(self.scale);
+        scene.fill(Fill::NonZero, self.transform, border_color, None, &shape);
+
+        // Draw vertical inner borders
+        let mut x = 0.0;
+        for (&width, &gutter) in cols.sizes.iter().zip(cols.gutters.iter()) {
+            let shape =
+                Rect::new(x, 0.0, x + gutter as f64, inner_height).scale_from_origin(self.scale);
+            scene.fill(Fill::NonZero, self.transform, border_color, None, &shape);
+
+            x += (width + gutter) as f64;
+        }
+
+        // Draw vertical outer borders
+        // Left border
+        let shape = Rect::new(0.0, 0.0, border_width, inner_height).scale_from_origin(self.scale);
+        scene.fill(Fill::NonZero, self.transform, border_color, None, &shape);
+        // Right border
+        let shape = Rect::new(inner_width, 0.0, inner_width + border_width, inner_height)
+            .scale_from_origin(self.scale);
+        scene.fill(Fill::NonZero, self.transform, border_color, None, &shape);
+    }
+
+    /// Draw a single border edge for a node
+    fn draw_border_edge(&self, scene: &mut impl PaintScene, edge: Edge) {
         let style = &*self.style;
         let border = style.get_border();
         let path = self.frame.border_edge_shape(edge);
@@ -774,7 +821,7 @@ impl ElementCx<'_> {
 
         let alpha = color.components[3];
         if alpha != 0.0 {
-            sb.fill(Fill::NonZero, self.transform, color, None, &path);
+            scene.fill(Fill::NonZero, self.transform, color, None, &path);
         }
     }
 
