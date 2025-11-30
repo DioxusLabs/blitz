@@ -244,7 +244,13 @@ impl BaseDocument {
                         doc: self,
                         ctx: context,
                     };
-                    return compute_grid_layout(&mut table_wrapper, node_id, inputs);
+                    let mut output = compute_grid_layout(&mut table_wrapper, node_id, inputs);
+
+                    // HACK: Cap content size at node size to prevent scrolling
+                    output.content_size.width = output.content_size.width.min(output.size.width);
+                    output.content_size.height = output.content_size.height.min(output.size.height);
+
+                    return output;
                 }
 
                 if node.flags.is_inline_root() {
