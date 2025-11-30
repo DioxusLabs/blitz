@@ -732,6 +732,8 @@ impl ElementCx<'_> {
             return;
         };
 
+        let outer_border_style = self.style.get_border();
+
         let cols = &grid_info.columns;
         let rows = &grid_info.rows;
 
@@ -766,12 +768,17 @@ impl ElementCx<'_> {
 
         // Draw horizontal outer borders
         // Top border
-        let shape = Rect::new(0.0, 0.0, inner_width, border_width).scale_from_origin(self.scale);
-        scene.fill(Fill::NonZero, self.transform, border_color, None, &shape);
+        if outer_border_style.border_top_style != BorderStyle::Hidden {
+            let shape =
+                Rect::new(0.0, 0.0, inner_width, border_width).scale_from_origin(self.scale);
+            scene.fill(Fill::NonZero, self.transform, border_color, None, &shape);
+        }
         // Bottom border
-        let shape = Rect::new(0.0, inner_height, inner_width, inner_height + border_width)
-            .scale_from_origin(self.scale);
-        scene.fill(Fill::NonZero, self.transform, border_color, None, &shape);
+        if outer_border_style.border_bottom_style != BorderStyle::Hidden {
+            let shape = Rect::new(0.0, inner_height, inner_width, inner_height + border_width)
+                .scale_from_origin(self.scale);
+            scene.fill(Fill::NonZero, self.transform, border_color, None, &shape);
+        }
 
         // Draw vertical inner borders
         let mut x = 0.0;
@@ -785,12 +792,17 @@ impl ElementCx<'_> {
 
         // Draw vertical outer borders
         // Left border
-        let shape = Rect::new(0.0, 0.0, border_width, inner_height).scale_from_origin(self.scale);
-        scene.fill(Fill::NonZero, self.transform, border_color, None, &shape);
+        if outer_border_style.border_left_style != BorderStyle::Hidden {
+            let shape =
+                Rect::new(0.0, 0.0, border_width, inner_height).scale_from_origin(self.scale);
+            scene.fill(Fill::NonZero, self.transform, border_color, None, &shape);
+        }
         // Right border
-        let shape = Rect::new(inner_width, 0.0, inner_width + border_width, inner_height)
-            .scale_from_origin(self.scale);
-        scene.fill(Fill::NonZero, self.transform, border_color, None, &shape);
+        if outer_border_style.border_right_style != BorderStyle::Hidden {
+            let shape = Rect::new(inner_width, 0.0, inner_width + border_width, inner_height)
+                .scale_from_origin(self.scale);
+            scene.fill(Fill::NonZero, self.transform, border_color, None, &shape);
+        }
     }
 
     /// Draw a single border edge for a node
