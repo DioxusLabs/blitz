@@ -5,6 +5,10 @@ edition = "2024"
 license.workspace = true
 publish = false
 
+[[bin]]
+name = "blitz"
+path = "src/main.rs"
+
 [features]
 default = ["vello", "floats", "incremental", "cookies"]
 vello = ["dioxus-native/vello"]
