@@ -72,6 +72,7 @@ pub(crate) fn build_table_context(
     };
 
     let mut style = stylo_taffy::to_taffy_style(&stylo_styles);
+    style.item_is_table = true;
     style.grid_auto_columns = Vec::new();
     style.grid_auto_rows = Vec::new();
 
