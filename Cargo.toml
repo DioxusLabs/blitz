@@ -56,8 +56,8 @@ cssparser = { version = "0.36" }
 
 # HTML5ever dependencies
 markup5ever = "0.36.1" # needs to match stylo web_atoms version
-html5ever = "0.36.1" # needs to match stylo web_atoms version
-xml5ever = "0.36.1" # needs to match stylo web_atoms version
+html5ever = "0.36.1"   # needs to match stylo web_atoms version
+xml5ever = "0.36.1"    # needs to match stylo web_atoms version
 
 # Other Servo dependencies
 euclid = "0.22"
@@ -84,7 +84,16 @@ dioxus-cli-config = { version = "0.7" }
 # Dioxus Prelude
 dioxus-core-macro = { version = "0.7" }
 
-taffy = { git = "https://github.com/DioxusLabs/taffy", rev = "22868d2812bf903cc4d1dc514cf82197d9849a0b", default-features = false, features = ["std", "flexbox", "grid", "block_layout", "content_size", "calc"] }
+# Taffy
+taffy = { git = "https://github.com/DioxusLabs/taffy", rev = "22868d2812bf903cc4d1dc514cf82197d9849a0b", default-features = false, features = [
+  "std",
+  "flexbox",
+  "grid",
+  "block_layout",
+  "content_size",
+  "calc",
+  "detailed_layout_info",
+] }
 
 # AnyRender
 anyrender = { version = "0.6" }
@@ -100,14 +109,21 @@ color = "0.3"
 linebender_resource_handle = "0.1"
 peniko = "0.5.0"
 kurbo = "0.12"
-parley = { git = "https://github.com/linebender/parley", rev = "f6a8485c35367b581b03bd6da55c8465f24e16ef", default-features = false, features = ["std"] }
-skrifa = { version = "0.37", default-features = false, features = ["std"] } # Should match parley version
+parley = { git = "https://github.com/linebender/parley", rev = "f6a8485c35367b581b03bd6da55c8465f24e16ef", default-features = false, features = [
+  "std",
+] }
+skrifa = { version = "0.37", default-features = false, features = [
+  "std",
+] } # Should match parley version
 wgpu = "26"
 softbuffer = "0.4"
 pixels = "0.15"
-vello = { version = "0.6", features = [ "wgpu" ] }
+vello = { version = "0.6", features = ["wgpu"] }
 vello_encoding = { version = "0.6", default-features = false }
-vello_cpu = { version = "0.0.3", default-features = false, features = ["std", "text"]}
+vello_cpu = { version = "0.0.3", default-features = false, features = [
+  "std",
+  "text",
+] }
 usvg = "0.45.1"
 
 # Windowing & Input

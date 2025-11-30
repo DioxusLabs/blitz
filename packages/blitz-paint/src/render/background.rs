@@ -3,7 +3,7 @@ use crate::color::{Color, ToColorColor};
 use crate::gradient::to_peniko_gradient;
 use crate::layers::maybe_with_layer;
 use anyrender::PaintScene;
-use blitz_dom::node::ImageData;
+use blitz_dom::node::{ImageData, SpecialElementData};
 use kurbo::{self, BezPath, Point, Rect, Shape, Size, Vec2};
 use peniko::{self, Fill};
 use style::{
@@ -90,6 +90,49 @@ impl ElementCx<'_> {
                     }
                 },
             );
+        }
+    }
+
+    pub(super) fn draw_table_row_backgrounds(&self, scene: &mut impl PaintScene) {
+        let SpecialElementData::TableRoot(table) = &self.element.special_data else {
+            return;
+        };
+        let Some(grid_info) = &mut *table.computed_grid_info.borrow_mut() else {
+            return;
+        };
+
+        let cols = &grid_info.columns;
+        let inner_width =
+            (cols.sizes.iter().sum::<f32>() + cols.gutters.iter().sum::<f32>()) as f64;
+
+        let rows = &grid_info.rows;
+        let mut y = 0.0;
+        for ((row, &height), &gutter) in table
+            .rows
+            .iter()
+            .zip(rows.sizes.iter())
+            .zip(rows.gutters.iter())
+        {
+            let row_node = &self.context.dom.get_node(row.node_id).unwrap();
+            let Some(style) = row_node.primary_styles() else {
+                continue;
+            };
+
+            let shape =
+                Rect::new(0.0, y, inner_width, y + height as f64).scale_from_origin(self.scale);
+
+            let current_color = style.clone_color();
+            let background_color = &style.get_background().background_color;
+            let bg_color = background_color
+                .resolve_to_absolute(&current_color)
+                .as_srgb_color();
+
+            if bg_color != Color::TRANSPARENT {
+                // Fill the color
+                scene.fill(Fill::NonZero, self.transform, bg_color, None, &shape);
+            }
+
+            y += (height + gutter) as f64;
         }
     }
 
