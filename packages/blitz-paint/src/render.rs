@@ -223,6 +223,7 @@ impl BlitzDomPainter<'_> {
         cx.draw_outline(scene);
         cx.draw_outset_box_shadow(scene);
         cx.draw_background(scene);
+        cx.draw_table_row_backgrounds(scene);
         cx.draw_inset_box_shadow(scene);
         cx.draw_border(scene);
 
