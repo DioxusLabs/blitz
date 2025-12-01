@@ -17,7 +17,7 @@ Talk to us in: the [#native](https://discord.gg/AnNPqT95pu) channel in the [Diox
 
 ## Status
 
-Blitz is currently in a **pre-alpha** state. It already has a very capable renderer, but there are also still many bugs and missing features. We are actively working on bringing into a usable state but we would not yet recommend building apps with it.
+Blitz is currently in a **pre-alpha** state. It already has a very capable renderer, but there are also still many bugs and missing features. We are actively working on bringing it into a usable state but we would not yet recommend building apps with it.
 
 Check out the [roadmap issue](https://github.com/DioxusLabs/blitz/issues/119) for more details. 
 
@@ -25,25 +25,34 @@ Check out the [roadmap issue](https://github.com/DioxusLabs/blitz/issues/119) fo
 
 ![screenshot](https://raw.githubusercontent.com/DioxusLabs/screenshots/main/blitz/counter-example.png)
 
-
 > Note: This repo contains a new version of Blitz (v0.2+) which uses Stylo. The source code for the old version (v0.1) is still available on the [legacy](https://github.com/DioxusLabs/blitz/tree/legacy) branch but is not under active development.
-
 
 ## Trying it out
 
 1. Clone this repo
-2. Run an example:
-    - `cargo run --release --example todomvc`
-    - `cargo run --release --example google`
-3. Or our "browser" package:
-    - `cargo run --release --package readme ./README.md`
-    - `cargo run --release --package readme https://news.ycombinator.com`
+2. Run our "browser" package:
+    ```sh
+    cargo run --release --package browser
+    ```
+3. Or run an example:
+    - small TODO app
+    ```sh
+    cargo run --release --package todomvc
+    ```
+    - markdown renderer
+    ```sh
+    cargo run --release --package readme ./README.md
+    ```
+    - integration with raw WGPU rendering
+    ```sh
+    cargo run --release --package wgpu_texture
+    ```
 
-Other examples available.
+Other examples are available in the [examples/](./examples/) folder.
 
 ## Goals
 
-Blitz is designed to render HTML and CSS - we *don't* want to support the entirety of browser features (or at least we want to make all such "extra" features opt-in). In our opinion, the browser is bloated for the basic usecase of rendering HTML/CSS.
+Blitz is designed to render HTML and CSS - we *don't* want to support the entirety of browser features (or at least we want to make all such "extra" features opt-in). In our opinion, the browser is bloated for the basic use case of rendering HTML/CSS.
 
 We do intend to support:
 
