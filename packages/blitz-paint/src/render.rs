@@ -46,6 +46,8 @@ pub struct BlitzDomPainter<'dom> {
     pub(crate) scale: f64,
     pub(crate) width: u32,
     pub(crate) height: u32,
+    pub(crate) initial_x: f64,
+    pub(crate) initial_y: f64,
     pub(crate) devtools: DevtoolSettings,
 }
 
@@ -66,7 +68,7 @@ impl BlitzDomPainter<'_> {
     ///
     /// This assumes styles are resolved and layout is complete.
     /// Make sure you do those before trying to render
-    pub fn paint_scene(&self, scene: &mut impl PaintScene, initial_x: f64, initial_y: f64) {
+    pub fn paint_scene(&self, scene: &mut impl PaintScene) {
         // Simply render the document (the root element (note that this is not the same as the root node)))
         // scene.reset();
         let viewport_scroll = self.dom.as_ref().viewport_scroll();
@@ -114,8 +116,8 @@ impl BlitzDomPainter<'_> {
             scene,
             root_id,
             Point {
-                x: initial_x - viewport_scroll.x,
-                y: initial_y - viewport_scroll.y,
+                x: self.initial_x - viewport_scroll.x,
+                y: self.initial_y - viewport_scroll.y,
             },
         );
 
@@ -208,7 +210,7 @@ impl BlitzDomPainter<'_> {
         };
 
         // Don't render things that are out of view
-        let scaled_y = box_position.y * self.scale;
+        let scaled_y = (box_position.y - self.initial_y) * self.scale;
         let scaled_content_height = content_size.height.max(size.height) as f64 * self.scale;
         if scaled_y > self.height as f64 || scaled_y + scaled_content_height < 0.0 {
             return;
@@ -677,8 +679,8 @@ impl ElementCx<'_> {
             let scale = self.scale;
             let width = self.frame.content_box.width() as u32;
             let height = self.frame.content_box.height() as u32;
-            let x = self.pos.x + self.frame.content_box.origin().x;
-            let y = self.pos.y + self.frame.content_box.origin().y;
+            let initial_x = self.pos.x + self.frame.content_box.origin().x;
+            let initial_y = self.pos.y + self.frame.content_box.origin().y;
             // let transform = self.transform.then_translate(Vec2 { x, y });
 
             let painter = BlitzDomPainter {
@@ -686,10 +688,12 @@ impl ElementCx<'_> {
                 scale,
                 width,
                 height,
+                initial_x,
+                initial_y,
                 devtools: DevtoolSettings::default(),
             };
 
-            painter.paint_scene(scene, x, y);
+            painter.paint_scene(scene);
         }
     }
 

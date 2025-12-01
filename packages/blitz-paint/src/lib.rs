@@ -41,9 +41,11 @@ pub fn paint_scene(
         scale,
         width,
         height,
+        initial_x: 0.0,
+        initial_y: 0.0,
         devtools,
     };
-    generator.paint_scene(scene, 0.0, 0.0);
+    generator.paint_scene(scene);
 
     // println!(
     //     "Rendered using {} clips (depth: {}) (wanted: {})",
