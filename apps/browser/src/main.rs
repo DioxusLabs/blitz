@@ -36,7 +36,7 @@ fn use_sync_store<T: Send + Sync + 'static>(value: impl FnOnce() -> T) -> SyncSt
 }
 
 fn app() -> Element {
-    let home_url = use_hook(|| Url::parse("https://wikipedia.org").unwrap());
+    let home_url = use_hook(|| Url::parse("https://html.duckduckgo.com").unwrap());
 
     let mut url_input_value = use_signal(|| home_url.to_string());
     let mut history: SyncStore<History> = use_sync_store(|| History::new(home_url.clone()));
