@@ -177,7 +177,6 @@ impl ElementCx<'_> {
             ),
             self.scale as f32,
         );
-        let bg_size = bg_size * self.scale;
 
         let x_ratio = bg_size.width as f64 / svg_size.width() as f64;
         let y_ratio = bg_size.height as f64 / svg_size.height() as f64;
