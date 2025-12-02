@@ -41,10 +41,18 @@ pub(crate) fn handle_mousemove(
             return changed;
         }
 
-        let content_box_offset = taffy::Point {
+        let mut content_box_offset = taffy::Point {
             x: node.final_layout.padding.left + node.final_layout.border.left,
             y: node.final_layout.padding.top + node.final_layout.border.top,
         };
+        if !text_input_data.is_multiline {
+            let layout = text_input_data.editor.try_layout().unwrap();
+            let content_box_height = node.final_layout.content_box_height();
+            let input_height = layout.height() / layout.scale() as f32;
+            let y_offset = ((content_box_height - input_height) / 2.0).max(0.0);
+
+            content_box_offset.y += y_offset;
+        }
 
         let x = (hit.x - content_box_offset.x) as f64 * doc.viewport.scale_f64();
         let y = (hit.y - content_box_offset.y) as f64 * doc.viewport.scale_f64();
@@ -79,10 +87,19 @@ pub(crate) fn handle_mousedown(doc: &mut BaseDocument, target: usize, x: f32, y:
     }
 
     if let SpecialElementData::TextInput(ref mut text_input_data) = el.special_data {
-        let content_box_offset = taffy::Point {
+        let mut content_box_offset = taffy::Point {
             x: node.final_layout.padding.left + node.final_layout.border.left,
             y: node.final_layout.padding.top + node.final_layout.border.top,
         };
+        if !text_input_data.is_multiline {
+            let layout = text_input_data.editor.try_layout().unwrap();
+            let content_box_height = node.final_layout.content_box_height();
+            let input_height = layout.height() / layout.scale() as f32;
+            let y_offset = ((content_box_height - input_height) / 2.0).max(0.0);
+
+            content_box_offset.y += y_offset;
+        }
+
         let x = (hit.x - content_box_offset.x) as f64 * doc.viewport.scale_f64();
         let y = (hit.y - content_box_offset.y) as f64 * doc.viewport.scale_f64();
 

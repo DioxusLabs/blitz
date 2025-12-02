@@ -451,6 +451,14 @@ impl ElementCx<'_> {
     fn draw_text_input_text(&self, scene: &mut impl PaintScene, pos: Point) {
         // Render the text in text inputs
         if let Some(input_data) = self.text_input {
+            // For single-line inputs, add an offset to vertically center the text input layout
+            // within the content box of it's node.
+            let y_offset = self.node.text_input_v_centering_offset(self.scale);
+            let pos = Point {
+                x: pos.x,
+                y: pos.y + y_offset,
+            };
+
             let transform = Affine::translate((pos.x * self.scale, pos.y * self.scale));
 
             if self.node.is_focussed() {
