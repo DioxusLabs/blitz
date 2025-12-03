@@ -128,7 +128,7 @@ usvg = "0.46"
 
 # Windowing & Input
 raw-window-handle = "0.6.0"
-winit = { version = "0.30.2", features = ["rwh_06"] }
+winit = { version = "=0.31.0-beta.2" }
 accesskit_winit = "0.23"
 accesskit = "0.17"
 arboard = { version = "3.4.1", default-features = false }
@@ -167,7 +167,7 @@ tracing-subscriber = "0.3"
 futures-util = "0.3.30"
 futures-intrusive = "0.5.0"
 pollster = "0.4"
-smol_str = "0.2"
+smol_str = "0.3"
 bitflags = "2.8.0"
 bytemuck = "1"
 fastrand = "2.3.0"
