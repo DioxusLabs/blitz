@@ -3,10 +3,10 @@ use crate::event::{BlitzShellEvent, BlitzShellProxy};
 use anyrender::WindowRenderer;
 use std::collections::HashMap;
 use std::sync::mpsc::Receiver;
-use winit::application::ApplicationHandler;
 use winit::event::WindowEvent;
 use winit::event_loop::ActiveEventLoop;
 use winit::window::WindowId;
+use winit::{application::ApplicationHandler, platform::macos::ApplicationHandlerExtMacOS};
 
 use crate::{View, WindowConfig};
 
@@ -83,6 +83,10 @@ impl<Rend: WindowRenderer> BlitzApplication<Rend> {
 }
 
 impl<Rend: WindowRenderer> ApplicationHandler for BlitzApplication<Rend> {
+    fn macos_handler(&mut self) -> Option<&mut dyn ApplicationHandlerExtMacOS> {
+        Some(self)
+    }
+
     fn can_create_surfaces(&mut self, event_loop: &dyn ActiveEventLoop) {
         // Resume existing windows
         for (_, view) in self.windows.iter_mut() {
@@ -143,5 +147,18 @@ impl<Rend: WindowRenderer> ApplicationHandler for BlitzApplication<Rend> {
         while let Ok(event) = self.event_queue.try_recv() {
             self.handle_blitz_shell_event(event_loop, event);
         }
+    }
+}
+
+impl<Rend: WindowRenderer> ApplicationHandlerExtMacOS for BlitzApplication<Rend> {
+    fn standard_key_binding(
+        &mut self,
+        event_loop: &dyn ActiveEventLoop,
+        window_id: WindowId,
+        action: &str,
+    ) {
+        let _ = event_loop;
+        let _ = window_id;
+        let _ = action;
     }
 }
