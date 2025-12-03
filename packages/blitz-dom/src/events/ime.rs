@@ -41,6 +41,14 @@ pub(crate) fn handle_ime_event<F: FnMut(DomEvent)>(
                     }
                     doc.shell_provider.request_redraw();
                 }
+                BlitzImeEvent::DeleteSurrounding {
+                    before_bytes,
+                    after_bytes,
+                } => {
+                    let _ = before_bytes;
+                    let _ = after_bytes;
+                    // TODO
+                }
             }
             println!("Sent ime event to {node_id}");
         }
