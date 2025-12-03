@@ -11,6 +11,7 @@ use winit::application::ApplicationHandler;
 use winit::event::{Modifiers, StartCause, WindowEvent};
 use winit::event_loop::ActiveEventLoop;
 use winit::keyboard::{KeyCode, PhysicalKey};
+use winit::platform::macos::ApplicationHandlerExtMacOS;
 use winit::window::{Theme, WindowId};
 
 use crate::fetch;
@@ -130,6 +131,10 @@ impl ReadmeApplication {
 }
 
 impl ApplicationHandler for ReadmeApplication {
+    fn macos_handler(&mut self) -> Option<&mut dyn ApplicationHandlerExtMacOS> {
+        self.inner.macos_handler()
+    }
+
     fn resumed(&mut self, event_loop: &dyn ActiveEventLoop) {
         self.inner.resumed(event_loop);
     }
