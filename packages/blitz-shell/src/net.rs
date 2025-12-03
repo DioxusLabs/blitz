@@ -1,29 +1,27 @@
-use std::sync::Arc;
+// use std::sync::Arc;
 
-use blitz_traits::net::NetWaker;
-use winit::event_loop::EventLoopProxy;
+// use blitz_traits::net::NetWaker;
+// use winit::event_loop::EventLoopProxy;
 
-use crate::BlitzShellEvent;
+// use crate::{BlitzShellEvent, event::BlitzShellProxy};
 
-/// A NetWaker that wakes up our winit event loop
-pub struct BlitzShellNetWaker(EventLoopProxy<BlitzShellEvent>);
+// /// A NetWaker that wakes up our winit event loop
+// pub struct BlitzShellNetWaker(BlitzShellProxy);
 
-impl BlitzShellNetWaker {
-    pub fn new(proxy: EventLoopProxy<BlitzShellEvent>) -> Self {
-        Self(proxy)
-    }
+// impl BlitzShellNetWaker {
+//     pub fn new(proxy: BlitzShellProxy) -> Self {
+//         Self(proxy)
+//     }
 
-    pub fn shared(proxy: EventLoopProxy<BlitzShellEvent>) -> Arc<dyn NetWaker> {
-        Arc::new(Self(proxy))
-    }
-}
-impl NetWaker for BlitzShellNetWaker {
-    fn wake(&self, doc_id: usize) {
-        self.0
-            .send_event(BlitzShellEvent::RequestRedraw { doc_id })
-            .unwrap()
-    }
-}
+//     pub fn shared(proxy: BlitzShellProxy) -> Arc<dyn NetWaker> {
+//         Arc::new(Self(proxy))
+//     }
+// }
+// impl NetWaker for BlitzShellNetWaker {
+//     fn wake(&self, doc_id: usize) {
+//         self.0.send_event(BlitzShellEvent::RequestRedraw { doc_id })
+//     }
+// }
 
 #[cfg(feature = "data-uri")]
 mod data_uri_net_provider {
