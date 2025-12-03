@@ -32,6 +32,13 @@ pub(crate) fn winit_ime_to_blitz(event: Ime) -> BlitzImeEvent {
         Ime::Disabled => BlitzImeEvent::Disabled,
         Ime::Preedit(text, cursor) => BlitzImeEvent::Preedit(text, cursor),
         Ime::Commit(text) => BlitzImeEvent::Commit(text),
+        Ime::DeleteSurrounding {
+            before_bytes,
+            after_bytes,
+        } => BlitzImeEvent::DeleteSurrounding {
+            before_bytes,
+            after_bytes,
+        },
     }
 }
 
@@ -65,7 +72,7 @@ pub(crate) fn winit_modifiers_to_kbt_modifiers(winit_modifiers: WinitModifiers) 
     if winit_modifiers.shift_key() {
         modifiers.insert(Modifiers::SHIFT);
     }
-    if winit_modifiers.super_key() {
+    if winit_modifiers.meta_key() {
         modifiers.insert(Modifiers::SUPER);
     }
     modifiers
@@ -80,15 +87,13 @@ pub(crate) fn winit_key_location_to_kbt_location(location: WinitKeyLocation) -> 
     }
 }
 
+#[allow(deprecated)] // Should cover all variants for conversion
 pub(crate) fn winit_physical_key_to_kbt_code(physical_key: &WinitPhysicalKey) -> Code {
     match physical_key {
         WinitPhysicalKey::Unidentified(_) => Code::Unidentified,
         WinitPhysicalKey::Code(key_code) => match key_code {
-            // Variants that don't match 1:1
-            WinitKeyCode::Meta => Code::Super,
-            WinitKeyCode::SuperLeft => Code::Super,
-            WinitKeyCode::SuperRight => Code::Super,
-
+            WinitKeyCode::MetaLeft => Code::Super,
+            WinitKeyCode::MetaRight => Code::Super,
             WinitKeyCode::Backquote => Code::Backquote,
             WinitKeyCode::Backslash => Code::Backslash,
             WinitKeyCode::BracketLeft => Code::BracketLeft,
@@ -280,12 +285,37 @@ pub(crate) fn winit_physical_key_to_kbt_code(physical_key: &WinitPhysicalKey) ->
             WinitKeyCode::F33 => Code::F33,
             WinitKeyCode::F34 => Code::F34,
             WinitKeyCode::F35 => Code::F35,
+            WinitKeyCode::Super => Code::Super,
+            WinitKeyCode::Unidentified => Code::Unidentified,
+            WinitKeyCode::BrightnessDown => Code::BrightnessDown,
+            WinitKeyCode::BrightnessUp => Code::BrightnessUp,
+            WinitKeyCode::DisplayToggleIntExt => Code::DisplayToggleIntExt,
+            WinitKeyCode::KeyboardLayoutSelect => Code::KeyboardLayoutSelect,
+            WinitKeyCode::LaunchAssistant => Code::LaunchAssistant,
+            WinitKeyCode::LaunchControlPanel => Code::LaunchControlPanel,
+            WinitKeyCode::LaunchScreenSaver => Code::LaunchScreenSaver,
+            WinitKeyCode::MailForward => Code::MailForward,
+            WinitKeyCode::MailReply => Code::MailReply,
+            WinitKeyCode::MailSend => Code::MailSend,
+            WinitKeyCode::MediaFastForward => Code::MediaFastForward,
+            WinitKeyCode::MediaPause => Code::MediaPause,
+            WinitKeyCode::MediaPlay => Code::MediaPlay,
+            WinitKeyCode::MediaRecord => Code::MediaRecord,
+            WinitKeyCode::MediaRewind => Code::MediaRewind,
+            WinitKeyCode::MicrophoneMuteToggle => Code::MicrophoneMuteToggle,
+            WinitKeyCode::PrivacyScreenToggle => Code::PrivacyScreenToggle,
+            WinitKeyCode::SelectTask => Code::SelectTask,
+            WinitKeyCode::ShowAllWindows => Code::ShowAllWindows,
+            WinitKeyCode::ZoomToggle => Code::ZoomToggle,
+
+            WinitKeyCode::KeyboardBacklightToggle => todo!(),
             _ => todo!(),
         },
     }
 }
 
 pub(crate) fn winit_key_to_kbt_key(winit_key: &WinitKey) -> Key {
+    #[allow(deprecated)] // Should cover all variants for conversion
     match winit_key {
         WinitKey::Character(c) => Key::Character(c.to_string()),
         WinitKey::Unidentified(_) => Key::Unidentified,
@@ -307,7 +337,6 @@ pub(crate) fn winit_key_to_kbt_key(winit_key: &WinitKey) -> Key {
             WinitNamedKey::Super => Key::Super,
             WinitNamedKey::Enter => Key::Enter,
             WinitNamedKey::Tab => Key::Tab,
-            WinitNamedKey::Space => Key::Character(" ".to_string()),
             WinitNamedKey::ArrowDown => Key::ArrowDown,
             WinitNamedKey::ArrowLeft => Key::ArrowLeft,
             WinitNamedKey::ArrowRight => Key::ArrowRight,
@@ -597,6 +626,9 @@ pub(crate) fn winit_key_to_kbt_key(winit_key: &WinitKey) -> Key {
             WinitNamedKey::F33 => Key::F33,
             WinitNamedKey::F34 => Key::F34,
             WinitNamedKey::F35 => Key::F35,
+            WinitNamedKey::Unidentified => Key::Unidentified,
+            WinitNamedKey::Dead => Key::Dead,
+
             _ => Key::Unidentified,
         },
     }
