@@ -136,7 +136,7 @@ impl<Rend: WindowRenderer> ApplicationHandler for BlitzApplication<Rend> {
             window.handle_winit_event(event);
         }
 
-        let _ = self.proxy.send_event(BlitzShellEvent::Poll { window_id });
+        self.proxy.send_event(BlitzShellEvent::Poll { window_id });
     }
 
     fn proxy_wake_up(&mut self, event_loop: &dyn ActiveEventLoop) {
