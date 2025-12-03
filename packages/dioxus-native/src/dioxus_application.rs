@@ -1,10 +1,10 @@
-use blitz_shell::{BlitzApplication, View};
+use blitz_shell::{BlitzApplication, BlitzShellProxy, View};
 use dioxus_core::{provide_context, ScopeId};
 use dioxus_history::{History, MemoryHistory};
 use std::rc::Rc;
 use winit::application::ApplicationHandler;
 use winit::event::{StartCause, WindowEvent};
-use winit::event_loop::{ActiveEventLoop, EventLoopProxy};
+use winit::event_loop::ActiveEventLoop;
 use winit::window::WindowId;
 
 use crate::DioxusNativeWindowRenderer;
@@ -30,18 +30,17 @@ pub enum DioxusNativeEvent {
 pub struct DioxusNativeApplication {
     pending_window: Option<WindowConfig<DioxusNativeWindowRenderer>>,
     inner: BlitzApplication<DioxusNativeWindowRenderer>,
-    proxy: EventLoopProxy<BlitzShellEvent>,
 }
 
 impl DioxusNativeApplication {
     pub fn new(
-        proxy: EventLoopProxy<BlitzShellEvent>,
+        proxy: BlitzShellProxy,
+        event_queue: std::sync::mpsc::Receiver<BlitzShellEvent>,
         config: WindowConfig<DioxusNativeWindowRenderer>,
     ) -> Self {
         Self {
             pending_window: Some(config),
-            inner: BlitzApplication::new(proxy.clone()),
-            proxy,
+            inner: BlitzApplication::new(proxy, event_queue),
         }
     }
 
@@ -49,9 +48,9 @@ impl DioxusNativeApplication {
         self.inner.add_window(window_config);
     }
 
-    fn handle_blitz_shell_event(
+    fn handle_dioxus_native_event(
         &mut self,
-        event_loop: &ActiveEventLoop,
+        event_loop: &dyn ActiveEventLoop,
         event: &DioxusNativeEvent,
     ) {
         match event {
@@ -105,20 +104,34 @@ impl DioxusNativeApplication {
     }
 }
 
-impl ApplicationHandler<BlitzShellEvent> for DioxusNativeApplication {
-    fn resumed(&mut self, event_loop: &ActiveEventLoop) {
+impl ApplicationHandler for DioxusNativeApplication {
+    fn resumed(&mut self, event_loop: &dyn ActiveEventLoop) {
+        self.inner.resumed(event_loop);
+    }
+
+    fn suspended(&mut self, event_loop: &dyn ActiveEventLoop) {
+        self.inner.suspended(event_loop);
+    }
+
+    fn destroy_surfaces(&mut self, event_loop: &dyn ActiveEventLoop) {
+        self.inner.destroy_surfaces(event_loop);
+    }
+
+    fn can_create_surfaces(&mut self, event_loop: &dyn ActiveEventLoop) {
         #[cfg(feature = "tracing")]
         tracing::debug!("Injecting document provider into all windows");
 
         if let Some(config) = self.pending_window.take() {
-            let mut window = View::init(config, event_loop, &self.proxy);
+            let mut window = View::init(config, event_loop, &self.inner.proxy);
             let renderer = window.renderer.clone();
             let window_id = window.window_id();
             let doc = window.downcast_doc_mut::<DioxusDocument>();
 
             doc.vdom.in_scope(ScopeId::ROOT, || {
-                let shared: Rc<dyn dioxus_document::Document> =
-                    Rc::new(DioxusNativeDocument::new(self.proxy.clone(), window_id));
+                let shared: Rc<dyn dioxus_document::Document> = Rc::new(DioxusNativeDocument::new(
+                    self.inner.proxy.clone(),
+                    window_id,
+                ));
                 provide_context(shared);
             });
 
@@ -146,34 +159,32 @@ impl ApplicationHandler<BlitzShellEvent> for DioxusNativeApplication {
             self.inner.windows.insert(window_id, window);
         }
 
-        self.inner.resumed(event_loop);
+        self.inner.can_create_surfaces(event_loop);
     }
 
-    fn suspended(&mut self, event_loop: &ActiveEventLoop) {
-        self.inner.suspended(event_loop);
-    }
-
-    fn new_events(&mut self, event_loop: &ActiveEventLoop, cause: StartCause) {
+    fn new_events(&mut self, event_loop: &dyn ActiveEventLoop, cause: StartCause) {
         self.inner.new_events(event_loop, cause);
     }
 
     fn window_event(
         &mut self,
-        event_loop: &ActiveEventLoop,
+        event_loop: &dyn ActiveEventLoop,
         window_id: WindowId,
         event: WindowEvent,
     ) {
         self.inner.window_event(event_loop, window_id, event);
     }
 
-    fn user_event(&mut self, event_loop: &ActiveEventLoop, event: BlitzShellEvent) {
-        match event {
-            BlitzShellEvent::Embedder(event) => {
-                if let Some(event) = event.downcast_ref::<DioxusNativeEvent>() {
-                    self.handle_blitz_shell_event(event_loop, event);
+    fn proxy_wake_up(&mut self, event_loop: &dyn ActiveEventLoop) {
+        while let Ok(event) = self.inner.event_queue.try_recv() {
+            match event {
+                BlitzShellEvent::Embedder(event) => {
+                    if let Some(event) = event.downcast_ref::<DioxusNativeEvent>() {
+                        self.handle_dioxus_native_event(event_loop, event);
+                    }
                 }
+                event => self.inner.handle_blitz_shell_event(event_loop, event),
             }
-            event => self.inner.user_event(event_loop, event),
         }
     }
 }
