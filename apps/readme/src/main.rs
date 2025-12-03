@@ -52,8 +52,7 @@ struct ReadmeNavigationProvider {
 
 impl NavigationProvider for ReadmeNavigationProvider {
     fn navigate_to(&self, opts: NavigationOptions) {
-        let _ = self
-            .proxy
+        self.proxy
             .send_event(BlitzShellEvent::Navigate(Box::new(opts)));
     }
 }
