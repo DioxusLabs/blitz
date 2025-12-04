@@ -10,7 +10,7 @@ name = "blitz"
 path = "src/main.rs"
 
 [features]
-default = ["vello", "floats", "incremental", "cookies"]
+default = ["vello", "floats", "incremental", "cookies", "cache"]
 vello = ["dioxus-native/vello"]
 hybrid = ["dioxus-native/vello-hybrid"]
 skia = ["dioxus-native/skia"]
