@@ -88,7 +88,8 @@ pub fn replaced_measure_function(
 
     let unclamped_size = 'size: {
         if known_dimensions.width.is_some() | known_dimensions.height.is_some() {
-            break 'size known_dimensions
+            let content_box_known_dimensions = known_dimensions.maybe_sub(pb_sum);
+            break 'size content_box_known_dimensions
                 .maybe_apply_aspect_ratio(Some(aspect_ratio))
                 .map(|s| s.unwrap());
         }
