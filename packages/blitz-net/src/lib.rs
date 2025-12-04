@@ -24,14 +24,13 @@ type RequestBuilder = reqwest::RequestBuilder;
 
 #[cfg(feature = "cache")]
 fn get_cache_path() -> std::path::PathBuf {
-    let cwd = std::env::current_dir().unwrap();
-    let cache_dir = cwd.join(".blitz-cache");
-
-    if !std::fs::exists(&cache_dir).unwrap() {
-        std::fs::create_dir(&cache_dir).unwrap();
-    }
-
-    cache_dir
+    use directories::ProjectDirs;
+    let path = ProjectDirs::from("com", "DioxusLabs", "Blitz")
+        .expect("Failed to find cache directory")
+        .cache_dir()
+        .to_owned();
+    println!("Using cache dir {}", path.display());
+    path
 }
 
 pub struct Provider {

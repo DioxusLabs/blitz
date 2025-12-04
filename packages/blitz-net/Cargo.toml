@@ -13,7 +13,7 @@ rust-version.workspace = true
 [features]
 cookies = ["reqwest/cookies"]
 multipart = ["reqwest/multipart", "reqwest/stream"]
-cache = ["dep:reqwest-middleware", "dep:http-cache-reqwest"]
+cache = ["dep:reqwest-middleware", "dep:http-cache-reqwest", "dep:directories"]
 debug_log = []
 
 [dependencies]
@@ -28,3 +28,4 @@ data-url = { workspace = true }
 # Caching
 reqwest-middleware = { workspace = true, optional = true }
 http-cache-reqwest = { workspace = true, optional = true, features = ["manager-cacache"] }
+directories = { version = "6.0.0", optional = true }
