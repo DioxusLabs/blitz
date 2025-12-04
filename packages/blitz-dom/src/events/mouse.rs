@@ -48,7 +48,7 @@ pub(crate) fn handle_mousemove(
         if !text_input_data.is_multiline {
             let layout = text_input_data.editor.try_layout().unwrap();
             let content_box_height = node.final_layout.content_box_height();
-            let input_height = layout.height() / layout.scale() as f32;
+            let input_height = layout.height() / layout.scale();
             let y_offset = ((content_box_height - input_height) / 2.0).max(0.0);
 
             content_box_offset.y += y_offset;
@@ -94,7 +94,7 @@ pub(crate) fn handle_mousedown(doc: &mut BaseDocument, target: usize, x: f32, y:
         if !text_input_data.is_multiline {
             let layout = text_input_data.editor.try_layout().unwrap();
             let content_box_height = node.final_layout.content_box_height();
-            let input_height = layout.height() / layout.scale() as f32;
+            let input_height = layout.height() / layout.scale();
             let y_offset = ((content_box_height - input_height) / 2.0).max(0.0);
 
             content_box_offset.y += y_offset;

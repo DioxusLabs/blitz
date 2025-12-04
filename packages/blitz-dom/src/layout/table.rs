@@ -10,8 +10,7 @@ use style::{
     computed_values::table_layout::T as TableLayout,
 };
 use taffy::{
-    DetailedGridInfo, Dimension, LayoutPartialTree as _, ResolveOrZero, TrackSizingFunction,
-    style_helpers,
+    DetailedGridInfo, LayoutPartialTree as _, ResolveOrZero, TrackSizingFunction, style_helpers,
 };
 
 use crate::BaseDocument;
