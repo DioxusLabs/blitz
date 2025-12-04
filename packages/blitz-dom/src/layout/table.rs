@@ -86,7 +86,7 @@ pub(crate) fn build_table_context(
 
     drop(stylo_styles);
 
-    let mut column_sizes: Vec<taffy::Dimension> = Vec::new();
+    let mut column_sizes: Vec<taffy::TrackSizingFunction> = Vec::new();
     let mut first_cell_border: Option<ServoArc<Border>> = None;
     for child_id in children.iter().copied() {
         collect_table_cells(
@@ -104,10 +104,7 @@ pub(crate) fn build_table_context(
     }
     column_sizes.resize(col as usize, style_helpers::auto());
 
-    style.grid_template_columns = column_sizes
-        .into_iter()
-        .map(|dim| TrackSizingFunction::from(dim).into())
-        .collect();
+    style.grid_template_columns = column_sizes.into_iter().map(|dim| dim.into()).collect();
     style.grid_template_rows = vec![style_helpers::auto(); row as usize];
 
     style.gap = match border_collapse {
@@ -170,7 +167,7 @@ pub(crate) fn collect_table_cells(
     col: &mut u16,
     cells: &mut Vec<TableCell>,
     rows: &mut Vec<TableRow>,
-    columns: &mut Vec<Dimension>,
+    columns: &mut Vec<TrackSizingFunction>,
     first_cell_border: &mut Option<ServoArc<Border>>,
 ) {
     let node = &doc.nodes[node_id];
@@ -254,7 +251,7 @@ pub(crate) fn collect_table_cells(
             }
 
             // TODO: account for padding/border/margin
-            if is_fixed && *row == 1 {
+            if *row == 1 {
                 let column = match style.size.width.tag() {
                     taffy::CompactLength::LENGTH_TAG => {
                         let len = style.size.width.value();
@@ -262,7 +259,11 @@ pub(crate) fn collect_table_cells(
                         style_helpers::length(len + padding.left + padding.right)
                     }
                     taffy::CompactLength::PERCENT_TAG => {
-                        style_helpers::percent(style.size.width.value())
+                        if is_fixed {
+                            style_helpers::percent(style.size.width.value())
+                        } else {
+                            style_helpers::auto()
+                        }
                     }
                     taffy::CompactLength::AUTO_TAG => style_helpers::auto(),
                     _ => unreachable!(),
