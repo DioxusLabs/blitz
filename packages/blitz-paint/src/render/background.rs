@@ -162,8 +162,8 @@ impl ElementCx<'_> {
 
         let bg_styles = &self.style.get_background();
 
-        let frame_w = self.frame.padding_box.width() as f32;
-        let frame_h = self.frame.padding_box.height() as f32;
+        let frame_w = (self.frame.padding_box.width() / self.scale) as f32;
+        let frame_h = (self.frame.padding_box.height() / self.scale) as f32;
 
         let svg_size = svg.size();
         let bg_size = compute_background_size(
@@ -171,15 +171,11 @@ impl ElementCx<'_> {
             frame_w,
             frame_h,
             idx,
-            BackgroundSizeComputeMode::Size(
-                svg_size.width() / self.scale as f32,
-                svg_size.height() / self.scale as f32,
-            ),
-            self.scale as f32,
+            BackgroundSizeComputeMode::Size(svg_size.width(), svg_size.height()),
         );
 
-        let x_ratio = bg_size.width as f64 / svg_size.width() as f64;
-        let y_ratio = bg_size.height as f64 / svg_size.height() as f64;
+        let x_ratio = (bg_size.width as f64 / svg_size.width() as f64) * self.scale;
+        let y_ratio = (bg_size.height as f64 / svg_size.height() as f64) * self.scale;
 
         let bg_pos = compute_background_position(
             bg_styles,
@@ -189,8 +185,8 @@ impl ElementCx<'_> {
         );
 
         let transform = kurbo::Affine::translate((
-            (self.pos.x * self.scale) + bg_pos.x,
-            (self.pos.y * self.scale) + bg_pos.y,
+            (self.pos.x + bg_pos.x) * self.scale,
+            (self.pos.y + bg_pos.y) * self.scale,
         ))
         .pre_scale_non_uniform(x_ratio, y_ratio);
 
@@ -659,7 +655,6 @@ fn compute_background_position_and_background_size(
         container_h as f32,
         bg_idx,
         size_mode,
-        1.0,
     );
 
     let bg_pos = compute_background_position(
@@ -719,7 +714,6 @@ fn compute_background_size(
     container_h: f32,
     bg_idx: usize,
     mode: BackgroundSizeComputeMode,
-    scale: f32,
 ) -> kurbo::Size {
     use style::values::computed::{BackgroundSize, Length};
     use style::values::generics::length::GenericLengthPercentageOrAuto as Lpa;
@@ -758,7 +752,7 @@ fn compute_background_size(
                 }
                 (Lpa::Auto, Lpa::Auto) => match mode {
                     BackgroundSizeComputeMode::Auto => (container_w, container_h),
-                    BackgroundSizeComputeMode::Size(bg_w, bg_h) => (bg_w * scale, bg_h * scale),
+                    BackgroundSizeComputeMode::Size(bg_w, bg_h) => (bg_w, bg_h),
                 },
             }
         }
