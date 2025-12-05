@@ -10,8 +10,9 @@ use blitz_traits::events::{DomEvent, DomEventData, EventState, UiEvent};
 use dioxus_core::{ElementId, Event, VirtualDom};
 use dioxus_html::{set_event_converter, PlatformEventData};
 use futures_util::task::noop_waker;
-use futures_util::{pin_mut, FutureExt};
+use std::future::Future;
 use std::ops::{Deref, DerefMut};
+use std::pin::pin;
 use std::sync::LazyLock;
 use std::task::{Context as TaskContext, Waker};
 use std::{any::Any, rc::Rc};
@@ -183,11 +184,11 @@ impl Document for DioxusDocument {
     fn poll(&mut self, cx: Option<TaskContext>) -> bool {
         {
             let fut = self.vdom.wait_for_work();
-            pin_mut!(fut);
+            let mut pinned_fut = pin!(fut);
 
             static NOOP_WAKER: LazyLock<Waker> = LazyLock::new(noop_waker);
             let mut cx = cx.unwrap_or_else(|| TaskContext::from_waker(&NOOP_WAKER));
-            match fut.poll_unpin(&mut cx) {
+            match pinned_fut.as_mut().poll(&mut cx) {
                 std::task::Poll::Ready(_) => {}
                 std::task::Poll::Pending => return false,
             }
