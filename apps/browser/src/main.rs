@@ -4,16 +4,18 @@
 
 //! A web browser with UI powered by Dioxus Native and content rendering powered by Blitz
 
+use std::rc::Rc;
 use std::sync::{Arc, atomic::AtomicUsize, atomic::Ordering as Ao};
 
 use blitz_traits::shell::ShellProvider;
 use dioxus_core::Task;
 use dioxus_native::{SubDocumentAttr, prelude::*};
 
-use blitz_dom::DocumentConfig;
+use blitz_dom::{DocumentConfig, FontContext};
 use blitz_html::{HtmlDocument, HtmlProvider};
 use blitz_traits::navigation::{NavigationOptions, NavigationProvider};
 use blitz_traits::net::{Body, Entry, EntryValue, FormData, Method, Request, Url};
+use linebender_resource_handle::Blob;
 
 type StdNetProvider = blitz_net::Provider;
 
@@ -42,7 +44,7 @@ fn app() -> Element {
     let mut history: SyncStore<History> = use_sync_store(|| History::new(home_url.clone()));
 
     let net_provider = use_context::<Arc<StdNetProvider>>();
-    let loader = use_hook(|| DocumentLoader::new(net_provider, history));
+    let loader = use_hook(|| Rc::new(DocumentLoader::new(net_provider, history)));
     let content_doc = loader.doc;
 
     let load_current_url = use_callback(move |_| {
@@ -215,6 +217,7 @@ enum DocumentLoaderStatus {
 }
 
 struct DocumentLoader {
+    font_ctx: FontContext,
     net_provider: Arc<StdNetProvider>,
     status: Signal<DocumentLoaderStatus>,
     request_id_counter: AtomicUsize,
@@ -222,21 +225,28 @@ struct DocumentLoader {
     history: SyncStore<History>,
 }
 
-impl Clone for DocumentLoader {
-    fn clone(&self) -> Self {
-        Self {
-            net_provider: self.net_provider.clone(),
-            status: self.status,
-            request_id_counter: AtomicUsize::new(self.request_id_counter.load(Ao::SeqCst)),
-            doc: self.doc,
-            history: self.history,
-        }
-    }
-}
+// impl Clone for DocumentLoader {
+//     fn clone(&self) -> Self {
+//         Self {
+//             font_ctx: self.font_ctx.clone(),
+//             net_provider: self.net_provider.clone(),
+//             status: self.status,
+//             request_id_counter: AtomicUsize::new(self.request_id_counter.load(Ao::SeqCst)),
+//             doc: self.doc,
+//             history: self.history,
+//         }
+//     }
+// }
 
 impl DocumentLoader {
     fn new(net_provider: Arc<StdNetProvider>, history: SyncStore<History>) -> Self {
+        let mut font_ctx = FontContext::default();
+        font_ctx
+            .collection
+            .register_fonts(Blob::new(Arc::new(blitz_dom::BULLET_FONT) as _), None);
+
         Self {
+            font_ctx,
             net_provider,
             status: Signal::new(DocumentLoaderStatus::Idle),
             request_id_counter: AtomicUsize::new(0),
@@ -248,6 +258,7 @@ impl DocumentLoader {
     fn load_document(&self, req: Request) {
         let request_id = self.request_id_counter.fetch_add(1, Ao::Relaxed);
         let net_provider = Arc::clone(&self.net_provider);
+        let font_ctx = self.font_ctx.clone();
         let status = self.status;
         let doc_signal = self.doc;
         let history = self.history;
@@ -284,7 +295,7 @@ impl DocumentLoader {
                         navigation_provider: Some(Arc::new(BrowserNavProvider { history })),
                         shell_provider: Some(consume_context::<Arc<dyn ShellProvider>>()),
                         html_parser_provider: Some(Arc::new(HtmlProvider)),
-                        font_ctx: None,
+                        font_ctx: Some(font_ctx),
                     };
 
                     let html = if bytes.is_empty() {

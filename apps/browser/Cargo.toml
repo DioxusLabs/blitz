@@ -38,5 +38,6 @@ blitz-traits = { workspace = true }
 blitz-dom = { workspace = true, features = ["woff-rust"] }
 blitz-net = { workspace = true }
 blitz-html = { workspace = true }
+linebender_resource_handle = { workspace = true }
 tracing-subscriber = { workspace = true, optional = true }
 webbrowser = { workspace = true }

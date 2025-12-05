@@ -996,6 +996,7 @@ dependencies = [
  "blitz-net",
  "blitz-traits",
  "dioxus-native",
+ "linebender_resource_handle",
  "tracing-subscriber",
  "webbrowser",
 ]
