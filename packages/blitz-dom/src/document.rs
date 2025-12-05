@@ -56,6 +56,9 @@ use style::{
 };
 use url::Url;
 
+#[cfg(feature = "parallel-construct")]
+use {std::cell::RefCell, thread_local::ThreadLocal};
+
 /// Abstraction over wrappers around [`BaseDocument`] to allow for them all to
 /// be driven by [`blitz-shell`](https://docs.rs/blitz-shell)
 pub trait Document: Deref<Target = BaseDocument> + DerefMut + 'static {
@@ -139,6 +142,9 @@ pub struct BaseDocument {
     // Parley contexts
     /// A Parley font context
     pub(crate) font_ctx: Arc<Mutex<parley::FontContext>>,
+    #[cfg(feature = "parallel-construct")]
+    /// Thread-and-document-local copies to the font context
+    pub(crate) thread_font_contexts: ThreadLocal<RefCell<Box<FontContext>>>,
     /// A Parley layout context
     pub(crate) layout_ctx: parley::LayoutContext<TextBrush>,
 
@@ -287,6 +293,8 @@ impl BaseDocument {
             ua_stylesheets: HashMap::new(),
             nodes_to_stylesheet: BTreeMap::new(),
             font_ctx,
+            #[cfg(feature = "parallel-construct")]
+            thread_font_contexts: ThreadLocal::new(),
             layout_ctx: parley::LayoutContext::new(),
 
             hover_node_id: None,
@@ -799,24 +807,14 @@ impl BaseDocument {
 
                 #[cfg(feature = "parallel-construct")]
                 {
-                    use crate::resolve::FONT_CTX;
-
-                    let doc_font_ctx = &*font_ctx;
                     rayon::broadcast(|_ctx| {
-                        FONT_CTX.with_borrow_mut(|font_ctx| {
-                            match font_ctx {
-                                None => {
-                                    println!(
-                                        "Initialising FontContext for thread {:?}",
-                                        std::thread::current().id()
-                                    );
-                                    *font_ctx = Some(Box::new(doc_font_ctx.clone()));
-                                }
-                                Some(font_ctx) => {
-                                    font_ctx.collection.register_fonts(font.clone(), None);
-                                }
-                            };
-                        })
+                        let mut font_ctx = self
+                            .thread_font_contexts
+                            .get_or(|| {
+                                RefCell::new(Box::new(self.font_ctx.lock().unwrap().clone()))
+                            })
+                            .borrow_mut();
+                        font_ctx.collection.register_fonts(font.clone(), None);
                     });
                 }
                 drop(font_ctx);
