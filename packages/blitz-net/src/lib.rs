@@ -2,7 +2,8 @@
 //!
 //! Provides an implementation of the [`blitz_traits::net::NetProvider`] trait.
 
-use blitz_traits::net::{Body, Bytes, NetHandler, NetProvider, NetWaker, Request};
+use blitz_traits::net::{Body, Bytes, NetHandler, NetProvider, Request};
+use blitz_traits::shell::{DummyEventLoopWaker, EventLoopWaker};
 use data_url::DataUrl;
 use std::sync::Arc;
 use tokio::runtime::Handle;
@@ -36,10 +37,10 @@ fn get_cache_path() -> std::path::PathBuf {
 pub struct Provider {
     rt: Handle,
     client: Client,
-    waker: Arc<dyn NetWaker>,
+    waker: Arc<dyn EventLoopWaker>,
 }
 impl Provider {
-    pub fn new(waker: Option<Arc<dyn NetWaker>>) -> Self {
+    pub fn new(waker: Option<Arc<dyn EventLoopWaker>>) -> Self {
         let builder = reqwest::Client::builder();
         #[cfg(feature = "cookies")]
         let builder = builder.cookie_store(true);
@@ -54,14 +55,14 @@ impl Provider {
             }))
             .build();
 
-        let waker = waker.unwrap_or(Arc::new(DummyNetWaker));
+        let waker = waker.unwrap_or(Arc::new(DummyEventLoopWaker));
         Self {
             rt: Handle::current(),
             client,
             waker,
         }
     }
-    pub fn shared(waker: Option<Arc<dyn NetWaker>>) -> Arc<dyn NetProvider> {
+    pub fn shared(waker: Option<Arc<dyn EventLoopWaker>>) -> Arc<dyn NetProvider> {
         Arc::new(Self::new(waker))
     }
     pub fn is_empty(&self) -> bool {
@@ -259,9 +260,4 @@ impl ReqwestExt for RequestBuilder {
             Body::Empty => self,
         }
     }
-}
-
-struct DummyNetWaker;
-impl NetWaker for DummyNetWaker {
-    fn wake(&self, _client_id: usize) {}
 }

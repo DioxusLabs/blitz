@@ -1,4 +1,5 @@
 use blitz_traits::navigation::NavigationOptions;
+use blitz_traits::shell::EventLoopWaker;
 use futures_util::task::ArcWake;
 use std::{any::Any, sync::Arc};
 use winit::{event_loop::EventLoopProxy, window::WindowId};
@@ -15,6 +16,9 @@ pub enum BlitzShellEvent {
     RequestRedraw {
         doc_id: usize,
     },
+
+    #[cfg(feature = "devtools")]
+    ProcessDevtoolMessages,
 
     /// An accessibility event from `accesskit`.
     #[cfg(feature = "accessibility")]
@@ -74,4 +78,38 @@ pub fn create_waker(proxy: &EventLoopProxy<BlitzShellEvent>, id: WindowId) -> st
 
     let proxy = proxy.clone();
     futures_util::task::waker(Arc::new(DomHandle { id, proxy }))
+}
+
+/// A EventLoopWaker that wakes up our winit event loop
+pub struct BlitzShellWaker<F: Fn(usize) -> BlitzShellEvent + Send + Sync + 'static> {
+    proxy: EventLoopProxy<BlitzShellEvent>,
+    cb: F,
+}
+
+impl<F: Fn(usize) -> BlitzShellEvent + Send + Sync + 'static> BlitzShellWaker<F> {
+    pub fn new(proxy: EventLoopProxy<BlitzShellEvent>, cb: F) -> Self {
+        Self { proxy, cb }
+    }
+
+    pub fn shared(proxy: EventLoopProxy<BlitzShellEvent>, cb: F) -> Arc<dyn EventLoopWaker> {
+        Arc::new(Self::new(proxy, cb)) as _
+    }
+}
+
+impl BlitzShellWaker<fn(usize) -> BlitzShellEvent> {
+    pub fn net_waker(proxy: EventLoopProxy<BlitzShellEvent>) -> Arc<dyn EventLoopWaker> {
+        BlitzShellWaker::shared(proxy, |doc_id| BlitzShellEvent::RequestRedraw { doc_id })
+    }
+
+    pub fn devtools_waker(proxy: EventLoopProxy<BlitzShellEvent>) -> Arc<dyn EventLoopWaker> {
+        BlitzShellWaker::shared(proxy, |_| BlitzShellEvent::ProcessDevtoolMessages)
+    }
+}
+
+impl<F: Fn(usize) -> BlitzShellEvent + Send + Sync + 'static> EventLoopWaker
+    for BlitzShellWaker<F>
+{
+    fn wake(&self, doc_id: usize) {
+        self.proxy.send_event((self.cb)(doc_id)).unwrap()
+    }
 }
