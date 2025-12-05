@@ -822,7 +822,6 @@ dependencies = [
  "stylo_taffy",
  "stylo_traits",
  "taffy",
- "thread_local",
  "tracing",
  "url",
  "usvg",

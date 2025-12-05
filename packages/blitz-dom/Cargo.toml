@@ -83,7 +83,6 @@ url = { workspace = true }
 # Input
 keyboard-types = { workspace = true }
 cursor-icon = { workspace = true }
-thread_local.workspace = true
 
 # HACK: Blitz doesn't need to depend on objc2 directly. But this feature flag is necessary
 # to prevent debug builds from panicking.
