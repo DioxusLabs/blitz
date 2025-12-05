@@ -1,0 +1,126 @@
+name: Publish Browser
+on:
+  pull_request:
+  workflow_dispatch:
+    # inputs:
+    #   post:
+    #     name: "Release Post"
+    #     required: true
+    #     description: Choose the release post to publish with. Must be a tag (eg v0.4.0)
+    #     type: string
+    #   channel:
+    #     name: "CLI Binary Version"
+    #     required: true
+    #     description: Choose the version number to publish with. Must be a tag (ie v0.4.0)
+    #     type: string
+
+env:
+  # make sure we have the right version
+  # main is always a prepatch until we hit 1.0, and then this script needs to be updated
+  # note that we need to promote the prepatch to a minor bump when we actually do a release
+  # this means the version in git will always be one minor bump ahead of the actual release - basically meaning once
+  # we release a version, it's fair game to merge breaking changes to main since all semver-compatible changes will be
+  # backported automatically
+  # SEMVER: ${{ github.event.inputs.channel == 'main' && 'prerelease' || 'patch' }}
+  # PRERELEASE_TAG: ${{ github.event.inputs.channel == 'main' && '-pre' || '' }}
+  RELEASE_TAG: ${{ github.event.inputs.channel }}
+  RELEASE_POST: ${{ github.event.inputs.post }}
+
+jobs:
+  release-cli:
+    permissions:
+      contents: write
+    runs-on: ${{ matrix.platform.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        platform:
+          - target: x86_64-pc-windows-msvc
+            os: windows-latest
+            artefact_name: ""
+            artefact_path: ""
+          - target: aarch64-pc-windows-msvc
+            os: windows-latest
+            artefact_name: ""
+            artefact_path: ""
+          - target: x86_64-apple-darwin
+            os: macos-15-intel
+            artefact_name: "Blitz_0.0.0_x86_64.dmg"
+            artefact_path: "./target/dx/blitz/bundle/macos/bundle/dmg/Blitz_0.0.0_x86_64.dmg"
+          - target: aarch64-apple-darwin
+            os: macos-latest
+            artefact_name: "Blitz_0.0.0_aarch64.dmg"
+            artefact_path: "./target/dx/blitz/bundle/macos/bundle/dmg/Blitz_0.0.0_aarch64.dmg"
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-24.04
+            artefact_name: ""
+            artefact_path: ""
+          - target: aarch64-unknown-linux-gnu
+            os: ubuntu-24.04-arm
+            artefact_name: ""
+            artefact_path: ""
+          # musl builds
+          # - target: x86_64-unknown-linux-musl
+          #   os: ubuntu-24.04
+          # - target: aarch64-unknown-linux-musl
+          #   os: ubuntu-24.04-arm
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.89.0"
+          targets: ${{ matrix.platform.target }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          cache-all-crates: "true"
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+
+      - name: Install Dioxus CLI
+        uses: taiki-e/install-action@v2
+        with:
+          tool: dioxus-cli@0.7.2
+
+      # - name: Install openssl on macos
+      #   if: ${{ matrix.platform.os == 'macos-latest' || matrix.platform.os == 'macos-15-intel' }}
+      #   run: brew install openssl
+
+      # - name: Install nasm for windows (tls)
+      #   if: ${{ matrix.platform.target == 'x86_64-pc-windows-msvc' }}
+      #   uses: ilammy/setup-nasm@v1
+
+      # - name: Free Disk Space
+      #   if: ${{ matrix.platform.os == 'ubuntu-24.04' || matrix.platform.os == 'ubuntu-24.04-arm' }}
+      #   uses: ./.github/actions/free-disk-space
+
+      - uses: awalsh128/cache-apt-pkgs-action@latest
+        if: ${{ matrix.platform.os == 'ubuntu-24.04' || matrix.platform.os == 'ubuntu-24.04-arm' }}
+        with:
+          packages: libgtk-3-dev libxdo-dev
+          version: 1.0
+
+      - name: Bundle browser
+        run: dx bundle --package browser --profile production
+
+      - name: Upload app bundle
+        uses: actions/upload-artifact@v5
+        if: ${{ matrix.platform.artefact_path != '' && matrix.platform.artefact_name != '' }}
+        with:
+          name: ${{ matrix.platform.artefact_name }}
+          path: ${{ matrix.platform.artefact_path }}
+
+      # # Todo: we want `cargo install dx` to actually just use a prebuilt binary instead of building it
+      # - name: Build and upload CLI binaries
+      #   uses: taiki-e/upload-rust-binary-action@v1
+      #   with:
+      #     bin: dx
+      #     token: ${{ secrets.GITHUB_TOKEN }}
+      #     target: ${{ matrix.platform.target }}
+      #     archive: $bin-$target
+      #     checksum: sha256
+      #     manifest_path: packages/cli/Cargo.toml
+      #     ref: refs/tags/${{ env.RELEASE_POST }}
+      #     zip: "all"
