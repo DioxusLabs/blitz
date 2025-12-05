@@ -423,6 +423,11 @@ fn flush_pseudo_elements(doc: &mut BaseDocument, node_id: usize) {
             )));
             doc.nodes[new_node_id].parent = Some(node_id);
             doc.nodes[new_node_id].layout_parent.set(Some(node_id));
+            if doc.nodes[node_id].flags.contains(NodeFlags::IS_IN_DOCUMENT) {
+                doc.nodes[new_node_id]
+                    .flags
+                    .insert(NodeFlags::IS_IN_DOCUMENT);
+            }
 
             let content = &pe_style.as_ref().get_counters().content;
             if let Content::Items(item_data) = content {
@@ -547,6 +552,12 @@ fn collect_complex_layout_children(
                 stylo_element_data.styles.primary = Some(style);
                 stylo_element_data.set_restyled();
                 *doc.nodes[node_id].stylo_element_data.borrow_mut() = Some(stylo_element_data);
+                if doc.nodes[container_node_id]
+                    .flags
+                    .contains(NodeFlags::IS_IN_DOCUMENT)
+                {
+                    doc.nodes[node_id].flags.insert(NodeFlags::IS_IN_DOCUMENT);
+                }
                 doc.nodes[node_id].parent = Some(container_node_id);
                 doc.nodes[node_id]
                     .layout_parent

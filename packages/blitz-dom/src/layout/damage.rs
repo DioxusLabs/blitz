@@ -330,21 +330,34 @@ impl BaseDocument {
         let font_ctx = &self.font_ctx;
         let layout_ctx = &mut self.layout_ctx;
 
+        let mut anon_nodes = Vec::new();
+
         for (_, node) in self.nodes.iter_mut() {
             if !(node.flags.contains(NodeFlags::IS_IN_DOCUMENT)) {
                 continue;
             }
+
             let Some(element) = node.data.downcast_element_mut() else {
                 continue;
             };
 
             if element.inline_layout_data.is_some() {
-                node.insert_damage(ALL_DAMAGE);
+                if node.is_anonymous() {
+                    anon_nodes.push(node.id);
+                } else {
+                    node.insert_damage(ALL_DAMAGE);
+                }
             } else if let Some(input) = element.text_input_data_mut() {
                 input.editor.set_scale(scale);
                 let mut font_ctx = font_ctx.lock().unwrap();
                 input.editor.refresh_layout(&mut font_ctx, layout_ctx);
                 node.insert_damage(ONLY_RELAYOUT);
+            }
+        }
+
+        for node_id in anon_nodes {
+            if let Some(parent_id) = *(self.nodes[node_id].layout_parent.get_mut()) {
+                self.nodes[parent_id].insert_damage(ALL_DAMAGE);
             }
         }
     }
