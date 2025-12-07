@@ -38,13 +38,17 @@ jobs:
           - target: x86_64-pc-windows-msvc
             os: windows-latest
             use_git_cli: true
-            artefact_name: ""
-            artefact_path: ""
+            artefact_name: "Blitz_0.0.0_windows_x86_64"
+            artefact_path: |
+               ./target/dx/blitz/bundle/windows/bundle/msi/Blitz_0.0.0_x64_en-US.msi
+               ./target/dx/blitz/bundle/windows/bundle/nsis/Blitz_0.0.0_x64-setup.exe
           - target: aarch64-pc-windows-msvc
             os: windows-latest
             use_git_cli: true
-            artefact_name: ""
-            artefact_path: ""
+            artefact_name: "Blitz_0.0.0_windows_aarch64"
+            artefact_path: |
+               ./target/dx/blitz/bundle/windows/bundle/msi/Blitz_0.0.0_x64_en-US.msi
+               ./target/dx/blitz/bundle/windows/bundle/nsis/Blitz_0.0.0_x64-setup.exe
           - target: x86_64-apple-darwin
             os: macos-15-intel
             use_git_cli: false
