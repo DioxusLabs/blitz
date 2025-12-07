@@ -151,10 +151,13 @@ pub struct BaseDocument {
     /// The node which recieved a mousedown event (if any)
     pub(crate) mousedown_node_id: Option<usize>,
 
+    // TODO: collapse animating state into a bitflags
     /// Whether there are active CSS animations/transitions (so we should re-render every frame)
     pub(crate) has_active_animations: bool,
     /// Whether there is a <canvas> element in the DOM (so we should re-render every frame)
     pub(crate) has_canvas: bool,
+    /// Whether there are subdocuments that are animating (so we should re-render every frame)
+    pub(crate) subdoc_is_animating: bool,
 
     /// Map of node ID's for fast lookups
     pub(crate) nodes_to_id: HashMap<String, usize>,
@@ -294,6 +297,7 @@ impl BaseDocument {
             active_node_id: None,
             mousedown_node_id: None,
             has_active_animations: false,
+            subdoc_is_animating: false,
             has_canvas: false,
             sub_document_nodes: HashSet::new(),
             changed_nodes: HashSet::new(),
@@ -1068,7 +1072,7 @@ impl BaseDocument {
     }
 
     pub fn is_animating(&self) -> bool {
-        self.has_canvas | self.has_active_animations
+        self.has_canvas | self.has_active_animations | self.subdoc_is_animating
     }
 
     /// Update the device and reset the stylist to process the new size

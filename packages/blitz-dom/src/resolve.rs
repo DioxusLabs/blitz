@@ -84,6 +84,7 @@ impl BaseDocument {
             timer.record_time("c_damage");
         }
 
+        let mut subdoc_is_animating = false;
         for &node_id in &self.sub_document_nodes {
             let node = &mut self.nodes[node_id];
             let size = node.final_layout.size;
@@ -100,8 +101,11 @@ impl BaseDocument {
                 drop(sub_viewport);
 
                 sub_doc.resolve(current_time_for_animations);
+
+                subdoc_is_animating |= sub_doc.is_animating();
             }
         }
+        self.subdoc_is_animating = subdoc_is_animating;
         timer.record_time("subdocs");
 
         timer.print_times(&format!("Resolve({}): ", self.id()));
