@@ -43,12 +43,12 @@ jobs:
                ./target/dx/blitz/bundle/windows/bundle/msi/Blitz_0.0.0_x64_en-US.msi
                ./target/dx/blitz/bundle/windows/bundle/nsis/Blitz_0.0.0_x64-setup.exe
           - target: aarch64-pc-windows-msvc
-            os: windows-latest
+            os: windows-11-arm
             use_git_cli: true
             artefact_name: "Blitz_0.0.0_windows_aarch64"
             artefact_path: |
-               ./target/dx/blitz/bundle/windows/bundle/msi/Blitz_0.0.0_x64_en-US.msi
-               ./target/dx/blitz/bundle/windows/bundle/nsis/Blitz_0.0.0_x64-setup.exe
+               ./target/dx/blitz/bundle/windows/bundle/msi/Blitz_0.0.0_aarch64_en-US.msi
+               ./target/dx/blitz/bundle/windows/bundle/nsis/Blitz_0.0.0_aarch64-setup.exe
           - target: x86_64-apple-darwin
             os: macos-15-intel
             use_git_cli: false
