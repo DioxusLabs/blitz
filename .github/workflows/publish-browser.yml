@@ -37,22 +37,27 @@ jobs:
         platform:
           - target: x86_64-pc-windows-msvc
             os: windows-latest
+            use_git_cli: false
             artefact_name: ""
             artefact_path: ""
           - target: aarch64-pc-windows-msvc
             os: windows-latest
+            use_git_cli: false
             artefact_name: ""
             artefact_path: ""
           - target: x86_64-apple-darwin
             os: macos-15-intel
+            use_git_cli: false
             artefact_name: "Blitz_0.0.0_macos_x86_64"
             artefact_path: "./target/dx/blitz/bundle/macos/bundle/dmg/Blitz_0.0.0_x86_64.dmg"
           - target: aarch64-apple-darwin
             os: macos-latest
+            use_git_cli: false
             artefact_name: "Blitz_0.0.0_macos_aarch64"
             artefact_path: "./target/dx/blitz/bundle/macos/bundle/dmg/Blitz_0.0.0_aarch64.dmg"
           - target: x86_64-unknown-linux-gnu
             os: ubuntu-24.04
+            use_git_cli: true
             artefact_name: "Blitz_0.0.0_linux_x86_64"
             artefact_path: |
                ./target/dx/blitz/bundle/linux/bundle/deb/Blitz_0.0.0_amd64.deb
@@ -60,6 +65,7 @@ jobs:
                ./target/dx/blitz/bundle/linux/bundle/appimage/Blitz_0.0.0_amd64.AppImage
           - target: aarch64-unknown-linux-gnu
             os: ubuntu-24.04-arm
+            use_git_cli: true
             artefact_name: "Blitz_0.0.0_linux_aarch64"
             artefact_path: |
                ./target/dx/blitz/bundle/linux/bundle/deb/Blitz_0.0.0_amd64.deb
@@ -85,12 +91,14 @@ jobs:
           cache-all-crates: "true"
           save-if: ${{ github.ref == 'refs/heads/main' }}
 
-      # - name: Install Dioxus CLI
-      #   uses: taiki-e/install-action@v2
-      #   with:
-      #     tool: dioxus-cli@0.7.2
+      - name: Install Dioxus CLI
+        if: ${{ matrix.platform.use_git_cli == false }}
+        uses: taiki-e/install-action@v2
+        with:
+          tool: dioxus-cli@0.7.2
 
       - name: Install Dioxus CLI (git)
+        if: ${{ matrix.platform.use_git_cli == true }}
         run: cargo install dioxus-cli --git https://github.com/nicoburns/dioxus.git --rev=bd8ad33
 
       # - name: Install openssl on macos
