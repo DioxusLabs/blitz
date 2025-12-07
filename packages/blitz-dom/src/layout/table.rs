@@ -333,8 +333,8 @@ impl taffy::TraversePartialTree for TableTreeWrapper<'_> {
     }
 
     #[inline(always)]
-    fn child_count(&self, node_id: taffy::NodeId) -> usize {
-        self.doc.child_count(node_id)
+    fn child_count(&self, _node_id: taffy::NodeId) -> usize {
+        self.ctx.cells.len()
     }
 
     #[inline(always)]
