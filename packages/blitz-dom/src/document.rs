@@ -1113,6 +1113,10 @@ impl BaseDocument {
             return Some(CursorIcon::Text);
         }
 
+        if let Some(subdoc) = node.element_data().and_then(|el| el.sub_doc_data()) {
+            return subdoc.get_cursor();
+        }
+
         // Use "pointer" cursor if any ancestor is a link
         let mut maybe_node = Some(node);
         while let Some(node) = maybe_node {
