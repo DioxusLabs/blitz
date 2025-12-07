@@ -49,7 +49,7 @@ jobs:
             os: macos-15-intel
             use_git_cli: false
             artefact_name: "Blitz_0.0.0_macos_x86_64"
-            artefact_path: "./target/dx/blitz/bundle/macos/bundle/dmg/Blitz_0.0.0_x86_64.dmg"
+            artefact_path: "./target/dx/blitz/bundle/macos/bundle/dmg/Blitz_0.0.0_x64.dmg"
           - target: aarch64-apple-darwin
             os: macos-latest
             use_git_cli: false
@@ -68,9 +68,9 @@ jobs:
             use_git_cli: true
             artefact_name: "Blitz_0.0.0_linux_aarch64"
             artefact_path: |
-               ./target/dx/blitz/bundle/linux/bundle/deb/Blitz_0.0.0_amd64.deb
-               ./target/dx/blitz/bundle/linux/bundle/rpm/Blitz-0.0.0-.x86_64.rpm
-               ./target/dx/blitz/bundle/linux/bundle/appimage/Blitz_0.0.0_amd64.AppImage
+               ./target/dx/blitz/bundle/linux/bundle/deb/Blitz_0.0.arm64.deb
+               ./target/dx/blitz/bundle/linux/bundle/rpm/Blitz-0.0.0-.aarch64.rpm
+               ./target/dx/blitz/bundle/linux/bundle/appimage/Blitz_0.0.0_aarch64.AppImage
           # musl builds
           # - target: x86_64-unknown-linux-musl
           #   os: ubuntu-24.04
