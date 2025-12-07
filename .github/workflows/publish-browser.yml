@@ -37,12 +37,12 @@ jobs:
         platform:
           - target: x86_64-pc-windows-msvc
             os: windows-latest
-            use_git_cli: false
+            use_git_cli: true
             artefact_name: ""
             artefact_path: ""
           - target: aarch64-pc-windows-msvc
             os: windows-latest
-            use_git_cli: false
+            use_git_cli: true
             artefact_name: ""
             artefact_path: ""
           - target: x86_64-apple-darwin
@@ -99,7 +99,7 @@ jobs:
 
       - name: Install Dioxus CLI (git)
         if: ${{ matrix.platform.use_git_cli == true }}
-        run: cargo install dioxus-cli --git https://github.com/nicoburns/dioxus.git --rev=bd8ad33
+        run: cargo install dioxus-cli --git https://github.com/nicoburns/dioxus.git --rev=ac396faada3c8129d085a41af83ffd28067037da
 
       # - name: Install openssl on macos
       #   if: ${{ matrix.platform.os == 'macos-latest' || matrix.platform.os == 'macos-15-intel' }}
