@@ -606,9 +606,10 @@ impl ElementCx<'_> {
         let x_scale = paint_size.width as f64 / object_size.width as f64;
         let y_scale = paint_size.height as f64 / object_size.height as f64;
 
-        let transform =
-            Affine::translate((self.pos.x * self.scale + x, self.pos.y * self.scale + y))
-                .pre_scale_non_uniform(x_scale, y_scale);
+        let transform = self
+            .transform
+            .pre_scale_non_uniform(x_scale, y_scale)
+            .then_translate(Vec2 { x, y });
 
         anyrender_svg::render_svg_tree(scene, svg, transform);
     }
