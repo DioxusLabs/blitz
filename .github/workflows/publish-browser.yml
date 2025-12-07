@@ -79,10 +79,13 @@ jobs:
           cache-all-crates: "true"
           save-if: ${{ github.ref == 'refs/heads/main' }}
 
-      - name: Install Dioxus CLI
-        uses: taiki-e/install-action@v2
-        with:
-          tool: dioxus-cli@0.7.2
+      # - name: Install Dioxus CLI
+      #   uses: taiki-e/install-action@v2
+      #   with:
+      #     tool: dioxus-cli@0.7.2
+
+      - name: Install Dioxus CLI (git)
+        run: cargo install dioxus-cli --git https://github.com/nicoburns/dioxus.git --rev=bd8ad33
 
       # - name: Install openssl on macos
       #   if: ${{ matrix.platform.os == 'macos-latest' || matrix.platform.os == 'macos-15-intel' }}
