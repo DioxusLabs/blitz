@@ -5,8 +5,10 @@ use std::rc::Rc;
 use winit::application::ApplicationHandler;
 use winit::event::{StartCause, WindowEvent};
 use winit::event_loop::ActiveEventLoop;
-use winit::platform::macos::ApplicationHandlerExtMacOS;
 use winit::window::WindowId;
+
+#[cfg(target_os = "macos")]
+use winit::platform::macos::ApplicationHandlerExtMacOS;
 
 use crate::DioxusNativeWindowRenderer;
 use crate::{contexts::DioxusNativeDocument, BlitzShellEvent, DioxusDocument, WindowConfig};
@@ -106,6 +108,7 @@ impl DioxusNativeApplication {
 }
 
 impl ApplicationHandler for DioxusNativeApplication {
+    #[cfg(target_os = "macos")]
     fn macos_handler(&mut self) -> Option<&mut dyn ApplicationHandlerExtMacOS> {
         self.inner.macos_handler()
     }
