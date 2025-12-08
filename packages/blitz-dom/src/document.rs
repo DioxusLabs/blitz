@@ -1096,6 +1096,10 @@ impl BaseDocument {
         // todo: cache this on the node itself
         let node = &self.nodes[self.get_hover_node_id()?];
 
+        if let Some(subdoc) = node.element_data().and_then(|el| el.sub_doc_data()) {
+            return subdoc.get_cursor();
+        }
+
         let style = node.primary_styles()?;
         let keyword = stylo_to_cursor_icon(style.clone_cursor().keyword);
 
@@ -1111,10 +1115,6 @@ impl BaseDocument {
                 .is_some_and(|e| e.text_input_data().is_some())
         {
             return Some(CursorIcon::Text);
-        }
-
-        if let Some(subdoc) = node.element_data().and_then(|el| el.sub_doc_data()) {
-            return subdoc.get_cursor();
         }
 
         // Use "pointer" cursor if any ancestor is a link
