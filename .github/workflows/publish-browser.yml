@@ -38,40 +38,40 @@ jobs:
           - target: x86_64-pc-windows-msvc
             os: windows-latest
             use_git_cli: true
-            artefact_name: "Blitz_0.0.0_windows_x86_64"
-            artefact_path: |
+            artifact_name: "Blitz_0.0.0_windows_x86_64"
+            artifact_path: |
                ./target/dx/blitz/bundle/windows/bundle/msi/Blitz_0.0.0_x64_en-US.msi
                ./target/dx/blitz/bundle/windows/bundle/nsis/Blitz_0.0.0_x64-setup.exe
           - target: aarch64-pc-windows-msvc
             os: windows-11-arm
             use_git_cli: true
-            artefact_name: "Blitz_0.0.0_windows_aarch64"
-            artefact_path: |
+            artifact_name: "Blitz_0.0.0_windows_aarch64"
+            artifact_path: |
                ./target/dx/blitz/bundle/windows/bundle/msi/Blitz_0.0.0_arm64_en-US.msi
                ./target/dx/blitz/bundle/windows/bundle/nsis/Blitz_0.0.0_arm64-setup.exe
           - target: x86_64-apple-darwin
             os: macos-15-intel
             use_git_cli: false
-            artefact_name: "Blitz_0.0.0_macos_x86_64"
-            artefact_path: "./target/dx/blitz/bundle/macos/bundle/dmg/Blitz_0.0.0_x64.dmg"
+            artifact_name: "Blitz_0.0.0_macos_x86_64"
+            artifact_path: "./target/dx/blitz/bundle/macos/bundle/dmg/Blitz_0.0.0_x64.dmg"
           - target: aarch64-apple-darwin
             os: macos-latest
             use_git_cli: false
-            artefact_name: "Blitz_0.0.0_macos_aarch64"
-            artefact_path: "./target/dx/blitz/bundle/macos/bundle/dmg/Blitz_0.0.0_aarch64.dmg"
+            artifact_name: "Blitz_0.0.0_macos_aarch64"
+            artifact_path: "./target/dx/blitz/bundle/macos/bundle/dmg/Blitz_0.0.0_aarch64.dmg"
           - target: x86_64-unknown-linux-gnu
             os: ubuntu-24.04
             use_git_cli: true
-            artefact_name: "Blitz_0.0.0_linux_x86_64"
-            artefact_path: |
+            artifact_name: "Blitz_0.0.0_linux_x86_64"
+            artifact_path: |
                ./target/dx/blitz/bundle/linux/bundle/deb/Blitz_0.0.0_amd64.deb
                ./target/dx/blitz/bundle/linux/bundle/rpm/Blitz-0.0.0-.x86_64.rpm
                ./target/dx/blitz/bundle/linux/bundle/appimage/Blitz_0.0.0_amd64.AppImage
           - target: aarch64-unknown-linux-gnu
             os: ubuntu-24.04-arm
             use_git_cli: true
-            artefact_name: "Blitz_0.0.0_linux_aarch64"
-            artefact_path: |
+            artifact_name: "Blitz_0.0.0_linux_aarch64"
+            artifact_path: |
                ./target/dx/blitz/bundle/linux/bundle/deb/Blitz_0.0.arm64.deb
                ./target/dx/blitz/bundle/linux/bundle/rpm/Blitz-0.0.0-.aarch64.rpm
                ./target/dx/blitz/bundle/linux/bundle/appimage/Blitz_0.0.0_aarch64.AppImage
@@ -128,10 +128,10 @@ jobs:
 
       - name: Upload app bundle
         uses: actions/upload-artifact@v5
-        if: ${{ matrix.platform.artefact_path != '' && matrix.platform.artefact_name != '' }}
+        if: ${{ matrix.platform.artifact_path != '' && matrix.platform.artifact_name != '' }}
         with:
-          name: ${{ matrix.platform.artefact_name }}
-          path: ${{ matrix.platform.artefact_path }}
+          name: ${{ matrix.platform.artifact_name }}
+          path: ${{ matrix.platform.artifact_path }}
 
       # # Todo: we want `cargo install dx` to actually just use a prebuilt binary instead of building it
       # - name: Build and upload CLI binaries
