@@ -29,7 +29,7 @@ homepage = "https://github.com/dioxuslabs/blitz"
 repository = "https://github.com/dioxuslabs/blitz"
 categories = ["gui"]
 edition = "2024"
-rust-version = "1.88.0"
+rust-version = "1.89.0"
 
 [workspace.dependencies]
 # Blitz dependencies(in-repo)
@@ -214,7 +214,7 @@ edition = "2024"
 description = "Top level crate for Blitz"
 license = "MIT OR Apache-2.0"
 keywords = ["dom", "ui", "gui", "react", "wasm"]
-rust-version = "1.86.0"
+rust-version = "1.89.0"
 publish = false
 
 [dev-dependencies]
