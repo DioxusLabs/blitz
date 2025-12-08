@@ -3,10 +3,10 @@ use crate::event::{BlitzShellEvent, BlitzShellProxy};
 use anyrender::WindowRenderer;
 use std::collections::HashMap;
 use std::sync::mpsc::Receiver;
+use winit::application::ApplicationHandler;
 use winit::event::WindowEvent;
 use winit::event_loop::ActiveEventLoop;
 use winit::window::WindowId;
-use winit::{application::ApplicationHandler};
 
 #[cfg(target_os = "macos")]
 use winit::platform::macos::ApplicationHandlerExtMacOS;
