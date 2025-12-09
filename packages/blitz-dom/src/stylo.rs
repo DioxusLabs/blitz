@@ -10,6 +10,7 @@ use crate::node::Node;
 use crate::node::NodeData;
 use atomic_refcell::{AtomicRef, AtomicRefMut};
 use markup5ever::{LocalName, LocalNameStaticSet, Namespace, NamespaceStaticSet, local_name};
+use selectors::bloom::BLOOM_HASH_MASK;
 use selectors::{
     Element, OpaqueElement,
     attr::{AttrSelectorOperation, AttrSelectorOperator, NamespaceConstraint},
@@ -20,6 +21,7 @@ use style::CaseSensitivityExt;
 use style::animation::AnimationSetKey;
 use style::animation::AnimationState;
 use style::applicable_declarations::ApplicableDeclarationBlock;
+use style::bloom::each_relevant_element_hash;
 use style::color::AbsoluteColor;
 use style::invalidation::element::restyle_hints::RestyleHint;
 use style::properties::ComputedValues;
@@ -543,8 +545,9 @@ impl selectors::Element for BlitzNode<'_> {
         false
     }
 
-    fn add_element_unique_hashes(&self, _filter: &mut selectors::bloom::BloomFilter) -> bool {
-        false
+    fn add_element_unique_hashes(&self, filter: &mut selectors::bloom::BloomFilter) -> bool {
+        each_relevant_element_hash(*self, |hash| filter.insert_hash(hash & BLOOM_HASH_MASK));
+        true
     }
 }
 
