@@ -2,6 +2,7 @@ use blitz_shell::{BlitzApplication, BlitzShellProxy, View};
 use dioxus_core::{provide_context, ScopeId};
 use dioxus_history::{History, MemoryHistory};
 use std::rc::Rc;
+use std::sync::Arc;
 use winit::application::ApplicationHandler;
 use winit::event::{StartCause, WindowEvent};
 use winit::event_loop::ActiveEventLoop;
@@ -131,6 +132,7 @@ impl ApplicationHandler for DioxusNativeApplication {
 
         if let Some(config) = self.pending_window.take() {
             let mut window = View::init(config, event_loop, &self.inner.proxy);
+            let winit_window = Arc::clone(&window.window);
             let renderer = window.renderer.clone();
             let window_id = window.window_id();
             let doc = window.downcast_doc_mut::<DioxusDocument>();
@@ -156,6 +158,10 @@ impl ApplicationHandler for DioxusNativeApplication {
             // Add renderer
             doc.vdom
                 .in_scope(ScopeId::ROOT, move || provide_context(renderer));
+
+            // Add winit window
+            doc.vdom
+                .in_scope(ScopeId::ROOT, move || provide_context(winit_window));
 
             // Queue rebuild
             doc.initial_build();
