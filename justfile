@@ -24,6 +24,9 @@ browser:
 browser-with-perf:
   cargo run --release --package browser --features log_frame_times,log_phase_times
 
+browskia:
+  cargo run -rp browser --no-default-features --features skia,floats,incremental,cookies,cache,log_frame_times,log_phase_times
+
 ## Browser
 
 screenshot *ARGS:
