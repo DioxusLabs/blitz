@@ -3,7 +3,7 @@
 use std::cell::RefCell;
 
 use debug_timer::debug_timer;
-use parley::{FontContext, LayoutContext};
+use parley::LayoutContext;
 use selectors::Element as _;
 use style::dom::TDocument;
 
@@ -14,7 +14,6 @@ use rayon::prelude::*;
 // Should use thread_local crate with ThreadLocal value store in the Document.
 thread_local! {
     pub(crate) static LAYOUT_CTX: RefCell<Option<Box<LayoutContext<TextBrush>>>> = const { RefCell::new(None) };
-    pub(crate) static FONT_CTX: RefCell<Option<Box<FontContext>>> = const { RefCell::new(None) };
 }
 
 #[cfg(feature = "incremental")]
@@ -184,11 +183,12 @@ impl BaseDocument {
                     let layout_ctx_mut = &mut layout_ctx;
 
                     #[cfg(feature = "parallel-construct")]
-                    let mut font_ctx = FONT_CTX
-                        .take()
-                        .unwrap_or_else(|| Box::new(self.font_ctx.lock().unwrap().clone()));
+                    let mut font_ctx = self
+                        .thread_font_contexts
+                        .get_or(|| RefCell::new(Box::new(self.font_ctx.lock().unwrap().clone())))
+                        .borrow_mut();
                     #[cfg(feature = "parallel-construct")]
-                    let font_ctx_mut = &mut font_ctx;
+                    let font_ctx_mut = &mut *font_ctx;
 
                     #[cfg(not(feature = "parallel-construct"))]
                     let layout_ctx_mut = &mut self.layout_ctx;
@@ -208,7 +208,6 @@ impl BaseDocument {
                     #[cfg(feature = "parallel-construct")]
                     {
                         LAYOUT_CTX.set(Some(layout_ctx));
-                        FONT_CTX.set(Some(font_ctx));
                     }
 
                     // If layout doesn't contain any inline boxes, then it is safe to populate the content_widths
