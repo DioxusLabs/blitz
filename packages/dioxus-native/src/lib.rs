@@ -123,12 +123,7 @@ pub fn launch_cfg_with_props<P: Clone + 'static, M: 'static>(
     let _guard = rt.enter();
 
     // Setup hot-reloading if enabled.
-    #[cfg(all(
-        feature = "hot-reload",
-        debug_assertions,
-        not(target_os = "android"),
-        not(target_os = "ios")
-    ))]
+    #[cfg(all(feature = "hot-reload", debug_assertions))]
     {
         let proxy = event_loop.create_proxy();
         dioxus_devtools::connect(move |event| {

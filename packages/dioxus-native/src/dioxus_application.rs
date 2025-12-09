@@ -13,12 +13,7 @@ use crate::{contexts::DioxusNativeDocument, BlitzShellEvent, DioxusDocument, Win
 /// Dioxus-native specific event type
 pub enum DioxusNativeEvent {
     /// A hotreload event, basically telling us to update our templates.
-    #[cfg(all(
-        feature = "hot-reload",
-        debug_assertions,
-        not(target_os = "android"),
-        not(target_os = "ios")
-    ))]
+    #[cfg(all(feature = "hot-reload", debug_assertions))]
     DevserverEvent(dioxus_devtools::DevserverMsg),
 
     /// Create a new head element from the Link and Title elements
@@ -60,12 +55,7 @@ impl DioxusNativeApplication {
         event: &DioxusNativeEvent,
     ) {
         match event {
-            #[cfg(all(
-                feature = "hot-reload",
-                debug_assertions,
-                not(target_os = "android"),
-                not(target_os = "ios")
-            ))]
+            #[cfg(all(feature = "hot-reload", debug_assertions))]
             DioxusNativeEvent::DevserverEvent(event) => match event {
                 dioxus_devtools::DevserverMsg::HotReload(hotreload_message) => {
                     for window in self.inner.windows.values_mut() {
@@ -105,12 +95,7 @@ impl DioxusNativeApplication {
             }
 
             // Suppress unused variable warning
-            #[cfg(not(all(
-                feature = "hot-reload",
-                debug_assertions,
-                not(target_os = "android"),
-                not(target_os = "ios")
-            )))]
+            #[cfg(not(all(feature = "hot-reload", debug_assertions)))]
             #[allow(unreachable_patterns)]
             _ => {
                 let _ = event_loop;
