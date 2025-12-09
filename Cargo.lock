@@ -742,6 +742,7 @@ dependencies = [
  "linebender_resource_handle",
  "tracing-subscriber",
  "webbrowser",
+ "winit",
 ]
 
 [[package]]

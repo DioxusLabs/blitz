@@ -61,11 +61,27 @@ pub use {
 use blitz_shell::{
     create_default_event_loop, BlitzShellEvent, BlitzShellProxy, Config, WindowConfig,
 };
-use dioxus_core::{ComponentFunction, Element, VirtualDom};
+use dioxus_core::{consume_context, use_hook, ComponentFunction, Element, VirtualDom};
 use link_handler::DioxusNativeNavigationProvider;
 use std::any::Any;
 use std::sync::Arc;
-use winit::window::WindowAttributes;
+use winit::{
+    raw_window_handle::{HasWindowHandle as _, RawWindowHandle},
+    window::{Window, WindowAttributes},
+};
+
+pub fn use_window() -> Arc<dyn Window> {
+    use_hook(consume_context::<Arc<dyn Window>>)
+}
+
+pub fn use_raw_window_handle() -> RawWindowHandle {
+    use_hook(|| {
+        consume_context::<Arc<dyn Window>>()
+            .window_handle()
+            .unwrap()
+            .as_raw()
+    })
+}
 
 /// Launch an interactive HTML/CSS renderer driven by the Dioxus virtualdom
 pub fn launch(app: fn() -> Element) {
