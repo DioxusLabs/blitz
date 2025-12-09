@@ -283,12 +283,12 @@ impl Node {
 
     pub fn hover(&mut self) {
         self.element_state.insert(ElementState::HOVER);
-        self.set_restyle_hint(RestyleHint::RESTYLE_SELF | RestyleHint::RESTYLE_PSEUDOS);
+        self.set_restyle_hint(RestyleHint::restyle_subtree());
     }
 
     pub fn unhover(&mut self) {
         self.element_state.remove(ElementState::HOVER);
-        self.set_restyle_hint(RestyleHint::RESTYLE_SELF | RestyleHint::RESTYLE_PSEUDOS);
+        self.set_restyle_hint(RestyleHint::restyle_subtree());
     }
 
     pub fn is_hovered(&self) -> bool {
