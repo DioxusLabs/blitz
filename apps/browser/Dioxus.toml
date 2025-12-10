@@ -4,3 +4,7 @@
 publisher = "DioxusLabs"
 identifier = "com.dioxuslabs.blitz"
 icon = ["./assets/blitz-logo.png"]
+
+[bundle.windows]
+webview_install_mode = "Skip"
+icon_path = "assets\\blitz-logo.ico"
