@@ -253,7 +253,9 @@ impl EventHandler for DioxusEventHandler<'_> {
             DomEventData::MouseMove(mevent)
             | DomEventData::MouseDown(mevent)
             | DomEventData::MouseUp(mevent)
-            | DomEventData::Click(mevent) => Some(wrap_event_data(NativeClickData(mevent.clone()))),
+            | DomEventData::Click(mevent)
+            | DomEventData::ContextMenu(mevent)
+            | DomEventData::DoubleClick(mevent) => Some(wrap_event_data(NativeClickData(mevent.clone()))),
 
             DomEventData::KeyDown(kevent)
             | DomEventData::KeyUp(kevent)

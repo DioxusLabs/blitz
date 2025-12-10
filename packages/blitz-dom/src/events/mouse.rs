@@ -1,3 +1,5 @@
+use std::time::{Duration, Instant};
+
 use blitz_traits::{
     events::{
         BlitzInputEvent, BlitzMouseButtonEvent, DomEvent, DomEventData, MouseEventButton,
@@ -143,6 +145,11 @@ pub(crate) fn handle_mouseup<F: FnMut(DomEvent)>(
     if do_click && event.button == MouseEventButton::Main {
         dispatch_event(DomEvent::new(target, DomEventData::Click(event.clone())));
     }
+
+    // Dispatch a context menu event
+    if do_click && event.button == MouseEventButton::Secondary {
+        dispatch_event(DomEvent::new(target, DomEventData::ContextMenu(event.clone())));
+    }
 }
 
 pub(crate) fn handle_click<F: FnMut(DomEvent)>(
@@ -275,4 +282,12 @@ pub(crate) fn handle_click<F: FnMut(DomEvent)>(
 
     // If nothing is matched then clear focus
     doc.clear_focus();
+
+    // Assumed double click time to be less than 500ms, although may be system-dependant?
+    if doc.dbl_click_first_time.map(|t| t.elapsed() < Duration::from_millis(500)).unwrap_or(false)  {
+        dispatch_event(DomEvent::new(target, DomEventData::DoubleClick(event.clone())));
+        doc.dbl_click_first_time = None;
+    } else {
+        doc.dbl_click_first_time = Some(Instant::now());
+    }
 }

@@ -51,6 +51,8 @@ pub(crate) fn handle_dom_event<F: FnMut(DomEvent)>(
             // The sub document will generate it's own versions of these events.
             DomEventData::KeyPress(_) => None,
             DomEventData::Click(_) => None,
+            DomEventData::ContextMenu(_) => None,
+            DomEventData::DoubleClick(_) => None,
             DomEventData::Input(_) => None,
         };
 
@@ -103,5 +105,11 @@ pub(crate) fn handle_dom_event<F: FnMut(DomEvent)>(
         DomEventData::Input(_) => {
             // Do nothing (no default action)
         }
+        DomEventData::ContextMenu(_) => {
+            // TODO: Open context menu
+        },
+        DomEventData::DoubleClick(_) => {
+            // Do nothing (no default action)
+        },
     }
 }

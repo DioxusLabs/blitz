@@ -34,6 +34,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::mpsc::{Receiver, Sender, channel};
 use std::sync::{Arc, Mutex};
 use std::task::Context as TaskContext;
+use std::time::Instant;
 use style::Atom;
 use style::animation::DocumentAnimationSet;
 use style::attr::{AttrIdentifier, AttrValue};
@@ -150,6 +151,8 @@ pub struct BaseDocument {
     pub(crate) active_node_id: Option<usize>,
     /// The node which recieved a mousedown event (if any)
     pub(crate) mousedown_node_id: Option<usize>,
+    /// The time at which a possible first click in a double click happens
+    pub(crate) dbl_click_first_time: Option<Instant>,
 
     // TODO: collapse animating state into a bitflags
     /// Whether there are active CSS animations/transitions (so we should re-render every frame)
@@ -307,6 +310,7 @@ impl BaseDocument {
             navigation_provider,
             shell_provider,
             html_parser_provider,
+            dbl_click_first_time: None,
         };
 
         // Initialise document with root Document node

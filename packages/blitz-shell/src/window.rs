@@ -359,6 +359,7 @@ impl<Rend: WindowRenderer> View<Rend> {
                 let button = match button {
                     MouseButton::Left => MouseEventButton::Main,
                     MouseButton::Right => MouseEventButton::Secondary,
+                    MouseButton::Middle => MouseEventButton::Auxiliary,
                     _ => return,
                 };
 
