@@ -253,6 +253,10 @@ impl EventHandler for DioxusEventHandler<'_> {
             DomEventData::MouseMove(mevent)
             | DomEventData::MouseDown(mevent)
             | DomEventData::MouseUp(mevent)
+            | DomEventData::MouseLeave(mevent)
+            | DomEventData::MouseEnter(mevent)
+            | DomEventData::MouseOver(mevent)
+            | DomEventData::MouseOut(mevent)
             | DomEventData::Click(mevent)
             | DomEventData::ContextMenu(mevent)
             | DomEventData::DoubleClick(mevent) => Some(wrap_event_data(NativeClickData(mevent.clone()))),

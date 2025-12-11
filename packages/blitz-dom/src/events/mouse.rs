@@ -11,18 +11,24 @@ use markup5ever::local_name;
 
 use crate::{BaseDocument, node::SpecialElementData};
 
-pub(crate) fn handle_mousemove(
+pub(crate) fn handle_mousemove<F: FnMut(DomEvent)>(
     doc: &mut BaseDocument,
     target: usize,
     x: f32,
     y: f32,
     buttons: MouseEventButtons,
+    event: &BlitzMouseButtonEvent,
+    mut dispatch_event: F
 ) -> bool {
     let mut changed = doc.set_hover_to(x, y);
 
     let Some(hit) = doc.hit(x, y) else {
         return changed;
     };
+
+    if changed {
+        dispatch_event(DomEvent::new(hit.node_id, DomEventData::MouseEnter(event.clone())));
+    }
 
     if hit.node_id != target {
         return changed;

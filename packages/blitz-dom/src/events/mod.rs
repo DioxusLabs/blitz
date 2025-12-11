@@ -43,12 +43,13 @@ pub(crate) fn handle_dom_event<F: FnMut(DomEvent)>(
                 set_focus = true;
                 Some(UiEvent::MouseUp(mouse_event))
             }
+            DomEventData::MouseEnter(_) => None,
+            DomEventData::MouseLeave(_) => None,
+            DomEventData::MouseOver(_) => None,
+            DomEventData::MouseOut(_) => None,
             DomEventData::KeyDown(data) => Some(UiEvent::KeyDown(data)),
             DomEventData::KeyUp(data) => Some(UiEvent::KeyUp(data)),
             DomEventData::Ime(data) => Some(UiEvent::Ime(data)),
-
-            // Derived events do not map to a UiEvent. We simply ignore them.
-            // The sub document will generate it's own versions of these events.
             DomEventData::KeyPress(_) => None,
             DomEventData::Click(_) => None,
             DomEventData::ContextMenu(_) => None,
@@ -76,6 +77,8 @@ pub(crate) fn handle_dom_event<F: FnMut(DomEvent)>(
                 mouse_event.x,
                 mouse_event.y,
                 mouse_event.buttons,
+                mouse_event,
+                dispatch_event
             );
             if changed {
                 doc.shell_provider.request_redraw();
@@ -109,6 +112,18 @@ pub(crate) fn handle_dom_event<F: FnMut(DomEvent)>(
             // TODO: Open context menu
         },
         DomEventData::DoubleClick(_) => {
+            // Do nothing (no default action)
+        },
+        DomEventData::MouseEnter(_) => {
+            // Do nothing (no default action)
+        },
+        DomEventData::MouseLeave(_) => {
+            // Do nothing (no default action)
+        },
+        DomEventData::MouseOver(_) => {
+            // Do nothing (no default action)
+        },
+        DomEventData::MouseOut(_) => {
             // Do nothing (no default action)
         },
     }

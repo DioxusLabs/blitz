@@ -55,8 +55,20 @@ impl<'doc, Handler: EventHandler> EventDriver<'doc, Handler> {
             UiEvent::MouseMove(event) => {
                 let dom_x = event.x + viewport_scroll.x as f32 / zoom;
                 let dom_y = event.y + viewport_scroll.y as f32 / zoom;
-                self.doc_mut().set_hover_to(dom_x, dom_y);
+                let changed = self.doc_mut().set_hover_to(dom_x, dom_y);
+                if changed {
+                    if let Some(target) = hover_node_id {
+                        self.handle_dom_event(DomEvent::new(target, DomEventData::MouseOut(event.clone())));
+                        self.handle_dom_event(DomEvent::new(target, DomEventData::MouseLeave(event.clone())));
+                    }
+                }
                 hover_node_id = self.doc().hover_node_id;
+                if changed {
+                    if let Some(target) = hover_node_id {
+                        self.handle_dom_event(DomEvent::new(target, DomEventData::MouseOver(event.clone())));
+                        self.handle_dom_event(DomEvent::new(target, DomEventData::MouseEnter(event.clone())));
+                    }
+                }
             }
             UiEvent::MouseDown(_) => {
                 self.doc_mut().active_node();

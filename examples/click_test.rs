@@ -9,12 +9,22 @@ fn main() {
 fn app() -> Element {
     rsx! {
         div {
-            width: "30px",
-            height: "30px",
-            background: "red",
-            onclick: |_| println!("onclick"),
-            ondoubleclick: |_| println!("ondblclick"),
-            oncontextmenu: |_| println!("oncontextmenu"),
+            padding: "10px",
+            background: "yellow",
+            onmouseenter: |_| println!("onmouseenter outer"),
+            onmouseleave: |_| println!("onmouseleave outer"),
+            onmouseover: |_| println!("onmouseover outer"),
+            onmouseout: |_| println!("onmouseout outer"),
+
+            div {
+                width: "30px",
+                height: "30px",
+                background: "red",
+                onmouseenter: |_| println!("onmouseenter"),
+                onmouseleave: |_| println!("onmouseleave"),
+                onmouseover: |_| println!("onmouseover"),
+                onmouseout: |_| println!("onmouseout"),
+            }
         }
     }
 }
