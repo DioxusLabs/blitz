@@ -14,6 +14,7 @@ mod contexts;
 mod dioxus_application;
 mod dioxus_renderer;
 mod link_handler;
+mod windowing;
 
 #[cfg(feature = "prelude")]
 pub mod prelude;
@@ -26,6 +27,7 @@ pub use dioxus_native_dom::*;
 use assets::DioxusNativeNetProvider;
 pub use dioxus_application::{DioxusNativeApplication, DioxusNativeEvent};
 pub use dioxus_renderer::DioxusNativeWindowRenderer;
+pub use windowing::DioxusWindowHandle;
 
 #[cfg(target_os = "android")]
 #[cfg_attr(docsrs, doc(cfg(target_os = "android")))]
@@ -62,7 +64,9 @@ use blitz_shell::{create_default_event_loop, BlitzShellEvent, Config, WindowConf
 use dioxus_core::{ComponentFunction, Element, VirtualDom};
 use link_handler::DioxusNativeNavigationProvider;
 use std::any::Any;
+use std::rc::Rc;
 use std::sync::Arc;
+use windowing::{DioxusWindowQueue, DioxusWindowTemplate};
 use winit::window::WindowAttributes;
 
 /// Launch an interactive HTML/CSS renderer driven by the Dioxus virtualdom
@@ -154,10 +158,11 @@ pub fn launch_cfg_with_props<P: Clone + 'static, M: 'static>(
     // Spin up the virtualdom
     // We're going to need to hit it with a special waker
     // Note that we are delaying the initialization of window-specific contexts (net provider, document, etc)
+    let contexts = Arc::new(contexts);
     let mut vdom = VirtualDom::new_with_props(app, props);
 
     // Add contexts
-    for context in contexts {
+    for context in contexts.iter() {
         vdom.insert_any_root_context(context());
     }
 
@@ -193,16 +198,6 @@ pub fn launch_cfg_with_props<P: Clone + 'static, M: 'static>(
 
     let navigation_provider = Some(Arc::new(DioxusNativeNavigationProvider) as _);
 
-    // Create document + window from the baked virtualdom
-    let doc = DioxusDocument::new(
-        vdom,
-        DocumentConfig {
-            net_provider: Some(net_provider),
-            html_parser_provider,
-            navigation_provider,
-            ..Default::default()
-        },
-    );
     #[cfg(any(
         feature = "vello",
         all(
@@ -210,7 +205,13 @@ pub fn launch_cfg_with_props<P: Clone + 'static, M: 'static>(
             not(all(target_os = "ios", target_abi = "sim"))
         )
     ))]
-    let renderer = DioxusNativeWindowRenderer::with_features_and_limits(features, limits);
+    let renderer_factory: Arc<dyn Fn() -> DioxusNativeWindowRenderer + Send + Sync> = {
+        let features = features.clone();
+        let limits = limits.clone();
+        Arc::new(move || {
+            DioxusNativeWindowRenderer::with_features_and_limits(features.clone(), limits.clone())
+        })
+    };
     #[cfg(not(any(
         feature = "vello",
         all(
@@ -218,15 +219,38 @@ pub fn launch_cfg_with_props<P: Clone + 'static, M: 'static>(
             not(all(target_os = "ios", target_abi = "sim"))
         )
     )))]
-    let renderer = DioxusNativeWindowRenderer::new();
+    let renderer_factory: Arc<dyn Fn() -> DioxusNativeWindowRenderer + Send + Sync> =
+        Arc::new(|| DioxusNativeWindowRenderer::new());
+
+    // Create document + window from the baked virtualdom
+    let doc = DioxusDocument::new(
+        vdom,
+        DocumentConfig {
+            net_provider: Some(Arc::clone(&net_provider)),
+            html_parser_provider: html_parser_provider.clone(),
+            navigation_provider: navigation_provider.clone(),
+            ..Default::default()
+        },
+    );
+    let window_attributes = window_attributes.unwrap_or_default();
+    let renderer = renderer_factory();
     let config = WindowConfig::with_attributes(
         Box::new(doc) as _,
         renderer.clone(),
-        window_attributes.unwrap_or_default(),
+        window_attributes.clone(),
     );
-
     // Create application
-    let mut application = DioxusNativeApplication::new(event_loop.create_proxy(), config);
+    let template = Arc::new(DioxusWindowTemplate::new(
+        contexts,
+        renderer_factory,
+        window_attributes.clone(),
+        Arc::clone(&net_provider),
+        html_parser_provider.clone(),
+        navigation_provider.clone(),
+    ));
+    let window_queue = Rc::new(DioxusWindowQueue::new());
+    let mut application =
+        DioxusNativeApplication::new(event_loop.create_proxy(), config, template, window_queue);
 
     // Run event loop
     event_loop.run_app(&mut application).unwrap();

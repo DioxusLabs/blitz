@@ -1,12 +1,15 @@
+use anyrender::WindowRenderer;
 use blitz_shell::{BlitzApplication, View};
 use dioxus_core::{provide_context, ScopeId};
 use dioxus_history::{History, MemoryHistory};
 use std::rc::Rc;
+use std::sync::Arc;
 use winit::application::ApplicationHandler;
 use winit::event::{StartCause, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, EventLoopProxy};
 use winit::window::WindowId;
 
+use crate::windowing::{DioxusWindowHandle, DioxusWindowQueue, DioxusWindowTemplate};
 use crate::DioxusNativeWindowRenderer;
 use crate::{contexts::DioxusNativeDocument, BlitzShellEvent, DioxusDocument, WindowConfig};
 
@@ -15,6 +18,9 @@ pub enum DioxusNativeEvent {
     /// A hotreload event, basically telling us to update our templates.
     #[cfg(all(feature = "hot-reload", debug_assertions))]
     DevserverEvent(dioxus_devtools::DevserverMsg),
+
+    /// Internal signal to create queued windows.
+    SpawnQueuedWindows,
 
     /// Create a new head element from the Link and Title elements
     ///
@@ -31,22 +37,86 @@ pub struct DioxusNativeApplication {
     pending_window: Option<WindowConfig<DioxusNativeWindowRenderer>>,
     inner: BlitzApplication<DioxusNativeWindowRenderer>,
     proxy: EventLoopProxy<BlitzShellEvent>,
+    window_template: Arc<DioxusWindowTemplate>,
+    window_queue: Rc<DioxusWindowQueue>,
 }
 
 impl DioxusNativeApplication {
-    pub fn new(
+    pub(crate) fn new(
         proxy: EventLoopProxy<BlitzShellEvent>,
         config: WindowConfig<DioxusNativeWindowRenderer>,
+        window_template: Arc<DioxusWindowTemplate>,
+        window_queue: Rc<DioxusWindowQueue>,
     ) -> Self {
         Self {
             pending_window: Some(config),
             inner: BlitzApplication::new(proxy.clone()),
             proxy,
+            window_template,
+            window_queue,
         }
     }
 
     pub fn add_window(&mut self, window_config: WindowConfig<DioxusNativeWindowRenderer>) {
         self.inner.add_window(window_config);
+    }
+
+    fn spawn_window(
+        &mut self,
+        config: WindowConfig<DioxusNativeWindowRenderer>,
+        event_loop: &ActiveEventLoop,
+        auto_resume: bool,
+    ) {
+        let mut window = View::init(config, event_loop, &self.proxy);
+        self.inject_window_contexts(&mut window);
+        if auto_resume {
+            window.resume();
+            if !window.renderer.is_active() {
+                return;
+            }
+        }
+        let window_id = window.window_id();
+        self.inner.windows.insert(window_id, window);
+    }
+
+    fn inject_window_contexts(&self, window: &mut View<DioxusNativeWindowRenderer>) {
+        let renderer = window.renderer.clone();
+        let window_id = window.window_id();
+        let doc = window.downcast_doc_mut::<DioxusDocument>();
+
+        doc.vdom.in_scope(ScopeId::ROOT, || {
+            let shared: Rc<dyn dioxus_document::Document> =
+                Rc::new(DioxusNativeDocument::new(self.proxy.clone(), window_id));
+            provide_context(shared);
+        });
+
+        let window_handle = DioxusWindowHandle::new(
+            self.proxy.clone(),
+            Arc::clone(&self.window_template),
+            Rc::clone(&self.window_queue),
+        );
+        doc.vdom
+            .in_scope(ScopeId::ROOT, || provide_context(window_handle.clone()));
+
+        let shell_provider = doc.as_ref().shell_provider.clone();
+        doc.vdom
+            .in_scope(ScopeId::ROOT, move || provide_context(shell_provider));
+
+        let history_provider: Rc<dyn History> = Rc::new(MemoryHistory::default());
+        doc.vdom
+            .in_scope(ScopeId::ROOT, move || provide_context(history_provider));
+
+        doc.vdom
+            .in_scope(ScopeId::ROOT, move || provide_context(renderer));
+
+        doc.initial_build();
+        window.request_redraw();
+    }
+
+    fn drain_window_queue(&mut self, event_loop: &ActiveEventLoop) {
+        for config in self.window_queue.drain() {
+            self.spawn_window(config, event_loop, true);
+        }
     }
 
     fn handle_blitz_shell_event(
@@ -94,6 +164,10 @@ impl DioxusNativeApplication {
                 }
             }
 
+            DioxusNativeEvent::SpawnQueuedWindows => {
+                self.drain_window_queue(event_loop);
+            }
+
             // Suppress unused variable warning
             #[cfg(not(all(feature = "hot-reload", debug_assertions)))]
             #[allow(unreachable_patterns)]
@@ -111,41 +185,10 @@ impl ApplicationHandler<BlitzShellEvent> for DioxusNativeApplication {
         tracing::debug!("Injecting document provider into all windows");
 
         if let Some(config) = self.pending_window.take() {
-            let mut window = View::init(config, event_loop, &self.proxy);
-            let renderer = window.renderer.clone();
-            let window_id = window.window_id();
-            let doc = window.downcast_doc_mut::<DioxusDocument>();
-
-            doc.vdom.in_scope(ScopeId::ROOT, || {
-                let shared: Rc<dyn dioxus_document::Document> =
-                    Rc::new(DioxusNativeDocument::new(self.proxy.clone(), window_id));
-                provide_context(shared);
-            });
-
-            // Add shell provider
-            let shell_provider = doc.inner.borrow().shell_provider.clone();
-            doc.vdom
-                .in_scope(ScopeId::ROOT, move || provide_context(shell_provider));
-
-            // Add history
-            let history_provider: Rc<dyn History> = Rc::new(MemoryHistory::default());
-            doc.vdom
-                .in_scope(ScopeId::ROOT, move || provide_context(history_provider));
-
-            // Add renderer
-            doc.vdom
-                .in_scope(ScopeId::ROOT, move || provide_context(renderer));
-
-            // Queue rebuild
-            doc.initial_build();
-
-            // And then request redraw
-            window.request_redraw();
-
-            // todo(jon): we should actually mess with the pending windows instead of passing along the contexts
-            self.inner.windows.insert(window_id, window);
+            self.spawn_window(config, event_loop, false);
         }
 
+        self.drain_window_queue(event_loop);
         self.inner.resumed(event_loop);
     }
 
