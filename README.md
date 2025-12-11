@@ -48,6 +48,11 @@ Check out the [roadmap issue](https://github.com/DioxusLabs/blitz/issues/119) fo
     cargo run --release --package wgpu_texture
     ```
 
+    - multi-window demo
+    ```sh
+    cargo run --example multi_window
+    ```
+
 Other examples are available in the [examples/](./examples/) folder.
 
 ## Goals
