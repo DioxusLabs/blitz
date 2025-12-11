@@ -2,6 +2,7 @@ use anyrender::WindowRenderer;
 use blitz_shell::{BlitzApplication, View};
 use dioxus_core::{provide_context, ScopeId};
 use dioxus_history::{History, MemoryHistory};
+use std::cell::RefCell;
 use std::rc::Rc;
 use std::sync::Arc;
 use winit::application::ApplicationHandler;
@@ -9,7 +10,9 @@ use winit::event::{StartCause, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, EventLoopProxy};
 use winit::window::WindowId;
 
-use crate::windowing::{DioxusWindowHandle, DioxusWindowQueue, DioxusWindowTemplate};
+use crate::windowing::{
+    DioxusWindowHandle, DioxusWindowInfo, DioxusWindowQueue, DioxusWindowTemplate,
+};
 use crate::DioxusNativeWindowRenderer;
 use crate::{contexts::DioxusNativeDocument, BlitzShellEvent, DioxusDocument, WindowConfig};
 
@@ -21,6 +24,12 @@ pub enum DioxusNativeEvent {
 
     /// Internal signal to create queued windows.
     SpawnQueuedWindows,
+
+    /// Focus an existing window by id.
+    FocusWindow { window_id: WindowId },
+
+    /// Update a window's title.
+    SetWindowTitle { window_id: WindowId, title: String },
 
     /// Create a new head element from the Link and Title elements
     ///
@@ -34,26 +43,29 @@ pub enum DioxusNativeEvent {
 }
 
 pub struct DioxusNativeApplication {
-    pending_window: Option<WindowConfig<DioxusNativeWindowRenderer>>,
+    pending_window: Option<(WindowConfig<DioxusNativeWindowRenderer>, String)>,
     inner: BlitzApplication<DioxusNativeWindowRenderer>,
     proxy: EventLoopProxy<BlitzShellEvent>,
     window_template: Arc<DioxusWindowTemplate>,
     window_queue: Rc<DioxusWindowQueue>,
+    window_registry: Rc<RefCell<Vec<DioxusWindowInfo>>>,
 }
 
 impl DioxusNativeApplication {
     pub(crate) fn new(
         proxy: EventLoopProxy<BlitzShellEvent>,
-        config: WindowConfig<DioxusNativeWindowRenderer>,
+        pending_window: (WindowConfig<DioxusNativeWindowRenderer>, String),
         window_template: Arc<DioxusWindowTemplate>,
         window_queue: Rc<DioxusWindowQueue>,
+        window_registry: Rc<RefCell<Vec<DioxusWindowInfo>>>,
     ) -> Self {
         Self {
-            pending_window: Some(config),
+            pending_window: Some(pending_window),
             inner: BlitzApplication::new(proxy.clone()),
             proxy,
             window_template,
             window_queue,
+            window_registry,
         }
     }
 
@@ -64,6 +76,7 @@ impl DioxusNativeApplication {
     fn spawn_window(
         &mut self,
         config: WindowConfig<DioxusNativeWindowRenderer>,
+        label: String,
         event_loop: &ActiveEventLoop,
         auto_resume: bool,
     ) {
@@ -76,6 +89,7 @@ impl DioxusNativeApplication {
             }
         }
         let window_id = window.window_id();
+        self.register_window(window_id, label);
         self.inner.windows.insert(window_id, window);
     }
 
@@ -94,6 +108,7 @@ impl DioxusNativeApplication {
             self.proxy.clone(),
             Arc::clone(&self.window_template),
             Rc::clone(&self.window_queue),
+            Rc::clone(&self.window_registry),
         );
         doc.vdom
             .in_scope(ScopeId::ROOT, || provide_context(window_handle.clone()));
@@ -114,8 +129,29 @@ impl DioxusNativeApplication {
     }
 
     fn drain_window_queue(&mut self, event_loop: &ActiveEventLoop) {
-        for config in self.window_queue.drain() {
-            self.spawn_window(config, event_loop, true);
+        for queued in self.window_queue.drain() {
+            self.spawn_window(queued.config, queued.title, event_loop, true);
+        }
+    }
+
+    fn register_window(&self, window_id: WindowId, title: String) {
+        self.window_registry.borrow_mut().push(DioxusWindowInfo {
+            id: window_id,
+            title,
+        });
+    }
+
+    fn unregister_window(&self, window_id: WindowId) {
+        let mut registry = self.window_registry.borrow_mut();
+        registry.retain(|info| info.id != window_id);
+    }
+
+    fn update_window_title(&self, window_id: WindowId, title: String) {
+        for info in self.window_registry.borrow_mut().iter_mut() {
+            if info.id == window_id {
+                info.title = title.clone();
+                break;
+            }
         }
     }
 
@@ -164,6 +200,19 @@ impl DioxusNativeApplication {
                 }
             }
 
+            DioxusNativeEvent::FocusWindow { window_id } => {
+                if let Some(window) = self.inner.windows.get_mut(window_id) {
+                    window.window.focus_window();
+                }
+            }
+
+            DioxusNativeEvent::SetWindowTitle { window_id, title } => {
+                if let Some(window) = self.inner.windows.get_mut(window_id) {
+                    window.window.set_title(title);
+                    self.update_window_title(*window_id, title.to_string());
+                }
+            }
+
             DioxusNativeEvent::SpawnQueuedWindows => {
                 self.drain_window_queue(event_loop);
             }
@@ -184,8 +233,8 @@ impl ApplicationHandler<BlitzShellEvent> for DioxusNativeApplication {
         #[cfg(feature = "tracing")]
         tracing::debug!("Injecting document provider into all windows");
 
-        if let Some(config) = self.pending_window.take() {
-            self.spawn_window(config, event_loop, false);
+        if let Some((config, label)) = self.pending_window.take() {
+            self.spawn_window(config, label, event_loop, false);
         }
 
         self.drain_window_queue(event_loop);
@@ -206,6 +255,9 @@ impl ApplicationHandler<BlitzShellEvent> for DioxusNativeApplication {
         window_id: WindowId,
         event: WindowEvent,
     ) {
+        if matches!(event, WindowEvent::CloseRequested) {
+            self.unregister_window(window_id);
+        }
         self.inner.window_event(event_loop, window_id, event);
     }
 

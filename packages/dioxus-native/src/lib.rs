@@ -27,7 +27,7 @@ pub use dioxus_native_dom::*;
 use assets::DioxusNativeNetProvider;
 pub use dioxus_application::{DioxusNativeApplication, DioxusNativeEvent};
 pub use dioxus_renderer::DioxusNativeWindowRenderer;
-pub use windowing::DioxusWindowHandle;
+pub use windowing::{DioxusWindowHandle, DioxusWindowInfo, DioxusWindowOptions};
 
 #[cfg(target_os = "android")]
 #[cfg_attr(docsrs, doc(cfg(target_os = "android")))]
@@ -64,6 +64,7 @@ use blitz_shell::{create_default_event_loop, BlitzShellEvent, Config, WindowConf
 use dioxus_core::{ComponentFunction, Element, VirtualDom};
 use link_handler::DioxusNativeNavigationProvider;
 use std::any::Any;
+use std::cell::RefCell;
 use std::rc::Rc;
 use std::sync::Arc;
 use windowing::{DioxusWindowQueue, DioxusWindowTemplate};
@@ -239,6 +240,7 @@ pub fn launch_cfg_with_props<P: Clone + 'static, M: 'static>(
         renderer.clone(),
         window_attributes.clone(),
     );
+    let initial_title = window_attributes.title.clone();
     // Create application
     let template = Arc::new(DioxusWindowTemplate::new(
         contexts,
@@ -249,8 +251,14 @@ pub fn launch_cfg_with_props<P: Clone + 'static, M: 'static>(
         navigation_provider.clone(),
     ));
     let window_queue = Rc::new(DioxusWindowQueue::new());
-    let mut application =
-        DioxusNativeApplication::new(event_loop.create_proxy(), config, template, window_queue);
+    let window_registry = Rc::new(RefCell::new(Vec::new()));
+    let mut application = DioxusNativeApplication::new(
+        event_loop.create_proxy(),
+        (config, initial_title),
+        template,
+        window_queue,
+        window_registry,
+    );
 
     // Run event loop
     event_loop.run_app(&mut application).unwrap();
