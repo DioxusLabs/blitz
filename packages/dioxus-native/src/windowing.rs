@@ -4,7 +4,10 @@ use blitz_dom::{DocumentConfig, HtmlParserProvider};
 use blitz_shell::{BlitzShellEvent, WindowConfig};
 use blitz_traits::{navigation::NavigationProvider, net::NetProvider};
 use dioxus_core::{ComponentFunction, Element, VirtualDom};
-use winit::{event_loop::EventLoopProxy, window::WindowAttributes};
+use winit::{
+    event_loop::EventLoopProxy,
+    window::{WindowAttributes, WindowId},
+};
 
 use crate::{DioxusDocument, DioxusNativeEvent, DioxusNativeWindowRenderer};
 
@@ -36,11 +39,26 @@ impl DioxusWindowTemplate {
         }
     }
 
+    pub fn build_window(
+        &self,
+        component: fn() -> Element,
+        options: DioxusWindowOptions,
+    ) -> QueuedWindow {
+        self.build_window_with_props(component, (), options)
+    }
+
     pub fn build_window_with_props<P: Clone + 'static, M: 'static>(
         &self,
         component: impl ComponentFunction<P, M>,
         props: P,
-    ) -> WindowConfig<DioxusNativeWindowRenderer> {
+        options: DioxusWindowOptions,
+    ) -> QueuedWindow {
+        let mut attributes = options
+            .attributes
+            .unwrap_or_else(|| self.window_attributes.clone());
+        let title = options.title.unwrap_or_else(|| attributes.title.clone());
+        attributes.title = title.clone();
+
         let mut vdom = VirtualDom::new_with_props(component, props);
         for context in self.contexts.iter() {
             vdom.insert_any_root_context(context());
@@ -49,8 +67,8 @@ impl DioxusWindowTemplate {
         if let Some(parser) = &self.html_parser_provider {
             vdom.provide_root_context(Arc::clone(parser));
         }
-        if let Some(navigation) = &self.navigation_provider {
-            vdom.provide_root_context(Arc::clone(navigation));
+        if let Some(nav) = &self.navigation_provider {
+            vdom.provide_root_context(Arc::clone(nav));
         }
 
         let document = DioxusDocument::new(
@@ -64,23 +82,30 @@ impl DioxusWindowTemplate {
         );
 
         let renderer = (self.renderer_factory)();
-        WindowConfig::with_attributes(
-            Box::new(document) as _,
-            renderer,
-            self.window_attributes.clone(),
-        )
-    }
-
-    pub fn build_window(
-        &self,
-        component: fn() -> Element,
-    ) -> WindowConfig<DioxusNativeWindowRenderer> {
-        self.build_window_with_props(component, ())
+        let config = WindowConfig::with_attributes(Box::new(document) as _, renderer, attributes);
+        QueuedWindow { config, title }
     }
 }
 
-pub(crate) struct DioxusWindowQueue {
-    pending: RefCell<Vec<WindowConfig<DioxusNativeWindowRenderer>>>,
+pub struct QueuedWindow {
+    pub config: WindowConfig<DioxusNativeWindowRenderer>,
+    pub title: String,
+}
+
+#[derive(Clone, Default)]
+pub struct DioxusWindowOptions {
+    pub title: Option<String>,
+    pub attributes: Option<WindowAttributes>,
+}
+
+#[derive(Clone, Debug)]
+pub struct DioxusWindowInfo {
+    pub id: WindowId,
+    pub title: String,
+}
+
+pub struct DioxusWindowQueue {
+    pending: RefCell<Vec<QueuedWindow>>,
 }
 
 impl DioxusWindowQueue {
@@ -90,11 +115,11 @@ impl DioxusWindowQueue {
         }
     }
 
-    pub fn enqueue(&self, config: WindowConfig<DioxusNativeWindowRenderer>) {
-        self.pending.borrow_mut().push(config);
+    pub fn enqueue(&self, window: QueuedWindow) {
+        self.pending.borrow_mut().push(window);
     }
 
-    pub fn drain(&self) -> Vec<WindowConfig<DioxusNativeWindowRenderer>> {
+    pub fn drain(&self) -> Vec<QueuedWindow> {
         self.pending.borrow_mut().drain(..).collect()
     }
 }
@@ -104,6 +129,7 @@ pub struct DioxusWindowHandle {
     proxy: EventLoopProxy<BlitzShellEvent>,
     template: Arc<DioxusWindowTemplate>,
     queue: Rc<DioxusWindowQueue>,
+    registry: Rc<RefCell<Vec<DioxusWindowInfo>>>,
 }
 
 impl DioxusWindowHandle {
@@ -111,32 +137,68 @@ impl DioxusWindowHandle {
         proxy: EventLoopProxy<BlitzShellEvent>,
         template: Arc<DioxusWindowTemplate>,
         queue: Rc<DioxusWindowQueue>,
+        registry: Rc<RefCell<Vec<DioxusWindowInfo>>>,
     ) -> Self {
         Self {
             proxy,
             template,
             queue,
+            registry,
         }
     }
 
-    /// Open a window rendered by the provided component without props.
     pub fn open_window(&self, component: fn() -> Element) {
-        let config = self.template.build_window(component);
-        self.enqueue_and_signal(config);
+        self.open_window_with_options(component, DioxusWindowOptions::default());
     }
 
-    /// Open a window rendered by `component` with the given props.
+    pub fn open_window_with_options(
+        &self,
+        component: fn() -> Element,
+        options: DioxusWindowOptions,
+    ) {
+        let queued = self.template.build_window(component, options);
+        self.enqueue_and_signal(queued);
+    }
+
     pub fn open_window_with_props<P: Clone + 'static, M: 'static>(
         &self,
         component: impl ComponentFunction<P, M>,
         props: P,
     ) {
-        let config = self.template.build_window_with_props(component, props);
-        self.enqueue_and_signal(config);
+        self.open_window_with_props_and_options(component, props, DioxusWindowOptions::default());
     }
 
-    fn enqueue_and_signal(&self, config: WindowConfig<DioxusNativeWindowRenderer>) {
-        self.queue.enqueue(config);
+    pub fn open_window_with_props_and_options<P: Clone + 'static, M: 'static>(
+        &self,
+        component: impl ComponentFunction<P, M>,
+        props: P,
+        options: DioxusWindowOptions,
+    ) {
+        let queued = self
+            .template
+            .build_window_with_props(component, props, options);
+        self.enqueue_and_signal(queued);
+    }
+
+    pub fn list_windows(&self) -> Vec<DioxusWindowInfo> {
+        self.registry.borrow().clone()
+    }
+
+    pub fn focus_window(&self, window_id: WindowId) {
+        let _ = self.proxy.send_event(BlitzShellEvent::embedder_event(
+            DioxusNativeEvent::FocusWindow { window_id },
+        ));
+    }
+
+    pub fn set_window_title(&self, window_id: WindowId, title: impl Into<String>) {
+        let title = title.into();
+        let _ = self.proxy.send_event(BlitzShellEvent::embedder_event(
+            DioxusNativeEvent::SetWindowTitle { window_id, title },
+        ));
+    }
+
+    fn enqueue_and_signal(&self, window: QueuedWindow) {
+        self.queue.enqueue(window);
         let _ = self.proxy.send_event(BlitzShellEvent::embedder_event(
             DioxusNativeEvent::SpawnQueuedWindows,
         ));
