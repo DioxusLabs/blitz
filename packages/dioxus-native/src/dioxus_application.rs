@@ -1,8 +1,9 @@
-use anyrender::WindowRenderer;
+use blitz_shell::WindowConfig;
 use blitz_shell::{BlitzApplication, View};
+use blitz_traits::{navigation::NavigationProvider, net::NetProvider};
 use dioxus_core::{provide_context, ScopeId};
 use dioxus_history::{History, MemoryHistory};
-use std::cell::RefCell;
+use std::any::Any;
 use std::rc::Rc;
 use std::sync::Arc;
 use winit::application::ApplicationHandler;
@@ -10,11 +11,57 @@ use winit::event::{StartCause, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, EventLoopProxy};
 use winit::window::WindowId;
 
-use crate::windowing::{
-    DioxusWindowHandle, DioxusWindowInfo, DioxusWindowQueue, DioxusWindowTemplate,
-};
+use blitz_dom::DocumentConfig;
+use blitz_dom::HtmlParserProvider;
+
 use crate::DioxusNativeWindowRenderer;
-use crate::{contexts::DioxusNativeDocument, BlitzShellEvent, DioxusDocument, WindowConfig};
+use crate::{contexts::DioxusNativeDocument, BlitzShellEvent, DioxusDocument};
+
+#[repr(transparent)]
+#[doc(hidden)]
+pub struct OpaquePtr<T: ?Sized>(*mut T);
+
+impl<T: ?Sized> Copy for OpaquePtr<T> {}
+
+impl<T: ?Sized> Clone for OpaquePtr<T> {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+
+// Safety: this is intentionally used to smuggle single-threaded payloads through an embedder
+// event channel that requires `Send + Sync`. Correctness relies on the caller ensuring that the
+// payload is only ever created + consumed within the same thread/affinity assumptions as before.
+unsafe impl<T: ?Sized> Send for OpaquePtr<T> {}
+unsafe impl<T: ?Sized> Sync for OpaquePtr<T> {}
+
+impl<T: ?Sized> OpaquePtr<T> {
+    pub fn from_box(value: Box<T>) -> Self {
+        Self(Box::into_raw(value))
+    }
+
+    pub(crate) unsafe fn into_box(self) -> Box<T> {
+        Box::from_raw(self.0)
+    }
+}
+
+#[doc(hidden)]
+pub struct UnsafeBox<T: ?Sized>(Box<T>);
+
+// Safety: this wrapper exists solely to satisfy the `Send + Sync` bound imposed by the embedder
+// event channel. The payloads are only ever created and consumed on the event loop thread.
+unsafe impl<T: ?Sized> Send for UnsafeBox<T> {}
+unsafe impl<T: ?Sized> Sync for UnsafeBox<T> {}
+
+impl<T: ?Sized> UnsafeBox<T> {
+    pub fn new(value: Box<T>) -> Self {
+        Self(value)
+    }
+
+    pub fn into_inner(self) -> Box<T> {
+        self.0
+    }
+}
 
 /// Dioxus-native specific event type
 pub enum DioxusNativeEvent {
@@ -22,50 +69,83 @@ pub enum DioxusNativeEvent {
     #[cfg(all(feature = "hot-reload", debug_assertions))]
     DevserverEvent(dioxus_devtools::DevserverMsg),
 
-    /// Internal signal to create queued windows.
-    SpawnQueuedWindows,
-
-    /// Focus an existing window by id.
-    FocusWindow { window_id: WindowId },
-
-    /// Update a window's title.
-    SetWindowTitle { window_id: WindowId, title: String },
-
     /// Create a new head element from the Link and Title elements
     ///
-    /// todo(jon): these should probabkly be synchronous somehow
+    /// todo(jon): these should probably be synchronous somehow
     CreateHeadElement {
         window: WindowId,
         name: String,
         attributes: Vec<(String, String)>,
         contents: Option<String>,
     },
+
+    /// Spawn a pre-constructed window.
+    ///
+    /// # Safety
+    /// The pointers must come from `Box::into_raw` on the same process, and must be sent exactly
+    /// once; they will be reclaimed by the event loop thread via `Box::from_raw`.
+    CreateDocumentWindow {
+        vdom: UnsafeBox<dioxus_core::VirtualDom>,
+        attributes: winit::window::WindowAttributes,
+    },
 }
 
 pub struct DioxusNativeApplication {
-    pending_window: Option<(WindowConfig<DioxusNativeWindowRenderer>, String)>,
     inner: BlitzApplication<DioxusNativeWindowRenderer>,
     proxy: EventLoopProxy<BlitzShellEvent>,
-    window_template: Arc<DioxusWindowTemplate>,
-    window_queue: Rc<DioxusWindowQueue>,
-    window_registry: Rc<RefCell<Vec<DioxusWindowInfo>>>,
+
+    renderer_factory: Arc<dyn Fn() -> DioxusNativeWindowRenderer + Send + Sync>,
+
+    contexts: Arc<Vec<Box<dyn Fn() -> Box<dyn Any> + Send + Sync>>>,
+    net_provider: Arc<dyn NetProvider>,
+    #[cfg(feature = "net")]
+    inner_net_provider: Option<Arc<blitz_net::Provider>>,
+    html_parser_provider: Option<Arc<dyn HtmlParserProvider>>,
+    navigation_provider: Option<Arc<dyn NavigationProvider>>,
+}
+
+#[derive(Clone)]
+pub struct DioxusNativeProvider {
+    proxy: EventLoopProxy<BlitzShellEvent>,
+}
+
+impl DioxusNativeProvider {
+    pub(crate) fn new(proxy: EventLoopProxy<BlitzShellEvent>) -> Self {
+        Self { proxy }
+    }
+
+    pub fn create_document_window(
+        &self,
+        vdom: dioxus_core::VirtualDom,
+        attributes: winit::window::WindowAttributes,
+    ) {
+        let vdom = UnsafeBox::new(Box::new(vdom));
+        let _ = self.proxy.send_event(BlitzShellEvent::embedder_event(
+            DioxusNativeEvent::CreateDocumentWindow { vdom, attributes },
+        ));
+    }
 }
 
 impl DioxusNativeApplication {
     pub(crate) fn new(
         proxy: EventLoopProxy<BlitzShellEvent>,
-        pending_window: (WindowConfig<DioxusNativeWindowRenderer>, String),
-        window_template: Arc<DioxusWindowTemplate>,
-        window_queue: Rc<DioxusWindowQueue>,
-        window_registry: Rc<RefCell<Vec<DioxusWindowInfo>>>,
+        renderer_factory: Arc<dyn Fn() -> DioxusNativeWindowRenderer + Send + Sync>,
+        contexts: Arc<Vec<Box<dyn Fn() -> Box<dyn Any> + Send + Sync>>>,
+        net_provider: Arc<dyn NetProvider>,
+        #[cfg(feature = "net")] inner_net_provider: Option<Arc<blitz_net::Provider>>,
+        html_parser_provider: Option<Arc<dyn HtmlParserProvider>>,
+        navigation_provider: Option<Arc<dyn NavigationProvider>>,
     ) -> Self {
         Self {
-            pending_window: Some(pending_window),
             inner: BlitzApplication::new(proxy.clone()),
             proxy,
-            window_template,
-            window_queue,
-            window_registry,
+            renderer_factory,
+            contexts,
+            net_provider,
+            #[cfg(feature = "net")]
+            inner_net_provider,
+            html_parser_provider,
+            navigation_provider,
         }
     }
 
@@ -73,23 +153,17 @@ impl DioxusNativeApplication {
         self.inner.add_window(window_config);
     }
 
-    fn spawn_window(
+    fn _spawn_window(
         &mut self,
         config: WindowConfig<DioxusNativeWindowRenderer>,
-        label: String,
         event_loop: &ActiveEventLoop,
-        auto_resume: bool,
     ) {
         let mut window = View::init(config, event_loop, &self.proxy);
         self.inject_window_contexts(&mut window);
-        if auto_resume {
-            window.resume();
-            if !window.renderer.is_active() {
-                return;
-            }
-        }
+
+        window.resume();
+
         let window_id = window.window_id();
-        self.register_window(window_id, label);
         self.inner.windows.insert(window_id, window);
     }
 
@@ -103,15 +177,6 @@ impl DioxusNativeApplication {
                 Rc::new(DioxusNativeDocument::new(self.proxy.clone(), window_id));
             provide_context(shared);
         });
-
-        let window_handle = DioxusWindowHandle::new(
-            self.proxy.clone(),
-            Arc::clone(&self.window_template),
-            Rc::clone(&self.window_queue),
-            Rc::clone(&self.window_registry),
-        );
-        doc.vdom
-            .in_scope(ScopeId::ROOT, || provide_context(window_handle.clone()));
 
         let shell_provider = doc.as_ref().shell_provider.clone();
         doc.vdom
@@ -128,38 +193,53 @@ impl DioxusNativeApplication {
         window.request_redraw();
     }
 
-    fn drain_window_queue(&mut self, event_loop: &ActiveEventLoop) {
-        for queued in self.window_queue.drain() {
-            self.spawn_window(queued.config, queued.title, event_loop, true);
-        }
-    }
-
-    fn register_window(&self, window_id: WindowId, title: String) {
-        self.window_registry.borrow_mut().push(DioxusWindowInfo {
-            id: window_id,
-            title,
-        });
-    }
-
-    fn unregister_window(&self, window_id: WindowId) {
-        let mut registry = self.window_registry.borrow_mut();
-        registry.retain(|info| info.id != window_id);
-    }
-
-    fn update_window_title(&self, window_id: WindowId, title: String) {
-        for info in self.window_registry.borrow_mut().iter_mut() {
-            if info.id == window_id {
-                info.title = title.clone();
-                break;
-            }
-        }
-    }
-
-    fn handle_blitz_shell_event(
+    fn create_window(
         &mut self,
         event_loop: &ActiveEventLoop,
-        event: &DioxusNativeEvent,
+        vdom: UnsafeBox<dioxus_core::VirtualDom>,
+        attributes: winit::window::WindowAttributes,
     ) {
+        let mut vdom = *vdom.into_inner();
+
+        // Make the event loop proxy available to user components.
+        vdom.provide_root_context(self.proxy.clone());
+
+        // Provide a minimal, stable API for spawning additional windows.
+        vdom.provide_root_context(DioxusNativeProvider::new(self.proxy.clone()));
+
+        #[cfg(feature = "net")]
+        if let Some(inner) = &self.inner_net_provider {
+            vdom.provide_root_context(Arc::clone(inner));
+        }
+
+        let contexts = &self.contexts;
+        for context in contexts.iter() {
+            vdom.insert_any_root_context(context());
+        }
+        vdom.provide_root_context(self.net_provider.clone());
+        if let Some(parser) = self.html_parser_provider.clone() {
+            vdom.provide_root_context(parser);
+        }
+        if let Some(nav) = self.navigation_provider.clone() {
+            vdom.provide_root_context(nav);
+        }
+        let document = DioxusDocument::new(
+            vdom,
+            DocumentConfig {
+                net_provider: Some(self.net_provider.clone()),
+                html_parser_provider: self.html_parser_provider.clone(),
+                navigation_provider: self.navigation_provider.clone(),
+                ..Default::default()
+            },
+        );
+        let doc = Box::new(document) as _;
+
+        let renderer = (self.renderer_factory)();
+        let config = WindowConfig::with_attributes(doc, renderer, attributes);
+        self._spawn_window(config, event_loop);
+    }
+
+    fn handle_blitz_shell_event(&mut self, event_loop: &ActiveEventLoop, event: DioxusNativeEvent) {
         match event {
             #[cfg(all(feature = "hot-reload", debug_assertions))]
             DioxusNativeEvent::DevserverEvent(event) => match event {
@@ -168,7 +248,7 @@ impl DioxusNativeApplication {
                         let doc = window.downcast_doc_mut::<DioxusDocument>();
 
                         // Apply changes to vdom
-                        dioxus_devtools::apply_changes(&doc.vdom, hotreload_message);
+                        dioxus_devtools::apply_changes(&doc.vdom, &hotreload_message);
 
                         // Reload changed assets
                         for asset_path in &hotreload_message.assets {
@@ -193,28 +273,15 @@ impl DioxusNativeApplication {
                 contents,
                 window,
             } => {
-                if let Some(window) = self.inner.windows.get_mut(window) {
+                if let Some(window) = self.inner.windows.get_mut(&window) {
                     let doc = window.downcast_doc_mut::<DioxusDocument>();
-                    doc.create_head_element(name, attributes, contents);
+                    doc.create_head_element(&name, &attributes, &contents);
                     window.poll();
                 }
             }
 
-            DioxusNativeEvent::FocusWindow { window_id } => {
-                if let Some(window) = self.inner.windows.get_mut(window_id) {
-                    window.window.focus_window();
-                }
-            }
-
-            DioxusNativeEvent::SetWindowTitle { window_id, title } => {
-                if let Some(window) = self.inner.windows.get_mut(window_id) {
-                    window.window.set_title(title);
-                    self.update_window_title(*window_id, title.to_string());
-                }
-            }
-
-            DioxusNativeEvent::SpawnQueuedWindows => {
-                self.drain_window_queue(event_loop);
+            DioxusNativeEvent::CreateDocumentWindow { vdom, attributes } => {
+                self.create_window(event_loop, vdom, attributes);
             }
 
             // Suppress unused variable warning
@@ -222,7 +289,7 @@ impl DioxusNativeApplication {
             #[allow(unreachable_patterns)]
             _ => {
                 let _ = event_loop;
-                let _ = event;
+                let _ = &event;
             }
         }
     }
@@ -232,12 +299,6 @@ impl ApplicationHandler<BlitzShellEvent> for DioxusNativeApplication {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
         #[cfg(feature = "tracing")]
         tracing::debug!("Injecting document provider into all windows");
-
-        if let Some((config, label)) = self.pending_window.take() {
-            self.spawn_window(config, label, event_loop, false);
-        }
-
-        self.drain_window_queue(event_loop);
         self.inner.resumed(event_loop);
     }
 
@@ -255,17 +316,25 @@ impl ApplicationHandler<BlitzShellEvent> for DioxusNativeApplication {
         window_id: WindowId,
         event: WindowEvent,
     ) {
-        if matches!(event, WindowEvent::CloseRequested) {
-            self.unregister_window(window_id);
-        }
         self.inner.window_event(event_loop, window_id, event);
     }
 
     fn user_event(&mut self, event_loop: &ActiveEventLoop, event: BlitzShellEvent) {
         match event {
             BlitzShellEvent::Embedder(event) => {
-                if let Some(event) = event.downcast_ref::<DioxusNativeEvent>() {
-                    self.handle_blitz_shell_event(event_loop, event);
+                match std::sync::Arc::downcast::<DioxusNativeEvent>(event) {
+                    Ok(event) => {
+                        if let Ok(event) = std::sync::Arc::try_unwrap(event) {
+                            self.handle_blitz_shell_event(event_loop, event);
+                        } else {
+                            #[cfg(feature = "tracing")]
+                            tracing::warn!("Dioxus embedder event unexpectedly shared");
+                        }
+                    }
+                    Err(_event) => {
+                        #[cfg(feature = "tracing")]
+                        tracing::warn!("Unhandled embedder event");
+                    }
                 }
             }
             event => self.inner.user_event(event_loop, event),
