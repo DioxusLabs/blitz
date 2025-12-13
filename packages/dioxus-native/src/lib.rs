@@ -14,7 +14,7 @@ mod contexts;
 mod dioxus_application;
 mod dioxus_renderer;
 mod link_handler;
-mod windowing;
+// windowing module removed
 
 #[cfg(feature = "prelude")]
 pub mod prelude;
@@ -26,8 +26,12 @@ pub use dioxus_native_dom::*;
 
 use assets::DioxusNativeNetProvider;
 pub use dioxus_application::{DioxusNativeApplication, DioxusNativeEvent};
+#[doc(hidden)]
+pub use dioxus_application::OpaquePtr;
+#[doc(hidden)]
+pub use dioxus_application::UnsafeBox;
+pub use dioxus_application::DioxusNativeProvider;
 pub use dioxus_renderer::DioxusNativeWindowRenderer;
-pub use windowing::{DioxusWindowHandle, DioxusWindowInfo};
 
 #[cfg(target_os = "android")]
 #[cfg_attr(docsrs, doc(cfg(target_os = "android")))]
@@ -60,15 +64,13 @@ pub use {
     dioxus_renderer::{use_wgpu, Features, Limits},
 };
 
-use blitz_shell::{create_default_event_loop, BlitzShellEvent, Config, WindowConfig};
+use blitz_shell::{create_default_event_loop, BlitzShellEvent, Config};
 use dioxus_core::{ComponentFunction, Element, VirtualDom};
 use link_handler::DioxusNativeNavigationProvider;
 use std::any::Any;
-use std::cell::RefCell;
-use std::rc::Rc;
 use std::sync::Arc;
-use windowing::{DioxusWindowQueue, DioxusWindowTemplate};
 use winit::window::WindowAttributes;
+
 
 /// Launch an interactive HTML/CSS renderer driven by the Dioxus virtualdom
 pub fn launch(app: fn() -> Element) {
@@ -136,6 +138,7 @@ pub fn launch_cfg_with_props<P: Clone + 'static, M: 'static>(
     }
 
     let event_loop = create_default_event_loop::<BlitzShellEvent>();
+    let proxy = event_loop.create_proxy();
 
     // Turn on the runtime and enter it
     #[cfg(feature = "net")]
@@ -160,38 +163,33 @@ pub fn launch_cfg_with_props<P: Clone + 'static, M: 'static>(
     // We're going to need to hit it with a special waker
     // Note that we are delaying the initialization of window-specific contexts (net provider, document, etc)
     let contexts = Arc::new(contexts);
-    let mut vdom = VirtualDom::new_with_props(app, props);
-
-    // Add contexts
-    for context in contexts.iter() {
-        vdom.insert_any_root_context(context());
-    }
+    let app = app.clone();
 
     #[cfg(feature = "net")]
-    let net_provider = {
+    let (net_provider, inner_net_provider) = {
         use blitz_shell::BlitzShellNetWaker;
 
         let proxy = event_loop.create_proxy();
         let net_waker = Some(BlitzShellNetWaker::shared(proxy.clone()));
 
         let inner_net_provider = Arc::new(blitz_net::Provider::new(net_waker.clone()));
-        vdom.provide_root_context(Arc::clone(&inner_net_provider));
 
-        Arc::new(DioxusNativeNetProvider::with_inner(
+        let net_provider = Arc::new(DioxusNativeNetProvider::with_inner(
             proxy,
-            inner_net_provider as _,
-        )) as Arc<dyn NetProvider>
+            Arc::clone(&inner_net_provider) as _,
+        )) as Arc<dyn NetProvider>;
+
+        (net_provider, Some(inner_net_provider))
     };
 
     #[cfg(not(feature = "net"))]
     let net_provider = DioxusNativeNetProvider::shared(event_loop.create_proxy());
 
-    vdom.provide_root_context(Arc::clone(&net_provider));
+    // contexts/providers are injected via window runtime
 
     #[cfg(feature = "html")]
     let html_parser_provider = {
         let html_parser = Arc::new(blitz_html::HtmlProvider) as _;
-        vdom.provide_root_context(Arc::clone(&html_parser));
         Some(html_parser)
     };
     #[cfg(not(feature = "html"))]
@@ -223,42 +221,29 @@ pub fn launch_cfg_with_props<P: Clone + 'static, M: 'static>(
     let renderer_factory: Arc<dyn Fn() -> DioxusNativeWindowRenderer + Send + Sync> =
         Arc::new(|| DioxusNativeWindowRenderer::new());
 
-    // Create document + window from the baked virtualdom
-    let doc = DioxusDocument::new(
-        vdom,
-        DocumentConfig {
-            net_provider: Some(Arc::clone(&net_provider)),
-            html_parser_provider: html_parser_provider.clone(),
-            navigation_provider: navigation_provider.clone(),
-            ..Default::default()
-        },
-    );
     let window_attributes = window_attributes.unwrap_or_default();
-    let renderer = renderer_factory();
-    let config = WindowConfig::with_attributes(
-        Box::new(doc) as _,
-        renderer.clone(),
-        window_attributes.clone(),
-    );
-    let initial_title = window_attributes.title.clone();
-    // Create application
-    let template = Arc::new(DioxusWindowTemplate::new(
-        contexts,
+
+    let vdom = VirtualDom::new_with_props(app, props);
+    let vdom = UnsafeBox::new(Box::new(vdom));
+
+    let mut application = DioxusNativeApplication::new(
+        proxy.clone(),
         renderer_factory,
-        window_attributes.clone(),
+        Arc::clone(&contexts),
         Arc::clone(&net_provider),
+        #[cfg(feature = "net")]
+        inner_net_provider,
         html_parser_provider.clone(),
         navigation_provider.clone(),
-    ));
-    let window_queue = Rc::new(DioxusWindowQueue::new());
-    let window_registry = Rc::new(RefCell::new(Vec::new()));
-    let mut application = DioxusNativeApplication::new(
-        event_loop.create_proxy(),
-        (config, initial_title),
-        template,
-        window_queue,
-        window_registry,
     );
+
+    // Queue the initial window creation via an embedder event.
+    let _ = proxy.send_event(BlitzShellEvent::embedder_event(
+        DioxusNativeEvent::CreateDocumentWindow {
+            vdom,
+            attributes: window_attributes.clone(),
+        },
+    ));
 
     // Run event loop
     event_loop.run_app(&mut application).unwrap();
