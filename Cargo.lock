@@ -827,6 +827,7 @@ dependencies = [
  "blitz-traits",
  "dioxus",
  "dioxus-native",
+ "dioxus-native-dom",
  "env_logger",
  "euclid",
  "image",
@@ -835,6 +836,7 @@ dependencies = [
  "reqwest",
  "tokio",
  "tracing-subscriber",
+ "winit",
 ]
 
 [[package]]

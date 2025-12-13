@@ -1,10 +1,17 @@
 //! Demonstrate opening additional windows from a pure Dioxus app.
 
 use dioxus::prelude::*;
-use dioxus_native::{DioxusWindowHandle, DioxusWindowInfo, DioxusWindowOptions};
+use dioxus_native::{DioxusWindowHandle, DioxusWindowInfo};
+use std::time::Duration;
+use winit::window::{WindowAttributes, WindowButtons};
 
 fn main() {
-    dioxus_native::launch(app);
+    // Demonstrate how to pass custom WindowAttributes (title, size, decorations).
+    let attrs = WindowAttributes::default()
+        .with_title("Multi-window Demo")
+        .with_inner_size(winit::dpi::LogicalSize::new(600.0, 800.0))
+        .with_enabled_buttons(WindowButtons::all());
+    dioxus_native::launch_cfg(app, vec![], vec![Box::new(attrs)]);
 }
 
 fn app() -> Element {
@@ -20,39 +27,22 @@ fn app() -> Element {
     let known_windows_signal = known_windows.clone();
     let refresh_handle_for_list = refresh_handle.clone();
     let rename_counter = use_signal(|| 1u32);
-    let window_rows = {
-        let windows_snapshot = known_windows();
-        windows_snapshot
-            .into_iter()
-            .map(|info| {
-                let focus_handle = base_focus_handle.clone();
-                let rename_handle = base_rename_handle.clone();
-                let mut rename_counter_signal = rename_counter.clone();
-                let mut update_list_signal = known_windows_signal.clone();
-                let update_source = refresh_handle_for_list.clone();
-                let id = info.id;
-                let title = info.title;
-                rsx! {
-                    li {
-                        "{title} (ID: {id:?})"
-                        button {
-                            onclick: move |_| focus_handle.focus_window(id),
-                            "Focus"
-                        }
-                        button {
-                            onclick: move |_| {
-                                let idx = rename_counter_signal();
-                                rename_handle.set_window_title(id, format!("Renamed {idx}"));
-                                rename_counter_signal += 1;
-                                update_list_signal.set(update_source.list_windows());
-                            },
-                            "Rename"
-                        }
-                    }
+
+    {
+        let refresh_handle = window_handle.clone();
+        let mut known_windows_signal = known_windows.clone();
+        use_future(move || {
+            let refresh_handle = refresh_handle.clone();
+            async move {
+                loop {
+                    tokio::time::sleep(Duration::from_millis(100)).await;
+                    known_windows_signal.set(refresh_handle.list_windows());
                 }
-            })
-            .collect::<Vec<_>>()
-    };
+            }
+        });
+    }
+
+    let windows_snapshot = known_windows();
 
     rsx! {
         main {
@@ -62,12 +52,13 @@ fn app() -> Element {
             div {
                 button {
                     onclick: move |_| {
-                        open_simple.open_window_with_options(
+                        open_simple.open_window_with_attributes(
                             secondary_window,
-                            DioxusWindowOptions {
-                                title: Some("Secondary window".into()),
-                                ..Default::default()
-                            },
+                            Some(
+                                WindowAttributes::default()
+                                    .with_title("Secondary window")
+                                    .with_inner_size(winit::dpi::LogicalSize::new(400.0, 300.0)),
+                            ),
                         );
                         known_windows.set(open_simple.list_windows());
                     },
@@ -76,15 +67,16 @@ fn app() -> Element {
                 button {
                     onclick: move |_| {
                         let idx = counter();
-                        open_with_props.open_window_with_props_and_options(
+                        open_with_props.open_window_with_props_and_attributes(
                             message_window,
                             MessageWindowProps {
                                 message: format!("Window #{idx}"),
                             },
-                            DioxusWindowOptions {
-                                title: Some(format!("Window #{idx}")),
-                                ..Default::default()
-                            },
+                            Some(
+                                WindowAttributes::default()
+                                    .with_title(format!("Window #{idx}"))
+                                    .with_inner_size(winit::dpi::LogicalSize::new(320.0, 240.0)),
+                            ),
                         );
                         counter += 1;
                         known_windows.set(open_with_props.list_windows());
@@ -96,7 +88,35 @@ fn app() -> Element {
                     "Refresh list"
                 }
             }
-            ul {{ window_rows.into_iter() }}
+            ul {
+                {windows_snapshot.into_iter().map(|info| {
+                    let focus_handle = base_focus_handle.clone();
+                    let rename_handle = base_rename_handle.clone();
+                    let mut rename_counter_signal = rename_counter.clone();
+                    let mut update_list_signal = known_windows_signal.clone();
+                    let update_source = refresh_handle_for_list.clone();
+                    let id = info.id;
+                    let title = info.title;
+                    rsx! {
+                        li {
+                            "{title} (ID: {id:?})"
+                            button {
+                                onclick: move |_| focus_handle.focus_window(id),
+                                "Focus"
+                            }
+                            button {
+                                onclick: move |_| {
+                                    let idx = rename_counter_signal();
+                                    rename_handle.set_window_title(id, format!("Renamed {idx}"));
+                                    rename_counter_signal += 1;
+                                    update_list_signal.set(update_source.list_windows());
+                                },
+                                "Rename"
+                            }
+                        }
+                    }
+                })}
+            }
         }
     }
 }
