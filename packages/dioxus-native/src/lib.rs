@@ -27,7 +27,7 @@ pub use dioxus_native_dom::*;
 use assets::DioxusNativeNetProvider;
 pub use dioxus_application::{DioxusNativeApplication, DioxusNativeEvent};
 pub use dioxus_renderer::DioxusNativeWindowRenderer;
-pub use windowing::{DioxusWindowHandle, DioxusWindowInfo, DioxusWindowOptions};
+pub use windowing::{DioxusWindowHandle, DioxusWindowInfo};
 
 #[cfg(any(
     feature = "vello",

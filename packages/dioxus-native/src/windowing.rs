@@ -42,22 +42,19 @@ impl DioxusWindowTemplate {
     pub fn build_window(
         &self,
         component: fn() -> Element,
-        options: DioxusWindowOptions,
+        attributes_override: Option<WindowAttributes>,
     ) -> QueuedWindow {
-        self.build_window_with_props(component, (), options)
+        self.build_window_with_props(component, (), attributes_override)
     }
 
     pub fn build_window_with_props<P: Clone + 'static, M: 'static>(
         &self,
         component: impl ComponentFunction<P, M>,
         props: P,
-        options: DioxusWindowOptions,
+        attributes_override: Option<WindowAttributes>,
     ) -> QueuedWindow {
-        let mut attributes = options
-            .attributes
-            .unwrap_or_else(|| self.window_attributes.clone());
-        let title = options.title.unwrap_or_else(|| attributes.title.clone());
-        attributes.title = title.clone();
+        let attributes = attributes_override.unwrap_or_else(|| self.window_attributes.clone());
+        let title = attributes.title.clone();
 
         let mut vdom = VirtualDom::new_with_props(component, props);
         for context in self.contexts.iter() {
@@ -90,12 +87,6 @@ impl DioxusWindowTemplate {
 pub struct QueuedWindow {
     pub config: WindowConfig<DioxusNativeWindowRenderer>,
     pub title: String,
-}
-
-#[derive(Clone, Default)]
-pub struct DioxusWindowOptions {
-    pub title: Option<String>,
-    pub attributes: Option<WindowAttributes>,
 }
 
 #[derive(Clone, Debug)]
@@ -148,15 +139,15 @@ impl DioxusWindowHandle {
     }
 
     pub fn open_window(&self, component: fn() -> Element) {
-        self.open_window_with_options(component, DioxusWindowOptions::default());
+        self.open_window_with_attributes(component, None);
     }
 
-    pub fn open_window_with_options(
+    pub fn open_window_with_attributes(
         &self,
         component: fn() -> Element,
-        options: DioxusWindowOptions,
+        attributes: Option<WindowAttributes>,
     ) {
-        let queued = self.template.build_window(component, options);
+        let queued = self.template.build_window(component, attributes);
         self.enqueue_and_signal(queued);
     }
 
@@ -165,18 +156,18 @@ impl DioxusWindowHandle {
         component: impl ComponentFunction<P, M>,
         props: P,
     ) {
-        self.open_window_with_props_and_options(component, props, DioxusWindowOptions::default());
+        self.open_window_with_props_and_attributes(component, props, None);
     }
 
-    pub fn open_window_with_props_and_options<P: Clone + 'static, M: 'static>(
+    pub fn open_window_with_props_and_attributes<P: Clone + 'static, M: 'static>(
         &self,
         component: impl ComponentFunction<P, M>,
         props: P,
-        options: DioxusWindowOptions,
+        attributes: Option<WindowAttributes>,
     ) {
         let queued = self
             .template
-            .build_window_with_props(component, props, options);
+            .build_window_with_props(component, props, attributes);
         self.enqueue_and_signal(queued);
     }
 
