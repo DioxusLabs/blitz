@@ -223,6 +223,7 @@ pub fn launch_cfg_with_props<P: Clone + 'static, M: 'static>(
         DioxusNativeEvent::CreateDocumentWindow {
             vdom,
             attributes: window_attributes.clone(),
+            reply: None,
         },
     ));
 
