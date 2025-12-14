@@ -368,13 +368,11 @@ impl ApplicationHandler<BlitzShellEvent> for DioxusNativeApplication {
                         if let Ok(event) = std::sync::Arc::try_unwrap(event) {
                             self.handle_blitz_shell_event(event_loop, event);
                         } else {
-                            #[cfg(feature = "tracing")]
-                            tracing::warn!("Dioxus embedder event unexpectedly shared");
+                            unreachable!("Dioxus embedder event unexpectedly shared");
                         }
                     }
                     Err(_event) => {
-                        #[cfg(feature = "tracing")]
-                        tracing::warn!("Unhandled embedder event");
+                        unreachable!("Unhandled embedder event");
                     }
                 }
             }
