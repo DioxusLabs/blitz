@@ -4,11 +4,9 @@ use blitz_traits::shell::ShellProvider;
 use dioxus::prelude::*;
 use dioxus_native::DioxusNativeProvider;
 use std::sync::Arc;
-use std::time::Duration;
-use dioxus::core::spawn_isomorphic;
-use winit::window::{WindowAttributes, WindowButtons};
-use winit::window::WindowId;
 use winit::window::Window;
+use winit::window::WindowId;
+use winit::window::{WindowAttributes, WindowButtons};
 
 fn main() {
     // Demonstrate how to pass custom WindowAttributes (title, size, decorations).
@@ -23,6 +21,7 @@ fn app() -> Element {
     let provider = use_context::<DioxusNativeProvider>();
     let mut counter = use_signal(|| 0u32);
     let spawned_windows = use_signal(|| Vec::<(WindowId, Arc<Window>)>::new());
+
     rsx! {
         main {
             h1 { "Blitz multi-window" }
@@ -39,9 +38,7 @@ fn app() -> Element {
                         let mut spawned_windows = spawned_windows.clone();
                         spawn(async move {
                             if let Ok((window_id, window)) = receiver.await {
-                                let mut next = spawned_windows();
-                                next.push((window_id, window));
-                                spawned_windows.set(next);
+                                spawned_windows.push((window_id, window));
                             }
                         });
                         counter += 1;
