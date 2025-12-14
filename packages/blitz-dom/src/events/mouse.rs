@@ -1,7 +1,8 @@
+use std::time::{Duration, Instant};
+
 use blitz_traits::{
     events::{
-        BlitzInputEvent, BlitzMouseButtonEvent, DomEvent, DomEventData, MouseEventButton,
-        MouseEventButtons,
+        BlitzInputEvent, BlitzMouseButtonEvent, BlitzWheelDelta, BlitzWheelEvent, DomEvent, DomEventData, MouseEventButton, MouseEventButtons
     },
     navigation::NavigationOptions,
 };
@@ -9,18 +10,24 @@ use markup5ever::local_name;
 
 use crate::{BaseDocument, node::SpecialElementData};
 
-pub(crate) fn handle_mousemove(
+pub(crate) fn handle_mousemove<F: FnMut(DomEvent)>(
     doc: &mut BaseDocument,
     target: usize,
     x: f32,
     y: f32,
     buttons: MouseEventButtons,
+    event: &BlitzMouseButtonEvent,
+    mut dispatch_event: F
 ) -> bool {
     let mut changed = doc.set_hover_to(x, y);
 
     let Some(hit) = doc.hit(x, y) else {
         return changed;
     };
+
+    if changed {
+        dispatch_event(DomEvent::new(hit.node_id, DomEventData::MouseEnter(event.clone())));
+    }
 
     if hit.node_id != target {
         return changed;
@@ -142,6 +149,11 @@ pub(crate) fn handle_mouseup<F: FnMut(DomEvent)>(
     // Dispatch a click event
     if do_click && event.button == MouseEventButton::Main {
         dispatch_event(DomEvent::new(target, DomEventData::Click(event.clone())));
+    }
+
+    // Dispatch a context menu event
+    if do_click && event.button == MouseEventButton::Secondary {
+        dispatch_event(DomEvent::new(target, DomEventData::ContextMenu(event.clone())));
     }
 }
 
@@ -275,4 +287,30 @@ pub(crate) fn handle_click<F: FnMut(DomEvent)>(
 
     // If nothing is matched then clear focus
     doc.clear_focus();
+
+    // Assumed double click time to be less than 500ms, although may be system-dependant?
+    if doc.dbl_click_first_time.map(|t| t.elapsed() < Duration::from_millis(500)).unwrap_or(false)  {
+        dispatch_event(DomEvent::new(target, DomEventData::DoubleClick(event.clone())));
+        doc.dbl_click_first_time = None;
+    } else {
+        doc.dbl_click_first_time = Some(Instant::now());
+    }
+}
+
+pub(crate) fn handle_wheel<F: FnMut(DomEvent)>(
+    doc: &mut BaseDocument,
+    _: usize,
+    event: BlitzWheelEvent,
+    dispatch_event: F,
+) {
+    let (scroll_x, scroll_y) = match event.delta {
+        BlitzWheelDelta::Lines(x, y) => (x as f64 * 20.0, y as f64 * 20.0),
+        BlitzWheelDelta::Pixels(x, y) => (x, y)
+    };
+
+    let _has_changed = if let Some(hover_node_id) = doc.get_hover_node_id() {
+        doc.scroll_node_by_has_changed(hover_node_id, scroll_x, scroll_y, dispatch_event)
+    } else {
+        doc.scroll_viewport_by_has_changed(scroll_x, scroll_y)
+    };
 }
