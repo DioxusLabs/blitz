@@ -4,6 +4,7 @@ use blitz_traits::shell::ShellProvider;
 use dioxus::prelude::*;
 use dioxus_native::DioxusNativeProvider;
 use std::sync::Arc;
+use std::sync::Weak;
 use winit::window::Window;
 use winit::window::WindowId;
 use winit::window::{WindowAttributes, WindowButtons};
@@ -20,7 +21,7 @@ fn main() {
 fn app() -> Element {
     let provider = use_context::<DioxusNativeProvider>();
     let mut counter = use_signal(|| 0u32);
-    let spawned_windows = use_signal(|| Vec::<(WindowId, Arc<Window>)>::new());
+    let spawned_windows = use_signal(|| Vec::<(WindowId, Weak<Window>)>::new());
 
     rsx! {
         main {
@@ -38,7 +39,9 @@ fn app() -> Element {
                         let mut spawned_windows = spawned_windows.clone();
                         spawn(async move {
                             if let Ok((window_id, window)) = receiver.await {
-                                spawned_windows.push((window_id, window));
+                                let mut next = spawned_windows();
+                                next.push((window_id, Arc::downgrade(&window)));
+                                spawned_windows.set(next);
                             }
                         });
                         counter += 1;
@@ -49,10 +52,13 @@ fn app() -> Element {
 
             h2 { "Spawned windows" }
             ul {
-                {spawned_windows().into_iter().map(|(id, window)| {
-                    let title = window.title();
-                    let title = if title.is_empty() { String::from("<unsupported>") } else { title };
-                    rsx! { li { "{title} (ID: {id:?})" } }
+                {spawned_windows().into_iter().map(|(id, window)| match window.upgrade() {
+                    Some(window) => {
+                        let title = window.title();
+                        let title = if title.is_empty() { String::from("<unsupported>") } else { title };
+                        rsx! { li { "{title} (ID: {id:?})" } }
+                    }
+                    None => rsx! { li { "<closed> (ID: {id:?})" } },
                 })}
             }
         }
