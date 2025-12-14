@@ -10,7 +10,7 @@ pub(crate) use keyboard::handle_keypress;
 use mouse::handle_mouseup;
 pub(crate) use mouse::{handle_click, handle_mousedown, handle_mousemove};
 
-use crate::BaseDocument;
+use crate::{BaseDocument, events::mouse::handle_wheel};
 
 pub(crate) fn handle_dom_event<F: FnMut(DomEvent)>(
     doc: &mut BaseDocument,
@@ -55,6 +55,8 @@ pub(crate) fn handle_dom_event<F: FnMut(DomEvent)>(
             DomEventData::ContextMenu(_) => None,
             DomEventData::DoubleClick(_) => None,
             DomEventData::Input(_) => None,
+            DomEventData::Wheel(data) => Some(UiEvent::Wheel(data)),
+            DomEventData::Scroll(_) => None,
         };
 
         if let Some(ui_event) = ui_event {
@@ -125,6 +127,12 @@ pub(crate) fn handle_dom_event<F: FnMut(DomEvent)>(
         },
         DomEventData::MouseOut(_) => {
             // Do nothing (no default action)
+        },
+        DomEventData::Scroll(_) => {
+            // Handled elsewhere
+        },
+        DomEventData::Wheel(event) => {
+            handle_wheel(doc, target_node_id, event.clone(), dispatch_event);
         },
     }
 }

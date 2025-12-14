@@ -84,6 +84,7 @@ impl<'doc, Handler: EventHandler> EventDriver<'doc, Handler> {
             UiEvent::MouseMove(_) => hover_node_id,
             UiEvent::MouseUp(_) => hover_node_id,
             UiEvent::MouseDown(_) => hover_node_id,
+            UiEvent::Wheel(_) => hover_node_id,
             UiEvent::KeyUp(_) => focussed_node_id,
             UiEvent::KeyDown(_) => focussed_node_id,
             UiEvent::Ime(_) => focussed_node_id,
@@ -105,6 +106,7 @@ impl<'doc, Handler: EventHandler> EventDriver<'doc, Handler> {
                 y: data.y + viewport_scroll.y as f32 / zoom,
                 ..data
             }),
+            UiEvent::Wheel(data) => DomEventData::Wheel(data),
             UiEvent::KeyUp(data) => DomEventData::KeyUp(data),
             UiEvent::KeyDown(data) => DomEventData::KeyDown(data),
             UiEvent::Ime(data) => DomEventData::Ime(data),

@@ -2,8 +2,7 @@ use std::time::{Duration, Instant};
 
 use blitz_traits::{
     events::{
-        BlitzInputEvent, BlitzMouseButtonEvent, DomEvent, DomEventData, MouseEventButton,
-        MouseEventButtons,
+        BlitzInputEvent, BlitzMouseButtonEvent, BlitzWheelDelta, BlitzWheelEvent, DomEvent, DomEventData, MouseEventButton, MouseEventButtons
     },
     navigation::NavigationOptions,
 };
@@ -296,4 +295,22 @@ pub(crate) fn handle_click<F: FnMut(DomEvent)>(
     } else {
         doc.dbl_click_first_time = Some(Instant::now());
     }
+}
+
+pub(crate) fn handle_wheel<F: FnMut(DomEvent)>(
+    doc: &mut BaseDocument,
+    _: usize,
+    event: BlitzWheelEvent,
+    dispatch_event: F,
+) {
+    let (scroll_x, scroll_y) = match event.delta {
+        BlitzWheelDelta::Lines(x, y) => (x as f64 * 20.0, y as f64 * 20.0),
+        BlitzWheelDelta::Pixels(x, y) => (x, y)
+    };
+
+    let _has_changed = if let Some(hover_node_id) = doc.get_hover_node_id() {
+        doc.scroll_node_by_has_changed(hover_node_id, scroll_x, scroll_y, dispatch_event)
+    } else {
+        doc.scroll_viewport_by_has_changed(scroll_x, scroll_y)
+    };
 }

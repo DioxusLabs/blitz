@@ -7,7 +7,7 @@ use crate::event::{BlitzShellEvent, create_waker};
 use anyrender::WindowRenderer;
 use blitz_dom::Document;
 use blitz_paint::paint_scene;
-use blitz_traits::events::{BlitzMouseButtonEvent, MouseEventButton, MouseEventButtons, UiEvent};
+use blitz_traits::events::{BlitzMouseButtonEvent, BlitzWheelDelta, BlitzWheelEvent, MouseEventButton, MouseEventButtons, UiEvent};
 use blitz_traits::shell::Viewport;
 use winit::keyboard::PhysicalKey;
 
@@ -384,20 +384,22 @@ impl<Rend: WindowRenderer> View<Rend> {
                 self.request_redraw();
             }
             WindowEvent::MouseWheel { delta, .. } => {
-                let (scroll_x, scroll_y) = match delta {
-                    winit::event::MouseScrollDelta::LineDelta(x, y) => (x as f64 * 20.0, y as f64 * 20.0),
-                    winit::event::MouseScrollDelta::PixelDelta(offsets) => (offsets.x, offsets.y)
+                let blitz_delta = match delta {
+                    winit::event::MouseScrollDelta::LineDelta(x, y) => BlitzWheelDelta::Lines(x as f64, y as f64),
+                    winit::event::MouseScrollDelta::PixelDelta(pos) => BlitzWheelDelta::Pixels(pos.x, pos.y),
                 };
 
-                let has_changed = if let Some(hover_node_id) = self.doc.get_hover_node_id() {
-                    self.doc.scroll_node_by_has_changed(hover_node_id, scroll_x, scroll_y)
-                } else {
-                    self.doc.scroll_viewport_by_has_changed(scroll_x, scroll_y)
+                let event = BlitzWheelEvent { 
+                    delta: blitz_delta,
+                    x: self.mouse_pos.0,
+                    y: self.mouse_pos.1,
+                    button: MouseEventButton::Main, // Acts as an uninitialized value in this case
+                    buttons: self.buttons,
+                    mods: winit_modifiers_to_kbt_modifiers(self.keyboard_modifiers.state()),
                 };
 
-                if has_changed {
-                    self.request_redraw();
-                }
+                self.doc.handle_ui_event(UiEvent::Wheel(event));
+                self.request_redraw();
             }
 
             // File events

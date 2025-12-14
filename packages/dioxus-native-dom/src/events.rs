@@ -1,15 +1,8 @@
-use blitz_traits::events::{BlitzKeyEvent, BlitzMouseButtonEvent, MouseEventButton};
+use blitz_traits::events::{BlitzKeyEvent, BlitzMouseButtonEvent, BlitzScrollEvent, BlitzWheelDelta, BlitzWheelEvent, MouseEventButton};
 use dioxus_html::{
-    geometry::{ClientPoint, ElementPoint, PagePoint, ScreenPoint},
-    input_data::{MouseButton, MouseButtonSet},
-    point_interaction::{
+    AnimationData, CancelData, ClipboardData, CompositionData, DragData, FocusData, FormData, FormValue, HasFileData, HasFocusData, HasFormData, HasKeyboardData, HasMouseData, HasScrollData, HasWheelData, HtmlEventConverter, ImageData, KeyboardData, MediaData, MountedData, MouseData, PlatformEventData, PointerData, ResizeData, ScrollData, SelectionData, ToggleData, TouchData, TransitionData, VisibleData, WheelData, geometry::{ClientPoint, ElementPoint, PagePoint, ScreenPoint, euclid::Vector3D}, input_data::{MouseButton, MouseButtonSet}, point_interaction::{
         InteractionElementOffset, InteractionLocation, ModifiersInteraction, PointerInteraction,
-    },
-    AnimationData, CancelData, ClipboardData, CompositionData, DragData, FocusData, FormData,
-    FormValue, HasFileData, HasFocusData, HasFormData, HasKeyboardData, HasMouseData,
-    HtmlEventConverter, ImageData, KeyboardData, MediaData, MountedData, MouseData,
-    PlatformEventData, PointerData, ResizeData, ScrollData, SelectionData, ToggleData, TouchData,
-    TransitionData, VisibleData, WheelData,
+    }
 };
 use keyboard_types::{Code, Key, Location, Modifiers};
 use std::any::Any;
@@ -73,8 +66,12 @@ impl HtmlEventConverter for NativeConverter {
         unimplemented!("todo: convert_pointer_data in dioxus-native. requires support in blitz")
     }
 
-    fn convert_scroll_data(&self, _event: &PlatformEventData) -> ScrollData {
-        unimplemented!("todo: convert_scroll_data in dioxus-native. requires support in blitz")
+    fn convert_scroll_data(&self, event: &PlatformEventData) -> ScrollData {
+        event 
+            .downcast::<NativeScrollData>()
+            .unwrap()
+            .clone()
+            .into()
     }
 
     fn convert_selection_data(&self, _event: &PlatformEventData) -> SelectionData {
@@ -93,8 +90,8 @@ impl HtmlEventConverter for NativeConverter {
         unimplemented!("todo: convert_transition_data in dioxus-native. requires support in blitz")
     }
 
-    fn convert_wheel_data(&self, _event: &PlatformEventData) -> WheelData {
-        unimplemented!("todo: convert_wheel_data in dioxus-native. requires support in blitz")
+    fn convert_wheel_data(&self, event: &PlatformEventData) -> WheelData {
+        event.downcast::<NativeWheelData>().unwrap().clone().into()
     }
 
     fn convert_resize_data(&self, _event: &PlatformEventData) -> ResizeData {
@@ -227,5 +224,100 @@ pub struct NativeFocusData {}
 impl HasFocusData for NativeFocusData {
     fn as_any(&self) -> &dyn std::any::Any {
         self as &dyn std::any::Any
+    }
+}
+
+#[derive(Clone)]
+pub struct NativeScrollData(pub(crate) BlitzScrollEvent);
+impl HasScrollData for NativeScrollData {
+    fn as_any(&self) -> &dyn std::any::Any {
+        self as &dyn std::any::Any
+    }
+    
+    fn scroll_top(&self) -> f64 {
+        self.0.scroll_top
+    }
+    
+    fn scroll_left(&self) -> f64 {
+        self.0.scroll_left
+    }
+    
+    fn scroll_width(&self) -> i32 {
+        self.0.scroll_width
+    }
+    
+    fn scroll_height(&self) -> i32 {
+        self.0.scroll_height
+    }
+    
+    fn client_width(&self) -> i32 {
+        self.0.client_width
+    }
+    
+    fn client_height(&self) -> i32 {
+        self.0.client_height
+    }
+}
+
+#[derive(Clone)]
+pub struct NativeWheelData(pub(crate) BlitzWheelEvent);
+impl HasWheelData for NativeWheelData {
+    fn as_any(&self) -> &dyn std::any::Any {
+        self as &dyn std::any::Any
+    }
+    
+    fn delta(&self) -> dioxus_html::geometry::WheelDelta {
+        match self.0.delta {
+            BlitzWheelDelta::Lines(x, y) => dioxus_html::geometry::WheelDelta::Lines(Vector3D::new(x, y, 0.0)),
+            BlitzWheelDelta::Pixels(x, y) => dioxus_html::geometry::WheelDelta::Pixels(Vector3D::new(x, y, 0.0)),
+        }
+    }
+}
+
+impl HasMouseData for NativeWheelData {
+    fn as_any(&self) -> &dyn std::any::Any {
+        self as &dyn std::any::Any
+    }
+}
+
+impl PointerInteraction for NativeWheelData {
+    fn trigger_button(&self) -> Option<MouseButton> {
+        Some(match self.0.button {
+            MouseEventButton::Main => MouseButton::Primary,
+            MouseEventButton::Auxiliary => MouseButton::Auxiliary,
+            MouseEventButton::Secondary => MouseButton::Secondary,
+            MouseEventButton::Fourth => MouseButton::Fourth,
+            MouseEventButton::Fifth => MouseButton::Fifth,
+        })
+    }
+
+    fn held_buttons(&self) -> MouseButtonSet {
+        dioxus_html::input_data::decode_mouse_button_set(self.0.buttons.bits() as u16)
+    }
+}
+
+impl ModifiersInteraction for NativeWheelData {
+    fn modifiers(&self) -> Modifiers {
+        self.0.mods
+    }
+}
+
+impl InteractionElementOffset for NativeWheelData {
+    fn element_coordinates(&self) -> ElementPoint {
+        unimplemented!()
+    }
+}
+
+impl InteractionLocation for NativeWheelData {
+    fn client_coordinates(&self) -> ClientPoint {
+        ClientPoint::new(self.0.x as _, self.0.y as _)
+    }
+
+    fn screen_coordinates(&self) -> ScreenPoint {
+        unimplemented!()
+    }
+
+    fn page_coordinates(&self) -> PagePoint {
+        unimplemented!()
     }
 }

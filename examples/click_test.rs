@@ -7,23 +7,28 @@ fn main() {
 }
 
 fn app() -> Element {
+    let style = 
+            r#"
+                #main, html, body {
+                    max_height: 300px;
+                    height: 300px;
+                }
+            "#;
+
     rsx! {
+        style {
+            "{style}"
+        }
+
         div {
             padding: "10px",
+            max_height: "300px",
             background: "yellow",
-            onmouseenter: |_| println!("onmouseenter outer"),
-            onmouseleave: |_| println!("onmouseleave outer"),
-            onmouseover: |_| println!("onmouseover outer"),
-            onmouseout: |_| println!("onmouseout outer"),
+            overflow: "scroll",
+            onscroll: |e| println!("onscrollouter"),
 
-            div {
-                width: "30px",
-                height: "30px",
-                background: "red",
-                onmouseenter: |_| println!("onmouseenter"),
-                onmouseleave: |_| println!("onmouseleave"),
-                onmouseover: |_| println!("onmouseover"),
-                onmouseout: |_| println!("onmouseout"),
+            input {
+                
             }
         }
     }

@@ -16,7 +16,7 @@ use crate::{
     EventDriver, HtmlParserProvider, Node, NodeData, NoopEventHandler, TextNodeData,
 };
 use blitz_traits::devtools::DevtoolSettings;
-use blitz_traits::events::{DomEvent, HitResult, UiEvent};
+use blitz_traits::events::{BlitzScrollEvent, DomEvent, DomEventData, HitResult, UiEvent};
 use blitz_traits::navigation::{DummyNavigationProvider, NavigationProvider};
 use blitz_traits::net::{DummyNetProvider, NetProvider, Request};
 use blitz_traits::shell::{ColorScheme, DummyShellProvider, ShellProvider, Viewport};
@@ -1135,14 +1135,14 @@ impl BaseDocument {
         Some(CursorIcon::Default)
     }
 
-    pub fn scroll_node_by(&mut self, node_id: usize, x: f64, y: f64) {
-        self.scroll_node_by_has_changed(node_id, x, y);
+    pub fn scroll_node_by<F: FnMut(DomEvent)>(&mut self, node_id: usize, x: f64, y: f64, dispatch_event: F) {
+        self.scroll_node_by_has_changed(node_id, x, y, dispatch_event);
     }
 
     /// Scroll a node by given x and y
     /// Will bubble scrolling up to parent node once it can no longer scroll further
     /// If we're already at the root node, bubbles scrolling up to the viewport
-    pub fn scroll_node_by_has_changed(&mut self, node_id: usize, x: f64, y: f64) -> bool {
+    pub fn scroll_node_by_has_changed<F: FnMut(DomEvent)>(&mut self, node_id: usize, x: f64, y: f64, mut dispatch_event: F) -> bool {
         let Some(node) = self.nodes.get_mut(node_id) else {
             return false;
         };
@@ -1176,7 +1176,7 @@ impl BaseDocument {
         // Handle sub document case
         if let Some(sub_doc) = node.subdoc_mut() {
             let has_changed = if let Some(hover_node_id) = sub_doc.get_hover_node_id() {
-                sub_doc.scroll_node_by_has_changed(hover_node_id, x, y)
+                sub_doc.scroll_node_by_has_changed(hover_node_id, x, y, dispatch_event)
             } else {
                 sub_doc.scroll_viewport_by_has_changed(x, y)
             };
@@ -1212,9 +1212,23 @@ impl BaseDocument {
 
         let has_changed = node.scroll_offset != initial;
 
+        if has_changed {
+            let layout = node.final_layout;
+            let event = BlitzScrollEvent {
+                scroll_top: node.scroll_offset.y,
+                scroll_left: node.scroll_offset.x,
+                scroll_width: layout.scroll_width() as i32,
+                scroll_height: layout.scroll_height() as i32,
+                client_width: layout.size.width as i32,
+                client_height: layout.size.height as i32,
+            };
+
+            dispatch_event(DomEvent::new(node_id, DomEventData::Scroll(event)));
+        }
+
         if bubble_x != 0.0 || bubble_y != 0.0 {
             if let Some(parent) = node.parent {
-                return self.scroll_node_by_has_changed(parent, bubble_x, bubble_y) | has_changed;
+                return self.scroll_node_by_has_changed(parent, bubble_x, bubble_y, dispatch_event) | has_changed;
             } else {
                 return self.scroll_viewport_by_has_changed(bubble_x, bubble_y) | has_changed;
             }

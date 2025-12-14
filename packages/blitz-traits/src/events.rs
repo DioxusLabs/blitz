@@ -50,6 +50,7 @@ pub enum UiEvent {
     MouseMove(BlitzMouseButtonEvent),
     MouseUp(BlitzMouseButtonEvent),
     MouseDown(BlitzMouseButtonEvent),
+    Wheel(BlitzWheelEvent),
     KeyUp(BlitzKeyEvent),
     KeyDown(BlitzKeyEvent),
     Ime(BlitzImeEvent),
@@ -103,6 +104,8 @@ pub enum DomEventKind {
     MouseLeave,
     MouseOver,
     MouseOut,
+    Scroll,
+    Wheel,
     Click,
     ContextMenu,
     DoubleClick,
@@ -128,6 +131,8 @@ impl FromStr for DomEventKind {
             "mouseleave" => Ok(Self::MouseLeave),
             "mouseover" => Ok(Self::MouseOver),
             "mouseout" => Ok(Self::MouseOut),
+            "scroll" => Ok(Self::Scroll),
+            "wheel" => Ok(Self::Wheel),
             "click" => Ok(Self::Click),
             "contextmenu" => Ok(Self::ContextMenu),
             "dblclick" => Ok(Self::DoubleClick),
@@ -151,6 +156,8 @@ pub enum DomEventData {
     MouseLeave(BlitzMouseButtonEvent),
     MouseOver(BlitzMouseButtonEvent),
     MouseOut(BlitzMouseButtonEvent),
+    Scroll(BlitzScrollEvent),
+    Wheel(BlitzWheelEvent),
     Click(BlitzMouseButtonEvent),
     ContextMenu(BlitzMouseButtonEvent),
     DoubleClick(BlitzMouseButtonEvent),
@@ -180,6 +187,8 @@ impl DomEventData {
             Self::MouseLeave { .. } => "mouseleave",
             Self::MouseOver { .. } => "mouseover",
             Self::MouseOut { .. } => "mouseout",
+            Self::Scroll { .. } => "scroll",
+            Self::Wheel { .. } => "wheel",
             Self::Click { .. } => "click",
             Self::ContextMenu { .. } => "contextmenu",
             Self::DoubleClick { .. } => "dblclick",
@@ -200,6 +209,8 @@ impl DomEventData {
             Self::MouseLeave { .. } => DomEventKind::MouseLeave,
             Self::MouseOver { .. } => DomEventKind::MouseOver,
             Self::MouseOut { .. } => DomEventKind::MouseOut,
+            Self::Scroll { .. } => DomEventKind::Scroll,
+            Self::Wheel { .. } => DomEventKind::Wheel,
             Self::Click { .. } => DomEventKind::Click,
             Self::ContextMenu{ .. } => DomEventKind::ContextMenu,
             Self::DoubleClick{ .. } => DomEventKind::DoubleClick,
@@ -220,6 +231,8 @@ impl DomEventData {
             Self::MouseLeave{ .. } => false,
             Self::MouseOver{ .. } => true,
             Self::MouseOut{ .. } => true,
+            Self::Scroll { .. } => false,
+            Self::Wheel { .. } => true,
             Self::Click { .. } => true,
             Self::ContextMenu{ .. } => true,
             Self::DoubleClick{ .. } => true,
@@ -240,6 +253,8 @@ impl DomEventData {
             Self::MouseLeave{ .. } => false,
             Self::MouseOver{ .. } => true,
             Self::MouseOut{ .. } => true,
+            Self::Scroll { .. } => false,
+            Self::Wheel { .. } => true,
             Self::Click { .. } => true,
             Self::ContextMenu { .. } => true,
             Self::DoubleClick { .. } => true,
@@ -269,6 +284,32 @@ pub struct BlitzMouseButtonEvent {
     pub button: MouseEventButton,
     pub buttons: MouseEventButtons,
     pub mods: Modifiers,
+}
+
+#[derive(Clone, Debug)]
+pub struct BlitzWheelEvent {
+    pub delta: BlitzWheelDelta,
+    pub x: f32,
+    pub y: f32,
+    pub button: MouseEventButton,
+    pub buttons: MouseEventButtons,
+    pub mods: Modifiers, 
+}
+
+#[derive(Clone, Debug)]
+pub enum BlitzWheelDelta {
+    Lines(f64, f64),
+    Pixels(f64, f64) 
+}
+
+#[derive(Clone, Debug)]
+pub struct BlitzScrollEvent {
+    pub scroll_top: f64,
+    pub scroll_left: f64,
+    pub scroll_width: i32,
+    pub scroll_height: i32,
+    pub client_width: i32,
+    pub client_height: i32,
 }
 
 bitflags! {
