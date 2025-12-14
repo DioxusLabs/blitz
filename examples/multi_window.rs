@@ -4,7 +4,11 @@ use blitz_traits::shell::ShellProvider;
 use dioxus::prelude::*;
 use dioxus_native::DioxusNativeProvider;
 use std::sync::Arc;
+use std::time::Duration;
+use dioxus::core::spawn_isomorphic;
 use winit::window::{WindowAttributes, WindowButtons};
+use winit::window::WindowId;
+use winit::window::Window;
 
 fn main() {
     // Demonstrate how to pass custom WindowAttributes (title, size, decorations).
@@ -17,7 +21,8 @@ fn main() {
 
 fn app() -> Element {
     let provider = use_context::<DioxusNativeProvider>();
-    let mut counter = use_signal(|| 0);
+    let mut counter = use_signal(|| 0u32);
+    let spawned_windows = use_signal(|| Vec::<(WindowId, Arc<Window>)>::new());
     rsx! {
         main {
             h1 { "Blitz multi-window" }
@@ -26,14 +31,32 @@ fn app() -> Element {
                 button {
                     onclick: move |_| {
                         let vdom = VirtualDom::new(secondary_window);
+                        let title = format!("window#{}", counter());
                         let attributes = WindowAttributes::default()
-                            .with_title(format!("window#{}", counter))
+                            .with_title(title)
                             .with_inner_size(winit::dpi::LogicalSize::new(400.0, 300.0));
-                        provider.create_document_window(vdom, attributes);
+                        let receiver = provider.create_document_window(vdom, attributes);
+                        let mut spawned_windows = spawned_windows.clone();
+                        spawn(async move {
+                            if let Ok((window_id, window)) = receiver.await {
+                                let mut next = spawned_windows();
+                                next.push((window_id, window));
+                                spawned_windows.set(next);
+                            }
+                        });
                         counter += 1;
                     },
                     "Open secondary window"
                 }
+            }
+
+            h2 { "Spawned windows" }
+            ul {
+                {spawned_windows().into_iter().map(|(id, window)| {
+                    let title = window.title();
+                    let title = if title.is_empty() { String::from("<unsupported>") } else { title };
+                    rsx! { li { "{title} (ID: {id:?})" } }
+                })}
             }
         }
     }

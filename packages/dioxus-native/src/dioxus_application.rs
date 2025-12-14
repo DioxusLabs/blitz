@@ -6,9 +6,11 @@ use dioxus_history::{History, MemoryHistory};
 use std::any::Any;
 use std::rc::Rc;
 use std::sync::Arc;
+use tokio::sync::oneshot;
 use winit::application::ApplicationHandler;
 use winit::event::{StartCause, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, EventLoopProxy};
+use winit::window::Window;
 use winit::window::WindowId;
 
 use blitz_dom::DocumentConfig;
@@ -38,10 +40,6 @@ unsafe impl<T: ?Sized> Sync for OpaquePtr<T> {}
 impl<T: ?Sized> OpaquePtr<T> {
     pub fn from_box(value: Box<T>) -> Self {
         Self(Box::into_raw(value))
-    }
-
-    pub(crate) unsafe fn into_box(self) -> Box<T> {
-        Box::from_raw(self.0)
     }
 }
 
@@ -87,6 +85,12 @@ pub enum DioxusNativeEvent {
     CreateDocumentWindow {
         vdom: UnsafeBox<dioxus_core::VirtualDom>,
         attributes: winit::window::WindowAttributes,
+        reply: Option<UnsafeBox<oneshot::Sender<(WindowId, Arc<Window>)>>>,
+    },
+
+    GetWindow {
+        window_id: WindowId,
+        reply: UnsafeBox<oneshot::Sender<Option<Arc<Window>>>>,
     },
 }
 
@@ -118,11 +122,27 @@ impl DioxusNativeProvider {
         &self,
         vdom: dioxus_core::VirtualDom,
         attributes: winit::window::WindowAttributes,
-    ) {
+    ) -> oneshot::Receiver<(WindowId, Arc<Window>)> {
+        let (sender, receiver) = oneshot::channel();
         let vdom = UnsafeBox::new(Box::new(vdom));
+        let reply = Some(UnsafeBox::new(Box::new(sender)));
         let _ = self.proxy.send_event(BlitzShellEvent::embedder_event(
-            DioxusNativeEvent::CreateDocumentWindow { vdom, attributes },
+            DioxusNativeEvent::CreateDocumentWindow {
+                vdom,
+                attributes,
+                reply,
+            },
         ));
+        receiver
+    }
+
+    pub fn get_window(&self, window_id: WindowId) -> oneshot::Receiver<Option<Arc<Window>>> {
+        let (sender, receiver) = oneshot::channel();
+        let reply = UnsafeBox::new(Box::new(sender));
+        let _ = self.proxy.send_event(BlitzShellEvent::embedder_event(
+            DioxusNativeEvent::GetWindow { window_id, reply },
+        ));
+        receiver
     }
 }
 
@@ -157,14 +177,17 @@ impl DioxusNativeApplication {
         &mut self,
         config: WindowConfig<DioxusNativeWindowRenderer>,
         event_loop: &ActiveEventLoop,
-    ) {
+    ) -> (WindowId, Arc<Window>) {
         let mut window = View::init(config, event_loop, &self.proxy);
         self.inject_window_contexts(&mut window);
 
         window.resume();
 
         let window_id = window.window_id();
+        let window_arc = Arc::clone(&window.window);
         self.inner.windows.insert(window_id, window);
+
+        (window_id, window_arc)
     }
 
     fn inject_window_contexts(&self, window: &mut View<DioxusNativeWindowRenderer>) {
@@ -198,6 +221,7 @@ impl DioxusNativeApplication {
         event_loop: &ActiveEventLoop,
         vdom: UnsafeBox<dioxus_core::VirtualDom>,
         attributes: winit::window::WindowAttributes,
+        reply: Option<UnsafeBox<oneshot::Sender<(WindowId, Arc<Window>)>>>,
     ) {
         let mut vdom = *vdom.into_inner();
 
@@ -236,7 +260,11 @@ impl DioxusNativeApplication {
 
         let renderer = (self.renderer_factory)();
         let config = WindowConfig::with_attributes(doc, renderer, attributes);
-        self._spawn_window(config, event_loop);
+        let (window_id, window_arc) = self._spawn_window(config, event_loop);
+
+        if let Some(reply) = reply {
+            let _ = reply.into_inner().send((window_id, window_arc));
+        }
     }
 
     fn handle_blitz_shell_event(&mut self, event_loop: &ActiveEventLoop, event: DioxusNativeEvent) {
@@ -280,8 +308,21 @@ impl DioxusNativeApplication {
                 }
             }
 
-            DioxusNativeEvent::CreateDocumentWindow { vdom, attributes } => {
-                self.create_window(event_loop, vdom, attributes);
+            DioxusNativeEvent::CreateDocumentWindow {
+                vdom,
+                attributes,
+                reply,
+            } => {
+                self.create_window(event_loop, vdom, attributes, reply);
+            }
+
+            DioxusNativeEvent::GetWindow { window_id, reply } => {
+                let window = self
+                    .inner
+                    .windows
+                    .get(&window_id)
+                    .map(|view| Arc::clone(&view.window));
+                let _ = reply.into_inner().send(window);
             }
 
             // Suppress unused variable warning
