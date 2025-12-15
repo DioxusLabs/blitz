@@ -401,7 +401,6 @@ impl<Rend: WindowRenderer> View<Rend> {
                 };
 
                 self.doc.handle_ui_event(UiEvent::Wheel(event));
-                self.request_redraw();
             }
 
             // File events
