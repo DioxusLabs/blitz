@@ -57,50 +57,40 @@ impl<'doc, Handler: EventHandler> EventDriver<'doc, Handler> {
                 let dom_y = event.y + viewport_scroll.y as f32 / zoom;
                 let changed = self.doc_mut().set_hover_to(dom_x, dom_y);
 
-                let old_chain = hover_node_id.map(|id| self.doc().node_chain(id));
-                let new_chain = self.doc().hover_node_id.map(|id| self.doc().node_chain(id));
-
-                // Find the difference in the node chain of the last hovered objected and the newest
-                let mut chain_diff = 0;
-                if let Some(ref old_chain) = old_chain {
-                    if let Some(ref new_chain) = new_chain {
-                        let old_len = old_chain.len();
-                        let new_len = new_chain.len();
-
-                        for i in 0..(old_len.min(new_len)) {
-                            if old_chain[old_len - i - 1] != new_chain[new_len - i - 1] {
-                                chain_diff = i;
-                            }
-                        }
-                    }
-                }
-
-                if changed {
-                    if let Some(target) = hover_node_id {
-                        self.handle_dom_event(DomEvent::new(target, DomEventData::MouseOut(event.clone())));
-
-                        // Send an mouseleave event to all old elements on the chain
-                        if let Some(ref old_chain) = old_chain {
-                            for i in chain_diff..old_chain.len() {
-                                self.handle_dom_event(DomEvent::new(old_chain[old_chain.len() - i - 1], DomEventData::MouseLeave(event.clone())));
-                            }
-                        }                         
-                    }
-                }
+                let prev_hover_node_id = hover_node_id;
                 hover_node_id = self.doc().hover_node_id;
 
                 if changed {
+                    let mut old_chain = prev_hover_node_id.map(|id| self.doc().node_chain(id)).unwrap_or_default();
+                    let mut new_chain = hover_node_id.map(|id| self.doc().node_chain(id)).unwrap_or_default();
+                    old_chain.reverse();
+                    new_chain.reverse();
+
+                    // Find the difference in the node chain of the last hovered objected and the newest
+                    let old_len = old_chain.len();
+                    let new_len = new_chain.len();
+
+                    let first_difference_index = old_chain.iter().zip(&new_chain).position(|(old, new)| old != new).unwrap_or_else(|| old_len.min(new_len));
+
+                    if let Some(target) = prev_hover_node_id {
+                        self.handle_dom_event(DomEvent::new(target, DomEventData::MouseOut(event.clone())));
+
+                        // Send an mouseleave event to all old elements on the chain
+                        for node_id in old_chain.get(first_difference_index..).unwrap_or(&[]).iter() {
+                            self.handle_dom_event(DomEvent::new(*node_id, DomEventData::MouseLeave(event.clone())));
+                        }
+                    }
+
                     if let Some(target) = hover_node_id {
                         self.handle_dom_event(DomEvent::new(target, DomEventData::MouseOver(event.clone())));
 
                         // Send an mouseenter event to all new elements on the chain
-                        if let Some(ref new_chain) = new_chain {
-                            for i in chain_diff..new_chain.len() {
-                                self.handle_dom_event(DomEvent::new(new_chain[new_chain.len() - i - 1], DomEventData::MouseEnter(event.clone())));
-                            }
+                        for node_id in new_chain.get(first_difference_index..).unwrap_or(&[]).iter() {
+                            self.handle_dom_event(DomEvent::new(*node_id, DomEventData::MouseEnter(event.clone())));
                         }
                     }
                 }
+
             }
             UiEvent::MouseDown(_) => {
                 self.doc_mut().active_node();
