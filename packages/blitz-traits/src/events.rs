@@ -212,8 +212,8 @@ impl DomEventData {
             Self::Scroll { .. } => DomEventKind::Scroll,
             Self::Wheel { .. } => DomEventKind::Wheel,
             Self::Click { .. } => DomEventKind::Click,
-            Self::ContextMenu{ .. } => DomEventKind::ContextMenu,
-            Self::DoubleClick{ .. } => DomEventKind::DoubleClick,
+            Self::ContextMenu { .. } => DomEventKind::ContextMenu,
+            Self::DoubleClick { .. } => DomEventKind::DoubleClick,
             Self::KeyPress { .. } => DomEventKind::KeyPress,
             Self::KeyDown { .. } => DomEventKind::KeyDown,
             Self::KeyUp { .. } => DomEventKind::KeyUp,
@@ -227,15 +227,15 @@ impl DomEventData {
             Self::MouseMove { .. } => true,
             Self::MouseDown { .. } => true,
             Self::MouseUp { .. } => true,
-            Self::MouseEnter{ .. } => false,
-            Self::MouseLeave{ .. } => false,
-            Self::MouseOver{ .. } => true,
-            Self::MouseOut{ .. } => true,
+            Self::MouseEnter { .. } => false,
+            Self::MouseLeave { .. } => false,
+            Self::MouseOver { .. } => true,
+            Self::MouseOut { .. } => true,
             Self::Scroll { .. } => false,
             Self::Wheel { .. } => true,
             Self::Click { .. } => true,
-            Self::ContextMenu{ .. } => true,
-            Self::DoubleClick{ .. } => true,
+            Self::ContextMenu { .. } => true,
+            Self::DoubleClick { .. } => true,
             Self::KeyDown { .. } => true,
             Self::KeyUp { .. } => true,
             Self::KeyPress { .. } => true,
@@ -249,10 +249,10 @@ impl DomEventData {
             Self::MouseMove { .. } => true,
             Self::MouseDown { .. } => true,
             Self::MouseUp { .. } => true,
-            Self::MouseEnter{ .. } => false,
-            Self::MouseLeave{ .. } => false,
-            Self::MouseOver{ .. } => true,
-            Self::MouseOut{ .. } => true,
+            Self::MouseEnter { .. } => false,
+            Self::MouseLeave { .. } => false,
+            Self::MouseOver { .. } => true,
+            Self::MouseOut { .. } => true,
             Self::Scroll { .. } => false,
             Self::Wheel { .. } => true,
             Self::Click { .. } => true,
@@ -293,13 +293,13 @@ pub struct BlitzWheelEvent {
     pub y: f32,
     pub button: MouseEventButton,
     pub buttons: MouseEventButtons,
-    pub mods: Modifiers, 
+    pub mods: Modifiers,
 }
 
 #[derive(Clone, Debug)]
 pub enum BlitzWheelDelta {
     Lines(f64, f64),
-    Pixels(f64, f64) 
+    Pixels(f64, f64),
 }
 
 #[derive(Clone, Debug)]

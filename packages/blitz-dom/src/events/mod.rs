@@ -80,7 +80,7 @@ pub(crate) fn handle_dom_event<F: FnMut(DomEvent)>(
                 mouse_event.y,
                 mouse_event.buttons,
                 mouse_event,
-                dispatch_event
+                dispatch_event,
             );
             if changed {
                 doc.shell_provider.request_redraw();
@@ -112,27 +112,27 @@ pub(crate) fn handle_dom_event<F: FnMut(DomEvent)>(
         }
         DomEventData::ContextMenu(_) => {
             // TODO: Open context menu
-        },
+        }
         DomEventData::DoubleClick(_) => {
             // Do nothing (no default action)
-        },
+        }
         DomEventData::MouseEnter(_) => {
             // Do nothing (no default action)
-        },
+        }
         DomEventData::MouseLeave(_) => {
             // Do nothing (no default action)
-        },
+        }
         DomEventData::MouseOver(_) => {
             // Do nothing (no default action)
-        },
+        }
         DomEventData::MouseOut(_) => {
             // Do nothing (no default action)
-        },
+        }
         DomEventData::Scroll(_) => {
             // Handled elsewhere
-        },
+        }
         DomEventData::Wheel(event) => {
             handle_wheel(doc, target_node_id, event.clone(), dispatch_event);
-        },
+        }
     }
 }

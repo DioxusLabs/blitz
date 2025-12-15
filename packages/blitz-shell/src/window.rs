@@ -7,7 +7,10 @@ use crate::event::{BlitzShellEvent, create_waker};
 use anyrender::WindowRenderer;
 use blitz_dom::Document;
 use blitz_paint::paint_scene;
-use blitz_traits::events::{BlitzMouseButtonEvent, BlitzWheelDelta, BlitzWheelEvent, MouseEventButton, MouseEventButtons, UiEvent};
+use blitz_traits::events::{
+    BlitzMouseButtonEvent, BlitzWheelDelta, BlitzWheelEvent, MouseEventButton, MouseEventButtons,
+    UiEvent,
+};
 use blitz_traits::shell::Viewport;
 use winit::keyboard::PhysicalKey;
 
@@ -388,7 +391,7 @@ impl<Rend: WindowRenderer> View<Rend> {
                     winit::event::MouseScrollDelta::PixelDelta(pos) => BlitzWheelDelta::Pixels(pos.x, pos.y),
                 };
 
-                let event = BlitzWheelEvent { 
+                let event = BlitzWheelEvent {
                     delta: blitz_delta,
                     x: self.mouse_pos.0,
                     y: self.mouse_pos.1,

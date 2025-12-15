@@ -2,7 +2,8 @@ use std::time::{Duration, Instant};
 
 use blitz_traits::{
     events::{
-        BlitzInputEvent, BlitzMouseButtonEvent, BlitzWheelDelta, BlitzWheelEvent, DomEvent, DomEventData, MouseEventButton, MouseEventButtons
+        BlitzInputEvent, BlitzMouseButtonEvent, BlitzWheelDelta, BlitzWheelEvent, DomEvent,
+        DomEventData, MouseEventButton, MouseEventButtons,
     },
     navigation::NavigationOptions,
 };
@@ -17,7 +18,7 @@ pub(crate) fn handle_mousemove<F: FnMut(DomEvent)>(
     y: f32,
     buttons: MouseEventButtons,
     event: &BlitzMouseButtonEvent,
-    mut dispatch_event: F
+    mut dispatch_event: F,
 ) -> bool {
     let mut changed = doc.set_hover_to(x, y);
 
@@ -26,7 +27,10 @@ pub(crate) fn handle_mousemove<F: FnMut(DomEvent)>(
     };
 
     if changed {
-        dispatch_event(DomEvent::new(hit.node_id, DomEventData::MouseEnter(event.clone())));
+        dispatch_event(DomEvent::new(
+            hit.node_id,
+            DomEventData::MouseEnter(event.clone()),
+        ));
     }
 
     if hit.node_id != target {
@@ -153,7 +157,10 @@ pub(crate) fn handle_mouseup<F: FnMut(DomEvent)>(
 
     // Dispatch a context menu event
     if do_click && event.button == MouseEventButton::Secondary {
-        dispatch_event(DomEvent::new(target, DomEventData::ContextMenu(event.clone())));
+        dispatch_event(DomEvent::new(
+            target,
+            DomEventData::ContextMenu(event.clone()),
+        ));
     }
 }
 
@@ -289,12 +296,19 @@ pub(crate) fn handle_click<F: FnMut(DomEvent)>(
     doc.clear_focus();
 
     // Assumed double click time to be less than 500ms, although may be system-dependant?
-    if doc.last_click_time.map(|t| t.elapsed() < Duration::from_millis(500)).unwrap_or(false)  {
+    if doc
+        .last_click_time
+        .map(|t| t.elapsed() < Duration::from_millis(500))
+        .unwrap_or(false)
+    {
         doc.last_click_time = Some(Instant::now());
         doc.click_count += 1;
 
         if doc.click_count == 2 {
-            dispatch_event(DomEvent::new(target, DomEventData::DoubleClick(event.clone())));
+            dispatch_event(DomEvent::new(
+                target,
+                DomEventData::DoubleClick(event.clone()),
+            ));
         }
     } else {
         doc.last_click_time = Some(Instant::now());
@@ -310,7 +324,7 @@ pub(crate) fn handle_wheel<F: FnMut(DomEvent)>(
 ) {
     let (scroll_x, scroll_y) = match event.delta {
         BlitzWheelDelta::Lines(x, y) => (x as f64 * 20.0, y as f64 * 20.0),
-        BlitzWheelDelta::Pixels(x, y) => (x, y)
+        BlitzWheelDelta::Pixels(x, y) => (x, y),
     };
 
     let has_changed = if let Some(hover_node_id) = doc.get_hover_node_id() {
