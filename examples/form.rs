@@ -23,7 +23,7 @@ fn app() -> Element {
                         checked: checkbox_checked(),
                         // This works too
                         // checked: "{checkbox_checked}",
-                        oninput: move |ev| checkbox_checked.set(!ev.checked()),
+                        oninput: move |ev| checkbox_checked.set(ev.checked()),
                     }
                     label {
                         r#for: "check1",
