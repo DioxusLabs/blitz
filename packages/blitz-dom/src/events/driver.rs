@@ -55,8 +55,69 @@ impl<'doc, Handler: EventHandler> EventDriver<'doc, Handler> {
             UiEvent::MouseMove(event) => {
                 let dom_x = event.x + viewport_scroll.x as f32 / zoom;
                 let dom_y = event.y + viewport_scroll.y as f32 / zoom;
-                self.doc_mut().set_hover_to(dom_x, dom_y);
+                let changed = self.doc_mut().set_hover_to(dom_x, dom_y);
+
+                let prev_hover_node_id = hover_node_id;
                 hover_node_id = self.doc().hover_node_id;
+
+                if changed {
+                    let mut old_chain = prev_hover_node_id
+                        .map(|id| self.doc().node_chain(id))
+                        .unwrap_or_default();
+                    let mut new_chain = hover_node_id
+                        .map(|id| self.doc().node_chain(id))
+                        .unwrap_or_default();
+                    old_chain.reverse();
+                    new_chain.reverse();
+
+                    // Find the difference in the node chain of the last hovered objected and the newest
+                    let old_len = old_chain.len();
+                    let new_len = new_chain.len();
+
+                    let first_difference_index = old_chain
+                        .iter()
+                        .zip(&new_chain)
+                        .position(|(old, new)| old != new)
+                        .unwrap_or_else(|| old_len.min(new_len));
+
+                    if let Some(target) = prev_hover_node_id {
+                        self.handle_dom_event(DomEvent::new(
+                            target,
+                            DomEventData::MouseOut(event.clone()),
+                        ));
+
+                        // Send an mouseleave event to all old elements on the chain
+                        for node_id in old_chain
+                            .get(first_difference_index..)
+                            .unwrap_or(&[])
+                            .iter()
+                        {
+                            self.handle_dom_event(DomEvent::new(
+                                *node_id,
+                                DomEventData::MouseLeave(event.clone()),
+                            ));
+                        }
+                    }
+
+                    if let Some(target) = hover_node_id {
+                        self.handle_dom_event(DomEvent::new(
+                            target,
+                            DomEventData::MouseOver(event.clone()),
+                        ));
+
+                        // Send an mouseenter event to all new elements on the chain
+                        for node_id in new_chain
+                            .get(first_difference_index..)
+                            .unwrap_or(&[])
+                            .iter()
+                        {
+                            self.handle_dom_event(DomEvent::new(
+                                *node_id,
+                                DomEventData::MouseEnter(event.clone()),
+                            ));
+                        }
+                    }
+                }
             }
             UiEvent::MouseDown(_) => {
                 self.doc_mut().active_node();
@@ -72,6 +133,7 @@ impl<'doc, Handler: EventHandler> EventDriver<'doc, Handler> {
             UiEvent::MouseMove(_) => hover_node_id,
             UiEvent::MouseUp(_) => hover_node_id,
             UiEvent::MouseDown(_) => hover_node_id,
+            UiEvent::Wheel(_) => hover_node_id,
             UiEvent::KeyUp(_) => focussed_node_id,
             UiEvent::KeyDown(_) => focussed_node_id,
             UiEvent::Ime(_) => focussed_node_id,
@@ -93,6 +155,7 @@ impl<'doc, Handler: EventHandler> EventDriver<'doc, Handler> {
                 y: data.y + viewport_scroll.y as f32 / zoom,
                 ..data
             }),
+            UiEvent::Wheel(data) => DomEventData::Wheel(data),
             UiEvent::KeyUp(data) => DomEventData::KeyUp(data),
             UiEvent::KeyDown(data) => DomEventData::KeyDown(data),
             UiEvent::Ime(data) => DomEventData::Ime(data),
