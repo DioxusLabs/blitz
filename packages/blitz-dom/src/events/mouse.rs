@@ -323,7 +323,7 @@ pub(crate) fn handle_wheel<F: FnMut(DomEvent)>(
     dispatch_event: F,
 ) {
     let (scroll_x, scroll_y) = match event.delta {
-        BlitzWheelDelta::Lines(x, y) => (x as f64 * 20.0, y as f64 * 20.0),
+        BlitzWheelDelta::Lines(x, y) => (x * 20.0, y * 20.0),
         BlitzWheelDelta::Pixels(x, y) => (x, y),
     };
 
