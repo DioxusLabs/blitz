@@ -336,7 +336,6 @@ impl<Rend: WindowRenderer> View<Rend> {
                 };
 
                 self.doc.handle_ui_event(event);
-                self.request_redraw();
             }
 
 

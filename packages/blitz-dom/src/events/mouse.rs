@@ -289,11 +289,16 @@ pub(crate) fn handle_click<F: FnMut(DomEvent)>(
     doc.clear_focus();
 
     // Assumed double click time to be less than 500ms, although may be system-dependant?
-    if doc.dbl_click_first_time.map(|t| t.elapsed() < Duration::from_millis(500)).unwrap_or(false)  {
-        dispatch_event(DomEvent::new(target, DomEventData::DoubleClick(event.clone())));
-        doc.dbl_click_first_time = None;
+    if doc.last_click_time.map(|t| t.elapsed() < Duration::from_millis(500)).unwrap_or(false)  {
+        doc.last_click_time = Some(Instant::now());
+        doc.click_count += 1;
+
+        if doc.click_count == 2 {
+            dispatch_event(DomEvent::new(target, DomEventData::DoubleClick(event.clone())));
+        }
     } else {
-        doc.dbl_click_first_time = Some(Instant::now());
+        doc.last_click_time = Some(Instant::now());
+        doc.click_count = 1;
     }
 }
 
@@ -308,9 +313,13 @@ pub(crate) fn handle_wheel<F: FnMut(DomEvent)>(
         BlitzWheelDelta::Pixels(x, y) => (x, y)
     };
 
-    let _has_changed = if let Some(hover_node_id) = doc.get_hover_node_id() {
+    let has_changed = if let Some(hover_node_id) = doc.get_hover_node_id() {
         doc.scroll_node_by_has_changed(hover_node_id, scroll_x, scroll_y, dispatch_event)
     } else {
         doc.scroll_viewport_by_has_changed(scroll_x, scroll_y)
     };
+
+    if has_changed {
+        doc.shell_provider.request_redraw();
+    }
 }

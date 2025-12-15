@@ -1,6 +1,6 @@
 use crate::{BaseDocument, DocumentMutator};
 use blitz_traits::events::{BlitzMouseButtonEvent, DomEvent, DomEventData, EventState, UiEvent};
-use std::collections::VecDeque;
+use std::{collections::VecDeque};
 
 pub trait EventHandler {
     fn handle_event(
@@ -56,17 +56,49 @@ impl<'doc, Handler: EventHandler> EventDriver<'doc, Handler> {
                 let dom_x = event.x + viewport_scroll.x as f32 / zoom;
                 let dom_y = event.y + viewport_scroll.y as f32 / zoom;
                 let changed = self.doc_mut().set_hover_to(dom_x, dom_y);
+
+                let old_chain = hover_node_id.map(|id| self.doc().node_chain(id));
+                let new_chain = self.doc().hover_node_id.map(|id| self.doc().node_chain(id));
+
+                // Find the difference in the node chain of the last hovered objected and the newest
+                let mut chain_diff = 0;
+                if let Some(ref old_chain) = old_chain {
+                    if let Some(ref new_chain) = new_chain {
+                        let old_len = old_chain.len();
+                        let new_len = new_chain.len();
+
+                        for i in 0..(old_len.min(new_len)) {
+                            if old_chain[old_len - i - 1] != new_chain[new_len - i - 1] {
+                                chain_diff = i;
+                            }
+                        }
+                    }
+                }
+
                 if changed {
                     if let Some(target) = hover_node_id {
                         self.handle_dom_event(DomEvent::new(target, DomEventData::MouseOut(event.clone())));
-                        self.handle_dom_event(DomEvent::new(target, DomEventData::MouseLeave(event.clone())));
+
+                        // Send an mouseleave event to all old elements on the chain
+                        if let Some(ref old_chain) = old_chain {
+                            for i in chain_diff..old_chain.len() {
+                                self.handle_dom_event(DomEvent::new(old_chain[old_chain.len() - i - 1], DomEventData::MouseLeave(event.clone())));
+                            }
+                        }                         
                     }
                 }
                 hover_node_id = self.doc().hover_node_id;
+
                 if changed {
                     if let Some(target) = hover_node_id {
                         self.handle_dom_event(DomEvent::new(target, DomEventData::MouseOver(event.clone())));
-                        self.handle_dom_event(DomEvent::new(target, DomEventData::MouseEnter(event.clone())));
+
+                        // Send an mouseenter event to all new elements on the chain
+                        if let Some(ref new_chain) = new_chain {
+                            for i in chain_diff..new_chain.len() {
+                                self.handle_dom_event(DomEvent::new(new_chain[new_chain.len() - i - 1], DomEventData::MouseEnter(event.clone())));
+                            }
+                        }
                     }
                 }
             }
