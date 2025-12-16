@@ -68,51 +68,53 @@ fn app() -> Element {
         }
     };
 
-    rsx!(body {
-        style { {include_str!("./todomvc.css")} }
-        section { class: "todoapp",
-            TodoHeader { todos }
-            section { class: "main",
-                if !todos.read().is_empty() {
-                    input {
-                        id: "toggle-all",
-                        class: "toggle-all",
-                        r#type: "checkbox",
-                        onchange: toggle_all,
-                        checked: active_todo_count() == 0
+    rsx!(
+        body {
+            style { {include_str!("./todomvc.css")} }
+            section { class: "todoapp",
+                TodoHeader { todos }
+                section { class: "main",
+                    if !todos.read().is_empty() {
+                        input {
+                            id: "toggle-all",
+                            class: "toggle-all",
+                            r#type: "checkbox",
+                            onchange: toggle_all,
+                            checked: active_todo_count() == 0,
+                        }
+                        label { r#for: "toggle-all" }
                     }
-                    label { r#for: "toggle-all" }
-                }
 
-                // Render the todos using the filtered_todos signal
-                // We pass the ID into the TodoEntry component so it can access the todo from the todos signal.
-                // Since we store the todos in a signal too, we also need to send down the todo list
-                ul { class: "todo-list",
-                    for id in filtered_todos() {
-                        TodoEntry { key: "{id}", id, todos }
+                    // Render the todos using the filtered_todos signal
+                    // We pass the ID into the TodoEntry component so it can access the todo from the todos signal.
+                    // Since we store the todos in a signal too, we also need to send down the todo list
+                    ul { class: "todo-list",
+                        for id in filtered_todos() {
+                            TodoEntry { key: "{id}", id, todos }
+                        }
+                    }
+
+                    // We only show the footer if there are todos.
+                    if !todos.read().is_empty() {
+                        ListFooter { active_todo_count, todos, filter }
                     }
                 }
+            }
 
-                // We only show the footer if there are todos.
-                if !todos.read().is_empty() {
-                    ListFooter { active_todo_count, todos, filter }
+            // A simple info footer
+            footer { class: "info",
+                p { "Double-click to edit a todo" }
+                p {
+                    "Created by "
+                    a { href: "http://github.com/jkelleyrtp/", "jkelleyrtp" }
+                }
+                p {
+                    "Part of "
+                    a { href: "http://todomvc.com", "TodoMVC" }
                 }
             }
         }
-
-        // A simple info footer
-        footer { class: "info",
-            p { "Double-click to edit a todo" }
-            p {
-                "Created by "
-                a { href: "http://github.com/jkelleyrtp/", "jkelleyrtp" }
-            }
-            p {
-                "Part of "
-                a { href: "http://todomvc.com", "TodoMVC" }
-            }
-        }
-    })
+    )
 }
 
 #[component]
@@ -145,7 +147,7 @@ fn TodoHeader(mut todos: Signal<HashMap<u32, TodoItem>>) -> Element {
                 value: "{draft}",
                 autofocus: "true",
                 oninput: move |evt| draft.set(evt.value()),
-                onkeydown
+                onkeydown,
             }
         }
     }
@@ -210,7 +212,7 @@ fn TodoEntry(mut todos: Signal<HashMap<u32, TodoItem>>, id: u32) -> Element {
                             evt.prevent_default();
                             is_editing.set(false);
                         }
-                    }
+                    },
                 }
             }
         }
@@ -235,7 +237,7 @@ fn ListFooter(
                     match active_todo_count() {
                         1 => "item",
                         _ => "items",
-                    },
+                    }
                     " left"
                 }
             }
@@ -244,7 +246,8 @@ fn ListFooter(
                     (FilterState::All, "All", "#/"),
                     (FilterState::Active, "Active", "#/active"),
                     (FilterState::Completed, "Completed", "#/completed"),
-                ] {
+                ]
+                {
                     li {
                         a {
                             href: url,

@@ -16,7 +16,15 @@ fn app() -> Element {
             style { {CSS} }
             div {
                 h2 { "justify-content" }
-                for row in ["flex-start", "flex-end", "center", "space-between", "space-around", "space-evenly"] {
+                for row in [
+                    "flex-start",
+                    "flex-end",
+                    "center",
+                    "space-between",
+                    "space-around",
+                    "space-evenly",
+                ]
+                {
                     h3 { "{row}" }
                     div { id: "container", justify_content: "{row}",
                         div { class: "floater", "__1__" }
@@ -25,9 +33,8 @@ fn app() -> Element {
                     }
                 }
             }
-            h3 { "CSS Grid Test"}
-            div {
-                id: "grid_container",
+            h3 { "CSS Grid Test" }
+            div { id: "grid_container",
                 for _ in 0..3 {
                     div { class: "floater", "__1__" }
                     div { class: "floater", "__2__" }

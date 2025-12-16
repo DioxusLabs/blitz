@@ -7,8 +7,7 @@ fn main() {
 fn app() -> Element {
     rsx! {
         style { {CSS} }
-        div {
-            class: "grid-container",
+        div { class: "grid-container",
             div { id: "a1" }
             div { id: "a2" }
             div { id: "a3" }

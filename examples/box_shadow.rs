@@ -8,18 +8,9 @@ fn app() -> Element {
     rsx! {
         div {
             style { {CSS} }
-            div {
-                id: "box-shadow-1",
-                class: "box-shadow",
-            }
-            div {
-                id: "box-shadow-2",
-                class: "box-shadow",
-            }
-            div {
-                id: "box-shadow-3",
-                class: "box-shadow",
-            }
+            div { id: "box-shadow-1", class: "box-shadow" }
+            div { id: "box-shadow-2", class: "box-shadow" }
+            div { id: "box-shadow-3", class: "box-shadow" }
         }
     }
 }

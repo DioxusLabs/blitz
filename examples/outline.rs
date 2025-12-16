@@ -14,9 +14,7 @@ fn app() -> Element {
         div { "padd           " }
         div { "padd           " }
         div { "padd           " }
-        div {
-            class: "colorful",
-            id: "a",
+        div { class: "colorful", id: "a",
             div { "Dioxus12312312312321" }
             div { "Dioxus12312312312321" }
             div { "Dioxus12312312312321" }

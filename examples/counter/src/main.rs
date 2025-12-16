@@ -9,8 +9,7 @@ fn app() -> Element {
     let mut count = use_signal(|| 0);
 
     rsx! {
-        div {
-            class: "container",
+        div { class: "container",
             style { {CSS} }
             h1 { class: "header", "Count: {count}" }
             div { class: "buttons",

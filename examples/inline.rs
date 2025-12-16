@@ -43,22 +43,10 @@ fn app() -> Element {
             ul {
                 li { "Item 1" }
                 li { "Item 2" }
-                li {
-                    class: "square",
-                    "Square item"
-                }
-                li {
-                    class: "circle",
-                    "Circle item"
-                }
-                li {
-                    class: "disclosure-open",
-                    "Disclosure open item"
-                }
-                li {
-                    class: "disclosure-closed",
-                    "Disclosure closed item"
-                }
+                li { class: "square", "Square item" }
+                li { class: "circle", "Circle item" }
+                li { class: "disclosure-open", "Disclosure open item" }
+                li { class: "disclosure-closed", "Disclosure closed item" }
             }
             h1 { "ol - decimal" }
             ol {
