@@ -15,7 +15,7 @@ use crate::{BaseDocument, events::mouse::handle_wheel};
 pub(crate) fn handle_dom_event<F: FnMut(DomEvent)>(
     doc: &mut BaseDocument,
     event: &mut DomEvent,
-    dispatch_event: F,
+    mut dispatch_event: F,
 ) {
     let target_node_id = event.target;
 
@@ -87,13 +87,13 @@ pub(crate) fn handle_dom_event<F: FnMut(DomEvent)>(
             }
         }
         DomEventData::MouseDown(event) => {
-            handle_mousedown(doc, target_node_id, event.x, event.y);
+            handle_mousedown(doc, target_node_id, event.x, event.y, event.mods);
         }
         DomEventData::MouseUp(event) => {
             handle_mouseup(doc, target_node_id, event, dispatch_event);
         }
         DomEventData::Click(event) => {
-            handle_click(doc, target_node_id, event, dispatch_event);
+            handle_click(doc, target_node_id, event, &mut dispatch_event);
         }
         DomEventData::KeyDown(event) => {
             handle_keypress(doc, target_node_id, event.clone(), dispatch_event);
