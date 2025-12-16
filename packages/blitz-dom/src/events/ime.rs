@@ -22,6 +22,7 @@ pub(crate) fn handle_ime_event<F: FnMut(DomEvent)>(
                 BlitzImeEvent::Enabled => { /* Do nothing */ }
                 BlitzImeEvent::Disabled => {
                     driver.clear_compose();
+                    doc.shell_provider.request_redraw();
                 }
                 BlitzImeEvent::Commit(text) => {
                     driver.insert_or_replace_selection(&text);
@@ -30,6 +31,7 @@ pub(crate) fn handle_ime_event<F: FnMut(DomEvent)>(
                         node_id,
                         DomEventData::Input(BlitzInputEvent { value }),
                     ));
+                    doc.shell_provider.request_redraw();
                 }
                 BlitzImeEvent::Preedit(text, cursor) => {
                     if text.is_empty() {
@@ -37,6 +39,7 @@ pub(crate) fn handle_ime_event<F: FnMut(DomEvent)>(
                     } else {
                         driver.set_compose(&text, cursor);
                     }
+                    doc.shell_provider.request_redraw();
                 }
             }
             println!("Sent ime event to {node_id}");

@@ -13,6 +13,7 @@ use parley::{FontContext, LayoutContext};
 // TODO: support keypress events
 enum GeneratedEvent {
     Input,
+    Select,
     Submit,
 }
 
@@ -54,6 +55,10 @@ pub(crate) fn handle_keypress<F: FnMut(DomEvent)>(
                             node_id,
                             DomEventData::Input(BlitzInputEvent { value }),
                         ));
+                        doc.shell_provider.request_redraw();
+                    }
+                    GeneratedEvent::Select => {
+                        doc.shell_provider.request_redraw();
                     }
                     GeneratedEvent::Submit => {
                         // TODO: Generate submit event that can be handled by script
@@ -118,6 +123,7 @@ fn apply_keypress_event(
             } else {
                 driver.select_all()
             }
+            return Some(GeneratedEvent::Select);
         }
         Key::ArrowLeft => {
             if action_mod {
@@ -131,6 +137,7 @@ fn apply_keypress_event(
             } else {
                 driver.move_left()
             }
+            return Some(GeneratedEvent::Select);
         }
         Key::ArrowRight => {
             if action_mod {
@@ -144,6 +151,7 @@ fn apply_keypress_event(
             } else {
                 driver.move_right()
             }
+            return Some(GeneratedEvent::Select);
         }
         Key::ArrowUp => {
             if shift {
@@ -151,6 +159,7 @@ fn apply_keypress_event(
             } else {
                 driver.move_up()
             }
+            return Some(GeneratedEvent::Select);
         }
         Key::ArrowDown => {
             if shift {
@@ -158,6 +167,7 @@ fn apply_keypress_event(
             } else {
                 driver.move_down()
             }
+            return Some(GeneratedEvent::Select);
         }
         Key::Home => {
             if action_mod {
@@ -171,6 +181,7 @@ fn apply_keypress_event(
             } else {
                 driver.move_to_line_start()
             }
+            return Some(GeneratedEvent::Select);
         }
         Key::End => {
             if action_mod {
@@ -184,6 +195,7 @@ fn apply_keypress_event(
             } else {
                 driver.move_to_line_end()
             }
+            return Some(GeneratedEvent::Select);
         }
         Key::Delete => {
             if action_mod {
@@ -204,6 +216,7 @@ fn apply_keypress_event(
         Key::Enter => {
             if is_multiline {
                 driver.insert_or_replace_selection("\n");
+                return Some(GeneratedEvent::Input);
             } else {
                 return Some(GeneratedEvent::Submit);
             }
