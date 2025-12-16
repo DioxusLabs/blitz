@@ -116,8 +116,8 @@ pub struct NativeFormData {
 }
 
 impl HasFormData for NativeFormData {
-    fn as_any(&self) -> &dyn std::any::Any {
-        self as &dyn std::any::Any
+    fn as_any(&self) -> &dyn Any {
+        self as &dyn Any
     }
 
     fn value(&self) -> String {
@@ -169,7 +169,7 @@ impl HasKeyboardData for BlitzKeyboardData {
         self.0.is_composing
     }
 
-    fn as_any(&self) -> &dyn std::any::Any {
+    fn as_any(&self) -> &dyn Any {
         self as &dyn Any
     }
 }
@@ -220,24 +220,24 @@ impl PointerInteraction for NativeClickData {
     }
 }
 impl HasMouseData for NativeClickData {
-    fn as_any(&self) -> &dyn std::any::Any {
-        self as &dyn std::any::Any
+    fn as_any(&self) -> &dyn Any {
+        self as &dyn Any
     }
 }
 
 #[derive(Clone)]
 pub struct NativeFocusData {}
 impl HasFocusData for NativeFocusData {
-    fn as_any(&self) -> &dyn std::any::Any {
-        self as &dyn std::any::Any
+    fn as_any(&self) -> &dyn Any {
+        self as &dyn Any
     }
 }
 
 #[derive(Clone)]
 pub struct NativeScrollData(pub(crate) BlitzScrollEvent);
 impl HasScrollData for NativeScrollData {
-    fn as_any(&self) -> &dyn std::any::Any {
-        self as &dyn std::any::Any
+    fn as_any(&self) -> &dyn Any {
+        self as &dyn Any
     }
 
     fn scroll_top(&self) -> f64 {
@@ -268,8 +268,8 @@ impl HasScrollData for NativeScrollData {
 #[derive(Clone)]
 pub struct NativeWheelData(pub(crate) BlitzWheelEvent);
 impl HasWheelData for NativeWheelData {
-    fn as_any(&self) -> &dyn std::any::Any {
-        self as &dyn std::any::Any
+    fn as_any(&self) -> &dyn Any {
+        self as &dyn Any
     }
 
     fn delta(&self) -> dioxus_html::geometry::WheelDelta {
@@ -285,8 +285,8 @@ impl HasWheelData for NativeWheelData {
 }
 
 impl HasMouseData for NativeWheelData {
-    fn as_any(&self) -> &dyn std::any::Any {
-        self as &dyn std::any::Any
+    fn as_any(&self) -> &dyn Any {
+        self as &dyn Any
     }
 }
 
