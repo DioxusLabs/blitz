@@ -114,6 +114,10 @@ pub enum DomEventKind {
     KeyUp,
     Input,
     Ime,
+    Focus,
+    Blur,
+    FocusIn,
+    FocusOut,
 }
 impl DomEventKind {
     pub fn discriminant(self) -> u8 {
@@ -141,6 +145,10 @@ impl FromStr for DomEventKind {
             "keyup" => Ok(Self::KeyUp),
             "input" => Ok(Self::Input),
             "composition" => Ok(Self::Ime),
+            "focus" => Ok(Self::Focus),
+            "blur" => Ok(Self::Blur),
+            "focusin" => Ok(Self::FocusIn),
+            "focusout" => Ok(Self::FocusOut),
             _ => Err(()),
         }
     }
@@ -166,6 +174,10 @@ pub enum DomEventData {
     KeyUp(BlitzKeyEvent),
     Input(BlitzInputEvent),
     Ime(BlitzImeEvent),
+    Focus(BlitzFocusEvent),
+    Blur(BlitzFocusEvent),
+    FocusIn(BlitzFocusEvent),
+    FocusOut(BlitzFocusEvent),
 }
 impl DomEventData {
     pub fn discriminant(&self) -> u8 {
@@ -197,6 +209,10 @@ impl DomEventData {
             Self::KeyUp { .. } => "keyup",
             Self::Input { .. } => "input",
             Self::Ime { .. } => "composition",
+            Self::Focus { .. } => "focus",
+            Self::Blur { .. } => "blur",
+            Self::FocusIn { .. } => "focusin",
+            Self::FocusOut { .. } => "focusout",
         }
     }
 
@@ -219,6 +235,10 @@ impl DomEventData {
             Self::KeyUp { .. } => DomEventKind::KeyUp,
             Self::Input { .. } => DomEventKind::Input,
             Self::Ime { .. } => DomEventKind::Ime,
+            Self::Focus { .. } => DomEventKind::Focus,
+            Self::Blur { .. } => DomEventKind::Blur,
+            Self::FocusIn { .. } => DomEventKind::FocusIn,
+            Self::FocusOut { .. } => DomEventKind::FocusOut,
         }
     }
 
@@ -241,6 +261,10 @@ impl DomEventData {
             Self::KeyPress { .. } => true,
             Self::Ime { .. } => true,
             Self::Input { .. } => false,
+            Self::Focus { .. } => false,
+            Self::Blur { .. } => false,
+            Self::FocusIn { .. } => false,
+            Self::FocusOut { .. } => false,
         }
     }
 
@@ -263,6 +287,10 @@ impl DomEventData {
             Self::KeyPress { .. } => true,
             Self::Ime { .. } => true,
             Self::Input { .. } => true,
+            Self::Focus { .. } => false,
+            Self::Blur { .. } => false,
+            Self::FocusIn { .. } => true,
+            Self::FocusOut { .. } => true,
         }
     }
 }
@@ -399,6 +427,9 @@ pub struct BlitzKeyEvent {
 pub struct BlitzInputEvent {
     pub value: String,
 }
+
+#[derive(Clone, Debug)]
+pub struct BlitzFocusEvent;
 
 /// Copy of Winit IME event to avoid lower-level Blitz crates depending on winit
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]

@@ -12,6 +12,8 @@ use markup5ever::local_name;
 
 use crate::{BaseDocument, node::SpecialElementData};
 
+use super::focus::generate_focus_events;
+
 pub(crate) fn handle_mousemove<F: FnMut(DomEvent)>(
     doc: &mut BaseDocument,
     target: usize,
@@ -86,6 +88,7 @@ pub(crate) fn handle_mousedown(
     x: f32,
     y: f32,
     mods: Modifiers,
+    dispatch_event: &mut dyn FnMut(DomEvent),
 ) {
     let Some(hit) = doc.hit(x, y) else {
         return;
@@ -152,7 +155,13 @@ pub(crate) fn handle_mousedown(
         }
 
         drop(font_ctx);
-        doc.set_focus_to(hit.node_id);
+        generate_focus_events(
+            doc,
+            &mut |doc| {
+                doc.set_focus_to(hit.node_id);
+            },
+            dispatch_event,
+        );
     }
 }
 
@@ -235,7 +244,13 @@ pub(crate) fn handle_click(
                         node_id,
                         DomEventData::Input(BlitzInputEvent { value }),
                     ));
-                    doc.set_focus_to(node_id);
+                    generate_focus_events(
+                        doc,
+                        &mut |doc| {
+                            doc.set_focus_to(node_id);
+                        },
+                        dispatch_event,
+                    );
                     break 'matched true;
                 }
                 local_name!("input") if el.attr(local_name!("type")) == Some("radio") => {
@@ -249,7 +264,13 @@ pub(crate) fn handle_click(
                         DomEventData::Input(BlitzInputEvent { value }),
                     ));
 
-                    BaseDocument::set_focus_to(doc, node_id);
+                    generate_focus_events(
+                        doc,
+                        &mut |doc| {
+                            doc.set_focus_to(node_id);
+                        },
+                        dispatch_event,
+                    );
 
                     break 'matched true;
                 }
@@ -336,7 +357,7 @@ pub(crate) fn handle_click(
 
     // If nothing is matched then clear focus
     if !matched {
-        doc.clear_focus();
+        generate_focus_events(doc, &mut |doc| doc.clear_focus(), dispatch_event);
     }
 
     // Assumed double click time to be less than 500ms, although may be system-dependant?

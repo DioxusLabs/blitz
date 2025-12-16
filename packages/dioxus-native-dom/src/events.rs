@@ -226,7 +226,7 @@ impl HasMouseData for NativeClickData {
 }
 
 #[derive(Clone)]
-pub struct NativeFocusData {}
+pub struct NativeFocusData;
 impl HasFocusData for NativeFocusData {
     fn as_any(&self) -> &dyn Any {
         self as &dyn Any

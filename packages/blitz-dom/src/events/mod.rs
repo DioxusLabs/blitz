@@ -1,4 +1,5 @@
 mod driver;
+mod focus;
 mod ime;
 mod keyboard;
 mod mouse;
@@ -57,6 +58,10 @@ pub(crate) fn handle_dom_event<F: FnMut(DomEvent)>(
             DomEventData::Input(_) => None,
             DomEventData::Wheel(data) => Some(UiEvent::Wheel(data)),
             DomEventData::Scroll(_) => None,
+            DomEventData::Focus(_) => None,
+            DomEventData::Blur(_) => None,
+            DomEventData::FocusIn(_) => None,
+            DomEventData::FocusOut(_) => None,
         };
 
         if let Some(ui_event) = ui_event {
@@ -87,7 +92,14 @@ pub(crate) fn handle_dom_event<F: FnMut(DomEvent)>(
             }
         }
         DomEventData::MouseDown(event) => {
-            handle_mousedown(doc, target_node_id, event.x, event.y, event.mods);
+            handle_mousedown(
+                doc,
+                target_node_id,
+                event.x,
+                event.y,
+                event.mods,
+                &mut dispatch_event,
+            );
         }
         DomEventData::MouseUp(event) => {
             handle_mouseup(doc, target_node_id, event, dispatch_event);
@@ -133,6 +145,18 @@ pub(crate) fn handle_dom_event<F: FnMut(DomEvent)>(
         }
         DomEventData::Wheel(event) => {
             handle_wheel(doc, target_node_id, event.clone(), dispatch_event);
+        }
+        DomEventData::Focus(_) => {
+            // Do nothing (no default action)
+        }
+        DomEventData::Blur(_) => {
+            // Do nothing (no default action)
+        }
+        DomEventData::FocusIn(_) => {
+            // Do nothing (no default action)
+        }
+        DomEventData::FocusOut(_) => {
+            // Do nothing (no default action)
         }
     }
 }
