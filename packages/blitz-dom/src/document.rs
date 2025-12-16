@@ -159,6 +159,8 @@ pub struct BaseDocument {
     pub(crate) mousedown_node_id: Option<usize>,
     /// The last time a click was made
     pub(crate) last_click_time: Option<Instant>,
+    /// The position of the cursor when the last click was made
+    pub(crate) last_click_position: taffy::Point<f32>,
     /// How many clicks have been made in quick succession
     pub(crate) click_count: u16,
 
@@ -321,6 +323,7 @@ impl BaseDocument {
             shell_provider,
             html_parser_provider,
             last_click_time: None,
+            last_click_position: taffy::Point::ZERO,
             click_count: 0,
         };
 

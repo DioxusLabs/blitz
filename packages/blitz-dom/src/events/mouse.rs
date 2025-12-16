@@ -118,20 +118,21 @@ pub(crate) fn handle_mousedown(
             content_box_offset.y += y_offset;
         }
 
-        let x = (hit.x - content_box_offset.x) as f64 * doc.viewport.scale_f64();
-        let y = (hit.y - content_box_offset.y) as f64 * doc.viewport.scale_f64();
-
         // TODO: Only increment click count if click maps to the same/similar caret position as the previous click
         let click_count = if doc
             .last_click_time
             .map(|t| t.elapsed() < Duration::from_millis(500))
             .unwrap_or(false)
+            && (doc.last_click_position.x - x).abs() <= 2.0
+            && (doc.last_click_position.y - y).abs() <= 2.0
         {
-            // Add 1 to doc.click_count because the click count hasn't yet been updated in the mousedown event
             doc.click_count + 1
         } else {
             1
         };
+
+        let x = (hit.x - content_box_offset.x) as f64 * doc.viewport.scale_f64();
+        let y = (hit.y - content_box_offset.y) as f64 * doc.viewport.scale_f64();
 
         let mut font_ctx = doc.font_ctx.lock().unwrap();
         let mut driver = text_input_data
@@ -343,6 +344,8 @@ pub(crate) fn handle_click(
         .last_click_time
         .map(|t| t.elapsed() < Duration::from_millis(500))
         .unwrap_or(false)
+        && (doc.last_click_position.x - event.x).abs() <= 2.0
+        && (doc.last_click_position.y - event.y).abs() <= 2.0
     {
         doc.last_click_time = Some(Instant::now());
         doc.click_count += 1;
@@ -357,6 +360,9 @@ pub(crate) fn handle_click(
         doc.last_click_time = Some(Instant::now());
         doc.click_count = 1;
     }
+
+    doc.last_click_position.x = event.x;
+    doc.last_click_position.y = event.y;
 }
 
 pub(crate) fn handle_wheel<F: FnMut(DomEvent)>(
