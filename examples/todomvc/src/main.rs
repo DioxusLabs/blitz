@@ -178,11 +178,10 @@ fn TodoEntry(mut todos: Signal<HashMap<u32, TodoItem>>, id: u32) -> Element {
                     r#type: "checkbox",
                     id: "cbg-{id}",
                     checked: "{checked}",
-                    oninput: move |evt| todos.write().get_mut(&id).unwrap().checked = evt.checked()
+                    oninput: move |evt| todos.write().get_mut(&id).unwrap().checked = evt.checked(),
                 }
                 label {
-                    r#for: "cbg-{id}",
-                    onclick: move |evt| {
+                    ondoubleclick: move |evt| {
                         is_editing.set(true);
                         evt.prevent_default()
                     },
