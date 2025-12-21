@@ -850,6 +850,7 @@ dependencies = [
  "env_logger",
  "euclid",
  "image",
+ "peniko",
  "png",
  "reqwest",
  "tokio",

@@ -1,13 +1,14 @@
 //! Load first CLI argument as a url. Fallback to google.com if no CLI argument is provided.
 
-use anyrender::render_to_buffer;
-use anyrender_vello::VelloImageRenderer;
+use anyrender::{PaintScene as _, render_to_buffer};
 use anyrender_vello_cpu::VelloCpuImageRenderer;
-use blitz_dom::DocumentConfig;
+use blitz_dom::{DocumentConfig, util::Color};
 use blitz_html::HtmlDocument;
 use blitz_net::Provider;
 use blitz_paint::paint_scene;
 use blitz_traits::shell::{ColorScheme, Viewport};
+use peniko::Fill;
+use peniko::kurbo::Rect;
 use reqwest::Url;
 use std::sync::Arc;
 use std::{
@@ -22,8 +23,6 @@ const USER_AGENT: &str = "Mozilla/5.0 (X11; Linux x86_64; rv:60.0) Gecko/2010010
 #[tokio::main]
 async fn main() {
     let mut timer = Timer::init();
-
-    let use_cpu_renderer = std::env::args().any(|arg| arg == "--cpu");
 
     let url_string = std::env::args()
         .nth(1)
@@ -104,19 +103,23 @@ async fn main() {
     let render_height = ((computed_height as f64).max(height as f64).min(4000.0) * scale) as u32;
 
     // Render document to RGBA buffer
-    let buffer = if use_cpu_renderer {
-        render_to_buffer::<VelloCpuImageRenderer, _>(
-            |scene| paint_scene(scene, document.as_ref(), scale, render_width, render_height),
-            render_width,
-            render_height,
-        )
-    } else {
-        render_to_buffer::<VelloImageRenderer, _>(
-            |scene| paint_scene(scene, document.as_ref(), scale, render_width, render_height),
-            render_width,
-            render_height,
-        )
-    };
+    let buffer = render_to_buffer::<VelloCpuImageRenderer, _>(
+        |scene| {
+            // Render white background
+            scene.fill(
+                Fill::NonZero,
+                Default::default(),
+                Color::WHITE,
+                Default::default(),
+                &Rect::new(0.0, 0.0, render_width as f64, render_height as f64),
+            );
+
+            // Render document
+            paint_scene(scene, document.as_ref(), scale, render_width, render_height);
+        },
+        render_width,
+        render_height,
+    );
 
     timer.time("Rendered to buffer");
 
