@@ -72,25 +72,23 @@ async fn main() {
         DocumentConfig {
             base_url: Some(url_string.clone()),
             net_provider: Some(Arc::clone(&net) as _),
+            viewport: Some(Viewport::new(
+                width * (scale as u32),
+                height * (scale as u32),
+                scale as f32,
+                ColorScheme::Light,
+            )),
             ..Default::default()
         },
     );
 
     timer.time("Parsed document");
 
-    document.as_mut().set_viewport(Viewport::new(
-        width * (scale as u32),
-        height * (scale as u32),
-        scale as f32,
-        ColorScheme::Light,
-    ));
-    document.resolve(0.0);
-
-    while !net.is_empty() {
+    loop {
         document.resolve(0.0);
-
-        // HACK: this fixes a deadlock by forcing thread synchronisation.
-        println!("{} resources remaining {}", net.count(), net.is_empty());
+        if net.is_empty() {
+            break;
+        }
     }
 
     timer.time("Fetched assets");
