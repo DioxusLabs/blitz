@@ -372,9 +372,7 @@ pub(crate) fn fetch_font_face(
                         _ => FontFaceSourceFormatKeyword::None,
                     };
                     if format == FontFaceSourceFormatKeyword::None {
-                        let Some((_, end)) = url_source.url.as_str().rsplit_once('.') else {
-                            return None;
-                        };
+                        let (_, end) = url_source.url.as_str().rsplit_once('.')?;
                         format = match end {
                             "woff2" => FontFaceSourceFormatKeyword::Woff2,
                             "woff" => FontFaceSourceFormatKeyword::Woff,
