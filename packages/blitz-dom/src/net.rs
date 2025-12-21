@@ -128,17 +128,6 @@ impl NetHandler for ResourceHandler<StylesheetHandler> {
             AllowImportRules::Yes,
         );
 
-        // Fetch @font-face fonts
-        fetch_font_face(
-            self.tx.clone(),
-            self.doc_id,
-            self.node_id,
-            &sheet,
-            &self.data.net_provider,
-            &self.shell_provider,
-            &self.data.guard.read(),
-        );
-
         self.respond(
             resolved_url,
             Ok(Resource::Css(DocumentStyleSheet(ServoArc::new(sheet)))),
@@ -343,7 +332,7 @@ impl FontFaceHandler {
     }
 }
 
-fn fetch_font_face(
+pub(crate) fn fetch_font_face(
     tx: Sender<DocumentEvent>,
     doc_id: usize,
     node_id: Option<usize>,

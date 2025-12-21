@@ -706,6 +706,17 @@ impl BaseDocument {
             self.stylist.remove_stylesheet(old, &self.guard.read())
         }
 
+        // Fetch @font-face fonts
+        crate::net::fetch_font_face(
+            self.tx.clone(),
+            self.id,
+            Some(node_id),
+            &stylesheet.0,
+            &self.net_provider,
+            &self.shell_provider,
+            &self.guard.read(),
+        );
+
         // Store data on element
         let element = &mut self.nodes[node_id].element_data_mut().unwrap();
         element.special_data = SpecialElementData::Stylesheet(stylesheet.clone());
