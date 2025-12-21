@@ -90,6 +90,12 @@ fn main() {
         html = markdown_to_html(html);
         stylesheets.push(String::from(GITHUB_MD_STYLES));
         stylesheets.push(String::from(BLITZ_MD_STYLES));
+
+        #[cfg(feature = "syntax-highlighting-giallo")]
+        {
+            stylesheets.push(String::from(giallo::GIALLO_CSS))
+        }
+
         title = format!(
             "README for {}",
             base_url.rsplit("/").find(|s| !s.is_empty()).unwrap()
