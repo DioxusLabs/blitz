@@ -31,7 +31,9 @@ async fn main() {
     println!("{}", url_string);
 
     // Assert that url is valid
-    let url = Url::parse(&url_string).expect("Invalid url");
+    let url = Url::parse(&url_string)
+        .unwrap_or_else(|_| Url::parse(&format!("https://{url_string}")).expect("Invalid url"));
+    let url_string = url.to_string();
 
     // Fetch HTML from URL
     let html = match url.scheme() {
