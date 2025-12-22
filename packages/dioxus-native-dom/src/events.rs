@@ -5,8 +5,9 @@ use blitz_traits::events::{
 };
 use dioxus_html::{
     geometry::{
-        euclid::Vector3D, ClientPoint, ElementPoint, PagePoint, PixelsRect, PixelsSize,
-        PixelsVector2D, ScreenPoint, WheelDelta,
+        euclid::{Point2D, Size2D, Vector3D},
+        ClientPoint, ElementPoint, PagePoint, PixelsRect, PixelsSize, PixelsVector2D, ScreenPoint,
+        WheelDelta,
     },
     input_data::{MouseButton, MouseButtonSet},
     point_interaction::{
@@ -23,6 +24,7 @@ use keyboard_types::{Code, Key, Location, Modifiers};
 use std::{
     any::Any,
     cell::{Ref, RefCell, RefMut},
+    fmt::Display,
     future::Future,
     pin::Pin,
     rc::Rc,
@@ -139,7 +141,22 @@ impl NodeHandle {
                 .expect("Node does not exist in the Document")
         })
     }
+
+    fn node_not_exist_err<T>(&self) -> Pin<Box<dyn Future<Output = MountedResult<T>>>> {
+        let node_id = self.node_id;
+        let err = MountedError::OperationFailed(Box::new(NodeNotExistErr(node_id)));
+        Box::pin(async move { Err(err) })
+    }
 }
+
+#[derive(Debug)]
+struct NodeNotExistErr(NodeId);
+impl Display for NodeNotExistErr {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "The node {} does not exist", self.0)
+    }
+}
+impl std::error::Error for NodeNotExistErr {}
 
 impl RenderedElementBacking for NodeHandle {
     fn as_any(&self) -> &dyn std::any::Any {
@@ -159,7 +176,14 @@ impl RenderedElementBacking for NodeHandle {
     }
 
     fn get_client_rect(&self) -> Pin<Box<dyn Future<Output = MountedResult<PixelsRect>>>> {
-        Box::pin(async { Err(MountedError::NotSupported) })
+        let Some(bounding_rect) = self.doc_mut().get_client_bounding_rect(self.node_id) else {
+            return self.node_not_exist_err();
+        };
+        let pixels_rect = PixelsRect::new(
+            Point2D::new(bounding_rect.x, bounding_rect.y),
+            Size2D::new(bounding_rect.width, bounding_rect.height),
+        );
+        Box::pin(async move { Ok(pixels_rect) })
     }
 
     fn scroll_to(

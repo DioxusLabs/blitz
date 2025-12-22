@@ -1030,7 +1030,7 @@ impl Node {
         Some(offset)
     }
 
-    /// Computes the Document-relative coordinates of the Node
+    /// Computes the Document-relative coordinates of the `Node`
     pub fn absolute_position(&self, x: f32, y: f32) -> taffy::Point<f32> {
         let x = x + self.final_layout.location.x - self.scroll_offset.x as f32;
         let y = y + self.final_layout.location.y - self.scroll_offset.y as f32;

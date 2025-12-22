@@ -1359,6 +1359,22 @@ impl BaseDocument {
         self.viewport_scroll = scroll;
     }
 
+    /// Computes the size and position of the `Node` relative to the viewport
+    pub fn get_client_bounding_rect(&self, node_id: usize) -> Option<BoundingRect> {
+        let node = self.get_node(node_id)?;
+
+        let mut pos = node.absolute_position(0.0, 0.0).map(|v| v as f64);
+        pos.x -= self.viewport_scroll.x;
+        pos.y -= self.viewport_scroll.y;
+
+        Some(BoundingRect {
+            x: pos.x,
+            y: pos.y,
+            width: node.unrounded_layout.size.width as f64,
+            height: node.unrounded_layout.size.width as f64,
+        })
+    }
+
     pub fn find_title_node(&self) -> Option<&Node> {
         TreeTraverser::new(self)
             .find(|node_id| {
@@ -1641,6 +1657,13 @@ impl BaseDocument {
 
         ranges
     }
+}
+
+pub struct BoundingRect {
+    pub x: f64,
+    pub y: f64,
+    pub width: f64,
+    pub height: f64,
 }
 
 impl AsRef<BaseDocument> for BaseDocument {
