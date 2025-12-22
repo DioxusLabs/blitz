@@ -1,18 +1,16 @@
 use anyrender::PaintScene;
 use blitz_dom::{BaseDocument, node::TextBrush, util::ToColorColor};
-use kurbo::{Affine, Point, Stroke};
+use kurbo::{Affine, Stroke};
 use parley::{Line, PositionedLayoutItem};
 use peniko::Fill;
 use style::values::computed::TextDecorationLine;
 
 pub(crate) fn stroke_text<'a>(
-    scale: f64,
     scene: &mut impl PaintScene,
     lines: impl Iterator<Item = Line<'a, TextBrush>>,
     doc: &BaseDocument,
-    pos: Point,
+    transform: Affine,
 ) {
-    let transform = Affine::translate((pos.x * scale, pos.y * scale));
     for line in lines {
         for item in line.items() {
             if let PositionedLayoutItem::GlyphRun(glyph_run) = item {

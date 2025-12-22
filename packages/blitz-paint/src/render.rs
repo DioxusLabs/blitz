@@ -201,8 +201,8 @@ impl BlitzDomPainter<'_> {
         } = node.final_layout;
         let scaled_pb = (padding + border).map(f64::from);
         let content_position = kurbo::Point {
-            x: box_position.x + scaled_pb.left,
-            y: box_position.y + scaled_pb.top,
+            x: scaled_pb.left,
+            y: scaled_pb.top,
         };
         let content_box_size = kurbo::Size {
             width: (size.width as f64 - scaled_pb.left - scaled_pb.right) * self.scale,
@@ -437,13 +437,15 @@ impl ElementCx<'_> {
                     panic!("Tried to render node marked as inline root that does not have an inline layout: {:?}", self.node);
                 });
 
+            let transform =
+                Affine::translate((pos.x * self.scale, pos.y * self.scale)) * self.transform;
+
             // Render text
             crate::text::stroke_text(
-                self.scale,
                 scene,
                 text_layout.layout.lines(),
                 self.context.dom,
-                pos,
+                transform,
             );
         }
     }
@@ -459,7 +461,8 @@ impl ElementCx<'_> {
                 y: pos.y + y_offset,
             };
 
-            let transform = Affine::translate((pos.x * self.scale, pos.y * self.scale));
+            let transform =
+                Affine::translate((pos.x * self.scale, pos.y * self.scale)) * self.transform;
 
             if self.node.is_focussed() {
                 // Render selection/caret
@@ -488,11 +491,10 @@ impl ElementCx<'_> {
 
             // Render text
             crate::text::stroke_text(
-                self.scale,
                 scene,
                 input_data.editor.try_layout().unwrap().lines(),
                 self.context.dom,
-                pos,
+                transform,
             );
         }
     }
@@ -529,7 +531,10 @@ impl ElementCx<'_> {
                 y: pos.y + y_offset as f64,
             };
 
-            crate::text::stroke_text(self.scale, scene, layout.lines(), self.context.dom, pos);
+            let transform =
+                Affine::translate((pos.x * self.scale, pos.y * self.scale)) * self.transform;
+
+            crate::text::stroke_text(scene, layout.lines(), self.context.dom, transform);
         }
     }
 
