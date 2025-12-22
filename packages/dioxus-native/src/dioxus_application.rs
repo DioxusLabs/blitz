@@ -67,7 +67,7 @@ impl DioxusNativeApplication {
                         // Reload changed assets
                         for asset_path in &hotreload_message.assets {
                             if let Some(url) = asset_path.to_str() {
-                                doc.reload_resource_by_href(url);
+                                doc.inner.borrow_mut().reload_resource_by_href(url);
                             }
                         }
 
@@ -123,7 +123,7 @@ impl ApplicationHandler<BlitzShellEvent> for DioxusNativeApplication {
             });
 
             // Add shell provider
-            let shell_provider = doc.as_ref().shell_provider.clone();
+            let shell_provider = doc.inner.borrow().shell_provider.clone();
             doc.vdom
                 .in_scope(ScopeId::ROOT, move || provide_context(shell_provider));
 

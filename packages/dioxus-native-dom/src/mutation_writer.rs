@@ -1,6 +1,6 @@
 //! Integration between Dioxus and Blitz
 use crate::{qual_name, trace, NodeId, SubDocumentAttr};
-use blitz_dom::{BaseDocument, DocumentMutator};
+use blitz_dom::{BaseDocument, Document as _, DocumentMutator};
 use blitz_traits::events::DomEventKind;
 use dioxus_core::{
     AttributeValue, ElementId, Template, TemplateAttribute, TemplateNode, WriteMutations,
@@ -201,7 +201,9 @@ impl WriteMutations for MutationWriter<'_> {
                         sub_doc_attr.as_any().downcast_ref::<SubDocumentAttr>()
                     {
                         if let Some(mut sub_document) = sub_doc_attr.take_document() {
-                            sub_document.set_shell_provider(self.docm.doc.shell_provider.clone());
+                            sub_document
+                                .inner_mut()
+                                .set_shell_provider(self.docm.doc.shell_provider.clone());
                             self.docm.set_sub_document(node_id, sub_document as _);
                         }
                     }

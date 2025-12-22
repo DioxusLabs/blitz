@@ -68,7 +68,7 @@ pub mod util;
 mod accessibility;
 
 pub use config::DocumentConfig;
-pub use document::{BaseDocument, Document, PlainDocument};
+pub use document::{BaseDocument, DocGuard, DocGuardMut, Document, PlainDocument};
 pub use markup5ever::{
     LocalName, Namespace, NamespaceStaticSet, Prefix, PrefixStaticSet, QualName, local_name,
     namespace_prefix, namespace_url, ns,

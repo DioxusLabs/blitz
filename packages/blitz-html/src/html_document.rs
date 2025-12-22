@@ -2,13 +2,12 @@ use std::ops::{Deref, DerefMut};
 
 use crate::DocumentHtmlParser;
 
-use blitz_dom::{BaseDocument, DEFAULT_CSS, Document, DocumentConfig};
+use blitz_dom::{BaseDocument, DEFAULT_CSS, DocGuard, DocGuardMut, Document, DocumentConfig};
 
 pub struct HtmlDocument {
     inner: BaseDocument,
 }
 
-// Implement DocumentLike and required traits for HtmlDocument
 impl Deref for HtmlDocument {
     type Target = BaseDocument;
     fn deref(&self) -> &BaseDocument {
@@ -26,8 +25,12 @@ impl From<HtmlDocument> for BaseDocument {
     }
 }
 impl Document for HtmlDocument {
-    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
-        self
+    fn inner(&self) -> DocGuard<'_> {
+        DocGuard::Ref(&self.inner)
+    }
+
+    fn inner_mut(&mut self) -> DocGuardMut<'_> {
+        DocGuardMut::Ref(&mut self.inner)
     }
 }
 

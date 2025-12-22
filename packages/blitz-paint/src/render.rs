@@ -750,7 +750,7 @@ impl ElementCx<'_> {
     }
 
     fn draw_sub_document(&self, scene: &mut impl PaintScene) {
-        if let Some(sub_doc) = self.element.sub_doc_data() {
+        if let Some(sub_doc) = self.element.sub_doc_data().map(|doc| doc.inner()) {
             let scale = self.scale;
             let width = self.frame.content_box.width() as u32;
             let height = self.frame.content_box.height() as u32;
@@ -758,8 +758,8 @@ impl ElementCx<'_> {
             let initial_y = self.pos.y + self.frame.content_box.origin().y;
             // let transform = self.transform.then_translate(Vec2 { x, y });
 
-            let painter = BlitzDomPainter::new(sub_doc, scale, width, height, initial_x, initial_y);
-
+            let painter =
+                BlitzDomPainter::new(&sub_doc, scale, width, height, initial_x, initial_y);
             painter.paint_scene(scene);
         }
     }

@@ -33,7 +33,7 @@ use std::ops::{Deref, DerefMut};
 use std::str::FromStr;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::mpsc::{Receiver, Sender, channel};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, MutexGuard, RwLockReadGuard, RwLockWriteGuard};
 use std::task::Context as TaskContext;
 use std::time::Instant;
 use style::Atom;
@@ -61,12 +61,68 @@ use url::Url;
 #[cfg(feature = "parallel-construct")]
 use {std::cell::RefCell, thread_local::ThreadLocal};
 
+pub enum DocGuard<'a> {
+    Ref(&'a BaseDocument),
+    RefCell(std::cell::Ref<'a, BaseDocument>),
+    RwLock(RwLockReadGuard<'a, BaseDocument>),
+    Mutex(MutexGuard<'a, BaseDocument>),
+}
+
+impl Deref for DocGuard<'_> {
+    type Target = BaseDocument;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        match self {
+            Self::Ref(base_document) => base_document,
+            Self::RefCell(refcell_guard) => refcell_guard,
+            Self::RwLock(rw_lock_read_guard) => rw_lock_read_guard,
+            Self::Mutex(mutex_guard) => mutex_guard,
+        }
+    }
+}
+
+pub enum DocGuardMut<'a> {
+    Ref(&'a mut BaseDocument),
+    RefCell(std::cell::RefMut<'a, BaseDocument>),
+    RwLock(RwLockWriteGuard<'a, BaseDocument>),
+    Mutex(MutexGuard<'a, BaseDocument>),
+}
+
+impl Deref for DocGuardMut<'_> {
+    type Target = BaseDocument;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        match self {
+            Self::Ref(base_document) => base_document,
+            Self::RefCell(refcell_guard) => refcell_guard,
+            Self::RwLock(rw_lock_read_guard) => rw_lock_read_guard,
+            Self::Mutex(mutex_guard) => mutex_guard,
+        }
+    }
+}
+
+impl DerefMut for DocGuardMut<'_> {
+    #[inline(always)]
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        match self {
+            Self::Ref(base_document) => base_document,
+            Self::RefCell(refcell_guard) => &mut *refcell_guard,
+            Self::RwLock(rw_lock_read_guard) => &mut *rw_lock_read_guard,
+            Self::Mutex(mutex_guard) => &mut *mutex_guard,
+        }
+    }
+}
+
 /// Abstraction over wrappers around [`BaseDocument`] to allow for them all to
 /// be driven by [`blitz-shell`](https://docs.rs/blitz-shell)
-pub trait Document: Deref<Target = BaseDocument> + DerefMut + 'static {
+pub trait Document: Any + 'static {
+    fn inner(&self) -> DocGuard<'_>;
+    fn inner_mut(&mut self) -> DocGuardMut<'_>;
+
     /// Update the [`Document`] in response to a [`UiEvent`] (click, keypress, etc)
     fn handle_ui_event(&mut self, event: UiEvent) {
-        let mut driver = EventDriver::new((*self).mutate(), NoopEventHandler);
+        let mut inner = self.inner_mut();
+        let mut driver = EventDriver::new(inner.mutate(), NoopEventHandler);
         driver.handle_ui_event(event);
     }
 
@@ -77,29 +133,19 @@ pub trait Document: Deref<Target = BaseDocument> + DerefMut + 'static {
         false
     }
 
-    fn as_any_mut(&mut self) -> &mut dyn Any;
-
     /// Get the [`Document`]'s id
     fn id(&self) -> usize {
-        self.id
+        self.inner().id
     }
 }
 
 pub struct PlainDocument(pub BaseDocument);
-impl Deref for PlainDocument {
-    type Target = BaseDocument;
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-impl DerefMut for PlainDocument {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.0
-    }
-}
 impl Document for PlainDocument {
-    fn as_any_mut(&mut self) -> &mut dyn Any {
-        self
+    fn inner(&self) -> DocGuard<'_> {
+        DocGuard::Ref(&self.0)
+    }
+    fn inner_mut(&mut self) -> DocGuardMut<'_> {
+        DocGuardMut::Ref(&mut self.0)
     }
 }
 
@@ -1127,7 +1173,7 @@ impl BaseDocument {
     pub fn get_cursor(&self) -> Option<CursorIcon> {
         let node = &self.nodes[self.get_hover_node_id()?];
 
-        if let Some(subdoc) = node.element_data().and_then(|el| el.sub_doc_data()) {
+        if let Some(subdoc) = node.subdoc().map(|doc| doc.inner()) {
             return subdoc.get_cursor();
         }
 
@@ -1217,7 +1263,7 @@ impl BaseDocument {
         let scroll_height = node.final_layout.scroll_height() as f64;
 
         // Handle sub document case
-        if let Some(sub_doc) = node.subdoc_mut() {
+        if let Some(mut sub_doc) = node.subdoc_mut().map(|doc| doc.inner_mut()) {
             let has_changed = if let Some(hover_node_id) = sub_doc.get_hover_node_id() {
                 sub_doc.scroll_node_by_has_changed(hover_node_id, x, y, dispatch_event)
             } else {

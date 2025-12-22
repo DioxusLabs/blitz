@@ -7,14 +7,15 @@ use crate::mutation_writer::{DioxusState, MutationWriter};
 use crate::qual_name;
 use crate::NodeId;
 use blitz_dom::{
-    Attribute, BaseDocument, Document, DocumentConfig, EventDriver, EventHandler, Node, DEFAULT_CSS,
+    Attribute, BaseDocument, DocGuard, DocGuardMut, Document, DocumentConfig, EventDriver,
+    EventHandler, Node, DEFAULT_CSS,
 };
 use blitz_traits::events::{DomEvent, DomEventData, EventState, UiEvent};
 use dioxus_core::{ElementId, Event, VirtualDom};
 use dioxus_html::{set_event_converter, PlatformEventData};
 use futures_util::task::noop_waker;
+use std::cell::RefCell;
 use std::future::Future;
-use std::ops::{Deref, DerefMut};
 use std::pin::pin;
 use std::sync::LazyLock;
 use std::task::{Context as TaskContext, Waker};
@@ -63,7 +64,7 @@ fn get_dioxus_id(node: &Node) -> Option<ElementId> {
 /// You can just push events into the [`DioxusDocument`] with [`doc.handle_ui_event(..)`](Self::handle_ui_event)
 /// and then flush the changes with [`doc.poll(..)`](Self::poll)
 pub struct DioxusDocument {
-    pub inner: BaseDocument,
+    pub inner: Rc<RefCell<BaseDocument>>,
     pub vdom: VirtualDom,
     pub vdom_state: DioxusState,
 
@@ -132,7 +133,7 @@ impl DioxusDocument {
         Self {
             vdom,
             vdom_state,
-            inner: doc,
+            inner: Rc::new(RefCell::new(doc)),
             html_element_id,
             head_element_id,
             body_element_id,
@@ -142,7 +143,8 @@ impl DioxusDocument {
 
     /// Run an initial build of the Dioxus vdom
     pub fn initial_build(&mut self) {
-        let mut writer = MutationWriter::new(&mut self.inner, &mut self.vdom_state);
+        let mut inner = self.inner.borrow_mut();
+        let mut writer = MutationWriter::new(&mut inner, &mut self.vdom_state);
         self.vdom.rebuild(&mut writer);
     }
 
@@ -155,7 +157,8 @@ impl DioxusDocument {
         attributes: &[(String, String)],
         contents: &Option<String>,
     ) {
-        let mut mutr = self.inner.mutate();
+        let mut inner = self.inner.borrow_mut();
+        let mut mutr = inner.mutate();
 
         let attributes = attributes
             .iter()
@@ -177,11 +180,15 @@ impl DioxusDocument {
 // Implement DocumentLike and required traits for DioxusDocument
 impl Document for DioxusDocument {
     fn id(&self) -> usize {
-        self.inner.id()
+        self.inner.borrow().id()
     }
 
-    fn as_any_mut(&mut self) -> &mut dyn Any {
-        self
+    fn inner(&self) -> DocGuard<'_> {
+        DocGuard::RefCell(self.inner.borrow())
+    }
+
+    fn inner_mut(&mut self) -> DocGuardMut<'_> {
+        DocGuardMut::RefCell(self.inner.borrow_mut())
     }
 
     fn poll(&mut self, cx: Option<TaskContext>) -> bool {
@@ -197,7 +204,8 @@ impl Document for DioxusDocument {
             }
         }
 
-        let mut writer = MutationWriter::new(&mut self.inner, &mut self.vdom_state);
+        let mut inner = self.inner.borrow_mut();
+        let mut writer = MutationWriter::new(&mut inner, &mut self.vdom_state);
         self.vdom.render_immediate(&mut writer);
 
         true
@@ -208,25 +216,9 @@ impl Document for DioxusDocument {
             vdom: &mut self.vdom,
             vdom_state: &mut self.vdom_state,
         };
-        let mut driver = EventDriver::new(self.inner.mutate(), handler);
+        let mut inner = self.inner.borrow_mut();
+        let mut driver = EventDriver::new(inner.mutate(), handler);
         driver.handle_ui_event(event);
-    }
-}
-
-impl Deref for DioxusDocument {
-    type Target = BaseDocument;
-    fn deref(&self) -> &BaseDocument {
-        &self.inner
-    }
-}
-impl DerefMut for DioxusDocument {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.inner
-    }
-}
-impl From<DioxusDocument> for BaseDocument {
-    fn from(doc: DioxusDocument) -> BaseDocument {
-        doc.inner
     }
 }
 
