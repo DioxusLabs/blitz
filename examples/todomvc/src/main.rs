@@ -145,7 +145,9 @@ fn TodoHeader(mut todos: Signal<HashMap<u32, TodoItem>>) -> Element {
                 r#type: "text",
                 placeholder: "What needs to be done?",
                 value: "{draft}",
-                autofocus: "true",
+                onmounted: async move |evt| {
+                    evt.set_focus(true).await.unwrap();
+                },
                 oninput: move |evt| draft.set(evt.value()),
                 onkeydown,
             }

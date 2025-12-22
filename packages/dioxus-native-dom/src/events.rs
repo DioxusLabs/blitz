@@ -1,9 +1,13 @@
+use blitz_dom::{BaseDocument, Node};
 use blitz_traits::events::{
     BlitzKeyEvent, BlitzMouseButtonEvent, BlitzScrollEvent, BlitzWheelDelta, BlitzWheelEvent,
     MouseEventButton,
 };
 use dioxus_html::{
-    geometry::{euclid::Vector3D, ClientPoint, ElementPoint, PagePoint, ScreenPoint},
+    geometry::{
+        euclid::Vector3D, ClientPoint, ElementPoint, PagePoint, PixelsRect, PixelsSize,
+        PixelsVector2D, ScreenPoint, WheelDelta,
+    },
     input_data::{MouseButton, MouseButtonSet},
     point_interaction::{
         InteractionElementOffset, InteractionLocation, ModifiersInteraction, PointerInteraction,
@@ -11,11 +15,20 @@ use dioxus_html::{
     AnimationData, CancelData, ClipboardData, CompositionData, DragData, FocusData, FormData,
     FormValue, HasFileData, HasFocusData, HasFormData, HasKeyboardData, HasMouseData,
     HasScrollData, HasWheelData, HtmlEventConverter, ImageData, KeyboardData, MediaData,
-    MountedData, MouseData, PlatformEventData, PointerData, ResizeData, ScrollData, SelectionData,
+    MountedData, MountedError, MountedResult, MouseData, PlatformEventData, PointerData,
+    RenderedElementBacking, ResizeData, ScrollBehavior, ScrollData, ScrollToOptions, SelectionData,
     ToggleData, TouchData, TransitionData, VisibleData, WheelData,
 };
 use keyboard_types::{Code, Key, Location, Modifiers};
-use std::any::Any;
+use std::{
+    any::Any,
+    cell::{Ref, RefCell, RefMut},
+    future::Future,
+    pin::Pin,
+    rc::Rc,
+};
+
+use crate::NodeId;
 
 pub struct NativeConverter {}
 
@@ -68,8 +81,8 @@ impl HtmlEventConverter for NativeConverter {
         unimplemented!("todo: convert_media_data in dioxus-native. requires support in blitz")
     }
 
-    fn convert_mounted_data(&self, _event: &PlatformEventData) -> MountedData {
-        unimplemented!("todo: convert_mounted_data in dioxus-native. requires support in blitz")
+    fn convert_mounted_data(&self, event: &PlatformEventData) -> MountedData {
+        event.downcast::<NodeHandle>().unwrap().clone().into()
     }
 
     fn convert_pointer_data(&self, _event: &PlatformEventData) -> PointerData {
@@ -106,6 +119,76 @@ impl HtmlEventConverter for NativeConverter {
 
     fn convert_visible_data(&self, _event: &PlatformEventData) -> VisibleData {
         unimplemented!("todo: convert_visible_data in dioxus-native. requires support in blitz")
+    }
+}
+
+#[derive(Clone)]
+pub struct NodeHandle {
+    pub(crate) doc: Rc<RefCell<BaseDocument>>,
+    pub(crate) node_id: NodeId,
+}
+
+impl NodeHandle {
+    fn doc_mut(&self) -> RefMut<'_, BaseDocument> {
+        self.doc.borrow_mut()
+    }
+
+    fn node(&self) -> Ref<'_, Node> {
+        Ref::map(self.doc.borrow(), |doc| {
+            doc.get_node(self.node_id)
+                .expect("Node does not exist in the Document")
+        })
+    }
+}
+
+impl RenderedElementBacking for NodeHandle {
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
+    fn get_scroll_offset(&self) -> Pin<Box<dyn Future<Output = MountedResult<PixelsVector2D>>>> {
+        let scroll_offset = self.node().scroll_offset;
+        Box::pin(async move { Ok(PixelsVector2D::new(scroll_offset.x, scroll_offset.y)) })
+    }
+
+    fn get_scroll_size(&self) -> Pin<Box<dyn Future<Output = MountedResult<PixelsSize>>>> {
+        let node = self.node();
+        let scroll_width = node.final_layout.scroll_width() as f64;
+        let scroll_height = node.final_layout.scroll_height() as f64;
+        Box::pin(async move { Ok(PixelsSize::new(scroll_width, scroll_height)) })
+    }
+
+    fn get_client_rect(&self) -> Pin<Box<dyn Future<Output = MountedResult<PixelsRect>>>> {
+        Box::pin(async { Err(MountedError::NotSupported) })
+    }
+
+    fn scroll_to(
+        &self,
+        _options: ScrollToOptions,
+    ) -> Pin<Box<dyn Future<Output = MountedResult<()>>>> {
+        Box::pin(async { Err(MountedError::NotSupported) })
+    }
+
+    fn scroll(
+        &self,
+        _coordinates: PixelsVector2D,
+        _behavior: ScrollBehavior,
+    ) -> Pin<Box<dyn Future<Output = MountedResult<()>>>> {
+        Box::pin(async { Err(MountedError::NotSupported) })
+    }
+
+    fn set_focus(&self, focus: bool) -> Pin<Box<dyn Future<Output = MountedResult<()>>>> {
+        let mut doc = self.doc_mut();
+        if focus {
+            // TODO: queue focus events somehow
+            doc.set_focus_to(self.node_id);
+        } else if doc.get_focussed_node_id() == Some(self.node_id) {
+            // Q: Should this only clear focus if the node is focussed?
+            // TODO: queue blur events somehow
+            self.doc_mut().clear_focus();
+        }
+
+        Box::pin(async { Ok(()) })
     }
 }
 
@@ -272,7 +355,7 @@ impl HasWheelData for NativeWheelData {
         self as &dyn Any
     }
 
-    fn delta(&self) -> dioxus_html::geometry::WheelDelta {
+    fn delta(&self) -> WheelDelta {
         match self.0.delta {
             BlitzWheelDelta::Lines(x, y) => {
                 dioxus_html::geometry::WheelDelta::Lines(Vector3D::new(x, y, 0.0))

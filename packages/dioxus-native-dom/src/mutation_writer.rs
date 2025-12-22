@@ -19,6 +19,8 @@ pub struct DioxusState {
     pub(crate) node_id_mapping: Vec<Option<NodeId>>,
     /// Count of each handler type
     pub(crate) event_handler_counts: [u32; 32],
+    /// Mounted events queued as elements are mounted
+    pub(crate) queued_mounted_events: Vec<ElementId>,
 }
 
 impl DioxusState {
@@ -29,6 +31,7 @@ impl DioxusState {
             stack: vec![root_id],
             node_id_mapping: vec![Some(root_id)],
             event_handler_counts: [0; 32],
+            queued_mounted_events: Vec::new(),
         }
     }
 
@@ -50,6 +53,10 @@ impl DioxusState {
 
     pub(crate) fn m_stack_nodes(&mut self, m: usize) -> Vec<usize> {
         self.stack.split_off(self.stack.len() - m)
+    }
+
+    pub(crate) fn queue_mount_event(&mut self, id: ElementId) {
+        self.queued_mounted_events.push(id);
     }
 }
 
@@ -258,6 +265,12 @@ impl WriteMutations for MutationWriter<'_> {
     }
 
     fn create_event_listener(&mut self, name: &'static str, id: ElementId) {
+        // Mounted events are fired immediately after the element is mounted.
+        if name == "mounted" {
+            self.state.queue_mount_event(id);
+            return;
+        }
+
         // We're going to actually set the listener here as a placeholder - in JS this would also be a placeholder
         // we might actually just want to attach the attribute to the root element (delegation)
         let value = AttributeValue::Text("<rust func>".into());
