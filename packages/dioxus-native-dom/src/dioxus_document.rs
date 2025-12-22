@@ -232,7 +232,6 @@ impl From<DioxusDocument> for BaseDocument {
 
 pub struct DioxusEventHandler<'v> {
     vdom: &'v mut VirtualDom,
-    #[allow(dead_code, reason = "WIP")]
     vdom_state: &'v mut DioxusState,
 }
 
