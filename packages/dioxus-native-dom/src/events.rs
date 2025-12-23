@@ -131,13 +131,28 @@ pub struct NodeHandle {
 }
 
 impl NodeHandle {
-    fn doc_mut(&self) -> RefMut<'_, BaseDocument> {
+    pub fn node_id(&self) -> NodeId {
+        self.node_id
+    }
+
+    pub fn doc(&self) -> Ref<'_, BaseDocument> {
+        self.doc.borrow()
+    }
+
+    pub fn doc_mut(&self) -> RefMut<'_, BaseDocument> {
         self.doc.borrow_mut()
     }
 
-    fn node(&self) -> Ref<'_, Node> {
+    pub fn node(&self) -> Ref<'_, Node> {
         Ref::map(self.doc.borrow(), |doc| {
             doc.get_node(self.node_id)
+                .expect("Node does not exist in the Document")
+        })
+    }
+
+    pub fn node_mut(&self) -> RefMut<'_, Node> {
+        RefMut::map(self.doc.borrow_mut(), |doc| {
+            doc.get_node_mut(self.node_id)
                 .expect("Node does not exist in the Document")
         })
     }

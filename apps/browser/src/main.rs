@@ -4,12 +4,13 @@
 
 //! A web browser with UI powered by Dioxus Native and content rendering powered by Blitz
 
+use std::cell::RefCell;
 use std::rc::Rc;
 use std::sync::{Arc, atomic::AtomicUsize, atomic::Ordering as Ao};
 
 use blitz_traits::shell::ShellProvider;
 use dioxus_core::Task;
-use dioxus_native::{SubDocumentAttr, prelude::*};
+use dioxus_native::{NodeHandle, SubDocumentAttr, prelude::*};
 
 use blitz_dom::{DocumentConfig, FontContext};
 use blitz_html::{HtmlDocument, HtmlProvider};
@@ -40,7 +41,10 @@ fn use_sync_store<T: Send + Sync + 'static>(value: impl FnOnce() -> T) -> SyncSt
 fn app() -> Element {
     let home_url = use_hook(|| Url::parse("https://html.duckduckgo.com").unwrap());
 
+    let mut url_input_handle = use_signal(|| None);
     let mut url_input_value = use_signal(|| home_url.to_string());
+    let mut is_focussed = use_signal(|| false);
+    let block_mouse_up = use_hook(|| Rc::new(RefCell::new(false)));
     let mut history: SyncStore<History> = use_sync_store(|| History::new(home_url.clone()));
 
     let net_provider = use_context::<Arc<StdNetProvider>>();
@@ -79,6 +83,40 @@ fn app() -> Element {
                     "type": "text",
                     name: "url",
                     value: url_input_value(),
+                    onmounted: move |evt: Event<MountedData>| {
+                        let node_handle = evt.downcast::<NodeHandle>().unwrap();
+                        *url_input_handle.write() = Some(node_handle.clone());
+                    },
+                    onblur: move |_evt| {
+                        *is_focussed.write() = false;
+                    },
+                    onfocus: move |_evt| {
+                        *is_focussed.write() = true;
+                        if let Some(handle) = url_input_handle() {
+                            let node_id = handle.node_id();
+                            let mut doc = handle.doc_mut();
+                            doc.with_text_input(node_id, |mut driver| driver.select_all());
+                        }
+                    },
+                    onmousedown: {
+                        let block_mouse_up = block_mouse_up.clone();
+                        move |_evt| {
+                            *block_mouse_up.borrow_mut() = !is_focussed();
+                        }
+                    },
+                    onmousemove: {
+                        let block_mouse_up = block_mouse_up.clone();
+                        move |evt| {
+                            if *block_mouse_up.borrow() {
+                                evt.prevent_default();
+                            }
+                        }
+                    },
+                    onmouseup: move |evt| {
+                        if *block_mouse_up.borrow() {
+                            evt.prevent_default();
+                        }
+                    },
                     onkeydown: move |evt| {
                         if evt.key() == Key::Enter {
                             evt.prevent_default();

@@ -24,7 +24,7 @@ use blitz_traits::shell::{ColorScheme, DummyShellProvider, ShellProvider, Viewpo
 use cursor_icon::CursorIcon;
 use linebender_resource_handle::Blob;
 use markup5ever::local_name;
-use parley::FontContext;
+use parley::{FontContext, PlainEditorDriver};
 use selectors::{Element, matching::QuirksMode};
 use slab::Slab;
 use std::any::Any;
@@ -1404,6 +1404,26 @@ impl BaseDocument {
                     .is_element_with_tag_name(&local_name!("title"))
             })
             .map(|node_id| &self.nodes[node_id])
+    }
+
+    pub fn with_text_input(
+        &mut self,
+        node_id: usize,
+        cb: impl FnOnce(PlainEditorDriver<TextBrush>),
+    ) {
+        let Some(node) = self.nodes.get_mut(node_id) else {
+            return;
+        };
+
+        if let Some(text_input) = node
+            .element_data_mut()
+            .and_then(|el| el.text_input_data_mut())
+        {
+            let mut font_ctx = self.font_ctx.lock().unwrap();
+            let layout_ctx = &mut self.layout_ctx;
+            let driver = text_input.editor.driver(&mut font_ctx, layout_ctx);
+            cb(driver)
+        }
     }
 
     pub(crate) fn compute_has_canvas(&self) -> bool {
