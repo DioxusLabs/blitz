@@ -36,15 +36,7 @@ pub fn paint_scene(
     reset_layer_stats();
 
     let devtools = *dom.devtools();
-    let generator = BlitzDomPainter {
-        dom,
-        scale,
-        width,
-        height,
-        initial_x: 0.0,
-        initial_y: 0.0,
-        devtools,
-    };
+    let generator = BlitzDomPainter::new(dom, scale, width, height, 0.0, 0.0, devtools);
     generator.paint_scene(scene);
 
     // println!(
