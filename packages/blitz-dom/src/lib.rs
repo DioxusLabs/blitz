@@ -55,6 +55,7 @@ mod query_selector;
 mod resolve;
 /// Implementations that interact with servo's style engine
 mod stylo;
+mod selection;
 mod stylo_to_cursor_icon;
 mod stylo_to_parley;
 mod traversal;

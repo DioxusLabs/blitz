@@ -1,3 +1,5 @@
+use std::cmp::Ordering;
+
 use style::{dom::TNode as _, values::specified::box_::DisplayInside};
 
 use crate::{BaseDocument, Node};
@@ -240,9 +242,7 @@ impl BaseDocument {
     /// Returns Ordering::Less if node_a comes before node_b in document order.
     /// Returns Ordering::Greater if node_a comes after node_b.
     /// Returns Ordering::Equal if they are the same node.
-    pub fn compare_document_order(&self, node_a: usize, node_b: usize) -> std::cmp::Ordering {
-        use std::cmp::Ordering;
-
+    pub fn compare_document_order(&self, node_a: usize, node_b: usize) -> Ordering {
         if node_a == node_b {
             return Ordering::Equal;
         }
@@ -308,8 +308,6 @@ impl BaseDocument {
     /// Both start and end are assumed to be inline roots.
     /// Returns the nodes in document order (from first to last).
     pub fn collect_inline_roots_in_range(&self, start_node: usize, end_node: usize) -> Vec<usize> {
-        use std::cmp::Ordering;
-
         let start = &self.nodes[start_node];
         let end = &self.nodes[end_node];
         let start_is_anon = start.is_anonymous();

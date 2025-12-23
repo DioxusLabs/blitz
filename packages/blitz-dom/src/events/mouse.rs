@@ -43,14 +43,8 @@ pub(crate) fn handle_mousemove<F: FnMut(DomEvent)>(
     let node = &mut doc.nodes[target];
     let Some(el) = node.data.downcast_element_mut() else {
         // Handle text selection extension for non-element nodes
-        if buttons != MouseEventButtons::None && doc.selection_start_node.is_some() {
-            if let Some((inline_root_id, byte_offset)) = doc.find_text_position(x, y) {
-                // Allow selection across multiple inline roots
-                // Use update_selection_end to also update stable references for anonymous blocks
-                doc.update_selection_end(inline_root_id, byte_offset);
-                doc.shell_provider.request_redraw();
-                changed = true;
-            }
+        if buttons != MouseEventButtons::None && doc.extend_text_selection_to_point(x, y) {
+            changed = true;
         }
         return changed;
     };
@@ -87,15 +81,8 @@ pub(crate) fn handle_mousemove<F: FnMut(DomEvent)>(
             .extend_selection_to_point(x as f32, y as f32);
 
         changed = true;
-    } else if buttons != MouseEventButtons::None && doc.selection_start_node.is_some() {
-        // Extend text selection while dragging (for non-input text)
-        // Allow selection across multiple inline roots
-        if let Some((inline_root_id, byte_offset)) = doc.find_text_position(x, y) {
-            // Use update_selection_end to also update stable references for anonymous blocks
-            doc.update_selection_end(inline_root_id, byte_offset);
-            doc.shell_provider.request_redraw();
-            changed = true;
-        }
+    } else if buttons != MouseEventButtons::None && doc.extend_text_selection_to_point(x, y) {
+        changed = true;
     }
 
     changed
@@ -120,45 +107,42 @@ pub(crate) fn handle_mousedown(
     // but not DOM children), so we use the hit result for text selection.
     let actual_target = hit.node_id;
 
-    // First, check what kind of element we're dealing with and extract needed info
+    // Check what kind of element we're dealing with and extract needed info
     enum ClickTarget {
-        TextInput {
-            content_box_offset: taffy::Point<f32>,
-        },
+        TextInput { content_box_offset: taffy::Point<f32> },
         Disabled,
-        NonElement,
-        Other,
+        SelectableText,
     }
 
     let click_target = {
         let node = &doc.nodes[actual_target];
-        if let Some(el) = node.data.downcast_element() {
-            if el.attr(local_name!("disabled")).is_some() {
-                ClickTarget::Disabled
-            } else if let SpecialElementData::TextInput(ref text_input_data) = el.special_data {
-                let mut content_box_offset = taffy::Point {
-                    x: node.final_layout.padding.left + node.final_layout.border.left,
-                    y: node.final_layout.padding.top + node.final_layout.border.top,
-                };
-                if !text_input_data.is_multiline {
-                    let layout = text_input_data.editor.try_layout().unwrap();
-                    let content_box_height = node.final_layout.content_box_height();
-                    let input_height = layout.height() / layout.scale();
-                    let y_offset = ((content_box_height - input_height) / 2.0).max(0.0);
-                    content_box_offset.y += y_offset;
+        match node.data.downcast_element() {
+            Some(el) if el.attr(local_name!("disabled")).is_some() => ClickTarget::Disabled,
+            Some(el) => {
+                if let SpecialElementData::TextInput(ref text_input_data) = el.special_data {
+                    let mut content_box_offset = taffy::Point {
+                        x: node.final_layout.padding.left + node.final_layout.border.left,
+                        y: node.final_layout.padding.top + node.final_layout.border.top,
+                    };
+                    if !text_input_data.is_multiline {
+                        let layout = text_input_data.editor.try_layout().unwrap();
+                        let content_box_height = node.final_layout.content_box_height();
+                        let input_height = layout.height() / layout.scale();
+                        let y_offset = ((content_box_height - input_height) / 2.0).max(0.0);
+                        content_box_offset.y += y_offset;
+                    }
+                    ClickTarget::TextInput { content_box_offset }
+                } else {
+                    ClickTarget::SelectableText
                 }
-                ClickTarget::TextInput { content_box_offset }
-            } else {
-                ClickTarget::Other
             }
-        } else {
-            ClickTarget::NonElement
+            None => ClickTarget::SelectableText,
         }
     };
 
     match click_target {
         ClickTarget::Disabled => return,
-        ClickTarget::NonElement | ClickTarget::Other => {
+        ClickTarget::SelectableText => {
             // Handle text selection for non-input elements
             if let Some((inline_root_id, byte_offset)) = doc.find_text_position(x, y) {
                 doc.set_text_selection(inline_root_id, byte_offset, inline_root_id, byte_offset);
