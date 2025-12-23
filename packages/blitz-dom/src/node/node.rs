@@ -900,14 +900,15 @@ impl Node {
         // Inline children
         if self.flags.is_inline_root() {
             let element_data = &self.element_data().unwrap();
-            let layout = &element_data.inline_layout_data.as_ref().unwrap().layout;
-            let scale = layout.scale();
+            if let Some(ild) = element_data.inline_layout_data.as_ref() {
+                let layout = &ild.layout;
+                let scale = layout.scale();
 
-            if let Some((cluster, _side)) = Cluster::from_point_exact(layout, x * scale, y * scale)
-            {
-                let style_index = cluster.glyphs().next()?.style_index();
-                let node_id = layout.styles()[style_index].brush.id;
-                return Some(HitResult { node_id, x, y });
+                if let Some((cluster, _side)) = Cluster::from_point_exact(layout, x * scale, y * scale) {
+                    let style_index = cluster.glyphs().next()?.style_index();
+                    let node_id = layout.styles()[style_index].brush.id;
+                    return Some(HitResult { node_id, x, y });
+                }
             }
         }
 
@@ -931,7 +932,10 @@ impl Node {
             if node.flags.is_inline_root() {
                 return Some(node);
             }
-            node = node.layout_parent.get().map(|id| self.with(id))?;
+            match node.layout_parent.get() {
+                Some(id) => node = self.with(id),
+                None => return None,
+            }
         }
     }
 

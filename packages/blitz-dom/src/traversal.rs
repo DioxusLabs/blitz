@@ -235,4 +235,108 @@ impl BaseDocument {
             .map(|id| self.node_layout_ancestors(id))
             .unwrap_or_default()
     }
+
+    /// Compare the document order of two nodes.
+    /// Returns Ordering::Less if node_a comes before node_b in document order.
+    /// Returns Ordering::Greater if node_a comes after node_b.
+    /// Returns Ordering::Equal if they are the same node.
+    pub fn compare_document_order(&self, node_a: usize, node_b: usize) -> std::cmp::Ordering {
+        use std::cmp::Ordering;
+
+        if node_a == node_b {
+            return Ordering::Equal;
+        }
+
+        // Build ancestor chains from root to node (inclusive)
+        let chain_a = self.ancestor_chain_from_root(node_a);
+        let chain_b = self.ancestor_chain_from_root(node_b);
+
+        // Find where the chains diverge
+        let mut common_depth = 0;
+        for (a, b) in chain_a.iter().zip(chain_b.iter()) {
+            if a != b {
+                break;
+            }
+            common_depth += 1;
+        }
+
+        // If one is an ancestor of the other
+        if common_depth == chain_a.len() {
+            return Ordering::Less; // node_a is ancestor of node_b
+        }
+        if common_depth == chain_b.len() {
+            return Ordering::Greater; // node_b is ancestor of node_a
+        }
+
+        // Safety: common_depth must be > 0 here because both chains start from the same
+        // root node (node 0), so they share at least that node. If common_depth were 0,
+        // chain_a[0] != chain_b[0], but both start from root, so this is impossible.
+        debug_assert!(common_depth > 0, "nodes must share a common ancestor (the root)");
+
+        // Compare position among siblings at the divergence point
+        let divergent_a = chain_a[common_depth];
+        let divergent_b = chain_b[common_depth];
+        let parent_id = chain_a[common_depth - 1];
+        let parent = &self.nodes[parent_id];
+
+        for &child_id in &parent.children {
+            if child_id == divergent_a {
+                return Ordering::Less;
+            }
+            if child_id == divergent_b {
+                return Ordering::Greater;
+            }
+        }
+
+        // Should not reach here if tree is well-formed
+        Ordering::Equal
+    }
+
+    /// Build ancestor chain from root to node (inclusive), ordered [root, ..., node].
+    fn ancestor_chain_from_root(&self, node_id: usize) -> Vec<usize> {
+        let mut ancestors = Vec::with_capacity(16);
+        let mut current = Some(node_id);
+        while let Some(id) = current {
+            ancestors.push(id);
+            current = self.nodes[id].parent;
+        }
+        ancestors.reverse();
+        ancestors
+    }
+
+    /// Collect all inline root nodes between start_node and end_node in document order.
+    /// Both start and end are assumed to be inline roots.
+    /// Returns the nodes in document order (from first to last).
+    pub fn collect_inline_roots_in_range(&self, start_node: usize, end_node: usize) -> Vec<usize> {
+        use std::cmp::Ordering;
+
+        // Ensure start comes before end in document order
+        let (first, last) = match self.compare_document_order(start_node, end_node) {
+            Ordering::Less | Ordering::Equal => (start_node, end_node),
+            Ordering::Greater => (end_node, start_node),
+        };
+
+        let mut result = Vec::new();
+        let mut found_first = false;
+
+        // Traverse tree in document order
+        for node_id in TreeTraverser::new(self) {
+            if node_id == first {
+                found_first = true;
+            }
+
+            if found_first {
+                let node = &self.nodes[node_id];
+                if node.flags.is_inline_root() {
+                    result.push(node_id);
+                }
+            }
+
+            if node_id == last {
+                break;
+            }
+        }
+
+        result
+    }
 }

@@ -45,12 +45,11 @@ pub(crate) fn handle_mousemove<F: FnMut(DomEvent)>(
         // Handle text selection extension for non-element nodes
         if buttons != MouseEventButtons::None && doc.selection_start_node.is_some() {
             if let Some((inline_root_id, byte_offset)) = doc.find_text_position(x, y) {
-                if Some(inline_root_id) == doc.selection_start_node {
-                    doc.selection_end_node = Some(inline_root_id);
-                    doc.selection_end_offset = byte_offset;
-                    doc.shell_provider.request_redraw();
-                    changed = true;
-                }
+                // Allow selection across multiple inline roots
+                doc.selection_end_node = Some(inline_root_id);
+                doc.selection_end_offset = byte_offset;
+                doc.shell_provider.request_redraw();
+                changed = true;
             }
         }
         return changed;
@@ -90,14 +89,12 @@ pub(crate) fn handle_mousemove<F: FnMut(DomEvent)>(
         changed = true;
     } else if buttons != MouseEventButtons::None && doc.selection_start_node.is_some() {
         // Extend text selection while dragging (for non-input text)
+        // Allow selection across multiple inline roots
         if let Some((inline_root_id, byte_offset)) = doc.find_text_position(x, y) {
-            // Only extend if we're in the same inline root as the start
-            if Some(inline_root_id) == doc.selection_start_node {
-                doc.selection_end_node = Some(inline_root_id);
-                doc.selection_end_offset = byte_offset;
-                doc.shell_provider.request_redraw();
-                changed = true;
-            }
+            doc.selection_end_node = Some(inline_root_id);
+            doc.selection_end_offset = byte_offset;
+            doc.shell_provider.request_redraw();
+            changed = true;
         }
     }
 

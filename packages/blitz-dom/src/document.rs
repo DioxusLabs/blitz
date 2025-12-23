@@ -1384,48 +1384,134 @@ impl BaseDocument {
                 || self.selection_start_offset != self.selection_end_offset)
     }
 
-    /// Get the selected text content (only supports single inline root for now)
+    /// Get the selected text content, supporting selection across multiple inline roots.
     pub fn get_selected_text(&self) -> Option<String> {
-        let start_node_id = self.selection_start_node?;
-        let end_node_id = self.selection_end_node?;
-
-        // For now, only support selection within a single inline root
-        if start_node_id != end_node_id {
+        let ranges = self.get_text_selection_ranges();
+        if ranges.is_empty() {
             return None;
         }
 
-        let node = self.get_node(start_node_id)?;
-        let inline_layout = node.element_data()?.inline_layout_data.as_ref()?;
+        let mut result = String::new();
+        for (node_id, start, end) in &ranges {
+            let Some(node) = self.get_node(*node_id) else {
+                continue;
+            };
+            let Some(element_data) = node.element_data() else {
+                continue;
+            };
+            let Some(inline_layout) = element_data.inline_layout_data.as_ref() else {
+                continue;
+            };
 
-        let start = self.selection_start_offset.min(self.selection_end_offset);
-        let end = self.selection_start_offset.max(self.selection_end_offset);
+            if *end > inline_layout.text.len() {
+                continue;
+            }
 
-        if start == end || end > inline_layout.text.len() {
-            return None;
+            if !result.is_empty() {
+                // Add space between different inline roots (matches browser behavior for
+                // inline content). Use newline only if the inline roots are in different
+                // block containers, but for simplicity we use space for now.
+                result.push(' ');
+            }
+            result.push_str(&inline_layout.text[*start..*end]);
         }
 
-        Some(inline_layout.text[start..end].to_string())
+        if result.is_empty() {
+            None
+        } else {
+            Some(result)
+        }
     }
 
-    /// Get the selection range as (node_id, start_offset, end_offset)
-    /// Returns None if no selection or if selection spans multiple inline roots
-    pub fn get_text_selection_range(&self) -> Option<(usize, usize, usize)> {
-        let start_node_id = self.selection_start_node?;
-        let end_node_id = self.selection_end_node?;
+    /// Get all selection ranges as Vec<(node_id, start_offset, end_offset)>.
+    /// Returns empty vec if no selection.
+    /// For single-node selection, returns a single range.
+    /// For multi-node selection, returns ranges for each inline root in document order.
+    pub fn get_text_selection_ranges(&self) -> Vec<(usize, usize, usize)> {
+        let Some(start_node_id) = self.selection_start_node else {
+            return Vec::new();
+        };
+        let Some(end_node_id) = self.selection_end_node else {
+            return Vec::new();
+        };
 
-        // For now, only support selection within a single inline root
-        if start_node_id != end_node_id {
-            return None;
+        // Single node selection
+        if start_node_id == end_node_id {
+            let start = self.selection_start_offset.min(self.selection_end_offset);
+            let end = self.selection_start_offset.max(self.selection_end_offset);
+
+            if start == end {
+                return Vec::new();
+            }
+
+            return vec![(start_node_id, start, end)];
         }
 
-        let start = self.selection_start_offset.min(self.selection_end_offset);
-        let end = self.selection_start_offset.max(self.selection_end_offset);
-
-        if start == end {
-            return None;
+        // Multi-node selection: collect all inline roots between start and end
+        let inline_roots = self.collect_inline_roots_in_range(start_node_id, end_node_id);
+        if inline_roots.is_empty() {
+            return Vec::new();
         }
 
-        Some((start_node_id, start, end))
+        // Determine which end comes first in document order
+        use std::cmp::Ordering;
+        let (first_node, first_offset, last_node, last_offset) =
+            match self.compare_document_order(start_node_id, end_node_id) {
+                Ordering::Less | Ordering::Equal => (
+                    start_node_id,
+                    self.selection_start_offset,
+                    end_node_id,
+                    self.selection_end_offset,
+                ),
+                Ordering::Greater => (
+                    end_node_id,
+                    self.selection_end_offset,
+                    start_node_id,
+                    self.selection_start_offset,
+                ),
+            };
+
+        let mut ranges = Vec::with_capacity(inline_roots.len());
+
+        for &node_id in &inline_roots {
+            let Some(node) = self.get_node(node_id) else {
+                continue;
+            };
+            let Some(element_data) = node.element_data() else {
+                continue;
+            };
+            let Some(inline_layout) = element_data.inline_layout_data.as_ref() else {
+                continue;
+            };
+
+            let text_len = inline_layout.text.len();
+
+            if node_id == first_node && node_id == last_node {
+                // Single node (shouldn't happen in this branch, but handle it)
+                let start = first_offset.min(last_offset);
+                let end = first_offset.max(last_offset);
+                if start < end && end <= text_len {
+                    ranges.push((node_id, start, end));
+                }
+            } else if node_id == first_node {
+                // First node: from offset to end of text
+                if first_offset < text_len {
+                    ranges.push((node_id, first_offset, text_len));
+                }
+            } else if node_id == last_node {
+                // Last node: from start to offset
+                if last_offset > 0 && last_offset <= text_len {
+                    ranges.push((node_id, 0, last_offset));
+                }
+            } else {
+                // Middle node: entire text
+                if text_len > 0 {
+                    ranges.push((node_id, 0, text_len));
+                }
+            }
+        }
+
+        ranges
     }
 }
 
