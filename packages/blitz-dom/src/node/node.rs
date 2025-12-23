@@ -5,7 +5,7 @@ use blitz_traits::shell::ShellProvider;
 use html_escape::encode_quoted_attribute_to_string;
 use keyboard_types::Modifiers;
 use markup5ever::{LocalName, local_name};
-use parley::Cluster;
+use parley::{BreakReason, Cluster, ClusterSide};
 use selectors::matching::ElementSelectorFlags;
 use slab::Slab;
 use std::cell::{Cell, RefCell};
@@ -949,8 +949,29 @@ impl Node {
         let scale = layout.scale();
 
         // Use Parley's cluster hit testing (from_point is more forgiving than from_point_exact)
-        let (cluster, _affinity) = Cluster::from_point(layout, x * scale, y * scale)?;
-        Some(cluster.text_range().start)
+        let (cluster, side) = Cluster::from_point(layout, x * scale, y * scale)?;
+
+        // Determine byte offset based on which side of the cluster was clicked
+        // For LTR text: left side = start of cluster, right side = end of cluster
+        // For RTL text: left side = end of cluster, right side = start of cluster
+        // Also, explicit line breaks should always use start to avoid cursor appearing on next line
+        let is_leading = side == ClusterSide::Left;
+        let offset = if cluster.is_rtl() {
+            if is_leading {
+                cluster.text_range().end
+            } else {
+                cluster.text_range().start
+            }
+        } else {
+            // LTR text
+            if is_leading || cluster.is_line_break() == Some(BreakReason::Explicit) {
+                cluster.text_range().start
+            } else {
+                cluster.text_range().end
+            }
+        };
+
+        Some(offset)
     }
 
     /// Computes the Document-relative coordinates of the Node
