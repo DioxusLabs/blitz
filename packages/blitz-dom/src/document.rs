@@ -164,6 +164,16 @@ pub struct BaseDocument {
     /// How many clicks have been made in quick succession
     pub(crate) click_count: u16,
 
+    // Text selection state (for non-input text)
+    /// The inline root node where selection started (if any)
+    pub(crate) selection_start_node: Option<usize>,
+    /// Byte offset in the text where selection started
+    pub(crate) selection_start_offset: usize,
+    /// The inline root node where selection ends (if any)
+    pub(crate) selection_end_node: Option<usize>,
+    /// Byte offset in the text where selection ends
+    pub(crate) selection_end_offset: usize,
+
     // TODO: collapse animating state into a bitflags
     /// Whether there are active CSS animations/transitions (so we should re-render every frame)
     pub(crate) has_active_animations: bool,
@@ -325,6 +335,10 @@ impl BaseDocument {
             last_click_time: None,
             last_click_position: taffy::Point::ZERO,
             click_count: 0,
+            selection_start_node: None,
+            selection_start_offset: 0,
+            selection_end_node: None,
+            selection_end_offset: 0,
         };
 
         // Initialise document with root Document node
@@ -1319,6 +1333,99 @@ impl BaseDocument {
 
             false
         })
+    }
+
+    // Text selection methods
+
+    /// Find the text position (inline_root_id, byte_offset) at a given point.
+    /// Uses hit() for proper coordinate transformation, then finds the inline root
+    /// and byte offset.
+    pub fn find_text_position(&self, x: f32, y: f32) -> Option<(usize, usize)> {
+        // Use hit() to get the node and transformed coordinates
+        let hit = self.hit(x, y)?;
+        let hit_node = self.get_node(hit.node_id)?;
+
+        // Find the inline root ancestor
+        let inline_root = hit_node.inline_root_ancestor()?;
+
+        // Get byte offset using the already-transformed coordinates from hit()
+        let byte_offset = inline_root.text_offset_at_point(hit.x, hit.y)?;
+
+        Some((inline_root.id, byte_offset))
+    }
+
+    /// Set the text selection range
+    pub fn set_text_selection(
+        &mut self,
+        start_node: usize,
+        start_offset: usize,
+        end_node: usize,
+        end_offset: usize,
+    ) {
+        self.selection_start_node = Some(start_node);
+        self.selection_start_offset = start_offset;
+        self.selection_end_node = Some(end_node);
+        self.selection_end_offset = end_offset;
+    }
+
+    /// Clear the text selection
+    pub fn clear_text_selection(&mut self) {
+        self.selection_start_node = None;
+        self.selection_start_offset = 0;
+        self.selection_end_node = None;
+        self.selection_end_offset = 0;
+    }
+
+    /// Check if there is an active text selection
+    pub fn has_text_selection(&self) -> bool {
+        self.selection_start_node.is_some()
+            && self.selection_end_node.is_some()
+            && (self.selection_start_node != self.selection_end_node
+                || self.selection_start_offset != self.selection_end_offset)
+    }
+
+    /// Get the selected text content (only supports single inline root for now)
+    pub fn get_selected_text(&self) -> Option<String> {
+        let start_node_id = self.selection_start_node?;
+        let end_node_id = self.selection_end_node?;
+
+        // For now, only support selection within a single inline root
+        if start_node_id != end_node_id {
+            return None;
+        }
+
+        let node = self.get_node(start_node_id)?;
+        let inline_layout = node.element_data()?.inline_layout_data.as_ref()?;
+
+        let start = self.selection_start_offset.min(self.selection_end_offset);
+        let end = self.selection_start_offset.max(self.selection_end_offset);
+
+        if start == end || end > inline_layout.text.len() {
+            return None;
+        }
+
+        Some(inline_layout.text[start..end].to_string())
+    }
+
+    /// Get the selection range as (node_id, start_offset, end_offset)
+    /// Returns None if no selection or if selection spans multiple inline roots
+    pub fn get_text_selection_range(&self) -> Option<(usize, usize, usize)> {
+        let start_node_id = self.selection_start_node?;
+        let end_node_id = self.selection_end_node?;
+
+        // For now, only support selection within a single inline root
+        if start_node_id != end_node_id {
+            return None;
+        }
+
+        let start = self.selection_start_offset.min(self.selection_end_offset);
+        let end = self.selection_start_offset.max(self.selection_end_offset);
+
+        if start == end {
+            return None;
+        }
+
+        Some((start_node_id, start, end))
     }
 }
 

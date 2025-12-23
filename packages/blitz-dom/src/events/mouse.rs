@@ -42,6 +42,17 @@ pub(crate) fn handle_mousemove<F: FnMut(DomEvent)>(
 
     let node = &mut doc.nodes[target];
     let Some(el) = node.data.downcast_element_mut() else {
+        // Handle text selection extension for non-element nodes
+        if buttons != MouseEventButtons::None && doc.selection_start_node.is_some() {
+            if let Some((inline_root_id, byte_offset)) = doc.find_text_position(x, y) {
+                if Some(inline_root_id) == doc.selection_start_node {
+                    doc.selection_end_node = Some(inline_root_id);
+                    doc.selection_end_offset = byte_offset;
+                    doc.shell_provider.request_redraw();
+                    changed = true;
+                }
+            }
+        }
         return changed;
     };
 
@@ -77,6 +88,17 @@ pub(crate) fn handle_mousemove<F: FnMut(DomEvent)>(
             .extend_selection_to_point(x as f32, y as f32);
 
         changed = true;
+    } else if buttons != MouseEventButtons::None && doc.selection_start_node.is_some() {
+        // Extend text selection while dragging (for non-input text)
+        if let Some((inline_root_id, byte_offset)) = doc.find_text_position(x, y) {
+            // Only extend if we're in the same inline root as the start
+            if Some(inline_root_id) == doc.selection_start_node {
+                doc.selection_end_node = Some(inline_root_id);
+                doc.selection_end_offset = byte_offset;
+                doc.shell_provider.request_redraw();
+                changed = true;
+            }
+        }
     }
 
     changed
@@ -91,77 +113,113 @@ pub(crate) fn handle_mousedown(
     dispatch_event: &mut dyn FnMut(DomEvent),
 ) {
     let Some(hit) = doc.hit(x, y) else {
+        // Clear text selection when clicking outside any element
+        doc.clear_text_selection();
         return;
     };
     if hit.node_id != target {
         return;
     }
 
-    let node = &mut doc.nodes[target];
-    let Some(el) = node.data.downcast_element_mut() else {
-        return;
-    };
-
-    let disabled = el.attr(local_name!("disabled")).is_some();
-    if disabled {
-        return;
+    // First, check what kind of element we're dealing with and extract needed info
+    enum ClickTarget {
+        TextInput {
+            content_box_offset: taffy::Point<f32>,
+        },
+        Disabled,
+        NonElement,
+        Other,
     }
 
-    if let SpecialElementData::TextInput(ref mut text_input_data) = el.special_data {
-        let mut content_box_offset = taffy::Point {
-            x: node.final_layout.padding.left + node.final_layout.border.left,
-            y: node.final_layout.padding.top + node.final_layout.border.top,
-        };
-        if !text_input_data.is_multiline {
-            let layout = text_input_data.editor.try_layout().unwrap();
-            let content_box_height = node.final_layout.content_box_height();
-            let input_height = layout.height() / layout.scale();
-            let y_offset = ((content_box_height - input_height) / 2.0).max(0.0);
-
-            content_box_offset.y += y_offset;
-        }
-
-        // TODO: Only increment click count if click maps to the same/similar caret position as the previous click
-        let click_count = if doc
-            .last_click_time
-            .map(|t| t.elapsed() < Duration::from_millis(500))
-            .unwrap_or(false)
-            && (doc.last_click_position.x - x).abs() <= 2.0
-            && (doc.last_click_position.y - y).abs() <= 2.0
-        {
-            doc.click_count + 1
-        } else {
-            1
-        };
-
-        let x = (hit.x - content_box_offset.x) as f64 * doc.viewport.scale_f64();
-        let y = (hit.y - content_box_offset.y) as f64 * doc.viewport.scale_f64();
-
-        let mut font_ctx = doc.font_ctx.lock().unwrap();
-        let mut driver = text_input_data
-            .editor
-            .driver(&mut font_ctx, &mut doc.layout_ctx);
-
-        match click_count {
-            1 => {
-                if mods.shift() {
-                    driver.shift_click_extension(x as f32, y as f32);
-                } else {
-                    driver.move_to_point(x as f32, y as f32);
+    let click_target = {
+        let node = &doc.nodes[target];
+        if let Some(el) = node.data.downcast_element() {
+            if el.attr(local_name!("disabled")).is_some() {
+                ClickTarget::Disabled
+            } else if let SpecialElementData::TextInput(ref text_input_data) = el.special_data {
+                let mut content_box_offset = taffy::Point {
+                    x: node.final_layout.padding.left + node.final_layout.border.left,
+                    y: node.final_layout.padding.top + node.final_layout.border.top,
+                };
+                if !text_input_data.is_multiline {
+                    let layout = text_input_data.editor.try_layout().unwrap();
+                    let content_box_height = node.final_layout.content_box_height();
+                    let input_height = layout.height() / layout.scale();
+                    let y_offset = ((content_box_height - input_height) / 2.0).max(0.0);
+                    content_box_offset.y += y_offset;
                 }
+                ClickTarget::TextInput { content_box_offset }
+            } else {
+                ClickTarget::Other
             }
-            2 => driver.select_word_at_point(x as f32, y as f32),
-            _ => driver.select_hard_line_at_point(x as f32, y as f32),
+        } else {
+            ClickTarget::NonElement
         }
+    };
 
-        drop(font_ctx);
-        generate_focus_events(
-            doc,
-            &mut |doc| {
-                doc.set_focus_to(hit.node_id);
-            },
-            dispatch_event,
-        );
+    match click_target {
+        ClickTarget::Disabled => return,
+        ClickTarget::NonElement | ClickTarget::Other => {
+            // Handle text selection for non-input elements
+            if let Some((inline_root_id, byte_offset)) = doc.find_text_position(x, y) {
+                doc.set_text_selection(inline_root_id, byte_offset, inline_root_id, byte_offset);
+                doc.shell_provider.request_redraw();
+            } else {
+                doc.clear_text_selection();
+            }
+        }
+        ClickTarget::TextInput { content_box_offset } => {
+            // Clear general text selection when focusing a text input
+            doc.clear_text_selection();
+
+            // TODO: Only increment click count if click maps to the same/similar caret position as the previous click
+            let click_count = if doc
+                .last_click_time
+                .map(|t| t.elapsed() < Duration::from_millis(500))
+                .unwrap_or(false)
+                && (doc.last_click_position.x - x).abs() <= 2.0
+                && (doc.last_click_position.y - y).abs() <= 2.0
+            {
+                doc.click_count + 1
+            } else {
+                1
+            };
+
+            let tx = (hit.x - content_box_offset.x) as f64 * doc.viewport.scale_f64();
+            let ty = (hit.y - content_box_offset.y) as f64 * doc.viewport.scale_f64();
+
+            // Now get mutable access to the text input
+            let node = &mut doc.nodes[target];
+            let el = node.data.downcast_element_mut().unwrap();
+            if let SpecialElementData::TextInput(ref mut text_input_data) = el.special_data {
+                let mut font_ctx = doc.font_ctx.lock().unwrap();
+                let mut driver = text_input_data
+                    .editor
+                    .driver(&mut font_ctx, &mut doc.layout_ctx);
+
+                match click_count {
+                    1 => {
+                        if mods.shift() {
+                            driver.shift_click_extension(tx as f32, ty as f32);
+                        } else {
+                            driver.move_to_point(tx as f32, ty as f32);
+                        }
+                    }
+                    2 => driver.select_word_at_point(tx as f32, ty as f32),
+                    _ => driver.select_hard_line_at_point(tx as f32, ty as f32),
+                }
+
+                drop(font_ctx);
+            }
+
+            generate_focus_events(
+                doc,
+                &mut |doc| {
+                    doc.set_focus_to(hit.node_id);
+                },
+                dispatch_event,
+            );
+        }
     }
 }
 

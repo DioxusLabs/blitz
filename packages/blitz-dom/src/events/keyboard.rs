@@ -28,6 +28,30 @@ pub(crate) fn handle_keypress<F: FnMut(DomEvent)>(
         return;
     }
 
+    // Handle copy (Ctrl+C/Cmd+C) for text selection when no text input is focused
+    if event.state.is_pressed() {
+        let action_mod = event.modifiers.contains(ACTION_MOD);
+        if action_mod {
+            if let Key::Character(c) = &event.key {
+                if c.to_lowercase() == "c" {
+                    // Check if we have a text selection (and no focused text input)
+                    let has_focused_text_input = doc.focus_node_id.is_some_and(|id| {
+                        doc.get_node(id)
+                            .and_then(|n| n.element_data())
+                            .is_some_and(|e| e.text_input_data().is_some())
+                    });
+
+                    if !has_focused_text_input {
+                        if let Some(text) = doc.get_selected_text() {
+                            let _ = doc.shell_provider.set_clipboard_text(text);
+                            return;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     if let Some(node_id) = doc.focus_node_id {
         if target != node_id {
             return;

@@ -1,7 +1,7 @@
 use anyrender::PaintScene;
 use blitz_dom::{BaseDocument, node::TextBrush, util::ToColorColor};
 use kurbo::{Affine, Stroke};
-use parley::{Line, PositionedLayoutItem};
+use parley::{Affinity, Cursor, Layout, Line, PositionedLayoutItem, Selection};
 use peniko::Fill;
 use style::values::computed::TextDecorationLine;
 
@@ -86,4 +86,32 @@ pub(crate) fn stroke_text<'a>(
             }
         }
     }
+}
+
+/// Draw selection highlight rectangles for the given byte range in a layout.
+/// Uses Parley's Selection type for accurate geometry calculation.
+pub(crate) fn draw_text_selection(
+    scene: &mut impl PaintScene,
+    layout: &Layout<TextBrush>,
+    transform: Affine,
+    selection_start: usize,
+    selection_end: usize,
+) {
+    let anchor = Cursor::from_byte_index(layout, selection_start, Affinity::Downstream);
+    let focus = Cursor::from_byte_index(layout, selection_end, Affinity::Downstream);
+    let selection = Selection::new(anchor, focus);
+
+    let selection_color = color::palette::css::STEEL_BLUE;
+    let scale = layout.scale() as f64;
+
+    selection.geometry_with(layout, |rect, _line_idx| {
+        // Convert from Parley's BoundingBox to kurbo::Rect, accounting for scale
+        let rect = kurbo::Rect::new(
+            rect.x0 as f64 / scale,
+            rect.y0 as f64 / scale,
+            rect.x1 as f64 / scale,
+            rect.y1 as f64 / scale,
+        );
+        scene.fill(Fill::NonZero, transform, selection_color, None, &rect);
+    });
 }

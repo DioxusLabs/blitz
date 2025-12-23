@@ -440,6 +440,21 @@ impl ElementCx<'_> {
             let transform =
                 Affine::translate((pos.x * self.scale, pos.y * self.scale)) * self.transform;
 
+            // Render text selection highlight (if any)
+            if let Some((sel_node_id, sel_start, sel_end)) =
+                self.context.dom.get_text_selection_range()
+            {
+                if sel_node_id == self.node.id {
+                    crate::text::draw_text_selection(
+                        scene,
+                        &text_layout.layout,
+                        transform,
+                        sel_start,
+                        sel_end,
+                    );
+                }
+            }
+
             // Render text
             crate::text::stroke_text(
                 scene,

@@ -923,6 +923,36 @@ impl Node {
         None
     }
 
+    /// Find the inline root ancestor of this node (or self if this is an inline root).
+    /// Returns None if no inline root ancestor exists.
+    pub fn inline_root_ancestor(&self) -> Option<&Node> {
+        let mut node = self;
+        loop {
+            if node.flags.is_inline_root() {
+                return Some(node);
+            }
+            node = node.layout_parent.get().map(|id| self.with(id))?;
+        }
+    }
+
+    /// Get the text byte offset at a given point, using coordinates already transformed
+    /// to be relative to this inline root's content box.
+    /// Returns Some(byte_offset) if the point hits text, None otherwise.
+    pub fn text_offset_at_point(&self, x: f32, y: f32) -> Option<usize> {
+        if !self.flags.is_inline_root() {
+            return None;
+        }
+
+        let element_data = self.element_data()?;
+        let inline_layout = element_data.inline_layout_data.as_ref()?;
+        let layout = &inline_layout.layout;
+        let scale = layout.scale();
+
+        // Use Parley's cluster hit testing (from_point is more forgiving than from_point_exact)
+        let (cluster, _affinity) = Cluster::from_point(layout, x * scale, y * scale)?;
+        Some(cluster.text_range().start)
+    }
+
     /// Computes the Document-relative coordinates of the Node
     pub fn absolute_position(&self, x: f32, y: f32) -> taffy::Point<f32> {
         let x = x + self.final_layout.location.x - self.scroll_offset.x as f32;
