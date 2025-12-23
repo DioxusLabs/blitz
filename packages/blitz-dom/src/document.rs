@@ -1347,14 +1347,19 @@ impl BaseDocument {
         focus_node: usize,
         focus_offset: usize,
     ) {
-        self.text_selection = TextSelection::new(anchor_node, anchor_offset, focus_node, focus_offset);
+        self.text_selection =
+            TextSelection::new(anchor_node, anchor_offset, focus_node, focus_offset);
 
         // Store stable parent references for anonymous blocks
         let (anchor_parent, anchor_idx) = self.anonymous_block_location(anchor_node);
         let (focus_parent, focus_idx) = self.anonymous_block_location(focus_node);
 
-        self.text_selection.anchor.set_anonymous_info(anchor_parent, anchor_idx);
-        self.text_selection.focus.set_anonymous_info(focus_parent, focus_idx);
+        self.text_selection
+            .anchor
+            .set_anonymous_info(anchor_parent, anchor_idx);
+        self.text_selection
+            .focus
+            .set_anonymous_info(focus_parent, focus_idx);
     }
 
     /// Get the parent ID and sibling index for a node if it's an anonymous block.
@@ -1452,7 +1457,11 @@ impl BaseDocument {
     }
 
     /// Find the Nth anonymous block under a parent.
-    fn find_anonymous_block_by_index(&self, parent_id: usize, target_index: usize) -> Option<usize> {
+    fn find_anonymous_block_by_index(
+        &self,
+        parent_id: usize,
+        target_index: usize,
+    ) -> Option<usize> {
         let parent = self.get_node(parent_id)?;
         let layout_children = parent.layout_children.borrow();
         let children = layout_children.as_ref()?;
@@ -1498,7 +1507,11 @@ impl BaseDocument {
             result.push_str(&inline_layout.text[*start..*end]);
         }
 
-        if result.is_empty() { None } else { Some(result) }
+        if result.is_empty() {
+            None
+        } else {
+            Some(result)
+        }
     }
 
     /// Get all selection ranges as Vec<(node_id, start_offset, end_offset)>.
@@ -1517,8 +1530,16 @@ impl BaseDocument {
 
         // Single node selection
         if anchor_node == focus_node {
-            let start = self.text_selection.anchor.offset.min(self.text_selection.focus.offset);
-            let end = self.text_selection.anchor.offset.max(self.text_selection.focus.offset);
+            let start = self
+                .text_selection
+                .anchor
+                .offset
+                .min(self.text_selection.focus.offset);
+            let end = self
+                .text_selection
+                .anchor
+                .offset
+                .max(self.text_selection.focus.offset);
 
             if start == end {
                 return Vec::new();
@@ -1552,9 +1573,15 @@ impl BaseDocument {
         let mut ranges = Vec::with_capacity(inline_roots.len());
 
         for &node_id in &inline_roots {
-            let Some(node) = self.get_node(node_id) else { continue };
-            let Some(element_data) = node.element_data() else { continue };
-            let Some(inline_layout) = element_data.inline_layout_data.as_ref() else { continue };
+            let Some(node) = self.get_node(node_id) else {
+                continue;
+            };
+            let Some(element_data) = node.element_data() else {
+                continue;
+            };
+            let Some(inline_layout) = element_data.inline_layout_data.as_ref() else {
+                continue;
+            };
 
             let text_len = inline_layout.text.len();
 

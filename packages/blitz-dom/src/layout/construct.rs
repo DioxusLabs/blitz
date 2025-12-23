@@ -1045,7 +1045,11 @@ pub(crate) fn build_inline_layout_into(
 /// Recursively set layout_parent for all children of an inline root.
 /// This ensures that text nodes and inline elements can find their inline root
 /// ancestor via the layout_parent chain.
-fn set_inline_children_layout_parent(doc: &mut BaseDocument, node_id: usize, inline_root_id: usize) {
+fn set_inline_children_layout_parent(
+    doc: &mut BaseDocument,
+    node_id: usize,
+    inline_root_id: usize,
+) {
     let children = std::mem::take(&mut doc.nodes[node_id].children);
     for &child_id in &children {
         doc.nodes[child_id].layout_parent.set(Some(inline_root_id));

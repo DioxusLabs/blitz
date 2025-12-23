@@ -271,7 +271,10 @@ impl BaseDocument {
         // Safety: common_depth must be > 0 here because both chains start from the same
         // root node (node 0), so they share at least that node. If common_depth were 0,
         // chain_a[0] != chain_b[0], but both start from root, so this is impossible.
-        debug_assert!(common_depth > 0, "nodes must share a common ancestor (the root)");
+        debug_assert!(
+            common_depth > 0,
+            "nodes must share a common ancestor (the root)"
+        );
 
         // Compare position among siblings at the divergence point
         let divergent_a = chain_a[common_depth];
@@ -322,18 +325,36 @@ impl BaseDocument {
 
         // Determine first/last based on document order
         // For anonymous blocks, use their parent's position in document order
-        let start_cmp_id = if start_is_anon { start.parent.unwrap_or(start_node) } else { start_node };
-        let end_cmp_id = if end_is_anon { end.parent.unwrap_or(end_node) } else { end_node };
+        let start_cmp_id = if start_is_anon {
+            start.parent.unwrap_or(start_node)
+        } else {
+            start_node
+        };
+        let end_cmp_id = if end_is_anon {
+            end.parent.unwrap_or(end_node)
+        } else {
+            end_node
+        };
 
-        let (first, last, first_is_anon, last_is_anon) = match self.compare_document_order(start_cmp_id, end_cmp_id) {
+        let (first, last, first_is_anon, last_is_anon) = match self
+            .compare_document_order(start_cmp_id, end_cmp_id)
+        {
             Ordering::Less | Ordering::Equal => (start_node, end_node, start_is_anon, end_is_anon),
             Ordering::Greater => (end_node, start_node, end_is_anon, start_is_anon),
         };
 
         let mut result = Vec::new();
         let mut found_first = false;
-        let first_parent = if first_is_anon { self.nodes[first].parent } else { None };
-        let last_parent = if last_is_anon { self.nodes[last].parent } else { None };
+        let first_parent = if first_is_anon {
+            self.nodes[first].parent
+        } else {
+            None
+        };
+        let last_parent = if last_is_anon {
+            self.nodes[last].parent
+        } else {
+            None
+        };
 
         // Traverse tree in document order
         for node_id in TreeTraverser::new(self) {
@@ -399,7 +420,9 @@ impl BaseDocument {
     fn collect_anonymous_from(&self, parent_id: usize, from: usize, result: &mut Vec<usize>) {
         let parent = &self.nodes[parent_id];
         let layout_children = parent.layout_children.borrow();
-        let Some(children) = layout_children.as_ref() else { return };
+        let Some(children) = layout_children.as_ref() else {
+            return;
+        };
 
         let mut found = false;
         for &child_id in children.iter() {
@@ -419,7 +442,9 @@ impl BaseDocument {
     fn collect_anonymous_until(&self, parent_id: usize, until: usize, result: &mut Vec<usize>) {
         let parent = &self.nodes[parent_id];
         let layout_children = parent.layout_children.borrow();
-        let Some(children) = layout_children.as_ref() else { return };
+        let Some(children) = layout_children.as_ref() else {
+            return;
+        };
 
         for &child_id in children.iter() {
             let child = &self.nodes[child_id];

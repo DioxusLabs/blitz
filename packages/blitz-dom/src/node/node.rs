@@ -904,7 +904,9 @@ impl Node {
                 let layout = &ild.layout;
                 let scale = layout.scale();
 
-                if let Some((cluster, _side)) = Cluster::from_point_exact(layout, x * scale, y * scale) {
+                if let Some((cluster, _side)) =
+                    Cluster::from_point_exact(layout, x * scale, y * scale)
+                {
                     let style_index = cluster.glyphs().next()?.style_index();
                     let node_id = layout.styles()[style_index].brush.id;
                     return Some(HitResult { node_id, x, y });

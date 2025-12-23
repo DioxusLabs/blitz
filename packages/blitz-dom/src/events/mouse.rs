@@ -109,7 +109,9 @@ pub(crate) fn handle_mousedown(
 
     // Check what kind of element we're dealing with and extract needed info
     enum ClickTarget {
-        TextInput { content_box_offset: taffy::Point<f32> },
+        TextInput {
+            content_box_offset: taffy::Point<f32>,
+        },
         Disabled,
         SelectableText,
     }
