@@ -28,8 +28,10 @@ use parley::FontContext;
 use selectors::{Element, matching::QuirksMode};
 use slab::Slab;
 use std::any::Any;
+use std::cell::RefCell;
 use std::collections::{BTreeMap, Bound, HashMap, HashSet};
 use std::ops::{Deref, DerefMut};
+use std::rc::Rc;
 use std::str::FromStr;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::mpsc::{Receiver, Sender, channel};
@@ -59,7 +61,7 @@ use style::{
 use url::Url;
 
 #[cfg(feature = "parallel-construct")]
-use {std::cell::RefCell, thread_local::ThreadLocal};
+use thread_local::ThreadLocal;
 
 pub enum DocGuard<'a> {
     Ref(&'a BaseDocument),
@@ -121,8 +123,8 @@ pub trait Document: Any + 'static {
 
     /// Update the [`Document`] in response to a [`UiEvent`] (click, keypress, etc)
     fn handle_ui_event(&mut self, event: UiEvent) {
-        let mut inner = self.inner_mut();
-        let mut driver = EventDriver::new(inner.mutate(), NoopEventHandler);
+        let mut doc = self.inner_mut();
+        let mut driver = EventDriver::new(&mut *doc, NoopEventHandler);
         driver.handle_ui_event(event);
     }
 
@@ -146,6 +148,25 @@ impl Document for PlainDocument {
     }
     fn inner_mut(&mut self) -> DocGuardMut<'_> {
         DocGuardMut::Ref(&mut self.0)
+    }
+}
+
+impl Document for BaseDocument {
+    fn inner(&self) -> DocGuard<'_> {
+        DocGuard::Ref(self)
+    }
+    fn inner_mut(&mut self) -> DocGuardMut<'_> {
+        DocGuardMut::Ref(self)
+    }
+}
+
+impl Document for Rc<RefCell<BaseDocument>> {
+    fn inner(&self) -> DocGuard<'_> {
+        DocGuard::RefCell(self.borrow())
+    }
+
+    fn inner_mut(&mut self) -> DocGuardMut<'_> {
+        DocGuardMut::RefCell(self.borrow_mut())
     }
 }
 

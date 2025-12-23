@@ -1,4 +1,4 @@
-use crate::{BaseDocument, DocumentMutator};
+use crate::Document;
 use blitz_traits::events::{BlitzMouseButtonEvent, DomEvent, DomEventData, EventState, UiEvent};
 use std::collections::VecDeque;
 
@@ -7,7 +7,7 @@ pub trait EventHandler {
         &mut self,
         chain: &[usize],
         event: &mut DomEvent,
-        mutr: &mut DocumentMutator<'_>,
+        doc: &mut dyn Document,
         event_state: &mut EventState,
     );
 }
@@ -18,7 +18,7 @@ impl EventHandler for NoopEventHandler {
         &mut self,
         _chain: &[usize],
         _event: &mut DomEvent,
-        _mutr: &mut DocumentMutator<'_>,
+        _doc: &mut dyn Document,
         _event_state: &mut EventState,
     ) {
         // Do nothing
@@ -26,46 +26,44 @@ impl EventHandler for NoopEventHandler {
 }
 
 pub struct EventDriver<'doc, Handler: EventHandler> {
-    mutr: DocumentMutator<'doc>,
+    doc: &'doc mut dyn Document,
     handler: Handler,
 }
 
 impl<'doc, Handler: EventHandler> EventDriver<'doc, Handler> {
-    fn doc_mut(&mut self) -> &mut BaseDocument {
-        self.mutr.doc
-    }
-
-    fn doc(&self) -> &BaseDocument {
-        &*self.mutr.doc
-    }
-
-    pub fn new(mutr: DocumentMutator<'doc>, handler: Handler) -> Self {
-        EventDriver { mutr, handler }
+    pub fn new(doc: &'doc mut dyn Document, handler: Handler) -> Self {
+        EventDriver { doc, handler }
     }
 
     pub fn handle_ui_event(&mut self, event: UiEvent) {
-        let viewport_scroll = self.doc().viewport_scroll();
-        let zoom = self.doc().viewport.zoom();
+        let doc = self.doc.inner();
+        let viewport_scroll = doc.viewport_scroll();
+        let zoom = doc.viewport.zoom();
 
-        let mut hover_node_id = self.doc().hover_node_id;
-        let focussed_node_id = self.doc().focus_node_id;
+        let mut hover_node_id = doc.hover_node_id;
+        let focussed_node_id = doc.focus_node_id;
+        drop(doc);
 
         // Update document input state (hover, focus, active, etc)
         match &event {
             UiEvent::MouseMove(event) => {
+                let mut doc = self.doc.inner_mut();
                 let dom_x = event.x + viewport_scroll.x as f32 / zoom;
                 let dom_y = event.y + viewport_scroll.y as f32 / zoom;
-                let changed = self.doc_mut().set_hover_to(dom_x, dom_y);
+                let changed = doc.set_hover_to(dom_x, dom_y);
 
                 let prev_hover_node_id = hover_node_id;
-                hover_node_id = self.doc().hover_node_id;
+                hover_node_id = doc.hover_node_id;
+
+                drop(doc);
 
                 if changed {
+                    let doc = self.doc.inner();
                     let mut old_chain = prev_hover_node_id
-                        .map(|id| self.doc().node_chain(id))
+                        .map(|id| doc.node_chain(id))
                         .unwrap_or_default();
                     let mut new_chain = hover_node_id
-                        .map(|id| self.doc().node_chain(id))
+                        .map(|id| doc.node_chain(id))
                         .unwrap_or_default();
                     old_chain.reverse();
                     new_chain.reverse();
@@ -79,6 +77,8 @@ impl<'doc, Handler: EventHandler> EventDriver<'doc, Handler> {
                         .zip(&new_chain)
                         .position(|(old, new)| old != new)
                         .unwrap_or_else(|| old_len.min(new_len));
+
+                    drop(doc);
 
                     if let Some(target) = prev_hover_node_id {
                         self.handle_dom_event(DomEvent::new(
@@ -120,11 +120,13 @@ impl<'doc, Handler: EventHandler> EventDriver<'doc, Handler> {
                 }
             }
             UiEvent::MouseDown(_) => {
-                self.doc_mut().active_node();
-                self.doc_mut().set_mousedown_node_id(hover_node_id);
+                let mut doc = self.doc.inner_mut();
+                doc.active_node();
+                doc.set_mousedown_node_id(hover_node_id);
             }
             UiEvent::MouseUp(_) => {
-                self.doc_mut().unactive_node();
+                let mut doc = self.doc.inner_mut();
+                doc.unactive_node();
             }
             _ => {}
         };
@@ -161,7 +163,7 @@ impl<'doc, Handler: EventHandler> EventDriver<'doc, Handler> {
             UiEvent::Ime(data) => DomEventData::Ime(data),
         };
 
-        let target = target.unwrap_or_else(|| self.doc().root_element().id);
+        let target = target.unwrap_or_else(|| self.doc.inner().root_element().id);
         let dom_event = DomEvent::new(target, data);
 
         self.handle_dom_event(dom_event);
@@ -173,18 +175,19 @@ impl<'doc, Handler: EventHandler> EventDriver<'doc, Handler> {
 
         while let Some(mut event) = queue.pop_front() {
             let chain = if event.bubbles {
-                self.doc().node_chain(event.target)
+                let doc = self.doc.inner();
+                doc.node_chain(event.target)
             } else {
                 vec![event.target]
             };
 
             let mut event_state = EventState::default();
             self.handler
-                .handle_event(&chain, &mut event, &mut self.mutr, &mut event_state);
+                .handle_event(&chain, &mut event, self.doc, &mut event_state);
 
             if !event_state.is_cancelled() {
-                self.doc_mut()
-                    .handle_dom_event(&mut event, |new_evt| queue.push_back(new_evt));
+                let mut doc = self.doc.inner_mut();
+                doc.handle_dom_event(&mut event, |new_evt| queue.push_back(new_evt));
             }
         }
     }

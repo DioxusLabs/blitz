@@ -245,8 +245,7 @@ impl Document for DioxusDocument {
             vdom: &mut self.vdom,
             vdom_state: &mut self.vdom_state,
         };
-        let mut inner = self.inner.borrow_mut();
-        let mut driver = EventDriver::new(inner.mutate(), handler);
+        let mut driver = EventDriver::new(&mut self.inner, handler);
         driver.handle_ui_event(event);
     }
 }
@@ -261,7 +260,7 @@ impl EventHandler for DioxusEventHandler<'_> {
         &mut self,
         chain: &[usize],
         event: &mut DomEvent,
-        mutr: &mut blitz_dom::DocumentMutator<'_>,
+        doc: &mut dyn Document,
         event_state: &mut EventState,
     ) {
         // As an optimisation we maintain a count of the total number event handlers of a given type
@@ -315,7 +314,7 @@ impl EventHandler for DioxusEventHandler<'_> {
 
         for &node_id in chain {
             // Get dioxus vdom id for node
-            let dioxus_id = mutr.doc.get_node(node_id).and_then(get_dioxus_id);
+            let dioxus_id = doc.inner().get_node(node_id).and_then(get_dioxus_id);
             let Some(id) = dioxus_id else {
                 continue;
             };
