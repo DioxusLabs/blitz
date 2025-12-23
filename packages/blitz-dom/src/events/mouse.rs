@@ -46,8 +46,8 @@ pub(crate) fn handle_mousemove<F: FnMut(DomEvent)>(
         if buttons != MouseEventButtons::None && doc.selection_start_node.is_some() {
             if let Some((inline_root_id, byte_offset)) = doc.find_text_position(x, y) {
                 // Allow selection across multiple inline roots
-                doc.selection_end_node = Some(inline_root_id);
-                doc.selection_end_offset = byte_offset;
+                // Use update_selection_end to also update stable references for anonymous blocks
+                doc.update_selection_end(inline_root_id, byte_offset);
                 doc.shell_provider.request_redraw();
                 changed = true;
             }
@@ -91,8 +91,8 @@ pub(crate) fn handle_mousemove<F: FnMut(DomEvent)>(
         // Extend text selection while dragging (for non-input text)
         // Allow selection across multiple inline roots
         if let Some((inline_root_id, byte_offset)) = doc.find_text_position(x, y) {
-            doc.selection_end_node = Some(inline_root_id);
-            doc.selection_end_offset = byte_offset;
+            // Use update_selection_end to also update stable references for anonymous blocks
+            doc.update_selection_end(inline_root_id, byte_offset);
             doc.shell_provider.request_redraw();
             changed = true;
         }
@@ -103,7 +103,7 @@ pub(crate) fn handle_mousemove<F: FnMut(DomEvent)>(
 
 pub(crate) fn handle_mousedown(
     doc: &mut BaseDocument,
-    target: usize,
+    _target: usize,
     x: f32,
     y: f32,
     mods: Modifiers,
@@ -114,9 +114,11 @@ pub(crate) fn handle_mousedown(
         doc.clear_text_selection();
         return;
     };
-    if hit.node_id != target {
-        return;
-    }
+
+    // Use hit.node_id for determining the actual clicked element.
+    // This may differ from `target` for anonymous blocks (which are layout children
+    // but not DOM children), so we use the hit result for text selection.
+    let actual_target = hit.node_id;
 
     // First, check what kind of element we're dealing with and extract needed info
     enum ClickTarget {
@@ -129,7 +131,7 @@ pub(crate) fn handle_mousedown(
     }
 
     let click_target = {
-        let node = &doc.nodes[target];
+        let node = &doc.nodes[actual_target];
         if let Some(el) = node.data.downcast_element() {
             if el.attr(local_name!("disabled")).is_some() {
                 ClickTarget::Disabled
@@ -186,7 +188,7 @@ pub(crate) fn handle_mousedown(
             let ty = (hit.y - content_box_offset.y) as f64 * doc.viewport.scale_f64();
 
             // Now get mutable access to the text input
-            let node = &mut doc.nodes[target];
+            let node = &mut doc.nodes[actual_target];
             let el = node.data.downcast_element_mut().unwrap();
             if let SpecialElementData::TextInput(ref mut text_input_data) = el.special_data {
                 let mut font_ctx = doc.font_ctx.lock().unwrap();

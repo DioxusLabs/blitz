@@ -310,33 +310,127 @@ impl BaseDocument {
     pub fn collect_inline_roots_in_range(&self, start_node: usize, end_node: usize) -> Vec<usize> {
         use std::cmp::Ordering;
 
-        // Ensure start comes before end in document order
-        let (first, last) = match self.compare_document_order(start_node, end_node) {
-            Ordering::Less | Ordering::Equal => (start_node, end_node),
-            Ordering::Greater => (end_node, start_node),
+        let start = &self.nodes[start_node];
+        let end = &self.nodes[end_node];
+        let start_is_anon = start.is_anonymous();
+        let end_is_anon = end.is_anonymous();
+
+        // If both are anonymous blocks with the same parent, just collect from layout_children
+        if start_is_anon && end_is_anon && start.parent == end.parent {
+            if let Some(parent_id) = start.parent {
+                return self.collect_anonymous_siblings(parent_id, start_node, end_node);
+            }
+        }
+
+        // Determine first/last based on document order
+        // For anonymous blocks, use their parent's position in document order
+        let start_cmp_id = if start_is_anon { start.parent.unwrap_or(start_node) } else { start_node };
+        let end_cmp_id = if end_is_anon { end.parent.unwrap_or(end_node) } else { end_node };
+
+        let (first, last, first_is_anon, last_is_anon) = match self.compare_document_order(start_cmp_id, end_cmp_id) {
+            Ordering::Less | Ordering::Equal => (start_node, end_node, start_is_anon, end_is_anon),
+            Ordering::Greater => (end_node, start_node, end_is_anon, start_is_anon),
         };
 
         let mut result = Vec::new();
         let mut found_first = false;
+        let first_parent = if first_is_anon { self.nodes[first].parent } else { None };
+        let last_parent = if last_is_anon { self.nodes[last].parent } else { None };
 
         // Traverse tree in document order
         for node_id in TreeTraverser::new(self) {
-            if node_id == first {
-                found_first = true;
+            // Check if we've reached the first node (or the parent of an anonymous first)
+            if !found_first {
+                if node_id == first {
+                    found_first = true;
+                } else if first_is_anon && Some(node_id) == first_parent {
+                    // Include anonymous blocks from this parent, starting from 'first'
+                    found_first = true;
+                    self.collect_anonymous_from(node_id, first, &mut result);
+                    continue;
+                }
             }
 
             if found_first {
+                // Check if this is the parent of the last anonymous block
+                if last_is_anon && Some(node_id) == last_parent {
+                    // Include anonymous blocks up to 'last'
+                    self.collect_anonymous_until(node_id, last, &mut result);
+                    break;
+                }
+
                 let node = &self.nodes[node_id];
                 if node.flags.is_inline_root() {
                     result.push(node_id);
                 }
-            }
 
-            if node_id == last {
-                break;
+                if node_id == last {
+                    break;
+                }
             }
         }
 
         result
+    }
+
+    /// Collect anonymous block siblings between start and end (inclusive)
+    fn collect_anonymous_siblings(&self, parent_id: usize, start: usize, end: usize) -> Vec<usize> {
+        let parent = &self.nodes[parent_id];
+        let layout_children = parent.layout_children.borrow();
+        let Some(children) = layout_children.as_ref() else {
+            return Vec::new();
+        };
+
+        let start_idx = children.iter().position(|&id| id == start);
+        let end_idx = children.iter().position(|&id| id == end);
+
+        let (first_idx, last_idx) = match (start_idx, end_idx) {
+            (Some(s), Some(e)) if s <= e => (s, e),
+            (Some(s), Some(e)) => (e, s),
+            _ => return Vec::new(),
+        };
+
+        children[first_idx..=last_idx]
+            .iter()
+            .filter(|&&id| self.nodes[id].flags.is_inline_root())
+            .copied()
+            .collect()
+    }
+
+    /// Collect anonymous inline roots from a parent, starting from 'from' node
+    fn collect_anonymous_from(&self, parent_id: usize, from: usize, result: &mut Vec<usize>) {
+        let parent = &self.nodes[parent_id];
+        let layout_children = parent.layout_children.borrow();
+        let Some(children) = layout_children.as_ref() else { return };
+
+        let mut found = false;
+        for &child_id in children.iter() {
+            if child_id == from {
+                found = true;
+            }
+            if found {
+                let child = &self.nodes[child_id];
+                if child.is_anonymous() && child.flags.is_inline_root() {
+                    result.push(child_id);
+                }
+            }
+        }
+    }
+
+    /// Collect anonymous inline roots from a parent, up to and including 'until' node
+    fn collect_anonymous_until(&self, parent_id: usize, until: usize, result: &mut Vec<usize>) {
+        let parent = &self.nodes[parent_id];
+        let layout_children = parent.layout_children.borrow();
+        let Some(children) = layout_children.as_ref() else { return };
+
+        for &child_id in children.iter() {
+            let child = &self.nodes[child_id];
+            if child.is_anonymous() && child.flags.is_inline_root() {
+                result.push(child_id);
+            }
+            if child_id == until {
+                break;
+            }
+        }
     }
 }

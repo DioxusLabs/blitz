@@ -173,6 +173,14 @@ pub struct BaseDocument {
     pub(crate) selection_end_node: Option<usize>,
     /// Byte offset in the text where selection ends
     pub(crate) selection_end_offset: usize,
+    /// Parent element ID for selection start (stable reference for anonymous blocks)
+    pub(crate) selection_start_parent: Option<usize>,
+    /// Parent element ID for selection end (stable reference for anonymous blocks)
+    pub(crate) selection_end_parent: Option<usize>,
+    /// Index of the anonymous block among its parent's layout_children (for selection start)
+    pub(crate) selection_start_anon_index: Option<usize>,
+    /// Index of the anonymous block among its parent's layout_children (for selection end)
+    pub(crate) selection_end_anon_index: Option<usize>,
 
     // TODO: collapse animating state into a bitflags
     /// Whether there are active CSS animations/transitions (so we should re-render every frame)
@@ -339,6 +347,10 @@ impl BaseDocument {
             selection_start_offset: 0,
             selection_end_node: None,
             selection_end_offset: 0,
+            selection_start_parent: None,
+            selection_end_parent: None,
+            selection_start_anon_index: None,
+            selection_end_anon_index: None,
         };
 
         // Initialise document with root Document node
@@ -1366,6 +1378,52 @@ impl BaseDocument {
         self.selection_start_offset = start_offset;
         self.selection_end_node = Some(end_node);
         self.selection_end_offset = end_offset;
+
+        // Store stable parent references and anonymous block index for anonymous blocks
+        let (start_parent, start_anon_idx) = self.get_anonymous_block_info(start_node);
+        let (end_parent, end_anon_idx) = self.get_anonymous_block_info(end_node);
+
+        self.selection_start_parent = start_parent;
+        self.selection_start_anon_index = start_anon_idx;
+        self.selection_end_parent = end_parent;
+        self.selection_end_anon_index = end_anon_idx;
+    }
+
+    /// Get parent ID and anonymous block index for a node (if it's an anonymous block)
+    fn get_anonymous_block_info(&self, node_id: usize) -> (Option<usize>, Option<usize>) {
+        let Some(node) = self.get_node(node_id) else {
+            return (None, None);
+        };
+
+        if !node.is_anonymous() {
+            return (None, None);
+        }
+
+        let Some(parent_id) = node.parent else {
+            return (None, None);
+        };
+
+        let Some(parent) = self.get_node(parent_id) else {
+            return (Some(parent_id), None);
+        };
+
+        let layout_children = parent.layout_children.borrow();
+        let Some(children) = layout_children.as_ref() else {
+            return (Some(parent_id), None);
+        };
+
+        // Count which anonymous block this is among the parent's anonymous block children
+        let mut anon_index = 0;
+        for &child_id in children.iter() {
+            if child_id == node_id {
+                return (Some(parent_id), Some(anon_index));
+            }
+            if self.get_node(child_id).map_or(false, |n| n.is_anonymous()) {
+                anon_index += 1;
+            }
+        }
+
+        (Some(parent_id), None)
     }
 
     /// Clear the text selection
@@ -1374,6 +1432,72 @@ impl BaseDocument {
         self.selection_start_offset = 0;
         self.selection_end_node = None;
         self.selection_end_offset = 0;
+        self.selection_start_parent = None;
+        self.selection_end_parent = None;
+        self.selection_start_anon_index = None;
+        self.selection_end_anon_index = None;
+    }
+
+    /// Update the selection end point (used during mouse drag to extend selection).
+    /// This also updates the stable parent/index references for anonymous blocks.
+    pub fn update_selection_end(&mut self, end_node: usize, end_offset: usize) {
+        self.selection_end_node = Some(end_node);
+        self.selection_end_offset = end_offset;
+
+        // Update stable references for anonymous blocks
+        let (end_parent, end_anon_idx) = self.get_anonymous_block_info(end_node);
+        self.selection_end_parent = end_parent;
+        self.selection_end_anon_index = end_anon_idx;
+    }
+
+    /// Update selection references after layout reconstruction.
+    /// Anonymous blocks are recreated with new IDs during layout, so we need to
+    /// find the new anonymous block that contains our selection.
+    pub fn update_selection_after_layout(&mut self) {
+        // Update start node if it was an anonymous block
+        if let (Some(_), Some(parent_id), Some(anon_index)) = (
+            self.selection_start_node,
+            self.selection_start_parent,
+            self.selection_start_anon_index,
+        ) {
+            // Always find the current anonymous block by index (IDs are unstable)
+            if let Some(new_node_id) = self.find_anonymous_block_by_index(parent_id, anon_index) {
+                self.selection_start_node = Some(new_node_id);
+            }
+        }
+
+        // Update end node if it was an anonymous block
+        if let (Some(_), Some(parent_id), Some(anon_index)) = (
+            self.selection_end_node,
+            self.selection_end_parent,
+            self.selection_end_anon_index,
+        ) {
+            // Always find the current anonymous block by index (IDs are unstable)
+            if let Some(new_node_id) = self.find_anonymous_block_by_index(parent_id, anon_index) {
+                self.selection_end_node = Some(new_node_id);
+            }
+        }
+    }
+
+    /// Find the Nth anonymous block under a parent.
+    /// Returns the node ID if found.
+    fn find_anonymous_block_by_index(&self, parent_id: usize, target_index: usize) -> Option<usize> {
+        let parent = self.get_node(parent_id)?;
+        let layout_children = parent.layout_children.borrow();
+        let layout_children = layout_children.as_ref()?;
+
+        let mut anon_index = 0;
+        for &child_id in layout_children.iter() {
+            let child = self.get_node(child_id)?;
+            if child.is_anonymous() {
+                if anon_index == target_index {
+                    return Some(child_id);
+                }
+                anon_index += 1;
+            }
+        }
+
+        None
     }
 
     /// Check if there is an active text selection
