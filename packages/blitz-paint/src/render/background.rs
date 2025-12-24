@@ -1,7 +1,6 @@
 use super::{ElementCx, to_image_quality, to_peniko_image};
 use crate::color::{Color, ToColorColor};
 use crate::gradient::to_peniko_gradient;
-use crate::layers::maybe_with_layer;
 use anyrender::PaintScene;
 use blitz_dom::node::{ImageData, SpecialElementData};
 use kurbo::{self, BezPath, Point, Rect, Shape, Size, Vec2};
@@ -52,7 +51,7 @@ impl ElementCx<'_> {
                 ContentBox => self.frame.content_box_path(),
             };
 
-            maybe_with_layer(
+            self.context.layer_manager.maybe_with_layer(
                 scene,
                 true,
                 1.0,

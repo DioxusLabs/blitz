@@ -10,7 +10,7 @@ use crate::SELECTION_COLOR;
 use crate::color::{Color, ToColorColor};
 use crate::debug_overlay::render_debug_overlay;
 use crate::kurbo_css::NonUniformRoundedRectRadii;
-use crate::layers::maybe_with_layer;
+use crate::layers::LayerManager;
 use crate::sizing::compute_object_fit;
 use anyrender::{CustomPaint, Paint, PaintScene};
 use blitz_dom::node::{
@@ -51,6 +51,7 @@ pub struct BlitzDomPainter<'dom> {
     pub(crate) initial_x: f64,
     pub(crate) initial_y: f64,
     pub(crate) devtools: DevtoolSettings,
+    pub(crate) layer_manager: LayerManager,
     /// Cached selection ranges for O(1) lookup: node_id -> (start_offset, end_offset)
     pub(crate) selection_ranges: HashMap<usize, (usize, usize)>,
 }
@@ -72,6 +73,8 @@ impl<'dom> BlitzDomPainter<'dom> {
             .map(|(node_id, start, end)| (node_id, (start, end)))
             .collect();
 
+        let layer_manager = LayerManager::default();
+
         Self {
             dom,
             scale,
@@ -80,6 +83,7 @@ impl<'dom> BlitzDomPainter<'dom> {
             initial_x,
             initial_y,
             devtools,
+            layer_manager,
             selection_ranges,
         }
     }
@@ -271,34 +275,41 @@ impl<'dom> BlitzDomPainter<'dom> {
             &cx.frame.padding_box_path()
         };
 
-        maybe_with_layer(scene, wants_layer, opacity, cx.transform, clip, |scene| {
-            cx.stroke_devtools(scene);
+        self.layer_manager.maybe_with_layer(
+            scene,
+            wants_layer,
+            opacity,
+            cx.transform,
+            clip,
+            |scene| {
+                cx.stroke_devtools(scene);
 
-            // Now that background has been drawn, offset pos and cx in order to draw our contents scrolled
-            let content_position = Point {
-                x: content_position.x - node.scroll_offset.x,
-                y: content_position.y - node.scroll_offset.y,
-            };
-            cx.pos = Point {
-                x: cx.pos.x - node.scroll_offset.x,
-                y: cx.pos.y - node.scroll_offset.y,
-            };
-            cx.transform = cx.transform.then_translate(Vec2 {
-                x: -node.scroll_offset.x,
-                y: -node.scroll_offset.y,
-            });
-            cx.draw_image(scene);
-            #[cfg(feature = "svg")]
-            cx.draw_svg(scene);
-            cx.draw_canvas(scene);
-            cx.draw_sub_document(scene);
-            cx.draw_input(scene);
+                // Now that background has been drawn, offset pos and cx in order to draw our contents scrolled
+                let content_position = Point {
+                    x: content_position.x - node.scroll_offset.x,
+                    y: content_position.y - node.scroll_offset.y,
+                };
+                cx.pos = Point {
+                    x: cx.pos.x - node.scroll_offset.x,
+                    y: cx.pos.y - node.scroll_offset.y,
+                };
+                cx.transform = cx.transform.then_translate(Vec2 {
+                    x: -node.scroll_offset.x,
+                    y: -node.scroll_offset.y,
+                });
+                cx.draw_image(scene);
+                #[cfg(feature = "svg")]
+                cx.draw_svg(scene);
+                cx.draw_canvas(scene);
+                cx.draw_sub_document(scene);
+                cx.draw_input(scene);
 
-            cx.draw_text_input_text(scene, content_position);
-            cx.draw_inline_layout(scene, content_position);
-            cx.draw_marker(scene, content_position);
-            cx.draw_children(scene);
-        });
+                cx.draw_text_input_text(scene, content_position);
+                cx.draw_inline_layout(scene, content_position);
+                cx.draw_marker(scene, content_position);
+                cx.draw_children(scene);
+            },
+        );
     }
 
     fn render_node(&self, scene: &mut impl PaintScene, node_id: usize, location: Point) {

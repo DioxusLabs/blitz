@@ -1,8 +1,5 @@
 use super::ElementCx;
-use crate::{
-    color::{Color, ToColorColor as _},
-    layers::maybe_with_layer,
-};
+use crate::color::{Color, ToColorColor as _};
 use anyrender::PaintScene;
 use kurbo::{Rect, Vec2};
 
@@ -29,7 +26,7 @@ impl ElementCx<'_> {
             prev.union(rect)
         });
 
-        maybe_with_layer(
+        self.context.layer_manager.maybe_with_layer(
             scene,
             has_outset_shadow,
             1.0,
@@ -78,7 +75,7 @@ impl ElementCx<'_> {
             return;
         }
 
-        maybe_with_layer(
+        self.context.layer_manager.maybe_with_layer(
             scene,
             has_inset_shadow,
             1.0,

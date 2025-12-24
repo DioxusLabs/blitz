@@ -14,7 +14,6 @@ mod text;
 
 use anyrender::PaintScene;
 use blitz_dom::{BaseDocument, util::Color};
-use layers::reset_layer_stats;
 use render::BlitzDomPainter;
 
 /// Paint a [`blitz_dom::BaseDocument`] by pushing drawing commands into
@@ -33,8 +32,6 @@ pub fn paint_scene(
     width: u32,
     height: u32,
 ) {
-    reset_layer_stats();
-
     let devtools = *dom.devtools();
     let generator = BlitzDomPainter::new(dom, scale, width, height, 0.0, 0.0, devtools);
     generator.paint_scene(scene);
