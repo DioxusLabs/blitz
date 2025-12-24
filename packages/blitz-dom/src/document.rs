@@ -158,12 +158,14 @@ pub struct BaseDocument {
     pub(crate) active_node_id: Option<usize>,
     /// The node which recieved a mousedown event (if any)
     pub(crate) mousedown_node_id: Option<usize>,
-    /// The last time a click was made
-    pub(crate) last_click_time: Option<Instant>,
-    /// The position of the cursor when the last click was made
-    pub(crate) last_click_position: taffy::Point<f32>,
+    /// The last time a mousedown was made (for double-click detection)
+    pub(crate) last_mousedown_time: Option<Instant>,
+    /// The position where mousedown occurred (for selection drags and double-click detection)
+    pub(crate) mousedown_position: taffy::Point<f32>,
     /// How many clicks have been made in quick succession
     pub(crate) click_count: u16,
+    /// Whether we're currently in a text selection drag (moved 2px+ from mousedown)
+    pub(crate) is_selecting: bool,
 
     /// Text selection state (for non-input text)
     pub(crate) text_selection: TextSelection,
@@ -326,9 +328,10 @@ impl BaseDocument {
             navigation_provider,
             shell_provider,
             html_parser_provider,
-            last_click_time: None,
-            last_click_position: taffy::Point::ZERO,
+            last_mousedown_time: None,
+            mousedown_position: taffy::Point::ZERO,
             click_count: 0,
+            is_selecting: false,
             text_selection: TextSelection::default(),
         };
 

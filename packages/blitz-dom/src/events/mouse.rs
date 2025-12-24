@@ -25,6 +25,15 @@ pub(crate) fn handle_mousemove<F: FnMut(DomEvent)>(
 ) -> bool {
     let mut changed = doc.set_hover_to(x, y);
 
+    // Check if we've moved enough to be considered a selection drag (2px threshold)
+    if buttons != MouseEventButtons::None && !doc.is_selecting {
+        let dx = (x - doc.mousedown_position.x).abs();
+        let dy = (y - doc.mousedown_position.y).abs();
+        if dx > 2.0 || dy > 2.0 {
+            doc.is_selecting = true;
+        }
+    }
+
     let Some(hit) = doc.hit(x, y) else {
         return changed;
     };
@@ -96,6 +105,26 @@ pub(crate) fn handle_mousedown(
     mods: Modifiers,
     dispatch_event: &mut dyn FnMut(DomEvent),
 ) {
+    // Compute click count using the previous mousedown position (before updating)
+    // This handles both double-click detection and text input word/line selection
+    // TODO: For text inputs, only increment click count if click maps to the same/similar caret position
+    doc.click_count = if doc
+        .last_mousedown_time
+        .map(|t| t.elapsed() < Duration::from_millis(500))
+        .unwrap_or(false)
+        && (doc.mousedown_position.x - x).abs() <= 2.0
+        && (doc.mousedown_position.y - y).abs() <= 2.0
+    {
+        doc.click_count + 1
+    } else {
+        1
+    };
+
+    // Update mousedown tracking for next click and selection drag detection
+    doc.last_mousedown_time = Some(Instant::now());
+    doc.mousedown_position = taffy::Point { x, y };
+    doc.is_selecting = false;
+
     let Some(hit) = doc.hit(x, y) else {
         // Clear text selection when clicking outside any element
         doc.clear_text_selection();
@@ -157,23 +186,11 @@ pub(crate) fn handle_mousedown(
             // Clear general text selection when focusing a text input
             doc.clear_text_selection();
 
-            // TODO: Only increment click count if click maps to the same/similar caret position as the previous click
-            let click_count = if doc
-                .last_click_time
-                .map(|t| t.elapsed() < Duration::from_millis(500))
-                .unwrap_or(false)
-                && (doc.last_click_position.x - x).abs() <= 2.0
-                && (doc.last_click_position.y - y).abs() <= 2.0
-            {
-                doc.click_count + 1
-            } else {
-                1
-            };
-
             let tx = (hit.x - content_box_offset.x) as f64 * doc.viewport.scale_f64();
             let ty = (hit.y - content_box_offset.y) as f64 * doc.viewport.scale_f64();
 
             // Now get mutable access to the text input
+            let click_count = doc.click_count;
             let node = &mut doc.nodes[actual_target];
             let el = node.data.downcast_element_mut().unwrap();
             if let SpecialElementData::TextInput(ref mut text_input_data) = el.special_data {
@@ -226,14 +243,11 @@ pub(crate) fn handle_mouseup<F: FnMut(DomEvent)>(
         return;
     }
 
-    // Determine whether to dispatch a click event
-    let do_click = true;
-    // let do_click = doc.mouse_down_node.is_some_and(|mouse_down_id| {
-    //     // Anonymous node ids are unstable due to tree reconstruction. So we compare the id
-    //     // of the first non-anonymous ancestor.
-    //     mouse_down_id == target
-    //         || doc.non_anon_ancestor_if_anon(mouse_down_id) == doc.non_anon_ancestor_if_anon(target)
-    // });
+    // Don't dispatch click if we were doing a text selection drag
+    let do_click = !doc.is_selecting;
+
+    // Reset selection state
+    doc.is_selecting = false;
 
     // Dispatch a click event
     if do_click && event.button == MouseEventButton::Main {
@@ -403,30 +417,14 @@ pub(crate) fn handle_click(
         generate_focus_events(doc, &mut |doc| doc.clear_focus(), dispatch_event);
     }
 
-    // Assumed double click time to be less than 500ms, although may be system-dependant?
-    if doc
-        .last_click_time
-        .map(|t| t.elapsed() < Duration::from_millis(500))
-        .unwrap_or(false)
-        && (doc.last_click_position.x - event.x).abs() <= 2.0
-        && (doc.last_click_position.y - event.y).abs() <= 2.0
-    {
-        doc.last_click_time = Some(Instant::now());
-        doc.click_count += 1;
-
-        if doc.click_count == 2 {
-            dispatch_event(DomEvent::new(
-                target,
-                DomEventData::DoubleClick(double_click_event),
-            ));
-        }
-    } else {
-        doc.last_click_time = Some(Instant::now());
-        doc.click_count = 1;
+    // Dispatch double-click event if this is the second click in quick succession
+    // (click_count was already computed in handle_mousedown)
+    if doc.click_count == 2 {
+        dispatch_event(DomEvent::new(
+            target,
+            DomEventData::DoubleClick(double_click_event),
+        ));
     }
-
-    doc.last_click_position.x = event.x;
-    doc.last_click_position.y = event.y;
 }
 
 pub(crate) fn handle_wheel<F: FnMut(DomEvent)>(

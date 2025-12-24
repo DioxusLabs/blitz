@@ -321,13 +321,12 @@ impl BaseDocument {
         }
 
         // Determine first/last based on document order (using anchors for comparison)
-        let (first_anchor, first_anon, last_anchor, last_anon) =
-            match self.compare_document_order(start_anchor, end_anchor) {
-                Ordering::Less | Ordering::Equal => {
-                    (start_anchor, start_anon, end_anchor, end_anon)
-                }
-                Ordering::Greater => (end_anchor, end_anon, start_anchor, start_anon),
-            };
+        let (first_anchor, first_anon, last_anchor, last_anon) = match self
+            .compare_document_order(start_anchor, end_anchor)
+        {
+            Ordering::Less | Ordering::Equal => (start_anchor, start_anon, end_anchor, end_anon),
+            Ordering::Greater => (end_anchor, end_anon, start_anchor, start_anon),
+        };
 
         let mut result = Vec::new();
         let mut found_first = false;
@@ -347,7 +346,12 @@ impl BaseDocument {
                             // Different parents: stop at last_anchor (which is a child of first_anchor)
                             Some(last_anchor)
                         };
-                        self.collect_layout_children_inline_roots(node_id, Some(anon_id), stop_at, &mut result);
+                        self.collect_layout_children_inline_roots(
+                            node_id,
+                            Some(anon_id),
+                            stop_at,
+                            &mut result,
+                        );
                         // If we collected up to last, we're done
                         if result.last() == Some(&last_anchor)
                             || last_anon.is_some_and(|la| result.last() == Some(&la))
@@ -363,7 +367,12 @@ impl BaseDocument {
                 if node_id == last_anchor {
                     if let Some(anon_id) = last_anon {
                         // Last is anonymous: collect up to anon_id (exclusive), then include anon_id
-                        self.collect_layout_children_inline_roots(node_id, None, Some(anon_id), &mut result);
+                        self.collect_layout_children_inline_roots(
+                            node_id,
+                            None,
+                            Some(anon_id),
+                            &mut result,
+                        );
                         // Include the last_anon itself (until is exclusive, so we add it here)
                         if !result.contains(&anon_id) {
                             result.push(anon_id);
@@ -384,7 +393,12 @@ impl BaseDocument {
                 } else {
                     // For non-inline-root nodes, collect any inline roots from their layout_children
                     // This handles intermediate block containers with anonymous block children
-                    self.collect_layout_children_inline_roots(node_id, None, Some(last_anchor), &mut result);
+                    self.collect_layout_children_inline_roots(
+                        node_id,
+                        None,
+                        Some(last_anchor),
+                        &mut result,
+                    );
                 }
             }
         }
