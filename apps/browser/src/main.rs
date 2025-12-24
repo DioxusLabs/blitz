@@ -42,6 +42,7 @@ fn app() -> Element {
     let home_url = use_hook(|| Url::parse("https://html.duckduckgo.com").unwrap());
 
     let mut url_input_handle = use_signal(|| None);
+    let mut webview_node_handle: Signal<Option<NodeHandle>> = use_signal(|| None);
     let mut url_input_value = use_signal(|| home_url.to_string());
     let mut is_focussed = use_signal(|| false);
     let block_mouse_up = use_hook(|| Rc::new(RefCell::new(false)));
@@ -66,6 +67,21 @@ fn app() -> Element {
     let refresh_action = load_current_url;
     let open_action =
         use_callback(move |_| open_in_external_browser(&history.current_url().read()));
+
+    let devtools_action = use_callback(move |_| {
+        if let Some(handle) = webview_node_handle() {
+            let node_id = handle.node_id();
+            let mut doc = handle.doc_mut();
+            if let Some(sub_doc) = doc
+                .get_node_mut(node_id)
+                .and_then(|node| node.element_data_mut())
+                .and_then(|el| el.sub_doc_data_mut())
+            {
+                let mut sub_doc = sub_doc.inner_mut();
+                sub_doc.devtools_mut().toggle_highlight_hover();
+            }
+        }
+    });
 
     rsx!(
         div { id: "frame",
@@ -131,11 +147,18 @@ fn app() -> Element {
                     oninput: move |evt| { *url_input_value.write() = evt.value() },
                 }
                 IconButton { icon: icons::EXTERNAL_LINK_ICON, action: open_action }
-                IconButton { icon: icons::MENU_ICON }
+                IconButton { icon: icons::MENU_ICON, action: devtools_action }
             }
 
             // Web content
-            web-view { class: "webview", "__webview_document": content_doc() }
+            web-view {
+                class: "webview",
+                "__webview_document": content_doc(),
+                onmounted: move |evt: Event<MountedData>| {
+                    let node_handle = evt.downcast::<NodeHandle>().unwrap();
+                    *webview_node_handle.write() = Some(node_handle.clone());
+                },
+            }
         }
     )
 }

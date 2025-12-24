@@ -157,7 +157,14 @@ impl<'dom> BlitzDomPainter<'dom> {
         // Render debug overlay
         if self.dom.devtools().highlight_hover {
             if let Some(node_id) = self.dom.as_ref().get_hover_node_id() {
-                render_debug_overlay(scene, self.dom, node_id, self.scale);
+                render_debug_overlay(
+                    scene,
+                    self.dom,
+                    node_id,
+                    self.scale,
+                    self.initial_x,
+                    self.initial_y,
+                );
             }
         }
     }

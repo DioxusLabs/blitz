@@ -11,6 +11,8 @@ pub(crate) fn render_debug_overlay(
     dom: &BaseDocument,
     node_id: usize,
     scale: f64,
+    initial_x: f64,
+    initial_y: f64,
 ) {
     let viewport_scroll = dom.as_ref().viewport_scroll();
     let mut node = &dom.as_ref().tree()[node_id];
@@ -44,8 +46,8 @@ pub(crate) fn render_debug_overlay(
         abs_y += y - node.scroll_offset.y as f32;
     }
 
-    abs_x -= viewport_scroll.x as f32;
-    abs_y -= viewport_scroll.y as f32;
+    abs_x = abs_x - viewport_scroll.x as f32 + initial_x as f32;
+    abs_y = abs_y - viewport_scroll.y as f32 + initial_y as f32;
 
     // Hack: scale factor
     let abs_x = f64::from(abs_x) * scale;
