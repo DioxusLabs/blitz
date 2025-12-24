@@ -512,7 +512,7 @@ impl ElementCx<'_> {
                     scene.fill(
                         Fill::NonZero,
                         transform,
-                        color::palette::css::STEEL_BLUE,
+                        Color::from_rgb8(180, 213, 255),
                         None,
                         &convert_rect(rect),
                     );

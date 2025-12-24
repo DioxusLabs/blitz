@@ -119,7 +119,7 @@ pub(crate) fn handle_mousedown(
     let click_target = {
         let node = &doc.nodes[actual_target];
         match node.data.downcast_element() {
-            Some(el) if el.attr(local_name!("disabled")).is_some() => ClickTarget::Disabled,
+            Some(el) if el.has_attr(local_name!("disabled")) => ClickTarget::Disabled,
             Some(el) => {
                 if let SpecialElementData::TextInput(ref text_input_data) = el.special_data {
                     let mut content_box_offset = taffy::Point {

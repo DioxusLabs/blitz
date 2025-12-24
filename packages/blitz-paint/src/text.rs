@@ -101,16 +101,14 @@ pub(crate) fn draw_text_selection(
     let focus = Cursor::from_byte_index(layout, selection_end, Affinity::Downstream);
     let selection = Selection::new(anchor, focus);
 
-    let selection_color = color::palette::css::STEEL_BLUE;
-    let scale = layout.scale() as f64;
+    let selection_color = Color::from_rgb8(180, 213, 255);
 
     selection.geometry_with(layout, |rect, _line_idx| {
-        // Convert from Parley's BoundingBox to kurbo::Rect, accounting for scale
         let rect = kurbo::Rect::new(
-            rect.x0 as f64 / scale,
-            rect.y0 as f64 / scale,
-            rect.x1 as f64 / scale,
-            rect.y1 as f64 / scale,
+            rect.x0 as f64,
+            rect.y0 as f64,
+            rect.x1 as f64,
+            rect.y1 as f64,
         );
         scene.fill(Fill::NonZero, transform, selection_color, None, &rect);
     });
