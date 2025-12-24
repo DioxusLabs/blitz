@@ -349,8 +349,8 @@ impl<'dom> BlitzDomPainter<'dom> {
         let reference_box = euclid::Rect::new(
             euclid::Point2D::new(CSSPixelLength::new(0.0), CSSPixelLength::new(0.0)),
             euclid::Size2D::new(
-                CSSPixelLength::new(frame.border_box.width() as f32),
-                CSSPixelLength::new(frame.border_box.height() as f32),
+                CSSPixelLength::new((frame.border_box.width() / scale) as f32),
+                CSSPixelLength::new((frame.border_box.height() / scale) as f32),
             ),
         );
 
@@ -366,8 +366,18 @@ impl<'dom> BlitzDomPainter<'dom> {
         if !has_3d {
             // See: https://drafts.csswg.org/css-transforms-2/#two-dimensional-subset
             // And https://docs.rs/kurbo/latest/kurbo/struct.Affine.html#method.new
-            let kurbo_transform =
-                Affine::new([t.m11, t.m12, t.m21, t.m22, t.m41, t.m42].map(|v| v as f64));
+            let kurbo_transform = Affine::new(
+                [
+                    t.m11,
+                    t.m12,
+                    t.m21,
+                    t.m22,
+                    // Scale the translation but not the scale or skew
+                    t.m41 * scale as f32,
+                    t.m42 * scale as f32,
+                ]
+                .map(|v| v as f64),
+            );
 
             // Apply the transform origin by:
             //   - Translating by the origin offset
