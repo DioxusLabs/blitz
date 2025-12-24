@@ -6,6 +6,7 @@ use std::any::Any;
 use std::collections::HashMap;
 
 use super::kurbo_css::{CssBox, Edge};
+use crate::SELECTION_COLOR;
 use crate::color::{Color, ToColorColor};
 use crate::debug_overlay::render_debug_overlay;
 use crate::kurbo_css::NonUniformRoundedRectRadii;
@@ -512,7 +513,7 @@ impl ElementCx<'_> {
                     scene.fill(
                         Fill::NonZero,
                         transform,
-                        Color::from_rgb8(180, 213, 255),
+                        SELECTION_COLOR,
                         None,
                         &convert_rect(rect),
                     );

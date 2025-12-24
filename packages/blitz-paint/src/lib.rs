@@ -13,7 +13,7 @@ mod sizing;
 mod text;
 
 use anyrender::PaintScene;
-use blitz_dom::BaseDocument;
+use blitz_dom::{BaseDocument, util::Color};
 use layers::reset_layer_stats;
 use render::BlitzDomPainter;
 
@@ -46,3 +46,5 @@ pub fn paint_scene(
     //     CLIPS_WANTED.load(atomic::Ordering::SeqCst)
     // );
 }
+
+const SELECTION_COLOR: Color = Color::from_rgb8(180, 213, 255);

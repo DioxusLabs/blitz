@@ -2,8 +2,10 @@ use anyrender::PaintScene;
 use blitz_dom::{BaseDocument, node::TextBrush, util::ToColorColor};
 use kurbo::{Affine, Stroke};
 use parley::{Affinity, Cursor, Layout, Line, PositionedLayoutItem, Selection};
-use peniko::{Color, Fill};
+use peniko::Fill;
 use style::values::computed::TextDecorationLine;
+
+use crate::SELECTION_COLOR;
 
 pub(crate) fn stroke_text<'a>(
     scene: &mut impl PaintScene,
@@ -101,10 +103,8 @@ pub(crate) fn draw_text_selection(
     let focus = Cursor::from_byte_index(layout, selection_end, Affinity::Downstream);
     let selection = Selection::new(anchor, focus);
 
-    let selection_color = Color::from_rgb8(180, 213, 255);
-
     selection.geometry_with(layout, |rect, _line_idx| {
         let rect = kurbo::Rect::new(rect.x0, rect.y0, rect.x1, rect.y1);
-        scene.fill(Fill::NonZero, transform, selection_color, None, &rect);
+        scene.fill(Fill::NonZero, transform, SELECTION_COLOR, None, &rect);
     });
 }
