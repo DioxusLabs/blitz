@@ -143,7 +143,7 @@ pub(crate) fn handle_mousedown(
     };
 
     match click_target {
-        ClickTarget::Disabled => return,
+        ClickTarget::Disabled => (),
         ClickTarget::SelectableText => {
             // Handle text selection for non-input elements
             if let Some((inline_root_id, byte_offset)) = doc.find_text_position(x, y) {

@@ -1489,8 +1489,6 @@ impl BaseDocument {
     /// Get all selection ranges as Vec<(node_id, start_offset, end_offset)>.
     /// Returns empty vec if no selection.
     pub fn get_text_selection_ranges(&self) -> Vec<(usize, usize, usize)> {
-        use std::cmp::Ordering;
-
         let lookup = |parent_id, idx| self.find_anonymous_block_by_index(parent_id, idx);
 
         let anchor_node = match self.text_selection.anchor.resolve_node_id(lookup) {
@@ -1527,21 +1525,27 @@ impl BaseDocument {
             return Vec::new();
         }
 
-        // Determine document order
+        // Determine document order using the collected inline_roots order
+        // (inline_roots is already in document order from first to last)
+        let first_in_roots = inline_roots[0];
+
         let (first_node, first_offset, last_node, last_offset) =
-            match self.compare_document_order(anchor_node, focus_node) {
-                Ordering::Less | Ordering::Equal => (
+            if first_in_roots == anchor_node || (first_in_roots != focus_node) {
+                // anchor is first (or neither endpoint is in roots, which shouldn't happen)
+                (
                     anchor_node,
                     self.text_selection.anchor.offset,
                     focus_node,
                     self.text_selection.focus.offset,
-                ),
-                Ordering::Greater => (
+                )
+            } else {
+                // focus is first
+                (
                     focus_node,
                     self.text_selection.focus.offset,
                     anchor_node,
                     self.text_selection.anchor.offset,
-                ),
+                )
             };
 
         let mut ranges = Vec::with_capacity(inline_roots.len());

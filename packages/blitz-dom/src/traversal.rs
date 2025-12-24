@@ -339,7 +339,21 @@ impl BaseDocument {
                     found_first = true;
                     if let Some(anon_id) = first_anon {
                         // First is anonymous: collect from this parent starting at anon_id
-                        self.collect_anonymous_from(node_id, anon_id, &mut result);
+                        // Stop at last_anchor if different parent, or last_anon if same parent
+                        let stop_at = if first_anchor == last_anchor {
+                            // Same parent: stop at last_anon
+                            last_anon
+                        } else {
+                            // Different parents: stop at last_anchor (which is a child of first_anchor)
+                            Some(last_anchor)
+                        };
+                        self.collect_layout_children_inline_roots(node_id, Some(anon_id), stop_at, &mut result);
+                        // If we collected up to last, we're done
+                        if result.last() == Some(&last_anchor)
+                            || last_anon.is_some_and(|la| result.last() == Some(&la))
+                        {
+                            break;
+                        }
                         continue;
                     }
                 }
@@ -348,12 +362,16 @@ impl BaseDocument {
             if found_first {
                 if node_id == last_anchor {
                     if let Some(anon_id) = last_anon {
-                        // Last is anonymous: collect up to anon_id
-                        self.collect_anonymous_until(node_id, anon_id, &mut result);
+                        // Last is anonymous: collect up to anon_id (exclusive), then include anon_id
+                        self.collect_layout_children_inline_roots(node_id, None, Some(anon_id), &mut result);
+                        // Include the last_anon itself (until is exclusive, so we add it here)
+                        if !result.contains(&anon_id) {
+                            result.push(anon_id);
+                        }
                     } else {
-                        // Last is regular: include it if it's an inline root
+                        // Last is regular: include it if it's an inline root and not already collected
                         let node = &self.nodes[node_id];
-                        if node.flags.is_inline_root() {
+                        if node.flags.is_inline_root() && !result.contains(&node_id) {
                             result.push(node_id);
                         }
                     }
@@ -361,8 +379,12 @@ impl BaseDocument {
                 }
 
                 let node = &self.nodes[node_id];
-                if node.flags.is_inline_root() {
+                if node.flags.is_inline_root() && !result.contains(&node_id) {
                     result.push(node_id);
+                } else {
+                    // For non-inline-root nodes, collect any inline roots from their layout_children
+                    // This handles intermediate block containers with anonymous block children
+                    self.collect_layout_children_inline_roots(node_id, None, Some(last_anchor), &mut result);
                 }
             }
         }
@@ -383,6 +405,7 @@ impl BaseDocument {
     }
 
     /// Collect anonymous block siblings between start and end (inclusive)
+    /// Also recursively collects inline roots from any block children in between
     fn collect_anonymous_siblings(&self, parent_id: usize, start: usize, end: usize) -> Vec<usize> {
         let parent = &self.nodes[parent_id];
         let layout_children = parent.layout_children.borrow();
@@ -399,51 +422,90 @@ impl BaseDocument {
             _ => return Vec::new(),
         };
 
-        children[first_idx..=last_idx]
-            .iter()
-            .filter(|&&id| self.nodes[id].flags.is_inline_root())
-            .copied()
-            .collect()
-    }
-
-    /// Collect anonymous inline roots from a parent, starting from 'from' node
-    fn collect_anonymous_from(&self, parent_id: usize, from: usize, result: &mut Vec<usize>) {
-        let parent = &self.nodes[parent_id];
-        let layout_children = parent.layout_children.borrow();
-        let Some(children) = layout_children.as_ref() else {
-            return;
-        };
-
-        let mut found = false;
-        for &child_id in children.iter() {
-            if child_id == from {
-                found = true;
-            }
-            if found {
-                let child = &self.nodes[child_id];
-                if child.is_anonymous() && child.flags.is_inline_root() {
-                    result.push(child_id);
-                }
+        let mut result = Vec::new();
+        for &child_id in &children[first_idx..=last_idx] {
+            let child = &self.nodes[child_id];
+            if child.flags.is_inline_root() {
+                result.push(child_id);
+            } else {
+                // For non-inline-root children (block containers), collect all their inline roots
+                self.collect_all_inline_roots_in_subtree(child_id, &mut result);
             }
         }
+        result
     }
 
-    /// Collect anonymous inline roots from a parent, up to and including 'until' node
-    fn collect_anonymous_until(&self, parent_id: usize, until: usize, result: &mut Vec<usize>) {
-        let parent = &self.nodes[parent_id];
-        let layout_children = parent.layout_children.borrow();
+    /// Recursively collect all inline roots from a node's layout_children subtree
+    fn collect_all_inline_roots_in_subtree(&self, node_id: usize, result: &mut Vec<usize>) {
+        let node = &self.nodes[node_id];
+        let layout_children = node.layout_children.borrow();
         let Some(children) = layout_children.as_ref() else {
             return;
         };
 
         for &child_id in children.iter() {
             let child = &self.nodes[child_id];
-            if child.is_anonymous() && child.flags.is_inline_root() {
+            if child.flags.is_inline_root() {
                 result.push(child_id);
-            }
-            if child_id == until {
-                break;
+            } else {
+                // Recurse into block children
+                self.collect_all_inline_roots_in_subtree(child_id, result);
             }
         }
+    }
+
+    /// Collect inline roots from a parent's layout_children.
+    /// - `from`: If Some, start collecting from this node; if None, start from beginning
+    /// - `until`: If Some, stop when we reach this node OR a node that contains it; if None, collect to end
+    fn collect_layout_children_inline_roots(
+        &self,
+        parent_id: usize,
+        from: Option<usize>,
+        until: Option<usize>,
+        result: &mut Vec<usize>,
+    ) {
+        let parent = &self.nodes[parent_id];
+        let layout_children = parent.layout_children.borrow();
+        let Some(children) = layout_children.as_ref() else {
+            return;
+        };
+
+        let mut collecting = from.is_none(); // Start immediately if no 'from' specified
+        for &child_id in children.iter() {
+            if from == Some(child_id) {
+                collecting = true;
+            }
+            if collecting {
+                // Stop without adding if this child contains the 'until' node (it will be processed later)
+                if let Some(until_id) = until {
+                    if self.is_ancestor_of(child_id, until_id) {
+                        break;
+                    }
+                }
+                // Stop before processing if this child IS the 'until' node
+                if until == Some(child_id) {
+                    break;
+                }
+                let child = &self.nodes[child_id];
+                if child.flags.is_inline_root() {
+                    result.push(child_id);
+                } else {
+                    // For non-inline-root children (block containers), recursively collect their inline roots
+                    self.collect_all_inline_roots_in_subtree(child_id, result);
+                }
+            }
+        }
+    }
+
+    /// Check if `ancestor_id` is an ancestor of `descendant_id`
+    fn is_ancestor_of(&self, ancestor_id: usize, descendant_id: usize) -> bool {
+        let mut current = descendant_id;
+        while let Some(parent) = self.nodes[current].parent {
+            if parent == ancestor_id {
+                return true;
+            }
+            current = parent;
+        }
+        false
     }
 }

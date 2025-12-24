@@ -104,12 +104,7 @@ pub(crate) fn draw_text_selection(
     let selection_color = Color::from_rgb8(180, 213, 255);
 
     selection.geometry_with(layout, |rect, _line_idx| {
-        let rect = kurbo::Rect::new(
-            rect.x0 as f64,
-            rect.y0 as f64,
-            rect.x1 as f64,
-            rect.y1 as f64,
-        );
+        let rect = kurbo::Rect::new(rect.x0, rect.y0, rect.x1, rect.y1);
         scene.fill(Fill::NonZero, transform, selection_color, None, &rect);
     });
 }
