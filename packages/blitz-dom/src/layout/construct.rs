@@ -287,6 +287,7 @@ pub(crate) fn collect_layout_children(
                 doc.nodes[container_node_id]
                     .flags
                     .insert(NodeFlags::IS_INLINE_ROOT);
+
                 find_inline_layout_embedded_boxes(doc, container_node_id, layout_children);
                 return;
             }

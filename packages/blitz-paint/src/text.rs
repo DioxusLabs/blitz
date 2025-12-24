@@ -1,8 +1,8 @@
 use anyrender::PaintScene;
 use blitz_dom::{BaseDocument, node::TextBrush, util::ToColorColor};
 use kurbo::{Affine, Stroke};
-use parley::{Line, PositionedLayoutItem};
-use peniko::Fill;
+use parley::{Affinity, Cursor, Layout, Line, PositionedLayoutItem, Selection};
+use peniko::{Color, Fill};
 use style::values::computed::TextDecorationLine;
 
 pub(crate) fn stroke_text<'a>(
@@ -86,4 +86,25 @@ pub(crate) fn stroke_text<'a>(
             }
         }
     }
+}
+
+/// Draw selection highlight rectangles for the given byte range in a layout.
+/// Uses Parley's Selection type for accurate geometry calculation.
+pub(crate) fn draw_text_selection(
+    scene: &mut impl PaintScene,
+    layout: &Layout<TextBrush>,
+    transform: Affine,
+    selection_start: usize,
+    selection_end: usize,
+) {
+    let anchor = Cursor::from_byte_index(layout, selection_start, Affinity::Downstream);
+    let focus = Cursor::from_byte_index(layout, selection_end, Affinity::Downstream);
+    let selection = Selection::new(anchor, focus);
+
+    let selection_color = Color::from_rgb8(180, 213, 255);
+
+    selection.geometry_with(layout, |rect, _line_idx| {
+        let rect = kurbo::Rect::new(rect.x0, rect.y0, rect.x1, rect.y1);
+        scene.fill(Fill::NonZero, transform, selection_color, None, &rect);
+    });
 }

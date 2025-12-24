@@ -3,6 +3,7 @@ mod box_shadow;
 mod form_controls;
 
 use std::any::Any;
+use std::collections::HashMap;
 
 use super::kurbo_css::{CssBox, Edge};
 use crate::color::{Color, ToColorColor};
@@ -49,9 +50,39 @@ pub struct BlitzDomPainter<'dom> {
     pub(crate) initial_x: f64,
     pub(crate) initial_y: f64,
     pub(crate) devtools: DevtoolSettings,
+    /// Cached selection ranges for O(1) lookup: node_id -> (start_offset, end_offset)
+    pub(crate) selection_ranges: HashMap<usize, (usize, usize)>,
 }
 
-impl BlitzDomPainter<'_> {
+impl<'dom> BlitzDomPainter<'dom> {
+    /// Create a new BlitzDomPainter for the given document
+    pub fn new(
+        dom: &'dom BaseDocument,
+        scale: f64,
+        width: u32,
+        height: u32,
+        initial_x: f64,
+        initial_y: f64,
+        devtools: DevtoolSettings,
+    ) -> Self {
+        let selection_ranges: HashMap<usize, (usize, usize)> = dom
+            .get_text_selection_ranges()
+            .into_iter()
+            .map(|(node_id, start, end)| (node_id, (start, end)))
+            .collect();
+
+        Self {
+            dom,
+            scale,
+            width,
+            height,
+            initial_x,
+            initial_y,
+            devtools,
+            selection_ranges,
+        }
+    }
+
     fn node_position(&self, node: usize, location: Point) -> (Layout, Point) {
         let layout = self.layout(node);
         let pos = location + Vec2::new(layout.location.x as f64, layout.location.y as f64);
@@ -440,6 +471,17 @@ impl ElementCx<'_> {
             let transform =
                 Affine::translate((pos.x * self.scale, pos.y * self.scale)) * self.transform;
 
+            // Render text selection highlight (if any) using cached selection ranges
+            if let Some(&(sel_start, sel_end)) = self.context.selection_ranges.get(&self.node.id) {
+                crate::text::draw_text_selection(
+                    scene,
+                    &text_layout.layout,
+                    transform,
+                    sel_start,
+                    sel_end,
+                );
+            }
+
             // Render text
             crate::text::stroke_text(
                 scene,
@@ -470,7 +512,7 @@ impl ElementCx<'_> {
                     scene.fill(
                         Fill::NonZero,
                         transform,
-                        color::palette::css::STEEL_BLUE,
+                        Color::from_rgb8(180, 213, 255),
                         None,
                         &convert_rect(rect),
                     );
@@ -697,15 +739,15 @@ impl ElementCx<'_> {
             let initial_y = self.pos.y + self.frame.content_box.origin().y;
             // let transform = self.transform.then_translate(Vec2 { x, y });
 
-            let painter = BlitzDomPainter {
-                dom: sub_doc,
+            let painter = BlitzDomPainter::new(
+                sub_doc,
                 scale,
                 width,
                 height,
                 initial_x,
                 initial_y,
-                devtools: DevtoolSettings::default(),
-            };
+                DevtoolSettings::default(),
+            );
 
             painter.paint_scene(scene);
         }

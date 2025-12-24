@@ -5,7 +5,7 @@ use blitz_traits::shell::ShellProvider;
 use html_escape::encode_quoted_attribute_to_string;
 use keyboard_types::Modifiers;
 use markup5ever::{LocalName, local_name};
-use parley::Cluster;
+use parley::{BreakReason, Cluster, ClusterSide};
 use selectors::matching::ElementSelectorFlags;
 use slab::Slab;
 use std::cell::{Cell, RefCell};
@@ -900,19 +900,22 @@ impl Node {
         // Inline children
         if self.flags.is_inline_root() {
             let element_data = &self.element_data().unwrap();
-            let layout = &element_data.inline_layout_data.as_ref().unwrap().layout;
-            let scale = layout.scale();
+            if let Some(ild) = element_data.inline_layout_data.as_ref() {
+                let layout = &ild.layout;
+                let scale = layout.scale();
 
-            if let Some((cluster, _side)) = Cluster::from_point_exact(layout, x * scale, y * scale)
-            {
-                let style_index = cluster.glyphs().next()?.style_index();
-                let node_id = layout.styles()[style_index].brush.id;
-                return Some(HitResult {
-                    node_id,
-                    x,
-                    y,
-                    is_text: true,
-                });
+                if let Some((cluster, _side)) =
+                    Cluster::from_point_exact(layout, x * scale, y * scale)
+                {
+                    let style_index = cluster.glyphs().next()?.style_index();
+                    let node_id = layout.styles()[style_index].brush.id;
+                    return Some(HitResult {
+                        node_id,
+                        x,
+                        y,
+                        is_text: true,
+                    });
+                }
             }
         }
 
@@ -927,6 +930,60 @@ impl Node {
         }
 
         None
+    }
+
+    /// Find the inline root ancestor of this node (or self if this is an inline root).
+    /// Returns None if no inline root ancestor exists.
+    pub fn inline_root_ancestor(&self) -> Option<&Node> {
+        let mut node = self;
+        loop {
+            if node.flags.is_inline_root() {
+                return Some(node);
+            }
+            match node.layout_parent.get() {
+                Some(id) => node = self.with(id),
+                None => return None,
+            }
+        }
+    }
+
+    /// Get the text byte offset at a given point, using coordinates already transformed
+    /// to be relative to this inline root's content box.
+    /// Returns Some(byte_offset) if the point hits text, None otherwise.
+    pub fn text_offset_at_point(&self, x: f32, y: f32) -> Option<usize> {
+        if !self.flags.is_inline_root() {
+            return None;
+        }
+
+        let element_data = self.element_data()?;
+        let inline_layout = element_data.inline_layout_data.as_ref()?;
+        let layout = &inline_layout.layout;
+        let scale = layout.scale();
+
+        // Use Parley's cluster hit testing (from_point is more forgiving than from_point_exact)
+        let (cluster, side) = Cluster::from_point(layout, x * scale, y * scale)?;
+
+        // Determine byte offset based on which side of the cluster was clicked
+        // For LTR text: left side = start of cluster, right side = end of cluster
+        // For RTL text: left side = end of cluster, right side = start of cluster
+        // Also, explicit line breaks should always use start to avoid cursor appearing on next line
+        let is_leading = side == ClusterSide::Left;
+        let offset = if cluster.is_rtl() {
+            if is_leading {
+                cluster.text_range().end
+            } else {
+                cluster.text_range().start
+            }
+        } else {
+            // LTR text
+            if is_leading || cluster.is_line_break() == Some(BreakReason::Explicit) {
+                cluster.text_range().start
+            } else {
+                cluster.text_range().end
+            }
+        };
+
+        Some(offset)
     }
 
     /// Computes the Document-relative coordinates of the Node

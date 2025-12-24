@@ -1,3 +1,5 @@
+use std::cmp::Ordering;
+
 use style::{dom::TNode as _, values::specified::box_::DisplayInside};
 
 use crate::{BaseDocument, Node};
@@ -234,5 +236,290 @@ impl BaseDocument {
         node_id
             .map(|id| self.node_layout_ancestors(id))
             .unwrap_or_default()
+    }
+
+    /// Compare the document order of two nodes.
+    /// Returns Ordering::Less if node_a comes before node_b in document order.
+    /// Returns Ordering::Greater if node_a comes after node_b.
+    /// Returns Ordering::Equal if they are the same node.
+    pub fn compare_document_order(&self, node_a: usize, node_b: usize) -> Ordering {
+        if node_a == node_b {
+            return Ordering::Equal;
+        }
+
+        // Build ancestor chains from root to node (inclusive)
+        let chain_a = self.ancestor_chain_from_root(node_a);
+        let chain_b = self.ancestor_chain_from_root(node_b);
+
+        // Find where the chains diverge
+        let mut common_depth = 0;
+        for (a, b) in chain_a.iter().zip(chain_b.iter()) {
+            if a != b {
+                break;
+            }
+            common_depth += 1;
+        }
+
+        // If one is an ancestor of the other
+        if common_depth == chain_a.len() {
+            return Ordering::Less; // node_a is ancestor of node_b
+        }
+        if common_depth == chain_b.len() {
+            return Ordering::Greater; // node_b is ancestor of node_a
+        }
+
+        // Safety: common_depth must be > 0 here because both chains start from the same
+        // root node (node 0), so they share at least that node. If common_depth were 0,
+        // chain_a[0] != chain_b[0], but both start from root, so this is impossible.
+        debug_assert!(
+            common_depth > 0,
+            "nodes must share a common ancestor (the root)"
+        );
+
+        // Compare position among siblings at the divergence point
+        let divergent_a = chain_a[common_depth];
+        let divergent_b = chain_b[common_depth];
+        let parent_id = chain_a[common_depth - 1];
+        let parent = &self.nodes[parent_id];
+
+        for &child_id in &parent.children {
+            if child_id == divergent_a {
+                return Ordering::Less;
+            }
+            if child_id == divergent_b {
+                return Ordering::Greater;
+            }
+        }
+
+        // Should not reach here if tree is well-formed
+        Ordering::Equal
+    }
+
+    /// Build ancestor chain from root to node (inclusive), ordered [root, ..., node].
+    fn ancestor_chain_from_root(&self, node_id: usize) -> Vec<usize> {
+        let mut ancestors = Vec::with_capacity(16);
+        let mut current = Some(node_id);
+        while let Some(id) = current {
+            ancestors.push(id);
+            current = self.nodes[id].parent;
+        }
+        ancestors.reverse();
+        ancestors
+    }
+
+    /// Collect all inline root nodes between start_node and end_node in document order.
+    /// Both start and end are assumed to be inline roots.
+    /// Returns the nodes in document order (from first to last).
+    pub fn collect_inline_roots_in_range(&self, start_node: usize, end_node: usize) -> Vec<usize> {
+        // Resolve nodes: for anonymous blocks, get (parent_id, Some(anon_id)); for regular, (node_id, None)
+        let (start_anchor, start_anon) = self.resolve_for_traversal(start_node);
+        let (end_anchor, end_anon) = self.resolve_for_traversal(end_node);
+
+        // If both are anonymous blocks with the same parent, just collect from layout_children
+        if start_anon.is_some() && end_anon.is_some() && start_anchor == end_anchor {
+            return self.collect_anonymous_siblings(start_anchor, start_node, end_node);
+        }
+
+        // Determine first/last based on document order (using anchors for comparison)
+        let (first_anchor, first_anon, last_anchor, last_anon) = match self
+            .compare_document_order(start_anchor, end_anchor)
+        {
+            Ordering::Less | Ordering::Equal => (start_anchor, start_anon, end_anchor, end_anon),
+            Ordering::Greater => (end_anchor, end_anon, start_anchor, start_anon),
+        };
+
+        let mut result = Vec::new();
+        let mut found_first = false;
+
+        // Traverse tree in document order
+        for node_id in TreeTraverser::new(self) {
+            if !found_first {
+                if node_id == first_anchor {
+                    found_first = true;
+                    if let Some(anon_id) = first_anon {
+                        // First is anonymous: collect from this parent starting at anon_id
+                        // Stop at last_anchor if different parent, or last_anon if same parent
+                        let stop_at = if first_anchor == last_anchor {
+                            // Same parent: stop at last_anon
+                            last_anon
+                        } else {
+                            // Different parents: stop at last_anchor (which is a child of first_anchor)
+                            Some(last_anchor)
+                        };
+                        self.collect_layout_children_inline_roots(
+                            node_id,
+                            Some(anon_id),
+                            stop_at,
+                            &mut result,
+                        );
+                        // If we collected up to last, we're done
+                        if result.last() == Some(&last_anchor)
+                            || last_anon.is_some_and(|la| result.last() == Some(&la))
+                        {
+                            break;
+                        }
+                        continue;
+                    }
+                }
+            }
+
+            if found_first {
+                if node_id == last_anchor {
+                    if let Some(anon_id) = last_anon {
+                        // Last is anonymous: collect up to anon_id (exclusive), then include anon_id
+                        self.collect_layout_children_inline_roots(
+                            node_id,
+                            None,
+                            Some(anon_id),
+                            &mut result,
+                        );
+                        // Include the last_anon itself (until is exclusive, so we add it here)
+                        if !result.contains(&anon_id) {
+                            result.push(anon_id);
+                        }
+                    } else {
+                        // Last is regular: include it if it's an inline root and not already collected
+                        let node = &self.nodes[node_id];
+                        if node.flags.is_inline_root() && !result.contains(&node_id) {
+                            result.push(node_id);
+                        }
+                    }
+                    break;
+                }
+
+                let node = &self.nodes[node_id];
+                if node.flags.is_inline_root() && !result.contains(&node_id) {
+                    result.push(node_id);
+                } else {
+                    // For non-inline-root nodes, collect any inline roots from their layout_children
+                    // This handles intermediate block containers with anonymous block children
+                    self.collect_layout_children_inline_roots(
+                        node_id,
+                        None,
+                        Some(last_anchor),
+                        &mut result,
+                    );
+                }
+            }
+        }
+
+        result
+    }
+
+    /// Resolve a node for traversal purposes.
+    /// For anonymous blocks: returns (parent_id, Some(node_id))
+    /// For regular nodes: returns (node_id, None)
+    fn resolve_for_traversal(&self, node_id: usize) -> (usize, Option<usize>) {
+        let node = &self.nodes[node_id];
+        if node.is_anonymous() {
+            (node.parent.unwrap_or(node_id), Some(node_id))
+        } else {
+            (node_id, None)
+        }
+    }
+
+    /// Collect anonymous block siblings between start and end (inclusive)
+    /// Also recursively collects inline roots from any block children in between
+    fn collect_anonymous_siblings(&self, parent_id: usize, start: usize, end: usize) -> Vec<usize> {
+        let parent = &self.nodes[parent_id];
+        let layout_children = parent.layout_children.borrow();
+        let Some(children) = layout_children.as_ref() else {
+            return Vec::new();
+        };
+
+        let start_idx = children.iter().position(|&id| id == start);
+        let end_idx = children.iter().position(|&id| id == end);
+
+        let (first_idx, last_idx) = match (start_idx, end_idx) {
+            (Some(s), Some(e)) if s <= e => (s, e),
+            (Some(s), Some(e)) => (e, s),
+            _ => return Vec::new(),
+        };
+
+        let mut result = Vec::new();
+        for &child_id in &children[first_idx..=last_idx] {
+            let child = &self.nodes[child_id];
+            if child.flags.is_inline_root() {
+                result.push(child_id);
+            } else {
+                // For non-inline-root children (block containers), collect all their inline roots
+                self.collect_all_inline_roots_in_subtree(child_id, &mut result);
+            }
+        }
+        result
+    }
+
+    /// Recursively collect all inline roots from a node's layout_children subtree
+    fn collect_all_inline_roots_in_subtree(&self, node_id: usize, result: &mut Vec<usize>) {
+        let node = &self.nodes[node_id];
+        let layout_children = node.layout_children.borrow();
+        let Some(children) = layout_children.as_ref() else {
+            return;
+        };
+
+        for &child_id in children.iter() {
+            let child = &self.nodes[child_id];
+            if child.flags.is_inline_root() {
+                result.push(child_id);
+            } else {
+                // Recurse into block children
+                self.collect_all_inline_roots_in_subtree(child_id, result);
+            }
+        }
+    }
+
+    /// Collect inline roots from a parent's layout_children.
+    /// - `from`: If Some, start collecting from this node; if None, start from beginning
+    /// - `until`: If Some, stop when we reach this node OR a node that contains it; if None, collect to end
+    fn collect_layout_children_inline_roots(
+        &self,
+        parent_id: usize,
+        from: Option<usize>,
+        until: Option<usize>,
+        result: &mut Vec<usize>,
+    ) {
+        let parent = &self.nodes[parent_id];
+        let layout_children = parent.layout_children.borrow();
+        let Some(children) = layout_children.as_ref() else {
+            return;
+        };
+
+        let mut collecting = from.is_none(); // Start immediately if no 'from' specified
+        for &child_id in children.iter() {
+            if from == Some(child_id) {
+                collecting = true;
+            }
+            if collecting {
+                // Stop without adding if this child contains the 'until' node (it will be processed later)
+                if let Some(until_id) = until {
+                    if self.is_ancestor_of(child_id, until_id) {
+                        break;
+                    }
+                }
+                // Stop before processing if this child IS the 'until' node
+                if until == Some(child_id) {
+                    break;
+                }
+                let child = &self.nodes[child_id];
+                if child.flags.is_inline_root() {
+                    result.push(child_id);
+                } else {
+                    // For non-inline-root children (block containers), recursively collect their inline roots
+                    self.collect_all_inline_roots_in_subtree(child_id, result);
+                }
+            }
+        }
+    }
+
+    /// Check if `ancestor_id` is an ancestor of `descendant_id`
+    fn is_ancestor_of(&self, ancestor_id: usize, descendant_id: usize) -> bool {
+        let mut current = descendant_id;
+        while let Some(parent) = self.nodes[current].parent {
+            if parent == ancestor_id {
+                return true;
+            }
+            current = parent;
+        }
+        false
     }
 }
