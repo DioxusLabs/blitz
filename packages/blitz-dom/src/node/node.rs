@@ -909,7 +909,12 @@ impl Node {
                 {
                     let style_index = cluster.glyphs().next()?.style_index();
                     let node_id = layout.styles()[style_index].brush.id;
-                    return Some(HitResult { node_id, x, y });
+                    return Some(HitResult {
+                        node_id,
+                        x,
+                        y,
+                        is_text: true,
+                    });
                 }
             }
         }
@@ -920,6 +925,7 @@ impl Node {
                 node_id: self.id,
                 x,
                 y,
+                is_text: false,
             });
         }
 

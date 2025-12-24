@@ -299,6 +299,8 @@ impl DomEventData {
 pub struct HitResult {
     /// The node_id of the node identified as the hit target
     pub node_id: usize,
+    /// Whether the hit content is text
+    pub is_text: bool,
     /// The x coordinate of the hit within the hit target's border-box
     pub x: f32,
     /// The y coordinate of the hit within the hit target's border-box
