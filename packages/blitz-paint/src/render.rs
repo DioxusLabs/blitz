@@ -50,7 +50,6 @@ pub struct BlitzDomPainter<'dom> {
     pub(crate) height: u32,
     pub(crate) initial_x: f64,
     pub(crate) initial_y: f64,
-    pub(crate) devtools: DevtoolSettings,
     pub(crate) layer_manager: LayerManager,
     /// Cached selection ranges for O(1) lookup: node_id -> (start_offset, end_offset)
     pub(crate) selection_ranges: HashMap<usize, (usize, usize)>,
@@ -65,7 +64,6 @@ impl<'dom> BlitzDomPainter<'dom> {
         height: u32,
         initial_x: f64,
         initial_y: f64,
-        devtools: DevtoolSettings,
     ) -> Self {
         let selection_ranges: HashMap<usize, (usize, usize)> = dom
             .get_text_selection_ranges()
@@ -82,7 +80,6 @@ impl<'dom> BlitzDomPainter<'dom> {
             height,
             initial_x,
             initial_y,
-            devtools,
             layer_manager,
             selection_ranges,
         }
@@ -158,7 +155,7 @@ impl<'dom> BlitzDomPainter<'dom> {
         );
 
         // Render debug overlay
-        if self.devtools.highlight_hover {
+        if self.dom.devtools().highlight_hover {
             if let Some(node_id) = self.dom.as_ref().get_hover_node_id() {
                 render_debug_overlay(scene, self.dom, node_id, self.scale);
             }
@@ -426,7 +423,7 @@ impl<'dom> BlitzDomPainter<'dom> {
             svg: element.svg_data(),
             text_input: element.text_input_data(),
             list_item: element.list_item_data.as_deref(),
-            devtools: &self.devtools,
+            devtools: self.dom.devtools(),
         }
     }
 }
@@ -761,15 +758,7 @@ impl ElementCx<'_> {
             let initial_y = self.pos.y + self.frame.content_box.origin().y;
             // let transform = self.transform.then_translate(Vec2 { x, y });
 
-            let painter = BlitzDomPainter::new(
-                sub_doc,
-                scale,
-                width,
-                height,
-                initial_x,
-                initial_y,
-                DevtoolSettings::default(),
-            );
+            let painter = BlitzDomPainter::new(sub_doc, scale, width, height, initial_x, initial_y);
 
             painter.paint_scene(scene);
         }
