@@ -288,9 +288,6 @@ pub(crate) fn collect_layout_children(
                     .flags
                     .insert(NodeFlags::IS_INLINE_ROOT);
 
-                // Set layout_parent for all inline children so they can find their inline root
-                set_inline_children_layout_parent(doc, container_node_id, container_node_id);
-
                 find_inline_layout_embedded_boxes(doc, container_node_id, layout_children);
                 return;
             }
@@ -1040,26 +1037,4 @@ pub(crate) fn build_inline_layout_into(
             NodeData::Document => unreachable!(),
         }
     }
-}
-
-/// Recursively set layout_parent for all children of an inline root.
-/// This ensures that text nodes and inline elements can find their inline root
-/// ancestor via the layout_parent chain.
-fn set_inline_children_layout_parent(
-    doc: &mut BaseDocument,
-    node_id: usize,
-    inline_root_id: usize,
-) {
-    let children = std::mem::take(&mut doc.nodes[node_id].children);
-    for &child_id in &children {
-        doc.nodes[child_id].layout_parent.set(Some(inline_root_id));
-        // Recursively process children of inline elements (but not block elements)
-        let is_block = doc.nodes[child_id]
-            .display_style()
-            .is_some_and(|d| d.outside() == DisplayOutside::Block);
-        if !is_block {
-            set_inline_children_layout_parent(doc, child_id, inline_root_id);
-        }
-    }
-    doc.nodes[node_id].children = children;
 }
