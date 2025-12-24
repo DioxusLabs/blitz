@@ -151,6 +151,8 @@ pub struct BaseDocument {
 
     /// The node which is currently hovered (if any)
     pub(crate) hover_node_id: Option<usize>,
+    /// Whether the node which is currently hovered is a text node/span
+    pub(crate) hover_node_is_text: bool,
     /// The node which is currently focussed (if any)
     pub(crate) focus_node_id: Option<usize>,
     /// The node which is currently active (if any)
@@ -308,6 +310,7 @@ impl BaseDocument {
             layout_ctx: parley::LayoutContext::new(),
 
             hover_node_id: None,
+            hover_node_is_text: false,
             focus_node_id: None,
             active_node_id: None,
             mousedown_node_id: None,
@@ -1013,6 +1016,7 @@ impl BaseDocument {
     pub fn set_hover_to(&mut self, x: f32, y: f32) -> bool {
         let hit = self.hit(x, y);
         let hover_node_id = hit.map(|hit| hit.node_id);
+        let new_is_text = hit.map(|hit| hit.is_text).unwrap_or(false);
 
         // Return early if the new node is the same as the already-hovered node
         if hover_node_id == self.hover_node_id {
@@ -1034,6 +1038,7 @@ impl BaseDocument {
         }
 
         self.hover_node_id = hover_node_id;
+        self.hover_node_is_text = new_is_text;
 
         // Update the cursor
         let cursor = self.get_cursor().unwrap_or_default();
@@ -1112,7 +1117,6 @@ impl BaseDocument {
     }
 
     pub fn get_cursor(&self) -> Option<CursorIcon> {
-        // todo: cache this on the node itself
         let node = &self.nodes[self.get_hover_node_id()?];
 
         if let Some(subdoc) = node.element_data().and_then(|el| el.sub_doc_data()) {
@@ -1127,11 +1131,10 @@ impl BaseDocument {
             return Some(keyword);
         }
 
-        // Return text cursor for text nodes and text inputs
-        if node.is_text_node()
-            || node
-                .element_data()
-                .is_some_and(|e| e.text_input_data().is_some())
+        // Return text cursor for text inputs
+        if node
+            .element_data()
+            .is_some_and(|e| e.text_input_data().is_some())
         {
             return Some(CursorIcon::Text);
         }
@@ -1144,6 +1147,11 @@ impl BaseDocument {
             }
 
             maybe_node = node.layout_parent.get().map(|node_id| node.with(node_id));
+        }
+
+        // Return text cursor for text nodes
+        if self.hover_node_is_text {
+            return Some(CursorIcon::Text);
         }
 
         // Else fallback to default cursor
