@@ -1444,17 +1444,11 @@ impl BaseDocument {
         let layout_children = parent.layout_children.borrow();
         let children = layout_children.as_ref()?;
 
-        let mut anon_index = 0;
-        for &child_id in children.iter() {
-            if self.get_node(child_id).is_some_and(|n| n.is_anonymous()) {
-                if anon_index == target_index {
-                    return Some(child_id);
-                }
-                anon_index += 1;
-            }
-        }
-
-        None
+        children
+            .iter()
+            .filter(|&&child_id| self.get_node(child_id).is_some_and(|n| n.is_anonymous()))
+            .nth(target_index)
+            .copied()
     }
 
     /// Check if there is an active (non-empty) text selection
