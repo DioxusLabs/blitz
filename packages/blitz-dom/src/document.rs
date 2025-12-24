@@ -1350,16 +1350,17 @@ impl BaseDocument {
         self.text_selection =
             TextSelection::new(anchor_node, anchor_offset, focus_node, focus_offset);
 
-        // Store stable parent references for anonymous blocks
-        let (anchor_parent, anchor_idx) = self.anonymous_block_location(anchor_node);
-        let (focus_parent, focus_idx) = self.anonymous_block_location(focus_node);
-
-        self.text_selection
-            .anchor
-            .set_anonymous_info(anchor_parent, anchor_idx);
-        self.text_selection
-            .focus
-            .set_anonymous_info(focus_parent, focus_idx);
+        // For anonymous blocks, switch to storing parent+sibling_index (stable reference)
+        if let (Some(parent), Some(idx)) = self.anonymous_block_location(anchor_node) {
+            self.text_selection
+                .anchor
+                .set_anonymous(parent, idx, anchor_offset);
+        }
+        if let (Some(parent), Some(idx)) = self.anonymous_block_location(focus_node) {
+            self.text_selection
+                .focus
+                .set_anonymous(parent, idx, focus_offset);
+        }
     }
 
     /// Get the parent ID and sibling index for a node if it's an anonymous block.
@@ -1407,11 +1408,14 @@ impl BaseDocument {
 
     /// Update the selection focus point (used during mouse drag to extend selection).
     pub fn update_selection_focus(&mut self, focus_node: usize, focus_offset: usize) {
-        self.text_selection.set_focus(focus_node, focus_offset);
-
-        // Update stable references for anonymous blocks
-        let (parent, idx) = self.anonymous_block_location(focus_node);
-        self.text_selection.focus.set_anonymous_info(parent, idx);
+        // For anonymous blocks, store parent+sibling_index; otherwise store node directly
+        if let (Some(parent), Some(idx)) = self.anonymous_block_location(focus_node) {
+            self.text_selection
+                .focus
+                .set_anonymous(parent, idx, focus_offset);
+        } else {
+            self.text_selection.set_focus(focus_node, focus_offset);
+        }
     }
 
     /// Extend text selection to the given point. Returns true if selection was updated.
@@ -1427,32 +1431,6 @@ impl BaseDocument {
             true
         } else {
             false
-        }
-    }
-
-    /// Update selection references after layout reconstruction.
-    /// Anonymous blocks get new IDs during layout, so we find them by parent + sibling index.
-    pub fn update_selection_after_layout(&mut self) {
-        // Update anchor node if it was an anonymous block
-        if let (Some(_), Some(parent_id), Some(idx)) = (
-            self.text_selection.anchor.node,
-            self.text_selection.anchor.parent,
-            self.text_selection.anchor.sibling_index,
-        ) {
-            if let Some(new_id) = self.find_anonymous_block_by_index(parent_id, idx) {
-                self.text_selection.anchor.node = Some(new_id);
-            }
-        }
-
-        // Update focus node if it was an anonymous block
-        if let (Some(_), Some(parent_id), Some(idx)) = (
-            self.text_selection.focus.node,
-            self.text_selection.focus.parent,
-            self.text_selection.focus.sibling_index,
-        ) {
-            if let Some(new_id) = self.find_anonymous_block_by_index(parent_id, idx) {
-                self.text_selection.focus.node = Some(new_id);
-            }
         }
     }
 
@@ -1519,11 +1497,13 @@ impl BaseDocument {
     pub fn get_text_selection_ranges(&self) -> Vec<(usize, usize, usize)> {
         use std::cmp::Ordering;
 
-        let anchor_node = match self.text_selection.anchor.node {
+        let lookup = |parent_id, idx| self.find_anonymous_block_by_index(parent_id, idx);
+
+        let anchor_node = match self.text_selection.anchor.resolve_node_id(lookup) {
             Some(id) => id,
             None => return Vec::new(),
         };
-        let focus_node = match self.text_selection.focus.node {
+        let focus_node = match self.text_selection.focus.resolve_node_id(lookup) {
             Some(id) => id,
             None => return Vec::new(),
         };

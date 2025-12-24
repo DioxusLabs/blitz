@@ -2,7 +2,7 @@ use anyrender::PaintScene;
 use blitz_dom::{BaseDocument, node::TextBrush, util::ToColorColor};
 use kurbo::{Affine, Stroke};
 use parley::{Affinity, Cursor, Layout, Line, PositionedLayoutItem, Selection};
-use peniko::Fill;
+use peniko::{Color, Fill};
 use style::values::computed::TextDecorationLine;
 
 pub(crate) fn stroke_text<'a>(

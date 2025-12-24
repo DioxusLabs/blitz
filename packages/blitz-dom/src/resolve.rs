@@ -66,10 +66,6 @@ impl BaseDocument {
         self.resolve_deferred_tasks();
         timer.record_time("pconstruct");
 
-        // Update text selection references after layout reconstruction
-        // (anonymous blocks get new IDs, so we need to find the new ones)
-        self.update_selection_after_layout();
-
         // Merge stylo into taffy
         self.flush_styles_to_layout(root_node_id);
         timer.record_time("flush");
