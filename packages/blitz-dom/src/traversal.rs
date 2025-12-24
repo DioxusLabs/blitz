@@ -311,70 +311,52 @@ impl BaseDocument {
     /// Both start and end are assumed to be inline roots.
     /// Returns the nodes in document order (from first to last).
     pub fn collect_inline_roots_in_range(&self, start_node: usize, end_node: usize) -> Vec<usize> {
-        let start = &self.nodes[start_node];
-        let end = &self.nodes[end_node];
-        let start_is_anon = start.is_anonymous();
-        let end_is_anon = end.is_anonymous();
+        // Resolve nodes: for anonymous blocks, get (parent_id, Some(anon_id)); for regular, (node_id, None)
+        let (start_anchor, start_anon) = self.resolve_for_traversal(start_node);
+        let (end_anchor, end_anon) = self.resolve_for_traversal(end_node);
 
         // If both are anonymous blocks with the same parent, just collect from layout_children
-        if start_is_anon && end_is_anon && start.parent == end.parent {
-            if let Some(parent_id) = start.parent {
-                return self.collect_anonymous_siblings(parent_id, start_node, end_node);
-            }
+        if start_anon.is_some() && end_anon.is_some() && start_anchor == end_anchor {
+            return self.collect_anonymous_siblings(start_anchor, start_node, end_node);
         }
 
-        // Determine first/last based on document order
-        // For anonymous blocks, use their parent's position in document order
-        let start_cmp_id = if start_is_anon {
-            start.parent.unwrap_or(start_node)
-        } else {
-            start_node
-        };
-        let end_cmp_id = if end_is_anon {
-            end.parent.unwrap_or(end_node)
-        } else {
-            end_node
-        };
-
-        let (first, last, first_is_anon, last_is_anon) = match self
-            .compare_document_order(start_cmp_id, end_cmp_id)
-        {
-            Ordering::Less | Ordering::Equal => (start_node, end_node, start_is_anon, end_is_anon),
-            Ordering::Greater => (end_node, start_node, end_is_anon, start_is_anon),
-        };
+        // Determine first/last based on document order (using anchors for comparison)
+        let (first_anchor, first_anon, last_anchor, last_anon) =
+            match self.compare_document_order(start_anchor, end_anchor) {
+                Ordering::Less | Ordering::Equal => {
+                    (start_anchor, start_anon, end_anchor, end_anon)
+                }
+                Ordering::Greater => (end_anchor, end_anon, start_anchor, start_anon),
+            };
 
         let mut result = Vec::new();
         let mut found_first = false;
-        let first_parent = if first_is_anon {
-            self.nodes[first].parent
-        } else {
-            None
-        };
-        let last_parent = if last_is_anon {
-            self.nodes[last].parent
-        } else {
-            None
-        };
 
         // Traverse tree in document order
         for node_id in TreeTraverser::new(self) {
-            // Check if we've reached the first node (or the parent of an anonymous first)
             if !found_first {
-                if node_id == first {
+                if node_id == first_anchor {
                     found_first = true;
-                } else if first_is_anon && Some(node_id) == first_parent {
-                    // Include anonymous blocks from this parent, starting from 'first'
-                    found_first = true;
-                    self.collect_anonymous_from(node_id, first, &mut result);
-                    continue;
+                    if let Some(anon_id) = first_anon {
+                        // First is anonymous: collect from this parent starting at anon_id
+                        self.collect_anonymous_from(node_id, anon_id, &mut result);
+                        continue;
+                    }
                 }
             }
 
             if found_first {
-                // Check if this is the parent of the last anonymous block
-                if last_is_anon && Some(node_id) == last_parent {
-                    // Include anonymous blocks up to 'last'
-                    self.collect_anonymous_until(node_id, last, &mut result);
+                if node_id == last_anchor {
+                    if let Some(anon_id) = last_anon {
+                        // Last is anonymous: collect up to anon_id
+                        self.collect_anonymous_until(node_id, anon_id, &mut result);
+                    } else {
+                        // Last is regular: include it if it's an inline root
+                        let node = &self.nodes[node_id];
+                        if node.flags.is_inline_root() {
+                            result.push(node_id);
+                        }
+                    }
                     break;
                 }
 
@@ -382,14 +364,22 @@ impl BaseDocument {
                 if node.flags.is_inline_root() {
                     result.push(node_id);
                 }
-
-                if node_id == last {
-                    break;
-                }
             }
         }
 
         result
+    }
+
+    /// Resolve a node for traversal purposes.
+    /// For anonymous blocks: returns (parent_id, Some(node_id))
+    /// For regular nodes: returns (node_id, None)
+    fn resolve_for_traversal(&self, node_id: usize) -> (usize, Option<usize>) {
+        let node = &self.nodes[node_id];
+        if node.is_anonymous() {
+            (node.parent.unwrap_or(node_id), Some(node_id))
+        } else {
+            (node_id, None)
+        }
     }
 
     /// Collect anonymous block siblings between start and end (inclusive)
