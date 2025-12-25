@@ -23,7 +23,7 @@ pub enum BlitzShellEvent {
         data: Arc<AccessKitWindowEvent>,
     },
 
-    /// An arbitrary event from the Blitz embedder
+    /// An arbitary event from the Blitz embedder
     Embedder(Arc<dyn Any + Send + Sync>),
 
     /// Navigate to another URL (triggered by e.g. clicking a link)

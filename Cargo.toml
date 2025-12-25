@@ -231,7 +231,6 @@ blitz-net = { workspace = true }
 blitz = { workspace = true, features = ["net"] }
 dioxus = { workspace = true }
 dioxus-native = { workspace = true, features = ["vello", "floats", "svg"] }
-dioxus-native-dom = { workspace = true }
 euclid = { workspace = true }
 reqwest = { workspace = true }
 tokio = { workspace = true, features = ["macros"] }
