@@ -33,6 +33,12 @@ use crate::layout::damage::HoistedPaintChildren;
 
 use super::{Attribute, ElementData};
 
+macro_rules! local_names {
+    ($($name:tt),+) => {
+        [$(local_name!($name),)+]
+    };
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum DisplayOuter {
     Block,
@@ -131,6 +137,23 @@ impl Node {
         guard: SharedRwLock,
         data: NodeData,
     ) -> Self {
+        // The element state needs to be modified if the element is disabled
+        let state = match &data {
+            NodeData::Element(data) => {
+                let mut state = ElementState::empty();
+                let tag = &data.name.local;
+
+                if data.has_attr(local_name!("disabled"))
+                    && local_names!("button", "input", "select", "textarea").contains(tag)
+                {
+                    state.insert(ElementState::DISABLED);
+                }
+
+                state
+            }
+            _ => ElementState::empty(),
+        };
+
         Self {
             tree,
 
@@ -148,7 +171,7 @@ impl Node {
             stylo_element_data: Default::default(),
             selector_flags: AtomicRefCell::new(ElementSelectorFlags::empty()),
             guard,
-            element_state: ElementState::empty(),
+            element_state: state,
 
             before: None,
             after: None,
@@ -347,6 +370,27 @@ impl Node {
 
     pub fn is_active(&self) -> bool {
         self.element_state.contains(ElementState::ACTIVE)
+    }
+
+    // Marks the node as disabled. This does not check whether the node can be disabled.
+    // It also does not disable any children which should be disabled as well (relevant for the
+    // `select` element).
+    pub fn disable(&mut self) {
+        self.element_state.insert(ElementState::DISABLED);
+        self.set_restyle_hint(RestyleHint::restyle_subtree());
+    }
+
+    // Removes the disabled status from the node. This does not check whether the node can be disabled.
+    // It also does not undisable any children which should be undisabled as well (relevant for the `select` element).
+    pub fn undisable(&mut self) {
+        self.element_state.remove(ElementState::DISABLED);
+        self.set_restyle_hint(RestyleHint::restyle_subtree());
+    }
+
+    // Returns true if the node is marked as disabled. This does not check whether the node should
+    // be disabled because of a disabled parent node (relevant for the `select` element).
+    pub fn is_disabled(&self) -> bool {
+        self.element_state.contains(ElementState::DISABLED)
     }
 
     pub fn subdoc(&self) -> Option<&dyn Document> {
@@ -979,5 +1023,55 @@ impl std::fmt::Debug for Node {
             // .field("unrounded_layout", &self.unrounded_layout)
             // .field("final_layout", &self.final_layout)
             .finish()
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use crate::{Attribute, BaseDocument, DocumentConfig, ElementData, NodeData, qual_name};
+
+    #[test]
+    fn create_node_with_disabled_attr() {
+        let mut document = BaseDocument::new(DocumentConfig::default());
+        let node = document.create_node(NodeData::Element(ElementData::new(
+            qual_name!("button"),
+            vec![Attribute {
+                name: qual_name!("disabled"),
+                value: "".into(),
+            }],
+        )));
+        let node = document.get_node(node).unwrap();
+
+        assert!(node.is_disabled(), "form node is disabled")
+    }
+
+    #[test]
+    fn ignore_disabled_attr_content() {
+        let mut document = BaseDocument::new(DocumentConfig::default());
+        let node = document.create_node(NodeData::Element(ElementData::new(
+            qual_name!("button"),
+            vec![Attribute {
+                name: qual_name!("disabled"),
+                value: "false".into(),
+            }],
+        )));
+        let node = document.get_node(node).unwrap();
+
+        assert!(node.is_disabled(), "form node is disabled")
+    }
+
+    #[test]
+    fn create_node_with_ignored_disable() {
+        let mut document = BaseDocument::new(DocumentConfig::default());
+        let node = document.create_node(NodeData::Element(ElementData::new(
+            qual_name!("a"),
+            vec![Attribute {
+                name: qual_name!("disabled"),
+                value: "".into(),
+            }],
+        )));
+        let node = document.get_node(node).unwrap();
+
+        assert!(!node.is_disabled(), "Only form nodes can be disabled")
     }
 }

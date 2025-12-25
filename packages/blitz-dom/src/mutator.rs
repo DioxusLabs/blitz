@@ -22,6 +22,12 @@ macro_rules! tag_and_attr {
     };
 }
 
+macro_rules! local_names {
+    ($($name:tt),+) => {
+        [$(local_name!($name),)+]
+    };
+}
+
 #[derive(Debug, Clone)]
 pub enum AppendTextErr {
     /// The node is not a text node
@@ -247,6 +253,13 @@ impl DocumentMutator<'_> {
             return;
         }
 
+        if *attr == local_name!("disabled")
+            && local_names!("button", "input", "select", "textarea").contains(tag)
+        {
+            node.disable();
+            return;
+        }
+
         // If node if not in the document, then don't apply any special behaviours
         // and simply set the attribute value
         if !node.flags.is_in_document() {
@@ -303,6 +316,14 @@ impl DocumentMutator<'_> {
 
         let tag = &element.name.local;
         let attr = &name.local;
+
+        if *attr == local_name!("disabled")
+            && local_names!("button", "input", "select", "textarea").contains(tag)
+        {
+            node.undisable();
+            return;
+        }
+
         if *attr == local_name!("style") {
             element.flush_style_attribute(&self.doc.guard, &self.doc.url.url_extra_data());
         } else if (tag, attr) == tag_and_attr!("canvas", "src") {
@@ -840,5 +861,64 @@ impl Drop for ViewportMut<'_> {
         if scale_has_changed {
             self.doc.invalidate_inline_contexts();
         }
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use crate::{Attribute, BaseDocument, DocumentConfig, ElementData, NodeData, qual_name};
+
+    #[test]
+    fn mutator_remove_disabled() {
+        let mut document = BaseDocument::new(DocumentConfig::default());
+        let node = document.create_node(NodeData::Element(ElementData::new(
+            qual_name!("button"),
+            vec![Attribute {
+                name: qual_name!("disabled"),
+                value: "".into(),
+            }],
+        )));
+        let mut mutator = document.mutate();
+        mutator.clear_attribute(node, qual_name!("disabled"));
+        drop(mutator);
+
+        let node = document.get_node(node).unwrap();
+
+        assert!(!node.is_disabled(), "disabled attribute is removed")
+    }
+
+    #[test]
+    fn mutator_set_disabled() {
+        let mut document = BaseDocument::new(DocumentConfig::default());
+        let node = document.create_node(NodeData::Element(ElementData::new(
+            qual_name!("button"),
+            vec![],
+        )));
+        let mut mutator = document.mutate();
+        mutator.set_attribute(node, qual_name!("disabled"), "");
+        drop(mutator);
+
+        let node = document.get_node(node).unwrap();
+
+        assert!(node.is_disabled(), "disabled attribute is set")
+    }
+
+    #[test]
+    fn mutator_set_disabled_invalid_node() {
+        let mut document = BaseDocument::new(DocumentConfig::default());
+        let node = document.create_node(NodeData::Element(ElementData::new(
+            qual_name!("button"),
+            vec![],
+        )));
+        let mut mutator = document.mutate();
+        mutator.clear_attribute(node, qual_name!("disabled"));
+        drop(mutator);
+
+        let node = document.get_node(node).unwrap();
+
+        assert!(
+            !node.is_disabled(),
+            "disabled attribute is set, but the node is not a form element"
+        )
     }
 }
