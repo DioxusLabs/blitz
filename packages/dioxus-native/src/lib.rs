@@ -25,12 +25,12 @@ use blitz_traits::net::NetProvider;
 pub use dioxus_native_dom::*;
 
 use assets::DioxusNativeNetProvider;
-pub use dioxus_application::{DioxusNativeApplication, DioxusNativeEvent};
+pub use dioxus_application::DioxusNativeProvider;
 #[doc(hidden)]
 pub use dioxus_application::OpaquePtr;
 #[doc(hidden)]
 pub use dioxus_application::UnsafeBox;
-pub use dioxus_application::DioxusNativeProvider;
+pub use dioxus_application::{DioxusNativeApplication, DioxusNativeEvent};
 pub use dioxus_renderer::DioxusNativeWindowRenderer;
 
 #[cfg(target_os = "android")]
@@ -70,7 +70,6 @@ use link_handler::DioxusNativeNavigationProvider;
 use std::any::Any;
 use std::sync::Arc;
 use winit::window::WindowAttributes;
-
 
 /// Launch an interactive HTML/CSS renderer driven by the Dioxus virtualdom
 pub fn launch(app: fn() -> Element) {
@@ -205,10 +204,10 @@ pub fn launch_cfg_with_props<P: Clone + 'static, M: 'static>(
         )
     ))]
     let renderer_factory: Arc<dyn Fn() -> DioxusNativeWindowRenderer + Send + Sync> = {
-        let features = features.clone();
+        let features = features;
         let limits = limits.clone();
         Arc::new(move || {
-            DioxusNativeWindowRenderer::with_features_and_limits(features.clone(), limits.clone())
+            DioxusNativeWindowRenderer::with_features_and_limits(features, limits.clone())
         })
     };
     #[cfg(not(any(
@@ -219,7 +218,7 @@ pub fn launch_cfg_with_props<P: Clone + 'static, M: 'static>(
         )
     )))]
     let renderer_factory: Arc<dyn Fn() -> DioxusNativeWindowRenderer + Send + Sync> =
-        Arc::new(|| DioxusNativeWindowRenderer::new());
+        Arc::new(DioxusNativeWindowRenderer::new);
 
     let window_attributes = window_attributes.unwrap_or_default();
 

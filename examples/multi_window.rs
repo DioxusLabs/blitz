@@ -21,7 +21,7 @@ fn main() {
 fn app() -> Element {
     let provider = use_context::<DioxusNativeProvider>();
     let mut counter = use_signal(|| 0u32);
-    let spawned_windows = use_signal(|| Vec::<(WindowId, Weak<Window>)>::new());
+    let spawned_windows = use_signal(Vec::<(WindowId, Weak<Window>)>::new);
 
     rsx! {
         main {
@@ -36,7 +36,7 @@ fn app() -> Element {
                             .with_title(title)
                             .with_inner_size(winit::dpi::LogicalSize::new(400.0, 300.0));
                         let receiver = provider.create_document_window(vdom, attributes);
-                        let mut spawned_windows = spawned_windows.clone();
+                        let mut spawned_windows = spawned_windows;
                         spawn(async move {
                             if let Ok((window_id, window)) = receiver.await {
                                 let mut next = spawned_windows();

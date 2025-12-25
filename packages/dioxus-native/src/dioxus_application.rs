@@ -61,6 +61,12 @@ impl<T: ?Sized> UnsafeBox<T> {
     }
 }
 
+type ContextProvider = Box<dyn Fn() -> Box<dyn Any> + Send + Sync>;
+type ContextProviders = Arc<Vec<ContextProvider>>;
+type WindowCreated = (WindowId, Arc<Window>);
+type CreateWindowReply = UnsafeBox<oneshot::Sender<WindowCreated>>;
+type CreateWindowReplyOpt = Option<CreateWindowReply>;
+
 /// Dioxus-native specific event type
 pub enum DioxusNativeEvent {
     /// A hotreload event, basically telling us to update our templates.
@@ -85,7 +91,7 @@ pub enum DioxusNativeEvent {
     CreateDocumentWindow {
         vdom: UnsafeBox<dioxus_core::VirtualDom>,
         attributes: winit::window::WindowAttributes,
-        reply: Option<UnsafeBox<oneshot::Sender<(WindowId, Arc<Window>)>>>,
+        reply: CreateWindowReplyOpt,
     },
 
     GetWindow {
@@ -100,7 +106,7 @@ pub struct DioxusNativeApplication {
 
     renderer_factory: Arc<dyn Fn() -> DioxusNativeWindowRenderer + Send + Sync>,
 
-    contexts: Arc<Vec<Box<dyn Fn() -> Box<dyn Any> + Send + Sync>>>,
+    contexts: ContextProviders,
     net_provider: Arc<dyn NetProvider>,
     #[cfg(feature = "net")]
     inner_net_provider: Option<Arc<blitz_net::Provider>>,
@@ -150,7 +156,7 @@ impl DioxusNativeApplication {
     pub(crate) fn new(
         proxy: EventLoopProxy<BlitzShellEvent>,
         renderer_factory: Arc<dyn Fn() -> DioxusNativeWindowRenderer + Send + Sync>,
-        contexts: Arc<Vec<Box<dyn Fn() -> Box<dyn Any> + Send + Sync>>>,
+        contexts: ContextProviders,
         net_provider: Arc<dyn NetProvider>,
         #[cfg(feature = "net")] inner_net_provider: Option<Arc<blitz_net::Provider>>,
         html_parser_provider: Option<Arc<dyn HtmlParserProvider>>,
@@ -221,7 +227,7 @@ impl DioxusNativeApplication {
         event_loop: &ActiveEventLoop,
         vdom: UnsafeBox<dioxus_core::VirtualDom>,
         attributes: winit::window::WindowAttributes,
-        reply: Option<UnsafeBox<oneshot::Sender<(WindowId, Arc<Window>)>>>,
+        reply: CreateWindowReplyOpt,
     ) {
         let mut vdom = *vdom.into_inner();
 
