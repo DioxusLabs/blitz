@@ -855,6 +855,7 @@ dependencies = [
  "reqwest",
  "tokio",
  "tracing-subscriber",
+ "winit",
 ]
 
 [[package]]
