@@ -22,6 +22,12 @@ use super::{Attribute, Attributes};
 use crate::Document;
 use crate::layout::table::TableContext;
 
+macro_rules! local_names {
+    ($($name:tt),+) => {
+        [$(local_name!($name),)+]
+    };
+}
+
 #[derive(Debug, Clone)]
 pub struct ElementData {
     /// The elements tag name, namespace and prefix
@@ -164,6 +170,10 @@ impl ElementData {
     /// Detects the presence of the attribute, treating *any* value as truthy.
     pub fn has_attr(&self, name: impl PartialEq<LocalName>) -> bool {
         self.attrs.iter().any(|attr| name == attr.name.local)
+    }
+
+    pub fn can_be_disabled(&self) -> bool {
+        local_names!("button", "input", "select", "textarea").contains(&self.name.local)
     }
 
     pub fn image_data(&self) -> Option<&ImageData> {
