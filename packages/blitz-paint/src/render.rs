@@ -735,8 +735,8 @@ impl ElementCx<'_> {
             let y_scale = paint_size.height as f64 / object_size.height as f64;
             let transform = self
                 .transform
-                .pre_scale_non_uniform(x_scale, y_scale)
-                .then_translate(Vec2 { x, y });
+                .pre_translate(Vec2 { x, y })
+                .pre_scale_non_uniform(x_scale, y_scale);
 
             scene.draw_image(to_peniko_image(image, quality).as_ref(), transform);
         }
