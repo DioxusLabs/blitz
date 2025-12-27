@@ -130,8 +130,9 @@ fn create_net_provider(
 ) -> Arc<EnabledNetProvider> {
     #[cfg(feature = "net")]
     let net_provider = {
+        use blitz_shell::BlitzShellWaker;
         let proxy = event_loop.create_proxy();
-        let waker = blitz_shell::BlitzShellNetWaker::shared(proxy);
+        let waker = BlitzShellWaker::net_waker(proxy);
         Arc::new(blitz_net::Provider::new(Some(waker)))
     };
     #[cfg(not(feature = "net"))]

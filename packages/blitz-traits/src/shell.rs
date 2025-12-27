@@ -2,6 +2,17 @@
 
 use cursor_icon::CursorIcon;
 
+/// A callback which wakes the event loop
+pub trait EventLoopWaker: Send + Sync + 'static {
+    fn wake(&self, client_id: usize);
+}
+
+#[derive(Clone)]
+pub struct DummyEventLoopWaker;
+impl EventLoopWaker for DummyEventLoopWaker {
+    fn wake(&self, _client_id: usize) {}
+}
+
 /// Type representing an error performing a clipboard operation
 // TODO: fill out with meaningful errors
 pub struct ClipboardError;
