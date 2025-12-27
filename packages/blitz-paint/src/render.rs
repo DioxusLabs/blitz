@@ -263,55 +263,66 @@ impl<'dom> BlitzDomPainter<'dom> {
         }
 
         let mut cx = self.element_cx(node, layout, box_position);
+
         cx.draw_outline(scene);
         cx.draw_outset_box_shadow(scene);
-        cx.draw_background(scene);
-        cx.draw_inset_box_shadow(scene);
-        cx.draw_table_row_backgrounds(scene);
-        cx.draw_table_borders(scene);
-        cx.draw_border(scene);
 
-        // TODO: allow layers with opacity to be unclipped (overflow: visible)
-        let wants_layer = should_clip | has_opacity;
-        let clip = if is_text_input {
-            &cx.frame.content_box_path()
-        } else {
-            &cx.frame.padding_box_path()
-        };
-
+        // Opacity layer if box has opacity. Clipped to border-box as it needs to include
+        // the background and borders.
         self.layer_manager.maybe_with_layer(
             scene,
-            wants_layer,
+            has_opacity,
             opacity,
             cx.transform,
-            clip,
+            &cx.frame.border_box_path(),
             |scene| {
+                cx.draw_background(scene);
+                cx.draw_inset_box_shadow(scene);
+                cx.draw_table_row_backgrounds(scene);
+                cx.draw_table_borders(scene);
+                cx.draw_border(scene);
                 cx.stroke_devtools(scene);
 
-                // Now that background has been drawn, offset pos and cx in order to draw our contents scrolled
-                let content_position = Point {
-                    x: content_position.x - node.scroll_offset.x,
-                    y: content_position.y - node.scroll_offset.y,
+                // TODO: allow layers with opacity to be unclipped (overflow: visible)
+                let clip = if is_text_input {
+                    &cx.frame.content_box_path()
+                } else {
+                    &cx.frame.padding_box_path()
                 };
-                cx.pos = Point {
-                    x: cx.pos.x - node.scroll_offset.x,
-                    y: cx.pos.y - node.scroll_offset.y,
-                };
-                cx.transform = cx.transform.then_translate(Vec2 {
-                    x: -node.scroll_offset.x,
-                    y: -node.scroll_offset.y,
-                });
-                cx.draw_image(scene);
-                #[cfg(feature = "svg")]
-                cx.draw_svg(scene);
-                cx.draw_canvas(scene);
-                cx.draw_sub_document(scene);
-                cx.draw_input(scene);
 
-                cx.draw_text_input_text(scene, content_position);
-                cx.draw_inline_layout(scene, content_position);
-                cx.draw_marker(scene, content_position);
-                cx.draw_children(scene);
+                // Clip layer if box requires clipping. Opacity set to 1.0
+                self.layer_manager.maybe_with_layer(
+                    scene,
+                    should_clip,
+                    1.0, // opacity
+                    cx.transform,
+                    clip,
+                    |scene| {
+                        // Now that background has been drawn, offset pos and cx in order to draw our contents scrolled
+                        let content_position = Point {
+                            x: content_position.x - node.scroll_offset.x,
+                            y: content_position.y - node.scroll_offset.y,
+                        };
+                        cx.pos = Point {
+                            x: cx.pos.x - node.scroll_offset.x,
+                            y: cx.pos.y - node.scroll_offset.y,
+                        };
+                        cx.transform = cx.transform.then_translate(Vec2 {
+                            x: -node.scroll_offset.x,
+                            y: -node.scroll_offset.y,
+                        });
+                        cx.draw_image(scene);
+                        #[cfg(feature = "svg")]
+                        cx.draw_svg(scene);
+                        cx.draw_canvas(scene);
+                        cx.draw_sub_document(scene);
+                        cx.draw_input(scene);
+                        cx.draw_text_input_text(scene, content_position);
+                        cx.draw_inline_layout(scene, content_position);
+                        cx.draw_marker(scene, content_position);
+                        cx.draw_children(scene);
+                    },
+                );
             },
         );
     }

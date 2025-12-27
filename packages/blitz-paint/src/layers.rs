@@ -48,15 +48,13 @@ impl LayerManager {
         if !layers_available {
             return false;
         }
-        let blend_mode = if opacity == 1.0 {
-            #[allow(deprecated)]
-            Mix::Clip
-        } else {
-            Mix::Normal
-        };
 
-        // Actually push the clip layer
-        scene.push_layer(blend_mode, opacity, transform, shape);
+        // Actually push the layer
+        if opacity == 1.0 {
+            scene.push_clip_layer(transform, shape);
+        } else {
+            scene.push_layer(Mix::Normal, opacity, transform, shape);
+        };
 
         // Update accounting
         self.layers_used.update(|x| x + 1);
