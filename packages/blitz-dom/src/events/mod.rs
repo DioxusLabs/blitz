@@ -6,6 +6,7 @@ mod mouse;
 
 use blitz_traits::events::{DomEvent, DomEventData, UiEvent};
 pub use driver::{EventDriver, EventHandler, NoopEventHandler};
+use focus::generate_focus_events;
 pub(crate) use ime::handle_ime_event;
 pub(crate) use keyboard::handle_keypress;
 use mouse::handle_mouseup;
@@ -70,7 +71,13 @@ pub(crate) fn handle_dom_event<F: FnMut(DomEvent)>(
         }
 
         if set_focus {
-            doc.set_focus_to(target_node_id);
+            generate_focus_events(
+                doc,
+                &mut |doc| {
+                    doc.set_focus_to(target_node_id);
+                },
+                &mut dispatch_event,
+            );
         }
 
         return;
