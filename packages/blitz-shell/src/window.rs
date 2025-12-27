@@ -332,11 +332,19 @@ impl<Rend: WindowRenderer> View<Rend> {
 
                     // Ctrl/Super keyboard shortcuts
                     if ctrl | meta {
-                        let mut inner = self.doc.inner_mut();
                         match key_code {
-                            KeyCode::Equal => inner.viewport_mut().zoom_by(0.1),
-                            KeyCode::Minus => inner.viewport_mut().zoom_by(-0.1),
-                            KeyCode::Digit0 => inner.viewport_mut().set_zoom(1.0),
+                            KeyCode::Equal => {
+                                self.doc.inner_mut().viewport_mut().zoom_by(0.1);
+                                self.request_redraw();
+                            },
+                            KeyCode::Minus => {
+                                self.doc.inner_mut().viewport_mut().zoom_by(-0.1);
+                                self.request_redraw();
+                            },
+                            KeyCode::Digit0 => {
+                                self.doc.inner_mut().viewport_mut().set_zoom(1.0);
+                                self.request_redraw();
+                            }
                             _ => {}
                         };
                     }
