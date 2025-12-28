@@ -140,7 +140,12 @@ fn app() -> Element {
                         }
                     },
                     onkeydown: move |evt| {
-                        if evt.key() == Key::Enter {
+                        let is_enter = match evt.key() {
+                            Key::Enter => true,
+                            Key::Character(s) if s == "\n" => true,
+                            _ => false,
+                        };
+                        if is_enter {
                             evt.prevent_default();
                             let req = req_from_string(&url_input_value.read());
                             if let Some(req) = req {
