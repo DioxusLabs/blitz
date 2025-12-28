@@ -332,8 +332,6 @@ impl<Rend: WindowRenderer> View<Rend> {
             }
             WindowEvent::KeyboardInput { event, .. } => {
 
-                if event.state.is_pressed() {
-
                 if let PhysicalKey::Code(key_code) = event.physical_key {
                     if event.state.is_pressed() {
                         let ctrl = self.keyboard_modifiers.state().control_key();
