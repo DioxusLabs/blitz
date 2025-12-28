@@ -31,8 +31,11 @@ pub fn paint_scene(
     scale: f64,
     width: u32,
     height: u32,
+    x_offset: u32,
+    y_offset: u32,
 ) {
-    let generator = BlitzDomPainter::new(dom, scale, width, height, 0.0, 0.0);
+    let generator =
+        BlitzDomPainter::new(dom, scale, width, height, x_offset as f64, y_offset as f64);
     generator.paint_scene(scene);
 
     // println!(
