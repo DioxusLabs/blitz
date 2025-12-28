@@ -284,12 +284,25 @@ pub(crate) fn handle_click(
                 continue;
             };
 
+            let is_focusable = el.is_focussable;
+
             let disabled = el.attr(local_name!("disabled")).is_some();
             if disabled {
                 break 'matched true;
             }
 
             if let SpecialElementData::TextInput(_) = el.special_data {
+                break 'matched true;
+            }
+
+            if is_focusable {
+                generate_focus_events(
+                    doc,
+                    &mut |doc| {
+                        doc.set_focus_to(node_id);
+                    },
+                    dispatch_event,
+                );
                 break 'matched true;
             }
 

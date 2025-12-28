@@ -223,6 +223,11 @@ impl DocumentMutator<'_> {
 
         element.attrs.set(name.clone(), value);
 
+        // Update focusability when tabindex or disabled changes
+        if *&name.local == local_name!("tabindex") || *&name.local == local_name!("disabled") {
+            element.flush_is_focussable();
+        }
+
         let tag = &element.name.local;
         let attr = &name.local;
 
