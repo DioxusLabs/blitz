@@ -113,7 +113,12 @@ fn TodoHeader(mut todos: Signal<HashMap<u32, TodoItem>>) -> Element {
     let mut todo_id = use_signal(|| 0);
 
     let onkeydown = move |evt: KeyboardEvent| {
-        if evt.key() == Key::Enter && !draft.read().is_empty() {
+        let is_enter = match evt.key() {
+            Key::Enter => true,
+            Key::Character(s) if s == "\n" => true,
+            _ => false,
+        };
+        if is_enter && !draft.read().is_empty() {
             let id = todo_id();
             let todo = TodoItem {
                 id,
