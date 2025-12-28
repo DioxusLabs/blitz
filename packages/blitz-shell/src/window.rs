@@ -277,7 +277,11 @@ impl<Rend: WindowRenderer> View<Rend> {
         drop(viewport);
         drop(inner);
         if width > 0 && height > 0 {
-            self.renderer.set_size(width, height);
+            let insets = self.safe_area_insets;
+            self.renderer.set_size(
+                width + insets.left + insets.right,
+                height + insets.top + insets.bottom,
+            );
             self.request_redraw();
         }
     }
