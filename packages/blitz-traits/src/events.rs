@@ -307,7 +307,7 @@ pub struct HitResult {
     pub y: f32,
 }
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum BlitzPointerId {
     Mouse,
     Finger(u64),
