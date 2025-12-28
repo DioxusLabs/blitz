@@ -1054,6 +1054,7 @@ impl Node {
 
         BlitzPointerEvent {
             id: BlitzPointerId::Mouse,
+            is_primary: true,
             x,
             y,
             mods,

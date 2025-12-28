@@ -1,15 +1,15 @@
 use crate::BlitzShellProvider;
 use crate::convert_events::{
-    color_scheme_to_theme, theme_to_color_scheme, winit_ime_to_blitz, winit_key_event_to_blitz,
-    winit_modifiers_to_kbt_modifiers,
+    button_source_to_blitz, color_scheme_to_theme, pointer_source_to_blitz, theme_to_color_scheme,
+    winit_ime_to_blitz, winit_key_event_to_blitz, winit_modifiers_to_kbt_modifiers,
 };
 use crate::event::{BlitzShellProxy, create_waker};
 use anyrender::WindowRenderer;
 use blitz_dom::Document;
 use blitz_paint::paint_scene;
 use blitz_traits::events::{
-    BlitzPointerEvent, BlitzPointerId, BlitzWheelDelta, BlitzWheelEvent, MouseEventButton,
-    MouseEventButtons, UiEvent,
+    BlitzPointerEvent, BlitzWheelDelta, BlitzWheelEvent, MouseEventButton, MouseEventButtons,
+    UiEvent,
 };
 use blitz_traits::shell::Viewport;
 use winit::dpi::PhysicalInsets;
@@ -393,11 +393,13 @@ impl<Rend: WindowRenderer> View<Rend> {
             }
             WindowEvent::PointerEntered { /*device_id*/.. } => {}
             WindowEvent::PointerLeft { /*device_id*/.. } => {}
-            WindowEvent::PointerMoved { position, .. } => {
+            WindowEvent::PointerMoved { position, source, primary, .. } => {
+                let id = pointer_source_to_blitz(&source);
                 let winit::dpi::LogicalPosition::<f32> { x, y } = position.to_logical(self.window.scale_factor());
                 self.mouse_pos = (x, y);
                 let event = UiEvent::MouseMove(BlitzPointerEvent {
-                    id: BlitzPointerId::Mouse,
+                    id,
+                    is_primary: primary,
                     x,
                     y,
                     button: Default::default(),
@@ -406,8 +408,9 @@ impl<Rend: WindowRenderer> View<Rend> {
                 });
                 self.doc.handle_ui_event(event);
             }
-            WindowEvent::PointerButton { button, state, .. } => {
-                let button = match button {
+            WindowEvent::PointerButton { button, state, primary, .. } => {
+                let id = button_source_to_blitz(&button);
+                let button = match &button {
                     ButtonSource::Mouse(mouse_button) => match mouse_button {
                         MouseButton::Left => MouseEventButton::Main,
                         MouseButton::Right => MouseEventButton::Secondary,
@@ -425,7 +428,8 @@ impl<Rend: WindowRenderer> View<Rend> {
                 }
 
                 let event = BlitzPointerEvent {
-                    id: BlitzPointerId::Mouse,
+                    id,
+                    is_primary: primary,
                     x: self.mouse_pos.0,
                     y: self.mouse_pos.1,
                     button,
@@ -450,7 +454,6 @@ impl<Rend: WindowRenderer> View<Rend> {
                     delta: blitz_delta,
                     x: self.mouse_pos.0,
                     y: self.mouse_pos.1,
-                    button: MouseEventButton::Main, // Acts as an uninitialized value in this case
                     buttons: self.buttons,
                     mods: winit_modifiers_to_kbt_modifiers(self.keyboard_modifiers.state()),
                 };
