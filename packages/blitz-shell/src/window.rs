@@ -8,8 +8,8 @@ use anyrender::WindowRenderer;
 use blitz_dom::Document;
 use blitz_paint::paint_scene;
 use blitz_traits::events::{
-    BlitzPointerEvent, BlitzWheelDelta, BlitzWheelEvent, MouseEventButton, MouseEventButtons,
-    UiEvent,
+    BlitzPointerEvent, BlitzPointerId, BlitzWheelDelta, BlitzWheelEvent, MouseEventButton,
+    MouseEventButtons, UiEvent,
 };
 use blitz_traits::shell::Viewport;
 use winit::dpi::PhysicalInsets;
@@ -394,10 +394,12 @@ impl<Rend: WindowRenderer> View<Rend> {
             }
             WindowEvent::PointerEntered { /*device_id*/.. } => {}
             WindowEvent::PointerLeft { /*device_id*/.. } => {}
-            WindowEvent::PointerMoved { position, source, primary, .. } => {
+            WindowEvent::PointerMoved { mut position, source, primary, .. } => {
                 let id = pointer_source_to_blitz(&source);
+                position.x -= self.safe_area_insets.left as f64;
+                position.y -= self.safe_area_insets.top as f64;
                 let winit::dpi::LogicalPosition::<f32> { x, y } = position.to_logical(self.window.scale_factor());
-                self.mouse_pos = (x, y);
+                
                 let event = UiEvent::MouseMove(BlitzPointerEvent {
                     id,
                     is_primary: primary,
@@ -409,7 +411,7 @@ impl<Rend: WindowRenderer> View<Rend> {
                 });
                 self.doc.handle_ui_event(event);
             }
-            WindowEvent::PointerButton { button, state, primary, .. } => {
+            WindowEvent::PointerButton { button, state, primary, mut position, .. } => {
                 let id = button_source_to_blitz(&button);
                 let button = match &button {
                     ButtonSource::Mouse(mouse_button) => match mouse_button {
@@ -417,9 +419,9 @@ impl<Rend: WindowRenderer> View<Rend> {
                         MouseButton::Right => MouseEventButton::Secondary,
                         MouseButton::Middle => MouseEventButton::Auxiliary,
                         // TODO: handle other button types
-                        _ => return,
+                        _ => MouseEventButton::Auxiliary,
                     }
-                    _ => return,
+                    _ => MouseEventButton::Main,
 
                 };
 
@@ -428,11 +430,29 @@ impl<Rend: WindowRenderer> View<Rend> {
                     ElementState::Released => self.buttons ^= button.into(),
                 }
 
+                position.x -= self.safe_area_insets.left as f64;
+                position.y -= self.safe_area_insets.top as f64;
+                let winit::dpi::LogicalPosition::<f32> { x, y } = position.to_logical(self.window.scale_factor());
+
+                if id != BlitzPointerId::Mouse {
+                    let event = UiEvent::MouseMove(BlitzPointerEvent {
+                        id,
+                        is_primary: primary,
+                        x,
+                        y,
+                        button: Default::default(),
+                        buttons: self.buttons,
+                        mods: winit_modifiers_to_kbt_modifiers(self.keyboard_modifiers.state()),
+                    });
+                    self.doc.handle_ui_event(event);
+                }
+
+                
                 let event = BlitzPointerEvent {
                     id,
                     is_primary: primary,
-                    x: self.mouse_pos.0,
-                    y: self.mouse_pos.1,
+                    x,
+                    y,
                     button,
                     buttons: self.buttons,
                     mods: winit_modifiers_to_kbt_modifiers(self.keyboard_modifiers.state()),
@@ -442,6 +462,7 @@ impl<Rend: WindowRenderer> View<Rend> {
                     ElementState::Pressed => UiEvent::MouseDown(event),
                     ElementState::Released => UiEvent::MouseUp(event),
                 };
+
                 self.doc.handle_ui_event(event);
                 self.request_redraw();
             }
