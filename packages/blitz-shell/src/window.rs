@@ -331,54 +331,55 @@ impl<Rend: WindowRenderer> View<Rend> {
                 self.keyboard_modifiers = new_state;
             }
             WindowEvent::KeyboardInput { event, .. } => {
-                let PhysicalKey::Code(key_code) = event.physical_key else {
-                    return;
-                };
 
                 if event.state.is_pressed() {
-                    let ctrl = self.keyboard_modifiers.state().control_key();
-                    let meta = self.keyboard_modifiers.state().meta_key();
-                    let alt = self.keyboard_modifiers.state().alt_key();
 
-                    // Ctrl/Super keyboard shortcuts
-                    if ctrl | meta {
-                        match key_code {
-                            KeyCode::Equal => {
-                                self.doc.inner_mut().viewport_mut().zoom_by(0.1);
-                                self.request_redraw();
-                            },
-                            KeyCode::Minus => {
-                                self.doc.inner_mut().viewport_mut().zoom_by(-0.1);
-                                self.request_redraw();
-                            },
-                            KeyCode::Digit0 => {
-                                self.doc.inner_mut().viewport_mut().set_zoom(1.0);
-                                self.request_redraw();
-                            }
-                            _ => {}
-                        };
+                if let PhysicalKey::Code(key_code) = event.physical_key {
+                    if event.state.is_pressed() {
+                        let ctrl = self.keyboard_modifiers.state().control_key();
+                        let meta = self.keyboard_modifiers.state().meta_key();
+                        let alt = self.keyboard_modifiers.state().alt_key();
+
+                        // Ctrl/Super keyboard shortcuts
+                        if ctrl | meta {
+                            match key_code {
+                                KeyCode::Equal => {
+                                    self.doc.inner_mut().viewport_mut().zoom_by(0.1);
+                                    self.request_redraw();
+                                },
+                                KeyCode::Minus => {
+                                    self.doc.inner_mut().viewport_mut().zoom_by(-0.1);
+                                    self.request_redraw();
+                                },
+                                KeyCode::Digit0 => {
+                                    self.doc.inner_mut().viewport_mut().set_zoom(1.0);
+                                    self.request_redraw();
+                                }
+                                _ => {}
+                            };
+                        }
+
+                        // Alt keyboard shortcuts
+                        if alt {
+                            match key_code {
+                                KeyCode::KeyD => {
+                                    let mut inner = self.doc.inner_mut();
+                                    inner.devtools_mut().toggle_show_layout();
+                                    drop(inner);
+                                    self.request_redraw();
+                                }
+                                KeyCode::KeyH => {
+                                    let mut inner = self.doc.inner_mut();
+                                    inner.devtools_mut().toggle_highlight_hover();
+                                    drop(inner);
+                                    self.request_redraw();
+                                }
+                                KeyCode::KeyT => self.doc.inner().print_taffy_tree(),
+                                _ => {}
+                            };
+                        }
+
                     }
-
-                    // Alt keyboard shortcuts
-                    if alt {
-                        match key_code {
-                            KeyCode::KeyD => {
-                                let mut inner = self.doc.inner_mut();
-                                inner.devtools_mut().toggle_show_layout();
-                                drop(inner);
-                                self.request_redraw();
-                            }
-                            KeyCode::KeyH => {
-                                let mut inner = self.doc.inner_mut();
-                                inner.devtools_mut().toggle_highlight_hover();
-                                drop(inner);
-                                self.request_redraw();
-                            }
-                            KeyCode::KeyT => self.doc.inner().print_taffy_tree(),
-                            _ => {}
-                        };
-                    }
-
                 }
 
                 // Unmodified keypresses
