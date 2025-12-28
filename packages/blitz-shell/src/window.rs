@@ -332,8 +332,7 @@ impl<Rend: WindowRenderer> View<Rend> {
             }
             WindowEvent::KeyboardInput { event, .. } => {
 
-                if let PhysicalKey::Code(key_code) = event.physical_key {
-                    if event.state.is_pressed() {
+                if let PhysicalKey::Code(key_code) = event.physical_key && event.state.is_pressed() {
                         let ctrl = self.keyboard_modifiers.state().control_key();
                         let meta = self.keyboard_modifiers.state().meta_key();
                         let alt = self.keyboard_modifiers.state().alt_key();
@@ -377,7 +376,6 @@ impl<Rend: WindowRenderer> View<Rend> {
                             };
                         }
 
-                    }
                 }
 
                 // Unmodified keypresses
