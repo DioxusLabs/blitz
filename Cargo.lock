@@ -691,6 +691,7 @@ dependencies = [
 name = "browser"
 version = "0.0.0"
 dependencies = [
+ "android-activity",
  "blitz-dom",
  "blitz-html",
  "blitz-net",
@@ -1238,6 +1239,7 @@ dependencies = [
 name = "counter"
 version = "0.1.0"
 dependencies = [
+ "android-activity",
  "blitz-dom",
  "blitz-paint",
  "dioxus-native",
@@ -6301,6 +6303,7 @@ dependencies = [
 name = "todomvc"
 version = "0.1.0"
 dependencies = [
+ "android-activity",
  "dioxus-native",
  "idna_adapter",
  "tracing-subscriber",

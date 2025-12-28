@@ -5,20 +5,24 @@ edition = "2024"
 license.workspace = true
 publish = false
 
+[lib]
+crate-type = ["cdylib"]
+
 [features]
-default = ["system_fonts", "vello"]
+default = ["vello"]
 system_fonts = ["blitz-dom/system_fonts"]
 vello = ["dioxus-native/vello"]
 cpu = ["cpu-pixels"]
 svg = ["blitz-paint/svg"]
 cpu-pixels = ["dioxus-native/vello-cpu-pixels"]
 cpu-softbuffer = ["dioxus-native/vello-cpu-softbuffer"]
+skia = ["dioxus-native/skia"]
 incremental = ["dioxus-native/incremental"]
 log_frame_times = ["dioxus-native/log-frame-times"]
 log_phase_times = ["dioxus-native/log-phase-times"]
 
 [dependencies]
-dioxus-native = { workspace = true, default-features = false, features = ["prelude"]}
+dioxus-native = { workspace = true, default-features = false, features = ["prelude", "system-fonts"] }
 
 # Control whether system font support is enabled
 blitz-dom = { workspace = true, default-features = false }
@@ -27,3 +31,6 @@ blitz-paint = { workspace = true, default-features = false }
 # Disable unicode URL support
 # See https://github.com/hsivonen/idna_adapter
 idna_adapter = "=1.0.0"
+
+[target.'cfg(target_os = "android")'.dependencies]
+android-activity = { version = "0.6.0", features = ["native-activity"] }

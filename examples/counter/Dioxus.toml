@@ -1,0 +1,2 @@
+[application]
+android_main_activity = "MainActivity.kt.hbs"

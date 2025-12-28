@@ -69,6 +69,11 @@ todoandroid *ARGS:
   export CARGO_APK_RELEASE_KEYSTORE_PASSWORD="android"
   cargo apk run --lib --no-default-features --features skia -p todomvc
 
+counterandroid *ARGS:
+  export CARGO_APK_RELEASE_KEYSTORE="$HOME/.android/debug.keystore"
+  export CARGO_APK_RELEASE_KEYSTORE_PASSWORD="android"
+  cargo apk run --lib --no-default-features --features skia -p counter
+
 ## Ops
 
 bump *ARGS:
