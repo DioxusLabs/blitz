@@ -118,7 +118,7 @@ fn render_html_to_buffer(
     ctx.renderer.render_to_vec(
         |scene| {
             scene.reset();
-            paint_scene(scene, document.as_ref(), SCALE, WIDTH, HEIGHT);
+            paint_scene(scene, document.as_ref(), SCALE, WIDTH, HEIGHT, 0, 0);
         },
         buf,
     );

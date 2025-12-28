@@ -1,9 +1,7 @@
-use blitz_shell::BlitzShellNetWaker;
+use blitz_shell::BlitzShellProxy;
 use std::sync::Arc;
 
-use blitz_shell::BlitzShellEvent;
 use blitz_traits::net::{NetHandler, NetProvider, Request};
-use winit::event_loop::EventLoopProxy;
 
 pub struct DioxusNativeNetProvider {
     inner_net_provider: Option<Arc<dyn NetProvider + 'static>>,
@@ -11,12 +9,13 @@ pub struct DioxusNativeNetProvider {
 
 #[allow(unused)]
 impl DioxusNativeNetProvider {
-    pub fn shared(proxy: EventLoopProxy<BlitzShellEvent>) -> Arc<dyn NetProvider> {
+    pub fn shared(proxy: BlitzShellProxy) -> Arc<dyn NetProvider> {
         Arc::new(Self::new(proxy)) as Arc<dyn NetProvider>
     }
 
-    pub fn new(proxy: EventLoopProxy<BlitzShellEvent>) -> Self {
-        let net_waker = Some(BlitzShellNetWaker::shared(proxy));
+    pub fn new(proxy: BlitzShellProxy) -> Self {
+        #[cfg(any(feature = "data-uri", feature = "net"))]
+        let net_waker = Some(Arc::new(proxy) as _);
 
         #[cfg(feature = "net")]
         let inner_net_provider = Some(blitz_net::Provider::shared(net_waker.clone()));
@@ -28,7 +27,7 @@ impl DioxusNativeNetProvider {
         Self { inner_net_provider }
     }
 
-    pub fn with_inner(proxy: EventLoopProxy<BlitzShellEvent>, inner: Arc<dyn NetProvider>) -> Self {
+    pub fn with_inner(proxy: BlitzShellProxy, inner: Arc<dyn NetProvider>) -> Self {
         Self {
             inner_net_provider: Some(inner),
         }

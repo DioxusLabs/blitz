@@ -3,7 +3,7 @@ use crate::convert_events::{
     color_scheme_to_theme, theme_to_color_scheme, winit_ime_to_blitz, winit_key_event_to_blitz,
     winit_modifiers_to_kbt_modifiers,
 };
-use crate::event::{BlitzShellEvent, create_waker};
+use crate::event::{BlitzShellProxy, create_waker};
 use anyrender::WindowRenderer;
 use blitz_dom::Document;
 use blitz_paint::paint_scene;
@@ -12,14 +12,15 @@ use blitz_traits::events::{
     UiEvent,
 };
 use blitz_traits::shell::Viewport;
+use winit::dpi::PhysicalInsets;
 use winit::keyboard::PhysicalKey;
 
 use std::any::Any;
 use std::sync::Arc;
 use std::task::Waker;
 use std::time::Instant;
-use winit::event::{ElementState, MouseButton};
-use winit::event_loop::{ActiveEventLoop, EventLoopProxy};
+use winit::event::{ButtonSource, ElementState, MouseButton};
+use winit::event_loop::ActiveEventLoop;
 use winit::window::{Theme, WindowAttributes, WindowId};
 use winit::{event::Modifiers, event::WindowEvent, keyboard::KeyCode, window::Window};
 
@@ -34,7 +35,7 @@ pub struct WindowConfig<Rend: WindowRenderer> {
 
 impl<Rend: WindowRenderer> WindowConfig<Rend> {
     pub fn new(doc: Box<dyn Document>, renderer: Rend) -> Self {
-        Self::with_attributes(doc, renderer, Window::default_attributes())
+        Self::with_attributes(doc, renderer, WindowAttributes::default())
     }
 
     pub fn with_attributes(
@@ -56,8 +57,8 @@ pub struct View<Rend: WindowRenderer> {
     pub renderer: Rend,
     pub waker: Option<Waker>,
 
-    pub event_loop_proxy: EventLoopProxy<BlitzShellEvent>,
-    pub window: Arc<Window>,
+    pub proxy: BlitzShellProxy,
+    pub window: Arc<dyn Window>,
 
     /// The state of the keyboard modifiers (ctrl, shift, etc). Winit/Tao don't track these for us so we
     /// need to store them in order to have access to them when processing keypress events
@@ -67,6 +68,7 @@ pub struct View<Rend: WindowRenderer> {
     pub mouse_pos: (f32, f32),
     pub animation_timer: Option<Instant>,
     pub is_visible: bool,
+    pub safe_area_insets: PhysicalInsets<u32>,
 
     #[cfg(feature = "accessibility")]
     /// Accessibility adapter for `accesskit`.
@@ -76,14 +78,17 @@ pub struct View<Rend: WindowRenderer> {
 impl<Rend: WindowRenderer> View<Rend> {
     pub fn init(
         config: WindowConfig<Rend>,
-        event_loop: &ActiveEventLoop,
-        proxy: &EventLoopProxy<BlitzShellEvent>,
+        event_loop: &dyn ActiveEventLoop,
+        proxy: &BlitzShellProxy,
     ) -> Self {
-        let winit_window = Arc::from(event_loop.create_window(config.attributes).unwrap());
+        let winit_window: Arc<dyn Window> =
+            Arc::from(event_loop.create_window(config.attributes).unwrap());
 
         // Create viewport
-        let size = winit_window.inner_size();
+        // TODO: account for the "safe area"
+        let size = winit_window.surface_size();
         let scale = winit_window.scale_factor() as f32;
+        let safe_area_insets = winit_window.safe_area();
         let theme = winit_window.theme().unwrap_or(Theme::Light);
         let color_scheme = theme_to_color_scheme(theme);
         let viewport = Viewport::new(size.width, size.height, scale, color_scheme);
@@ -111,15 +116,16 @@ impl<Rend: WindowRenderer> View<Rend> {
             waker: None,
             animation_timer: None,
             keyboard_modifiers: Default::default(),
-            event_loop_proxy: proxy.clone(),
+            proxy: proxy.clone(),
             window: winit_window.clone(),
             doc,
             theme_override: None,
             buttons: MouseEventButtons::None,
+            safe_area_insets,
             mouse_pos: Default::default(),
             is_visible: winit_window.is_visible().unwrap_or(true),
             #[cfg(feature = "accessibility")]
-            accessibility: AccessibilityState::new(&winit_window, proxy.clone()),
+            accessibility: AccessibilityState::new(&*winit_window, proxy.clone()),
         }
     }
 
@@ -189,17 +195,20 @@ impl<Rend: WindowRenderer> View<Rend> {
         // Resume renderer
         let (width, height) = inner.viewport().window_size;
         let scale = inner.viewport().scale_f64();
-        self.renderer.resume(self.window.clone(), width, height);
+        self.renderer
+            .resume(Arc::new(self.window.clone()), width, height);
         if !self.renderer.is_active() {
             panic!("Renderer failed to resume");
         };
 
         // Render
-        self.renderer
-            .render(|scene| paint_scene(scene, &inner, scale, width, height));
+        let insets = self.safe_area_insets;
+        self.renderer.render(|scene| {
+            paint_scene(scene, &inner, scale, width, height, insets.left, insets.top)
+        });
 
         // Set waker
-        self.waker = Some(create_waker(&self.event_loop_proxy, window_id));
+        self.waker = Some(create_waker(&self.proxy, window_id));
     }
 
     pub fn suspend(&mut self) {
@@ -243,8 +252,10 @@ impl<Rend: WindowRenderer> View<Rend> {
         let (width, height) = inner.viewport().window_size;
         let scale = inner.viewport().scale_f64();
         let is_animating = inner.is_animating();
-        self.renderer
-            .render(|scene| paint_scene(scene, &inner, scale, width, height));
+        let insets = self.safe_area_insets;
+        self.renderer.render(|scene| {
+            paint_scene(scene, &inner, scale, width, height, insets.left, insets.top)
+        });
 
         drop(inner);
 
@@ -279,7 +290,6 @@ impl<Rend: WindowRenderer> View<Rend> {
 
     pub fn handle_winit_event(&mut self, event: WindowEvent) {
         match event {
-            // Window lifecycle events
             WindowEvent::Destroyed => {}
             WindowEvent::ActivationTokenDone { .. } => {},
             WindowEvent::CloseRequested => {
@@ -288,8 +298,6 @@ impl<Rend: WindowRenderer> View<Rend> {
             WindowEvent::RedrawRequested => {
                 self.redraw();
             }
-
-            // Window size/position events
             WindowEvent::Moved(_) => {}
             WindowEvent::Occluded(is_occluded) => {
                 self.is_visible = !is_occluded;
@@ -297,21 +305,23 @@ impl<Rend: WindowRenderer> View<Rend> {
                     self.request_redraw();
                 }
             },
-            WindowEvent::Resized(physical_size) => {
-                self.with_viewport(|v| v.window_size = (physical_size.width, physical_size.height));
+            WindowEvent::SurfaceResized(physical_size) => {
+                self.safe_area_insets = self.window.safe_area();
+                let insets = self.safe_area_insets;
+                let width = physical_size.width - insets.left - insets.right;
+                let height = physical_size.height - insets.top - insets.bottom;
+                self.with_viewport(|v| v.window_size = (width, height));
+                self.request_redraw();
             }
             WindowEvent::ScaleFactorChanged { scale_factor, .. } => {
                 self.with_viewport(|v| v.set_hidpi_scale(scale_factor as f32));
+                self.request_redraw();
             }
-
-            // Theme events
             WindowEvent::ThemeChanged(theme) => {
                 let color_scheme = theme_to_color_scheme(self.theme_override.unwrap_or(theme));
                 let mut inner = self.doc.inner_mut();
                 inner.viewport_mut().color_scheme = color_scheme;
             }
-
-            // Text / keyboard events
             WindowEvent::Ime(ime_event) => {
                 self.doc.handle_ui_event(UiEvent::Ime(winit_ime_to_blitz(ime_event)));
                 self.request_redraw();
@@ -327,7 +337,7 @@ impl<Rend: WindowRenderer> View<Rend> {
 
                 if event.state.is_pressed() {
                     let ctrl = self.keyboard_modifiers.state().control_key();
-                    let meta = self.keyboard_modifiers.state().super_key();
+                    let meta = self.keyboard_modifiers.state().meta_key();
                     let alt = self.keyboard_modifiers.state().alt_key();
 
                     // Ctrl/Super keyboard shortcuts
@@ -381,12 +391,9 @@ impl<Rend: WindowRenderer> View<Rend> {
 
                 self.doc.handle_ui_event(event);
             }
-
-
-            // Mouse/pointer events
-            WindowEvent::CursorEntered { /*device_id*/.. } => {}
-            WindowEvent::CursorLeft { /*device_id*/.. } => {}
-            WindowEvent::CursorMoved { position, .. } => {
+            WindowEvent::PointerEntered { /*device_id*/.. } => {}
+            WindowEvent::PointerLeft { /*device_id*/.. } => {}
+            WindowEvent::PointerMoved { position, .. } => {
                 let winit::dpi::LogicalPosition::<f32> { x, y } = position.to_logical(self.window.scale_factor());
                 self.mouse_pos = (x, y);
                 let event = UiEvent::MouseMove(BlitzMouseButtonEvent {
@@ -398,12 +405,17 @@ impl<Rend: WindowRenderer> View<Rend> {
                 });
                 self.doc.handle_ui_event(event);
             }
-            WindowEvent::MouseInput { button, state, .. } => {
+            WindowEvent::PointerButton { button, state, .. } => {
                 let button = match button {
-                    MouseButton::Left => MouseEventButton::Main,
-                    MouseButton::Right => MouseEventButton::Secondary,
-                    MouseButton::Middle => MouseEventButton::Auxiliary,
+                    ButtonSource::Mouse(mouse_button) => match mouse_button {
+                        MouseButton::Left => MouseEventButton::Main,
+                        MouseButton::Right => MouseEventButton::Secondary,
+                        MouseButton::Middle => MouseEventButton::Auxiliary,
+                        // TODO: handle other button types
+                        _ => return,
+                    }
                     _ => return,
+
                 };
 
                 match state {
@@ -443,22 +455,16 @@ impl<Rend: WindowRenderer> View<Rend> {
 
                 self.doc.handle_ui_event(UiEvent::Wheel(event));
             }
-
-            // File events
-            WindowEvent::DroppedFile(_) => {}
-            WindowEvent::HoveredFile(_) => {}
-            WindowEvent::HoveredFileCancelled => {}
             WindowEvent::Focused(_) => {}
-
-            // Touch and motion events
-            // Todo implement touch scrolling
-            WindowEvent::Touch(_) => {}
             WindowEvent::TouchpadPressure { .. } => {}
-            WindowEvent::AxisMotion { .. } => {}
             WindowEvent::PinchGesture { .. } => {},
             WindowEvent::PanGesture { .. } => {},
             WindowEvent::DoubleTapGesture { .. } => {},
             WindowEvent::RotationGesture { .. } => {},
+            WindowEvent::DragEntered { .. } => {},
+            WindowEvent::DragMoved { .. } => {},
+            WindowEvent::DragDropped { .. } => {},
+            WindowEvent::DragLeft { .. } => {},
         }
     }
 }
