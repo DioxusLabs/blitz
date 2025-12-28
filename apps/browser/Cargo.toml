@@ -42,3 +42,7 @@ linebender_resource_handle = { workspace = true }
 tracing-subscriber = { workspace = true, optional = true }
 webbrowser = { workspace = true }
 winit = { workspace = true }
+
+
+[target.'cfg(target_os = "android")'.dependencies]
+android-activity = { version = "0.6.0", features = ["native-activity"] }

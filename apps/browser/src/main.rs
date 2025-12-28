@@ -25,10 +25,16 @@ use icons::IconButton;
 
 static BROWSER_UI_STYLES: Asset = asset!("../assets/browser.css");
 
+#[unsafe(no_mangle)]
+#[cfg(target_os = "android")]
+pub fn android_main(android_app: dioxus_native::AndroidApp) {
+    dioxus_native::set_android_app(android_app);
+    main()
+}
+
 fn main() {
     #[cfg(feature = "tracing")]
     tracing_subscriber::fmt::init();
-
     dioxus_native::launch(app)
 }
 
