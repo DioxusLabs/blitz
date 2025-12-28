@@ -1057,6 +1057,13 @@ impl Node {
             is_primary: true,
             x,
             y,
+
+            // TODO: should these be different?
+            screen_x: x,
+            screen_y: y,
+            client_x: x,
+            client_y: y,
+
             mods,
             button: Default::default(),
             buttons: Default::default(),
