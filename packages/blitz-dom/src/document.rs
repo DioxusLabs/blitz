@@ -174,6 +174,23 @@ pub enum DocumentEvent {
     ResourceLoad(ResourceLoadResponse),
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct PanState {
+    pub(crate) target: usize,
+    pub(crate) last_x: f32,
+    pub(crate) last_y: f32,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) enum DragMode {
+    /// We are not currently dragging
+    None,
+    /// We are currently dragging a selection (probably mouse)
+    Selecting,
+    /// We are currently panning the document with a drag (probably touch)
+    Panning(PanState),
+}
+
 pub struct BaseDocument {
     /// ID of the document
     id: usize,
@@ -234,7 +251,7 @@ pub struct BaseDocument {
     /// How many clicks have been made in quick succession
     pub(crate) click_count: u16,
     /// Whether we're currently in a text selection drag (moved 2px+ from mousedown)
-    pub(crate) is_selecting: bool,
+    pub(crate) drag_mode: DragMode,
 
     /// Text selection state (for non-input text)
     pub(crate) text_selection: TextSelection,
@@ -401,7 +418,7 @@ impl BaseDocument {
             last_mousedown_time: None,
             mousedown_position: taffy::Point::ZERO,
             click_count: 0,
-            is_selecting: false,
+            drag_mode: DragMode::None,
             text_selection: TextSelection::default(),
         };
 
@@ -1370,6 +1387,20 @@ impl BaseDocument {
         );
 
         self.viewport_scroll != initial
+    }
+
+    pub fn scroll_by(
+        &mut self,
+        anchor_node_id: Option<usize>,
+        scroll_x: f64,
+        scroll_y: f64,
+        dispatch_event: &mut dyn FnMut(DomEvent),
+    ) -> bool {
+        if let Some(anchor_node_id) = anchor_node_id {
+            self.scroll_node_by_has_changed(anchor_node_id, scroll_x, scroll_y, dispatch_event)
+        } else {
+            self.scroll_viewport_by_has_changed(scroll_x, scroll_y)
+        }
     }
 
     pub fn viewport_scroll(&self) -> crate::Point<f64> {
