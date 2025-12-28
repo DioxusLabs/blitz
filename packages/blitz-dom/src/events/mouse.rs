@@ -2,7 +2,7 @@ use std::time::{Duration, Instant};
 
 use blitz_traits::{
     events::{
-        BlitzInputEvent, BlitzMouseButtonEvent, BlitzWheelDelta, BlitzWheelEvent, DomEvent,
+        BlitzInputEvent, BlitzPointerEvent, BlitzWheelDelta, BlitzWheelEvent, DomEvent,
         DomEventData, MouseEventButton, MouseEventButtons,
     },
     navigation::NavigationOptions,
@@ -20,7 +20,7 @@ pub(crate) fn handle_mousemove<F: FnMut(DomEvent)>(
     x: f32,
     y: f32,
     buttons: MouseEventButtons,
-    event: &BlitzMouseButtonEvent,
+    event: &BlitzPointerEvent,
     mut dispatch_event: F,
 ) -> bool {
     let mut changed = doc.set_hover_to(x, y);
@@ -228,7 +228,7 @@ pub(crate) fn handle_mousedown(
 pub(crate) fn handle_mouseup<F: FnMut(DomEvent)>(
     doc: &mut BaseDocument,
     target: usize,
-    event: &BlitzMouseButtonEvent,
+    event: &BlitzPointerEvent,
     mut dispatch_event: F,
 ) {
     if doc.devtools().highlight_hover {
@@ -266,7 +266,7 @@ pub(crate) fn handle_mouseup<F: FnMut(DomEvent)>(
 pub(crate) fn handle_click(
     doc: &mut BaseDocument,
     target: usize,
-    event: &BlitzMouseButtonEvent,
+    event: &BlitzPointerEvent,
     dispatch_event: &mut dyn FnMut(DomEvent),
 ) {
     let double_click_event = event.clone();

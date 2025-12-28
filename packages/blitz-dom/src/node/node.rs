@@ -1,6 +1,6 @@
 use atomic_refcell::{AtomicRef, AtomicRefCell, AtomicRefMut};
 use bitflags::bitflags;
-use blitz_traits::events::{BlitzMouseButtonEvent, DomEventData, HitResult};
+use blitz_traits::events::{BlitzPointerEvent, DomEventData, HitResult};
 use blitz_traits::shell::ShellProvider;
 use html_escape::encode_quoted_attribute_to_string;
 use keyboard_types::Modifiers;
@@ -1047,12 +1047,12 @@ impl Node {
         DomEventData::Click(self.synthetic_click_event_data(mods))
     }
 
-    pub fn synthetic_click_event_data(&self, mods: Modifiers) -> BlitzMouseButtonEvent {
+    pub fn synthetic_click_event_data(&self, mods: Modifiers) -> BlitzPointerEvent {
         let absolute_position = self.absolute_position(0.0, 0.0);
         let x = absolute_position.x + (self.final_layout.size.width / 2.0);
         let y = absolute_position.y + (self.final_layout.size.height / 2.0);
 
-        BlitzMouseButtonEvent {
+        BlitzPointerEvent {
             x,
             y,
             mods,

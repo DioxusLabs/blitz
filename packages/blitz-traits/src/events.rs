@@ -47,9 +47,9 @@ impl EventState {
 #[derive(Debug, Clone)]
 #[repr(u8)]
 pub enum UiEvent {
-    MouseMove(BlitzMouseButtonEvent),
-    MouseUp(BlitzMouseButtonEvent),
-    MouseDown(BlitzMouseButtonEvent),
+    MouseMove(BlitzPointerEvent),
+    MouseUp(BlitzPointerEvent),
+    MouseDown(BlitzPointerEvent),
     Wheel(BlitzWheelEvent),
     KeyUp(BlitzKeyEvent),
     KeyDown(BlitzKeyEvent),
@@ -157,18 +157,18 @@ impl FromStr for DomEventKind {
 #[derive(Debug, Clone)]
 #[repr(u8)]
 pub enum DomEventData {
-    MouseMove(BlitzMouseButtonEvent),
-    MouseDown(BlitzMouseButtonEvent),
-    MouseUp(BlitzMouseButtonEvent),
-    MouseEnter(BlitzMouseButtonEvent),
-    MouseLeave(BlitzMouseButtonEvent),
-    MouseOver(BlitzMouseButtonEvent),
-    MouseOut(BlitzMouseButtonEvent),
+    MouseMove(BlitzPointerEvent),
+    MouseDown(BlitzPointerEvent),
+    MouseUp(BlitzPointerEvent),
+    MouseEnter(BlitzPointerEvent),
+    MouseLeave(BlitzPointerEvent),
+    MouseOver(BlitzPointerEvent),
+    MouseOut(BlitzPointerEvent),
     Scroll(BlitzScrollEvent),
     Wheel(BlitzWheelEvent),
-    Click(BlitzMouseButtonEvent),
-    ContextMenu(BlitzMouseButtonEvent),
-    DoubleClick(BlitzMouseButtonEvent),
+    Click(BlitzPointerEvent),
+    ContextMenu(BlitzPointerEvent),
+    DoubleClick(BlitzPointerEvent),
     KeyPress(BlitzKeyEvent),
     KeyDown(BlitzKeyEvent),
     KeyUp(BlitzKeyEvent),
@@ -308,7 +308,7 @@ pub struct HitResult {
 }
 
 #[derive(Clone, Debug)]
-pub struct BlitzMouseButtonEvent {
+pub struct BlitzPointerEvent {
     pub x: f32,
     pub y: f32,
     pub button: MouseEventButton,
