@@ -1,6 +1,6 @@
 use atomic_refcell::{AtomicRef, AtomicRefCell, AtomicRefMut};
 use bitflags::bitflags;
-use blitz_traits::events::{BlitzPointerEvent, DomEventData, HitResult};
+use blitz_traits::events::{BlitzPointerEvent, BlitzPointerId, DomEventData, HitResult};
 use blitz_traits::shell::ShellProvider;
 use html_escape::encode_quoted_attribute_to_string;
 use keyboard_types::Modifiers;
@@ -1053,6 +1053,7 @@ impl Node {
         let y = absolute_position.y + (self.final_layout.size.height / 2.0);
 
         BlitzPointerEvent {
+            id: BlitzPointerId::Mouse,
             x,
             y,
             mods,
