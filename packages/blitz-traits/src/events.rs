@@ -307,8 +307,15 @@ pub struct HitResult {
     pub y: f32,
 }
 
+#[derive(Copy, Clone, Debug)]
+pub enum BlitzPointerId {
+    Mouse,
+    Finger(u64),
+}
+
 #[derive(Clone, Debug)]
 pub struct BlitzPointerEvent {
+    pub id: BlitzPointerId,
     pub x: f32,
     pub y: f32,
     pub button: MouseEventButton,
