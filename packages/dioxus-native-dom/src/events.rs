@@ -414,13 +414,7 @@ impl HasMouseData for NativeWheelData {
 
 impl PointerInteraction for NativeWheelData {
     fn trigger_button(&self) -> Option<MouseButton> {
-        Some(match self.0.button {
-            MouseEventButton::Main => MouseButton::Primary,
-            MouseEventButton::Auxiliary => MouseButton::Auxiliary,
-            MouseEventButton::Secondary => MouseButton::Secondary,
-            MouseEventButton::Fourth => MouseButton::Fourth,
-            MouseEventButton::Fifth => MouseButton::Fifth,
-        })
+        None
     }
 
     fn held_buttons(&self) -> MouseButtonSet {

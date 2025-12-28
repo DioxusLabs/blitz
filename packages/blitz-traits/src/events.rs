@@ -316,6 +316,7 @@ pub enum BlitzPointerId {
 #[derive(Clone, Debug)]
 pub struct BlitzPointerEvent {
     pub id: BlitzPointerId,
+    pub is_primary: bool,
     pub x: f32,
     pub y: f32,
     pub button: MouseEventButton,
@@ -328,7 +329,6 @@ pub struct BlitzWheelEvent {
     pub delta: BlitzWheelDelta,
     pub x: f32,
     pub y: f32,
-    pub button: MouseEventButton,
     pub buttons: MouseEventButtons,
     pub mods: Modifiers,
 }
@@ -348,6 +348,20 @@ pub struct BlitzScrollEvent {
     pub client_width: i32,
     pub client_height: i32,
 }
+
+// struct PointerInputState {
+//     id: BlitzPointerId,
+//     pointer_down_x: f32,
+//     pointer_down_y: f32,
+//     pointer_down_time: Option<Instant>,
+//     click_count: u16,
+// }
+
+// struct PointersInputState {
+//     initial_finger_active: bool,
+//     mouse: Option<PointerInputState>,
+//     fingers: Vec<PointerInputState>,
+// }
 
 bitflags! {
     /// The buttons property indicates which buttons are pressed on the mouse

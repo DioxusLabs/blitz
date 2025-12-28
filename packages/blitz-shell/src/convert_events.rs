@@ -1,9 +1,9 @@
-use blitz_traits::events::{BlitzImeEvent, BlitzKeyEvent, KeyState};
+use blitz_traits::events::{BlitzImeEvent, BlitzKeyEvent, BlitzPointerId, KeyState};
 use blitz_traits::shell::ColorScheme;
 use keyboard_types::{Code, Key, Location, Modifiers};
-use winit::event::ElementState;
-use winit::event::Ime;
 use winit::event::KeyEvent as WinitKeyEvent;
+use winit::event::{ButtonSource, ElementState};
+use winit::event::{Ime, PointerSource};
 use winit::keyboard::Key as WinitKey;
 use winit::keyboard::KeyCode as WinitKeyCode;
 use winit::keyboard::KeyLocation as WinitKeyLocation;
@@ -58,6 +58,32 @@ pub(crate) fn winit_key_event_to_blitz(
             ElementState::Released => KeyState::Released,
         },
         text: event.text.clone(),
+    }
+}
+
+pub(crate) fn pointer_source_to_blitz(source: &PointerSource) -> BlitzPointerId {
+    match source {
+        PointerSource::Mouse => BlitzPointerId::Mouse,
+        PointerSource::Touch { finger_id, .. } => {
+            BlitzPointerId::Finger(finger_id.into_raw() as u64)
+        }
+
+        // TODO: TabletTool and Unknown events
+        PointerSource::TabletTool { .. } => BlitzPointerId::Mouse,
+        PointerSource::Unknown => BlitzPointerId::Mouse,
+    }
+}
+
+pub(crate) fn button_source_to_blitz(source: &ButtonSource) -> BlitzPointerId {
+    match source {
+        ButtonSource::Mouse(_) => BlitzPointerId::Mouse,
+        ButtonSource::Touch { finger_id, .. } => {
+            BlitzPointerId::Finger(finger_id.into_raw() as u64)
+        }
+
+        // TODO: TabletTool and Unknown events
+        ButtonSource::TabletTool { .. } => BlitzPointerId::Mouse,
+        ButtonSource::Unknown(_) => BlitzPointerId::Mouse,
     }
 }
 
