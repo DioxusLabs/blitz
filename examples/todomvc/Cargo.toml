@@ -5,6 +5,9 @@ edition = "2024"
 license.workspace = true
 publish = false
 
+[lib]
+crate-type = ["cdylib"]
+
 [features]
 default = ["vello"]
 vello = ["dioxus-native/vello"]

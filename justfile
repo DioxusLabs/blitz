@@ -64,6 +64,11 @@ todomvc *ARGS:
 todoskia *ARGS:
   cargo run --release --package todomvc {{ARGS}} --no-default-features --features skia
 
+todoandroid *ARGS:
+  export CARGO_APK_RELEASE_KEYSTORE="$HOME/.android/debug.keystore"
+  export CARGO_APK_RELEASE_KEYSTORE_PASSWORD="android"
+  cargo apk run --lib --no-default-features --features skia -p todomvc
+
 ## Ops
 
 bump *ARGS:

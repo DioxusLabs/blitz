@@ -103,6 +103,9 @@ tracing = { workspace = true, optional = true }
 rustc-hash = { workspace = true }
 futures-util = { workspace = true }
 
+[target.'cfg(target_os = "android")'.dependencies]
+android-activity = { version = "0.6", default-features = false }
+
 [target.'cfg(all(target_os = "ios", target_abi = "sim"))'.dependencies]
 anyrender_vello_cpu = { workspace = true, features = ["pixels_window_renderer"]}
 

@@ -27,6 +27,26 @@ use assets::DioxusNativeNetProvider;
 pub use dioxus_application::{DioxusNativeApplication, DioxusNativeEvent};
 pub use dioxus_renderer::DioxusNativeWindowRenderer;
 
+
+#[cfg(target_os = "android")]
+#[cfg_attr(docsrs, doc(cfg(target_os = "android")))]
+/// Set the current [`AndroidApp`](android_activity::AndroidApp).
+pub fn set_android_app(app: android_activity::AndroidApp) {
+    blitz_shell::set_android_app(app);
+}
+
+#[cfg(target_os = "android")]
+#[cfg_attr(docsrs, doc(cfg(target_os = "android")))]
+/// Get the current [`AndroidApp`](android_activity::AndroidApp).
+/// This will panic if the android activity has not been setup with [`set_android_app`].
+pub fn current_android_app() -> android_activity::AndroidApp {
+    blitz_shell::current_android_app()
+}
+
+#[cfg(target_os = "android")]
+#[cfg_attr(docsrs, doc(cfg(target_os = "android")))]
+pub use android_activity::AndroidApp;
+
 #[cfg(any(
     feature = "vello",
     all(
