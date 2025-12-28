@@ -143,18 +143,24 @@ impl<'doc, Handler: EventHandler> EventDriver<'doc, Handler> {
 
         let data = match event {
             UiEvent::MouseMove(data) => DomEventData::MouseMove(BlitzPointerEvent {
-                x: data.x + viewport_scroll.x as f32 / zoom,
-                y: data.y + viewport_scroll.y as f32 / zoom,
+                x: data.x / zoom,
+                y: data.y / zoom,
+                client_x: data.client_x / zoom,
+                client_y: data.client_y / zoom,
                 ..data
             }),
             UiEvent::MouseUp(data) => DomEventData::MouseUp(BlitzPointerEvent {
-                x: data.x + viewport_scroll.x as f32 / zoom,
-                y: data.y + viewport_scroll.y as f32 / zoom,
+                x: data.x / zoom,
+                y: data.y / zoom,
+                client_x: data.client_x / zoom,
+                client_y: data.client_y / zoom,
                 ..data
             }),
             UiEvent::MouseDown(data) => DomEventData::MouseDown(BlitzPointerEvent {
-                x: data.x + viewport_scroll.x as f32 / zoom,
-                y: data.y + viewport_scroll.y as f32 / zoom,
+                x: data.x / zoom,
+                y: data.y / zoom,
+                client_x: data.client_x / zoom,
+                client_y: data.client_y / zoom,
                 ..data
             }),
             UiEvent::Wheel(data) => DomEventData::Wheel(data),

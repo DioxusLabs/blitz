@@ -2,15 +2,19 @@ use std::time::{Duration, Instant};
 
 use blitz_traits::{
     events::{
-        BlitzInputEvent, BlitzPointerEvent, BlitzWheelDelta, BlitzWheelEvent, DomEvent,
-        DomEventData, MouseEventButton, MouseEventButtons,
+        BlitzInputEvent, BlitzPointerEvent, BlitzPointerId, BlitzWheelDelta, BlitzWheelEvent,
+        DomEvent, DomEventData, MouseEventButton, MouseEventButtons,
     },
     navigation::NavigationOptions,
 };
 use keyboard_types::Modifiers;
 use markup5ever::local_name;
 
-use crate::{BaseDocument, node::SpecialElementData};
+use crate::{
+    BaseDocument,
+    document::{DragMode, PanState},
+    node::SpecialElementData,
+};
 
 use super::focus::generate_focus_events;
 
@@ -26,12 +30,34 @@ pub(crate) fn handle_mousemove<F: FnMut(DomEvent)>(
     let mut changed = doc.set_hover_to(x, y);
 
     // Check if we've moved enough to be considered a selection drag (2px threshold)
-    if buttons != MouseEventButtons::None && !doc.is_selecting {
-        let dx = (x - doc.mousedown_position.x).abs();
-        let dy = (y - doc.mousedown_position.y).abs();
-        if dx > 2.0 || dy > 2.0 {
-            doc.is_selecting = true;
+    if buttons != MouseEventButtons::None && doc.drag_mode == DragMode::None {
+        let dx = x - doc.mousedown_position.x;
+        let dy = y - doc.mousedown_position.y;
+        if dx.abs() > 2.0 || dy.abs() > 2.0 {
+            match event.id {
+                BlitzPointerId::Mouse => {
+                    doc.drag_mode = DragMode::Selecting;
+                }
+                BlitzPointerId::Finger(_) => {
+                    doc.drag_mode = DragMode::Panning(PanState {
+                        target,
+                        last_x: event.screen_x,
+                        last_y: event.screen_y,
+                    });
+                }
+            }
         }
+    }
+
+    if let DragMode::Panning(state) = &mut doc.drag_mode {
+        let dx = (event.screen_x - state.last_x) as f64;
+        let dy = (event.screen_y - state.last_y) as f64;
+        let target = state.target;
+        state.last_x = event.screen_x;
+        state.last_y = event.screen_y;
+
+        let has_changed = doc.scroll_by(Some(target), dx, dy, &mut dispatch_event);
+        return has_changed;
     }
 
     let Some(hit) = doc.hit(x, y) else {
@@ -123,7 +149,7 @@ pub(crate) fn handle_mousedown(
     // Update mousedown tracking for next click and selection drag detection
     doc.last_mousedown_time = Some(Instant::now());
     doc.mousedown_position = taffy::Point { x, y };
-    doc.is_selecting = false;
+    doc.drag_mode = DragMode::None;
 
     let Some(hit) = doc.hit(x, y) else {
         // Clear text selection when clicking outside any element
@@ -243,11 +269,12 @@ pub(crate) fn handle_mouseup<F: FnMut(DomEvent)>(
         return;
     }
 
-    // Don't dispatch click if we were doing a text selection drag
-    let do_click = !doc.is_selecting;
+    // Don't dispatch click if we were doing a text selection drag or panning
+    // the document with a touch
+    let do_click = doc.drag_mode == DragMode::None;
 
     // Reset selection state
-    doc.is_selecting = false;
+    doc.drag_mode = DragMode::None;
 
     // Dispatch a click event
     if do_click && event.button == MouseEventButton::Main {
@@ -431,19 +458,19 @@ pub(crate) fn handle_wheel<F: FnMut(DomEvent)>(
     doc: &mut BaseDocument,
     _: usize,
     event: BlitzWheelEvent,
-    dispatch_event: F,
+    mut dispatch_event: F,
 ) {
     let (scroll_x, scroll_y) = match event.delta {
         BlitzWheelDelta::Lines(x, y) => (x * 20.0, y * 20.0),
         BlitzWheelDelta::Pixels(x, y) => (x, y),
     };
 
-    let has_changed = if let Some(hover_node_id) = doc.get_hover_node_id() {
-        doc.scroll_node_by_has_changed(hover_node_id, scroll_x, scroll_y, dispatch_event)
-    } else {
-        doc.scroll_viewport_by_has_changed(scroll_x, scroll_y)
-    };
-
+    let has_changed = doc.scroll_by(
+        doc.get_hover_node_id(),
+        scroll_x,
+        scroll_y,
+        &mut dispatch_event,
+    );
     if has_changed {
         doc.shell_provider.request_redraw();
     }

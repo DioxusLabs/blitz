@@ -12,7 +12,7 @@ use blitz_traits::events::{
     MouseEventButtons, UiEvent,
 };
 use blitz_traits::shell::Viewport;
-use winit::dpi::PhysicalInsets;
+use winit::dpi::{LogicalPosition, PhysicalInsets};
 use winit::keyboard::PhysicalKey;
 
 use std::any::Any;
@@ -390,24 +390,33 @@ impl<Rend: WindowRenderer> View<Rend> {
             }
             WindowEvent::PointerEntered { /*device_id*/.. } => {}
             WindowEvent::PointerLeft { /*device_id*/.. } => {}
-            WindowEvent::PointerMoved { mut position, source, primary, .. } => {
+            WindowEvent::PointerMoved { position, source, primary, .. } => {
                 let id = pointer_source_to_blitz(&source);
-                position.x -= self.safe_area_insets.left as f64;
-                position.y -= self.safe_area_insets.top as f64;
-                let winit::dpi::LogicalPosition::<f32> { x, y } = position.to_logical(self.window.scale_factor());
-                
+
+                let scale = self.window.scale_factor();
+                let LogicalPosition::<f32> { x: screen_x, y: screen_y } = position.to_logical(scale);
+                let viewport_scroll_offset = self.doc.inner().viewport_scroll();
+                let client_x = screen_x - (self.safe_area_insets.left as f64 / scale) as f32;
+                let client_y = screen_y - (self.safe_area_insets.top as f64 / scale) as f32;
+                let page_x = client_x + viewport_scroll_offset.x as f32;
+                let page_y = client_y + viewport_scroll_offset.y as f32;
+
                 let event = UiEvent::MouseMove(BlitzPointerEvent {
                     id,
                     is_primary: primary,
-                    x,
-                    y,
+                    x: page_x,
+                    y: page_y,
+                    screen_x,
+                    screen_y,
+                    client_x,
+                    client_y,
                     button: Default::default(),
                     buttons: self.buttons,
                     mods: winit_modifiers_to_kbt_modifiers(self.keyboard_modifiers.state()),
                 });
                 self.doc.handle_ui_event(event);
             }
-            WindowEvent::PointerButton { button, state, primary, mut position, .. } => {
+            WindowEvent::PointerButton { button, state, primary, position, .. } => {
                 let id = button_source_to_blitz(&button);
                 let button = match &button {
                     ButtonSource::Mouse(mouse_button) => match mouse_button {
@@ -426,16 +435,24 @@ impl<Rend: WindowRenderer> View<Rend> {
                     ElementState::Released => self.buttons ^= button.into(),
                 }
 
-                position.x -= self.safe_area_insets.left as f64;
-                position.y -= self.safe_area_insets.top as f64;
-                let winit::dpi::LogicalPosition::<f32> { x, y } = position.to_logical(self.window.scale_factor());
+                let scale = self.window.scale_factor();
+                let LogicalPosition::<f32> { x: screen_x, y: screen_y } = position.to_logical(scale);
+                let viewport_scroll_offset = self.doc.inner().viewport_scroll();
+                let client_x = screen_x - (self.safe_area_insets.left as f64 / scale) as f32;
+                let client_y = screen_y - (self.safe_area_insets.top as f64 / scale) as f32;
+                let page_x = client_x + viewport_scroll_offset.x as f32;
+                let page_y = client_y + viewport_scroll_offset.y as f32;
 
                 if id != BlitzPointerId::Mouse {
                     let event = UiEvent::MouseMove(BlitzPointerEvent {
                         id,
                         is_primary: primary,
-                        x,
-                        y,
+                        x: page_x,
+                        y: page_y,
+                        screen_x,
+                        screen_y,
+                        client_x,
+                        client_y,
                         button: Default::default(),
                         buttons: self.buttons,
                         mods: winit_modifiers_to_kbt_modifiers(self.keyboard_modifiers.state()),
@@ -443,12 +460,15 @@ impl<Rend: WindowRenderer> View<Rend> {
                     self.doc.handle_ui_event(event);
                 }
 
-                
                 let event = BlitzPointerEvent {
                     id,
                     is_primary: primary,
-                    x,
-                    y,
+                    x: page_x,
+                    y: page_y,
+                    screen_x,
+                    screen_y,
+                    client_x,
+                    client_y,
                     button,
                     buttons: self.buttons,
                     mods: winit_modifiers_to_kbt_modifiers(self.keyboard_modifiers.state()),

@@ -317,8 +317,12 @@ pub enum BlitzPointerId {
 pub struct BlitzPointerEvent {
     pub id: BlitzPointerId,
     pub is_primary: bool,
-    pub x: f32,
-    pub y: f32,
+    pub x: f32, // page_x TODO: rename
+    pub y: f32, // page_y TODO: rename
+    pub screen_x: f32,
+    pub screen_y: f32,
+    pub client_x: f32,
+    pub client_y: f32,
     pub button: MouseEventButton,
     pub buttons: MouseEventButtons,
     pub mods: Modifiers,
