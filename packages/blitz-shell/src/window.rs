@@ -12,6 +12,7 @@ use blitz_traits::events::{
     UiEvent,
 };
 use blitz_traits::shell::Viewport;
+use winit::dpi::PhysicalInsets;
 use winit::keyboard::PhysicalKey;
 
 use std::any::Any;
@@ -67,6 +68,7 @@ pub struct View<Rend: WindowRenderer> {
     pub mouse_pos: (f32, f32),
     pub animation_timer: Option<Instant>,
     pub is_visible: bool,
+    pub safe_area_insets: PhysicalInsets<u32>,
 
     #[cfg(feature = "accessibility")]
     /// Accessibility adapter for `accesskit`.
@@ -86,6 +88,7 @@ impl<Rend: WindowRenderer> View<Rend> {
         // TODO: account for the "safe area"
         let size = winit_window.surface_size();
         let scale = winit_window.scale_factor() as f32;
+        let safe_area_insets = winit_window.safe_area();
         let theme = winit_window.theme().unwrap_or(Theme::Light);
         let color_scheme = theme_to_color_scheme(theme);
         let viewport = Viewport::new(size.width, size.height, scale, color_scheme);
@@ -118,6 +121,7 @@ impl<Rend: WindowRenderer> View<Rend> {
             doc,
             theme_override: None,
             buttons: MouseEventButtons::None,
+            safe_area_insets,
             mouse_pos: Default::default(),
             is_visible: winit_window.is_visible().unwrap_or(true),
             #[cfg(feature = "accessibility")]
@@ -198,8 +202,10 @@ impl<Rend: WindowRenderer> View<Rend> {
         };
 
         // Render
-        self.renderer
-            .render(|scene| paint_scene(scene, &inner, scale, width, height));
+        let insets = self.safe_area_insets;
+        self.renderer.render(|scene| {
+            paint_scene(scene, &inner, scale, width, height, insets.left, insets.top)
+        });
 
         // Set waker
         self.waker = Some(create_waker(&self.proxy, window_id));
@@ -246,8 +252,10 @@ impl<Rend: WindowRenderer> View<Rend> {
         let (width, height) = inner.viewport().window_size;
         let scale = inner.viewport().scale_f64();
         let is_animating = inner.is_animating();
-        self.renderer
-            .render(|scene| paint_scene(scene, &inner, scale, width, height));
+        let insets = self.safe_area_insets;
+        self.renderer.render(|scene| {
+            paint_scene(scene, &inner, scale, width, height, insets.left, insets.top)
+        });
 
         drop(inner);
 
@@ -298,10 +306,16 @@ impl<Rend: WindowRenderer> View<Rend> {
                 }
             },
             WindowEvent::SurfaceResized(physical_size) => {
-                self.with_viewport(|v| v.window_size = (physical_size.width, physical_size.height));
+                self.safe_area_insets = self.window.safe_area();
+                let insets = self.safe_area_insets;
+                let width = physical_size.width - insets.left - insets.right;
+                let height = physical_size.height - insets.top - insets.bottom;
+                self.with_viewport(|v| v.window_size = (width, height));
+                self.request_redraw();
             }
             WindowEvent::ScaleFactorChanged { scale_factor, .. } => {
                 self.with_viewport(|v| v.set_hidpi_scale(scale_factor as f32));
+                self.request_redraw();
             }
             WindowEvent::ThemeChanged(theme) => {
                 let color_scheme = theme_to_color_scheme(self.theme_override.unwrap_or(theme));
