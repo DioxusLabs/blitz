@@ -17,7 +17,7 @@ use anyrender_vello::VelloWindowRenderer as WindowRenderer;
 use blitz_dom::DocumentConfig;
 use blitz_html::HtmlDocument;
 use blitz_shell::{
-    BlitzApplication, BlitzShellEvent, Config, EventLoop, WindowConfig, create_default_event_loop,
+    BlitzApplication, BlitzShellProxy, Config, EventLoop, WindowConfig, create_default_event_loop,
 };
 use blitz_traits::net::NetProvider;
 
@@ -55,8 +55,10 @@ pub fn launch_url(url: &str) {
         .unwrap();
     let _guard = rt.enter();
 
-    let event_loop = create_default_event_loop::<BlitzShellEvent>();
-    let net_provider = create_net_provider(&event_loop);
+    let event_loop = create_default_event_loop();
+    let (proxy, reciever) = BlitzShellProxy::new(event_loop.create_proxy());
+    let net_provider = create_net_provider(proxy.clone());
+    let application = BlitzApplication::new(proxy, reciever);
 
     let (url, bytes) = rt
         .block_on(net_provider.fetch_async(blitz_traits::net::Request::get(url)))
@@ -70,6 +72,7 @@ pub fn launch_url(url: &str) {
             base_url: Some(url),
         },
         event_loop,
+        application,
         net_provider,
     )
 }
@@ -88,16 +91,19 @@ pub fn launch_static_html_cfg(html: &str, cfg: Config) {
     #[cfg(feature = "net")]
     let _guard = rt.enter();
 
-    let event_loop = create_default_event_loop::<BlitzShellEvent>();
-    let net_provider = create_net_provider(&event_loop);
+    let event_loop = create_default_event_loop();
+    let (proxy, reciever) = BlitzShellProxy::new(event_loop.create_proxy());
+    let net_provider = create_net_provider(proxy.clone());
+    let application = BlitzApplication::new(proxy, reciever);
 
-    launch_internal(html, cfg, event_loop, net_provider)
+    launch_internal(html, cfg, event_loop, application, net_provider)
 }
 
 fn launch_internal(
     html: &str,
     cfg: Config,
-    event_loop: EventLoop<BlitzShellEvent>,
+    event_loop: EventLoop,
+    mut application: BlitzApplication<WindowRenderer>,
     net_provider: Arc<dyn NetProvider>,
 ) {
     let doc = HtmlDocument::from_html(
@@ -113,11 +119,11 @@ fn launch_internal(
     let window = WindowConfig::new(Box::new(doc) as _, renderer);
 
     // Create application
-    let mut application = BlitzApplication::new(event_loop.create_proxy());
+
     application.add_window(window);
 
     // Run event loop
-    event_loop.run_app(&mut application).unwrap()
+    event_loop.run_app(application).unwrap()
 }
 
 #[cfg(feature = "net")]
@@ -125,15 +131,9 @@ type EnabledNetProvider = blitz_net::Provider;
 #[cfg(not(feature = "net"))]
 type EnabledNetProvider = blitz_traits::net::DummyNetProvider;
 
-fn create_net_provider(
-    event_loop: &blitz_shell::EventLoop<BlitzShellEvent>,
-) -> Arc<EnabledNetProvider> {
+fn create_net_provider(proxy: BlitzShellProxy) -> Arc<EnabledNetProvider> {
     #[cfg(feature = "net")]
-    let net_provider = {
-        let proxy = event_loop.create_proxy();
-        let waker = blitz_shell::BlitzShellNetWaker::shared(proxy);
-        Arc::new(blitz_net::Provider::new(Some(waker)))
-    };
+    let net_provider = Arc::new(blitz_net::Provider::new(Some(Arc::new(proxy))));
     #[cfg(not(feature = "net"))]
     let net_provider = {
         use blitz_traits::net::DummyNetProvider;
