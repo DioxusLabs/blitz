@@ -202,7 +202,7 @@ impl<Rend: WindowRenderer> View<Rend> {
         };
 
         // Render
-        let insets = self.safe_area_insets;
+        let insets = self.safe_area_insets.to_logical(scale);
         self.renderer.render(|scene| {
             paint_scene(scene, &inner, scale, width, height, insets.left, insets.top)
         });
@@ -252,7 +252,7 @@ impl<Rend: WindowRenderer> View<Rend> {
         let (width, height) = inner.viewport().window_size;
         let scale = inner.viewport().scale_f64();
         let is_animating = inner.is_animating();
-        let insets = self.safe_area_insets;
+        let insets = self.safe_area_insets.to_logical(scale);
         self.renderer.render(|scene| {
             paint_scene(scene, &inner, scale, width, height, insets.left, insets.top)
         });
