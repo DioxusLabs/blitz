@@ -1,5 +1,5 @@
 use crate::Document;
-use blitz_traits::events::{BlitzMouseButtonEvent, DomEvent, DomEventData, EventState, UiEvent};
+use blitz_traits::events::{BlitzPointerEvent, DomEvent, DomEventData, EventState, UiEvent};
 use std::collections::VecDeque;
 
 pub trait EventHandler {
@@ -142,17 +142,17 @@ impl<'doc, Handler: EventHandler> EventDriver<'doc, Handler> {
         };
 
         let data = match event {
-            UiEvent::MouseMove(data) => DomEventData::MouseMove(BlitzMouseButtonEvent {
+            UiEvent::MouseMove(data) => DomEventData::MouseMove(BlitzPointerEvent {
                 x: data.x + viewport_scroll.x as f32 / zoom,
                 y: data.y + viewport_scroll.y as f32 / zoom,
                 ..data
             }),
-            UiEvent::MouseUp(data) => DomEventData::MouseUp(BlitzMouseButtonEvent {
+            UiEvent::MouseUp(data) => DomEventData::MouseUp(BlitzPointerEvent {
                 x: data.x + viewport_scroll.x as f32 / zoom,
                 y: data.y + viewport_scroll.y as f32 / zoom,
                 ..data
             }),
-            UiEvent::MouseDown(data) => DomEventData::MouseDown(BlitzMouseButtonEvent {
+            UiEvent::MouseDown(data) => DomEventData::MouseDown(BlitzPointerEvent {
                 x: data.x + viewport_scroll.x as f32 / zoom,
                 y: data.y + viewport_scroll.y as f32 / zoom,
                 ..data

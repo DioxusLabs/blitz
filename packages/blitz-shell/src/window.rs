@@ -8,7 +8,7 @@ use anyrender::WindowRenderer;
 use blitz_dom::Document;
 use blitz_paint::paint_scene;
 use blitz_traits::events::{
-    BlitzMouseButtonEvent, BlitzWheelDelta, BlitzWheelEvent, MouseEventButton, MouseEventButtons,
+    BlitzPointerEvent, BlitzWheelDelta, BlitzWheelEvent, MouseEventButton, MouseEventButtons,
     UiEvent,
 };
 use blitz_traits::shell::Viewport;
@@ -396,7 +396,7 @@ impl<Rend: WindowRenderer> View<Rend> {
             WindowEvent::PointerMoved { position, .. } => {
                 let winit::dpi::LogicalPosition::<f32> { x, y } = position.to_logical(self.window.scale_factor());
                 self.mouse_pos = (x, y);
-                let event = UiEvent::MouseMove(BlitzMouseButtonEvent {
+                let event = UiEvent::MouseMove(BlitzPointerEvent {
                     x,
                     y,
                     button: Default::default(),
@@ -423,7 +423,7 @@ impl<Rend: WindowRenderer> View<Rend> {
                     ElementState::Released => self.buttons ^= button.into(),
                 }
 
-                let event = BlitzMouseButtonEvent {
+                let event = BlitzPointerEvent {
                     x: self.mouse_pos.0,
                     y: self.mouse_pos.1,
                     button,

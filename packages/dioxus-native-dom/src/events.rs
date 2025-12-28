@@ -1,6 +1,6 @@
 use blitz_dom::{BaseDocument, Node};
 use blitz_traits::events::{
-    BlitzKeyEvent, BlitzMouseButtonEvent, BlitzScrollEvent, BlitzWheelDelta, BlitzWheelEvent,
+    BlitzKeyEvent, BlitzPointerEvent, BlitzScrollEvent, BlitzWheelDelta, BlitzWheelEvent,
     MouseEventButton,
 };
 use dioxus_html::{
@@ -297,7 +297,7 @@ impl HasKeyboardData for BlitzKeyboardData {
 }
 
 #[derive(Clone)]
-pub struct NativeClickData(pub(crate) BlitzMouseButtonEvent);
+pub struct NativeClickData(pub(crate) BlitzPointerEvent);
 
 impl InteractionLocation for NativeClickData {
     fn client_coordinates(&self) -> ClientPoint {
