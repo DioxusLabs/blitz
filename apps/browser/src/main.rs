@@ -92,7 +92,12 @@ fn app() -> Element {
     // HACK: Winit doesn't support "safe area" on Android yet.
     // So we just hardcode a fallback safe area.
     const TOP_PAD: &str = if cfg!(target_os = "android") {
-        "50px"
+        "30px"
+    } else {
+        ""
+    };
+    const BOTTOM_PAD: &str = if cfg!(target_os = "android") {
+        "44px"
     } else {
         ""
     };
@@ -100,6 +105,7 @@ fn app() -> Element {
     rsx!(
         div { id: "frame",
               padding_top: TOP_PAD,
+              padding_bottom: BOTTOM_PAD,
             title { "Blitz Browser" }
             document::Link { rel: "stylesheet", href: BROWSER_UI_STYLES }
 
