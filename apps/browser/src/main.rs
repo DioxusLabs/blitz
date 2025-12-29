@@ -25,10 +25,16 @@ use icons::IconButton;
 
 static BROWSER_UI_STYLES: Asset = asset!("../assets/browser.css");
 
+#[unsafe(no_mangle)]
+#[cfg(target_os = "android")]
+pub fn android_main(android_app: dioxus_native::AndroidApp) {
+    dioxus_native::set_android_app(android_app);
+    main()
+}
+
 fn main() {
     #[cfg(feature = "tracing")]
     tracing_subscriber::fmt::init();
-
     dioxus_native::launch(app)
 }
 
@@ -39,7 +45,7 @@ fn use_sync_store<T: Send + Sync + 'static>(value: impl FnOnce() -> T) -> SyncSt
 }
 
 fn app() -> Element {
-    let home_url = use_hook(|| Url::parse("https://html.duckduckgo.com").unwrap());
+    let home_url = use_hook(|| Url::parse("https://en.wikipedia.org/wiki/Main_Page").unwrap());
 
     let mut url_input_handle = use_signal(|| None);
     let mut webview_node_handle: Signal<Option<NodeHandle>> = use_signal(|| None);
@@ -83,8 +89,23 @@ fn app() -> Element {
         }
     });
 
+    // HACK: Winit doesn't support "safe area" on Android yet.
+    // So we just hardcode a fallback safe area.
+    const TOP_PAD: &str = if cfg!(target_os = "android") {
+        "30px"
+    } else {
+        ""
+    };
+    const BOTTOM_PAD: &str = if cfg!(target_os = "android") {
+        "44px"
+    } else {
+        ""
+    };
+
     rsx!(
         div { id: "frame",
+              padding_top: TOP_PAD,
+              padding_bottom: BOTTOM_PAD,
             title { "Blitz Browser" }
             document::Link { rel: "stylesheet", href: BROWSER_UI_STYLES }
 
@@ -134,7 +155,12 @@ fn app() -> Element {
                         }
                     },
                     onkeydown: move |evt| {
-                        if evt.key() == Key::Enter {
+                        let is_enter = match evt.key() {
+                            Key::Enter => true,
+                            Key::Character(s) if s == "\n" => true,
+                            _ => false,
+                        };
+                        if is_enter {
                             evt.prevent_default();
                             let req = req_from_string(&url_input_value.read());
                             if let Some(req) = req {

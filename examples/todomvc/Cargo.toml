@@ -30,3 +30,6 @@ tracing-subscriber = { workspace = true, optional = true}
 # Disable unicode URL support
 # See https://github.com/hsivonen/idna_adapter
 idna_adapter = "=1.0.0"
+
+[target.'cfg(target_os = "android")'.dependencies]
+android-activity = { version = "0.6.0", features = ["native-activity"] }

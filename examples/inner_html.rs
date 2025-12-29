@@ -3,7 +3,7 @@ use std::sync::Arc;
 use anyrender_vello::VelloWindowRenderer;
 use blitz_dom::DocumentConfig;
 use blitz_html::{HtmlDocument, HtmlProvider};
-use blitz_shell::{BlitzApplication, BlitzShellEvent, WindowConfig, create_default_event_loop};
+use blitz_shell::{BlitzApplication, BlitzShellProxy, WindowConfig, create_default_event_loop};
 
 pub fn main() {
     // Create renderer
@@ -22,14 +22,15 @@ pub fn main() {
     doc.resolve(0.0);
 
     // Create the Winit application and window
-    let event_loop = create_default_event_loop::<BlitzShellEvent>();
-    let mut application = BlitzApplication::new(event_loop.create_proxy());
+    let event_loop = create_default_event_loop();
+    let (proxy, reciever) = BlitzShellProxy::new(event_loop.create_proxy());
+    let mut application = BlitzApplication::new(proxy, reciever);
     let renderer = VelloWindowRenderer::new();
     let window = WindowConfig::new(Box::new(doc), renderer);
     application.add_window(window);
 
     // Run event loop
-    event_loop.run_app(&mut application).unwrap()
+    event_loop.run_app(application).unwrap()
 }
 
 static HTML: &str = r#"

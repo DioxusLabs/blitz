@@ -5,6 +5,13 @@
 
 mod app;
 
+#[unsafe(no_mangle)]
+#[cfg(target_os = "android")]
+pub fn android_main(android_app: dioxus_native::AndroidApp) {
+    dioxus_native::set_android_app(android_app);
+    dioxus_native::launch(app::app)
+}
+
 fn main() {
     #[cfg(feature = "tracing")]
     tracing_subscriber::fmt::init();

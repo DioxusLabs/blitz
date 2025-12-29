@@ -237,6 +237,14 @@ fn apply_keypress_event(
             }
             return Some(GeneratedEvent::Input);
         }
+        Key::Character(c) if c == "\n" => {
+            if is_multiline {
+                driver.insert_or_replace_selection("\n");
+                return Some(GeneratedEvent::Input);
+            } else {
+                return Some(GeneratedEvent::Submit);
+            }
+        }
         Key::Enter => {
             if is_multiline {
                 driver.insert_or_replace_selection("\n");
