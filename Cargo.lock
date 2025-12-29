@@ -178,9 +178,9 @@ dependencies = [
 
 [[package]]
 name = "anyrender_skia"
-version = "0.3.0"
+version = "0.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0cd23fede1c9b592693a3d6213eb8a4c3eb3855c5ccf6cd32c2babbc68c70a31"
+checksum = "a462fde618a4394fdb9618a5e4733357f9a1c5b99b17c98704234461449e61b3"
 dependencies = [
  "anyrender",
  "ash 0.38.0+1.3.281",
@@ -196,6 +196,7 @@ dependencies = [
  "objc2-core-foundation",
  "objc2-metal",
  "objc2-quartz-core",
+ "objc2-ui-kit",
  "peniko",
  "pixels_window_renderer",
  "raw-window-handle",
