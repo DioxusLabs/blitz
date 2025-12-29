@@ -154,7 +154,7 @@ impl<Rend: WindowRenderer> ApplicationHandler for BlitzApplication<Rend> {
     }
 
     #[cfg(target_os = "ios")]
-    fn about_to_wait(&mut self, event_loop: &dyn ActiveEventLoop) {
+    fn about_to_wait(&mut self, _event_loop: &dyn ActiveEventLoop) {
         for view in self.windows.values_mut() {
             if view.ios_request_redraw.get() {
                 view.window.request_redraw();
