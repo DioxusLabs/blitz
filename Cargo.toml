@@ -100,7 +100,7 @@ anyrender = { version = "0.6" }
 anyrender_vello = { version = "0.6" }
 anyrender_vello_cpu = { version = "0.8" }
 anyrender_vello_hybrid = { version = "0.1" }
-anyrender_skia = { version = "0.3.0" }
+anyrender_skia = { version = "0.3.1" }
 anyrender_svg = { version = "0.6" }
 wgpu_context = { version = "0.1.2" }
 
@@ -245,6 +245,7 @@ tracing-subscriber = "0.3"
 # anyrender_skia = { path = "../anyrender/crates/anyrender_skia" }
 # anyrender_vello = { path = "../anyrender/crates/anyrender_vello" }
 # anyrender_vello_cpu = { path = "../anyrender/crates/anyrender_vello_cpu" }
+# anyrender_vello_hybrid = { path = "../anyrender/crates/anyrender_vello_hybrid" }
 # anyrender_svg = { path = "../anyrender/crates/anyrender_svg" }
 # wgpu_context = { path = "../anyrender/crates/wgpu_context" }
 
