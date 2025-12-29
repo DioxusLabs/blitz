@@ -12,6 +12,7 @@ html, body, #main, #frame {
 #frame {
     display: flex;
     flex-direction: column;
+    background: black;
 }
 
 .urlbar {
