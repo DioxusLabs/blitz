@@ -1,5 +1,5 @@
 use crate::Document;
-use blitz_traits::events::{BlitzPointerEvent, DomEvent, DomEventData, EventState, UiEvent};
+use blitz_traits::events::{DomEvent, DomEventData, EventState, UiEvent};
 use std::collections::VecDeque;
 
 pub trait EventHandler {
@@ -37,8 +37,6 @@ impl<'doc, Handler: EventHandler> EventDriver<'doc, Handler> {
 
     pub fn handle_ui_event(&mut self, event: UiEvent) {
         let doc = self.doc.inner();
-        let viewport_scroll = doc.viewport_scroll();
-        let zoom = doc.viewport.zoom();
 
         let mut hover_node_id = doc.hover_node_id;
         let focussed_node_id = doc.focus_node_id;
@@ -48,8 +46,8 @@ impl<'doc, Handler: EventHandler> EventDriver<'doc, Handler> {
         match &event {
             UiEvent::MouseMove(event) => {
                 let mut doc = self.doc.inner_mut();
-                let dom_x = event.x + viewport_scroll.x as f32 / zoom;
-                let dom_y = event.y + viewport_scroll.y as f32 / zoom;
+                let dom_x = event.x;
+                let dom_y = event.y;
                 let changed = doc.set_hover_to(dom_x, dom_y);
 
                 let prev_hover_node_id = hover_node_id;
@@ -142,27 +140,9 @@ impl<'doc, Handler: EventHandler> EventDriver<'doc, Handler> {
         };
 
         let data = match event {
-            UiEvent::MouseMove(data) => DomEventData::MouseMove(BlitzPointerEvent {
-                x: data.x / zoom,
-                y: data.y / zoom,
-                client_x: data.client_x / zoom,
-                client_y: data.client_y / zoom,
-                ..data
-            }),
-            UiEvent::MouseUp(data) => DomEventData::MouseUp(BlitzPointerEvent {
-                x: data.x / zoom,
-                y: data.y / zoom,
-                client_x: data.client_x / zoom,
-                client_y: data.client_y / zoom,
-                ..data
-            }),
-            UiEvent::MouseDown(data) => DomEventData::MouseDown(BlitzPointerEvent {
-                x: data.x / zoom,
-                y: data.y / zoom,
-                client_x: data.client_x / zoom,
-                client_y: data.client_y / zoom,
-                ..data
-            }),
+            UiEvent::MouseMove(data) => DomEventData::MouseMove(data),
+            UiEvent::MouseUp(data) => DomEventData::MouseUp(data),
+            UiEvent::MouseDown(data) => DomEventData::MouseDown(data),
             UiEvent::Wheel(data) => DomEventData::Wheel(data),
             UiEvent::KeyUp(data) => DomEventData::KeyUp(data),
             UiEvent::KeyDown(data) => DomEventData::KeyDown(data),
