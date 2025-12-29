@@ -85,15 +85,7 @@ pub(crate) fn handle_dom_event<F: FnMut(DomEvent)>(
 
     match &event.data {
         DomEventData::MouseMove(mouse_event) => {
-            let changed = handle_mousemove(
-                doc,
-                target_node_id,
-                mouse_event.x,
-                mouse_event.y,
-                mouse_event.buttons,
-                mouse_event,
-                dispatch_event,
-            );
+            let changed = handle_mousemove(doc, target_node_id, mouse_event, dispatch_event);
             if changed {
                 doc.shell_provider.request_redraw();
             }

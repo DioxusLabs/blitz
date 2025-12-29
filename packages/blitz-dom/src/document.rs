@@ -29,7 +29,7 @@ use selectors::{Element, matching::QuirksMode};
 use slab::Slab;
 use std::any::Any;
 use std::cell::RefCell;
-use std::collections::{BTreeMap, Bound, HashMap, HashSet};
+use std::collections::{BTreeMap, Bound, HashMap, HashSet, VecDeque};
 use std::ops::{Deref, DerefMut};
 use std::rc::Rc;
 use std::str::FromStr;
@@ -175,10 +175,32 @@ pub enum DocumentEvent {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+pub(crate) struct FlingState {
+    pub(crate) target: usize,
+    pub(crate) last_seen_time: f64,
+    pub(crate) x_velocity: f64,
+    pub(crate) y_velocity: f64,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) enum ScrollAnimationState {
+    None,
+    Fling(FlingState),
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub(crate) struct PanState {
     pub(crate) target: usize,
     pub(crate) last_x: f32,
     pub(crate) last_y: f32,
+    pub(crate) samples: VecDeque<PanSample>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct PanSample {
+    pub(crate) time: u64,
+    pub(crate) dx: f32,
+    pub(crate) dy: f32,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -189,6 +211,12 @@ pub(crate) enum DragMode {
     Selecting,
     /// We are currently panning the document with a drag (probably touch)
     Panning(PanState),
+}
+
+impl DragMode {
+    pub(crate) fn take(&mut self) -> DragMode {
+        std::mem::replace(self, DragMode::None)
+    }
 }
 
 pub struct BaseDocument {
@@ -252,6 +280,8 @@ pub struct BaseDocument {
     pub(crate) click_count: u16,
     /// Whether we're currently in a text selection drag (moved 2px+ from mousedown)
     pub(crate) drag_mode: DragMode,
+    /// Whether and what kind of scroll animation is currently in progress
+    pub(crate) scroll_animation: ScrollAnimationState,
 
     /// Text selection state (for non-input text)
     pub(crate) text_selection: TextSelection,
@@ -419,6 +449,7 @@ impl BaseDocument {
             mousedown_position: taffy::Point::ZERO,
             click_count: 0,
             drag_mode: DragMode::None,
+            scroll_animation: ScrollAnimationState::None,
             text_selection: TextSelection::default(),
         };
 
@@ -1188,7 +1219,10 @@ impl BaseDocument {
     }
 
     pub fn is_animating(&self) -> bool {
-        self.has_canvas | self.has_active_animations | self.subdoc_is_animating
+        self.has_canvas
+            | self.has_active_animations
+            | self.subdoc_is_animating
+            | (self.scroll_animation != ScrollAnimationState::None)
     }
 
     /// Update the device and reset the stylist to process the new size
