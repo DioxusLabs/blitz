@@ -126,6 +126,10 @@ impl ApplicationHandler for DioxusNativeApplication {
         self.inner.destroy_surfaces(event_loop);
     }
 
+    fn about_to_wait(&mut self, event_loop: &dyn ActiveEventLoop) {
+        self.inner.about_to_wait(event_loop);
+    }
+
     fn can_create_surfaces(&mut self, event_loop: &dyn ActiveEventLoop) {
         #[cfg(feature = "tracing")]
         tracing::debug!("Injecting document provider into all windows");

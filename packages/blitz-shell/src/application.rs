@@ -152,6 +152,15 @@ impl<Rend: WindowRenderer> ApplicationHandler for BlitzApplication<Rend> {
     fn macos_handler(&mut self) -> Option<&mut dyn ApplicationHandlerExtMacOS> {
         Some(self)
     }
+
+    #[cfg(target_os = "ios")]
+    fn about_to_wait(&mut self, event_loop: &dyn ActiveEventLoop) {
+        for view in self.windows.values_mut() {
+            if view.ios_request_redraw.get() {
+                view.window.request_redraw();
+            }
+        }
+    }
 }
 
 #[cfg(target_os = "macos")]
