@@ -73,6 +73,13 @@ pub struct View<Rend: WindowRenderer> {
     #[cfg(feature = "accessibility")]
     /// Accessibility adapter for `accesskit`.
     pub accessibility: AccessibilityState,
+
+    // Calling request_redraw within a WindowEvent doesn't work on iOS. So on iOS we track the state
+    // with a boolean and call request_redraw in about_to_wait
+    //
+    // See https://github.com/rust-windowing/winit/issues/3406
+    #[cfg(target_os = "ios")]
+    pub ios_request_redraw: std::cell::Cell<bool>,
 }
 
 impl<Rend: WindowRenderer> View<Rend> {
@@ -126,6 +133,9 @@ impl<Rend: WindowRenderer> View<Rend> {
             is_visible: winit_window.is_visible().unwrap_or(true),
             #[cfg(feature = "accessibility")]
             accessibility: AccessibilityState::new(&*winit_window, proxy.clone()),
+
+            #[cfg(target_os = "ios")]
+            ios_request_redraw: std::cell::Cell::new(false),
         }
     }
 
@@ -239,10 +249,14 @@ impl<Rend: WindowRenderer> View<Rend> {
     pub fn request_redraw(&self) {
         if self.renderer.is_active() {
             self.window.request_redraw();
+            #[cfg(target_os = "ios")]
+            self.ios_request_redraw.set(true);
         }
     }
 
     pub fn redraw(&mut self) {
+        #[cfg(target_os = "ios")]
+        self.ios_request_redraw.set(false);
         let animation_time = self.current_animation_time();
         let is_visible = self.is_visible;
 
