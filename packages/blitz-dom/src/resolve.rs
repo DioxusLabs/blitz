@@ -22,6 +22,7 @@ use taffy::AvailableSpace;
 
 use crate::{
     BaseDocument, NON_INCREMENTAL,
+    document::ScrollAnimationState,
     layout::{
         construct::{
             ConstructionTask, ConstructionTaskData, ConstructionTaskResult,
@@ -45,6 +46,8 @@ impl BaseDocument {
 
         // Process messages that have been sent to our message channel (e.g. loaded resource)
         self.handle_messages();
+
+        self.resolve_scroll_animation(current_time_for_animations);
 
         let root_node_id = self.root_element().id;
         debug_timer!(timer, feature = "log_phase_times");
@@ -108,6 +111,31 @@ impl BaseDocument {
         timer.record_time("subdocs");
 
         timer.print_times(&format!("Resolve({}): ", self.id()));
+    }
+
+    pub fn resolve_scroll_animation(&mut self, animation_time: f64) {
+        match &mut self.scroll_animation {
+            ScrollAnimationState::Fling(fling_state) => {
+                // let time_diff_ms = animation_time - fling_state.last_seen_time;
+
+                // TODO: consider time
+                fling_state.x_velocity *= 0.95;
+                fling_state.y_velocity *= 0.95;
+                fling_state.last_seen_time = animation_time;
+                let fling_state = fling_state.clone();
+
+                let dx = fling_state.x_velocity; // * time_diff_ms;
+                let dy = fling_state.y_velocity; // * time_diff_ms;
+
+                self.scroll_by(Some(fling_state.target), dx, dy, &mut |_| {});
+                if fling_state.x_velocity.abs() < 1.0 && fling_state.y_velocity.abs() < 1.0 {
+                    self.scroll_animation = ScrollAnimationState::None;
+                }
+            }
+            ScrollAnimationState::None => {
+                // Do nothing
+            }
+        }
     }
 
     /// Ensure that the layout_children field is populated for all nodes
