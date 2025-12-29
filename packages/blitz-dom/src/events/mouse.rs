@@ -349,8 +349,8 @@ pub(crate) fn handle_mouseup<F: FnMut(DomEvent)>(
                 let fling = FlingState {
                     target: state.target,
                     last_seen_time: time_ms as f64,
-                    x_velocity: x_velocity as f64 * 16.6666,
-                    y_velocity: y_velocity as f64 * 16.6666,
+                    x_velocity: x_velocity as f64, // * 16.6666,
+                    y_velocity: y_velocity as f64, // * 16.6666,
                 };
 
                 doc.scroll_animation = ScrollAnimationState::Fling(fling);
