@@ -1,4 +1,7 @@
-use std::time::{Duration, Instant};
+use std::{
+    collections::VecDeque,
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
+};
 
 use blitz_traits::{
     events::{
@@ -12,7 +15,7 @@ use markup5ever::local_name;
 
 use crate::{
     BaseDocument,
-    document::{DragMode, PanState},
+    document::{DragMode, FlingState, PanSample, PanState, ScrollAnimationState},
     node::SpecialElementData,
 };
 
@@ -21,12 +24,13 @@ use super::focus::generate_focus_events;
 pub(crate) fn handle_mousemove<F: FnMut(DomEvent)>(
     doc: &mut BaseDocument,
     target: usize,
-    x: f32,
-    y: f32,
-    buttons: MouseEventButtons,
     event: &BlitzPointerEvent,
     mut dispatch_event: F,
 ) -> bool {
+    let x = event.x;
+    let y = event.y;
+    let buttons = event.buttons;
+
     let mut changed = doc.set_hover_to(x, y);
 
     // Check if we've moved enough to be considered a selection drag (2px threshold)
@@ -43,6 +47,7 @@ pub(crate) fn handle_mousemove<F: FnMut(DomEvent)>(
                         target,
                         last_x: event.screen_x,
                         last_y: event.screen_y,
+                        samples: VecDeque::with_capacity(200),
                     });
                 }
             }
@@ -52,9 +57,32 @@ pub(crate) fn handle_mousemove<F: FnMut(DomEvent)>(
     if let DragMode::Panning(state) = &mut doc.drag_mode {
         let dx = (event.screen_x - state.last_x) as f64;
         let dy = (event.screen_y - state.last_y) as f64;
+        let time_ms = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_millis() as u64;
+
         let target = state.target;
         state.last_x = event.screen_x;
         state.last_y = event.screen_y;
+
+        state.samples.push_back(PanSample {
+            time: time_ms,
+            // TODO: account for scroll delta not applied due to clamping
+            dx: dx as f32,
+            dy: dy as f32,
+        });
+
+        // Remove samples older than 100ms
+        if state.samples.len() > 50 && time_ms - state.samples.front().unwrap().time > 100 {
+            let idx = state
+                .samples
+                .partition_point(|sample| time_ms - sample.time > 100);
+            // FIXME: use truncate_front once stable
+            for _ in 0..idx {
+                state.samples.pop_front();
+            }
+        }
 
         let has_changed = doc.scroll_by(Some(target), dx, dy, &mut dispatch_event);
         return has_changed;
@@ -150,6 +178,7 @@ pub(crate) fn handle_mousedown(
     doc.last_mousedown_time = Some(Instant::now());
     doc.mousedown_position = taffy::Point { x, y };
     doc.drag_mode = DragMode::None;
+    doc.scroll_animation = ScrollAnimationState::None;
 
     let Some(hit) = doc.hit(x, y) else {
         // Clear text selection when clicking outside any element
@@ -269,12 +298,66 @@ pub(crate) fn handle_mouseup<F: FnMut(DomEvent)>(
         return;
     }
 
+    // Reset Document's drag state to DragMode::None, storing the state
+    // locally for use within this function
+    let drag_mode = doc.drag_mode.take();
+
     // Don't dispatch click if we were doing a text selection drag or panning
     // the document with a touch
-    let do_click = doc.drag_mode == DragMode::None;
+    let do_click = drag_mode == DragMode::None;
 
-    // Reset selection state
-    doc.drag_mode = DragMode::None;
+    let time_ms = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_millis() as u64;
+
+    if let DragMode::Panning(state) = &drag_mode {
+        // Generate "fling"
+        if let Some(last_sample) = state.samples.back()
+            && time_ms - last_sample.time < 100
+        {
+            let idx = state
+                .samples
+                .partition_point(|sample| time_ms - sample.time > 100);
+
+            // Compute pan_time. Will always be <= 100ms as we ignore samples older than that.
+            let pan_start_time = state.samples[idx].time;
+            let pan_time = (time_ms - pan_start_time) as f32;
+
+            // Avoid division by 0
+            if pan_time > 0.0 {
+                let (pan_x, pan_y) = state
+                    .samples
+                    .iter()
+                    .skip(idx)
+                    .fold((0.0, 0.0), |(dx, dy), sample| {
+                        (dx + sample.dx, dy + sample.dy)
+                    });
+
+                let x_velocity = if pan_x.abs() > pan_y.abs() {
+                    pan_x / pan_time
+                } else {
+                    0.0
+                };
+
+                let y_velocity = if pan_y.abs() > pan_x.abs() {
+                    pan_y / pan_time
+                } else {
+                    0.0
+                };
+
+                let fling = FlingState {
+                    target: state.target,
+                    last_seen_time: time_ms as f64,
+                    x_velocity: x_velocity as f64 * 16.6666,
+                    y_velocity: y_velocity as f64 * 16.6666,
+                };
+
+                doc.scroll_animation = ScrollAnimationState::Fling(fling);
+                doc.shell_provider.request_redraw();
+            }
+        }
+    }
 
     // Dispatch a click event
     if do_click && event.button == MouseEventButton::Main {
