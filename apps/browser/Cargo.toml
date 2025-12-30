@@ -45,4 +45,4 @@ winit = { workspace = true }
 
 
 [target.'cfg(target_os = "android")'.dependencies]
-android-activity = { version = "0.6.0", features = ["native-activity"] }
+android-activity = { version = "0.6.0", features = ["game-activity"] }

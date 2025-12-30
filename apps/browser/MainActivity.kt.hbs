@@ -1,4 +1,16 @@
 package dev.dioxus.main;
 
-class MainActivity : android.app.NativeActivity()
-//class MainActivity : com.google.androidgamesdk.GameActivity()
+import androidx.appcompat.app.AppCompatActivity;
+import androidx.core.view.WindowCompat;
+import androidx.core.view.WindowInsetsCompat;
+import androidx.core.view.WindowInsetsControllerCompat;
+import com.google.androidgamesdk.GameActivity;
+
+// class MainActivity : android.app.NativeActivity()
+class MainActivity : GameActivity() {
+    companion object {
+        init {
+            System.loadLibrary("dioxusmain")
+        }
+    }
+}
