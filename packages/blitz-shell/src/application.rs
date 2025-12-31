@@ -1,6 +1,7 @@
 use crate::event::BlitzShellEvent;
 
 use anyrender::WindowRenderer;
+use blitz_devtools_server::DevtoolsServer;
 use std::collections::HashMap;
 use winit::application::ApplicationHandler;
 use winit::event::WindowEvent;
@@ -13,6 +14,10 @@ pub struct BlitzApplication<Rend: WindowRenderer> {
     pub windows: HashMap<WindowId, View<Rend>>,
     pub pending_windows: Vec<WindowConfig<Rend>>,
     pub proxy: EventLoopProxy<BlitzShellEvent>,
+
+    #[cfg(feature = "devtools")]
+    /// Devtools server
+    pub devtools_server: DevtoolsServer,
 }
 
 impl<Rend: WindowRenderer> BlitzApplication<Rend> {
@@ -20,7 +25,17 @@ impl<Rend: WindowRenderer> BlitzApplication<Rend> {
         BlitzApplication {
             windows: HashMap::new(),
             pending_windows: Vec::new(),
-            proxy,
+            proxy: proxy.clone(),
+
+            #[cfg(feature = "devtools")]
+            devtools_server: {
+                println!("INITIALIZE DEVTOOL SERVER");
+                use crate::BlitzShellWaker;
+                let waker = BlitzShellWaker::devtools_waker(proxy);
+                let mut server = DevtoolsServer::new(waker);
+                server.start_listening("127.0.0.1:6080");
+                server
+            },
         }
     }
 
@@ -94,6 +109,11 @@ impl<Rend: WindowRenderer> ApplicationHandler<BlitzShellEvent> for BlitzApplicat
                 if let Some(window) = self.window_mut_by_doc_id(doc_id) {
                     window.request_redraw();
                 }
+            }
+
+            #[cfg(feature = "devtools")]
+            BlitzShellEvent::ProcessDevtoolMessages => {
+                self.devtools_server.process_messages();
             }
 
             #[cfg(feature = "accessibility")]
