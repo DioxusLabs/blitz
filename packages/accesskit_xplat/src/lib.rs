@@ -47,7 +47,6 @@ use accesskit::{
     ActionHandler, ActionRequest, ActivationHandler, DeactivationHandler, Rect, TreeUpdate,
 };
 
-
 #[cfg(target_os = "android")]
 use android_activity::AndroidApp;
 #[cfg(not(target_os = "android"))]
