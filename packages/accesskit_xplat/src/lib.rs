@@ -57,7 +57,7 @@ pub enum WindowEvent {
     AccessibilityDeactivated,
 }
 
-pub trait EventHandler: Send + 'static {
+pub trait EventHandler: Send + Sync + 'static {
     fn handle_accesskit_event(&self, event: WindowEvent);
 }
 

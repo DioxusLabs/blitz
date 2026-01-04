@@ -34,7 +34,7 @@ impl Adapter {
     }
 
     pub fn set_focus(&mut self, is_focused: bool) {
-        self.update_window_focus_state(*is_focused);
+        self.update_window_focus_state(is_focused);
     }
 
     pub fn set_window_bounds(&mut self, outer_bounds: Rect, inner_bounds: Rect) {
