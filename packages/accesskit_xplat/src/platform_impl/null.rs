@@ -2,7 +2,7 @@
 // Licensed under the Apache License, Version 2.0 (found in
 // the LICENSE-APACHE file).
 
-use accesskit::{ActionHandler, ActivationHandler, DeactivationHandler, TreeUpdate};
+use accesskit::{ActionHandler, ActivationHandler, DeactivationHandler, Rect, TreeUpdate};
 
 pub struct Adapter;
 

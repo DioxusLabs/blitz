@@ -2,7 +2,7 @@
 // Licensed under the Apache License, Version 2.0 (found in
 // the LICENSE-APACHE file).
 
-use accesskit::{ActionHandler, ActivationHandler, DeactivationHandler, TreeUpdate};
+use accesskit::{ActionHandler, ActivationHandler, DeactivationHandler, Rect, TreeUpdate};
 use accesskit_windows::{HWND, SubclassingAdapter};
 use raw_window_handle::RawWindowHandle;
 use winit::{event::WindowEvent, event_loop::ActiveEventLoop, window::Window};
@@ -34,7 +34,7 @@ impl Adapter {
         }
     }
 
-    pub fn set_focus(&mut self, is_focused: bool) {}
+    pub fn set_focus(&mut self, _is_focused: bool) {}
 
     pub fn set_window_bounds(&mut self, outer_bounds: Rect, inner_bounds: Rect) {}
 }
