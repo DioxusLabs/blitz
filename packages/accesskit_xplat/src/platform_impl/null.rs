@@ -3,6 +3,7 @@
 // the LICENSE-APACHE file).
 
 use accesskit::{ActionHandler, ActivationHandler, DeactivationHandler, Rect, TreeUpdate};
+use raw_window_handle::RawWindowHandle;
 
 pub struct Adapter;
 
@@ -18,7 +19,7 @@ impl Adapter {
 
     pub fn update_if_active(&mut self, _updater: impl FnOnce() -> TreeUpdate) {}
 
-    pub fn set_focus(&mut self, is_focused: bool) {}
+    pub fn set_focus(&mut self, _is_focused: bool) {}
 
-    pub fn set_window_bounds(&mut self, outer_bounds: Rect, inner_bounds: Rect) {}
+    pub fn set_window_bounds(&mut self, _outer_bounds: Rect, _inner_bounds: Rect) {}
 }
