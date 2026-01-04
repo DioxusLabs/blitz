@@ -156,6 +156,22 @@ jobs:
               command: "test",
               args: "--all --tests",
             }
+          - {
+              name: ios,
+              target: aarch64-apple-ios,
+              os: macos-latest,
+              cross: false,
+              command: "build",
+              args: "--all",
+            }
+          - {
+              name: android,
+              target: aarch64-linux-android,
+              os: ubuntu-latest,
+              cross: false,
+              command: "build",
+              args: "--all",
+            }
 
     name: Test (${{ matrix.platform.name }})
 
