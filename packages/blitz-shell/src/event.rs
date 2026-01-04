@@ -5,8 +5,8 @@ use std::sync::mpsc::{Receiver, Sender, channel};
 use std::{any::Any, sync::Arc};
 use winit::{event_loop::EventLoopProxy, window::WindowId};
 
-// #[cfg(feature = "accessibility")]
-// use accesskit_winit::{Event as AccessKitEvent, WindowEvent as AccessKitWindowEvent};
+#[cfg(feature = "accessibility")]
+use accesskit_xplat::WindowEvent as AccessKitEvent;
 
 #[derive(Debug, Clone)]
 pub enum BlitzShellEvent {
@@ -19,11 +19,11 @@ pub enum BlitzShellEvent {
     },
 
     /// An accessibility event from `accesskit`.
-    // #[cfg(feature = "accessibility")]
-    // Accessibility {
-    //     window_id: WindowId,
-    //     data: Arc<AccessKitWindowEvent>,
-    // },
+    #[cfg(feature = "accessibility")]
+    Accessibility {
+        window_id: WindowId,
+        data: Arc<AccessKitEvent>,
+    },
 
     /// An arbitary event from the Blitz embedder
     Embedder(Arc<dyn Any + Send + Sync>),
@@ -45,16 +45,6 @@ impl BlitzShellEvent {
         Self::Embedder(boxed)
     }
 }
-
-// #[cfg(feature = "accessibility")]
-// impl From<AccessKitEvent> for BlitzShellEvent {
-//     fn from(value: AccessKitEvent) -> Self {
-//         Self::Accessibility {
-//             window_id: value.window_id,
-//             data: Arc::new(value.window_event),
-//         }
-//     }
-// }
 
 #[derive(Clone)]
 pub struct BlitzShellProxy(Arc<BlitzShellProxyInner>);

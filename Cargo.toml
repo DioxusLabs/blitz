@@ -45,6 +45,7 @@ stylo_taffy = { version = "0.2.0", path = "./packages/stylo_taffy", default-feat
 dioxus-native = { version = "0.7.0", path = "./packages/dioxus-native", default-features = false }
 dioxus-native-dom = { version = "0.7.0", path = "./packages/dioxus-native-dom", default-features = false }
 debug_timer = { version = "0.1.2", path = "./packages/debug_timer" }
+accesskit_xplat = { version = "0.1", path = "./packages/accesskit_xplat", default-features = false }
 
 # Servo dependencies
 style = { version = "0.9.0", package = "stylo" }
@@ -130,8 +131,7 @@ usvg = "0.45.1"
 # Windowing & Input
 raw-window-handle = "0.6.0"
 winit = { version = "=0.31.0-beta.2" }
-accesskit_winit = "0.23"
-accesskit = "0.17"
+accesskit = "0.22"
 arboard = { version = "3.4.1", default-features = false }
 rfd = { version = "0.15.3", default-features = false }
 keyboard-types = "0.7"

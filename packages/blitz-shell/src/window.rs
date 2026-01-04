@@ -307,6 +307,11 @@ impl<Rend: WindowRenderer> View<Rend> {
     }
 
     pub fn handle_winit_event(&mut self, event: WindowEvent) {
+        // Update accessibility focus and window size state in response to a Winit WindowEvent
+        #[cfg(feature = "accessibility")]
+        self.accessibility
+            .process_window_event(&*self.window, &event);
+
         match event {
             WindowEvent::Destroyed => {}
             WindowEvent::ActivationTokenDone { .. } => {},

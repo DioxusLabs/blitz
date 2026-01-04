@@ -56,22 +56,22 @@ impl<Rend: WindowRenderer> BlitzApplication<Rend> {
                 }
             }
 
-            // #[cfg(feature = "accessibility")]
-            // BlitzShellEvent::Accessibility { window_id, data } => {
-            //     if let Some(window) = self.windows.get_mut(&window_id) {
-            //         match &*data {
-            //             accesskit_winit::WindowEvent::InitialTreeRequested => {
-            //                 window.build_accessibility_tree();
-            //             }
-            //             accesskit_winit::WindowEvent::AccessibilityDeactivated => {
-            //                 // TODO
-            //             }
-            //             accesskit_winit::WindowEvent::ActionRequested(_req) => {
-            //                 // TODO
-            //             }
-            //         }
-            //     }
-            // }
+            #[cfg(feature = "accessibility")]
+            BlitzShellEvent::Accessibility { window_id, data } => {
+                if let Some(window) = self.windows.get_mut(&window_id) {
+                    match &*data {
+                        accesskit_xplat::WindowEvent::InitialTreeRequested => {
+                            window.build_accessibility_tree();
+                        }
+                        accesskit_xplat::WindowEvent::AccessibilityDeactivated => {
+                            // TODO
+                        }
+                        accesskit_xplat::WindowEvent::ActionRequested(_req) => {
+                            // TODO
+                        }
+                    }
+                }
+            }
             BlitzShellEvent::Embedder(_) => {
                 // Do nothing. Should be handled by embedders (if required).
             }

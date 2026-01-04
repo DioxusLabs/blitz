@@ -109,7 +109,7 @@ impl Adapter {
     /// Panics if the window is already visible.
     pub fn with_split_handlers(
         #[cfg(target_os = "android")] android_app: &AndroidApp,
-        #[cfg(not(target_os = "android"))] window: &RawWindowHandle,
+        #[cfg(not(target_os = "android"))] window: RawWindowHandle,
         activation_handler: impl 'static + ActivationHandler + Send,
         action_handler: impl 'static + ActionHandler + Send,
         deactivation_handler: impl 'static + DeactivationHandler + Send,
@@ -118,7 +118,7 @@ impl Adapter {
             #[cfg(target_os = "android")]
             android_app,
             #[cfg(not(target_os = "android"))]
-            window,
+            &window,
             activation_handler,
             action_handler,
             deactivation_handler,
@@ -128,7 +128,7 @@ impl Adapter {
 
     pub fn with_combined_handler(
         #[cfg(target_os = "android")] android_app: &AndroidApp,
-        #[cfg(not(target_os = "android"))] window: &RawWindowHandle,
+        #[cfg(not(target_os = "android"))] window: RawWindowHandle,
         handler: Arc<dyn EventHandler>,
     ) -> Self {
         let handler = CombinedHandler(handler);
@@ -136,7 +136,7 @@ impl Adapter {
             #[cfg(target_os = "android")]
             android_app,
             #[cfg(not(target_os = "android"))]
-            window,
+            &window,
             handler.clone(),
             handler.clone(),
             handler,
