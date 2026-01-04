@@ -5,7 +5,6 @@
 use accesskit::{ActionHandler, ActivationHandler, DeactivationHandler, Rect, TreeUpdate};
 use accesskit_windows::{HWND, SubclassingAdapter};
 use raw_window_handle::RawWindowHandle;
-use winit::{event::WindowEvent, event_loop::ActiveEventLoop, window::Window};
 
 pub struct Adapter {
     adapter: SubclassingAdapter,
@@ -36,5 +35,5 @@ impl Adapter {
 
     pub fn set_focus(&mut self, _is_focused: bool) {}
 
-    pub fn set_window_bounds(&mut self, outer_bounds: Rect, inner_bounds: Rect) {}
+    pub fn set_window_bounds(&mut self, _outer_bounds: Rect, _inner_bounds: Rect) {}
 }
