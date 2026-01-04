@@ -11,6 +11,7 @@ use winit::application::ApplicationHandler;
 use winit::event::{Modifiers, StartCause, WindowEvent};
 use winit::event_loop::ActiveEventLoop;
 use winit::keyboard::{KeyCode, PhysicalKey};
+#[cfg(target_os = "macos")]
 use winit::platform::macos::ApplicationHandlerExtMacOS;
 use winit::window::{Theme, WindowId};
 
@@ -131,6 +132,7 @@ impl ReadmeApplication {
 }
 
 impl ApplicationHandler for ReadmeApplication {
+    #[cfg(target_os = "macos")]
     fn macos_handler(&mut self) -> Option<&mut dyn ApplicationHandlerExtMacOS> {
         self.inner.macos_handler()
     }
