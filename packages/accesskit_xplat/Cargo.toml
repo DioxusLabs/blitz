@@ -1,0 +1,33 @@
+[package]
+name = "accesskit_xplat"
+version = "0.1.0"
+license = "Apache-2.0"
+description = "AccessKit UI accessibility infrastructure: cross-platform adapter"
+keywords = ["gui", "ui", "accessibility"]
+repository.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[features]
+default = ["accesskit_unix", "async-io"]
+async-io = ["accesskit_unix/async-io"]
+tokio = ["accesskit_unix/tokio"]
+
+[dependencies]
+accesskit = { version = "0.22" }
+winit-core = { version = "0.31.0-beta.2", default-features = false }
+raw-window-handle = { version = "0.6.2", features = ["std"] }
+
+[target.'cfg(target_os = "windows")'.dependencies]
+accesskit_windows = { version = "0.30.0" }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+accesskit_macos = { version = "0.23.0" }
+
+[target.'cfg(any(target_os = "linux", target_os = "dragonfly", target_os = "freebsd", target_os = "openbsd", target_os = "netbsd"))'.dependencies]
+accesskit_unix = { version = "0.18.0", optional = true, default-features = false }
+
+[target.'cfg(target_os = "android")'.dependencies]
+accesskit_android = { version = "0.5.0", optional = true, features = ["embedded-dex"] }
+android-activity = { version = "0.6.0" }
+
