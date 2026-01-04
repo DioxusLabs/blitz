@@ -9,7 +9,8 @@ pub struct Adapter;
 
 impl Adapter {
     pub fn new(
-        _window_handle: &RawWindowHandle,
+        #[cfg(target_os = "android")] _android_app: &AndroidApp,
+        #[cfg(not(target_os = "android"))] _window_handle: RawWindowHandle,
         _activation_handler: impl 'static + ActivationHandler,
         _action_handler: impl 'static + ActionHandler,
         _deactivation_handler: impl 'static + DeactivationHandler,
