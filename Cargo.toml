@@ -1,5 +1,6 @@
 [workspace]
 members = [
+  "packages/accesskit_xplat",
   "packages/debug_timer",
   "packages/blitz-traits",
   "packages/blitz-dom",
