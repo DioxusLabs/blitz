@@ -131,6 +131,7 @@ jobs:
     env:
       RUST_CARGO_COMMAND: ${{ matrix.platform.cross == true && 'cross' || 'cargo' }}
     strategy:
+      fail-fast: false
       matrix:
         platform:
           - {
