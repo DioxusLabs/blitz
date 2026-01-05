@@ -12,7 +12,7 @@ pub struct Adapter {
 
 impl Adapter {
     pub fn new(
-        window_handle: &RawWindowHandle,
+        window_handle: RawWindowHandle,
         activation_handler: impl 'static + ActivationHandler,
         action_handler: impl 'static + ActionHandler + Send,
         _deactivation_handler: impl 'static + DeactivationHandler,
