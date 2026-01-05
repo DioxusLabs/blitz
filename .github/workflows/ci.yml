@@ -191,13 +191,17 @@ jobs:
         if: ${{ matrix.platform.cross == true }}
         run: cargo install cross --git https://github.com/cross-rs/cross --rev 426e811
 
-      - name: Free Disk Space (Ubuntu)
-        if: ${{ matrix.platform.os == 'ubuntu-latest' }}
-        uses: jlumbroso/free-disk-space@v1.3.1
-        with: # speed things up a bit
-          large-packages: false
-          docker-images: false
-          swap-storage: false
+      # This is currently disabled as Blitz's CI doesn't need the extra disk space.
+      # So this task is just taking up time for no reason. We will reinstate if our
+      # disk space requirement increase.
+      #
+      # - name: Free Disk Space (Ubuntu)
+      #   if: ${{ matrix.platform.os == 'ubuntu-latest' }}
+      #   uses: jlumbroso/free-disk-space@v1.3.1
+      #   with: # speed things up a bit
+      #     large-packages: false
+      #     docker-images: false
+      #     swap-storage: false
 
       - uses: Swatinem/rust-cache@v2
         with:
