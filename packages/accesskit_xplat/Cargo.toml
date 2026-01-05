@@ -15,7 +15,6 @@ tokio = ["accesskit_unix/tokio"]
 
 [dependencies]
 accesskit = { version = "0.22" }
-winit-core = { version = "0.31.0-beta.2", default-features = false }
 raw-window-handle = { version = "0.6.2", features = ["std"] }
 
 [target.'cfg(target_os = "windows")'.dependencies]
