@@ -3,13 +3,17 @@
 // the LICENSE-APACHE file).
 
 use accesskit::{ActionHandler, ActivationHandler, DeactivationHandler, Rect, TreeUpdate};
+
+#[cfg(target_os = "android")]
+use android_activity::AndroidApp;
+#[cfg(not(target_os = "android"))]
 use raw_window_handle::RawWindowHandle;
 
 pub struct Adapter;
 
 impl Adapter {
     pub fn new(
-        #[cfg(target_os = "android")] _android_app: &android_activity::AndroidApp,
+        #[cfg(target_os = "android")] _android_app: &AndroidApp,
         #[cfg(not(target_os = "android"))] _window_handle: RawWindowHandle,
         _activation_handler: impl 'static + ActivationHandler,
         _action_handler: impl 'static + ActionHandler,
