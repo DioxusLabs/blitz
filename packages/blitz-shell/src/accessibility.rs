@@ -33,6 +33,9 @@ impl AccessibilityState {
         let window_id = window.id();
         Self {
             adapter: Adapter::with_combined_handler(
+                #[cfg(target_os = "android")]
+                &crate::current_android_app(),
+                #[cfg(not(target_os = "android"))]
                 window.window_handle().unwrap().as_raw(),
                 Arc::new(Handler { window_id, proxy }),
             ),
