@@ -7,8 +7,9 @@ use std::cell::Cell;
 use blitz_dom::Node;
 use objc2::rc::Retained;
 use objc2::runtime::NSObjectProtocol;
-use objc2::{define_class, msg_send, DefinedClass, MainThreadOnly};
-use objc2_foundation::{MainThreadMarker, NSString};
+use objc2::{DefinedClass, MainThreadOnly, define_class, msg_send};
+use objc2_foundation::MainThreadMarker;
+use objc2_foundation::NSString;
 use objc2_ui_kit::{UILabel, UIView};
 
 // =============================================================================
@@ -60,23 +61,9 @@ impl BlitzLabel {
 
 /// Extract text content from a DOM node and its children.
 fn extract_text_content(node: &Node) -> String {
-    let mut text = String::new();
-    collect_text_recursive(node, &mut text);
-    text
-}
-
-/// Recursively collect text from a node and its children.
-fn collect_text_recursive(node: &Node, output: &mut String) {
-    // If this is a text node, add its content
-    if let Some(text_data) = node.text_data() {
-        output.push_str(&text_data.content);
-        return;
-    }
-
-    // Otherwise, recurse into children
-    // Note: We need access to the document to get children
-    // For now, we'll just handle direct text content
-    // The full implementation would need to walk layout_children
+    // Use blitz-dom's built-in text_content() which recursively
+    // collects text from all child nodes
+    node.text_content()
 }
 
 /// Create a UILabel for a text element.
@@ -100,21 +87,54 @@ pub fn update_label(view: &UIView, node: &Node) {
 
 /// Update label content from node.
 fn update_label_content(label: &UILabel, node: &Node) {
-    // Try to get text content from element's inline layout data
+    let text: Option<String>;
+
+    // Try to get text content from element's inline layout data (computed by Parley)
     if let Some(element_data) = node.element_data() {
         if let Some(inline_layout) = &element_data.inline_layout_data {
             // Use the text from inline layout
-            let text = &inline_layout.text;
-            let ns_text = NSString::from_str(text);
-            unsafe { label.setText(Some(&ns_text)) };
-            return;
+            text = Some(inline_layout.text.clone());
+        } else {
+            // Fallback: extract text content recursively
+            let extracted = extract_text_content(node);
+            text = if extracted.is_empty() {
+                None
+            } else {
+                Some(extracted)
+            };
         }
+    } else {
+        text = None;
     }
 
-    // Fallback: extract text content recursively
-    let text = extract_text_content(node);
-    if !text.is_empty() {
-        let ns_text = NSString::from_str(&text);
-        unsafe { label.setText(Some(&ns_text)) };
+    if let Some(content) = text {
+        let ns_text = NSString::from_str(&content);
+        unsafe {
+            label.setText(Some(&ns_text));
+
+            // Check if Taffy computed a valid height
+            // If not, use UIKit's native text measurement as fallback
+            // (Parley may not have access to iOS system fonts)
+            let current_frame = label.frame();
+            if current_frame.size.height <= 0.0 && current_frame.size.width > 0.0 {
+                use objc2_foundation::{NSPoint, NSRect, NSSize};
+
+                // Constrain width to Taffy's computed width, let UIKit measure height
+                let constrained_frame = NSRect::new(
+                    current_frame.origin,
+                    NSSize::new(current_frame.size.width, f64::MAX),
+                );
+                label.setFrame(constrained_frame);
+                label.sizeToFit();
+
+                // Restore position and width (sizeToFit may change them)
+                let sized_frame = label.frame();
+                let final_frame = NSRect::new(
+                    NSPoint::new(current_frame.origin.x, current_frame.origin.y),
+                    NSSize::new(current_frame.size.width, sized_frame.size.height),
+                );
+                label.setFrame(final_frame);
+            }
+        }
     }
 }

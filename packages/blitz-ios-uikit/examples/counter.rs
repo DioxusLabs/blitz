@@ -4,19 +4,14 @@
 //!
 //! # Running
 //!
-//! iOS Simulator (Apple Silicon Mac):
+//! Via Dioxus CLI:
+//! ```sh
+//! dx2 run --ios --example counter
+//! ```
+//!
+//! Direct build for iOS Simulator:
 //! ```sh
 //! cargo build --example counter --target aarch64-apple-ios-sim
-//! ```
-//!
-//! iOS Device:
-//! ```sh
-//! cargo build --example counter --target aarch64-apple-ios
-//! ```
-//!
-//! Mac Catalyst:
-//! ```sh
-//! cargo build --example counter --target aarch64-apple-ios-macabi
 //! ```
 
 #![cfg(target_os = "ios")]
@@ -28,8 +23,14 @@ use blitz_dom::DocumentConfig;
 use blitz_html::HtmlDocument;
 use blitz_ios_uikit::UIKitRenderer;
 use blitz_traits::shell::{ColorScheme, Viewport};
+use objc2::rc::Retained;
 use objc2_foundation::{MainThreadMarker, NSPoint, NSRect, NSSize};
 use objc2_ui_kit::UIView;
+use raw_window_handle::{HasWindowHandle, RawWindowHandle};
+use winit::application::ApplicationHandler;
+use winit::event::WindowEvent;
+use winit::event_loop::{ActiveEventLoop, EventLoop};
+use winit::window::{Window, WindowId};
 
 // =============================================================================
 // HTML Content
@@ -58,21 +59,22 @@ const HTML: &str = r#"
         .container {
             background: white;
             border-radius: 20px;
-            padding: 40px;
+            padding: 30px 50px;
             text-align: center;
+            min-width: 280px;
         }
 
         h1 {
             color: #333;
-            margin: 0 0 20px 0;
-            font-size: 48px;
+            margin: 0 0 16px 0;
+            font-size: 32px;
         }
 
         .count {
-            font-size: 72px;
+            font-size: 48px;
             font-weight: bold;
             color: #667eea;
-            margin: 20px 0;
+            margin: 16px 0;
         }
 
         .buttons {
@@ -120,71 +122,184 @@ const HTML: &str = r#"
 "#;
 
 // =============================================================================
-// Main Entry Point
+// Application State
 // =============================================================================
 
-fn main() {
-    println!("blitz-ios-uikit Counter Example");
-    println!("================================\n");
+struct App {
+    window: Option<Box<dyn Window>>,
+    renderer: Option<UIKitRenderer>,
+    doc: Option<Rc<RefCell<blitz_dom::BaseDocument>>>,
+}
 
-    // Parse the HTML document
-    println!("1. Parsing HTML document...");
-    let doc = HtmlDocument::from_html(HTML, DocumentConfig::default());
-    let mut base_doc = doc.into_inner();
-    println!("   Document created with root element\n");
+impl App {
+    fn new() -> Self {
+        Self {
+            window: None,
+            renderer: None,
+            doc: None,
+        }
+    }
+}
 
-    // Set viewport size and compute layout
-    println!("2. Computing layout (390x844 - iPhone 14 size)...");
-    let viewport = Viewport::new(390, 844, 3.0, ColorScheme::Light);
-    base_doc.set_viewport(viewport);
-    base_doc.resolve_layout();
-    println!("   Layout computed\n");
+impl ApplicationHandler for App {
+    fn can_create_surfaces(&mut self, event_loop: &dyn ActiveEventLoop) {
+        println!("[App] can_create_surfaces called");
 
-    // Get main thread marker (required for UIKit)
-    println!("3. Getting MainThreadMarker...");
-    let mtm = MainThreadMarker::new().expect("Must be called from main thread");
-    println!("   MainThreadMarker acquired\n");
+        // Create window
+        let window_attributes =
+            winit::window::WindowAttributes::default().with_title("Counter Example");
 
-    // Create a root UIView
-    println!("4. Creating root UIView...");
-    let root_frame = NSRect::new(NSPoint::new(0.0, 0.0), NSSize::new(390.0, 844.0));
-    let root_view = UIView::initWithFrame(mtm.alloc::<UIView>(), root_frame);
-    println!("   Root view created: {:?}\n", root_view.frame());
+        let window = event_loop.create_window(window_attributes).unwrap();
+        let size = window.surface_size();
+        let scale = window.scale_factor() as f32;
 
-    // Wrap document in Rc<RefCell> for the renderer
-    let doc = Rc::new(RefCell::new(base_doc));
+        println!(
+            "[App] Window created: {}x{} @ {}x scale",
+            size.width, size.height, scale
+        );
 
-    // Create the UIKit renderer
-    println!("5. Creating UIKitRenderer...");
-    let mut renderer = UIKitRenderer::new(doc.clone(), root_view.clone(), mtm);
-    renderer.set_scale(3.0); // iPhone Retina scale
-    println!("   Renderer created with scale: {}\n", renderer.scale());
+        // Get the UIView from the window handle
+        let mtm = MainThreadMarker::new().expect("Must be on main thread");
+        let root_view = get_uiview_from_window(&*window, mtm);
 
-    // Sync the DOM to UIKit views
-    println!("6. Syncing DOM to UIKit view hierarchy...");
-    renderer.sync();
-    println!("   Sync complete!\n");
+        println!("[App] Got UIView from window: {:?}", root_view.frame());
 
-    // Print view hierarchy info
-    println!("7. View hierarchy created:");
-    print_view_hierarchy(&root_view, 0);
+        // Parse HTML and create document
+        let html_doc = HtmlDocument::from_html(HTML, DocumentConfig::default());
+        let mut base_doc = html_doc.into_inner();
 
-    println!("\n================================");
-    println!("Example complete!");
-    println!("\nTo see this running on a real device:");
-    println!("  cargo build --example counter --target aarch64-apple-ios");
+        // Set viewport - use logical size (points), not physical pixels
+        let logical_width = (size.width as f32 / scale) as u32;
+        let logical_height = (size.height as f32 / scale) as u32;
+        println!(
+            "[App] Setting viewport to {}x{} logical pixels",
+            logical_width, logical_height
+        );
+
+        let viewport = Viewport::new(size.width, size.height, scale, ColorScheme::Light);
+        base_doc.set_viewport(viewport);
+
+        // Full resolution (styles + layout)
+        base_doc.resolve(0.0);
+
+        // Debug: print root element layout
+        let root = base_doc.root_element();
+        let layout = root.final_layout;
+        println!("[App] Root element layout: {:?}", layout);
+        println!("[App] Document layout computed");
+
+        // Wrap document
+        let doc = Rc::new(RefCell::new(base_doc));
+        self.doc = Some(doc.clone());
+
+        // Create UIKit renderer
+        let mut renderer = UIKitRenderer::new(doc, root_view.clone(), mtm);
+        renderer.set_scale(scale as f64);
+
+        // Sync DOM to UIKit views
+        println!("[App] Syncing DOM to UIKit views...");
+        renderer.sync();
+        println!("[App] Sync complete!");
+
+        // Debug: print view hierarchy
+        print_view_hierarchy(&root_view, 0);
+
+        self.renderer = Some(renderer);
+        self.window = Some(window);
+    }
+
+    fn window_event(
+        &mut self,
+        event_loop: &dyn ActiveEventLoop,
+        _window_id: WindowId,
+        event: WindowEvent,
+    ) {
+        match event {
+            WindowEvent::CloseRequested => {
+                println!("[App] Close requested");
+                event_loop.exit();
+            }
+            WindowEvent::RedrawRequested => {
+                // Re-sync views if needed
+                if let Some(renderer) = &mut self.renderer {
+                    renderer.sync();
+                }
+            }
+            WindowEvent::SurfaceResized(size) => {
+                println!("[App] Resized to {}x{}", size.width, size.height);
+                if let (Some(doc), Some(window)) = (&self.doc, &self.window) {
+                    let scale = window.scale_factor() as f32;
+                    let viewport =
+                        Viewport::new(size.width, size.height, scale, ColorScheme::Light);
+                    doc.borrow_mut().set_viewport(viewport);
+                    doc.borrow_mut().resolve(0.0);
+                    if let Some(renderer) = &mut self.renderer {
+                        renderer.sync();
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+
+    fn about_to_wait(&mut self, _event_loop: &dyn ActiveEventLoop) {
+        if let Some(window) = &self.window {
+            window.request_redraw();
+        }
+    }
+
+    fn resumed(&mut self, _event_loop: &dyn ActiveEventLoop) {
+        println!("[App] Resumed");
+    }
+}
+
+/// Extract UIView from a winit Window via raw_window_handle
+fn get_uiview_from_window(window: &dyn Window, mtm: MainThreadMarker) -> Retained<UIView> {
+    let handle = window.window_handle().expect("Failed to get window handle");
+    let raw_handle = handle.as_raw();
+
+    match raw_handle {
+        RawWindowHandle::UiKit(uikit_handle) => {
+            let ui_view_ptr = uikit_handle.ui_view.as_ptr();
+            // SAFETY: The pointer comes from winit's window handle and is valid
+            // We're on the main thread (verified by MainThreadMarker)
+            unsafe {
+                let ui_view: *mut UIView = ui_view_ptr.cast();
+                // Retain the view since we're going to use it
+                Retained::retain(ui_view).expect("UIView pointer should be valid")
+            }
+        }
+        _ => {
+            // Fallback: create a new UIView (won't be attached to window)
+            println!("[WARNING] Not a UIKit window handle, creating detached UIView");
+            let frame = NSRect::new(NSPoint::new(0.0, 0.0), NSSize::new(390.0, 844.0));
+            UIView::initWithFrame(mtm.alloc::<UIView>(), frame)
+        }
+    }
 }
 
 /// Print the UIView hierarchy for debugging
 fn print_view_hierarchy(view: &UIView, depth: usize) {
-    let indent = "   ".repeat(depth);
+    let indent = "  ".repeat(depth);
     let frame = view.frame();
     let subviews = view.subviews();
-    let count = subviews.len();
+
+    // Get class name
+    let class_name = unsafe {
+        use objc2::runtime::AnyObject;
+        let obj: &AnyObject = std::mem::transmute(view);
+        obj.class().name().to_str().unwrap_or("Unknown")
+    };
 
     println!(
-        "{}UIView: origin=({:.0}, {:.0}) size=({:.0}x{:.0}) subviews={}",
-        indent, frame.origin.x, frame.origin.y, frame.size.width, frame.size.height, count
+        "{}{}: ({:.0},{:.0}) {:.0}x{:.0} [{}]",
+        indent,
+        class_name,
+        frame.origin.x,
+        frame.origin.y,
+        frame.size.width,
+        frame.size.height,
+        subviews.len()
     );
 
     for subview in subviews.iter() {
@@ -192,14 +307,17 @@ fn print_view_hierarchy(view: &UIView, depth: usize) {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+// =============================================================================
+// Main Entry Point
+// =============================================================================
 
-    #[test]
-    fn html_parses() {
-        let doc = HtmlDocument::from_html(HTML, DocumentConfig::default());
-        let base = doc.into_inner();
-        assert!(base.root_element().element_data().is_some());
-    }
+fn main() {
+    println!("blitz-ios-uikit Counter Example");
+    println!("================================\n");
+
+    let event_loop = EventLoop::new().expect("Failed to create event loop");
+    let app = App::new();
+
+    println!("[Main] Starting event loop...");
+    event_loop.run_app(app).expect("Event loop failed");
 }

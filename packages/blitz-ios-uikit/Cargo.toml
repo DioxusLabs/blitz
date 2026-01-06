@@ -17,7 +17,10 @@ path = "src/lib.rs"
 # It demonstrates UIKit patterns with objc2 but requires external Swift FFI
 
 [dependencies]
-blitz-dom = { workspace = true, features = ["svg"]}
+# Note: system_fonts enables CoreText font backend on iOS/macOS
+# woff-rust enables pure-Rust WOFF font decoding for web fonts
+# floats enables CSS float layout support
+blitz-dom = { workspace = true, features = ["svg", "system_fonts", "woff-rust", "floats"]}
 blitz-traits = { workspace = true }
 rustc-hash = { workspace = true }
 taffy = { workspace = true }
@@ -29,6 +32,8 @@ style = { workspace = true }
 
 [dev-dependencies]
 blitz-html = { workspace = true }
+winit = { workspace = true }
+raw-window-handle = "0.6"
 
 # objc2 bindings for iOS (UIKit requires iOS or Mac Catalyst)
 # For Mac Catalyst, build with: --target aarch64-apple-ios-macabi

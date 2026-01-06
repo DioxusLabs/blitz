@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <style>
+        html, body {
+            margin: 0;
+            padding: 0;
+            height: 100%;
+            font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+        }
+
+        body {
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        }
+
+        .container {
+            background: white;
+            border-radius: 20px;
+            padding: 40px;
+            text-align: center;
+        }
+
+        h1 {
+            color: #333;
+            margin: 0 0 20px 0;
+            font-size: 48px;
+        }
+
+        .count {
+            font-size: 72px;
+            font-weight: bold;
+            color: #667eea;
+            margin: 20px 0;
+        }
+
+        .buttons {
+            display: flex;
+            gap: 10px;
+            justify-content: center;
+        }
+
+        button {
+            padding: 15px 30px;
+            font-size: 24px;
+            border: none;
+            border-radius: 10px;
+        }
+
+        .btn-increment {
+            background: #4CAF50;
+            color: white;
+        }
+
+        .btn-decrement {
+            background: #f44336;
+            color: white;
+        }
+
+        .btn-reset {
+            background: #2196F3;
+            color: white;
+            margin-top: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Counter</h1>
+        <div class="count" id="count">0</div>
+        <div class="buttons">
+            <button class="btn-decrement" id="decrement">-</button>
+            <button class="btn-increment" id="increment">+</button>
+        </div>
+        <button class="btn-reset" id="reset">Reset</button>
+    </div>
+</body>
+</html>

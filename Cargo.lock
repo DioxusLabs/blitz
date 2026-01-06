@@ -866,9 +866,11 @@ dependencies = [
  "objc2-foundation 0.3.2",
  "objc2-quartz-core 0.3.2",
  "objc2-ui-kit",
+ "raw-window-handle",
  "rustc-hash 1.1.0",
  "stylo",
  "taffy",
+ "winit",
 ]
 
 [[package]]

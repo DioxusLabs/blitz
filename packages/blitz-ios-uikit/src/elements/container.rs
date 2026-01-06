@@ -94,8 +94,9 @@ impl BlitzView {
         // Enable user interaction by default
         unsafe { view.setUserInteractionEnabled(true) };
 
-        // Clips to bounds by default (matching CSS behavior)
-        unsafe { view.setClipsToBounds(true) };
+        // Don't clip by default (CSS overflow: visible is the default)
+        // Clipping will be enabled by apply_visual_styles for overflow: hidden/scroll/auto
+        unsafe { view.setClipsToBounds(false) };
 
         view
     }

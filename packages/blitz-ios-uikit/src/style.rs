@@ -5,7 +5,7 @@
 
 use blitz_dom::Node;
 use objc2_foundation::{NSPoint, NSRect, NSSize};
-use objc2_ui_kit::{UIColor, UIFont, UILabel, UIView};
+use objc2_ui_kit::{UIButton, UIColor, UIFont, UILabel, UIView};
 use style::properties::ComputedValues;
 
 /// Apply layout (position and size) from Taffy to a UIView.
@@ -14,29 +14,41 @@ use style::properties::ComputedValues;
 ///
 /// * `view` - The UIView to update
 /// * `node` - The DOM node with layout information
-/// * `parent_origin` - The origin of the parent view in screen coordinates
-/// * `scale` - Scale factor (points per CSS pixel)
-pub fn apply_layout(view: &UIView, node: &Node, parent_origin: NSPoint, scale: f64) {
+/// * `frame_offset` - Additional offset to apply (from skipped anonymous blocks)
+/// * `_scale` - Unused (CSS pixels map 1:1 to UIKit points)
+pub fn apply_layout(view: &UIView, node: &Node, frame_offset: NSPoint, _scale: f64) {
     let layout = node.final_layout;
 
     // Convert Taffy layout (in CSS pixels) to UIKit frame (in points)
+    // UIView frames are always relative to the parent view's coordinate system.
+    // CSS pixels map 1:1 to UIKit points - the scale factor is handled by the OS
+    // when rendering to physical pixels.
+    //
+    // frame_offset is added when a view is placed directly into a grandparent
+    // (skipping anonymous blocks) - it contains the accumulated positions of
+    // skipped ancestors.
     let frame = NSRect::new(
         NSPoint::new(
-            parent_origin.x + layout.location.x as f64 * scale,
-            parent_origin.y + layout.location.y as f64 * scale,
+            frame_offset.x + layout.location.x as f64,
+            frame_offset.y + layout.location.y as f64,
         ),
-        NSSize::new(
-            layout.size.width as f64 * scale,
-            layout.size.height as f64 * scale,
-        ),
+        NSSize::new(layout.size.width as f64, layout.size.height as f64),
     );
 
     unsafe { view.setFrame(frame) };
 }
 
 /// Apply visual styles (background, border, opacity) to a UIView.
-pub fn apply_visual_styles(view: &UIView, node: &Node, scale: f64) {
+pub fn apply_visual_styles(view: &UIView, node: &Node, _scale: f64) {
     let Some(styles) = node.primary_styles() else {
+        #[cfg(debug_assertions)]
+        {
+            let frame = view.frame();
+            println!(
+                "[Style] NO STYLES for view at ({:.0},{:.0}) {:.0}x{:.0}",
+                frame.origin.x, frame.origin.y, frame.size.width, frame.size.height
+            );
+        }
         return;
     };
 
@@ -44,17 +56,18 @@ pub fn apply_visual_styles(view: &UIView, node: &Node, scale: f64) {
     apply_background_color(view, &styles);
 
     // Apply border
-    apply_border(view, &styles, scale);
+    apply_border(view, &styles);
 
     // Apply opacity
     apply_opacity(view, &styles);
 
     // Apply visibility
     apply_visibility(view, &styles);
+
 }
 
 /// Apply text styles to a UILabel.
-pub fn apply_text_styles(label: &UILabel, node: &Node, scale: f64) {
+pub fn apply_text_styles(label: &UILabel, node: &Node, _scale: f64) {
     let Some(styles) = node.primary_styles() else {
         return;
     };
@@ -63,10 +76,67 @@ pub fn apply_text_styles(label: &UILabel, node: &Node, scale: f64) {
     apply_text_color(label, &styles);
 
     // Apply font
-    apply_font(label, &styles, scale);
+    apply_font(label, &styles);
 
     // Apply text alignment
     apply_text_alignment(label, &styles);
+}
+
+/// Apply text styles to a UIButton.
+pub fn apply_button_styles(button: &UIButton, node: &Node, _scale: f64) {
+    let Some(styles) = node.primary_styles() else {
+        #[cfg(debug_assertions)]
+        println!("[Button] No styles for button!");
+        return;
+    };
+
+    // Apply title color from CSS 'color' property
+    let color = styles.clone_color();
+    if let Some(ui_color) = stylo_color_to_uicolor(&color) {
+        unsafe {
+            button.setTitleColor_forState(Some(&ui_color), objc2_ui_kit::UIControlState::Normal);
+        }
+    }
+
+    // Apply background color
+    let current_color = styles.clone_color();
+    let bg = styles.clone_background_color();
+    let bg_absolute = bg.resolve_to_absolute(&current_color);
+
+    if let Some(ui_color) = stylo_color_to_uicolor(&bg_absolute) {
+        unsafe {
+            button.setBackgroundColor(Some(&ui_color));
+        }
+    }
+
+    // Apply border radius
+    let border = styles.get_border();
+    let radii = &border.border_top_left_radius;
+    let radius = radii
+        .0
+        .width
+        .0
+        .resolve(style::values::computed::Au(0).into())
+        .px() as f64;
+    if radius > 0.0 {
+        unsafe {
+            let layer = button.layer();
+            layer.setCornerRadius(radius);
+            layer.setMasksToBounds(true);
+        }
+    }
+
+    // Apply font
+    let font_style = styles.get_font();
+    let font_size = font_style.font_size.computed_size.px() as f64;
+    let weight = font_weight_to_uifont_weight(&font_style);
+    let ui_font = unsafe { UIFont::systemFontOfSize_weight(font_size, weight) };
+
+    unsafe {
+        if let Some(title_label) = button.titleLabel() {
+            title_label.setFont(Some(&ui_font));
+        }
+    }
 }
 
 // =============================================================================
@@ -83,7 +153,7 @@ fn apply_background_color(view: &UIView, styles: &ComputedValues) {
     }
 }
 
-fn apply_border(view: &UIView, styles: &ComputedValues, scale: f64) {
+fn apply_border(view: &UIView, styles: &ComputedValues) {
     let layer = unsafe { view.layer() };
 
     let border = styles.get_border();
@@ -91,16 +161,14 @@ fn apply_border(view: &UIView, styles: &ComputedValues, scale: f64) {
 
     // Border width (use top border as representative)
     // Note: UIKit doesn't support non-uniform border widths
-    let border_width = border.border_top_width.to_f64_px() * scale;
+    let border_width = border.border_top_width.to_f64_px();
     unsafe { layer.setBorderWidth(border_width) };
 
     // Border color - get CGColor from UIColor
     let border_color = border.border_top_color.resolve_to_absolute(&current_color);
     if let Some(ui_color) = stylo_color_to_uicolor(&border_color) {
         let cg_color = unsafe { ui_color.CGColor() };
-        // if let Some(cg_color) = unsafe { ui_color.CGColor() } {
         unsafe { layer.setBorderColor(Some(&cg_color)) };
-        // }
     }
 
     // Corner radius
@@ -112,8 +180,7 @@ fn apply_border(view: &UIView, styles: &ComputedValues, scale: f64) {
         .width
         .0
         .resolve(style::values::computed::Au(0).into())
-        .px() as f64
-        * scale;
+        .px() as f64;
 
     unsafe { layer.setCornerRadius(radius) };
 
@@ -143,11 +210,11 @@ fn apply_text_color(label: &UILabel, styles: &ComputedValues) {
     }
 }
 
-fn apply_font(label: &UILabel, styles: &ComputedValues, scale: f64) {
+fn apply_font(label: &UILabel, styles: &ComputedValues) {
     let font_style = styles.get_font();
 
-    // Get font size
-    let font_size = font_style.font_size.computed_size.px() as f64 * scale;
+    // Get font size (CSS pixels = UIKit points)
+    let font_size = font_style.font_size.computed_size.px() as f64;
 
     // Get font weight
     let weight = font_weight_to_uifont_weight(&font_style);

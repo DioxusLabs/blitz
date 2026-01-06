@@ -7,7 +7,7 @@ mod checkbox;
 mod container;
 mod image;
 mod input;
-mod text;
+pub mod text;
 
 use blitz_dom::Node;
 use markup5ever::local_name;
@@ -87,6 +87,17 @@ pub fn element_type_for_node(node: &Node) -> Option<ElementType> {
         // Check if element is scrollable (would need computed styles)
         // For now, just treat as container - we'll enhance this later
         _ => {
+            // Check if this container is an inline root with actual text content
+            // Anonymous inline boxes (wrapping buttons, etc) may be inline roots
+            // but have empty text - render those as containers, not labels
+            if node.flags.is_inline_root() {
+                if let Some(inline_layout) = &element_data.inline_layout_data {
+                    // Only render as Text if there's non-whitespace text content
+                    if !inline_layout.text.trim().is_empty() {
+                        return Some(ElementType::Text);
+                    }
+                }
+            }
             // Default to container for all other elements
             Some(ElementType::Container)
         }

@@ -6,11 +6,11 @@
 use blitz_dom::Node;
 use blitz_dom::node::NodeData;
 use objc2_foundation::NSPoint;
-use objc2_ui_kit::{UILabel, UIView};
+use objc2_ui_kit::{UIButton, UILabel, UIView};
 use style::values::computed::Display as StyloDisplay;
 
 use crate::elements::{ElementType, create_view, element_type_for_node, update_view};
-use crate::style::{apply_layout, apply_text_styles, apply_visual_styles};
+use crate::style::{apply_button_styles, apply_layout, apply_text_styles, apply_visual_styles};
 use crate::{UIKitRenderer, ViewEntry};
 
 /// Synchronize the UIKit view hierarchy with the DOM tree.
@@ -36,12 +36,12 @@ pub fn sync_tree(renderer: &mut UIKitRenderer) {
     drop(doc);
 
     {
-        // Start syncing from root
+        // Start syncing from root with zero frame offset
         sync_node(
             renderer,
             root_element_id,
             &root_view,
-            NSPoint::new(0.0, 0.0),
+            NSPoint::new(0.0, 0.0), // frame_offset: no offset for root
             scale,
             generation,
         );
@@ -52,11 +52,16 @@ pub fn sync_tree(renderer: &mut UIKitRenderer) {
 }
 
 /// Sync a single node and its children.
+///
+/// # Arguments
+/// * `frame_offset` - Additional offset to apply when setting this node's frame.
+///   This accumulates positions from skipped anonymous blocks. For normal views,
+///   children receive (0,0) since their frames are relative to the new view.
 fn sync_node(
     renderer: &mut UIKitRenderer,
     node_id: usize,
     parent_view: &UIView,
-    parent_offset: NSPoint,
+    frame_offset: NSPoint,
     scale: f64,
     generation: u64,
 ) {
@@ -83,12 +88,12 @@ fn sync_node(
         // Text content is handled by the parent element
         drop(doc);
 
-        // Recursively sync children
+        // Recursively sync children (pass same frame_offset since no view was created)
         sync_children(
             renderer,
             node_id,
             parent_view,
-            parent_offset,
+            frame_offset,
             scale,
             generation,
         );
@@ -98,6 +103,28 @@ fn sync_node(
     // Get or create view
     let mtm = renderer.main_thread_marker();
     let event_sender = renderer.event_sender().clone();
+
+    // Check if this is an anonymous block that we should skip.
+    // Anonymous blocks are created by Stylo for layout purposes but don't render
+    // their children correctly when mapped to UIKit views.
+    // We skip creating a view for them and sync children directly to parent.
+    let is_anonymous = node.is_anonymous();
+
+    // Skip anonymous blocks - sync their children directly to parent
+    if is_anonymous && element_type == ElementType::Container {
+        // Accumulate this skipped node's position into frame_offset
+        let layout = node.final_layout;
+        let accumulated_offset = NSPoint::new(
+            frame_offset.x + layout.location.x as f64,
+            frame_offset.y + layout.location.y as f64,
+        );
+
+        drop(doc);
+
+        // Sync children directly to the parent view, with accumulated offset
+        sync_children(renderer, node_id, parent_view, accumulated_offset, scale, generation);
+        return;
+    }
 
     let view = match renderer.view_map_mut().get_mut(&node_id) {
         Some(entry) if entry.element_type == element_type => {
@@ -156,28 +183,31 @@ fn sync_node(
     let doc = doc.borrow();
     let node = doc.get_node(node_id).unwrap();
 
-    // Apply layout and styles
-    apply_layout(&view, node, parent_offset, scale);
+    // Apply layout (with frame_offset from any skipped ancestors) and styles
+    apply_layout(&view, node, frame_offset, scale);
     apply_visual_styles(&view, node, scale);
 
-    // Apply text styles if this is a text element
+    // Apply text styles and content if this is a text element
     if element_type == ElementType::Text {
         // SAFETY: Text elements are UILabels
         let label: &UILabel = unsafe { std::mem::transmute(&*view) };
         apply_text_styles(label, node, scale);
+
+        // Update text content
+        crate::elements::text::update_label(&view, node);
     }
 
-    // Calculate child offset
-    let layout = node.final_layout;
-    let child_offset = NSPoint::new(
-        parent_offset.x + layout.location.x as f64 * scale,
-        parent_offset.y + layout.location.y as f64 * scale,
-    );
+    // Apply button styles (title color, background, font)
+    if element_type == ElementType::Button {
+        // SAFETY: Button elements are UIButtons
+        let button: &UIButton = unsafe { std::mem::transmute(&*view) };
+        apply_button_styles(button, node, scale);
+    }
 
     drop(doc);
 
-    // Sync children
-    sync_children(renderer, node_id, &view, child_offset, scale, generation);
+    // Sync children with zero frame_offset since they're relative to this new view
+    sync_children(renderer, node_id, &view, NSPoint::new(0.0, 0.0), scale, generation);
 }
 
 /// Sync children of a node.
@@ -185,7 +215,7 @@ fn sync_children(
     renderer: &mut UIKitRenderer,
     parent_node_id: usize,
     parent_view: &UIView,
-    parent_offset: NSPoint,
+    frame_offset: NSPoint,
     scale: f64,
     generation: u64,
 ) {
@@ -212,7 +242,7 @@ fn sync_children(
             renderer,
             child_id,
             parent_view,
-            parent_offset,
+            frame_offset,
             scale,
             generation,
         );
