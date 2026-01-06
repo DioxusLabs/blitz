@@ -1,0 +1,58 @@
+[package]
+name = "blitz-ios-uikit"
+version.workspace = true
+license.workspace = true
+homepage.workspace = true
+repository.workspace = true
+categories.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "UIKit renderer for blitz-dom - maps DOM nodes to native iOS views"
+
+[lib]
+name = "blitz_ios_uikit"
+path = "src/lib.rs"
+
+# Note: inspo.rs is kept as reference code, not a runnable example
+# It demonstrates UIKit patterns with objc2 but requires external Swift FFI
+
+[dependencies]
+blitz-dom = { workspace = true, features = ["svg"]}
+blitz-traits = { workspace = true }
+rustc-hash = { workspace = true }
+taffy = { workspace = true }
+keyboard-types = { workspace = true }
+markup5ever = { workspace = true }
+
+# Stylo (for computed styles)
+style = { workspace = true }
+
+# objc2 bindings for iOS
+objc2 = "0.6"
+objc2-foundation = { version = "0.3", features = ["NSThread", "NSString", "NSDictionary", "NSSet", "NSEnumerator", "NSGeometry"] }
+objc2-ui-kit = { version = "0.3", features = [
+    "UIResponder",
+    "UIView",
+    "UIViewController",
+    "UIWindow",
+    "UIScreen",
+    "UIApplication",
+    "UIColor",
+    "UILabel",
+    "UIButton",
+    "UIButtonConfiguration",
+    "UIControl",
+    "UITextField",
+    "UITextInput",
+    "UISwitch",
+    "UIImageView",
+    "UIScrollView",
+    "UIImage",
+    "UITouch",
+    "UIEvent",
+    "UIGestureRecognizer",
+    "UIFont",
+    "NSText",
+    "NSAttributedString",
+] }
+objc2-quartz-core = { version = "0.3", features = ["CALayer"] }

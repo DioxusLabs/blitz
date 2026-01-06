@@ -18,7 +18,7 @@ members = [
   "wpt/runner",
   "examples/counter",
   "examples/todomvc",
-  "examples/wgpu_texture",
+  "examples/wgpu_texture", "packages/blitz-ios-uikit",
 ]
 exclude = ["sites"]
 resolver = "2"

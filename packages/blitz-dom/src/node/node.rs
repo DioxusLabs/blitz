@@ -196,7 +196,7 @@ impl Node {
         }
     }
 
-    pub(crate) fn display_style(&self) -> Option<StyloDisplay> {
+    pub fn display_style(&self) -> Option<StyloDisplay> {
         Some(self.primary_styles().as_ref()?.clone_display())
     }
 
