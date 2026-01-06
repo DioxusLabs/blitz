@@ -859,10 +859,13 @@ version = "0.2.0"
 dependencies = [
  "blitz-dom",
  "blitz-html",
+ "blitz-net",
  "blitz-traits",
  "keyboard-types 0.7.0",
  "markup5ever",
  "objc2 0.6.3",
+ "objc2-core-foundation",
+ "objc2-core-graphics",
  "objc2-foundation 0.3.2",
  "objc2-quartz-core 0.3.2",
  "objc2-ui-kit",
@@ -870,6 +873,7 @@ dependencies = [
  "rustc-hash 1.1.0",
  "stylo",
  "taffy",
+ "tokio",
  "winit",
 ]
 
@@ -4528,6 +4532,7 @@ dependencies = [
  "bitflags 2.10.0",
  "block2 0.6.2",
  "dispatch2",
+ "libc",
  "objc2 0.6.3",
 ]
 
@@ -4538,11 +4543,13 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e022c9d066895efa1345f8e33e584b9f958da2fd4cd116792e15e07e4720a807"
 dependencies = [
  "bitflags 2.10.0",
+ "block2 0.6.2",
  "dispatch2",
  "libc",
  "objc2 0.6.3",
  "objc2-core-foundation",
  "objc2-io-surface",
+ "objc2-metal 0.3.2",
 ]
 
 [[package]]

@@ -32,8 +32,10 @@ style = { workspace = true }
 
 [dev-dependencies]
 blitz-html = { workspace = true }
+blitz-net = { workspace = true }
 winit = { workspace = true }
 raw-window-handle = "0.6"
+tokio = { version = "1", features = ["rt", "macros", "time"] }
 
 # objc2 bindings for iOS (UIKit requires iOS or Mac Catalyst)
 # For Mac Catalyst, build with: --target aarch64-apple-ios-macabi
@@ -66,3 +68,10 @@ objc2-ui-kit = { version = "0.3", features = [
     "NSAttributedString",
 ] }
 objc2-quartz-core = { version = "0.3", features = ["CALayer"] }
+objc2-core-foundation = { version = "0.3", features = ["CFData"] }
+objc2-core-graphics = { version = "0.3", features = [
+    "CGImage",
+    "CGDataProvider",
+    "CGColorSpace",
+    "CGBitmapContext",  # for CGImageAlphaInfo
+] }

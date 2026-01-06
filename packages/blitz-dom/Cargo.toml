@@ -70,7 +70,8 @@ fastrand = { workspace = true }
 rayon = { workspace = true }
 
 # Media & Decoding
-image = { workspace = true }
+# Note: image crate needs format features enabled for web image support
+image = { workspace = true, features = ["png", "jpeg", "gif", "webp"] }
 usvg = { workspace = true, optional = true }
 woff = { workspace = true, optional = true, features = ["version1", "version2"] }
 wuff = { workspace = true, optional = true }

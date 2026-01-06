@@ -871,8 +871,13 @@ impl BaseDocument {
         // without holding a borrow to the Document
         let rx = self.rx.take().unwrap();
 
+        let mut count = 0;
         while let Ok(msg) = rx.try_recv() {
+            count += 1;
             self.handle_message(msg);
+        }
+        if count > 0 {
+            eprintln!("[blitz-dom] Processed {} messages", count);
         }
 
         // Put Reciever back
@@ -887,7 +892,13 @@ impl BaseDocument {
 
     pub fn load_resource(&mut self, res: ResourceLoadResponse) {
         let Ok(resource) = res.result else {
-            // TODO: handle error
+            // Log the error for debugging
+            if let Err(ref error) = res.result {
+                eprintln!(
+                    "[blitz-dom] Resource load failed for node {:?}: {}",
+                    res.node_id, error
+                );
+            }
             return;
         };
 
@@ -898,6 +909,10 @@ impl BaseDocument {
             }
             Resource::Image(kind, width, height, image_data) => {
                 let node_id = res.node_id.unwrap();
+                eprintln!(
+                    "[blitz-dom] Image loaded for node {}: {}x{}, {} bytes",
+                    node_id, width, height, image_data.len()
+                );
                 let node = self.get_node_mut(node_id).unwrap();
 
                 match kind {
@@ -906,6 +921,7 @@ impl BaseDocument {
                             SpecialElementData::Image(Box::new(ImageData::Raster(
                                 RasterImageData::new(width, height, image_data),
                             )));
+                        eprintln!("[blitz-dom] Image data stored in node {} special_data", node_id);
 
                         // Clear layout cache
                         node.cache.clear();

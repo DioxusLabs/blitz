@@ -18,10 +18,12 @@
 
 use std::cell::RefCell;
 use std::rc::Rc;
+use std::sync::Arc;
 
-use blitz_dom::DocumentConfig;
+use blitz_dom::{DocumentConfig, local_name};
 use blitz_html::HtmlDocument;
 use blitz_ios_uikit::UIKitRenderer;
+use blitz_net::Provider;
 use blitz_traits::shell::{ColorScheme, Viewport};
 use objc2::rc::Retained;
 use objc2_foundation::{MainThreadMarker, NSPoint, NSRect, NSSize};
@@ -105,10 +107,18 @@ const HTML: &str = r#"
             color: white;
             margin-top: 10px;
         }
+
+        .logo {
+            width: 80px;
+            height: 80px;
+            margin-bottom: 16px;
+            border-radius: 16px;
+        }
     </style>
 </head>
 <body>
     <div class="container">
+        <img class="logo" src="https://avatars.githubusercontent.com/u/79236386?s=200&v=4" alt="Dioxus Logo" />
         <h1>Counter</h1>
         <div class="count" id="count">0</div>
         <div class="buttons">
@@ -129,14 +139,25 @@ struct App {
     window: Option<Box<dyn Window>>,
     renderer: Option<UIKitRenderer>,
     doc: Option<Rc<RefCell<blitz_dom::BaseDocument>>>,
+    net: Arc<Provider>,
+    rt: tokio::runtime::Runtime,
 }
 
 impl App {
     fn new() -> Self {
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .expect("Failed to create Tokio runtime");
+
+        let net = rt.block_on(async { Arc::new(Provider::new(None)) });
+
         Self {
             window: None,
             renderer: None,
             doc: None,
+            net,
+            rt,
         }
     }
 }
@@ -164,23 +185,88 @@ impl ApplicationHandler for App {
 
         println!("[App] Got UIView from window: {:?}", root_view.frame());
 
-        // Parse HTML and create document
-        let html_doc = HtmlDocument::from_html(HTML, DocumentConfig::default());
+        // Parse HTML and create document with network provider for images
+        let viewport = Viewport::new(size.width, size.height, scale, ColorScheme::Light);
+        let html_doc = HtmlDocument::from_html(
+            HTML,
+            DocumentConfig {
+                net_provider: Some(Arc::clone(&self.net) as _),
+                viewport: Some(viewport.clone()),
+                ..Default::default()
+            },
+        );
         let mut base_doc = html_doc.into_inner();
 
-        // Set viewport - use logical size (points), not physical pixels
-        let logical_width = (size.width as f32 / scale) as u32;
-        let logical_height = (size.height as f32 / scale) as u32;
+        // Set viewport
         println!(
-            "[App] Setting viewport to {}x{} logical pixels",
-            logical_width, logical_height
+            "[App] Setting viewport to {}x{} @ {}x scale",
+            size.width, size.height, scale
         );
-
-        let viewport = Viewport::new(size.width, size.height, scale, ColorScheme::Light);
         base_doc.set_viewport(viewport);
 
-        // Full resolution (styles + layout)
-        base_doc.resolve(0.0);
+        // Resolve styles and layout, waiting for images to load
+        // blitz-net requires a Tokio runtime for async network requests
+        println!("[App] Loading assets...");
+
+        // Check if img element exists and has src attribute
+        base_doc.visit(|node_id, node| {
+            if let Some(element) = node.element_data() {
+                if element.name.local.as_ref() == "img" {
+                    println!(
+                        "[App] Found img element at node {}: src={:?}",
+                        node_id,
+                        element.attr(local_name!("src"))
+                    );
+                }
+            }
+        });
+
+        let net = Arc::clone(&self.net);
+        self.rt.block_on(async {
+            let mut iterations = 0;
+            let mut had_pending = false;
+            loop {
+                base_doc.resolve(0.0);
+                let pending = net.count();
+                println!(
+                    "[App] Resolve iteration {}, pending requests: {}",
+                    iterations, pending
+                );
+
+                if pending > 0 {
+                    had_pending = true;
+                }
+
+                // Only exit after we've seen pending requests AND they're all done
+                // AND we've had at least a few iterations to process responses
+                if had_pending && net.is_empty() && iterations > 5 {
+                    break;
+                }
+
+                // Give at least some iterations for requests to be queued
+                if iterations > 200 {
+                    println!("[App] Max iterations reached, giving up on asset loading");
+                    break;
+                }
+                iterations += 1;
+                // Yield to allow network tasks to progress
+                tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+            }
+
+            // Check image data after loading
+            base_doc.visit(|node_id, node| {
+                if let Some(element) = node.element_data() {
+                    if element.name.local.as_ref() == "img" {
+                        println!(
+                            "[App] After load - img node {} special_data: {:?}",
+                            node_id,
+                            std::mem::discriminant(&element.special_data)
+                        );
+                    }
+                }
+            });
+        });
+        println!("[App] Assets loaded");
 
         // Debug: print root element layout
         let root = base_doc.root_element();
