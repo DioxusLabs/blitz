@@ -858,6 +858,7 @@ name = "blitz-ios-uikit"
 version = "0.2.0"
 dependencies = [
  "blitz-dom",
+ "blitz-html",
  "blitz-traits",
  "keyboard-types 0.7.0",
  "markup5ever",

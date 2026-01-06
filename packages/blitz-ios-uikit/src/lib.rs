@@ -15,13 +15,27 @@
 //!
 //! Layout is computed by Taffy (CSS flexbox/grid) and applied as UIView frames.
 //! Events from UIKit are bridged back to blitz-dom's event system.
+//!
+//! # Platform Support
+//!
+//! This crate only compiles on iOS. To run on macOS, use Mac Catalyst:
+//! ```sh
+//! cargo build --target aarch64-apple-ios-macabi
+//! ```
+//!
+//! For iOS simulator:
+//! ```sh
+//! cargo build --target aarch64-apple-ios-sim
+//! ```
+
+#![cfg(target_os = "ios")]
 
 mod elements;
 mod events;
 mod style;
 mod sync;
 
-use std::cell::{Cell, RefCell};
+use std::cell::RefCell;
 use std::rc::Rc;
 
 use blitz_dom::BaseDocument;

@@ -27,7 +27,12 @@ markup5ever = { workspace = true }
 # Stylo (for computed styles)
 style = { workspace = true }
 
-# objc2 bindings for iOS
+[dev-dependencies]
+blitz-html = { workspace = true }
+
+# objc2 bindings for iOS (UIKit requires iOS or Mac Catalyst)
+# For Mac Catalyst, build with: --target aarch64-apple-ios-macabi
+[target.'cfg(target_os = "ios")'.dependencies]
 objc2 = "0.6"
 objc2-foundation = { version = "0.3", features = ["NSThread", "NSString", "NSDictionary", "NSSet", "NSEnumerator", "NSGeometry"] }
 objc2-ui-kit = { version = "0.3", features = [
