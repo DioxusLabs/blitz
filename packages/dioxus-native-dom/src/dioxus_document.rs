@@ -250,6 +250,21 @@ impl Document for DioxusDocument {
     }
 }
 
+impl DioxusDocument {
+    /// Handle a DOM event directly (e.g., from native platform controls).
+    ///
+    /// This is used for events that don't originate from pointer/keyboard input,
+    /// such as text input changes from native UITextField on iOS.
+    pub fn handle_dom_event(&mut self, event: DomEvent) {
+        let handler = DioxusEventHandler {
+            vdom: &mut self.vdom,
+            vdom_state: &mut self.vdom_state,
+        };
+        let mut driver = EventDriver::new(&mut self.inner, handler);
+        driver.handle_dom_event(event);
+    }
+}
+
 pub struct DioxusEventHandler<'v> {
     vdom: &'v mut VirtualDom,
     vdom_state: &'v mut DioxusState,

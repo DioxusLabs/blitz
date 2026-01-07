@@ -8,11 +8,11 @@ use blitz_dom::Node;
 use markup5ever::local_name;
 use objc2::rc::Retained;
 use objc2::runtime::NSObjectProtocol;
-use objc2::{DefinedClass, MainThreadOnly, define_class, msg_send};
+use objc2::{DefinedClass, MainThreadOnly, define_class, msg_send, sel};
 use objc2_foundation::{MainThreadMarker, NSString};
-use objc2_ui_kit::{UITextBorderStyle, UITextField, UITextInputTraits, UIView};
+use objc2_ui_kit::{UIControlEvents, UITextBorderStyle, UITextField, UITextInputTraits, UIView};
 
-use crate::events::EventSender;
+use crate::events::{queue_focus_gained, queue_focus_lost, queue_text_changed, EventSender};
 
 // =============================================================================
 // BlitzTextField - Custom UITextField with event bridging
@@ -33,6 +33,40 @@ define_class!(
     pub struct BlitzTextField;
 
     unsafe impl NSObjectProtocol for BlitzTextField {}
+
+    impl BlitzTextField {
+        /// Called when the text field's text changes.
+        #[unsafe(method(handleEditingChanged:))]
+        fn handle_editing_changed(&self, _sender: &UITextField) {
+            let node_id = self.ivars().node_id.get();
+
+            // Get the current text value
+            let value = unsafe {
+                self.text()
+                    .map(|s| s.to_string())
+                    .unwrap_or_default()
+            };
+
+            println!("[BlitzTextField] EditingChanged node_id={} value={:?}", node_id, value);
+            queue_text_changed(node_id, value);
+        }
+
+        /// Called when the text field begins editing (gains focus).
+        #[unsafe(method(handleEditingDidBegin:))]
+        fn handle_editing_did_begin(&self, _sender: &UITextField) {
+            let node_id = self.ivars().node_id.get();
+            println!("[BlitzTextField] EditingDidBegin (focus) node_id={}", node_id);
+            queue_focus_gained(node_id);
+        }
+
+        /// Called when the text field ends editing (loses focus).
+        #[unsafe(method(handleEditingDidEnd:))]
+        fn handle_editing_did_end(&self, _sender: &UITextField) {
+            let node_id = self.ivars().node_id.get();
+            println!("[BlitzTextField] EditingDidEnd (blur) node_id={}", node_id);
+            queue_focus_lost(node_id);
+        }
+    }
 );
 
 impl BlitzTextField {
@@ -48,6 +82,30 @@ impl BlitzTextField {
         unsafe {
             // Add a visible border
             text_field.setBorderStyle(UITextBorderStyle::RoundedRect);
+        }
+
+        // Wire up event handlers using target-action pattern
+        unsafe {
+            // Text changed event
+            text_field.addTarget_action_forControlEvents(
+                Some(&*text_field),
+                sel!(handleEditingChanged:),
+                UIControlEvents::EditingChanged,
+            );
+
+            // Focus gained event
+            text_field.addTarget_action_forControlEvents(
+                Some(&*text_field),
+                sel!(handleEditingDidBegin:),
+                UIControlEvents::EditingDidBegin,
+            );
+
+            // Focus lost event
+            text_field.addTarget_action_forControlEvents(
+                Some(&*text_field),
+                sel!(handleEditingDidEnd:),
+                UIControlEvents::EditingDidEnd,
+            );
         }
 
         text_field
@@ -66,6 +124,7 @@ pub fn create_text_field(
     node_id: usize,
     _event_sender: &EventSender,
 ) -> Retained<UIView> {
+    println!("[BlitzTextField] Creating text field for node_id={}", node_id);
     let text_field = BlitzTextField::new(mtm, node_id);
 
     // Apply initial attributes

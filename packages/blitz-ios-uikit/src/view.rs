@@ -4,6 +4,7 @@
 //! renderer, and waker to provide proper async integration with the event loop.
 
 use crate::application::{UIKitProxy, create_waker};
+use crate::events::{drain_input_events, input_event_to_dom_event};
 use crate::UIKitRenderer;
 
 use std::cell::{Cell, RefCell};
@@ -11,13 +12,15 @@ use std::rc::Rc;
 use std::sync::Arc;
 use std::task::Waker;
 
-use blitz_dom::BaseDocument;
+use blitz_dom::{BaseDocument, Document, EventDriver, NoopEventHandler};
+use blitz_traits::events::{BlitzPointerId, BlitzPointerEvent, MouseEventButton, MouseEventButtons, UiEvent};
 use blitz_traits::shell::{ColorScheme, Viewport};
+use keyboard_types::Modifiers;
 use objc2::rc::Retained;
 use objc2_foundation::{MainThreadMarker, NSPoint, NSRect, NSSize};
 use objc2_ui_kit::UIView;
 use raw_window_handle::{HasWindowHandle, RawWindowHandle};
-use winit::event::WindowEvent;
+use winit::event::{ElementState, WindowEvent};
 use winit::event_loop::ActiveEventLoop;
 use winit::window::{Window, WindowAttributes, WindowId};
 
@@ -168,6 +171,18 @@ impl UIKitView {
         false
     }
 
+    /// Process queued input events from UIKit native controls.
+    pub fn process_input_events(&mut self) {
+        let events = drain_input_events();
+        for event in events {
+            let dom_event = input_event_to_dom_event(event);
+            // Dispatch through the document's event system
+            let mut doc = self.doc.borrow_mut();
+            let mut driver = EventDriver::new(&mut *doc, NoopEventHandler);
+            driver.handle_dom_event(dom_event);
+        }
+    }
+
     /// Perform a redraw if needed.
     pub fn redraw(&mut self) {
         if !self.needs_redraw.get() {
@@ -175,6 +190,9 @@ impl UIKitView {
         }
 
         self.needs_redraw.set(false);
+
+        // Process any queued input events
+        self.process_input_events();
 
         // Resolve layout
         self.doc.borrow_mut().resolve(0.0);
@@ -204,10 +222,75 @@ impl UIKitView {
                 drop(doc);
                 self.request_redraw();
             }
+            // Handle pointer/touch moved
+            WindowEvent::PointerMoved { position, primary, .. } => {
+                let scale = self.window.scale_factor();
+                let x = (position.x / scale) as f32;
+                let y = (position.y / scale) as f32;
+
+                let event = UiEvent::MouseMove(BlitzPointerEvent {
+                    id: BlitzPointerId::Finger(0),
+                    is_primary: primary,
+                    x,
+                    y,
+                    screen_x: x,
+                    screen_y: y,
+                    client_x: x,
+                    client_y: y,
+                    button: MouseEventButton::Main,
+                    buttons: MouseEventButtons::Primary,
+                    mods: Modifiers::empty(),
+                });
+
+                self.dispatch_event(event);
+            }
+            // Handle pointer/touch button (down/up)
+            WindowEvent::PointerButton { state, position, primary, .. } => {
+                let scale = self.window.scale_factor();
+                let x = (position.x / scale) as f32;
+                let y = (position.y / scale) as f32;
+
+                let (event_type, buttons) = match state {
+                    ElementState::Pressed => (true, MouseEventButtons::Primary),
+                    ElementState::Released => (false, MouseEventButtons::None),
+                };
+
+                let pointer_event = BlitzPointerEvent {
+                    id: BlitzPointerId::Finger(0),
+                    is_primary: primary,
+                    x,
+                    y,
+                    screen_x: x,
+                    screen_y: y,
+                    client_x: x,
+                    client_y: y,
+                    button: MouseEventButton::Main,
+                    buttons,
+                    mods: Modifiers::empty(),
+                };
+
+                let event = if event_type {
+                    println!("[UIKitView] Pointer down at ({}, {})", x, y);
+                    UiEvent::MouseDown(pointer_event)
+                } else {
+                    println!("[UIKitView] Pointer up at ({}, {})", x, y);
+                    UiEvent::MouseUp(pointer_event)
+                };
+
+                self.dispatch_event(event);
+                self.request_redraw();
+            }
             _ => {
-                // Other events could be handled here (touch, keyboard, etc.)
+                // Other events (keyboard, etc.) can be added here
             }
         }
+    }
+
+    /// Dispatch a UI event to the document's event handler.
+    fn dispatch_event(&mut self, event: UiEvent) {
+        let mut doc = self.doc.borrow_mut();
+        let mut driver = EventDriver::new(&mut *doc, NoopEventHandler);
+        driver.handle_ui_event(event);
     }
 }
 

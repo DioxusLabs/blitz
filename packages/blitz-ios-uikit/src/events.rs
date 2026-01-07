@@ -6,12 +6,80 @@
 use std::cell::RefCell;
 use std::collections::VecDeque;
 use std::rc::Rc;
+use std::sync::Mutex;
 
 use blitz_traits::events::{
-    BlitzInputEvent, BlitzPointerId, BlitzPointerEvent, DomEvent, DomEventData, MouseEventButton,
-    MouseEventButtons, UiEvent,
+    BlitzFocusEvent, BlitzInputEvent, BlitzPointerId, BlitzPointerEvent, DomEvent, DomEventData,
+    MouseEventButton, MouseEventButtons, UiEvent,
 };
 use keyboard_types::Modifiers;
+
+// =============================================================================
+// Global Input Event Queue
+// =============================================================================
+
+/// Thread-safe queue for input events from native UIKit controls.
+/// This allows objc2 code to queue events that will be processed by the Rust event loop.
+static INPUT_EVENT_QUEUE: Mutex<VecDeque<InputEvent>> = Mutex::new(VecDeque::new());
+
+/// An input event from a native UIKit control.
+#[derive(Debug, Clone)]
+pub enum InputEvent {
+    /// Text input changed
+    TextChanged { node_id: usize, value: String },
+    /// Input gained focus
+    FocusGained { node_id: usize },
+    /// Input lost focus
+    FocusLost { node_id: usize },
+}
+
+/// Queue a text change event from a UITextField.
+pub fn queue_text_changed(node_id: usize, value: String) {
+    if let Ok(mut queue) = INPUT_EVENT_QUEUE.lock() {
+        println!("[InputEvent] TextChanged node_id={} value={:?}", node_id, value);
+        queue.push_back(InputEvent::TextChanged { node_id, value });
+    }
+}
+
+/// Queue a focus gained event.
+pub fn queue_focus_gained(node_id: usize) {
+    if let Ok(mut queue) = INPUT_EVENT_QUEUE.lock() {
+        println!("[InputEvent] FocusGained node_id={}", node_id);
+        queue.push_back(InputEvent::FocusGained { node_id });
+    }
+}
+
+/// Queue a focus lost event.
+pub fn queue_focus_lost(node_id: usize) {
+    if let Ok(mut queue) = INPUT_EVENT_QUEUE.lock() {
+        println!("[InputEvent] FocusLost node_id={}", node_id);
+        queue.push_back(InputEvent::FocusLost { node_id });
+    }
+}
+
+/// Drain all pending input events.
+pub fn drain_input_events() -> Vec<InputEvent> {
+    if let Ok(mut queue) = INPUT_EVENT_QUEUE.lock() {
+        queue.drain(..).collect()
+    } else {
+        Vec::new()
+    }
+}
+
+/// Convert an InputEvent to a DomEvent.
+pub fn input_event_to_dom_event(event: InputEvent) -> DomEvent {
+    match event {
+        InputEvent::TextChanged { node_id, value } => {
+            DomEvent::new(node_id, DomEventData::Input(BlitzInputEvent { value }))
+        }
+        InputEvent::FocusGained { node_id } => {
+            DomEvent::new(node_id, DomEventData::Focus(BlitzFocusEvent))
+        }
+        InputEvent::FocusLost { node_id } => {
+            DomEvent::new(node_id, DomEventData::Blur(BlitzFocusEvent))
+        }
+    }
+}
 
 /// Sender for events from UIKit to blitz-dom.
 ///

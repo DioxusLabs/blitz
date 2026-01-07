@@ -53,6 +53,9 @@ mod style;
 mod sync;
 mod view;
 
+#[cfg(feature = "dioxus")]
+mod dioxus;
+
 use std::cell::RefCell;
 use std::rc::Rc;
 
@@ -66,6 +69,9 @@ pub use application::{UIKitApplication, UIKitEvent, UIKitProxy, create_waker};
 pub use elements::ElementType;
 pub use events::EventSender;
 pub use view::{UIKitView, ViewConfig};
+
+#[cfg(feature = "dioxus")]
+pub use dioxus::{launch, launch_cfg, launch_cfg_with_props, DioxusUIKitApplication, DioxusUIKitView};
 
 /// Entry in the view map tracking a UIView and its metadata
 pub struct ViewEntry {

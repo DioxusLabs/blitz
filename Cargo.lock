@@ -861,6 +861,8 @@ dependencies = [
  "blitz-html",
  "blitz-net",
  "blitz-traits",
+ "dioxus-core",
+ "dioxus-native-dom",
  "futures-util",
  "keyboard-types 0.7.0",
  "markup5ever",
