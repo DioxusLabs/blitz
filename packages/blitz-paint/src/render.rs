@@ -843,7 +843,7 @@ impl ElementCx<'_> {
             return;
         }
 
-        let border_width = border_style.border_top_width.to_f64_px();
+        let border_width = border_style.border_top_width.0.to_f64_px();
 
         // Draw horizontal inner borders
         let mut y = 0.0;
@@ -992,7 +992,7 @@ fn create_css_rect(style: &ComputedValues, layout: &Layout, scale: f64) -> CssBo
     let border_box = Rect::new(0.0, 0.0, width * scale, height * scale);
     let border = insets_from_taffy_rect(layout.border.map(|p| p as f64 * scale));
     let padding = insets_from_taffy_rect(layout.padding.map(|p| p as f64 * scale));
-    let outline_width = style.get_outline().outline_width.to_f64_px() * scale;
+    let outline_width = style.get_outline().outline_width.0.to_f64_px() * scale;
 
     // Resolve the radii to a length. need to downscale since the radii are in document pixels
     let resolve_w = CSSPixelLength::new(width as _);

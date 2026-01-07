@@ -116,11 +116,13 @@ pub(crate) fn build_table_context(
             .map(|border| {
                 let x = border
                     .border_left_width
-                    .max(border.border_right_width)
+                    .0
+                    .max(border.border_right_width.0)
                     .to_f32_px();
                 let y = border
                     .border_top_width
-                    .max(border.border_bottom_width)
+                    .0
+                    .max(border.border_bottom_width.0)
                     .to_f32_px();
                 taffy::Size {
                     width: style_helpers::length(x),

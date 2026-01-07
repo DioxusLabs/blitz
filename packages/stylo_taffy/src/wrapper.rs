@@ -4,7 +4,6 @@ use std::ops::Deref;
 use style::properties::ComputedValues;
 use style::values::CustomIdent;
 use style::{Atom, OwnedSlice};
-use taffy::prelude::FromLength;
 
 #[cfg(feature = "grid")]
 use style::values::{
@@ -138,13 +137,21 @@ impl<T: Deref<Target = ComputedValues>> taffy::CoreStyle for TaffyStyloStyle<T> 
     fn border(&self) -> taffy::Rect<taffy::LengthPercentage> {
         let border_styles = self.0.get_border();
         taffy::Rect {
-            left: taffy::LengthPercentage::from_length(border_styles.border_left_width.to_f32_px()),
-            right: taffy::LengthPercentage::from_length(
-                border_styles.border_right_width.to_f32_px(),
+            left: convert::border(
+                &border_styles.border_left_width,
+                border_styles.border_left_style,
             ),
-            top: taffy::LengthPercentage::from_length(border_styles.border_top_width.to_f32_px()),
-            bottom: taffy::LengthPercentage::from_length(
-                border_styles.border_bottom_width.to_f32_px(),
+            right: convert::border(
+                &border_styles.border_right_width,
+                border_styles.border_right_style,
+            ),
+            top: convert::border(
+                &border_styles.border_top_width,
+                border_styles.border_top_style,
+            ),
+            bottom: convert::border(
+                &border_styles.border_bottom_width,
+                border_styles.border_bottom_style,
             ),
         }
     }

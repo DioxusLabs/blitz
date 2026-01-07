@@ -9,13 +9,14 @@ pub(crate) mod stylo {
     pub(crate) use style::properties::longhands::position::computed_value::T as Position;
     pub(crate) use style::values::computed::length_percentage::CalcLengthPercentage;
     pub(crate) use style::values::computed::length_percentage::Unpacked as UnpackedLengthPercentage;
-    pub(crate) use style::values::computed::{LengthPercentage, Percentage};
+    pub(crate) use style::values::computed::{BorderSideWidth, LengthPercentage, Percentage};
     pub(crate) use style::values::generics::NonNegative;
     pub(crate) use style::values::generics::length::{
         GenericLengthPercentageOrNormal, GenericMargin, GenericMaxSize, GenericSize,
     };
     pub(crate) use style::values::generics::position::{Inset as GenericInset, PreferredRatio};
     pub(crate) use style::values::specified::align::{AlignFlags, ContentDistribution};
+    pub(crate) use style::values::specified::border::BorderStyle;
     pub(crate) use style::values::specified::box_::{
         Display, DisplayInside, DisplayOutside, Overflow,
     };
@@ -121,6 +122,17 @@ pub fn margin(val: &stylo::MarginVal) -> taffy::LengthPercentageAuto {
         stylo::MarginVal::AnchorSizeFunction(_) => unreachable!(),
         stylo::MarginVal::AnchorContainingCalcFunction(_) => unreachable!(),
     }
+}
+
+#[inline]
+pub fn border(
+    width: &stylo::BorderSideWidth,
+    style: stylo::BorderStyle,
+) -> taffy::LengthPercentage {
+    if style.none_or_hidden() {
+        return taffy::style_helpers::zero();
+    }
+    taffy::style_helpers::length(width.0.to_f32_px())
 }
 
 #[inline]
@@ -623,10 +635,10 @@ pub fn to_taffy_style(style: &stylo::ComputedValues) -> taffy::Style<Atom> {
             bottom: self::length_percentage(&padding.padding_bottom.0),
         },
         border: taffy::Rect {
-            left: taffy::style_helpers::length(border.border_left_width.to_f32_px()),
-            right: taffy::style_helpers::length(border.border_right_width.to_f32_px()),
-            top: taffy::style_helpers::length(border.border_top_width.to_f32_px()),
-            bottom: taffy::style_helpers::length(border.border_bottom_width.to_f32_px()),
+            left: self::border(&border.border_left_width, border.border_left_style),
+            right: self::border(&border.border_right_width, border.border_right_style),
+            top: self::border(&border.border_top_width, border.border_top_style),
+            bottom: self::border(&border.border_bottom_width, border.border_bottom_style),
         },
 
         // Gap
