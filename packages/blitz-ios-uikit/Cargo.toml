@@ -30,12 +30,19 @@ markup5ever = { workspace = true }
 # Stylo (for computed styles)
 style = { workspace = true }
 
+# Async support for event loop integration
+futures-util = { workspace = true }
+
+# Window management
+winit = { workspace = true }
+raw-window-handle = "0.6"
+
 [dev-dependencies]
 blitz-html = { workspace = true }
 blitz-net = { workspace = true }
 winit = { workspace = true }
 raw-window-handle = "0.6"
-tokio = { version = "1", features = ["rt", "macros", "time"] }
+tokio = { version = "1", features = ["rt", "macros", "time", "full"] }
 
 # objc2 bindings for iOS (UIKit requires iOS or Mac Catalyst)
 # For Mac Catalyst, build with: --target aarch64-apple-ios-macabi

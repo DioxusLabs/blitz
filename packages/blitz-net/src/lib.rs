@@ -161,22 +161,12 @@ impl NetProvider for Provider {
         #[cfg(feature = "debug_log")]
         println!("Fetching {}", &request.url);
 
-        // Always log the URL being fetched for debugging
-        eprintln!("[blitz-net] Fetching: {}", &request.url);
-
-        let url_for_error = request.url.to_string();
         let waker = self.waker.clone();
         self.rt.spawn(async move {
             #[cfg(feature = "debug_log")]
             let url = request.url.to_string();
 
             let _res = Self::fetch_with_handler(client, request, handler).await;
-
-            // Always log results for debugging
-            match &_res {
-                Ok(()) => eprintln!("[blitz-net] Success fetching: {url_for_error}"),
-                Err(e) => eprintln!("[blitz-net] Error fetching {url_for_error}: {e:?}"),
-            }
 
             #[cfg(feature = "debug_log")]
             if _res.is_ok() {

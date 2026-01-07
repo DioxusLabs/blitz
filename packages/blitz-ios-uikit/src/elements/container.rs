@@ -118,6 +118,8 @@ pub fn create_container(
     node_id: usize,
     _event_sender: &EventSender,
 ) -> Retained<UIView> {
+    println!("[BlitzView] Creating container for node_id={}", node_id);
+
     let frame = NSRect::new(
         NSPoint::new(0.0, 0.0),
         NSSize::new(0.0, 0.0),

@@ -10,7 +10,9 @@ use objc2::rc::Retained;
 use objc2::runtime::NSObjectProtocol;
 use objc2::{DefinedClass, MainThreadOnly, define_class, msg_send};
 use objc2_core_foundation::CFData;
-use objc2_core_graphics::{CGBitmapInfo, CGColorRenderingIntent, CGColorSpace, CGDataProvider, CGImage, CGImageAlphaInfo};
+use objc2_core_graphics::{
+    CGBitmapInfo, CGColorRenderingIntent, CGColorSpace, CGDataProvider, CGImage, CGImageAlphaInfo,
+};
 use objc2_foundation::MainThreadMarker;
 use objc2_ui_kit::{UIImage, UIImageView, UIView, UIViewContentMode};
 
@@ -22,6 +24,8 @@ use objc2_ui_kit::{UIImage, UIImageView, UIView, UIViewContentMode};
 #[derive(Default)]
 pub struct BlitzImageViewIvars {
     pub node_id: Cell<usize>,
+    /// Hash of the current image data to detect changes
+    pub image_hash: Cell<u64>,
 }
 
 define_class!(
@@ -40,6 +44,7 @@ impl BlitzImageView {
     pub fn new(mtm: MainThreadMarker, node_id: usize) -> Retained<Self> {
         let ivars = BlitzImageViewIvars {
             node_id: Cell::new(node_id),
+            image_hash: Cell::new(0),
         };
         let this = mtm.alloc::<Self>().set_ivars(ivars);
         let image_view: Retained<Self> = unsafe { msg_send![super(this), init] };
@@ -60,6 +65,16 @@ impl BlitzImageView {
     pub fn node_id(&self) -> usize {
         self.ivars().node_id.get()
     }
+
+    /// Get the current image hash.
+    pub fn image_hash(&self) -> u64 {
+        self.ivars().image_hash.get()
+    }
+
+    /// Set the image hash.
+    pub fn set_image_hash(&self, hash: u64) {
+        self.ivars().image_hash.set(hash);
+    }
 }
 
 /// Create a UIImageView for an img element.
@@ -75,15 +90,29 @@ pub fn create_image_view(mtm: MainThreadMarker, node: &Node, node_id: usize) -> 
 
 /// Update a UIImageView with new node data.
 pub fn update_image_view(view: &UIView, node: &Node) {
-    // SAFETY: We only call this for ImageView element types
-    let image_view: &UIImageView = unsafe { std::mem::transmute(view) };
+    // SAFETY: We only call this for ImageView element types, which are BlitzImageView
+    let image_view: &BlitzImageView = unsafe { std::mem::transmute(view) };
     set_image_from_node(image_view, node);
 }
 
+/// Compute a simple hash of image data for change detection.
+fn compute_image_hash(raster: &RasterImageData) -> u64 {
+    use std::collections::hash_map::DefaultHasher;
+    use std::hash::{Hash, Hasher};
+
+    let mut hasher = DefaultHasher::new();
+    raster.width.hash(&mut hasher);
+    raster.height.hash(&mut hasher);
+    // Hash a sample of the data for performance (first 1KB + length)
+    raster.data.len().hash(&mut hasher);
+    let sample_size = raster.data.len().min(1024);
+    raster.data.as_ref()[..sample_size].hash(&mut hasher);
+    hasher.finish()
+}
+
 /// Set image content from node's image data.
-fn set_image_from_node(image_view: &UIImageView, node: &Node) {
+fn set_image_from_node(image_view: &BlitzImageView, node: &Node) {
     let Some(element_data) = node.element_data() else {
-        println!("[BlitzImageView] No element_data for image node");
         return;
     };
 
@@ -91,28 +120,33 @@ fn set_image_from_node(image_view: &UIImageView, node: &Node) {
     if let blitz_dom::node::SpecialElementData::Image(ref image_data) = element_data.special_data {
         match image_data.as_ref() {
             ImageData::Raster(raster) => {
-                println!(
-                    "[BlitzImageView] Raster image: {}x{}, {} bytes",
-                    raster.width, raster.height, raster.data.len()
-                );
+                // Compute hash and check if image changed
+                let new_hash = compute_image_hash(raster);
+                if new_hash == image_view.image_hash() {
+                    // Image hasn't changed, skip update
+                    println!("[BlitzImageView] Skipping image update (unchanged)");
+                    return;
+                }
+
                 if let Some(ui_image) = create_ui_image_from_raster(raster) {
-                    println!("[BlitzImageView] UIImage created successfully");
+                    println!(
+                        "[BlitzImageView] Creating UIImage: {}x{} ({} bytes)",
+                        raster.width, raster.height, raster.data.len()
+                    );
                     unsafe { image_view.setImage(Some(&ui_image)) };
-                } else {
-                    println!("[BlitzImageView] Failed to create UIImage from raster");
+                    image_view.set_image_hash(new_hash);
                 }
             }
             ImageData::Svg(_svg_tree) => {
-                println!("[BlitzImageView] SVG images not yet supported");
+                // SVG images not yet supported
             }
             ImageData::None => {
-                println!("[BlitzImageView] ImageData::None - no image loaded");
-                unsafe { image_view.setImage(None) };
+                if image_view.image_hash() != 0 {
+                    unsafe { image_view.setImage(None) };
+                    image_view.set_image_hash(0);
+                }
             }
         }
-    } else {
-        println!("[BlitzImageView] special_data is not Image type: {:?}",
-            std::mem::discriminant(&element_data.special_data));
     }
 }
 

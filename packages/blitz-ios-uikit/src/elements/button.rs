@@ -104,6 +104,8 @@ pub fn create_button(
     node_id: usize,
     _event_sender: &EventSender,
 ) -> Retained<UIView> {
+    println!("[BlitzButton] Creating button for node_id={}", node_id);
+
     let button = BlitzButton::new(mtm, node_id);
 
     // Set initial title

@@ -16,6 +16,22 @@
 //! Layout is computed by Taffy (CSS flexbox/grid) and applied as UIView frames.
 //! Events from UIKit are bridged back to blitz-dom's event system.
 //!
+//! # Usage
+//!
+//! For a retained UI with proper event loop integration, use `UIKitApplication`:
+//!
+//! ```ignore
+//! use blitz_ios_uikit::{UIKitApplication, UIKitProxy, ViewConfig};
+//!
+//! let event_loop = EventLoop::new().unwrap();
+//! let (proxy, receiver) = UIKitProxy::new(event_loop.create_proxy());
+//!
+//! let mut app = UIKitApplication::new(proxy, receiver);
+//! app.add_view(ViewConfig::new(doc));
+//!
+//! event_loop.run_app(app).unwrap();
+//! ```
+//!
 //! # Platform Support
 //!
 //! This crate only compiles on iOS. To run on macOS, use Mac Catalyst:
@@ -30,10 +46,12 @@
 
 #![cfg(target_os = "ios")]
 
+mod application;
 mod elements;
 mod events;
 mod style;
 mod sync;
+mod view;
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -44,8 +62,10 @@ use objc2_foundation::MainThreadMarker;
 use objc2_ui_kit::UIView;
 use rustc_hash::FxHashMap;
 
+pub use application::{UIKitApplication, UIKitEvent, UIKitProxy, create_waker};
 pub use elements::ElementType;
 pub use events::EventSender;
+pub use view::{UIKitView, ViewConfig};
 
 /// Entry in the view map tracking a UIView and its metadata
 pub struct ViewEntry {

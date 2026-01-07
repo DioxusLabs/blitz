@@ -68,6 +68,8 @@ fn extract_text_content(node: &Node) -> String {
 
 /// Create a UILabel for a text element.
 pub fn create_label(mtm: MainThreadMarker, node: &Node, node_id: usize) -> Retained<UIView> {
+    println!("[BlitzLabel] Creating label for node_id={}", node_id);
+
     let label = BlitzLabel::new(mtm, node_id);
 
     // Set initial text content
