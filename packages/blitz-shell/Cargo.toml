@@ -14,7 +14,7 @@ rust-version.workspace = true
 default = ["accessibility", "clipboard", "file_dialog"]
 accessibility = [
     "dep:accesskit",
-    "dep:accesskit_winit",
+    "dep:accesskit_xplat",
     "blitz-dom/accessibility",
 ]
 clipboard = ["dep:arboard"]
@@ -34,7 +34,7 @@ anyrender = { workspace = true }
 winit = { workspace = true }
 keyboard-types = { workspace = true }
 accesskit = { workspace = true, optional = true }
-accesskit_winit = { workspace = true, optional = true }
+accesskit_xplat = { workspace = true, optional = true }
 
 # Other dependencies
 tracing = { workspace = true, optional = true }
@@ -42,7 +42,7 @@ futures-util = { workspace = true }
 data-url = { workspace = true, optional = true }
 
 [target.'cfg(target_os = "android")'.dependencies]
-android-activity = { version = "0.6.0", features = ["native-activity"] }
+android-activity = { version = "0.6.0" }
 
 [target.'cfg(any(target_os = "windows",target_os = "macos",target_os = "linux",target_os = "dragonfly", target_os = "freebsd", target_os = "netbsd", target_os = "openbsd"))'.dependencies]
 arboard = { workspace = true, optional = true }

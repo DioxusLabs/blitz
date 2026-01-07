@@ -29,7 +29,7 @@ use selectors::{Element, matching::QuirksMode};
 use slab::Slab;
 use std::any::Any;
 use std::cell::RefCell;
-use std::collections::{BTreeMap, Bound, HashMap, HashSet};
+use std::collections::{BTreeMap, Bound, HashMap, HashSet, VecDeque};
 use std::ops::{Deref, DerefMut};
 use std::rc::Rc;
 use std::str::FromStr;
@@ -174,6 +174,51 @@ pub enum DocumentEvent {
     ResourceLoad(ResourceLoadResponse),
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct FlingState {
+    pub(crate) target: usize,
+    pub(crate) last_seen_time: f64,
+    pub(crate) x_velocity: f64,
+    pub(crate) y_velocity: f64,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) enum ScrollAnimationState {
+    None,
+    Fling(FlingState),
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct PanState {
+    pub(crate) target: usize,
+    pub(crate) last_x: f32,
+    pub(crate) last_y: f32,
+    pub(crate) samples: VecDeque<PanSample>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct PanSample {
+    pub(crate) time: u64,
+    pub(crate) dx: f32,
+    pub(crate) dy: f32,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) enum DragMode {
+    /// We are not currently dragging
+    None,
+    /// We are currently dragging a selection (probably mouse)
+    Selecting,
+    /// We are currently panning the document with a drag (probably touch)
+    Panning(PanState),
+}
+
+impl DragMode {
+    pub(crate) fn take(&mut self) -> DragMode {
+        std::mem::replace(self, DragMode::None)
+    }
+}
+
 pub struct BaseDocument {
     /// ID of the document
     id: usize,
@@ -234,7 +279,9 @@ pub struct BaseDocument {
     /// How many clicks have been made in quick succession
     pub(crate) click_count: u16,
     /// Whether we're currently in a text selection drag (moved 2px+ from mousedown)
-    pub(crate) is_selecting: bool,
+    pub(crate) drag_mode: DragMode,
+    /// Whether and what kind of scroll animation is currently in progress
+    pub(crate) scroll_animation: ScrollAnimationState,
 
     /// Text selection state (for non-input text)
     pub(crate) text_selection: TextSelection,
@@ -401,7 +448,8 @@ impl BaseDocument {
             last_mousedown_time: None,
             mousedown_position: taffy::Point::ZERO,
             click_count: 0,
-            is_selecting: false,
+            drag_mode: DragMode::None,
+            scroll_animation: ScrollAnimationState::None,
             text_selection: TextSelection::default(),
         };
 
@@ -1171,7 +1219,10 @@ impl BaseDocument {
     }
 
     pub fn is_animating(&self) -> bool {
-        self.has_canvas | self.has_active_animations | self.subdoc_is_animating
+        self.has_canvas
+            | self.has_active_animations
+            | self.subdoc_is_animating
+            | (self.scroll_animation != ScrollAnimationState::None)
     }
 
     /// Update the device and reset the stylist to process the new size
@@ -1370,6 +1421,20 @@ impl BaseDocument {
         );
 
         self.viewport_scroll != initial
+    }
+
+    pub fn scroll_by(
+        &mut self,
+        anchor_node_id: Option<usize>,
+        scroll_x: f64,
+        scroll_y: f64,
+        dispatch_event: &mut dyn FnMut(DomEvent),
+    ) -> bool {
+        if let Some(anchor_node_id) = anchor_node_id {
+            self.scroll_node_by_has_changed(anchor_node_id, scroll_x, scroll_y, dispatch_event)
+        } else {
+            self.scroll_viewport_by_has_changed(scroll_x, scroll_y)
+        }
     }
 
     pub fn viewport_scroll(&self) -> crate::Point<f64> {

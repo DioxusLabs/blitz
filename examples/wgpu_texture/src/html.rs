@@ -1,7 +1,7 @@
 use anyrender_vello::{VelloRendererOptions, VelloWindowRenderer};
 use blitz_dom::{qual_name, DocumentConfig};
 use blitz_html::HtmlDocument;
-use blitz_shell::{create_default_event_loop, BlitzApplication, BlitzShellEvent, WindowConfig};
+use blitz_shell::{create_default_event_loop, BlitzApplication, BlitzShellProxy, WindowConfig};
 
 use crate::{limits, DemoPaintSource, FEATURES, STYLES};
 
@@ -30,13 +30,14 @@ pub fn launch_html() {
         .set_attribute(canvas_node_id, src_attr, &src_str);
 
     // Create the Winit application and window
-    let event_loop = create_default_event_loop::<BlitzShellEvent>();
-    let mut application = BlitzApplication::new(event_loop.create_proxy());
+    let event_loop = create_default_event_loop();
+    let (proxy, reciever) = BlitzShellProxy::new(event_loop.create_proxy());
+    let mut application = BlitzApplication::new(proxy, reciever);
     let window = WindowConfig::new(Box::new(doc), renderer);
     application.add_window(window);
 
     // Run event loop
-    event_loop.run_app(&mut application).unwrap()
+    event_loop.run_app(application).unwrap()
 }
 
 static HTML: &str = r#"

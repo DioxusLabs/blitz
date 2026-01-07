@@ -37,24 +37,22 @@ use markdown::{BLITZ_MD_STYLES, GITHUB_MD_STYLES, markdown_to_html};
 use notify::{Error as NotifyError, Event as NotifyEvent, RecursiveMode, Watcher as _};
 use readme_application::{ReadmeApplication, ReadmeEvent};
 
-use blitz_shell::{BlitzShellEvent, BlitzShellNetWaker, WindowConfig, create_default_event_loop};
+use blitz_shell::{BlitzShellEvent, BlitzShellProxy, WindowConfig, create_default_event_loop};
 use std::env::current_dir;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tokio::sync::oneshot;
 use url::Url;
-use winit::event_loop::EventLoopProxy;
 use winit::window::WindowAttributes;
 
 struct ReadmeNavigationProvider {
-    proxy: EventLoopProxy<BlitzShellEvent>,
+    proxy: BlitzShellProxy,
 }
 
 impl NavigationProvider for ReadmeNavigationProvider {
     fn navigate_to(&self, opts: NavigationOptions) {
-        let _ = self
-            .proxy
+        self.proxy
             .send_event(BlitzShellEvent::Navigate(Box::new(opts)));
     }
 }
@@ -74,9 +72,10 @@ fn main() {
     let _guard = rt.enter();
 
     let event_loop = create_default_event_loop();
-    let proxy = event_loop.create_proxy();
+    let winit_proxy = event_loop.create_proxy();
+    let (proxy, event_queue) = BlitzShellProxy::new(winit_proxy);
 
-    let net_waker = Some(BlitzShellNetWaker::shared(proxy.clone()));
+    let net_waker = Some(Arc::new(proxy.clone()) as _);
     let net_provider = Arc::new(Provider::new(net_waker));
 
     let (base_url, contents, is_md, file_path) =
@@ -98,7 +97,6 @@ fn main() {
 
     // println!("{html}");
 
-    let proxy = event_loop.create_proxy();
     let navigation_provider = ReadmeNavigationProvider {
         proxy: proxy.clone(),
     };
@@ -121,6 +119,7 @@ fn main() {
     // Create application
     let mut application = ReadmeApplication::new(
         proxy.clone(),
+        event_queue,
         raw_url.clone(),
         net_provider,
         navigation_provider,
@@ -131,7 +130,7 @@ fn main() {
         let mut watcher =
             notify::recommended_watcher(move |_: Result<NotifyEvent, NotifyError>| {
                 let event = BlitzShellEvent::Embedder(Arc::new(ReadmeEvent));
-                proxy.send_event(event).unwrap();
+                proxy.send_event(event);
             })
             .unwrap();
 
@@ -145,7 +144,7 @@ fn main() {
     }
 
     // Run event loop
-    event_loop.run_app(&mut application).unwrap()
+    event_loop.run_app(application).unwrap()
 }
 
 async fn fetch(
