@@ -18,7 +18,7 @@ path = "src/lib.rs"
 
 [features]
 default = ["dioxus"]
-dioxus = ["dep:dioxus-native-dom", "dep:dioxus-core"]
+dioxus = ["dep:dioxus-native-dom", "dep:dioxus-core", "dep:blitz-net", "dep:tokio"]
 
 [dependencies]
 # Note: system_fonts enables CoreText font backend on iOS/macOS
@@ -34,6 +34,10 @@ markup5ever = { workspace = true }
 # Dioxus integration (optional)
 dioxus-native-dom = { workspace = true, optional = true }
 dioxus-core = { workspace = true, optional = true }
+
+# Networking for image loading (optional, enabled with dioxus feature)
+blitz-net = { workspace = true, optional = true }
+tokio = { version = "1", features = ["rt", "macros"], optional = true }
 
 # Stylo (for computed styles)
 style = { workspace = true }
@@ -51,6 +55,7 @@ blitz-net = { workspace = true }
 winit = { workspace = true }
 raw-window-handle = "0.6"
 tokio = { version = "1", features = ["rt", "macros", "time", "full"] }
+dioxus = { workspace = true }
 
 # objc2 bindings for iOS (UIKit requires iOS or Mac Catalyst)
 # For Mac Catalyst, build with: --target aarch64-apple-ios-macabi

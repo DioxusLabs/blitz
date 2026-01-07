@@ -3,13 +3,13 @@
 //! This module handles walking the DOM tree and creating/updating/removing
 //! UIKit views to match the current DOM state.
 
-use blitz_dom::Node;
+use blitz_dom::{BaseDocument, Node};
 use blitz_dom::node::NodeData;
 use objc2_foundation::NSPoint;
 use objc2_ui_kit::{UIButton, UILabel, UIView};
 use style::values::computed::Display as StyloDisplay;
 
-use crate::elements::{ElementType, create_view, element_type_for_node, update_view};
+use crate::elements::{ElementType, create_view, element_type_for_node, update_scroll_view_content_size, update_view};
 use crate::style::{apply_button_styles, apply_layout, apply_text_styles, apply_visual_styles};
 use crate::{UIKitRenderer, ViewEntry};
 
@@ -208,6 +208,16 @@ fn sync_node(
 
     // Sync children with zero frame_offset since they're relative to this new view
     sync_children(renderer, node_id, &view, NSPoint::new(0.0, 0.0), scale, generation);
+
+    // For scroll views, calculate and set content size from children
+    if element_type == ElementType::ScrollView {
+        let doc = renderer.doc();
+        let doc = doc.borrow();
+        if let Some(node) = doc.get_node(node_id) {
+            let content_size = calculate_content_size(node, &doc);
+            update_scroll_view_content_size(&view, content_size.0, content_size.1);
+        }
+    }
 }
 
 /// Sync children of a node.
@@ -276,4 +286,32 @@ fn cleanup_stale_views(renderer: &mut UIKitRenderer, current_generation: u64) {
             unsafe { entry.view.removeFromSuperview() };
         }
     }
+}
+
+/// Calculate the content size for a scroll view based on its children's layout.
+fn calculate_content_size(node: &Node, doc: &BaseDocument) -> (f64, f64) {
+    let mut max_x: f64 = 0.0;
+    let mut max_y: f64 = 0.0;
+
+    // Get layout children
+    let children = node
+        .layout_children
+        .borrow();
+
+    if let Some(children) = children.as_ref() {
+        for &child_id in children.iter() {
+            if let Some(child) = doc.get_node(child_id) {
+                let layout = child.final_layout;
+                let child_right = layout.location.x as f64 + layout.size.width as f64;
+                let child_bottom = layout.location.y as f64 + layout.size.height as f64;
+
+                max_x = max_x.max(child_right);
+                max_y = max_y.max(child_bottom);
+            }
+        }
+    }
+
+    // Add some padding at the bottom for better scrolling experience
+    let padding = 20.0;
+    (max_x, max_y + padding)
 }

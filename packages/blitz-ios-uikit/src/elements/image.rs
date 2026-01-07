@@ -79,9 +79,10 @@ impl BlitzImageView {
 
 /// Create a UIImageView for an img element.
 pub fn create_image_view(mtm: MainThreadMarker, node: &Node, node_id: usize) -> Retained<UIView> {
+    println!("[BlitzImageView] Creating image view for node_id={}", node_id);
     let image_view = BlitzImageView::new(mtm, node_id);
 
-    // Try to set initial image
+    // Try to set initial image (may not be loaded yet)
     set_image_from_node(&image_view, node);
 
     // Cast to UIView
@@ -112,12 +113,15 @@ fn compute_image_hash(raster: &RasterImageData) -> u64 {
 
 /// Set image content from node's image data.
 fn set_image_from_node(image_view: &BlitzImageView, node: &Node) {
+    let node_id = image_view.node_id();
     let Some(element_data) = node.element_data() else {
+        println!("[BlitzImageView] node_id={} no element data", node_id);
         return;
     };
 
     // Check for image data in special_data
     if let blitz_dom::node::SpecialElementData::Image(ref image_data) = element_data.special_data {
+        println!("[BlitzImageView] node_id={} has image data", node_id);
         match image_data.as_ref() {
             ImageData::Raster(raster) => {
                 // Compute hash and check if image changed
@@ -141,12 +145,15 @@ fn set_image_from_node(image_view: &BlitzImageView, node: &Node) {
                 // SVG images not yet supported
             }
             ImageData::None => {
+                println!("[BlitzImageView] node_id={} image data is None (not loaded yet)", node_id);
                 if image_view.image_hash() != 0 {
                     unsafe { image_view.setImage(None) };
                     image_view.set_image_hash(0);
                 }
             }
         }
+    } else {
+        println!("[BlitzImageView] node_id={} special_data is not Image type", node_id);
     }
 }
 

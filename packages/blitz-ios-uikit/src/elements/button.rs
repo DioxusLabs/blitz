@@ -12,7 +12,7 @@ use objc2::{DefinedClass, MainThreadOnly, define_class, msg_send, sel};
 use objc2_foundation::{MainThreadMarker, NSString};
 use objc2_ui_kit::{UIButton, UIButtonConfiguration, UIControlEvents, UIView};
 
-use crate::events::EventSender;
+use crate::events::{queue_click, EventSender};
 
 // =============================================================================
 // BlitzButton - Custom UIButton with event bridging
@@ -38,12 +38,8 @@ define_class!(
         #[unsafe(method(handleTouchUpInside:))]
         fn handle_touch_up_inside(&self, _sender: &UIButton) {
             let node_id = self.ivars().node_id.get();
-
-            #[cfg(debug_assertions)]
             println!("[BlitzButton] tap event for node_id={}", node_id);
-
-            // TODO: Send click event via EventSender
-            // This will be wired up when we implement the full event system
+            queue_click(node_id);
         }
     }
 );

@@ -25,12 +25,22 @@ static INPUT_EVENT_QUEUE: Mutex<VecDeque<InputEvent>> = Mutex::new(VecDeque::new
 /// An input event from a native UIKit control.
 #[derive(Debug, Clone)]
 pub enum InputEvent {
+    /// Button/element clicked
+    Click { node_id: usize },
     /// Text input changed
     TextChanged { node_id: usize, value: String },
     /// Input gained focus
     FocusGained { node_id: usize },
     /// Input lost focus
     FocusLost { node_id: usize },
+}
+
+/// Queue a click event from a UIButton or other tappable element.
+pub fn queue_click(node_id: usize) {
+    if let Ok(mut queue) = INPUT_EVENT_QUEUE.lock() {
+        println!("[InputEvent] Click node_id={}", node_id);
+        queue.push_back(InputEvent::Click { node_id });
+    }
 }
 
 /// Queue a text change event from a UITextField.
@@ -66,9 +76,38 @@ pub fn drain_input_events() -> Vec<InputEvent> {
     }
 }
 
+/// Check if there are pending input events without draining them.
+pub fn has_pending_input_events() -> bool {
+    if let Ok(queue) = INPUT_EVENT_QUEUE.lock() {
+        !queue.is_empty()
+    } else {
+        false
+    }
+}
+
 /// Convert an InputEvent to a DomEvent.
 pub fn input_event_to_dom_event(event: InputEvent) -> DomEvent {
     match event {
+        InputEvent::Click { node_id } => {
+            // Create a click event with dummy pointer data
+            // The actual position doesn't matter for native button clicks
+            DomEvent::new(
+                node_id,
+                DomEventData::Click(BlitzPointerEvent {
+                    id: BlitzPointerId::Finger(0),
+                    is_primary: true,
+                    x: 0.0,
+                    y: 0.0,
+                    screen_x: 0.0,
+                    screen_y: 0.0,
+                    client_x: 0.0,
+                    client_y: 0.0,
+                    button: MouseEventButton::Main,
+                    buttons: MouseEventButtons::None,
+                    mods: Modifiers::empty(),
+                }),
+            )
+        }
         InputEvent::TextChanged { node_id, value } => {
             DomEvent::new(node_id, DomEventData::Input(BlitzInputEvent { value }))
         }

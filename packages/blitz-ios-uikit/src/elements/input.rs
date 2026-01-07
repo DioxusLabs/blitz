@@ -9,6 +9,7 @@ use markup5ever::local_name;
 use objc2::rc::Retained;
 use objc2::runtime::NSObjectProtocol;
 use objc2::{DefinedClass, MainThreadOnly, define_class, msg_send, sel};
+use objc2_core_foundation::{CGRect, CGSize};
 use objc2_foundation::{MainThreadMarker, NSString};
 use objc2_ui_kit::{UIControlEvents, UITextBorderStyle, UITextField, UITextInputTraits, UIView};
 
@@ -57,6 +58,36 @@ define_class!(
             let node_id = self.ivars().node_id.get();
             println!("[BlitzTextField] EditingDidBegin (focus) node_id={}", node_id);
             queue_focus_gained(node_id);
+
+            // Scroll the text field into view to avoid keyboard overlap
+            // Find parent scroll view and scroll to make this field visible
+            unsafe {
+                let mut current_view: Option<Retained<UIView>> = self.superview();
+                while let Some(view) = current_view {
+                    // Check if this is a UIScrollView by trying to call scrollRectToVisible
+                    // We use the class name check since we can't easily do dynamic casting
+                    let class_name = view.class().name().to_string_lossy();
+                    if class_name.contains("ScrollView") {
+                        // Found a scroll view - scroll to make this text field visible
+                        let frame = self.frame();
+                        // Convert frame to scroll view coordinates
+                        let converted = view.convertRect_fromView(frame, Some(self.superview().as_deref().unwrap_or(&*view)));
+                        // Add some padding for the keyboard (rough estimate)
+                        let visible_rect = CGRect {
+                            origin: converted.origin,
+                            size: CGSize {
+                                width: converted.size.width,
+                                height: converted.size.height + 300.0, // Extra space for keyboard
+                            },
+                        };
+                        // Cast to UIScrollView and scroll
+                        let scroll_view: &objc2_ui_kit::UIScrollView = std::mem::transmute(&*view);
+                        scroll_view.scrollRectToVisible_animated(visible_rect, true);
+                        break;
+                    }
+                    current_view = view.superview();
+                }
+            }
         }
 
         /// Called when the text field ends editing (loses focus).
@@ -186,11 +217,21 @@ fn apply_text_field_attributes(text_field: &UITextField, node: &Node) {
     unsafe {
         let keyboard_type = match input_type.as_deref() {
             Some("email") => objc2_ui_kit::UIKeyboardType::EmailAddress,
-            Some("number") => objc2_ui_kit::UIKeyboardType::NumberPad,
+            Some("number") => objc2_ui_kit::UIKeyboardType::DecimalPad,
             Some("tel") => objc2_ui_kit::UIKeyboardType::PhonePad,
             Some("url") => objc2_ui_kit::UIKeyboardType::URL,
+            Some("search") => objc2_ui_kit::UIKeyboardType::WebSearch,
             _ => objc2_ui_kit::UIKeyboardType::Default,
         };
         text_field.setKeyboardType(keyboard_type);
+    }
+
+    // Set return key type for search inputs
+    unsafe {
+        let return_key_type = match input_type.as_deref() {
+            Some("search") => objc2_ui_kit::UIReturnKeyType::Search,
+            _ => objc2_ui_kit::UIReturnKeyType::Default,
+        };
+        text_field.setReturnKeyType(return_key_type);
     }
 }

@@ -861,6 +861,7 @@ dependencies = [
  "blitz-html",
  "blitz-net",
  "blitz-traits",
+ "dioxus",
  "dioxus-core",
  "dioxus-native-dom",
  "futures-util",

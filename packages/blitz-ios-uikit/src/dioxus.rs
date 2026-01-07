@@ -7,7 +7,7 @@
 //! - Handles events and async tasks
 
 use crate::application::{create_waker, UIKitEvent, UIKitProxy};
-use crate::events::{drain_input_events, InputEvent};
+use crate::events::{drain_input_events, has_pending_input_events, InputEvent};
 use crate::UIKitRenderer;
 
 use std::cell::Cell;
@@ -21,7 +21,7 @@ use blitz_traits::events::{
     BlitzFocusEvent, BlitzInputEvent, BlitzPointerId, BlitzPointerEvent, DomEvent, DomEventData,
     MouseEventButton, MouseEventButtons, UiEvent,
 };
-use blitz_traits::shell::{ColorScheme, Viewport};
+use blitz_traits::shell::{ColorScheme, ShellProvider, Viewport};
 use dioxus_core::{ComponentFunction, Element, VirtualDom};
 use dioxus_native_dom::{DioxusDocument, DocumentConfig};
 use keyboard_types::Modifiers;
@@ -33,6 +33,27 @@ use winit::application::ApplicationHandler;
 use winit::event::{ElementState, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, EventLoop};
 use winit::window::{Window, WindowAttributes, WindowId};
+
+// =============================================================================
+// UIKitShellProvider - for triggering redraws when resources load
+// =============================================================================
+
+/// Shell provider that triggers window redraws when resources (images, fonts) load.
+pub struct UIKitShellProvider {
+    window: Arc<dyn Window>,
+}
+
+impl UIKitShellProvider {
+    pub fn new(window: Arc<dyn Window>) -> Self {
+        Self { window }
+    }
+}
+
+impl ShellProvider for UIKitShellProvider {
+    fn request_redraw(&self) {
+        self.window.request_redraw();
+    }
+}
 
 // =============================================================================
 // DioxusUIKitView
@@ -79,6 +100,10 @@ impl DioxusUIKitView {
         // Get window metrics
         let size = window.surface_size();
         let scale = window.scale_factor() as f32;
+
+        // Set up shell provider for resource loading callbacks (images, fonts)
+        let shell_provider = Arc::new(UIKitShellProvider::new(window.clone()));
+        doc.inner.borrow_mut().set_shell_provider(shell_provider);
 
         // Set viewport on document
         let viewport = Viewport::new(size.width, size.height, scale, ColorScheme::Light);
@@ -166,10 +191,32 @@ impl DioxusUIKitView {
     ///
     /// This converts InputEvents from native UIKit controls (UITextField, etc.)
     /// to DomEvents and dispatches them through the Dioxus event system.
-    pub fn process_input_events(&mut self) {
+    ///
+    /// Returns true if any events were processed.
+    pub fn process_input_events(&mut self) -> bool {
         let events = drain_input_events();
+        let had_events = !events.is_empty();
+
         for event in events {
             let dom_event = match event {
+                InputEvent::Click { node_id } => {
+                    DomEvent::new(
+                        node_id,
+                        DomEventData::Click(BlitzPointerEvent {
+                            id: BlitzPointerId::Finger(0),
+                            is_primary: true,
+                            x: 0.0,
+                            y: 0.0,
+                            screen_x: 0.0,
+                            screen_y: 0.0,
+                            client_x: 0.0,
+                            client_y: 0.0,
+                            button: MouseEventButton::Main,
+                            buttons: MouseEventButtons::None,
+                            mods: Modifiers::empty(),
+                        }),
+                    )
+                }
                 InputEvent::TextChanged { node_id, value } => {
                     DomEvent::new(node_id, DomEventData::Input(BlitzInputEvent { value }))
                 }
@@ -183,6 +230,8 @@ impl DioxusUIKitView {
             // Dispatch through Dioxus event handler
             self.doc.handle_dom_event(dom_event);
         }
+
+        had_events
     }
 
     /// Perform a redraw if needed.
@@ -194,7 +243,13 @@ impl DioxusUIKitView {
         self.needs_redraw.set(false);
 
         // Process any queued input events
-        self.process_input_events();
+        let had_events = self.process_input_events();
+
+        // If we had events, poll the VirtualDom to process them and get mutations
+        if had_events {
+            // Poll with no waker since we're already in redraw
+            let _ = self.doc.poll(None);
+        }
 
         // Resolve layout
         self.doc.inner.borrow_mut().resolve(0.0);
@@ -414,8 +469,12 @@ impl ApplicationHandler for DioxusUIKitApplication {
     }
 
     fn about_to_wait(&mut self, _event_loop: &dyn ActiveEventLoop) {
+        // Check if there are pending input events from native controls (buttons, text fields)
+        let has_pending = has_pending_input_events();
+
         for view in self.views.values() {
-            if view.needs_redraw() {
+            // Request redraw if view needs it OR if there are pending input events
+            if view.needs_redraw() || has_pending {
                 view.request_redraw();
             }
         }
@@ -467,6 +526,16 @@ pub fn launch_cfg_with_props<P: Clone + 'static, M: 'static>(
     props: P,
     attributes: WindowAttributes,
 ) {
+    // Create tokio runtime for async networking
+    let rt = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+        .expect("Failed to create tokio runtime");
+    let _guard = rt.enter();
+
+    // Create net provider for image/font loading
+    let net_provider = blitz_net::Provider::shared(None);
+
     // Create event loop
     let event_loop = EventLoop::new().expect("Failed to create event loop");
     let winit_proxy = event_loop.create_proxy();
@@ -475,8 +544,12 @@ pub fn launch_cfg_with_props<P: Clone + 'static, M: 'static>(
     // Create VirtualDom
     let vdom = VirtualDom::new_with_props(app, props);
 
-    // Create DioxusDocument
-    let doc = DioxusDocument::new(vdom, DocumentConfig::default());
+    // Create DioxusDocument with net provider
+    let config = DocumentConfig {
+        net_provider: Some(net_provider),
+        ..Default::default()
+    };
+    let doc = DioxusDocument::new(vdom, config);
 
     // Create application
     let application = DioxusUIKitApplication::new(doc, attributes, proxy, event_queue);

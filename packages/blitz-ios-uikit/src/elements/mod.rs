@@ -7,6 +7,7 @@ mod checkbox;
 mod container;
 mod image;
 mod input;
+mod scrollview;
 pub mod text;
 
 use blitz_dom::Node;
@@ -21,6 +22,7 @@ pub use button::BlitzButton;
 pub use checkbox::BlitzSwitch;
 pub use container::BlitzView;
 pub use input::BlitzTextField;
+pub use scrollview::{BlitzScrollView, update_scroll_view_content_size};
 pub use text::BlitzLabel;
 
 /// Categories of UIKit views we create
@@ -69,6 +71,9 @@ pub fn element_type_for_node(node: &Node) -> Option<ElementType> {
 
     // Check for other specific elements
     match tag.as_ref() {
+        // Body is always scrollable to handle overflow
+        "body" => Some(ElementType::ScrollView),
+
         "button" => Some(ElementType::Button),
         "img" => Some(ElementType::ImageView),
         "textarea" => Some(ElementType::TextField),
@@ -119,10 +124,7 @@ pub fn create_view(
         ElementType::TextField => input::create_text_field(mtm, node, node_id, event_sender),
         ElementType::Switch => checkbox::create_switch(mtm, node, node_id, event_sender),
         ElementType::ImageView => image::create_image_view(mtm, node, node_id),
-        ElementType::ScrollView => {
-            // For now, create a regular container - we'll add scroll support later
-            container::create_container(mtm, node_id, event_sender)
-        }
+        ElementType::ScrollView => scrollview::create_scroll_view(mtm, node_id, event_sender)
     }
 }
 
