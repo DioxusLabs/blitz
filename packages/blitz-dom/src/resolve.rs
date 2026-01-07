@@ -1,6 +1,9 @@
 //! Resolve style and layout
 
-use std::cell::RefCell;
+use std::{
+    cell::RefCell,
+    time::{SystemTime, UNIX_EPOCH},
+};
 
 use debug_timer::debug_timer;
 use parley::LayoutContext;
@@ -22,6 +25,7 @@ use taffy::AvailableSpace;
 
 use crate::{
     BaseDocument, NON_INCREMENTAL,
+    document::ScrollAnimationState,
     layout::{
         construct::{
             ConstructionTask, ConstructionTaskData, ConstructionTaskResult,
@@ -45,6 +49,8 @@ impl BaseDocument {
 
         // Process messages that have been sent to our message channel (e.g. loaded resource)
         self.handle_messages();
+
+        self.resolve_scroll_animation();
 
         let root_node_id = self.root_element().id;
         debug_timer!(timer, feature = "log_phase_times");
@@ -108,6 +114,38 @@ impl BaseDocument {
         timer.record_time("subdocs");
 
         timer.print_times(&format!("Resolve({}): ", self.id()));
+    }
+
+    pub fn resolve_scroll_animation(&mut self) {
+        match &mut self.scroll_animation {
+            ScrollAnimationState::Fling(fling_state) => {
+                let time_ms = SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .unwrap()
+                    .as_millis() as u64 as f64;
+
+                let time_diff_ms = time_ms - fling_state.last_seen_time;
+
+                // 0.95 @ 60fps normalized to actual frame times
+                let deceleration = 1.0 - ((0.05 / 16.66666) * time_diff_ms);
+
+                fling_state.x_velocity *= deceleration;
+                fling_state.y_velocity *= deceleration;
+                fling_state.last_seen_time = time_ms;
+                let fling_state = fling_state.clone();
+
+                let dx = fling_state.x_velocity * time_diff_ms;
+                let dy = fling_state.y_velocity * time_diff_ms;
+
+                self.scroll_by(Some(fling_state.target), dx, dy, &mut |_| {});
+                if fling_state.x_velocity.abs() < 0.1 && fling_state.y_velocity.abs() < 0.1 {
+                    self.scroll_animation = ScrollAnimationState::None;
+                }
+            }
+            ScrollAnimationState::None => {
+                // Do nothing
+            }
+        }
     }
 
     /// Ensure that the layout_children field is populated for all nodes

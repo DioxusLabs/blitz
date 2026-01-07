@@ -11,6 +11,7 @@ edition.workspace = true
 rust-version.workspace = true
 
 [features]
+http2 = ["reqwest/http2"]
 cookies = ["reqwest/cookies"]
 multipart = ["reqwest/multipart", "reqwest/stream"]
 cache = ["dep:reqwest-middleware", "dep:http-cache-reqwest", "dep:directories"]
@@ -22,7 +23,7 @@ blitz-traits = { workspace = true }
 
 # Networking dependencies
 tokio = { workspace = true }
-reqwest = { workspace = true }
+reqwest = { workspace = true, features = ["charset", "rustls-tls"] }
 data-url = { workspace = true }
 
 # Caching

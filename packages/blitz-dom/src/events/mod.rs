@@ -26,22 +26,29 @@ pub(crate) fn handle_dom_event<F: FnMut(DomEvent)>(
     let pos = node.absolute_position(0.0, 0.0);
     let mut set_focus = false;
     if let Some(sub_doc) = node.subdoc_mut() {
+        let viewport_scroll = sub_doc.inner().viewport_scroll();
         // TODO: eliminate clone
         let ui_event = match event.data.clone() {
             DomEventData::MouseMove(mut mouse_event) => {
-                mouse_event.x -= pos.x;
-                mouse_event.y -= pos.y;
+                mouse_event.x -= pos.x - viewport_scroll.x as f32;
+                mouse_event.y -= pos.y - viewport_scroll.y as f32;
+                mouse_event.client_x -= pos.x;
+                mouse_event.client_y -= pos.y;
                 Some(UiEvent::MouseMove(mouse_event))
             }
             DomEventData::MouseDown(mut mouse_event) => {
-                mouse_event.x -= pos.x;
-                mouse_event.y -= pos.y;
+                mouse_event.x -= pos.x - viewport_scroll.x as f32;
+                mouse_event.y -= pos.y - viewport_scroll.y as f32;
+                mouse_event.client_x -= pos.x;
+                mouse_event.client_y -= pos.y;
                 set_focus = true;
                 Some(UiEvent::MouseDown(mouse_event))
             }
             DomEventData::MouseUp(mut mouse_event) => {
-                mouse_event.x -= pos.x;
-                mouse_event.y -= pos.y;
+                mouse_event.x -= pos.x - viewport_scroll.x as f32;
+                mouse_event.y -= pos.y - viewport_scroll.y as f32;
+                mouse_event.client_x -= pos.x;
+                mouse_event.client_y -= pos.y;
                 set_focus = true;
                 Some(UiEvent::MouseUp(mouse_event))
             }
@@ -85,15 +92,7 @@ pub(crate) fn handle_dom_event<F: FnMut(DomEvent)>(
 
     match &event.data {
         DomEventData::MouseMove(mouse_event) => {
-            let changed = handle_mousemove(
-                doc,
-                target_node_id,
-                mouse_event.x,
-                mouse_event.y,
-                mouse_event.buttons,
-                mouse_event,
-                dispatch_event,
-            );
+            let changed = handle_mousemove(doc, target_node_id, mouse_event, dispatch_event);
             if changed {
                 doc.shell_provider.request_redraw();
             }

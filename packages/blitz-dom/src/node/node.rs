@@ -1,6 +1,6 @@
 use atomic_refcell::{AtomicRef, AtomicRefCell, AtomicRefMut};
 use bitflags::bitflags;
-use blitz_traits::events::{BlitzMouseButtonEvent, DomEventData, HitResult};
+use blitz_traits::events::{BlitzPointerEvent, BlitzPointerId, DomEventData, HitResult};
 use blitz_traits::shell::ShellProvider;
 use html_escape::encode_quoted_attribute_to_string;
 use keyboard_types::Modifiers;
@@ -196,7 +196,7 @@ impl Node {
         }
     }
 
-    pub(crate) fn display_style(&self) -> Option<StyloDisplay> {
+    pub fn display_style(&self) -> Option<StyloDisplay> {
         Some(self.primary_styles().as_ref()?.clone_display())
     }
 
@@ -1047,14 +1047,23 @@ impl Node {
         DomEventData::Click(self.synthetic_click_event_data(mods))
     }
 
-    pub fn synthetic_click_event_data(&self, mods: Modifiers) -> BlitzMouseButtonEvent {
+    pub fn synthetic_click_event_data(&self, mods: Modifiers) -> BlitzPointerEvent {
         let absolute_position = self.absolute_position(0.0, 0.0);
         let x = absolute_position.x + (self.final_layout.size.width / 2.0);
         let y = absolute_position.y + (self.final_layout.size.height / 2.0);
 
-        BlitzMouseButtonEvent {
+        BlitzPointerEvent {
+            id: BlitzPointerId::Mouse,
+            is_primary: true,
             x,
             y,
+
+            // TODO: should these be different?
+            screen_x: x,
+            screen_y: y,
+            client_x: x,
+            client_y: y,
+
             mods,
             button: Default::default(),
             buttons: Default::default(),

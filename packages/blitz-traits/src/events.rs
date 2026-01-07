@@ -47,9 +47,9 @@ impl EventState {
 #[derive(Debug, Clone)]
 #[repr(u8)]
 pub enum UiEvent {
-    MouseMove(BlitzMouseButtonEvent),
-    MouseUp(BlitzMouseButtonEvent),
-    MouseDown(BlitzMouseButtonEvent),
+    MouseMove(BlitzPointerEvent),
+    MouseUp(BlitzPointerEvent),
+    MouseDown(BlitzPointerEvent),
     Wheel(BlitzWheelEvent),
     KeyUp(BlitzKeyEvent),
     KeyDown(BlitzKeyEvent),
@@ -157,18 +157,18 @@ impl FromStr for DomEventKind {
 #[derive(Debug, Clone)]
 #[repr(u8)]
 pub enum DomEventData {
-    MouseMove(BlitzMouseButtonEvent),
-    MouseDown(BlitzMouseButtonEvent),
-    MouseUp(BlitzMouseButtonEvent),
-    MouseEnter(BlitzMouseButtonEvent),
-    MouseLeave(BlitzMouseButtonEvent),
-    MouseOver(BlitzMouseButtonEvent),
-    MouseOut(BlitzMouseButtonEvent),
+    MouseMove(BlitzPointerEvent),
+    MouseDown(BlitzPointerEvent),
+    MouseUp(BlitzPointerEvent),
+    MouseEnter(BlitzPointerEvent),
+    MouseLeave(BlitzPointerEvent),
+    MouseOver(BlitzPointerEvent),
+    MouseOut(BlitzPointerEvent),
     Scroll(BlitzScrollEvent),
     Wheel(BlitzWheelEvent),
-    Click(BlitzMouseButtonEvent),
-    ContextMenu(BlitzMouseButtonEvent),
-    DoubleClick(BlitzMouseButtonEvent),
+    Click(BlitzPointerEvent),
+    ContextMenu(BlitzPointerEvent),
+    DoubleClick(BlitzPointerEvent),
     KeyPress(BlitzKeyEvent),
     KeyDown(BlitzKeyEvent),
     KeyUp(BlitzKeyEvent),
@@ -307,10 +307,22 @@ pub struct HitResult {
     pub y: f32,
 }
 
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum BlitzPointerId {
+    Mouse,
+    Finger(u64),
+}
+
 #[derive(Clone, Debug)]
-pub struct BlitzMouseButtonEvent {
-    pub x: f32,
-    pub y: f32,
+pub struct BlitzPointerEvent {
+    pub id: BlitzPointerId,
+    pub is_primary: bool,
+    pub x: f32, // page_x TODO: rename
+    pub y: f32, // page_y TODO: rename
+    pub screen_x: f32,
+    pub screen_y: f32,
+    pub client_x: f32,
+    pub client_y: f32,
     pub button: MouseEventButton,
     pub buttons: MouseEventButtons,
     pub mods: Modifiers,
@@ -321,7 +333,6 @@ pub struct BlitzWheelEvent {
     pub delta: BlitzWheelDelta,
     pub x: f32,
     pub y: f32,
-    pub button: MouseEventButton,
     pub buttons: MouseEventButtons,
     pub mods: Modifiers,
 }
@@ -341,6 +352,20 @@ pub struct BlitzScrollEvent {
     pub client_width: i32,
     pub client_height: i32,
 }
+
+// struct PointerInputState {
+//     id: BlitzPointerId,
+//     pointer_down_x: f32,
+//     pointer_down_y: f32,
+//     pointer_down_time: Option<Instant>,
+//     click_count: u16,
+// }
+
+// struct PointersInputState {
+//     initial_finger_active: bool,
+//     mouse: Option<PointerInputState>,
+//     fingers: Vec<PointerInputState>,
+// }
 
 bitflags! {
     /// The buttons property indicates which buttons are pressed on the mouse
@@ -439,7 +464,8 @@ pub enum BlitzImeEvent {
     /// Notifies when the IME was enabled.
     ///
     /// After getting this event you could receive [`Preedit`][Self::Preedit] and
-    /// [`Commit`][Self::Commit] events.
+    /// [`Commit`][Self::Commit] events. You should also start performing IME related requests
+    /// like [`Window::set_ime_cursor_area`].
     Enabled,
 
     /// Notifies when a new composing text should be set at the cursor position.
@@ -448,7 +474,7 @@ pub enum BlitzImeEvent {
     /// position. When it's `None`, the cursor should be hidden. When `String` is an empty string
     /// this indicates that preedit was cleared.
     ///
-    /// The cursor position is byte-wise indexed.
+    /// The cursor position is byte-wise indexed, assuming UTF-8.
     Preedit(String, Option<(usize, usize)>),
 
     /// Notifies when text should be inserted into the editor widget.
@@ -456,9 +482,25 @@ pub enum BlitzImeEvent {
     /// Right before this event winit will send empty [`Self::Preedit`] event.
     Commit(String),
 
+    /// Delete text surrounding the cursor or selection.
+    ///
+    /// This event does not affect either the pre-edit string.
+    /// This means that the application must first remove the pre-edit,
+    /// then execute the deletion, then insert the removed text back.
+    ///
+    /// This event assumes text is stored in UTF-8.
+    DeleteSurrounding {
+        /// Bytes to remove before the selection
+        before_bytes: usize,
+        /// Bytes to remove after the selection
+        after_bytes: usize,
+    },
+
     /// Notifies when the IME was disabled.
     ///
     /// After receiving this event you won't get any more [`Preedit`][Self::Preedit] or
-    /// [`Commit`][Self::Commit] events until the next [`Enabled`][Self::Enabled] event.
+    /// [`Commit`][Self::Commit] events until the next [`Enabled`][Self::Enabled] event. You should
+    /// also stop issuing IME related requests like [`Window::set_ime_cursor_area`] and clear
+    /// pending preedit text.
     Disabled,
 }
