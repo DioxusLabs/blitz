@@ -110,6 +110,7 @@ pub fn replaced_measure_function(
 
         inherent_size
             // .maybe_clamp(min_size, max_size)
+            .maybe_min(available_space.into_options())
             .map(Some)
             .maybe_apply_aspect_ratio(Some(aspect_ratio))
             .map(|s| s.unwrap())
