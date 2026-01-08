@@ -11,13 +11,14 @@ edition.workspace = true
 rust-version.workspace = true
 
 [features]
-default = ["accessibility", "clipboard", "file_dialog"]
+default = ["accessibility", "clipboard", "file_dialog", "devtools"]
 accessibility = [
     "dep:accesskit",
     "dep:accesskit_winit",
     "blitz-dom/accessibility",
 ]
 clipboard = ["dep:arboard"]
+devtools = ["dep:blitz-devtools-server"]
 tracing = ["dep:tracing", "blitz-dom/tracing"]
 file_dialog = ["dep:rfd"]
 # Enables a data-uri-only NetProvider. Only needed if you aren't using the regular NetProvider
@@ -28,6 +29,7 @@ data-uri = ["dep:data-url"]
 blitz-traits = { workspace = true }
 blitz-dom = { workspace = true }
 blitz-paint = { workspace = true }
+blitz-devtools-server = { workspace = true, optional = true }
 anyrender = { workspace = true }
 
 # Windowing & Input
