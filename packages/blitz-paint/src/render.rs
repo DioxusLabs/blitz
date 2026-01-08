@@ -141,7 +141,10 @@ impl<'dom> BlitzDomPainter<'dom> {
 
         if let Some(bg_color) = background_color {
             let bg_color = bg_color.as_srgb_color();
-            let rect = Rect::from_origin_size((0.0, 0.0), (bg_width as f64, bg_height as f64));
+            let rect = Rect::from_origin_size(
+                (self.initial_x * self.scale, self.initial_y * self.scale),
+                (bg_width as f64, bg_height as f64),
+            );
             scene.fill(Fill::NonZero, Affine::IDENTITY, bg_color, None, &rect);
         }
 

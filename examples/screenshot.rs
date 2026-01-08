@@ -117,7 +117,15 @@ async fn main() {
             );
 
             // Render document
-            paint_scene(scene, document.as_ref(), scale, render_width, render_height);
+            paint_scene(
+                scene,
+                document.as_ref(),
+                scale,
+                render_width,
+                render_height,
+                0,
+                0,
+            );
         },
         render_width,
         render_height,

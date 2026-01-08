@@ -23,13 +23,13 @@ jobs:
   # We only run `cargo build` (not `cargo test`) so as to avoid requiring dev-dependencies to build with the MSRV
   # version. Building is likely sufficient as runtime errors varying between rust versions is very unlikely.
   build-msrv:
-    name: "MSRV Build [Rust 1.88]"
+    name: "MSRV Build [Rust 1.89]"
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@master
         with:
-          toolchain: 1.88
+          toolchain: 1.89
       - run: perl -pi.bak -e 's/opt-level = 2/opt-level = 0/g' Cargo.toml
       - uses: awalsh128/cache-apt-pkgs-action@latest
         with:
@@ -130,6 +130,7 @@ jobs:
     env:
       RUST_CARGO_COMMAND: ${{ matrix.platform.cross == true && 'cross' || 'cargo' }}
     strategy:
+      fail-fast: false
       matrix:
         platform:
           - {
@@ -155,6 +156,22 @@ jobs:
               cross: false,
               command: "test",
               args: "--all --tests",
+            }
+          - {
+              name: ios,
+              target: aarch64-apple-ios,
+              os: macos-latest,
+              cross: false,
+              command: "build",
+              args: "--all",
+            }
+          - {
+              name: android,
+              target: aarch64-linux-android,
+              os: ubuntu-latest,
+              cross: true,
+              command: "build",
+              args: "--all",
             }
 
     name: Test (${{ matrix.platform.name }})
@@ -190,8 +207,12 @@ jobs:
         if: ${{ matrix.platform.os == 'ubuntu-latest' }}
         uses: awalsh128/cache-apt-pkgs-action@latest
         with:
-          packages: libasound2-dev libatk1.0-dev libgtk-3-dev libudev-dev libpango1.0-dev libxdo-dev
+          packages: libasound2-dev libatk1.0-dev libgtk-3-dev libudev-dev libpango1.0-dev libxdo-dev libssl-dev
           version: 1.0
+
+      - name: Install cross
+        if: ${{ matrix.platform.cross == true }}
+        uses: taiki-e/install-action@cross
 
       - name: Setup
         run: ${{ matrix.platform.setup }} 

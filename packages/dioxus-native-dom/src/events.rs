@@ -1,6 +1,6 @@
 use blitz_dom::{BaseDocument, Node};
 use blitz_traits::events::{
-    BlitzKeyEvent, BlitzMouseButtonEvent, BlitzScrollEvent, BlitzWheelDelta, BlitzWheelEvent,
+    BlitzKeyEvent, BlitzPointerEvent, BlitzScrollEvent, BlitzWheelDelta, BlitzWheelEvent,
     MouseEventButton,
 };
 use dioxus_html::{
@@ -297,20 +297,19 @@ impl HasKeyboardData for BlitzKeyboardData {
 }
 
 #[derive(Clone)]
-pub struct NativeClickData(pub(crate) BlitzMouseButtonEvent);
+pub struct NativeClickData(pub(crate) BlitzPointerEvent);
 
 impl InteractionLocation for NativeClickData {
     fn client_coordinates(&self) -> ClientPoint {
-        ClientPoint::new(self.0.x as _, self.0.y as _)
+        ClientPoint::new(self.0.client_x as f64, self.0.client_y as f64)
     }
 
-    // these require blitz to pass them along, or a dom rect
     fn screen_coordinates(&self) -> ScreenPoint {
-        unimplemented!()
+        ScreenPoint::new(self.0.screen_x as f64, self.0.screen_y as f64)
     }
 
     fn page_coordinates(&self) -> PagePoint {
-        unimplemented!()
+        PagePoint::new(self.0.x as f64, self.0.y as f64)
     }
 }
 
@@ -414,13 +413,7 @@ impl HasMouseData for NativeWheelData {
 
 impl PointerInteraction for NativeWheelData {
     fn trigger_button(&self) -> Option<MouseButton> {
-        Some(match self.0.button {
-            MouseEventButton::Main => MouseButton::Primary,
-            MouseEventButton::Auxiliary => MouseButton::Auxiliary,
-            MouseEventButton::Secondary => MouseButton::Secondary,
-            MouseEventButton::Fourth => MouseButton::Fourth,
-            MouseEventButton::Fifth => MouseButton::Fifth,
-        })
+        None
     }
 
     fn held_buttons(&self) -> MouseButtonSet {
