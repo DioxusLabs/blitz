@@ -46,28 +46,44 @@ impl<T: ?Sized> OpaquePtr<T> {
 
 #[doc(hidden)]
 pub struct UnsafeBox<T: ?Sized> {
-    value: Box<T>,
+    value: Option<Box<T>>,
     owner: std::thread::ThreadId,
 }
 
+// Safety: this wrapper is only used to cross an event channel boundary and is guarded by
+// runtime thread-affinity checks. Misuse will panic instead of causing UB.
 unsafe impl<T: ?Sized> Send for UnsafeBox<T> {}
 unsafe impl<T: ?Sized> Sync for UnsafeBox<T> {}
 
 impl<T: ?Sized> UnsafeBox<T> {
     pub fn new(value: Box<T>) -> Self {
         Self {
-            value,
+            value: Some(value),
             owner: std::thread::current().id(),
         }
     }
 
-    pub fn into_inner(self) -> Box<T> {
+    pub fn into_inner(mut self) -> Box<T> {
+        self.assert_owner();
+        self.value
+            .take()
+            .expect("UnsafeBox inner value already taken")
+    }
+
+    fn assert_owner(&self) {
         assert_eq!(
             self.owner,
             std::thread::current().id(),
             "UnsafeBox accessed from a different thread",
         );
-        self.value
+    }
+}
+
+impl<T: ?Sized> Drop for UnsafeBox<T> {
+    fn drop(&mut self) {
+        if self.value.is_some() {
+            self.assert_owner();
+        }
     }
 }
 
