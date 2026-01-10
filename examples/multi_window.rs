@@ -35,7 +35,8 @@ fn app() -> Element {
                         let attributes = WindowAttributes::default()
                             .with_title(title)
                             .with_inner_size(winit::dpi::LogicalSize::new(400.0, 300.0));
-                        let receiver = provider.new_window(vdom, attributes);
+                        let config = dioxus_native::Config::new().with_window_attributes(attributes);
+                        let receiver = provider.new_window(vdom, config);
                         let mut spawned_windows = spawned_windows;
                         spawn(async move {
                             if let Ok((window_id, window)) = receiver.await {

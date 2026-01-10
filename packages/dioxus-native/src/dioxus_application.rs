@@ -18,7 +18,7 @@ use blitz_dom::DocumentConfig;
 use blitz_dom::HtmlParserProvider;
 
 use crate::DioxusNativeWindowRenderer;
-use crate::{contexts::DioxusNativeDocument, BlitzShellEvent, DioxusDocument};
+use crate::{contexts::DioxusNativeDocument, BlitzShellEvent, Config, DioxusDocument};
 
 #[repr(transparent)]
 #[doc(hidden)]
@@ -116,7 +116,7 @@ pub enum DioxusNativeEvent {
     /// once; they will be reclaimed by the event loop thread via `Box::from_raw`.
     CreateDocumentWindow {
         vdom: UnsafeBox<dioxus_core::VirtualDom>,
-        attributes: winit::window::WindowAttributes,
+        config: Config,
         reply: CreateWindowReplyOpt,
     },
 
@@ -153,7 +153,7 @@ impl DioxusNativeProvider {
     pub fn create_document_window(
         &self,
         vdom: dioxus_core::VirtualDom,
-        attributes: winit::window::WindowAttributes,
+        config: Config,
     ) -> oneshot::Receiver<(WindowId, Arc<Window>)> {
         let (sender, receiver) = oneshot::channel();
         let vdom = UnsafeBox::new(Box::new(vdom));
@@ -161,7 +161,7 @@ impl DioxusNativeProvider {
         let _ = self.proxy.send_event(BlitzShellEvent::embedder_event(
             DioxusNativeEvent::CreateDocumentWindow {
                 vdom,
-                attributes,
+                config,
                 reply,
             },
         ));
@@ -171,9 +171,9 @@ impl DioxusNativeProvider {
     pub fn new_window(
         &self,
         vdom: dioxus_core::VirtualDom,
-        attributes: winit::window::WindowAttributes,
+        config: Config,
     ) -> oneshot::Receiver<(WindowId, Arc<Window>)> {
-        self.create_document_window(vdom, attributes)
+        self.create_document_window(vdom, config)
     }
 
     pub fn get_window(&self, window_id: WindowId) -> oneshot::Receiver<Option<Arc<Window>>> {
@@ -260,7 +260,7 @@ impl DioxusNativeApplication {
         &mut self,
         event_loop: &ActiveEventLoop,
         vdom: UnsafeBox<dioxus_core::VirtualDom>,
-        attributes: winit::window::WindowAttributes,
+        config: Config,
         reply: CreateWindowReplyOpt,
     ) {
         let mut vdom = *vdom.into_inner();
@@ -299,7 +299,7 @@ impl DioxusNativeApplication {
         let doc = Box::new(document) as _;
 
         let renderer = (self.renderer_factory)();
-        let config = WindowConfig::with_attributes(doc, renderer, attributes);
+        let config = WindowConfig::with_attributes(doc, renderer, config.into_window_attributes());
         let (window_id, window_arc) = self._spawn_window(config, event_loop);
 
         if let Some(reply) = reply {
@@ -350,10 +350,10 @@ impl DioxusNativeApplication {
 
             DioxusNativeEvent::CreateDocumentWindow {
                 vdom,
-                attributes,
+                config,
                 reply,
             } => {
-                self.create_window(event_loop, vdom, attributes, reply);
+                self.create_window(event_loop, vdom, config, reply);
             }
 
             DioxusNativeEvent::GetWindow { window_id, reply } => {

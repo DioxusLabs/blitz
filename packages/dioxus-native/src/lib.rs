@@ -64,12 +64,55 @@ pub use {
     dioxus_renderer::{use_wgpu, Features, Limits},
 };
 
-use blitz_shell::{create_default_event_loop, BlitzShellEvent, Config};
+use blitz_shell::{create_default_event_loop, BlitzShellEvent, Config as BlitzConfig};
 use dioxus_core::{ComponentFunction, Element, VirtualDom};
 use link_handler::DioxusNativeNavigationProvider;
 use std::any::Any;
 use std::sync::Arc;
 use winit::window::WindowAttributes;
+
+/// Window configuration for Dioxus Native.
+#[derive(Clone)]
+pub struct Config {
+    window_attributes: WindowAttributes,
+}
+
+impl Default for Config {
+    fn default() -> Self {
+        Self {
+            window_attributes: WindowAttributes::default(),
+        }
+    }
+}
+
+impl Config {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn with_window(mut self, window_attributes: WindowAttributes) -> Self {
+        self.window_attributes = window_attributes;
+        self
+    }
+
+    pub fn with_window_attributes(self, window_attributes: WindowAttributes) -> Self {
+        self.with_window(window_attributes)
+    }
+
+    pub fn window_attributes(&self) -> &WindowAttributes {
+        &self.window_attributes
+    }
+
+    pub fn into_window_attributes(self) -> WindowAttributes {
+        self.window_attributes
+    }
+}
+
+impl From<WindowAttributes> for Config {
+    fn from(window_attributes: WindowAttributes) -> Self {
+        Self { window_attributes }
+    }
+}
 
 /// Launch an interactive HTML/CSS renderer driven by the Dioxus virtualdom
 pub fn launch(app: fn() -> Element) {
@@ -132,7 +175,7 @@ pub fn launch_cfg_with_props<P: Clone + 'static, M: 'static>(
             cfg = try_read_config!(cfg, limits, Limits);
         }
         cfg = try_read_config!(cfg, window_attributes, WindowAttributes);
-        cfg = try_read_config!(cfg, _config, Config);
+        cfg = try_read_config!(cfg, _config, BlitzConfig);
         let _ = cfg;
     }
 
@@ -221,6 +264,7 @@ pub fn launch_cfg_with_props<P: Clone + 'static, M: 'static>(
         Arc::new(DioxusNativeWindowRenderer::new);
 
     let window_attributes = window_attributes.unwrap_or_default();
+    let window_config = Config::from(window_attributes);
 
     let vdom = VirtualDom::new_with_props(app, props);
     let vdom = UnsafeBox::new(Box::new(vdom));
@@ -240,7 +284,7 @@ pub fn launch_cfg_with_props<P: Clone + 'static, M: 'static>(
     let _ = proxy.send_event(BlitzShellEvent::embedder_event(
         DioxusNativeEvent::CreateDocumentWindow {
             vdom,
-            attributes: window_attributes.clone(),
+            config: window_config,
             reply: None,
         },
     ));
