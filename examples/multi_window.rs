@@ -36,14 +36,13 @@ fn app() -> Element {
                             .with_title(title)
                             .with_inner_size(winit::dpi::LogicalSize::new(400.0, 300.0));
                         let config = dioxus_native::Config::new().with_window_attributes(attributes);
-                        let receiver = provider.new_window(vdom, config);
+                        let pending = provider.new_window(vdom, config);
                         let mut spawned_windows = spawned_windows;
                         spawn(async move {
-                            if let Ok((window_id, window)) = receiver.await {
-                                let mut next = spawned_windows();
-                                next.push((window_id, Arc::downgrade(&window)));
-                                spawned_windows.set(next);
-                            }
+                            let (window_id, window) = pending.await;
+                            let mut next = spawned_windows();
+                            next.push((window_id, Arc::downgrade(&window)));
+                            spawned_windows.set(next);
                         });
                         counter += 1;
                     },

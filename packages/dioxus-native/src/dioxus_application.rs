@@ -18,7 +18,10 @@ use blitz_dom::DocumentConfig;
 use blitz_dom::HtmlParserProvider;
 
 use crate::DioxusNativeWindowRenderer;
-use crate::{contexts::DioxusNativeDocument, BlitzShellEvent, Config, DioxusDocument};
+use crate::{
+    contexts::DioxusNativeDocument, BlitzShellEvent, Config, DioxusDocument,
+    PendingWindowContext, WindowCreated,
+};
 
 #[repr(transparent)]
 #[doc(hidden)]
@@ -89,7 +92,6 @@ impl<T: ?Sized> Drop for UnsafeBox<T> {
 
 type ContextProvider = Box<dyn Fn() -> Box<dyn Any> + Send + Sync>;
 type ContextProviders = Arc<Vec<ContextProvider>>;
-type WindowCreated = (WindowId, Arc<Window>);
 type CreateWindowReply = UnsafeBox<oneshot::Sender<WindowCreated>>;
 type CreateWindowReplyOpt = Option<CreateWindowReply>;
 
@@ -154,7 +156,7 @@ impl DioxusNativeProvider {
         &self,
         vdom: dioxus_core::VirtualDom,
         config: Config,
-    ) -> oneshot::Receiver<(WindowId, Arc<Window>)> {
+    ) -> PendingWindowContext {
         let (sender, receiver) = oneshot::channel();
         let vdom = UnsafeBox::new(Box::new(vdom));
         let reply = Some(UnsafeBox::new(Box::new(sender)));
@@ -165,14 +167,14 @@ impl DioxusNativeProvider {
                 reply,
             },
         ));
-        receiver
+        PendingWindowContext::new(receiver)
     }
 
     pub fn new_window(
         &self,
         vdom: dioxus_core::VirtualDom,
         config: Config,
-    ) -> oneshot::Receiver<(WindowId, Arc<Window>)> {
+    ) -> PendingWindowContext {
         self.create_document_window(vdom, config)
     }
 

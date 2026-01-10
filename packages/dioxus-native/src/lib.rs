@@ -66,10 +66,13 @@ pub use {
 
 use blitz_shell::{create_default_event_loop, BlitzShellEvent, Config as BlitzConfig};
 use dioxus_core::{ComponentFunction, Element, VirtualDom};
+use futures_channel::oneshot;
 use link_handler::DioxusNativeNavigationProvider;
 use std::any::Any;
+use std::future::Future;
+use std::pin::Pin;
 use std::sync::Arc;
-use winit::window::WindowAttributes;
+use winit::window::{Window, WindowAttributes, WindowId};
 
 /// Window configuration for Dioxus Native.
 #[derive(Clone)]
@@ -111,6 +114,39 @@ impl Config {
 impl From<WindowAttributes> for Config {
     fn from(window_attributes: WindowAttributes) -> Self {
         Self { window_attributes }
+    }
+}
+
+pub type WindowCreated = (WindowId, Arc<Window>);
+
+pub struct PendingWindowContext {
+    receiver: oneshot::Receiver<WindowCreated>,
+}
+
+impl PendingWindowContext {
+    pub(crate) fn new(receiver: oneshot::Receiver<WindowCreated>) -> Self {
+        Self { receiver }
+    }
+
+    pub async fn resolve(self) -> WindowCreated {
+        self.try_resolve()
+            .await
+            .expect("Failed to resolve pending window context")
+    }
+
+    pub async fn try_resolve(
+        self,
+    ) -> Result<WindowCreated, futures_channel::oneshot::Canceled> {
+        self.receiver.await
+    }
+}
+
+impl std::future::IntoFuture for PendingWindowContext {
+    type Output = WindowCreated;
+    type IntoFuture = Pin<Box<dyn Future<Output = Self::Output>>>;
+
+    fn into_future(self) -> Self::IntoFuture {
+        Box::pin(self.resolve())
     }
 }
 
