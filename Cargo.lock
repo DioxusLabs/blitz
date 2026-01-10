@@ -2087,6 +2087,7 @@ dependencies = [
  "dioxus-native-dom",
  "dioxus-signals",
  "dioxus-stores",
+ "futures-channel",
  "futures-util",
  "keyboard-types",
  "manganis",

@@ -38,7 +38,7 @@ vello-cpu-base = ["alt-renderer", "dep:anyrender_vello_cpu"]
 alt-renderer = []
 
 # Other features
-net = ["dep:blitz-net"]
+net = ["dep:blitz-net", "dep:tokio"]
 html = ["dep:blitz-html"]
 
 # Dev
@@ -95,7 +95,8 @@ winit = { workspace = true }
 keyboard-types = { workspace = true }
 
 # Runtime + channels
-tokio = { workspace = true, features = ["rt-multi-thread", "sync"] }
+tokio = { workspace = true, features = ["rt-multi-thread"], optional = true }
+futures-channel = { workspace = true }
 webbrowser = { workspace = true }
 
 # Other dependencies

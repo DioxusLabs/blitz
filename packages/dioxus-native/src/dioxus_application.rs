@@ -3,11 +3,12 @@ use blitz_shell::{BlitzApplication, View};
 use blitz_traits::{navigation::NavigationProvider, net::NetProvider};
 use dioxus_core::{provide_context, ScopeId};
 use dioxus_history::{History, MemoryHistory};
+use futures_channel::oneshot;
 use std::any::Any;
 use std::rc::Rc;
 use std::sync::Arc;
-use tokio::sync::oneshot;
 use winit::application::ApplicationHandler;
+
 use winit::event::{StartCause, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, EventLoopProxy};
 use winit::window::Window;
@@ -44,20 +45,29 @@ impl<T: ?Sized> OpaquePtr<T> {
 }
 
 #[doc(hidden)]
-pub struct UnsafeBox<T: ?Sized>(Box<T>);
+pub struct UnsafeBox<T: ?Sized> {
+    value: Box<T>,
+    owner: std::thread::ThreadId,
+}
 
-// Safety: this wrapper exists solely to satisfy the `Send + Sync` bound imposed by the embedder
-// event channel. The payloads are only ever created and consumed on the event loop thread.
 unsafe impl<T: ?Sized> Send for UnsafeBox<T> {}
 unsafe impl<T: ?Sized> Sync for UnsafeBox<T> {}
 
 impl<T: ?Sized> UnsafeBox<T> {
     pub fn new(value: Box<T>) -> Self {
-        Self(value)
+        Self {
+            value,
+            owner: std::thread::current().id(),
+        }
     }
 
     pub fn into_inner(self) -> Box<T> {
-        self.0
+        assert_eq!(
+            self.owner,
+            std::thread::current().id(),
+            "UnsafeBox accessed from a different thread",
+        );
+        self.value
     }
 }
 
@@ -142,6 +152,14 @@ impl DioxusNativeProvider {
         receiver
     }
 
+    pub fn new_window(
+        &self,
+        vdom: dioxus_core::VirtualDom,
+        attributes: winit::window::WindowAttributes,
+    ) -> oneshot::Receiver<(WindowId, Arc<Window>)> {
+        self.create_document_window(vdom, attributes)
+    }
+
     pub fn get_window(&self, window_id: WindowId) -> oneshot::Receiver<Option<Arc<Window>>> {
         let (sender, receiver) = oneshot::channel();
         let reply = UnsafeBox::new(Box::new(sender));
@@ -207,7 +225,7 @@ impl DioxusNativeApplication {
             provide_context(shared);
         });
 
-        let shell_provider = doc.as_ref().shell_provider.clone();
+        let shell_provider = doc.inner.borrow().shell_provider.clone();
         doc.vdom
             .in_scope(ScopeId::ROOT, move || provide_context(shell_provider));
 
