@@ -29,7 +29,7 @@ homepage = "https://github.com/dioxuslabs/blitz"
 repository = "https://github.com/dioxuslabs/blitz"
 categories = ["gui"]
 edition = "2024"
-rust-version = "1.88.0"
+rust-version = "1.90.0"
 
 [workspace.dependencies]
 # Blitz dependencies(in-repo)
@@ -132,7 +132,7 @@ winit = { version = "0.30.2", features = ["rwh_06"] }
 accesskit_winit = "0.23"
 accesskit = "0.17"
 arboard = { version = "3.4.1", default-features = false }
-rfd = { version = "0.15.3", default-features = false }
+rfd = { version = "0.17.1", default-features = false }
 keyboard-types = "0.7"
 cursor-icon = "1"
 
