@@ -55,9 +55,9 @@ selectors = { version = "0.34.0", package = "selectors" }
 cssparser = { version = "0.36" }
 
 # HTML5ever dependencies
-markup5ever = "0.36.1" # needs to match stylo web_atoms version
-html5ever = "0.36.1"   # needs to match stylo web_atoms version
-xml5ever = "0.36.1"    # needs to match stylo web_atoms version
+markup5ever = "0.37.0" # needs to match stylo web_atoms version
+html5ever = "0.37.0"   # needs to match stylo web_atoms version
+xml5ever = "0.37.0"    # needs to match stylo web_atoms version
 
 # Other Servo dependencies
 euclid = "0.22"
