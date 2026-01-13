@@ -91,8 +91,10 @@ To use the git version of `dioxus-native`:
 - Remove your dependency on the `dioxus` crate entirely.
 - Add `dioxus-native = { git = "https://github.com/DioxusLabs/blitz", rev = "e64a3d8", features = ["prelude"] }`
 - (replace `e64a3d8` with the git commit id of the version you want to use)
-- In your rust code change `use dioxus::prelude::*` to `use dioxus_native::prelude::*` everywhere.
+- In your rust code change all instances of `use dioxus::prelude::*` to `use dioxus_native::prelude::*`.
 - If you need to access additonal functionality from the `dioxus` crate that is not exported from the Dioxus Native prelude then you can import it from the individual sub-crates (`dioxus-html`, `dioxus-signals`, `dioxus-router`, etc) instead.
+
+The git versions of Dioxus Native still depend on the stable v0.7.x version of Dioxus from crates.io, so any additional libraries that you are using (`dioxus-sdk`, `dioxus-components`, `dioxus-free-icons`, etc) should still work.
 
 ### Modular Components
 
