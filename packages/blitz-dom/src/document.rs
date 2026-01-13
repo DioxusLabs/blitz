@@ -626,6 +626,23 @@ impl BaseDocument {
         id
     }
 
+    pub(crate) fn drop_node_ignoring_parent(&mut self, node_id: usize) -> Option<Node> {
+        let mut node = self.nodes.try_remove(node_id);
+        if let Some(node) = &mut node {
+            if let Some(before) = node.before {
+                self.drop_node_ignoring_parent(before);
+            }
+            if let Some(after) = node.after {
+                self.drop_node_ignoring_parent(after);
+            }
+
+            for &child in &node.children {
+                self.drop_node_ignoring_parent(child);
+            }
+        }
+        node
+    }
+
     /// Whether the document has been mutated
     pub fn has_changes(&self) -> bool {
         self.changed_nodes.is_empty()

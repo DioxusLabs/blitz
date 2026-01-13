@@ -354,20 +354,10 @@ impl DocumentMutator<'_> {
         self.process_removed_subtree(node_id);
     }
 
-    fn remove_node_ignoring_parent(&mut self, node_id: usize) -> Option<Node> {
-        let mut node = self.doc.nodes.try_remove(node_id);
-        if let Some(node) = &mut node {
-            for &child in &node.children {
-                self.remove_node_ignoring_parent(child);
-            }
-        }
-        node
-    }
-
     pub fn remove_and_drop_node(&mut self, node_id: usize) -> Option<Node> {
         self.process_removed_subtree(node_id);
 
-        let node = self.remove_node_ignoring_parent(node_id);
+        let node = self.doc.drop_node_ignoring_parent(node_id);
 
         // Update child_idx values
         if let Some(parent_id) = node.as_ref().and_then(|node| node.parent) {
@@ -403,7 +393,7 @@ impl DocumentMutator<'_> {
         let children = mem::take(&mut parent.children);
         for child_id in children {
             self.process_removed_subtree(child_id);
-            let _ = self.remove_node_ignoring_parent(child_id);
+            let _ = self.doc.drop_node_ignoring_parent(child_id);
         }
         self.maybe_record_node(node_id);
     }
