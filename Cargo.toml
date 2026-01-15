@@ -96,26 +96,26 @@ taffy = { git = "https://github.com/DioxusLabs/taffy", rev = "6712879d35c13ad316
 ] }
 
 # AnyRender
-anyrender = { version = "0.6" }
-anyrender_vello = { version = "0.6" }
-anyrender_vello_cpu = { version = "0.8" }
-anyrender_vello_hybrid = { version = "0.1" }
-anyrender_skia = { version = "0.3.0" }
-anyrender_svg = { version = "0.6" }
-wgpu_context = { version = "0.1.2" }
+anyrender = { version = "0.7" }
+anyrender_vello = { version = "0.7" }
+anyrender_vello_cpu = { version = "0.9" }
+anyrender_vello_hybrid = { version = "0.2" }
+anyrender_skia = { version = "0.4" }
+anyrender_svg = { version = "0.8" }
+wgpu_context = { version = "0.2" }
 
 # Linebender + Fontations + WGPU + SVG
 color = "0.3"
 linebender_resource_handle = "0.1"
-peniko = "0.5.0"
-kurbo = "0.12"
+peniko = "0.6.0"
+kurbo = "0.13"
 parley = { git = "https://github.com/linebender/parley", rev = "f6a8485c35367b581b03bd6da55c8465f24e16ef", default-features = false, features = [
   "std",
 ] }
 skrifa = { version = "0.37", default-features = false, features = [
   "std",
 ] } # Should match parley version
-wgpu = "26"
+wgpu = "27"
 softbuffer = "0.4"
 pixels = "0.15"
 vello = { version = "0.6", features = ["wgpu"] }
@@ -124,7 +124,7 @@ vello_cpu = { version = "0.0.3", default-features = false, features = [
   "std",
   "text",
 ] }
-usvg = "0.45.1"
+usvg = "0.46"
 
 # Windowing & Input
 raw-window-handle = "0.6.0"
@@ -245,6 +245,7 @@ tracing-subscriber = "0.3"
 # anyrender_skia = { path = "../anyrender/crates/anyrender_skia" }
 # anyrender_vello = { path = "../anyrender/crates/anyrender_vello" }
 # anyrender_vello_cpu = { path = "../anyrender/crates/anyrender_vello_cpu" }
+# anyrender_vello_hybrid = { path = "../anyrender/crates/anyrender_vello_hybrid" }
 # anyrender_svg = { path = "../anyrender/crates/anyrender_svg" }
 # wgpu_context = { path = "../anyrender/crates/wgpu_context" }
 
