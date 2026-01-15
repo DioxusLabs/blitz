@@ -115,7 +115,7 @@ parley = { git = "https://github.com/linebender/parley", rev = "f6a8485c35367b58
 skrifa = { version = "0.37", default-features = false, features = [
   "std",
 ] } # Should match parley version
-wgpu = "26"
+wgpu = "27"
 softbuffer = "0.4"
 pixels = "0.15"
 vello = { version = "0.6", features = ["wgpu"] }
