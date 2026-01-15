@@ -5,8 +5,8 @@
 //! - Wraps it in a DioxusDocument
 //! - Renders to native UIKit views
 //! - Handles events and async tasks
+//! - Supports hot-reloading when the `hot-reload` feature is enabled
 
-use crate::application::{create_waker, UIKitEvent, UIKitProxy};
 use crate::events::{drain_input_events, has_pending_input_events, InputEvent};
 use crate::UIKitRenderer;
 
@@ -33,6 +33,90 @@ use winit::application::ApplicationHandler;
 use winit::event::{ElementState, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, EventLoop};
 use winit::window::{Window, WindowAttributes, WindowId};
+
+// =============================================================================
+// UIKit Dioxus Events
+// =============================================================================
+
+/// Events for Dioxus UIKit application
+#[derive(Debug, Clone)]
+pub enum UIKitDioxusEvent {
+    /// Poll a specific window for updates
+    Poll { window_id: WindowId },
+    /// Request a redraw for a document
+    RequestRedraw { doc_id: usize },
+    /// Hot reload event from devserver
+    #[cfg(all(feature = "hot-reload", debug_assertions))]
+    HotReload(dioxus_devtools::DevserverMsg),
+}
+
+/// Proxy for sending Dioxus UIKit events to the event loop.
+#[derive(Clone)]
+pub struct DioxusUIKitProxy {
+    inner: Arc<DioxusUIKitProxyInner>,
+}
+
+struct DioxusUIKitProxyInner {
+    winit_proxy: winit::event_loop::EventLoopProxy,
+    sender: std::sync::mpsc::Sender<UIKitDioxusEvent>,
+}
+
+impl DioxusUIKitProxy {
+    /// Create a new proxy and event receiver.
+    pub fn new(winit_proxy: winit::event_loop::EventLoopProxy) -> (Self, Receiver<UIKitDioxusEvent>) {
+        let (sender, receiver) = std::sync::mpsc::channel();
+        let proxy = Self {
+            inner: Arc::new(DioxusUIKitProxyInner {
+                winit_proxy,
+                sender,
+            }),
+        };
+        (proxy, receiver)
+    }
+
+    /// Wake up the event loop.
+    pub fn wake_up(&self) {
+        self.inner.winit_proxy.wake_up();
+    }
+
+    /// Send an event to the application.
+    pub fn send_event(&self, event: UIKitDioxusEvent) {
+        let _ = self.inner.sender.send(event);
+        self.wake_up();
+    }
+}
+
+impl blitz_traits::net::NetWaker for DioxusUIKitProxy {
+    fn wake(&self, doc_id: usize) {
+        self.send_event(UIKitDioxusEvent::RequestRedraw { doc_id });
+    }
+}
+
+/// Create a waker that sends Poll events to the event loop.
+///
+/// This allows async tasks in the VirtualDom to wake up the event loop
+/// when they complete.
+fn create_dioxus_waker(proxy: &DioxusUIKitProxy, window_id: WindowId) -> Waker {
+    use futures_util::task::ArcWake;
+
+    struct WakerHandle {
+        proxy: DioxusUIKitProxy,
+        window_id: WindowId,
+    }
+
+    impl ArcWake for WakerHandle {
+        fn wake_by_ref(arc_self: &Arc<Self>) {
+            arc_self.proxy.send_event(UIKitDioxusEvent::Poll {
+                window_id: arc_self.window_id,
+            });
+        }
+    }
+
+    futures_util::task::waker(Arc::new(WakerHandle {
+        proxy: proxy.clone(),
+        window_id,
+    }))
+}
 
 // =============================================================================
 // UIKitShellProvider - for triggering redraws when resources load
@@ -73,7 +157,7 @@ pub struct DioxusUIKitView {
     /// Waker for async integration
     waker: Option<Waker>,
     /// Proxy for event loop communication
-    proxy: UIKitProxy,
+    proxy: DioxusUIKitProxy,
     /// MainThreadMarker for UIKit operations
     mtm: MainThreadMarker,
     /// Whether a redraw is needed
@@ -88,7 +172,7 @@ impl DioxusUIKitView {
         mut doc: DioxusDocument,
         attributes: WindowAttributes,
         event_loop: &dyn ActiveEventLoop,
-        proxy: &UIKitProxy,
+        proxy: &DioxusUIKitProxy,
     ) -> Self {
         let mtm = MainThreadMarker::new().expect("DioxusUIKitView must be created on main thread");
 
@@ -116,8 +200,8 @@ impl DioxusUIKitView {
         let mut renderer = UIKitRenderer::new(doc.inner.clone(), root_view, mtm);
         renderer.set_scale(scale as f64);
 
-        // Create waker
-        let waker = create_waker(proxy, window.id());
+        // Create waker for async tasks
+        let waker = create_dioxus_waker(proxy, window.id());
 
         // Run initial build of the VirtualDom
         doc.initial_build();
@@ -132,6 +216,23 @@ impl DioxusUIKitView {
             needs_redraw: Cell::new(true),
             initialized: Cell::new(false),
         }
+    }
+
+    /// Apply hot-reload changes to the document.
+    #[cfg(all(feature = "hot-reload", debug_assertions))]
+    pub fn apply_hot_reload(&mut self, msg: &dioxus_devtools::HotReloadMsg) {
+        // Apply changes to the vdom
+        dioxus_devtools::apply_changes(&self.doc.vdom, msg);
+
+        // Reload changed assets
+        for asset_path in &msg.assets {
+            if let Some(url) = asset_path.to_str() {
+                self.doc.inner.borrow_mut().reload_resource_by_href(url);
+            }
+        }
+
+        // Request redraw
+        self.request_redraw();
     }
 
     /// Get the window ID.
@@ -372,9 +473,9 @@ pub struct DioxusUIKitApplication {
     /// Pending document to create on resume
     pending_doc: Option<(DioxusDocument, WindowAttributes)>,
     /// Proxy for sending events
-    proxy: UIKitProxy,
+    proxy: DioxusUIKitProxy,
     /// Receiver for application events
-    event_queue: Receiver<UIKitEvent>,
+    event_queue: Receiver<UIKitDioxusEvent>,
 }
 
 impl DioxusUIKitApplication {
@@ -382,8 +483,8 @@ impl DioxusUIKitApplication {
     pub fn new(
         doc: DioxusDocument,
         attributes: WindowAttributes,
-        proxy: UIKitProxy,
-        event_queue: Receiver<UIKitEvent>,
+        proxy: DioxusUIKitProxy,
+        event_queue: Receiver<UIKitDioxusEvent>,
     ) -> Self {
         Self {
             views: HashMap::new(),
@@ -397,18 +498,50 @@ impl DioxusUIKitApplication {
         self.views.values_mut().find(|v| v.doc_id() == doc_id)
     }
 
-    fn handle_event(&mut self, _event_loop: &dyn ActiveEventLoop, event: UIKitEvent) {
+    fn handle_event(&mut self, event_loop: &dyn ActiveEventLoop, event: UIKitDioxusEvent) {
         match event {
-            UIKitEvent::Poll { window_id } => {
+            UIKitDioxusEvent::Poll { window_id } => {
                 if let Some(view) = self.views.get_mut(&window_id) {
                     view.poll();
                 }
             }
-            UIKitEvent::RequestRedraw { doc_id } => {
+            UIKitDioxusEvent::RequestRedraw { doc_id } => {
                 if let Some(view) = self.view_by_doc_id(doc_id) {
                     view.request_redraw();
                 }
             }
+            #[cfg(all(feature = "hot-reload", debug_assertions))]
+            UIKitDioxusEvent::HotReload(msg) => {
+                self.handle_hot_reload(event_loop, msg);
+            }
+        }
+    }
+
+    /// Handle hot-reload messages from the devserver.
+    #[cfg(all(feature = "hot-reload", debug_assertions))]
+    fn handle_hot_reload(&mut self, event_loop: &dyn ActiveEventLoop, msg: dioxus_devtools::DevserverMsg) {
+        match msg {
+            dioxus_devtools::DevserverMsg::HotReload(hotreload_msg) => {
+                // Apply hot-reload to all views
+                for view in self.views.values_mut() {
+                    view.apply_hot_reload(&hotreload_msg);
+                    view.poll();
+                }
+            }
+            dioxus_devtools::DevserverMsg::Shutdown => {
+                println!("[HotReload] Devserver shutdown, exiting...");
+                event_loop.exit();
+            }
+            dioxus_devtools::DevserverMsg::FullReloadStart => {
+                println!("[HotReload] Full reload starting...");
+            }
+            dioxus_devtools::DevserverMsg::FullReloadFailed => {
+                println!("[HotReload] Full reload failed");
+            }
+            dioxus_devtools::DevserverMsg::FullReloadCommand => {
+                println!("[HotReload] Full reload command received");
+            }
+            _ => {}
         }
     }
 }
@@ -459,7 +592,7 @@ impl ApplicationHandler for DioxusUIKitApplication {
             view.handle_window_event(event);
         }
 
-        self.proxy.send_event(UIKitEvent::Poll { window_id });
+        self.proxy.send_event(UIKitDioxusEvent::Poll { window_id });
     }
 
     fn proxy_wake_up(&mut self, event_loop: &dyn ActiveEventLoop) {
@@ -539,7 +672,17 @@ pub fn launch_cfg_with_props<P: Clone + 'static, M: 'static>(
     // Create event loop
     let event_loop = EventLoop::new().expect("Failed to create event loop");
     let winit_proxy = event_loop.create_proxy();
-    let (proxy, event_queue) = UIKitProxy::new(winit_proxy);
+    let (proxy, event_queue) = DioxusUIKitProxy::new(winit_proxy);
+
+    // Setup hot-reloading if enabled
+    #[cfg(all(feature = "hot-reload", debug_assertions))]
+    {
+        let proxy = proxy.clone();
+        dioxus_devtools::connect(move |event| {
+            proxy.send_event(UIKitDioxusEvent::HotReload(event));
+        });
+        println!("[HotReload] Connected to devtools server");
+    }
 
     // Create VirtualDom
     let vdom = VirtualDom::new_with_props(app, props);

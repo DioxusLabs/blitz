@@ -62,49 +62,15 @@ fn app() -> Element {
                 }
                 span { class: "input-value", "Value: {text_value}" }
             }
-
             div { class: "input-group",
-                label { "Number Input:" }
+                label { "Text Input:" }
                 input {
-                    r#type: "number",
-                    placeholder: "Enter number...",
-                    value: "{number_value}",
-                    oninput: move |e| number_value.set(e.value()),
+                    r#type: "text",
+                    placeholder: "Enter text...",
+                    value: "{text_value}",
+                    oninput: move |e| text_value.set(e.value()),
                 }
-                span { class: "input-value", "Value: {number_value}" }
-            }
-
-            div { class: "input-group",
-                label { "Email Input:" }
-                input {
-                    r#type: "email",
-                    placeholder: "Enter email...",
-                    value: "{email_value}",
-                    oninput: move |e| email_value.set(e.value()),
-                }
-                span { class: "input-value", "Value: {email_value}" }
-            }
-
-            div { class: "input-group",
-                label { "Password Input:" }
-                input {
-                    r#type: "password",
-                    placeholder: "Enter password...",
-                    value: "{password_value}",
-                    oninput: move |e| password_value.set(e.value()),
-                }
-                span { class: "input-value", "Value: {password_value}" }
-            }
-
-            div { class: "input-group",
-                label { "Search Input:" }
-                input {
-                    r#type: "search",
-                    placeholder: "Search...",
-                    value: "{search_value}",
-                    oninput: move |e| search_value.set(e.value()),
-                }
-                span { class: "input-value", "Value: {search_value}" }
+                span { class: "input-value", "Value: {text_value}" }
             }
 
             // Checkbox test

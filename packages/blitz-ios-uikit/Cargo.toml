@@ -17,8 +17,9 @@ path = "src/lib.rs"
 # It demonstrates UIKit patterns with objc2 but requires external Swift FFI
 
 [features]
-default = ["dioxus"]
+default = ["dioxus", "hot-reload"]
 dioxus = ["dep:dioxus-native-dom", "dep:dioxus-core", "dep:blitz-net", "dep:tokio"]
+hot-reload = ["dep:dioxus-devtools"]
 
 [dependencies]
 # Note: system_fonts enables CoreText font backend on iOS/macOS
@@ -38,6 +39,9 @@ dioxus-core = { workspace = true, optional = true }
 # Networking for image loading (optional, enabled with dioxus feature)
 blitz-net = { workspace = true, optional = true }
 tokio = { version = "1", features = ["rt", "macros"], optional = true }
+
+# Hot reload support (optional)
+dioxus-devtools = { workspace = true, optional = true }
 
 # Stylo (for computed styles)
 style = { workspace = true }
