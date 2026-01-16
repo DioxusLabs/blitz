@@ -23,6 +23,7 @@ use style::animation::AnimationState;
 use style::applicable_declarations::ApplicableDeclarationBlock;
 use style::bloom::each_relevant_element_hash;
 use style::color::AbsoluteColor;
+use style::dom::AttributeProvider;
 use style::invalidation::element::restyle_hints::RestyleHint;
 use style::properties::ComputedValues;
 use style::properties::{Importance, PropertyDeclaration};
@@ -272,6 +273,12 @@ impl<'a> TNode for BlitzNode<'a> {
     fn as_shadow_root(&self) -> Option<Self::ConcreteShadowRoot> {
         // TODO: implement shadow DOM
         None
+    }
+}
+
+impl AttributeProvider for BlitzNode<'_> {
+    fn get_attr(&self, attr: &style::LocalName) -> Option<String> {
+        self.attr(attr.0.clone()).map(|s| s.to_string())
     }
 }
 
