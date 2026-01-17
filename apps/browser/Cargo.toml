@@ -33,6 +33,7 @@ dioxus-native = { workspace = true, features = [
   "net",
   "clipboard",
   "prelude",
+  "hot-reload"
 ] }
 blitz-traits = { workspace = true }
 blitz-dom = { workspace = true, features = ["woff-rust", "parallel-construct"] }

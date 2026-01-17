@@ -66,23 +66,23 @@ app_units = "0.7.5"
 smallvec = "1"
 
 # DioxusLabs dependencies
-dioxus = { version = "0.7" }
-dioxus-core = { version = "0.7" }
-dioxus-html = { version = "0.7" }
-dioxus-hooks = { version = "0.7" }
-dioxus-signals = { version = "0.7" }
-dioxus-stores = { version = "0.7" }
-dioxus-asset-resolver = { version = "0.7" }
-manganis = { version = "0.7" }
-dioxus-document = { version = "0.7" }
-dioxus-history = { version = "0.7" }
+dioxus = { version = "0.7.3" }
+dioxus-core = { version = "0.7.3" }
+dioxus-html = { version = "0.7.3" }
+dioxus-hooks = { version = "0.7.3" }
+dioxus-signals = { version = "0.7.3" }
+dioxus-stores = { version = "0.7.3" }
+dioxus-asset-resolver = { version = "0.7.3" }
+manganis = { version = "0.7.3" }
+dioxus-document = { version = "0.7.3" }
+dioxus-history = { version = "0.7.3" }
 
 # Dioxus hot reload
-dioxus-devtools = { version = "0.7" }
-dioxus-cli-config = { version = "0.7" }
+dioxus-devtools = { version = "0.7.3" }
+dioxus-cli-config = { version = "0.7.3" }
 
 # Dioxus Prelude
-dioxus-core-macro = { version = "0.7" }
+dioxus-core-macro = { version = "0.7.3" }
 
 # Taffy
 taffy = { git = "https://github.com/DioxusLabs/taffy", rev = "6712879d35c13ad316bbbed2c1e4092c270cb650", default-features = false, features = [
