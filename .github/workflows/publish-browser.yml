@@ -124,7 +124,7 @@ jobs:
           version: 1.0
 
       - name: Bundle browser
-        run: dx bundle --package browser --profile production --locked
+        run: dx bundle --package browser --profile production --locked --verbose
 
       - name: Upload app bundle
         uses: actions/upload-artifact@v5
