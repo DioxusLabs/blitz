@@ -99,7 +99,7 @@ jobs:
         if: ${{ matrix.platform.use_git_cli == false }}
         uses: taiki-e/install-action@v2
         with:
-          tool: dioxus-cli@0.7.2
+          tool: dioxus-cli@0.7.3
 
       - name: Install Dioxus CLI (git)
         if: ${{ matrix.platform.use_git_cli == true }}
