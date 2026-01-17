@@ -99,7 +99,7 @@ winit = { version = "0.30.2", features = ["rwh_06"] }
 accesskit_winit = "0.23"
 accesskit = "0.17"
 arboard = { version = "3.4.1", default-features = false }
-rfd = { version = "0.15.3", default-features = false }
+rfd = { version = "0.17.2", default-features = false }
 keyboard-types = "0.7"
 cursor-icon = "1"
 
