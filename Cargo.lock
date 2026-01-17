@@ -809,7 +809,7 @@ dependencies = [
 
 [[package]]
 name = "blitz-shell"
-version = "0.2.2"
+version = "0.2.3"
 dependencies = [
  "accesskit",
  "accesskit_winit",
