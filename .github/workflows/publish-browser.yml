@@ -37,14 +37,14 @@ jobs:
         platform:
           - target: x86_64-pc-windows-msvc
             os: windows-latest
-            use_git_cli: true
+            use_git_cli: false
             artifact_name: "Blitz_0.0.0_windows_x86_64"
             artifact_path: |
                ./target/dx/blitz/bundle/windows/bundle/msi/Blitz_0.0.0_x64_en-US.msi
                ./target/dx/blitz/bundle/windows/bundle/nsis/Blitz_0.0.0_x64-setup.exe
           - target: aarch64-pc-windows-msvc
             os: windows-11-arm
-            use_git_cli: true
+            use_git_cli: false
             artifact_name: "Blitz_0.0.0_windows_aarch64"
             artifact_path: |
                ./target/dx/blitz/bundle/windows/bundle/msi/Blitz_0.0.0_arm64_en-US.msi
@@ -61,7 +61,7 @@ jobs:
             artifact_path: "./target/dx/blitz/bundle/macos/bundle/dmg/Blitz_0.0.0_aarch64.dmg"
           - target: x86_64-unknown-linux-gnu
             os: ubuntu-24.04
-            use_git_cli: true
+            use_git_cli: false
             artifact_name: "Blitz_0.0.0_linux_x86_64"
             artifact_path: |
                ./target/dx/blitz/bundle/linux/bundle/deb/Blitz_0.0.0_amd64.deb
@@ -69,7 +69,7 @@ jobs:
                ./target/dx/blitz/bundle/linux/bundle/appimage/Blitz_0.0.0_amd64.AppImage
           - target: aarch64-unknown-linux-gnu
             os: ubuntu-24.04-arm
-            use_git_cli: true
+            use_git_cli: false
             artifact_name: "Blitz_0.0.0_linux_aarch64"
             artifact_path: |
                ./target/dx/blitz/bundle/linux/bundle/deb/Blitz_0.0.arm64.deb
