@@ -435,14 +435,14 @@ impl InteractionElementOffset for NativeWheelData {
 
 impl InteractionLocation for NativeWheelData {
     fn client_coordinates(&self) -> ClientPoint {
-        ClientPoint::new(self.0.x as _, self.0.y as _)
+        ClientPoint::new(self.0.client_x() as f64, self.0.client_y() as f64)
     }
 
     fn screen_coordinates(&self) -> ScreenPoint {
-        unimplemented!()
+        ScreenPoint::new(self.0.screen_x() as f64, self.0.screen_y() as f64)
     }
 
     fn page_coordinates(&self) -> PagePoint {
-        unimplemented!()
+        PagePoint::new(self.0.page_x() as f64, self.0.page_y() as f64)
     }
 }

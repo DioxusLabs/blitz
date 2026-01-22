@@ -361,18 +361,44 @@ impl BlitzPointerEvent {
 }
 
 #[derive(Clone, Debug)]
+pub enum BlitzWheelDelta {
+    Lines(f64, f64),
+    Pixels(f64, f64),
+}
+
+#[derive(Clone, Debug)]
 pub struct BlitzWheelEvent {
     pub delta: BlitzWheelDelta,
-    pub x: f32,
-    pub y: f32,
+    pub coords: PointerCoords,
     pub buttons: MouseEventButtons,
     pub mods: Modifiers,
 }
 
-#[derive(Clone, Debug)]
-pub enum BlitzWheelDelta {
-    Lines(f64, f64),
-    Pixels(f64, f64),
+impl BlitzWheelEvent {
+    #[inline(always)]
+    pub fn page_x(&self) -> f32 {
+        self.coords.page_x
+    }
+    #[inline(always)]
+    pub fn page_y(&self) -> f32 {
+        self.coords.page_y
+    }
+    #[inline(always)]
+    pub fn client_x(&self) -> f32 {
+        self.coords.client_x
+    }
+    #[inline(always)]
+    pub fn client_y(&self) -> f32 {
+        self.coords.client_y
+    }
+    #[inline(always)]
+    pub fn screen_x(&self) -> f32 {
+        self.coords.screen_x
+    }
+    #[inline(always)]
+    pub fn screen_y(&self) -> f32 {
+        self.coords.screen_y
+    }
 }
 
 #[derive(Clone, Debug)]

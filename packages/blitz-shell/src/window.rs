@@ -65,7 +65,7 @@ pub struct View<Rend: WindowRenderer> {
     pub theme_override: Option<Theme>,
     pub keyboard_modifiers: Modifiers,
     pub buttons: MouseEventButtons,
-    pub mouse_pos: (f32, f32),
+    pub pointer_pos: PhysicalPosition<f64>,
     pub animation_timer: Option<Instant>,
     pub is_visible: bool,
     pub safe_area_insets: PhysicalInsets<u32>,
@@ -129,7 +129,7 @@ impl<Rend: WindowRenderer> View<Rend> {
             theme_override: None,
             buttons: MouseEventButtons::None,
             safe_area_insets,
-            mouse_pos: Default::default(),
+            pointer_pos: Default::default(),
             is_visible: winit_window.is_visible().unwrap_or(true),
             #[cfg(feature = "accessibility")]
             accessibility: AccessibilityState::new(&*winit_window, proxy.clone()),
@@ -436,6 +436,7 @@ impl<Rend: WindowRenderer> View<Rend> {
             WindowEvent::PointerEntered { /*device_id*/.. } => {}
             WindowEvent::PointerLeft { /*device_id*/.. } => {}
             WindowEvent::PointerMoved { position, source, primary, .. } => {
+                self.pointer_pos = position;
                 let event = UiEvent::MouseMove(BlitzPointerEvent {
                     id: pointer_source_to_blitz(&source),
                     is_primary: primary,
@@ -449,6 +450,7 @@ impl<Rend: WindowRenderer> View<Rend> {
             WindowEvent::PointerButton { button, state, primary, position, .. } => {
                 let id = button_source_to_blitz(&button);
                 let coords = self.pointer_coords(position);
+                self.pointer_pos = position;
                 let button = match &button {
                     ButtonSource::Mouse(mouse_button) => match mouse_button {
                         MouseButton::Left => MouseEventButton::Main,
@@ -458,7 +460,6 @@ impl<Rend: WindowRenderer> View<Rend> {
                         _ => MouseEventButton::Auxiliary,
                     }
                     _ => MouseEventButton::Main,
-
                 };
 
                 match state {
@@ -503,8 +504,7 @@ impl<Rend: WindowRenderer> View<Rend> {
 
                 let event = BlitzWheelEvent {
                     delta: blitz_delta,
-                    x: self.mouse_pos.0,
-                    y: self.mouse_pos.1,
+                    coords: self.pointer_coords(self.pointer_pos),
                     buttons: self.buttons,
                     mods: winit_modifiers_to_kbt_modifiers(self.keyboard_modifiers.state()),
                 };
