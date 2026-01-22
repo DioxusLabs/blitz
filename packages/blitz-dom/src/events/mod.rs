@@ -2,7 +2,7 @@ mod driver;
 mod focus;
 mod ime;
 mod keyboard;
-mod mouse;
+mod pointer;
 
 use crate::util::Point;
 use blitz_traits::events::{DomEvent, DomEventData, PointerCoords, UiEvent};
@@ -10,12 +10,12 @@ pub use driver::{EventDriver, EventHandler, NoopEventHandler};
 use focus::generate_focus_events;
 pub(crate) use ime::handle_ime_event;
 pub(crate) use keyboard::handle_keypress;
-use mouse::handle_mouseup;
-pub(crate) use mouse::{
+use pointer::handle_mouseup;
+pub(crate) use pointer::{
     DragMode, ScrollAnimationState, handle_click, handle_mousedown, handle_mousemove,
 };
 
-use crate::{BaseDocument, events::mouse::handle_wheel};
+use crate::{BaseDocument, events::pointer::handle_wheel};
 
 fn adjust_coords_for_subdocument(
     coords: &mut PointerCoords,
@@ -43,19 +43,19 @@ pub(crate) fn handle_dom_event<F: FnMut(DomEvent)>(
         let viewport_scroll = sub_doc.inner().viewport_scroll();
         // TODO: eliminate clone
         let ui_event = match event.data.clone() {
-            DomEventData::MouseMove(mut mouse_event) => {
-                adjust_coords_for_subdocument(&mut mouse_event.coords, pos, viewport_scroll);
-                Some(UiEvent::MouseMove(mouse_event))
+            DomEventData::MouseMove(mut event) => {
+                adjust_coords_for_subdocument(&mut event.coords, pos, viewport_scroll);
+                Some(UiEvent::MouseMove(event))
             }
-            DomEventData::MouseDown(mut mouse_event) => {
-                adjust_coords_for_subdocument(&mut mouse_event.coords, pos, viewport_scroll);
+            DomEventData::MouseDown(mut event) => {
+                adjust_coords_for_subdocument(&mut event.coords, pos, viewport_scroll);
                 set_focus = true;
-                Some(UiEvent::MouseDown(mouse_event))
+                Some(UiEvent::MouseDown(event))
             }
-            DomEventData::MouseUp(mut mouse_event) => {
-                adjust_coords_for_subdocument(&mut mouse_event.coords, pos, viewport_scroll);
+            DomEventData::MouseUp(mut event) => {
+                adjust_coords_for_subdocument(&mut event.coords, pos, viewport_scroll);
                 set_focus = true;
-                Some(UiEvent::MouseUp(mouse_event))
+                Some(UiEvent::MouseUp(event))
             }
             DomEventData::MouseEnter(_) => None,
             DomEventData::MouseLeave(_) => None,
@@ -96,8 +96,8 @@ pub(crate) fn handle_dom_event<F: FnMut(DomEvent)>(
     }
 
     match &event.data {
-        DomEventData::MouseMove(mouse_event) => {
-            let changed = handle_mousemove(doc, target_node_id, mouse_event, dispatch_event);
+        DomEventData::MouseMove(event) => {
+            let changed = handle_mousemove(doc, target_node_id, event, dispatch_event);
             if changed {
                 doc.shell_provider.request_redraw();
             }
