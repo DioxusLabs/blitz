@@ -13,13 +13,130 @@ use blitz_traits::{
 use keyboard_types::Modifiers;
 use markup5ever::local_name;
 
-use crate::{
-    BaseDocument,
-    document::{DragMode, FlingState, PanSample, PanState, ScrollAnimationState},
-    node::SpecialElementData,
-};
+use crate::{BaseDocument, node::SpecialElementData};
 
 use super::focus::generate_focus_events;
+
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct FlingState {
+    pub(crate) target: usize,
+    pub(crate) last_seen_time: f64,
+    pub(crate) x_velocity: f64,
+    pub(crate) y_velocity: f64,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) enum ScrollAnimationState {
+    None,
+    Fling(FlingState),
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct PanState {
+    pub(crate) target: usize,
+    pub(crate) last_x: f32,
+    pub(crate) last_y: f32,
+    pub(crate) samples: VecDeque<PanSample>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct PanSample {
+    pub(crate) time: u64,
+    pub(crate) dx: f32,
+    pub(crate) dy: f32,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) enum DragMode {
+    /// We are not currently dragging
+    None,
+    /// We are currently dragging a selection (probably mouse)
+    Selecting,
+    /// We are currently panning the document with a drag (probably touch)
+    Panning(PanState),
+}
+
+impl DragMode {
+    pub(crate) fn take(&mut self) -> DragMode {
+        std::mem::replace(self, DragMode::None)
+    }
+}
+
+impl PanState {
+    fn update(&mut self, time_ms: u64, screen_x: f32, screen_y: f32) -> (f64, f64) {
+        let dx = (screen_x - self.last_x) as f64;
+        let dy = (screen_y - self.last_y) as f64;
+        self.last_x = screen_x;
+        self.last_y = screen_y;
+
+        self.samples.push_back(PanSample {
+            time: time_ms,
+            // TODO: account for scroll delta not applied due to clamping
+            dx: dx as f32,
+            dy: dy as f32,
+        });
+
+        // Remove samples older than 100ms
+        if self.samples.len() > 50 && time_ms - self.samples.front().unwrap().time > 100 {
+            let idx = self
+                .samples
+                .partition_point(|sample| time_ms - sample.time > 100);
+            // FIXME: use truncate_front once stable
+            for _ in 0..idx {
+                self.samples.pop_front();
+            }
+        }
+
+        (dx, dy)
+    }
+
+    fn generate_fling(&self, time_ms: u64) -> Option<FlingState> {
+        // Generate "fling"
+        if let Some(last_sample) = self.samples.back()
+            && time_ms - last_sample.time < 100
+        {
+            let idx = self
+                .samples
+                .partition_point(|sample| time_ms - sample.time > 100);
+
+            // Compute pan_time. Will always be <= 100ms as we ignore samples older than that.
+            let pan_start_time = self.samples[idx].time;
+            let pan_time = (time_ms - pan_start_time) as f32;
+
+            // Avoid division by 0
+            if pan_time > 0.0 {
+                let (pan_x, pan_y) = self
+                    .samples
+                    .iter()
+                    .skip(idx)
+                    .fold((0.0, 0.0), |(dx, dy), sample| {
+                        (dx + sample.dx, dy + sample.dy)
+                    });
+
+                let x_velocity = if pan_x.abs() > pan_y.abs() {
+                    pan_x / pan_time
+                } else {
+                    0.0
+                };
+
+                let y_velocity = if pan_y.abs() > pan_x.abs() {
+                    pan_y / pan_time
+                } else {
+                    0.0
+                };
+
+                return Some(FlingState {
+                    target: self.target,
+                    last_seen_time: time_ms as f64,
+                    x_velocity: x_velocity as f64 * 2.0,
+                    y_velocity: y_velocity as f64 * 2.0,
+                });
+            }
+        }
+
+        None
+    }
+}
 
 pub(crate) fn handle_mousemove<F: FnMut(DomEvent)>(
     doc: &mut BaseDocument,
@@ -55,34 +172,13 @@ pub(crate) fn handle_mousemove<F: FnMut(DomEvent)>(
     }
 
     if let DragMode::Panning(state) = &mut doc.drag_mode {
-        let dx = (event.screen_x() - state.last_x) as f64;
-        let dy = (event.screen_y() - state.last_y) as f64;
         let time_ms = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap()
             .as_millis() as u64;
 
         let target = state.target;
-        state.last_x = event.screen_x();
-        state.last_y = event.screen_y();
-
-        state.samples.push_back(PanSample {
-            time: time_ms,
-            // TODO: account for scroll delta not applied due to clamping
-            dx: dx as f32,
-            dy: dy as f32,
-        });
-
-        // Remove samples older than 100ms
-        if state.samples.len() > 50 && time_ms - state.samples.front().unwrap().time > 100 {
-            let idx = state
-                .samples
-                .partition_point(|sample| time_ms - sample.time > 100);
-            // FIXME: use truncate_front once stable
-            for _ in 0..idx {
-                state.samples.pop_front();
-            }
-        }
+        let (dx, dy) = state.update(time_ms, event.screen_x(), event.screen_y());
 
         let has_changed = doc.scroll_by(Some(target), dx, dy, &mut dispatch_event);
         return has_changed;
@@ -312,50 +408,9 @@ pub(crate) fn handle_mouseup<F: FnMut(DomEvent)>(
         .as_millis() as u64;
 
     if let DragMode::Panning(state) = &drag_mode {
-        // Generate "fling"
-        if let Some(last_sample) = state.samples.back()
-            && time_ms - last_sample.time < 100
-        {
-            let idx = state
-                .samples
-                .partition_point(|sample| time_ms - sample.time > 100);
-
-            // Compute pan_time. Will always be <= 100ms as we ignore samples older than that.
-            let pan_start_time = state.samples[idx].time;
-            let pan_time = (time_ms - pan_start_time) as f32;
-
-            // Avoid division by 0
-            if pan_time > 0.0 {
-                let (pan_x, pan_y) = state
-                    .samples
-                    .iter()
-                    .skip(idx)
-                    .fold((0.0, 0.0), |(dx, dy), sample| {
-                        (dx + sample.dx, dy + sample.dy)
-                    });
-
-                let x_velocity = if pan_x.abs() > pan_y.abs() {
-                    pan_x / pan_time
-                } else {
-                    0.0
-                };
-
-                let y_velocity = if pan_y.abs() > pan_x.abs() {
-                    pan_y / pan_time
-                } else {
-                    0.0
-                };
-
-                let fling = FlingState {
-                    target: state.target,
-                    last_seen_time: time_ms as f64,
-                    x_velocity: x_velocity as f64 * 2.0,
-                    y_velocity: y_velocity as f64 * 2.0,
-                };
-
-                doc.scroll_animation = ScrollAnimationState::Fling(fling);
-                doc.shell_provider.request_redraw();
-            }
+        if let Some(fling) = state.generate_fling(time_ms) {
+            doc.scroll_animation = ScrollAnimationState::Fling(fling);
+            doc.shell_provider.request_redraw();
         }
     }
 

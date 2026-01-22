@@ -1,4 +1,4 @@
-use crate::events::handle_dom_event;
+use crate::events::{DragMode, ScrollAnimationState, handle_dom_event};
 use crate::font_metrics::BlitzFontMetricsProvider;
 use crate::layout::construct::ConstructionTask;
 use crate::layout::damage::ALL_DAMAGE;
@@ -29,7 +29,7 @@ use selectors::{Element, matching::QuirksMode};
 use slab::Slab;
 use std::any::Any;
 use std::cell::RefCell;
-use std::collections::{BTreeMap, Bound, HashMap, HashSet, VecDeque};
+use std::collections::{BTreeMap, Bound, HashMap, HashSet};
 use std::ops::{Deref, DerefMut};
 use std::rc::Rc;
 use std::str::FromStr;
@@ -172,51 +172,6 @@ impl Document for Rc<RefCell<BaseDocument>> {
 
 pub enum DocumentEvent {
     ResourceLoad(ResourceLoadResponse),
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub(crate) struct FlingState {
-    pub(crate) target: usize,
-    pub(crate) last_seen_time: f64,
-    pub(crate) x_velocity: f64,
-    pub(crate) y_velocity: f64,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub(crate) enum ScrollAnimationState {
-    None,
-    Fling(FlingState),
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub(crate) struct PanState {
-    pub(crate) target: usize,
-    pub(crate) last_x: f32,
-    pub(crate) last_y: f32,
-    pub(crate) samples: VecDeque<PanSample>,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub(crate) struct PanSample {
-    pub(crate) time: u64,
-    pub(crate) dx: f32,
-    pub(crate) dy: f32,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub(crate) enum DragMode {
-    /// We are not currently dragging
-    None,
-    /// We are currently dragging a selection (probably mouse)
-    Selecting,
-    /// We are currently panning the document with a drag (probably touch)
-    Panning(PanState),
-}
-
-impl DragMode {
-    pub(crate) fn take(&mut self) -> DragMode {
-        std::mem::replace(self, DragMode::None)
-    }
 }
 
 pub struct BaseDocument {

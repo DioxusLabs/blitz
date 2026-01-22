@@ -25,7 +25,7 @@ use taffy::AvailableSpace;
 
 use crate::{
     BaseDocument, NON_INCREMENTAL,
-    document::ScrollAnimationState,
+    events::ScrollAnimationState,
     layout::{
         construct::{
             ConstructionTask, ConstructionTaskData, ConstructionTaskResult,

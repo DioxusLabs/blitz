@@ -11,7 +11,9 @@ use focus::generate_focus_events;
 pub(crate) use ime::handle_ime_event;
 pub(crate) use keyboard::handle_keypress;
 use mouse::handle_mouseup;
-pub(crate) use mouse::{handle_click, handle_mousedown, handle_mousemove};
+pub(crate) use mouse::{
+    DragMode, ScrollAnimationState, handle_click, handle_mousedown, handle_mousemove,
+};
 
 use crate::{BaseDocument, events::mouse::handle_wheel};
 
