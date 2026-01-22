@@ -707,13 +707,42 @@ impl<'doc> DocumentMutator<'doc> {
         if let Some(raw_src) = node.attr(local_name!("src")) {
             if !raw_src.is_empty() {
                 let src = self.doc.resolve_url(raw_src);
+                let src_string = src.as_str();
+
+                // Check cache first
+                if let Some(cached_image) = self.doc.image_cache.get(src_string) {
+                    #[cfg(feature = "tracing")]
+                    tracing::info!("Loading image {src_string} from cache");
+                    let node = &mut self.doc.nodes[target_id];
+                    node.element_data_mut().unwrap().special_data =
+                        SpecialElementData::Image(Box::new(cached_image.clone()));
+                    node.cache.clear();
+                    node.insert_damage(ALL_DAMAGE);
+                    return;
+                }
+
+                // Check if there's already a pending request for this URL
+                if let Some(waiting_list) = self.doc.pending_images.get_mut(src_string) {
+                    #[cfg(feature = "tracing")]
+                    tracing::info!("Image {src_string} already pending, queueing node {target_id}");
+                    waiting_list.push((target_id, ImageType::Image));
+                    return;
+                }
+
+                // Start fetch and track as pending
+                #[cfg(feature = "tracing")]
+                tracing::info!("Fetching image {src_string}");
+                self.doc
+                    .pending_images
+                    .insert(src_string.to_string(), vec![(target_id, ImageType::Image)]);
+
                 self.doc.net_provider.fetch(
                     self.doc.id(),
                     Request::get(src),
                     ResourceHandler::boxed(
                         self.doc.tx.clone(),
                         self.doc.id(),
-                        Some(target_id),
+                        None, // Don't pass node_id, we'll handle it via pending_images
                         self.doc.shell_provider.clone(),
                         ImageHandler::new(ImageType::Image),
                     ),

@@ -2,7 +2,9 @@ use std::ops::Range;
 
 use crate::net::ResourceHandler;
 use crate::node::NodeFlags;
-use crate::{BaseDocument, net::ImageHandler, node::BackgroundImageData, util::ImageType};
+use crate::{
+    BaseDocument, net::ImageHandler, node::BackgroundImageData, node::Status, util::ImageType,
+};
 use crate::{NON_INCREMENTAL, Node};
 use blitz_traits::net::Request;
 use style::properties::ComputedValues;
@@ -413,20 +415,48 @@ impl BaseDocument {
                                 break;
                             }
 
-                            self.net_provider.fetch(
-                                doc_id,
-                                Request::get((**new_url).clone()),
-                                ResourceHandler::boxed(
-                                    self.tx.clone(),
-                                    doc_id,
-                                    Some(node_id),
-                                    self.shell_provider.clone(),
-                                    ImageHandler::new(ImageType::Background(idx)),
-                                ),
-                            );
+                            // Check cache first
+                            let url_str = new_url.as_str();
+                            if let Some(cached_image) = self.image_cache.get(url_str) {
+                                #[cfg(feature = "tracing")]
+                                tracing::info!("Loading image {url_str} from cache");
+                                Some(BackgroundImageData {
+                                    url: new_url.clone(),
+                                    status: Status::Ok,
+                                    image: cached_image.clone(),
+                                })
+                            } else if let Some(waiting_list) = self.pending_images.get_mut(url_str)
+                            {
+                                // Image is already being fetched, queue this node
+                                #[cfg(feature = "tracing")]
+                                tracing::info!(
+                                    "Image {url_str} already pending, queueing node {node_id}"
+                                );
+                                waiting_list.push((node_id, ImageType::Background(idx)));
+                                Some(BackgroundImageData::new(new_url.clone()))
+                            } else {
+                                // Start fetch and track as pending
+                                #[cfg(feature = "tracing")]
+                                tracing::info!("Fetching image {url_str}");
+                                self.pending_images.insert(
+                                    url_str.to_string(),
+                                    vec![(node_id, ImageType::Background(idx))],
+                                );
 
-                            let bg_image_data = BackgroundImageData::new(new_url.clone());
-                            Some(bg_image_data)
+                                self.net_provider.fetch(
+                                    doc_id,
+                                    Request::get((**new_url).clone()),
+                                    ResourceHandler::boxed(
+                                        self.tx.clone(),
+                                        doc_id,
+                                        None, // Don't pass node_id, we'll handle via pending_images
+                                        self.shell_provider.clone(),
+                                        ImageHandler::new(ImageType::Background(idx)),
+                                    ),
+                                );
+
+                                Some(BackgroundImageData::new(new_url.clone()))
+                            }
                         }
                         _ => None,
                     };

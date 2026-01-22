@@ -263,6 +263,15 @@ pub struct BaseDocument {
     /// Set of changed nodes for updating the accessibility tree
     pub(crate) deferred_construction_nodes: Vec<ConstructionTask>,
 
+    /// Cache of loaded images, keyed by URL. Allows reusing images across multiple
+    /// elements without re-fetching from the network.
+    pub(crate) image_cache: HashMap<String, ImageData>,
+
+    /// Tracks in-flight image requests. When an image is being fetched, additional
+    /// requests for the same URL are queued here instead of starting new fetches.
+    /// Value is a list of (node_id, image_type) pairs waiting for the image.
+    pub(crate) pending_images: HashMap<String, Vec<(usize, ImageType)>>,
+
     // Service providers
     /// Network provider. Can be used to fetch assets.
     pub net_provider: Arc<dyn NetProvider>,
@@ -393,6 +402,8 @@ impl BaseDocument {
             sub_document_nodes: HashSet::new(),
             changed_nodes: HashSet::new(),
             deferred_construction_nodes: Vec::new(),
+            image_cache: HashMap::new(),
+            pending_images: HashMap::new(),
             controls_to_form: HashMap::new(),
             net_provider,
             navigation_provider,
@@ -865,54 +876,97 @@ impl BaseDocument {
                 let node_id = res.node_id.unwrap();
                 self.add_stylesheet_for_node(css, node_id);
             }
-            Resource::Image(kind, width, height, image_data) => {
-                let node_id = res.node_id.unwrap();
-                let node = self.get_node_mut(node_id).unwrap();
+            Resource::Image(_kind, width, height, image_data) => {
+                // Create the ImageData and cache it
+                let image = ImageData::Raster(RasterImageData::new(width, height, image_data));
 
-                match kind {
-                    ImageType::Image => {
-                        node.element_data_mut().unwrap().special_data =
-                            SpecialElementData::Image(Box::new(ImageData::Raster(
-                                RasterImageData::new(width, height, image_data),
-                            )));
+                let Some(url) = res.resolved_url.as_ref() else {
+                    return;
+                };
 
-                        // Clear layout cache
-                        node.cache.clear();
-                        node.insert_damage(ALL_DAMAGE);
-                    }
-                    ImageType::Background(idx) => {
-                        if let Some(Some(bg_image)) = node
-                            .element_data_mut()
-                            .and_then(|el| el.background_images.get_mut(idx))
-                        {
-                            bg_image.status = Status::Ok;
-                            bg_image.image =
-                                ImageData::Raster(RasterImageData::new(width, height, image_data))
+                // Get all nodes waiting for this image
+                let waiting_nodes = self.pending_images.remove(url).unwrap_or_default();
+
+                #[cfg(feature = "tracing")]
+                tracing::info!(
+                    "Image {url} loaded, applying to {} nodes",
+                    waiting_nodes.len()
+                );
+
+                // Cache the image
+                self.image_cache.insert(url.clone(), image.clone());
+
+                // Apply to all waiting nodes
+                for (node_id, image_type) in waiting_nodes {
+                    let Some(node) = self.get_node_mut(node_id) else {
+                        continue;
+                    };
+
+                    match image_type {
+                        ImageType::Image => {
+                            node.element_data_mut().unwrap().special_data =
+                                SpecialElementData::Image(Box::new(image.clone()));
+
+                            // Clear layout cache
+                            node.cache.clear();
+                            node.insert_damage(ALL_DAMAGE);
+                        }
+                        ImageType::Background(idx) => {
+                            if let Some(Some(bg_image)) = node
+                                .element_data_mut()
+                                .and_then(|el| el.background_images.get_mut(idx))
+                            {
+                                bg_image.status = Status::Ok;
+                                bg_image.image = image.clone();
+                            }
                         }
                     }
                 }
             }
             #[cfg(feature = "svg")]
-            Resource::Svg(kind, tree) => {
-                let node_id = res.node_id.unwrap();
-                let node = self.get_node_mut(node_id).unwrap();
+            Resource::Svg(_kind, tree) => {
+                // Create the ImageData and cache it
+                let image = ImageData::Svg(tree);
 
-                match kind {
-                    ImageType::Image => {
-                        node.element_data_mut().unwrap().special_data =
-                            SpecialElementData::Image(Box::new(ImageData::Svg(tree)));
+                let Some(url) = res.resolved_url.as_ref() else {
+                    return;
+                };
 
-                        // Clear layout cache
-                        node.cache.clear();
-                        node.insert_damage(ALL_DAMAGE);
-                    }
-                    ImageType::Background(idx) => {
-                        if let Some(Some(bg_image)) = node
-                            .element_data_mut()
-                            .and_then(|el| el.background_images.get_mut(idx))
-                        {
-                            bg_image.status = Status::Ok;
-                            bg_image.image = ImageData::Svg(tree);
+                // Get all nodes waiting for this image
+                let waiting_nodes = self.pending_images.remove(url).unwrap_or_default();
+
+                #[cfg(feature = "tracing")]
+                tracing::info!(
+                    "SVG {url} loaded, applying to {} nodes",
+                    waiting_nodes.len()
+                );
+
+                // Cache the image
+                self.image_cache.insert(url.clone(), image.clone());
+
+                // Apply to all waiting nodes
+                for (node_id, image_type) in waiting_nodes {
+                    let Some(node) = self.get_node_mut(node_id) else {
+                        continue;
+                    };
+
+                    match image_type {
+                        ImageType::Image => {
+                            node.element_data_mut().unwrap().special_data =
+                                SpecialElementData::Image(Box::new(image.clone()));
+
+                            // Clear layout cache
+                            node.cache.clear();
+                            node.insert_damage(ALL_DAMAGE);
+                        }
+                        ImageType::Background(idx) => {
+                            if let Some(Some(bg_image)) = node
+                                .element_data_mut()
+                                .and_then(|el| el.background_images.get_mut(idx))
+                            {
+                                bg_image.status = Status::Ok;
+                                bg_image.image = image.clone();
+                            }
                         }
                     }
                 }
