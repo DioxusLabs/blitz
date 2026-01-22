@@ -13,7 +13,7 @@ use slab::Slab;
 use std::cell::{Cell, RefCell};
 use std::fmt::Write;
 use std::sync::Arc;
-use std::sync::atomic::AtomicBool;
+use std::sync::atomic::{AtomicBool, Ordering};
 use style::Atom;
 use style::invalidation::element::restyle_hints::RestyleHint;
 use style::properties::ComputedValues;
@@ -116,6 +116,9 @@ pub struct Node {
     pub style: Style<Atom>,
     pub has_snapshot: bool,
     pub snapshot_handled: AtomicBool,
+    /// Whether any descendant of this node needs restyling.
+    /// Used by Stylo's incremental style traversal to skip unchanged subtrees.
+    pub dirty_descendants: AtomicBool,
     pub display_constructed_as: StyloDisplay,
     pub cache: Cache,
     pub unrounded_layout: Layout,
@@ -174,6 +177,7 @@ impl Node {
             style: Default::default(),
             has_snapshot: false,
             snapshot_handled: AtomicBool::new(false),
+            dirty_descendants: AtomicBool::new(false),
             display_constructed_as: StyloDisplay::Block,
             cache: Cache::new(),
             unrounded_layout: Layout::new(),
@@ -253,6 +257,40 @@ impl Node {
     pub fn set_restyle_hint(&self, hint: RestyleHint) {
         if let Some(element_data) = self.stylo_element_data.borrow_mut().as_mut() {
             element_data.hint.insert(hint);
+        }
+        // Mark all ancestors as having dirty descendants so the style traversal
+        // will visit this node's subtree
+        self.mark_ancestors_dirty();
+    }
+
+    /// Returns whether this node has any descendants that need restyling.
+    pub fn has_dirty_descendants(&self) -> bool {
+        self.dirty_descendants.load(Ordering::SeqCst)
+    }
+
+    /// Sets the dirty_descendants flag on this node.
+    pub fn set_dirty_descendants(&self) {
+        self.dirty_descendants.store(true, Ordering::SeqCst);
+    }
+
+    /// Clears the dirty_descendants flag on this node.
+    pub fn unset_dirty_descendants(&self) {
+        self.dirty_descendants.store(false, Ordering::SeqCst);
+    }
+
+    /// Marks all ancestors of this node as having dirty descendants.
+    /// This propagates the dirty flag up the tree so that the style traversal
+    /// knows to visit the subtree containing this node.
+    pub fn mark_ancestors_dirty(&self) {
+        let mut current_id = self.parent;
+        while let Some(parent_id) = current_id {
+            let parent = &self.tree()[parent_id];
+            // If this ancestor already has dirty_descendants set, we can stop
+            // because all further ancestors must also have it set
+            if parent.dirty_descendants.swap(true, Ordering::SeqCst) {
+                break;
+            }
+            current_id = parent.parent;
         }
     }
 
