@@ -437,7 +437,7 @@ impl<Rend: WindowRenderer> View<Rend> {
             WindowEvent::PointerLeft { /*device_id*/.. } => {}
             WindowEvent::PointerMoved { position, source, primary, .. } => {
                 self.pointer_pos = position;
-                let event = UiEvent::MouseMove(BlitzPointerEvent {
+                let event = UiEvent::PointerMove(BlitzPointerEvent {
                     id: pointer_source_to_blitz(&source),
                     is_primary: primary,
                     coords: self.pointer_coords(position),
@@ -468,7 +468,7 @@ impl<Rend: WindowRenderer> View<Rend> {
                 }
 
                 if id != BlitzPointerId::Mouse {
-                    let event = UiEvent::MouseMove(BlitzPointerEvent {
+                    let event = UiEvent::PointerMove(BlitzPointerEvent {
                         id,
                         is_primary: primary,
                         coords,
@@ -489,8 +489,8 @@ impl<Rend: WindowRenderer> View<Rend> {
                 };
 
                 let event = match state {
-                    ElementState::Pressed => UiEvent::MouseDown(event),
-                    ElementState::Released => UiEvent::MouseUp(event),
+                    ElementState::Pressed => UiEvent::PointerDown(event),
+                    ElementState::Released => UiEvent::PointerUp(event),
                 };
 
                 self.doc.handle_ui_event(event);

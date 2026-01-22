@@ -120,16 +120,16 @@ impl<'doc, Handler: EventHandler> EventDriver<'doc, Handler> {
 
         // Update document input state (hover, focus, active, etc)
         match &event {
-            UiEvent::MouseMove(event) => {
+            UiEvent::PointerMove(event) => {
                 hover_node_id = self.handle_pointer_move(event);
             }
-            UiEvent::MouseDown(event) => {
+            UiEvent::PointerDown(event) => {
                 hover_node_id = self.handle_pointer_move(event);
                 let mut doc = self.doc.inner_mut();
                 doc.active_node();
                 doc.set_mousedown_node_id(hover_node_id);
             }
-            UiEvent::MouseUp(event) => {
+            UiEvent::PointerUp(event) => {
                 hover_node_id = self.handle_pointer_move(event);
                 let mut doc = self.doc.inner_mut();
                 doc.unactive_node();
@@ -142,9 +142,9 @@ impl<'doc, Handler: EventHandler> EventDriver<'doc, Handler> {
         };
 
         let target = match event {
-            UiEvent::MouseMove(_) => hover_node_id,
-            UiEvent::MouseUp(_) => hover_node_id,
-            UiEvent::MouseDown(_) => hover_node_id,
+            UiEvent::PointerMove(_) => hover_node_id,
+            UiEvent::PointerUp(_) => hover_node_id,
+            UiEvent::PointerDown(_) => hover_node_id,
             UiEvent::Wheel(_) => hover_node_id,
             UiEvent::KeyUp(_) => focussed_node_id,
             UiEvent::KeyDown(_) => focussed_node_id,
@@ -152,9 +152,9 @@ impl<'doc, Handler: EventHandler> EventDriver<'doc, Handler> {
         };
 
         let data = match event {
-            UiEvent::MouseMove(data) => DomEventData::MouseMove(data),
-            UiEvent::MouseUp(data) => DomEventData::MouseUp(data),
-            UiEvent::MouseDown(data) => DomEventData::MouseDown(data),
+            UiEvent::PointerMove(data) => DomEventData::MouseMove(data),
+            UiEvent::PointerUp(data) => DomEventData::MouseUp(data),
+            UiEvent::PointerDown(data) => DomEventData::MouseDown(data),
             UiEvent::Wheel(data) => DomEventData::Wheel(data),
             UiEvent::KeyUp(data) => DomEventData::KeyUp(data),
             UiEvent::KeyDown(data) => DomEventData::KeyDown(data),

@@ -47,9 +47,9 @@ impl EventState {
 #[derive(Debug, Clone)]
 #[repr(u8)]
 pub enum UiEvent {
-    MouseMove(BlitzPointerEvent),
-    MouseUp(BlitzPointerEvent),
-    MouseDown(BlitzPointerEvent),
+    PointerMove(BlitzPointerEvent),
+    PointerUp(BlitzPointerEvent),
+    PointerDown(BlitzPointerEvent),
     Wheel(BlitzWheelEvent),
     KeyUp(BlitzKeyEvent),
     KeyDown(BlitzKeyEvent),

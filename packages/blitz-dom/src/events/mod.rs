@@ -45,17 +45,17 @@ pub(crate) fn handle_dom_event<F: FnMut(DomEvent)>(
         let ui_event = match event.data.clone() {
             DomEventData::MouseMove(mut event) => {
                 adjust_coords_for_subdocument(&mut event.coords, pos, viewport_scroll);
-                Some(UiEvent::MouseMove(event))
+                Some(UiEvent::PointerMove(event))
             }
             DomEventData::MouseDown(mut event) => {
                 adjust_coords_for_subdocument(&mut event.coords, pos, viewport_scroll);
                 set_focus = true;
-                Some(UiEvent::MouseDown(event))
+                Some(UiEvent::PointerDown(event))
             }
             DomEventData::MouseUp(mut event) => {
                 adjust_coords_for_subdocument(&mut event.coords, pos, viewport_scroll);
                 set_focus = true;
-                Some(UiEvent::MouseUp(event))
+                Some(UiEvent::PointerUp(event))
             }
             DomEventData::MouseEnter(_) => None,
             DomEventData::MouseLeave(_) => None,
