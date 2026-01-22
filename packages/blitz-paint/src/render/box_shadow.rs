@@ -2,6 +2,7 @@ use super::ElementCx;
 use crate::color::{Color, ToColorColor as _};
 use anyrender::PaintScene;
 use kurbo::{Rect, Vec2};
+use peniko::{Compose, Fill, Mix};
 
 impl ElementCx<'_> {
     pub(super) fn draw_outset_box_shadow(&self, scene: &mut impl PaintScene) {
@@ -75,39 +76,45 @@ impl ElementCx<'_> {
             return;
         }
 
-        self.context.layer_manager.maybe_with_layer(
-            scene,
-            has_inset_shadow,
-            1.0,
-            self.transform,
-            &self.frame.padding_box_path(),
-            |scene| {
-                for shadow in box_shadow.iter().filter(|s| s.inset) {
-                    let shadow_color = shadow
-                        .base
-                        .color
-                        .resolve_to_absolute(&current_color)
-                        .as_srgb_color();
-                    if shadow_color != Color::TRANSPARENT {
-                        let transform = self.transform.then_translate(Vec2 {
-                            x: shadow.base.horizontal.px() as f64,
-                            y: shadow.base.vertical.px() as f64,
-                        });
+        let padding_box = self.frame.padding_box_path();
 
-                        //TODO draw shadows with matching individual radii instead of averaging
-                        let radius = self.frame.border_radii.average();
+        for shadow in box_shadow.iter().filter(|s| s.inset) {
+            let shadow_color = shadow
+                .base
+                .color
+                .resolve_to_absolute(&current_color)
+                .as_srgb_color();
+            if shadow_color == Color::TRANSPARENT {
+                return;
+            }
 
-                        // Fill the color
-                        scene.draw_box_shadow(
-                            transform,
-                            self.frame.border_box,
-                            shadow_color,
-                            radius,
-                            shadow.base.blur.px() as f64 * self.scale,
-                        );
-                    }
-                }
-            },
-        );
+            // TODO draw shadows with matching individual radii instead of averaging
+            let radius = self.frame.border_radii.average();
+            let transform = self.transform.then_translate(Vec2 {
+                x: shadow.base.horizontal.px() as f64,
+                y: shadow.base.vertical.px() as f64,
+            });
+
+            scene.push_layer(Mix::Normal, 1.0, self.transform, &padding_box);
+            scene.fill(
+                Fill::NonZero,
+                self.transform,
+                shadow_color,
+                None,
+                &padding_box,
+            );
+
+            scene.push_layer(Compose::DestOut, 1.0, self.transform, &padding_box);
+            scene.draw_box_shadow(
+                transform,
+                self.frame.border_box,
+                Color::WHITE,
+                radius,
+                shadow.base.blur.px() as f64 * self.scale,
+            );
+
+            scene.pop_layer();
+            scene.pop_layer();
+        }
     }
 }
