@@ -1,5 +1,5 @@
 use crate::{BaseDocument, Node as BlitzDomNode, local_name};
-use accesskit::{Node as AccessKitNode, NodeId, Role, Tree, TreeUpdate};
+use accesskit::{Node as AccessKitNode, NodeId, Role, Tree, TreeId, TreeUpdate};
 
 impl BaseDocument {
     pub fn build_accessibility_tree(&self) -> TreeUpdate {
@@ -25,6 +25,7 @@ impl BaseDocument {
 
         let tree = Tree::new(NodeId(u64::MAX));
         TreeUpdate {
+            tree_id: TreeId::ROOT,
             nodes,
             tree: Some(tree),
             focus: NodeId(self.focus_node_id.map(|id| id as u64).unwrap_or(u64::MAX)),
