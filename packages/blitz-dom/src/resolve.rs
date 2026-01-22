@@ -74,11 +74,12 @@ impl BaseDocument {
         self.resolve_layout();
         timer.record_time("layout");
 
-        // Clear all damage
+        // Clear all damage and dirty flags
         #[cfg(feature = "incremental")]
         {
             for (_, node) in self.nodes.iter_mut() {
                 node.clear_damage_mut();
+                node.unset_dirty_descendants();
             }
             timer.record_time("c_damage");
         }
