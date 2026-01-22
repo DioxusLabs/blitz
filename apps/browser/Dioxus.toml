@@ -1,5 +1,5 @@
 [application]
-android_main_activity = "MainActivity.kt.hbs"
+android_main_activity = "MainActivity.kt"
 
 [bundle]
 publisher = "DioxusLabs"
