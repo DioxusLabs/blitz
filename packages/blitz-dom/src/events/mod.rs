@@ -30,23 +30,23 @@ pub(crate) fn handle_dom_event<F: FnMut(DomEvent)>(
         // TODO: eliminate clone
         let ui_event = match event.data.clone() {
             DomEventData::MouseMove(mut mouse_event) => {
-                mouse_event.x -= pos.x - viewport_scroll.x as f32;
-                mouse_event.y -= pos.y - viewport_scroll.y as f32;
+                mouse_event.page_x -= pos.x - viewport_scroll.x as f32;
+                mouse_event.page_y -= pos.y - viewport_scroll.y as f32;
                 mouse_event.client_x -= pos.x;
                 mouse_event.client_y -= pos.y;
                 Some(UiEvent::MouseMove(mouse_event))
             }
             DomEventData::MouseDown(mut mouse_event) => {
-                mouse_event.x -= pos.x - viewport_scroll.x as f32;
-                mouse_event.y -= pos.y - viewport_scroll.y as f32;
+                mouse_event.page_x -= pos.x - viewport_scroll.x as f32;
+                mouse_event.page_y -= pos.y - viewport_scroll.y as f32;
                 mouse_event.client_x -= pos.x;
                 mouse_event.client_y -= pos.y;
                 set_focus = true;
                 Some(UiEvent::MouseDown(mouse_event))
             }
             DomEventData::MouseUp(mut mouse_event) => {
-                mouse_event.x -= pos.x - viewport_scroll.x as f32;
-                mouse_event.y -= pos.y - viewport_scroll.y as f32;
+                mouse_event.page_x -= pos.x - viewport_scroll.x as f32;
+                mouse_event.page_y -= pos.y - viewport_scroll.y as f32;
                 mouse_event.client_x -= pos.x;
                 mouse_event.client_y -= pos.y;
                 set_focus = true;
@@ -101,8 +101,8 @@ pub(crate) fn handle_dom_event<F: FnMut(DomEvent)>(
             handle_mousedown(
                 doc,
                 target_node_id,
-                event.x,
-                event.y,
+                event.page_x,
+                event.page_y,
                 event.mods,
                 &mut dispatch_event,
             );

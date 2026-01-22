@@ -27,8 +27,8 @@ pub(crate) fn handle_mousemove<F: FnMut(DomEvent)>(
     event: &BlitzPointerEvent,
     mut dispatch_event: F,
 ) -> bool {
-    let x = event.x;
-    let y = event.y;
+    let x = event.page_x;
+    let y = event.page_y;
     let buttons = event.buttons;
 
     let mut changed = doc.set_hover_to(x, y);

@@ -427,8 +427,8 @@ impl<Rend: WindowRenderer> View<Rend> {
                 let event = UiEvent::MouseMove(BlitzPointerEvent {
                     id,
                     is_primary: primary,
-                    x: page_x,
-                    y: page_y,
+                    page_x,
+                    page_y,
                     screen_x,
                     screen_y,
                     client_x,
@@ -470,8 +470,8 @@ impl<Rend: WindowRenderer> View<Rend> {
                     let event = UiEvent::MouseMove(BlitzPointerEvent {
                         id,
                         is_primary: primary,
-                        x: page_x,
-                        y: page_y,
+                        page_x,
+                        page_y,
                         screen_x,
                         screen_y,
                         client_x,
@@ -486,8 +486,8 @@ impl<Rend: WindowRenderer> View<Rend> {
                 let event = BlitzPointerEvent {
                     id,
                     is_primary: primary,
-                    x: page_x,
-                    y: page_y,
+                    page_x,
+                    page_y,
                     screen_x,
                     screen_y,
                     client_x,

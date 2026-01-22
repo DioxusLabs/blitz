@@ -1055,8 +1055,8 @@ impl Node {
         BlitzPointerEvent {
             id: BlitzPointerId::Mouse,
             is_primary: true,
-            x,
-            y,
+            page_x: x,
+            page_y: y,
 
             // TODO: should these be different?
             screen_x: x,

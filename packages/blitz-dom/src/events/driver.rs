@@ -46,8 +46,8 @@ impl<'doc, Handler: EventHandler> EventDriver<'doc, Handler> {
         match &event {
             UiEvent::MouseMove(event) => {
                 let mut doc = self.doc.inner_mut();
-                let dom_x = event.x;
-                let dom_y = event.y;
+                let dom_x = event.page_x;
+                let dom_y = event.page_y;
                 let changed = doc.set_hover_to(dom_x, dom_y);
 
                 let prev_hover_node_id = hover_node_id;

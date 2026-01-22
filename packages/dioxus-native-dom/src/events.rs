@@ -309,7 +309,7 @@ impl InteractionLocation for NativeClickData {
     }
 
     fn page_coordinates(&self) -> PagePoint {
-        PagePoint::new(self.0.x as f64, self.0.y as f64)
+        PagePoint::new(self.0.page_x as f64, self.0.page_y as f64)
     }
 }
 
