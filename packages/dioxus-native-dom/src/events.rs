@@ -301,15 +301,15 @@ pub struct NativeClickData(pub(crate) BlitzPointerEvent);
 
 impl InteractionLocation for NativeClickData {
     fn client_coordinates(&self) -> ClientPoint {
-        ClientPoint::new(self.0.client_x as f64, self.0.client_y as f64)
+        ClientPoint::new(self.0.client_x() as f64, self.0.client_y() as f64)
     }
 
     fn screen_coordinates(&self) -> ScreenPoint {
-        ScreenPoint::new(self.0.screen_x as f64, self.0.screen_y as f64)
+        ScreenPoint::new(self.0.screen_x() as f64, self.0.screen_y() as f64)
     }
 
     fn page_coordinates(&self) -> PagePoint {
-        PagePoint::new(self.0.page_x as f64, self.0.page_y as f64)
+        PagePoint::new(self.0.page_x() as f64, self.0.page_y() as f64)
     }
 }
 

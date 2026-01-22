@@ -27,8 +27,8 @@ pub(crate) fn handle_mousemove<F: FnMut(DomEvent)>(
     event: &BlitzPointerEvent,
     mut dispatch_event: F,
 ) -> bool {
-    let x = event.page_x;
-    let y = event.page_y;
+    let x = event.page_x();
+    let y = event.page_y();
     let buttons = event.buttons;
 
     let mut changed = doc.set_hover_to(x, y);
@@ -45,8 +45,8 @@ pub(crate) fn handle_mousemove<F: FnMut(DomEvent)>(
                 BlitzPointerId::Finger(_) => {
                     doc.drag_mode = DragMode::Panning(PanState {
                         target,
-                        last_x: event.screen_x,
-                        last_y: event.screen_y,
+                        last_x: event.screen_x(),
+                        last_y: event.screen_y(),
                         samples: VecDeque::with_capacity(200),
                     });
                 }
@@ -55,16 +55,16 @@ pub(crate) fn handle_mousemove<F: FnMut(DomEvent)>(
     }
 
     if let DragMode::Panning(state) = &mut doc.drag_mode {
-        let dx = (event.screen_x - state.last_x) as f64;
-        let dy = (event.screen_y - state.last_y) as f64;
+        let dx = (event.screen_x() - state.last_x) as f64;
+        let dy = (event.screen_y() - state.last_y) as f64;
         let time_ms = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap()
             .as_millis() as u64;
 
         let target = state.target;
-        state.last_x = event.screen_x;
-        state.last_y = event.screen_y;
+        state.last_x = event.screen_x();
+        state.last_y = event.screen_y();
 
         state.samples.push_back(PanSample {
             time: time_ms,

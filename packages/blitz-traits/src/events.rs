@@ -313,19 +313,51 @@ pub enum BlitzPointerId {
     Finger(u64),
 }
 
-#[derive(Clone, Debug)]
-pub struct BlitzPointerEvent {
-    pub id: BlitzPointerId,
-    pub is_primary: bool,
+#[derive(Copy, Clone, Debug)]
+pub struct PointerCoords {
     pub page_x: f32,
     pub page_y: f32,
     pub screen_x: f32,
     pub screen_y: f32,
     pub client_x: f32,
     pub client_y: f32,
+}
+
+#[derive(Clone, Debug)]
+pub struct BlitzPointerEvent {
+    pub id: BlitzPointerId,
+    pub is_primary: bool,
+    pub coords: PointerCoords,
     pub button: MouseEventButton,
     pub buttons: MouseEventButtons,
     pub mods: Modifiers,
+}
+
+impl BlitzPointerEvent {
+    #[inline(always)]
+    pub fn page_x(&self) -> f32 {
+        self.coords.page_x
+    }
+    #[inline(always)]
+    pub fn page_y(&self) -> f32 {
+        self.coords.page_y
+    }
+    #[inline(always)]
+    pub fn client_x(&self) -> f32 {
+        self.coords.client_x
+    }
+    #[inline(always)]
+    pub fn client_y(&self) -> f32 {
+        self.coords.client_y
+    }
+    #[inline(always)]
+    pub fn screen_x(&self) -> f32 {
+        self.coords.screen_x
+    }
+    #[inline(always)]
+    pub fn screen_y(&self) -> f32 {
+        self.coords.screen_y
+    }
 }
 
 #[derive(Clone, Debug)]

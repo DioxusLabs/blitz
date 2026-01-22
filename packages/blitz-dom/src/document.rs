@@ -1519,14 +1519,11 @@ impl BaseDocument {
     /// Computes the size and position of the `Node` relative to the viewport
     pub fn get_client_bounding_rect(&self, node_id: usize) -> Option<BoundingRect> {
         let node = self.get_node(node_id)?;
-
-        let mut pos = node.absolute_position(0.0, 0.0).map(|v| v as f64);
-        pos.x -= self.viewport_scroll.x;
-        pos.y -= self.viewport_scroll.y;
+        let pos = node.absolute_position(0.0, 0.0);
 
         Some(BoundingRect {
-            x: pos.x,
-            y: pos.y,
+            x: pos.x as f64 - self.viewport_scroll.x,
+            y: pos.y as f64 - self.viewport_scroll.y,
             width: node.unrounded_layout.size.width as f64,
             height: node.unrounded_layout.size.width as f64,
         })
