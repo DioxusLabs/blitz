@@ -315,7 +315,8 @@ impl InteractionLocation for NativeClickData {
 
 impl InteractionElementOffset for NativeClickData {
     fn element_coordinates(&self) -> ElementPoint {
-        unimplemented!()
+        // TODO: implement element point
+        ElementPoint::new(0.0, 0.0)
     }
 }
 
@@ -429,7 +430,8 @@ impl ModifiersInteraction for NativeWheelData {
 
 impl InteractionElementOffset for NativeWheelData {
     fn element_coordinates(&self) -> ElementPoint {
-        unimplemented!()
+        // TODO: implement element point
+        ElementPoint::new(0.0, 0.0)
     }
 }
 
