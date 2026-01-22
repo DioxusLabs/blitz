@@ -1244,6 +1244,29 @@ impl BaseDocument {
         true
     }
 
+    pub fn clear_hover(&mut self) -> bool {
+        let Some(hover_node_id) = self.hover_node_id else {
+            return false;
+        };
+
+        let old_node_path = self.maybe_node_layout_ancestors(Some(hover_node_id));
+        for &id in old_node_path.iter() {
+            self.snapshot_node_and(id, |node| node.unhover());
+        }
+
+        self.hover_node_id = None;
+        self.hover_node_is_text = false;
+
+        // Update the cursor
+        let cursor = self.get_cursor().unwrap_or_default();
+        self.shell_provider.set_cursor(cursor);
+
+        // Request redraw
+        self.shell_provider.request_redraw();
+
+        true
+    }
+
     pub fn get_hover_node_id(&self) -> Option<usize> {
         self.hover_node_id
     }

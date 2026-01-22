@@ -1,5 +1,7 @@
 use crate::Document;
-use blitz_traits::events::{DomEvent, DomEventData, EventState, UiEvent};
+use blitz_traits::events::{
+    BlitzPointerEvent, BlitzPointerId, DomEvent, DomEventData, EventState, UiEvent,
+};
 use std::collections::VecDeque;
 
 pub trait EventHandler {
@@ -35,9 +37,83 @@ impl<'doc, Handler: EventHandler> EventDriver<'doc, Handler> {
         EventDriver { doc, handler }
     }
 
+    pub fn handle_pointer_move(&mut self, event: &BlitzPointerEvent) -> Option<usize> {
+        let mut doc = self.doc.inner_mut();
+
+        let prev_hover_node_id = doc.hover_node_id;
+        let changed = doc.set_hover_to(event.page_x(), event.page_y());
+        let hover_node_id = doc.hover_node_id;
+
+        drop(doc);
+
+        if !changed {
+            return prev_hover_node_id;
+        }
+
+        let doc = self.doc.inner();
+        let mut old_chain = prev_hover_node_id
+            .map(|id| doc.node_chain(id))
+            .unwrap_or_default();
+        let mut new_chain = hover_node_id
+            .map(|id| doc.node_chain(id))
+            .unwrap_or_default();
+        old_chain.reverse();
+        new_chain.reverse();
+
+        // Find the difference in the node chain of the last hovered objected and the newest
+        let old_len = old_chain.len();
+        let new_len = new_chain.len();
+
+        let first_difference_index = old_chain
+            .iter()
+            .zip(&new_chain)
+            .position(|(old, new)| old != new)
+            .unwrap_or_else(|| old_len.min(new_len));
+
+        drop(doc);
+
+        if let Some(target) = prev_hover_node_id {
+            self.handle_dom_event(DomEvent::new(target, DomEventData::MouseOut(event.clone())));
+
+            // Send an mouseleave event to all old elements on the chain
+            for node_id in old_chain
+                .get(first_difference_index..)
+                .unwrap_or(&[])
+                .iter()
+            {
+                self.handle_dom_event(DomEvent::new(
+                    *node_id,
+                    DomEventData::MouseLeave(event.clone()),
+                ));
+            }
+        }
+
+        if let Some(target) = hover_node_id {
+            self.handle_dom_event(DomEvent::new(
+                target,
+                DomEventData::MouseOver(event.clone()),
+            ));
+
+            // Send an mouseenter event to all new elements on the chain
+            for node_id in new_chain
+                .get(first_difference_index..)
+                .unwrap_or(&[])
+                .iter()
+            {
+                self.handle_dom_event(DomEvent::new(
+                    *node_id,
+                    DomEventData::MouseEnter(event.clone()),
+                ));
+            }
+        }
+
+        hover_node_id
+    }
+
     pub fn handle_ui_event(&mut self, event: UiEvent) {
         let doc = self.doc.inner();
 
+        let mut should_clear_hover = false;
         let mut hover_node_id = doc.hover_node_id;
         let focussed_node_id = doc.focus_node_id;
         drop(doc);
@@ -45,86 +121,22 @@ impl<'doc, Handler: EventHandler> EventDriver<'doc, Handler> {
         // Update document input state (hover, focus, active, etc)
         match &event {
             UiEvent::MouseMove(event) => {
-                let mut doc = self.doc.inner_mut();
-                let dom_x = event.page_x();
-                let dom_y = event.page_y();
-                let changed = doc.set_hover_to(dom_x, dom_y);
-
-                let prev_hover_node_id = hover_node_id;
-                hover_node_id = doc.hover_node_id;
-
-                drop(doc);
-
-                if changed {
-                    let doc = self.doc.inner();
-                    let mut old_chain = prev_hover_node_id
-                        .map(|id| doc.node_chain(id))
-                        .unwrap_or_default();
-                    let mut new_chain = hover_node_id
-                        .map(|id| doc.node_chain(id))
-                        .unwrap_or_default();
-                    old_chain.reverse();
-                    new_chain.reverse();
-
-                    // Find the difference in the node chain of the last hovered objected and the newest
-                    let old_len = old_chain.len();
-                    let new_len = new_chain.len();
-
-                    let first_difference_index = old_chain
-                        .iter()
-                        .zip(&new_chain)
-                        .position(|(old, new)| old != new)
-                        .unwrap_or_else(|| old_len.min(new_len));
-
-                    drop(doc);
-
-                    if let Some(target) = prev_hover_node_id {
-                        self.handle_dom_event(DomEvent::new(
-                            target,
-                            DomEventData::MouseOut(event.clone()),
-                        ));
-
-                        // Send an mouseleave event to all old elements on the chain
-                        for node_id in old_chain
-                            .get(first_difference_index..)
-                            .unwrap_or(&[])
-                            .iter()
-                        {
-                            self.handle_dom_event(DomEvent::new(
-                                *node_id,
-                                DomEventData::MouseLeave(event.clone()),
-                            ));
-                        }
-                    }
-
-                    if let Some(target) = hover_node_id {
-                        self.handle_dom_event(DomEvent::new(
-                            target,
-                            DomEventData::MouseOver(event.clone()),
-                        ));
-
-                        // Send an mouseenter event to all new elements on the chain
-                        for node_id in new_chain
-                            .get(first_difference_index..)
-                            .unwrap_or(&[])
-                            .iter()
-                        {
-                            self.handle_dom_event(DomEvent::new(
-                                *node_id,
-                                DomEventData::MouseEnter(event.clone()),
-                            ));
-                        }
-                    }
-                }
+                hover_node_id = self.handle_pointer_move(event);
             }
-            UiEvent::MouseDown(_) => {
+            UiEvent::MouseDown(event) => {
+                hover_node_id = self.handle_pointer_move(event);
                 let mut doc = self.doc.inner_mut();
                 doc.active_node();
                 doc.set_mousedown_node_id(hover_node_id);
             }
-            UiEvent::MouseUp(_) => {
+            UiEvent::MouseUp(event) => {
+                hover_node_id = self.handle_pointer_move(event);
                 let mut doc = self.doc.inner_mut();
                 doc.unactive_node();
+
+                if event.is_primary && matches!(event.id, BlitzPointerId::Finger(_)) {
+                    should_clear_hover = true;
+                }
             }
             _ => {}
         };
@@ -153,6 +165,11 @@ impl<'doc, Handler: EventHandler> EventDriver<'doc, Handler> {
         let dom_event = DomEvent::new(target, data);
 
         self.handle_dom_event(dom_event);
+
+        // Update document input state (hover, focus, active, etc)
+        if should_clear_hover {
+            self.doc.inner_mut().clear_hover();
+        }
     }
 
     pub fn handle_dom_event(&mut self, event: DomEvent) {
