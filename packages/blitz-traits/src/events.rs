@@ -42,6 +42,15 @@ impl EventState {
     pub fn redraw_is_requested(&self) -> bool {
         self.redraw_requested
     }
+
+    #[inline]
+    pub fn merge(&self, other: &EventState) -> EventState {
+        EventState {
+            cancelled: self.cancelled | other.cancelled,
+            propagation_stopped: self.propagation_stopped | other.propagation_stopped,
+            redraw_requested: self.redraw_requested | other.redraw_requested,
+        }
+    }
 }
 
 #[derive(Debug, Clone)]

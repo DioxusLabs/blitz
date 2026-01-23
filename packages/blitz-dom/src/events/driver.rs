@@ -30,11 +30,16 @@ impl EventHandler for NoopEventHandler {
 pub struct EventDriver<'doc, Handler: EventHandler> {
     doc: &'doc mut dyn Document,
     handler: Handler,
+    queue: VecDeque<DomEvent>,
 }
 
 impl<'doc, Handler: EventHandler> EventDriver<'doc, Handler> {
     pub fn new(doc: &'doc mut dyn Document, handler: Handler) -> Self {
-        EventDriver { doc, handler }
+        EventDriver {
+            doc,
+            handler,
+            queue: VecDeque::with_capacity(4),
+        }
     }
 
     pub fn handle_pointer_move(&mut self, event: &BlitzPointerEvent) -> Option<usize> {
@@ -182,37 +187,28 @@ impl<'doc, Handler: EventHandler> EventDriver<'doc, Handler> {
 
         match event {
             UiEvent::PointerMove(data) => {
-                if data.is_mouse() {
-                    self.handle_dom_event(DomEvent::new(
-                        target,
-                        DomEventData::PointerMove(data.clone()),
-                    ));
-                    self.handle_dom_event(DomEvent::new(target, DomEventData::MouseMove(data)));
-                } else {
-                    self.handle_dom_event(DomEvent::new(target, DomEventData::PointerMove(data)));
-                }
+                self.handle_pointer_event(
+                    target,
+                    data,
+                    DomEventData::PointerMove,
+                    DomEventData::MouseMove,
+                );
             }
             UiEvent::PointerUp(data) => {
-                if data.is_mouse() {
-                    self.handle_dom_event(DomEvent::new(
-                        target,
-                        DomEventData::PointerUp(data.clone()),
-                    ));
-                    self.handle_dom_event(DomEvent::new(target, DomEventData::MouseUp(data)));
-                } else {
-                    self.handle_dom_event(DomEvent::new(target, DomEventData::PointerUp(data)));
-                }
+                self.handle_pointer_event(
+                    target,
+                    data,
+                    DomEventData::PointerUp,
+                    DomEventData::MouseUp,
+                );
             }
             UiEvent::PointerDown(data) => {
-                if data.is_mouse() {
-                    self.handle_dom_event(DomEvent::new(
-                        target,
-                        DomEventData::PointerDown(data.clone()),
-                    ));
-                    self.handle_dom_event(DomEvent::new(target, DomEventData::MouseDown(data)));
-                } else {
-                    self.handle_dom_event(DomEvent::new(target, DomEventData::PointerDown(data)));
-                }
+                self.handle_pointer_event(
+                    target,
+                    data,
+                    DomEventData::PointerDown,
+                    DomEventData::MouseDown,
+                );
             }
             UiEvent::Wheel(data) => {
                 self.handle_dom_event(DomEvent::new(target, DomEventData::Wheel(data)))
@@ -235,25 +231,60 @@ impl<'doc, Handler: EventHandler> EventDriver<'doc, Handler> {
     }
 
     pub fn handle_dom_event(&mut self, event: DomEvent) {
-        let mut queue = VecDeque::with_capacity(4);
-        queue.push_back(event);
+        self.queue.push_back(event);
+        self.process_queue();
+    }
 
-        while let Some(mut event) = queue.pop_front() {
-            let chain = if event.bubbles {
-                let doc = self.doc.inner();
-                doc.node_chain(event.target)
-            } else {
-                vec![event.target]
-            };
+    fn handle_pointer_event(
+        &mut self,
+        target: usize,
+        data: BlitzPointerEvent,
+        make_ptr_data: impl FnOnce(BlitzPointerEvent) -> DomEventData,
+        make_mouse_data: impl FnOnce(BlitzPointerEvent) -> DomEventData,
+    ) {
+        let mut ptr_event = DomEvent::new(target, make_ptr_data(data.clone()));
+        let mut event_state = EventState::default();
+        event_state = self.run_handler_event(&mut ptr_event, event_state);
+        if !event_state.is_cancelled() && data.is_mouse() {
+            let mut mouse_event = DomEvent::new(target, make_mouse_data(data));
+            event_state = self.run_handler_event(&mut mouse_event, event_state);
+        }
+        if !event_state.is_cancelled() {
+            self.run_default_action(&mut ptr_event);
+        }
+        self.process_queue();
+    }
 
-            let mut event_state = EventState::default();
-            self.handler
-                .handle_event(&chain, &mut event, self.doc, &mut event_state);
-
+    fn process_queue(&mut self) {
+        while let Some(mut event) = self.queue.pop_front() {
+            let event_state = self.run_handler_event(&mut event, EventState::default());
             if !event_state.is_cancelled() {
-                let mut doc = self.doc.inner_mut();
-                doc.handle_dom_event(&mut event, |new_evt| queue.push_back(new_evt));
+                self.run_default_action(&mut event);
             }
         }
+    }
+
+    fn run_handler_event(
+        &mut self,
+        event: &mut DomEvent,
+        initial_event_state: EventState,
+    ) -> EventState {
+        let chain = if event.bubbles {
+            let doc = self.doc.inner();
+            doc.node_chain(event.target)
+        } else {
+            vec![event.target]
+        };
+
+        let mut event_state = initial_event_state;
+        self.handler
+            .handle_event(&chain, event, self.doc, &mut event_state);
+
+        event_state
+    }
+
+    fn run_default_action(&mut self, event: &mut DomEvent) {
+        let mut doc = self.doc.inner_mut();
+        doc.handle_dom_event(event, |new_evt| self.queue.push_back(new_evt));
     }
 }
