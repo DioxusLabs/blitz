@@ -22,18 +22,6 @@ pub trait NetHandler: Send + Sync + 'static {
     fn bytes(self: Box<Self>, resolved_url: String, bytes: Bytes);
 }
 
-/// A callback which gets called every time a network request completes
-// Q: Should we use std::task::Waker for this?
-pub trait NetWaker: Send + Sync + 'static {
-    fn wake(&self, client_id: usize);
-}
-
-impl<F: Fn(usize) + Send + Sync + 'static> NetWaker for F {
-    fn wake(&self, doc_id: usize) {
-        self(doc_id)
-    }
-}
-
 #[non_exhaustive]
 #[derive(Debug, Clone)]
 /// A request type loosely representing <https://fetch.spec.whatwg.org/#requests>

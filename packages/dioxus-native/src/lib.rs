@@ -163,10 +163,10 @@ pub fn launch_cfg_with_props<P: Clone + 'static, M: 'static>(
 
     #[cfg(feature = "net")]
     let net_provider = {
-        use blitz_shell::BlitzShellNetWaker;
+        use blitz_shell::BlitzShellWaker;
 
         let proxy = event_loop.create_proxy();
-        let net_waker = Some(BlitzShellNetWaker::shared(proxy.clone()));
+        let net_waker = Some(BlitzShellWaker::net_waker(proxy.clone()));
 
         let inner_net_provider = Arc::new(blitz_net::Provider::new(net_waker.clone()));
         vdom.provide_root_context(Arc::clone(&inner_net_provider));

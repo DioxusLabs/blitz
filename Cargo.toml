@@ -5,6 +5,7 @@ members = [
   "packages/blitz-dom",
   "packages/blitz-html",
   "packages/blitz-net",
+  "packages/blitz-devtools-server",
   "packages/blitz-paint",
   "packages/blitz-shell",
   "packages/blitz",
@@ -40,6 +41,7 @@ blitz-net = { version = "0.2.0", path = "./packages/blitz-net", default-features
 blitz-paint = { version = "0.2.0", path = "./packages/blitz-paint", default-features = false }
 blitz-shell = { version = "0.2.0", path = "./packages/blitz-shell", default-features = false }
 blitz-traits = { version = "0.2.0", path = "./packages/blitz-traits", default-features = false }
+blitz-devtools-server = { version = "0.2.0", path = "./packages/blitz-devtools-server", default-features = false }
 stylo_taffy = { version = "0.2.0", path = "./packages/stylo_taffy", default-features = false }
 dioxus-native = { version = "0.7.0", path = "./packages/dioxus-native", default-features = false }
 dioxus-native-dom = { version = "0.7.0", path = "./packages/dioxus-native-dom", default-features = false }
@@ -141,6 +143,7 @@ url = "2.5.0"
 http = "1.1.0"
 data-url = "0.3.1"
 tokio = "1.42"
+tokio-util = "0.7"
 reqwest = "0.12"
 reqwest-middleware = { version = "0.4.2", default-features = false }
 http-cache-reqwest = { version = "=1.0.0-alpha.2", default-features = false }
@@ -154,6 +157,8 @@ html-escape = "0.2.13"
 percent-encoding = "2.3.1"
 png = "0.17"
 serde = "1"
+serde_json = "1"
+serde_derive = "1"
 
 # Dioxus Native
 webbrowser = "1.0"
@@ -161,6 +166,7 @@ webbrowser = "1.0"
 # Other dependencies
 rustc-hash = "1.1.0"
 bytes = "1.7.1"
+bytestring = "1.4"
 slab = "0.4.9"
 tracing = "0.1.40"
 tracing-subscriber = "0.3"
