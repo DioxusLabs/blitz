@@ -44,7 +44,7 @@ impl HtmlEventConverter for NativeConverter {
     }
 
     fn convert_mouse_data(&self, event: &PlatformEventData) -> MouseData {
-        event.downcast::<NativeClickData>().unwrap().clone().into()
+        event.downcast::<NativePointerData>().unwrap().clone().into()
     }
 
     fn convert_keyboard_data(&self, event: &PlatformEventData) -> KeyboardData {
@@ -297,9 +297,9 @@ impl HasKeyboardData for BlitzKeyboardData {
 }
 
 #[derive(Clone)]
-pub struct NativeClickData(pub(crate) BlitzPointerEvent);
+pub struct NativePointerData(pub(crate) BlitzPointerEvent);
 
-impl InteractionLocation for NativeClickData {
+impl InteractionLocation for NativePointerData {
     fn client_coordinates(&self) -> ClientPoint {
         ClientPoint::new(self.0.client_x() as f64, self.0.client_y() as f64)
     }
@@ -313,20 +313,20 @@ impl InteractionLocation for NativeClickData {
     }
 }
 
-impl InteractionElementOffset for NativeClickData {
+impl InteractionElementOffset for NativePointerData {
     fn element_coordinates(&self) -> ElementPoint {
         // TODO: implement element point
         ElementPoint::new(0.0, 0.0)
     }
 }
 
-impl ModifiersInteraction for NativeClickData {
+impl ModifiersInteraction for NativePointerData {
     fn modifiers(&self) -> Modifiers {
         self.0.mods
     }
 }
 
-impl PointerInteraction for NativeClickData {
+impl PointerInteraction for NativePointerData {
     fn trigger_button(&self) -> Option<MouseButton> {
         Some(match self.0.button {
             MouseEventButton::Main => MouseButton::Primary,
@@ -341,7 +341,7 @@ impl PointerInteraction for NativeClickData {
         dioxus_html::input_data::decode_mouse_button_set(self.0.buttons.bits() as u16)
     }
 }
-impl HasMouseData for NativeClickData {
+impl HasMouseData for NativePointerData {
     fn as_any(&self) -> &dyn Any {
         self as &dyn Any
     }

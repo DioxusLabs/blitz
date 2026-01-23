@@ -1,6 +1,6 @@
 //! Integration between Dioxus and Blitz
 use crate::events::{
-    BlitzKeyboardData, NativeClickData, NativeConverter, NativeFocusData, NativeFormData,
+    BlitzKeyboardData, NativePointerData, NativeConverter, NativeFocusData, NativeFormData,
     NativeScrollData, NativeWheelData, NodeHandle,
 };
 use crate::mutation_writer::{DioxusState, MutationWriter};
@@ -282,7 +282,7 @@ impl EventHandler for DioxusEventHandler<'_> {
             | DomEventData::Click(mevent)
             | DomEventData::ContextMenu(mevent)
             | DomEventData::DoubleClick(mevent) => {
-                Some(wrap_event_data(NativeClickData(mevent.clone())))
+                Some(wrap_event_data(NativePointerData(mevent.clone())))
             }
 
             DomEventData::Scroll(sevent) => Some(wrap_event_data(NativeScrollData(sevent.clone()))),
