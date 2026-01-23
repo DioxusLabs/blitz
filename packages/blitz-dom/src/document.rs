@@ -1,4 +1,4 @@
-use crate::events::handle_dom_event;
+use crate::events::{DragMode, ScrollAnimationState, handle_dom_event};
 use crate::font_metrics::BlitzFontMetricsProvider;
 use crate::layout::construct::ConstructionTask;
 use crate::layout::damage::ALL_DAMAGE;
@@ -234,7 +234,9 @@ pub struct BaseDocument {
     /// How many clicks have been made in quick succession
     pub(crate) click_count: u16,
     /// Whether we're currently in a text selection drag (moved 2px+ from mousedown)
-    pub(crate) is_selecting: bool,
+    pub(crate) drag_mode: DragMode,
+    /// Whether and what kind of scroll animation is currently in progress
+    pub(crate) scroll_animation: ScrollAnimationState,
 
     /// Text selection state (for non-input text)
     pub(crate) text_selection: TextSelection,
@@ -412,7 +414,8 @@ impl BaseDocument {
             last_mousedown_time: None,
             mousedown_position: taffy::Point::ZERO,
             click_count: 0,
-            is_selecting: false,
+            drag_mode: DragMode::None,
+            scroll_animation: ScrollAnimationState::None,
             text_selection: TextSelection::default(),
         };
 
@@ -1196,6 +1199,29 @@ impl BaseDocument {
         true
     }
 
+    pub fn clear_hover(&mut self) -> bool {
+        let Some(hover_node_id) = self.hover_node_id else {
+            return false;
+        };
+
+        let old_node_path = self.maybe_node_layout_ancestors(Some(hover_node_id));
+        for &id in old_node_path.iter() {
+            self.snapshot_node_and(id, |node| node.unhover());
+        }
+
+        self.hover_node_id = None;
+        self.hover_node_is_text = false;
+
+        // Update the cursor
+        let cursor = self.get_cursor().unwrap_or_default();
+        self.shell_provider.set_cursor(cursor);
+
+        // Request redraw
+        self.shell_provider.request_redraw();
+
+        true
+    }
+
     pub fn get_hover_node_id(&self) -> Option<usize> {
         self.hover_node_id
     }
@@ -1242,7 +1268,10 @@ impl BaseDocument {
     }
 
     pub fn is_animating(&self) -> bool {
-        self.has_canvas | self.has_active_animations | self.subdoc_is_animating
+        self.has_canvas
+            | self.has_active_animations
+            | self.subdoc_is_animating
+            | (self.scroll_animation != ScrollAnimationState::None)
     }
 
     /// Update the device and reset the stylist to process the new size
@@ -1443,6 +1472,20 @@ impl BaseDocument {
         self.viewport_scroll != initial
     }
 
+    pub fn scroll_by(
+        &mut self,
+        anchor_node_id: Option<usize>,
+        scroll_x: f64,
+        scroll_y: f64,
+        dispatch_event: &mut dyn FnMut(DomEvent),
+    ) -> bool {
+        if let Some(anchor_node_id) = anchor_node_id {
+            self.scroll_node_by_has_changed(anchor_node_id, scroll_x, scroll_y, dispatch_event)
+        } else {
+            self.scroll_viewport_by_has_changed(scroll_x, scroll_y)
+        }
+    }
+
     pub fn viewport_scroll(&self) -> crate::Point<f64> {
         self.viewport_scroll
     }
@@ -1454,14 +1497,11 @@ impl BaseDocument {
     /// Computes the size and position of the `Node` relative to the viewport
     pub fn get_client_bounding_rect(&self, node_id: usize) -> Option<BoundingRect> {
         let node = self.get_node(node_id)?;
-
-        let mut pos = node.absolute_position(0.0, 0.0).map(|v| v as f64);
-        pos.x -= self.viewport_scroll.x;
-        pos.y -= self.viewport_scroll.y;
+        let pos = node.absolute_position(0.0, 0.0);
 
         Some(BoundingRect {
-            x: pos.x,
-            y: pos.y,
+            x: pos.x as f64 - self.viewport_scroll.x,
+            y: pos.y as f64 - self.viewport_scroll.y,
             width: node.unrounded_layout.size.width as f64,
             height: node.unrounded_layout.size.width as f64,
         })

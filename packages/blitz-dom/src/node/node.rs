@@ -1,6 +1,8 @@
 use atomic_refcell::{AtomicRef, AtomicRefCell, AtomicRefMut};
 use bitflags::bitflags;
-use blitz_traits::events::{BlitzMouseButtonEvent, DomEventData, HitResult};
+use blitz_traits::events::{
+    BlitzPointerEvent, BlitzPointerId, DomEventData, HitResult, PointerCoords,
+};
 use blitz_traits::shell::ShellProvider;
 use html_escape::encode_quoted_attribute_to_string;
 use keyboard_types::Modifiers;
@@ -1031,7 +1033,7 @@ impl Node {
     }
 
     /// Computes the Document-relative coordinates of the `Node`
-    pub fn absolute_position(&self, x: f32, y: f32) -> taffy::Point<f32> {
+    pub fn absolute_position(&self, x: f32, y: f32) -> crate::util::Point<f32> {
         let x = x + self.final_layout.location.x - self.scroll_offset.x as f32;
         let y = y + self.final_layout.location.y - self.scroll_offset.y as f32;
 
@@ -1039,7 +1041,7 @@ impl Node {
         self.layout_parent
             .get()
             .map(|i| self.with(i).absolute_position(x, y))
-            .unwrap_or(taffy::Point { x, y })
+            .unwrap_or(crate::util::Point { x, y })
     }
 
     /// Creates a synthetic click event
@@ -1047,17 +1049,28 @@ impl Node {
         DomEventData::Click(self.synthetic_click_event_data(mods))
     }
 
-    pub fn synthetic_click_event_data(&self, mods: Modifiers) -> BlitzMouseButtonEvent {
+    pub fn synthetic_click_event_data(&self, mods: Modifiers) -> BlitzPointerEvent {
         let absolute_position = self.absolute_position(0.0, 0.0);
         let x = absolute_position.x + (self.final_layout.size.width / 2.0);
         let y = absolute_position.y + (self.final_layout.size.height / 2.0);
 
-        BlitzMouseButtonEvent {
-            x,
-            y,
+        BlitzPointerEvent {
+            id: BlitzPointerId::Mouse,
+            is_primary: true,
+            coords: PointerCoords {
+                page_x: x,
+                page_y: y,
+
+                // TODO: should these be different?
+                screen_x: x,
+                screen_y: y,
+                client_x: x,
+                client_y: y,
+            },
             mods,
             button: Default::default(),
             buttons: Default::default(),
+            details: Default::default(),
         }
     }
 }

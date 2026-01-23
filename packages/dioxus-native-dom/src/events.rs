@@ -1,7 +1,7 @@
 use blitz_dom::{BaseDocument, Node};
 use blitz_traits::events::{
-    BlitzKeyEvent, BlitzMouseButtonEvent, BlitzScrollEvent, BlitzWheelDelta, BlitzWheelEvent,
-    MouseEventButton,
+    BlitzKeyEvent, BlitzPointerEvent, BlitzPointerId, BlitzScrollEvent, BlitzWheelDelta,
+    BlitzWheelEvent, MouseEventButton,
 };
 use dioxus_html::{
     geometry::{
@@ -15,8 +15,8 @@ use dioxus_html::{
     },
     AnimationData, CancelData, ClipboardData, CompositionData, DragData, FocusData, FormData,
     FormValue, HasFileData, HasFocusData, HasFormData, HasKeyboardData, HasMouseData,
-    HasScrollData, HasWheelData, HtmlEventConverter, ImageData, KeyboardData, MediaData,
-    MountedData, MountedError, MountedResult, MouseData, PlatformEventData, PointerData,
+    HasPointerData, HasScrollData, HasWheelData, HtmlEventConverter, ImageData, KeyboardData,
+    MediaData, MountedData, MountedError, MountedResult, MouseData, PlatformEventData, PointerData,
     RenderedElementBacking, ResizeData, ScrollBehavior, ScrollData, ScrollToOptions, SelectionData,
     ToggleData, TouchData, TransitionData, VisibleData, WheelData,
 };
@@ -44,7 +44,11 @@ impl HtmlEventConverter for NativeConverter {
     }
 
     fn convert_mouse_data(&self, event: &PlatformEventData) -> MouseData {
-        event.downcast::<NativeClickData>().unwrap().clone().into()
+        event
+            .downcast::<NativePointerData>()
+            .unwrap()
+            .clone()
+            .into()
     }
 
     fn convert_keyboard_data(&self, event: &PlatformEventData) -> KeyboardData {
@@ -87,8 +91,12 @@ impl HtmlEventConverter for NativeConverter {
         event.downcast::<NodeHandle>().unwrap().clone().into()
     }
 
-    fn convert_pointer_data(&self, _event: &PlatformEventData) -> PointerData {
-        unimplemented!("todo: convert_pointer_data in dioxus-native. requires support in blitz")
+    fn convert_pointer_data(&self, event: &PlatformEventData) -> PointerData {
+        event
+            .downcast::<NativePointerData>()
+            .unwrap()
+            .clone()
+            .into()
     }
 
     fn convert_scroll_data(&self, event: &PlatformEventData) -> ScrollData {
@@ -297,36 +305,36 @@ impl HasKeyboardData for BlitzKeyboardData {
 }
 
 #[derive(Clone)]
-pub struct NativeClickData(pub(crate) BlitzMouseButtonEvent);
+pub struct NativePointerData(pub(crate) BlitzPointerEvent);
 
-impl InteractionLocation for NativeClickData {
+impl InteractionLocation for NativePointerData {
     fn client_coordinates(&self) -> ClientPoint {
-        ClientPoint::new(self.0.x as _, self.0.y as _)
+        ClientPoint::new(self.0.client_x() as f64, self.0.client_y() as f64)
     }
 
-    // these require blitz to pass them along, or a dom rect
     fn screen_coordinates(&self) -> ScreenPoint {
-        unimplemented!()
+        ScreenPoint::new(self.0.screen_x() as f64, self.0.screen_y() as f64)
     }
 
     fn page_coordinates(&self) -> PagePoint {
-        unimplemented!()
+        PagePoint::new(self.0.page_x() as f64, self.0.page_y() as f64)
     }
 }
 
-impl InteractionElementOffset for NativeClickData {
+impl InteractionElementOffset for NativePointerData {
     fn element_coordinates(&self) -> ElementPoint {
-        unimplemented!()
+        // TODO: implement element point
+        ElementPoint::new(0.0, 0.0)
     }
 }
 
-impl ModifiersInteraction for NativeClickData {
+impl ModifiersInteraction for NativePointerData {
     fn modifiers(&self) -> Modifiers {
         self.0.mods
     }
 }
 
-impl PointerInteraction for NativeClickData {
+impl PointerInteraction for NativePointerData {
     fn trigger_button(&self) -> Option<MouseButton> {
         Some(match self.0.button {
             MouseEventButton::Main => MouseButton::Primary,
@@ -341,9 +349,59 @@ impl PointerInteraction for NativeClickData {
         dioxus_html::input_data::decode_mouse_button_set(self.0.buttons.bits() as u16)
     }
 }
-impl HasMouseData for NativeClickData {
+impl HasMouseData for NativePointerData {
     fn as_any(&self) -> &dyn Any {
         self as &dyn Any
+    }
+}
+
+impl HasPointerData for NativePointerData {
+    fn as_any(&self) -> &dyn Any {
+        self as &dyn Any
+    }
+
+    fn is_primary(&self) -> bool {
+        self.0.is_primary
+    }
+
+    fn pointer_id(&self) -> i32 {
+        match self.0.id {
+            BlitzPointerId::Mouse => 0,
+            BlitzPointerId::Pen => 0,
+            BlitzPointerId::Finger(id) => id as i32,
+        }
+    }
+
+    fn pointer_type(&self) -> String {
+        match self.0.id {
+            BlitzPointerId::Mouse => String::from("mouse"),
+            BlitzPointerId::Pen => String::from("pen"),
+            BlitzPointerId::Finger(_) => String::from("touch"),
+        }
+    }
+
+    fn pressure(&self) -> f32 {
+        self.0.details.pressure as f32
+    }
+    fn tangential_pressure(&self) -> f32 {
+        self.0.details.tangential_pressure
+    }
+    fn tilt_x(&self) -> i32 {
+        self.0.details.tilt_x as i32
+    }
+    fn tilt_y(&self) -> i32 {
+        self.0.details.tilt_y as i32
+    }
+    fn twist(&self) -> i32 {
+        self.0.details.twist as i32
+    }
+
+    // TODO: implement these fields with real values
+    fn width(&self) -> f64 {
+        1.0
+    }
+    fn height(&self) -> f64 {
+        1.0
     }
 }
 
@@ -414,13 +472,7 @@ impl HasMouseData for NativeWheelData {
 
 impl PointerInteraction for NativeWheelData {
     fn trigger_button(&self) -> Option<MouseButton> {
-        Some(match self.0.button {
-            MouseEventButton::Main => MouseButton::Primary,
-            MouseEventButton::Auxiliary => MouseButton::Auxiliary,
-            MouseEventButton::Secondary => MouseButton::Secondary,
-            MouseEventButton::Fourth => MouseButton::Fourth,
-            MouseEventButton::Fifth => MouseButton::Fifth,
-        })
+        None
     }
 
     fn held_buttons(&self) -> MouseButtonSet {
@@ -436,20 +488,21 @@ impl ModifiersInteraction for NativeWheelData {
 
 impl InteractionElementOffset for NativeWheelData {
     fn element_coordinates(&self) -> ElementPoint {
-        unimplemented!()
+        // TODO: implement element point
+        ElementPoint::new(0.0, 0.0)
     }
 }
 
 impl InteractionLocation for NativeWheelData {
     fn client_coordinates(&self) -> ClientPoint {
-        ClientPoint::new(self.0.x as _, self.0.y as _)
+        ClientPoint::new(self.0.client_x() as f64, self.0.client_y() as f64)
     }
 
     fn screen_coordinates(&self) -> ScreenPoint {
-        unimplemented!()
+        ScreenPoint::new(self.0.screen_x() as f64, self.0.screen_y() as f64)
     }
 
     fn page_coordinates(&self) -> PagePoint {
-        unimplemented!()
+        PagePoint::new(self.0.page_x() as f64, self.0.page_y() as f64)
     }
 }

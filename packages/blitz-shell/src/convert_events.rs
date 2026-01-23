@@ -1,9 +1,11 @@
-use blitz_traits::events::{BlitzImeEvent, BlitzKeyEvent, KeyState};
+use blitz_traits::events::{
+    BlitzImeEvent, BlitzKeyEvent, BlitzPointerId, KeyState, PointerDetails,
+};
 use blitz_traits::shell::ColorScheme;
 use keyboard_types::{Code, Key, Location, Modifiers};
-use winit::event::ElementState;
-use winit::event::Ime;
 use winit::event::KeyEvent as WinitKeyEvent;
+use winit::event::{ButtonSource, ElementState};
+use winit::event::{Ime, PointerSource};
 use winit::keyboard::Key as WinitKey;
 use winit::keyboard::KeyCode as WinitKeyCode;
 use winit::keyboard::KeyLocation as WinitKeyLocation;
@@ -32,6 +34,13 @@ pub(crate) fn winit_ime_to_blitz(event: Ime) -> BlitzImeEvent {
         Ime::Disabled => BlitzImeEvent::Disabled,
         Ime::Preedit(text, cursor) => BlitzImeEvent::Preedit(text, cursor),
         Ime::Commit(text) => BlitzImeEvent::Commit(text),
+        Ime::DeleteSurrounding {
+            before_bytes,
+            after_bytes,
+        } => BlitzImeEvent::DeleteSurrounding {
+            before_bytes,
+            after_bytes,
+        },
     }
 }
 
@@ -54,6 +63,55 @@ pub(crate) fn winit_key_event_to_blitz(
     }
 }
 
+pub(crate) fn pointer_source_to_blitz(source: &PointerSource) -> BlitzPointerId {
+    match source {
+        PointerSource::Mouse => BlitzPointerId::Mouse,
+        PointerSource::Touch { finger_id, .. } => {
+            BlitzPointerId::Finger(finger_id.into_raw() as u64)
+        }
+
+        // TODO: TabletTool and Unknown events
+        PointerSource::TabletTool { .. } => BlitzPointerId::Mouse,
+        PointerSource::Unknown => BlitzPointerId::Mouse,
+    }
+}
+
+pub(crate) fn button_source_to_blitz(source: &ButtonSource) -> BlitzPointerId {
+    match source {
+        ButtonSource::Mouse(_) => BlitzPointerId::Mouse,
+        ButtonSource::TabletTool { .. } => BlitzPointerId::Pen,
+        ButtonSource::Touch { finger_id, .. } => {
+            BlitzPointerId::Finger(finger_id.into_raw() as u64)
+        }
+
+        // TODO: Unknown events
+        ButtonSource::Unknown(_) => BlitzPointerId::Mouse,
+    }
+}
+
+pub(crate) fn pointer_source_to_blitz_details(source: &PointerSource) -> PointerDetails {
+    match source {
+        PointerSource::Mouse => PointerDetails::default(),
+        PointerSource::Unknown => PointerDetails::default(),
+        PointerSource::Touch { force, .. } => PointerDetails {
+            pressure: force.map(|force| force.normalized(None)).unwrap_or(0.0),
+            ..PointerDetails::default()
+        },
+        PointerSource::TabletTool { data, .. } => PointerDetails {
+            pressure: data
+                .force
+                .map(|force| force.normalized(data.angle))
+                .unwrap_or(0.0),
+            tangential_pressure: data.tangential_force.unwrap_or(0.0),
+            tilt_x: data.tilt.map(|tilt| tilt.x).unwrap_or(0),
+            tilt_y: data.tilt.map(|tilt| tilt.y).unwrap_or(0),
+            twist: data.twist.unwrap_or(0),
+            altitude: data.angle.map(|angle| angle.altitude).unwrap_or(0.0),
+            azimuth: data.angle.map(|angle| angle.azimuth).unwrap_or(0.0),
+        },
+    }
+}
+
 pub(crate) fn winit_modifiers_to_kbt_modifiers(winit_modifiers: WinitModifiers) -> Modifiers {
     let mut modifiers = Modifiers::default();
     if winit_modifiers.control_key() {
@@ -65,7 +123,7 @@ pub(crate) fn winit_modifiers_to_kbt_modifiers(winit_modifiers: WinitModifiers) 
     if winit_modifiers.shift_key() {
         modifiers.insert(Modifiers::SHIFT);
     }
-    if winit_modifiers.super_key() {
+    if winit_modifiers.meta_key() {
         modifiers.insert(Modifiers::SUPER);
     }
     modifiers
@@ -80,15 +138,13 @@ pub(crate) fn winit_key_location_to_kbt_location(location: WinitKeyLocation) -> 
     }
 }
 
+#[allow(deprecated)] // Should cover all variants for conversion
 pub(crate) fn winit_physical_key_to_kbt_code(physical_key: &WinitPhysicalKey) -> Code {
     match physical_key {
         WinitPhysicalKey::Unidentified(_) => Code::Unidentified,
         WinitPhysicalKey::Code(key_code) => match key_code {
-            // Variants that don't match 1:1
-            WinitKeyCode::Meta => Code::Super,
-            WinitKeyCode::SuperLeft => Code::Super,
-            WinitKeyCode::SuperRight => Code::Super,
-
+            WinitKeyCode::MetaLeft => Code::Super,
+            WinitKeyCode::MetaRight => Code::Super,
             WinitKeyCode::Backquote => Code::Backquote,
             WinitKeyCode::Backslash => Code::Backslash,
             WinitKeyCode::BracketLeft => Code::BracketLeft,
@@ -280,12 +336,37 @@ pub(crate) fn winit_physical_key_to_kbt_code(physical_key: &WinitPhysicalKey) ->
             WinitKeyCode::F33 => Code::F33,
             WinitKeyCode::F34 => Code::F34,
             WinitKeyCode::F35 => Code::F35,
+            WinitKeyCode::Super => Code::Super,
+            WinitKeyCode::Unidentified => Code::Unidentified,
+            WinitKeyCode::BrightnessDown => Code::BrightnessDown,
+            WinitKeyCode::BrightnessUp => Code::BrightnessUp,
+            WinitKeyCode::DisplayToggleIntExt => Code::DisplayToggleIntExt,
+            WinitKeyCode::KeyboardLayoutSelect => Code::KeyboardLayoutSelect,
+            WinitKeyCode::LaunchAssistant => Code::LaunchAssistant,
+            WinitKeyCode::LaunchControlPanel => Code::LaunchControlPanel,
+            WinitKeyCode::LaunchScreenSaver => Code::LaunchScreenSaver,
+            WinitKeyCode::MailForward => Code::MailForward,
+            WinitKeyCode::MailReply => Code::MailReply,
+            WinitKeyCode::MailSend => Code::MailSend,
+            WinitKeyCode::MediaFastForward => Code::MediaFastForward,
+            WinitKeyCode::MediaPause => Code::MediaPause,
+            WinitKeyCode::MediaPlay => Code::MediaPlay,
+            WinitKeyCode::MediaRecord => Code::MediaRecord,
+            WinitKeyCode::MediaRewind => Code::MediaRewind,
+            WinitKeyCode::MicrophoneMuteToggle => Code::MicrophoneMuteToggle,
+            WinitKeyCode::PrivacyScreenToggle => Code::PrivacyScreenToggle,
+            WinitKeyCode::SelectTask => Code::SelectTask,
+            WinitKeyCode::ShowAllWindows => Code::ShowAllWindows,
+            WinitKeyCode::ZoomToggle => Code::ZoomToggle,
+
+            WinitKeyCode::KeyboardBacklightToggle => todo!(),
             _ => todo!(),
         },
     }
 }
 
 pub(crate) fn winit_key_to_kbt_key(winit_key: &WinitKey) -> Key {
+    #[allow(deprecated)] // Should cover all variants for conversion
     match winit_key {
         WinitKey::Character(c) => Key::Character(c.to_string()),
         WinitKey::Unidentified(_) => Key::Unidentified,
@@ -307,7 +388,6 @@ pub(crate) fn winit_key_to_kbt_key(winit_key: &WinitKey) -> Key {
             WinitNamedKey::Super => Key::Super,
             WinitNamedKey::Enter => Key::Enter,
             WinitNamedKey::Tab => Key::Tab,
-            WinitNamedKey::Space => Key::Character(" ".to_string()),
             WinitNamedKey::ArrowDown => Key::ArrowDown,
             WinitNamedKey::ArrowLeft => Key::ArrowLeft,
             WinitNamedKey::ArrowRight => Key::ArrowRight,
@@ -597,6 +677,9 @@ pub(crate) fn winit_key_to_kbt_key(winit_key: &WinitKey) -> Key {
             WinitNamedKey::F33 => Key::F33,
             WinitNamedKey::F34 => Key::F34,
             WinitNamedKey::F35 => Key::F35,
+            WinitNamedKey::Unidentified => Key::Unidentified,
+            WinitNamedKey::Dead => Key::Dead,
+
             _ => Key::Unidentified,
         },
     }

@@ -2,17 +2,29 @@ mod driver;
 mod focus;
 mod ime;
 mod keyboard;
-mod mouse;
+mod pointer;
 
-use blitz_traits::events::{DomEvent, DomEventData, UiEvent};
+use crate::util::Point;
+use blitz_traits::events::{DomEvent, DomEventData, PointerCoords, UiEvent};
 pub use driver::{EventDriver, EventHandler, NoopEventHandler};
 use focus::generate_focus_events;
 pub(crate) use ime::handle_ime_event;
 pub(crate) use keyboard::handle_keypress;
-use mouse::handle_mouseup;
-pub(crate) use mouse::{handle_click, handle_mousedown, handle_mousemove};
+pub(crate) use pointer::{DragMode, ScrollAnimationState};
+use pointer::{handle_click, handle_pointerdown, handle_pointermove, handle_pointerup};
 
-use crate::{BaseDocument, events::mouse::handle_wheel};
+use crate::{BaseDocument, events::pointer::handle_wheel};
+
+fn adjust_coords_for_subdocument(
+    coords: &mut PointerCoords,
+    offset: Point<f32>,
+    viewport_scroll: Point<f64>,
+) {
+    coords.page_x -= offset.x - viewport_scroll.x as f32;
+    coords.page_y -= offset.y - viewport_scroll.y as f32;
+    coords.client_x -= offset.x;
+    coords.client_y -= offset.y;
+}
 
 pub(crate) fn handle_dom_event<F: FnMut(DomEvent)>(
     doc: &mut BaseDocument,
@@ -26,32 +38,45 @@ pub(crate) fn handle_dom_event<F: FnMut(DomEvent)>(
     let pos = node.absolute_position(0.0, 0.0);
     let mut set_focus = false;
     if let Some(sub_doc) = node.subdoc_mut() {
+        let viewport_scroll = sub_doc.inner().viewport_scroll();
         // TODO: eliminate clone
         let ui_event = match event.data.clone() {
-            DomEventData::MouseMove(mut mouse_event) => {
-                mouse_event.x -= pos.x;
-                mouse_event.y -= pos.y;
-                Some(UiEvent::MouseMove(mouse_event))
+            DomEventData::PointerMove(mut event) => {
+                adjust_coords_for_subdocument(&mut event.coords, pos, viewport_scroll);
+                Some(UiEvent::PointerMove(event))
             }
-            DomEventData::MouseDown(mut mouse_event) => {
-                mouse_event.x -= pos.x;
-                mouse_event.y -= pos.y;
+            DomEventData::PointerDown(mut event) => {
+                adjust_coords_for_subdocument(&mut event.coords, pos, viewport_scroll);
                 set_focus = true;
-                Some(UiEvent::MouseDown(mouse_event))
+                Some(UiEvent::PointerDown(event))
             }
-            DomEventData::MouseUp(mut mouse_event) => {
-                mouse_event.x -= pos.x;
-                mouse_event.y -= pos.y;
+            DomEventData::PointerUp(mut event) => {
+                adjust_coords_for_subdocument(&mut event.coords, pos, viewport_scroll);
                 set_focus = true;
-                Some(UiEvent::MouseUp(mouse_event))
+                Some(UiEvent::PointerUp(event))
             }
+
+            // Enter/leave events will be recreated by sub-document's event driver
+            // based move events
+            DomEventData::PointerEnter(_) => None,
+            DomEventData::PointerLeave(_) => None,
+            DomEventData::PointerOver(_) => None,
+            DomEventData::PointerOut(_) => None,
+
+            // Mouse events will be recreated by sub-document's event driver
+            // based pointer events
+            DomEventData::MouseMove(_) => None,
+            DomEventData::MouseDown(_) => None,
+            DomEventData::MouseUp(_) => None,
             DomEventData::MouseEnter(_) => None,
             DomEventData::MouseLeave(_) => None,
             DomEventData::MouseOver(_) => None,
             DomEventData::MouseOut(_) => None,
+
             DomEventData::KeyDown(data) => Some(UiEvent::KeyDown(data)),
             DomEventData::KeyUp(data) => Some(UiEvent::KeyUp(data)),
             DomEventData::Ime(data) => Some(UiEvent::Ime(data)),
+
             DomEventData::KeyPress(_) => None,
             DomEventData::Click(_) => None,
             DomEventData::ContextMenu(_) => None,
@@ -84,32 +109,33 @@ pub(crate) fn handle_dom_event<F: FnMut(DomEvent)>(
     }
 
     match &event.data {
-        DomEventData::MouseMove(mouse_event) => {
-            let changed = handle_mousemove(
-                doc,
-                target_node_id,
-                mouse_event.x,
-                mouse_event.y,
-                mouse_event.buttons,
-                mouse_event,
-                dispatch_event,
-            );
+        DomEventData::PointerMove(event) => {
+            let changed = handle_pointermove(doc, target_node_id, event, dispatch_event);
             if changed {
                 doc.shell_provider.request_redraw();
             }
         }
-        DomEventData::MouseDown(event) => {
-            handle_mousedown(
+        DomEventData::MouseMove(_) => {
+            // Do nothing (handled in PointerMove)
+        }
+        DomEventData::PointerDown(event) => {
+            handle_pointerdown(
                 doc,
                 target_node_id,
-                event.x,
-                event.y,
+                event.page_x(),
+                event.page_y(),
                 event.mods,
                 &mut dispatch_event,
             );
         }
-        DomEventData::MouseUp(event) => {
-            handle_mouseup(doc, target_node_id, event, dispatch_event);
+        DomEventData::MouseDown(_) => {
+            // Do nothing (handled in PointerDown)
+        }
+        DomEventData::PointerUp(event) => {
+            handle_pointerup(doc, target_node_id, event, dispatch_event);
+        }
+        DomEventData::MouseUp(_) => {
+            // Do nothing (handled in PointerUp)
         }
         DomEventData::Click(event) => {
             handle_click(doc, target_node_id, event, &mut dispatch_event);
@@ -133,6 +159,18 @@ pub(crate) fn handle_dom_event<F: FnMut(DomEvent)>(
             // TODO: Open context menu
         }
         DomEventData::DoubleClick(_) => {
+            // Do nothing (no default action)
+        }
+        DomEventData::PointerEnter(_) => {
+            // Do nothing (no default action)
+        }
+        DomEventData::PointerLeave(_) => {
+            // Do nothing (no default action)
+        }
+        DomEventData::PointerOver(_) => {
+            // Do nothing (no default action)
+        }
+        DomEventData::PointerOut(_) => {
             // Do nothing (no default action)
         }
         DomEventData::MouseEnter(_) => {

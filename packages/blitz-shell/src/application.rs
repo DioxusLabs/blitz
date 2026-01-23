@@ -1,26 +1,32 @@
-use crate::event::BlitzShellEvent;
+use crate::event::{BlitzShellEvent, BlitzShellProxy};
 
 use anyrender::WindowRenderer;
 use std::collections::HashMap;
+use std::sync::mpsc::Receiver;
 use winit::application::ApplicationHandler;
 use winit::event::WindowEvent;
-use winit::event_loop::{ActiveEventLoop, EventLoopProxy};
+use winit::event_loop::ActiveEventLoop;
 use winit::window::WindowId;
+
+#[cfg(target_os = "macos")]
+use winit::platform::macos::ApplicationHandlerExtMacOS;
 
 use crate::{View, WindowConfig};
 
 pub struct BlitzApplication<Rend: WindowRenderer> {
     pub windows: HashMap<WindowId, View<Rend>>,
     pub pending_windows: Vec<WindowConfig<Rend>>,
-    pub proxy: EventLoopProxy<BlitzShellEvent>,
+    pub proxy: BlitzShellProxy,
+    pub event_queue: Receiver<BlitzShellEvent>,
 }
 
 impl<Rend: WindowRenderer> BlitzApplication<Rend> {
-    pub fn new(proxy: EventLoopProxy<BlitzShellEvent>) -> Self {
+    pub fn new(proxy: BlitzShellProxy, event_queue: Receiver<BlitzShellEvent>) -> Self {
         BlitzApplication {
             windows: HashMap::new(),
             pending_windows: Vec::new(),
             proxy,
+            event_queue,
         }
     }
 
@@ -31,10 +37,56 @@ impl<Rend: WindowRenderer> BlitzApplication<Rend> {
     fn window_mut_by_doc_id(&mut self, doc_id: usize) -> Option<&mut View<Rend>> {
         self.windows.values_mut().find(|w| w.doc.id() == doc_id)
     }
+
+    pub fn handle_blitz_shell_event(
+        &mut self,
+        _event_loop: &dyn ActiveEventLoop,
+        event: BlitzShellEvent,
+    ) {
+        match event {
+            BlitzShellEvent::Poll { window_id } => {
+                if let Some(window) = self.windows.get_mut(&window_id) {
+                    window.poll();
+                };
+            }
+            BlitzShellEvent::RequestRedraw { doc_id } => {
+                // TODO: Handle multiple documents per window
+                if let Some(window) = self.window_mut_by_doc_id(doc_id) {
+                    window.request_redraw();
+                }
+            }
+
+            #[cfg(feature = "accessibility")]
+            BlitzShellEvent::Accessibility { window_id, data } => {
+                if let Some(window) = self.windows.get_mut(&window_id) {
+                    match &*data {
+                        accesskit_xplat::WindowEvent::InitialTreeRequested => {
+                            window.build_accessibility_tree();
+                        }
+                        accesskit_xplat::WindowEvent::AccessibilityDeactivated => {
+                            // TODO
+                        }
+                        accesskit_xplat::WindowEvent::ActionRequested(_req) => {
+                            // TODO
+                        }
+                    }
+                }
+            }
+            BlitzShellEvent::Embedder(_) => {
+                // Do nothing. Should be handled by embedders (if required).
+            }
+            BlitzShellEvent::Navigate(_opts) => {
+                // Do nothing. Should be handled by embedders (if required).
+            }
+            BlitzShellEvent::NavigationLoad { .. } => {
+                // Do nothing. Should be handled by embedders (if required).
+            }
+        }
+    }
 }
 
-impl<Rend: WindowRenderer> ApplicationHandler<BlitzShellEvent> for BlitzApplication<Rend> {
-    fn resumed(&mut self, event_loop: &ActiveEventLoop) {
+impl<Rend: WindowRenderer> ApplicationHandler for BlitzApplication<Rend> {
+    fn can_create_surfaces(&mut self, event_loop: &dyn ActiveEventLoop) {
         // Resume existing windows
         for (_, view) in self.windows.iter_mut() {
             view.resume();
@@ -51,15 +103,23 @@ impl<Rend: WindowRenderer> ApplicationHandler<BlitzShellEvent> for BlitzApplicat
         }
     }
 
-    fn suspended(&mut self, _event_loop: &ActiveEventLoop) {
+    fn destroy_surfaces(&mut self, _event_loop: &dyn ActiveEventLoop) {
         for (_, view) in self.windows.iter_mut() {
             view.suspend();
         }
     }
 
+    fn resumed(&mut self, _event_loop: &dyn ActiveEventLoop) {
+        // TODO
+    }
+
+    fn suspended(&mut self, _event_loop: &dyn ActiveEventLoop) {
+        // TODO
+    }
+
     fn window_event(
         &mut self,
-        event_loop: &ActiveEventLoop,
+        event_loop: &dyn ActiveEventLoop,
         window_id: WindowId,
         event: WindowEvent,
     ) {
@@ -79,49 +139,40 @@ impl<Rend: WindowRenderer> ApplicationHandler<BlitzShellEvent> for BlitzApplicat
             window.handle_winit_event(event);
         }
 
-        let _ = self.proxy.send_event(BlitzShellEvent::Poll { window_id });
+        self.proxy.send_event(BlitzShellEvent::Poll { window_id });
     }
 
-    fn user_event(&mut self, _event_loop: &ActiveEventLoop, event: BlitzShellEvent) {
-        match event {
-            BlitzShellEvent::Poll { window_id } => {
-                if let Some(window) = self.windows.get_mut(&window_id) {
-                    window.poll();
-                };
-            }
-            BlitzShellEvent::RequestRedraw { doc_id } => {
-                // TODO: Handle multiple documents per window
-                if let Some(window) = self.window_mut_by_doc_id(doc_id) {
-                    window.request_redraw();
-                }
-            }
+    fn proxy_wake_up(&mut self, event_loop: &dyn ActiveEventLoop) {
+        while let Ok(event) = self.event_queue.try_recv() {
+            self.handle_blitz_shell_event(event_loop, event);
+        }
+    }
 
-            #[cfg(feature = "accessibility")]
-            BlitzShellEvent::Accessibility { window_id, data } => {
-                if let Some(window) = self.windows.get_mut(&window_id) {
-                    match &*data {
-                        accesskit_winit::WindowEvent::InitialTreeRequested => {
-                            window.build_accessibility_tree();
-                        }
-                        accesskit_winit::WindowEvent::AccessibilityDeactivated => {
-                            // TODO
-                        }
-                        accesskit_winit::WindowEvent::ActionRequested(_req) => {
-                            // TODO
-                        }
-                    }
-                }
-            }
+    #[cfg(target_os = "macos")]
+    fn macos_handler(&mut self) -> Option<&mut dyn ApplicationHandlerExtMacOS> {
+        Some(self)
+    }
 
-            BlitzShellEvent::Embedder(_) => {
-                // Do nothing. Should be handled by embedders (if required).
-            }
-            BlitzShellEvent::Navigate(_opts) => {
-                // Do nothing. Should be handled by embedders (if required).
-            }
-            BlitzShellEvent::NavigationLoad { .. } => {
-                // Do nothing. Should be handled by embedders (if required).
+    #[cfg(target_os = "ios")]
+    fn about_to_wait(&mut self, _event_loop: &dyn ActiveEventLoop) {
+        for view in self.windows.values_mut() {
+            if view.ios_request_redraw.get() {
+                view.window.request_redraw();
             }
         }
+    }
+}
+
+#[cfg(target_os = "macos")]
+impl<Rend: WindowRenderer> ApplicationHandlerExtMacOS for BlitzApplication<Rend> {
+    fn standard_key_binding(
+        &mut self,
+        event_loop: &dyn ActiveEventLoop,
+        window_id: WindowId,
+        action: &str,
+    ) {
+        let _ = event_loop;
+        let _ = window_id;
+        let _ = action;
     }
 }

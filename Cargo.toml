@@ -1,5 +1,6 @@
 [workspace]
 members = [
+  "packages/accesskit_xplat",
   "packages/debug_timer",
   "packages/blitz-traits",
   "packages/blitz-dom",
@@ -44,6 +45,7 @@ stylo_taffy = { version = "0.2.0", path = "./packages/stylo_taffy", default-feat
 dioxus-native = { version = "0.7.0", path = "./packages/dioxus-native", default-features = false }
 dioxus-native-dom = { version = "0.7.0", path = "./packages/dioxus-native-dom", default-features = false }
 debug_timer = { version = "0.1.2", path = "./packages/debug_timer" }
+accesskit_xplat = { version = "0.1", path = "./packages/accesskit_xplat", default-features = false }
 
 # Servo dependencies
 style = { version = "0.11.0", package = "stylo" }
@@ -128,9 +130,8 @@ usvg = "0.46"
 
 # Windowing & Input
 raw-window-handle = "0.6.0"
-winit = { version = "0.30.2", features = ["rwh_06"] }
-accesskit_winit = "0.23"
-accesskit = "0.17"
+winit = { version = "=0.31.0-beta.2" }
+accesskit = "0.23"
 arboard = { version = "3.4.1", default-features = false }
 rfd = { version = "0.17.1", default-features = false }
 keyboard-types = "0.7"
@@ -141,7 +142,7 @@ url = "2.5.0"
 http = "1.1.0"
 data-url = "0.3.1"
 tokio = "1.42"
-reqwest = "0.12"
+reqwest = { version = "0.12", default-features = false }
 reqwest-middleware = { version = "0.4.2", default-features = false }
 http-cache-reqwest = { version = "=1.0.0-alpha.2", default-features = false }
 
@@ -167,7 +168,7 @@ tracing-subscriber = "0.3"
 futures-util = "0.3.30"
 futures-intrusive = "0.5.0"
 pollster = "0.4"
-smol_str = "0.2"
+smol_str = "0.3"
 bitflags = "2.8.0"
 bytemuck = "1"
 fastrand = "2.3.0"
@@ -214,7 +215,7 @@ edition = "2024"
 description = "Top level crate for Blitz"
 license = "MIT OR Apache-2.0"
 keywords = ["dom", "ui", "gui", "react", "wasm"]
-rust-version = "1.86.0"
+rust-version = "1.89.0"
 publish = false
 
 [dev-dependencies]

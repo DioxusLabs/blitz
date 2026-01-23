@@ -47,9 +47,9 @@ impl EventState {
 #[derive(Debug, Clone)]
 #[repr(u8)]
 pub enum UiEvent {
-    MouseMove(BlitzMouseButtonEvent),
-    MouseUp(BlitzMouseButtonEvent),
-    MouseDown(BlitzMouseButtonEvent),
+    PointerMove(BlitzPointerEvent),
+    PointerUp(BlitzPointerEvent),
+    PointerDown(BlitzPointerEvent),
     Wheel(BlitzWheelEvent),
     KeyUp(BlitzKeyEvent),
     KeyDown(BlitzKeyEvent),
@@ -97,6 +97,14 @@ impl DomEvent {
 #[derive(Copy, Clone, Debug, PartialEq)]
 #[repr(u8)]
 pub enum DomEventKind {
+    PointerMove,
+    PointerDown,
+    PointerUp,
+    PointerEnter,
+    PointerLeave,
+    PointerOver,
+    PointerOut,
+
     MouseMove,
     MouseDown,
     MouseUp,
@@ -104,16 +112,20 @@ pub enum DomEventKind {
     MouseLeave,
     MouseOver,
     MouseOut,
+
     Scroll,
     Wheel,
+
     Click,
     ContextMenu,
     DoubleClick,
+
     KeyPress,
     KeyDown,
     KeyUp,
     Input,
     Ime,
+
     Focus,
     Blur,
     FocusIn,
@@ -128,6 +140,14 @@ impl FromStr for DomEventKind {
     type Err = ();
     fn from_str(s: &str) -> Result<Self, ()> {
         match s.trim_start_matches("on") {
+            "pointermove" => Ok(Self::PointerMove),
+            "pointerdown" => Ok(Self::PointerDown),
+            "pointerup" => Ok(Self::PointerUp),
+            "pointerenter" => Ok(Self::PointerEnter),
+            "pointerleave" => Ok(Self::PointerLeave),
+            "pointerover" => Ok(Self::PointerOver),
+            "pointerout" => Ok(Self::PointerOut),
+
             "mousemove" => Ok(Self::MouseMove),
             "mousedown" => Ok(Self::MouseDown),
             "mouseup" => Ok(Self::MouseUp),
@@ -135,16 +155,20 @@ impl FromStr for DomEventKind {
             "mouseleave" => Ok(Self::MouseLeave),
             "mouseover" => Ok(Self::MouseOver),
             "mouseout" => Ok(Self::MouseOut),
+
             "scroll" => Ok(Self::Scroll),
             "wheel" => Ok(Self::Wheel),
+
             "click" => Ok(Self::Click),
             "contextmenu" => Ok(Self::ContextMenu),
             "dblclick" => Ok(Self::DoubleClick),
+
             "keypress" => Ok(Self::KeyPress),
             "keydown" => Ok(Self::KeyDown),
             "keyup" => Ok(Self::KeyUp),
             "input" => Ok(Self::Input),
             "composition" => Ok(Self::Ime),
+
             "focus" => Ok(Self::Focus),
             "blur" => Ok(Self::Blur),
             "focusin" => Ok(Self::FocusIn),
@@ -157,23 +181,35 @@ impl FromStr for DomEventKind {
 #[derive(Debug, Clone)]
 #[repr(u8)]
 pub enum DomEventData {
-    MouseMove(BlitzMouseButtonEvent),
-    MouseDown(BlitzMouseButtonEvent),
-    MouseUp(BlitzMouseButtonEvent),
-    MouseEnter(BlitzMouseButtonEvent),
-    MouseLeave(BlitzMouseButtonEvent),
-    MouseOver(BlitzMouseButtonEvent),
-    MouseOut(BlitzMouseButtonEvent),
+    PointerMove(BlitzPointerEvent),
+    PointerDown(BlitzPointerEvent),
+    PointerUp(BlitzPointerEvent),
+    PointerEnter(BlitzPointerEvent),
+    PointerLeave(BlitzPointerEvent),
+    PointerOver(BlitzPointerEvent),
+    PointerOut(BlitzPointerEvent),
+
+    MouseMove(BlitzPointerEvent),
+    MouseDown(BlitzPointerEvent),
+    MouseUp(BlitzPointerEvent),
+    MouseEnter(BlitzPointerEvent),
+    MouseLeave(BlitzPointerEvent),
+    MouseOver(BlitzPointerEvent),
+    MouseOut(BlitzPointerEvent),
+
     Scroll(BlitzScrollEvent),
     Wheel(BlitzWheelEvent),
-    Click(BlitzMouseButtonEvent),
-    ContextMenu(BlitzMouseButtonEvent),
-    DoubleClick(BlitzMouseButtonEvent),
+
+    Click(BlitzPointerEvent),
+    ContextMenu(BlitzPointerEvent),
+    DoubleClick(BlitzPointerEvent),
+
     KeyPress(BlitzKeyEvent),
     KeyDown(BlitzKeyEvent),
     KeyUp(BlitzKeyEvent),
     Input(BlitzInputEvent),
     Ime(BlitzImeEvent),
+
     Focus(BlitzFocusEvent),
     Blur(BlitzFocusEvent),
     FocusIn(BlitzFocusEvent),
@@ -192,6 +228,14 @@ impl DomEventData {
 impl DomEventData {
     pub fn name(&self) -> &'static str {
         match self {
+            Self::PointerMove { .. } => "pointermove",
+            Self::PointerDown { .. } => "pointerdown",
+            Self::PointerUp { .. } => "pointerup",
+            Self::PointerEnter { .. } => "pointerenter",
+            Self::PointerLeave { .. } => "pointerleave",
+            Self::PointerOver { .. } => "pointerover",
+            Self::PointerOut { .. } => "pointerout",
+
             Self::MouseMove { .. } => "mousemove",
             Self::MouseDown { .. } => "mousedown",
             Self::MouseUp { .. } => "mouseup",
@@ -199,16 +243,20 @@ impl DomEventData {
             Self::MouseLeave { .. } => "mouseleave",
             Self::MouseOver { .. } => "mouseover",
             Self::MouseOut { .. } => "mouseout",
+
             Self::Scroll { .. } => "scroll",
             Self::Wheel { .. } => "wheel",
+
             Self::Click { .. } => "click",
             Self::ContextMenu { .. } => "contextmenu",
             Self::DoubleClick { .. } => "dblclick",
+
             Self::KeyPress { .. } => "keypress",
             Self::KeyDown { .. } => "keydown",
             Self::KeyUp { .. } => "keyup",
             Self::Input { .. } => "input",
             Self::Ime { .. } => "composition",
+
             Self::Focus { .. } => "focus",
             Self::Blur { .. } => "blur",
             Self::FocusIn { .. } => "focusin",
@@ -218,6 +266,14 @@ impl DomEventData {
 
     pub fn kind(&self) -> DomEventKind {
         match self {
+            Self::PointerMove { .. } => DomEventKind::PointerMove,
+            Self::PointerDown { .. } => DomEventKind::PointerDown,
+            Self::PointerUp { .. } => DomEventKind::PointerUp,
+            Self::PointerEnter { .. } => DomEventKind::PointerEnter,
+            Self::PointerLeave { .. } => DomEventKind::PointerLeave,
+            Self::PointerOver { .. } => DomEventKind::PointerOver,
+            Self::PointerOut { .. } => DomEventKind::PointerOut,
+
             Self::MouseMove { .. } => DomEventKind::MouseMove,
             Self::MouseDown { .. } => DomEventKind::MouseDown,
             Self::MouseUp { .. } => DomEventKind::MouseUp,
@@ -225,16 +281,20 @@ impl DomEventData {
             Self::MouseLeave { .. } => DomEventKind::MouseLeave,
             Self::MouseOver { .. } => DomEventKind::MouseOver,
             Self::MouseOut { .. } => DomEventKind::MouseOut,
+
             Self::Scroll { .. } => DomEventKind::Scroll,
             Self::Wheel { .. } => DomEventKind::Wheel,
+
             Self::Click { .. } => DomEventKind::Click,
             Self::ContextMenu { .. } => DomEventKind::ContextMenu,
             Self::DoubleClick { .. } => DomEventKind::DoubleClick,
+
             Self::KeyPress { .. } => DomEventKind::KeyPress,
             Self::KeyDown { .. } => DomEventKind::KeyDown,
             Self::KeyUp { .. } => DomEventKind::KeyUp,
             Self::Input { .. } => DomEventKind::Input,
             Self::Ime { .. } => DomEventKind::Ime,
+
             Self::Focus { .. } => DomEventKind::Focus,
             Self::Blur { .. } => DomEventKind::Blur,
             Self::FocusIn { .. } => DomEventKind::FocusIn,
@@ -244,6 +304,14 @@ impl DomEventData {
 
     pub fn cancelable(&self) -> bool {
         match self {
+            Self::PointerMove { .. } => true,
+            Self::PointerDown { .. } => true,
+            Self::PointerUp { .. } => true,
+            Self::PointerEnter { .. } => false,
+            Self::PointerLeave { .. } => false,
+            Self::PointerOver { .. } => true,
+            Self::PointerOut { .. } => true,
+
             Self::MouseMove { .. } => true,
             Self::MouseDown { .. } => true,
             Self::MouseUp { .. } => true,
@@ -251,16 +319,20 @@ impl DomEventData {
             Self::MouseLeave { .. } => false,
             Self::MouseOver { .. } => true,
             Self::MouseOut { .. } => true,
+
             Self::Scroll { .. } => false,
             Self::Wheel { .. } => true,
+
             Self::Click { .. } => true,
             Self::ContextMenu { .. } => true,
             Self::DoubleClick { .. } => true,
+
             Self::KeyDown { .. } => true,
             Self::KeyUp { .. } => true,
             Self::KeyPress { .. } => true,
             Self::Ime { .. } => true,
             Self::Input { .. } => false,
+
             Self::Focus { .. } => false,
             Self::Blur { .. } => false,
             Self::FocusIn { .. } => false,
@@ -270,6 +342,14 @@ impl DomEventData {
 
     pub fn bubbles(&self) -> bool {
         match self {
+            Self::PointerMove { .. } => true,
+            Self::PointerDown { .. } => true,
+            Self::PointerUp { .. } => true,
+            Self::PointerEnter { .. } => false,
+            Self::PointerLeave { .. } => false,
+            Self::PointerOver { .. } => true,
+            Self::PointerOut { .. } => true,
+
             Self::MouseMove { .. } => true,
             Self::MouseDown { .. } => true,
             Self::MouseUp { .. } => true,
@@ -277,16 +357,20 @@ impl DomEventData {
             Self::MouseLeave { .. } => false,
             Self::MouseOver { .. } => true,
             Self::MouseOut { .. } => true,
+
             Self::Scroll { .. } => false,
             Self::Wheel { .. } => true,
+
             Self::Click { .. } => true,
             Self::ContextMenu { .. } => true,
             Self::DoubleClick { .. } => true,
+
             Self::KeyDown { .. } => true,
             Self::KeyUp { .. } => true,
             Self::KeyPress { .. } => true,
             Self::Ime { .. } => true,
             Self::Input { .. } => true,
+
             Self::Focus { .. } => false,
             Self::Blur { .. } => false,
             Self::FocusIn { .. } => true,
@@ -307,29 +391,120 @@ pub struct HitResult {
     pub y: f32,
 }
 
-#[derive(Clone, Debug)]
-pub struct BlitzMouseButtonEvent {
-    pub x: f32,
-    pub y: f32,
-    pub button: MouseEventButton,
-    pub buttons: MouseEventButtons,
-    pub mods: Modifiers,
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum BlitzPointerId {
+    Mouse,
+    Pen,
+    Finger(u64),
+}
+
+#[derive(Copy, Clone, Debug)]
+pub struct PointerCoords {
+    pub page_x: f32,
+    pub page_y: f32,
+    pub screen_x: f32,
+    pub screen_y: f32,
+    pub client_x: f32,
+    pub client_y: f32,
+}
+
+#[derive(Copy, Clone, Debug, Default)]
+pub struct PointerDetails {
+    pub pressure: f64, // default 0.5 if buttons pressed else 0.0
+    pub tangential_pressure: f32,
+    pub tilt_x: i8,
+    pub tilt_y: i8,
+    pub twist: u16,
+    pub altitude: f64,
+    pub azimuth: f64,
 }
 
 #[derive(Clone, Debug)]
-pub struct BlitzWheelEvent {
-    pub delta: BlitzWheelDelta,
-    pub x: f32,
-    pub y: f32,
+pub struct BlitzPointerEvent {
+    pub id: BlitzPointerId,
+    pub is_primary: bool,
+    pub coords: PointerCoords,
     pub button: MouseEventButton,
     pub buttons: MouseEventButtons,
     pub mods: Modifiers,
+    pub details: PointerDetails,
+}
+
+impl BlitzPointerEvent {
+    #[inline(always)]
+    pub fn is_mouse(&self) -> bool {
+        matches!(self.id, BlitzPointerId::Mouse)
+    }
+    #[inline(always)]
+    pub fn is_finger(&self) -> bool {
+        matches!(self.id, BlitzPointerId::Finger(_))
+    }
+
+    #[inline(always)]
+    pub fn page_x(&self) -> f32 {
+        self.coords.page_x
+    }
+    #[inline(always)]
+    pub fn page_y(&self) -> f32 {
+        self.coords.page_y
+    }
+    #[inline(always)]
+    pub fn client_x(&self) -> f32 {
+        self.coords.client_x
+    }
+    #[inline(always)]
+    pub fn client_y(&self) -> f32 {
+        self.coords.client_y
+    }
+    #[inline(always)]
+    pub fn screen_x(&self) -> f32 {
+        self.coords.screen_x
+    }
+    #[inline(always)]
+    pub fn screen_y(&self) -> f32 {
+        self.coords.screen_y
+    }
 }
 
 #[derive(Clone, Debug)]
 pub enum BlitzWheelDelta {
     Lines(f64, f64),
     Pixels(f64, f64),
+}
+
+#[derive(Clone, Debug)]
+pub struct BlitzWheelEvent {
+    pub delta: BlitzWheelDelta,
+    pub coords: PointerCoords,
+    pub buttons: MouseEventButtons,
+    pub mods: Modifiers,
+}
+
+impl BlitzWheelEvent {
+    #[inline(always)]
+    pub fn page_x(&self) -> f32 {
+        self.coords.page_x
+    }
+    #[inline(always)]
+    pub fn page_y(&self) -> f32 {
+        self.coords.page_y
+    }
+    #[inline(always)]
+    pub fn client_x(&self) -> f32 {
+        self.coords.client_x
+    }
+    #[inline(always)]
+    pub fn client_y(&self) -> f32 {
+        self.coords.client_y
+    }
+    #[inline(always)]
+    pub fn screen_x(&self) -> f32 {
+        self.coords.screen_x
+    }
+    #[inline(always)]
+    pub fn screen_y(&self) -> f32 {
+        self.coords.screen_y
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -341,6 +516,20 @@ pub struct BlitzScrollEvent {
     pub client_width: i32,
     pub client_height: i32,
 }
+
+// struct PointerInputState {
+//     id: BlitzPointerId,
+//     pointer_down_x: f32,
+//     pointer_down_y: f32,
+//     pointer_down_time: Option<Instant>,
+//     click_count: u16,
+// }
+
+// struct PointersInputState {
+//     initial_finger_active: bool,
+//     mouse: Option<PointerInputState>,
+//     fingers: Vec<PointerInputState>,
+// }
 
 bitflags! {
     /// The buttons property indicates which buttons are pressed on the mouse
@@ -439,7 +628,8 @@ pub enum BlitzImeEvent {
     /// Notifies when the IME was enabled.
     ///
     /// After getting this event you could receive [`Preedit`][Self::Preedit] and
-    /// [`Commit`][Self::Commit] events.
+    /// [`Commit`][Self::Commit] events. You should also start performing IME related requests
+    /// like [`Window::set_ime_cursor_area`].
     Enabled,
 
     /// Notifies when a new composing text should be set at the cursor position.
@@ -448,7 +638,7 @@ pub enum BlitzImeEvent {
     /// position. When it's `None`, the cursor should be hidden. When `String` is an empty string
     /// this indicates that preedit was cleared.
     ///
-    /// The cursor position is byte-wise indexed.
+    /// The cursor position is byte-wise indexed, assuming UTF-8.
     Preedit(String, Option<(usize, usize)>),
 
     /// Notifies when text should be inserted into the editor widget.
@@ -456,9 +646,25 @@ pub enum BlitzImeEvent {
     /// Right before this event winit will send empty [`Self::Preedit`] event.
     Commit(String),
 
+    /// Delete text surrounding the cursor or selection.
+    ///
+    /// This event does not affect either the pre-edit string.
+    /// This means that the application must first remove the pre-edit,
+    /// then execute the deletion, then insert the removed text back.
+    ///
+    /// This event assumes text is stored in UTF-8.
+    DeleteSurrounding {
+        /// Bytes to remove before the selection
+        before_bytes: usize,
+        /// Bytes to remove after the selection
+        after_bytes: usize,
+    },
+
     /// Notifies when the IME was disabled.
     ///
     /// After receiving this event you won't get any more [`Preedit`][Self::Preedit] or
-    /// [`Commit`][Self::Commit] events until the next [`Enabled`][Self::Enabled] event.
+    /// [`Commit`][Self::Commit] events until the next [`Enabled`][Self::Enabled] event. You should
+    /// also stop issuing IME related requests like [`Window::set_ime_cursor_area`] and clear
+    /// pending preedit text.
     Disabled,
 }
