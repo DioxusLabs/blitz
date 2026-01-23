@@ -79,12 +79,12 @@ pub(crate) fn pointer_source_to_blitz(source: &PointerSource) -> BlitzPointerId 
 pub(crate) fn button_source_to_blitz(source: &ButtonSource) -> BlitzPointerId {
     match source {
         ButtonSource::Mouse(_) => BlitzPointerId::Mouse,
+        ButtonSource::TabletTool { .. } => BlitzPointerId::Pen,
         ButtonSource::Touch { finger_id, .. } => {
             BlitzPointerId::Finger(finger_id.into_raw() as u64)
         }
 
-        // TODO: TabletTool and Unknown events
-        ButtonSource::TabletTool { .. } => BlitzPointerId::Mouse,
+        // TODO: Unknown events
         ButtonSource::Unknown(_) => BlitzPointerId::Mouse,
     }
 }

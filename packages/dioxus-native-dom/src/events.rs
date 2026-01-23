@@ -367,6 +367,7 @@ impl HasPointerData for NativePointerData {
     fn pointer_id(&self) -> i32 {
         match self.0.id {
             BlitzPointerId::Mouse => 0,
+            BlitzPointerId::Pen => 0,
             BlitzPointerId::Finger(id) => id as i32,
         }
     }
@@ -374,6 +375,7 @@ impl HasPointerData for NativePointerData {
     fn pointer_type(&self) -> String {
         match self.0.id {
             BlitzPointerId::Mouse => String::from("mouse"),
+            BlitzPointerId::Pen => String::from("pen"),
             BlitzPointerId::Finger(_) => String::from("touch"),
         }
     }

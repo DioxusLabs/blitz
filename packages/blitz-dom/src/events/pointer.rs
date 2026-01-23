@@ -156,7 +156,7 @@ pub(crate) fn handle_pointermove<F: FnMut(DomEvent)>(
         let dy = y - doc.mousedown_position.y;
         if dx.abs() > 2.0 || dy.abs() > 2.0 {
             match event.id {
-                BlitzPointerId::Mouse => {
+                BlitzPointerId::Mouse | BlitzPointerId::Pen => {
                     doc.drag_mode = DragMode::Selecting;
                 }
                 BlitzPointerId::Finger(_) => {
