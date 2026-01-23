@@ -1070,6 +1070,7 @@ impl Node {
             mods,
             button: Default::default(),
             buttons: Default::default(),
+            details: Default::default(),
         }
     }
 }

@@ -1,7 +1,8 @@
 use crate::BlitzShellProvider;
 use crate::convert_events::{
-    button_source_to_blitz, color_scheme_to_theme, pointer_source_to_blitz, theme_to_color_scheme,
-    winit_ime_to_blitz, winit_key_event_to_blitz, winit_modifiers_to_kbt_modifiers,
+    button_source_to_blitz, color_scheme_to_theme, pointer_source_to_blitz,
+    pointer_source_to_blitz_details, theme_to_color_scheme, winit_ime_to_blitz,
+    winit_key_event_to_blitz, winit_modifiers_to_kbt_modifiers,
 };
 use crate::event::{BlitzShellProxy, create_waker};
 use anyrender::WindowRenderer;
@@ -9,7 +10,7 @@ use blitz_dom::Document;
 use blitz_paint::paint_scene;
 use blitz_traits::events::{
     BlitzPointerEvent, BlitzPointerId, BlitzWheelDelta, BlitzWheelEvent, MouseEventButton,
-    MouseEventButtons, PointerCoords, UiEvent,
+    MouseEventButtons, PointerCoords, PointerDetails, UiEvent,
 };
 use blitz_traits::shell::Viewport;
 use winit::dpi::{LogicalPosition, PhysicalInsets, PhysicalPosition};
@@ -444,6 +445,7 @@ impl<Rend: WindowRenderer> View<Rend> {
                     button: Default::default(),
                     buttons: self.buttons,
                     mods: winit_modifiers_to_kbt_modifiers(self.keyboard_modifiers.state()),
+                    details: pointer_source_to_blitz_details(&source)
                 });
                 self.doc.handle_ui_event(event);
             }
@@ -475,6 +477,7 @@ impl<Rend: WindowRenderer> View<Rend> {
                         button: Default::default(),
                         buttons: self.buttons,
                         mods: winit_modifiers_to_kbt_modifiers(self.keyboard_modifiers.state()),
+                        details: PointerDetails::default()
                     });
                     self.doc.handle_ui_event(event);
                 }
@@ -486,6 +489,9 @@ impl<Rend: WindowRenderer> View<Rend> {
                     button,
                     buttons: self.buttons,
                     mods: winit_modifiers_to_kbt_modifiers(self.keyboard_modifiers.state()),
+
+                    // TODO: details for pointer up/down events
+                    details: PointerDetails::default(),
                 };
 
                 let event = match state {

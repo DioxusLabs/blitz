@@ -1,4 +1,6 @@
-use blitz_traits::events::{BlitzImeEvent, BlitzKeyEvent, BlitzPointerId, KeyState};
+use blitz_traits::events::{
+    BlitzImeEvent, BlitzKeyEvent, BlitzPointerId, KeyState, PointerDetails,
+};
 use blitz_traits::shell::ColorScheme;
 use keyboard_types::{Code, Key, Location, Modifiers};
 use winit::event::KeyEvent as WinitKeyEvent;
@@ -84,6 +86,29 @@ pub(crate) fn button_source_to_blitz(source: &ButtonSource) -> BlitzPointerId {
         // TODO: TabletTool and Unknown events
         ButtonSource::TabletTool { .. } => BlitzPointerId::Mouse,
         ButtonSource::Unknown(_) => BlitzPointerId::Mouse,
+    }
+}
+
+pub(crate) fn pointer_source_to_blitz_details(source: &PointerSource) -> PointerDetails {
+    match source {
+        PointerSource::Mouse => PointerDetails::default(),
+        PointerSource::Unknown => PointerDetails::default(),
+        PointerSource::Touch { force, .. } => PointerDetails {
+            pressure: force.map(|force| force.normalized(None)).unwrap_or(0.0),
+            ..PointerDetails::default()
+        },
+        PointerSource::TabletTool { data, .. } => PointerDetails {
+            pressure: data
+                .force
+                .map(|force| force.normalized(data.angle))
+                .unwrap_or(0.0),
+            tangential_pressure: data.tangential_force.unwrap_or(0.0),
+            tilt_x: data.tilt.map(|tilt| tilt.x).unwrap_or(0),
+            tilt_y: data.tilt.map(|tilt| tilt.y).unwrap_or(0),
+            twist: data.twist.unwrap_or(0),
+            altitude: data.angle.map(|angle| angle.altitude).unwrap_or(0.0),
+            azimuth: data.angle.map(|angle| angle.azimuth).unwrap_or(0.0),
+        },
     }
 }
 

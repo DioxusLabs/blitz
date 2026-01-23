@@ -407,6 +407,17 @@ pub struct PointerCoords {
     pub client_y: f32,
 }
 
+#[derive(Copy, Clone, Debug, Default)]
+pub struct PointerDetails {
+    pub pressure: f64, // default 0.5 if buttons pressed else 0.0
+    pub tangential_pressure: f32,
+    pub tilt_x: i8,
+    pub tilt_y: i8,
+    pub twist: u16,
+    pub altitude: f64,
+    pub azimuth: f64,
+}
+
 #[derive(Clone, Debug)]
 pub struct BlitzPointerEvent {
     pub id: BlitzPointerId,
@@ -415,6 +426,7 @@ pub struct BlitzPointerEvent {
     pub button: MouseEventButton,
     pub buttons: MouseEventButtons,
     pub mods: Modifiers,
+    pub details: PointerDetails,
 }
 
 impl BlitzPointerEvent {

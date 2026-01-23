@@ -356,6 +356,14 @@ impl HasMouseData for NativePointerData {
 }
 
 impl HasPointerData for NativePointerData {
+    fn as_any(&self) -> &dyn Any {
+        self as &dyn Any
+    }
+
+    fn is_primary(&self) -> bool {
+        self.0.is_primary
+    }
+
     fn pointer_id(&self) -> i32 {
         match self.0.id {
             BlitzPointerId::Mouse => 0,
@@ -370,12 +378,20 @@ impl HasPointerData for NativePointerData {
         }
     }
 
-    fn is_primary(&self) -> bool {
-        self.0.is_primary
+    fn pressure(&self) -> f32 {
+        self.0.details.pressure as f32
     }
-
-    fn as_any(&self) -> &dyn Any {
-        self as &dyn Any
+    fn tangential_pressure(&self) -> f32 {
+        self.0.details.tangential_pressure
+    }
+    fn tilt_x(&self) -> i32 {
+        self.0.details.tilt_x as i32
+    }
+    fn tilt_y(&self) -> i32 {
+        self.0.details.tilt_y as i32
+    }
+    fn twist(&self) -> i32 {
+        self.0.details.twist as i32
     }
 
     // TODO: implement these fields with real values
@@ -384,21 +400,6 @@ impl HasPointerData for NativePointerData {
     }
     fn height(&self) -> f64 {
         1.0
-    }
-    fn pressure(&self) -> f32 {
-        0.0
-    }
-    fn tangential_pressure(&self) -> f32 {
-        0.0
-    }
-    fn tilt_x(&self) -> i32 {
-        0
-    }
-    fn tilt_y(&self) -> i32 {
-        0
-    }
-    fn twist(&self) -> i32 {
-        0
     }
 }
 
