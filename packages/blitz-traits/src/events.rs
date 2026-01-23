@@ -97,6 +97,14 @@ impl DomEvent {
 #[derive(Copy, Clone, Debug, PartialEq)]
 #[repr(u8)]
 pub enum DomEventKind {
+    PointerMove,
+    PointerDown,
+    PointerUp,
+    PointerEnter,
+    PointerLeave,
+    PointerOver,
+    PointerOut,
+
     MouseMove,
     MouseDown,
     MouseUp,
@@ -104,16 +112,20 @@ pub enum DomEventKind {
     MouseLeave,
     MouseOver,
     MouseOut,
+
     Scroll,
     Wheel,
+
     Click,
     ContextMenu,
     DoubleClick,
+
     KeyPress,
     KeyDown,
     KeyUp,
     Input,
     Ime,
+
     Focus,
     Blur,
     FocusIn,
@@ -128,6 +140,14 @@ impl FromStr for DomEventKind {
     type Err = ();
     fn from_str(s: &str) -> Result<Self, ()> {
         match s.trim_start_matches("on") {
+            "pointermove" => Ok(Self::PointerMove),
+            "pointerdown" => Ok(Self::PointerDown),
+            "pointerup" => Ok(Self::PointerUp),
+            "pointerenter" => Ok(Self::PointerEnter),
+            "pointerleave" => Ok(Self::PointerLeave),
+            "pointerover" => Ok(Self::PointerOver),
+            "pointerout" => Ok(Self::PointerOut),
+
             "mousemove" => Ok(Self::MouseMove),
             "mousedown" => Ok(Self::MouseDown),
             "mouseup" => Ok(Self::MouseUp),
@@ -135,16 +155,20 @@ impl FromStr for DomEventKind {
             "mouseleave" => Ok(Self::MouseLeave),
             "mouseover" => Ok(Self::MouseOver),
             "mouseout" => Ok(Self::MouseOut),
+
             "scroll" => Ok(Self::Scroll),
             "wheel" => Ok(Self::Wheel),
+
             "click" => Ok(Self::Click),
             "contextmenu" => Ok(Self::ContextMenu),
             "dblclick" => Ok(Self::DoubleClick),
+
             "keypress" => Ok(Self::KeyPress),
             "keydown" => Ok(Self::KeyDown),
             "keyup" => Ok(Self::KeyUp),
             "input" => Ok(Self::Input),
             "composition" => Ok(Self::Ime),
+
             "focus" => Ok(Self::Focus),
             "blur" => Ok(Self::Blur),
             "focusin" => Ok(Self::FocusIn),
@@ -157,6 +181,14 @@ impl FromStr for DomEventKind {
 #[derive(Debug, Clone)]
 #[repr(u8)]
 pub enum DomEventData {
+    PointerMove(BlitzPointerEvent),
+    PointerDown(BlitzPointerEvent),
+    PointerUp(BlitzPointerEvent),
+    PointerEnter(BlitzPointerEvent),
+    PointerLeave(BlitzPointerEvent),
+    PointerOver(BlitzPointerEvent),
+    PointerOut(BlitzPointerEvent),
+
     MouseMove(BlitzPointerEvent),
     MouseDown(BlitzPointerEvent),
     MouseUp(BlitzPointerEvent),
@@ -164,16 +196,20 @@ pub enum DomEventData {
     MouseLeave(BlitzPointerEvent),
     MouseOver(BlitzPointerEvent),
     MouseOut(BlitzPointerEvent),
+
     Scroll(BlitzScrollEvent),
     Wheel(BlitzWheelEvent),
+
     Click(BlitzPointerEvent),
     ContextMenu(BlitzPointerEvent),
     DoubleClick(BlitzPointerEvent),
+
     KeyPress(BlitzKeyEvent),
     KeyDown(BlitzKeyEvent),
     KeyUp(BlitzKeyEvent),
     Input(BlitzInputEvent),
     Ime(BlitzImeEvent),
+
     Focus(BlitzFocusEvent),
     Blur(BlitzFocusEvent),
     FocusIn(BlitzFocusEvent),
@@ -192,6 +228,14 @@ impl DomEventData {
 impl DomEventData {
     pub fn name(&self) -> &'static str {
         match self {
+            Self::PointerMove { .. } => "pointermove",
+            Self::PointerDown { .. } => "pointerdown",
+            Self::PointerUp { .. } => "pointerup",
+            Self::PointerEnter { .. } => "pointerenter",
+            Self::PointerLeave { .. } => "pointerleave",
+            Self::PointerOver { .. } => "pointerover",
+            Self::PointerOut { .. } => "pointerout",
+
             Self::MouseMove { .. } => "mousemove",
             Self::MouseDown { .. } => "mousedown",
             Self::MouseUp { .. } => "mouseup",
@@ -199,16 +243,20 @@ impl DomEventData {
             Self::MouseLeave { .. } => "mouseleave",
             Self::MouseOver { .. } => "mouseover",
             Self::MouseOut { .. } => "mouseout",
+
             Self::Scroll { .. } => "scroll",
             Self::Wheel { .. } => "wheel",
+
             Self::Click { .. } => "click",
             Self::ContextMenu { .. } => "contextmenu",
             Self::DoubleClick { .. } => "dblclick",
+
             Self::KeyPress { .. } => "keypress",
             Self::KeyDown { .. } => "keydown",
             Self::KeyUp { .. } => "keyup",
             Self::Input { .. } => "input",
             Self::Ime { .. } => "composition",
+
             Self::Focus { .. } => "focus",
             Self::Blur { .. } => "blur",
             Self::FocusIn { .. } => "focusin",
@@ -218,6 +266,14 @@ impl DomEventData {
 
     pub fn kind(&self) -> DomEventKind {
         match self {
+            Self::PointerMove { .. } => DomEventKind::PointerMove,
+            Self::PointerDown { .. } => DomEventKind::PointerDown,
+            Self::PointerUp { .. } => DomEventKind::PointerUp,
+            Self::PointerEnter { .. } => DomEventKind::PointerEnter,
+            Self::PointerLeave { .. } => DomEventKind::PointerLeave,
+            Self::PointerOver { .. } => DomEventKind::PointerOver,
+            Self::PointerOut { .. } => DomEventKind::PointerOut,
+
             Self::MouseMove { .. } => DomEventKind::MouseMove,
             Self::MouseDown { .. } => DomEventKind::MouseDown,
             Self::MouseUp { .. } => DomEventKind::MouseUp,
@@ -225,16 +281,20 @@ impl DomEventData {
             Self::MouseLeave { .. } => DomEventKind::MouseLeave,
             Self::MouseOver { .. } => DomEventKind::MouseOver,
             Self::MouseOut { .. } => DomEventKind::MouseOut,
+
             Self::Scroll { .. } => DomEventKind::Scroll,
             Self::Wheel { .. } => DomEventKind::Wheel,
+
             Self::Click { .. } => DomEventKind::Click,
             Self::ContextMenu { .. } => DomEventKind::ContextMenu,
             Self::DoubleClick { .. } => DomEventKind::DoubleClick,
+
             Self::KeyPress { .. } => DomEventKind::KeyPress,
             Self::KeyDown { .. } => DomEventKind::KeyDown,
             Self::KeyUp { .. } => DomEventKind::KeyUp,
             Self::Input { .. } => DomEventKind::Input,
             Self::Ime { .. } => DomEventKind::Ime,
+
             Self::Focus { .. } => DomEventKind::Focus,
             Self::Blur { .. } => DomEventKind::Blur,
             Self::FocusIn { .. } => DomEventKind::FocusIn,
@@ -244,6 +304,14 @@ impl DomEventData {
 
     pub fn cancelable(&self) -> bool {
         match self {
+            Self::PointerMove { .. } => true,
+            Self::PointerDown { .. } => true,
+            Self::PointerUp { .. } => true,
+            Self::PointerEnter { .. } => false,
+            Self::PointerLeave { .. } => false,
+            Self::PointerOver { .. } => true,
+            Self::PointerOut { .. } => true,
+
             Self::MouseMove { .. } => true,
             Self::MouseDown { .. } => true,
             Self::MouseUp { .. } => true,
@@ -251,16 +319,20 @@ impl DomEventData {
             Self::MouseLeave { .. } => false,
             Self::MouseOver { .. } => true,
             Self::MouseOut { .. } => true,
+
             Self::Scroll { .. } => false,
             Self::Wheel { .. } => true,
+
             Self::Click { .. } => true,
             Self::ContextMenu { .. } => true,
             Self::DoubleClick { .. } => true,
+
             Self::KeyDown { .. } => true,
             Self::KeyUp { .. } => true,
             Self::KeyPress { .. } => true,
             Self::Ime { .. } => true,
             Self::Input { .. } => false,
+
             Self::Focus { .. } => false,
             Self::Blur { .. } => false,
             Self::FocusIn { .. } => false,
@@ -270,6 +342,14 @@ impl DomEventData {
 
     pub fn bubbles(&self) -> bool {
         match self {
+            Self::PointerMove { .. } => true,
+            Self::PointerDown { .. } => true,
+            Self::PointerUp { .. } => true,
+            Self::PointerEnter { .. } => false,
+            Self::PointerLeave { .. } => false,
+            Self::PointerOver { .. } => true,
+            Self::PointerOut { .. } => true,
+
             Self::MouseMove { .. } => true,
             Self::MouseDown { .. } => true,
             Self::MouseUp { .. } => true,
@@ -277,16 +357,20 @@ impl DomEventData {
             Self::MouseLeave { .. } => false,
             Self::MouseOver { .. } => true,
             Self::MouseOut { .. } => true,
+
             Self::Scroll { .. } => false,
             Self::Wheel { .. } => true,
+
             Self::Click { .. } => true,
             Self::ContextMenu { .. } => true,
             Self::DoubleClick { .. } => true,
+
             Self::KeyDown { .. } => true,
             Self::KeyUp { .. } => true,
             Self::KeyPress { .. } => true,
             Self::Ime { .. } => true,
             Self::Input { .. } => true,
+
             Self::Focus { .. } => false,
             Self::Blur { .. } => false,
             Self::FocusIn { .. } => true,
@@ -334,6 +418,15 @@ pub struct BlitzPointerEvent {
 }
 
 impl BlitzPointerEvent {
+    #[inline(always)]
+    pub fn is_mouse(&self) -> bool {
+        matches!(self.id, BlitzPointerId::Mouse)
+    }
+    #[inline(always)]
+    pub fn is_finger(&self) -> bool {
+        matches!(self.id, BlitzPointerId::Finger(_))
+    }
+
     #[inline(always)]
     pub fn page_x(&self) -> f32 {
         self.coords.page_x

@@ -138,7 +138,7 @@ impl PanState {
     }
 }
 
-pub(crate) fn handle_mousemove<F: FnMut(DomEvent)>(
+pub(crate) fn handle_pointermove<F: FnMut(DomEvent)>(
     doc: &mut BaseDocument,
     target: usize,
     event: &BlitzPointerEvent,
@@ -247,7 +247,7 @@ pub(crate) fn handle_mousemove<F: FnMut(DomEvent)>(
     changed
 }
 
-pub(crate) fn handle_mousedown(
+pub(crate) fn handle_pointerdown(
     doc: &mut BaseDocument,
     _target: usize,
     x: f32,
@@ -376,7 +376,7 @@ pub(crate) fn handle_mousedown(
     }
 }
 
-pub(crate) fn handle_mouseup<F: FnMut(DomEvent)>(
+pub(crate) fn handle_pointerup<F: FnMut(DomEvent)>(
     doc: &mut BaseDocument,
     target: usize,
     event: &BlitzPointerEvent,

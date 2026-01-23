@@ -150,18 +150,18 @@ impl<'doc, Handler: EventHandler> EventDriver<'doc, Handler> {
             UiEvent::KeyDown(_) => focussed_node_id,
             UiEvent::Ime(_) => focussed_node_id,
         };
+        let target = target.unwrap_or_else(|| self.doc.inner().root_element().id);
 
         let data = match event {
-            UiEvent::PointerMove(data) => DomEventData::MouseMove(data),
-            UiEvent::PointerUp(data) => DomEventData::MouseUp(data),
-            UiEvent::PointerDown(data) => DomEventData::MouseDown(data),
+            UiEvent::PointerMove(data) => DomEventData::PointerMove(data),
+            UiEvent::PointerUp(data) => DomEventData::PointerUp(data),
+            UiEvent::PointerDown(data) => DomEventData::PointerDown(data),
             UiEvent::Wheel(data) => DomEventData::Wheel(data),
             UiEvent::KeyUp(data) => DomEventData::KeyUp(data),
             UiEvent::KeyDown(data) => DomEventData::KeyDown(data),
             UiEvent::Ime(data) => DomEventData::Ime(data),
         };
 
-        let target = target.unwrap_or_else(|| self.doc.inner().root_element().id);
         let dom_event = DomEvent::new(target, data);
 
         self.handle_dom_event(dom_event);
