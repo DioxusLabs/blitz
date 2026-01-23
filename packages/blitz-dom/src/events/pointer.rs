@@ -240,7 +240,10 @@ pub(crate) fn handle_pointermove<F: FnMut(DomEvent)>(
             .extend_selection_to_point(x as f32, y as f32);
 
         changed = true;
-    } else if buttons != MouseEventButtons::None && doc.extend_text_selection_to_point(x, y) {
+    } else if event.is_mouse()
+        && buttons != MouseEventButtons::None
+        && doc.extend_text_selection_to_point(x, y)
+    {
         changed = true;
     }
 

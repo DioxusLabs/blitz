@@ -445,6 +445,10 @@ impl BlitzPointerEvent {
         matches!(self.id, BlitzPointerId::Mouse)
     }
     #[inline(always)]
+    pub fn is_pen(&self) -> bool {
+        matches!(self.id, BlitzPointerId::Pen)
+    }
+    #[inline(always)]
     pub fn is_finger(&self) -> bool {
         matches!(self.id, BlitzPointerId::Finger(_))
     }

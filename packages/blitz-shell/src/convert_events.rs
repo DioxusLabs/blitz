@@ -71,7 +71,7 @@ pub(crate) fn pointer_source_to_blitz(source: &PointerSource) -> BlitzPointerId 
         }
 
         // TODO: TabletTool and Unknown events
-        PointerSource::TabletTool { .. } => BlitzPointerId::Mouse,
+        PointerSource::TabletTool { .. } => BlitzPointerId::Pen,
         PointerSource::Unknown => BlitzPointerId::Mouse,
     }
 }
