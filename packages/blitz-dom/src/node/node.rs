@@ -265,17 +265,17 @@ impl Node {
 
     /// Returns whether this node has any descendants that need restyling.
     pub fn has_dirty_descendants(&self) -> bool {
-        self.dirty_descendants.load(Ordering::SeqCst)
+        self.dirty_descendants.load(Ordering::Relaxed)
     }
 
     /// Sets the dirty_descendants flag on this node.
     pub fn set_dirty_descendants(&self) {
-        self.dirty_descendants.store(true, Ordering::SeqCst);
+        self.dirty_descendants.store(true, Ordering::Relaxed);
     }
 
     /// Clears the dirty_descendants flag on this node.
     pub fn unset_dirty_descendants(&self) {
-        self.dirty_descendants.store(false, Ordering::SeqCst);
+        self.dirty_descendants.store(false, Ordering::Relaxed);
     }
 
     /// Marks all ancestors of this node as having dirty descendants.
@@ -287,7 +287,7 @@ impl Node {
             let parent = &self.tree()[parent_id];
             // If this ancestor already has dirty_descendants set, we can stop
             // because all further ancestors must also have it set
-            if parent.dirty_descendants.swap(true, Ordering::SeqCst) {
+            if parent.dirty_descendants.swap(true, Ordering::Relaxed) {
                 break;
             }
             current_id = parent.parent;
