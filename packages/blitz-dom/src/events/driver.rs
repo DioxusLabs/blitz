@@ -72,8 +72,16 @@ impl<'doc, Handler: EventHandler> EventDriver<'doc, Handler> {
 
         drop(doc);
 
+        let is_mouse = event.is_mouse();
+
         if let Some(target) = prev_hover_node_id {
-            self.handle_dom_event(DomEvent::new(target, DomEventData::MouseOut(event.clone())));
+            self.handle_dom_event(DomEvent::new(
+                target,
+                DomEventData::PointerOut(event.clone()),
+            ));
+            if is_mouse {
+                self.handle_dom_event(DomEvent::new(target, DomEventData::MouseOut(event.clone())));
+            }
 
             // Send an mouseleave event to all old elements on the chain
             for node_id in old_chain
@@ -83,16 +91,29 @@ impl<'doc, Handler: EventHandler> EventDriver<'doc, Handler> {
             {
                 self.handle_dom_event(DomEvent::new(
                     *node_id,
-                    DomEventData::MouseLeave(event.clone()),
+                    DomEventData::PointerLeave(event.clone()),
                 ));
+                if is_mouse {
+                    self.handle_dom_event(DomEvent::new(
+                        *node_id,
+                        DomEventData::MouseLeave(event.clone()),
+                    ));
+                }
             }
         }
 
         if let Some(target) = hover_node_id {
             self.handle_dom_event(DomEvent::new(
                 target,
-                DomEventData::MouseOver(event.clone()),
+                DomEventData::PointerOver(event.clone()),
             ));
+
+            if is_mouse {
+                self.handle_dom_event(DomEvent::new(
+                    target,
+                    DomEventData::MouseOver(event.clone()),
+                ));
+            }
 
             // Send an mouseenter event to all new elements on the chain
             for node_id in new_chain
@@ -102,8 +123,15 @@ impl<'doc, Handler: EventHandler> EventDriver<'doc, Handler> {
             {
                 self.handle_dom_event(DomEvent::new(
                     *node_id,
-                    DomEventData::MouseEnter(event.clone()),
+                    DomEventData::PointerEnter(event.clone()),
                 ));
+
+                if is_mouse {
+                    self.handle_dom_event(DomEvent::new(
+                        *node_id,
+                        DomEventData::MouseEnter(event.clone()),
+                    ));
+                }
             }
         }
 
@@ -152,19 +180,53 @@ impl<'doc, Handler: EventHandler> EventDriver<'doc, Handler> {
         };
         let target = target.unwrap_or_else(|| self.doc.inner().root_element().id);
 
-        let data = match event {
-            UiEvent::PointerMove(data) => DomEventData::PointerMove(data),
-            UiEvent::PointerUp(data) => DomEventData::PointerUp(data),
-            UiEvent::PointerDown(data) => DomEventData::PointerDown(data),
-            UiEvent::Wheel(data) => DomEventData::Wheel(data),
-            UiEvent::KeyUp(data) => DomEventData::KeyUp(data),
-            UiEvent::KeyDown(data) => DomEventData::KeyDown(data),
-            UiEvent::Ime(data) => DomEventData::Ime(data),
+        match event {
+            UiEvent::PointerMove(data) => {
+                if data.is_mouse() {
+                    self.handle_dom_event(DomEvent::new(
+                        target,
+                        DomEventData::PointerMove(data.clone()),
+                    ));
+                    self.handle_dom_event(DomEvent::new(target, DomEventData::MouseMove(data)));
+                } else {
+                    self.handle_dom_event(DomEvent::new(target, DomEventData::PointerMove(data)));
+                }
+            }
+            UiEvent::PointerUp(data) => {
+                if data.is_mouse() {
+                    self.handle_dom_event(DomEvent::new(
+                        target,
+                        DomEventData::PointerUp(data.clone()),
+                    ));
+                    self.handle_dom_event(DomEvent::new(target, DomEventData::MouseUp(data)));
+                } else {
+                    self.handle_dom_event(DomEvent::new(target, DomEventData::PointerUp(data)));
+                }
+            }
+            UiEvent::PointerDown(data) => {
+                if data.is_mouse() {
+                    self.handle_dom_event(DomEvent::new(
+                        target,
+                        DomEventData::PointerDown(data.clone()),
+                    ));
+                    self.handle_dom_event(DomEvent::new(target, DomEventData::MouseDown(data)));
+                } else {
+                    self.handle_dom_event(DomEvent::new(target, DomEventData::PointerDown(data)));
+                }
+            }
+            UiEvent::Wheel(data) => {
+                self.handle_dom_event(DomEvent::new(target, DomEventData::Wheel(data)))
+            }
+            UiEvent::KeyUp(data) => {
+                self.handle_dom_event(DomEvent::new(target, DomEventData::KeyUp(data)))
+            }
+            UiEvent::KeyDown(data) => {
+                self.handle_dom_event(DomEvent::new(target, DomEventData::KeyDown(data)))
+            }
+            UiEvent::Ime(data) => {
+                self.handle_dom_event(DomEvent::new(target, DomEventData::Ime(data)))
+            }
         };
-
-        let dom_event = DomEvent::new(target, data);
-
-        self.handle_dom_event(dom_event);
 
         // Update document input state (hover, focus, active, etc)
         if should_clear_hover {
