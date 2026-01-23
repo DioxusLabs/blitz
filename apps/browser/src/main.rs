@@ -135,13 +135,13 @@ fn app() -> Element {
                             doc.with_text_input(node_id, |mut driver| driver.select_all());
                         }
                     },
-                    onmousedown: {
+                    onpointerdown: {
                         let block_mouse_up = block_mouse_up.clone();
                         move |_evt| {
                             *block_mouse_up.borrow_mut() = !is_focussed();
                         }
                     },
-                    onmousemove: {
+                    onpointermove: {
                         let block_mouse_up = block_mouse_up.clone();
                         move |evt| {
                             if *block_mouse_up.borrow() {
@@ -149,7 +149,7 @@ fn app() -> Element {
                             }
                         }
                     },
-                    onmouseup: move |evt| {
+                    onpointerup: move |evt| {
                         if *block_mouse_up.borrow() {
                             evt.prevent_default();
                         }
