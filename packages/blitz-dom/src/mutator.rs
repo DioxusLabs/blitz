@@ -150,7 +150,7 @@ impl DocumentMutator<'_> {
     // Node mutation methods
 
     pub fn set_node_text(&mut self, node_id: usize, value: &str) {
-        let node = self.doc.get_node_mut(node_id).unwrap();
+        let node = &mut self.doc.nodes[node_id];
 
         let text = match node.data {
             NodeData::Text(ref mut text) => text,
@@ -163,8 +163,16 @@ impl DocumentMutator<'_> {
             text.content.clear();
             text.content.push_str(value);
             node.insert_damage(ALL_DAMAGE);
-            let parent = node.parent;
-            self.maybe_record_node(parent);
+            let parent_id = node.parent;
+
+            // Also insert damage on the parent element, since text content changes
+            // affect the parent's layout (text may wrap differently, change size, etc.)
+            if let Some(parent_id) = parent_id {
+                let parent = &mut self.doc.nodes[parent_id];
+                parent.insert_damage(ALL_DAMAGE);
+            }
+
+            self.maybe_record_node(parent_id);
         }
     }
 
