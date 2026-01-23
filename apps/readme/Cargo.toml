@@ -7,7 +7,7 @@ rust-version.workspace = true
 publish = false
 
 [features]
-default = ["gpu", "comrak", "floats"]
+default = ["gpu", "comrak", "syntax-highlighting-giallo", "floats"]
 
 # Renderers
 gpu = ["dep:anyrender_vello"]
@@ -23,6 +23,7 @@ cpu-base = ["dep:anyrender_vello_cpu"]
 avif = ["dep:image", "image?/avif-native"]
 comrak = ["dep:comrak"]
 pulldown_cmark = ["dep:pulldown-cmark"]
+syntax-highlighting-giallo = ["dep:giallo"]
 floats = ["blitz-dom/floats"]
 cache = ["blitz-net/cache"]
 log_frame_times = [
@@ -51,6 +52,7 @@ reqwest = { workspace = true }
 url = { workspace = true }
 winit = { workspace = true }
 comrak = { version = "0.49", default-features = false, optional = true }
+giallo = { version = "0.1", features = ["dump"], optional = true }
 pulldown-cmark = { version = "0.13", default-features = false, features = ["html"], optional = true }
 image = { workspace = true, default-features = false, optional = true }
 notify = "8.0.0"
