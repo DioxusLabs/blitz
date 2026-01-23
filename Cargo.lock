@@ -121,6 +121,7 @@ dependencies = [
  "accesskit_windows",
  "android-activity",
  "raw-window-handle",
+ "winit-core",
 ]
 
 [[package]]
