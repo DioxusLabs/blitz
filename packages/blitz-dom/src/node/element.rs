@@ -233,14 +233,6 @@ impl ElementData {
         }
     }
 
-    #[cfg(feature = "svg")]
-    pub fn svg_data_mut(&mut self) -> Option<&mut usvg::Tree> {
-        match self.image_data_mut()? {
-            ImageData::Svg(data) => Some(data),
-            _ => None,
-        }
-    }
-
     pub fn text_input_data(&self) -> Option<&TextInputData> {
         match &self.special_data {
             SpecialElementData::TextInput(data) => Some(data),
@@ -453,13 +445,13 @@ impl RasterImageData {
 pub enum ImageData {
     Raster(RasterImageData),
     #[cfg(feature = "svg")]
-    Svg(Box<usvg::Tree>),
+    Svg(Arc<usvg::Tree>),
     None,
 }
 #[cfg(feature = "svg")]
 impl From<usvg::Tree> for ImageData {
     fn from(value: usvg::Tree) -> Self {
-        Self::Svg(Box::new(value))
+        Self::Svg(Arc::new(value))
     }
 }
 

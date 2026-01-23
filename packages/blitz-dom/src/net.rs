@@ -29,7 +29,7 @@ use crate::{document::DocumentEvent, util::ImageType};
 pub enum Resource {
     Image(ImageType, u32, u32, Arc<Vec<u8>>),
     #[cfg(feature = "svg")]
-    Svg(ImageType, Box<usvg::Tree>),
+    Svg(ImageType, Arc<usvg::Tree>),
     Css(DocumentStyleSheet),
     Font(Bytes),
     None,
@@ -461,7 +461,7 @@ impl ImageHandler {
         {
             use crate::util::parse_svg;
             if let Ok(tree) = parse_svg(&bytes) {
-                return Ok(Resource::Svg(self.kind, Box::new(tree)));
+                return Ok(Resource::Svg(self.kind, Arc::new(tree)));
             }
         }
 
