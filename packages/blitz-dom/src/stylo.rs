@@ -286,8 +286,13 @@ impl selectors::Element for BlitzNode<'_> {
     type Impl = SelectorImpl;
 
     fn opaque(&self) -> selectors::OpaqueElement {
-        // FIXME: this is wrong in the case where pushing new elements casuses reallocations.
-        // We should see if selectors will accept a PR that allows creation from a usize
+        // This correctly uses a unique id for the OpaqueElement (unlike using a pointer to the "slot")
+        // However, it makes it impossible for us to "rehydrate" the OpaqueElement back into an actual Element
+        // which is required to implement the `implicit_scope_for_sheet_in_shadow_root` method below
+        //
+        // We should see if selectors will accept a PR that allows us to use 128bits for the OpaqueElement. Or
+        // find some other solution that will enable "rehydration". This is required to enable and use the
+        // Shadow DOM functionality in Stylo.
         let non_null = NonNull::new((self.id + 1) as *mut ()).unwrap();
         OpaqueElement::from_non_null_ptr(non_null)
     }
