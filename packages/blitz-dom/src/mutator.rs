@@ -163,6 +163,9 @@ impl DocumentMutator<'_> {
             text.content.clear();
             text.content.push_str(value);
             node.insert_damage(ALL_DAMAGE);
+            // Mark ancestors dirty so the style traversal visits this subtree.
+            // Without this, the traversal may skip nodes with pending damage.
+            node.mark_ancestors_dirty();
             let parent = node.parent;
             self.maybe_record_node(parent);
         }
@@ -214,6 +217,11 @@ impl DocumentMutator<'_> {
                 data.hint |= RestyleHint::restyle_subtree();
             }
         }
+
+        // Mark ancestors dirty so the style traversal visits this subtree.
+        // Without this, the traversal may skip nodes with pending RestyleHint/damage
+        // because it uses dirty_descendants flags to determine which subtrees to visit.
+        self.doc.nodes[node_id].mark_ancestors_dirty();
 
         let node = &mut self.doc.nodes[node_id];
 
@@ -280,6 +288,10 @@ impl DocumentMutator<'_> {
             data.damage.insert(ALL_DAMAGE);
         }
         drop(stylo_element_data);
+
+        // Mark ancestors dirty so the style traversal visits this subtree.
+        // Without this, the traversal may skip nodes with pending RestyleHint/damage.
+        node.mark_ancestors_dirty();
 
         let Some(element) = node.element_data_mut() else {
             return;
