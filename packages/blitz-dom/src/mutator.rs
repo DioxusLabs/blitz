@@ -163,6 +163,9 @@ impl DocumentMutator<'_> {
             text.content.clear();
             text.content.push_str(value);
             node.insert_damage(ALL_DAMAGE);
+            // Mark ancestors dirty so the style traversal visits this subtree.
+            // Without this, the traversal may skip nodes with pending damage.
+            node.mark_ancestors_dirty();
             let parent_id = node.parent;
 
             // Also insert damage on the parent element, since text content changes
@@ -222,6 +225,11 @@ impl DocumentMutator<'_> {
                 data.hint |= RestyleHint::restyle_subtree();
             }
         }
+
+        // Mark ancestors dirty so the style traversal visits this subtree.
+        // Without this, the traversal may skip nodes with pending RestyleHint/damage
+        // because it uses dirty_descendants flags to determine which subtrees to visit.
+        self.doc.nodes[node_id].mark_ancestors_dirty();
 
         let node = &mut self.doc.nodes[node_id];
 
@@ -289,6 +297,10 @@ impl DocumentMutator<'_> {
         }
         drop(stylo_element_data);
 
+        // Mark ancestors dirty so the style traversal visits this subtree.
+        // Without this, the traversal may skip nodes with pending RestyleHint/damage.
+        node.mark_ancestors_dirty();
+
         let Some(element) = node.element_data_mut() else {
             return;
         };
@@ -355,6 +367,8 @@ impl DocumentMutator<'_> {
         if let Some(parent_id) = node.parent.take() {
             let parent = &mut self.doc.nodes[parent_id];
             parent.insert_damage(ALL_DAMAGE);
+            // Mark ancestors dirty so the style traversal visits this subtree.
+            parent.mark_ancestors_dirty();
             parent.children.retain(|id| *id != node_id);
             self.maybe_record_node(parent_id);
         }
@@ -378,6 +392,8 @@ impl DocumentMutator<'_> {
                 if let Some(data) = &mut *parent.stylo_element_data.borrow_mut() {
                     data.hint |= RestyleHint::restyle_subtree();
                 }
+                // Mark ancestors dirty so the style traversal visits this subtree.
+                parent.mark_ancestors_dirty();
             }
 
             parent.children.retain(|id| *id != node_id);
@@ -396,6 +412,8 @@ impl DocumentMutator<'_> {
             if let Some(data) = &mut *parent.stylo_element_data.borrow_mut() {
                 data.hint |= RestyleHint::restyle_subtree();
             }
+            // Mark ancestors dirty so the style traversal visits this subtree.
+            parent.mark_ancestors_dirty();
         }
 
         let children = mem::take(&mut parent.children);
@@ -447,6 +465,8 @@ impl DocumentMutator<'_> {
             if let Some(data) = &mut *new_parent.stylo_element_data.borrow_mut() {
                 data.hint |= RestyleHint::restyle_subtree();
             }
+            // Mark ancestors dirty so the style traversal visits this subtree.
+            new_parent.mark_ancestors_dirty();
         }
 
         insert_children_fn(new_parent, child_ids);
@@ -469,6 +489,8 @@ impl DocumentMutator<'_> {
                     if let Some(data) = &mut *old_parent.stylo_element_data.borrow_mut() {
                         data.hint |= RestyleHint::restyle_subtree();
                     }
+                    // Mark ancestors dirty so the style traversal visits this subtree.
+                    old_parent.mark_ancestors_dirty();
                 }
 
                 old_parent.children.retain(|id| *id != child_id);
