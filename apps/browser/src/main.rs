@@ -45,7 +45,7 @@ fn use_sync_store<T: Send + Sync + 'static>(value: impl FnOnce() -> T) -> SyncSt
 }
 
 fn app() -> Element {
-    let home_url = use_hook(|| Url::parse("https://en.wikipedia.org/wiki/Main_Page").unwrap());
+    let home_url = use_hook(|| Url::parse("https://html.duckduckgo.com").unwrap());
 
     let mut url_input_handle = use_signal(|| None);
     let mut webview_node_handle: Signal<Option<NodeHandle>> = use_signal(|| None);
