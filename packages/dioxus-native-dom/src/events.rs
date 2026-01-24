@@ -232,7 +232,7 @@ impl RenderedElementBacking for NodeHandle {
         } else if doc.get_focussed_node_id() == Some(self.node_id) {
             // Q: Should this only clear focus if the node is focussed?
             // TODO: queue blur events somehow
-            self.doc_mut().clear_focus();
+            doc.clear_focus();
         }
 
         Box::pin(async { Ok(()) })
