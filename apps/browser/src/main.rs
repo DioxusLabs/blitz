@@ -177,7 +177,7 @@ fn app() -> Element {
                         if is_enter {
                             evt.prevent_default();
                             if let Some(handle) = url_input_handle() {
-                                let _ = handle.set_focus(false);
+                                core::mem::drop(handle.set_focus(false));
                             }
                             let req = req_from_string(&url_input_value.read());
                             if let Some(req) = req {
