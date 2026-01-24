@@ -61,6 +61,20 @@ fn app() -> Element {
     let load_current_url = use_callback(move |_| {
         let request = (*history.current_url().read()).clone();
         *url_input_value.write_unchecked() = request.url.to_string();
+
+        if let Some(handle) = &*webview_node_handle.peek() {
+            let node_id = handle.node_id();
+            let mut doc = handle.doc_mut();
+            if let Some(sub_doc) = doc
+                .get_node_mut(node_id)
+                .and_then(|node| node.element_data_mut())
+                .and_then(|el| el.sub_doc_data_mut())
+            {
+                let mut sub_doc = sub_doc.inner_mut();
+                sub_doc.clear_focus();
+            }
+        }
+
         println!("Loading {}...", &request.url.as_str());
         loader.load_document(request);
     });
