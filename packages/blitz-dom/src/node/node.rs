@@ -177,7 +177,7 @@ impl Node {
             style: Default::default(),
             has_snapshot: false,
             snapshot_handled: AtomicBool::new(false),
-            dirty_descendants: AtomicBool::new(false),
+            dirty_descendants: AtomicBool::new(true),
             display_constructed_as: StyloDisplay::Block,
             cache: Cache::new(),
             unrounded_layout: Layout::new(),
