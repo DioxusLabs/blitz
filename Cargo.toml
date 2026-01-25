@@ -87,7 +87,7 @@ dioxus-cli-config = { version = "0.7.3" }
 dioxus-core-macro = { version = "0.7.3" }
 
 # Taffy
-taffy = { git = "https://github.com/DioxusLabs/taffy", rev = "6712879d35c13ad316bbbed2c1e4092c270cb650", default-features = false, features = [
+taffy = { git = "https://github.com/DioxusLabs/taffy", rev = "25759dad44d8350743a4e866fee54962f996895a", default-features = false, features = [
   "std",
   "flexbox",
   "grid",

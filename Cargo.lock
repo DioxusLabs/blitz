@@ -6461,7 +6461,7 @@ dependencies = [
 [[package]]
 name = "taffy"
 version = "0.9.2"
-source = "git+https://github.com/DioxusLabs/taffy?rev=6712879d35c13ad316bbbed2c1e4092c270cb650#6712879d35c13ad316bbbed2c1e4092c270cb650"
+source = "git+https://github.com/DioxusLabs/taffy?rev=25759dad44d8350743a4e866fee54962f996895a#25759dad44d8350743a4e866fee54962f996895a"
 dependencies = [
  "arrayvec",
  "grid",
