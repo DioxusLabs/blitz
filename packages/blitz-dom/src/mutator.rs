@@ -180,7 +180,10 @@ impl DocumentMutator<'_> {
     }
 
     pub fn append_text_to_node(&mut self, node_id: usize, text: &str) -> Result<(), AppendTextErr> {
-        match self.doc.nodes[node_id].text_data_mut() {
+        let node = &mut self.doc.nodes[node_id];
+        node.insert_damage(ALL_DAMAGE);
+        node.mark_ancestors_dirty();
+        match node.text_data_mut() {
             Some(data) => {
                 data.content += text;
                 Ok(())
