@@ -2,9 +2,10 @@
 //!
 //! Provides an implementation of the [`blitz_traits::net::NetProvider`] trait.
 
-use blitz_traits::net::{Body, Bytes, NetHandler, NetProvider, NetWaker, Request};
+// use blitz_traits::net::{Body, Bytes, NetHandler, NetProvider, NetWaker, Request};
+use blitz_traits::net::{AbortSignal, Body, Bytes, NetHandler, NetProvider, NetWaker, Request};
 use data_url::DataUrl;
-use std::sync::Arc;
+use std::{marker::PhantomData, pin::Pin, sync::Arc, task::Poll};
 use tokio::runtime::Handle;
 
 #[cfg(feature = "cache")]
@@ -102,16 +103,6 @@ impl Provider {
         })
     }
 
-    async fn fetch_with_handler(
-        client: Client,
-        request: Request,
-        handler: Box<dyn NetHandler>,
-    ) -> Result<(), ProviderError> {
-        let (response_url, bytes) = Self::fetch_inner(client, request).await?;
-        handler.bytes(response_url, bytes);
-        Ok(())
-    }
-
     #[allow(clippy::type_complexity)]
     pub fn fetch_with_callback(
         &self,
@@ -155,7 +146,7 @@ impl Provider {
 }
 
 impl NetProvider for Provider {
-    fn fetch(&self, doc_id: usize, request: Request, handler: Box<dyn NetHandler>) {
+    fn fetch(&self, doc_id: usize, mut request: Request, handler: Box<dyn NetHandler>) {
         let client = self.client.clone();
 
         #[cfg(feature = "debug_log")]
@@ -166,23 +157,80 @@ impl NetProvider for Provider {
             #[cfg(feature = "debug_log")]
             let url = request.url.to_string();
 
-            let _res = Self::fetch_with_handler(client, request, handler).await;
-
-            #[cfg(feature = "debug_log")]
-            if let Err(e) = _res {
-                eprintln!("Error fetching {url}: {e:?}");
+            let signal = request.signal.take();
+            let result = if let Some(signal) = signal {
+                AbortFetch::new(
+                    signal,
+                    Box::pin(async move { Self::fetch_inner(client, request).await }),
+                )
+                .await
             } else {
-                println!("Success {url}");
-            }
+                Self::fetch_inner(client, request).await
+            };
 
             // Call the waker to notify of completed network request
-            waker.wake(doc_id)
+            waker.wake(doc_id);
+
+            match result {
+                Ok((response_url, bytes)) => {
+                    handler.bytes(response_url, bytes);
+                    #[cfg(feature = "debug_log")]
+                    println!("Success {url}");
+                }
+                Err(e) => {
+                    #[cfg(feature = "debug_log")]
+                    eprintln!("Error fetching {url}: {e:?}");
+                    #[cfg(not(feature = "debug_log"))]
+                    let _ = e;
+                }
+            };
         });
+    }
+}
+
+/// A future that is cancellable using an AbortSignal
+struct AbortFetch<F, T> {
+    signal: AbortSignal,
+    future: F,
+    _rt: PhantomData<T>,
+}
+
+impl<F, T> AbortFetch<F, T> {
+    fn new(signal: AbortSignal, future: F) -> Self {
+        Self {
+            signal,
+            future,
+            _rt: PhantomData,
+        }
+    }
+}
+
+impl<F, T> Future for AbortFetch<F, T>
+where
+    F: Future + Unpin + Send + 'static,
+    F::Output: Send + Into<Result<T, ProviderError>> + 'static,
+    T: Unpin,
+{
+    type Output = Result<T, ProviderError>;
+
+    fn poll(
+        mut self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Self::Output> {
+        if self.signal.aborted() {
+            return Poll::Ready(Err(ProviderError::Abort));
+        }
+
+        match Pin::new(&mut self.future).poll(cx) {
+            Poll::Ready(output) => Poll::Ready(output.into()),
+            Poll::Pending => Poll::Pending,
+        }
     }
 }
 
 #[derive(Debug)]
 pub enum ProviderError {
+    Abort,
     Io(std::io::Error),
     DataUrl(data_url::DataUrlError),
     DataUrlBase64(data_url::forgiving_base64::InvalidBase64),
