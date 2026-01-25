@@ -655,7 +655,7 @@ impl<'a> TElement for BlitzNode<'a> {
     }
 
     fn has_dirty_descendants(&self) -> bool {
-        true
+        Node::has_dirty_descendants(self)
     }
 
     fn has_snapshot(&self) -> bool {
@@ -670,9 +670,14 @@ impl<'a> TElement for BlitzNode<'a> {
         self.snapshot_handled.store(true, Ordering::SeqCst);
     }
 
-    unsafe fn set_dirty_descendants(&self) {}
+    unsafe fn set_dirty_descendants(&self) {
+        Node::set_dirty_descendants(self);
+        Node::mark_ancestors_dirty(self);
+    }
 
-    unsafe fn unset_dirty_descendants(&self) {}
+    unsafe fn unset_dirty_descendants(&self) {
+        Node::unset_dirty_descendants(self);
+    }
 
     fn store_children_to_process(&self, _n: isize) {
         unimplemented!()
