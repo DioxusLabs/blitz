@@ -233,6 +233,9 @@ impl<Rend: WindowRenderer> View<Rend> {
             panic!("Renderer failed to resume");
         };
 
+        #[cfg(feature = "custom-widget")]
+        inner.can_create_surfaces(&self.renderer as _);
+
         // Render
         let insets = self.safe_area_insets.to_logical(scale);
         self.renderer.render(|scene| {
@@ -246,6 +249,7 @@ impl<Rend: WindowRenderer> View<Rend> {
     pub fn suspend(&mut self) {
         self.waker = None;
         self.renderer.suspend();
+        self.doc.inner_mut().destroy_surfaces();
     }
 
     pub fn poll(&mut self) -> bool {

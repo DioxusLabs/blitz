@@ -263,6 +263,8 @@ pub struct BaseDocument {
     pub(crate) controls_to_form: HashMap<usize, usize>,
     /// Nodes that contain sub documents
     pub(crate) sub_document_nodes: HashSet<usize>,
+    /// Nodes that contain custom widgets
+    pub(crate) custom_widget_nodes: HashSet<usize>,
     /// Set of changed nodes for updating the accessibility tree
     pub(crate) changed_nodes: HashSet<usize>,
     /// Set of changed nodes for updating the accessibility tree
@@ -413,6 +415,7 @@ impl BaseDocument {
             subdoc_is_animating: false,
             has_canvas: false,
             sub_document_nodes: HashSet::new(),
+            custom_widget_nodes: HashSet::new(),
             changed_nodes: HashSet::new(),
             deferred_construction_nodes: Vec::new(),
             image_cache: HashMap::new(),

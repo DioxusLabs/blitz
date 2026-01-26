@@ -22,6 +22,7 @@ tracing = ["dep:tracing", "blitz-dom/tracing"]
 file_dialog = ["dep:rfd"]
 # Enables a data-uri-only NetProvider. Only needed if you aren't using the regular NetProvider
 data-uri = ["dep:data-url"]
+custom-widget = ["blitz-dom/custom-widget"]
 
 [dependencies]
 # Blitz dependencies
