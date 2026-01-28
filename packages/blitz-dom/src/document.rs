@@ -1854,7 +1854,9 @@ mod tests {
         )));
 
         // Create a text node as child
-        let text_id = doc.create_node(NodeData::Text(crate::TextNodeData::new("Hello".to_string())));
+        let text_id = doc.create_node(NodeData::Text(crate::TextNodeData::new(
+            "Hello".to_string(),
+        )));
 
         // Append text to div using append_children (takes a slice)
         let mut mutator = doc.mutate();
@@ -1905,7 +1907,10 @@ mod tests {
 
         // Traversal should not panic even if layout_children contains stale IDs
         let ancestors = doc.node_layout_ancestors(parent_id);
-        assert!(!ancestors.is_empty(), "Should return at least the parent itself");
+        assert!(
+            !ancestors.is_empty(),
+            "Should return at least the parent itself"
+        );
     }
 
     /// Test that removing a hovered node clears the hover state.
