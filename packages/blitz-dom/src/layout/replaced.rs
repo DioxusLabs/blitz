@@ -82,6 +82,7 @@ pub fn replaced_measure_function(
     let max_size = style
         .max_size
         .maybe_resolve(basis_for_max_and_preferred, resolve_calc_value)
+        .maybe_min(available_space.into_options())
         .maybe_max(min_size)
         .maybe_sub(box_sizing_adjustment);
     let attr_size = image_context.attr_size;
@@ -96,24 +97,17 @@ pub fn replaced_measure_function(
 
         if style_size.width.is_some() | style_size.height.is_some() {
             break 'size style_size
-                // .maybe_clamp(min_size, max_size)
                 .maybe_apply_aspect_ratio(Some(aspect_ratio))
                 .map(|s| s.unwrap());
         }
 
         if attr_size.width.is_some() | attr_size.height.is_some() {
             break 'size attr_size
-                // .maybe_clamp(min_size, max_size)
                 .maybe_apply_aspect_ratio(Some(aspect_ratio))
                 .map(|s| s.unwrap());
         }
 
         inherent_size
-            // .maybe_clamp(min_size, max_size)
-            .maybe_min(available_space.into_options())
-            .map(Some)
-            .maybe_apply_aspect_ratio(Some(aspect_ratio))
-            .map(|s| s.unwrap())
     };
 
     // Floor size at zero
