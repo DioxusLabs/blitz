@@ -82,6 +82,7 @@ pub fn replaced_measure_function(
     let max_size = style
         .max_size
         .maybe_resolve(basis_for_max_and_preferred, resolve_calc_value)
+        .or(available_space.into_options())
         .maybe_min(available_space.into_options())
         .maybe_max(min_size)
         .maybe_sub(box_sizing_adjustment);
