@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang=en-US>
+    <head>
+        <meta charset=utf-8>
+        <title>:after bug</title>
+        <style>
+
+        html, body {
+            margin: 0;
+        }
+
+        .block {
+            display: flex;
+            flex-direction: column;
+            align-items: flex-start;
+            width: 100%;
+        }
+        .summary p {
+            display: inline;
+        }
+/*        .summary p:after {
+            content: "\a\a";
+            white-space: pre
+        }*/
+        </style>
+    </head>
+    <body>
+        <div class=block>
+            <div class=summary>
+                <p>To our European community: mark your calendars for the first official Graphite community meetup on Friday, October 10th, 2025 in Karlsruhe, Germany. Meet core members of the project team and make acquaintance with your fellow Graphite enthusiasts plus Rust developers, open source contributors, and FOSS digital content creation software users.<br /><br /></p>
+            </div>
+        </div>
+    </body>
+</html>
