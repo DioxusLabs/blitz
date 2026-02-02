@@ -332,7 +332,7 @@ dependencies = [
  "rustc-hash 2.1.1",
  "vello",
  "wgpu 27.0.1",
- "wgpu_context 0.3.0",
+ "wgpu_context",
 ]
 
 [[package]]
@@ -365,7 +365,7 @@ dependencies = [
  "vello_common",
  "vello_hybrid",
  "wgpu 27.0.1",
- "wgpu_context 0.3.0",
+ "wgpu_context",
 ]
 
 [[package]]
@@ -7916,16 +7916,6 @@ dependencies = [
 
 [[package]]
 name = "wgpu_context"
-version = "0.2.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3eeae4fb1399e5c755844a01117b955ec948b521aa4ef2f35ee25c1be08bd720"
-dependencies = [
- "futures-intrusive",
- "wgpu 27.0.1",
-]
-
-[[package]]
-name = "wgpu_context"
 version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0026c90c85592ae76f43fbf9be74fc14a647e6a93e74ab868d66137c0eb91882"
@@ -7949,7 +7939,7 @@ dependencies = [
  "dioxus-native",
  "pollster 0.4.0",
  "wgpu 27.0.1",
- "wgpu_context 0.2.0",
+ "wgpu_context",
 ]
 
 [[package]]

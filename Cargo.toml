@@ -104,7 +104,7 @@ anyrender_vello_cpu = { version = "0.9" }
 anyrender_vello_hybrid = { version = "0.2" }
 anyrender_skia = { version = "0.4" }
 anyrender_svg = { version = "0.8" }
-wgpu_context = { version = "0.2" }
+wgpu_context = { version = "0.3" }
 
 # Linebender + Fontations + WGPU + SVG
 color = "0.3"
