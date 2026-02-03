@@ -23,6 +23,8 @@ log_phase_times = ["dioxus-native/log-phase-times"]
 floats = ["dioxus-native/floats"]
 cache = ["blitz-net/cache"]
 cookies = ["blitz-net/cookies"]
+avif = ["image/avif"]
+webp = ["image/webp"]
 tracing = ["dioxus-native/tracing", "dep:tracing-subscriber"]
 hot-reload = ["dioxus-native/hot-reload"]
 
@@ -43,6 +45,7 @@ linebender_resource_handle = { workspace = true }
 tracing-subscriber = { workspace = true, optional = true }
 webbrowser = { workspace = true }
 winit = { workspace = true }
+image = { workspace = true }
 
 
 [target.'cfg(target_os = "android")'.dependencies]
