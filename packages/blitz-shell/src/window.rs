@@ -388,15 +388,12 @@ impl<Rend: WindowRenderer> View<Rend> {
                             match key_code {
                                 KeyCode::Equal => {
                                     self.doc.inner_mut().viewport_mut().zoom_by(0.1);
-                                    self.request_redraw();
                                 },
                                 KeyCode::Minus => {
                                     self.doc.inner_mut().viewport_mut().zoom_by(-0.1);
-                                    self.request_redraw();
                                 },
                                 KeyCode::Digit0 => {
                                     self.doc.inner_mut().viewport_mut().set_zoom(1.0);
-                                    self.request_redraw();
                                 }
                                 _ => {}
                             };

@@ -902,6 +902,7 @@ impl Drop for ViewportMut<'_> {
             self.doc.viewport().scale_f64() != self.initial_viewport.scale_f64();
         if scale_has_changed {
             self.doc.invalidate_inline_contexts();
+            self.doc.shell_provider.request_redraw();
         }
     }
 }

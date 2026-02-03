@@ -1234,6 +1234,7 @@ impl BaseDocument {
 
         if scale_has_changed {
             self.invalidate_inline_contexts();
+            self.shell_provider.request_redraw();
         }
     }
 
