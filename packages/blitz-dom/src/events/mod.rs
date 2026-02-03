@@ -92,7 +92,6 @@ pub(crate) fn handle_dom_event<F: FnMut(DomEvent)>(
 
         if let Some(ui_event) = ui_event {
             sub_doc.handle_ui_event(ui_event);
-            doc.shell_provider.request_redraw();
         }
 
         if set_focus {
