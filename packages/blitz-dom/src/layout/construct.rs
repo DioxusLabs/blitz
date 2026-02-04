@@ -10,7 +10,6 @@ use slab::Slab;
 use style::{
     computed_values::position::T as PositionProperty,
     data::ElementData as StyloElementData,
-    selector_parser::RestyleDamage,
     shared_lock::StylesheetGuards,
     values::{
         computed::{Content, ContentItem, Display, Float},
