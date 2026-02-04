@@ -373,6 +373,9 @@ impl DocumentMutator<'_> {
             // Mark ancestors dirty so the style traversal visits this subtree.
             parent.mark_ancestors_dirty();
             parent.children.retain(|id| *id != node_id);
+            // Clear cached layout_children so they'll be reconstructed with valid IDs.
+            // Without this, layout_children could contain stale references to removed nodes.
+            *parent.layout_children.borrow_mut() = None;
             self.maybe_record_node(parent_id);
         }
 
@@ -400,6 +403,8 @@ impl DocumentMutator<'_> {
             }
 
             parent.children.retain(|id| *id != node_id);
+            // Clear cached layout_children so they'll be reconstructed with valid IDs.
+            *parent.layout_children.borrow_mut() = None;
             self.maybe_record_node(parent_id);
         }
 
@@ -418,6 +423,9 @@ impl DocumentMutator<'_> {
             // Mark ancestors dirty so the style traversal visits this subtree.
             parent.mark_ancestors_dirty();
         }
+
+        // Clear cached layout_children since children are being removed
+        *parent.layout_children.borrow_mut() = None;
 
         let children = mem::take(&mut parent.children);
         for child_id in children {
@@ -633,6 +641,21 @@ impl<'doc> DocumentMutator<'doc> {
         self.doc.iter_subtree_mut(node_id, |node_id, doc| {
             let node = &mut doc.nodes[node_id];
             node.flags.set(NodeFlags::IS_IN_DOCUMENT, false);
+
+            // Clear hover state if this node was being hovered.
+            // This prevents stale hover_node_id references.
+            if doc.hover_node_id == Some(node_id) {
+                doc.hover_node_id = None;
+                doc.hover_node_is_text = false;
+            }
+
+            // Remove any snapshot for this node to prevent stale snapshot references
+            // during style invalidation.
+            if node.has_snapshot {
+                let opaque_id = style::dom::TNode::opaque(&&*node);
+                doc.snapshots.remove(&opaque_id);
+                node.has_snapshot = false;
+            }
 
             // If the node has an "id" attribute remove it from the ID map.
             if let Some(id_attr) = node.attr(local_name!("id")) {
