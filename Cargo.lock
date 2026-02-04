@@ -3399,9 +3399,9 @@ dependencies = [
 
 [[package]]
 name = "http-cache-semantics"
-version = "2.1.0"
+version = "2.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "92baf25cf0b8c9246baecf3a444546360a97b569168fdf92563ee6a47829920c"
+checksum = "4311240f94cb6fe622337dc580b09ddd6ae4a891eb121dba20cf4f77ca4e7129"
 dependencies = [
  "http",
  "http-serde",
@@ -8241,9 +8241,9 @@ dependencies = [
 
 [[package]]
 name = "wgpu_context"
-version = "0.3.0"
+version = "0.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0026c90c85592ae76f43fbf9be74fc14a647e6a93e74ab868d66137c0eb91882"
+checksum = "7810fecc0b2ea658f21add46e5a8a65ddb310d00b52949a365496984b3f44db5"
 dependencies = [
  "futures-intrusive",
  "wgpu 27.0.1",
