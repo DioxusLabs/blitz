@@ -241,6 +241,7 @@ body {
 .todo-list li .destroy:after {
     content: '×';
     line-height: 1;
+    cursor: pointer;
 }
 
 .todo-list li:hover .destroy {
