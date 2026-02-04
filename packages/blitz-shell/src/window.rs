@@ -280,12 +280,13 @@ impl<Rend: WindowRenderer> View<Rend> {
     }
 
     pub fn pointer_coords(&self, position: PhysicalPosition<f64>) -> PointerCoords {
-        let scale = self.window.scale_factor();
+        let inner = self.doc.inner();
+        let scale = inner.viewport().scale_f64();
         let LogicalPosition::<f32> {
             x: screen_x,
             y: screen_y,
         } = position.to_logical(scale);
-        let viewport_scroll_offset = self.doc.inner().viewport_scroll();
+        let viewport_scroll_offset = inner.viewport_scroll();
         let client_x = screen_x - (self.safe_area_insets.left as f64 / scale) as f32;
         let client_y = screen_y - (self.safe_area_insets.top as f64 / scale) as f32;
         let page_x = client_x + viewport_scroll_offset.x as f32;
@@ -388,15 +389,12 @@ impl<Rend: WindowRenderer> View<Rend> {
                             match key_code {
                                 KeyCode::Equal => {
                                     self.doc.inner_mut().viewport_mut().zoom_by(0.1);
-                                    self.request_redraw();
                                 },
                                 KeyCode::Minus => {
                                     self.doc.inner_mut().viewport_mut().zoom_by(-0.1);
-                                    self.request_redraw();
                                 },
                                 KeyCode::Digit0 => {
                                     self.doc.inner_mut().viewport_mut().set_zoom(1.0);
-                                    self.request_redraw();
                                 }
                                 _ => {}
                             };

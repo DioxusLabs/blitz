@@ -99,10 +99,13 @@ impl BaseDocument {
                 // viewport_mut handles change detection. So we just unconditionally set the values;
                 let mut sub_viewport = sub_doc.viewport_mut();
                 sub_viewport.hidpi_scale = self.viewport.hidpi_scale;
+                sub_viewport.zoom = self.viewport.zoom;
                 sub_viewport.color_scheme = self.viewport.color_scheme;
+
+                let viewport_scale = self.viewport.scale();
                 sub_viewport.window_size = (
-                    (size.width * self.viewport.hidpi_scale) as u32,
-                    (size.height * self.viewport.hidpi_scale) as u32,
+                    (size.width * viewport_scale) as u32,
+                    (size.height * viewport_scale) as u32,
                 );
                 drop(sub_viewport);
 
