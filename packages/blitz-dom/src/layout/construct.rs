@@ -447,7 +447,7 @@ fn flush_pseudo_elements(doc: &mut BaseDocument, node_id: usize) {
             let mut element_data = StyloElementData::default();
             element_data.styles.primary = Some(pe_style.clone());
             element_data.set_restyled();
-            element_data.damage = RestyleDamage::all();
+            element_data.damage = ALL_DAMAGE;
             *doc.nodes[new_node_id].stylo_element_data.borrow_mut() = Some(element_data);
 
             let node = &mut doc.nodes[node_id];
@@ -461,7 +461,7 @@ fn flush_pseudo_elements(doc: &mut BaseDocument, node_id: usize) {
 
             let mut node_styles = doc.nodes[pe_node_id].stylo_element_data.borrow_mut();
             let node_styles = &mut node_styles.as_mut().unwrap();
-            node_styles.damage.insert(RestyleDamage::all());
+            node_styles.damage.insert(ALL_DAMAGE);
             let primary_styles = &mut node_styles.styles.primary;
 
             if !std::ptr::eq(&**primary_styles.as_ref().unwrap(), &*pe_style) {
