@@ -18,8 +18,8 @@ small:
 wpt *ARGS:
   cargo run --release --package wpt {{ARGS}}
 
-browser:
-  cargo run --release --package browser
+browser *ARGS:
+  cargo run --release --package browser {{ARGS}}
 
 browser-with-perf:
   cargo run --release --package browser --features log_frame_times,log_phase_times

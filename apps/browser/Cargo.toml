@@ -28,6 +28,7 @@ avif = ["image/avif"]
 webp = ["image/webp"]
 tracing = ["dioxus-native/tracing", "dep:tracing-subscriber"]
 hot-reload = ["dioxus-native/hot-reload"]
+accessibility = ["dioxus-native/accessibility"]
 
 [dependencies]
 dioxus-native = { workspace = true, features = [
