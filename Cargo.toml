@@ -131,7 +131,7 @@ usvg = "0.46"
 # Windowing & Input
 raw-window-handle = "0.6.0"
 winit = { version = "=0.31.0-beta.2" }
-accesskit = "0.23"
+accesskit = "0.24"
 arboard = { version = "3.4.1", default-features = false }
 rfd = { version = "0.17.1", default-features = false }
 keyboard-types = "0.7"
