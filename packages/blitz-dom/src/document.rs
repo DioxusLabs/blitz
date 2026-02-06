@@ -315,20 +315,20 @@ impl BaseDocument {
 
         let font_ctx = config
             .font_ctx
-            // .map(|mut font_ctx| {
-            //     font_ctx.collection.make_shared();
-            //     font_ctx.source_cache.make_shared();
-            //     font_ctx
-            // })
+            .map(|mut font_ctx| {
+                font_ctx.source_cache.make_shared();
+                // font_ctx.collection.make_shared();
+                font_ctx
+            })
             .unwrap_or_else(|| {
-                // let mut font_ctx = FontContext {
-                //     source_cache: SourceCache::new_shared(),
-                //     collection: Collection::new(CollectionOptions {
-                //         shared: true,
-                //         system_fonts: true,
-                //     }),
-                // };
-                let mut font_ctx = FontContext::default();
+                use parley::fontique::{Collection, CollectionOptions, SourceCache};
+                let mut font_ctx = FontContext {
+                    source_cache: SourceCache::new_shared(),
+                    collection: Collection::new(CollectionOptions {
+                        shared: false,
+                        system_fonts: true,
+                    }),
+                };
                 font_ctx
                     .collection
                     .register_fonts(Blob::new(Arc::new(crate::BULLET_FONT) as _), None);
