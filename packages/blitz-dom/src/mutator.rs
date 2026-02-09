@@ -263,6 +263,7 @@ impl DocumentMutator<'_> {
 
         if *attr == local_name!("style") {
             element.flush_style_attribute(&self.doc.guard, &self.doc.url.url_extra_data());
+            node.mark_style_attr_updated();
             return;
         }
 
@@ -339,6 +340,7 @@ impl DocumentMutator<'_> {
 
         if *attr == local_name!("style") {
             element.flush_style_attribute(&self.doc.guard, &self.doc.url.url_extra_data());
+            node.mark_style_attr_updated();
         } else if (tag, attr) == tag_and_attr!("canvas", "src") {
             self.recompute_is_animating = true;
         } else if (tag, attr) == tag_and_attr!("link", "href") {

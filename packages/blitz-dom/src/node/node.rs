@@ -278,6 +278,14 @@ impl Node {
         self.dirty_descendants.store(false, Ordering::Relaxed);
     }
 
+    /// Set appropriate damage for Stylo when an element's style attribute is updated
+    pub(crate) fn mark_style_attr_updated(&mut self) {
+        if let Some(data) = &mut self.stylo_element_data.get_mut() {
+            data.hint |= RestyleHint::RESTYLE_STYLE_ATTRIBUTE;
+            self.set_dirty_descendants();
+        }
+    }
+
     /// Marks all ancestors of this node as having dirty descendants.
     /// This propagates the dirty flag up the tree so that the style traversal
     /// knows to visit the subtree containing this node.

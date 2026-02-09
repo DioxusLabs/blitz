@@ -328,7 +328,7 @@ impl ElementData {
         value: &str,
         guard: &SharedRwLock,
         url_extra_data: UrlExtraData,
-    ) {
+    ) -> bool {
         let context = ParserContext::new(
             Origin::Author,
             &url_extra_data,
@@ -342,7 +342,7 @@ impl ElementData {
 
         let Ok(property_id) = PropertyId::parse(name, &context) else {
             eprintln!("Warning: unsupported property {name}");
-            return;
+            return false;
         };
         let mut source_property_declaration = SourcePropertyDeclaration::default();
         let mut input = ParserInput::new(value);
@@ -354,7 +354,7 @@ impl ElementData {
             &mut parser,
         ) else {
             eprintln!("Warning: invalid property value for {name}: {value}");
-            return;
+            return false;
         };
 
         if self.style_attribute.is_none() {
@@ -365,6 +365,8 @@ impl ElementData {
             .unwrap()
             .write_with(&mut guard.write())
             .extend(source_property_declaration.drain(), Importance::Normal);
+
+        true
     }
 
     pub fn remove_style_property(
@@ -372,7 +374,7 @@ impl ElementData {
         name: &str,
         guard: &SharedRwLock,
         url_extra_data: UrlExtraData,
-    ) {
+    ) -> bool {
         let context = ParserContext::new(
             Origin::Author,
             &url_extra_data,
@@ -385,7 +387,7 @@ impl ElementData {
         );
         let Ok(property_id) = PropertyId::parse(name, &context) else {
             eprintln!("Warning: unsupported property {name}");
-            return;
+            return false;
         };
 
         if let Some(style) = &mut self.style_attribute {
@@ -393,8 +395,11 @@ impl ElementData {
             let style = style.write_with(&mut guard);
             if let Some(index) = style.first_declaration_to_remove(&property_id) {
                 style.remove_property(&property_id, index);
+                return true;
             }
         }
+
+        false
     }
 
     pub fn set_sub_document(&mut self, sub_document: Box<dyn Document>) {

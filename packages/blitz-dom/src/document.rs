@@ -578,17 +578,28 @@ impl BaseDocument {
     }
 
     pub fn set_style_property(&mut self, node_id: usize, name: &str, value: &str) {
-        self.nodes[node_id]
-            .element_data_mut()
-            .unwrap()
-            .set_style_property(name, value, &self.guard, self.url.url_extra_data());
+        let node = &mut self.nodes[node_id];
+        let did_change = node.element_data_mut().unwrap().set_style_property(
+            name,
+            value,
+            &self.guard,
+            self.url.url_extra_data(),
+        );
+        if did_change {
+            node.mark_style_attr_updated();
+        }
     }
 
     pub fn remove_style_property(&mut self, node_id: usize, name: &str) {
-        self.nodes[node_id]
-            .element_data_mut()
-            .unwrap()
-            .remove_style_property(name, &self.guard, self.url.url_extra_data());
+        let node = &mut self.nodes[node_id];
+        let did_change = node.element_data_mut().unwrap().remove_style_property(
+            name,
+            &self.guard,
+            self.url.url_extra_data(),
+        );
+        if did_change {
+            node.mark_style_attr_updated();
+        }
     }
 
     pub fn set_sub_document(&mut self, node_id: usize, sub_document: Box<dyn Document>) {
