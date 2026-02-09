@@ -24,6 +24,7 @@ pub(crate) mod stylo {
 pub(crate) mod parley {
     pub(crate) use parley::FontVariation;
     pub(crate) use parley::fontique::QueryFamily;
+    pub(crate) use parley::setting::*;
     pub(crate) use parley::style::*;
 }
 
@@ -86,7 +87,7 @@ pub(crate) fn font_variations(input: &stylo::FontVariationSettings) -> Vec<parle
         .0
         .iter()
         .map(|v| parley::FontVariation {
-            tag: v.tag.0,
+            tag: parley::Tag::from_bytes(v.tag.0.to_be_bytes()),
             value: v.value,
         })
         .collect()
@@ -106,7 +107,7 @@ pub(crate) fn white_space_collapse(input: stylo::WhiteSpaceCollapse) -> parley::
 pub(crate) fn style(
     span_id: usize,
     style: &stylo::ComputedValues,
-) -> parley::TextStyle<'static, TextBrush> {
+) -> parley::TextStyle<'static, 'static, TextBrush> {
     let font_styles = style.get_font();
     let itext_styles = style.get_inherited_text();
 
@@ -144,27 +145,31 @@ pub(crate) fn style(
                     // Legacy web compatibility
                     #[cfg(target_vendor = "apple")]
                     if name == "-apple-system" {
-                        break 'ret parley::FontFamily::Generic(parley::GenericFamily::SystemUi);
+                        break 'ret parley::FontFamilyName::Generic(
+                            parley::GenericFamily::SystemUi,
+                        );
                     }
                     #[cfg(target_os = "macos")]
                     if name == "BlinkMacSystemFont" {
-                        break 'ret parley::FontFamily::Generic(parley::GenericFamily::SystemUi);
+                        break 'ret parley::FontFamilyName::Generic(
+                            parley::GenericFamily::SystemUi,
+                        );
                     }
 
-                    break 'ret parley::FontFamily::Named(Cow::Owned(name.to_string()));
+                    break 'ret parley::FontFamilyName::Named(Cow::Owned(name.to_string()));
                 }
             }
             stylo::SingleFontFamily::Generic(generic) => {
-                parley::FontFamily::Generic(self::generic_font_family(*generic))
+                parley::FontFamilyName::Generic(self::generic_font_family(*generic))
             }
         })
         .collect();
 
     // Wrapping and breaking
     let word_break = match itext_styles.word_break {
-        stylo::WordBreak::Normal => parley::WordBreakStrength::Normal,
-        stylo::WordBreak::BreakAll => parley::WordBreakStrength::BreakAll,
-        stylo::WordBreak::KeepAll => parley::WordBreakStrength::KeepAll,
+        stylo::WordBreak::Normal => parley::WordBreak::Normal,
+        stylo::WordBreak::BreakAll => parley::WordBreak::BreakAll,
+        stylo::WordBreak::KeepAll => parley::WordBreak::KeepAll,
     };
     let overflow_wrap = match itext_styles.overflow_wrap {
         stylo::OverflowWrap::Normal => parley::OverflowWrap::Normal,
@@ -177,14 +182,14 @@ pub(crate) fn style(
     };
 
     parley::TextStyle {
-        // font_stack: parley::FontStack::Single(FontFamily::Generic(GenericFamily::SystemUi)),
-        font_stack: parley::FontStack::List(Cow::Owned(families)),
+        // font_family: parley::FontFamily::Single(FontFamilyName::Generic(GenericFamily::SystemUi)),
+        font_family: parley::FontFamily::List(Cow::Owned(families)),
         font_size,
         font_width,
         font_style,
         font_weight,
-        font_variations: parley::FontSettings::List(Cow::Owned(font_variations)),
-        font_features: parley::FontSettings::List(Cow::Borrowed(&[])),
+        font_variations: parley::FontVariations::List(Cow::Owned(font_variations)),
+        font_features: parley::FontFeatures::List(Cow::Borrowed(&[])),
         locale: Default::default(),
         line_height,
         word_spacing: Default::default(),

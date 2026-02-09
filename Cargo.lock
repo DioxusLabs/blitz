@@ -2702,22 +2702,21 @@ dependencies = [
 [[package]]
 name = "fontique"
 version = "0.7.0"
-source = "git+https://github.com/linebender/parley?rev=e350e655c89524b49d7dde1ed69a7ea4ca6a4438#e350e655c89524b49d7dde1ed69a7ea4ca6a4438"
+source = "git+https://github.com/linebender/parley?rev=37aa8ab7103e9da89eea22899902016ce20739f2#37aa8ab7103e9da89eea22899902016ce20739f2"
 dependencies = [
- "bytemuck",
  "hashbrown 0.16.1",
- "icu_locale_core",
  "linebender_resource_handle",
  "memmap2 0.9.9",
  "objc2 0.6.3",
  "objc2-core-foundation",
  "objc2-core-text",
  "objc2-foundation 0.3.2",
- "read-fonts 0.35.0",
+ "read-fonts 0.37.0",
  "roxmltree 0.21.1",
  "smallvec",
- "windows 0.58.0",
- "windows-core 0.58.0",
+ "text_primitives",
+ "windows 0.62.2",
+ "windows-core 0.62.2",
  "yeslogic-fontconfig-sys",
 ]
 
@@ -3213,14 +3212,14 @@ dependencies = [
 
 [[package]]
 name = "harfrust"
-version = "0.3.2"
+version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "92c020db12c71d8a12a3fe7607873cade3a01a6287e29d540c8723276221b9d8"
+checksum = "4f9f40651a03bc0f7316bd75267ff5767e93017ef3cfffe76c6aa7252cc5a31c"
 dependencies = [
  "bitflags 2.10.0",
  "bytemuck",
  "core_maths",
- "read-fonts 0.35.0",
+ "read-fonts 0.37.0",
  "smallvec",
 ]
 
@@ -3540,6 +3539,31 @@ name = "icu_locale_data"
 version = "2.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1c5f1d16b4c3a2642d3a719f18f6b06070ab0aef246a6418130c955ae08aa831"
+
+[[package]]
+name = "icu_normalizer"
+version = "2.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5f6c8828b67bf8908d82127b2054ea1b4427ff0230ee9141c54251934ab1b599"
+dependencies = [
+ "icu_collections",
+ "icu_provider",
+ "smallvec",
+ "zerovec",
+]
+
+[[package]]
+name = "icu_properties"
+version = "2.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "020bfc02fe870ec3a66d93e677ccca0562506e5872c650f893269e08615d74ec"
+dependencies = [
+ "icu_collections",
+ "icu_locale_core",
+ "icu_provider",
+ "zerotrie",
+ "zerovec",
+]
 
 [[package]]
 name = "icu_provider"
@@ -4974,14 +4998,31 @@ dependencies = [
 [[package]]
 name = "parley"
 version = "0.7.0"
-source = "git+https://github.com/linebender/parley?rev=e350e655c89524b49d7dde1ed69a7ea4ca6a4438#e350e655c89524b49d7dde1ed69a7ea4ca6a4438"
+source = "git+https://github.com/linebender/parley?rev=37aa8ab7103e9da89eea22899902016ce20739f2#37aa8ab7103e9da89eea22899902016ce20739f2"
 dependencies = [
  "fontique",
  "harfrust",
  "hashbrown 0.16.1",
+ "icu_collections",
+ "icu_normalizer",
+ "icu_properties",
+ "icu_provider",
+ "icu_segmenter",
  "linebender_resource_handle",
- "skrifa 0.37.0",
- "swash",
+ "parley_data",
+ "skrifa 0.40.0",
+ "text_primitives",
+ "zerovec",
+]
+
+[[package]]
+name = "parley_data"
+version = "0.0.0"
+source = "git+https://github.com/linebender/parley?rev=37aa8ab7103e9da89eea22899902016ce20739f2#37aa8ab7103e9da89eea22899902016ce20739f2"
+dependencies = [
+ "icu_collections",
+ "icu_properties",
+ "zerovec",
 ]
 
 [[package]]
@@ -5572,7 +5613,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6717cf23b488adf64b9d711329542ba34de147df262370221940dfabc2c91358"
 dependencies = [
  "bytemuck",
- "core_maths",
  "font-types 0.10.1",
 ]
 
@@ -5583,6 +5623,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7b634fabf032fab15307ffd272149b622260f55974d9fad689292a5d33df02e5"
 dependencies = [
  "bytemuck",
+ "core_maths",
  "font-types 0.11.0",
 ]
 
@@ -6674,17 +6715,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "swash"
-version = "0.2.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "47846491253e976bdd07d0f9cc24b7daf24720d11309302ccbbc6e6b6e53550a"
-dependencies = [
- "skrifa 0.37.0",
- "yazi",
- "zeno",
-]
-
-[[package]]
 name = "syn"
 version = "1.0.109"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6823,6 +6853,11 @@ name = "terminal-link"
 version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "253bcead4f3aa96243b0f8fa46f9010e87ca23bd5d0c723d474ff1d2417bbdf8"
+
+[[package]]
+name = "text_primitives"
+version = "0.1.0"
+source = "git+https://github.com/linebender/parley?rev=37aa8ab7103e9da89eea22899902016ce20739f2#37aa8ab7103e9da89eea22899902016ce20739f2"
 
 [[package]]
 name = "thin-vec"
@@ -9151,12 +9186,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fdd20c5420375476fbd4394763288da7eb0cc0b8c11deed431a91562af7335d3"
 
 [[package]]
-name = "yazi"
-version = "0.2.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e01738255b5a16e78bbb83e7fbba0a1e7dd506905cfc53f4622d89015a03fbb5"
-
-[[package]]
 name = "yeslogic-fontconfig-sys"
 version = "6.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -9288,12 +9317,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "zeno"
-version = "0.3.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6df3dc4292935e51816d896edcd52aa30bc297907c26167fec31e2b0c6a32524"
-
-[[package]]
 name = "zerocopy"
 version = "0.8.38"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -9347,6 +9370,8 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2a59c17a5562d507e4b54960e8569ebee33bee890c70aa3fe7b97e85a9fd7851"
 dependencies = [
  "displaydoc",
+ "yoke",
+ "zerofrom",
 ]
 
 [[package]]
