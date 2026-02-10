@@ -24,6 +24,7 @@ use style::applicable_declarations::ApplicableDeclarationBlock;
 use style::bloom::each_relevant_element_hash;
 use style::color::AbsoluteColor;
 use style::dom::AttributeProvider;
+use style::global_style_data::STYLE_THREAD_POOL;
 use style::invalidation::element::restyle_hints::RestyleHint;
 use style::properties::ComputedValues;
 use style::properties::{Importance, PropertyDeclaration};
@@ -123,7 +124,8 @@ impl crate::document::BaseDocument {
         if token.should_traverse() {
             // Style the elements, resolving their data
             let traverser = RecalcStyle::new(context);
-            style::driver::traverse_dom(&traverser, token, None);
+            let rayon_pool = STYLE_THREAD_POOL.pool();
+            style::driver::traverse_dom(&traverser, token, rayon_pool.as_ref());
         }
 
         for opaque in self.snapshots.keys() {
@@ -479,14 +481,17 @@ impl selectors::Element for BlitzNode<'_> {
         // Handle flags that apply to the element.
         let self_flags = flags.for_self();
         if !self_flags.is_empty() {
-            *self.selector_flags.borrow_mut() |= self_flags;
+            self.selector_flags
+                .set(self.selector_flags.get() | self_flags);
         }
 
         // Handle flags that apply to the parent.
         let parent_flags = flags.for_parent();
         if !parent_flags.is_empty() {
             if let Some(parent) = self.parent_node() {
-                *parent.selector_flags.borrow_mut() |= parent_flags;
+                parent
+                    .selector_flags
+                    .set(parent.selector_flags.get() | parent_flags);
             }
         }
     }
@@ -976,11 +981,11 @@ impl<'a> TElement for BlitzNode<'a> {
     }
 
     fn has_selector_flags(&self, flags: ElementSelectorFlags) -> bool {
-        self.selector_flags.borrow().contains(flags)
+        self.selector_flags.get().contains(flags)
     }
 
     fn relative_selector_search_direction(&self) -> ElementSelectorFlags {
-        let flags = self.selector_flags.borrow();
+        let flags = self.selector_flags.get();
         if flags.contains(ElementSelectorFlags::RELATIVE_SELECTOR_SEARCH_DIRECTION_ANCESTOR_SIBLING)
         {
             ElementSelectorFlags::RELATIVE_SELECTOR_SEARCH_DIRECTION_ANCESTOR_SIBLING

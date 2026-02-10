@@ -104,7 +104,7 @@ pub struct Node {
     // This little bundle of joy is our style data from stylo and a lock guard that allows access to it
     // TODO: See if guard can be hoisted to a higher level
     pub stylo_element_data: AtomicRefCell<Option<StyloElementData>>,
-    pub selector_flags: AtomicRefCell<ElementSelectorFlags>,
+    pub selector_flags: Cell<ElementSelectorFlags>,
     pub guard: SharedRwLock,
     pub element_state: ElementState,
 
@@ -167,7 +167,7 @@ impl Node {
             data,
 
             stylo_element_data: Default::default(),
-            selector_flags: AtomicRefCell::new(ElementSelectorFlags::empty()),
+            selector_flags: Cell::new(ElementSelectorFlags::empty()),
             guard,
             element_state: state,
 

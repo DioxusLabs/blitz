@@ -336,6 +336,14 @@ impl BaseDocument {
             });
         let font_ctx = Arc::new(Mutex::new(font_ctx));
 
+        // Make sure we turn on stylo features *before* creating the Stylist
+        style_config::set_bool("layout.flexbox.enabled", true);
+        style_config::set_bool("layout.grid.enabled", true);
+        style_config::set_bool("layout.legacy_layout", true);
+        style_config::set_bool("layout.unimplemented", true);
+        style_config::set_bool("layout.columns.enabled", true);
+        style_config::set_i32("layout.threads", -1);
+
         let viewport = config.viewport.unwrap_or_default();
         let device = make_device(&viewport, font_ctx.clone());
         let stylist = Stylist::new(device, QuirksMode::NoQuirks);
@@ -343,13 +351,6 @@ impl BaseDocument {
         let nodes = Box::new(Slab::new());
         let guard = SharedRwLock::new();
         let nodes_to_id = HashMap::new();
-
-        // Make sure we turn on stylo features
-        style_config::set_bool("layout.flexbox.enabled", true);
-        style_config::set_bool("layout.grid.enabled", true);
-        style_config::set_bool("layout.legacy_layout", true);
-        style_config::set_bool("layout.unimplemented", true);
-        style_config::set_bool("layout.columns.enabled", true);
 
         let base_url = config
             .base_url
