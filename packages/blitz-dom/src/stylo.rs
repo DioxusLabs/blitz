@@ -1084,18 +1084,14 @@ where
         node: E::ConcreteNode,
         note_child: F,
     ) {
-        // Don't process textnodees in this traversal
-        if node.is_text_node() {
-            return;
+        if let Some(el) = node.as_element() {
+            // let mut data = el.mutate_data().unwrap();
+            let mut data = unsafe { el.ensure_data() };
+            recalc_style_at(self, traversal_data, context, el, &mut data, note_child);
+
+            // Gets set later on
+            unsafe { el.unset_dirty_descendants() }
         }
-
-        let el = node.as_element().unwrap();
-        // let mut data = el.mutate_data().unwrap();
-        let mut data = unsafe { el.ensure_data() };
-        recalc_style_at(self, traversal_data, context, el, &mut data, note_child);
-
-        // Gets set later on
-        unsafe { el.unset_dirty_descendants() }
     }
 
     #[inline]
