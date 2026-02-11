@@ -4,6 +4,10 @@
 
 //! A web browser with UI powered by Dioxus Native and content rendering powered by Blitz
 
+#[cfg(feature = "mimalloc")]
+#[global_allocator]
+static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
+
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::sync::{Arc, atomic::AtomicUsize, atomic::Ordering as Ao};

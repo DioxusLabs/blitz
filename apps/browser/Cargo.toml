@@ -29,6 +29,7 @@ webp = ["image/webp"]
 tracing = ["dioxus-native/tracing", "dep:tracing-subscriber"]
 hot-reload = ["dioxus-native/hot-reload"]
 accessibility = ["dioxus-native/accessibility"]
+mimalloc = ["dep:mimalloc"]
 
 [dependencies]
 dioxus-native = { workspace = true, features = [
@@ -49,6 +50,8 @@ webbrowser = { workspace = true }
 winit = { workspace = true }
 image = { workspace = true }
 
+# Allocators
+mimalloc = { version = "0.1.48", optional = true }
 
 [target.'cfg(target_os = "android")'.dependencies]
 android-activity = { version = "0.6.0", features = ["native-activity"] }
