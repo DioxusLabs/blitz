@@ -149,6 +149,9 @@ impl crate::document::BaseDocument {
         sets.retain(|_, state| !state.is_empty());
         self.has_active_animations = sets.values().any(|state| state.needs_animation_ticks());
 
+        // Maybe run garbage collection. Stylo has internal to determine whether to run or not.
+        self.stylist.rule_tree().maybe_gc();
+
         style::thread_state::exit(ThreadState::LAYOUT);
     }
 }
