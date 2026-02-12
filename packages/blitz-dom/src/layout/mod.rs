@@ -157,7 +157,11 @@ impl BaseDocument {
                                 &node.style,
                                 resolve_calc_value,
                                 |_known_size, _available_space| taffy::Size {
-                                    width: 300.0,
+                                    width: match inputs.available_space.width {
+                                        AvailableSpace::Definite(limit) => limit.min(300.0),
+                                        AvailableSpace::MinContent => 0.0,
+                                        AvailableSpace::MaxContent => 300.0,
+                                    },
                                     height: resolved_line_height.unwrap_or(16.0),
                                 },
                             );
