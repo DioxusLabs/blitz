@@ -6529,10 +6529,28 @@ dependencies = [
 ]
 
 [[package]]
-name = "stylo"
-version = "0.11.0"
+name = "strum"
+version = "0.27.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4a6897d0adff265acd6931ee5f4a10ff156d53469b9dacacf36e8d3a1c045bb4"
+checksum = "af23d6f6c1a224baef9d3f61e287d2761385a5b88fdab4eb4c6f11aeb54c4bcf"
+
+[[package]]
+name = "strum_macros"
+version = "0.27.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7695ce3845ea4b33927c055a39dc438a45b059f7c1b3d91d38d10355fb8cbca7"
+dependencies = [
+ "heck",
+ "proc-macro2",
+ "quote",
+ "syn 2.0.114",
+]
+
+[[package]]
+name = "stylo"
+version = "0.12.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5ad158e6840fc267f068c7956ade41bbdd09a184d490a17ca38fcff94f910c15"
 dependencies = [
  "app_units",
  "arrayvec",
@@ -6567,6 +6585,8 @@ dependencies = [
  "smallvec",
  "static_assertions",
  "string_cache",
+ "strum",
+ "strum_macros",
  "stylo_atoms",
  "stylo_config",
  "stylo_derive",
@@ -6586,9 +6606,9 @@ dependencies = [
 
 [[package]]
 name = "stylo_atoms"
-version = "0.11.0"
+version = "0.12.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "105898e8da1aed50358c48b6e6fcf7e1b9c3b394eabb280d8f26466c9edf7849"
+checksum = "4de3f265b0364402f95a6c5e8f05250fd659e8b011be0da9fa9f68b1f641f308"
 dependencies = [
  "string_cache",
  "string_cache_codegen",
@@ -6596,15 +6616,15 @@ dependencies = [
 
 [[package]]
 name = "stylo_config"
-version = "0.11.0"
+version = "0.12.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "58e2436a42998b71c86dc62f1063e9ccb3191186e4b253625950f09cb0bf81b0"
+checksum = "0cf1244a50a1fba2266bc587f2efa85419105e7eb210eebfe828db0c6c996be0"
 
 [[package]]
 name = "stylo_derive"
-version = "0.11.0"
+version = "0.12.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8276376b44889b9d5bdf0e6c6a7d8a1fc098bd393e741f4bc83e34a9eb0411ae"
+checksum = "7d440f646f5f66464ed6b77bed976867979efc4d2dfe5e910d17f06ebe6c7d19"
 dependencies = [
  "darling 0.20.11",
  "proc-macro2",
@@ -6615,9 +6635,9 @@ dependencies = [
 
 [[package]]
 name = "stylo_dom"
-version = "0.11.0"
+version = "0.12.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1acbc87f0c81694ee9ce27a2d0e924d2e5f16addfb0e8009e5ec4b9fa6ed0e4f"
+checksum = "410e21fafc44c6cd5ae0640422b19c651d0d356a7bfc34c15a2cd42811befee2"
 dependencies = [
  "bitflags 2.10.0",
  "stylo_malloc_size_of",
@@ -6625,9 +6645,9 @@ dependencies = [
 
 [[package]]
 name = "stylo_malloc_size_of"
-version = "0.11.0"
+version = "0.12.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4cc2607696906a841f7572404e02c52e3cf2ccc36b27d5ca8ca535799dbc3507"
+checksum = "2fd4fa073f68ccb54cb5b747c0de7ec5807eefc57426a8463d5b5529873dfc7e"
 dependencies = [
  "app_units",
  "cssparser",
@@ -6643,9 +6663,12 @@ dependencies = [
 
 [[package]]
 name = "stylo_static_prefs"
-version = "0.11.0"
+version = "0.12.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fd15301b4756455af51fda9835655e48812dd4175e80947fd5d6a4b57ee30e89"
+checksum = "9efd065dbc5acf78da14eda70578b15cd6c31e057289bf2f188186ca9c5ae6e1"
+dependencies = [
+ "stylo_config",
+]
 
 [[package]]
 name = "stylo_taffy"
@@ -6658,9 +6681,9 @@ dependencies = [
 
 [[package]]
 name = "stylo_traits"
-version = "0.11.0"
+version = "0.12.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "587304c23438003ea820d07c88af13c6714944c4597ad24f6063ef9e3d1b0bbc"
+checksum = "5baad668b39a5e993a73111df8f55def808bd561c651acf794ab58a9c208c3f4"
 dependencies = [
  "app_units",
  "bitflags 2.10.0",

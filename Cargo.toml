@@ -48,11 +48,11 @@ debug_timer = { version = "0.1.2", path = "./packages/debug_timer" }
 accesskit_xplat = { version = "0.1", path = "./packages/accesskit_xplat", default-features = false }
 
 # Servo dependencies
-style = { version = "0.11.0", package = "stylo" }
-style_traits = { version = "0.11.0", package = "stylo_traits" }
-style_atoms = { version = "0.11.0", package = "stylo_atoms" }
-style_config = { version = "0.11.0", package = "stylo_config" }
-style_dom = { version = "0.11.0", package = "stylo_dom" }
+style = { version = "0.12.0", package = "stylo" }
+style_traits = { version = "0.12.0", package = "stylo_traits" }
+style_atoms = { version = "0.12.0", package = "stylo_atoms" }
+style_config = { version = "0.12.0", package = "stylo_config" }
+style_dom = { version = "0.12.0", package = "stylo_dom" }
 selectors = { version = "0.35.0", package = "selectors" }
 cssparser = { version = "0.36" }
 

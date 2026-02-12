@@ -73,7 +73,8 @@ impl crate::document::BaseDocument {
             .unwrap();
 
         self.stylist
-            .flush(&guards, Some(root), Some(&self.snapshots));
+            .flush(&guards)
+            .process_style(root, Some(&self.snapshots));
 
         // Mark actively animating nodes as dirty
         let mut sets = self.animations.sets.write();
@@ -457,6 +458,7 @@ impl selectors::Element for BlitzNode<'_> {
 
             NonTSPseudoClass::InRange => false,
             NonTSPseudoClass::Modal => false,
+            NonTSPseudoClass::Open => false,
             NonTSPseudoClass::Optional => false,
             NonTSPseudoClass::OutOfRange => false,
             NonTSPseudoClass::PopoverOpen => false,

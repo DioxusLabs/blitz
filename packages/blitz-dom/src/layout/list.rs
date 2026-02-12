@@ -68,7 +68,7 @@ fn node_list_item_child(
     let styles = node.primary_styles().unwrap();
     let list_style_type = styles.clone_list_style_type();
     let list_style_position = styles.clone_list_style_position();
-    let marker = marker_for_style(list_style_type, index)?;
+    let marker = marker_for_style(list_style_type.clone(), index)?;
 
     let position = match list_style_position {
         ListStylePosition::Inside => ListItemLayoutPosition::Inside,
