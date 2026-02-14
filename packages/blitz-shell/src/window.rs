@@ -89,8 +89,18 @@ impl<Rend: WindowRenderer> View<Rend> {
         event_loop: &dyn ActiveEventLoop,
         proxy: &BlitzShellProxy,
     ) -> Self {
-        let winit_window: Arc<dyn Window> =
-            Arc::from(event_loop.create_window(config.attributes).unwrap());
+        // We create window as invisble and then later make window visible
+        // after AccessKit has initialised to avoid AccessKit panics
+        let is_visible = config.attributes.visible;
+        let attrs = config.attributes.with_visible(false);
+
+        let winit_window: Arc<dyn Window> = Arc::from(event_loop.create_window(attrs).unwrap());
+        #[cfg(feature = "accessibility")]
+        let accessibility = AccessibilityState::new(&*winit_window, proxy.clone());
+
+        if is_visible {
+            winit_window.set_visible(true);
+        }
 
         // Create viewport
         // TODO: account for the "safe area"
@@ -133,7 +143,7 @@ impl<Rend: WindowRenderer> View<Rend> {
             pointer_pos: Default::default(),
             is_visible: winit_window.is_visible().unwrap_or(true),
             #[cfg(feature = "accessibility")]
-            accessibility: AccessibilityState::new(&*winit_window, proxy.clone()),
+            accessibility,
 
             #[cfg(target_os = "ios")]
             ios_request_redraw: std::cell::Cell::new(false),
