@@ -1398,13 +1398,17 @@ dependencies = [
 
 [[package]]
 name = "comrak"
-version = "0.49.0"
+version = "0.50.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ab87129dce2f2d7e75e753b1df0e5093b27dec8fa5970b6eb51280faacb25bd6"
+checksum = "321d20bf105b6871a49da44c5fbb93e90a7cd6178ea5a9fe6cbc1e6d4504bc5e"
 dependencies = [
  "caseless",
  "entities",
  "jetscii",
+ "phf",
+ "phf_codegen",
+ "rustc-hash 2.1.1",
+ "smallvec",
  "typed-arena",
  "unicode_categories",
 ]
