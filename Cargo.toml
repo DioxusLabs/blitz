@@ -114,7 +114,7 @@ kurbo = "0.13"
 parley = { git = "https://github.com/linebender/parley", rev = "37aa8ab7103e9da89eea22899902016ce20739f2", default-features = false, features = [
   "std",
 ] }
-skrifa = { version = "0.37", default-features = false, features = [
+skrifa = { version = "0.40", default-features = false, features = [
   "std",
 ] } # Should match parley version
 wgpu = "27"
