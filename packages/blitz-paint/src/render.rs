@@ -37,7 +37,7 @@ use style::{
 
 use kurbo::{self, Affine, Insets, Point, Rect, Stroke, Vec2};
 use peniko::{self, Fill, ImageData, ImageSampler};
-use style::values::generics::color::GenericColor;
+use style::values::generics::color::{ColorOrAuto, GenericColor};
 use taffy::Layout;
 
 /// A short-lived struct which holds a bunch of parameters for rendering a scene so
@@ -558,13 +558,16 @@ impl ElementCx<'_> {
                     );
                 }
                 if let Some(cursor) = input_data.editor.cursor_geometry(1.5) {
-                    // TODO: Use the `caret-color` attribute here if present.
                     let color = self.style.get_inherited_text().color;
+                    let caret_color = match &self.style.get_inherited_ui().caret_color.0 {
+                        ColorOrAuto::Auto => color,
+                        ColorOrAuto::Color(caret_color) => caret_color.resolve_to_absolute(&color),
+                    };
 
                     scene.fill(
                         Fill::NonZero,
                         transform,
-                        color.as_srgb_color(),
+                        caret_color.as_srgb_color(),
                         None,
                         &convert_rect(&cursor),
                     );
