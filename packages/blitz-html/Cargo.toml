@@ -10,6 +10,9 @@ categories.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 
+[features]
+tracing = ["dep:tracing", "blitz-dom/tracing"]
+
 [dependencies]
 # Blitz dependencies
 blitz-dom = { workspace = true }
@@ -18,3 +21,5 @@ blitz-traits = { workspace = true }
 # Servo dependencies
 html5ever = { workspace = true }
 xml5ever = { workspace = true }
+
+tracing = { workspace = true, optional = true }

@@ -178,7 +178,8 @@ pub(crate) fn collect_table_cells(
     }
 
     let Some(display) = node.primary_styles().map(|s| s.clone_display()) else {
-        println!("Ignoring table descendent because it has no styles");
+        #[cfg(feature = "tracing")]
+        tracing::info!("Ignoring table descendent because it has no styles");
         return;
     };
 

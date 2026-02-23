@@ -341,7 +341,8 @@ impl ElementData {
         );
 
         let Ok(property_id) = PropertyId::parse(name, &context) else {
-            eprintln!("Warning: unsupported property {name}");
+            #[cfg(feature = "tracing")]
+            tracing::warn!(property = name, "Unsupported property");
             return false;
         };
         let mut source_property_declaration = SourcePropertyDeclaration::default();
@@ -353,7 +354,8 @@ impl ElementData {
             &context,
             &mut parser,
         ) else {
-            eprintln!("Warning: invalid property value for {name}: {value}");
+            #[cfg(feature = "tracing")]
+            tracing::warn!(property = name, value, "Invalid property value");
             return false;
         };
 
@@ -386,7 +388,8 @@ impl ElementData {
             None,
         );
         let Ok(property_id) = PropertyId::parse(name, &context) else {
-            eprintln!("Warning: unsupported property {name}");
+            #[cfg(feature = "tracing")]
+            tracing::warn!(property = name, "Unsupported property");
             return false;
         };
 

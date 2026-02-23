@@ -809,6 +809,7 @@ dependencies = [
  "blitz-shell",
  "blitz-traits",
  "tokio",
+ "tracing",
  "url",
 ]
 
@@ -888,6 +889,7 @@ dependencies = [
  "blitz-dom",
  "blitz-traits",
  "html5ever",
+ "tracing",
  "xml5ever",
 ]
 
@@ -902,6 +904,7 @@ dependencies = [
  "reqwest",
  "reqwest-middleware",
  "tokio",
+ "tracing",
 ]
 
 [[package]]
@@ -5684,6 +5687,7 @@ dependencies = [
  "pulldown-cmark",
  "reqwest",
  "tokio",
+ "tracing-subscriber",
  "url",
  "winit",
 ]

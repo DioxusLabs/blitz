@@ -72,11 +72,12 @@ impl BaseDocument {
             NodeData::Text(data) => {
                 // With the new "inline context" architecture all text nodes should be wrapped in an "inline layout context"
                 // and should therefore never be measured individually.
-                println!(
-                    "ERROR: Tried to lay out text node individually ({})",
-                    usize::from(node_id)
+                #[cfg(feature = "tracing")]
+                tracing::error!(
+                    node_id = usize::from(node_id),
+                    data = ?data,
+                    "Tried to lay out text node individually",
                 );
-                dbg!(data);
                 taffy::LayoutOutput::HIDDEN
                 // unreachable!();
 

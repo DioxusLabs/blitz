@@ -1,24 +1,24 @@
 [workspace]
 members = [
-  "packages/accesskit_xplat",
-  "packages/debug_timer",
-  "packages/blitz-traits",
-  "packages/blitz-dom",
-  "packages/blitz-html",
-  "packages/blitz-net",
-  "packages/blitz-paint",
-  "packages/blitz-shell",
-  "packages/blitz",
-  "packages/stylo_taffy",
-  "packages/dioxus-native",
-  "packages/dioxus-native-dom",
-  "apps/browser",
-  "apps/readme",
-  "apps/bump",
-  "wpt/runner",
-  "examples/counter",
-  "examples/todomvc",
-  "examples/wgpu_texture",
+    "packages/accesskit_xplat",
+    "packages/debug_timer",
+    "packages/blitz-traits",
+    "packages/blitz-dom",
+    "packages/blitz-html",
+    "packages/blitz-net",
+    "packages/blitz-paint",
+    "packages/blitz-shell",
+    "packages/blitz",
+    "packages/stylo_taffy",
+    "packages/dioxus-native",
+    "packages/dioxus-native-dom",
+    "apps/browser",
+    "apps/readme",
+    "apps/bump",
+    "wpt/runner",
+    "examples/counter",
+    "examples/todomvc",
+    "examples/wgpu_texture",
 ]
 exclude = ["sites"]
 resolver = "2"
@@ -88,13 +88,13 @@ dioxus-core-macro = { version = "0.7.3" }
 
 # Taffy
 taffy = { git = "https://github.com/DioxusLabs/taffy", rev = "25759dad44d8350743a4e866fee54962f996895a", default-features = false, features = [
-  "std",
-  "flexbox",
-  "grid",
-  "block_layout",
-  "content_size",
-  "calc",
-  "detailed_layout_info",
+    "std",
+    "flexbox",
+    "grid",
+    "block_layout",
+    "content_size",
+    "calc",
+    "detailed_layout_info",
 ] }
 
 # AnyRender
@@ -112,10 +112,10 @@ linebender_resource_handle = "0.1"
 peniko = "0.6.0"
 kurbo = "0.13"
 parley = { git = "https://github.com/linebender/parley", rev = "37aa8ab7103e9da89eea22899902016ce20739f2", default-features = false, features = [
-  "std",
+    "std",
 ] }
 skrifa = { version = "0.40", default-features = false, features = [
-  "std",
+    "std",
 ] } # Should match parley version
 wgpu = "27"
 softbuffer = "0.4"
@@ -123,8 +123,8 @@ pixels = "0.15"
 vello = { version = "0.6", features = ["wgpu"] }
 vello_encoding = { version = "0.6", default-features = false }
 vello_cpu = { version = "0.0.3", default-features = false, features = [
-  "std",
-  "text",
+    "std",
+    "text",
 ] }
 usvg = "0.46"
 

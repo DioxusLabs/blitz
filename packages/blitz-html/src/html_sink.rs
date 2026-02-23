@@ -146,7 +146,8 @@ impl<'m, 'doc> TreeSink for DocumentHtmlParser<'m, 'doc> {
 
     fn finish(self) -> Self::Output {
         for error in self.errors.borrow().iter() {
-            println!("ERROR: {error}");
+            #[cfg(feature = "tracing")]
+            tracing::error!("{error}");
         }
     }
 
