@@ -11,10 +11,10 @@ edition.workspace = true
 rust-version.workspace = true
 
 [features]
-default = ["net", "accessibility"]
+default = ["net", "accessibility", "tracing"]
 net = ["dep:tokio", "dep:url", "dep:blitz-net"]
 accessibility = ["blitz-shell/accessibility"]
-tracing = ["blitz-shell/tracing"]
+tracing = ["dep:tracing", "blitz-shell/tracing", "blitz-html/tracing", "blitz-net/tracing"]
 
 [dependencies]
 # Blitz dependencies
@@ -29,6 +29,8 @@ blitz-net = { workspace = true, optional = true }
 # IO & Networking
 url = { workspace = true, features = ["serde"], optional = true }
 tokio = { workspace = true, features = ["rt-multi-thread"], optional = true }
+
+tracing = { workspace = true, optional = true }
 
 [package.metadata.docs.rs]
 all-features = true

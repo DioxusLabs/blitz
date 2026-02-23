@@ -58,6 +58,9 @@ impl NavigationProvider for ReadmeNavigationProvider {
 }
 
 fn main() {
+    #[cfg(feature = "tracing")]
+    tracing_subscriber::fmt::init();
+
     let raw_url = std::env::args().nth(1).unwrap_or_else(|| {
         let cwd = current_dir().unwrap();
         format!("{}", cwd.display())

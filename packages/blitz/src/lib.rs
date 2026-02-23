@@ -44,7 +44,8 @@ pub use blitz_traits as traits;
 #[cfg(feature = "net")]
 pub fn launch_url(url: &str) {
     // Assert that url is valid
-    println!("{url}");
+    #[cfg(feature = "tracing")]
+    tracing::info!("Launching {url}");
     let url = url.to_owned();
     let url = url::Url::parse(&url).expect("Invalid url");
 

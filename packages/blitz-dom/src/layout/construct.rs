@@ -150,9 +150,13 @@ pub(crate) fn collect_layout_children(
                         .special_data = SpecialElementData::Image(Box::new(svg.into()));
                 }
                 Err(err) => {
-                    println!("{container_node_id} SVG parse failed");
-                    println!("{outer_html}");
-                    dbg!(err);
+                    #[cfg(feature = "tracing")]
+                    tracing::warn!(
+                        node_id = container_node_id,
+                        html = outer_html,
+                        error = ?err,
+                        "SVG parse failed",
+                    );
                 }
             };
             return;

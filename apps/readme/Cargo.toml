@@ -7,7 +7,7 @@ rust-version.workspace = true
 publish = false
 
 [features]
-default = ["gpu", "comrak", "floats"]
+default = ["gpu", "comrak", "floats", "tracing"]
 
 # Renderers
 gpu = ["dep:anyrender_vello"]
@@ -34,14 +34,15 @@ log_frame_times = [
 ]
 log_phase_times = ["blitz-dom/log_phase_times"]
 incremental = ["blitz-dom/incremental"]
+tracing = ["dep:tracing-subscriber", "blitz-shell/tracing", "blitz-net/tracing", "blitz-html/tracing"]
 
 [dependencies]
 blitz-traits = { workspace = true }
 blitz-dom = { workspace = true, features = ["default", "parallel-construct"] }
 blitz-html = { workspace = true }
 blitz-paint = { workspace = true, features = ["default"] }
-blitz-net = { workspace = true, features = ["cookies", "debug_log"] }
-blitz-shell = { workspace = true, features = ["tracing", "default"] }
+blitz-net = { workspace = true, features = ["cookies"] }
+blitz-shell = { workspace = true, features = ["default"] }
 anyrender_vello = { workspace = true, optional = true }
 anyrender_skia = { workspace = true, optional = true }
 anyrender_vello_cpu = { workspace = true, features = ["multithreading"], optional = true }
@@ -55,3 +56,4 @@ comrak = { version = "0.50", default-features = false, optional = true }
 pulldown-cmark = { version = "0.13", default-features = false, features = ["html"], optional = true }
 image = { workspace = true, default-features = false, optional = true }
 notify = "8.0.0"
+tracing-subscriber = { workspace = true, optional = true }

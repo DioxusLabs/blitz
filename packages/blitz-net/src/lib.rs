@@ -30,7 +30,8 @@ fn get_cache_path() -> std::path::PathBuf {
         .expect("Failed to find cache directory")
         .cache_dir()
         .to_owned();
-    println!("Using cache dir {}", path.display());
+    #[cfg(feature = "tracing")]
+    tracing::info!(path = ?path.display(), "Using cache dir");
     path
 }
 
@@ -109,18 +110,20 @@ impl Provider {
         request: Request,
         callback: Box<dyn FnOnce(Result<(String, Bytes), ProviderError>) + Send + Sync + 'static>,
     ) {
-        #[cfg(feature = "debug_log")]
+        #[cfg(feature = "tracing")]
         let url = request.url.to_string();
 
         let client = self.client.clone();
         self.rt.spawn(async move {
             let result = Self::fetch_inner(client, request).await;
 
-            #[cfg(feature = "debug_log")]
+            #[cfg(feature = "tracing")]
             if let Err(e) = &result {
-                eprintln!("Error fetching {url}: {e:?}");
+                #[cfg(feature = "tracing")]
+                tracing::error!(url = url.as_str(), error = ?e, "Fetching");
             } else {
-                println!("Success {url}");
+                #[cfg(feature = "tracing")]
+                tracing::info!(url = url.as_str(), "Success fetching");
             }
 
             callback(result);
@@ -128,17 +131,19 @@ impl Provider {
     }
 
     pub async fn fetch_async(&self, request: Request) -> Result<(String, Bytes), ProviderError> {
-        #[cfg(feature = "debug_log")]
+        #[cfg(feature = "tracing")]
         let url = request.url.to_string();
 
         let client = self.client.clone();
         let result = Self::fetch_inner(client, request).await;
 
-        #[cfg(feature = "debug_log")]
+        #[cfg(feature = "tracing")]
         if let Err(e) = &result {
-            eprintln!("Error fetching {url}: {e:?}");
+            #[cfg(feature = "tracing")]
+            tracing::error!(url = url.as_str(), error = ?e, "Fetching");
         } else {
-            println!("Success {url}");
+            #[cfg(feature = "tracing")]
+            tracing::info!(url = url.as_str(), "Success fetching");
         }
 
         result
@@ -149,12 +154,12 @@ impl NetProvider for Provider {
     fn fetch(&self, doc_id: usize, mut request: Request, handler: Box<dyn NetHandler>) {
         let client = self.client.clone();
 
-        #[cfg(feature = "debug_log")]
-        println!("Fetching {}", &request.url);
+        #[cfg(feature = "tracing")]
+        tracing::info!(url = request.url.as_str(), "Fetching");
 
         let waker = self.waker.clone();
         self.rt.spawn(async move {
-            #[cfg(feature = "debug_log")]
+            #[cfg(feature = "tracing")]
             let url = request.url.to_string();
 
             let signal = request.signal.take();
@@ -174,13 +179,13 @@ impl NetProvider for Provider {
             match result {
                 Ok((response_url, bytes)) => {
                     handler.bytes(response_url, bytes);
-                    #[cfg(feature = "debug_log")]
-                    println!("Success {url}");
+                    #[cfg(feature = "tracing")]
+                    tracing::info!(url = url.as_str(), "Success fetching");
                 }
                 Err(e) => {
-                    #[cfg(feature = "debug_log")]
-                    eprintln!("Error fetching {url}: {e:?}");
-                    #[cfg(not(feature = "debug_log"))]
+                    #[cfg(feature = "tracing")]
+                    tracing::error!(url = url.as_str(), error = ?e, "Error fetching");
+                    #[cfg(not(feature = "tracing"))]
                     let _ = e;
                 }
             };

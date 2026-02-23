@@ -53,7 +53,7 @@ log-frame-times = [
   "anyrender_vello_hybrid?/log_frame_times",
   "anyrender_skia?/log_frame_times",
 ]
-tracing = ["dep:tracing", "dioxus-native-dom/tracing", "blitz-shell/tracing", "blitz-dom/tracing"]
+tracing = ["dep:tracing", "dioxus-native-dom/tracing", "blitz-shell/tracing", "blitz-dom/tracing", "blitz-html/tracing", "blitz-net/tracing"]
 
 [dependencies]
 # Blitz dependencies

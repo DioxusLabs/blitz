@@ -50,7 +50,8 @@ pub(crate) fn handle_ime_event<F: FnMut(DomEvent)>(
                     // TODO
                 }
             }
-            println!("Sent ime event to {node_id}");
+            #[cfg(feature = "tracing")]
+            tracing::debug!(node_id, "Sent ime event");
         }
     }
 }

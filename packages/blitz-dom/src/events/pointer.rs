@@ -520,11 +520,13 @@ pub(crate) fn handle_click(
                                 doc.id(),
                             ));
                         } else {
-                            println!("{href} is not parseable as a url. : {:?}", *doc.url)
+                            #[cfg(feature = "tracing")]
+                            tracing::warn!("{href} is not parseable as a url. : {:?}", *doc.url);
                         }
                         break 'matched true;
                     } else {
-                        println!("Clicked link without href: {:?}", el.attrs());
+                        #[cfg(feature = "tracing")]
+                        tracing::info!("Clicked link without href: {:?}", el.attrs());
                     }
                 }
                 local_name!("input")

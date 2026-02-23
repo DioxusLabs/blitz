@@ -43,7 +43,8 @@ impl BaseDocument {
             .first_element_child()
             .is_none()
         {
-            println!("No DOM - not resolving");
+            #[cfg(feature = "tracing")]
+            tracing::warn!("No DOM - not resolving");
             return;
         }
 
