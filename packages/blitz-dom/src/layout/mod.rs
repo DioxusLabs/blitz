@@ -78,6 +78,10 @@ impl BaseDocument {
                     data = ?data,
                     "Tried to lay out text node individually",
                 );
+
+                #[cfg(not(feature = "tracing"))]
+                let _ = data;
+
                 taffy::LayoutOutput::HIDDEN
                 // unreachable!();
 

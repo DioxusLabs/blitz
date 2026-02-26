@@ -157,6 +157,8 @@ pub(crate) fn collect_layout_children(
                         error = ?err,
                         "SVG parse failed",
                     );
+                    #[cfg(not(feature = "tracing"))]
+                    let _ = err;
                 }
             };
             return;
