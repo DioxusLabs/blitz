@@ -2707,7 +2707,7 @@ dependencies = [
 [[package]]
 name = "fontique"
 version = "0.7.0"
-source = "git+https://github.com/linebender/parley?rev=37aa8ab7103e9da89eea22899902016ce20739f2#37aa8ab7103e9da89eea22899902016ce20739f2"
+source = "git+https://github.com/linebender/parley?rev=6d0d9c90a7875ceb34f0bb1c2bfbfbe5b5d74856#6d0d9c90a7875ceb34f0bb1c2bfbfbe5b5d74856"
 dependencies = [
  "hashbrown 0.16.1",
  "linebender_resource_handle",
@@ -3564,10 +3564,18 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5f6c8828b67bf8908d82127b2054ea1b4427ff0230ee9141c54251934ab1b599"
 dependencies = [
  "icu_collections",
+ "icu_normalizer_data",
+ "icu_properties",
  "icu_provider",
  "smallvec",
  "zerovec",
 ]
+
+[[package]]
+name = "icu_normalizer_data"
+version = "2.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7aedcccd01fc5fe81e6b489c15b247b8b0690feb23304303a9e560f37efc560a"
 
 [[package]]
 name = "icu_properties"
@@ -3577,10 +3585,17 @@ checksum = "020bfc02fe870ec3a66d93e677ccca0562506e5872c650f893269e08615d74ec"
 dependencies = [
  "icu_collections",
  "icu_locale_core",
+ "icu_properties_data",
  "icu_provider",
  "zerotrie",
  "zerovec",
 ]
+
+[[package]]
+name = "icu_properties_data"
+version = "2.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "616c294cf8d725c6afcd8f55abc17c56464ef6211f9ed59cccffe534129c77af"
 
 [[package]]
 name = "icu_provider"
@@ -5048,27 +5063,24 @@ dependencies = [
 [[package]]
 name = "parley"
 version = "0.7.0"
-source = "git+https://github.com/linebender/parley?rev=37aa8ab7103e9da89eea22899902016ce20739f2#37aa8ab7103e9da89eea22899902016ce20739f2"
+source = "git+https://github.com/linebender/parley?rev=6d0d9c90a7875ceb34f0bb1c2bfbfbe5b5d74856#6d0d9c90a7875ceb34f0bb1c2bfbfbe5b5d74856"
 dependencies = [
  "fontique",
  "harfrust",
  "hashbrown 0.16.1",
- "icu_collections",
  "icu_normalizer",
  "icu_properties",
- "icu_provider",
  "icu_segmenter",
  "linebender_resource_handle",
  "parley_data",
  "skrifa",
  "text_primitives",
- "zerovec",
 ]
 
 [[package]]
 name = "parley_data"
 version = "0.0.0"
-source = "git+https://github.com/linebender/parley?rev=37aa8ab7103e9da89eea22899902016ce20739f2#37aa8ab7103e9da89eea22899902016ce20739f2"
+source = "git+https://github.com/linebender/parley?rev=6d0d9c90a7875ceb34f0bb1c2bfbfbe5b5d74856#6d0d9c90a7875ceb34f0bb1c2bfbfbe5b5d74856"
 dependencies = [
  "icu_collections",
  "icu_properties",
@@ -6911,7 +6923,7 @@ checksum = "253bcead4f3aa96243b0f8fa46f9010e87ca23bd5d0c723d474ff1d2417bbdf8"
 [[package]]
 name = "text_primitives"
 version = "0.1.0"
-source = "git+https://github.com/linebender/parley?rev=37aa8ab7103e9da89eea22899902016ce20739f2#37aa8ab7103e9da89eea22899902016ce20739f2"
+source = "git+https://github.com/linebender/parley?rev=6d0d9c90a7875ceb34f0bb1c2bfbfbe5b5d74856#6d0d9c90a7875ceb34f0bb1c2bfbfbe5b5d74856"
 
 [[package]]
 name = "thin-vec"
