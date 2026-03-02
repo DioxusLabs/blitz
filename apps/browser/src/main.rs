@@ -419,6 +419,27 @@ impl DocumentLoader {
                 }
                 Err(err) => {
                     println!("Error loading document {:?}", err);
+
+                    let error_msg = format!("{err:?}")
+                        .replace('&', "&amp;")
+                        .replace('<', "&lt;")
+                        .replace('>', "&gt;");
+                    let error_html =
+                        include_str!("../assets/error.html").replace("{error}", &error_msg);
+
+                    let config = DocumentConfig {
+                        viewport: None,
+                        base_url: None,
+                        ua_stylesheets: None,
+                        net_provider: Some(net_provider as _),
+                        navigation_provider: Some(Arc::new(BrowserNavProvider { history })),
+                        shell_provider: Some(consume_context::<Arc<dyn ShellProvider>>()),
+                        html_parser_provider: Some(Arc::new(HtmlProvider)),
+                        font_ctx: Some(font_ctx),
+                    };
+
+                    let document = HtmlDocument::from_html(&error_html, config).into_inner();
+                    *doc_signal.write_unchecked() = Some(SubDocumentAttr::new(document));
                 }
             }
             // do something with result
