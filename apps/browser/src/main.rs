@@ -420,12 +420,7 @@ impl DocumentLoader {
                 Err(err) => {
                     println!("Error loading document {:?}", err);
 
-                    let error_msg = format!("{err:?}")
-                        .replace('&', "&amp;")
-                        .replace('<', "&lt;")
-                        .replace('>', "&gt;");
-                    let error_html =
-                        include_str!("../assets/error.html").replace("{error}", &error_msg);
+                    let error_msg = format!("{err:?}");
 
                     let config = DocumentConfig {
                         viewport: None,
@@ -438,7 +433,15 @@ impl DocumentLoader {
                         font_ctx: Some(font_ctx),
                     };
 
-                    let document = HtmlDocument::from_html(&error_html, config).into_inner();
+                    let error_html = include_str!("../assets/error.html");
+                    let mut document = HtmlDocument::from_html(error_html, config).into_inner();
+                    if let Some(text_node) = document
+                        .get_element_by_id("error")
+                        .and_then(|el| document.get_node(el))
+                        .and_then(|node| node.children.first().copied())
+                    {
+                        document.mutate().set_node_text(text_node, &error_msg);
+                    }
                     *doc_signal.write_unchecked() = Some(SubDocumentAttr::new(document));
                 }
             }
