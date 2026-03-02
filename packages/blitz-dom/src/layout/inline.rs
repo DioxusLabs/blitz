@@ -1,8 +1,5 @@
 use parley::{AlignmentOptions, IndentOptions};
-use style::values::{
-    computed::{CSSPixelLength, LengthPercentage},
-    generics::text::GenericTextIndent,
-};
+use style::values::{computed::CSSPixelLength, generics::text::GenericTextIndent};
 use taffy::{
     AvailableSpace, BlockContext, BlockFormattingContext, BoxSizing, CollapsibleMarginSet,
     CoreStyle as _, LayoutInput, LayoutOutput, LayoutPartialTree as _, MaybeMath as _,
@@ -173,15 +170,6 @@ impl BaseDocument {
             Size::ZERO
         };
 
-        let text_indent = self.nodes[node_id]
-            .primary_styles()
-            .map(|s| s.clone_text_indent())
-            .unwrap_or(GenericTextIndent {
-                length: LengthPercentage::new_length(CSSPixelLength::new(0.0)),
-                hanging: false,
-                each_line: false,
-            });
-
         // Scrollbar gutters are reserved when the `overflow` property is set to `Overflow::Scroll`.
         // However, the axis are switched (transposed) because a node that scrolls vertically needs
         // *horizontal* space to be reserved for a scrollbar
@@ -318,6 +306,10 @@ impl BaseDocument {
         }
 
         // TODO: Resolve against style widths as well as known dimensions
+        let text_indent = self.nodes[node_id]
+            .primary_styles()
+            .map(|s| s.clone_text_indent())
+            .unwrap_or_else(GenericTextIndent::zero);
         let resolved_text_indent = text_indent
             .length
             .resolve(CSSPixelLength::new(known_dimensions.width.unwrap_or(0.0)))
