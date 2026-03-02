@@ -532,7 +532,7 @@ impl BaseDocument {
                         state.set_line_y((next_slot.y * scale) as f64);
 
                         let layout = &mut self.nodes[node_id].unrounded_layout;
-                        layout.size = output.size;
+                        layout.size = output.size.into();
                         layout.location.x = pos.x + margin.left + container_pb.left;
                         layout.location.y = pos.y + margin.top + container_pb.top;
 
@@ -648,7 +648,7 @@ impl BaseDocument {
                         let output = self.compute_child_layout(NodeId::from(ibox.id), child_inputs);
 
                         let layout = &mut self.nodes[ibox.id as usize].unrounded_layout;
-                        layout.size = output.size;
+                        layout.size = output.size.into();
 
                         // TODO: Implement absolute positioning
                         layout.location.x = left
@@ -668,20 +668,20 @@ impl BaseDocument {
                             })
                             .unwrap_or((ibox.y / scale) + margin.top + container_pb.top);
 
-                        layout.padding = padding; //.map(|p| p / scale);
-                        layout.border = border; //.map(|p| p / scale);
+                        layout.padding = padding.into(); //.map(|p| p / scale);
+                        layout.border = border.into(); //.map(|p| p / scale);
                     } else if is_floated {
                         let layout = &mut self.nodes[ibox.id as usize].unrounded_layout;
-                        layout.padding = padding; //.map(|p| p / scale);
-                        layout.border = border; //.map(|p| p / scale);
+                        layout.padding = padding.into(); //.map(|p| p / scale);
+                        layout.border = border.into(); //.map(|p| p / scale);
                     } else {
                         let layout = &mut node.unrounded_layout;
                         layout.size.width = (ibox.width / scale) - margin.left - margin.right;
                         layout.size.height = (ibox.height / scale) - margin.top - margin.bottom;
                         layout.location.x = (ibox.x / scale) + margin.left + container_pb.left;
                         layout.location.y = (ibox.y / scale) + margin.top + container_pb.top;
-                        layout.padding = padding; //.map(|p| p / scale);
-                        layout.border = border; //.map(|p| p / scale);
+                        layout.padding = padding.into(); //.map(|p| p / scale);
+                        layout.border = border.into(); //.map(|p| p / scale);
                     }
                 }
             }

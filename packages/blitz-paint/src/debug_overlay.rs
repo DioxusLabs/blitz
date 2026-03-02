@@ -17,14 +17,14 @@ pub(crate) fn render_debug_overlay(
     let viewport_scroll = dom.as_ref().viewport_scroll();
     let mut node = &dom.as_ref().tree()[node_id];
 
-    let taffy::Layout {
+    let blitz_dom::Layout {
         size,
         border,
         padding,
         margin,
         ..
     } = node.final_layout;
-    let taffy::Size { width, height } = size;
+    let blitz_dom::layout_types::Size { width, height } = size;
 
     let padding_border = padding + border;
     let scaled_pb = padding_border.map(|v| f64::from(v) * scale);
@@ -35,13 +35,13 @@ pub(crate) fn render_debug_overlay(
     let content_width = width - padding_border.left - padding_border.right;
     let content_height = height - padding_border.top - padding_border.bottom;
 
-    let taffy::Point { x, y } = node.final_layout.location;
+    let blitz_dom::layout_types::Point { x, y } = node.final_layout.location;
 
     let mut abs_x = x;
     let mut abs_y = y;
     while let Some(parent_id) = node.layout_parent.get() {
         node = &dom.as_ref().tree()[parent_id];
-        let taffy::Point { x, y } = node.final_layout.location;
+        let blitz_dom::layout_types::Point { x, y } = node.final_layout.location;
         abs_x += x - node.scroll_offset.x as f32;
         abs_y += y - node.scroll_offset.y as f32;
     }
@@ -102,7 +102,7 @@ fn draw_cutout_rect(
     scene: &mut impl PaintScene,
     base_translation: Vec2,
     size: Vec2,
-    edge_widths: taffy::Rect<f64>,
+    edge_widths: blitz_dom::layout_types::Rect<f64>,
     color: Color,
 ) {
     let mut fill = |pos: Vec2, width: f64, height: f64| {

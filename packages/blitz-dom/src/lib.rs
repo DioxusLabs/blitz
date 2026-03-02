@@ -34,6 +34,9 @@ pub const BULLET_FONT: &[u8] = include_bytes!("../assets/moz-bullet-font.otf");
 const INCREMENTAL: bool = cfg!(feature = "incremental");
 const NON_INCREMENTAL: bool = !INCREMENTAL;
 
+/// Layout types that decouple the public API from taffy's semver.
+pub mod layout_types;
+
 /// The DOM implementation.
 ///
 /// This is the primary entry point for this crate.
@@ -81,4 +84,5 @@ pub use style::invalidation::element::restyle_hints::RestyleHint;
 pub type SelectorList = selectors::SelectorList<style::selector_parser::SelectorImpl>;
 pub use events::{EventDriver, EventHandler, NoopEventHandler};
 pub use html::{DummyHtmlParserProvider, HtmlParserProvider};
+pub use layout_types::Layout;
 pub use util::Point;

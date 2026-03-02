@@ -325,7 +325,7 @@ impl LayoutPartialTree for BaseDocument {
     }
 
     fn set_unrounded_layout(&mut self, node_id: NodeId, layout: &Layout) {
-        self.node_from_id_mut(node_id).unrounded_layout = *layout;
+        self.node_from_id_mut(node_id).unrounded_layout = (*layout).into();
     }
 
     fn resolve_calc_value(&self, calc_ptr: *const (), parent_size: f32) -> f32 {
@@ -455,11 +455,11 @@ impl taffy::LayoutGridContainer for BaseDocument {
 
 impl RoundTree for BaseDocument {
     fn get_unrounded_layout(&self, node_id: NodeId) -> Layout {
-        self.node_from_id(node_id).unrounded_layout
+        self.node_from_id(node_id).unrounded_layout.into()
     }
 
     fn set_final_layout(&mut self, node_id: NodeId, layout: &Layout) {
-        self.node_from_id_mut(node_id).final_layout = *layout;
+        self.node_from_id_mut(node_id).final_layout = (*layout).into();
     }
 }
 
@@ -490,7 +490,7 @@ impl PrintTree for BaseDocument {
     }
 
     fn get_final_layout(&self, node_id: NodeId) -> Layout {
-        self.node_from_id(node_id).final_layout
+        self.node_from_id(node_id).final_layout.into()
     }
 }
 

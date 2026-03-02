@@ -16,7 +16,6 @@ use style::values::generics::image::Image as StyloImage;
 use style::values::specified::align::AlignFlags;
 use style::values::specified::box_::DisplayInside;
 use style::values::specified::box_::DisplayOutside;
-use taffy::Rect;
 
 pub(crate) const CONSTRUCT_BOX: RestyleDamage =
     RestyleDamage::from_bits_retain(0b_0000_0000_0001_0000);
@@ -244,7 +243,7 @@ pub(crate) fn compute_layout_damage(old: &ComputedValues, new: &ComputedValues) 
 pub struct HoistedPaintChild {
     pub node_id: usize,
     pub z_index: i32,
-    pub position: taffy::Point<f32>,
+    pub position: crate::layout_types::Point<f32>,
 }
 
 #[derive(Debug)]
@@ -253,7 +252,7 @@ pub struct HoistedPaintChildren {
     /// The number of hoisted point children with negative z_index
     pub negative_z_count: u32,
 
-    pub content_area: taffy::Rect<f32>,
+    pub content_area: crate::layout_types::Rect<f32>,
 }
 
 impl HoistedPaintChildren {
@@ -261,7 +260,7 @@ impl HoistedPaintChildren {
         Self {
             children: Vec::new(),
             negative_z_count: 0,
-            content_area: taffy::Rect::ZERO,
+            content_area: crate::layout_types::Rect::ZERO,
         }
     }
 
@@ -271,14 +270,14 @@ impl HoistedPaintChildren {
     }
 
     pub fn compute_content_size(&mut self, doc: &BaseDocument) {
-        fn child_pos(child: &HoistedPaintChild, doc: &BaseDocument) -> Rect<f32> {
+        fn child_pos(child: &HoistedPaintChild, doc: &BaseDocument) -> crate::layout_types::Rect<f32> {
             let node = &doc.nodes[child.node_id];
             let left = child.position.x + node.final_layout.location.x;
             let top = child.position.y + node.final_layout.location.y;
             let right = left + node.final_layout.size.width;
             let bottom = top + node.final_layout.size.height;
 
-            taffy::Rect {
+            crate::layout_types::Rect {
                 top,
                 left,
                 bottom,
@@ -287,7 +286,7 @@ impl HoistedPaintChildren {
         }
 
         if self.children.is_empty() {
-            self.content_area = taffy::Rect::ZERO;
+            self.content_area = crate::layout_types::Rect::ZERO;
         } else {
             self.content_area = child_pos(&self.children[0], doc);
             for child in self.children[1..].iter() {
@@ -534,7 +533,7 @@ impl BaseDocument {
                     stacking_context.children.push(HoistedPaintChild {
                         node_id: child_id,
                         z_index,
-                        position: taffy::Point::ZERO,
+                        position: crate::layout_types::Point::ZERO,
                     })
                 } else {
                     paint_children.push(child_id);

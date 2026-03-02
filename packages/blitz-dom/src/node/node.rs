@@ -27,8 +27,9 @@ use style_dom::ElementState;
 use style_traits::values::ToCss;
 use taffy::{
     Cache,
-    prelude::{Layout, Style},
+    prelude::Style,
 };
+use crate::layout_types::Layout;
 
 use crate::Document;
 use crate::layout::damage::HoistedPaintChildren;
@@ -113,14 +114,14 @@ pub struct Node {
     pub after: Option<usize>,
 
     // Taffy layout data:
-    pub style: Style<Atom>,
+    pub(crate) style: Style<Atom>,
     pub has_snapshot: bool,
     pub snapshot_handled: AtomicBool,
     /// Whether any descendant of this node needs restyling.
     /// Used by Stylo's incremental style traversal to skip unchanged subtrees.
     pub dirty_descendants: AtomicBool,
     pub display_constructed_as: StyloDisplay,
-    pub cache: Cache,
+    pub(crate) cache: Cache,
     pub unrounded_layout: Layout,
     pub final_layout: Layout,
     pub scroll_offset: crate::Point<f64>,
@@ -200,6 +201,11 @@ impl Node {
             1 => self.before = value,
             _ => panic!("Invalid pseudo element index"),
         }
+    }
+
+    /// Get the taffy display mode of this node.
+    pub fn display(&self) -> taffy::Display {
+        self.style.display
     }
 
     pub(crate) fn display_style(&self) -> Option<StyloDisplay> {

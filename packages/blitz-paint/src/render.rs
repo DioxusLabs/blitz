@@ -38,7 +38,7 @@ use style::{
 use kurbo::{self, Affine, Insets, Point, Rect, Stroke, Vec2};
 use peniko::{self, Fill, ImageData, ImageSampler};
 use style::values::generics::color::{ColorOrAuto, GenericColor};
-use taffy::Layout;
+use blitz_dom::Layout;
 
 /// A short-lived struct which holds a bunch of parameters for rendering a scene so
 /// that we don't have to pass them down as parameters
@@ -185,7 +185,7 @@ impl<'dom> BlitzDomPainter<'dom> {
         let node = &self.dom.as_ref().tree()[node_id];
 
         // Early return if the element is hidden
-        if matches!(node.style.display, taffy::Display::None) {
+        if matches!(node.display(), taffy::Display::None) {
             return;
         }
 
@@ -235,7 +235,7 @@ impl<'dom> BlitzDomPainter<'dom> {
 
         // Apply padding/border offset to inline root
         let (layout, box_position) = self.node_position(node_id, location);
-        let taffy::Layout {
+        let Layout {
             size,
             border,
             padding,
@@ -793,7 +793,7 @@ impl ElementCx<'_> {
             let shape = &self.frame.border_box;
             let stroke = Stroke::new(self.scale);
 
-            let stroke_color = match self.node.style.display {
+            let stroke_color = match self.node.display() {
                 taffy::Display::Block => Color::new([1.0, 0.0, 0.0, 1.0]),
                 taffy::Display::Flex => Color::new([0.0, 1.0, 0.0, 1.0]),
                 taffy::Display::Grid => Color::new([0.0, 0.0, 1.0, 1.0]),
@@ -980,7 +980,7 @@ impl<'a> std::ops::Deref for ElementCx<'a> {
     }
 }
 
-fn insets_from_taffy_rect(input: taffy::Rect<f64>) -> Insets {
+fn insets_from_taffy_rect(input: blitz_dom::layout_types::Rect<f64>) -> Insets {
     Insets {
         x0: input.left,
         y0: input.top,
