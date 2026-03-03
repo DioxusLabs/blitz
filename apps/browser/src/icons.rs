@@ -6,6 +6,7 @@ pub const BACK_ICON: Asset = asset!("../assets/icons/arrow-left.svg");
 pub const FORWARDS_ICON: Asset = asset!("../assets/icons/arrow-right.svg");
 pub const MENU_ICON: Asset = asset!("../assets/icons/ellipsis-vertical.svg");
 pub const EXTERNAL_LINK_ICON: Asset = asset!("../assets/icons/external-link.svg");
+pub const CODE_ICON: Asset = asset!("../assets/icons/code.svg");
 
 #[component]
 pub fn IconButton(icon: Asset, action: Option<Callback>) -> Element {

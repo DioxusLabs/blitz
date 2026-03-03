@@ -58,10 +58,13 @@ fn app() -> Element {
     let block_mouse_up = use_hook(|| Rc::new(RefCell::new(false)));
     let mut history: SyncStore<History> = use_sync_store(|| History::new(home_url.clone()));
 
+    let html_source: Signal<String> = use_signal(String::new);
+
     let net_provider = use_context::<Arc<StdNetProvider>>();
-    let loader = use_hook(|| Rc::new(DocumentLoader::new(net_provider, history)));
+    let loader = use_hook(|| Rc::new(DocumentLoader::new(net_provider, history, html_source)));
     let content_doc = loader.doc;
 
+    let loader_for_load = loader.clone();
     let load_current_url = use_callback(move |_| {
         let request = (*history.current_url().read()).clone();
         *url_input_value.write_unchecked() = request.url.to_string();
@@ -80,7 +83,7 @@ fn app() -> Element {
         }
 
         println!("Loading {}...", &request.url.as_str());
-        loader.load_document(request);
+        loader_for_load.load_document(request);
     });
 
     use_effect(move || load_current_url(()));
@@ -91,8 +94,42 @@ fn app() -> Element {
     let refresh_action = load_current_url;
     let open_action =
         use_callback(move |_| open_in_external_browser(&history.current_url().read()));
+    let mut menu_open = use_signal(|| false);
+
+    let view_source_action = use_callback(move |_| {
+        menu_open.set(false);
+        let source = html_source.read().clone();
+        if source.is_empty() {
+            return;
+        }
+
+        // Update URL bar to show view-source:// URL
+        let current_url = history.current_url().read().url.to_string();
+        *url_input_value.write() = format!("view-source://{current_url}");
+
+        let escaped = source
+            .replace('&', "&amp;")
+            .replace('<', "&lt;")
+            .replace('>', "&gt;");
+        let view_source_html = format!(
+            "<html><body><pre style=\"margin:8px;white-space:pre-wrap;word-wrap:break-word;\"><code>{escaped}</code></pre></body></html>"
+        );
+        let config = DocumentConfig {
+            viewport: None,
+            base_url: None,
+            ua_stylesheets: None,
+            net_provider: None,
+            navigation_provider: None,
+            shell_provider: None,
+            html_parser_provider: Some(Arc::new(HtmlProvider)),
+            font_ctx: Some(loader.font_ctx.clone()),
+        };
+        let document = HtmlDocument::from_html(&view_source_html, config).into_inner();
+        *loader.doc.write_unchecked() = Some(SubDocumentAttr::new(document));
+    });
 
     let devtools_action = use_callback(move |_| {
+        menu_open.set(false);
         if let Some(handle) = webview_node_handle() {
             let node_id = handle.node_id();
             let mut doc = handle.doc_mut();
@@ -194,7 +231,22 @@ fn app() -> Element {
                     oninput: move |evt| { *url_input_value.write() = evt.value() },
                 }
                 IconButton { icon: icons::EXTERNAL_LINK_ICON, action: open_action }
-                IconButton { icon: icons::MENU_ICON, action: devtools_action }
+                div { class: "menu-wrapper",
+                    div {
+                        class: "iconbutton",
+                        onclick: move |_| menu_open.toggle(),
+                        img { class: "urlbar-icon", src: icons::MENU_ICON }
+                    }
+                    if menu_open() {
+                        div { class: "menu-dropdown",
+                            div { class: "menu-item", onclick: move |_| view_source_action(()),
+                                img { class: "menu-item-icon", src: icons::CODE_ICON }
+                                "View Source"
+                            }
+                            div { class: "menu-item", onclick: move |_| devtools_action(()), "Toggle DevTools" }
+                        }
+                    }
+                }
             }
 
             // Web content
@@ -331,6 +383,7 @@ struct DocumentLoader {
     request_id_counter: AtomicUsize,
     doc: Signal<Option<SubDocumentAttr>>,
     history: SyncStore<History>,
+    html_source: Signal<String>,
 }
 
 // impl Clone for DocumentLoader {
@@ -347,7 +400,11 @@ struct DocumentLoader {
 // }
 
 impl DocumentLoader {
-    fn new(net_provider: Arc<StdNetProvider>, history: SyncStore<History>) -> Self {
+    fn new(
+        net_provider: Arc<StdNetProvider>,
+        history: SyncStore<History>,
+        html_source: Signal<String>,
+    ) -> Self {
         let mut font_ctx = FontContext::default();
         font_ctx
             .collection
@@ -360,6 +417,7 @@ impl DocumentLoader {
             request_id_counter: AtomicUsize::new(0),
             doc: Signal::new(None),
             history,
+            html_source,
         }
     }
 
@@ -370,6 +428,7 @@ impl DocumentLoader {
         let status = self.status;
         let doc_signal = self.doc;
         let history = self.history;
+        let html_source = self.html_source;
 
         if let DocumentLoaderStatus::Loading { task, .. } = *self.status.peek() {
             task.cancel();
@@ -412,7 +471,7 @@ impl DocumentLoader {
                         str::from_utf8(&bytes).unwrap()
                     };
 
-                    // println!("{}", html);
+                    *html_source.write_unchecked() = html.to_string();
 
                     let document = HtmlDocument::from_html(html, config).into_inner();
                     *doc_signal.write_unchecked() = Some(SubDocumentAttr::new(document));

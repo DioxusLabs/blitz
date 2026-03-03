@@ -56,6 +56,45 @@ html, body, #main, #frame {
     }
 }
 
+.menu-wrapper {
+    position: relative;
+}
+
+.menu-dropdown {
+    position: absolute;
+    top: 100%;
+    right: 0;
+    background: #F9F9F9;
+    border: 1px solid #CCC;
+    border-radius: 4px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+    z-index: 100;
+    min-width: 160px;
+}
+
+.menu-item {
+    padding: 8px 12px;
+    cursor: pointer;
+    font-size: 13px;
+    white-space: nowrap;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+
+    &:hover {
+        background: #E8E8E8;
+    }
+
+    &:active {
+        background: #DDD;
+    }
+}
+
+.menu-item-icon {
+    height: 16px;
+    width: 16px;
+}
+
 .webview {
     flex: 1 1 0px;
     height: 100%;
