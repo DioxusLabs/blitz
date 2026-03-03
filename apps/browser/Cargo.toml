@@ -49,6 +49,11 @@ tracing-subscriber = { workspace = true, optional = true }
 webbrowser = { workspace = true }
 winit = { workspace = true }
 image = { workspace = true }
+anyrender = { workspace = true }
+anyrender_vello_cpu = { workspace = true }
+blitz-paint = { workspace = true }
+png = { workspace = true }
+peniko = { workspace = true }
 
 # Allocators
 mimalloc = { version = "0.1.48", optional = true }

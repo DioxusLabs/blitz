@@ -22,6 +22,12 @@ use blitz_traits::navigation::{NavigationOptions, NavigationProvider};
 use blitz_traits::net::{Body, Entry, EntryValue, FormData, Method, Request, Url};
 use linebender_resource_handle::Blob;
 
+use anyrender::{PaintScene as _, render_to_buffer};
+use anyrender_vello_cpu::VelloCpuImageRenderer;
+use blitz_paint::paint_scene;
+use peniko::Fill;
+use peniko::kurbo::Rect;
+
 type StdNetProvider = blitz_net::Provider;
 
 mod icons;
@@ -107,6 +113,7 @@ fn app() -> Element {
         let current_url = history.current_url().read().url.to_string();
         *url_input_value.write() = format!("view-source://{current_url}");
 
+        let view_source_html = include_str!("../assets/view-source.html");
         let config = DocumentConfig {
             viewport: None,
             base_url: None,
@@ -124,6 +131,58 @@ fn app() -> Element {
             mutator.append_children(parent_id, &[text_node]);
         }
         *loader.doc.write_unchecked() = Some(SubDocumentAttr::new(document));
+    });
+
+    let screenshot_action = use_callback(move |_| {
+        menu_open.set(false);
+        if let Some(handle) = webview_node_handle() {
+            let node_id = handle.node_id();
+            let mut doc = handle.doc_mut();
+            if let Some(sub_doc) = doc
+                .get_node_mut(node_id)
+                .and_then(|node| node.element_data_mut())
+                .and_then(|el| el.sub_doc_data_mut())
+            {
+                let sub_doc = sub_doc.inner();
+                let viewport = sub_doc.viewport();
+                let scale = viewport.scale_f64();
+                let (win_w, win_h) = viewport.window_size;
+                let render_width = win_w;
+                let render_height = win_h;
+
+                let buffer = render_to_buffer::<VelloCpuImageRenderer, _>(
+                    |scene| {
+                        scene.fill(
+                            Fill::NonZero,
+                            Default::default(),
+                            blitz_dom::util::Color::WHITE,
+                            Default::default(),
+                            &Rect::new(0.0, 0.0, render_width as f64, render_height as f64),
+                        );
+                        paint_scene(scene, &sub_doc, scale, render_width, render_height, 0, 0);
+                    },
+                    render_width,
+                    render_height,
+                );
+
+                // Save to file
+                let timestamp = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_secs();
+                let filename = format!("blitz-screenshot-{timestamp}.png");
+                if let Ok(file) = std::fs::File::create(&filename) {
+                    let mut encoder = png::Encoder::new(file, render_width, render_height);
+                    encoder.set_color(png::ColorType::Rgba);
+                    encoder.set_depth(png::BitDepth::Eight);
+                    if let Ok(mut writer) = encoder.write_header() {
+                        if writer.write_image_data(&buffer).is_ok() {
+                            println!("Screenshot saved to {filename}");
+                        }
+                    }
+                }
+            }
+        }
     });
 
     let devtools_action = use_callback(move |_| {
@@ -156,112 +215,109 @@ fn app() -> Element {
     };
 
     rsx!(
-            div { id: "frame",
-                  padding_top: TOP_PAD,
-                  padding_bottom: BOTTOM_PAD,
-                title { "Blitz Browser" }
-                document::Link { rel: "stylesheet", href: BROWSER_UI_STYLES }
+        div { id: "frame",
+              padding_top: TOP_PAD,
+              padding_bottom: BOTTOM_PAD,
+            title { "Blitz Browser" }
+            document::Link { rel: "stylesheet", href: BROWSER_UI_STYLES }
 
-                // Toolbar
-                div { class: "urlbar",
-                    IconButton { icon: icons::BACK_ICON, action: back_action }
-                    IconButton { icon: icons::FORWARDS_ICON, action: forward_action }
-                    IconButton { icon: icons::REFRESH_ICON, action: refresh_action }
-                    IconButton { icon: icons::HOME_ICON, action: home_action }
-                    input {
-                        class: "urlbar-input",
-                        "type": "text",
-                        name: "url",
-                        value: url_input_value(),
-                        onmounted: move |evt: Event<MountedData>| {
-                            let node_handle = evt.downcast::<NodeHandle>().unwrap();
-                            *url_input_handle.write() = Some(node_handle.clone());
-                        },
-                        onblur: move |_evt| {
-                            *is_focussed.write() = false;
-                        },
-                        onfocus: move |_evt| {
-                            *is_focussed.write() = true;
-                            if let Some(handle) = url_input_handle() {
-                                let node_id = handle.node_id();
-                                let mut doc = handle.doc_mut();
-                                doc.with_text_input(node_id, |mut driver| driver.select_all());
-                            }
-                        },
-                        onpointerdown: {
-                            let block_mouse_up = block_mouse_up.clone();
-                            move |_evt| {
-                                *block_mouse_up.borrow_mut() = !is_focussed();
-                            }
-                        },
-                        onpointermove: {
-                            let block_mouse_up = block_mouse_up.clone();
-                            move |evt| {
-                                if *block_mouse_up.borrow() {
-                                    evt.prevent_default();
-                                }
-                            }
-                        },
-                        onpointerup: move |evt| {
+            // Toolbar
+            div { class: "urlbar",
+                IconButton { icon: icons::BACK_ICON, action: back_action }
+                IconButton { icon: icons::FORWARDS_ICON, action: forward_action }
+                IconButton { icon: icons::REFRESH_ICON, action: refresh_action }
+                IconButton { icon: icons::HOME_ICON, action: home_action }
+                input {
+                    class: "urlbar-input",
+                    "type": "text",
+                    name: "url",
+                    value: url_input_value(),
+                    onmounted: move |evt: Event<MountedData>| {
+                        let node_handle = evt.downcast::<NodeHandle>().unwrap();
+                        *url_input_handle.write() = Some(node_handle.clone());
+                    },
+                    onblur: move |_evt| {
+                        *is_focussed.write() = false;
+                    },
+                    onfocus: move |_evt| {
+                        *is_focussed.write() = true;
+                        if let Some(handle) = url_input_handle() {
+                            let node_id = handle.node_id();
+                            let mut doc = handle.doc_mut();
+                            doc.with_text_input(node_id, |mut driver| driver.select_all());
+                        }
+                    },
+                    onpointerdown: {
+                        let block_mouse_up = block_mouse_up.clone();
+                        move |_evt| {
+                            *block_mouse_up.borrow_mut() = !is_focussed();
+                        }
+                    },
+                    onpointermove: {
+                        let block_mouse_up = block_mouse_up.clone();
+                        move |evt| {
                             if *block_mouse_up.borrow() {
                                 evt.prevent_default();
                             }
-                        },
-                        onkeydown: move |evt| {
-                            let is_enter = match evt.key() {
-                                Key::Enter => true,
-                                Key::Character(s) if s == "\n" => true,
-                                _ => false,
-                            };
-                            if is_enter {
-                                evt.prevent_default();
-                                if let Some(handle) = url_input_handle() {
-                                    core::mem::drop(handle.set_focus(false));
-                                }
-                                let req = req_from_string(&url_input_value.read());
-                                if let Some(req) = req {
-                                    history.navigate(req);
-                                } else {
-                                    println!("Error parsing URL {}", &*url_input_value.read());
-                                }
-                            }
-                        },
-                        oninput: move |evt| { *url_input_value.write() = evt.value() },
-                    }
-                    IconButton { icon: icons::EXTERNAL_LINK_ICON, action: open_action }
-                    div { class: "menu-wrapper",
-    <<<<<<< HEAD
-                        IconButton { icon: icons::MENU_ICON, action: move |_| menu_open.toggle(), active: menu_open() },
-    =======
-                        div {
-                            class: "iconbutton",
-                            onclick: move |_| menu_open.toggle(),
-                            img { class: "urlbar-icon", src: icons::MENU_ICON }
                         }
-    >>>>>>> c7246b19 (Implement the view-source menu-item from #363)
-                        if menu_open() {
-                            div { class: "menu-dropdown",
-                                div { class: "menu-item", onclick: move |_| view_source_action(()),
-                                    img { class: "menu-item-icon", src: icons::CODE_ICON }
-                                    "View Source"
-                                }
-                                div { class: "menu-item", onclick: move |_| devtools_action(()), "Toggle DevTools" }
-                            }
-                        }
-                    }
-                }
-
-                // Web content
-                web-view {
-                    class: "webview",
-                    "__webview_document": content_doc(),
-                    onmounted: move |evt: Event<MountedData>| {
-                        let node_handle = evt.downcast::<NodeHandle>().unwrap();
-                        *webview_node_handle.write() = Some(node_handle.clone());
                     },
+                    onpointerup: move |evt| {
+                        if *block_mouse_up.borrow() {
+                            evt.prevent_default();
+                        }
+                    },
+                    onkeydown: move |evt| {
+                        let is_enter = match evt.key() {
+                            Key::Enter => true,
+                            Key::Character(s) if s == "\n" => true,
+                            _ => false,
+                        };
+                        if is_enter {
+                            evt.prevent_default();
+                            if let Some(handle) = url_input_handle() {
+                                core::mem::drop(handle.set_focus(false));
+                            }
+                            let req = req_from_string(&url_input_value.read());
+                            if let Some(req) = req {
+                                history.navigate(req);
+                            } else {
+                                println!("Error parsing URL {}", &*url_input_value.read());
+                            }
+                        }
+                    },
+                    oninput: move |evt| { *url_input_value.write() = evt.value() },
+                }
+                IconButton { icon: icons::EXTERNAL_LINK_ICON, action: open_action }
+                div { class: "menu-wrapper",
+                    IconButton { icon: icons::MENU_ICON, action: move |_| menu_open.toggle(), active: menu_open() },
+                    if menu_open() {
+                        div { class: "menu-dropdown",
+                            div { class: "menu-item", onclick: move |_| view_source_action(()),
+                                img { class: "menu-item-icon", src: icons::CODE_ICON }
+                                "View Source"
+                            }
+                            div { class: "menu-item", onclick: move |_| devtools_action(()), "Toggle DevTools" }
+                        }
+                        div { class: "menu-item", onclick: move |_| screenshot_action(()),
+                            img { class: "menu-item-icon", src: icons::CAMERA_ICON }
+                            "Capture Screenshot"
+                        }
+                        div { class: "menu-item", onclick: move |_| devtools_action(()), "Toggle DevTools" }
+                    }
                 }
             }
-        )
+
+            // Web content
+            web-view {
+                class: "webview",
+                "__webview_document": content_doc(),
+                onmounted: move |evt: Event<MountedData>| {
+                    let node_handle = evt.downcast::<NodeHandle>().unwrap();
+                    *webview_node_handle.write() = Some(node_handle.clone());
+                },
+            }
+        }
+    )
 }
 
 fn req_from_string(url_s: &str) -> Option<Request> {
