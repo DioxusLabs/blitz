@@ -107,7 +107,6 @@ fn app() -> Element {
         let current_url = history.current_url().read().url.to_string();
         *url_input_value.write() = format!("view-source://{current_url}");
 
-        let view_source_html = include_str!("../assets/view-source.html");
         let config = DocumentConfig {
             viewport: None,
             base_url: None,
@@ -157,104 +156,112 @@ fn app() -> Element {
     };
 
     rsx!(
-        div { id: "frame",
-              padding_top: TOP_PAD,
-              padding_bottom: BOTTOM_PAD,
-            title { "Blitz Browser" }
-            document::Link { rel: "stylesheet", href: BROWSER_UI_STYLES }
+            div { id: "frame",
+                  padding_top: TOP_PAD,
+                  padding_bottom: BOTTOM_PAD,
+                title { "Blitz Browser" }
+                document::Link { rel: "stylesheet", href: BROWSER_UI_STYLES }
 
-            // Toolbar
-            div { class: "urlbar",
-                IconButton { icon: icons::BACK_ICON, action: back_action }
-                IconButton { icon: icons::FORWARDS_ICON, action: forward_action }
-                IconButton { icon: icons::REFRESH_ICON, action: refresh_action }
-                IconButton { icon: icons::HOME_ICON, action: home_action }
-                input {
-                    class: "urlbar-input",
-                    "type": "text",
-                    name: "url",
-                    value: url_input_value(),
-                    onmounted: move |evt: Event<MountedData>| {
-                        let node_handle = evt.downcast::<NodeHandle>().unwrap();
-                        *url_input_handle.write() = Some(node_handle.clone());
-                    },
-                    onblur: move |_evt| {
-                        *is_focussed.write() = false;
-                    },
-                    onfocus: move |_evt| {
-                        *is_focussed.write() = true;
-                        if let Some(handle) = url_input_handle() {
-                            let node_id = handle.node_id();
-                            let mut doc = handle.doc_mut();
-                            doc.with_text_input(node_id, |mut driver| driver.select_all());
-                        }
-                    },
-                    onpointerdown: {
-                        let block_mouse_up = block_mouse_up.clone();
-                        move |_evt| {
-                            *block_mouse_up.borrow_mut() = !is_focussed();
-                        }
-                    },
-                    onpointermove: {
-                        let block_mouse_up = block_mouse_up.clone();
-                        move |evt| {
+                // Toolbar
+                div { class: "urlbar",
+                    IconButton { icon: icons::BACK_ICON, action: back_action }
+                    IconButton { icon: icons::FORWARDS_ICON, action: forward_action }
+                    IconButton { icon: icons::REFRESH_ICON, action: refresh_action }
+                    IconButton { icon: icons::HOME_ICON, action: home_action }
+                    input {
+                        class: "urlbar-input",
+                        "type": "text",
+                        name: "url",
+                        value: url_input_value(),
+                        onmounted: move |evt: Event<MountedData>| {
+                            let node_handle = evt.downcast::<NodeHandle>().unwrap();
+                            *url_input_handle.write() = Some(node_handle.clone());
+                        },
+                        onblur: move |_evt| {
+                            *is_focussed.write() = false;
+                        },
+                        onfocus: move |_evt| {
+                            *is_focussed.write() = true;
+                            if let Some(handle) = url_input_handle() {
+                                let node_id = handle.node_id();
+                                let mut doc = handle.doc_mut();
+                                doc.with_text_input(node_id, |mut driver| driver.select_all());
+                            }
+                        },
+                        onpointerdown: {
+                            let block_mouse_up = block_mouse_up.clone();
+                            move |_evt| {
+                                *block_mouse_up.borrow_mut() = !is_focussed();
+                            }
+                        },
+                        onpointermove: {
+                            let block_mouse_up = block_mouse_up.clone();
+                            move |evt| {
+                                if *block_mouse_up.borrow() {
+                                    evt.prevent_default();
+                                }
+                            }
+                        },
+                        onpointerup: move |evt| {
                             if *block_mouse_up.borrow() {
                                 evt.prevent_default();
                             }
-                        }
-                    },
-                    onpointerup: move |evt| {
-                        if *block_mouse_up.borrow() {
-                            evt.prevent_default();
-                        }
-                    },
-                    onkeydown: move |evt| {
-                        let is_enter = match evt.key() {
-                            Key::Enter => true,
-                            Key::Character(s) if s == "\n" => true,
-                            _ => false,
-                        };
-                        if is_enter {
-                            evt.prevent_default();
-                            if let Some(handle) = url_input_handle() {
-                                core::mem::drop(handle.set_focus(false));
+                        },
+                        onkeydown: move |evt| {
+                            let is_enter = match evt.key() {
+                                Key::Enter => true,
+                                Key::Character(s) if s == "\n" => true,
+                                _ => false,
+                            };
+                            if is_enter {
+                                evt.prevent_default();
+                                if let Some(handle) = url_input_handle() {
+                                    core::mem::drop(handle.set_focus(false));
+                                }
+                                let req = req_from_string(&url_input_value.read());
+                                if let Some(req) = req {
+                                    history.navigate(req);
+                                } else {
+                                    println!("Error parsing URL {}", &*url_input_value.read());
+                                }
                             }
-                            let req = req_from_string(&url_input_value.read());
-                            if let Some(req) = req {
-                                history.navigate(req);
-                            } else {
-                                println!("Error parsing URL {}", &*url_input_value.read());
-                            }
+                        },
+                        oninput: move |evt| { *url_input_value.write() = evt.value() },
+                    }
+                    IconButton { icon: icons::EXTERNAL_LINK_ICON, action: open_action }
+                    div { class: "menu-wrapper",
+    <<<<<<< HEAD
+                        IconButton { icon: icons::MENU_ICON, action: move |_| menu_open.toggle(), active: menu_open() },
+    =======
+                        div {
+                            class: "iconbutton",
+                            onclick: move |_| menu_open.toggle(),
+                            img { class: "urlbar-icon", src: icons::MENU_ICON }
                         }
-                    },
-                    oninput: move |evt| { *url_input_value.write() = evt.value() },
-                }
-                IconButton { icon: icons::EXTERNAL_LINK_ICON, action: open_action }
-                div { class: "menu-wrapper",
-                    IconButton { icon: icons::MENU_ICON, action: move |_| menu_open.toggle(), active: menu_open() },
-                    if menu_open() {
-                        div { class: "menu-dropdown",
-                            div { class: "menu-item", onclick: move |_| view_source_action(()),
-                                img { class: "menu-item-icon", src: icons::CODE_ICON }
-                                "View Source"
+    >>>>>>> c7246b19 (Implement the view-source menu-item from #363)
+                        if menu_open() {
+                            div { class: "menu-dropdown",
+                                div { class: "menu-item", onclick: move |_| view_source_action(()),
+                                    img { class: "menu-item-icon", src: icons::CODE_ICON }
+                                    "View Source"
+                                }
+                                div { class: "menu-item", onclick: move |_| devtools_action(()), "Toggle DevTools" }
                             }
-                            div { class: "menu-item", onclick: move |_| devtools_action(()), "Toggle DevTools" }
                         }
                     }
                 }
-            }
 
-            // Web content
-            web-view {
-                class: "webview",
-                "__webview_document": content_doc(),
-                onmounted: move |evt: Event<MountedData>| {
-                    let node_handle = evt.downcast::<NodeHandle>().unwrap();
-                    *webview_node_handle.write() = Some(node_handle.clone());
-                },
+                // Web content
+                web-view {
+                    class: "webview",
+                    "__webview_document": content_doc(),
+                    onmounted: move |evt: Event<MountedData>| {
+                        let node_handle = evt.downcast::<NodeHandle>().unwrap();
+                        *webview_node_handle.write() = Some(node_handle.clone());
+                    },
+                }
             }
-        }
-    )
+        )
 }
 
 fn req_from_string(url_s: &str) -> Option<Request> {
