@@ -231,11 +231,7 @@ fn app() -> Element {
                 }
                 IconButton { icon: icons::EXTERNAL_LINK_ICON, action: open_action }
                 div { class: "menu-wrapper",
-                    div {
-                        class: "iconbutton",
-                        onclick: move |_| menu_open.toggle(),
-                        img { class: "urlbar-icon", src: icons::MENU_ICON }
-                    }
+                    IconButton { icon: icons::MENU_ICON, action: move |_| menu_open.toggle(), active: menu_open() },
                     if menu_open() {
                         div { class: "menu-dropdown",
                             div { class: "menu-item", onclick: move |_| view_source_action(()),

@@ -9,10 +9,18 @@ pub const EXTERNAL_LINK_ICON: Asset = asset!("../assets/icons/external-link.svg"
 pub const CODE_ICON: Asset = asset!("../assets/icons/code.svg");
 
 #[component]
-pub fn IconButton(icon: Asset, action: Option<Callback>) -> Element {
+pub fn IconButton(
+    icon: Asset,
+    action: Option<Callback>,
+    #[props(default)] active: bool,
+) -> Element {
     rsx!(
         div {
-            class: "iconbutton",
+            class: if active  {
+                "iconbutton active"
+            } else {
+                "iconbutton"
+            },
             onclick: move |_| {
                 if let Some(action) = action {
                     action(())

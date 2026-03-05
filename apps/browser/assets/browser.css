@@ -47,7 +47,7 @@ html, body, #main, #frame {
         background: #CCC;
     }
 
-    &:active {
+    &.active, &:active {
         background: #BBB;
     }
 
@@ -64,22 +64,26 @@ html, body, #main, #frame {
     position: absolute;
     top: 100%;
     right: 0;
-    background: #F9F9F9;
+    background: white;//#F9F9F9;
+    padding: 8px;
     border: 1px solid #CCC;
     border-radius: 4px;
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
     z-index: 100;
-    min-width: 160px;
+    min-width: 200px;
 }
 
 .menu-item {
     padding: 8px 12px;
     cursor: pointer;
-    font-size: 13px;
+    font-size: 14px;
+    font-family: sans-serif;
+    line-height: 1;
     white-space: nowrap;
     display: flex;
     align-items: center;
     gap: 8px;
+    border-radius: 4px;
 
     &:hover {
         background: #E8E8E8;
