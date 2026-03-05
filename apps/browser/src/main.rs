@@ -107,13 +107,7 @@ fn app() -> Element {
         let current_url = history.current_url().read().url.to_string();
         *url_input_value.write() = format!("view-source://{current_url}");
 
-        let escaped = source
-            .replace('&', "&amp;")
-            .replace('<', "&lt;")
-            .replace('>', "&gt;");
-        let view_source_html = format!(
-            "<html><body><pre style=\"margin:8px;white-space:pre-wrap;word-wrap:break-word;\"><code>{escaped}</code></pre></body></html>"
-        );
+        let view_source_html = include_str!("../assets/view-source.html");
         let config = DocumentConfig {
             viewport: None,
             base_url: None,
@@ -124,7 +118,12 @@ fn app() -> Element {
             html_parser_provider: Some(Arc::new(HtmlProvider)),
             font_ctx: Some(loader.font_ctx.clone()),
         };
-        let document = HtmlDocument::from_html(&view_source_html, config).into_inner();
+        let mut document = HtmlDocument::from_html(view_source_html, config).into_inner();
+        if let Some(parent_id) = document.get_element_by_id("source") {
+            let mut mutator = document.mutate();
+            let text_node = mutator.create_text_node(&source);
+            mutator.append_children(parent_id, &[text_node]);
+        }
         *loader.doc.write_unchecked() = Some(SubDocumentAttr::new(document));
     });
 
