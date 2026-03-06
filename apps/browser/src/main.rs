@@ -264,7 +264,7 @@ fn app() -> Element {
                     },
                     oninput: move |evt| { *url_input_value.write() = evt.value() },
                 }
-                
+
                 div { class: "menu-wrapper",
                     IconButton { icon: icons::MENU_ICON, action: move |_| menu_open.toggle(), active: menu_open() },
                     if menu_open() {
