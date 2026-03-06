@@ -806,14 +806,15 @@ impl ElementCx<'_> {
 
     /// Draw all borders for a node
     fn draw_border(&self, scene: &mut impl PaintScene) {
-        let mut previous_border: Option<(Color, BezPath)> = None;
-        for edge in [Edge::Top, Edge::Right, Edge::Bottom, Edge::Left] {
-            let style = &*self.style;
-            let border = style.get_border();
-            let border_path = self.frame.border_edge_shape(edge);
+        let style = &*self.style;
+        let border = style.get_border();
+        let current_color = style.clone_color();
 
-            let current_color = style.clone_color();
-            let border_color = match edge {
+        let mut border_groups: [Option<(Color, BezPath)>; 4] = [None, None, None, None];
+        let mut border_group_count = 0;
+
+        for edge in [Edge::Top, Edge::Right, Edge::Bottom, Edge::Left] {
+            let color = match edge {
                 Edge::Top => border
                     .border_top_color
                     .resolve_to_absolute(&current_color)
@@ -832,20 +833,48 @@ impl ElementCx<'_> {
                     .as_srgb_color(),
             };
 
-            if let Some(previous_border) = &mut previous_border {
-                if previous_border.0 == border_color {
-                    previous_border.1.extend(border_path);
-                } else {
-                    self.draw_border_edge(scene, previous_border.0, &previous_border.1);
-                    previous_border.0 = border_color;
-                    previous_border.1 = border_path;
+            if color.components[3] == 0.0 {
+                continue;
+            }
+
+            let border_path = self.frame.border_edge_shape(edge);
+
+            // Check if we can merge with the current active group.
+            if border_group_count > 0 {
+                if let Some((last_color, last_path)) = &mut border_groups[border_group_count - 1] {
+                    if *last_color == color {
+                        last_path.extend(border_path);
+                        continue;
+                    }
                 }
-            } else {
-                previous_border = Some((border_color, border_path));
+            }
+
+            // New color, start a new group.
+            border_groups[border_group_count] = Some((color, border_path));
+            border_group_count += 1;
+        }
+
+        // If the first and last groups have the same color, merge them.
+        if border_group_count > 1 {
+            let first_is_same_as_last =
+                match (&border_groups[0], &border_groups[border_group_count - 1]) {
+                    (Some((c1, _)), Some((c2, _))) => c1 == c2,
+                    _ => false,
+                };
+
+            if first_is_same_as_last {
+                if let Some((_, last_path)) = border_groups[border_group_count - 1].take() {
+                    if let Some((_, first_path)) = &mut border_groups[0] {
+                        first_path.extend(last_path);
+                    }
+                }
             }
         }
-        if let Some(previous_border) = &mut previous_border {
-            self.draw_border_edge(scene, previous_border.0, &previous_border.1);
+
+        for group in border_groups {
+            if let Some((color, path)) = &group {
+                scene.fill(Fill::NonZero, self.transform, *color, None, path);
+            }
         }
     }
 
@@ -935,14 +964,6 @@ impl ElementCx<'_> {
             let shape = Rect::new(inner_width, 0.0, inner_width + border_width, inner_height)
                 .scale_from_origin(self.scale);
             scene.fill(Fill::NonZero, self.transform, border_color, None, &shape);
-        }
-    }
-
-    /// Draw a single border edge
-    fn draw_border_edge(&self, scene: &mut impl PaintScene, color: Color, border_path: &BezPath) {
-        let alpha = color.components[3];
-        if alpha != 0.0 {
-            scene.fill(Fill::NonZero, self.transform, color, None, &border_path);
         }
     }
 
