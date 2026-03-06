@@ -1,107 +1,110 @@
-
 * {
-    box-sizing: border-box;
+  box-sizing: border-box;
 }
 
-html, body, #main, #frame {
-    margin: 0;
-    padding: 0;
-    height: 100%;
+html,
+body,
+#main,
+#frame {
+  margin: 0;
+  padding: 0;
+  height: 100%;
 }
 
 #frame {
-    display: flex;
-    flex-direction: column;
-    background: black;
+  display: flex;
+  flex-direction: column;
+  background: black;
 }
 
 .urlbar {
-    padding: 6px 6px;
-    gap: 6px;
-    background: #F9F9F9;
-    border-bottom: 1px solid #EEE;
-    display: flex;
+  padding: 6px 6px;
+  gap: 6px;
+  background: #F9F9F9;
+  border-bottom: 1px solid #EEE;
+  display: flex;
 }
 
 .urlbar-input {
-    flex: 1 1 60px;
-    border: 1px solid #CCC;
-    border-radius: 4px;
-    line-height: 1;
-    padding: 6px;
-    min-width: 60px;
-    font-size: 14px;
+  flex: 1 1 60px;
+  border: 1px solid #CCC;
+  border-radius: 4px;
+  line-height: 1;
+  padding: 6px;
+  min-width: 60px;
+  font-size: 14px;
 
-    &:focus {
-        border-color: #5E9ED6;
-        outline: 1px solid #5E9ED6;
-    }
+  &:focus {
+    border-color: #5E9ED6;
+    outline: 1px solid #5E9ED6;
+  }
 }
 
 .iconbutton {
-    padding: 4px;
-    cursor: pointer;
-    border-radius: 4px;
+  padding: 4px;
+  cursor: pointer;
+  border-radius: 4px;
 
-    &:hover {
-        background: #CCC;
-    }
+  &:hover {
+    background: #CCC;
+  }
 
-    &.active, &:active {
-        background: #BBB;
-    }
+  &.active,
+  &:active {
+    background: #BBB;
+  }
 
-    > .urlbar-icon {
-        height: 20px;
-    }
+  >.urlbar-icon {
+    height: 20px;
+  }
 }
 
 .menu-wrapper {
-    position: relative;
+  position: relative;
 }
 
 .menu-dropdown {
-    position: absolute;
-    top: 100%;
-    right: 0;
-    background: white;//#F9F9F9;
-    padding: 8px;
-    border: 1px solid #CCC;
-    border-radius: 4px;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
-    z-index: 100;
-    min-width: 200px;
+  position: absolute;
+  top: 100%;
+  right: 0;
+  background: white; //#F9F9F9;
+  padding: 8px;
+  border: 1px solid #CCC;
+  border-radius: 4px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  z-index: 100;
+  min-width: 200px;
 }
 
 .menu-item {
-    padding: 8px 12px;
-    cursor: pointer;
-    font-size: 14px;
-    font-family: sans-serif;
-    line-height: 1;
-    white-space: nowrap;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    border-radius: 4px;
+  padding: 8px 12px;
+  cursor: pointer;
+  font-size: 14px;
+  font-family: sans-serif;
+  line-height: 1;
+  white-space: nowrap;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border-radius: 4px;
 
-    &:hover {
-        background: #E8E8E8;
-    }
+  &:hover {
+    background: #E8E8E8;
+  }
 
-    &:active {
-        background: #DDD;
-    }
+  &:active {
+    background: #DDD;
+  }
 }
 
 .menu-item-icon {
-    height: 16px;
-    width: 16px;
+  height: 16px;
+  width: 16px;
 }
 
 .webview {
-    flex: 1 1 0px;
-    height: 100%;
-    width: 100%;
-    background: white;
+  flex: 1 1 0px;
+  height: 100%;
+  width: 100%;
+  background: white;
 }
