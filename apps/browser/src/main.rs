@@ -356,10 +356,14 @@ fn capture_screenshot(doc: &blitz_dom::BaseDocument) {
         .as_secs();
     let default_name = format!("blitz-screenshot-{timestamp}.png");
 
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
     let path = rfd::FileDialog::new()
         .set_file_name(&default_name)
         .add_filter("PNG Image", &["png"])
         .save_file();
+
+    #[cfg(any(target_os = "android", target_os = "ios"))]
+    let path = Some(std::path::PathBuf::from(&default_name));
 
     if let Some(path) = path {
         if let Ok(file) = std::fs::File::create(&path) {
