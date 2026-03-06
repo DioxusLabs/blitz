@@ -810,71 +810,65 @@ impl ElementCx<'_> {
         let border = style.get_border();
         let current_color = style.clone_color();
 
-        let mut border_groups: [Option<(Color, BezPath)>; 4] = [None, None, None, None];
-        let mut border_group_count = 0;
+        let mut borders: [(Color, Option<BezPath>); 4] = [
+            (Color::TRANSPARENT, None),
+            (Color::TRANSPARENT, None),
+            (Color::TRANSPARENT, None),
+            (Color::TRANSPARENT, None),
+        ];
+        let mut count = 0;
 
-        for edge in [Edge::Top, Edge::Right, Edge::Bottom, Edge::Left] {
+        for &edge in &[Edge::Top, Edge::Right, Edge::Bottom, Edge::Left] {
             let color = match edge {
-                Edge::Top => border
-                    .border_top_color
-                    .resolve_to_absolute(&current_color)
-                    .as_srgb_color(),
-                Edge::Right => border
-                    .border_right_color
-                    .resolve_to_absolute(&current_color)
-                    .as_srgb_color(),
-                Edge::Bottom => border
-                    .border_bottom_color
-                    .resolve_to_absolute(&current_color)
-                    .as_srgb_color(),
-                Edge::Left => border
-                    .border_left_color
-                    .resolve_to_absolute(&current_color)
-                    .as_srgb_color(),
-            };
-
-            if color.components[3] == 0.0 {
-                continue;
+                Edge::Top => &border.border_top_color,
+                Edge::Right => &border.border_right_color,
+                Edge::Bottom => &border.border_bottom_color,
+                Edge::Left => &border.border_left_color,
             }
+            .resolve_to_absolute(&current_color)
+            .as_srgb_color();
 
-            let border_path = self.frame.border_edge_shape(edge);
-
-            // Check if we can merge with the current active group.
-            if border_group_count > 0 {
-                if let Some((last_color, last_path)) = &mut border_groups[border_group_count - 1] {
-                    if *last_color == color {
-                        last_path.extend(border_path);
-                        continue;
-                    }
-                }
-            }
-
-            // New color, start a new group.
-            border_groups[border_group_count] = Some((color, border_path));
-            border_group_count += 1;
-        }
-
-        // If the first and last groups have the same color, merge them.
-        if border_group_count > 1 {
-            let first_is_same_as_last =
-                match (&border_groups[0], &border_groups[border_group_count - 1]) {
-                    (Some((c1, _)), Some((c2, _))) => c1 == c2,
-                    _ => false,
-                };
-
-            if first_is_same_as_last {
-                if let Some((_, last_path)) = border_groups[border_group_count - 1].take() {
-                    if let Some((_, first_path)) = &mut border_groups[0] {
-                        first_path.extend(last_path);
-                    }
-                }
+            if color.components[3] > 0.0 {
+                borders[count] = (color, Some(self.frame.border_edge_shape(edge)));
+                count += 1;
             }
         }
 
-        for group in border_groups {
-            if let Some((color, path)) = &group {
-                scene.fill(Fill::NonZero, self.transform, *color, None, path);
+        if count == 0 {
+            return;
+        }
+
+        // Group together identical colors by sorting.
+        let active_slice = &mut borders[0..count];
+        active_slice.sort_unstable_by(|a, b| {
+            a.0.components
+                .partial_cmp(&b.0.components)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+
+        let mut start_border_index = 0;
+        while start_border_index < count {
+            let color = borders[start_border_index].0;
+            let mut next_border_index = start_border_index + 1;
+            let has_multiple_edges =
+                next_border_index < count && borders[next_border_index].0 == color;
+            if has_multiple_edges {
+                let mut border_path = borders[start_border_index].1.take().unwrap();
+                while next_border_index < count && borders[next_border_index].0 == color {
+                    border_path.extend(&borders[next_border_index].1.take().unwrap());
+                    next_border_index += 1;
+                }
+                scene.fill(Fill::NonZero, self.transform, color, None, &border_path);
+            } else {
+                scene.fill(
+                    Fill::NonZero,
+                    self.transform,
+                    color,
+                    None,
+                    borders[start_border_index].1.as_ref().unwrap(),
+                );
             }
+            start_border_index = next_border_index;
         }
     }
 
