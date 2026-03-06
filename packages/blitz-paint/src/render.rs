@@ -35,7 +35,7 @@ use style::{
     },
 };
 
-use kurbo::{self, Affine, Insets, Point, Rect, Stroke, Vec2};
+use kurbo::{self, Affine, BezPath, Insets, Point, Rect, Stroke, Vec2};
 use peniko::{self, Fill, ImageData, ImageSampler};
 use style::values::generics::color::{ColorOrAuto, GenericColor};
 use taffy::Layout;
@@ -806,8 +806,47 @@ impl ElementCx<'_> {
 
     /// Draw all borders for a node
     fn draw_border(&self, scene: &mut impl PaintScene) {
+        let mut previous_border: Option<(Color, BezPath)> = None;
         for edge in [Edge::Top, Edge::Right, Edge::Bottom, Edge::Left] {
-            self.draw_border_edge(scene, edge);
+            let style = &*self.style;
+            let border = style.get_border();
+            let border_path = self.frame.border_edge_shape(edge);
+
+            let current_color = style.clone_color();
+            let border_color = match edge {
+                Edge::Top => border
+                    .border_top_color
+                    .resolve_to_absolute(&current_color)
+                    .as_srgb_color(),
+                Edge::Right => border
+                    .border_right_color
+                    .resolve_to_absolute(&current_color)
+                    .as_srgb_color(),
+                Edge::Bottom => border
+                    .border_bottom_color
+                    .resolve_to_absolute(&current_color)
+                    .as_srgb_color(),
+                Edge::Left => border
+                    .border_left_color
+                    .resolve_to_absolute(&current_color)
+                    .as_srgb_color(),
+            };
+
+            if let Some(previous_border) = &mut previous_border {
+                if previous_border.0 == border_color {
+                    previous_border.1.extend(border_path);
+                } else {
+                    self.draw_border_edge(scene, previous_border.0, &previous_border.1);
+                    (*previous_border).0 = border_color;
+                    (*previous_border).1 = border_path;
+                }
+            } else {
+                self.draw_border_edge(scene, border_color, &border_path);
+                previous_border = Some((border_color, border_path));
+            }
+        }
+        if let Some(previous_border) = &mut previous_border {
+            self.draw_border_edge(scene, previous_border.0, &previous_border.1);
         }
     }
 
@@ -900,35 +939,11 @@ impl ElementCx<'_> {
         }
     }
 
-    /// Draw a single border edge for a node
-    fn draw_border_edge(&self, scene: &mut impl PaintScene, edge: Edge) {
-        let style = &*self.style;
-        let border = style.get_border();
-        let path = self.frame.border_edge_shape(edge);
-
-        let current_color = style.clone_color();
-        let color = match edge {
-            Edge::Top => border
-                .border_top_color
-                .resolve_to_absolute(&current_color)
-                .as_srgb_color(),
-            Edge::Right => border
-                .border_right_color
-                .resolve_to_absolute(&current_color)
-                .as_srgb_color(),
-            Edge::Bottom => border
-                .border_bottom_color
-                .resolve_to_absolute(&current_color)
-                .as_srgb_color(),
-            Edge::Left => border
-                .border_left_color
-                .resolve_to_absolute(&current_color)
-                .as_srgb_color(),
-        };
-
+    /// Draw a single border edge
+    fn draw_border_edge(&self, scene: &mut impl PaintScene, color: Color, border_path: &BezPath) {
         let alpha = color.components[3];
         if alpha != 0.0 {
-            scene.fill(Fill::NonZero, self.transform, color, None, &path);
+            scene.fill(Fill::NonZero, self.transform, color, None, &border_path);
         }
     }
 
