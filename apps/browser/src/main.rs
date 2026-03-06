@@ -159,7 +159,7 @@ fn app() -> Element {
     let capture_action = use_callback(move |_| {
         menu_open.set(false);
         async move {
-            let Some(path) = capture::try_get_save_path("AnyRender Scene", "zip").await else {
+            let Some(path) = capture::try_get_save_path("AnyRender Scene", "scene").await else {
                 return;
             };
 
