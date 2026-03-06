@@ -9,6 +9,9 @@
 static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
 use std::cell::RefCell;
+#[cfg(feature = "screenshot")]
+use std::path::Path;
+use std::path::PathBuf;
 use std::rc::Rc;
 use std::sync::{Arc, atomic::AtomicUsize, atomic::Ordering as Ao};
 
@@ -141,16 +144,22 @@ fn app() -> Element {
     #[cfg(feature = "screenshot")]
     let screenshot_action = use_callback(move |_| {
         menu_open.set(false);
-        if let Some(handle) = webview_node_handle() {
-            let node_id = handle.node_id();
-            let mut doc = handle.doc_mut();
-            if let Some(sub_doc) = doc
-                .get_node_mut(node_id)
-                .and_then(|node| node.element_data_mut())
-                .and_then(|el| el.sub_doc_data_mut())
-            {
-                let sub_doc = sub_doc.inner();
-                capture_screenshot(&sub_doc);
+        async move {
+            let Some(path) = try_get_save_path().await else {
+                return;
+            };
+
+            if let Some(handle) = webview_node_handle() {
+                let node_id = handle.node_id();
+                let mut doc = handle.doc_mut();
+                if let Some(sub_doc) = doc
+                    .get_node_mut(node_id)
+                    .and_then(|node| node.element_data_mut())
+                    .and_then(|el| el.sub_doc_data_mut())
+                {
+                    let sub_doc = sub_doc.inner();
+                    capture_screenshot(&sub_doc, &path);
+                }
             }
         }
     });
@@ -330,7 +339,7 @@ fn open_in_external_browser(req: &Request) {
 }
 
 #[cfg(feature = "screenshot")]
-fn capture_screenshot(doc: &blitz_dom::BaseDocument) {
+fn capture_screenshot(doc: &blitz_dom::BaseDocument, path: &Path) {
     let viewport = doc.viewport();
     let scale = viewport.scale_f64();
     let (render_width, render_height) = viewport.window_size;
@@ -350,33 +359,37 @@ fn capture_screenshot(doc: &blitz_dom::BaseDocument) {
         render_height,
     );
 
+    if let Ok(file) = std::fs::File::create(path) {
+        let mut encoder = png::Encoder::new(file, render_width, render_height);
+        encoder.set_color(png::ColorType::Rgba);
+        encoder.set_depth(png::BitDepth::Eight);
+        if let Ok(mut writer) = encoder.write_header() {
+            if writer.write_image_data(&buffer).is_ok() {
+                println!("Screenshot saved to {}", path.display());
+            }
+        }
+    }
+}
+
+async fn try_get_save_path() -> Option<PathBuf> {
     let timestamp = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
         .as_secs();
     let default_name = format!("blitz-screenshot-{timestamp}.png");
 
-    #[cfg(not(any(target_os = "android", target_os = "ios")))]
-    let path = rfd::FileDialog::new()
-        .set_file_name(&default_name)
-        .add_filter("PNG Image", &["png"])
-        .save_file();
-
     #[cfg(any(target_os = "android", target_os = "ios"))]
     let path = Some(std::path::PathBuf::from(&default_name));
 
-    if let Some(path) = path {
-        if let Ok(file) = std::fs::File::create(&path) {
-            let mut encoder = png::Encoder::new(file, render_width, render_height);
-            encoder.set_color(png::ColorType::Rgba);
-            encoder.set_depth(png::BitDepth::Eight);
-            if let Ok(mut writer) = encoder.write_header() {
-                if writer.write_image_data(&buffer).is_ok() {
-                    println!("Screenshot saved to {}", path.display());
-                }
-            }
-        }
-    }
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    let path = rfd::AsyncFileDialog::new()
+        .set_file_name(&default_name)
+        .add_filter("PNG Image", &["png"])
+        .save_file()
+        .await
+        .map(|file| file.path().to_owned());
+
+    path
 }
 
 #[derive(Store)]
