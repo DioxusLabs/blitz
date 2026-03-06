@@ -837,8 +837,8 @@ impl ElementCx<'_> {
                     previous_border.1.extend(border_path);
                 } else {
                     self.draw_border_edge(scene, previous_border.0, &previous_border.1);
-                    (*previous_border).0 = border_color;
-                    (*previous_border).1 = border_path;
+                    previous_border.0 = border_color;
+                    previous_border.1 = border_path;
                 }
             } else {
                 self.draw_border_edge(scene, border_color, &border_path);
