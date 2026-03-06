@@ -30,6 +30,7 @@ mod icons;
 use icons::IconButton;
 
 static BROWSER_UI_STYLES: Asset = asset!("../assets/browser.css");
+const IS_MOBILE: bool = cfg!(any(target_os = "android", target_os = "ios"));
 
 #[unsafe(no_mangle)]
 #[cfg(target_os = "android")]
@@ -185,15 +186,24 @@ fn app() -> Element {
         div { id: "frame",
               padding_top: TOP_PAD,
               padding_bottom: BOTTOM_PAD,
+              class: if IS_MOBILE {
+                "mobile"
+              } else {
+                ""
+              },
             title { "Blitz Browser" }
             document::Link { rel: "stylesheet", href: BROWSER_UI_STYLES }
 
             // Toolbar
             div { class: "urlbar",
                 IconButton { icon: icons::BACK_ICON, action: back_action }
-                IconButton { icon: icons::FORWARDS_ICON, action: forward_action }
+                if !IS_MOBILE {
+                    IconButton { icon: icons::FORWARDS_ICON, action: forward_action }
+                }
                 IconButton { icon: icons::REFRESH_ICON, action: refresh_action }
-                IconButton { icon: icons::HOME_ICON, action: home_action }
+                if !IS_MOBILE {
+                    IconButton { icon: icons::HOME_ICON, action: home_action }
+                }
                 input {
                     class: "urlbar-input",
                     "type": "text",
@@ -254,11 +264,15 @@ fn app() -> Element {
                     },
                     oninput: move |evt| { *url_input_value.write() = evt.value() },
                 }
-                IconButton { icon: icons::EXTERNAL_LINK_ICON, action: open_action }
+                
                 div { class: "menu-wrapper",
                     IconButton { icon: icons::MENU_ICON, action: move |_| menu_open.toggle(), active: menu_open() },
                     if menu_open() {
                         div { class: "menu-dropdown",
+                            div { class: "menu-item", onclick: open_action,
+                                img { class: "menu-item-icon", src: icons::EXTERNAL_LINK_ICON }
+                                "Open in External Browser"
+                            }
                             div { class: "menu-item", onclick: move |_| view_source_action(()),
                                 img { class: "menu-item-icon", src: icons::CODE_ICON }
                                 "View Source"

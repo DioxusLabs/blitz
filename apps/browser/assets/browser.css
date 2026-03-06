@@ -23,6 +23,30 @@ body,
   background: #F9F9F9;
   border-bottom: 1px solid #EEE;
   display: flex;
+  align-items: center;
+}
+
+.mobile {
+  /*
+  &#frame {
+    flex-direction: column-reverse;
+  }
+  .menu-dropdown {
+    bottom: 100%;
+    top: auto;
+  }
+  > .urlbar {
+    border-top: 1px solid #EEE;
+    border-bottom: none;
+    padding: 6px 6px;
+    gap: 12px;
+  }
+  */
+
+  .urlbar-input {
+    font-size: 16px;
+    padding: 8px 6px;
+  }
 }
 
 .urlbar-input {
