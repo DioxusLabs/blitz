@@ -99,6 +99,7 @@ taffy = { git = "https://github.com/DioxusLabs/taffy", rev = "25759dad44d8350743
 
 # AnyRender
 anyrender = { git = "https://github.com/DioxusLabs/anyrender", rev = "f7d5b67c1f65f4e2f037216d3515e12bca8139e5", version = "0.7" }
+anyrender_serialize = { git = "https://github.com/DioxusLabs/anyrender", rev = "f7d5b67c1f65f4e2f037216d3515e12bca8139e5", version = "0.1" }
 anyrender_vello = { git = "https://github.com/DioxusLabs/anyrender", rev = "f7d5b67c1f65f4e2f037216d3515e12bca8139e5", version = "0.7" }
 anyrender_vello_cpu = { git = "https://github.com/DioxusLabs/anyrender", rev = "f7d5b67c1f65f4e2f037216d3515e12bca8139e5", version = "0.9" }
 anyrender_vello_hybrid = { git = "https://github.com/DioxusLabs/anyrender", rev = "f7d5b67c1f65f4e2f037216d3515e12bca8139e5", version = "0.2" }
