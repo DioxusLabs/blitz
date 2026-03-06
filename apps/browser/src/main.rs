@@ -22,10 +22,15 @@ use blitz_traits::navigation::{NavigationOptions, NavigationProvider};
 use blitz_traits::net::{Body, Entry, EntryValue, FormData, Method, Request, Url};
 use linebender_resource_handle::Blob;
 
+#[cfg(feature = "screenshot")]
 use anyrender::{PaintScene as _, render_to_buffer};
+#[cfg(feature = "screenshot")]
 use anyrender_vello_cpu::VelloCpuImageRenderer;
+#[cfg(feature = "screenshot")]
 use blitz_paint::paint_scene;
+#[cfg(feature = "screenshot")]
 use peniko::Fill;
+#[cfg(feature = "screenshot")]
 use peniko::kurbo::Rect;
 
 type StdNetProvider = blitz_net::Provider;
@@ -133,6 +138,7 @@ fn app() -> Element {
         *loader.doc.write_unchecked() = Some(SubDocumentAttr::new(document));
     });
 
+    #[cfg(feature = "screenshot")]
     let screenshot_action = use_callback(move |_| {
         menu_open.set(false);
         if let Some(handle) = webview_node_handle() {
@@ -144,43 +150,7 @@ fn app() -> Element {
                 .and_then(|el| el.sub_doc_data_mut())
             {
                 let sub_doc = sub_doc.inner();
-                let viewport = sub_doc.viewport();
-                let scale = viewport.scale_f64();
-                let (win_w, win_h) = viewport.window_size;
-                let render_width = win_w;
-                let render_height = win_h;
-
-                let buffer = render_to_buffer::<VelloCpuImageRenderer, _>(
-                    |scene| {
-                        scene.fill(
-                            Fill::NonZero,
-                            Default::default(),
-                            blitz_dom::util::Color::WHITE,
-                            Default::default(),
-                            &Rect::new(0.0, 0.0, render_width as f64, render_height as f64),
-                        );
-                        paint_scene(scene, &sub_doc, scale, render_width, render_height, 0, 0);
-                    },
-                    render_width,
-                    render_height,
-                );
-
-                // Save to file
-                let timestamp = std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .unwrap()
-                    .as_secs();
-                let filename = format!("blitz-screenshot-{timestamp}.png");
-                if let Ok(file) = std::fs::File::create(&filename) {
-                    let mut encoder = png::Encoder::new(file, render_width, render_height);
-                    encoder.set_color(png::ColorType::Rgba);
-                    encoder.set_depth(png::BitDepth::Eight);
-                    if let Ok(mut writer) = encoder.write_header() {
-                        if writer.write_image_data(&buffer).is_ok() {
-                            println!("Screenshot saved to {filename}");
-                        }
-                    }
-                }
+                capture_screenshot(&sub_doc);
             }
         }
     });
@@ -296,13 +266,14 @@ fn app() -> Element {
                                 img { class: "menu-item-icon", src: icons::CODE_ICON }
                                 "View Source"
                             }
+                            if cfg!(feature = "screenshot") {
+                                div { class: "menu-item", onclick: move |_| screenshot_action(()),
+                                    img { class: "menu-item-icon", src: icons::CAMERA_ICON }
+                                    "Capture Screenshot"
+                                }
+                            }
                             div { class: "menu-item", onclick: move |_| devtools_action(()), "Toggle DevTools" }
                         }
-                        div { class: "menu-item", onclick: move |_| screenshot_action(()),
-                            img { class: "menu-item-icon", src: icons::CAMERA_ICON }
-                            "Capture Screenshot"
-                        }
-                        div { class: "menu-item", onclick: move |_| devtools_action(()), "Toggle DevTools" }
                     }
                 }
             }
@@ -354,6 +325,52 @@ fn open_in_external_browser(req: &Request) {
     if req.method == Method::GET && matches!(req.url.scheme(), "http" | "https" | "mailto") {
         if let Err(err) = webbrowser::open(req.url.as_str()) {
             println!("Failed to open URL: {}", err);
+        }
+    }
+}
+
+#[cfg(feature = "screenshot")]
+fn capture_screenshot(doc: &blitz_dom::BaseDocument) {
+    let viewport = doc.viewport();
+    let scale = viewport.scale_f64();
+    let (render_width, render_height) = viewport.window_size;
+
+    let buffer = render_to_buffer::<VelloCpuImageRenderer, _>(
+        |scene| {
+            scene.fill(
+                Fill::NonZero,
+                Default::default(),
+                blitz_dom::util::Color::WHITE,
+                Default::default(),
+                &Rect::new(0.0, 0.0, render_width as f64, render_height as f64),
+            );
+            paint_scene(scene, doc, scale, render_width, render_height, 0, 0);
+        },
+        render_width,
+        render_height,
+    );
+
+    let timestamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+    let default_name = format!("blitz-screenshot-{timestamp}.png");
+
+    let path = rfd::FileDialog::new()
+        .set_file_name(&default_name)
+        .add_filter("PNG Image", &["png"])
+        .save_file();
+
+    if let Some(path) = path {
+        if let Ok(file) = std::fs::File::create(&path) {
+            let mut encoder = png::Encoder::new(file, render_width, render_height);
+            encoder.set_color(png::ColorType::Rgba);
+            encoder.set_depth(png::BitDepth::Eight);
+            if let Ok(mut writer) = encoder.write_header() {
+                if writer.write_image_data(&buffer).is_ok() {
+                    println!("Screenshot saved to {}", path.display());
+                }
+            }
         }
     }
 }

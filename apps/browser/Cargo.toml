@@ -10,7 +10,8 @@ name = "blitz"
 path = "src/main.rs"
 
 [features]
-default = ["vello", "floats", "incremental", "cookies", "cache"]
+default = ["vello", "floats", "incremental", "cookies", "cache", "screenshot"]
+screenshot = ["dep:anyrender", "dep:anyrender_vello_cpu", "dep:blitz-paint", "dep:png", "dep:peniko", "dep:rfd"]
 vello = ["dioxus-native/vello"]
 hybrid = ["dioxus-native/vello-hybrid"]
 skia = ["dioxus-native/skia"]
@@ -49,11 +50,12 @@ tracing-subscriber = { workspace = true, optional = true }
 webbrowser = { workspace = true }
 winit = { workspace = true }
 image = { workspace = true }
-anyrender = { workspace = true }
-anyrender_vello_cpu = { workspace = true }
-blitz-paint = { workspace = true }
-png = { workspace = true }
-peniko = { workspace = true }
+anyrender = { workspace = true, optional = true }
+anyrender_vello_cpu = { workspace = true, optional = true }
+blitz-paint = { workspace = true, optional = true }
+png = { workspace = true, optional = true }
+peniko = { workspace = true, optional = true }
+rfd = { workspace = true, optional = true, features = ["xdg-portal"] }
 
 # Allocators
 mimalloc = { version = "0.1.48", optional = true }
