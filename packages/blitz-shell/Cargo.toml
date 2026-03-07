@@ -29,6 +29,8 @@ blitz-traits = { workspace = true }
 blitz-dom = { workspace = true }
 blitz-paint = { workspace = true }
 anyrender = { workspace = true }
+kurbo = { workspace = true }
+peniko = { workspace = true }
 
 # Windowing & Input
 winit = { workspace = true }

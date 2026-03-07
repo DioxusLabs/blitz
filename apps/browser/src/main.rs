@@ -25,7 +25,9 @@ use linebender_resource_handle::Blob;
 
 type StdNetProvider = blitz_net::Provider;
 
+#[cfg(any(feature = "screenshot", feature = "capture"))]
 mod capture;
+
 mod icons;
 use icons::IconButton;
 
@@ -134,7 +136,7 @@ fn app() -> Element {
     let screenshot_action = use_callback(move |_| {
         menu_open.set(false);
         async move {
-            let Some(path) = capture::try_get_save_path().await else {
+            let Some(path) = capture::try_get_save_path("PNG Image", "png").await else {
                 return;
             };
 
@@ -148,6 +150,29 @@ fn app() -> Element {
                 {
                     let sub_doc = sub_doc.inner();
                     capture::capture_screenshot(&sub_doc, &path);
+                }
+            }
+        }
+    });
+
+    #[cfg(feature = "capture")]
+    let capture_action = use_callback(move |_| {
+        menu_open.set(false);
+        async move {
+            let Some(path) = capture::try_get_save_path("AnyRender Scene", "scene").await else {
+                return;
+            };
+
+            if let Some(handle) = webview_node_handle() {
+                let node_id = handle.node_id();
+                let mut doc = handle.doc_mut();
+                if let Some(sub_doc) = doc
+                    .get_node_mut(node_id)
+                    .and_then(|node| node.element_data_mut())
+                    .and_then(|el| el.sub_doc_data_mut())
+                {
+                    let sub_doc = sub_doc.inner();
+                    capture::capture_anyrender_scene(&sub_doc, &path);
                 }
             }
         }
@@ -169,23 +194,28 @@ fn app() -> Element {
         }
     });
 
-    // HACK: Winit doesn't support "safe area" on Android yet.
-    // So we just hardcode a fallback safe area.
-    const TOP_PAD: &str = if cfg!(target_os = "android") {
-        "30px"
-    } else {
-        ""
-    };
-    const BOTTOM_PAD: &str = if cfg!(target_os = "android") {
-        "44px"
-    } else {
-        ""
-    };
+    #[cfg(feature = "screenshot")]
+    let screenshot_item = rsx!(
+        div { class: "menu-item", onclick: move |_| screenshot_action(()),
+            img { class: "menu-item-icon", src: icons::CAMERA_ICON }
+            "Capture Screenshot"
+        }
+    );
+    #[cfg(not(feature = "screenshot"))]
+    let screenshot_item = rsx!();
+
+    #[cfg(feature = "capture")]
+    let capture_item = rsx!(
+        div { class: "menu-item", onclick: move |_| capture_action(()),
+            img { class: "menu-item-icon", src: icons::CAMERA_ICON }
+            "Capture AnyRender Archive"
+        }
+    );
+    #[cfg(not(feature = "capture"))]
+    let capture_item = rsx!();
 
     rsx!(
         div { id: "frame",
-              padding_top: TOP_PAD,
-              padding_bottom: BOTTOM_PAD,
               class: if IS_MOBILE {
                 "mobile"
               } else {
@@ -277,12 +307,8 @@ fn app() -> Element {
                                 img { class: "menu-item-icon", src: icons::CODE_ICON }
                                 "View Source"
                             }
-                            if cfg!(feature = "screenshot") {
-                                div { class: "menu-item", onclick: move |_| screenshot_action(()),
-                                    img { class: "menu-item-icon", src: icons::CAMERA_ICON }
-                                    "Capture Screenshot"
-                                }
-                            }
+                            {screenshot_item}
+                            {capture_item}
                             div { class: "menu-item", onclick: move |_| devtools_action(()), "Toggle DevTools" }
                         }
                     }
