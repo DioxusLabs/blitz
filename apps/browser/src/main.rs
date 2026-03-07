@@ -194,19 +194,6 @@ fn app() -> Element {
         }
     });
 
-    // HACK: Winit doesn't support "safe area" on Android yet.
-    // So we just hardcode a fallback safe area.
-    const TOP_PAD: &str = if cfg!(target_os = "android") {
-        "30px"
-    } else {
-        ""
-    };
-    const BOTTOM_PAD: &str = if cfg!(target_os = "android") {
-        "44px"
-    } else {
-        ""
-    };
-
     #[cfg(feature = "screenshot")]
     let screenshot_item = rsx!(
         div { class: "menu-item", onclick: move |_| screenshot_action(()),
@@ -229,8 +216,6 @@ fn app() -> Element {
 
     rsx!(
         div { id: "frame",
-              padding_top: TOP_PAD,
-              padding_bottom: BOTTOM_PAD,
               class: if IS_MOBILE {
                 "mobile"
               } else {
@@ -309,7 +294,7 @@ fn app() -> Element {
                     },
                     oninput: move |evt| { *url_input_value.write() = evt.value() },
                 }
-                
+
                 div { class: "menu-wrapper",
                     IconButton { icon: icons::MENU_ICON, action: move |_| menu_open.toggle(), active: menu_open() },
                     if menu_open() {

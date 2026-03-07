@@ -131,7 +131,7 @@ dependencies = [
  "accesskit_windows",
  "android-activity",
  "raw-window-handle",
- "winit-core",
+ "winit-core 0.31.0-beta.2 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]
@@ -147,7 +147,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5a15f179cd60c4584b8a8c596927aadc462e27f2ca70c04e0071964a73ba7a75"
 dependencies = [
  "cfg-if",
- "getrandom 0.3.4",
  "once_cell",
  "version_check",
  "zerocopy",
@@ -264,7 +263,7 @@ version = "1.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "40c48f72fd53cd289104fc64099abca73db4166ad86ea0b4341abe65af83dadc"
 dependencies = [
- "windows-sys 0.60.2",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -275,7 +274,7 @@ checksum = "291e6a250ff86cd4a820112fb8898808a366d8f9f58ce16d1f538353ad55747d"
 dependencies = [
  "anstyle",
  "once_cell_polyfill",
- "windows-sys 0.60.2",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -967,6 +966,8 @@ dependencies = [
  "data-url",
  "futures-util",
  "keyboard-types 0.7.0",
+ "kurbo",
+ "peniko",
  "rfd",
  "tracing",
  "winit",
@@ -2390,7 +2391,7 @@ dependencies = [
  "libc",
  "option-ext",
  "redox_users",
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -2439,6 +2440,10 @@ name = "downcast-rs"
 version = "1.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "75b325c5dbd37f80359721ad39aca5a29fb04c89279657cffdda8736d0c0b9d2"
+
+[[package]]
+name = "dpi"
+version = "0.1.2"
 
 [[package]]
 name = "dpi"
@@ -2633,7 +2638,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -4631,7 +4636,7 @@ version = "0.50.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7957b9740744892f114936ab4a57b3f487491bbeafaf8083688b16841a4240e5"
 dependencies = [
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -5825,6 +5830,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "redox_event"
+version = "0.4.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4ea3e412d205440c7b0218af26247226f979ed1201674cda7a33cc70609084b5"
+dependencies = [
+ "bitflags 2.11.0",
+ "libredox",
+]
+
+[[package]]
 name = "redox_syscall"
 version = "0.5.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6052,7 +6067,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys 0.12.1",
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -7032,7 +7047,7 @@ dependencies = [
  "getrandom 0.4.2",
  "once_cell",
  "rustix",
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -7595,7 +7610,7 @@ checksum = "51b70b87d15e91f553711b40df3048faf27a7a04e01e0ddc0cf9309f0af7c2ca"
 dependencies = [
  "memoffset",
  "tempfile",
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -8609,7 +8624,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -9045,13 +9060,11 @@ checksum = "d6bbff5f0aada427a1e5a6da5f1f98158182f26556f345ac9e04d36d0ebed650"
 [[package]]
 name = "winit"
 version = "0.31.0-beta.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2879d2854d1a43e48f67322d4bd097afcb6eb8f8f775c8de0260a71aea1df1aa"
 dependencies = [
  "bitflags 2.11.0",
  "cfg_aliases 0.2.1",
  "cursor-icon",
- "dpi",
+ "dpi 0.1.2",
  "libc",
  "raw-window-handle",
  "rustix",
@@ -9060,7 +9073,7 @@ dependencies = [
  "winit-android",
  "winit-appkit",
  "winit-common",
- "winit-core",
+ "winit-core 0.31.0-beta.2",
  "winit-orbital",
  "winit-uikit",
  "winit-wayland",
@@ -9072,29 +9085,25 @@ dependencies = [
 [[package]]
 name = "winit-android"
 version = "0.31.0-beta.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "51d9c0d2cd93efec3a9f9ad819cfaf0834782403af7c0d248c784ec0c61761df"
 dependencies = [
  "android-activity",
  "bitflags 2.11.0",
- "dpi",
+ "dpi 0.1.2",
  "ndk",
  "raw-window-handle",
  "smol_str",
  "tracing",
- "winit-core",
+ "winit-core 0.31.0-beta.2",
 ]
 
 [[package]]
 name = "winit-appkit"
 version = "0.31.0-beta.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "21310ca07851a49c348e0c2cc768e36b52ca65afda2c2354d78ed4b90074d8aa"
 dependencies = [
  "bitflags 2.11.0",
  "block2 0.6.2",
  "dispatch2",
- "dpi",
+ "dpi 0.1.2",
  "objc2 0.6.4",
  "objc2-app-kit 0.3.2",
  "objc2-core-foundation",
@@ -9105,23 +9114,35 @@ dependencies = [
  "smol_str",
  "tracing",
  "winit-common",
- "winit-core",
+ "winit-core 0.31.0-beta.2",
 ]
 
 [[package]]
 name = "winit-common"
 version = "0.31.0-beta.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "45375fbac4cbb77260d83a30b1f9d8105880dbac99a9ae97f56656694680ff69"
 dependencies = [
+ "block2 0.6.2",
  "memmap2 0.9.10",
  "objc2 0.6.4",
  "objc2-core-foundation",
  "smol_str",
  "tracing",
- "winit-core",
+ "winit-core 0.31.0-beta.2",
  "x11-dl",
  "xkbcommon-dl",
+]
+
+[[package]]
+name = "winit-core"
+version = "0.31.0-beta.2"
+dependencies = [
+ "bitflags 2.11.0",
+ "cursor-icon",
+ "dpi 0.1.2",
+ "keyboard-types 0.8.3",
+ "raw-window-handle",
+ "smol_str",
+ "web-time",
 ]
 
 [[package]]
@@ -9132,7 +9153,7 @@ checksum = "e4f0ccd7abb43740e2c6124ac7cae7d865ecec74eec63783e8922577ac232583"
 dependencies = [
  "bitflags 2.11.0",
  "cursor-icon",
- "dpi",
+ "dpi 0.1.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "keyboard-types 0.8.3",
  "raw-window-handle",
  "smol_str",
@@ -9142,29 +9163,26 @@ dependencies = [
 [[package]]
 name = "winit-orbital"
 version = "0.31.0-beta.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "51ea1fb262e7209f265f12bd0cc792c399b14355675e65531e9c8a87db287d46"
 dependencies = [
  "bitflags 2.11.0",
- "dpi",
+ "dpi 0.1.2",
+ "libredox",
  "orbclient",
  "raw-window-handle",
- "redox_syscall 0.5.18",
+ "redox_event",
  "smol_str",
  "tracing",
- "winit-core",
+ "winit-core 0.31.0-beta.2",
 ]
 
 [[package]]
 name = "winit-uikit"
 version = "0.31.0-beta.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "680a356e798837d8eb274d4556e83bceaf81698194e31aafc5cfb8a9f2fab643"
 dependencies = [
  "bitflags 2.11.0",
  "block2 0.6.2",
  "dispatch2",
- "dpi",
+ "dpi 0.1.2",
  "objc2 0.6.4",
  "objc2-core-foundation",
  "objc2-foundation 0.3.2",
@@ -9173,20 +9191,18 @@ dependencies = [
  "smol_str",
  "tracing",
  "winit-common",
- "winit-core",
+ "winit-core 0.31.0-beta.2",
 ]
 
 [[package]]
 name = "winit-wayland"
 version = "0.31.0-beta.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8ce5afb2ba07da603f84b722c95f9f9396d2cedae3944fb6c0cda4a6f88de545"
 dependencies = [
- "ahash",
  "bitflags 2.11.0",
  "calloop",
  "cursor-icon",
- "dpi",
+ "dpi 0.1.2",
+ "foldhash 0.2.0",
  "libc",
  "memmap2 0.9.10",
  "raw-window-handle",
@@ -9200,20 +9216,18 @@ dependencies = [
  "wayland-protocols",
  "wayland-protocols-plasma",
  "winit-common",
- "winit-core",
+ "winit-core 0.31.0-beta.2",
 ]
 
 [[package]]
 name = "winit-web"
 version = "0.31.0-beta.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8c2490a953fb776fbbd5e295d54f1c3847f4f15b6c3929ec53c09acda6487a92"
 dependencies = [
  "atomic-waker",
  "bitflags 2.11.0",
  "concurrent-queue",
  "cursor-icon",
- "dpi",
+ "dpi 0.1.2",
  "js-sys",
  "pin-project",
  "raw-window-handle",
@@ -9223,37 +9237,33 @@ dependencies = [
  "wasm-bindgen-futures",
  "web-sys",
  "web-time",
- "winit-core",
+ "winit-core 0.31.0-beta.2",
 ]
 
 [[package]]
 name = "winit-win32"
 version = "0.31.0-beta.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "644ea78af0e858aa3b092e5d1c67c41995a98220c81813f1353b28bc8bb91eaa"
 dependencies = [
  "bitflags 2.11.0",
  "cursor-icon",
- "dpi",
+ "dpi 0.1.2",
  "raw-window-handle",
  "smol_str",
  "tracing",
  "unicode-segmentation",
- "windows-sys 0.59.0",
- "winit-core",
+ "windows-sys 0.61.2",
+ "winit-core 0.31.0-beta.2",
 ]
 
 [[package]]
 name = "winit-x11"
 version = "0.31.0-beta.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "aa5b600756534c7041aa93cd0d244d44b09fca1b89e202bd1cd80dd9f3636c46"
 dependencies = [
  "bitflags 2.11.0",
  "bytemuck",
  "calloop",
  "cursor-icon",
- "dpi",
+ "dpi 0.1.2",
  "libc",
  "percent-encoding",
  "raw-window-handle",
@@ -9261,7 +9271,7 @@ dependencies = [
  "smol_str",
  "tracing",
  "winit-common",
- "winit-core",
+ "winit-core 0.31.0-beta.2",
  "x11-dl",
  "x11rb",
  "xkbcommon-dl",

@@ -25,6 +25,9 @@ use winit::event_loop::ActiveEventLoop;
 use winit::window::{Theme, WindowAttributes, WindowId};
 use winit::{event::Modifiers, event::WindowEvent, keyboard::KeyCode, window::Window};
 
+#[cfg(target_os = "android")]
+use anyrender::PaintScene as _;
+
 #[cfg(feature = "accessibility")]
 use crate::accessibility::AccessibilityState;
 
@@ -279,6 +282,15 @@ impl<Rend: WindowRenderer> View<Rend> {
         let is_animating = inner.is_animating();
         let insets = self.safe_area_insets.to_logical(scale);
         self.renderer.render(|scene| {
+            #[cfg(target_os = "android")]
+            scene.fill(
+                peniko::Fill::NonZero,
+                kurbo::Affine::IDENTITY,
+                peniko::Color::BLACK,
+                None,
+                &kurbo::Rect::new(0.0, 0.0, width as f64, height as f64),
+            );
+
             paint_scene(scene, &inner, scale, width, height, insets.left, insets.top)
         });
 
