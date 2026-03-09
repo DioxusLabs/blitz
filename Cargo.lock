@@ -853,8 +853,8 @@ dependencies = [
  "slab",
  "smallvec",
  "stylo",
- "stylo_config",
  "stylo_dom",
+ "stylo_static_prefs",
  "stylo_taffy",
  "stylo_traits",
  "taffy",
@@ -6080,9 +6080,9 @@ dependencies = [
 
 [[package]]
 name = "selectors"
-version = "0.35.0"
+version = "0.36.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "93fdfed56cd634f04fe8b9ddf947ae3dc493483e819593d2ba17df9ad05db8b2"
+checksum = "223b960be86f7d302b7168cdbab137f9bdbf7e04a90c185312fab14dff49dc5f"
 dependencies = [
  "bitflags 2.11.0",
  "cssparser",
@@ -6575,15 +6575,15 @@ dependencies = [
 
 [[package]]
 name = "strum"
-version = "0.27.2"
+version = "0.28.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "af23d6f6c1a224baef9d3f61e287d2761385a5b88fdab4eb4c6f11aeb54c4bcf"
+checksum = "9628de9b8791db39ceda2b119bbe13134770b56c138ec1d3af810d045c04f9bd"
 
 [[package]]
 name = "strum_macros"
-version = "0.27.2"
+version = "0.28.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7695ce3845ea4b33927c055a39dc438a45b059f7c1b3d91d38d10355fb8cbca7"
+checksum = "ab85eea0270ee17587ed4156089e10b9e6880ee688791d45a905f5b1ca36f664"
 dependencies = [
  "heck",
  "proc-macro2",
@@ -6593,9 +6593,9 @@ dependencies = [
 
 [[package]]
 name = "stylo"
-version = "0.12.0"
+version = "0.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5ad158e6840fc267f068c7956ade41bbdd09a184d490a17ca38fcff94f910c15"
+checksum = "4330d96551cb9a8317850c3e3d7293cdd76ebef35502fc3e4aa96a7dc93a55cc"
 dependencies = [
  "app_units",
  "arrayvec",
@@ -6633,7 +6633,6 @@ dependencies = [
  "strum",
  "strum_macros",
  "stylo_atoms",
- "stylo_config",
  "stylo_derive",
  "stylo_dom",
  "stylo_malloc_size_of",
@@ -6651,25 +6650,19 @@ dependencies = [
 
 [[package]]
 name = "stylo_atoms"
-version = "0.12.0"
+version = "0.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4de3f265b0364402f95a6c5e8f05250fd659e8b011be0da9fa9f68b1f641f308"
+checksum = "e65bcab814c433be0cbce482dee3f5a416a9eeaf3450f64dfd1e7d834ceab886"
 dependencies = [
  "string_cache",
  "string_cache_codegen",
 ]
 
 [[package]]
-name = "stylo_config"
-version = "0.12.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0cf1244a50a1fba2266bc587f2efa85419105e7eb210eebfe828db0c6c996be0"
-
-[[package]]
 name = "stylo_derive"
-version = "0.12.0"
+version = "0.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7d440f646f5f66464ed6b77bed976867979efc4d2dfe5e910d17f06ebe6c7d19"
+checksum = "0fd35b4e461b4aee2050906c5d35d9362d27480e255594427805579005ffee06"
 dependencies = [
  "darling 0.20.11",
  "proc-macro2",
@@ -6680,9 +6673,9 @@ dependencies = [
 
 [[package]]
 name = "stylo_dom"
-version = "0.12.0"
+version = "0.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "410e21fafc44c6cd5ae0640422b19c651d0d356a7bfc34c15a2cd42811befee2"
+checksum = "02406fc2852541fdfb702449279bc26b86fe59b27ae9306312b7073345398580"
 dependencies = [
  "bitflags 2.11.0",
  "stylo_malloc_size_of",
@@ -6690,9 +6683,9 @@ dependencies = [
 
 [[package]]
 name = "stylo_malloc_size_of"
-version = "0.12.0"
+version = "0.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2fd4fa073f68ccb54cb5b747c0de7ec5807eefc57426a8463d5b5529873dfc7e"
+checksum = "6717608707ea834a8d5e1b8afe96e45135994b5aa386b22eb22c51ffcb6088b8"
 dependencies = [
  "app_units",
  "cssparser",
@@ -6708,12 +6701,9 @@ dependencies = [
 
 [[package]]
 name = "stylo_static_prefs"
-version = "0.12.0"
+version = "0.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9efd065dbc5acf78da14eda70578b15cd6c31e057289bf2f188186ca9c5ae6e1"
-dependencies = [
- "stylo_config",
-]
+checksum = "543a82089ebb1dd6d6295c117252e1d4eeea56f21c473fcdc15dfbf055b6599e"
 
 [[package]]
 name = "stylo_taffy"
@@ -6726,9 +6716,9 @@ dependencies = [
 
 [[package]]
 name = "stylo_traits"
-version = "0.12.0"
+version = "0.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5baad668b39a5e993a73111df8f55def808bd561c651acf794ab58a9c208c3f4"
+checksum = "683cecf9da0ec6f184b5dc2cc28b1af601aa7599a19c41a93bbea7840be3f097"
 dependencies = [
  "app_units",
  "bitflags 2.11.0",

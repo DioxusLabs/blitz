@@ -4,11 +4,9 @@
 use std::ptr::NonNull;
 use std::sync::atomic::Ordering;
 
-use crate::layout::damage::ALL_DAMAGE;
 use crate::layout::damage::compute_layout_damage;
 use crate::node::Node;
 use crate::node::NodeData;
-use atomic_refcell::{AtomicRef, AtomicRefMut};
 use markup5ever::{LocalName, LocalNameStaticSet, Namespace, NamespaceStaticSet, local_name};
 use selectors::bloom::BLOOM_HASH_MASK;
 use selectors::{
@@ -23,6 +21,7 @@ use style::animation::AnimationState;
 use style::applicable_declarations::ApplicableDeclarationBlock;
 use style::bloom::each_relevant_element_hash;
 use style::color::AbsoluteColor;
+use style::data::{ElementDataMut, ElementDataRef};
 use style::dom::AttributeProvider;
 use style::global_style_data::STYLE_THREAD_POOL;
 use style::invalidation::element::restyle_hints::RestyleHint;
@@ -283,7 +282,8 @@ impl<'a> TNode for BlitzNode<'a> {
 }
 
 impl AttributeProvider for BlitzNode<'_> {
-    fn get_attr(&self, attr: &style::LocalName) -> Option<String> {
+    fn get_attr(&self, attr: &style::LocalName, _ns: &style::Namespace) -> Option<String> {
+        // TODO: filter by namespace
         self.attr(attr.0.clone()).map(|s| s.to_string())
     }
 }
@@ -697,41 +697,26 @@ impl<'a> TElement for BlitzNode<'a> {
         unimplemented!()
     }
 
-    unsafe fn ensure_data(&self) -> AtomicRefMut<'_, style::data::ElementData> {
-        let mut stylo_data = self.stylo_element_data.borrow_mut();
-        if stylo_data.is_none() {
-            *stylo_data = Some(style::data::ElementData {
-                damage: ALL_DAMAGE,
-                ..Default::default()
-            });
-        }
-        AtomicRefMut::map(stylo_data, |sd| sd.as_mut().unwrap())
+    unsafe fn ensure_data(&self) -> ElementDataMut<'_> {
+        // SAFETY: stylo traversal has exclusive access to nodes
+        unsafe { self.stylo_element_data.ensure_init() }
     }
 
     unsafe fn clear_data(&self) {
-        *self.stylo_element_data.borrow_mut() = None;
+        // SAFETY: stylo traversal has exclusive access to nodes
+        unsafe { self.stylo_element_data.clear() }
     }
 
     fn has_data(&self) -> bool {
-        self.stylo_element_data.borrow().is_some()
+        self.stylo_element_data.has_data()
     }
 
-    fn borrow_data(&self) -> Option<AtomicRef<'_, style::data::ElementData>> {
-        let stylo_data = self.stylo_element_data.borrow();
-        if stylo_data.is_some() {
-            Some(AtomicRef::map(stylo_data, |sd| sd.as_ref().unwrap()))
-        } else {
-            None
-        }
+    fn borrow_data(&self) -> Option<ElementDataRef<'_>> {
+        self.stylo_element_data.get()
     }
 
-    fn mutate_data(&self) -> Option<AtomicRefMut<'_, style::data::ElementData>> {
-        let stylo_data = self.stylo_element_data.borrow_mut();
-        if stylo_data.is_some() {
-            Some(AtomicRefMut::map(stylo_data, |sd| sd.as_mut().unwrap()))
-        } else {
-            None
-        }
+    fn mutate_data(&self) -> Option<ElementDataMut<'_>> {
+        unsafe { self.stylo_element_data.unsafe_stylo_only_mut() }
     }
 
     fn skip_item_display_fixup(&self) -> bool {

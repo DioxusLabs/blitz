@@ -38,7 +38,9 @@ impl BaseDocument {
         node_id: usize,
         damage_from_parent: RestyleDamage,
     ) -> RestyleDamage {
-        let Some(mut damage) = self.nodes[node_id].damage() else {
+        let mut damage = if let Some(data) = self.nodes[node_id].stylo_element_data.get_mut() {
+            data.damage
+        } else {
             return RestyleDamage::empty();
         };
         damage |= damage_from_parent;
@@ -383,7 +385,7 @@ impl BaseDocument {
         let display = {
             let node = self.nodes.get_mut(node_id).unwrap();
             let _damage = node.damage().unwrap_or(ALL_DAMAGE);
-            let stylo_element_data = node.stylo_element_data.borrow();
+            let stylo_element_data = node.stylo_element_data.get();
             let primary_styles = stylo_element_data
                 .as_ref()
                 .and_then(|data| data.styles.get_primary());

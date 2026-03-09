@@ -171,7 +171,7 @@ pub(crate) fn collect_table_cells(
     columns: &mut Vec<TrackSizingFunction>,
     first_cell_border: &mut Option<ServoArc<Border>>,
 ) {
-    let node = &doc.nodes[node_id];
+    let node = &mut doc.nodes[node_id];
 
     if !node.is_element() {
         return;

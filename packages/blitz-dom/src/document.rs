@@ -340,12 +340,10 @@ impl BaseDocument {
         let font_ctx = Arc::new(Mutex::new(font_ctx));
 
         // Make sure we turn on stylo features *before* creating the Stylist
-        style_config::set_bool("layout.flexbox.enabled", true);
-        style_config::set_bool("layout.grid.enabled", true);
-        style_config::set_bool("layout.legacy_layout", true);
-        style_config::set_bool("layout.unimplemented", true);
-        style_config::set_bool("layout.columns.enabled", true);
-        style_config::set_i32("layout.threads", -1);
+        style_config::set_pref!("layout.grid.enabled", true);
+        style_config::set_pref!("layout.unimplemented", true);
+        style_config::set_pref!("layout.columns.enabled", true);
+        style_config::set_pref!("layout.threads", -1);
 
         let viewport = config.viewport.unwrap_or_default();
         let device = make_device(&viewport, font_ctx.clone());
@@ -448,7 +446,8 @@ impl BaseDocument {
             },
             ..Default::default()
         };
-        *doc.root_node().stylo_element_data.borrow_mut() = Some(stylo_element_data);
+        let stylo_data = &mut doc.root_node_mut().stylo_element_data;
+        *stylo_data.ensure_init_mut() = stylo_element_data;
 
         doc
     }

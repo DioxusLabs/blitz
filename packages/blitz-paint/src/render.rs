@@ -359,9 +359,9 @@ impl<'dom> BlitzDomPainter<'dom> {
     ) -> ElementCx<'w> {
         let style = node
             .stylo_element_data
-            .borrow()
+            .primary_styles()
             .as_ref()
-            .map(|element_data| element_data.styles.primary().clone())
+            .map(|styles| (*styles).clone())
             .unwrap_or(
                 ComputedValues::initial_values_with_font_override(Font::initial_values()).to_arc(),
             );

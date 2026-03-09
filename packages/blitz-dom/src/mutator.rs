@@ -132,13 +132,13 @@ impl DocumentMutator<'_> {
         data.flush_style_attribute(self.doc.guard(), &self.doc.url.url_extra_data());
 
         let id = self.doc.create_node(NodeData::Element(data));
-        let node = self.doc.get_node(id).unwrap();
+        let node = self.doc.get_node_mut(id).unwrap();
 
         // Initialise style data
-        *node.stylo_element_data.borrow_mut() = Some(style::data::ElementData {
+        *node.stylo_element_data.ensure_init_mut() = style::data::ElementData {
             damage: ALL_DAMAGE,
             ..Default::default()
-        });
+        };
 
         id
     }
@@ -215,7 +215,7 @@ impl DocumentMutator<'_> {
         self.doc.snapshot_node(node_id);
 
         let node = &mut self.doc.nodes[node_id];
-        if let Some(data) = &mut *node.stylo_element_data.borrow_mut() {
+        if let Some(mut data) = node.stylo_element_data.get_mut() {
             data.hint |= RestyleHint::restyle_subtree();
             data.damage.insert(ALL_DAMAGE);
         }
@@ -224,7 +224,7 @@ impl DocumentMutator<'_> {
         let parent = node.parent;
         if let Some(parent_id) = parent {
             let parent = &mut self.doc.nodes[parent_id];
-            if let Some(data) = &mut *parent.stylo_element_data.borrow_mut() {
+            if let Some(mut data) = parent.stylo_element_data.get_mut() {
                 data.hint |= RestyleHint::restyle_subtree();
             }
         }
@@ -294,12 +294,10 @@ impl DocumentMutator<'_> {
 
         let node = &mut self.doc.nodes[node_id];
 
-        let mut stylo_element_data = node.stylo_element_data.borrow_mut();
-        if let Some(data) = &mut *stylo_element_data {
+        if let Some(mut data) = node.stylo_element_data.get_mut() {
             data.hint |= RestyleHint::restyle_subtree();
             data.damage.insert(ALL_DAMAGE);
         }
-        drop(stylo_element_data);
 
         // Mark ancestors dirty so the style traversal visits this subtree.
         // Without this, the traversal may skip nodes with pending RestyleHint/damage.
@@ -394,7 +392,7 @@ impl DocumentMutator<'_> {
 
             // TODO: make this fine grained / conditional based on ElementSelectorFlags
             if parent_is_in_doc {
-                if let Some(data) = &mut *parent.stylo_element_data.borrow_mut() {
+                if let Some(mut data) = parent.stylo_element_data.get_mut() {
                     data.hint |= RestyleHint::restyle_subtree();
                 }
                 // Mark ancestors dirty so the style traversal visits this subtree.
@@ -414,7 +412,7 @@ impl DocumentMutator<'_> {
 
         // TODO: make this fine grained / conditional based on ElementSelectorFlags
         if parent_is_in_doc {
-            if let Some(data) = &mut *parent.stylo_element_data.borrow_mut() {
+            if let Some(mut data) = parent.stylo_element_data.get_mut() {
                 data.hint |= RestyleHint::restyle_subtree();
             }
             // Mark ancestors dirty so the style traversal visits this subtree.
@@ -467,7 +465,7 @@ impl DocumentMutator<'_> {
 
         // TODO: make this fine grained / conditional based on ElementSelectorFlags
         if new_parent_is_in_doc {
-            if let Some(data) = &mut *new_parent.stylo_element_data.borrow_mut() {
+            if let Some(mut data) = new_parent.stylo_element_data.get_mut() {
                 data.hint |= RestyleHint::restyle_subtree();
             }
             // Mark ancestors dirty so the style traversal visits this subtree.
@@ -491,7 +489,7 @@ impl DocumentMutator<'_> {
 
                 // TODO: make this fine grained / conditional based on ElementSelectorFlags
                 if child_was_in_doc {
-                    if let Some(data) = &mut *old_parent.stylo_element_data.borrow_mut() {
+                    if let Some(mut data) = old_parent.stylo_element_data.get_mut() {
                         data.hint |= RestyleHint::restyle_subtree();
                     }
                     // Mark ancestors dirty so the style traversal visits this subtree.

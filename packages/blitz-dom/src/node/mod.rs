@@ -3,6 +3,7 @@
 mod attributes;
 mod element;
 mod node;
+mod stylo_data;
 
 pub use attributes::{Attribute, Attributes};
 pub use element::{
