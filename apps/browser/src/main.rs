@@ -182,6 +182,16 @@ fn app() -> Element {
         ""
     };
 
+    #[cfg(feature = "screenshot")]
+    let screenshot_item = rsx!(
+        div { class: "menu-item", onclick: move |_| screenshot_action(()),
+            img { class: "menu-item-icon", src: icons::CAMERA_ICON }
+            "Capture Screenshot"
+        }
+    );
+    #[cfg(not(feature = "screenshot"))]
+    let screenshot_item = rsx!();
+
     rsx!(
         div { id: "frame",
               padding_top: TOP_PAD,
@@ -277,12 +287,7 @@ fn app() -> Element {
                                 img { class: "menu-item-icon", src: icons::CODE_ICON }
                                 "View Source"
                             }
-                            if cfg!(feature = "screenshot") {
-                                div { class: "menu-item", onclick: move |_| screenshot_action(()),
-                                    img { class: "menu-item-icon", src: icons::CAMERA_ICON }
-                                    "Capture Screenshot"
-                                }
-                            }
+                            {screenshot_item}
                             div { class: "menu-item", onclick: move |_| devtools_action(()), "Toggle DevTools" }
                         }
                     }

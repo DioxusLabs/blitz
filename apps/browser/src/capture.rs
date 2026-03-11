@@ -12,8 +12,7 @@ use peniko::Fill;
 use peniko::kurbo::Rect;
 
 #[cfg(feature = "screenshot")]
-use std::path::Path;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 /// Capture a screenshot as PNG and write it to the specified path
 #[cfg(feature = "screenshot")]
@@ -50,6 +49,7 @@ pub(crate) fn capture_screenshot(doc: &blitz_dom::BaseDocument, path: &Path) {
 }
 
 /// Open an RFD file dialog to get a path to save a file to
+#[cfg(feature = "screenshot")]
 pub(crate) async fn try_get_save_path() -> Option<PathBuf> {
     let timestamp = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
