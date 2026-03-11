@@ -76,6 +76,10 @@ impl<T: Send + Sync + 'static> ResourceHandler<T> {
         Box::new(Self::new(tx, doc_id, node_id, shell_provider, data)) as _
     }
 
+    pub(crate) fn request_id(&self) -> usize {
+        self.request_id
+    }
+
     fn respond(&self, resolved_url: String, result: Result<Resource, String>) {
         let response = ResourceLoadResponse {
             request_id: self.request_id,

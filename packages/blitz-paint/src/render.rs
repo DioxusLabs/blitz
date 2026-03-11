@@ -102,6 +102,10 @@ impl<'dom> BlitzDomPainter<'dom> {
     /// This assumes styles are resolved and layout is complete.
     /// Make sure you do those before trying to render
     pub fn paint_scene(&self, scene: &mut impl PaintScene) {
+        if self.dom.has_pending_critical_resources() {
+            return;
+        }
+
         // Simply render the document (the root element (note that this is not the same as the root node)))
         // scene.reset();
         let viewport_scroll = self.dom.as_ref().viewport_scroll();

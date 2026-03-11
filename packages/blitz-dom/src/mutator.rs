@@ -712,6 +712,16 @@ impl<'doc> DocumentMutator<'doc> {
     fn load_linked_stylesheet(&mut self, target_id: usize) {
         let node = &self.doc.nodes[target_id];
 
+        let mut is_in_head = false;
+        let mut parent_id = node.parent;
+        while let Some(id) = parent_id
+            && !is_in_head
+        {
+            let parent = &self.doc.nodes[id];
+            is_in_head |= parent.data.is_element_with_tag_name(&local_name!("head"));
+            parent_id = parent.parent;
+        }
+
         let rel_attr = node.attr(local_name!("rel"));
         let href_attr = node.attr(local_name!("href"));
 
@@ -723,21 +733,27 @@ impl<'doc> DocumentMutator<'doc> {
         }
 
         let url = self.doc.resolve_url(href);
-        self.doc.net_provider.fetch(
+        let handler = ResourceHandler::new(
+            self.doc.tx.clone(),
             self.doc.id(),
-            Request::get(url.clone()),
-            ResourceHandler::boxed(
-                self.doc.tx.clone(),
-                self.doc.id(),
-                Some(node.id),
-                self.doc.shell_provider.clone(),
-                StylesheetHandler {
-                    source_url: url,
-                    guard: self.doc.guard.clone(),
-                    net_provider: self.doc.net_provider.clone(),
-                },
-            ),
+            Some(node.id),
+            self.doc.shell_provider.clone(),
+            StylesheetHandler {
+                source_url: url.clone(),
+                guard: self.doc.guard.clone(),
+                net_provider: self.doc.net_provider.clone(),
+            },
         );
+
+        if is_in_head {
+            self.doc
+                .pending_critical_resources
+                .insert(handler.request_id());
+        }
+
+        self.doc
+            .net_provider
+            .fetch(self.doc.id(), Request::get(url), Box::new(handler));
     }
 
     fn unload_stylesheet(&mut self, node_id: usize) {

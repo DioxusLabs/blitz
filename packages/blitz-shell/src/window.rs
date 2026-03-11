@@ -277,14 +277,20 @@ impl<Rend: WindowRenderer> View<Rend> {
         let (width, height) = inner.viewport().window_size;
         let scale = inner.viewport().scale_f64();
         let is_animating = inner.is_animating();
+        let is_blocked = inner.has_pending_critical_resources();
         let insets = self.safe_area_insets.to_logical(scale);
         self.renderer.render(|scene| {
             paint_scene(scene, &inner, scale, width, height, insets.left, insets.top)
         });
+        if !is_blocked && is_visible {
+            self.renderer.render(|scene| {
+                paint_scene(scene, &inner, scale, width, height, insets.left, insets.top)
+            });
+        }
 
         drop(inner);
 
-        if is_visible && is_animating {
+        if !is_blocked && is_visible && is_animating {
             self.request_redraw();
         }
     }

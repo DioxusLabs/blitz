@@ -274,6 +274,9 @@ pub struct BaseDocument {
     /// Value is a list of (node_id, image_type) pairs waiting for the image.
     pub(crate) pending_images: HashMap<String, Vec<(usize, ImageType)>>,
 
+    // Tracks in-flight "critical" resources (e.g. stylesheets linked from the `<head>`)
+    pub(crate) pending_critical_resources: HashSet<usize>,
+
     // Service providers
     /// Network provider. Can be used to fetch assets.
     pub net_provider: Arc<dyn NetProvider>,
@@ -407,6 +410,7 @@ impl BaseDocument {
             deferred_construction_nodes: Vec::new(),
             image_cache: HashMap::new(),
             pending_images: HashMap::new(),
+            pending_critical_resources: HashSet::new(),
             controls_to_form: HashMap::new(),
             net_provider,
             navigation_provider,
@@ -880,7 +884,14 @@ impl BaseDocument {
         }
     }
 
+    /// Whether the Document has pending requests for "critical" resources (that should block rendering)
+    pub fn has_pending_critical_resources(&self) -> bool {
+        !self.pending_critical_resources.is_empty()
+    }
+
     pub fn load_resource(&mut self, res: ResourceLoadResponse) {
+        self.pending_critical_resources.remove(&res.request_id);
+
         let Ok(resource) = res.result else {
             // TODO: handle error
             return;
