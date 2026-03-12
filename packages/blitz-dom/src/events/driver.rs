@@ -183,6 +183,7 @@ impl<'doc, Handler: EventHandler> EventDriver<'doc, Handler> {
             UiEvent::KeyDown(_) => focussed_node_id,
             UiEvent::Ime(_) => focussed_node_id,
             UiEvent::ClipboardPaste(_) => focussed_node_id,
+            UiEvent::ClipboardCopy | UiEvent::ClipboardCut => focussed_node_id,
         };
         let target = target.unwrap_or_else(|| self.doc.inner().root_element().id);
 
@@ -224,8 +225,11 @@ impl<'doc, Handler: EventHandler> EventDriver<'doc, Handler> {
                 self.handle_dom_event(DomEvent::new(target, DomEventData::Ime(data)))
             }
             UiEvent::ClipboardPaste(data) => {
-    self.handle_dom_event(DomEvent::new(target, DomEventData::Paste(data)))
-}
+            self.handle_dom_event(DomEvent::new(target, DomEventData::Paste(data)))
+               }
+            UiEvent::ClipboardCut => {
+                self.handle_dom_event(DomEvent::new(target, DomEventData::Cut))
+            }
         };
 
         // Update document input state (hover, focus, active, etc)
