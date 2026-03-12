@@ -2724,7 +2724,7 @@ dependencies = [
 [[package]]
 name = "fontique"
 version = "0.7.0"
-source = "git+https://github.com/linebender/parley?rev=6d0d9c90a7875ceb34f0bb1c2bfbfbe5b5d74856#6d0d9c90a7875ceb34f0bb1c2bfbfbe5b5d74856"
+source = "git+https://github.com/linebender/parley?rev=c3d3d41eaaca0d2dce9558f460c2c129559fc425#c3d3d41eaaca0d2dce9558f460c2c129559fc425"
 dependencies = [
  "hashbrown 0.16.1",
  "linebender_resource_handle",
@@ -5075,7 +5075,7 @@ dependencies = [
 [[package]]
 name = "parley"
 version = "0.7.0"
-source = "git+https://github.com/linebender/parley?rev=6d0d9c90a7875ceb34f0bb1c2bfbfbe5b5d74856#6d0d9c90a7875ceb34f0bb1c2bfbfbe5b5d74856"
+source = "git+https://github.com/linebender/parley?rev=c3d3d41eaaca0d2dce9558f460c2c129559fc425#c3d3d41eaaca0d2dce9558f460c2c129559fc425"
 dependencies = [
  "fontique",
  "harfrust",
@@ -5092,7 +5092,7 @@ dependencies = [
 [[package]]
 name = "parley_data"
 version = "0.0.0"
-source = "git+https://github.com/linebender/parley?rev=6d0d9c90a7875ceb34f0bb1c2bfbfbe5b5d74856#6d0d9c90a7875ceb34f0bb1c2bfbfbe5b5d74856"
+source = "git+https://github.com/linebender/parley?rev=c3d3d41eaaca0d2dce9558f460c2c129559fc425#c3d3d41eaaca0d2dce9558f460c2c129559fc425"
 dependencies = [
  "icu_collections",
  "icu_properties",
@@ -6943,7 +6943,7 @@ checksum = "253bcead4f3aa96243b0f8fa46f9010e87ca23bd5d0c723d474ff1d2417bbdf8"
 [[package]]
 name = "text_primitives"
 version = "0.1.0"
-source = "git+https://github.com/linebender/parley?rev=6d0d9c90a7875ceb34f0bb1c2bfbfbe5b5d74856#6d0d9c90a7875ceb34f0bb1c2bfbfbe5b5d74856"
+source = "git+https://github.com/linebender/parley?rev=c3d3d41eaaca0d2dce9558f460c2c129559fc425#c3d3d41eaaca0d2dce9558f460c2c129559fc425"
 
 [[package]]
 name = "thin-vec"
