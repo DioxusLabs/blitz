@@ -240,6 +240,8 @@ pub enum DomEventData {
     Blur(BlitzFocusEvent),
     FocusIn(BlitzFocusEvent),
     FocusOut(BlitzFocusEvent),
+
+    Paste(BlitzClipboardEvent),
 }
 impl DomEventData {
     pub fn discriminant(&self) -> u8 {
@@ -330,9 +332,9 @@ impl DomEventData {
             Self::FocusIn { .. } => DomEventKind::FocusIn,
             Self::FocusOut { .. } => DomEventKind::FocusOut,
 
-            Self::Copy => DomEventKind::Copy,
-            Self::Cut => DomEventKind::Cut,
             Self::Paste { .. } => DomEventKind::Paste,
+        Self::Copy => DomEventKind::Copy,
+        Self::Cut => DomEventKind::Cut,
         }
     }
 
