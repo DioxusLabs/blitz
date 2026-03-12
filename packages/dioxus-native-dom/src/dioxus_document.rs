@@ -311,6 +311,14 @@ impl EventHandler for DioxusEventHandler<'_> {
                 values: vec![],
             })),
 
+            DomEventData::Paste(data) => {
+         Some(wrap_event_data(dioxus_html::ClipboardData::new(data.clone())))
+               }
+
+           DomEventData::Copy | DomEventData::Cut => {
+                   Some(wrap_event_data(dioxus_html::ClipboardData::default()))
+                 }
+
             // TODO: Implement IME handling
             DomEventData::Ime(_) => None,
         };
