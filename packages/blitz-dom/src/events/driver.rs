@@ -223,9 +223,9 @@ impl<'doc, Handler: EventHandler> EventDriver<'doc, Handler> {
             UiEvent::Ime(data) => {
                 self.handle_dom_event(DomEvent::new(target, DomEventData::Ime(data)))
             }
-            UiEvent::ClipboardPaste(text) => {
-        self.handle_dom_event(DomEvent::new(target, DomEventData::ClipboardPaste(text)))
-    }
+            UiEvent::ClipboardPaste(data) => {
+    self.handle_dom_event(DomEvent::new(target, DomEventData::Paste(data)))
+}
         };
 
         // Update document input state (hover, focus, active, etc)
