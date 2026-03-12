@@ -333,8 +333,8 @@ impl DomEventData {
             Self::FocusOut { .. } => DomEventKind::FocusOut,
 
             Self::Paste { .. } => DomEventKind::Paste,
-        Self::Copy => DomEventKind::Copy,
-        Self::Cut => DomEventKind::Cut,
+            Self::Copy => DomEventKind::Copy,
+            Self::Cut => DomEventKind::Cut,
         }
     }
 
