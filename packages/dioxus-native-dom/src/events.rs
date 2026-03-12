@@ -67,12 +67,13 @@ impl HtmlEventConverter for NativeConverter {
         unimplemented!("todo: convert_animation_data in dioxus-native. requires support in blitz")
     }
 
-   fn convert_clipboard_data(&self, event: &PlatformEventData) -> ClipboardData {
-        event
+ fn convert_clipboard_data(&self, event: &PlatformEventData) -> ClipboardData {
+        let raw_event = event
             .downcast::<blitz_traits::events::BlitzClipboardEvent>()
             .unwrap()
-            .clone()
-            .into()
+            .clone();
+        
+        dioxus_html::ClipboardData::new(NativeClipboardData(raw_event))
     }
 
     fn convert_composition_data(&self, _event: &PlatformEventData) -> CompositionData {
