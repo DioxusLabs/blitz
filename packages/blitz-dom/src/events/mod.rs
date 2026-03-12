@@ -88,6 +88,10 @@ pub(crate) fn handle_dom_event<F: FnMut(DomEvent)>(
             DomEventData::Blur(_) => None,
             DomEventData::FocusIn(_) => None,
             DomEventData::FocusOut(_) => None,
+
+            DomEventData::Paste(data) => Some(UiEvent::ClipboardPaste(data)),
+            DomEventData::Copy => Some(UiEvent::ClipboardCopy),
+            DomEventData::Cut => Some(UiEvent::ClipboardCut)
         };
 
         if let Some(ui_event) = ui_event {
@@ -202,5 +206,6 @@ pub(crate) fn handle_dom_event<F: FnMut(DomEvent)>(
         DomEventData::FocusOut(_) => {
             // Do nothing (no default action)
         }
+        DomEventData::Paste(_) | DomEventData::Copy | DomEventData::Cut => {}
     }
 }
