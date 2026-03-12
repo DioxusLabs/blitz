@@ -388,31 +388,45 @@ impl<Rend: WindowRenderer> View<Rend> {
                 self.request_redraw();
             },
             WindowEvent::ModifiersChanged(new_state) => {
-                // Store new keyboard modifier (ctrl, shift, etc) state for later use
+                
                 self.keyboard_modifiers = new_state;
             }
-            WindowEvent::KeyboardInput { event, .. } => {
+          WindowEvent::KeyboardInput { event, .. } => {
+    if let PhysicalKey::Code(key_code) = event.physical_key && event.state.is_pressed() {
+        let ctrl = self.keyboard_modifiers.state().control_key();
+        let meta = self.keyboard_modifiers.state().meta_key();
+        let alt = self.keyboard_modifiers.state().alt_key();
 
-                if let PhysicalKey::Code(key_code) = event.physical_key && event.state.is_pressed() {
-                        let ctrl = self.keyboard_modifiers.state().control_key();
-                        let meta = self.keyboard_modifiers.state().meta_key();
-                        let alt = self.keyboard_modifiers.state().alt_key();
-
-                        // Ctrl/Super keyboard shortcuts
-                        if ctrl | meta {
-                            match key_code {
-                                KeyCode::Equal => {
-                                    self.doc.inner_mut().viewport_mut().zoom_by(0.1);
-                                },
-                                KeyCode::Minus => {
-                                    self.doc.inner_mut().viewport_mut().zoom_by(-0.1);
-                                },
-                                KeyCode::Digit0 => {
-                                    self.doc.inner_mut().viewport_mut().set_zoom(1.0);
-                                }
-                                _ => {}
-                            };
-                        }
+        // shortcuts
+        if ctrl | meta {
+            match key_code {
+                KeyCode::Equal => {
+                    self.doc.inner_mut().viewport_mut().zoom_by(0.1);
+                },
+                KeyCode::Minus => {
+                    self.doc.inner_mut().viewport_mut().zoom_by(-0.1);
+                },
+                KeyCode::Digit0 => {
+                    self.doc.inner_mut().viewport_mut().set_zoom(1.0);
+                }
+               
+                KeyCode::KeyV => {
+                    
+                    let inner = self.doc.inner();
+                    let shell = inner.shell_provider.clone();
+                    drop(inner); 
+                    
+                    //getting string here
+                    if let Some(clipboard_text) = shell.get_clipboard() {
+                        // paste
+                        self.doc.handle_ui_event(UiEvent::ClipboardPaste(clipboard_text));
+                        self.request_redraw();
+                    }
+                }
+                // -------------------------
+                _ => {}
+            };
+        }
 
                         // Alt keyboard shortcuts
                         if alt {
