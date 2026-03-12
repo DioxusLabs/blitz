@@ -391,75 +391,53 @@ impl<Rend: WindowRenderer> View<Rend> {
                 
                 self.keyboard_modifiers = new_state;
             }
-          WindowEvent::KeyboardInput { event, .. } => {
-    if let PhysicalKey::Code(key_code) = event.physical_key && event.state.is_pressed() {
-        let ctrl = self.keyboard_modifiers.state().control_key();
-        let meta = self.keyboard_modifiers.state().meta_key();
-        let alt = self.keyboard_modifiers.state().alt_key();
+   WindowEvent::KeyboardInput { event, .. } => {
+    let modifiers = self.keyboard_modifiers.state();
+    let is_pressed = event.state.is_pressed();
+    
+    if let PhysicalKey::Code(key_code) = event.physical_key && is_pressed {
+        let ctrl = modifiers.control_key();
+        let meta = modifiers.meta_key();
+        let alt = modifiers.alt_key();
 
-        // shortcuts
         if ctrl | meta {
             match key_code {
-                KeyCode::Equal => {
-                    self.doc.inner_mut().viewport_mut().zoom_by(0.1);
-                },
-                KeyCode::Minus => {
-                    self.doc.inner_mut().viewport_mut().zoom_by(-0.1);
-                },
-                KeyCode::Digit0 => {
-                    self.doc.inner_mut().viewport_mut().set_zoom(1.0);
-                }
-               
+                KeyCode::Equal => self.doc.inner_mut().viewport_mut().zoom_by(0.1),
+                KeyCode::Minus => self.doc.inner_mut().viewport_mut().zoom_by(-0.1),
+                KeyCode::Digit0 => self.doc.inner_mut().viewport_mut().set_zoom(1.0),
                 KeyCode::KeyV => {
-                    
-                    let inner = self.doc.inner();
-                    let shell = inner.shell_provider.clone();
-                    drop(inner); 
-                    
-                    //getting string here
-                    if let Some(clipboard_text) = shell.get_clipboard() {
-                        // paste
-                        self.doc.handle_ui_event(UiEvent::ClipboardPaste(clipboard_text));
-                        self.request_redraw();
+                    let shell = self.doc.inner().shell_provider.clone();
+                    if let Some(text) = shell.get_clipboard() {
+                        self.doc.handle_ui_event(UiEvent::ClipboardPaste(text));
                     }
                 }
-                // -------------------------
+                KeyCode::KeyC => self.doc.handle_ui_event(UiEvent::ClipboardCopy),
+                KeyCode::KeyX => self.doc.handle_ui_event(UiEvent::ClipboardCut),
                 _ => {}
-            };
+            }
+            self.request_redraw();
         }
 
-                        // Alt keyboard shortcuts
-                        if alt {
-                            match key_code {
-                                KeyCode::KeyD => {
-                                    let mut inner = self.doc.inner_mut();
-                                    inner.devtools_mut().toggle_show_layout();
-                                    drop(inner);
-                                    self.request_redraw();
-                                }
-                                KeyCode::KeyH => {
-                                    let mut inner = self.doc.inner_mut();
-                                    inner.devtools_mut().toggle_highlight_hover();
-                                    drop(inner);
-                                    self.request_redraw();
-                                }
-                                KeyCode::KeyT => self.doc.inner().print_taffy_tree(),
-                                _ => {}
-                            };
-                        }
-
-                }
-
-                // Unmodified keypresses
-                let key_event_data = winit_key_event_to_blitz(&event, self.keyboard_modifiers.state());
-                let event = if event.state.is_pressed() {
-                    UiEvent::KeyDown(key_event_data)
-                } else {
-                    UiEvent::KeyUp(key_event_data)
-                };
-
-                self.doc.handle_ui_event(event);
+        if alt {
+            match key_code {
+                KeyCode::KeyD => self.doc.inner_mut().devtools_mut().toggle_show_layout(),
+                KeyCode::KeyH => self.doc.inner_mut().devtools_mut().toggle_highlight_hover(),
+                KeyCode::KeyT => self.doc.inner().print_taffy_tree(),
+                _ => {}
             }
+            self.request_redraw();
+        }
+    }
+
+    let key_event_data = winit_key_event_to_blitz(&event, modifiers);
+    let ui_event = if is_pressed {
+        UiEvent::KeyDown(key_event_data)
+    } else {
+        UiEvent::KeyUp(key_event_data)
+    };
+
+    self.doc.handle_ui_event(ui_event);
+}
             WindowEvent::PointerEntered { /*device_id*/.. } => {}
             WindowEvent::PointerLeft { /*device_id*/.. } => {}
             WindowEvent::PointerMoved { position, source, primary, .. } => {
