@@ -240,7 +240,8 @@ pub enum DomEventData {
     Blur(BlitzFocusEvent),
     FocusIn(BlitzFocusEvent),
     FocusOut(BlitzFocusEvent),
-
+    Copy,
+    Cut,
     Paste(BlitzClipboardEvent),
 }
 impl DomEventData {
