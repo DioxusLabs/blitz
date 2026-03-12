@@ -511,9 +511,12 @@ impl InteractionLocation for NativeWheelData {
     }
 }
 
-impl HasClipboardData for blitz_traits::events::BlitzClipboardEvent {
-    fn content(&self) -> String {
-        self.0.clone() 
+#[derive(Clone, Debug)]
+pub struct NativeClipboardData(pub blitz_traits::events::BlitzClipboardEvent);
+
+impl HasClipboardData for NativeClipboardData {
+    fn text(&self) -> Option<String> {
+        Some(self.0.content.clone())
     }
     
     fn as_any(&self) -> &dyn Any {
