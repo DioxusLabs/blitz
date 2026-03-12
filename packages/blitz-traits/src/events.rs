@@ -12,6 +12,12 @@ pub struct EventState {
     propagation_stopped: bool,
     redraw_requested: bool,
 }
+
+#[derive(Clone, Debug)]
+pub struct BlitzClipboardEvent {
+    pub content: String, // The text being pasted
+}
+
 impl EventState {
     #[inline(always)]
     pub fn prevent_default(&mut self) {
@@ -63,6 +69,9 @@ pub enum UiEvent {
     KeyUp(BlitzKeyEvent),
     KeyDown(BlitzKeyEvent),
     Ime(BlitzImeEvent),
+    ClipboardPaste(BlitzClipboardEvent),
+    ClipboardCopy, 
+    ClipboardCut,
 }
 impl UiEvent {
     pub fn discriminant(&self) -> u8 {
@@ -139,6 +148,10 @@ pub enum DomEventKind {
     Blur,
     FocusIn,
     FocusOut,
+
+    Copy,
+    Cut,
+    Paste,
 }
 impl DomEventKind {
     pub fn discriminant(self) -> u8 {
@@ -182,6 +195,10 @@ impl FromStr for DomEventKind {
             "blur" => Ok(Self::Blur),
             "focusin" => Ok(Self::FocusIn),
             "focusout" => Ok(Self::FocusOut),
+
+            "copy" => Ok(Self::Copy),
+            "cut" => Ok(Self::Cut),
+            "paste" => Ok(Self::Paste),
             _ => Err(()),
         }
     }
@@ -270,6 +287,10 @@ impl DomEventData {
             Self::Blur { .. } => "blur",
             Self::FocusIn { .. } => "focusin",
             Self::FocusOut { .. } => "focusout",
+            
+            Self::Copy => "copy",
+            Self::Cut => "cut",
+            Self::Paste { .. } => "paste",
         }
     }
 
@@ -308,6 +329,10 @@ impl DomEventData {
             Self::Blur { .. } => DomEventKind::Blur,
             Self::FocusIn { .. } => DomEventKind::FocusIn,
             Self::FocusOut { .. } => DomEventKind::FocusOut,
+
+            Self::Copy => DomEventKind::Copy,
+            Self::Cut => DomEventKind::Cut,
+            Self::Paste { .. } => DomEventKind::Paste,
         }
     }
 
@@ -346,6 +371,8 @@ impl DomEventData {
             Self::Blur { .. } => false,
             Self::FocusIn { .. } => false,
             Self::FocusOut { .. } => false,
+
+            Self::Copy | Self::Cut | Self::Paste { .. } => true,
         }
     }
 
@@ -384,6 +411,8 @@ impl DomEventData {
             Self::Blur { .. } => false,
             Self::FocusIn { .. } => true,
             Self::FocusOut { .. } => true,
+
+            Self::Copy | Self::Cut | Self::Paste { .. } => true,
         }
     }
 }
