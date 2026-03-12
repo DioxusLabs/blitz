@@ -227,6 +227,9 @@ impl<'doc, Handler: EventHandler> EventDriver<'doc, Handler> {
             UiEvent::ClipboardPaste(data) => {
             self.handle_dom_event(DomEvent::new(target, DomEventData::Paste(data)))
                }
+            UiEvent::ClipboardCopy => {
+                self.handle_dom_event(DomEvent::new(target, DomEventData::Copy))
+            }
             UiEvent::ClipboardCut => {
                 self.handle_dom_event(DomEvent::new(target, DomEventData::Cut))
             }
