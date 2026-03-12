@@ -14,7 +14,7 @@ use dioxus_html::{
         InteractionElementOffset, InteractionLocation, ModifiersInteraction, PointerInteraction,
     },
     AnimationData, CancelData, ClipboardData, CompositionData, DragData, FocusData, FormData,
-    FormValue, HasFileData, HasFocusData, HasFormData, HasKeyboardData, HasMouseData,
+    FormValue, HasFileData, HasFocusData, HasFormData, HasKeyboardData, HasMouseData, HasClipboardData,
     HasPointerData, HasScrollData, HasWheelData, HtmlEventConverter, ImageData, KeyboardData,
     MediaData, MountedData, MountedError, MountedResult, MouseData, PlatformEventData, PointerData,
     RenderedElementBacking, ResizeData, ScrollBehavior, ScrollData, ScrollToOptions, SelectionData,
