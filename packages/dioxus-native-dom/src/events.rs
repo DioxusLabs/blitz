@@ -67,8 +67,12 @@ impl HtmlEventConverter for NativeConverter {
         unimplemented!("todo: convert_animation_data in dioxus-native. requires support in blitz")
     }
 
-    fn convert_clipboard_data(&self, _event: &PlatformEventData) -> ClipboardData {
-        unimplemented!("todo: convert_clipboard_data in dioxus-native. requires support in blitz")
+   fn convert_clipboard_data(&self, event: &PlatformEventData) -> ClipboardData {
+        event
+            .downcast::<blitz_traits::events::BlitzClipboardEvent>()
+            .unwrap()
+            .clone()
+            .into()
     }
 
     fn convert_composition_data(&self, _event: &PlatformEventData) -> CompositionData {
@@ -504,5 +508,15 @@ impl InteractionLocation for NativeWheelData {
 
     fn page_coordinates(&self) -> PagePoint {
         PagePoint::new(self.0.page_x() as f64, self.0.page_y() as f64)
+    }
+}
+
+impl HasClipboardData for blitz_traits::events::BlitzClipboardEvent {
+    fn content(&self) -> String {
+        self.0.clone() 
+    }
+    
+    fn as_any(&self) -> &dyn Any {
+        self as &dyn Any
     }
 }
