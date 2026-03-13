@@ -70,12 +70,9 @@ impl HtmlEventConverter for NativeConverter {
 fn convert_clipboard_data(&self, event: &PlatformEventData) -> ClipboardData {
     let raw_event = event
         .downcast::<blitz_traits::events::BlitzClipboardEvent>()
-        .cloned() 
-        .unwrap_or_else(|| {
-            let content = event.downcast::<String>().cloned().unwrap_or_default();
-            blitz_traits::events::BlitzClipboardEvent { content }
-        });
-        
+        .unwrap()
+        .clone();
+
     dioxus_html::ClipboardData::new(NativeClipboardData(raw_event))
 }
 
@@ -521,8 +518,5 @@ pub struct NativeClipboardData(pub blitz_traits::events::BlitzClipboardEvent);
 impl HasClipboardData for NativeClipboardData {
     fn as_any(&self) -> &dyn Any {
         self as &dyn Any
-    }
-    fn text(&self) -> String {
-        self.0.content.clone()
     }
 }
