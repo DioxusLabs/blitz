@@ -415,7 +415,10 @@ WindowEvent::KeyboardInput { event, .. } => {
         let event = blitz_traits::events::BlitzClipboardEvent { content: text };
         self.doc.handle_ui_event(UiEvent::ClipboardPaste(event));
     }
-   Err(_) => println!("DEBUG: A Clipboard Error occurred (type: ClipboardError)"), 
+   Err(e) => {
+    println!("DEBUG: Clipboard Error TYPE: {}", std::any::type_name_of_val(&e));
+    println!("DEBUG: Clipboard Error MESSAGE: {}", e);
+}
 }
                             }
                             KeyCode::KeyC => {
