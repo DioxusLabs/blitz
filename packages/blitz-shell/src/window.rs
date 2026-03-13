@@ -405,12 +405,14 @@ impl<Rend: WindowRenderer> View<Rend> {
                 KeyCode::Equal => self.doc.inner_mut().viewport_mut().zoom_by(0.1),
                 KeyCode::Minus => self.doc.inner_mut().viewport_mut().zoom_by(-0.1),
                 KeyCode::Digit0 => self.doc.inner_mut().viewport_mut().set_zoom(1.0),
-                KeyCode::KeyV => {
-                    let shell = self.doc.inner().shell_provider.clone();
-                    if let Ok(text) = shell.get_clipboard_text() {
-                        self.doc.handle_ui_event(UiEvent::ClipboardPaste(text));
-                    }
-                }
+               //wtf this better work
+                    KeyCode::KeyV => {
+    let shell = self.doc.inner().shell_provider.clone();
+    if let Ok(text) = shell.get_clipboard_text() {
+        let event = blitz_traits::events::BlitzClipboardEvent { content: text };
+        self.doc.handle_ui_event(UiEvent::ClipboardPaste(event));
+    }
+}
                 KeyCode::KeyC => self.doc.handle_ui_event(UiEvent::ClipboardCopy),
                 KeyCode::KeyX => self.doc.handle_ui_event(UiEvent::ClipboardCut),
                 _ => {}
