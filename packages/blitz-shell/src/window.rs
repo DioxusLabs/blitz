@@ -407,7 +407,7 @@ impl<Rend: WindowRenderer> View<Rend> {
                 KeyCode::Digit0 => self.doc.inner_mut().viewport_mut().set_zoom(1.0),
                 KeyCode::KeyV => {
                     let shell = self.doc.inner().shell_provider.clone();
-                    if let Some(text) = shell.get_clipboard_text() {
+                    if let Ok(text) = shell.get_clipboard_text() {
                         self.doc.handle_ui_event(UiEvent::ClipboardPaste(text));
                     }
                 }
