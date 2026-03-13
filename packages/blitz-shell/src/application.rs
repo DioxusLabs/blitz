@@ -153,6 +153,9 @@ impl<Rend: WindowRenderer> ApplicationHandler for BlitzApplication<Rend> {
         Some(self)
     }
 
+    fn exiting(&mut self, _event_loop: &dyn ActiveEventLoop) {
+    self.windows.clear();
+}
     #[cfg(target_os = "ios")]
     fn about_to_wait(&mut self, _event_loop: &dyn ActiveEventLoop) {
         for view in self.windows.values_mut() {
