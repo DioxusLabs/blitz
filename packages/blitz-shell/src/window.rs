@@ -415,7 +415,8 @@ WindowEvent::KeyboardInput { event, .. } => {
                                         let event = blitz_traits::events::BlitzClipboardEvent { content: text };
                                         self.doc.handle_ui_event(UiEvent::ClipboardPaste(event));
                                     }
-                                    Err(e) => println!("DEBUG: Clipboard Error: {:?}", e),
+                                    // Removed the {:?} e because ClipboardError lacks Debug
+                                    Err(_) => println!("DEBUG: Clipboard Error: Failed to get text"),
                                 }
                             }
                             KeyCode::KeyC => {
