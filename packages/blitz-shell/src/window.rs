@@ -391,7 +391,7 @@ impl<Rend: WindowRenderer> View<Rend> {
                 
                 self.keyboard_modifiers = new_state;
             }
-   WindowEvent::KeyboardInput { event, .. } => {
+WindowEvent::KeyboardInput { event, .. } => {
     let modifiers = self.keyboard_modifiers.state();
     let is_pressed = event.state.is_pressed();
     
@@ -406,25 +406,53 @@ impl<Rend: WindowRenderer> View<Rend> {
                 KeyCode::Equal => self.doc.inner_mut().viewport_mut().zoom_by(0.1),
                 KeyCode::Minus => self.doc.inner_mut().viewport_mut().zoom_by(-0.1),
                 KeyCode::Digit0 => self.doc.inner_mut().viewport_mut().set_zoom(1.0),
-                    KeyCode::KeyV => {
+                KeyCode::KeyV => {
                     println!("DEBUG: Attempting Paste...");
-
-    let shell = self.doc.inner().shell_provider.clone();
-    if let Ok(text) = shell.get_clipboard_text() {
-        println!("DEBUG: Clipboard Success! Content: '{}'", text);
-        let event = blitz_traits::events::BlitzClipboardEvent { content: text };
-        self.doc.handle_ui_event(UiEvent::ClipboardPaste(event));
-        Err(e) => println!("DEBUG: Clipboard Error: {:?}", e),
-    }
-}
-                KeyCode::KeyC => self.doc.handle_ui_event(UiEvent::ClipboardCopy),
-        println!("DEBUG: Copy Triggered");
-                KeyCode::KeyX => self.doc.handle_ui_event(UiEvent::ClipboardCut),
-       println!("DEBUG: Cut Triggered");
+                    let shell = self.doc.inner().shell_provider.clone();
+                    match shell.get_clipboard_text() {
+                        Ok(text) => {
+                            println!("DEBUG: Clipboard Success! Content: '{}'", text);
+                            let event = blitz_traits::events::BlitzClipboardEvent { content: text };
+                            self.doc.handle_ui_event(UiEvent::ClipboardPaste(event));
+                        }
+                        Err(e) => {
+                            println!("DEBUG: Clipboard Error: {:?}", e);
+                        }
+                    }
+                }
+                KeyCode::KeyC => {
+                    println!("DEBUG: Copy Triggered");
+                    self.doc.handle_ui_event(UiEvent::ClipboardCopy);
+                }
+                KeyCode::KeyX => {
+                    println!("DEBUG: Cut Triggered");
+                    self.doc.handle_ui_event(UiEvent::ClipboardCut);
+                }
                 _ => {}
             }
             self.request_redraw();
         }
+
+        if alt {
+            match key_code {
+                KeyCode::KeyD => self.doc.inner_mut().devtools_mut().toggle_show_layout(),
+                KeyCode::KeyH => self.doc.inner_mut().devtools_mut().toggle_highlight_hover(),
+                KeyCode::KeyT => self.doc.inner().print_taffy_tree(),
+                _ => {}
+            }
+            self.request_redraw();
+        }
+    }
+
+    let key_event_data = winit_key_event_to_blitz(&event, modifiers);
+    let ui_event = if is_pressed {
+        UiEvent::KeyDown(key_event_data)
+    } else {
+        UiEvent::KeyUp(key_event_data)
+    };
+
+    self.doc.handle_ui_event(ui_event);
+}
 
         if alt {
             match key_code {
