@@ -203,6 +203,14 @@ impl<Rend: WindowRenderer> View<Rend> {
     }
 }
 
+// so this code should properly drop the surface and fix the segemntation fault. 
+impl<Rend: WindowRenderer> Drop for View<Rend> {
+    fn drop(&mut self) {
+        self.renderer.suspend();
+        self.waker = None;
+    }
+}
+
 impl<Rend: WindowRenderer> View<Rend> {
     pub fn resume(&mut self) {
         let window_id = self.window_id();
