@@ -98,13 +98,13 @@ taffy = { git = "https://github.com/DioxusLabs/taffy", rev = "25759dad44d8350743
 ] }
 
 # AnyRender
-anyrender = { version = "0.7" }
-anyrender_vello = { version = "0.7" }
-anyrender_vello_cpu = { version = "0.9" }
-anyrender_vello_hybrid = { version = "0.2" }
-anyrender_skia = { version = "0.4" }
-anyrender_svg = { version = "0.8" }
-wgpu_context = { version = "0.3" }
+anyrender = { git = "https://github.com/DioxusLabs/anyrender", rev = "f7d5b67c1f65f4e2f037216d3515e12bca8139e5", version = "0.7" }
+anyrender_vello = { git = "https://github.com/DioxusLabs/anyrender", rev = "f7d5b67c1f65f4e2f037216d3515e12bca8139e5", version = "0.7" }
+anyrender_vello_cpu = { git = "https://github.com/DioxusLabs/anyrender", rev = "f7d5b67c1f65f4e2f037216d3515e12bca8139e5", version = "0.9" }
+anyrender_vello_hybrid = { git = "https://github.com/DioxusLabs/anyrender", rev = "f7d5b67c1f65f4e2f037216d3515e12bca8139e5", version = "0.2" }
+anyrender_skia = { git = "https://github.com/DioxusLabs/anyrender", rev = "f7d5b67c1f65f4e2f037216d3515e12bca8139e5", version = "0.4" }
+anyrender_svg = { git = "https://github.com/DioxusLabs/anyrender", rev = "f7d5b67c1f65f4e2f037216d3515e12bca8139e5", version = "0.8" }
+wgpu_context = { git = "https://github.com/DioxusLabs/anyrender", rev = "f7d5b67c1f65f4e2f037216d3515e12bca8139e5", version = "0.3" }
 
 # Linebender + Fontations + WGPU + SVG
 color = "0.3"
@@ -231,7 +231,12 @@ blitz-shell = { workspace = true }
 blitz-net = { workspace = true }
 blitz = { workspace = true, features = ["net"] }
 dioxus = { workspace = true }
-dioxus-native = { workspace = true, features = ["vello", "floats", "svg", "prelude"] }
+dioxus-native = { workspace = true, features = [
+  "vello",
+  "floats",
+  "svg",
+  "prelude",
+] }
 euclid = { workspace = true }
 reqwest = { workspace = true }
 tokio = { workspace = true, features = ["macros"] }
