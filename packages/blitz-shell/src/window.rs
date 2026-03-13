@@ -401,22 +401,18 @@ WindowEvent::KeyboardInput { event, .. } => {
                     let alt = modifiers.alt_key();
 
                     if ctrl | meta {
-                        println!("DEBUG: Shortcut Detected! CTRL/META + {:?}", key_code);
                         match key_code {
                             KeyCode::Equal => self.doc.inner_mut().viewport_mut().zoom_by(0.1),
                             KeyCode::Minus => self.doc.inner_mut().viewport_mut().zoom_by(-0.1),
                             KeyCode::Digit0 => self.doc.inner_mut().viewport_mut().set_zoom(1.0),
                             KeyCode::KeyV => {
-                                println!("DEBUG: Attempting Paste...");
                                 let shell = self.doc.inner().shell_provider.clone();
                                 match shell.get_clipboard_text() {
-    Ok(text) => {
-        println!("DEBUG: Clipboard Success! Content: '{}'", text);
-        let event = blitz_traits::events::BlitzClipboardEvent { content: text };
-        self.doc.handle_ui_event(UiEvent::ClipboardPaste(event));
-    }
-        Err(_) => println!("DEBUG: Clipboard Error: Failed to get text"),
-}
+                          Ok(text) => {
+                           let event = blitz_traits::events::BlitzClipboardEvent { content: text };
+                      self.doc.handle_ui_event(UiEvent::ClipboardPaste(event));
+                    }
+                }
                             }
                             KeyCode::KeyC => {
                                 println!("DEBUG: Copy Triggered");
