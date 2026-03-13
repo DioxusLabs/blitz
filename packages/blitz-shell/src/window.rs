@@ -410,14 +410,13 @@ WindowEvent::KeyboardInput { event, .. } => {
                                 println!("DEBUG: Attempting Paste...");
                                 let shell = self.doc.inner().shell_provider.clone();
                                 match shell.get_clipboard_text() {
-                                    Ok(text) => {
-                                        println!("DEBUG: Clipboard Success! Content: '{}'", text);
-                                        let event = blitz_traits::events::BlitzClipboardEvent { content: text };
-                                        self.doc.handle_ui_event(UiEvent::ClipboardPaste(event));
-                                    }
-                                    // Removed the {:?} e because ClipboardError lacks Debug
-                                    Err(_) => println!("DEBUG: Clipboard Error: Failed to get text"),
-                                }
+    Ok(text) => {
+        println!("DEBUG: Clipboard Success! Content: '{}'", text);
+        let event = blitz_traits::events::BlitzClipboardEvent { content: text };
+        self.doc.handle_ui_event(UiEvent::ClipboardPaste(event));
+    }
+    Err(e) => println!("DEBUG: Clipboard Error: {}", e),  
+}
                             }
                             KeyCode::KeyC => {
                                 println!("DEBUG: Copy Triggered");
