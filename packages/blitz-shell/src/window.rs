@@ -53,13 +53,16 @@ impl<Rend: WindowRenderer> WindowConfig<Rend> {
 }
 
 pub struct View<Rend: WindowRenderer> {
+    
+    //if we move this to the top it should be correct order. allowing surface to die.
+   pub window: Arc<dyn Window>,
+
     pub doc: Box<dyn Document>,
 
     pub renderer: Rend,
     pub waker: Option<Waker>,
 
     pub proxy: BlitzShellProxy,
-    pub window: Arc<dyn Window>,
 
     /// The state of the keyboard modifiers (ctrl, shift, etc). Winit/Tao don't track these for us so we
     /// need to store them in order to have access to them when processing keypress events
