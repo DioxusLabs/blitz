@@ -414,7 +414,7 @@ WindowEvent::KeyboardInput { event, .. } => {
     }
     Err(_) => {} 
 }
-                }
+                
                             }
                             KeyCode::KeyC => {
                                 println!("DEBUG: Copy Triggered");
