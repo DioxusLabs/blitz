@@ -407,11 +407,13 @@ WindowEvent::KeyboardInput { event, .. } => {
                             KeyCode::Digit0 => self.doc.inner_mut().viewport_mut().set_zoom(1.0),
                             KeyCode::KeyV => {
                                 let shell = self.doc.inner().shell_provider.clone();
-                                match shell.get_clipboard_text() {
-                          Ok(text) => {
-                           let event = blitz_traits::events::BlitzClipboardEvent { content: text };
-                      self.doc.handle_ui_event(UiEvent::ClipboardPaste(event));
-                    }
+                               match shell.get_clipboard_text() {
+                      Ok(text) => {
+        let event = blitz_traits::events::BlitzClipboardEvent { content: text };
+        self.doc.handle_ui_event(UiEvent::ClipboardPaste(event));
+    }
+    Err(_) => {} 
+}
                 }
                             }
                             KeyCode::KeyC => {
