@@ -401,20 +401,26 @@ impl<Rend: WindowRenderer> View<Rend> {
         let alt = modifiers.alt_key();
 
         if ctrl | meta {
+            println!("DEBUG: Shortcut Detected! CTRL/META + {:?}", key_code);
             match key_code {
                 KeyCode::Equal => self.doc.inner_mut().viewport_mut().zoom_by(0.1),
                 KeyCode::Minus => self.doc.inner_mut().viewport_mut().zoom_by(-0.1),
                 KeyCode::Digit0 => self.doc.inner_mut().viewport_mut().set_zoom(1.0),
-               //wtf this better work
                     KeyCode::KeyV => {
+                    println!("DEBUG: Attempting Paste...");
+
     let shell = self.doc.inner().shell_provider.clone();
     if let Ok(text) = shell.get_clipboard_text() {
+        println!("DEBUG: Clipboard Success! Content: '{}'", text);
         let event = blitz_traits::events::BlitzClipboardEvent { content: text };
         self.doc.handle_ui_event(UiEvent::ClipboardPaste(event));
+        Err(e) => println!("DEBUG: Clipboard Error: {:?}", e),
     }
 }
                 KeyCode::KeyC => self.doc.handle_ui_event(UiEvent::ClipboardCopy),
+        println!("DEBUG: Copy Triggered");
                 KeyCode::KeyX => self.doc.handle_ui_event(UiEvent::ClipboardCut),
+       println!("DEBUG: Cut Triggered");
                 _ => {}
             }
             self.request_redraw();
