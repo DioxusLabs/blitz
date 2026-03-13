@@ -311,18 +311,15 @@ impl EventHandler for DioxusEventHandler<'_> {
                 values: vec![],
             })),
 
-          DomEventData::Paste(data) => {
-                let wrapped = crate::events::NativeClipboardData(data.clone());
-                Some(wrap_event_data(dioxus_html::ClipboardData::new(wrapped)))
-            }
+        DomEventData::Paste(data) => {
+           Some(wrap_event_data(data.clone()))
+                }
 
-            DomEventData::Copy | DomEventData::Cut => {
-                let dummy = blitz_traits::events::BlitzClipboardEvent { 
-                    content: String::new() 
-                };
-                let wrapped = crate::events::NativeClipboardData(dummy);
-                Some(wrap_event_data(dioxus_html::ClipboardData::new(wrapped)))
-            }
+                DomEventData::Copy | DomEventData::Cut => {
+               Some(wrap_event_data(blitz_traits::events::BlitzClipboardEvent {
+           content: String::new(),
+     }))
+}
 
             // TODO: Implement IME handling
             DomEventData::Ime(_) => None,
