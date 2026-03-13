@@ -415,16 +415,7 @@ WindowEvent::KeyboardInput { event, .. } => {
         let event = blitz_traits::events::BlitzClipboardEvent { content: text };
         self.doc.handle_ui_event(UiEvent::ClipboardPaste(event));
     }
- Err(e) => {
-    println!("DEBUG: Clipboard error type: {}", std::any::type_name_of_val(&e));
-
-    if let Some(source) = std::error::Error::source(&e) {
-        println!("DEBUG: Inner cause type: {}", std::any::type_name_of_val(source));
-        println!("DEBUG: Inner cause message: {}", source);
-    } else {
-        println!("DEBUG: No inner source available");
-    }
-}
+        Err(_) => println!("DEBUG: Clipboard Error: Failed to get text"),
 }
                             }
                             KeyCode::KeyC => {
