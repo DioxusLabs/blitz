@@ -399,7 +399,6 @@ impl<Rend: WindowRenderer> View<Rend> {
                 self.request_redraw();
             },
             WindowEvent::ModifiersChanged(new_state) => {
-                
                 self.keyboard_modifiers = new_state;
             }
             WindowEvent::KeyboardInput { event, .. } => {
@@ -422,7 +421,6 @@ impl<Rend: WindowRenderer> View<Rend> {
                                    let event = blitz_traits::events::BlitzClipboardEvent { content: text };
                                    self.doc.handle_ui_event(UiEvent::ClipboardPaste(event));
                                 }
-                
                             }
                             KeyCode::KeyC => {
                                 println!("DEBUG: Copy Triggered");
