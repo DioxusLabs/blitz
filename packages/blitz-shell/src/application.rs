@@ -117,7 +117,7 @@ impl<Rend: WindowRenderer> ApplicationHandler for BlitzApplication<Rend> {
         // TODO
     }
 
-    fn window_event(
+       fn window_event(
         &mut self,
         event_loop: &dyn ActiveEventLoop,
         window_id: WindowId,
@@ -131,6 +131,7 @@ impl<Rend: WindowRenderer> ApplicationHandler for BlitzApplication<Rend> {
             drop(window);
             if self.windows.is_empty() {
                 event_loop.exit();
+            }
             return;
         }
 
