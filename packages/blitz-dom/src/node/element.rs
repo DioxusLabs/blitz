@@ -490,6 +490,7 @@ impl BackgroundImageData {
     }
 }
 
+#[derive(Clone)]
 pub struct TextInputData {
     pub editor: Box<parley::PlainEditor<TextBrush>>,
     pub is_multiline: bool,
@@ -498,7 +499,6 @@ pub struct TextInputData {
     pub shadow_text: String,
 }
 
-#[derive(Clone)]
 impl TextInputData {
     pub fn new(is_multiline: bool) -> Self {
         Self {
