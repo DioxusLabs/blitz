@@ -319,7 +319,6 @@ fn construct_entry_list(doc: &BaseDocument, form_id: usize, submitter_id: usize)
            } else {
              text.editor.text().to_string()
              };
-create_entry(name, value.into());
             create_entry(name, value.into());
         }
     }
