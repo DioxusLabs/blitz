@@ -314,8 +314,11 @@ fn construct_entry_list(doc: &BaseDocument, form_id: usize, submitter_id: usize)
         }
         // Otherwise, create an entry with name and the value of the field element, and append it to entry list.
         else if let Some(text) = element.text_input_data() {
-            create_entry(name, text.editor.text().to_string().as_str().into());
-        } else if let Some(value) = element.attr(local_name!("value")) {
+            let value = if text.is_password {
+                &text.shadow_text
+            } else {
+                text.editor.text()
+            };
             create_entry(name, value.into());
         }
     }
