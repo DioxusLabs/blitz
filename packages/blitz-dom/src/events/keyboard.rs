@@ -258,9 +258,9 @@ fn apply_keypress_event(
         }
         Key::Character(s) => {
             if input_data.is_password {
-                if !driver.editor.selection().is_empty() {
-                    input_data.shadow_text.clear();
-                }
+                if !driver.editor.raw_selection().is_empty() { 
+                  input_data.shadow_text.clear();
+                   }
                 input_data.shadow_text.push_str(&s);
                 driver.insert_or_replace_selection("•");
             } else {
@@ -310,4 +310,14 @@ fn implicit_form_submission(doc: &BaseDocument, text_target: usize) {
     }
 
     doc.submit_form(*form_owner_id, *form_owner_id);
+}
+
+fn sync_shadow_before_edit(input_data: &mut TextInputData, driver: &parley::EditorDriver<TextBrush>) {
+    if driver.editor.raw_selection().is_empty() {
+        if !input_data.shadow_text.is_empty() {
+            input_data.shadow_text.pop();
+        }
+    } else {
+        input_data.shadow_text.clear();
+    }
 }
