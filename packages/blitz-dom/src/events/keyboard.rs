@@ -259,7 +259,8 @@ fn apply_keypress_event(
         Key::Character(s) => {
             if input_data.is_password {
                 let selection = driver.editor.raw_selection();
-                if selection.anchor != selection.active {
+                // Use .anchor() and .focus() methods
+                if selection.anchor() != selection.focus() {
                     input_data.shadow_text.clear();
                 }
                 input_data.shadow_text.push_str(&s);
@@ -315,7 +316,8 @@ fn implicit_form_submission(doc: &BaseDocument, text_target: usize) {
 
 fn sync_shadow_before_edit(input_data: &mut TextInputData, editor: &parley::PlainEditor<TextBrush>) {
     let selection = editor.raw_selection();
-    if selection.anchor == selection.active {
+    // Use .anchor() and .focus() methods
+    if selection.anchor() == selection.focus() {
         if !input_data.shadow_text.is_empty() {
             input_data.shadow_text.pop();
         }
