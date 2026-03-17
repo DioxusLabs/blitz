@@ -220,8 +220,8 @@ fn apply_keypress_event(
         }
         Key::Delete => {
             if input_data.is_password {
-                sync_shadow_before_edit(input_data, &driver.editor);
-            }
+             sync_shadow_before_edit(&mut input_data.shadow_text, &driver.editor);
+                }
             if action_mod {
                 driver.delete_word()
             } else {
@@ -231,7 +231,7 @@ fn apply_keypress_event(
         }
         Key::Backspace => {
             if input_data.is_password {
-                sync_shadow_before_edit(input_data, &driver.editor);
+                sync_shadow_before_edit(&mut input_data.shadow_text, &driver.editor);
             }
             if action_mod {
                 driver.backdelete_word()
@@ -257,18 +257,17 @@ fn apply_keypress_event(
             }
         }
         Key::Character(s) => {
-            if input_data.is_password {
-                let selection = driver.editor.raw_selection();
-                // Use .anchor() and .focus() methods
-                if selection.anchor() != selection.focus() {
-                    input_data.shadow_text.clear();
-                }
-                input_data.shadow_text.push_str(&s);
-                driver.insert_or_replace_selection("•");
-            } else {
-                driver.insert_or_replace_selection(&s);
+           if input_data.is_password {
+           let selection = driver.editor.raw_selection();
+            if selection.anchor() != selection.focus() {
+            input_data.shadow_text.clear();
             }
-            return Some(GeneratedEvent::Input);
+            input_data.shadow_text.push_str(&s);
+           driver.insert_or_replace_selection("•");
+           } else {
+            driver.insert_or_replace_selection(&s);
+           }
+         return Some(GeneratedEvent::Input);
         }
         _ => {}
     };
@@ -314,14 +313,13 @@ fn implicit_form_submission(doc: &BaseDocument, text_target: usize) {
     doc.submit_form(*form_owner_id, *form_owner_id);
 }
 
-fn sync_shadow_before_edit(input_data: &mut TextInputData, editor: &parley::PlainEditor<TextBrush>) {
+fn sync_shadow_before_edit(shadow_text: &mut String, editor: &parley::PlainEditor<TextBrush>) {
     let selection = editor.raw_selection();
-    // Use .anchor() and .focus() methods
     if selection.anchor() == selection.focus() {
-        if !input_data.shadow_text.is_empty() {
-            input_data.shadow_text.pop();
+        if !shadow_text.is_empty() {
+            shadow_text.pop();
         }
     } else {
-        input_data.shadow_text.clear();
+        shadow_text.clear();
     }
 }
