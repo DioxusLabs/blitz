@@ -313,13 +313,13 @@ fn construct_entry_list(doc: &BaseDocument, form_id: usize, submitter_id: usize)
             create_entry(name, charset.into());
         }
         // Otherwise, create an entry with name and the value of the field element, and append it to entry list.
-        else if let Some(text) = element.text_input_data() {
-          let value = if text.is_password {
-           text.shadow_text.clone() 
-           } else {
-             text.editor.text().to_string()
-             };
-            create_entry(name, value.into());
+     else if let Some(text) = element.text_input_data() {
+            let value = if text.is_password {
+                text.shadow_text.clone()
+            } else {
+                text.editor.text().to_string()
+            };
+            create_entry(name, value.as_str().into());
         }
     }
     entry_list
