@@ -498,6 +498,7 @@ pub struct TextInputData {
     pub shadow_text: String,
 }
 
+#[derive(Clone)]
 impl TextInputData {
     pub fn new(is_multiline: bool) -> Self {
         Self {
@@ -523,7 +524,7 @@ impl TextInputData {
             text.to_string()
         };
 
-        if self.editor.text() != display_text {
+        if self.editor.text() != display_text.as_str() {
             self.editor.set_text(&display_text);
             self.editor.driver(font_ctx, layout_ctx).refresh_layout();
         }
