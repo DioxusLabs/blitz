@@ -399,10 +399,9 @@ impl<Rend: WindowRenderer> View<Rend> {
                 self.request_redraw();
             },
             WindowEvent::ModifiersChanged(new_state) => {
-                
                 self.keyboard_modifiers = new_state;
             }
-WindowEvent::KeyboardInput { event, .. } => {
+            WindowEvent::KeyboardInput { event, .. } => {
                 let modifiers = self.keyboard_modifiers.state();
                 let is_pressed = event.state.is_pressed();
 
@@ -418,14 +417,10 @@ WindowEvent::KeyboardInput { event, .. } => {
                             KeyCode::Digit0 => self.doc.inner_mut().viewport_mut().set_zoom(1.0),
                             KeyCode::KeyV => {
                                 let shell = self.doc.inner().shell_provider.clone();
-                               match shell.get_clipboard_text() {
-                      Ok(text) => {
-        let event = blitz_traits::events::BlitzClipboardEvent { content: text };
-        self.doc.handle_ui_event(UiEvent::ClipboardPaste(event));
-    }
-    Err(_) => {} 
-}
-                
+                                if let Ok(text) = shell.get_clipboard_text() {
+                                   let event = blitz_traits::events::BlitzClipboardEvent { content: text };
+                                   self.doc.handle_ui_event(UiEvent::ClipboardPaste(event));
+                                }
                             }
                             KeyCode::KeyC => {
                                 println!("DEBUG: Copy Triggered");
