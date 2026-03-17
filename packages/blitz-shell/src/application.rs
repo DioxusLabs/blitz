@@ -131,10 +131,6 @@ impl<Rend: WindowRenderer> ApplicationHandler for BlitzApplication<Rend> {
             drop(window);
             if self.windows.is_empty() {
                 event_loop.exit();
-            //this is a hack, but it should prevent the mesa linux globalteardown. at least until they fix upstream. also should be safe...end of funciton
-                #[cfg(target_os = "linux")]
-                 std::process::exit(0);
-            }
             return;
         }
 
