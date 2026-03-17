@@ -74,7 +74,11 @@ pub(crate) fn handle_keypress<F: FnMut(DomEvent)>(
             if let Some(generated_event) = generated_event {
                 match generated_event {
                     GeneratedEvent::Input => {
-                        let value = input_data.editor.raw_text().to_string();
+                        let value = if input_data.is_password {
+                            input_data.shadow_text.clone()
+                        } else {
+                            input_data.editor.raw_text().to_string()
+                        };
                         dispatch_event(DomEvent::new(
                             node_id,
                             DomEventData::Input(BlitzInputEvent { value }),
@@ -141,14 +145,7 @@ fn apply_keypress_event(
 
             return Some(GeneratedEvent::Input);
         }
-        Key::Character(c) if action_mod && matches!(c.to_lowercase().as_str(), "a") => {
-            if shift {
-                driver.collapse_selection()
-            } else {
-                driver.select_all()
-            }
-            return Some(GeneratedEvent::Select);
-        }
+
         Key::ArrowLeft => {
             if action_mod {
                 if shift {
@@ -222,6 +219,9 @@ fn apply_keypress_event(
             return Some(GeneratedEvent::Select);
         }
         Key::Delete => {
+            if input_data.is_password {
+                sync_shadow_before_edit(input_data, &driver);
+            }
             if action_mod {
                 driver.delete_word()
             } else {
@@ -230,6 +230,9 @@ fn apply_keypress_event(
             return Some(GeneratedEvent::Input);
         }
         Key::Backspace => {
+            if input_data.is_password {
+                sync_shadow_before_edit(input_data, &driver);
+            }
             if action_mod {
                 driver.backdelete_word()
             } else {
@@ -254,7 +257,15 @@ fn apply_keypress_event(
             }
         }
         Key::Character(s) => {
-            driver.insert_or_replace_selection(&s);
+            if input_data.is_password {
+                if !driver.editor.selection().is_empty() {
+                    input_data.shadow_text.clear();
+                }
+                input_data.shadow_text.push_str(&s);
+                driver.insert_or_replace_selection("•");
+            } else {
+                driver.insert_or_replace_selection(&s);
+            }
             return Some(GeneratedEvent::Input);
         }
         _ => {}
