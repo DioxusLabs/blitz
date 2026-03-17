@@ -491,25 +491,20 @@ impl BackgroundImageData {
 }
 
 pub struct TextInputData {
-    /// A parley TextEditor instance
     pub editor: Box<parley::PlainEditor<TextBrush>>,
-    /// Whether the input is a singleline or multiline input
     pub is_multiline: bool,
-}
-
-// FIXME: Implement Clone for PlainEditor
-impl Clone for TextInputData {
-    fn clone(&self) -> Self {
-        TextInputData::new(self.is_multiline)
-    }
+    pub is_password: bool,
+    // this is plaintext string
+    pub shadow_text: String,
 }
 
 impl TextInputData {
     pub fn new(is_multiline: bool) -> Self {
-        let editor = Box::new(parley::PlainEditor::new(16.0));
         Self {
-            editor,
+            editor: Box::new(parley::PlainEditor::new(16.0)),
             is_multiline,
+            is_password: false,
+            shadow_text: String::new(),
         }
     }
 
@@ -519,8 +514,17 @@ impl TextInputData {
         layout_ctx: &mut LayoutContext<TextBrush>,
         text: &str,
     ) {
-        if self.editor.text() != text {
-            self.editor.set_text(text);
+        self.shadow_text = text.to_string();
+
+        // show password
+        let display_text = if self.is_password {
+            "•".repeat(text.chars().count())
+        } else {
+            text.to_string()
+        };
+
+        if self.editor.text() != display_text {
+            self.editor.set_text(&display_text);
             self.editor.driver(font_ctx, layout_ctx).refresh_layout();
         }
     }
