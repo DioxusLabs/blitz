@@ -5,6 +5,7 @@ pub(crate) mod stylo {
     pub(crate) use style::Atom;
     pub(crate) use style::properties::ComputedValues;
     pub(crate) use style::properties::generated::longhands::box_sizing::computed_value::T as BoxSizing;
+    pub(crate) use style::properties::generated::longhands::direction::computed_value::T as Direction;
     pub(crate) use style::properties::longhands::aspect_ratio::computed_value::T as AspectRatio;
     pub(crate) use style::properties::longhands::position::computed_value::T as Position;
     pub(crate) use style::values::computed::length_percentage::CalcLengthPercentage;
@@ -241,6 +242,14 @@ pub fn overflow(input: stylo::Overflow) -> taffy::Overflow {
         stylo::Overflow::Scroll => taffy::Overflow::Scroll,
         // TODO: Support Overflow::Auto in Taffy
         stylo::Overflow::Auto => taffy::Overflow::Scroll,
+    }
+}
+
+#[inline]
+pub fn direction(input: stylo::Direction) -> taffy::Direction {
+    match input {
+        stylo::Direction::Ltr => taffy::Direction::Ltr,
+        stylo::Direction::Rtl => taffy::Direction::Rtl,
     }
 }
 
@@ -595,6 +604,7 @@ pub fn to_taffy_style(style: &stylo::ComputedValues) -> taffy::Style<Atom> {
             x: self::overflow(style.clone_overflow_x()),
             y: self::overflow(style.clone_overflow_y()),
         },
+        direction: self::direction(style.clone_direction()),
         scrollbar_width: 0.0,
 
         #[cfg(feature = "floats")]
