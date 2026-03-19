@@ -5,6 +5,7 @@
 //! This is slower, yes, but happens fast enough that it's not a huge issue.
 
 use crate::node::{ImageData, NodeData, SpecialElementData};
+use crate::resolve_2d_transform;
 use crate::{document::BaseDocument, node::Node};
 use markup5ever::local_name;
 use std::cell::Ref;
@@ -68,7 +69,7 @@ impl BaseDocument {
         let font_size = font_styles.map(|s| s.0);
         let resolved_line_height = font_styles.map(|s| s.1);
 
-        match &mut node.data {
+        let output = match &mut node.data {
             NodeData::Text(data) => {
                 // With the new "inline context" architecture all text nodes should be wrapped in an "inline layout context"
                 // and should therefore never be measured individually.
@@ -277,7 +278,26 @@ impl BaseDocument {
             NodeData::Document => compute_block_layout(self, node_id, inputs, None),
 
             _ => taffy::LayoutOutput::HIDDEN,
-        }
+        };
+
+        // Compute transform
+        let node = &mut self.nodes[node_id.into()];
+        node.transform = if let Some(style) = node.primary_styles() {
+            // Reference box for resolve percentage transforms
+            let reference_box = euclid::Rect::new(
+                euclid::Point2D::new(CSSPixelLength::new(0.0), CSSPixelLength::new(0.0)),
+                euclid::Size2D::new(
+                    CSSPixelLength::new(output.size.width),
+                    CSSPixelLength::new(output.size.height),
+                ),
+            );
+
+            resolve_2d_transform(&style.get_box(), reference_box, 1.0)
+        } else {
+            None
+        };
+
+        output
     }
 }
 

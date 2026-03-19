@@ -6,6 +6,7 @@ use blitz_traits::events::{
 use blitz_traits::shell::ShellProvider;
 use html_escape::encode_quoted_attribute_to_string;
 use keyboard_types::Modifiers;
+use kurbo::Affine;
 use markup5ever::{LocalName, local_name};
 use parley::{BreakReason, Cluster, ClusterSide};
 use selectors::matching::ElementSelectorFlags;
@@ -124,6 +125,8 @@ pub struct Node {
     pub unrounded_layout: Layout,
     pub final_layout: Layout,
     pub scroll_offset: crate::Point<f64>,
+
+    pub transform: Option<Affine>,
 }
 
 unsafe impl Send for Node {}
@@ -183,6 +186,8 @@ impl Node {
             unrounded_layout: Layout::new(),
             final_layout: Layout::new(),
             scroll_offset: crate::Point::ZERO,
+
+            transform: None,
         }
     }
 

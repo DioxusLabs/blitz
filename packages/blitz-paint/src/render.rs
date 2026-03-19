@@ -20,7 +20,6 @@ use blitz_dom::node::{
 use blitz_dom::{BaseDocument, ElementData, Node, local_name};
 use blitz_traits::devtools::DevtoolSettings;
 
-use euclid::Transform3D;
 use style::values::computed::BorderCornerRadius;
 use style::{
     computed_values::border_collapse::T as BorderCollapse,
@@ -378,59 +377,21 @@ impl<'dom> BlitzDomPainter<'dom> {
         // By performing the transform, we prevent the cache from becoming invalid when the page shifts around
         let mut transform = Affine::translate(box_position.to_vec2() * scale);
 
-        // Reference box for resolve percentage transforms
-        let reference_box = euclid::Rect::new(
-            euclid::Point2D::new(CSSPixelLength::new(0.0), CSSPixelLength::new(0.0)),
-            euclid::Size2D::new(
-                CSSPixelLength::new((frame.border_box.width() / scale) as f32),
-                CSSPixelLength::new((frame.border_box.height() / scale) as f32),
-            ),
-        );
-
         // Apply CSS transform property (where transforms are 2d)
         //
         // TODO: Handle hit testing correctly for transformed nodes
         // TODO: Implement nested transforms
-        let (t, has_3d) = &style
-            .get_box()
-            .transform
-            .to_transform_3d_matrix(Some(&reference_box))
-            .unwrap_or((Transform3D::default(), false));
-        if !has_3d {
-            // See: https://drafts.csswg.org/css-transforms-2/#two-dimensional-subset
-            // And https://docs.rs/kurbo/latest/kurbo/struct.Affine.html#method.new
-            let kurbo_transform = Affine::new(
-                [
-                    t.m11,
-                    t.m12,
-                    t.m21,
-                    t.m22,
-                    // Scale the translation but not the scale or skew
-                    t.m41 * scale as f32,
-                    t.m42 * scale as f32,
-                ]
-                .map(|v| v as f64),
-            );
-
-            // Apply the transform origin by:
-            //   - Translating by the origin offset
-            //   - Applying our transform
-            //   - Translating by the inverse of the origin offset
-            let transform_origin = &style.get_box().transform_origin;
-            let origin_translation = Affine::translate(Vec2 {
-                x: transform_origin
-                    .horizontal
-                    .resolve(CSSPixelLength::new(frame.border_box.width() as f32))
-                    .px() as f64,
-                y: transform_origin
-                    .vertical
-                    .resolve(CSSPixelLength::new(frame.border_box.height() as f32))
-                    .px() as f64,
-            });
-            let kurbo_transform =
-                origin_translation * kurbo_transform * origin_translation.inverse();
-
-            transform *= kurbo_transform;
+        if let Some(style_transform) = node.transform {
+            let t = style_transform.as_coeffs();
+            transform *= Affine::new([
+                t[0],
+                t[1],
+                t[2],
+                t[3],
+                // Scale the translation but not the scale or skew
+                t[4] * scale,
+                t[5] * scale,
+            ])
         }
 
         let element = node.element_data().unwrap();
