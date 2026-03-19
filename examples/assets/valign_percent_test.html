@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html>
+<head>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: Helvetica, Arial, sans-serif; font-size: 16px; margin: 20px; }
+  .test { background: #f0f0f0; margin: 15px 0; padding: 8px; border: 1px solid #ccc; line-height: 40px; }
+  .label { display: block; font-size: 12px; color: #666; margin-bottom: 4px; font-weight: bold; line-height: normal; }
+  .note { display: block; font-size: 11px; color: #999; margin-top: 2px; line-height: normal; }
+</style>
+</head>
+<body>
+
+<h3 style="margin-bottom: 10px;">Vertical-Align Percentage Tests</h3>
+<p style="font-size: 12px; color: #888; margin-bottom: 15px; line-height: normal;">
+  CSS spec: vertical-align percentages resolve against the element's computed line-height.<br>
+  All test rows use line-height: 40px unless noted otherwise.
+</p>
+
+<!-- Case 1: 50% with line-height: 40px => 20px shift up -->
+<span class="label">Case 1: vertical-align: 50% (50% of 40px = 20px up)</span>
+<div class="test">
+  <span style="background: lightyellow;">Baseline</span>
+  <span style="vertical-align: 50%; background: lightcoral;">50% shifted</span>
+  <span style="background: lightyellow;">reference</span>
+</div>
+
+<!-- Case 2: -25% with line-height: 40px => -10px shift down -->
+<span class="label">Case 2: vertical-align: -25% (25% of 40px = 10px down)</span>
+<div class="test">
+  <span style="background: lightyellow;">Baseline</span>
+  <span style="vertical-align: -25%; background: lightblue;">-25% shifted</span>
+  <span style="background: lightyellow;">reference</span>
+</div>
+
+<!-- Case 3: Compare 50% vs 20px — should be identical -->
+<span class="label">Case 3: 50% vs 20px (should be identical positions)</span>
+<div class="test">
+  <span style="background: lightyellow;">Baseline</span>
+  <span style="vertical-align: 50%; background: lightcoral;">50%</span>
+  <span style="vertical-align: 20px; background: lightgreen;">20px</span>
+  <span style="background: lightyellow;">(should overlap if correct)</span>
+</div>
+
+<!-- Case 4: Compare -25% vs -10px — should be identical -->
+<span class="label">Case 4: -25% vs -10px (should be identical positions)</span>
+<div class="test">
+  <span style="background: lightyellow;">Baseline</span>
+  <span style="vertical-align: -25%; background: lightblue;">-25%</span>
+  <span style="vertical-align: -10px; background: lightgreen;">-10px</span>
+  <span style="background: lightyellow;">(should overlap if correct)</span>
+</div>
+
+<!-- Case 5: 100% with line-height: 40px => 40px shift -->
+<span class="label">Case 5: vertical-align: 100% (full line-height shift)</span>
+<div class="test">
+  <span style="background: lightyellow;">Baseline</span>
+  <span style="vertical-align: 100%; background: lightcoral;">100%</span>
+  <span style="vertical-align: 40px; background: lightgreen;">40px</span>
+  <span style="background: lightyellow;">(should match)</span>
+</div>
+
+<!-- Case 6: Different line-height (60px), 50% => 30px -->
+<span class="label">Case 6: line-height: 60px, vertical-align: 50% (= 30px)</span>
+<div class="test" style="line-height: 60px;">
+  <span style="background: lightyellow;">Baseline</span>
+  <span style="vertical-align: 50%; background: lightcoral;">50%</span>
+  <span style="vertical-align: 30px; background: lightgreen;">30px</span>
+  <span style="background: lightyellow;">(should match)</span>
+</div>
+
+<!-- Case 7: Percentage on inline-block -->
+<span class="label">Case 7: vertical-align: 50% on inline-block</span>
+<div class="test">
+  <span style="background: lightyellow;">Baseline</span>
+  <span style="display: inline-block; width: 60px; height: 20px; background: coral; vertical-align: 50%;"></span>
+  <span style="display: inline-block; width: 60px; height: 20px; background: lightblue; vertical-align: 20px;"></span>
+  <span style="background: lightyellow;">(should match)</span>
+</div>
+
+<!-- Case 8: 0% should be same as baseline -->
+<span class="label">Case 8: vertical-align: 0% (same as baseline)</span>
+<div class="test">
+  <span style="background: lightyellow;">Baseline</span>
+  <span style="vertical-align: 0%; background: lightcoral;">0%</span>
+  <span style="vertical-align: baseline; background: lightgreen;">baseline</span>
+  <span style="background: lightyellow;">(should match)</span>
+</div>
+
+</body>
+</html>

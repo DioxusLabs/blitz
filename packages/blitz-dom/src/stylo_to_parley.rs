@@ -128,9 +128,15 @@ pub(crate) fn baseline_shift(style: &stylo::ComputedValues) -> parley::BaselineS
             BaselineShiftKeyword::Center => parley::BaselineShift::None,
         },
         GenericBaselineShift::Length(lp) => {
-            // TODO: percentages should resolve against line-height, not font-size
-            let font_size = style.get_font().font_size.used_size.0.px();
-            let px = lp.resolve(Length::new(font_size)).px();
+            let font_styles = style.get_font();
+            let font_size = font_styles.font_size.used_size.0.px();
+            // CSS spec: vertical-align percentages resolve against computed line-height
+            let line_height = match font_styles.line_height {
+                stylo::LineHeight::Normal => font_size * 1.2,
+                stylo::LineHeight::Number(n) => font_size * n.0,
+                stylo::LineHeight::Length(v) => v.0.px(),
+            };
+            let px = lp.resolve(Length::new(line_height)).px();
             if px == 0.0 {
                 parley::BaselineShift::None
             } else {

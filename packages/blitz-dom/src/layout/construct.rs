@@ -77,7 +77,7 @@ fn push_non_whitespace_children_and_pseudos(layout_children: &mut Vec<usize>, no
 }
 
 /// Convert a relative line height to an absolute one
-fn resolve_line_height(line_height: parley::LineHeight, font_size: f32) -> f32 {
+pub(super) fn resolve_line_height(line_height: parley::LineHeight, font_size: f32) -> f32 {
     match line_height {
         parley::LineHeight::FontSizeRelative(relative) => relative * font_size,
         parley::LineHeight::Absolute(absolute) => absolute,
@@ -916,7 +916,6 @@ pub(crate) fn build_inline_layout_into(
                         stylo_to_parley::baseline_source(&s),
                     ))
                     .unwrap_or_default();
-
                 match (display.outside(), display.inside()) {
                     (DisplayOutside::None, DisplayInside::None) => {
                         // node.remove_damage(CONSTRUCT_DESCENDENT | CONSTRUCT_FC | CONSTRUCT_BOX);
@@ -953,6 +952,7 @@ pub(crate) fn build_inline_layout_into(
                                 alignment_baseline,
                                 baseline_shift,
                                 baseline_source,
+                                first_baseline: None,
                             });
                         } else if *tag_name == local_name!("br") {
                             // node.remove_damage(CONSTRUCT_DESCENDENT | CONSTRUCT_FC | CONSTRUCT_BOX);
@@ -1032,6 +1032,7 @@ pub(crate) fn build_inline_layout_into(
                             alignment_baseline,
                             baseline_shift,
                             baseline_source,
+                            first_baseline: None,
                         });
                     }
                 };

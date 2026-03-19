@@ -1,4 +1,6 @@
+use parley::fontique::{Attributes, QueryFont, QueryStatus};
 use parley::{AlignmentOptions, IndentOptions};
+use skrifa::MetadataProvider as _;
 use style::values::{computed::CSSPixelLength, generics::text::GenericTextIndent};
 use taffy::{
     AvailableSpace, BlockContext, BlockFormattingContext, BoxSizing, CollapsibleMarginSet,
@@ -10,8 +12,10 @@ use taffy::{
 #[cfg(feature = "floats")]
 use taffy::{Clear, Float, prelude::TaffyMaxContent};
 
+use super::construct::resolve_line_height;
 use super::resolve_calc_value;
 use crate::BaseDocument;
+use crate::stylo_to_parley;
 
 impl BaseDocument {
     pub(crate) fn compute_inline_layout(
@@ -293,6 +297,10 @@ impl BaseDocument {
             #[cfg(not(feature = "floats"))]
             let is_floated = false;
 
+            // CSS2.1 §10.8.1: overflow != visible → baseline = bottom margin edge
+            let overflow_not_visible = style.overflow.x.is_scroll_container()
+                || style.overflow.y.is_scroll_container();
+
             if style.position == Position::Absolute || is_floated {
                 ibox.width = 0.0;
                 ibox.height = 0.0;
@@ -300,6 +308,34 @@ impl BaseDocument {
                 let output = self.compute_child_layout(NodeId::from(ibox.id), child_inputs);
                 ibox.width = (margin.left + margin.right + output.size.width) * scale;
                 ibox.height = (margin.top + margin.bottom + output.size.height) * scale;
+
+                // CSS2.1 §10.8.1: the baseline of an inline-block is the baseline
+                // of its last in-flow line box, unless it has no in-flow line boxes
+                // or its overflow is not visible, in which case it's the bottom
+                // margin edge (represented as first_baseline = None).
+                //
+                // Note: the internal baseline may exceed the box height when the
+                // box has an explicit small height but inherits a large line-height.
+                // This is correct — parley's metric clamping (shift_offset==0 → clamp)
+                // prevents line expansion while the full baseline is used for positioning.
+                ibox.first_baseline = if overflow_not_visible {
+                    None
+                } else {
+                    output.first_baselines.y.map(|b| (b + margin.top) * scale)
+                };
+            }
+
+            // Re-read baseline_shift from node style each time to avoid accumulating
+            // scales across repeated layout passes (e.g. flex sizing calls this multiple times)
+            let node_for_shift = &self.nodes[ibox.id as usize];
+            if let Some(styles) = node_for_shift.primary_styles() {
+                let bs = crate::stylo_to_parley::baseline_shift(&styles);
+                ibox.baseline_shift = match bs {
+                    parley::style::BaselineShift::Length(v) => {
+                        parley::style::BaselineShift::Length(v * scale)
+                    }
+                    other => other,
+                };
             }
         }
 
@@ -434,6 +470,18 @@ impl BaseDocument {
         //         height: layout.layout.height() / scale,
         //     };
         // }
+
+        // CSS strut (CSS2.1 §10.8.1): set minimum line metrics from root font
+        if let Some((strut_ascent, strut_descent, strut_line_height, strut_x_height)) =
+            self.compute_strut_metrics(node_id, scale)
+        {
+            inline_layout.layout.set_strut(
+                strut_ascent,
+                strut_descent,
+                strut_line_height,
+                strut_x_height,
+            );
+        }
 
         #[cfg(not(feature = "floats"))]
         {
@@ -576,10 +624,8 @@ impl BaseDocument {
                                 Float::None => unreachable!(),
                             };
                             let clear = self.nodes[ibox.id as usize].style.clear;
-                            let output = self.compute_child_layout(
-                                NodeId::from(ibox.id),
-                                float_child_inputs,
-                            );
+                            let output = self
+                                .compute_child_layout(NodeId::from(ibox.id), float_child_inputs);
                             let min_y = ibox.y / scale;
                             let pos = block_ctx.place_floated_box(
                                 output.size + margin.sum_axes(),
@@ -613,6 +659,23 @@ impl BaseDocument {
         // println!("known_dimensions: w: {:?} h: {:?}", inputs.known_dimensions.width, inputs.known_dimensions.height);
         // println!("\n");
 
+        // CSS2.1 §10.8.1: the baseline of an inline-block is the baseline
+        // of its last in-flow line box.
+        //
+        // When the box has an explicit height that clips later lines (e.g. height: 4px
+        // but the content spans multiple lines), the last line's baseline may be outside
+        // the box. In that case, walk backwards to find the last line whose baseline
+        // fits within the box, falling back to the first line if none fit (handles the
+        // case where even line 1's baseline exceeds a tiny explicit height).
+        let content_height = final_size.height * scale;
+        let last_baseline_y = inline_layout
+            .layout
+            .lines()
+            .rev()
+            .find(|line| line.metrics().baseline <= content_height)
+            .or_else(|| inline_layout.layout.lines().next())
+            .map(|line| (line.metrics().baseline / scale) + container_pb.top);
+
         // Put layout back
         self.nodes[node_id]
             .data
@@ -641,13 +704,90 @@ impl BaseDocument {
         LayoutOutput {
             size,
             content_size: measured_size + padding.sum_axes(),
-            first_baselines: Point::NONE,
+            first_baselines: Point {
+                x: None,
+                y: last_baseline_y,
+            },
             top_margin: CollapsibleMarginSet::ZERO,
             bottom_margin: CollapsibleMarginSet::ZERO,
             margins_can_collapse_through: !has_styles_preventing_being_collapsed_through
                 && size.height == 0.0
                 && measured_size.height == 0.0,
         }
+    }
+
+    /// Compute CSS strut metrics (CSS2.1 §10.8.1) for an inline formatting context root.
+    ///
+    /// Returns `(ascent, descent, line_height, x_height)` in physical pixels, or `None`
+    /// if the root node's font cannot be resolved.
+    fn compute_strut_metrics(&self, node_id: usize, scale: f32) -> Option<(f32, f32, f32, f32)> {
+        let styles = self.nodes[node_id].primary_styles()?;
+        let font_styles = styles.get_font();
+
+        // Resolve font size and line height in CSS pixels
+        let font_size_px = font_styles.font_size.used_size.0.px();
+        let line_height = match font_styles.line_height {
+            stylo_to_parley::stylo::LineHeight::Normal => parley::LineHeight::FontSizeRelative(1.2),
+            stylo_to_parley::stylo::LineHeight::Number(n) => {
+                parley::LineHeight::FontSizeRelative(n.0)
+            }
+            stylo_to_parley::stylo::LineHeight::Length(v) => parley::LineHeight::Absolute(v.0.px()),
+        };
+
+        // Query fontique for matching font
+        let mut font_ctx = self.font_ctx.lock().unwrap();
+        let font_ctx = &mut *font_ctx;
+        let mut query = font_ctx.collection.query(&mut font_ctx.source_cache);
+
+        let families = font_styles
+            .font_family
+            .families
+            .iter()
+            .map(stylo_to_parley::query_font_family);
+        query.set_families(families);
+        query.set_attributes(Attributes {
+            width: stylo_to_parley::font_width(font_styles.font_stretch),
+            weight: stylo_to_parley::font_weight(font_styles.font_weight),
+            style: stylo_to_parley::font_style(font_styles.font_style),
+        });
+
+        // Find a font that supports the space character
+        let mut font: Option<QueryFont> = None;
+        query.matches_with(|q_font: &QueryFont| {
+            let Ok(font_ref) = skrifa::FontRef::from_index(q_font.blob.as_ref(), q_font.index)
+            else {
+                return QueryStatus::Continue;
+            };
+            if font_ref.charmap().map(' ').is_some() {
+                font = Some(q_font.clone());
+                QueryStatus::Stop
+            } else {
+                QueryStatus::Continue
+            }
+        });
+        let font = font?;
+
+        // Get skrifa metrics at CSS-pixel font size
+        let font_ref = skrifa::FontRef::from_index(font.blob.as_ref(), font.index).ok()?;
+        let metrics = skrifa::metrics::Metrics::new(
+            &font_ref,
+            skrifa::instance::Size::new(font_size_px),
+            skrifa::instance::LocationRef::default(),
+        );
+
+        // Scale to physical pixels
+        let strut_ascent = metrics.ascent * scale;
+        let strut_descent = -metrics.descent * scale; // skrifa descent is negative
+        let strut_line_height = resolve_line_height(line_height, font_size_px) * scale;
+        // x_height for vertical-align: middle; CSS spec fallback is font_size * 0.5
+        let strut_x_height = metrics.x_height.unwrap_or(font_size_px * 0.5) * scale;
+
+        Some((
+            strut_ascent,
+            strut_descent,
+            strut_line_height,
+            strut_x_height,
+        ))
     }
 }
 
