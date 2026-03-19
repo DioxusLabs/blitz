@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use markup5ever::{QualName, local_name, ns};
 use parley::{
-    FontContext, InlineBox, InlineBoxKind, LayoutContext, StyleProperty, TreeBuilder,
+    FontContext, InlineBox, LayoutContext, StyleProperty, TreeBuilder,
     WhiteSpaceCollapse,
 };
 use slab::Slab;
@@ -908,13 +908,14 @@ pub(crate) fn build_inline_layout_into(
                     .map(|s| s.clone_position())
                     .unwrap_or(PositionProperty::Static);
                 let float = style.map(|s| s.clone_float()).unwrap_or(Float::None);
-                let box_kind = if position.is_absolutely_positioned() {
-                    InlineBoxKind::OutOfFlow
-                } else if float.is_floating() {
-                    InlineBoxKind::CustomOutOfFlow
-                } else {
-                    InlineBoxKind::InFlow
-                };
+                let _is_out_of_flow = position.is_absolutely_positioned() || float.is_floating();
+                let (alignment_baseline, baseline_shift, baseline_source) = style
+                    .map(|s| (
+                        stylo_to_parley::alignment_baseline(&s),
+                        stylo_to_parley::baseline_shift(&s),
+                        stylo_to_parley::baseline_source(&s),
+                    ))
+                    .unwrap_or_default();
 
                 match (display.outside(), display.inside()) {
                     (DisplayOutside::None, DisplayInside::None) => {
@@ -944,12 +945,14 @@ pub(crate) fn build_inline_layout_into(
                         {
                             builder.push_inline_box(InlineBox {
                                 id: node_id as u64,
-                                kind: box_kind,
                                 // Overridden by push_inline_box method
                                 index: 0,
                                 // Width and height are set during layout
                                 width: 0.0,
                                 height: 0.0,
+                                alignment_baseline,
+                                baseline_shift,
+                                baseline_source,
                             });
                         } else if *tag_name == local_name!("br") {
                             // node.remove_damage(CONSTRUCT_DESCENDENT | CONSTRUCT_FC | CONSTRUCT_BOX);
@@ -1021,12 +1024,14 @@ pub(crate) fn build_inline_layout_into(
                     (_, _) => {
                         builder.push_inline_box(InlineBox {
                             id: node_id as u64,
-                            kind: box_kind,
                             // Overridden by push_inline_box method
                             index: 0,
                             // Width and height are set during layout
                             width: 0.0,
                             height: 0.0,
+                            alignment_baseline,
+                            baseline_shift,
+                            baseline_source,
                         });
                     }
                 };
