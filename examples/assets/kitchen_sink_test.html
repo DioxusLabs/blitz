@@ -3,21 +3,136 @@
 <head>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
-  body { font-family: Helvetica, Arial, sans-serif; font-size: 14px; margin: 20px; color: #333; }
-  h2 { margin: 24px 0 8px; font-size: 18px; border-bottom: 2px solid #333; padding-bottom: 4px; }
+  :root {
+    --color-primary: #3498db;
+    --color-dark: #2c3e50;
+    --color-light: #ecf0f1;
+    --color-accent: #e74c3c;
+    --color-success: #27ae60;
+    --color-text: #333;
+    --color-muted: #888;
+    --spacing-sm: 4px;
+    --spacing-md: 8px;
+    --spacing-lg: 16px;
+    --spacing-xl: 24px;
+    --radius-sm: 4px;
+    --radius-md: 8px;
+    --radius-lg: 16px;
+    --shadow-sm: 0 1px 3px rgba(0,0,0,0.12);
+    --shadow-md: 0 4px 6px rgba(0,0,0,0.15);
+    --shadow-lg: 0 10px 25px rgba(0,0,0,0.2);
+  }
+  body { font-family: Helvetica, Arial, sans-serif; font-size: 14px; margin: 0; color: var(--color-text); }
+  h2 { margin: 24px 20px 8px; font-size: 18px; border-bottom: 2px solid var(--color-dark); padding-bottom: 4px; }
   h3 { margin: 16px 0 6px; font-size: 14px; color: #555; }
+  .content { padding: 0 20px; }
   .section { margin-bottom: 20px; }
   .row { display: flex; gap: 8px; margin-bottom: 8px; }
   .demo { background: #f5f5f5; border: 1px solid #ddd; padding: 8px; margin: 4px 0; }
   .note { font-size: 11px; color: #999; margin-top: 2px; }
+
+  /* Pseudo-element tests */
+  .badge::before {
+    content: "";
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--color-success);
+    margin-right: 6px;
+    vertical-align: middle;
+  }
+  .quote::before {
+    content: "\201C";
+    font-size: 32px;
+    color: var(--color-primary);
+    line-height: 1;
+    margin-right: 4px;
+    vertical-align: -8px;
+  }
+  .required::after {
+    content: " *";
+    color: var(--color-accent);
+    font-weight: bold;
+  }
+  .clearfix::after {
+    content: "";
+    display: table;
+    clear: both;
+  }
+  .tooltip-host {
+    position: relative;
+    display: inline-block;
+  }
+  .tooltip-host::after {
+    content: "Tooltip text!";
+    position: absolute;
+    bottom: 100%;
+    left: 50%;
+    transform: translateX(-50%);
+    background: var(--color-dark);
+    color: white;
+    padding: 4px 8px;
+    border-radius: var(--radius-sm);
+    font-size: 11px;
+    white-space: nowrap;
+    margin-bottom: 4px;
+  }
+
+  /* List styles */
+  ul.custom { list-style: none; padding-left: 0; }
+  ul.custom li::before { content: "\2713 "; color: var(--color-success); font-weight: bold; }
+
+  /* Focus ring */
+  .focus-ring:focus { outline: 3px solid var(--color-primary); outline-offset: 2px; }
 </style>
 </head>
 <body>
 
-<h1 style="font-size: 22px; margin-bottom: 4px;">CSS Layout Kitchen Sink</h1>
-<p style="font-size: 12px; color: #888; margin-bottom: 20px;">
-  Comprehensive test combining block, inline, flex, grid, positioning, sizing, text, and overflow.
-</p>
+<!-- ============================================================ -->
+<!-- STICKY NAV (position:sticky + flex + z-index + box-shadow)    -->
+<!-- ============================================================ -->
+<nav style="position: sticky; top: 0; z-index: 100; display: flex; align-items: center; background: var(--color-dark); color: white; padding: 10px 20px; gap: 16px; box-shadow: var(--shadow-md);">
+  <!-- Inline SVG icon -->
+  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" style="vertical-align: middle;">
+    <rect x="2" y="2" width="20" height="20" rx="4" fill="white" opacity="0.9"/>
+    <rect x="6" y="7" width="12" height="2" rx="1" fill="#2c3e50"/>
+    <rect x="6" y="11" width="8" height="2" rx="1" fill="#2c3e50"/>
+    <rect x="6" y="15" width="10" height="2" rx="1" fill="#2c3e50"/>
+  </svg>
+  <div style="font-weight: bold; font-size: 16px;">KitchenSink</div>
+  <div style="flex: 1;"></div>
+  <div style="display: flex; gap: 16px; font-size: 13px;">
+    <a href="#" style="color: white; text-decoration: none;">Home</a>
+    <a href="#" style="color: white; text-decoration: none;">About</a>
+    <a href="#" style="color: rgba(255,255,255,0.7); text-decoration: none;">Products</a>
+    <a href="#" style="color: white; text-decoration: none;">Contact</a>
+  </div>
+  <!-- Badge with dot pseudo-element -->
+  <span class="badge" style="color: white; font-size: 12px;">Online</span>
+</nav>
+
+<!-- ============================================================ -->
+<!-- HERO (gradient + text-shadow + centering + opacity + calc)    -->
+<!-- ============================================================ -->
+<div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 40px 20px; text-align: center;">
+  <div style="font-size: 28px; font-weight: bold; margin-bottom: 8px; text-shadow: 0 2px 4px rgba(0,0,0,0.3);">CSS Layout Kitchen Sink</div>
+  <div style="font-size: 14px; opacity: 0.85; max-width: 500px; margin: 0 auto;">
+    Comprehensive stress test: block, inline, flex, grid, position, sizing, text, overflow,
+    forms, tables, images, shadows, transforms, calc(), pseudo-elements, and custom properties.
+  </div>
+  <!-- CTA buttons using inline-flex -->
+  <div style="margin-top: 16px; display: flex; justify-content: center; gap: 12px;">
+    <a href="#" style="display: inline-flex; align-items: center; gap: 6px; background: white; color: var(--color-dark); padding: 8px 20px; border-radius: 20px; text-decoration: none; font-weight: bold; font-size: 13px; box-shadow: var(--shadow-sm);">
+      Get Started
+    </a>
+    <a href="#" style="display: inline-flex; align-items: center; gap: 6px; background: transparent; color: white; padding: 8px 20px; border-radius: 20px; text-decoration: none; font-size: 13px; border: 1.5px solid rgba(255,255,255,0.5);">
+      Learn More
+    </a>
+  </div>
+</div>
+
+<div class="content">
 
 <!-- ======================================== -->
 <h2>1. Block Flow & Box Model</h2>
@@ -34,20 +149,32 @@
     </div>
   </div>
 
-  <h3>Auto margins + negative margins</h3>
+  <h3>Auto margins + negative margins + opacity</h3>
   <div class="demo">
     <div style="width: 180px; margin: 0 auto; background: lightyellow; padding: 8px; text-align: center;">Centered block</div>
-    <div style="width: 180px; margin: -10px auto 0; background: lightgreen; padding: 8px; text-align: center; opacity: 0.8;">Overlapping -10px</div>
+    <div style="width: 180px; margin: -10px auto 0; background: lightgreen; padding: 8px; text-align: center; opacity: 0.7;">Overlapping -10px, opacity:0.7</div>
   </div>
 
-  <h3>Percentage width/padding + min/max</h3>
+  <h3>calc() widths + percentage padding + min/max</h3>
   <div class="demo" style="width: 400px;">
-    <div style="width: 75%; min-width: 200px; max-width: 350px; padding: 5%; background: lightcoral; margin-bottom: 4px;">
-      w:75% of 400=300, min:200, max:350 → 300px. pad:5% of 400=20px.
+    <div style="width: calc(100% - 80px); background: lightcoral; padding: 8px; margin-bottom: 4px;">
+      width: calc(100% - 80px) = 320px
     </div>
-    <div style="width: 30%; min-width: 200px; background: lightblue; padding: 8px;">
-      w:30% of 400=120 → clamped to min:200px
+    <div style="width: 75%; min-width: 200px; max-width: 350px; padding: 5%; background: lightyellow; margin-bottom: 4px;">
+      w:75%=300, pad:5%=20px, max:350
     </div>
+    <div style="width: calc(50% + 40px); background: lightblue; padding: 8px;">
+      width: calc(50% + 40px) = 240px
+    </div>
+  </div>
+
+  <h3>display:none vs visibility:hidden</h3>
+  <div class="demo">
+    <div style="background: lightcoral; padding: 4px;">Visible A</div>
+    <div style="display: none; background: lightyellow; padding: 4px;">display:none B</div>
+    <div style="background: lightblue; padding: 4px;">C (directly after A — B takes no space)</div>
+    <div style="visibility: hidden; background: lightgreen; padding: 4px;">visibility:hidden D</div>
+    <div style="background: plum; padding: 4px;">E (gap above — D is invisible but reserves space)</div>
   </div>
 </div>
 
@@ -81,12 +208,32 @@
     <span style="display: inline-block; width: 100px; background: lightcoral; border: 1px solid #aaa; font-size: 13px;">
       Line 1<br>Line 2<br>Line 3
     </span>
-    <span style="background: lightyellow;">← should align with "Line 3"</span>
+    <span style="background: lightyellow;">&#8592; should align with "Line 3"</span>
   </div>
 
-  <h3>Inline span decoration (background + border + padding)</h3>
+  <h3>Inline span decoration (background + border + padding, wrapping)</h3>
   <div class="demo" style="width: 280px;">
     Before <span style="background: lightcoral; border: 1px solid red; padding: 2px 6px;">decorated span that wraps across multiple lines in this narrow container</span> after.
+  </div>
+
+  <h3>Inline SVG icons + text alignment</h3>
+  <div class="demo">
+    <span>Icon:</span>
+    <svg width="16" height="16" viewBox="0 0 16 16" style="vertical-align: middle;">
+      <circle cx="8" cy="8" r="7" fill="var(--color-primary)"/>
+      <path d="M5 8l2 2 4-4" stroke="white" stroke-width="1.5" fill="none"/>
+    </svg>
+    <span>Check</span>
+    <span style="margin-left: 12px;">Arrow:</span>
+    <svg width="16" height="16" viewBox="0 0 16 16" style="vertical-align: middle;">
+      <path d="M3 8h10M9 4l4 4-4 4" stroke="var(--color-accent)" stroke-width="1.5" fill="none"/>
+    </svg>
+    <span>Right</span>
+    <span style="margin-left: 12px;">Star:</span>
+    <svg width="16" height="16" viewBox="0 0 16 16" style="vertical-align: middle;">
+      <polygon points="8,1 10,6 15,6 11,9 12.5,14 8,11 3.5,14 5,9 1,6 6,6" fill="#f1c40f"/>
+    </svg>
+    <span>Rating</span>
   </div>
 </div>
 
@@ -128,7 +275,15 @@
     <div style="background: lightgreen; padding: 8px; width: 80px; order: 4;">4 (wraps)</div>
   </div>
 
-  <h3>Nested flex</h3>
+  <h3>Truncation in flex child (min-width:0 trick)</h3>
+  <div class="demo" style="display: flex; gap: 8px; width: 300px;">
+    <div style="flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; background: lightyellow; padding: 4px;">
+      This is a very long title that should truncate with an ellipsis inside a flex child with min-width:0
+    </div>
+    <div style="flex-shrink: 0; background: lightblue; padding: 4px;">Fixed</div>
+  </div>
+
+  <h3>Nested flex (sidebar + main + sub-grid)</h3>
   <div class="demo" style="display: flex; gap: 4px;">
     <div style="flex: 1; display: flex; flex-direction: column; gap: 4px;">
       <div style="background: lightcoral; padding: 8px; flex: 1;">Sidebar top</div>
@@ -197,12 +352,24 @@
     </div>
   </div>
 
-  <h3>Sticky header (scroll to test)</h3>
-  <div class="demo" style="height: 80px; overflow: auto;">
-    <div style="position: sticky; top: 0; background: lightcoral; padding: 4px; z-index: 1;">Sticky header</div>
-    <div style="height: 200px; background: linear-gradient(lightyellow, lightblue); padding: 4px;">
-      Scroll down to test sticky behavior ↓
+  <h3>Sticky inside scroll container</h3>
+  <div class="demo" style="height: 100px; overflow: auto;">
+    <div style="position: sticky; top: 0; background: var(--color-dark); color: white; padding: 6px 8px; z-index: 1; font-weight: bold; font-size: 12px;">Sticky header (scroll me)</div>
+    <div style="padding: 8px;">
+      <p style="margin-bottom: 8px;">Row 1: Content below sticky header.</p>
+      <p style="margin-bottom: 8px;">Row 2: More content to scroll through.</p>
+      <p style="margin-bottom: 8px;">Row 3: The header should stick to the top.</p>
+      <p style="margin-bottom: 8px;">Row 4: Keep scrolling to verify behavior.</p>
+      <p style="margin-bottom: 8px;">Row 5: Almost at the end now.</p>
+      <p>Row 6: Final row of scrollable content.</p>
     </div>
+  </div>
+
+  <h3>Pseudo-element tooltip (::after + position:absolute + transform)</h3>
+  <div class="demo" style="padding: 30px 8px 8px;">
+    Normal text, then a
+    <span class="tooltip-host" style="background: lightyellow; padding: 2px 6px; border: 1px dashed var(--color-primary); cursor: help;">hover target</span>
+    with a tooltip positioned above via ::after.
   </div>
 </div>
 
@@ -222,9 +389,18 @@
 
   <h3>aspect-ratio</h3>
   <div class="row">
-    <div style="width: 100px; aspect-ratio: 1; background: lightcoral; display: flex; align-items: center; justify-content: center;">1:1</div>
-    <div style="width: 160px; aspect-ratio: 16/9; background: lightyellow; display: flex; align-items: center; justify-content: center;">16:9</div>
-    <div style="width: 80px; aspect-ratio: 3/4; background: lightblue; display: flex; align-items: center; justify-content: center;">3:4</div>
+    <div style="width: 80px; aspect-ratio: 1; background: lightcoral; display: flex; align-items: center; justify-content: center; border-radius: var(--radius-md);">1:1</div>
+    <div style="width: 142px; aspect-ratio: 16/9; background: lightyellow; display: flex; align-items: center; justify-content: center; border-radius: var(--radius-md);">16:9</div>
+    <div style="width: 60px; aspect-ratio: 3/4; background: lightblue; display: flex; align-items: center; justify-content: center; border-radius: var(--radius-md);">3:4</div>
+  </div>
+
+  <h3>calc() in various contexts</h3>
+  <div class="demo">
+    <div style="display: flex; gap: 8px;">
+      <div style="width: calc(33.333% - 6px); background: lightcoral; padding: 8px;">calc(33% - 6px)</div>
+      <div style="width: calc(33.333% - 6px); background: lightyellow; padding: 8px;">calc(33% - 6px)</div>
+      <div style="width: calc(33.333% - 6px); background: lightblue; padding: 8px;">calc(33% - 6px)</div>
+    </div>
   </div>
 </div>
 
@@ -241,28 +417,57 @@
   </div>
   <div class="demo" style="width: 200px;">
     <div style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; background: lightyellow; padding: 4px;">
-      Ellipsis: this very long text truncates with dots…
+      Ellipsis: this very long text truncates with dots at 200px
     </div>
   </div>
   <div class="demo">
-    <div style="white-space: pre; background: lightyellow; padding: 4px;">pre:  preserves   spaces
-    and newlines</div>
+    <div style="white-space: pre; background: lightyellow; padding: 4px; font-family: monospace;">pre:  preserves   spaces
+    and newlines
+      indented</div>
+  </div>
+  <div class="demo" style="width: 250px;">
+    <div style="white-space: pre-wrap; background: lightyellow; padding: 4px;">pre-wrap:  spaces  preserved
+but wraps when the line gets too long for the container width.</div>
   </div>
 
   <h3>text-decoration + text-transform + letter/word-spacing</h3>
   <div class="demo">
     <span style="text-decoration: underline;">underline</span>
     <span style="text-decoration: line-through; margin-left: 8px;">strike</span>
+    <span style="text-decoration: underline; text-decoration-color: var(--color-accent); margin-left: 8px;">colored underline</span>
     <span style="text-transform: uppercase; margin-left: 8px;">caps</span>
     <span style="letter-spacing: 3px; margin-left: 8px;">spaced</span>
     <span style="word-spacing: 12px; margin-left: 8px;">wide words here</span>
   </div>
 
+  <h3>text-shadow</h3>
+  <div class="demo">
+    <span style="font-size: 20px; text-shadow: 2px 2px 4px rgba(0,0,0,0.3);">Shadow text</span>
+    <span style="font-size: 20px; text-shadow: 0 0 8px var(--color-primary); margin-left: 16px;">Glow text</span>
+    <span style="font-size: 20px; color: white; text-shadow: -1px -1px 0 #333, 1px -1px 0 #333, -1px 1px 0 #333, 1px 1px 0 #333; margin-left: 16px;">Outline text</span>
+  </div>
+
   <h3>line-height comparison</h3>
   <div class="row">
-    <div style="flex: 1; line-height: 1; background: #eee; padding: 4px;">LH:1 — tight lines that demonstrate compact spacing on wrap.</div>
-    <div style="flex: 1; line-height: 1.5; background: #eee; padding: 4px;">LH:1.5 — normal lines that are readable and have normal spacing.</div>
-    <div style="flex: 1; line-height: 2.5; background: #eee; padding: 4px;">LH:2.5 — spacious lines with generous vertical gap.</div>
+    <div style="flex: 1; line-height: 1; background: #eee; padding: 4px;">LH:1 tight spacing on wrap lines.</div>
+    <div style="flex: 1; line-height: 1.5; background: #eee; padding: 4px;">LH:1.5 normal readable spacing.</div>
+    <div style="flex: 1; line-height: 2.5; background: #eee; padding: 4px;">LH:2.5 spacious vertical gap.</div>
+  </div>
+
+  <h3>overflow-wrap:break-word on long strings</h3>
+  <div class="demo" style="width: 200px;">
+    <div style="overflow-wrap: break-word; background: lightyellow; padding: 4px;">
+      Supercalifragilisticexpialidocious and https://example.com/very/long/url/that/should/break/nicely
+    </div>
+  </div>
+
+  <h3>Pseudo-element decorations (::before / ::after)</h3>
+  <div class="demo">
+    <span class="badge">Status indicator (::before green dot)</span>
+    <br><br>
+    <span class="quote">This quote has a big curly open-quote via ::before</span>
+    <br><br>
+    <span class="required">Required field label (::after red asterisk)</span>
   </div>
 </div>
 
@@ -275,64 +480,257 @@
     <div style="flex: 1;">
       <h3>visible</h3>
       <div class="demo" style="width: 100px; height: 40px; background: lightcoral;">
-        Overflows visibly outside box boundaries.
+        Overflows visibly outside box.
       </div>
     </div>
     <div style="flex: 1; margin-top: 20px;">
       <h3>hidden</h3>
       <div class="demo" style="width: 100px; height: 40px; overflow: hidden; background: lightblue;">
-        Clipped at overflow hidden boundary.
+        Clipped at overflow boundary.
       </div>
     </div>
     <div style="flex: 1;">
       <h3>scroll</h3>
       <div class="demo" style="width: 120px; height: 50px; overflow: scroll; background: lightgreen;">
-        Scrollable content. Extra text extra text extra text.
+        Scrollable. Extra text extra text extra text more.
+      </div>
+    </div>
+    <div style="flex: 1;">
+      <h3>auto</h3>
+      <div class="demo" style="width: 120px; height: 50px; overflow: auto; background: lightyellow;">
+        Auto scrollbar. Enough text to overflow the box boundary here.
       </div>
     </div>
   </div>
-</div>
 
-<!-- ======================================== -->
-<h2>9. Floats</h2>
-<!-- ======================================== -->
-
-<div class="section">
-  <div class="demo" style="overflow: hidden;">
-    <div style="float: left; width: 60px; height: 60px; background: lightcoral; margin: 0 8px 4px 0;"></div>
-    <div style="float: right; width: 60px; height: 40px; background: lightblue; margin: 0 0 4px 8px;"></div>
-    <p>Text wraps around both floats. The left coral box and right blue box are floated, and this text fills the remaining space between them. When the text is long enough, it wraps below the shorter float first.</p>
-    <div style="clear: both;"></div>
-  </div>
-</div>
-
-<!-- ======================================== -->
-<h2>10. Display Table</h2>
-<!-- ======================================== -->
-
-<div class="section">
+  <h3>border-radius + overflow:hidden (clip children to rounded corners)</h3>
   <div class="demo">
-    <div style="display: table; width: 100%; border-collapse: collapse;">
-      <div style="display: table-row;">
-        <div style="display: table-cell; border: 1px solid #bbb; padding: 6px; background: lightcoral;">Header 1</div>
-        <div style="display: table-cell; border: 1px solid #bbb; padding: 6px; background: lightyellow;">Header 2</div>
-        <div style="display: table-cell; border: 1px solid #bbb; padding: 6px; background: lightblue;">Header 3</div>
-      </div>
-      <div style="display: table-row;">
-        <div style="display: table-cell; border: 1px solid #bbb; padding: 6px;">Data A</div>
-        <div style="display: table-cell; border: 1px solid #bbb; padding: 6px;">Data B with more text</div>
-        <div style="display: table-cell; border: 1px solid #bbb; padding: 6px;">C</div>
-      </div>
+    <div style="width: 150px; border-radius: 12px; overflow: hidden; border: 2px solid #aaa;">
+      <div style="height: 40px; background: var(--color-primary);"></div>
+      <div style="padding: 8px; background: white; font-size: 12px;">Content clipped to rounded container</div>
     </div>
   </div>
 </div>
 
 <!-- ======================================== -->
-<h2>11. Borders & Backgrounds</h2>
+<h2>9. Floats & Clearfix</h2>
 <!-- ======================================== -->
 
 <div class="section">
-  <h3>Border styles + radius</h3>
+  <h3>Float left + right with text wrap</h3>
+  <div class="demo clearfix">
+    <div style="float: left; width: 60px; height: 60px; background: lightcoral; margin: 0 8px 4px 0; border-radius: 50%;"></div>
+    <div style="float: right; width: 60px; height: 40px; background: lightblue; margin: 0 0 4px 8px;"></div>
+    <p>Text wraps around both floats. Left coral circle and right blue box are floated. This text fills the remaining space. The clearfix ::after pseudo-element on the parent ensures it wraps the floats.</p>
+  </div>
+
+  <h3>Media object pattern (extremely common on real sites)</h3>
+  <div class="demo" style="display: flex; gap: 12px; align-items: flex-start;">
+    <div style="flex-shrink: 0; width: 48px; height: 48px; background: var(--color-primary); border-radius: 50%; display: flex; align-items: center; justify-content: center; color: white; font-weight: bold; font-size: 18px;">JK</div>
+    <div style="flex: 1; min-width: 0;">
+      <div style="font-weight: bold;">Jonathan Kelley</div>
+      <div style="font-size: 12px; color: var(--color-muted);">2 hours ago</div>
+      <p style="margin-top: 4px; font-size: 13px;">This is the media object pattern — avatar + content. Used in comment threads, chat messages, notification lists, and social feeds. The avatar uses flex-shrink:0, content uses flex:1 min-width:0.</p>
+    </div>
+  </div>
+</div>
+
+<!-- ======================================== -->
+<h2>10. Tables (real elements)</h2>
+<!-- ======================================== -->
+
+<div class="section">
+  <h3>HTML table with thead/tbody, borders, alignment</h3>
+  <div class="demo">
+    <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
+      <thead>
+        <tr>
+          <th style="border: 1px solid #bbb; padding: 8px; background: var(--color-dark); color: white; text-align: left;">Name</th>
+          <th style="border: 1px solid #bbb; padding: 8px; background: var(--color-dark); color: white; text-align: center;">Status</th>
+          <th style="border: 1px solid #bbb; padding: 8px; background: var(--color-dark); color: white; text-align: right;">Amount</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td style="border: 1px solid #ddd; padding: 8px;">Alice Johnson</td>
+          <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"><span style="background: #d4edda; color: #155724; padding: 2px 8px; border-radius: 10px; font-size: 11px;">Active</span></td>
+          <td style="border: 1px solid #ddd; padding: 8px; text-align: right; font-family: monospace;">$1,234.56</td>
+        </tr>
+        <tr style="background: #f9f9f9;">
+          <td style="border: 1px solid #ddd; padding: 8px;">Bob Smith</td>
+          <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"><span style="background: #fff3cd; color: #856404; padding: 2px 8px; border-radius: 10px; font-size: 11px;">Pending</span></td>
+          <td style="border: 1px solid #ddd; padding: 8px; text-align: right; font-family: monospace;">$567.89</td>
+        </tr>
+        <tr>
+          <td style="border: 1px solid #ddd; padding: 8px;">Carol Davis</td>
+          <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"><span style="background: #f8d7da; color: #721c24; padding: 2px 8px; border-radius: 10px; font-size: 11px;">Inactive</span></td>
+          <td style="border: 1px solid #ddd; padding: 8px; text-align: right; font-family: monospace;">$0.00</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3>Table with colspan/rowspan</h3>
+  <div class="demo">
+    <table style="border-collapse: collapse; font-size: 13px;">
+      <tr>
+        <td style="border: 1px solid #bbb; padding: 6px; background: lightcoral;" colspan="2">Colspan 2</td>
+        <td style="border: 1px solid #bbb; padding: 6px; background: lightyellow;" rowspan="2">Rowspan 2</td>
+      </tr>
+      <tr>
+        <td style="border: 1px solid #bbb; padding: 6px; background: lightblue;">A</td>
+        <td style="border: 1px solid #bbb; padding: 6px; background: lightgreen;">B</td>
+      </tr>
+      <tr>
+        <td style="border: 1px solid #bbb; padding: 6px;" colspan="3">Full width bottom</td>
+      </tr>
+    </table>
+  </div>
+</div>
+
+<!-- ======================================== -->
+<h2>11. Forms & Input Elements</h2>
+<!-- ======================================== -->
+
+<div class="section">
+  <h3>Common form controls</h3>
+  <div class="demo">
+    <div style="display: grid; grid-template-columns: 100px 1fr; gap: 8px; align-items: center; max-width: 400px;">
+      <label class="required" style="text-align: right; font-size: 13px;">Name</label>
+      <input type="text" value="John Doe" style="padding: 6px 10px; border: 1px solid #ccc; border-radius: var(--radius-sm); font-size: 13px; font-family: inherit;">
+
+      <label style="text-align: right; font-size: 13px;">Email</label>
+      <input type="email" placeholder="user@example.com" style="padding: 6px 10px; border: 1px solid #ccc; border-radius: var(--radius-sm); font-size: 13px; font-family: inherit;">
+
+      <label style="text-align: right; font-size: 13px;">Password</label>
+      <input type="password" value="secret" style="padding: 6px 10px; border: 1px solid #ccc; border-radius: var(--radius-sm); font-size: 13px; font-family: inherit;">
+
+      <label style="text-align: right; font-size: 13px;">Disabled</label>
+      <input type="text" value="Can't edit" disabled style="padding: 6px 10px; border: 1px solid #ddd; border-radius: var(--radius-sm); font-size: 13px; background: #f5f5f5; color: #999; font-family: inherit;">
+
+      <label style="text-align: right; font-size: 13px;">Select</label>
+      <select style="padding: 6px 10px; border: 1px solid #ccc; border-radius: var(--radius-sm); font-size: 13px; font-family: inherit;">
+        <option>Option A</option>
+        <option>Option B</option>
+        <option>Option C</option>
+      </select>
+
+      <label style="text-align: right; font-size: 13px; align-self: start; padding-top: 6px;">Message</label>
+      <textarea rows="3" style="padding: 6px 10px; border: 1px solid #ccc; border-radius: var(--radius-sm); font-size: 13px; font-family: inherit; resize: vertical;">Multi-line text area content.</textarea>
+    </div>
+  </div>
+
+  <h3>Checkboxes, radios, range</h3>
+  <div class="demo">
+    <div style="display: flex; gap: 24px; flex-wrap: wrap; align-items: center;">
+      <label style="display: flex; align-items: center; gap: 6px; font-size: 13px;">
+        <input type="checkbox" checked> Checked
+      </label>
+      <label style="display: flex; align-items: center; gap: 6px; font-size: 13px;">
+        <input type="checkbox"> Unchecked
+      </label>
+      <label style="display: flex; align-items: center; gap: 6px; font-size: 13px;">
+        <input type="radio" name="r1" checked> Radio A
+      </label>
+      <label style="display: flex; align-items: center; gap: 6px; font-size: 13px;">
+        <input type="radio" name="r1"> Radio B
+      </label>
+      <label style="display: flex; align-items: center; gap: 6px; font-size: 13px;">
+        Range: <input type="range" min="0" max="100" value="60" style="width: 100px;">
+      </label>
+    </div>
+  </div>
+
+  <h3>Buttons (various styles)</h3>
+  <div class="demo">
+    <div style="display: flex; gap: 8px; flex-wrap: wrap; align-items: center;">
+      <button style="padding: 8px 16px; background: var(--color-primary); color: white; border: none; border-radius: var(--radius-sm); font-size: 13px; cursor: pointer; font-family: inherit;">Primary</button>
+      <button style="padding: 8px 16px; background: white; color: var(--color-dark); border: 1px solid #ccc; border-radius: var(--radius-sm); font-size: 13px; cursor: pointer; font-family: inherit;">Secondary</button>
+      <button style="padding: 8px 16px; background: var(--color-accent); color: white; border: none; border-radius: var(--radius-sm); font-size: 13px; cursor: pointer; font-family: inherit;">Danger</button>
+      <button style="padding: 8px 16px; background: var(--color-success); color: white; border: none; border-radius: 20px; font-size: 13px; cursor: pointer; font-family: inherit;">Pill</button>
+      <button disabled style="padding: 8px 16px; background: #ddd; color: #999; border: none; border-radius: var(--radius-sm); font-size: 13px; font-family: inherit;">Disabled</button>
+      <button style="padding: 6px 12px; background: transparent; color: var(--color-primary); border: 1.5px solid var(--color-primary); border-radius: var(--radius-sm); font-size: 13px; cursor: pointer; font-family: inherit;">Outline</button>
+    </div>
+  </div>
+
+  <h3>Search bar pattern</h3>
+  <div class="demo">
+    <div style="display: flex; max-width: 400px; border: 1px solid #ccc; border-radius: var(--radius-md); overflow: hidden;">
+      <span style="display: flex; align-items: center; padding: 0 10px; background: #f5f5f5; border-right: 1px solid #ccc;">
+        <svg width="16" height="16" viewBox="0 0 16 16" style="opacity: 0.5;">
+          <circle cx="7" cy="7" r="5" fill="none" stroke="#333" stroke-width="1.5"/>
+          <line x1="11" y1="11" x2="14" y2="14" stroke="#333" stroke-width="1.5"/>
+        </svg>
+      </span>
+      <input type="text" placeholder="Search..." style="flex: 1; padding: 8px 12px; border: none; font-size: 13px; font-family: inherit; outline: none;">
+      <button style="padding: 8px 16px; background: var(--color-primary); color: white; border: none; font-size: 13px; cursor: pointer; font-family: inherit;">Go</button>
+    </div>
+  </div>
+</div>
+
+<!-- ======================================== -->
+<h2>12. Images & Replaced Elements</h2>
+<!-- ======================================== -->
+
+<div class="section">
+  <h3>SVG at various sizes + vertical-align</h3>
+  <div class="demo">
+    <span>Small:</span>
+    <svg width="16" height="16" style="vertical-align: middle; background: lightcoral;"><rect width="16" height="16" fill="coral"/></svg>
+    <span style="margin-left: 8px;">Medium:</span>
+    <svg width="32" height="32" style="vertical-align: middle; background: lightblue;"><rect width="32" height="32" fill="cornflowerblue"/></svg>
+    <span style="margin-left: 8px;">Large:</span>
+    <svg width="48" height="48" style="vertical-align: middle; background: lightgreen;"><rect width="48" height="48" fill="mediumseagreen"/></svg>
+    <span>after</span>
+  </div>
+
+  <h3>Image-like boxes with object-fit simulation</h3>
+  <div class="row">
+    <div style="width: 100px; height: 80px; background: lightcoral; border: 1px solid #aaa; display: flex; align-items: center; justify-content: center; font-size: 11px; color: #666;">
+      contain
+    </div>
+    <div style="width: 100px; height: 80px; background: lightyellow; border: 1px solid #aaa; display: flex; align-items: center; justify-content: center; font-size: 11px; color: #666;">
+      cover
+    </div>
+    <div style="width: 100px; height: 80px; background: lightblue; border: 1px solid #aaa; display: flex; align-items: center; justify-content: center; font-size: 11px; color: #666; border-radius: 50%; overflow: hidden;">
+      circle crop
+    </div>
+  </div>
+
+  <h3>SVG icons in a row (icon bar pattern)</h3>
+  <div class="demo" style="display: flex; gap: 12px; align-items: center; padding: 8px;">
+    <svg width="20" height="20" viewBox="0 0 20 20"><path d="M10 2l2.5 5 5.5.8-4 3.9.9 5.5L10 14.7 5.1 17.2l.9-5.5-4-3.9 5.5-.8z" fill="#f1c40f"/></svg>
+    <svg width="20" height="20" viewBox="0 0 20 20"><circle cx="10" cy="10" r="8" fill="none" stroke="#e74c3c" stroke-width="2"/><path d="M7 7l6 6M13 7l-6 6" stroke="#e74c3c" stroke-width="2"/></svg>
+    <svg width="20" height="20" viewBox="0 0 20 20"><rect x="2" y="2" width="16" height="16" rx="3" fill="#3498db"/><path d="M6 10h8M10 6v8" stroke="white" stroke-width="2"/></svg>
+    <svg width="20" height="20" viewBox="0 0 20 20"><circle cx="10" cy="6" r="4" fill="#27ae60"/><path d="M3 18c0-4 3-7 7-7s7 3 7 7" fill="#27ae60"/></svg>
+    <span style="font-size: 12px; color: var(--color-muted);">star / close / add / user</span>
+  </div>
+</div>
+
+<!-- ======================================== -->
+<h2>13. Shadows & Visual Effects</h2>
+<!-- ======================================== -->
+
+<div class="section">
+  <h3>box-shadow variants</h3>
+  <div class="row" style="gap: 16px; padding: 8px;">
+    <div style="flex: 1; padding: 16px; background: white; box-shadow: var(--shadow-sm); border-radius: var(--radius-sm); text-align: center; font-size: 12px;">shadow-sm</div>
+    <div style="flex: 1; padding: 16px; background: white; box-shadow: var(--shadow-md); border-radius: var(--radius-md); text-align: center; font-size: 12px;">shadow-md</div>
+    <div style="flex: 1; padding: 16px; background: white; box-shadow: var(--shadow-lg); border-radius: var(--radius-lg); text-align: center; font-size: 12px;">shadow-lg</div>
+    <div style="flex: 1; padding: 16px; background: white; box-shadow: inset 0 2px 4px rgba(0,0,0,0.15); border-radius: var(--radius-sm); text-align: center; font-size: 12px;">inset</div>
+  </div>
+
+  <h3>Multiple box-shadows + colored shadows</h3>
+  <div class="demo" style="padding: 16px;">
+    <div style="display: inline-block; padding: 16px 24px; background: white; box-shadow: 3px 3px 0 var(--color-primary), 6px 6px 0 var(--color-accent); border-radius: var(--radius-sm); margin-right: 24px;">
+      Layered shadows
+    </div>
+    <div style="display: inline-block; padding: 16px 24px; background: var(--color-primary); color: white; box-shadow: 0 4px 15px rgba(52,152,219,0.4); border-radius: var(--radius-md);">
+      Colored glow
+    </div>
+  </div>
+
+  <h3>Borders: styles + radius + asymmetric</h3>
   <div class="row">
     <div style="border: 3px solid coral; padding: 8px; flex: 1;">solid</div>
     <div style="border: 3px dashed lightblue; padding: 8px; flex: 1;">dashed</div>
@@ -340,94 +738,322 @@
     <div style="border: 3px double plum; padding: 8px; flex: 1;">double</div>
   </div>
   <div class="row">
-    <div style="border: 2px solid coral; border-radius: 8px; padding: 12px; flex: 1;">8px radius</div>
+    <div style="border: 2px solid coral; border-radius: var(--radius-md); padding: 12px; flex: 1;">8px radius</div>
     <div style="border: 2px solid lightblue; border-radius: 50%; width: 60px; height: 60px; display: flex; align-items: center; justify-content: center;">circle</div>
-    <div style="border: 2px solid lightgreen; border-radius: 20px 0; padding: 12px; flex: 1;">asymmetric</div>
+    <div style="border-top: 4px solid var(--color-primary); border-left: 1px solid #ddd; border-right: 1px solid #ddd; border-bottom: 1px solid #ddd; padding: 12px; flex: 1;">top accent</div>
+    <div style="border-left: 4px solid var(--color-accent); padding: 8px 12px; background: #fef2f2; flex: 1;">left accent (alert)</div>
   </div>
 
-  <h3>Background color + gradient</h3>
-  <div class="row">
-    <div style="flex: 1; padding: 12px; background: linear-gradient(to right, lightcoral, lightyellow);">Linear gradient</div>
-    <div style="flex: 1; padding: 12px; background: radial-gradient(circle, lightblue, lightgreen);">Radial gradient</div>
+  <h3>Gradients</h3>
+  <div class="row" style="height: 50px;">
+    <div style="flex: 1; background: linear-gradient(to right, lightcoral, lightyellow); border-radius: var(--radius-sm);"></div>
+    <div style="flex: 1; background: linear-gradient(135deg, #667eea, #764ba2); border-radius: var(--radius-sm);"></div>
+    <div style="flex: 1; background: radial-gradient(circle at 30% 50%, lightblue, lightgreen); border-radius: var(--radius-sm);"></div>
+    <div style="flex: 1; background: linear-gradient(to bottom, transparent, rgba(0,0,0,0.1)), linear-gradient(to right, lightcoral, lightyellow); border-radius: var(--radius-sm);"></div>
+  </div>
+
+  <h3>opacity + stacking contexts</h3>
+  <div class="demo" style="position: relative; height: 60px;">
+    <div style="position: absolute; top: 0; left: 0; width: 120px; height: 50px; background: lightcoral; opacity: 1.0; padding: 4px;">opacity:1</div>
+    <div style="position: absolute; top: 5px; left: 60px; width: 120px; height: 50px; background: lightblue; opacity: 0.7; padding: 4px;">opacity:0.7</div>
+    <div style="position: absolute; top: 10px; left: 120px; width: 120px; height: 50px; background: lightgreen; opacity: 0.4; padding: 4px;">opacity:0.4</div>
+  </div>
+
+  <h3>transform</h3>
+  <div class="demo" style="padding: 20px; display: flex; gap: 24px; align-items: center;">
+    <div style="background: lightcoral; padding: 8px; transform: rotate(-5deg);">rotate(-5deg)</div>
+    <div style="background: lightyellow; padding: 8px; transform: scale(1.15);">scale(1.15)</div>
+    <div style="background: lightblue; padding: 8px; transform: skewX(-5deg);">skewX(-5deg)</div>
+    <div style="background: lightgreen; padding: 8px; transform: translateY(-6px);">translateY(-6px)</div>
   </div>
 </div>
 
 <!-- ======================================== -->
-<h2>12. Combined Stress Test</h2>
+<h2>14. Lists</h2>
 <!-- ======================================== -->
 
 <div class="section">
-  <p class="note">Simulated page header with nav, hero, cards, and footer — exercises all layout modes together.</p>
-
-  <!-- Nav bar (flex) -->
-  <div style="display: flex; align-items: center; background: #2c3e50; color: white; padding: 8px 16px; gap: 16px;">
-    <div style="font-weight: bold; font-size: 16px;">Logo</div>
-    <div style="flex: 1;"></div>
-    <div style="display: flex; gap: 12px; font-size: 13px;">
-      <span>Home</span><span>About</span><span>Products</span><span>Contact</span>
-    </div>
-  </div>
-
-  <!-- Hero (centering) -->
-  <div style="background: linear-gradient(135deg, #667eea, #764ba2); color: white; padding: 30px 20px; text-align: center;">
-    <div style="font-size: 24px; font-weight: bold; margin-bottom: 8px;">Kitchen Sink Hero</div>
-    <div style="font-size: 14px; opacity: 0.9;">Testing block centering, text align, gradients, and font sizing together.</div>
-  </div>
-
-  <!-- Cards (grid + flex + overflow) -->
-  <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 8px; padding: 12px 0;">
-    <div style="background: white; border: 1px solid #ddd; border-radius: 6px; overflow: hidden;">
-      <div style="height: 50px; background: lightcoral;"></div>
-      <div style="padding: 8px;">
-        <div style="font-weight: bold; margin-bottom: 4px;">Card 1</div>
-        <div style="font-size: 12px; color: #666;">Description text that might overflow the card area.</div>
+  <div class="row">
+    <div style="flex: 1;">
+      <h3>Unordered list</h3>
+      <div class="demo">
+        <ul style="padding-left: 20px; font-size: 13px;">
+          <li>First item</li>
+          <li>Second item
+            <ul style="padding-left: 16px; list-style-type: circle;">
+              <li>Nested A</li>
+              <li>Nested B</li>
+            </ul>
+          </li>
+          <li>Third item</li>
+        </ul>
       </div>
     </div>
-    <div style="background: white; border: 1px solid #ddd; border-radius: 6px; overflow: hidden;">
-      <div style="height: 50px; background: lightyellow;"></div>
-      <div style="padding: 8px;">
-        <div style="font-weight: bold; margin-bottom: 4px;">Card 2</div>
-        <div style="font-size: 12px; color: #666;">Another card with different content length.</div>
+    <div style="flex: 1;">
+      <h3>Ordered list</h3>
+      <div class="demo">
+        <ol style="padding-left: 20px; font-size: 13px;">
+          <li>First step</li>
+          <li>Second step
+            <ol style="padding-left: 16px; list-style-type: lower-alpha;">
+              <li>Sub-step a</li>
+              <li>Sub-step b</li>
+            </ol>
+          </li>
+          <li>Third step</li>
+        </ol>
       </div>
     </div>
-    <div style="background: white; border: 1px solid #ddd; border-radius: 6px; overflow: hidden;">
-      <div style="height: 50px; background: lightblue;"></div>
-      <div style="padding: 8px;">
-        <div style="font-weight: bold; margin-bottom: 4px;">Card 3</div>
-        <div style="font-size: 12px; color: #666;">Short.</div>
-      </div>
-    </div>
-    <div style="background: white; border: 1px solid #ddd; border-radius: 6px; overflow: hidden;">
-      <div style="height: 50px; background: lightgreen;"></div>
-      <div style="padding: 8px;">
-        <div style="font-weight: bold; margin-bottom: 4px;">Card 4</div>
-        <div style="font-size: 12px; color: #666;">Grid auto-fill handles the responsive layout here.</div>
+    <div style="flex: 1;">
+      <h3>Custom list (::before)</h3>
+      <div class="demo">
+        <ul class="custom" style="font-size: 13px;">
+          <li>Completed task</li>
+          <li>Another done</li>
+          <li>All finished</li>
+        </ul>
       </div>
     </div>
   </div>
 
-  <!-- Content section (float + inline) -->
-  <div style="overflow: hidden; padding: 8px 0;">
-    <div style="float: left; width: 80px; height: 80px; background: lightcoral; border-radius: 50%; margin: 0 12px 8px 0;"></div>
-    <p style="font-size: 13px; line-height: 1.5;">
-      This paragraph wraps around the floated circle. It tests float interaction with inline text,
-      <span style="font-weight: bold;">bold spans</span>,
-      <span style="vertical-align: super; font-size: 10px; background: lightyellow;">super</span> and
-      <span style="vertical-align: sub; font-size: 10px; background: lightblue;">sub</span> text,
-      <span style="background: lightgreen; padding: 0 4px; border: 1px solid green;">decorated inlines</span>,
-      and <a href="#" style="color: #3498db; text-decoration: underline;">links</a>.
-      All on the same line with proper baseline alignment.
-    </p>
-  </div>
-
-  <!-- Footer (flex + text) -->
-  <div style="display: flex; justify-content: space-between; align-items: center; background: #2c3e50; color: white; padding: 8px 16px; font-size: 12px; margin-top: 8px;">
-    <span>© 2026 Kitchen Sink</span>
-    <span style="display: flex; gap: 8px;">
-      <span>Privacy</span><span>Terms</span><span>Help</span>
-    </span>
+  <h3>Description list</h3>
+  <div class="demo">
+    <dl style="font-size: 13px;">
+      <dt style="font-weight: bold; margin-top: 8px;">Term 1</dt>
+      <dd style="margin-left: 20px; color: var(--color-muted);">Definition of term 1</dd>
+      <dt style="font-weight: bold; margin-top: 8px;">Term 2</dt>
+      <dd style="margin-left: 20px; color: var(--color-muted);">Definition of term 2</dd>
+    </dl>
   </div>
 </div>
+
+<!-- ======================================== -->
+<h2>15. Details/Summary & Semantic HTML</h2>
+<!-- ======================================== -->
+
+<div class="section">
+  <h3>details/summary disclosure</h3>
+  <div class="demo">
+    <details style="border: 1px solid #ddd; border-radius: var(--radius-sm); padding: 8px;" open>
+      <summary style="font-weight: bold; cursor: pointer;">Expanded by default (open attribute)</summary>
+      <p style="margin-top: 8px; font-size: 13px;">This content is visible because the details element has the open attribute. Click summary to toggle.</p>
+    </details>
+    <details style="border: 1px solid #ddd; border-radius: var(--radius-sm); padding: 8px; margin-top: 8px;">
+      <summary style="font-weight: bold; cursor: pointer;">Collapsed by default</summary>
+      <p style="margin-top: 8px; font-size: 13px;">This content is hidden until the user clicks the summary.</p>
+    </details>
+  </div>
+
+  <h3>Semantic elements (should render as blocks)</h3>
+  <div class="demo">
+    <header style="background: lightcoral; padding: 8px; margin-bottom: 4px;">&lt;header&gt;</header>
+    <nav style="background: lightyellow; padding: 8px; margin-bottom: 4px;">&lt;nav&gt;</nav>
+    <main style="background: lightyellow; padding: 8px; margin-bottom: 4px;">
+      <article style="background: lightblue; padding: 8px; margin-bottom: 4px;">&lt;article&gt;</article>
+      <section style="background: lightgreen; padding: 8px;">&lt;section&gt;</section>
+    </main>
+    <aside style="background: plum; padding: 8px; margin-bottom: 4px;">&lt;aside&gt;</aside>
+    <footer style="background: khaki; padding: 8px;">&lt;footer&gt;</footer>
+  </div>
+</div>
+
+<!-- ======================================== -->
+<h2>16. CSS Custom Properties (var())</h2>
+<!-- ======================================== -->
+
+<div class="section">
+  <h3>Using --variables for colors, spacing, shadows, radii</h3>
+  <div class="demo" style="display: flex; gap: var(--spacing-md); flex-wrap: wrap;">
+    <div style="background: var(--color-primary); color: white; padding: var(--spacing-md) var(--spacing-lg); border-radius: var(--radius-sm); box-shadow: var(--shadow-sm);">--color-primary</div>
+    <div style="background: var(--color-accent); color: white; padding: var(--spacing-md) var(--spacing-lg); border-radius: var(--radius-sm); box-shadow: var(--shadow-sm);">--color-accent</div>
+    <div style="background: var(--color-success); color: white; padding: var(--spacing-md) var(--spacing-lg); border-radius: var(--radius-sm); box-shadow: var(--shadow-sm);">--color-success</div>
+    <div style="background: var(--color-dark); color: white; padding: var(--spacing-md) var(--spacing-lg); border-radius: var(--radius-md); box-shadow: var(--shadow-md);">--shadow-md</div>
+    <div style="background: var(--color-light); padding: var(--spacing-md) var(--spacing-lg); border-radius: var(--radius-lg); box-shadow: var(--shadow-lg);">--shadow-lg</div>
+  </div>
+</div>
+
+<!-- ======================================== -->
+<h2>17. Combined Stress: Realistic Page</h2>
+<!-- ======================================== -->
+
+<div class="section">
+  <p class="note">A realistic content page exercising all layout modes simultaneously.</p>
+
+  <!-- Breadcrumb (inline + separator) -->
+  <div style="font-size: 12px; color: var(--color-muted); padding: 8px 0;">
+    <a href="#" style="color: var(--color-primary); text-decoration: none;">Home</a>
+    <span style="margin: 0 4px;">/</span>
+    <a href="#" style="color: var(--color-primary); text-decoration: none;">Products</a>
+    <span style="margin: 0 4px;">/</span>
+    <span>Current Page</span>
+  </div>
+
+  <!-- Cards — grid auto-fill -->
+  <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 12px; margin-bottom: 16px;">
+    <div style="background: white; border: 1px solid #ddd; border-radius: var(--radius-md); overflow: hidden; box-shadow: var(--shadow-sm);">
+      <div style="height: 60px; background: linear-gradient(135deg, #ff6b6b, #ee5a24);"></div>
+      <div style="padding: 10px;">
+        <div style="font-weight: bold; margin-bottom: 4px;">Card 1</div>
+        <div style="font-size: 12px; color: var(--color-muted);">Grid auto-fill card with gradient header and shadow.</div>
+      </div>
+    </div>
+    <div style="background: white; border: 1px solid #ddd; border-radius: var(--radius-md); overflow: hidden; box-shadow: var(--shadow-sm);">
+      <div style="height: 60px; background: linear-gradient(135deg, #feca57, #ff9f43);"></div>
+      <div style="padding: 10px;">
+        <div style="font-weight: bold; margin-bottom: 4px;">Card 2</div>
+        <div style="font-size: 12px; color: var(--color-muted);">Tests border-radius + overflow:hidden clipping.</div>
+      </div>
+    </div>
+    <div style="background: white; border: 1px solid #ddd; border-radius: var(--radius-md); overflow: hidden; box-shadow: var(--shadow-sm);">
+      <div style="height: 60px; background: linear-gradient(135deg, #48dbfb, #0abde3);"></div>
+      <div style="padding: 10px;">
+        <div style="font-weight: bold; margin-bottom: 4px;">Card 3</div>
+        <div style="font-size: 12px; color: var(--color-muted);">Minmax responsive columns.</div>
+      </div>
+    </div>
+    <div style="background: white; border: 1px solid #ddd; border-radius: var(--radius-md); overflow: hidden; box-shadow: var(--shadow-sm);">
+      <div style="height: 60px; background: linear-gradient(135deg, #55efc4, #00b894);"></div>
+      <div style="padding: 10px;">
+        <div style="font-weight: bold; margin-bottom: 4px;">Card 4</div>
+        <div style="font-size: 12px; color: var(--color-muted);">Should fill available columns.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Cards — flex-wrap fallback -->
+  <div style="display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 16px;">
+    <div style="flex: 1 1 140px; max-width: 250px; background: white; border: 1px solid #ddd; border-radius: var(--radius-md); overflow: hidden; box-shadow: var(--shadow-sm);">
+      <div style="height: 60px; background: linear-gradient(135deg, #a29bfe, #6c5ce7);"></div>
+      <div style="padding: 10px;">
+        <div style="font-weight: bold; margin-bottom: 4px;">Card 5</div>
+        <div style="font-size: 12px; color: var(--color-muted);">Flex-wrap fallback for comparison.</div>
+      </div>
+    </div>
+    <div style="flex: 1 1 140px; max-width: 250px; background: white; border: 1px solid #ddd; border-radius: var(--radius-md); overflow: hidden; box-shadow: var(--shadow-sm);">
+      <div style="height: 60px; background: linear-gradient(135deg, #fd79a8, #e84393);"></div>
+      <div style="padding: 10px;">
+        <div style="font-weight: bold; margin-bottom: 4px;">Card 6</div>
+        <div style="font-size: 12px; color: var(--color-muted);">flex: 1 1 140px + max-width.</div>
+      </div>
+    </div>
+    <div style="flex: 1 1 140px; max-width: 250px; background: white; border: 1px solid #ddd; border-radius: var(--radius-md); overflow: hidden; box-shadow: var(--shadow-sm);">
+      <div style="height: 60px; background: linear-gradient(135deg, #fdcb6e, #e17055);"></div>
+      <div style="padding: 10px;">
+        <div style="font-weight: bold; margin-bottom: 4px;">Card 7</div>
+        <div style="font-size: 12px; color: var(--color-muted);">Compare with auto-fill above.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Two-column content (sidebar + main) -->
+  <div style="display: flex; gap: 16px; margin-bottom: 16px;">
+    <!-- Sidebar -->
+    <div style="flex: 0 0 180px;">
+      <div style="background: white; border: 1px solid #ddd; border-radius: var(--radius-md); overflow: hidden; box-shadow: var(--shadow-sm);">
+        <div style="background: var(--color-dark); color: white; padding: 10px; font-weight: bold; font-size: 13px;">Sidebar</div>
+        <ul style="list-style: none; font-size: 13px;">
+          <li><a href="#" style="display: block; padding: 8px 12px; color: var(--color-primary); text-decoration: none; border-bottom: 1px solid #eee;">Dashboard</a></li>
+          <li><a href="#" style="display: block; padding: 8px 12px; color: var(--color-text); text-decoration: none; border-bottom: 1px solid #eee; background: #f0f7ff;">Settings</a></li>
+          <li><a href="#" style="display: block; padding: 8px 12px; color: var(--color-text); text-decoration: none; border-bottom: 1px solid #eee;">Profile</a></li>
+          <li><a href="#" style="display: block; padding: 8px 12px; color: var(--color-muted); text-decoration: none;">Logout</a></li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- Main content -->
+    <div style="flex: 1; min-width: 0;">
+      <!-- Content with float -->
+      <div style="overflow: hidden; margin-bottom: 12px;">
+        <div style="float: left; width: 80px; height: 80px; background: var(--color-primary); border-radius: 50%; margin: 0 12px 8px 0; display: flex; align-items: center; justify-content: center; color: white; font-weight: bold; font-size: 24px;">JK</div>
+        <p style="font-size: 13px; line-height: 1.6;">
+          This paragraph wraps around the floated avatar circle. It tests float interaction with inline text,
+          <strong>bold spans</strong>,
+          <em>italic text</em>,
+          <span style="vertical-align: super; font-size: 10px; background: lightyellow;">super</span> and
+          <span style="vertical-align: sub; font-size: 10px; background: lightblue;">sub</span> text,
+          <span style="background: lightgreen; padding: 0 4px; border: 1px solid green;">decorated inlines</span>,
+          <code style="background: #f4f4f4; padding: 1px 4px; border-radius: 3px; font-size: 12px; font-family: monospace;">inline code</code>, and
+          <a href="#" style="color: var(--color-primary); text-decoration: underline;">links</a>.
+          All on the same line with proper baseline alignment across mixed inline content.
+        </p>
+      </div>
+
+      <!-- Alert/notification boxes -->
+      <div style="border-left: 4px solid var(--color-primary); background: #ebf5fb; padding: 10px 12px; border-radius: 0 var(--radius-sm) var(--radius-sm) 0; margin-bottom: 8px; font-size: 13px;">
+        <strong>Info:</strong> This is an info alert with left border accent.
+      </div>
+      <div style="border-left: 4px solid var(--color-success); background: #eafaf1; padding: 10px 12px; border-radius: 0 var(--radius-sm) var(--radius-sm) 0; margin-bottom: 8px; font-size: 13px;">
+        <strong>Success:</strong> Operation completed successfully.
+      </div>
+      <div style="border-left: 4px solid var(--color-accent); background: #fdedec; padding: 10px 12px; border-radius: 0 var(--radius-sm) var(--radius-sm) 0; font-size: 13px;">
+        <strong>Error:</strong> Something went wrong. Please try again.
+      </div>
+    </div>
+  </div>
+
+  <!-- Tags / badges inline -->
+  <div style="margin-bottom: 16px;">
+    <h3>Tags / badges</h3>
+    <div class="demo" style="display: flex; gap: 6px; flex-wrap: wrap;">
+      <span style="background: #e8f4fd; color: #1a73e8; padding: 4px 10px; border-radius: 12px; font-size: 12px;">CSS</span>
+      <span style="background: #fce4ec; color: #c62828; padding: 4px 10px; border-radius: 12px; font-size: 12px;">HTML</span>
+      <span style="background: #e8f5e9; color: #2e7d32; padding: 4px 10px; border-radius: 12px; font-size: 12px;">Layout</span>
+      <span style="background: #fff3e0; color: #e65100; padding: 4px 10px; border-radius: 12px; font-size: 12px;">Flexbox</span>
+      <span style="background: #f3e5f5; color: #6a1b9a; padding: 4px 10px; border-radius: 12px; font-size: 12px;">Grid</span>
+      <span style="background: #e0f2f1; color: #00695c; padding: 4px 10px; border-radius: 12px; font-size: 12px;">Inline</span>
+    </div>
+  </div>
+
+  <!-- Pagination (inline-flex + gap) -->
+  <div style="display: flex; justify-content: center; gap: 4px; margin-bottom: 16px;">
+    <span style="display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; border: 1px solid #ddd; border-radius: var(--radius-sm); font-size: 12px; color: var(--color-muted);">&lt;</span>
+    <span style="display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; background: var(--color-primary); color: white; border-radius: var(--radius-sm); font-size: 12px;">1</span>
+    <span style="display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; border: 1px solid #ddd; border-radius: var(--radius-sm); font-size: 12px;">2</span>
+    <span style="display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; border: 1px solid #ddd; border-radius: var(--radius-sm); font-size: 12px;">3</span>
+    <span style="display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; border: 1px solid #ddd; border-radius: var(--radius-sm); font-size: 12px; color: var(--color-muted);">&gt;</span>
+  </div>
+
+  <!-- Modal overlay simulation -->
+  <h3>Modal overlay (position + z-index + backdrop)</h3>
+  <div class="demo" style="position: relative; height: 200px; overflow: hidden;">
+    <!-- Page content behind -->
+    <div style="padding: 8px; font-size: 13px;">
+      <p>This is page content behind the modal overlay.</p>
+      <p style="margin-top: 4px;">It should be dimmed by the backdrop.</p>
+    </div>
+    <!-- Backdrop -->
+    <div style="position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); z-index: 10;"></div>
+    <!-- Modal -->
+    <div style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 11; background: white; border-radius: var(--radius-md); box-shadow: var(--shadow-lg); width: 280px; overflow: hidden;">
+      <div style="display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; border-bottom: 1px solid #eee;">
+        <div style="font-weight: bold;">Modal Title</div>
+        <span style="font-size: 18px; color: var(--color-muted); cursor: pointer; line-height: 1;">&times;</span>
+      </div>
+      <div style="padding: 16px; font-size: 13px;">
+        <p>Modal body content. Tests absolute centering with transform, z-index stacking, box-shadow, and border-radius.</p>
+      </div>
+      <div style="display: flex; justify-content: flex-end; gap: 8px; padding: 12px 16px; border-top: 1px solid #eee; background: #fafafa;">
+        <button style="padding: 6px 14px; border: 1px solid #ccc; border-radius: var(--radius-sm); background: white; font-size: 12px; cursor: pointer; font-family: inherit;">Cancel</button>
+        <button style="padding: 6px 14px; border: none; border-radius: var(--radius-sm); background: var(--color-primary); color: white; font-size: 12px; cursor: pointer; font-family: inherit;">Confirm</button>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+</div><!-- end .content -->
+
+<!-- ============================================================ -->
+<!-- FOOTER (flex + text + border-top)                             -->
+<!-- ============================================================ -->
+<footer style="display: flex; justify-content: space-between; align-items: center; background: var(--color-dark); color: rgba(255,255,255,0.7); padding: 12px 20px; font-size: 12px; margin-top: 24px; border-top: 3px solid var(--color-primary);">
+  <span>&copy; 2026 Kitchen Sink Test Suite</span>
+  <span style="display: flex; gap: 12px;">
+    <a href="#" style="color: rgba(255,255,255,0.7); text-decoration: none;">Privacy</a>
+    <a href="#" style="color: rgba(255,255,255,0.7); text-decoration: none;">Terms</a>
+    <a href="#" style="color: rgba(255,255,255,0.7); text-decoration: none;">Help</a>
+  </span>
+</footer>
 
 </body>
 </html>
