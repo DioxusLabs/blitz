@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html>
+<head>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: Helvetica, Arial, sans-serif; font-size: 14px; margin: 20px; }
+  .test { background: #f0f0f0; margin: 15px 0; padding: 8px; border: 1px solid #ccc; }
+  .label { display: block; font-size: 12px; color: #666; margin-bottom: 4px; font-weight: bold; }
+</style>
+</head>
+<body>
+
+<h3 style="margin-bottom: 10px;">Float & Clear Tests</h3>
+
+<!-- Case 1: float:left -->
+<span class="label">Case 1: float:left — text wraps around right side</span>
+<div class="test" style="overflow: hidden;">
+  <div style="float: left; width: 80px; height: 60px; background: lightcoral; margin: 0 8px 4px 0;"></div>
+  <p>This text flows around the floated box on the right side. The float is removed from normal flow but adjacent inline content wraps around it. More text to show the wrapping behavior.</p>
+</div>
+
+<!-- Case 2: float:right -->
+<span class="label">Case 2: float:right — text wraps around left side</span>
+<div class="test" style="overflow: hidden;">
+  <div style="float: right; width: 80px; height: 60px; background: lightblue; margin: 0 0 4px 8px;"></div>
+  <p>This text flows around the right-floated box on the left side. The float is positioned to the right of the container and text wraps on the left.</p>
+</div>
+
+<!-- Case 3: Multiple floats side by side -->
+<span class="label">Case 3: Multiple float:left — stack horizontally</span>
+<div class="test" style="overflow: hidden;">
+  <div style="float: left; width: 80px; height: 40px; background: lightcoral; margin-right: 4px;"></div>
+  <div style="float: left; width: 80px; height: 40px; background: lightyellow; margin-right: 4px;"></div>
+  <div style="float: left; width: 80px; height: 40px; background: lightblue; margin-right: 4px;"></div>
+  <p style="padding: 4px;">Text after three left floats.</p>
+</div>
+
+<!-- Case 4: clear:both -->
+<span class="label">Case 4: clear:both — forces content below floats</span>
+<div class="test" style="overflow: hidden;">
+  <div style="float: left; width: 80px; height: 60px; background: lightcoral; margin-right: 8px;"></div>
+  <div style="float: right; width: 80px; height: 40px; background: lightblue; margin-left: 8px;"></div>
+  <div style="clear: both; background: lightyellow; padding: 8px;">Cleared: below both floats</div>
+</div>
+
+<!-- Case 5: clear:left only -->
+<span class="label">Case 5: clear:left — clears left float only</span>
+<div class="test" style="overflow: hidden;">
+  <div style="float: left; width: 80px; height: 80px; background: lightcoral; margin-right: 8px;"></div>
+  <div style="float: right; width: 80px; height: 40px; background: lightblue; margin-left: 8px;"></div>
+  <div style="clear: left; background: lightyellow; padding: 8px;">Cleared left only (may still overlap right float)</div>
+</div>
+
+<!-- Case 6: Float collapsing parent (without overflow:hidden) -->
+<span class="label">Case 6: Parent without clearfix — collapses to 0 height</span>
+<div class="test">
+  <div style="background: lightyellow; border: 2px dashed red;">
+    <div style="float: left; width: 100px; height: 50px; background: lightcoral;">Float</div>
+    <!-- Parent has no height because float is out of flow -->
+  </div>
+  <div style="background: lightblue; padding: 4px;">This should overlap the float (parent collapsed)</div>
+</div>
+
+<!-- Case 7: Clearfix with overflow:hidden -->
+<span class="label">Case 7: Parent with overflow:hidden — contains float</span>
+<div class="test">
+  <div style="background: lightyellow; border: 2px dashed green; overflow: hidden;">
+    <div style="float: left; width: 100px; height: 50px; background: lightcoral;">Float</div>
+  </div>
+  <div style="background: lightblue; padding: 4px;">This is properly below the contained float</div>
+</div>
+
+<!-- Case 8: Float drop (floats that don't fit wrap) -->
+<span class="label">Case 8: Float drop — floats wrap when container too narrow</span>
+<div class="test" style="width: 200px; overflow: hidden;">
+  <div style="float: left; width: 100px; height: 40px; background: lightcoral; margin: 2px;">A</div>
+  <div style="float: left; width: 100px; height: 40px; background: lightyellow; margin: 2px;">B</div>
+  <div style="float: left; width: 100px; height: 40px; background: lightblue; margin: 2px;">C (drops)</div>
+</div>
+
+</body>
+</html>

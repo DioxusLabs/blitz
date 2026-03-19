@@ -1,0 +1,433 @@
+<!DOCTYPE html>
+<html>
+<head>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: Helvetica, Arial, sans-serif; font-size: 14px; margin: 20px; color: #333; }
+  h2 { margin: 24px 0 8px; font-size: 18px; border-bottom: 2px solid #333; padding-bottom: 4px; }
+  h3 { margin: 16px 0 6px; font-size: 14px; color: #555; }
+  .section { margin-bottom: 20px; }
+  .row { display: flex; gap: 8px; margin-bottom: 8px; }
+  .demo { background: #f5f5f5; border: 1px solid #ddd; padding: 8px; margin: 4px 0; }
+  .note { font-size: 11px; color: #999; margin-top: 2px; }
+</style>
+</head>
+<body>
+
+<h1 style="font-size: 22px; margin-bottom: 4px;">CSS Layout Kitchen Sink</h1>
+<p style="font-size: 12px; color: #888; margin-bottom: 20px;">
+  Comprehensive test combining block, inline, flex, grid, positioning, sizing, text, and overflow.
+</p>
+
+<!-- ======================================== -->
+<h2>1. Block Flow & Box Model</h2>
+<!-- ======================================== -->
+
+<div class="section">
+  <h3>Margin collapse + box-sizing</h3>
+  <div class="demo">
+    <div style="margin-bottom: 20px; padding: 8px; background: lightcoral; box-sizing: content-box; width: 200px; border: 3px solid darkred;">
+      content-box (w=200 + pad + border)
+    </div>
+    <div style="margin-top: 30px; padding: 8px; background: lightblue; box-sizing: border-box; width: 200px; border: 3px solid darkblue;">
+      border-box (w=200 total). Gap = max(20,30) = 30px.
+    </div>
+  </div>
+
+  <h3>Auto margins + negative margins</h3>
+  <div class="demo">
+    <div style="width: 180px; margin: 0 auto; background: lightyellow; padding: 8px; text-align: center;">Centered block</div>
+    <div style="width: 180px; margin: -10px auto 0; background: lightgreen; padding: 8px; text-align: center; opacity: 0.8;">Overlapping -10px</div>
+  </div>
+
+  <h3>Percentage width/padding + min/max</h3>
+  <div class="demo" style="width: 400px;">
+    <div style="width: 75%; min-width: 200px; max-width: 350px; padding: 5%; background: lightcoral; margin-bottom: 4px;">
+      w:75% of 400=300, min:200, max:350 → 300px. pad:5% of 400=20px.
+    </div>
+    <div style="width: 30%; min-width: 200px; background: lightblue; padding: 8px;">
+      w:30% of 400=120 → clamped to min:200px
+    </div>
+  </div>
+</div>
+
+<!-- ======================================== -->
+<h2>2. Inline & Inline-Block</h2>
+<!-- ======================================== -->
+
+<div class="section">
+  <h3>Mixed font sizes + vertical-align</h3>
+  <div class="demo">
+    <span style="font-size: 12px; background: lightyellow;">12px</span>
+    <span style="font-size: 20px; background: lightcoral;">20px</span>
+    <span style="font-size: 14px; vertical-align: super; background: lightgreen;">sup</span>
+    <span style="font-size: 14px; vertical-align: sub; background: lightblue;">sub</span>
+    <span style="font-size: 14px; vertical-align: middle; background: plum;">mid</span>
+    <span style="font-size: 14px; vertical-align: 8px; background: khaki;">+8px</span>
+  </div>
+
+  <h3>Inline-block with different heights + baselines</h3>
+  <div class="demo" style="line-height: 40px;">
+    <span style="background: lightyellow;">Text</span>
+    <span style="display: inline-block; width: 50px; height: 20px; background: lightcoral; vertical-align: baseline;"></span>
+    <span style="display: inline-block; width: 50px; height: 40px; background: lightblue; vertical-align: middle;"></span>
+    <span style="display: inline-block; width: 50px; height: 30px; background: lightgreen; vertical-align: top;"></span>
+    <span style="background: lightyellow;">After</span>
+  </div>
+
+  <h3>Multi-line inline-block baseline</h3>
+  <div class="demo">
+    <span style="background: lightyellow;">Align</span>
+    <span style="display: inline-block; width: 100px; background: lightcoral; border: 1px solid #aaa; font-size: 13px;">
+      Line 1<br>Line 2<br>Line 3
+    </span>
+    <span style="background: lightyellow;">← should align with "Line 3"</span>
+  </div>
+
+  <h3>Inline span decoration (background + border + padding)</h3>
+  <div class="demo" style="width: 280px;">
+    Before <span style="background: lightcoral; border: 1px solid red; padding: 2px 6px;">decorated span that wraps across multiple lines in this narrow container</span> after.
+  </div>
+</div>
+
+<!-- ======================================== -->
+<h2>3. Flexbox</h2>
+<!-- ======================================== -->
+
+<div class="section">
+  <h3>Row + justify-content variants</h3>
+  <div class="row">
+    <div style="flex: 1; display: flex; justify-content: flex-start; background: #eee; padding: 4px; gap: 4px;">
+      <div style="background: lightcoral; padding: 4px;">A</div><div style="background: lightyellow; padding: 4px;">B</div>
+    </div>
+    <div style="flex: 1; display: flex; justify-content: center; background: #eee; padding: 4px; gap: 4px;">
+      <div style="background: lightcoral; padding: 4px;">A</div><div style="background: lightyellow; padding: 4px;">B</div>
+    </div>
+    <div style="flex: 1; display: flex; justify-content: space-between; background: #eee; padding: 4px;">
+      <div style="background: lightcoral; padding: 4px;">A</div><div style="background: lightyellow; padding: 4px;">B</div>
+    </div>
+  </div>
+
+  <h3>Column + align-items + flex-grow</h3>
+  <div class="demo" style="display: flex; gap: 8px; height: 100px;">
+    <div style="display: flex; flex-direction: column; flex: 1; gap: 4px;">
+      <div style="flex-grow: 1; background: lightcoral; padding: 4px;">grow:1</div>
+      <div style="flex-grow: 2; background: lightyellow; padding: 4px;">grow:2</div>
+    </div>
+    <div style="display: flex; flex-direction: column; flex: 1; align-items: center; gap: 4px;">
+      <div style="background: lightblue; padding: 4px;">centered</div>
+      <div style="background: lightgreen; padding: 4px;">items</div>
+    </div>
+  </div>
+
+  <h3>Flex wrap + gap + order</h3>
+  <div class="demo" style="display: flex; flex-wrap: wrap; gap: 6px; width: 220px;">
+    <div style="background: lightcoral; padding: 8px; width: 80px; order: 3;">3</div>
+    <div style="background: lightyellow; padding: 8px; width: 80px; order: 1;">1</div>
+    <div style="background: lightblue; padding: 8px; width: 80px; order: 2;">2</div>
+    <div style="background: lightgreen; padding: 8px; width: 80px; order: 4;">4 (wraps)</div>
+  </div>
+
+  <h3>Nested flex</h3>
+  <div class="demo" style="display: flex; gap: 4px;">
+    <div style="flex: 1; display: flex; flex-direction: column; gap: 4px;">
+      <div style="background: lightcoral; padding: 8px; flex: 1;">Sidebar top</div>
+      <div style="background: lightyellow; padding: 8px; flex: 1;">Sidebar bot</div>
+    </div>
+    <div style="flex: 3; display: flex; flex-direction: column; gap: 4px;">
+      <div style="background: lightblue; padding: 8px; flex: 3;">Main content</div>
+      <div style="display: flex; gap: 4px; flex: 1;">
+        <div style="flex: 1; background: lightgreen; padding: 4px;">Sub A</div>
+        <div style="flex: 1; background: plum; padding: 4px;">Sub B</div>
+        <div style="flex: 1; background: khaki; padding: 4px;">Sub C</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ======================================== -->
+<h2>4. Grid</h2>
+<!-- ======================================== -->
+
+<div class="section">
+  <h3>Template areas + fr + fixed + span</h3>
+  <div class="demo" style="display: grid; grid-template-areas: 'hd hd hd' 'sb main main' 'ft ft ft'; grid-template-columns: 100px 1fr 1fr; grid-template-rows: 30px 60px 25px; gap: 4px;">
+    <div style="grid-area: hd; background: lightcoral; padding: 4px;">Header</div>
+    <div style="grid-area: sb; background: lightyellow; padding: 4px;">Side</div>
+    <div style="grid-area: main; background: lightblue; padding: 4px;">Main (2fr wide)</div>
+    <div style="grid-area: ft; background: lightgreen; padding: 4px;">Footer</div>
+  </div>
+
+  <h3>auto-fill + minmax</h3>
+  <div class="demo" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(60px, 1fr)); gap: 4px;">
+    <div style="background: lightcoral; padding: 8px; text-align: center;">1</div>
+    <div style="background: lightyellow; padding: 8px; text-align: center;">2</div>
+    <div style="background: lightblue; padding: 8px; text-align: center;">3</div>
+    <div style="background: lightgreen; padding: 8px; text-align: center;">4</div>
+    <div style="background: plum; padding: 8px; text-align: center;">5</div>
+    <div style="background: khaki; padding: 8px; text-align: center;">6</div>
+  </div>
+
+  <h3>Row/column span</h3>
+  <div class="demo" style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px;">
+    <div style="grid-column: span 2; background: lightcoral; padding: 4px;">Col span 2</div>
+    <div style="grid-row: span 2; background: lightyellow; padding: 4px;">Row span 2</div>
+    <div style="background: lightblue; padding: 4px;">Normal</div>
+    <div style="background: lightgreen; padding: 4px;">Normal</div>
+    <div style="background: plum; padding: 4px;">Normal</div>
+  </div>
+</div>
+
+<!-- ======================================== -->
+<h2>5. Positioning</h2>
+<!-- ======================================== -->
+
+<div class="section">
+  <h3>Relative + Absolute + z-index</h3>
+  <div class="demo" style="position: relative; height: 80px;">
+    <div style="position: relative; top: 5px; left: 10px; background: lightcoral; padding: 4px; width: 150px;">Relative +5,+10</div>
+    <div style="position: absolute; top: 10px; right: 10px; background: lightblue; padding: 4px; z-index: 2;">Absolute z:2</div>
+    <div style="position: absolute; top: 20px; right: 0; background: lightyellow; padding: 4px; z-index: 1;">Absolute z:1 (behind)</div>
+  </div>
+
+  <h3>Absolute stretched (all 4 insets)</h3>
+  <div class="demo" style="position: relative; height: 60px;">
+    <div style="position: absolute; top: 8px; right: 8px; bottom: 8px; left: 8px; background: lightgreen; padding: 4px; display: flex; align-items: center; justify-content: center;">
+      Stretched with 8px inset
+    </div>
+  </div>
+
+  <h3>Sticky header (scroll to test)</h3>
+  <div class="demo" style="height: 80px; overflow: auto;">
+    <div style="position: sticky; top: 0; background: lightcoral; padding: 4px; z-index: 1;">Sticky header</div>
+    <div style="height: 200px; background: linear-gradient(lightyellow, lightblue); padding: 4px;">
+      Scroll down to test sticky behavior ↓
+    </div>
+  </div>
+</div>
+
+<!-- ======================================== -->
+<h2>6. Sizing</h2>
+<!-- ======================================== -->
+
+<div class="section">
+  <h3>min-content / max-content / fit-content</h3>
+  <div class="row">
+    <div style="width: min-content; background: lightcoral; padding: 6px;">min-content wraps to longest word</div>
+    <div style="width: max-content; background: lightyellow; padding: 6px;">max-content stays on one line</div>
+  </div>
+  <div class="demo">
+    <div style="width: fit-content(150px); background: lightblue; padding: 6px;">fit-content(150px)</div>
+  </div>
+
+  <h3>aspect-ratio</h3>
+  <div class="row">
+    <div style="width: 100px; aspect-ratio: 1; background: lightcoral; display: flex; align-items: center; justify-content: center;">1:1</div>
+    <div style="width: 160px; aspect-ratio: 16/9; background: lightyellow; display: flex; align-items: center; justify-content: center;">16:9</div>
+    <div style="width: 80px; aspect-ratio: 3/4; background: lightblue; display: flex; align-items: center; justify-content: center;">3:4</div>
+  </div>
+</div>
+
+<!-- ======================================== -->
+<h2>7. Text & Inline Formatting</h2>
+<!-- ======================================== -->
+
+<div class="section">
+  <h3>text-align + white-space</h3>
+  <div class="row">
+    <div style="flex: 1; text-align: left; background: #eee; padding: 4px;">Left</div>
+    <div style="flex: 1; text-align: center; background: #eee; padding: 4px;">Center</div>
+    <div style="flex: 1; text-align: right; background: #eee; padding: 4px;">Right</div>
+  </div>
+  <div class="demo" style="width: 200px;">
+    <div style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; background: lightyellow; padding: 4px;">
+      Ellipsis: this very long text truncates with dots…
+    </div>
+  </div>
+  <div class="demo">
+    <div style="white-space: pre; background: lightyellow; padding: 4px;">pre:  preserves   spaces
+    and newlines</div>
+  </div>
+
+  <h3>text-decoration + text-transform + letter/word-spacing</h3>
+  <div class="demo">
+    <span style="text-decoration: underline;">underline</span>
+    <span style="text-decoration: line-through; margin-left: 8px;">strike</span>
+    <span style="text-transform: uppercase; margin-left: 8px;">caps</span>
+    <span style="letter-spacing: 3px; margin-left: 8px;">spaced</span>
+    <span style="word-spacing: 12px; margin-left: 8px;">wide words here</span>
+  </div>
+
+  <h3>line-height comparison</h3>
+  <div class="row">
+    <div style="flex: 1; line-height: 1; background: #eee; padding: 4px;">LH:1 — tight lines that demonstrate compact spacing on wrap.</div>
+    <div style="flex: 1; line-height: 1.5; background: #eee; padding: 4px;">LH:1.5 — normal lines that are readable and have normal spacing.</div>
+    <div style="flex: 1; line-height: 2.5; background: #eee; padding: 4px;">LH:2.5 — spacious lines with generous vertical gap.</div>
+  </div>
+</div>
+
+<!-- ======================================== -->
+<h2>8. Overflow & Clipping</h2>
+<!-- ======================================== -->
+
+<div class="section">
+  <div class="row">
+    <div style="flex: 1;">
+      <h3>visible</h3>
+      <div class="demo" style="width: 100px; height: 40px; background: lightcoral;">
+        Overflows visibly outside box boundaries.
+      </div>
+    </div>
+    <div style="flex: 1; margin-top: 20px;">
+      <h3>hidden</h3>
+      <div class="demo" style="width: 100px; height: 40px; overflow: hidden; background: lightblue;">
+        Clipped at overflow hidden boundary.
+      </div>
+    </div>
+    <div style="flex: 1;">
+      <h3>scroll</h3>
+      <div class="demo" style="width: 120px; height: 50px; overflow: scroll; background: lightgreen;">
+        Scrollable content. Extra text extra text extra text.
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ======================================== -->
+<h2>9. Floats</h2>
+<!-- ======================================== -->
+
+<div class="section">
+  <div class="demo" style="overflow: hidden;">
+    <div style="float: left; width: 60px; height: 60px; background: lightcoral; margin: 0 8px 4px 0;"></div>
+    <div style="float: right; width: 60px; height: 40px; background: lightblue; margin: 0 0 4px 8px;"></div>
+    <p>Text wraps around both floats. The left coral box and right blue box are floated, and this text fills the remaining space between them. When the text is long enough, it wraps below the shorter float first.</p>
+    <div style="clear: both;"></div>
+  </div>
+</div>
+
+<!-- ======================================== -->
+<h2>10. Display Table</h2>
+<!-- ======================================== -->
+
+<div class="section">
+  <div class="demo">
+    <div style="display: table; width: 100%; border-collapse: collapse;">
+      <div style="display: table-row;">
+        <div style="display: table-cell; border: 1px solid #bbb; padding: 6px; background: lightcoral;">Header 1</div>
+        <div style="display: table-cell; border: 1px solid #bbb; padding: 6px; background: lightyellow;">Header 2</div>
+        <div style="display: table-cell; border: 1px solid #bbb; padding: 6px; background: lightblue;">Header 3</div>
+      </div>
+      <div style="display: table-row;">
+        <div style="display: table-cell; border: 1px solid #bbb; padding: 6px;">Data A</div>
+        <div style="display: table-cell; border: 1px solid #bbb; padding: 6px;">Data B with more text</div>
+        <div style="display: table-cell; border: 1px solid #bbb; padding: 6px;">C</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ======================================== -->
+<h2>11. Borders & Backgrounds</h2>
+<!-- ======================================== -->
+
+<div class="section">
+  <h3>Border styles + radius</h3>
+  <div class="row">
+    <div style="border: 3px solid coral; padding: 8px; flex: 1;">solid</div>
+    <div style="border: 3px dashed lightblue; padding: 8px; flex: 1;">dashed</div>
+    <div style="border: 3px dotted lightgreen; padding: 8px; flex: 1;">dotted</div>
+    <div style="border: 3px double plum; padding: 8px; flex: 1;">double</div>
+  </div>
+  <div class="row">
+    <div style="border: 2px solid coral; border-radius: 8px; padding: 12px; flex: 1;">8px radius</div>
+    <div style="border: 2px solid lightblue; border-radius: 50%; width: 60px; height: 60px; display: flex; align-items: center; justify-content: center;">circle</div>
+    <div style="border: 2px solid lightgreen; border-radius: 20px 0; padding: 12px; flex: 1;">asymmetric</div>
+  </div>
+
+  <h3>Background color + gradient</h3>
+  <div class="row">
+    <div style="flex: 1; padding: 12px; background: linear-gradient(to right, lightcoral, lightyellow);">Linear gradient</div>
+    <div style="flex: 1; padding: 12px; background: radial-gradient(circle, lightblue, lightgreen);">Radial gradient</div>
+  </div>
+</div>
+
+<!-- ======================================== -->
+<h2>12. Combined Stress Test</h2>
+<!-- ======================================== -->
+
+<div class="section">
+  <p class="note">Simulated page header with nav, hero, cards, and footer — exercises all layout modes together.</p>
+
+  <!-- Nav bar (flex) -->
+  <div style="display: flex; align-items: center; background: #2c3e50; color: white; padding: 8px 16px; gap: 16px;">
+    <div style="font-weight: bold; font-size: 16px;">Logo</div>
+    <div style="flex: 1;"></div>
+    <div style="display: flex; gap: 12px; font-size: 13px;">
+      <span>Home</span><span>About</span><span>Products</span><span>Contact</span>
+    </div>
+  </div>
+
+  <!-- Hero (centering) -->
+  <div style="background: linear-gradient(135deg, #667eea, #764ba2); color: white; padding: 30px 20px; text-align: center;">
+    <div style="font-size: 24px; font-weight: bold; margin-bottom: 8px;">Kitchen Sink Hero</div>
+    <div style="font-size: 14px; opacity: 0.9;">Testing block centering, text align, gradients, and font sizing together.</div>
+  </div>
+
+  <!-- Cards (grid + flex + overflow) -->
+  <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 8px; padding: 12px 0;">
+    <div style="background: white; border: 1px solid #ddd; border-radius: 6px; overflow: hidden;">
+      <div style="height: 50px; background: lightcoral;"></div>
+      <div style="padding: 8px;">
+        <div style="font-weight: bold; margin-bottom: 4px;">Card 1</div>
+        <div style="font-size: 12px; color: #666;">Description text that might overflow the card area.</div>
+      </div>
+    </div>
+    <div style="background: white; border: 1px solid #ddd; border-radius: 6px; overflow: hidden;">
+      <div style="height: 50px; background: lightyellow;"></div>
+      <div style="padding: 8px;">
+        <div style="font-weight: bold; margin-bottom: 4px;">Card 2</div>
+        <div style="font-size: 12px; color: #666;">Another card with different content length.</div>
+      </div>
+    </div>
+    <div style="background: white; border: 1px solid #ddd; border-radius: 6px; overflow: hidden;">
+      <div style="height: 50px; background: lightblue;"></div>
+      <div style="padding: 8px;">
+        <div style="font-weight: bold; margin-bottom: 4px;">Card 3</div>
+        <div style="font-size: 12px; color: #666;">Short.</div>
+      </div>
+    </div>
+    <div style="background: white; border: 1px solid #ddd; border-radius: 6px; overflow: hidden;">
+      <div style="height: 50px; background: lightgreen;"></div>
+      <div style="padding: 8px;">
+        <div style="font-weight: bold; margin-bottom: 4px;">Card 4</div>
+        <div style="font-size: 12px; color: #666;">Grid auto-fill handles the responsive layout here.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Content section (float + inline) -->
+  <div style="overflow: hidden; padding: 8px 0;">
+    <div style="float: left; width: 80px; height: 80px; background: lightcoral; border-radius: 50%; margin: 0 12px 8px 0;"></div>
+    <p style="font-size: 13px; line-height: 1.5;">
+      This paragraph wraps around the floated circle. It tests float interaction with inline text,
+      <span style="font-weight: bold;">bold spans</span>,
+      <span style="vertical-align: super; font-size: 10px; background: lightyellow;">super</span> and
+      <span style="vertical-align: sub; font-size: 10px; background: lightblue;">sub</span> text,
+      <span style="background: lightgreen; padding: 0 4px; border: 1px solid green;">decorated inlines</span>,
+      and <a href="#" style="color: #3498db; text-decoration: underline;">links</a>.
+      All on the same line with proper baseline alignment.
+    </p>
+  </div>
+
+  <!-- Footer (flex + text) -->
+  <div style="display: flex; justify-content: space-between; align-items: center; background: #2c3e50; color: white; padding: 8px 16px; font-size: 12px; margin-top: 8px;">
+    <span>© 2026 Kitchen Sink</span>
+    <span style="display: flex; gap: 8px;">
+      <span>Privacy</span><span>Terms</span><span>Help</span>
+    </span>
+  </div>
+</div>
+
+</body>
+</html>

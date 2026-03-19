@@ -10,7 +10,7 @@ use taffy::{
 };
 
 #[cfg(feature = "floats")]
-use taffy::{Clear, Float, prelude::TaffyMaxContent};
+use taffy::{Float, prelude::TaffyMaxContent};
 
 use super::construct::resolve_line_height;
 use super::resolve_calc_value;
@@ -298,8 +298,8 @@ impl BaseDocument {
             let is_floated = false;
 
             // CSS2.1 §10.8.1: overflow != visible → baseline = bottom margin edge
-            let overflow_not_visible = style.overflow.x.is_scroll_container()
-                || style.overflow.y.is_scroll_container();
+            let overflow_not_visible =
+                style.overflow.x.is_scroll_container() || style.overflow.y.is_scroll_container();
 
             if style.position == Position::Absolute || is_floated {
                 ibox.width = 0.0;

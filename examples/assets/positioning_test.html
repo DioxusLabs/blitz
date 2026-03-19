@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html>
+<head>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: Helvetica, Arial, sans-serif; font-size: 14px; margin: 20px; }
+  .test { background: #f0f0f0; margin: 15px 0; padding: 8px; border: 1px solid #ccc; }
+  .label { display: block; font-size: 12px; color: #666; margin-bottom: 4px; font-weight: bold; }
+</style>
+</head>
+<body>
+
+<h3 style="margin-bottom: 10px;">CSS Positioning Tests</h3>
+
+<!-- Case 1: position:static (default) -->
+<span class="label">Case 1: position:static — top/left have no effect</span>
+<div class="test">
+  <div style="position: static; top: 50px; left: 50px; background: lightcoral; padding: 8px; width: 200px;">
+    Static: top/left ignored
+  </div>
+  <div style="background: lightyellow; padding: 8px; width: 200px;">After (should be directly below)</div>
+</div>
+
+<!-- Case 2: position:relative -->
+<span class="label">Case 2: position:relative — shifted 20px right + 10px down, space preserved</span>
+<div class="test">
+  <div style="background: lightyellow; padding: 8px;">Before</div>
+  <div style="position: relative; top: 10px; left: 20px; background: lightcoral; padding: 8px; width: 200px;">
+    Relative: shifted but space held
+  </div>
+  <div style="background: lightyellow; padding: 8px;">After (gap where relative box was)</div>
+</div>
+
+<!-- Case 3: position:absolute -->
+<span class="label">Case 3: position:absolute — removed from flow, positioned in container</span>
+<div class="test" style="position: relative; height: 80px;">
+  <div style="background: lightyellow; padding: 8px;">Normal flow</div>
+  <div style="position: absolute; top: 10px; right: 10px; background: lightcoral; padding: 8px;">
+    Absolute: top:10 right:10
+  </div>
+  <div style="background: lightyellow; padding: 8px;">Ignores absolute box</div>
+</div>
+
+<!-- Case 4: position:fixed (acts like absolute in non-scrolling context) -->
+<span class="label">Case 4: position:fixed — pinned to viewport (top:auto, left:auto falls back)</span>
+<div class="test" style="position: relative; height: 60px;">
+  <div style="background: lightyellow; padding: 8px;">Normal content under fixed</div>
+  <!-- Fixed elements are viewport-relative; in a test context this may overlay -->
+  <div style="position: fixed; bottom: 20px; right: 20px; background: rgba(255,127,80,0.9); padding: 8px; z-index: 9999; border: 2px solid red;">
+    Fixed: bottom:20 right:20
+  </div>
+</div>
+
+<!-- Case 5: Absolute inside relative chain -->
+<span class="label">Case 5: Absolute positions relative to nearest positioned ancestor</span>
+<div class="test">
+  <div style="position: relative; padding: 20px; background: lightyellow; height: 80px;">
+    <div style="position: relative; padding: 20px; background: lightblue; height: 60px;">
+      <div style="position: absolute; bottom: 5px; right: 5px; background: lightcoral; padding: 4px;">
+        Anchored to lightblue box
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Case 6: z-index stacking -->
+<span class="label">Case 6: z-index — red on top of blue (z-index:2 > z-index:1)</span>
+<div class="test" style="position: relative; height: 60px;">
+  <div style="position: absolute; top: 5px; left: 5px; width: 100px; height: 50px; background: lightblue; z-index: 1; padding: 4px;">z:1</div>
+  <div style="position: absolute; top: 15px; left: 40px; width: 100px; height: 50px; background: lightcoral; z-index: 2; padding: 4px;">z:2 (on top)</div>
+</div>
+
+<!-- Case 7: Absolute with all four insets (stretching) -->
+<span class="label">Case 7: Absolute with top:10 right:10 bottom:10 left:10 (stretches to fill)</span>
+<div class="test" style="position: relative; height: 80px;">
+  <div style="position: absolute; top: 10px; right: 10px; bottom: 10px; left: 10px; background: lightcoral; padding: 8px;">
+    Stretched by all four insets
+  </div>
+</div>
+
+<!-- Case 8: Sticky (falls back to relative in most simple contexts) -->
+<span class="label">Case 8: position:sticky — behaves like relative until scroll threshold</span>
+<div class="test" style="height: 100px; overflow: auto;">
+  <div style="height: 40px; background: lightyellow; padding: 8px;">Scroll down ↓</div>
+  <div style="position: sticky; top: 0; background: lightcoral; padding: 8px; z-index: 1;">
+    Sticky: top:0 (sticks when scrolled)
+  </div>
+  <div style="height: 200px; background: lightblue; padding: 8px;">Tall content to enable scroll</div>
+</div>
+
+<!-- Case 9: Negative offsets -->
+<span class="label">Case 9: Relative with negative top (shifts upward)</span>
+<div class="test">
+  <div style="background: lightyellow; padding: 8px; height: 30px;">Before</div>
+  <div style="position: relative; top: -15px; background: lightcoral; padding: 8px; width: 200px;">
+    Shifted 15px up (overlaps "Before")
+  </div>
+  <div style="background: lightyellow; padding: 8px;">After (original space preserved)</div>
+</div>
+
+</body>
+</html>
