@@ -12,7 +12,7 @@ use style::{
     data::ElementData as StyloElementData,
     shared_lock::StylesheetGuards,
     values::{
-        computed::{Content, ContentItem, Display, Float},
+        computed::{Content, ContentItem, Display, Float, TextTransform},
         specified::box_::{DisplayInside, DisplayOutside},
     },
 };
@@ -818,10 +818,16 @@ pub(crate) fn build_inline_layout_into(
 
     // Set whitespace collapsing mode
     let collapse_mode = root_node_style
+        .as_ref()
         .map(|s| s.get_inherited_text().white_space_collapse)
         .map(stylo_to_parley::white_space_collapse)
         .unwrap_or(WhiteSpaceCollapse::Collapse);
     builder.set_white_space_mode(collapse_mode);
+
+    let text_transform = root_node_style
+        .as_ref()
+        .map(|s| s.clone_text_transform() & TextTransform::CASE_TRANSFORMS)
+        .unwrap_or(TextTransform::NONE);
 
     // Render position-inside list items
     if let Some(ListItemLayout {
@@ -844,6 +850,7 @@ pub(crate) fn build_inline_layout_into(
             inline_context_root_node_id,
             before_id,
             collapse_mode,
+            text_transform,
             root_line_height,
         );
     }
@@ -854,6 +861,7 @@ pub(crate) fn build_inline_layout_into(
             inline_context_root_node_id,
             child_id,
             collapse_mode,
+            text_transform,
             root_line_height,
         );
     }
@@ -864,6 +872,7 @@ pub(crate) fn build_inline_layout_into(
             inline_context_root_node_id,
             after_id,
             collapse_mode,
+            text_transform,
             root_line_height,
         );
     }
@@ -877,6 +886,7 @@ pub(crate) fn build_inline_layout_into(
         parent_id: usize,
         node_id: usize,
         collapse_mode: WhiteSpaceCollapse,
+        parent_text_transform: TextTransform,
         root_line_height: f32,
     ) {
         let node = &nodes[node_id];
@@ -893,6 +903,10 @@ pub(crate) fn build_inline_layout_into(
             .map(stylo_to_parley::white_space_collapse)
             .unwrap_or(collapse_mode);
         builder.set_white_space_mode(collapse_mode);
+
+        let text_transform = style
+            .map(|s| s.clone_text_transform() & TextTransform::CASE_TRANSFORMS)
+            .unwrap_or(TextTransform::NONE);
 
         match &node.data {
             NodeData::Element(element_data) | NodeData::AnonymousBlock(element_data) => {
@@ -929,6 +943,7 @@ pub(crate) fn build_inline_layout_into(
                                 parent_id,
                                 child_id,
                                 collapse_mode,
+                                text_transform,
                                 root_line_height,
                             );
                         }
@@ -989,6 +1004,7 @@ pub(crate) fn build_inline_layout_into(
                                     node_id,
                                     before_id,
                                     collapse_mode,
+                                    text_transform,
                                     root_line_height,
                                 );
                             }
@@ -1000,6 +1016,7 @@ pub(crate) fn build_inline_layout_into(
                                     node_id,
                                     child_id,
                                     collapse_mode,
+                                    text_transform,
                                     root_line_height,
                                 );
                             }
@@ -1010,6 +1027,7 @@ pub(crate) fn build_inline_layout_into(
                                     node_id,
                                     after_id,
                                     collapse_mode,
+                                    text_transform,
                                     root_line_height,
                                 );
                             }
@@ -1034,7 +1052,19 @@ pub(crate) fn build_inline_layout_into(
             NodeData::Text(data) => {
                 // node.remove_damage(CONSTRUCT_DESCENDENT | CONSTRUCT_FC | CONSTRUCT_BOX);
                 // dbg!(&data.content);
-                builder.push_text(&data.content);
+
+                // TODO: optimize case transforms to be non-allocating
+                match parent_text_transform {
+                    TextTransform::UPPERCASE => {
+                        builder.push_text(&data.content.to_uppercase());
+                    }
+                    TextTransform::LOWERCASE => {
+                        builder.push_text(&data.content.to_lowercase());
+                    }
+                    _ => {
+                        builder.push_text(&data.content);
+                    }
+                }
             }
             NodeData::Comment => {
                 // node.remove_damage(CONSTRUCT_DESCENDENT | CONSTRUCT_FC | CONSTRUCT_BOX);
