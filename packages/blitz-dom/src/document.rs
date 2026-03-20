@@ -41,7 +41,7 @@ use std::time::Instant;
 use style::Atom;
 use style::animation::DocumentAnimationSet;
 use style::attr::{AttrIdentifier, AttrValue};
-use style::data::{ElementData as StyloElementData, ElementStyles};
+use style::data::ElementStyles;
 use style::media_queries::MediaType;
 use style::properties::ComputedValues;
 use style::properties::style_structs::Font;
@@ -437,18 +437,19 @@ impl BaseDocument {
         }
 
         // Stylo data on the root node container is needed to render the node
-        let stylo_element_data = StyloElementData {
-            styles: ElementStyles {
+        let wrapper = style::data::ElementDataWrapper::default();
+        {
+            let mut stylo_element_data = wrapper.borrow_mut();
+            stylo_element_data.styles = ElementStyles {
                 primary: Some(
                     ComputedValues::initial_values_with_font_override(Font::initial_values())
                         .to_arc(),
                 ),
                 ..Default::default()
-            },
-            ..Default::default()
-        };
+            };
+        }
         // Safety: we have exclusive access during document construction
-        *unsafe { &mut *doc.root_node().stylo_element_data.get() } = Some(stylo_element_data);
+        *unsafe { &mut *doc.root_node().stylo_element_data.get() } = Some(wrapper);
 
         doc
     }

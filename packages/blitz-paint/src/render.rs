@@ -361,7 +361,7 @@ impl<'dom> BlitzDomPainter<'dom> {
         // Safety: render happens single-threaded after layout is complete.
         let style = unsafe { &*node.stylo_element_data.get() }
             .as_ref()
-            .map(|element_data| element_data.styles.primary().clone())
+            .map(|wrapper| wrapper.borrow().styles.primary().clone())
             .unwrap_or(
                 ComputedValues::initial_values_with_font_override(Font::initial_values()).to_arc(),
             );

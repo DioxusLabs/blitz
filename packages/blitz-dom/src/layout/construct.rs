@@ -9,7 +9,6 @@ use parley::{
 use slab::Slab;
 use style::{
     computed_values::position::T as PositionProperty,
-    data::ElementData as StyloElementData,
     shared_lock::StylesheetGuards,
     values::{
         computed::{Content, ContentItem, Display, Float},
@@ -400,10 +399,10 @@ fn flush_pseudo_elements(doc: &mut BaseDocument, node_id: usize) {
         let style_data = unsafe { &*node.stylo_element_data.get() };
         let before_style = style_data
             .as_ref()
-            .and_then(|d| d.styles.pseudos.as_array()[1].clone());
+            .and_then(|d| d.borrow().styles.pseudos.as_array()[1].clone());
         let after_style = style_data
             .as_ref()
-            .and_then(|d| d.styles.pseudos.as_array()[0].clone());
+            .and_then(|d| d.borrow().styles.pseudos.as_array()[0].clone());
 
         (before_style, after_style, before_node_id, after_node_id)
     };
@@ -450,12 +449,15 @@ fn flush_pseudo_elements(doc: &mut BaseDocument, node_id: usize) {
                 }
             }
 
-            let mut element_data = StyloElementData::default();
-            element_data.styles.primary = Some(pe_style.clone());
-            element_data.set_restyled();
-            element_data.damage = ALL_DAMAGE;
+            let wrapper = style::data::ElementDataWrapper::default();
+            {
+                let mut element_data = wrapper.borrow_mut();
+                element_data.styles.primary = Some(pe_style.clone());
+                element_data.set_restyled();
+                element_data.damage = ALL_DAMAGE;
+            }
             // Safety: we have exclusive access during layout construction
-            *unsafe { &mut *doc.nodes[new_node_id].stylo_element_data.get() } = Some(element_data);
+            *unsafe { &mut *doc.nodes[new_node_id].stylo_element_data.get() } = Some(wrapper);
 
             let node = &mut doc.nodes[node_id];
             node.set_pe_by_index(idx, Some(new_node_id));
@@ -467,8 +469,8 @@ fn flush_pseudo_elements(doc: &mut BaseDocument, node_id: usize) {
             // TODO: Update content
 
             // Safety: we have exclusive access during layout construction
-            let node_styles = unsafe { &mut *doc.nodes[pe_node_id].stylo_element_data.get() };
-            let node_styles = &mut node_styles.as_mut().unwrap();
+            let opt = unsafe { &*doc.nodes[pe_node_id].stylo_element_data.get() };
+            let mut node_styles = opt.as_ref().unwrap().borrow_mut();
             node_styles.damage.insert(ALL_DAMAGE);
             let primary_styles = &mut node_styles.styles.primary;
 
@@ -552,14 +554,15 @@ fn collect_complex_layout_children(
                     &PseudoElement::ServoAnonymousBox,
                     &parent_style,
                 );
-                let mut stylo_element_data = StyloElementData {
-                    damage: ALL_DAMAGE,
-                    ..Default::default()
-                };
-                stylo_element_data.styles.primary = Some(style);
-                stylo_element_data.set_restyled();
+                let wrapper = style::data::ElementDataWrapper::default();
+                {
+                    let mut stylo_element_data = wrapper.borrow_mut();
+                    stylo_element_data.damage = ALL_DAMAGE;
+                    stylo_element_data.styles.primary = Some(style);
+                    stylo_element_data.set_restyled();
+                }
                 // Safety: we have exclusive access during layout construction
-                *unsafe { &mut *doc.nodes[node_id].stylo_element_data.get() } = Some(stylo_element_data);
+                *unsafe { &mut *doc.nodes[node_id].stylo_element_data.get() } = Some(wrapper);
                 if doc.nodes[container_node_id]
                     .flags
                     .contains(NodeFlags::IS_IN_DOCUMENT)

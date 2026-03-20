@@ -385,7 +385,8 @@ impl BaseDocument {
             let _damage = node.damage().unwrap_or(ALL_DAMAGE);
             // Safety: we have exclusive access during layout
             let stylo_element_data = unsafe { &*node.stylo_element_data.get() };
-            let primary_styles = stylo_element_data
+            let stylo_data_ref = stylo_element_data.as_ref().map(|w| w.borrow());
+            let primary_styles = stylo_data_ref
                 .as_ref()
                 .and_then(|data| data.styles.get_primary());
 

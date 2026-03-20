@@ -697,41 +697,38 @@ impl<'a> TElement for BlitzNode<'a> {
     }
 
     unsafe fn ensure_data(&self) -> style::data::ElementDataMut<'_> {
-        // Safety: ensure_data is an unsafe fn — caller guarantees exclusive access.
+        // Safety: ensure_data is unsafe — caller guarantees exclusive access.
+        // UnsafeCell needed here because we mutate the Option (None → Some).
         let opt = unsafe { &mut *self.stylo_element_data.get() };
         if opt.is_none() {
-            *opt = Some(style::data::ElementData {
-                damage: ALL_DAMAGE,
-                ..Default::default()
-            });
+            let data = style::data::ElementDataWrapper::default();
+            data.borrow_mut().damage = ALL_DAMAGE;
+            *opt = Some(data);
         }
-        style::data::ElementDataMut::new_unchecked(opt.as_mut().unwrap())
+        opt.as_ref().unwrap().borrow_mut()
     }
 
     unsafe fn clear_data(&self) {
-        // Safety: clear_data is an unsafe fn — caller guarantees exclusive access.
+        // Safety: clear_data is unsafe — caller guarantees exclusive access.
         *unsafe { &mut *self.stylo_element_data.get() } = None;
     }
 
     fn has_data(&self) -> bool {
-        // Safety: stylo's traversal ensures proper synchronization.
+        // Safety: only reads the Option discriminant, no data aliasing concerns.
         unsafe { &*self.stylo_element_data.get() }.is_some()
     }
 
     fn borrow_data(&self) -> Option<style::data::ElementDataRef<'_>> {
-        // Safety: stylo's traversal ensures proper synchronization.
-        unsafe {
-            let opt = &*self.stylo_element_data.get();
-            opt.as_ref().map(|data| style::data::ElementDataRef::new_unchecked(data))
-        }
+        // Safety: only reads the Option discriminant to get &ElementDataWrapper.
+        let opt = unsafe { &*self.stylo_element_data.get() };
+        opt.as_ref().map(|wrapper| wrapper.borrow())
     }
 
     fn mutate_data(&self) -> Option<style::data::ElementDataMut<'_>> {
-        // Safety: stylo's traversal ensures proper synchronization.
-        unsafe {
-            let opt = &mut *self.stylo_element_data.get();
-            opt.as_mut().map(|data| style::data::ElementDataMut::new_unchecked(data))
-        }
+        // Safety: only reads the Option discriminant to get &ElementDataWrapper.
+        // Interior mutability is provided by ElementDataWrapper's UnsafeCell.
+        let opt = unsafe { &*self.stylo_element_data.get() };
+        opt.as_ref().map(|wrapper| wrapper.borrow_mut())
     }
 
     fn skip_item_display_fixup(&self) -> bool {
