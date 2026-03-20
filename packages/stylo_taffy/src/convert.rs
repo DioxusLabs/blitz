@@ -579,6 +579,7 @@ pub fn max_track(
 /// Eagerly convert an entire [`stylo::ComputedValues`] into a [`taffy::Style`]
 pub fn to_taffy_style(style: &stylo::ComputedValues) -> taffy::Style<Atom> {
     let display = style.clone_display();
+    let css_position = style.clone_position();
     let pos = style.get_position();
     let margin = style.get_margin();
     let padding = style.get_padding();
@@ -590,7 +591,7 @@ pub fn to_taffy_style(style: &stylo::ComputedValues) -> taffy::Style<Atom> {
         box_sizing: self::box_sizing(style.clone_box_sizing()),
         item_is_table: display.inside() == stylo::DisplayInside::Table,
         item_is_replaced: false,
-        position: self::position(style.clone_position()),
+        position: self::position(css_position),
         overflow: taffy::Point {
             x: self::overflow(style.clone_overflow_x()),
             y: self::overflow(style.clone_overflow_y()),
@@ -616,11 +617,18 @@ pub fn to_taffy_style(style: &stylo::ComputedValues) -> taffy::Style<Atom> {
         },
         aspect_ratio: self::aspect_ratio(pos.aspect_ratio),
 
-        inset: taffy::Rect {
-            left: self::inset(&pos.left),
-            right: self::inset(&pos.right),
-            top: self::inset(&pos.top),
-            bottom: self::inset(&pos.bottom),
+        // Sticky insets define sticking thresholds, not layout offsets.
+        // Suppress them so Taffy doesn't apply them as relative offsets.
+        // Raw values remain accessible via Stylo computed styles for scroll-time use.
+        inset: if css_position == stylo::Position::Sticky {
+            taffy::Rect::AUTO
+        } else {
+            taffy::Rect {
+                left: self::inset(&pos.left),
+                right: self::inset(&pos.right),
+                top: self::inset(&pos.top),
+                bottom: self::inset(&pos.bottom),
+            }
         },
         margin: taffy::Rect {
             left: self::margin(&margin.margin_left),

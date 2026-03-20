@@ -70,6 +70,11 @@ impl BaseDocument {
         self.resolve_layout_children();
         timer.record_time("construct");
 
+        // Reparent absolutely/fixed-positioned children to their correct containing block
+        // ancestor so Taffy resolves insets and percentages against the right dimensions.
+        self.reparent_out_of_flow_children();
+        timer.record_time("reparent");
+
         self.resolve_deferred_tasks();
         timer.record_time("pconstruct");
 
@@ -200,6 +205,112 @@ impl BaseDocument {
 
             doc.nodes[node_id].set_damage(damage);
         }
+    }
+
+    /// Move absolutely/fixed-positioned children from their DOM parent's layout_children
+    /// to their correct CSS containing block ancestor's layout_children.
+    ///
+    /// This ensures Taffy resolves insets and percentage sizes against the correct
+    /// containing block dimensions (CSS2.1 §10.1).
+    ///
+    /// Sticky-positioned elements are intentionally NOT reparented — they participate
+    /// in normal flow and their visual offset is computed at scroll-time.
+    fn reparent_out_of_flow_children(&mut self) {
+        use style::computed_values::position::T as CssPosition;
+
+        // Collect reparenting operations: (child_id, old_parent_id, new_parent_id)
+        let mut reparent_list: Vec<(usize, usize, usize)> = Vec::new();
+
+        for (node_id, node) in self.nodes.iter() {
+            let Some(style) = node.primary_styles() else {
+                continue;
+            };
+            let position = style.clone_position();
+
+            let is_abs = position == CssPosition::Absolute;
+            let is_fixed = position == CssPosition::Fixed;
+            if !is_abs && !is_fixed {
+                continue;
+            }
+
+            let Some(current_parent) = node.layout_parent.get() else {
+                continue;
+            };
+
+            let target = if is_fixed {
+                self.find_fixed_containing_block(node_id)
+            } else {
+                self.find_absolute_containing_block(node_id)
+            };
+
+            if let Some(target) = target {
+                if current_parent != target {
+                    reparent_list.push((node_id, current_parent, target));
+                }
+            }
+        }
+
+        // Apply reparenting
+        for (child_id, old_parent, new_parent) in reparent_list {
+            if let Some(ref mut children) = *self.nodes[old_parent].layout_children.borrow_mut() {
+                children.retain(|&id| id != child_id);
+            }
+            if let Some(ref mut children) = *self.nodes[new_parent].layout_children.borrow_mut() {
+                children.push(child_id);
+            }
+            self.nodes[child_id].layout_parent.set(Some(new_parent));
+        }
+    }
+
+    /// Find the containing block for an absolutely-positioned element.
+    /// This is the nearest ancestor with position != static (CSS2.1 §10.1).
+    fn find_absolute_containing_block(&self, node_id: usize) -> Option<usize> {
+        let mut current = self.nodes[node_id].parent?;
+        loop {
+            if self.node_is_positioned(current) {
+                return Some(current);
+            }
+            match self.nodes[current].parent {
+                Some(p) => current = p,
+                None => return Some(current), // root = initial containing block
+            }
+        }
+    }
+
+    /// Find the containing block for a fixed-position element.
+    /// This is the nearest ancestor with transform/filter/perspective,
+    /// or the root element (viewport) if none found.
+    fn find_fixed_containing_block(&self, node_id: usize) -> Option<usize> {
+        let mut current = self.nodes[node_id].parent?;
+        loop {
+            if self.node_creates_containing_block_for_fixed(current) {
+                return Some(current);
+            }
+            match self.nodes[current].parent {
+                Some(p) => current = p,
+                None => return Some(current), // root = viewport
+            }
+        }
+    }
+
+    /// Returns true if the node has position != static (is "positioned").
+    fn node_is_positioned(&self, node_id: usize) -> bool {
+        use style::computed_values::position::T as CssPosition;
+        self.nodes[node_id]
+            .primary_styles()
+            .map(|s| s.clone_position() != CssPosition::Static)
+            .unwrap_or(false)
+    }
+
+    /// Returns true if the node creates a containing block for fixed-position descendants.
+    /// Per CSS spec, this is triggered by transform, filter, or perspective.
+    fn node_creates_containing_block_for_fixed(&self, node_id: usize) -> bool {
+        let Some(style) = self.nodes[node_id].primary_styles() else {
+            return false;
+        };
+        !style.get_box().transform.0.is_empty()
+            || !style.get_effects().filter.0.is_empty()
+        // TODO: perspective, will-change: transform/filter
     }
 
     pub fn resolve_deferred_tasks(&mut self) {

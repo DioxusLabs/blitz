@@ -1093,7 +1093,7 @@ impl BaseDocument {
         cb(&mut self.nodes[node_id]);
     }
 
-    // Takes (x, y) co-ordinates (relative to the )
+    // Takes (x, y) co-ordinates (page coordinates, i.e. viewport + scroll offset)
     pub fn hit(&self, x: f32, y: f32) -> Option<HitResult> {
         if TDocument::as_node(&&self.nodes[0])
             .first_element_child()
@@ -1104,7 +1104,65 @@ impl BaseDocument {
             return None;
         }
 
+        // Fixed-position elements are painted at viewport-relative positions (scroll-compensated),
+        // but hit() receives page coordinates (viewport + scroll). Test fixed children first
+        // with viewport coordinates so they can be hit correctly when the page is scrolled.
+        if let Some(hit) = self.hit_fixed_children(x, y) {
+            return Some(hit);
+        }
+
         self.root_element().hit(x, y)
+    }
+
+    /// Test fixed-position children of the root element using viewport coordinates.
+    /// Fixed elements are painted at viewport-relative positions, so hit testing them
+    /// requires subtracting the viewport scroll from page coordinates.
+    fn hit_fixed_children(&self, page_x: f32, page_y: f32) -> Option<HitResult> {
+        use style::properties::generated::longhands::position::computed_value::T as Position;
+
+        let root = self.root_element();
+        let root_id = root.id;
+        let vx = page_x - self.viewport_scroll.x as f32;
+        let vy = page_y - self.viewport_scroll.y as f32;
+
+        // Helper closure to test a single child node
+        let test_child = |node_id: usize, offset_x: f32, offset_y: f32| -> Option<HitResult> {
+            let child = &self.nodes[node_id];
+            if child.css_position == Position::Fixed && child.layout_parent.get() == Some(root_id) {
+                child.hit(vx - offset_x, vy - offset_y)
+            } else {
+                None
+            }
+        };
+
+        // Positive z_index hoisted children (highest priority, painted last)
+        if let Some(hoisted) = &root.stacking_context {
+            for hc in hoisted.pos_z_hoisted_children().rev() {
+                if let Some(hit) = test_child(hc.node_id, hc.position.x, hc.position.y) {
+                    return Some(hit);
+                }
+            }
+        }
+
+        // Regular paint children
+        if let Some(children) = &*root.paint_children.borrow() {
+            for &child_id in children.iter().rev() {
+                if let Some(hit) = test_child(child_id, 0.0, 0.0) {
+                    return Some(hit);
+                }
+            }
+        }
+
+        // Negative z_index hoisted children
+        if let Some(hoisted) = &root.stacking_context {
+            for hc in hoisted.neg_z_hoisted_children().rev() {
+                if let Some(hit) = test_child(hc.node_id, hc.position.x, hc.position.y) {
+                    return Some(hit);
+                }
+            }
+        }
+
+        None
     }
 
     pub fn focus_next_node(&mut self) -> Option<usize> {

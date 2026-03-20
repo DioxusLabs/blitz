@@ -597,6 +597,12 @@ impl BaseDocument {
                     let is_floated = false;
 
                     if node.style.position == Position::Absolute {
+                        // Skip absolute boxes that were reparented to a different containing block.
+                        // They will be sized and positioned by Taffy through the containing block.
+                        if self.nodes[ibox.id as usize].layout_parent.get() != Some(node_id) {
+                            continue;
+                        }
+
                         let output = self.compute_child_layout(NodeId::from(ibox.id), child_inputs);
 
                         let layout = &mut self.nodes[ibox.id as usize].unrounded_layout;

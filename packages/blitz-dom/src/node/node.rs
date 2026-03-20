@@ -114,6 +114,8 @@ pub struct Node {
 
     // Taffy layout data:
     pub style: Style<Atom>,
+    /// Original CSS position value (not the Taffy mapping which loses Fixed→Absolute and Sticky→Relative)
+    pub css_position: Position,
     pub has_snapshot: bool,
     pub snapshot_handled: AtomicBool,
     /// Whether any descendant of this node needs restyling.
@@ -175,6 +177,7 @@ impl Node {
             after: None,
 
             style: Default::default(),
+            css_position: Position::Static,
             has_snapshot: false,
             snapshot_handled: AtomicBool::new(false),
             dirty_descendants: AtomicBool::new(true),
@@ -856,12 +859,21 @@ impl Node {
             return true;
         }
 
+        // Transform (any value other than none)
+        if !style.get_box().transform.0.is_empty() {
+            return true;
+        }
+
+        // Filter (any value other than none)
+        if !style.get_effects().filter.0.is_empty() {
+            return true;
+        }
+
         // TODO: mix-blend-mode
-        // TODO: transforms
-        // TODO: filter
         // TODO: clip-path
         // TODO: mask
         // TODO: isolation
+        // TODO: perspective
         // TODO: contain
 
         false
