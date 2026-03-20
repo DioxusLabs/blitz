@@ -358,9 +358,8 @@ impl<'dom> BlitzDomPainter<'dom> {
         layout: Layout,
         box_position: Point,
     ) -> ElementCx<'w> {
-        let style = node
-            .stylo_element_data
-            .borrow()
+        // Safety: render happens single-threaded after layout is complete.
+        let style = unsafe { &*node.stylo_element_data.get() }
             .as_ref()
             .map(|element_data| element_data.styles.primary().clone())
             .unwrap_or(

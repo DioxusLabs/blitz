@@ -383,7 +383,8 @@ impl BaseDocument {
         let display = {
             let node = self.nodes.get_mut(node_id).unwrap();
             let _damage = node.damage().unwrap_or(ALL_DAMAGE);
-            let stylo_element_data = node.stylo_element_data.borrow();
+            // Safety: we have exclusive access during layout
+            let stylo_element_data = unsafe { &*node.stylo_element_data.get() };
             let primary_styles = stylo_element_data
                 .as_ref()
                 .and_then(|data| data.styles.get_primary());

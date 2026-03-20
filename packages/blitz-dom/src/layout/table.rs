@@ -83,8 +83,6 @@ pub(crate) fn build_table_context(
     let border_collapse = stylo_styles.clone_border_collapse();
     let border_spacing = stylo_styles.clone_border_spacing().0;
 
-    drop(stylo_styles);
-
     let mut column_sizes: Vec<taffy::TrackSizingFunction> = Vec::new();
     let mut first_cell_border: Option<ServoArc<Border>> = None;
     for child_id in children.iter().copied() {

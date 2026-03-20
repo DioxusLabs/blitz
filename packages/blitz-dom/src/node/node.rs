@@ -1,4 +1,4 @@
-use atomic_refcell::{AtomicRef, AtomicRefCell, AtomicRefMut};
+use std::cell::UnsafeCell;
 use bitflags::bitflags;
 use blitz_traits::events::{
     BlitzPointerEvent, BlitzPointerId, DomEventData, HitResult, PointerCoords,
@@ -101,9 +101,10 @@ pub struct Node {
     /// Node type (Element, TextNode, etc) specific data
     pub data: NodeData,
 
-    // This little bundle of joy is our style data from stylo and a lock guard that allows access to it
-    // TODO: See if guard can be hoisted to a higher level
-    pub stylo_element_data: AtomicRefCell<Option<StyloElementData>>,
+    // Style data from stylo. Uses UnsafeCell because stylo's trait methods need interior
+    // mutability and must return ElementDataMut/ElementDataRef types (plain references).
+    // Safety is ensured by stylo's traversal which guarantees proper synchronization.
+    pub stylo_element_data: UnsafeCell<Option<StyloElementData>>,
     pub selector_flags: Cell<ElementSelectorFlags>,
     pub guard: SharedRwLock,
     pub element_state: ElementState,
@@ -255,7 +256,8 @@ impl Node {
     }
 
     pub fn set_restyle_hint(&self, hint: RestyleHint) {
-        if let Some(element_data) = self.stylo_element_data.borrow_mut().as_mut() {
+        // Safety: caller must ensure exclusive access to stylo_element_data
+        if let Some(element_data) = unsafe { &mut *self.stylo_element_data.get() }.as_mut() {
             element_data.hint.insert(hint);
         }
         // Mark all ancestors as having dirty descendants so the style traversal
@@ -302,16 +304,10 @@ impl Node {
         }
     }
 
-    pub fn damage_mut(&self) -> Option<AtomicRefMut<'_, RestyleDamage>> {
-        let element_data = self.stylo_element_data.borrow_mut();
-        #[allow(clippy::manual_map, reason = "false positive")]
-        match *element_data {
-            Some(_) => Some(AtomicRefMut::map(
-                element_data,
-                |data: &mut Option<StyloElementData>| &mut data.as_mut().unwrap().damage,
-            )),
-            None => None,
-        }
+    pub fn damage_mut(&self) -> Option<&mut RestyleDamage> {
+        // Safety: caller must ensure exclusive access to stylo_element_data
+        let data = unsafe { &mut *self.stylo_element_data.get() };
+        data.as_mut().map(|d| &mut d.damage)
     }
 
     pub fn damage(&mut self) -> Option<RestyleDamage> {
@@ -322,7 +318,8 @@ impl Node {
     }
 
     pub fn set_damage(&self, damage: RestyleDamage) {
-        if let Some(data) = self.stylo_element_data.borrow_mut().as_mut() {
+        // Safety: caller must ensure exclusive access to stylo_element_data
+        if let Some(data) = unsafe { &mut *self.stylo_element_data.get() }.as_mut() {
             data.damage = damage;
         }
     }
@@ -334,7 +331,8 @@ impl Node {
     }
 
     pub fn remove_damage(&self, damage: RestyleDamage) {
-        if let Some(data) = self.stylo_element_data.borrow_mut().as_mut() {
+        // Safety: caller must ensure exclusive access to stylo_element_data
+        if let Some(data) = unsafe { &mut *self.stylo_element_data.get() }.as_mut() {
             data.damage.remove(damage);
         }
     }
@@ -803,22 +801,10 @@ impl Node {
         Some(&attr.value)
     }
 
-    pub fn primary_styles(&self) -> Option<AtomicRef<'_, ComputedValues>> {
-        let stylo_element_data = self.stylo_element_data.borrow();
-        if stylo_element_data
-            .as_ref()
-            .and_then(|d| d.styles.get_primary())
-            .is_some()
-        {
-            Some(AtomicRef::map(
-                stylo_element_data,
-                |data: &Option<StyloElementData>| -> &ComputedValues {
-                    data.as_ref().unwrap().styles.get_primary().unwrap()
-                },
-            ))
-        } else {
-            None
-        }
+    pub fn primary_styles(&self) -> Option<&ComputedValues> {
+        // Safety: caller must ensure no mutable aliases to stylo_element_data exist
+        let data = unsafe { &*self.stylo_element_data.get() };
+        data.as_ref()?.styles.get_primary().map(|arc| &**arc)
     }
 
     pub fn text_content(&self) -> String {

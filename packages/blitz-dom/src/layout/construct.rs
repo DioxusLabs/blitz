@@ -396,7 +396,8 @@ fn flush_pseudo_elements(doc: &mut BaseDocument, node_id: usize) {
         let after_node_id = node.after;
 
         // Note: yes these are kinda backwards
-        let style_data = node.stylo_element_data.borrow();
+        // Safety: we have exclusive access during layout construction
+        let style_data = unsafe { &*node.stylo_element_data.get() };
         let before_style = style_data
             .as_ref()
             .and_then(|d| d.styles.pseudos.as_array()[1].clone());
@@ -453,7 +454,8 @@ fn flush_pseudo_elements(doc: &mut BaseDocument, node_id: usize) {
             element_data.styles.primary = Some(pe_style.clone());
             element_data.set_restyled();
             element_data.damage = ALL_DAMAGE;
-            *doc.nodes[new_node_id].stylo_element_data.borrow_mut() = Some(element_data);
+            // Safety: we have exclusive access during layout construction
+            *unsafe { &mut *doc.nodes[new_node_id].stylo_element_data.get() } = Some(element_data);
 
             let node = &mut doc.nodes[node_id];
             node.set_pe_by_index(idx, Some(new_node_id));
@@ -464,7 +466,8 @@ fn flush_pseudo_elements(doc: &mut BaseDocument, node_id: usize) {
         if let (Some(pe_node_id), Some(pe_style)) = (pe_node_id, pe_style) {
             // TODO: Update content
 
-            let mut node_styles = doc.nodes[pe_node_id].stylo_element_data.borrow_mut();
+            // Safety: we have exclusive access during layout construction
+            let node_styles = unsafe { &mut *doc.nodes[pe_node_id].stylo_element_data.get() };
             let node_styles = &mut node_styles.as_mut().unwrap();
             node_styles.damage.insert(ALL_DAMAGE);
             let primary_styles = &mut node_styles.styles.primary;
@@ -553,11 +556,10 @@ fn collect_complex_layout_children(
                     damage: ALL_DAMAGE,
                     ..Default::default()
                 };
-                drop(parent_style);
-
                 stylo_element_data.styles.primary = Some(style);
                 stylo_element_data.set_restyled();
-                *doc.nodes[node_id].stylo_element_data.borrow_mut() = Some(stylo_element_data);
+                // Safety: we have exclusive access during layout construction
+                *unsafe { &mut *doc.nodes[node_id].stylo_element_data.get() } = Some(stylo_element_data);
                 if doc.nodes[container_node_id]
                     .flags
                     .contains(NodeFlags::IS_IN_DOCUMENT)

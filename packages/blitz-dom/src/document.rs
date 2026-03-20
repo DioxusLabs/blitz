@@ -52,7 +52,8 @@ use style::values::GenericAtomIdent;
 use style::values::computed::Overflow;
 use style::{
     dom::{TDocument, TNode},
-    media_queries::{Device, MediaList},
+    device::Device,
+    media_queries::MediaList,
     selector_parser::SnapshotMap,
     shared_lock::{SharedRwLock, StylesheetGuards},
     stylesheets::{AllowImportRules, DocumentStyleSheet, Origin, Stylesheet},
@@ -340,12 +341,10 @@ impl BaseDocument {
         let font_ctx = Arc::new(Mutex::new(font_ctx));
 
         // Make sure we turn on stylo features *before* creating the Stylist
-        style_config::set_bool("layout.flexbox.enabled", true);
-        style_config::set_bool("layout.grid.enabled", true);
-        style_config::set_bool("layout.legacy_layout", true);
-        style_config::set_bool("layout.unimplemented", true);
-        style_config::set_bool("layout.columns.enabled", true);
-        style_config::set_i32("layout.threads", -1);
+        static_prefs::set_pref!("layout.grid.enabled", true);
+        static_prefs::set_pref!("layout.unimplemented", true);
+        static_prefs::set_pref!("layout.columns.enabled", true);
+        static_prefs::set_pref!("layout.threads", -1);
 
         let viewport = config.viewport.unwrap_or_default();
         let device = make_device(&viewport, font_ctx.clone());
@@ -448,7 +447,8 @@ impl BaseDocument {
             },
             ..Default::default()
         };
-        *doc.root_node().stylo_element_data.borrow_mut() = Some(stylo_element_data);
+        // Safety: we have exclusive access during document construction
+        *unsafe { &mut *doc.root_node().stylo_element_data.get() } = Some(stylo_element_data);
 
         doc
     }

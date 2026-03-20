@@ -43,7 +43,7 @@ debug_timer = { workspace = true }
 style = { workspace = true }
 selectors = { workspace = true }
 cssparser = { workspace = true }
-style_config = { workspace = true }
+static_prefs = { workspace = true }
 style_traits = { workspace = true }
 style_dom = { workspace = true }
 app_units = { workspace = true }

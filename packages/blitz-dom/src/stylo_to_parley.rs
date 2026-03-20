@@ -112,6 +112,15 @@ pub(crate) fn alignment_baseline(style: &stylo::ComputedValues) -> parley::Align
         AlignmentBaseline::TextBottom => parley::AlignmentBaseline::TextBottom,
         AlignmentBaseline::Middle => parley::AlignmentBaseline::Middle,
         AlignmentBaseline::TextTop => parley::AlignmentBaseline::TextTop,
+        // These variants exist in the enum but are css(skip) — they can't come from CSS parsing.
+        // Map them to the closest parley equivalent.
+        AlignmentBaseline::Alphabetic | AlignmentBaseline::Ideographic => {
+            parley::AlignmentBaseline::Baseline
+        }
+        AlignmentBaseline::Central => parley::AlignmentBaseline::Middle,
+        AlignmentBaseline::Mathematical | AlignmentBaseline::Hanging => {
+            parley::AlignmentBaseline::TextTop
+        }
     }
 }
 
