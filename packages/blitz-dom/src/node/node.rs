@@ -1,4 +1,3 @@
-use std::cell::UnsafeCell;
 use bitflags::bitflags;
 use blitz_traits::events::{
     BlitzPointerEvent, BlitzPointerId, DomEventData, HitResult, PointerCoords,
@@ -15,15 +14,15 @@ use std::fmt::Write;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use style::Atom;
+use super::StyloData;
 use style::invalidation::element::restyle_hints::RestyleHint;
 use style::properties::ComputedValues;
 use style::properties::generated::longhands::position::computed_value::T as Position;
 use style::selector_parser::{PseudoElement, RestyleDamage};
+use style::shared_lock::SharedRwLock;
 use style::stylesheets::UrlExtraData;
 use style::values::computed::Display as StyloDisplay;
 use style::values::specified::box_::{DisplayInside, DisplayOutside};
-use style::data::ElementDataWrapper;
-use style::shared_lock::SharedRwLock;
 use style_dom::ElementState;
 use style_traits::values::ToCss;
 use taffy::{
@@ -102,11 +101,9 @@ pub struct Node {
     /// Node type (Element, TextNode, etc) specific data
     pub data: NodeData,
 
-    // Style data from stylo. Uses UnsafeCell<Option<ElementDataWrapper>> because stylo's
-    // TElement trait methods return ElementDataMut/ElementDataRef which come from
-    // ElementDataWrapper::borrow()/borrow_mut(). The UnsafeCell wraps the Option to allow
-    // interior mutability for ensure_data/clear_data. Safety is ensured by stylo's traversal.
-    pub stylo_element_data: UnsafeCell<Option<ElementDataWrapper>>,
+    /// Style data from stylo. Wrapped in `StyloData` to encapsulate the interior
+    /// mutability needed by stylo's `TElement` trait.
+    pub stylo_element_data: StyloData,
     pub selector_flags: Cell<ElementSelectorFlags>,
     pub guard: SharedRwLock,
     pub element_state: ElementState,
@@ -258,9 +255,8 @@ impl Node {
     }
 
     pub fn set_restyle_hint(&self, hint: RestyleHint) {
-        // Safety: caller must ensure exclusive access to stylo_element_data
-        if let Some(wrapper) = unsafe { &*self.stylo_element_data.get() }.as_ref() {
-            wrapper.borrow_mut().hint.insert(hint);
+        if let Some(mut data) = self.stylo_element_data.borrow_mut() {
+            data.hint.insert(hint);
         }
         // Mark all ancestors as having dirty descendants so the style traversal
         // will visit this node's subtree
@@ -284,8 +280,8 @@ impl Node {
 
     /// Set appropriate damage for Stylo when an element's style attribute is updated
     pub(crate) fn mark_style_attr_updated(&mut self) {
-        if let Some(wrapper) = self.stylo_element_data.get_mut().as_ref() {
-            wrapper.borrow_mut().hint |= RestyleHint::RESTYLE_STYLE_ATTRIBUTE;
+        if let Some(mut data) = self.stylo_element_data.borrow_mut() {
+            data.hint |= RestyleHint::RESTYLE_STYLE_ATTRIBUTE;
             self.set_dirty_descendants();
         }
     }
@@ -307,35 +303,30 @@ impl Node {
     }
 
     pub fn damage(&mut self) -> Option<RestyleDamage> {
-        self.stylo_element_data
-            .get_mut()
-            .as_ref()
-            .map(|wrapper| wrapper.borrow().damage)
+        self.stylo_element_data.borrow().map(|data| data.damage)
     }
 
     pub fn set_damage(&self, damage: RestyleDamage) {
-        // Safety: caller must ensure exclusive access to stylo_element_data
-        if let Some(wrapper) = unsafe { &*self.stylo_element_data.get() }.as_ref() {
-            wrapper.borrow_mut().damage = damage;
+        if let Some(mut data) = self.stylo_element_data.borrow_mut() {
+            data.damage = damage;
         }
     }
 
     pub fn insert_damage(&mut self, damage: RestyleDamage) {
-        if let Some(wrapper) = self.stylo_element_data.get_mut().as_ref() {
-            wrapper.borrow_mut().damage |= damage;
+        if let Some(mut data) = self.stylo_element_data.borrow_mut() {
+            data.damage |= damage;
         }
     }
 
     pub fn remove_damage(&self, damage: RestyleDamage) {
-        // Safety: caller must ensure exclusive access to stylo_element_data
-        if let Some(wrapper) = unsafe { &*self.stylo_element_data.get() }.as_ref() {
-            wrapper.borrow_mut().damage.remove(damage);
+        if let Some(mut data) = self.stylo_element_data.borrow_mut() {
+            data.damage.remove(damage);
         }
     }
 
     pub fn clear_damage_mut(&mut self) {
-        if let Some(wrapper) = self.stylo_element_data.get_mut().as_ref() {
-            wrapper.borrow_mut().damage = RestyleDamage::empty();
+        if let Some(mut data) = self.stylo_element_data.borrow_mut() {
+            data.damage = RestyleDamage::empty();
         }
     }
 
@@ -798,9 +789,7 @@ impl Node {
     }
 
     pub fn primary_styles(&self) -> Option<style::servo_arc::Arc<ComputedValues>> {
-        // Safety: caller must ensure no mutable aliases to stylo_element_data exist
-        let data = unsafe { &*self.stylo_element_data.get() };
-        data.as_ref()?.borrow().styles.get_primary().cloned()
+        self.stylo_element_data.borrow()?.styles.get_primary().cloned()
     }
 
     pub fn text_content(&self) -> String {

@@ -135,10 +135,9 @@ impl DocumentMutator<'_> {
         let node = self.doc.get_node(id).unwrap();
 
         // Initialise style data
-        // Safety: node was just created, we have exclusive access
         let wrapper = style::data::ElementDataWrapper::default();
         wrapper.borrow_mut().damage = ALL_DAMAGE;
-        *unsafe { &mut *node.stylo_element_data.get() } = Some(wrapper);
+        node.stylo_element_data.set(wrapper);
 
         id
     }
@@ -215,9 +214,7 @@ impl DocumentMutator<'_> {
         self.doc.snapshot_node(node_id);
 
         let node = &mut self.doc.nodes[node_id];
-        // Safety: we have exclusive access via &mut self
-        if let Some(wrapper) = unsafe { &*node.stylo_element_data.get() }.as_ref() {
-            let mut data = wrapper.borrow_mut();
+        if let Some(mut data) = node.stylo_element_data.borrow_mut() {
             data.hint |= RestyleHint::restyle_subtree();
             data.damage.insert(ALL_DAMAGE);
         }
@@ -226,9 +223,8 @@ impl DocumentMutator<'_> {
         let parent = node.parent;
         if let Some(parent_id) = parent {
             let parent = &mut self.doc.nodes[parent_id];
-            // Safety: we have exclusive access via &mut self
-            if let Some(wrapper) = unsafe { &*parent.stylo_element_data.get() }.as_ref() {
-                wrapper.borrow_mut().hint |= RestyleHint::restyle_subtree();
+            if let Some(mut data) = parent.stylo_element_data.borrow_mut() {
+                data.hint |= RestyleHint::restyle_subtree();
             }
         }
 
@@ -297,9 +293,7 @@ impl DocumentMutator<'_> {
 
         let node = &mut self.doc.nodes[node_id];
 
-        // Safety: we have exclusive access via &mut self
-        if let Some(wrapper) = unsafe { &*node.stylo_element_data.get() }.as_ref() {
-            let mut data = wrapper.borrow_mut();
+        if let Some(mut data) = node.stylo_element_data.borrow_mut() {
             data.hint |= RestyleHint::restyle_subtree();
             data.damage.insert(ALL_DAMAGE);
         }
@@ -397,9 +391,8 @@ impl DocumentMutator<'_> {
 
             // TODO: make this fine grained / conditional based on ElementSelectorFlags
             if parent_is_in_doc {
-                // Safety: we have exclusive access via &mut self
-                if let Some(wrapper) = unsafe { &*parent.stylo_element_data.get() }.as_ref() {
-                    wrapper.borrow_mut().hint |= RestyleHint::restyle_subtree();
+                if let Some(mut data) = parent.stylo_element_data.borrow_mut() {
+                    data.hint |= RestyleHint::restyle_subtree();
                 }
                 // Mark ancestors dirty so the style traversal visits this subtree.
                 parent.mark_ancestors_dirty();
@@ -418,9 +411,8 @@ impl DocumentMutator<'_> {
 
         // TODO: make this fine grained / conditional based on ElementSelectorFlags
         if parent_is_in_doc {
-            // Safety: we have exclusive access via &mut self
-            if let Some(wrapper) = unsafe { &*parent.stylo_element_data.get() }.as_ref() {
-                wrapper.borrow_mut().hint |= RestyleHint::restyle_subtree();
+            if let Some(mut data) = parent.stylo_element_data.borrow_mut() {
+                data.hint |= RestyleHint::restyle_subtree();
             }
             // Mark ancestors dirty so the style traversal visits this subtree.
             parent.mark_ancestors_dirty();
@@ -472,9 +464,8 @@ impl DocumentMutator<'_> {
 
         // TODO: make this fine grained / conditional based on ElementSelectorFlags
         if new_parent_is_in_doc {
-            // Safety: we have exclusive access via &mut self
-            if let Some(wrapper) = unsafe { &*new_parent.stylo_element_data.get() }.as_ref() {
-                wrapper.borrow_mut().hint |= RestyleHint::restyle_subtree();
+            if let Some(mut data) = new_parent.stylo_element_data.borrow_mut() {
+                data.hint |= RestyleHint::restyle_subtree();
             }
             // Mark ancestors dirty so the style traversal visits this subtree.
             new_parent.mark_ancestors_dirty();
@@ -497,9 +488,8 @@ impl DocumentMutator<'_> {
 
                 // TODO: make this fine grained / conditional based on ElementSelectorFlags
                 if child_was_in_doc {
-                    // Safety: we have exclusive access via &mut self
-                    if let Some(wrapper) = unsafe { &*old_parent.stylo_element_data.get() }.as_ref() {
-                        wrapper.borrow_mut().hint |= RestyleHint::restyle_subtree();
+                    if let Some(mut data) = old_parent.stylo_element_data.borrow_mut() {
+                        data.hint |= RestyleHint::restyle_subtree();
                     }
                     // Mark ancestors dirty so the style traversal visits this subtree.
                     old_parent.mark_ancestors_dirty();

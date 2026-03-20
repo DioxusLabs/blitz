@@ -448,8 +448,7 @@ impl BaseDocument {
                 ..Default::default()
             };
         }
-        // Safety: we have exclusive access during document construction
-        *unsafe { &mut *doc.root_node().stylo_element_data.get() } = Some(wrapper);
+        doc.root_node().stylo_element_data.set(wrapper);
 
         doc
     }

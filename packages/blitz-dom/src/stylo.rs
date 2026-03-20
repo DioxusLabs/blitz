@@ -697,38 +697,28 @@ impl<'a> TElement for BlitzNode<'a> {
     }
 
     unsafe fn ensure_data(&self) -> style::data::ElementDataMut<'_> {
-        // Safety: ensure_data is unsafe — caller guarantees exclusive access.
-        // UnsafeCell needed here because we mutate the Option (None → Some).
-        let opt = unsafe { &mut *self.stylo_element_data.get() };
-        if opt.is_none() {
+        if !self.stylo_element_data.has_data() {
             let data = style::data::ElementDataWrapper::default();
             data.borrow_mut().damage = ALL_DAMAGE;
-            *opt = Some(data);
+            self.stylo_element_data.set(data);
         }
-        opt.as_ref().unwrap().borrow_mut()
+        self.stylo_element_data.borrow_mut().unwrap()
     }
 
     unsafe fn clear_data(&self) {
-        // Safety: clear_data is unsafe — caller guarantees exclusive access.
-        *unsafe { &mut *self.stylo_element_data.get() } = None;
+        self.stylo_element_data.clear();
     }
 
     fn has_data(&self) -> bool {
-        // Safety: only reads the Option discriminant, no data aliasing concerns.
-        unsafe { &*self.stylo_element_data.get() }.is_some()
+        self.stylo_element_data.has_data()
     }
 
     fn borrow_data(&self) -> Option<style::data::ElementDataRef<'_>> {
-        // Safety: only reads the Option discriminant to get &ElementDataWrapper.
-        let opt = unsafe { &*self.stylo_element_data.get() };
-        opt.as_ref().map(|wrapper| wrapper.borrow())
+        self.stylo_element_data.borrow()
     }
 
     fn mutate_data(&self) -> Option<style::data::ElementDataMut<'_>> {
-        // Safety: only reads the Option discriminant to get &ElementDataWrapper.
-        // Interior mutability is provided by ElementDataWrapper's UnsafeCell.
-        let opt = unsafe { &*self.stylo_element_data.get() };
-        opt.as_ref().map(|wrapper| wrapper.borrow_mut())
+        self.stylo_element_data.borrow_mut()
     }
 
     fn skip_item_display_fixup(&self) -> bool {

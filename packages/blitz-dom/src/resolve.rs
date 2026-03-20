@@ -171,9 +171,8 @@ impl BaseDocument {
                 for child_id in layout_children.iter().copied() {
                     resolve_layout_children_recursive(doc, child_id);
                     doc.nodes[child_id].layout_parent.set(Some(node_id));
-                    if let Some(wrapper) = doc.nodes[child_id].stylo_element_data.get_mut().as_ref() {
-                        wrapper.borrow_mut().damage
-                            .remove(CONSTRUCT_DESCENDENT | CONSTRUCT_FC | CONSTRUCT_BOX);
+                    if let Some(mut data) = doc.nodes[child_id].stylo_element_data.borrow_mut() {
+                        data.damage.remove(CONSTRUCT_DESCENDENT | CONSTRUCT_FC | CONSTRUCT_BOX);
                     }
                 }
 
