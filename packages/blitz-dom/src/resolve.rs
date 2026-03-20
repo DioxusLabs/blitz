@@ -80,10 +80,12 @@ impl BaseDocument {
 
         // Merge stylo into taffy
         self.flush_styles_to_layout(root_node_id);
+        self.collect_sticky_nodes();
         timer.record_time("flush");
 
         // Next we resolve layout with the data resolved by stlist
         self.resolve_layout();
+        self.recompute_sticky_offsets();
         timer.record_time("layout");
 
         // Clear all damage and dirty flags
@@ -396,6 +398,178 @@ impl BaseDocument {
     ///
     /// TODO: update taffy to use an associated type instead of slab key
     /// TODO: update taffy to support traited styles so we don't even need to rely on taffy for storage
+    /// Collect all position:sticky nodes for efficient recomputation on scroll.
+    fn collect_sticky_nodes(&mut self) {
+        use style::computed_values::position::T as CssPosition;
+        self.sticky_nodes.clear();
+        for (node_id, node) in self.nodes.iter() {
+            if node.css_position == CssPosition::Sticky {
+                self.sticky_nodes.push(node_id);
+            }
+        }
+    }
+
+    /// Find the nearest scroll port ancestor (overflow != visible on either axis).
+    /// Returns None if the viewport is the scroll port.
+    /// Per CSS Overflow Level 3: overflow hidden/scroll/auto all establish scroll ports.
+    fn find_scroll_port_ancestor(&self, node_id: usize) -> Option<usize> {
+        use style::values::computed::Overflow;
+        let mut current = self.nodes[node_id].parent?;
+        loop {
+            if let Some(style) = self.nodes[current].primary_styles() {
+                let ox = style.clone_overflow_x();
+                let oy = style.clone_overflow_y();
+                if !matches!(ox, Overflow::Visible) || !matches!(oy, Overflow::Visible) {
+                    return Some(current);
+                }
+            }
+            match self.nodes[current].parent {
+                Some(p) => current = p,
+                None => return None,
+            }
+        }
+    }
+
+    /// Compute a node's position relative to an ancestor by walking the layout_parent chain.
+    /// Accumulates final_layout.location and subtracts intermediate scroll_offsets.
+    /// If ancestor_id is None, walks all the way to the root (for viewport case).
+    fn position_relative_to_ancestor(
+        &self,
+        node_id: usize,
+        ancestor_id: Option<usize>,
+    ) -> crate::Point<f64> {
+        let mut x = 0.0;
+        let mut y = 0.0;
+        let mut current = node_id;
+        loop {
+            let node = &self.nodes[current];
+            x += node.final_layout.location.x as f64;
+            y += node.final_layout.location.y as f64;
+            match node.layout_parent.get() {
+                Some(pid) if Some(pid) == ancestor_id => break,
+                Some(pid) => {
+                    x -= self.nodes[pid].scroll_offset.x;
+                    y -= self.nodes[pid].scroll_offset.y;
+                    current = pid;
+                }
+                None => break,
+            }
+        }
+        crate::Point { x, y }
+    }
+
+    /// Compute the sticky offset for a single node.
+    /// Implements CSS Positioned Layout Level 3 §3:
+    /// - Element stays within its scroll port (viewport or overflow ancestor)
+    /// - Clamped to its containing block (DOM parent) boundary
+    fn compute_sticky_offset_for_node(&self, node_id: usize) -> crate::Point<f64> {
+        let node = &self.nodes[node_id];
+        let Some(styles) = node.primary_styles() else {
+            return crate::Point::ZERO;
+        };
+
+        let pos_style = styles.get_position();
+        let element_width = node.final_layout.size.width as f64;
+        let element_height = node.final_layout.size.height as f64;
+
+        // Find scroll port ancestor (or viewport)
+        let scroll_port_id = self.find_scroll_port_ancestor(node_id);
+
+        // Get scroll state and port dimensions
+        let (scroll, port_width, port_height) = match scroll_port_id {
+            Some(sp_id) => {
+                let sp = &self.nodes[sp_id];
+                (
+                    sp.scroll_offset,
+                    sp.final_layout.size.width as f64,
+                    sp.final_layout.size.height as f64,
+                )
+            }
+            None => {
+                let w = self.viewport.window_size.0 as f64 / self.viewport.scale() as f64;
+                let h = self.viewport.window_size.1 as f64 / self.viewport.scale() as f64;
+                (self.viewport_scroll, w, h)
+            }
+        };
+
+        // Compute element's normal-flow position relative to scroll port
+        let node_pos = self.position_relative_to_ancestor(node_id, scroll_port_id);
+
+        // Resolve sticky thresholds from Stylo computed styles
+        let top = resolve_sticky_inset(&pos_style.top, port_height);
+        let bottom = resolve_sticky_inset(&pos_style.bottom, port_height);
+        let left = resolve_sticky_inset(&pos_style.left, port_width);
+        let right = resolve_sticky_inset(&pos_style.right, port_width);
+
+        // Y axis: compute visible position and clamp to thresholds
+        let visible_y = node_pos.y - scroll.y;
+        let mut min_y = f64::NEG_INFINITY;
+        let mut max_y = f64::INFINITY;
+        if let Some(t) = top {
+            min_y = t;
+        }
+        if let Some(b) = bottom {
+            max_y = port_height - b - element_height;
+        }
+        // Top wins over bottom per CSS spec when they conflict
+        if min_y > max_y {
+            max_y = min_y;
+        }
+        let clamped_y = visible_y.clamp(min_y, max_y);
+        let mut offset_y = clamped_y - visible_y;
+
+        // X axis: compute visible position and clamp to thresholds
+        let visible_x = node_pos.x - scroll.x;
+        let mut min_x = f64::NEG_INFINITY;
+        let mut max_x = f64::INFINITY;
+        if let Some(l) = left {
+            min_x = l;
+        }
+        if let Some(r) = right {
+            max_x = port_width - r - element_width;
+        }
+        // Left wins over right per CSS spec when they conflict
+        if min_x > max_x {
+            max_x = min_x;
+        }
+        let clamped_x = visible_x.clamp(min_x, max_x);
+        let mut offset_x = clamped_x - visible_x;
+
+        // Clamp to containing block (DOM parent): element must stay within parent's box
+        if let Some(parent_id) = node.parent {
+            let parent = &self.nodes[parent_id];
+            let parent_pos = self.position_relative_to_ancestor(parent_id, scroll_port_id);
+            let parent_height = parent.final_layout.scroll_height() as f64;
+            let parent_width = parent.final_layout.scroll_width() as f64;
+
+            let cb_min_y = parent_pos.y - node_pos.y;
+            let cb_max_y = (parent_pos.y + parent_height - element_height - node_pos.y)
+                .max(cb_min_y);
+            offset_y = offset_y.clamp(cb_min_y, cb_max_y);
+
+            let cb_min_x = parent_pos.x - node_pos.x;
+            let cb_max_x = (parent_pos.x + parent_width - element_width - node_pos.x)
+                .max(cb_min_x);
+            offset_x = offset_x.clamp(cb_min_x, cb_max_x);
+        }
+
+        crate::Point {
+            x: offset_x,
+            y: offset_y,
+        }
+    }
+
+    /// Recompute sticky offsets for all sticky nodes.
+    /// Called after layout and after every scroll event.
+    pub fn recompute_sticky_offsets(&mut self) {
+        let sticky_nodes = std::mem::take(&mut self.sticky_nodes);
+        for &node_id in &sticky_nodes {
+            let offset = self.compute_sticky_offset_for_node(node_id);
+            self.nodes[node_id].sticky_offset = offset;
+        }
+        self.sticky_nodes = sticky_nodes;
+    }
+
     pub fn resolve_layout(&mut self) {
         let size = self.stylist.device().au_viewport_size();
 
@@ -413,5 +587,25 @@ impl BaseDocument {
 
         // println!("\n\n");
         // taffy::print_tree(self, root_node_id)
+    }
+}
+
+/// Resolve a sticky inset threshold (top/bottom/left/right) from Stylo computed values to pixels.
+/// Uses LengthPercentage::resolve() which handles length, percentage, and calc uniformly.
+/// Returns None for `auto` values.
+fn resolve_sticky_inset(
+    val: &style::values::generics::position::GenericInset<
+        style::values::computed::Percentage,
+        style::values::computed::LengthPercentage,
+    >,
+    reference_size: f64,
+) -> Option<f64> {
+    use style::values::computed::Length;
+    use style::values::generics::position::GenericInset;
+    match val {
+        GenericInset::LengthPercentage(lp) => {
+            Some(lp.resolve(Length::new(reference_size as f32)).px() as f64)
+        }
+        _ => None, // Auto or anchor positioning
     }
 }

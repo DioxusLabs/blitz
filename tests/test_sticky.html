@@ -1,0 +1,363 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sticky Position Test Cases</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: system-ui, sans-serif; background: #f5f5f5; }
+
+  h2 { padding: 16px; background: #333; color: white; position: sticky; top: 0; z-index: 100; }
+  .test-label { font-weight: bold; padding: 8px; background: #e0e0e0; margin-bottom: 8px; }
+
+  /* ========================================================
+     TEST 1: Basic sticky top-only in a flex row
+     The sticky element should stay in its column (right side)
+     and only stick vertically, NOT shift horizontally.
+     This mimics the Dioxus docs layout.
+     ======================================================== */
+  .test1-container {
+    display: flex;
+    min-height: 2000px;
+    border: 2px solid #999;
+    margin: 16px;
+  }
+  .test1-left {
+    width: 200px;
+    background: #dbeafe;
+    padding: 16px;
+    flex-shrink: 0;
+  }
+  .test1-main {
+    flex: 1;
+    background: white;
+    padding: 16px;
+  }
+  .test1-right {
+    width: 200px;
+    background: #fef3c7;
+    padding: 16px;
+    flex-shrink: 0;
+    /* This is the sticky element — only top, no left/right */
+    position: sticky;
+    top: 96px;
+    align-self: flex-start;
+  }
+
+  /* ========================================================
+     TEST 2: Sticky inside overflow-y:auto container
+     The sticky element should stick relative to the scroll
+     container, not the viewport.
+     ======================================================== */
+  .test2-wrapper {
+    margin: 16px;
+    display: flex;
+    gap: 16px;
+  }
+  .test2-scroll-container {
+    width: 400px;
+    height: 300px;
+    overflow-y: auto;
+    border: 2px solid #999;
+    background: white;
+  }
+  .test2-scroll-content {
+    height: 1500px;
+    padding: 16px;
+    position: relative;
+  }
+  .test2-sticky {
+    position: sticky;
+    top: 10px;
+    background: #bbf7d0;
+    padding: 12px;
+    border: 1px solid #16a34a;
+  }
+  .test2-reference {
+    width: 400px;
+    height: 300px;
+    border: 2px solid #999;
+    background: white;
+    padding: 16px;
+  }
+
+  /* ========================================================
+     TEST 3: Sticky with overflow-x:hidden on a parent
+     Tests hypothesis 2: does overflow-x:hidden on a wrapper
+     incorrectly become the scroll port?
+     ======================================================== */
+  .test3-outer {
+    margin: 16px;
+    overflow-x: hidden; /* Common pattern — should this be a scroll port? */
+    border: 2px solid #999;
+  }
+  .test3-flex {
+    display: flex;
+    min-height: 1500px;
+  }
+  .test3-sidebar {
+    width: 200px;
+    background: #e0e7ff;
+    padding: 16px;
+  }
+  .test3-content {
+    flex: 1;
+    background: white;
+    padding: 16px;
+  }
+  .test3-toc {
+    width: 200px;
+    background: #fce7f3;
+    padding: 16px;
+    flex-shrink: 0;
+    position: sticky;
+    top: 96px;
+    align-self: flex-start;
+  }
+
+  /* ========================================================
+     TEST 4: Sticky in nested wrapper (DOM parent differs)
+     Tests hypothesis 3: Does a wrapper between the sticky
+     element and the flex container cause issues?
+     ======================================================== */
+  .test4-flex {
+    display: flex;
+    min-height: 1500px;
+    margin: 16px;
+    border: 2px solid #999;
+  }
+  .test4-left {
+    width: 200px;
+    background: #dbeafe;
+    padding: 16px;
+  }
+  .test4-center {
+    flex: 1;
+    background: white;
+    padding: 16px;
+  }
+  .test4-right-wrapper {
+    width: 200px;
+    flex-shrink: 0;
+  }
+  .test4-sticky {
+    position: sticky;
+    top: 96px;
+    background: #fef3c7;
+    padding: 16px;
+  }
+
+  /* ========================================================
+     TEST 5: Sticky with containing block constraint
+     The sticky element should "unstick" when its parent
+     scrolls out of view.
+     ======================================================== */
+  .test5-container {
+    margin: 16px;
+    border: 2px solid #999;
+  }
+  .test5-section {
+    padding: 16px;
+    min-height: 600px;
+    background: #f0fdf4;
+    border-bottom: 1px solid #ccc;
+  }
+  .test5-section:nth-child(even) {
+    background: #fefce8;
+  }
+  .test5-sticky {
+    position: sticky;
+    top: 40px;
+    background: #bbf7d0;
+    padding: 12px;
+    border: 1px solid #16a34a;
+    width: 200px;
+  }
+
+  /* ========================================================
+     TEST 6: Sticky with both top and left
+     Verifies that horizontal sticking works correctly
+     when explicitly requested.
+     ======================================================== */
+  .test6-scroll {
+    margin: 16px;
+    width: 500px;
+    height: 300px;
+    overflow: auto;
+    border: 2px solid #999;
+  }
+  .test6-content {
+    width: 1500px;
+    height: 1500px;
+    padding: 16px;
+    position: relative;
+  }
+  .test6-sticky {
+    position: sticky;
+    top: 10px;
+    left: 10px;
+    background: #e9d5ff;
+    padding: 12px;
+    border: 1px solid #7c3aed;
+    width: 150px;
+  }
+
+  /* Spacer to make page scrollable */
+  .spacer { height: 200px; }
+
+  /* Indicator boxes for visual comparison */
+  .expected-marker {
+    position: absolute;
+    border: 2px dashed red;
+    pointer-events: none;
+    opacity: 0.5;
+  }
+</style>
+</head>
+<body>
+
+<h2>Sticky Position Test Cases — Compare with Chrome</h2>
+
+<!-- TEST 1 -->
+<div class="test-label">TEST 1: Sticky top-only in flex row (like Dioxus docs sidebar)</div>
+<div class="test1-container">
+  <div class="test1-left">
+    <strong>Left Sidebar</strong>
+    <p>Navigation links here</p>
+    <ul>
+      <li>Link 1</li>
+      <li>Link 2</li>
+      <li>Link 3</li>
+      <li>Link 4</li>
+      <li>Link 5</li>
+    </ul>
+  </div>
+  <div class="test1-main">
+    <h3>Main Content</h3>
+    <p>The right sidebar (yellow) should stick at top:96px when scrolling.</p>
+    <p>It must NOT shift horizontally — it should stay in its flex column.</p>
+    <p style="margin-top:400px">Still scrolling...</p>
+    <p style="margin-top:400px">More content...</p>
+    <p style="margin-top:400px">Even more content...</p>
+  </div>
+  <div class="test1-right">
+    <strong>Right Sidebar (sticky top:96px)</strong>
+    <p>On this page:</p>
+    <ul>
+      <li>Section 1</li>
+      <li>Section 2</li>
+      <li>Section 3</li>
+    </ul>
+    <p>This should stay in the right column!</p>
+  </div>
+</div>
+
+<!-- TEST 2 -->
+<div class="test-label">TEST 2: Sticky inside overflow-y:auto scroll container</div>
+<div class="test2-wrapper">
+  <div class="test2-scroll-container">
+    <div class="test2-scroll-content">
+      <div class="test2-sticky">
+        Sticky header (top:10px) — should stick inside this scrollable box
+      </div>
+      <p style="margin-top:20px">Scroll this container. The green box should stick at 10px from the top of this box.</p>
+      <p style="margin-top:300px">Keep scrolling...</p>
+      <p style="margin-top:300px">More content in scroll container...</p>
+      <p style="margin-top:300px">End of scroll content.</p>
+    </div>
+  </div>
+  <div class="test2-reference">
+    <strong>Reference (not scrollable)</strong>
+    <p>The sticky element in the left box should NOT affect this area.</p>
+  </div>
+</div>
+
+<!-- TEST 3 -->
+<div class="test-label">TEST 3: Sticky inside parent with overflow-x:hidden</div>
+<div class="test3-outer">
+  <div class="test3-flex">
+    <div class="test3-sidebar">
+      <strong>Left Nav</strong>
+      <ul>
+        <li>Page 1</li>
+        <li>Page 2</li>
+        <li>Page 3</li>
+      </ul>
+    </div>
+    <div class="test3-content">
+      <h3>Content Area</h3>
+      <p>The pink sidebar on the right has sticky top:96px.</p>
+      <p>Its grandparent has overflow-x:hidden.</p>
+      <p>The sidebar should stick vertically but NOT shift horizontally.</p>
+      <p style="margin-top:400px">Scrolling down...</p>
+      <p style="margin-top:400px">More content...</p>
+    </div>
+    <div class="test3-toc">
+      <strong>Table of Contents (sticky)</strong>
+      <ul>
+        <li>Heading 1</li>
+        <li>Heading 2</li>
+        <li>Heading 3</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<!-- TEST 4 -->
+<div class="test-label">TEST 4: Sticky wrapped in extra div (DOM parent ≠ flex container)</div>
+<div class="test4-flex">
+  <div class="test4-left">
+    <strong>Left Sidebar</strong>
+    <p>Navigation</p>
+  </div>
+  <div class="test4-center">
+    <h3>Center Content</h3>
+    <p>The right sidebar is wrapped in an extra div.</p>
+    <p>It should still stick correctly without horizontal shift.</p>
+    <p style="margin-top:400px">Scrolling...</p>
+    <p style="margin-top:400px">More...</p>
+  </div>
+  <div class="test4-right-wrapper">
+    <div class="test4-sticky">
+      <strong>Sticky (inside wrapper)</strong>
+      <p>This has an extra wrapper div between it and the flex container.</p>
+      <p>Should stick at top:96px without horizontal displacement.</p>
+    </div>
+  </div>
+</div>
+
+<!-- TEST 5 -->
+<div class="test-label">TEST 5: Containing block constraint (sticky unsticks when parent leaves)</div>
+<div class="test5-container">
+  <div class="test5-section">
+    <div class="test5-sticky">Section 1 sticky (top:40px)</div>
+    <p style="margin-top:20px">This sticky should unstick when Section 1 scrolls out of view.</p>
+  </div>
+  <div class="test5-section">
+    <div class="test5-sticky">Section 2 sticky (top:40px)</div>
+    <p style="margin-top:20px">Same behavior for section 2.</p>
+  </div>
+  <div class="test5-section">
+    <div class="test5-sticky">Section 3 sticky (top:40px)</div>
+    <p style="margin-top:20px">And section 3.</p>
+  </div>
+</div>
+
+<!-- TEST 6 -->
+<div class="test-label">TEST 6: Sticky with both top and left (2D scroll container)</div>
+<div class="test6-scroll">
+  <div class="test6-content">
+    <div class="test6-sticky">
+      Sticky (top:10px, left:10px)
+    </div>
+    <p style="margin-top:20px">Scroll both horizontally and vertically.</p>
+    <p>The purple box should stick to the top-left corner of this scroll box.</p>
+    <p style="margin-top:400px; margin-left:400px">Far content (scroll right and down to see).</p>
+  </div>
+</div>
+
+<div class="spacer"></div>
+
+</body>
+</html>

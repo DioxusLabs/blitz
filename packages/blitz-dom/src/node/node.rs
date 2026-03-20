@@ -126,6 +126,9 @@ pub struct Node {
     pub unrounded_layout: Layout,
     pub final_layout: Layout,
     pub scroll_offset: crate::Point<f64>,
+    /// Sticky positioning offset: visual displacement from normal-flow position.
+    /// Recomputed on every scroll event without relayout.
+    pub sticky_offset: crate::Point<f64>,
 }
 
 unsafe impl Send for Node {}
@@ -186,6 +189,7 @@ impl Node {
             unrounded_layout: Layout::new(),
             final_layout: Layout::new(),
             scroll_offset: crate::Point::ZERO,
+            sticky_offset: crate::Point::ZERO,
         }
     }
 
@@ -900,8 +904,10 @@ impl Node {
             }
         }
 
-        let mut x = x - self.final_layout.location.x + self.scroll_offset.x as f32;
-        let mut y = y - self.final_layout.location.y + self.scroll_offset.y as f32;
+        let mut x = x - self.final_layout.location.x - self.sticky_offset.x as f32
+            + self.scroll_offset.x as f32;
+        let mut y = y - self.final_layout.location.y - self.sticky_offset.y as f32
+            + self.scroll_offset.y as f32;
 
         let size = self.final_layout.size;
         let matches_self = !(x < 0.0
@@ -1063,8 +1069,10 @@ impl Node {
 
     /// Computes the Document-relative coordinates of the `Node`
     pub fn absolute_position(&self, x: f32, y: f32) -> crate::util::Point<f32> {
-        let x = x + self.final_layout.location.x - self.scroll_offset.x as f32;
-        let y = y + self.final_layout.location.y - self.scroll_offset.y as f32;
+        let x = x + self.final_layout.location.x + self.sticky_offset.x as f32
+            - self.scroll_offset.x as f32;
+        let y = y + self.final_layout.location.y + self.sticky_offset.y as f32
+            - self.scroll_offset.y as f32;
 
         // Recurse up the layout hierarchy
         self.layout_parent

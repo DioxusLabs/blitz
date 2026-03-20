@@ -252,6 +252,13 @@ impl<'dom> BlitzDomPainter<'dom> {
                 box_position.y += viewport_scroll.y;
             }
         }
+
+        // Sticky-position elements: apply pre-computed offset from resolve pass.
+        // The offset is recomputed on every scroll event in recompute_sticky_offsets().
+        if node.css_position == CssPosition::Sticky {
+            box_position.x += node.sticky_offset.x;
+            box_position.y += node.sticky_offset.y;
+        }
         let taffy::Layout {
             size,
             border,

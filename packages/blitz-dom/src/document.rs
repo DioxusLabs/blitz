@@ -265,6 +265,8 @@ pub struct BaseDocument {
     pub(crate) changed_nodes: HashSet<usize>,
     /// Set of changed nodes for updating the accessibility tree
     pub(crate) deferred_construction_nodes: Vec<ConstructionTask>,
+    /// Node IDs of all position:sticky elements, for efficient recomputation on scroll
+    pub(crate) sticky_nodes: Vec<usize>,
 
     /// Cache of loaded images, keyed by URL. Allows reusing images across multiple
     /// elements without re-fetching from the network.
@@ -407,6 +409,7 @@ impl BaseDocument {
             sub_document_nodes: HashSet::new(),
             changed_nodes: HashSet::new(),
             deferred_construction_nodes: Vec::new(),
+            sticky_nodes: Vec::new(),
             image_cache: HashMap::new(),
             pending_images: HashMap::new(),
             pending_critical_resources: HashSet::new(),
@@ -1532,7 +1535,9 @@ impl BaseDocument {
     }
 
     pub fn scroll_viewport_by(&mut self, x: f64, y: f64) {
-        self.scroll_viewport_by_has_changed(x, y);
+        if self.scroll_viewport_by_has_changed(x, y) {
+            self.recompute_sticky_offsets();
+        }
     }
 
     /// Scroll the viewport by the given values
@@ -1562,11 +1567,15 @@ impl BaseDocument {
         scroll_y: f64,
         dispatch_event: &mut dyn FnMut(DomEvent),
     ) -> bool {
-        if let Some(anchor_node_id) = anchor_node_id {
+        let changed = if let Some(anchor_node_id) = anchor_node_id {
             self.scroll_node_by_has_changed(anchor_node_id, scroll_x, scroll_y, dispatch_event)
         } else {
             self.scroll_viewport_by_has_changed(scroll_x, scroll_y)
+        };
+        if changed {
+            self.recompute_sticky_offsets();
         }
+        changed
     }
 
     pub fn viewport_scroll(&self) -> crate::Point<f64> {
