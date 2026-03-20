@@ -166,7 +166,7 @@ pub(crate) fn style(
     // Convert font size and line height
     let font_size = font_styles.font_size.used_size.0.px();
     let line_height = match font_styles.line_height {
-        stylo::LineHeight::Normal => parley::LineHeight::FontSizeRelative(1.2),
+        stylo::LineHeight::Normal => parley::LineHeight::MetricsRelative(1.0),
         stylo::LineHeight::Number(num) => parley::LineHeight::FontSizeRelative(num.0),
         stylo::LineHeight::Length(value) => parley::LineHeight::Absolute(value.0.px()),
     };

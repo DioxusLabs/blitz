@@ -12,7 +12,6 @@ use taffy::{
 #[cfg(feature = "floats")]
 use taffy::{Float, prelude::TaffyMaxContent};
 
-use super::construct::resolve_line_height;
 use super::resolve_calc_value;
 use crate::BaseDocument;
 use crate::stylo_to_parley;
@@ -323,6 +322,14 @@ impl BaseDocument {
                 } else {
                     output.first_baselines.y.map(|b| (b + margin.top) * scale)
                 };
+
+                eprintln!(
+                    "[ibox] id={} w={:.1} h={:.1} first_baseline={:?} overflow_hidden={} margin={:.1}/{:.1}/{:.1}/{:.1} output_size={:.1}x{:.1} scale={:.2}",
+                    ibox.id, ibox.width, ibox.height, ibox.first_baseline,
+                    overflow_not_visible,
+                    margin.top, margin.right, margin.bottom, margin.left,
+                    output.size.width, output.size.height, scale
+                );
             }
 
             // Re-read baseline_shift from node style each time to avoid accumulating
@@ -724,15 +731,8 @@ impl BaseDocument {
         let styles = self.nodes[node_id].primary_styles()?;
         let font_styles = styles.get_font();
 
-        // Resolve font size and line height in CSS pixels
+        // Resolve font size in CSS pixels
         let font_size_px = font_styles.font_size.used_size.0.px();
-        let line_height = match font_styles.line_height {
-            stylo_to_parley::stylo::LineHeight::Normal => parley::LineHeight::FontSizeRelative(1.2),
-            stylo_to_parley::stylo::LineHeight::Number(n) => {
-                parley::LineHeight::FontSizeRelative(n.0)
-            }
-            stylo_to_parley::stylo::LineHeight::Length(v) => parley::LineHeight::Absolute(v.0.px()),
-        };
 
         // Query fontique for matching font
         let mut font_ctx = self.font_ctx.lock().unwrap();
@@ -778,7 +778,30 @@ impl BaseDocument {
         // Scale to physical pixels
         let strut_ascent = metrics.ascent * scale;
         let strut_descent = -metrics.descent * scale; // skrifa descent is negative
-        let strut_line_height = resolve_line_height(line_height, font_size_px) * scale;
+        let strut_line_height = match font_styles.line_height {
+            // CSS2.1 §10.8.1: "normal" uses font's recommended line spacing
+            stylo_to_parley::stylo::LineHeight::Normal => {
+                // OS/2 Win metrics (usWinAscent + usWinDescent) are closer to
+                // what browsers use for line-height: normal than skrifa's default
+                // Metrics (which may use sTypo metrics that sum to exactly UPM
+                // with zero leading for fonts like Helvetica).
+                use skrifa::raw::TableProvider;
+                let upm = font_ref.head().map(|h| h.units_per_em() as f32).unwrap_or(1000.0);
+                let scale_factor = font_size_px / upm;
+                let normal_lh = font_ref
+                    .os2()
+                    .ok()
+                    .map(|os2| {
+                        let win_ascent = os2.us_win_ascent() as f32 * scale_factor;
+                        let win_descent = os2.us_win_descent() as f32 * scale_factor;
+                        win_ascent + win_descent
+                    })
+                    .unwrap_or(metrics.ascent - metrics.descent + metrics.leading);
+                normal_lh * scale
+            }
+            stylo_to_parley::stylo::LineHeight::Number(n) => n.0 * font_size_px * scale,
+            stylo_to_parley::stylo::LineHeight::Length(v) => v.0.px() * scale,
+        };
         // x_height for vertical-align: middle; CSS spec fallback is font_size * 0.5
         let strut_x_height = metrics.x_height.unwrap_or(font_size_px * 0.5) * scale;
 
