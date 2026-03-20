@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html>
+<head>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: Helvetica, Arial, sans-serif; font-size: 16px; margin: 20px; }
+  .test { background: #f0f0f0; margin: 15px 0; padding: 8px; border: 1px solid #ccc; }
+  .label { display: block; font-size: 12px; color: #666; margin-bottom: 4px; font-weight: bold; }
+</style>
+</head>
+<body>
+
+<h3 style="margin-bottom: 10px;">overflow:hidden Inline-Block Baseline & Container Height</h3>
+<p style="font-size: 12px; color: #888; margin-bottom: 15px;">
+  CSS2.1 §10.8.1: inline-block with overflow != visible → bottom margin edge at baseline.<br>
+  The entire box sits above the baseline, so the container must be tall enough to hold it.
+</p>
+
+<!-- Case 1: Basic overflow:hidden vs overflow:visible -->
+<span class="label">Case 1: overflow:visible (text baseline) vs overflow:hidden (bottom at baseline)</span>
+<div class="test">
+  <span style="background: lightyellow;">Align</span>
+  <span style="display: inline-block; width: 100px; background: lightcoral; border: 1px solid #aaa; padding: 4px; overflow: visible;">
+    Line 1<br>Line 2
+  </span>
+  <span style="display: inline-block; width: 100px; background: lightblue; border: 1px solid #aaa; padding: 4px; overflow: hidden;">
+    Line 1<br>Line 2
+  </span>
+  <span style="background: lightyellow;">After</span>
+</div>
+
+<!-- Case 2: Tall overflow:hidden box — container must grow -->
+<span class="label">Case 2: Tall (100px) overflow:hidden box — bottom at baseline, box extends far above</span>
+<div class="test">
+  <span style="background: lightyellow;">Text</span>
+  <span style="display: inline-block; width: 80px; height: 100px; background: lightblue; overflow: hidden;"></span>
+  <span style="background: lightyellow;">After</span>
+</div>
+
+<!-- Case 3: overflow:hidden with text content (single line) -->
+<span class="label">Case 3: overflow:hidden with single line of text — bottom at baseline, not text baseline</span>
+<div class="test">
+  <span style="background: lightyellow;">Align</span>
+  <span style="display: inline-block; width: 120px; background: lightcoral; padding: 8px; overflow: visible;">
+    Visible text
+  </span>
+  <span style="display: inline-block; width: 120px; background: lightblue; padding: 8px; overflow: hidden;">
+    Hidden text
+  </span>
+  <span style="background: lightyellow;">After</span>
+</div>
+
+<!-- Case 4: overflow:hidden with padding/border -->
+<span class="label">Case 4: overflow:hidden with padding + border — margin edge (outermost) at baseline</span>
+<div class="test">
+  <span style="background: lightyellow;">Align</span>
+  <span style="display: inline-block; width: 80px; height: 40px; background: lightcoral; overflow: hidden; padding: 8px; border: 2px solid red;"></span>
+  <span style="display: inline-block; width: 80px; height: 40px; background: lightblue; overflow: hidden; margin-bottom: 10px;"></span>
+  <span style="background: lightyellow;">After — red has padding+border, blue has 10px bottom margin</span>
+</div>
+
+<!-- Case 5: overflow:scroll and overflow:auto (also not visible) -->
+<span class="label">Case 5: overflow:scroll and overflow:auto — same rule as hidden (bottom at baseline)</span>
+<div class="test">
+  <span style="background: lightyellow;">Align</span>
+  <span style="display: inline-block; width: 80px; height: 50px; background: lightcoral; overflow: visible;"></span>
+  <span style="display: inline-block; width: 80px; height: 50px; background: lightyellow; overflow: hidden;"></span>
+  <span style="display: inline-block; width: 80px; height: 50px; background: lightblue; overflow: scroll;"></span>
+  <span style="display: inline-block; width: 80px; height: 50px; background: lightgreen; overflow: auto;"></span>
+  <span style="background: lightyellow;">After — all except first should have bottom at baseline</span>
+</div>
+
+<!-- Case 6: Side-by-side height comparison -->
+<span class="label">Case 6: Same content, visible vs hidden — container heights should differ</span>
+<div style="display: flex; gap: 8px;">
+  <div>
+    <span class="label">overflow: visible</span>
+    <div class="test">
+      <span style="background: lightyellow;">X</span>
+      <span style="display: inline-block; width: 80px; background: lightcoral; border: 1px solid #aaa; padding: 4px; overflow: visible;">
+        A<br>B<br>C
+      </span>
+    </div>
+  </div>
+  <div>
+    <span class="label">overflow: hidden</span>
+    <div class="test">
+      <span style="background: lightyellow;">X</span>
+      <span style="display: inline-block; width: 80px; background: lightblue; border: 1px solid #aaa; padding: 4px; overflow: hidden;">
+        A<br>B<br>C
+      </span>
+    </div>
+  </div>
+</div>
+
+<!-- Case 7: Empty overflow:hidden boxes at different heights -->
+<span class="label">Case 7: Empty overflow:hidden boxes at 20/40/60/80px — all bottoms at baseline</span>
+<div class="test">
+  <span style="background: lightyellow;">Text</span>
+  <span style="display: inline-block; width: 40px; height: 20px; background: lightcoral; overflow: hidden;"></span>
+  <span style="display: inline-block; width: 40px; height: 40px; background: lightyellow; border: 1px solid #aaa; overflow: hidden;"></span>
+  <span style="display: inline-block; width: 40px; height: 60px; background: lightblue; overflow: hidden;"></span>
+  <span style="display: inline-block; width: 40px; height: 80px; background: lightgreen; overflow: hidden;"></span>
+  <span style="background: lightyellow;">After — tallest box determines container height</span>
+</div>
+
+<!-- Case 8: overflow:hidden next to baseline-aligned box with text -->
+<span class="label">Case 8: overflow:hidden next to inline-block with text (text baseline vs bottom)</span>
+<div class="test">
+  <span style="background: lightyellow;">Align</span>
+  <span style="display: inline-block; width: 100px; background: lightcoral; border: 1px solid #aaa; padding: 4px; overflow: visible;">
+    Two<br>lines
+  </span>
+  <span style="display: inline-block; width: 60px; height: 60px; background: lightblue; overflow: hidden;"></span>
+  <span style="background: lightyellow;">After — blue bottom at same baseline as red's last line text</span>
+</div>
+
+</body>
+</html>
