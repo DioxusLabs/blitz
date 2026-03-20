@@ -501,56 +501,72 @@ impl BaseDocument {
         let left = resolve_sticky_inset(&pos_style.left, port_width);
         let right = resolve_sticky_inset(&pos_style.right, port_width);
 
+        let has_y_sticky = top.is_some() || bottom.is_some();
+        let has_x_sticky = left.is_some() || right.is_some();
+
         // Y axis: compute visible position and clamp to thresholds
-        let visible_y = node_pos.y - scroll.y;
-        let mut min_y = f64::NEG_INFINITY;
-        let mut max_y = f64::INFINITY;
-        if let Some(t) = top {
-            min_y = t;
+        let mut offset_y = 0.0;
+        if has_y_sticky {
+            let visible_y = node_pos.y - scroll.y;
+            let mut min_y = f64::NEG_INFINITY;
+            let mut max_y = f64::INFINITY;
+            if let Some(t) = top {
+                min_y = t;
+            }
+            if let Some(b) = bottom {
+                max_y = port_height - b - element_height;
+            }
+            // Top wins over bottom per CSS spec when they conflict
+            if min_y > max_y {
+                max_y = min_y;
+            }
+            let clamped_y = visible_y.clamp(min_y, max_y);
+            offset_y = clamped_y - visible_y;
         }
-        if let Some(b) = bottom {
-            max_y = port_height - b - element_height;
-        }
-        // Top wins over bottom per CSS spec when they conflict
-        if min_y > max_y {
-            max_y = min_y;
-        }
-        let clamped_y = visible_y.clamp(min_y, max_y);
-        let mut offset_y = clamped_y - visible_y;
 
         // X axis: compute visible position and clamp to thresholds
-        let visible_x = node_pos.x - scroll.x;
-        let mut min_x = f64::NEG_INFINITY;
-        let mut max_x = f64::INFINITY;
-        if let Some(l) = left {
-            min_x = l;
+        let mut offset_x = 0.0;
+        if has_x_sticky {
+            let visible_x = node_pos.x - scroll.x;
+            let mut min_x = f64::NEG_INFINITY;
+            let mut max_x = f64::INFINITY;
+            if let Some(l) = left {
+                min_x = l;
+            }
+            if let Some(r) = right {
+                max_x = port_width - r - element_width;
+            }
+            // Left wins over right per CSS spec when they conflict
+            if min_x > max_x {
+                max_x = min_x;
+            }
+            let clamped_x = visible_x.clamp(min_x, max_x);
+            offset_x = clamped_x - visible_x;
         }
-        if let Some(r) = right {
-            max_x = port_width - r - element_width;
-        }
-        // Left wins over right per CSS spec when they conflict
-        if min_x > max_x {
-            max_x = min_x;
-        }
-        let clamped_x = visible_x.clamp(min_x, max_x);
-        let mut offset_x = clamped_x - visible_x;
 
-        // Clamp to containing block (DOM parent): element must stay within parent's box
+        // Clamp to containing block (DOM parent): element must stay within parent's box.
+        // Only apply on axes where sticking is active — otherwise offset is 0 and must stay 0.
         if let Some(parent_id) = node.parent {
             let parent = &self.nodes[parent_id];
             let parent_pos = self.position_relative_to_ancestor(parent_id, scroll_port_id);
-            let parent_height = parent.final_layout.scroll_height() as f64;
-            let parent_width = parent.final_layout.scroll_width() as f64;
 
-            let cb_min_y = parent_pos.y - node_pos.y;
-            let cb_max_y = (parent_pos.y + parent_height - element_height - node_pos.y)
-                .max(cb_min_y);
-            offset_y = offset_y.clamp(cb_min_y, cb_max_y);
+            if has_y_sticky {
+                let parent_size_h = parent.final_layout.size.height as f64;
+                let parent_content_h = parent.final_layout.content_size.height as f64;
+                let parent_height = parent_size_h.max(parent_content_h);
+                let cb_min_y = parent_pos.y - node_pos.y;
+                let cb_max_y = (parent_pos.y + parent_height - element_height - node_pos.y)
+                    .max(cb_min_y);
+                offset_y = offset_y.clamp(cb_min_y, cb_max_y);
+            }
 
-            let cb_min_x = parent_pos.x - node_pos.x;
-            let cb_max_x = (parent_pos.x + parent_width - element_width - node_pos.x)
-                .max(cb_min_x);
-            offset_x = offset_x.clamp(cb_min_x, cb_max_x);
+            if has_x_sticky {
+                let parent_width = parent.final_layout.scroll_width() as f64;
+                let cb_min_x = parent_pos.x - node_pos.x;
+                let cb_max_x = (parent_pos.x + parent_width - element_width - node_pos.x)
+                    .max(cb_min_x);
+                offset_x = offset_x.clamp(cb_min_x, cb_max_x);
+            }
         }
 
         crate::Point {
