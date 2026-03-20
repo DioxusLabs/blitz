@@ -613,8 +613,21 @@ fn create_text_editor(doc: &mut BaseDocument, input_element_id: usize, is_multil
     let element = &mut node.data.downcast_element_mut().unwrap();
     if !matches!(element.special_data, SpecialElementData::TextInput(_)) {
         let mut text_input_data = TextInputData::new(is_multiline);
+
+        if element.attr(local_name!("type")) == Some("password") {
+            text_input_data.is_password = true;
+        }
         let editor = &mut text_input_data.editor;
-        editor.set_text(element.attr(local_name!("value")).unwrap_or(" "));
+
+        // logic for the masking...
+        let initial_text = element.attr(local_name!("value")).unwrap_or("");
+        if text_input_data.is_password {
+            text_input_data.shadow_text = initial_text.to_string();
+            editor.set_text(&"•".repeat(initial_text.chars().count()));
+        } else {
+            editor.set_text(initial_text);
+        }
+
         element.special_data = SpecialElementData::TextInput(text_input_data);
     }
 
