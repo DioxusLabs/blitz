@@ -239,12 +239,14 @@ pub(crate) fn compute_layout_damage(old: &ComputedValues, new: &ComputedValues) 
     }
 }
 
-/// A child with a z_index that is hoisted up to it's containing Stacking Context for paint purposes
+/// A child with a z_index that is hoisted up to its containing Stacking Context for paint purposes.
+/// The actual position is computed at paint/hit-test time by walking the layout_parent chain,
+/// since pre-accumulating positions during flush_styles_to_layout is unreliable (it runs before
+/// resolve_layout, so recreated nodes like anonymous blocks have stale positions).
 #[derive(Debug, Clone)]
 pub struct HoistedPaintChild {
     pub node_id: usize,
     pub z_index: i32,
-    pub position: taffy::Point<f32>,
 }
 
 #[derive(Debug)]
@@ -270,11 +272,34 @@ impl HoistedPaintChildren {
         self.negative_z_count = 0;
     }
 
-    pub fn compute_content_size(&mut self, doc: &BaseDocument) {
-        fn child_pos(child: &HoistedPaintChild, doc: &BaseDocument) -> Rect<f32> {
+    pub fn compute_content_size(&mut self, doc: &BaseDocument, root_node_id: usize) {
+        fn child_pos(
+            child: &HoistedPaintChild,
+            doc: &BaseDocument,
+            root_node_id: usize,
+        ) -> Rect<f32> {
+            // Walk layout_parent chain from hoisted child to root to get accumulated offset
+            let mut off_x = 0.0f32;
+            let mut off_y = 0.0f32;
+            let mut current = child.node_id;
+            loop {
+                let Some(parent_id) = doc.nodes[current].layout_parent.get() else {
+                    break;
+                };
+                if parent_id == root_node_id {
+                    break;
+                }
+                let parent = &doc.nodes[parent_id];
+                off_x += parent.final_layout.location.x + parent.sticky_offset.x as f32
+                    - parent.scroll_offset.x as f32;
+                off_y += parent.final_layout.location.y + parent.sticky_offset.y as f32
+                    - parent.scroll_offset.y as f32;
+                current = parent_id;
+            }
+
             let node = &doc.nodes[child.node_id];
-            let left = child.position.x + node.final_layout.location.x;
-            let top = child.position.y + node.final_layout.location.y;
+            let left = off_x + node.final_layout.location.x;
+            let top = off_y + node.final_layout.location.y;
             let right = left + node.final_layout.size.width;
             let bottom = top + node.final_layout.size.height;
 
@@ -289,9 +314,9 @@ impl HoistedPaintChildren {
         if self.children.is_empty() {
             self.content_area = taffy::Rect::ZERO;
         } else {
-            self.content_area = child_pos(&self.children[0], doc);
+            self.content_area = child_pos(&self.children[0], doc, root_node_id);
             for child in self.children[1..].iter() {
-                let pos = child_pos(child, doc);
+                let pos = child_pos(child, doc, root_node_id);
                 self.content_area.left = self.content_area.left.min(pos.left);
                 self.content_area.top = self.content_area.top.min(pos.top);
                 self.content_area.right = self.content_area.right.max(pos.right);
@@ -540,7 +565,6 @@ impl BaseDocument {
                     stacking_context.children.push(HoistedPaintChild {
                         node_id: child_id,
                         z_index,
-                        position: taffy::Point::ZERO,
                     })
                 } else {
                     paint_children.push(child_id);
@@ -560,21 +584,17 @@ impl BaseDocument {
         }
 
         if let Some(parent_stacking_context) = parent_stacking_context {
-            let position = self.nodes[node_id].final_layout.location;
-            let scroll_offset = self.nodes[node_id].scroll_offset;
-            let sticky_offset = self.nodes[node_id].sticky_offset;
-            for hoisted in stacking_context.children.iter_mut() {
-                hoisted.position.x +=
-                    position.x + sticky_offset.x as f32 - scroll_offset.x as f32;
-                hoisted.position.y +=
-                    position.y + sticky_offset.y as f32 - scroll_offset.y as f32;
-            }
+            // Note: we do NOT accumulate positions here. Position accumulation using
+            // final_layout.location is unreliable because flush_styles_to_layout runs
+            // BEFORE resolve_layout, so recreated nodes (e.g. anonymous blocks) have
+            // stale (0,0) positions. Instead, hoisted positions are computed at paint
+            // time via layout_parent chain walking (see render.rs draw_children).
             parent_stacking_context
                 .children
                 .extend(stacking_context.children.iter().cloned());
         } else {
             stacking_context.sort();
-            stacking_context.compute_content_size(self);
+            stacking_context.compute_content_size(self, node_id);
             self.nodes[node_id].stacking_context = Some(Box::new(new_stacking_context));
         }
     }

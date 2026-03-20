@@ -1117,6 +1117,29 @@ impl BaseDocument {
         self.root_element().hit(x, y)
     }
 
+    /// Compute the accumulated position offset for a hoisted child relative to a
+    /// stacking context root, by walking the layout_parent chain.
+    fn hoisted_child_offset(&self, hoisted_node_id: usize, root_id: usize) -> (f32, f32) {
+        let mut x = 0.0f32;
+        let mut y = 0.0f32;
+        let mut current = hoisted_node_id;
+        loop {
+            let Some(parent_id) = self.nodes[current].layout_parent.get() else {
+                break;
+            };
+            if parent_id == root_id {
+                break;
+            }
+            let parent = &self.nodes[parent_id];
+            x += parent.final_layout.location.x + parent.sticky_offset.x as f32
+                - parent.scroll_offset.x as f32;
+            y += parent.final_layout.location.y + parent.sticky_offset.y as f32
+                - parent.scroll_offset.y as f32;
+            current = parent_id;
+        }
+        (x, y)
+    }
+
     /// Test fixed-position children of the root element using viewport coordinates.
     /// Fixed elements are painted at viewport-relative positions, so hit testing them
     /// requires subtracting the viewport scroll from page coordinates.
@@ -1141,7 +1164,8 @@ impl BaseDocument {
         // Positive z_index hoisted children (highest priority, painted last)
         if let Some(hoisted) = &root.stacking_context {
             for hc in hoisted.pos_z_hoisted_children().rev() {
-                if let Some(hit) = test_child(hc.node_id, hc.position.x, hc.position.y) {
+                let (ox, oy) = self.hoisted_child_offset(hc.node_id, root_id);
+                if let Some(hit) = test_child(hc.node_id, ox, oy) {
                     return Some(hit);
                 }
             }
@@ -1159,7 +1183,8 @@ impl BaseDocument {
         // Negative z_index hoisted children
         if let Some(hoisted) = &root.stacking_context {
             for hc in hoisted.neg_z_hoisted_children().rev() {
-                if let Some(hit) = test_child(hc.node_id, hc.position.x, hc.position.y) {
+                let (ox, oy) = self.hoisted_child_offset(hc.node_id, root_id);
+                if let Some(hit) = test_child(hc.node_id, ox, oy) {
                     return Some(hit);
                 }
             }

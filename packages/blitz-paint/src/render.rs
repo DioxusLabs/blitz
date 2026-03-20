@@ -645,14 +645,51 @@ impl ElementCx<'_> {
         }
     }
 
+    /// Compute the position of a hoisted child relative to this stacking context root.
+    /// Walks the layout_parent chain from the hoisted child's parent up to (but not
+    /// including) the stacking context root, accumulating layout positions and offsets.
+    /// This uses current-frame layout data, avoiding the stale-data problem that occurs
+    /// when positions are pre-accumulated during flush_styles_to_layout (which runs
+    /// before resolve_layout).
+    fn hoisted_child_position(&self, hoisted_node_id: usize) -> kurbo::Point {
+        let dom = self.context.dom.as_ref();
+        let tree = dom.tree();
+        let root_id = self.node.id;
+        let mut x = 0.0f64;
+        let mut y = 0.0f64;
+
+        // Walk from the hoisted child's layout_parent up to the stacking context root.
+        // We don't include the hoisted child's own layout.location because render_element
+        // will add it via node_position(). We accumulate intermediate ancestors only.
+        let mut current = hoisted_node_id;
+        loop {
+            let Some(parent_id) = tree[current].layout_parent.get() else {
+                break;
+            };
+            if parent_id == root_id {
+                break;
+            }
+            let parent = &tree[parent_id];
+            x += parent.final_layout.location.x as f64
+                + parent.sticky_offset.x
+                - parent.scroll_offset.x;
+            y += parent.final_layout.location.y as f64
+                + parent.sticky_offset.y
+                - parent.scroll_offset.y;
+            current = parent_id;
+        }
+
+        kurbo::Point {
+            x: self.pos.x + x,
+            y: self.pos.y + y,
+        }
+    }
+
     fn draw_children(&self, scene: &mut impl PaintScene) {
         // Negative z_index hoisted nodes
         if let Some(hoisted) = &self.node.stacking_context {
             for hoisted_child in hoisted.neg_z_hoisted_children() {
-                let pos = kurbo::Point {
-                    x: self.pos.x + hoisted_child.position.x as f64,
-                    y: self.pos.y + hoisted_child.position.y as f64,
-                };
+                let pos = self.hoisted_child_position(hoisted_child.node_id);
                 self.render_node(scene, hoisted_child.node_id, pos);
             }
         }
@@ -667,10 +704,7 @@ impl ElementCx<'_> {
         // Positive z_index hoisted nodes
         if let Some(hoisted) = &self.node.stacking_context {
             for hoisted_child in hoisted.pos_z_hoisted_children() {
-                let pos = kurbo::Point {
-                    x: self.pos.x + hoisted_child.position.x as f64,
-                    y: self.pos.y + hoisted_child.position.y as f64,
-                };
+                let pos = self.hoisted_child_position(hoisted_child.node_id);
                 self.render_node(scene, hoisted_child.node_id, pos);
             }
         }

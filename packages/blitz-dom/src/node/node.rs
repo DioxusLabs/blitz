@@ -863,6 +863,13 @@ impl Node {
             return true;
         }
 
+        // Scroll containers (overflow: auto/scroll/hidden) create stacking contexts.
+        // This ensures hoisted children are clipped to the scroll container's bounds.
+        let overflow = style.get_box();
+        if overflow.overflow_x.is_scrollable() || overflow.overflow_y.is_scrollable() {
+            return true;
+        }
+
         // Transform (any value other than none)
         if !style.get_box().transform.0.is_empty() {
             return true;
@@ -891,6 +898,31 @@ impl Node {
     ///
     /// TODO: z-index
     /// (If multiple children are positioned at the position then a random one will be recursed into)
+    /// Compute the accumulated position offset for a hoisted child relative to this
+    /// stacking context root, by walking the layout_parent chain from the hoisted child
+    /// up to (but not including) this node. Only accumulates intermediate ancestors.
+    fn hoisted_child_offset(&self, hoisted_node_id: usize) -> taffy::Point<f32> {
+        let root_id = self.id;
+        let mut x = 0.0f32;
+        let mut y = 0.0f32;
+        let mut current = hoisted_node_id;
+        loop {
+            let Some(parent_id) = self.with(current).layout_parent.get() else {
+                break;
+            };
+            if parent_id == root_id {
+                break;
+            }
+            let parent = self.with(parent_id);
+            x += parent.final_layout.location.x + parent.sticky_offset.x as f32
+                - parent.scroll_offset.x as f32;
+            y += parent.final_layout.location.y + parent.sticky_offset.y as f32
+                - parent.scroll_offset.y as f32;
+            current = parent_id;
+        }
+        taffy::Point { x, y }
+    }
+
     pub fn hit(&self, x: f32, y: f32) -> Option<HitResult> {
         use style::computed_values::visibility::T as Visibility;
 
@@ -949,8 +981,9 @@ impl Node {
         if matches_hoisted_content {
             if let Some(hoisted) = &self.stacking_context {
                 for hoisted_child in hoisted.pos_z_hoisted_children().rev() {
-                    let x = x - hoisted_child.position.x;
-                    let y = y - hoisted_child.position.y;
+                    let offset = self.hoisted_child_offset(hoisted_child.node_id);
+                    let x = x - offset.x;
+                    let y = y - offset.y;
                     if let Some(hit) = self.with(hoisted_child.node_id).hit(x, y) {
                         return Some(hit);
                     }
@@ -969,8 +1002,9 @@ impl Node {
         if matches_hoisted_content {
             if let Some(hoisted) = &self.stacking_context {
                 for hoisted_child in hoisted.neg_z_hoisted_children().rev() {
-                    let x = x - hoisted_child.position.x;
-                    let y = y - hoisted_child.position.y;
+                    let offset = self.hoisted_child_offset(hoisted_child.node_id);
+                    let x = x - offset.x;
+                    let y = y - offset.y;
                     if let Some(hit) = self.with(hoisted_child.node_id).hit(x, y) {
                         return Some(hit);
                     }

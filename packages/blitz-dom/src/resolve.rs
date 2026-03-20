@@ -554,17 +554,21 @@ impl BaseDocument {
                 let parent_size_h = parent.final_layout.size.height as f64;
                 let parent_content_h = parent.final_layout.content_size.height as f64;
                 let parent_height = parent_size_h.max(parent_content_h);
-                let cb_min_y = parent_pos.y - node_pos.y;
+                // The CB constraint limits how far the sticky offset can push the element.
+                // Offset=0 (natural position) must always be valid — the CB should never
+                // CREATE an offset, only limit one. This matters when negative margins place
+                // the element outside the parent's box in normal flow.
+                let cb_min_y = (parent_pos.y - node_pos.y).min(0.0);
                 let cb_max_y = (parent_pos.y + parent_height - element_height - node_pos.y)
-                    .max(cb_min_y);
+                    .max(0.0);
                 offset_y = offset_y.clamp(cb_min_y, cb_max_y);
             }
 
             if has_x_sticky {
                 let parent_width = parent.final_layout.scroll_width() as f64;
-                let cb_min_x = parent_pos.x - node_pos.x;
+                let cb_min_x = (parent_pos.x - node_pos.x).min(0.0);
                 let cb_max_x = (parent_pos.x + parent_width - element_width - node_pos.x)
-                    .max(cb_min_x);
+                    .max(0.0);
                 offset_x = offset_x.clamp(cb_min_x, cb_max_x);
             }
         }
@@ -601,8 +605,7 @@ impl BaseDocument {
         taffy::compute_root_layout(self, root_element_id, available_space);
         taffy::round_layout(self, root_element_id);
 
-        // println!("\n\n");
-        // taffy::print_tree(self, root_node_id)
+        // taffy::print_tree(self, root_element_id);
     }
 }
 
