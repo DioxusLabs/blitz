@@ -82,11 +82,11 @@
   <div style="display: flex; flex-direction: row; justify-content: space-between; font-weight: 300; max-width: 1536px; gap: 2rem; margin: 0 auto; padding: 0 2rem;">
 
     <!-- LEFT SIDEBAR (sticky) -->
-    <div style="display: block; position: sticky; top: 6rem; height: calc(100vh - 7rem);">
-      <div style="display: flex; flex-direction: column; height: 100%; margin-bottom: 0.5rem; font-size: 0.875rem; line-height: 1.25rem; color: #374151;">
+    <div id="sb-sticky" style="display: block; position: sticky; top: 6rem; height: calc(100vh - 7rem);">
+      <div id="sb-flexcol" style="display: flex; flex-direction: column; height: 100%; margin-bottom: 0.5rem; font-size: 0.875rem; line-height: 1.25rem; color: #374151;">
 
         <!-- Version selector button -->
-        <div tabindex="0" role="button" style="cursor: pointer;">
+        <div id="sb-version" tabindex="0" role="button" style="cursor: pointer;">
           <div style="border-radius: 0.25rem; width: 100%; padding: 0.25rem 0;">
             <div style="display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 0.5rem; padding: 0 0.25rem;">
               <div style="width: 2rem; height: 2rem; border-radius: 0.375rem; border: 1px solid #e5e7eb; display: flex; align-items: center; justify-content: center; background: #f9fafb; color: #111827;">
@@ -106,18 +106,18 @@
         </div>
 
         <!-- Nav with section headers -->
-        <nav style="font-size: 0.875rem; width: 18rem; color: #4b5563; overflow-y: scroll; margin-top: 0.5rem;">
+        <nav id="sb-nav" style="font-size: 0.875rem; width: 18rem; color: #4b5563; overflow-y: scroll; margin-top: 0.5rem;">
           <!-- Section wrapper: mt-9 pt-6 -mb-3 -->
-          <div style="margin-top: 2.25rem; padding-top: 1.5rem; margin-bottom: -0.75rem;">
+          <div id="sb-sec1" style="margin-top: 2.25rem; padding-top: 1.5rem; margin-bottom: -0.75rem;">
             <!-- Section header: -top-3 -mt-13 pt-3 sticky -->
-            <span style="color: #374151; position: sticky; top: -0.75rem; z-index: 1; display: flex; align-items: center; flex-direction: column; margin-top: -3.25rem; padding-top: 0.75rem; font-weight: 600; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.025em;">
+            <span id="sb-hdr1" style="color: #374151; position: sticky; top: -0.75rem; z-index: 1; display: flex; align-items: center; flex-direction: column; margin-top: -3.25rem; padding-top: 0.75rem; font-weight: 600; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.025em;">
               <h3 style="padding: 0.25rem; width: 100%; background: white;">Introduction</h3>
               <h3 style="background: linear-gradient(to bottom, white, transparent); height: 0.5rem; width: 100%;"></h3>
             </span>
           </div>
 
           <!-- Nav items -->
-          <a href="#" style="display: block; padding: 0.25rem 0.25rem; color: #4b5563; text-decoration: none;">Getting Started</a>
+          <a id="sb-link1" href="#" style="display: block; padding: 0.25rem 0.25rem; color: #4b5563; text-decoration: none;">Getting Started</a>
 
           <!-- Another section -->
           <div style="margin-top: 2.25rem; padding-top: 1.5rem; margin-bottom: -0.75rem;">
@@ -144,5 +144,24 @@
 
   </div>
 </div>
+<div id="log" style="position: fixed; bottom: 0; left: 0; right: 0; white-space: pre; font-size: 11px; padding: 8px; background: rgba(240,240,240,0.95); border-top: 1px solid #ccc; font-family: monospace; max-height: 200px; overflow: auto; z-index: 999;"></div>
+<script>
+function dump(id) {
+  var el = document.getElementById(id);
+  if (!el) return id + ': NOT FOUND';
+  var rect = el.getBoundingClientRect();
+  var cs = getComputedStyle(el);
+  return id.padEnd(14) +
+    ' h=' + rect.height.toFixed(1).padStart(6) +
+    ' y=' + rect.y.toFixed(1).padStart(7) +
+    ' mt=' + cs.marginTop.padStart(6) +
+    ' pt=' + cs.paddingTop.padStart(6) +
+    ' offTop=' + String(el.offsetTop).padStart(4);
+}
+var ids = ['sb-sticky','sb-flexcol','sb-version','sb-nav','sb-sec1','sb-hdr1','sb-link1'];
+var log = '--- Sidebar Layout ---\n';
+for (var i = 0; i < ids.length; i++) log += dump(ids[i]) + '\n';
+document.getElementById('log').textContent = log;
+</script>
 </body>
 </html>

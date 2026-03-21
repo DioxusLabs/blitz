@@ -88,6 +88,9 @@ impl BaseDocument {
         self.recompute_sticky_offsets();
         timer.record_time("layout");
 
+        // Debug: dump layout tree for scroll containers and their children
+        self.debug_dump_scroll_containers();
+
         // Clear all damage and dirty flags
         #[cfg(feature = "incremental")]
         {
@@ -581,6 +584,95 @@ impl BaseDocument {
 
     /// Recompute sticky offsets for all sticky nodes.
     /// Called after layout and after every scroll event.
+    /// Debug: dump layout info for scroll containers and their descendants
+    fn debug_dump_scroll_containers(&self) {
+        use style::values::computed::Overflow;
+
+        fn tag(node: &crate::Node) -> String {
+            match &node.data {
+                crate::node::NodeData::Element(data) => data.name.local.to_string(),
+                crate::node::NodeData::Text(t) => {
+                    let s: String = t.content.chars().take(20).collect();
+                    format!("#text({:?})", s)
+                }
+                crate::node::NodeData::AnonymousBlock(_) => "ANON-BLOCK".to_string(),
+                crate::node::NodeData::Document => "DOCUMENT".to_string(),
+                crate::node::NodeData::Comment => "COMMENT".to_string(),
+            }
+        }
+
+        fn dump_node(prefix: &str, node_id: usize, node: &crate::Node) {
+            let l = node.final_layout.location;
+            let s = node.final_layout.size;
+            let m = node.final_layout.margin;
+            let p = node.final_layout.padding;
+            let st = node.sticky_offset;
+            eprintln!("{prefix}node={node_id} <{}> loc=({:.1},{:.1}) size=({:.1},{:.1}) margin=({:.1},{:.1},{:.1},{:.1}) pad=({:.1},{:.1},{:.1},{:.1}) sticky=({:.1},{:.1})",
+                tag(node), l.x, l.y, s.width, s.height,
+                m.top, m.right, m.bottom, m.left,
+                p.top, p.right, p.bottom, p.left,
+                st.x, st.y);
+        }
+
+        fn dump_tree(nodes: &slab::Slab<crate::Node>, node_id: usize, depth: usize) {
+            let node = &nodes[node_id];
+            let prefix = "  ".repeat(depth);
+            dump_node(&prefix, node_id, node);
+            if let Some(children) = &*node.layout_children.borrow() {
+                for &child_id in children.iter() {
+                    if depth < 5 {
+                        dump_tree(nodes, child_id, depth + 1);
+                    }
+                }
+            }
+        }
+
+        for (node_id, node) in self.nodes.iter() {
+            let Some(style) = node.primary_styles() else { continue };
+            let oy = style.clone_overflow_y();
+            if !matches!(oy, Overflow::Scroll | Overflow::Auto) { continue; }
+
+            // Dump the scroll container's parent to see siblings (e.g. version selector)
+            if let Some(parent_id) = node.parent {
+                let parent = &self.nodes[parent_id];
+                eprintln!("[SCROLL PARENT] node={} <{}>", parent_id, tag(parent));
+                dump_tree(&self.nodes, parent_id, 0);
+
+                // Dump all layout children of parent (the flex column)
+                if let Some(children) = &*parent.layout_children.borrow() {
+                    eprintln!("[FLEX-COL CHILDREN] node={} count={} ids={:?}",
+                        parent_id, children.len(), children);
+                    for &child_id in children.iter() {
+                        let child = &self.nodes[child_id];
+                        let display = child.style.display;
+                        eprintln!("  child={} <{}> display={:?} loc=({:.1},{:.1}) size=({:.1},{:.1}) margin=({:.1},{:.1},{:.1},{:.1})",
+                            child_id, tag(&child), display,
+                            child.final_layout.location.x, child.final_layout.location.y,
+                            child.final_layout.size.width, child.final_layout.size.height,
+                            child.final_layout.margin.top, child.final_layout.margin.right,
+                            child.final_layout.margin.bottom, child.final_layout.margin.left);
+                    }
+                }
+                // Print Taffy tree for the flex column
+                eprintln!("[TAFFY TREE for flex-col node={}]", parent_id);
+                taffy::print_tree(self, taffy::NodeId::from(parent_id));
+                // Also check the Taffy style insets and computed styles
+                eprintln!("[TAFFY STYLE node={}] display={:?} gap={:?} flex_dir={:?} justify={:?} inset={:?}",
+                    parent_id, parent.style.display, parent.style.gap,
+                    parent.style.flex_direction, parent.style.justify_content,
+                    parent.style.inset);
+                if let Some(stylo) = parent.primary_styles() {
+                    let gap_col = stylo.clone_column_gap();
+                    let gap_row = stylo.clone_row_gap();
+                    eprintln!("[STYLO STYLE node={}] flex_dir={:?} column_gap={:?} row_gap={:?} display={:?} top={:?} position={:?}",
+                        parent_id, stylo.clone_flex_direction(), gap_col, gap_row, stylo.clone_display(),
+                        stylo.clone_top(), stylo.clone_position());
+                }
+            }
+            eprintln!("---");
+        }
+    }
+
     pub fn recompute_sticky_offsets(&mut self) {
         let sticky_nodes = std::mem::take(&mut self.sticky_nodes);
         for &node_id in &sticky_nodes {

@@ -617,10 +617,10 @@ pub fn to_taffy_style(style: &stylo::ComputedValues) -> taffy::Style<Atom> {
         },
         aspect_ratio: self::aspect_ratio(pos.aspect_ratio),
 
-        // Sticky insets define sticking thresholds, not layout offsets.
-        // Suppress them so Taffy doesn't apply them as relative offsets.
-        // Raw values remain accessible via Stylo computed styles for scroll-time use.
-        inset: if css_position == stylo::Position::Sticky {
+        // Suppress insets for static elements (Taffy maps static to relative, so insets
+        // would incorrectly be applied as relative offsets) and sticky elements (insets are
+        // sticking thresholds, not layout offsets — raw values remain accessible via Stylo).
+        inset: if css_position == stylo::Position::Sticky || css_position == stylo::Position::Static {
             taffy::Rect::AUTO
         } else {
             taffy::Rect {
@@ -722,5 +722,6 @@ pub fn to_taffy_style(style: &stylo::ComputedValues) -> taffy::Style<Atom> {
             start: self::grid_line(&pos.grid_column_start),
             end: self::grid_line(&pos.grid_column_end),
         },
+        direction: taffy::Direction::Ltr,
     }
 }
