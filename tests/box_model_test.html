@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html>
+<head>
+<style>
+  * { margin: 0; padding: 0; }
+  body { font-family: Helvetica, Arial, sans-serif; font-size: 14px; margin: 20px; }
+  .test { background: #f0f0f0; margin: 15px 0; padding: 8px; border: 1px solid #ccc; }
+  .label { display: block; font-size: 12px; color: #666; margin-bottom: 4px; font-weight: bold; }
+</style>
+</head>
+<body>
+
+<h3 style="margin-bottom: 10px;">Box Model Tests</h3>
+
+<!-- Case 1: content-box vs border-box sizing -->
+<span class="label">Case 1: box-sizing — both boxes should be same visual width (200px)</span>
+<div class="test">
+  <div style="width: 200px; padding: 20px; border: 5px solid coral; background: lightyellow; box-sizing: content-box; margin-bottom: 4px;">
+    content-box: 200 + 40pad + 10border = 250px total
+  </div>
+  <div style="width: 200px; padding: 20px; border: 5px solid lightblue; background: lightyellow; box-sizing: border-box;">
+    border-box: 200px total (content = 150px)
+  </div>
+</div>
+
+<!-- Case 2: Margin collapse — adjacent block siblings -->
+<span class="label">Case 2: Margin collapse — 20px + 30px = 30px gap (not 50px)</span>
+<div class="test">
+  <div style="background: lightcoral; padding: 8px; margin-bottom: 20px;">margin-bottom: 20px</div>
+  <div style="background: lightblue; padding: 8px; margin-top: 30px;">margin-top: 30px</div>
+</div>
+
+<!-- Case 3: Margin collapse — parent-child -->
+<span class="label">Case 3: Parent-child margin collapse (no padding/border on parent)</span>
+<div class="test">
+  <div style="background: lightyellow; margin-top: 20px;">
+    <div style="background: lightcoral; margin-top: 30px; padding: 8px;">
+      Child margin-top:30px collapses with parent margin-top:20px → 30px total
+    </div>
+  </div>
+</div>
+
+<!-- Case 4: No margin collapse when parent has padding -->
+<span class="label">Case 4: No collapse — parent has padding (gap = 20 + 30 = 50px)</span>
+<div class="test">
+  <div style="background: lightyellow; margin-top: 20px; padding-top: 1px;">
+    <div style="background: lightblue; margin-top: 30px; padding: 8px;">
+      Parent padding blocks collapse → margin-top:30px added to parent's 20px
+    </div>
+  </div>
+</div>
+
+<!-- Case 5: Negative margins -->
+<span class="label">Case 5: Negative margin — second box overlaps first</span>
+<div class="test">
+  <div style="background: lightcoral; padding: 8px; height: 40px;">First box</div>
+  <div style="background: rgba(100,149,237,0.7); padding: 8px; margin-top: -20px;">
+    margin-top: -20px (overlaps by 20px)
+  </div>
+</div>
+
+<!-- Case 6: Auto margins for centering -->
+<span class="label">Case 6: margin:auto centering</span>
+<div class="test">
+  <div style="width: 200px; margin: 0 auto; background: lightcoral; padding: 8px; text-align: center;">
+    Centered with margin:auto
+  </div>
+</div>
+
+<!-- Case 7: Percentage widths -->
+<span class="label">Case 7: Percentage widths (25% + 50% + 25% = full width)</span>
+<div class="test" style="overflow: hidden;">
+  <div style="float: left; width: 25%; background: lightcoral; padding: 8px; box-sizing: border-box;">25%</div>
+  <div style="float: left; width: 50%; background: lightyellow; padding: 8px; box-sizing: border-box;">50%</div>
+  <div style="float: left; width: 25%; background: lightblue; padding: 8px; box-sizing: border-box;">25%</div>
+</div>
+
+<!-- Case 8: Percentage padding (relative to parent width) -->
+<span class="label">Case 8: padding: 10% (all sides relative to parent width, including top/bottom)</span>
+<div class="test" style="width: 300px;">
+  <div style="padding: 10%; background: lightcoral;">
+    All padding = 10% of 300px = 30px
+  </div>
+</div>
+
+<!-- Case 9: Min/max constraints -->
+<span class="label">Case 9: min-width:150px, max-width:250px on 100% child</span>
+<div class="test" style="width: 100px;">
+  <div style="width: 100%; min-width: 150px; max-width: 250px; background: lightcoral; padding: 8px;">
+    Should be 150px (min-width wins over 100px parent)
+  </div>
+</div>
+
+<!-- Case 10: Overflow visible vs hidden -->
+<span class="label">Case 10: Overflow visible (default) vs hidden</span>
+<div class="test">
+  <div style="width: 150px; height: 30px; background: lightcoral; margin-bottom: 20px;">
+    This text overflows the small box and should be visible outside it by default.
+  </div>
+  <div style="width: 150px; height: 30px; background: lightblue; overflow: hidden;">
+    This text overflows but is clipped by overflow:hidden so you won't see the end.
+  </div>
+</div>
+
+</body>
+</html>

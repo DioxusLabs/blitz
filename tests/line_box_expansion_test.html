@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html>
+<head>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: Helvetica, Arial, sans-serif; font-size: 16px; margin: 20px; }
+  .test { background: #f0f0f0; margin: 15px 0; padding: 8px; border: 1px solid #ccc; }
+  .label { display: block; font-size: 12px; color: #666; margin-bottom: 4px; font-weight: bold; }
+</style>
+</head>
+<body>
+
+<h3 style="margin-bottom: 10px;">Line Box Expansion Tests</h3>
+<p style="font-size: 12px; color: #888; margin-bottom: 15px;">
+  CSS2.1 §10.8: line-height is the *minimum* height of line boxes.<br>
+  Shifted inline boxes should expand the line box. Unshifted should not.
+</p>
+
+<!-- Case 1: No shift — line box should match line-height exactly -->
+<span class="label">Case 1: No shift (reference — border should tightly wrap text)</span>
+<div class="test" style="line-height: 40px;">
+  <span style="background: lightyellow;">Normal text at line-height:40px</span>
+</div>
+
+<!-- Case 2: Inline-block shifted up — line box should expand -->
+<span class="label">Case 2: Inline-block shifted 20px up (container should expand)</span>
+<div class="test" style="line-height: 40px;">
+  <span style="background: lightyellow;">Text</span>
+  <span style="display: inline-block; width: 30px; height: 20px; background: coral; vertical-align: 20px;"></span>
+  <span style="background: lightyellow;">After (coral box should not overflow top)</span>
+</div>
+
+<!-- Case 3: Inline-block shifted down — line box should expand -->
+<span class="label">Case 3: Inline-block shifted 20px down (container should expand)</span>
+<div class="test" style="line-height: 40px;">
+  <span style="background: lightyellow;">Text</span>
+  <span style="display: inline-block; width: 30px; height: 20px; background: lightblue; vertical-align: -20px;"></span>
+  <span style="background: lightyellow;">After (blue box should not overflow bottom)</span>
+</div>
+
+<!-- Case 4: Text with vertical-align: super — line should expand -->
+<span class="label">Case 4: Super text (line should expand slightly)</span>
+<div class="test">
+  <span style="background: lightyellow;">Normal</span>
+  <span style="vertical-align: super; background: lightcoral;">superscript</span>
+  <span style="background: lightyellow;">text</span>
+</div>
+
+<!-- Case 5: Text with vertical-align: sub — line should expand -->
+<span class="label">Case 5: Sub text (line should expand slightly)</span>
+<div class="test">
+  <span style="background: lightyellow;">Normal</span>
+  <span style="vertical-align: sub; background: lightblue;">subscript</span>
+  <span style="background: lightyellow;">text</span>
+</div>
+
+<!-- Case 6: Large image shifted with vertical-align: middle -->
+<span class="label">Case 6: 48px image with vertical-align: middle</span>
+<div class="test">
+  <span style="background: lightyellow;">Text</span>
+  <svg width="48" height="48" style="background: coral; vertical-align: middle;">
+    <rect width="48" height="48" fill="coral"/>
+  </svg>
+  <span style="background: lightyellow;">After (container should fit the image)</span>
+</div>
+
+<!-- Case 7: Multiple shifted elements on same line -->
+<span class="label">Case 7: Multiple shifts — sup + sub + raised box (all should fit)</span>
+<div class="test" style="line-height: 30px;">
+  <span style="vertical-align: super; background: lightcoral;">Up</span>
+  <span style="background: lightyellow;">Normal</span>
+  <span style="vertical-align: sub; background: lightblue;">Down</span>
+  <span style="display: inline-block; width: 20px; height: 20px; background: lightgreen; vertical-align: 15px;"></span>
+</div>
+
+<!-- Case 8: Intentionally small line-height — content should overflow, NOT expand -->
+<span class="label">Case 8: line-height:0.5 (text overflows intentionally — NO expansion)</span>
+<div class="test" style="line-height: 0.5; margin-bottom: 30px;">
+  <span style="background: lightyellow;">Tight line-height (text overflows box, that's correct)</span>
+</div>
+
+<!-- Case 9: vertical-align: top/bottom should not expand line -->
+<span class="label">Case 9: vertical-align: top + bottom (should not expand beyond text)</span>
+<div class="test">
+  <span style="background: lightyellow;">Normal text</span>
+  <span style="display: inline-block; width: 20px; height: 10px; background: coral; vertical-align: top;"></span>
+  <span style="display: inline-block; width: 20px; height: 10px; background: lightblue; vertical-align: bottom;"></span>
+</div>
+
+</body>
+</html>

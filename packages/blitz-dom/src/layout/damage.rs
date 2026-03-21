@@ -383,8 +383,8 @@ impl BaseDocument {
         let display = {
             let node = self.nodes.get_mut(node_id).unwrap();
             let _damage = node.damage().unwrap_or(ALL_DAMAGE);
-            let stylo_element_data = node.stylo_element_data.borrow();
-            let primary_styles = stylo_element_data
+            let stylo_data_ref = node.stylo_element_data.borrow();
+            let primary_styles = stylo_data_ref
                 .as_ref()
                 .and_then(|data| data.styles.get_primary());
 
@@ -394,6 +394,7 @@ impl BaseDocument {
 
             // if damage.intersects(RestyleDamage::RELAYOUT | CONSTRUCT_BOX) {
             node.style = stylo_taffy::to_taffy_style(style);
+            node.css_position = style.clone_position();
             node.display_constructed_as = style.clone_display();
             // }
 
@@ -529,8 +530,13 @@ impl BaseDocument {
                 let position = style.clone_position();
                 let z_index = style.clone_z_index().integer_or(0);
 
-                // TODO: more complete hoisting detection
-                if position != Position::Static && z_index != 0 {
+                // Hoist children that participate in z-ordering:
+                // - Positioned elements with explicit z-index (CSS spec §9.9)
+                // - Any element that creates a stacking context (opacity, transform, filter, etc.)
+                let is_positioned_with_z = position != Position::Static && z_index != 0;
+                let creates_stacking_context =
+                    child.is_stacking_context_root(is_flex_or_grid);
+                if is_positioned_with_z || creates_stacking_context {
                     stacking_context.children.push(HoistedPaintChild {
                         node_id: child_id,
                         z_index,
@@ -556,9 +562,12 @@ impl BaseDocument {
         if let Some(parent_stacking_context) = parent_stacking_context {
             let position = self.nodes[node_id].final_layout.location;
             let scroll_offset = self.nodes[node_id].scroll_offset;
+            let sticky_offset = self.nodes[node_id].sticky_offset;
             for hoisted in stacking_context.children.iter_mut() {
-                hoisted.position.x += position.x - scroll_offset.x as f32;
-                hoisted.position.y += position.y - scroll_offset.y as f32;
+                hoisted.position.x +=
+                    position.x + sticky_offset.x as f32 - scroll_offset.x as f32;
+                hoisted.position.y +=
+                    position.y + sticky_offset.y as f32 - scroll_offset.y as f32;
             }
             parent_stacking_context
                 .children

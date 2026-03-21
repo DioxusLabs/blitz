@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html>
+<head>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: Helvetica, Arial, sans-serif; font-size: 14px; margin: 20px; }
+  .test { background: #f0f0f0; margin: 15px 0; padding: 8px; border: 1px solid #ccc; }
+  .label { display: block; font-size: 12px; color: #666; margin-bottom: 4px; font-weight: bold; }
+</style>
+</head>
+<body>
+
+<h3 style="margin-bottom: 10px;">calc() Widths, Percentage Padding, min/max Constraints</h3>
+<p style="font-size: 12px; color: #888; margin-bottom: 15px;">
+  Tests calc() resolution, percentage padding (resolved against parent width),<br>
+  and min-width/max-width/min-height/max-height interactions.
+</p>
+
+<!-- =============================== -->
+<!-- CALC() BASICS                   -->
+<!-- =============================== -->
+
+<!-- Case 1: Simple calc(100% - Npx) -->
+<span class="label">Case 1: calc(100% - 80px) in a 400px parent → 320px</span>
+<div class="test" style="width: 400px;">
+  <div style="width: calc(100% - 80px); background: lightcoral; padding: 8px;">
+    Should be 320px wide
+  </div>
+</div>
+
+<!-- Case 2: calc with addition -->
+<span class="label">Case 2: calc(50% + 40px) in a 400px parent → 240px</span>
+<div class="test" style="width: 400px;">
+  <div style="width: calc(50% + 40px); background: lightblue; padding: 8px;">
+    Should be 240px wide
+  </div>
+</div>
+
+<!-- Case 3: calc with multiplication (px * number) -->
+<span class="label">Case 3: calc(20px * 5) = 100px</span>
+<div class="test">
+  <div style="width: calc(20px * 5); height: 30px; background: lightgreen;"></div>
+</div>
+
+<!-- Case 4: calc with division -->
+<span class="label">Case 4: calc(300px / 3) = 100px</span>
+<div class="test">
+  <div style="width: calc(300px / 3); height: 30px; background: plum;"></div>
+</div>
+
+<!-- Case 5: Nested calc -->
+<span class="label">Case 5: calc(100% - calc(20px + 30px)) in 400px → 350px</span>
+<div class="test" style="width: 400px;">
+  <div style="width: calc(100% - calc(20px + 30px)); background: lightyellow; padding: 8px;">
+    Should be 350px
+  </div>
+</div>
+
+<!-- Case 6: calc in height -->
+<span class="label">Case 6: height: calc(80px - 20px) = 60px</span>
+<div class="test">
+  <div style="width: 200px; height: calc(80px - 20px); background: lightcoral; display: flex; align-items: center; justify-content: center;">
+    60px tall
+  </div>
+</div>
+
+<!-- Case 7: calc in padding -->
+<span class="label">Case 7: padding: calc(4px + 1%) in 400px parent → ~8px padding</span>
+<div class="test" style="width: 400px;">
+  <div style="padding: calc(4px + 1%); background: lightblue;">
+    Padding combines fixed + percentage
+  </div>
+</div>
+
+<!-- Case 8: calc in margin -->
+<span class="label">Case 8: margin-left: calc(50% - 100px) → centered 200px box</span>
+<div class="test" style="width: 400px;">
+  <div style="width: 200px; margin-left: calc(50% - 100px); background: lightgreen; padding: 8px; text-align: center;">
+    Centered via calc margin
+  </div>
+</div>
+
+<!-- Case 9: Three equal calc columns -->
+<span class="label">Case 9: Three columns calc(33.333% - 6px) with 8px gaps</span>
+<div class="test" style="width: 400px;">
+  <div style="display: flex; gap: 8px;">
+    <div style="width: calc(33.333% - 6px); background: lightcoral; padding: 8px;">Col 1</div>
+    <div style="width: calc(33.333% - 6px); background: lightyellow; padding: 8px;">Col 2</div>
+    <div style="width: calc(33.333% - 6px); background: lightblue; padding: 8px;">Col 3</div>
+  </div>
+</div>
+
+<!-- =============================== -->
+<!-- PERCENTAGE PADDING              -->
+<!-- =============================== -->
+
+<!-- Case 10: Percentage padding (all sides resolve against parent WIDTH) -->
+<span class="label">Case 10: padding:10% in 300px parent → 30px all sides (even top/bottom!)</span>
+<div class="test" style="width: 300px;">
+  <div style="padding: 10%; background: lightcoral;">
+    All padding = 30px (10% of 300px parent width)
+  </div>
+</div>
+
+<!-- Case 11: Mixed fixed + percentage padding -->
+<span class="label">Case 11: padding: 8px 5% in 400px parent → 8px top/bottom, 20px left/right</span>
+<div class="test" style="width: 400px;">
+  <div style="padding: 8px 5%; background: lightblue; border: 1px dashed #aaa;">
+    Top/bottom=8px, left/right=20px
+  </div>
+</div>
+
+<!-- Case 12: Percentage padding in flex child -->
+<span class="label">Case 12: Percentage padding in flex children (resolves against flex container width)</span>
+<div class="test" style="display: flex; width: 400px; gap: 4px;">
+  <div style="flex: 1; padding: 5%; background: lightcoral;">5% pad</div>
+  <div style="flex: 1; padding: 5%; background: lightyellow;">5% pad</div>
+  <div style="flex: 1; padding: 5%; background: lightblue;">5% pad</div>
+</div>
+
+<!-- Case 13: Percentage padding creating aspect ratio (old trick) -->
+<span class="label">Case 13: Percentage padding-top for 16:9 aspect ratio (padding-top:56.25%)</span>
+<div class="test" style="width: 320px;">
+  <div style="position: relative; padding-top: 56.25%; background: lightgreen;">
+    <div style="position: absolute; top: 0; left: 0; right: 0; bottom: 0; display: flex; align-items: center; justify-content: center; font-size: 12px;">
+      16:9 via padding-top trick (320 x 180)
+    </div>
+  </div>
+</div>
+
+<!-- =============================== -->
+<!-- MIN/MAX CONSTRAINTS             -->
+<!-- =============================== -->
+
+<!-- Case 14: min-width overrides smaller width -->
+<span class="label">Case 14: width:50px, min-width:150px → 150px wins</span>
+<div class="test">
+  <div style="width: 50px; min-width: 150px; background: lightcoral; padding: 8px;">
+    min-width wins
+  </div>
+</div>
+
+<!-- Case 15: max-width constrains larger width -->
+<span class="label">Case 15: width:500px, max-width:200px → 200px wins</span>
+<div class="test">
+  <div style="width: 500px; max-width: 200px; background: lightblue; padding: 8px;">
+    max-width wins
+  </div>
+</div>
+
+<!-- Case 16: Percentage width clamped by min-width -->
+<span class="label">Case 16: width:20% of 400px=80px, min-width:150px → 150px</span>
+<div class="test" style="width: 400px;">
+  <div style="width: 20%; min-width: 150px; background: lightgreen; padding: 8px;">
+    80px → clamped to 150px
+  </div>
+</div>
+
+<!-- Case 17: Percentage width clamped by max-width -->
+<span class="label">Case 17: width:90% of 400px=360px, max-width:250px → 250px</span>
+<div class="test" style="width: 400px;">
+  <div style="width: 90%; max-width: 250px; background: plum; padding: 8px;">
+    360px → clamped to 250px
+  </div>
+</div>
+
+<!-- Case 18: min-width > max-width (min wins per spec) -->
+<span class="label">Case 18: min-width:200px > max-width:100px → min wins (200px per spec)</span>
+<div class="test">
+  <div style="min-width: 200px; max-width: 100px; background: lightcoral; padding: 8px;">
+    min-width beats max-width
+  </div>
+</div>
+
+<!-- Case 19: min-height and max-height -->
+<span class="label">Case 19: min-height:80px on short content + max-height:40px on tall content</span>
+<div class="test" style="display: flex; gap: 8px;">
+  <div style="width: 150px; min-height: 80px; background: lightblue; padding: 8px;">
+    Short text, but min-height:80px
+  </div>
+  <div style="width: 150px; max-height: 40px; overflow: hidden; background: lightgreen; padding: 8px;">
+    Tall content clamped to max-height:40px. This extra text should be clipped because the container is only 40px tall.
+  </div>
+</div>
+
+<!-- Case 20: calc + min-width + max-width interaction -->
+<span class="label">Case 20: width:calc(100% - 40px), min:100px, max:300px in 400px parent</span>
+<div class="test" style="width: 400px;">
+  <div style="width: calc(100% - 40px); min-width: 100px; max-width: 300px; background: lightyellow; padding: 8px; margin-bottom: 4px;">
+    calc=360px, clamped to max:300px
+  </div>
+</div>
+<span class="label">Case 20b: Same calc in 120px parent → calc=80px → min:100px wins</span>
+<div class="test" style="width: 120px;">
+  <div style="width: calc(100% - 40px); min-width: 100px; max-width: 300px; background: lightyellow; padding: 8px;">
+    calc=80px, clamped to min:100px
+  </div>
+</div>
+
+<!-- Case 21: Percentage min/max widths -->
+<span class="label">Case 21: width:auto, min-width:50%, max-width:75% in 400px parent</span>
+<div class="test" style="width: 400px;">
+  <div style="min-width: 50%; max-width: 75%; background: lightcoral; padding: 8px;">
+    Auto width, clamped between 200px-300px
+  </div>
+</div>
+
+</body>
+</html>

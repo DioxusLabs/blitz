@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html>
+<head>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: Helvetica, Arial, sans-serif; font-size: 16px; margin: 20px; }
+  .test { background: #f0f0f0; margin: 15px 0; padding: 8px; border: 1px solid #ccc; }
+  .label { display: block; font-size: 12px; color: #666; margin-bottom: 4px; font-weight: bold; }
+</style>
+</head>
+<body>
+
+<h3 style="margin-bottom: 10px;">Text Layout Tests</h3>
+
+<!-- Case 1: text-align variants -->
+<span class="label">Case 1: text-align — left, center, right, justify</span>
+<div class="test" style="width: 300px;">
+  <div style="text-align: left; background: lightyellow; padding: 4px; margin-bottom: 4px;">Left aligned text</div>
+  <div style="text-align: center; background: lightyellow; padding: 4px; margin-bottom: 4px;">Center aligned text</div>
+  <div style="text-align: right; background: lightyellow; padding: 4px; margin-bottom: 4px;">Right aligned text</div>
+  <div style="text-align: justify; background: lightyellow; padding: 4px;">
+    Justified text that needs to be long enough to wrap to multiple lines so we can see the justify effect working correctly on the lines.
+  </div>
+</div>
+
+<!-- Case 2: white-space: nowrap -->
+<span class="label">Case 2: white-space:nowrap — text overflows, does not wrap</span>
+<div class="test" style="width: 200px; overflow: hidden;">
+  <div style="white-space: nowrap; background: lightyellow; padding: 4px;">
+    This text should not wrap and will overflow the 200px container width.
+  </div>
+</div>
+
+<!-- Case 3: white-space: pre (preserves spaces and newlines) -->
+<span class="label">Case 3: white-space:pre — preserves whitespace and newlines</span>
+<div class="test">
+  <div style="white-space: pre; background: lightyellow; padding: 4px;">Line 1
+    Indented line 2
+      Double indented
+  Multiple   spaces   preserved</div>
+</div>
+
+<!-- Case 4: white-space: pre-wrap -->
+<span class="label">Case 4: white-space:pre-wrap — preserves whitespace but wraps</span>
+<div class="test" style="width: 250px;">
+  <div style="white-space: pre-wrap; background: lightyellow; padding: 4px;">Preserves   spaces   but wraps when the line gets long enough to overflow the container width.
+And newlines too.</div>
+</div>
+
+<!-- Case 5: word-break variants -->
+<span class="label">Case 5: overflow-wrap:break-word — breaks long words</span>
+<div class="test" style="width: 200px;">
+  <div style="overflow-wrap: break-word; background: lightyellow; padding: 4px;">
+    Supercalifragilisticexpialidocious should break mid-word.
+  </div>
+</div>
+
+<!-- Case 6: text-overflow: ellipsis -->
+<span class="label">Case 6: text-overflow:ellipsis + nowrap + overflow:hidden</span>
+<div class="test" style="width: 200px;">
+  <div style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; background: lightyellow; padding: 4px;">
+    This text is too long and should end with an ellipsis character.
+  </div>
+</div>
+
+<!-- Case 7: line-height variants -->
+<span class="label">Case 7: line-height — 1.0, 1.5, 2.0</span>
+<div class="test" style="width: 300px;">
+  <div style="line-height: 1.0; background: lightcoral; padding: 4px; margin-bottom: 4px;">
+    Line height 1.0 — tight spacing. Second line here to show the effect on multi-line text blocks.
+  </div>
+  <div style="line-height: 1.5; background: lightyellow; padding: 4px; margin-bottom: 4px;">
+    Line height 1.5 — normal spacing. Second line here to show the effect on multi-line text blocks.
+  </div>
+  <div style="line-height: 2.0; background: lightblue; padding: 4px;">
+    Line height 2.0 — wide spacing. Second line here to show the effect on multi-line text blocks.
+  </div>
+</div>
+
+<!-- Case 8: letter-spacing -->
+<span class="label">Case 8: letter-spacing</span>
+<div class="test">
+  <div style="letter-spacing: 0; background: lightyellow; padding: 4px; margin-bottom: 4px;">Normal letter-spacing</div>
+  <div style="letter-spacing: 2px; background: lightyellow; padding: 4px; margin-bottom: 4px;">letter-spacing: 2px</div>
+  <div style="letter-spacing: 5px; background: lightyellow; padding: 4px;">letter-spacing: 5px</div>
+</div>
+
+<!-- Case 9: word-spacing -->
+<span class="label">Case 9: word-spacing</span>
+<div class="test">
+  <div style="word-spacing: normal; background: lightyellow; padding: 4px; margin-bottom: 4px;">Normal word spacing here</div>
+  <div style="word-spacing: 10px; background: lightyellow; padding: 4px; margin-bottom: 4px;">Extra word spacing here (10px)</div>
+  <div style="word-spacing: 20px; background: lightyellow; padding: 4px;">Wide word spacing here (20px)</div>
+</div>
+
+<!-- Case 10: text-indent -->
+<span class="label">Case 10: text-indent:30px (first line only)</span>
+<div class="test" style="width: 300px;">
+  <div style="text-indent: 30px; background: lightyellow; padding: 4px;">
+    This paragraph has a 30px indent on the first line only. The second line wraps normally without any indent applied to it.
+  </div>
+</div>
+
+<!-- Case 11: text-decoration -->
+<span class="label">Case 11: text-decoration — underline, overline, line-through</span>
+<div class="test">
+  <span style="text-decoration: underline; margin-right: 16px;">underline</span>
+  <span style="text-decoration: overline; margin-right: 16px;">overline</span>
+  <span style="text-decoration: line-through; margin-right: 16px;">line-through</span>
+  <span style="text-decoration: underline overline;">both</span>
+</div>
+
+<!-- Case 12: text-transform -->
+<span class="label">Case 12: text-transform</span>
+<div class="test">
+  <div style="text-transform: uppercase; background: lightyellow; padding: 4px; margin-bottom: 4px;">this should be uppercase</div>
+  <div style="text-transform: lowercase; background: lightyellow; padding: 4px; margin-bottom: 4px;">THIS SHOULD BE LOWERCASE</div>
+  <div style="text-transform: capitalize; background: lightyellow; padding: 4px;">every word capitalized here</div>
+</div>
+
+<!-- Case 13: Mixed font sizes on one line -->
+<span class="label">Case 13: Mixed font sizes — baseline alignment</span>
+<div class="test">
+  <span style="font-size: 12px; background: lightyellow;">12px</span>
+  <span style="font-size: 16px; background: lightcoral;">16px</span>
+  <span style="font-size: 24px; background: lightblue;">24px</span>
+  <span style="font-size: 32px; background: lightgreen;">32px</span>
+  <span style="font-size: 12px; background: lightyellow;">12px again</span>
+</div>
+
+</body>
+</html>

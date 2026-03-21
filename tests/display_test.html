@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html>
+<head>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: Helvetica, Arial, sans-serif; font-size: 14px; margin: 20px; }
+  .test { background: #f0f0f0; margin: 15px 0; padding: 8px; border: 1px solid #ccc; }
+  .label { display: block; font-size: 12px; color: #666; margin-bottom: 4px; font-weight: bold; }
+</style>
+</head>
+<body>
+
+<h3 style="margin-bottom: 10px;">Display Property Tests</h3>
+
+<!-- Case 1: display:block (default for div) -->
+<span class="label">Case 1: display:block — stacks vertically, full width</span>
+<div class="test">
+  <div style="background: lightcoral; padding: 4px;">Block 1</div>
+  <div style="background: lightyellow; padding: 4px;">Block 2</div>
+  <div style="background: lightblue; padding: 4px;">Block 3</div>
+</div>
+
+<!-- Case 2: display:inline -->
+<span class="label">Case 2: display:inline — flows horizontally, ignores width/height</span>
+<div class="test">
+  <span style="display: inline; width: 200px; height: 50px; background: lightcoral; padding: 4px;">Inline (w/h ignored)</span>
+  <span style="display: inline; background: lightyellow; padding: 4px;">Next inline</span>
+  <span style="display: inline; background: lightblue; padding: 4px;">And another</span>
+</div>
+
+<!-- Case 3: display:inline-block -->
+<span class="label">Case 3: display:inline-block — inline flow but respects width/height</span>
+<div class="test">
+  <span style="display: inline-block; width: 100px; height: 40px; background: lightcoral; padding: 4px; vertical-align: middle;">100x40</span>
+  <span style="display: inline-block; width: 80px; height: 60px; background: lightyellow; padding: 4px; vertical-align: middle;">80x60</span>
+  <span style="display: inline-block; width: 120px; height: 30px; background: lightblue; padding: 4px; vertical-align: middle;">120x30</span>
+</div>
+
+<!-- Case 4: display:none — removed from layout -->
+<span class="label">Case 4: display:none — middle element invisible, no space</span>
+<div class="test">
+  <div style="background: lightcoral; padding: 4px;">Visible A</div>
+  <div style="display: none; background: lightyellow; padding: 4px;">Hidden B</div>
+  <div style="background: lightblue; padding: 4px;">Visible C (directly after A)</div>
+</div>
+
+<!-- Case 5: visibility:hidden vs display:none -->
+<span class="label">Case 5: visibility:hidden — invisible but occupies space</span>
+<div class="test">
+  <div style="background: lightcoral; padding: 4px;">Visible A</div>
+  <div style="visibility: hidden; background: lightyellow; padding: 4px;">Hidden B (space reserved)</div>
+  <div style="background: lightblue; padding: 4px;">Visible C (gap above from hidden B)</div>
+</div>
+
+<!-- Case 6: display:table -->
+<span class="label">Case 6: display:table layout</span>
+<div class="test">
+  <div style="display: table; width: 100%; border-collapse: collapse;">
+    <div style="display: table-row;">
+      <div style="display: table-cell; border: 1px solid #aaa; padding: 8px; background: lightcoral;">Cell 1</div>
+      <div style="display: table-cell; border: 1px solid #aaa; padding: 8px; background: lightyellow;">Cell 2</div>
+      <div style="display: table-cell; border: 1px solid #aaa; padding: 8px; background: lightblue;">Cell 3</div>
+    </div>
+    <div style="display: table-row;">
+      <div style="display: table-cell; border: 1px solid #aaa; padding: 8px; background: lightgreen;">Cell 4</div>
+      <div style="display: table-cell; border: 1px solid #aaa; padding: 8px; background: plum;">Cell 5</div>
+      <div style="display: table-cell; border: 1px solid #aaa; padding: 8px; background: khaki;">Cell 6</div>
+    </div>
+  </div>
+</div>
+
+<!-- Case 7: display:inline-flex -->
+<span class="label">Case 7: display:inline-flex — flex container that flows inline</span>
+<div class="test">
+  Text before
+  <span style="display: inline-flex; gap: 4px; background: lightyellow; padding: 4px; border: 1px solid #aaa;">
+    <span style="background: lightcoral; padding: 4px;">A</span>
+    <span style="background: lightblue; padding: 4px;">B</span>
+  </span>
+  text after.
+</div>
+
+<!-- Case 8: display:inline-grid -->
+<span class="label">Case 8: display:inline-grid — grid container that flows inline</span>
+<div class="test">
+  Text before
+  <span style="display: inline-grid; grid-template-columns: auto auto; gap: 2px; background: lightyellow; padding: 4px; border: 1px solid #aaa;">
+    <span style="background: lightcoral; padding: 2px;">1</span>
+    <span style="background: lightblue; padding: 2px;">2</span>
+    <span style="background: lightgreen; padding: 2px;">3</span>
+    <span style="background: plum; padding: 2px;">4</span>
+  </span>
+  text after.
+</div>
+
+<!-- Case 9: Block-level flex items (divs inside flex) -->
+<span class="label">Case 9: div children in flex (become flex items regardless of display)</span>
+<div class="test" style="display: flex; gap: 4px;">
+  <div style="background: lightcoral; padding: 8px;">Block A</div>
+  <span style="background: lightyellow; padding: 8px;">Inline B</span>
+  <div style="background: lightblue; padding: 8px;">Block C</div>
+</div>
+
+</body>
+</html>

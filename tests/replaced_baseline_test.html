@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html>
+<head>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: Helvetica, Arial, sans-serif; font-size: 16px; margin: 20px; }
+  .test { background: #f0f0f0; margin: 15px 0; padding: 8px; border: 1px solid #ccc; }
+  .label { display: block; font-size: 12px; color: #666; margin-bottom: 4px; font-weight: bold; }
+  .note { display: block; font-size: 11px; color: #999; margin-top: 2px; }
+  /* Inline SVG used as replaced element stand-in (avoids external image deps) */
+  .box { display: inline-block; background: coral; }
+</style>
+</head>
+<body>
+
+<h3 style="margin-bottom: 10px;">Replaced Element Baseline Tests</h3>
+<p style="font-size: 12px; color: #888; margin-bottom: 15px;">
+  Images and SVGs are replaced elements. Their default baseline is the bottom margin edge.
+</p>
+
+<!-- Case 1: img default (bottom at baseline) -->
+<span class="label">Case 1: img default vertical-align (bottom at baseline)</span>
+<div class="test">
+  <span style="background: lightyellow;">Text before</span>
+  <svg width="32" height="32" style="background: coral;">
+    <rect width="32" height="32" fill="coral"/>
+  </svg>
+  <span style="background: lightyellow;">Text after</span>
+</div>
+<span class="note">Default: bottom of image sits at text baseline</span>
+
+<!-- Case 2: img with vertical-align: middle -->
+<span class="label">Case 2: img with vertical-align: middle</span>
+<div class="test">
+  <span style="background: lightyellow;">Text</span>
+  <svg width="32" height="32" style="background: coral; vertical-align: middle;">
+    <rect width="32" height="32" fill="coral"/>
+  </svg>
+  <span style="background: lightyellow;">Middle-aligned</span>
+</div>
+<span class="note">Middle: center of image at baseline + half x-height</span>
+
+<!-- Case 3: img with vertical-align: text-top -->
+<span class="label">Case 3: img with vertical-align: text-top</span>
+<div class="test">
+  <span style="background: lightyellow;">Text</span>
+  <svg width="32" height="32" style="background: lightblue; vertical-align: text-top;">
+    <rect width="32" height="32" fill="lightblue"/>
+  </svg>
+  <span style="background: lightyellow;">Text-top aligned</span>
+</div>
+
+<!-- Case 4: img with vertical-align: text-bottom -->
+<span class="label">Case 4: img with vertical-align: text-bottom</span>
+<div class="test">
+  <span style="background: lightyellow;">Text</span>
+  <svg width="32" height="32" style="background: lightgreen; vertical-align: text-bottom;">
+    <rect width="32" height="32" fill="lightgreen"/>
+  </svg>
+  <span style="background: lightyellow;">Text-bottom aligned</span>
+</div>
+
+<!-- Case 5: Different-sized images side by side -->
+<span class="label">Case 5: Different-sized images, all default baseline</span>
+<div class="test">
+  <span style="background: lightyellow;">Text</span>
+  <svg width="16" height="16" style="background: coral;">
+    <rect width="16" height="16" fill="coral"/>
+  </svg>
+  <svg width="32" height="32" style="background: lightblue;">
+    <rect width="32" height="32" fill="lightblue"/>
+  </svg>
+  <svg width="48" height="48" style="background: lightgreen;">
+    <rect width="48" height="48" fill="lightgreen"/>
+  </svg>
+  <span style="background: lightyellow;">All bottoms at baseline</span>
+</div>
+
+<!-- Case 6: Large line-height with image -->
+<span class="label">Case 6: line-height: 60px with image</span>
+<div class="test" style="line-height: 60px;">
+  <span style="background: lightyellow;">Text (lh=60px)</span>
+  <svg width="32" height="32" style="background: coral;">
+    <rect width="32" height="32" fill="coral"/>
+  </svg>
+  <span style="background: lightyellow;">After</span>
+</div>
+
+<!-- Case 7: img with vertical-align: sub and super -->
+<span class="label">Case 7: img with vertical-align: sub vs super</span>
+<div class="test">
+  <span style="background: lightyellow;">Normal</span>
+  <svg width="16" height="16" style="background: coral; vertical-align: sub;">
+    <rect width="16" height="16" fill="coral"/>
+  </svg>
+  <span style="background: lightyellow;">sub</span>
+  <svg width="16" height="16" style="background: lightblue; vertical-align: super;">
+    <rect width="16" height="16" fill="lightblue"/>
+  </svg>
+  <span style="background: lightyellow;">super</span>
+</div>
+
+<!-- Case 8: img with explicit px vertical-align -->
+<span class="label">Case 8: img with vertical-align: -5px and 10px</span>
+<div class="test">
+  <span style="background: lightyellow;">Baseline</span>
+  <svg width="24" height="24" style="background: coral; vertical-align: -5px;">
+    <rect width="24" height="24" fill="coral"/>
+  </svg>
+  <span style="background: lightyellow;">-5px</span>
+  <svg width="24" height="24" style="background: lightblue; vertical-align: 10px;">
+    <rect width="24" height="24" fill="lightblue"/>
+  </svg>
+  <span style="background: lightyellow;">+10px</span>
+</div>
+
+</body>
+</html>

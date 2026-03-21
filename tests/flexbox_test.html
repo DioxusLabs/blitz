@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html>
+<head>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: Helvetica, Arial, sans-serif; font-size: 14px; margin: 20px; }
+  .test { background: #f0f0f0; margin: 15px 0; padding: 8px; border: 1px solid #ccc; }
+  .label { display: block; font-size: 12px; color: #666; margin-bottom: 4px; font-weight: bold; }
+  .box { padding: 8px; text-align: center; }
+</style>
+</head>
+<body>
+
+<h3 style="margin-bottom: 10px;">Flexbox Layout Tests</h3>
+
+<!-- Case 1: Basic row -->
+<span class="label">Case 1: flex-direction:row (default)</span>
+<div class="test" style="display: flex;">
+  <div class="box" style="background: lightcoral;">A</div>
+  <div class="box" style="background: lightyellow;">B</div>
+  <div class="box" style="background: lightblue;">C</div>
+</div>
+
+<!-- Case 2: Column -->
+<span class="label">Case 2: flex-direction:column</span>
+<div class="test" style="display: flex; flex-direction: column; width: 200px;">
+  <div class="box" style="background: lightcoral;">A</div>
+  <div class="box" style="background: lightyellow;">B</div>
+  <div class="box" style="background: lightblue;">C</div>
+</div>
+
+<!-- Case 3: justify-content variants -->
+<span class="label">Case 3a: justify-content:flex-start (default)</span>
+<div class="test" style="display: flex; justify-content: flex-start;">
+  <div class="box" style="background: lightcoral; width: 60px;">A</div>
+  <div class="box" style="background: lightyellow; width: 60px;">B</div>
+  <div class="box" style="background: lightblue; width: 60px;">C</div>
+</div>
+<span class="label">Case 3b: justify-content:center</span>
+<div class="test" style="display: flex; justify-content: center;">
+  <div class="box" style="background: lightcoral; width: 60px;">A</div>
+  <div class="box" style="background: lightyellow; width: 60px;">B</div>
+  <div class="box" style="background: lightblue; width: 60px;">C</div>
+</div>
+<span class="label">Case 3c: justify-content:space-between</span>
+<div class="test" style="display: flex; justify-content: space-between;">
+  <div class="box" style="background: lightcoral; width: 60px;">A</div>
+  <div class="box" style="background: lightyellow; width: 60px;">B</div>
+  <div class="box" style="background: lightblue; width: 60px;">C</div>
+</div>
+<span class="label">Case 3d: justify-content:space-around</span>
+<div class="test" style="display: flex; justify-content: space-around;">
+  <div class="box" style="background: lightcoral; width: 60px;">A</div>
+  <div class="box" style="background: lightyellow; width: 60px;">B</div>
+  <div class="box" style="background: lightblue; width: 60px;">C</div>
+</div>
+<span class="label">Case 3e: justify-content:space-evenly</span>
+<div class="test" style="display: flex; justify-content: space-evenly;">
+  <div class="box" style="background: lightcoral; width: 60px;">A</div>
+  <div class="box" style="background: lightyellow; width: 60px;">B</div>
+  <div class="box" style="background: lightblue; width: 60px;">C</div>
+</div>
+
+<!-- Case 4: align-items variants -->
+<span class="label">Case 4: align-items — stretch vs flex-start vs center vs flex-end vs baseline</span>
+<div class="test" style="display: flex; height: 80px; gap: 4px;">
+  <div style="display: flex; align-items: stretch; flex: 1; background: #e0e0e0; gap: 2px;">
+    <div class="box" style="background: lightcoral;">stretch</div>
+  </div>
+  <div style="display: flex; align-items: flex-start; flex: 1; background: #e0e0e0; gap: 2px;">
+    <div class="box" style="background: lightyellow;">start</div>
+  </div>
+  <div style="display: flex; align-items: center; flex: 1; background: #e0e0e0; gap: 2px;">
+    <div class="box" style="background: lightblue;">center</div>
+  </div>
+  <div style="display: flex; align-items: flex-end; flex: 1; background: #e0e0e0; gap: 2px;">
+    <div class="box" style="background: lightgreen;">end</div>
+  </div>
+  <div style="display: flex; align-items: baseline; flex: 1; background: #e0e0e0; gap: 2px;">
+    <div class="box" style="background: plum; font-size: 24px;">Aa</div>
+    <div class="box" style="background: khaki; font-size: 12px;">Bb</div>
+  </div>
+</div>
+
+<!-- Case 5: flex-grow -->
+<span class="label">Case 5: flex-grow — A:1, B:2, C:1 (B gets double share)</span>
+<div class="test" style="display: flex;">
+  <div class="box" style="background: lightcoral; flex-grow: 1;">A (1)</div>
+  <div class="box" style="background: lightyellow; flex-grow: 2;">B (2)</div>
+  <div class="box" style="background: lightblue; flex-grow: 1;">C (1)</div>
+</div>
+
+<!-- Case 6: flex-shrink -->
+<span class="label">Case 6: flex-shrink — A shrinks, B doesn't (flex-shrink:0)</span>
+<div class="test" style="display: flex; width: 300px;">
+  <div class="box" style="background: lightcoral; flex: 0 1 200px;">A (shrinks from 200px)</div>
+  <div class="box" style="background: lightblue; flex: 0 0 200px;">B (stays at 200px)</div>
+</div>
+
+<!-- Case 7: flex-wrap -->
+<span class="label">Case 7: flex-wrap:wrap — items wrap to next line</span>
+<div class="test" style="display: flex; flex-wrap: wrap; width: 250px;">
+  <div class="box" style="background: lightcoral; width: 100px;">A</div>
+  <div class="box" style="background: lightyellow; width: 100px;">B</div>
+  <div class="box" style="background: lightblue; width: 100px;">C (wraps)</div>
+  <div class="box" style="background: lightgreen; width: 100px;">D (wraps)</div>
+</div>
+
+<!-- Case 8: align-content (needs wrap + fixed height) -->
+<span class="label">Case 8: align-content:center with wrap</span>
+<div class="test" style="display: flex; flex-wrap: wrap; align-content: center; width: 200px; height: 120px;">
+  <div class="box" style="background: lightcoral; width: 80px;">A</div>
+  <div class="box" style="background: lightyellow; width: 80px;">B</div>
+  <div class="box" style="background: lightblue; width: 80px;">C</div>
+  <div class="box" style="background: lightgreen; width: 80px;">D</div>
+</div>
+
+<!-- Case 9: order property -->
+<span class="label">Case 9: order — visual order differs from DOM (C=1, A=2, B=3)</span>
+<div class="test" style="display: flex;">
+  <div class="box" style="background: lightcoral; order: 2;">A (order:2)</div>
+  <div class="box" style="background: lightyellow; order: 3;">B (order:3)</div>
+  <div class="box" style="background: lightblue; order: 1;">C (order:1)</div>
+</div>
+
+<!-- Case 10: gap property -->
+<span class="label">Case 10: gap:10px (uniform 10px gaps between items)</span>
+<div class="test" style="display: flex; gap: 10px;">
+  <div class="box" style="background: lightcoral; flex: 1;">A</div>
+  <div class="box" style="background: lightyellow; flex: 1;">B</div>
+  <div class="box" style="background: lightblue; flex: 1;">C</div>
+</div>
+
+<!-- Case 11: Nested flex -->
+<span class="label">Case 11: Nested flex containers</span>
+<div class="test" style="display: flex; gap: 8px;">
+  <div style="display: flex; flex-direction: column; flex: 1; gap: 4px;">
+    <div class="box" style="background: lightcoral;">Row 1</div>
+    <div class="box" style="background: lightyellow;">Row 2</div>
+  </div>
+  <div style="display: flex; flex-direction: column; flex: 2; gap: 4px;">
+    <div class="box" style="background: lightblue;">Main content</div>
+    <div style="display: flex; gap: 4px;">
+      <div class="box" style="background: lightgreen; flex: 1;">Sub A</div>
+      <div class="box" style="background: plum; flex: 1;">Sub B</div>
+    </div>
+  </div>
+</div>
+
+<!-- Case 12: flex-direction:row-reverse -->
+<span class="label">Case 12: flex-direction:row-reverse</span>
+<div class="test" style="display: flex; flex-direction: row-reverse;">
+  <div class="box" style="background: lightcoral;">A (last visually)</div>
+  <div class="box" style="background: lightyellow;">B</div>
+  <div class="box" style="background: lightblue;">C (first visually)</div>
+</div>
+
+</body>
+</html>

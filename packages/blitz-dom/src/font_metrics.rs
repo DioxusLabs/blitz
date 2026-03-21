@@ -7,8 +7,8 @@ use skrifa::MetadataProvider as _;
 use skrifa::charmap::Charmap;
 use style::properties::style_structs::Font as FontStyles;
 use style::{
+    device::servo::FontMetricsProvider,
     font_metrics::FontMetrics,
-    servo::media_queries::FontMetricsProvider,
     values::computed::{CSSPixelLength, font::QueryFontMetricsFlags},
 };
 

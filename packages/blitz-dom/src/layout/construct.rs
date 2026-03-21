@@ -3,13 +3,12 @@ use std::sync::Arc;
 
 use markup5ever::{QualName, local_name, ns};
 use parley::{
-    FontContext, InlineBox, InlineBoxKind, LayoutContext, StyleProperty, TreeBuilder,
+    FontContext, InlineBox, LayoutContext, StyleProperty, TreeBuilder,
     WhiteSpaceCollapse,
 };
 use slab::Slab;
 use style::{
     computed_values::position::T as PositionProperty,
-    data::ElementData as StyloElementData,
     shared_lock::StylesheetGuards,
     values::{
         computed::{Content, ContentItem, Display, Float, TextTransform},
@@ -77,7 +76,7 @@ fn push_non_whitespace_children_and_pseudos(layout_children: &mut Vec<usize>, no
 }
 
 /// Convert a relative line height to an absolute one
-fn resolve_line_height(line_height: parley::LineHeight, font_size: f32) -> f32 {
+pub(super) fn resolve_line_height(line_height: parley::LineHeight, font_size: f32) -> f32 {
     match line_height {
         parley::LineHeight::FontSizeRelative(relative) => relative * font_size,
         parley::LineHeight::Absolute(absolute) => absolute,
@@ -396,12 +395,11 @@ fn flush_pseudo_elements(doc: &mut BaseDocument, node_id: usize) {
         let after_node_id = node.after;
 
         // Note: yes these are kinda backwards
-        let style_data = node.stylo_element_data.borrow();
-        let before_style = style_data
-            .as_ref()
+        let before_style = node.stylo_element_data
+            .borrow()
             .and_then(|d| d.styles.pseudos.as_array()[1].clone());
-        let after_style = style_data
-            .as_ref()
+        let after_style = node.stylo_element_data
+            .borrow()
             .and_then(|d| d.styles.pseudos.as_array()[0].clone());
 
         (before_style, after_style, before_node_id, after_node_id)
@@ -449,11 +447,14 @@ fn flush_pseudo_elements(doc: &mut BaseDocument, node_id: usize) {
                 }
             }
 
-            let mut element_data = StyloElementData::default();
-            element_data.styles.primary = Some(pe_style.clone());
-            element_data.set_restyled();
-            element_data.damage = ALL_DAMAGE;
-            *doc.nodes[new_node_id].stylo_element_data.borrow_mut() = Some(element_data);
+            let wrapper = style::data::ElementDataWrapper::default();
+            {
+                let mut element_data = wrapper.borrow_mut();
+                element_data.styles.primary = Some(pe_style.clone());
+                element_data.set_restyled();
+                element_data.damage = ALL_DAMAGE;
+            }
+            doc.nodes[new_node_id].stylo_element_data.set(wrapper);
 
             let node = &mut doc.nodes[node_id];
             node.set_pe_by_index(idx, Some(new_node_id));
@@ -464,8 +465,7 @@ fn flush_pseudo_elements(doc: &mut BaseDocument, node_id: usize) {
         if let (Some(pe_node_id), Some(pe_style)) = (pe_node_id, pe_style) {
             // TODO: Update content
 
-            let mut node_styles = doc.nodes[pe_node_id].stylo_element_data.borrow_mut();
-            let node_styles = &mut node_styles.as_mut().unwrap();
+            let mut node_styles = doc.nodes[pe_node_id].stylo_element_data.borrow_mut().unwrap();
             node_styles.damage.insert(ALL_DAMAGE);
             let primary_styles = &mut node_styles.styles.primary;
 
@@ -549,15 +549,14 @@ fn collect_complex_layout_children(
                     &PseudoElement::ServoAnonymousBox,
                     &parent_style,
                 );
-                let mut stylo_element_data = StyloElementData {
-                    damage: ALL_DAMAGE,
-                    ..Default::default()
-                };
-                drop(parent_style);
-
-                stylo_element_data.styles.primary = Some(style);
-                stylo_element_data.set_restyled();
-                *doc.nodes[node_id].stylo_element_data.borrow_mut() = Some(stylo_element_data);
+                let wrapper = style::data::ElementDataWrapper::default();
+                {
+                    let mut stylo_element_data = wrapper.borrow_mut();
+                    stylo_element_data.damage = ALL_DAMAGE;
+                    stylo_element_data.styles.primary = Some(style);
+                    stylo_element_data.set_restyled();
+                }
+                doc.nodes[node_id].stylo_element_data.set(wrapper);
                 if doc.nodes[container_node_id]
                     .flags
                     .contains(NodeFlags::IS_IN_DOCUMENT)
@@ -922,14 +921,14 @@ pub(crate) fn build_inline_layout_into(
                     .map(|s| s.clone_position())
                     .unwrap_or(PositionProperty::Static);
                 let float = style.map(|s| s.clone_float()).unwrap_or(Float::None);
-                let box_kind = if position.is_absolutely_positioned() {
-                    InlineBoxKind::OutOfFlow
-                } else if float.is_floating() {
-                    InlineBoxKind::CustomOutOfFlow
-                } else {
-                    InlineBoxKind::InFlow
-                };
-
+                let _is_out_of_flow = position.is_absolutely_positioned() || float.is_floating();
+                let (alignment_baseline, baseline_shift, baseline_source) = style
+                    .map(|s| (
+                        stylo_to_parley::alignment_baseline(&s),
+                        stylo_to_parley::baseline_shift(&s),
+                        stylo_to_parley::baseline_source(&s),
+                    ))
+                    .unwrap_or_default();
                 match (display.outside(), display.inside()) {
                     (DisplayOutside::None, DisplayInside::None) => {
                         // node.remove_damage(CONSTRUCT_DESCENDENT | CONSTRUCT_FC | CONSTRUCT_BOX);
@@ -959,12 +958,15 @@ pub(crate) fn build_inline_layout_into(
                         {
                             builder.push_inline_box(InlineBox {
                                 id: node_id as u64,
-                                kind: box_kind,
                                 // Overridden by push_inline_box method
                                 index: 0,
                                 // Width and height are set during layout
                                 width: 0.0,
                                 height: 0.0,
+                                alignment_baseline,
+                                baseline_shift,
+                                baseline_source,
+                                first_baseline: None,
                             });
                         } else if *tag_name == local_name!("br") {
                             // node.remove_damage(CONSTRUCT_DESCENDENT | CONSTRUCT_FC | CONSTRUCT_BOX);
@@ -1039,12 +1041,15 @@ pub(crate) fn build_inline_layout_into(
                     (_, _) => {
                         builder.push_inline_box(InlineBox {
                             id: node_id as u64,
-                            kind: box_kind,
                             // Overridden by push_inline_box method
                             index: 0,
                             // Width and height are set during layout
                             width: 0.0,
                             height: 0.0,
+                            alignment_baseline,
+                            baseline_shift,
+                            baseline_source,
+                            first_baseline: None,
                         });
                     }
                 };

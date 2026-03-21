@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html>
+<head>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: Helvetica, Arial, sans-serif; font-size: 16px; margin: 20px; }
+  .test { background: #f0f0f0; margin: 15px 0; padding: 8px; border: 1px solid #ccc; }
+  .label { display: block; font-size: 12px; color: #666; margin-bottom: 4px; font-weight: bold; }
+</style>
+</head>
+<body>
+
+<h3 style="margin-bottom: 10px;">Inline-Block Heights & Baseline Alignment</h3>
+<p style="font-size: 12px; color: #888; margin-bottom: 15px;">
+  CSS2.1 §10.8.1: baseline of inline-block with in-flow content = last line box baseline.<br>
+  Empty inline-block or overflow != visible: bottom margin edge sits on baseline.
+</p>
+
+<!-- Case 1: Same height, all baseline-aligned -->
+<span class="label">Case 1: Three equal-height inline-blocks, all vertical-align:baseline</span>
+<div class="test">
+  <span style="background: lightyellow;">Text</span>
+  <span style="display: inline-block; width: 60px; height: 40px; background: lightcoral; vertical-align: baseline;"></span>
+  <span style="display: inline-block; width: 60px; height: 40px; background: lightblue; vertical-align: baseline;"></span>
+  <span style="display: inline-block; width: 60px; height: 40px; background: lightgreen; vertical-align: baseline;"></span>
+  <span style="background: lightyellow;">After</span>
+</div>
+
+<!-- Case 2: Different heights, all baseline-aligned -->
+<span class="label">Case 2: Different heights (20/40/60px), all vertical-align:baseline — bottoms should align</span>
+<div class="test">
+  <span style="background: lightyellow;">Text</span>
+  <span style="display: inline-block; width: 60px; height: 20px; background: lightcoral; vertical-align: baseline;"></span>
+  <span style="display: inline-block; width: 60px; height: 40px; background: lightblue; vertical-align: baseline;"></span>
+  <span style="display: inline-block; width: 60px; height: 60px; background: lightgreen; vertical-align: baseline;"></span>
+  <span style="background: lightyellow;">After</span>
+</div>
+
+<!-- Case 3: Mixed vertical-align values -->
+<span class="label">Case 3: baseline + middle + top + bottom on same line</span>
+<div class="test" style="line-height: 60px;">
+  <span style="background: lightyellow;">Text</span>
+  <span style="display: inline-block; width: 40px; height: 30px; background: lightcoral; vertical-align: baseline;"></span>
+  <span style="display: inline-block; width: 40px; height: 30px; background: lightblue; vertical-align: middle;"></span>
+  <span style="display: inline-block; width: 40px; height: 30px; background: lightgreen; vertical-align: top;"></span>
+  <span style="display: inline-block; width: 40px; height: 30px; background: plum; vertical-align: bottom;"></span>
+  <span style="background: lightyellow;">After</span>
+</div>
+
+<!-- Case 4: Inline-block with text content (has its own baseline) -->
+<span class="label">Case 4: Inline-blocks with text content — baseline = last line of text</span>
+<div class="test">
+  <span style="background: lightyellow;">Align here</span>
+  <span style="display: inline-block; width: 80px; background: lightcoral; border: 1px solid #aaa; padding: 4px;">
+    One line
+  </span>
+  <span style="display: inline-block; width: 80px; background: lightblue; border: 1px solid #aaa; padding: 4px;">
+    Two<br>lines
+  </span>
+  <span style="display: inline-block; width: 80px; background: lightgreen; border: 1px solid #aaa; padding: 4px;">
+    Three<br>whole<br>lines
+  </span>
+  <span style="background: lightyellow;">← all baselines should differ</span>
+</div>
+
+<!-- Case 5: Tiny inline-block next to tall text -->
+<span class="label">Case 5: Tiny (8px) inline-block at baseline next to 32px text</span>
+<div class="test">
+  <span style="font-size: 32px; background: lightyellow;">Big text</span>
+  <span style="display: inline-block; width: 30px; height: 8px; background: lightcoral; vertical-align: baseline;"></span>
+  <span style="font-size: 32px; background: lightyellow;">more</span>
+</div>
+
+<!-- Case 6: Tall inline-block next to small text -->
+<span class="label">Case 6: Tall (80px) inline-block at baseline next to 14px text</span>
+<div class="test">
+  <span style="font-size: 14px; background: lightyellow;">Small text</span>
+  <span style="display: inline-block; width: 40px; height: 80px; background: lightblue; vertical-align: baseline;"></span>
+  <span style="font-size: 14px; background: lightyellow;">after</span>
+</div>
+
+<!-- Case 7: vertical-align:middle with different sizes -->
+<span class="label">Case 7: vertical-align:middle — boxes centered on x-height</span>
+<div class="test">
+  <span style="font-size: 24px; background: lightyellow;">Text</span>
+  <span style="display: inline-block; width: 40px; height: 16px; background: lightcoral; vertical-align: middle;"></span>
+  <span style="display: inline-block; width: 40px; height: 32px; background: lightblue; vertical-align: middle;"></span>
+  <span style="display: inline-block; width: 40px; height: 48px; background: lightgreen; vertical-align: middle;"></span>
+  <span style="font-size: 24px; background: lightyellow;">After</span>
+</div>
+
+<!-- Case 8: vertical-align:top — tops align with line box top -->
+<span class="label">Case 8: vertical-align:top — all tops flush with line box top</span>
+<div class="test" style="line-height: 60px;">
+  <span style="background: lightyellow;">Text</span>
+  <span style="display: inline-block; width: 40px; height: 20px; background: lightcoral; vertical-align: top;"></span>
+  <span style="display: inline-block; width: 40px; height: 40px; background: lightblue; vertical-align: top;"></span>
+  <span style="display: inline-block; width: 40px; height: 60px; background: lightgreen; vertical-align: top;"></span>
+  <span style="background: lightyellow;">After</span>
+</div>
+
+<!-- Case 9: vertical-align:bottom — bottoms align with line box bottom -->
+<span class="label">Case 9: vertical-align:bottom — all bottoms flush with line box bottom</span>
+<div class="test" style="line-height: 60px;">
+  <span style="background: lightyellow;">Text</span>
+  <span style="display: inline-block; width: 40px; height: 20px; background: lightcoral; vertical-align: bottom;"></span>
+  <span style="display: inline-block; width: 40px; height: 40px; background: lightblue; vertical-align: bottom;"></span>
+  <span style="display: inline-block; width: 40px; height: 60px; background: lightgreen; vertical-align: bottom;"></span>
+  <span style="background: lightyellow;">After</span>
+</div>
+
+<!-- Case 10: Inline-block with padding/border/margin affecting alignment -->
+<span class="label">Case 10: Padding + border + margin on inline-blocks (box model affects position)</span>
+<div class="test">
+  <span style="background: lightyellow;">Text</span>
+  <span style="display: inline-block; width: 40px; height: 30px; background: lightcoral; vertical-align: baseline;"></span>
+  <span style="display: inline-block; width: 40px; height: 30px; background: lightblue; vertical-align: baseline; padding: 8px;"></span>
+  <span style="display: inline-block; width: 40px; height: 30px; background: lightgreen; vertical-align: baseline; border: 4px solid green;"></span>
+  <span style="display: inline-block; width: 40px; height: 30px; background: plum; vertical-align: baseline; margin: 10px;"></span>
+  <span style="background: lightyellow;">After</span>
+</div>
+
+<!-- Case 11: Inline-block with overflow:hidden vs visible -->
+<span class="label">Case 11: overflow:hidden → bottom at baseline; overflow:visible → text baseline</span>
+<div class="test">
+  <span style="background: lightyellow;">Align</span>
+  <span style="display: inline-block; width: 100px; background: lightcoral; border: 1px solid #aaa; padding: 4px; overflow: visible;">
+    Line 1<br>Line 2
+  </span>
+  <span style="display: inline-block; width: 100px; background: lightblue; border: 1px solid #aaa; padding: 4px; overflow: hidden;">
+    Line 1<br>Line 2
+  </span>
+  <span style="background: lightyellow;">← visible aligns text, hidden aligns bottom</span>
+</div>
+
+<!-- Case 12: Mix of inline, inline-block, and text on one line -->
+<span class="label">Case 12: Inline span + inline-block + text + inline-block with text — all interleaved</span>
+<div class="test">
+  <span style="background: lightyellow;">A</span>
+  <span style="display: inline-block; width: 30px; height: 20px; background: lightcoral; vertical-align: baseline;"></span>
+  B
+  <span style="display: inline-block; background: lightblue; border: 1px solid #aaa; padding: 2px;">
+    iblock text
+  </span>
+  <span style="font-size: 24px; background: lightgreen;">C</span>
+  <span style="display: inline-block; width: 20px; height: 40px; background: plum; vertical-align: middle;"></span>
+  <span style="background: lightyellow;">D</span>
+</div>
+
+</body>
+</html>

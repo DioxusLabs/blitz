@@ -1,4 +1,3 @@
-use atomic_refcell::{AtomicRef, AtomicRefCell, AtomicRefMut};
 use bitflags::bitflags;
 use blitz_traits::events::{
     BlitzPointerEvent, BlitzPointerId, DomEventData, HitResult, PointerCoords,
@@ -15,14 +14,15 @@ use std::fmt::Write;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use style::Atom;
+use super::StyloData;
 use style::invalidation::element::restyle_hints::RestyleHint;
 use style::properties::ComputedValues;
 use style::properties::generated::longhands::position::computed_value::T as Position;
 use style::selector_parser::{PseudoElement, RestyleDamage};
+use style::shared_lock::SharedRwLock;
 use style::stylesheets::UrlExtraData;
 use style::values::computed::Display as StyloDisplay;
 use style::values::specified::box_::{DisplayInside, DisplayOutside};
-use style::{data::ElementData as StyloElementData, shared_lock::SharedRwLock};
 use style_dom::ElementState;
 use style_traits::values::ToCss;
 use taffy::{
@@ -101,9 +101,9 @@ pub struct Node {
     /// Node type (Element, TextNode, etc) specific data
     pub data: NodeData,
 
-    // This little bundle of joy is our style data from stylo and a lock guard that allows access to it
-    // TODO: See if guard can be hoisted to a higher level
-    pub stylo_element_data: AtomicRefCell<Option<StyloElementData>>,
+    /// Style data from stylo. Wrapped in `StyloData` to encapsulate the interior
+    /// mutability needed by stylo's `TElement` trait.
+    pub stylo_element_data: StyloData,
     pub selector_flags: Cell<ElementSelectorFlags>,
     pub guard: SharedRwLock,
     pub element_state: ElementState,
@@ -114,6 +114,8 @@ pub struct Node {
 
     // Taffy layout data:
     pub style: Style<Atom>,
+    /// Original CSS position value (not the Taffy mapping which loses Fixed→Absolute and Sticky→Relative)
+    pub css_position: Position,
     pub has_snapshot: bool,
     pub snapshot_handled: AtomicBool,
     /// Whether any descendant of this node needs restyling.
@@ -124,6 +126,9 @@ pub struct Node {
     pub unrounded_layout: Layout,
     pub final_layout: Layout,
     pub scroll_offset: crate::Point<f64>,
+    /// Sticky positioning offset: visual displacement from normal-flow position.
+    /// Recomputed on every scroll event without relayout.
+    pub sticky_offset: crate::Point<f64>,
 }
 
 unsafe impl Send for Node {}
@@ -175,6 +180,7 @@ impl Node {
             after: None,
 
             style: Default::default(),
+            css_position: Position::Static,
             has_snapshot: false,
             snapshot_handled: AtomicBool::new(false),
             dirty_descendants: AtomicBool::new(true),
@@ -183,6 +189,7 @@ impl Node {
             unrounded_layout: Layout::new(),
             final_layout: Layout::new(),
             scroll_offset: crate::Point::ZERO,
+            sticky_offset: crate::Point::ZERO,
         }
     }
 
@@ -255,8 +262,8 @@ impl Node {
     }
 
     pub fn set_restyle_hint(&self, hint: RestyleHint) {
-        if let Some(element_data) = self.stylo_element_data.borrow_mut().as_mut() {
-            element_data.hint.insert(hint);
+        if let Some(mut data) = self.stylo_element_data.borrow_mut() {
+            data.hint.insert(hint);
         }
         // Mark all ancestors as having dirty descendants so the style traversal
         // will visit this node's subtree
@@ -280,7 +287,7 @@ impl Node {
 
     /// Set appropriate damage for Stylo when an element's style attribute is updated
     pub(crate) fn mark_style_attr_updated(&mut self) {
-        if let Some(data) = &mut self.stylo_element_data.get_mut() {
+        if let Some(mut data) = self.stylo_element_data.borrow_mut() {
             data.hint |= RestyleHint::RESTYLE_STYLE_ATTRIBUTE;
             self.set_dirty_descendants();
         }
@@ -302,45 +309,30 @@ impl Node {
         }
     }
 
-    pub fn damage_mut(&self) -> Option<AtomicRefMut<'_, RestyleDamage>> {
-        let element_data = self.stylo_element_data.borrow_mut();
-        #[allow(clippy::manual_map, reason = "false positive")]
-        match *element_data {
-            Some(_) => Some(AtomicRefMut::map(
-                element_data,
-                |data: &mut Option<StyloElementData>| &mut data.as_mut().unwrap().damage,
-            )),
-            None => None,
-        }
-    }
-
     pub fn damage(&mut self) -> Option<RestyleDamage> {
-        self.stylo_element_data
-            .get_mut()
-            .as_ref()
-            .map(|data| data.damage)
+        self.stylo_element_data.borrow().map(|data| data.damage)
     }
 
     pub fn set_damage(&self, damage: RestyleDamage) {
-        if let Some(data) = self.stylo_element_data.borrow_mut().as_mut() {
+        if let Some(mut data) = self.stylo_element_data.borrow_mut() {
             data.damage = damage;
         }
     }
 
     pub fn insert_damage(&mut self, damage: RestyleDamage) {
-        if let Some(data) = self.stylo_element_data.get_mut().as_mut() {
+        if let Some(mut data) = self.stylo_element_data.borrow_mut() {
             data.damage |= damage;
         }
     }
 
     pub fn remove_damage(&self, damage: RestyleDamage) {
-        if let Some(data) = self.stylo_element_data.borrow_mut().as_mut() {
+        if let Some(mut data) = self.stylo_element_data.borrow_mut() {
             data.damage.remove(damage);
         }
     }
 
     pub fn clear_damage_mut(&mut self) {
-        if let Some(data) = self.stylo_element_data.get_mut() {
+        if let Some(mut data) = self.stylo_element_data.borrow_mut() {
             data.damage = RestyleDamage::empty();
         }
     }
@@ -803,22 +795,8 @@ impl Node {
         Some(&attr.value)
     }
 
-    pub fn primary_styles(&self) -> Option<AtomicRef<'_, ComputedValues>> {
-        let stylo_element_data = self.stylo_element_data.borrow();
-        if stylo_element_data
-            .as_ref()
-            .and_then(|d| d.styles.get_primary())
-            .is_some()
-        {
-            Some(AtomicRef::map(
-                stylo_element_data,
-                |data: &Option<StyloElementData>| -> &ComputedValues {
-                    data.as_ref().unwrap().styles.get_primary().unwrap()
-                },
-            ))
-        } else {
-            None
-        }
+    pub fn primary_styles(&self) -> Option<style::servo_arc::Arc<ComputedValues>> {
+        self.stylo_element_data.borrow()?.styles.get_primary().cloned()
     }
 
     pub fn text_content(&self) -> String {
@@ -885,12 +863,21 @@ impl Node {
             return true;
         }
 
+        // Transform (any value other than none)
+        if !style.get_box().transform.0.is_empty() {
+            return true;
+        }
+
+        // Filter (any value other than none)
+        if !style.get_effects().filter.0.is_empty() {
+            return true;
+        }
+
         // TODO: mix-blend-mode
-        // TODO: transforms
-        // TODO: filter
         // TODO: clip-path
         // TODO: mask
         // TODO: isolation
+        // TODO: perspective
         // TODO: contain
 
         false
@@ -917,8 +904,10 @@ impl Node {
             }
         }
 
-        let mut x = x - self.final_layout.location.x + self.scroll_offset.x as f32;
-        let mut y = y - self.final_layout.location.y + self.scroll_offset.y as f32;
+        let mut x = x - self.final_layout.location.x - self.sticky_offset.x as f32
+            + self.scroll_offset.x as f32;
+        let mut y = y - self.final_layout.location.y - self.sticky_offset.y as f32
+            + self.scroll_offset.y as f32;
 
         let size = self.final_layout.size;
         let matches_self = !(x < 0.0
@@ -1080,8 +1069,10 @@ impl Node {
 
     /// Computes the Document-relative coordinates of the `Node`
     pub fn absolute_position(&self, x: f32, y: f32) -> crate::util::Point<f32> {
-        let x = x + self.final_layout.location.x - self.scroll_offset.x as f32;
-        let y = y + self.final_layout.location.y - self.scroll_offset.y as f32;
+        let x = x + self.final_layout.location.x + self.sticky_offset.x as f32
+            - self.scroll_offset.x as f32;
+        let y = y + self.final_layout.location.y + self.sticky_offset.y as f32
+            - self.scroll_offset.y as f32;
 
         // Recurse up the layout hierarchy
         self.layout_parent

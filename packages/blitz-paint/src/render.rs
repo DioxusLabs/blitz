@@ -27,6 +27,7 @@ use style::{
     dom::TElement,
     properties::{
         ComputedValues, generated::longhands::visibility::computed_value::T as StyloVisibility,
+        generated::longhands::position::computed_value::T as CssPosition,
         style_structs::Font,
     },
     values::{
@@ -238,7 +239,26 @@ impl<'dom> BlitzDomPainter<'dom> {
             || !matches!(overflow_y, Overflow::Visible);
 
         // Apply padding/border offset to inline root
-        let (layout, box_position) = self.node_position(node_id, location);
+        let (layout, mut box_position) = self.node_position(node_id, location);
+
+        // Fixed-position elements should not scroll with the viewport.
+        // When the layout parent is the root element (no transform/filter ancestor captured it),
+        // compensate for the viewport scroll that was applied at the root.
+        if node.css_position == CssPosition::Fixed {
+            let root_id = self.dom.as_ref().root_element().id;
+            if node.layout_parent.get() == Some(root_id) {
+                let viewport_scroll = self.dom.as_ref().viewport_scroll();
+                box_position.x += viewport_scroll.x;
+                box_position.y += viewport_scroll.y;
+            }
+        }
+
+        // Sticky-position elements: apply pre-computed offset from resolve pass.
+        // The offset is recomputed on every scroll event in recompute_sticky_offsets().
+        if node.css_position == CssPosition::Sticky {
+            box_position.x += node.sticky_offset.x;
+            box_position.y += node.sticky_offset.y;
+        }
         let taffy::Layout {
             size,
             border,
@@ -358,11 +378,9 @@ impl<'dom> BlitzDomPainter<'dom> {
         layout: Layout,
         box_position: Point,
     ) -> ElementCx<'w> {
-        let style = node
-            .stylo_element_data
+        let style = node.stylo_element_data
             .borrow()
-            .as_ref()
-            .map(|element_data| element_data.styles.primary().clone())
+            .map(|data| data.styles.primary().clone())
             .unwrap_or(
                 ComputedValues::initial_values_with_font_override(Font::initial_values()).to_arc(),
             );

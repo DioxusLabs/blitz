@@ -1,7 +1,8 @@
 use markup5ever::local_name;
 use parley::FontFamily;
 use style::computed_values::list_style_position::T as ListStylePosition;
-use style::computed_values::list_style_type::T as ListStyleType;
+use style::values::computed::ListStyleType;
+use style::Atom;
 
 use crate::{
     BaseDocument,
@@ -75,7 +76,7 @@ fn node_list_item_child(
         ListStylePosition::Outside => {
             let mut parley_style = stylo_to_parley::style(child_id, &styles);
 
-            if let Some(font_family) = font_for_bullet_style(list_style_type) {
+            if let Some(font_family) = font_for_bullet_style(&list_style_type) {
                 parley_style.font_family = font_family;
             }
 
@@ -107,44 +108,47 @@ fn node_list_item_child(
     Some(ListItemLayout { marker, position })
 }
 
+/// Helper to get the counter style name atom from a ListStyleType, if it's a named style.
+fn counter_style_name(list_style_type: &ListStyleType) -> Option<&Atom> {
+    use style::counter_style::CounterStyle;
+    use style::values::CustomIdent;
+    match &list_style_type.0 {
+        CounterStyle::Name(CustomIdent(atom)) => Some(atom),
+        _ => None,
+    }
+}
+
 // Determine the marker to render for a given list style type
 fn marker_for_style(list_style_type: ListStyleType, index: usize) -> Option<Marker> {
-    if list_style_type == ListStyleType::None {
+    if list_style_type == ListStyleType::none() {
         return None;
     }
 
-    Some(match list_style_type {
-        ListStyleType::LowerAlpha => {
+    let name = counter_style_name(&list_style_type);
+    Some(match name.map(|a| &**a) {
+        Some("lower-alpha") => {
             let mut marker = String::new();
             build_alpha_marker(index, &mut marker);
             Marker::String(format!("{marker}. "))
         }
-        ListStyleType::UpperAlpha => {
+        Some("upper-alpha") => {
             let mut marker = String::new();
             build_alpha_marker(index, &mut marker);
             Marker::String(format!("{}. ", marker.to_ascii_uppercase()))
         }
-        ListStyleType::Decimal => Marker::String(format!("{}. ", index + 1)),
-        ListStyleType::Disc => Marker::Char('•'),
-        ListStyleType::Circle => Marker::Char('◦'),
-        ListStyleType::Square => Marker::Char('▪'),
-        ListStyleType::DisclosureOpen => Marker::Char('▾'),
-        ListStyleType::DisclosureClosed => Marker::Char('▸'),
+        Some("decimal") => Marker::String(format!("{}. ", index + 1)),
+        Some("disc") => Marker::Char('•'),
+        Some("circle") => Marker::Char('◦'),
+        Some("square") => Marker::Char('▪'),
+        Some("disclosure-open") => Marker::Char('▾'),
+        Some("disclosure-closed") => Marker::Char('▸'),
         _ => Marker::Char('□'),
     })
 }
 
 // Override the font to our specific bullet font when rendering bullets
-fn font_for_bullet_style(list_style_type: ListStyleType) -> Option<FontFamily<'static>> {
-    let bullet_font = Some("Bullet, monospace, sans-serif".into());
-    match list_style_type {
-        ListStyleType::Disc
-        | ListStyleType::Circle
-        | ListStyleType::Square
-        | ListStyleType::DisclosureOpen
-        | ListStyleType::DisclosureClosed => bullet_font,
-        _ => None,
-    }
+fn font_for_bullet_style(list_style_type: &ListStyleType) -> Option<FontFamily<'static>> {
+    list_style_type.0.is_bullet().then(|| "Bullet, monospace, sans-serif".into())
 }
 
 const ALPHABET: [char; 26] = [
@@ -163,26 +167,33 @@ fn build_alpha_marker(index: usize, str: &mut String) {
     }
 }
 
+#[cfg(test)]
+fn named_list_style(name: &str) -> ListStyleType {
+    use style::counter_style::CounterStyle;
+    use style::values::CustomIdent;
+    ListStyleType(CounterStyle::Name(CustomIdent(Atom::from(name))))
+}
+
 #[test]
 fn test_marker_for_disc() {
-    let result = marker_for_style(ListStyleType::Disc, 0);
+    let result = marker_for_style(named_list_style("disc"), 0);
     assert_eq!(result, Some(Marker::Char('•')));
 }
 
 #[test]
 fn test_marker_for_decimal() {
-    let result_1 = marker_for_style(ListStyleType::Decimal, 0);
-    let result_2 = marker_for_style(ListStyleType::Decimal, 1);
+    let result_1 = marker_for_style(named_list_style("decimal"), 0);
+    let result_2 = marker_for_style(named_list_style("decimal"), 1);
     assert_eq!(result_1, Some(Marker::String("1. ".to_string())));
     assert_eq!(result_2, Some(Marker::String("2. ".to_string())));
 }
 
 #[test]
 fn test_marker_for_lower_alpha() {
-    let result_1 = marker_for_style(ListStyleType::LowerAlpha, 0);
-    let result_2 = marker_for_style(ListStyleType::LowerAlpha, 1);
-    let result_extended_1 = marker_for_style(ListStyleType::LowerAlpha, 26);
-    let result_extended_2 = marker_for_style(ListStyleType::LowerAlpha, 27);
+    let result_1 = marker_for_style(named_list_style("lower-alpha"), 0);
+    let result_2 = marker_for_style(named_list_style("lower-alpha"), 1);
+    let result_extended_1 = marker_for_style(named_list_style("lower-alpha"), 26);
+    let result_extended_2 = marker_for_style(named_list_style("lower-alpha"), 27);
     assert_eq!(result_1, Some(Marker::String("a. ".to_string())));
     assert_eq!(result_2, Some(Marker::String("b. ".to_string())));
     assert_eq!(result_extended_1, Some(Marker::String("aa. ".to_string())));
@@ -191,10 +202,10 @@ fn test_marker_for_lower_alpha() {
 
 #[test]
 fn test_marker_for_upper_alpha() {
-    let result_1 = marker_for_style(ListStyleType::UpperAlpha, 0);
-    let result_2 = marker_for_style(ListStyleType::UpperAlpha, 1);
-    let result_extended_1 = marker_for_style(ListStyleType::UpperAlpha, 26);
-    let result_extended_2 = marker_for_style(ListStyleType::UpperAlpha, 27);
+    let result_1 = marker_for_style(named_list_style("upper-alpha"), 0);
+    let result_2 = marker_for_style(named_list_style("upper-alpha"), 1);
+    let result_extended_1 = marker_for_style(named_list_style("upper-alpha"), 26);
+    let result_extended_2 = marker_for_style(named_list_style("upper-alpha"), 27);
     assert_eq!(result_1, Some(Marker::String("A. ".to_string())));
     assert_eq!(result_2, Some(Marker::String("B. ".to_string())));
     assert_eq!(result_extended_1, Some(Marker::String("AA. ".to_string())));

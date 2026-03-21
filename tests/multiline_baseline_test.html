@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html>
+<head>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: Helvetica, Arial, sans-serif; font-size: 16px; margin: 20px; }
+  .test { background: #f0f0f0; margin: 15px 0; padding: 8px; border: 1px solid #ccc; }
+  .label { display: block; font-size: 12px; color: #666; margin-bottom: 4px; font-weight: bold; }
+</style>
+</head>
+<body>
+
+<h3 style="margin-bottom: 10px;">Multi-Line Inline-Block Baseline Tests</h3>
+<p style="font-size: 12px; color: #888; margin-bottom: 15px;">
+  CSS2.1 §10.8.1: baseline of inline-block = last in-flow line box.<br>
+  Tests clipping, overflow, and multi-line baseline behavior.
+</p>
+
+<!-- Case 1: 3 lines, no height constraint — baseline = last line -->
+<span class="label">Case 1: 3-line inline-block (baseline = "Line 3")</span>
+<div class="test">
+  <span style="background: lightyellow;">Align here</span>
+  <span style="display: inline-block; width: 120px; background: lightblue; border: 1px solid #aaa; font-size: 14px;">
+    Line 1<br>Line 2<br>Line 3
+  </span>
+  <span style="background: lightyellow;">(should match "Line 3")</span>
+</div>
+
+<!-- Case 2: 3 lines with height clipping to ~2 lines -->
+<span class="label">Case 2: 3 lines, height:36px (clips to ~2 lines, baseline = visible last line)</span>
+<div class="test">
+  <span style="background: lightyellow;">Align here</span>
+  <span style="display: inline-block; width: 120px; height: 36px; overflow: hidden; background: lightcoral; border: 1px solid #aaa; font-size: 14px;">
+    Line 1<br>Line 2<br>Line 3
+  </span>
+  <span style="background: lightyellow;">(overflow:hidden → bottom at baseline)</span>
+</div>
+
+<!-- Case 3: 3 lines, overflow:visible with height constraint -->
+<span class="label">Case 3: 3 lines, height:36px, overflow:visible (baseline = last visible line)</span>
+<div class="test">
+  <span style="background: lightyellow;">Align here</span>
+  <span style="display: inline-block; width: 120px; height: 36px; overflow: visible; background: lightgreen; border: 1px solid #aaa; font-size: 14px;">
+    Line 1<br>Line 2<br>Line 3
+  </span>
+  <span style="background: lightyellow;">(overflow:visible → text baseline aligns)</span>
+</div>
+
+<!-- Case 4: Single line vs multi-line comparison -->
+<span class="label">Case 4: Single-line vs 2-line vs 3-line baseline comparison</span>
+<div class="test">
+  <span style="display: inline-block; width: 80px; background: lightcoral; border: 1px solid #aaa; font-size: 14px;">
+    One line
+  </span>
+  <span style="display: inline-block; width: 80px; background: lightblue; border: 1px solid #aaa; font-size: 14px;">
+    Line 1<br>Line 2
+  </span>
+  <span style="display: inline-block; width: 80px; background: lightgreen; border: 1px solid #aaa; font-size: 14px;">
+    Line 1<br>Line 2<br>Line 3
+  </span>
+  <span style="background: lightyellow;">All baselines should differ</span>
+</div>
+
+<!-- Case 5: Inline-block with only whitespace/empty lines -->
+<span class="label">Case 5: Inline-block with nested block child (no inline line boxes)</span>
+<div class="test">
+  <span style="background: lightyellow;">Align here</span>
+  <span style="display: inline-block; width: 140px; background: lightcoral; border: 1px solid #aaa;">
+    <div style="padding: 4px; background: rgba(0,0,0,0.05);">Block child inside</div>
+  </span>
+  <span style="background: lightyellow;">(block child → bottom at baseline)</span>
+</div>
+
+<!-- Case 6: Inline-block with text + absolutely positioned extra content -->
+<span class="label">Case 6: Text + position:absolute sibling (abs content shouldn't affect baseline)</span>
+<div class="test">
+  <span style="background: lightyellow;">Align here</span>
+  <span style="display: inline-block; width: 160px; position: relative; background: lightblue; border: 1px solid #aaa; font-size: 14px;">
+    Visible line
+    <span style="position: absolute; top: 100%; left: 0; background: rgba(255,0,0,0.2);">Absolute text</span>
+  </span>
+  <span style="background: lightyellow;">(baseline = "Visible line", not abs text)</span>
+</div>
+
+<!-- Case 7: Large line-height on parent, inline-block wraps to 2 lines -->
+<span class="label">Case 7: Parent line-height:40px, inline-block wraps naturally</span>
+<div class="test" style="line-height: 40px;">
+  <span style="background: lightyellow;">Tall line</span>
+  <span style="display: inline-block; width: 100px; line-height: 1.2; background: lightgreen; border: 1px solid #aaa; font-size: 14px;">
+    This text wraps to two lines
+  </span>
+  <span style="background: lightyellow;">(baseline = last wrapped line)</span>
+</div>
+
+</body>
+</html>
