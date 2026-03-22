@@ -6,7 +6,6 @@
 use blitz_traits::net::{AbortSignal, Body, Bytes, NetHandler, NetProvider, NetWaker, Request};
 use data_url::DataUrl;
 use std::{marker::PhantomData, pin::Pin, sync::Arc, task::Poll};
-use tokio::runtime::Handle;
 
 #[cfg(feature = "cache")]
 use http_cache_reqwest::{CACacheManager, Cache, CacheMode, HttpCache, HttpCacheOptions};
@@ -35,8 +34,23 @@ fn get_cache_path() -> std::path::PathBuf {
     path
 }
 
+#[cfg(target_arch = "wasm32")]
+fn spawn(fut: impl Future + 'static) {
+    wasm_bindgen_futures::spawn_local(async move {
+        fut.await;
+    });
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn spawn<F>(fut: F)
+where
+    F: Future + Send + 'static,
+    F::Output: Send + 'static,
+{
+    tokio::spawn(fut);
+}
+
 pub struct Provider {
-    rt: Handle,
     client: Client,
     waker: Arc<dyn NetWaker>,
 }
@@ -57,11 +71,7 @@ impl Provider {
             .build();
 
         let waker = waker.unwrap_or(Arc::new(DummyNetWaker));
-        Self {
-            rt: Handle::current(),
-            client,
-            waker,
-        }
+        Self { client, waker }
     }
     pub fn shared(waker: Option<Arc<dyn NetWaker>>) -> Arc<dyn NetProvider> {
         Arc::new(Self::new(waker))
@@ -114,7 +124,7 @@ impl Provider {
         let url = request.url.to_string();
 
         let client = self.client.clone();
-        self.rt.spawn(async move {
+        spawn(async move {
             let result = Self::fetch_inner(client, request).await;
 
             #[cfg(feature = "tracing")]
@@ -158,7 +168,7 @@ impl NetProvider for Provider {
         tracing::info!(url = request.url.as_str(), "Fetching");
 
         let waker = self.waker.clone();
-        self.rt.spawn(async move {
+        spawn(async move {
             #[cfg(feature = "tracing")]
             let url = request.url.to_string();
 
@@ -212,8 +222,8 @@ impl<F, T> AbortFetch<F, T> {
 
 impl<F, T> Future for AbortFetch<F, T>
 where
-    F: Future + Unpin + Send + 'static,
-    F::Output: Send + Into<Result<T, ProviderError>> + 'static,
+    F: Future + Unpin + 'static,
+    F::Output: Into<Result<T, ProviderError>> + 'static,
     T: Unpin,
 {
     type Output = Result<T, ProviderError>;

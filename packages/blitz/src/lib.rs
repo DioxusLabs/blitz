@@ -42,6 +42,7 @@ pub use blitz_shell as shell;
 pub use blitz_traits as traits;
 
 #[cfg(feature = "net")]
+#[cfg(not(target_arch = "wasm32"))]
 pub fn launch_url(url: &str) {
     // Assert that url is valid
     #[cfg(feature = "tracing")]
@@ -85,11 +86,13 @@ pub fn launch_static_html(html: &str) {
 pub fn launch_static_html_cfg(html: &str, cfg: Config) {
     // Turn on the runtime and enter it
     #[cfg(feature = "net")]
+    #[cfg(not(target_arch = "wasm32"))]
     let rt = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()
         .unwrap();
     #[cfg(feature = "net")]
+    #[cfg(not(target_arch = "wasm32"))]
     let _guard = rt.enter();
 
     let event_loop = create_default_event_loop();
