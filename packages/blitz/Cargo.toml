@@ -28,9 +28,12 @@ blitz-net = { workspace = true, optional = true }
 
 # IO & Networking
 url = { workspace = true, features = ["serde"], optional = true }
-tokio = { workspace = true, features = ["rt-multi-thread"], optional = true }
+tokio = { workspace = true, features = ["rt"], optional = true }
 
 tracing = { workspace = true, optional = true }
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+tokio = { workspace = true, features = ["rt-multi-thread"], optional = true }
 
 [package.metadata.docs.rs]
 all-features = true

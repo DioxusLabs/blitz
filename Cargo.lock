@@ -915,6 +915,7 @@ dependencies = [
  "reqwest-middleware",
  "tokio",
  "tracing",
+ "wasm-bindgen-futures",
 ]
 
 [[package]]
