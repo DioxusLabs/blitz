@@ -159,6 +159,9 @@ serde = "1"
 # Dioxus Native
 webbrowser = "1.0"
 
+# WASM
+wasm-bindgen-futures = "0.4"
+
 # Other dependencies
 rustc-hash = "1.1.0"
 bytes = "1.7.1"

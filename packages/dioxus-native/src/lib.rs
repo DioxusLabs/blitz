@@ -154,15 +154,18 @@ pub fn launch_cfg_with_props<P: Clone + 'static, M: 'static>(
 
     // Turn on the runtime and enter it
     #[cfg(feature = "net")]
+    #[cfg(not(target_arch = "wasm32"))]
     let rt = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()
         .unwrap();
     #[cfg(feature = "net")]
+    #[cfg(not(target_arch = "wasm32"))]
     let _guard = rt.enter();
 
     // Setup hot-reloading if enabled.
     #[cfg(all(feature = "hot-reload", debug_assertions))]
+    #[cfg(not(target_arch = "wasm32"))]
     {
         let proxy = proxy.clone();
         dioxus_devtools::connect(move |event| {
