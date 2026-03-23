@@ -57,9 +57,13 @@ mod selection;
 /// Implementations that interact with servo's style engine
 mod stylo;
 mod stylo_to_cursor_icon;
+mod stylo_to_kurbo;
 mod stylo_to_parley;
 mod traversal;
+
 mod url;
+
+pub use stylo_to_kurbo::resolve_2d_transform;
 
 pub mod net;
 pub mod util;
