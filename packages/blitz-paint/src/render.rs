@@ -377,21 +377,23 @@ impl<'dom> BlitzDomPainter<'dom> {
         // By performing the transform, we prevent the cache from becoming invalid when the page shifts around
         let mut transform = Affine::translate(box_position.to_vec2() * scale);
 
+        // Reference box for resolve percentage transforms
+        let reference_box = euclid::Rect::new(
+            euclid::Point2D::new(CSSPixelLength::new(0.0), CSSPixelLength::new(0.0)),
+            euclid::Size2D::new(
+                CSSPixelLength::new(frame.border_box.width() as f32),
+                CSSPixelLength::new(frame.border_box.height() as f32),
+            ),
+        );
+
         // Apply CSS transform property (where transforms are 2d)
         //
         // TODO: Handle hit testing correctly for transformed nodes
         // TODO: Implement nested transforms
-        if let Some(style_transform) = node.transform {
-            let t = style_transform.as_coeffs();
-            transform *= Affine::new([
-                t[0],
-                t[1],
-                t[2],
-                t[3],
-                // Scale the translation but not the scale or skew
-                t[4] * scale,
-                t[5] * scale,
-            ])
+        if let Some(style_transform) =
+            blitz_dom::resolve_2d_transform(style.get_box(), reference_box, scale)
+        {
+            transform *= style_transform
         }
 
         let element = node.element_data().unwrap();

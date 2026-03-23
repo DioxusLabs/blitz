@@ -99,7 +99,7 @@ pub fn resolve_2d_transform(
             .px() as f64,
     });
 
-    let mut resolved = Affine::IDENTITY; //Affine::translate(origin_translation);
+    let mut resolved = Affine::IDENTITY;
 
     if let Some(translation) = translate {
         resolved = resolved.then_translate(translation)
