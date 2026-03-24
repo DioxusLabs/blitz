@@ -219,13 +219,27 @@ impl BaseDocument {
                         attr_size,
                     };
 
+                    let is_logo = inherent_size.width == 450.0 && inherent_size.height == 400.0;
                     let computed = replaced_measure_function(
                         inputs.known_dimensions,
                         inputs.parent_size,
                         inputs.available_space,
                         &replaced_context,
                         &node.style,
-                        false,
+                        is_logo,
+                    );
+
+                    eprintln!(
+                        "[replaced] tag={} inherent={:?} attr={:?} known={:?} parent={:?} avail={:?} style_w={:?} style_h={:?} => {:?}",
+                        element_data.name.local,
+                        inherent_size,
+                        attr_size,
+                        inputs.known_dimensions,
+                        inputs.parent_size,
+                        inputs.available_space,
+                        node.style.size.width,
+                        node.style.size.height,
+                        computed,
                     );
 
                     return taffy::LayoutOutput {

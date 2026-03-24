@@ -91,28 +91,36 @@ pub fn replaced_measure_function(
     let unclamped_size = 'size: {
         if known_dimensions.width.is_some() | known_dimensions.height.is_some() {
             let content_box_known_dimensions = known_dimensions.maybe_sub(pb_sum);
-            break 'size content_box_known_dimensions
+            let result = content_box_known_dimensions
                 .maybe_apply_aspect_ratio(Some(aspect_ratio))
                 .map(|s| s.unwrap());
+            if _debug { eprintln!("  [replaced] branch=known content_box_known={:?} aspect={} => {:?}", content_box_known_dimensions, aspect_ratio, result); }
+            break 'size result;
         }
 
         if style_size.width.is_some() | style_size.height.is_some() {
-            break 'size style_size
+            let result = style_size
                 .maybe_apply_aspect_ratio(Some(aspect_ratio))
                 .map(|s| s.unwrap());
+            if _debug { eprintln!("  [replaced] branch=style style_size={:?} aspect={} => {:?}", style_size, aspect_ratio, result); }
+            break 'size result;
         }
 
         if attr_size.width.is_some() | attr_size.height.is_some() {
-            break 'size attr_size
+            let result = attr_size
                 .maybe_apply_aspect_ratio(Some(aspect_ratio))
                 .map(|s| s.unwrap());
+            if _debug { eprintln!("  [replaced] branch=attr attr_size={:?} aspect={} => {:?}", attr_size, aspect_ratio, result); }
+            break 'size result;
         }
 
+        if _debug { eprintln!("  [replaced] branch=inherent {:?}", inherent_size); }
         inherent_size
     };
 
     // Floor size at zero
     let size = unclamped_size.map(|s| s.max(0.0));
+    if _debug { eprintln!("  [replaced] unclamped={:?} floored={:?} max_size={:?}", unclamped_size, size, max_size); }
 
     // Violations
     let width_violation = if size.width < min_size.width.unwrap_or(0.0) {

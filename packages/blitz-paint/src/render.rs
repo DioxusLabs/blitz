@@ -26,8 +26,8 @@ use style::{
     computed_values::border_collapse::T as BorderCollapse,
     dom::TElement,
     properties::{
-        ComputedValues, generated::longhands::visibility::computed_value::T as StyloVisibility,
-        generated::longhands::position::computed_value::T as CssPosition,
+        ComputedValues, generated::longhands::position::computed_value::T as CssPosition,
+        generated::longhands::visibility::computed_value::T as StyloVisibility,
         style_structs::Font,
     },
     values::{
@@ -378,7 +378,8 @@ impl<'dom> BlitzDomPainter<'dom> {
         layout: Layout,
         box_position: Point,
     ) -> ElementCx<'w> {
-        let style = node.stylo_element_data
+        let style = node
+            .stylo_element_data
             .borrow()
             .map(|data| data.styles.primary().clone())
             .unwrap_or(
@@ -670,11 +671,9 @@ impl ElementCx<'_> {
                 break;
             }
             let parent = &tree[parent_id];
-            x += parent.final_layout.location.x as f64
-                + parent.sticky_offset.x
+            x += parent.final_layout.location.x as f64 + parent.sticky_offset.x
                 - parent.scroll_offset.x;
-            y += parent.final_layout.location.y as f64
-                + parent.sticky_offset.y
+            y += parent.final_layout.location.y as f64 + parent.sticky_offset.y
                 - parent.scroll_offset.y;
             current = parent_id;
         }
@@ -712,8 +711,6 @@ impl ElementCx<'_> {
 
     #[cfg(feature = "svg")]
     fn draw_svg(&self, scene: &mut impl PaintScene) {
-        use style::properties::generated::longhands::object_fit::computed_value::T as ObjectFit;
-
         let Some(svg) = self.svg else {
             return;
         };
@@ -725,7 +722,7 @@ impl ElementCx<'_> {
         let x = self.frame.content_box.origin().x;
         let y = self.frame.content_box.origin().y;
 
-        // let object_fit = self.style.clone_object_fit();
+        let object_fit = self.style.clone_object_fit();
         let object_position = self.style.clone_object_position();
 
         // Apply object-fit algorithm
@@ -737,7 +734,7 @@ impl ElementCx<'_> {
             width: svg_size.width(),
             height: svg_size.height(),
         };
-        let paint_size = compute_object_fit(container_size, Some(object_size), ObjectFit::Contain);
+        let paint_size = compute_object_fit(container_size, Some(object_size), object_fit);
 
         // Compute object-position
         let x_offset = object_position.horizontal.resolve(
@@ -754,8 +751,8 @@ impl ElementCx<'_> {
 
         let transform = self
             .transform
-            .pre_scale_non_uniform(x_scale, y_scale)
-            .then_translate(Vec2 { x, y });
+            .pre_translate(Vec2 { x, y })
+            .pre_scale_non_uniform(x_scale, y_scale);
 
         anyrender_svg::render_svg_tree(scene, svg, transform);
     }
