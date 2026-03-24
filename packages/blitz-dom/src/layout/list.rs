@@ -143,13 +143,8 @@ fn marker_for_style(list_style_type: ListStyleType, index: usize) -> Option<Mark
 
 // Override the font to our specific bullet font when rendering bullets
 fn font_for_bullet_style(list_style_type: ListStyleType) -> Option<FontFamily<'static>> {
-    if let CounterStyle::Name(name) = list_style_type.0 {
-        if matches!(
-            &*name.0,
-            "disc" | "circle" | "square" | "disclosure-open" | "disclosure-closed"
-        ) {
-            return Some("Bullet, monospace, sans-serif".into());
-        }
+    if list_style_type.0.is_bullet() {
+        return Some("Bullet, monospace, sans-serif".into());
     }
 
     None
@@ -171,40 +166,56 @@ fn build_alpha_marker(index: usize, str: &mut String) {
     }
 }
 
-#[test]
-fn test_marker_for_disc() {
-    let result = marker_for_style(ListStyleType::Disc, 0);
-    assert_eq!(result, Some(Marker::Char('•')));
-}
+#[cfg(test)]
+mod tests {
+    use crate::node::Marker;
+    use style::{
+        Atom,
+        counter_style::CounterStyle,
+        values::{CustomIdent, computed::ListStyleType},
+    };
 
-#[test]
-fn test_marker_for_decimal() {
-    let result_1 = marker_for_style(ListStyleType::Decimal, 0);
-    let result_2 = marker_for_style(ListStyleType::Decimal, 1);
-    assert_eq!(result_1, Some(Marker::String("1. ".to_string())));
-    assert_eq!(result_2, Some(Marker::String("2. ".to_string())));
-}
+    use super::marker_for_style;
 
-#[test]
-fn test_marker_for_lower_alpha() {
-    let result_1 = marker_for_style(ListStyleType::LowerAlpha, 0);
-    let result_2 = marker_for_style(ListStyleType::LowerAlpha, 1);
-    let result_extended_1 = marker_for_style(ListStyleType::LowerAlpha, 26);
-    let result_extended_2 = marker_for_style(ListStyleType::LowerAlpha, 27);
-    assert_eq!(result_1, Some(Marker::String("a. ".to_string())));
-    assert_eq!(result_2, Some(Marker::String("b. ".to_string())));
-    assert_eq!(result_extended_1, Some(Marker::String("aa. ".to_string())));
-    assert_eq!(result_extended_2, Some(Marker::String("ab. ".to_string())));
-}
+    fn list_style(s: &str) -> ListStyleType {
+        ListStyleType(CounterStyle::Name(CustomIdent(Atom::from(s))))
+    }
 
-#[test]
-fn test_marker_for_upper_alpha() {
-    let result_1 = marker_for_style(ListStyleType::UpperAlpha, 0);
-    let result_2 = marker_for_style(ListStyleType::UpperAlpha, 1);
-    let result_extended_1 = marker_for_style(ListStyleType::UpperAlpha, 26);
-    let result_extended_2 = marker_for_style(ListStyleType::UpperAlpha, 27);
-    assert_eq!(result_1, Some(Marker::String("A. ".to_string())));
-    assert_eq!(result_2, Some(Marker::String("B. ".to_string())));
-    assert_eq!(result_extended_1, Some(Marker::String("AA. ".to_string())));
-    assert_eq!(result_extended_2, Some(Marker::String("AB. ".to_string())));
+    #[test]
+    fn test_marker_for_disc() {
+        let result = marker_for_style(ListStyleType::disc(), 0);
+        assert_eq!(result, Some(Marker::Char('•')));
+    }
+
+    #[test]
+    fn test_marker_for_decimal() {
+        let result_1 = marker_for_style(list_style("decimal"), 0);
+        let result_2 = marker_for_style(list_style("decimal"), 1);
+        assert_eq!(result_1, Some(Marker::String("1. ".to_string())));
+        assert_eq!(result_2, Some(Marker::String("2. ".to_string())));
+    }
+
+    #[test]
+    fn test_marker_for_lower_alpha() {
+        let result_1 = marker_for_style(list_style("lower-alpha"), 0);
+        let result_2 = marker_for_style(list_style("lower-alpha"), 1);
+        let result_extended_1 = marker_for_style(list_style("lower-alpha"), 26);
+        let result_extended_2 = marker_for_style(list_style("lower-alpha"), 27);
+        assert_eq!(result_1, Some(Marker::String("a. ".to_string())));
+        assert_eq!(result_2, Some(Marker::String("b. ".to_string())));
+        assert_eq!(result_extended_1, Some(Marker::String("aa. ".to_string())));
+        assert_eq!(result_extended_2, Some(Marker::String("ab. ".to_string())));
+    }
+
+    #[test]
+    fn test_marker_for_upper_alpha() {
+        let result_1 = marker_for_style(list_style("upper-alpha"), 0);
+        let result_2 = marker_for_style(list_style("upper-alpha"), 1);
+        let result_extended_1 = marker_for_style(list_style("upper-alpha"), 26);
+        let result_extended_2 = marker_for_style(list_style("upper-alpha"), 27);
+        assert_eq!(result_1, Some(Marker::String("A. ".to_string())));
+        assert_eq!(result_2, Some(Marker::String("B. ".to_string())));
+        assert_eq!(result_extended_1, Some(Marker::String("AA. ".to_string())));
+        assert_eq!(result_extended_2, Some(Marker::String("AB. ".to_string())));
+    }
 }
