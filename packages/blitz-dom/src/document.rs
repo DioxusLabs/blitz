@@ -51,8 +51,9 @@ use style::servo_arc::Arc as ServoArc;
 use style::values::GenericAtomIdent;
 use style::values::computed::Overflow;
 use style::{
+    device::Device,
     dom::{TDocument, TNode},
-    media_queries::{Device, MediaList},
+    media_queries::MediaList,
     selector_parser::SnapshotMap,
     shared_lock::{SharedRwLock, StylesheetGuards},
     stylesheets::{AllowImportRules, DocumentStyleSheet, Origin, Stylesheet},
