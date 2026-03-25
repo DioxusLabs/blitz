@@ -10,8 +10,9 @@ name = "blitz"
 path = "src/main.rs"
 
 [features]
-default = ["vello", "floats", "incremental", "cookies", "cache", "screenshot"]
+default = ["vello", "floats", "incremental", "cookies", "cache", "screenshot", "capture"]
 screenshot = ["dep:anyrender", "dep:anyrender_vello_cpu", "dep:blitz-paint", "dep:png", "dep:peniko", "dep:rfd"]
+capture = ["dep:anyrender", "dep:anyrender_serialize", "dep:blitz-paint", "dep:png", "dep:peniko", "dep:rfd"]
 vello = ["dioxus-native/vello"]
 hybrid = ["dioxus-native/vello-hybrid"]
 skia = ["dioxus-native/skia"]
@@ -51,15 +52,17 @@ webbrowser = { workspace = true }
 winit = { workspace = true }
 image = { workspace = true }
 anyrender = { workspace = true, optional = true }
+anyrender_serialize = { workspace = true, optional = true }
 anyrender_vello_cpu = { workspace = true, optional = true }
 blitz-paint = { workspace = true, optional = true }
 png = { workspace = true, optional = true }
 peniko = { workspace = true, optional = true }
-[target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
-rfd = { workspace = true, features = ["xdg-portal"], optional = true }
 
 # Allocators
 mimalloc = { version = "0.1.48", optional = true }
+
+[target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
+rfd = { workspace = true, features = ["xdg-portal"], optional = true }
 
 [target.'cfg(target_os = "android")'.dependencies]
 android-activity = { version = "0.6.0", features = ["native-activity"] }
