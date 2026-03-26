@@ -463,15 +463,14 @@ impl BaseDocument {
 
             while let Some(yield_data) = breaker.break_next() {
                 match yield_data {
-                    YieldData::LineBreak(line_break_data) => {
+                    YieldData::LineBreak(_line_break_data) => {
                         let state = breaker.state_mut();
 
                         if has_active_floats {
                             // TODO: revert state and retry layout if a line doesn't fit
                             // saved_state = state.clone();
 
-                            let min_y = (state.line_y() + line_break_data.line_height as f64)
-                                / scale as f64;
+                            let min_y = state.line_y() / scale as f64;
                             let next_slot =
                                 block_ctx.find_content_slot(min_y as f32, Clear::None, None);
                             has_active_floats = next_slot.segment_id.is_some();
@@ -482,7 +481,6 @@ impl BaseDocument {
                         } else {
                             state.set_line_x(0.0);
                             state.set_line_max_advance(width);
-                            state.set_line_y(state.line_y() + line_break_data.line_height as f64);
                         }
 
                         continue;

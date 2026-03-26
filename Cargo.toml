@@ -112,7 +112,7 @@ color = "0.3"
 linebender_resource_handle = "0.1"
 peniko = "0.6.0"
 kurbo = "0.13"
-parley = { git = "https://github.com/linebender/parley", rev = "c3d3d41eaaca0d2dce9558f460c2c129559fc425", default-features = false, features = [
+parley = { git = "https://github.com/linebender/parley", rev = "d7df17aa32637e95b64c1f804fb7ef7ea1981bd3", default-features = false, features = [
     "std",
 ] }
 skrifa = { version = "0.40", default-features = false, features = [
