@@ -14,7 +14,7 @@ use dioxus_html::{
         InteractionElementOffset, InteractionLocation, ModifiersInteraction, PointerInteraction,
     },
     AnimationData, CancelData, ClipboardData, CompositionData, DragData, FocusData, FormData,
-    FormValue, HasFileData, HasFocusData, HasFormData, HasKeyboardData, HasMouseData,
+    FormValue, HasFileData, HasFocusData, HasFormData, HasKeyboardData, HasMouseData, HasClipboardData,
     HasPointerData, HasScrollData, HasWheelData, HtmlEventConverter, ImageData, KeyboardData,
     MediaData, MountedData, MountedError, MountedResult, MouseData, PlatformEventData, PointerData,
     RenderedElementBacking, ResizeData, ScrollBehavior, ScrollData, ScrollToOptions, SelectionData,
@@ -67,9 +67,14 @@ impl HtmlEventConverter for NativeConverter {
         unimplemented!("todo: convert_animation_data in dioxus-native. requires support in blitz")
     }
 
-    fn convert_clipboard_data(&self, _event: &PlatformEventData) -> ClipboardData {
-        unimplemented!("todo: convert_clipboard_data in dioxus-native. requires support in blitz")
-    }
+fn convert_clipboard_data(&self, event: &PlatformEventData) -> ClipboardData {
+    let raw_event = event
+        .downcast::<blitz_traits::events::BlitzClipboardEvent>()
+        .unwrap()
+        .clone();
+
+    dioxus_html::ClipboardData::new(NativeClipboardData(raw_event))
+}
 
     fn convert_composition_data(&self, _event: &PlatformEventData) -> CompositionData {
         unimplemented!("todo: convert_composition_data in dioxus-native. requires support in blitz")
@@ -504,5 +509,14 @@ impl InteractionLocation for NativeWheelData {
 
     fn page_coordinates(&self) -> PagePoint {
         PagePoint::new(self.0.page_x() as f64, self.0.page_y() as f64)
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct NativeClipboardData(pub blitz_traits::events::BlitzClipboardEvent);
+
+impl HasClipboardData for NativeClipboardData {
+    fn as_any(&self) -> &dyn Any {
+        self as &dyn Any
     }
 }

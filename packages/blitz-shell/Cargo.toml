@@ -44,9 +44,12 @@ data-url = { workspace = true, optional = true }
 [target.'cfg(target_os = "android")'.dependencies]
 android-activity = { version = "0.6.0" }
 
-[target.'cfg(any(target_os = "windows",target_os = "macos",target_os = "linux",target_os = "dragonfly", target_os = "freebsd", target_os = "netbsd", target_os = "openbsd"))'.dependencies]
-arboard = { workspace = true, optional = true }
+[target.'cfg(target_os = "linux")'.dependencies]
+arboard = { workspace = true, optional = true, features = ["wayland-data-control"] }
 
+# for other platforms
+[target.'cfg(any(target_os = "windows", target_os = "macos", target_os = "dragonfly", target_os = "freebsd", target_os = "netbsd", target_os = "openbsd"))'.dependencies]
+arboard = { workspace = true, optional = true }
 
 [target.'cfg(any(target_os = "windows",target_os = "macos",target_os = "linux",target_os = "freebsd", target_os = "dragonfly", target_os = "netbsd", target_os = "openbsd"))'.dependencies]
 rfd = { workspace = true, optional = true, features = ["xdg-portal"] }
