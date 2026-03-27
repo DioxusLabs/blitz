@@ -399,6 +399,10 @@ impl BaseDocument {
             node.display_constructed_as = style.clone_display();
             // }
 
+            // Audit and log any unsupported CSS features on this node
+            #[cfg(feature = "tracing")]
+            crate::diagnostics::audit_unsupported_css(node, style);
+
             // Flush background image from style to dedicated storage on the node
             // TODO: handle multiple background images
             if let Some(elem) = node.data.downcast_element_mut() {
