@@ -3,6 +3,7 @@ use crate::{
     node::{TextBrush, TextInputData},
 };
 use blitz_traits::{
+    SmolStr,
     events::{BlitzInputEvent, BlitzKeyEvent, DomEvent, DomEventData},
     shell::ShellProvider,
 };
@@ -17,34 +18,41 @@ enum GeneratedEvent {
     Submit,
 }
 
-pub(crate) fn handle_keypress<F: FnMut(DomEvent)>(
+pub(super) enum KeyboardOrTextInputEvent {
+    KeyPress(BlitzKeyEvent),
+    AppleStandardKeyBinding(SmolStr),
+}
+
+pub(crate) fn handle_key_or_input_event<F: FnMut(DomEvent)>(
     doc: &mut BaseDocument,
     target: usize,
-    event: BlitzKeyEvent,
+    event: KeyboardOrTextInputEvent,
     mut dispatch_event: F,
 ) {
-    if event.key == Key::Tab {
-        doc.focus_next_node();
-        return;
-    }
+    if let KeyboardOrTextInputEvent::KeyPress(event) = &event {
+        if event.key == Key::Tab {
+            doc.focus_next_node();
+            return;
+        }
 
-    // Handle copy (Ctrl+C/Cmd+C) for text selection when no text input is focused
-    if event.state.is_pressed() {
-        let action_mod = event.modifiers.contains(ACTION_MOD);
-        if action_mod {
-            if let Key::Character(c) = &event.key {
-                if c.to_lowercase() == "c" {
-                    // Check if we have a text selection (and no focused text input)
-                    let has_focused_text_input = doc.focus_node_id.is_some_and(|id| {
-                        doc.get_node(id)
-                            .and_then(|n| n.element_data())
-                            .is_some_and(|e| e.text_input_data().is_some())
-                    });
+        // Handle copy (Ctrl+C/Cmd+C) for text selection when no text input is focused
+        if event.state.is_pressed() {
+            let action_mod = event.modifiers.contains(ACTION_MOD);
+            if action_mod {
+                if let Key::Character(c) = &event.key {
+                    if c.to_lowercase() == "c" {
+                        // Check if we have a text selection (and no focused text input)
+                        let has_focused_text_input = doc.focus_node_id.is_some_and(|id| {
+                            doc.get_node(id)
+                                .and_then(|n| n.element_data())
+                                .is_some_and(|e| e.text_input_data().is_some())
+                        });
 
-                    if !has_focused_text_input {
-                        if let Some(text) = doc.get_selected_text() {
-                            let _ = doc.shell_provider.set_clipboard_text(text);
-                            return;
+                        if !has_focused_text_input {
+                            if let Some(text) = doc.get_selected_text() {
+                                let _ = doc.shell_provider.set_clipboard_text(text);
+                                return;
+                            }
                         }
                     }
                 }
@@ -63,13 +71,24 @@ pub(crate) fn handle_keypress<F: FnMut(DomEvent)>(
         };
 
         if let Some(input_data) = element_data.text_input_data_mut() {
-            let generated_event = apply_keypress_event(
-                input_data,
-                &mut doc.font_ctx.lock().unwrap(),
-                &mut doc.layout_ctx,
-                &*doc.shell_provider,
-                event,
-            );
+            let generated_event = match event {
+                KeyboardOrTextInputEvent::KeyPress(blitz_key_event) => apply_keypress_event(
+                    input_data,
+                    &mut doc.font_ctx.lock().unwrap(),
+                    &mut doc.layout_ctx,
+                    &*doc.shell_provider,
+                    blitz_key_event,
+                ),
+                KeyboardOrTextInputEvent::AppleStandardKeyBinding(command) => {
+                    apply_apple_standard_keybinding(
+                        input_data,
+                        &mut doc.font_ctx.lock().unwrap(),
+                        &mut doc.layout_ctx,
+                        &*doc.shell_provider,
+                        &command,
+                    )
+                }
+            };
 
             if let Some(generated_event) = generated_event {
                 match generated_event {
@@ -254,9 +273,397 @@ fn apply_keypress_event(
             }
         }
         Key::Character(s) => {
-            driver.insert_or_replace_selection(&s);
+            if !mods.contains(Modifiers::CONTROL) && !mods.contains(Modifiers::SUPER) {
+                driver.insert_or_replace_selection(&s);
+                return Some(GeneratedEvent::Input);
+            }
+        }
+        _ => {}
+    };
+
+    None
+}
+
+fn apply_apple_standard_keybinding(
+    input_data: &mut TextInputData,
+    font_ctx: &mut FontContext,
+    layout_ctx: &mut LayoutContext<TextBrush>,
+    shell_provider: &dyn ShellProvider,
+    command: &str,
+) -> Option<GeneratedEvent> {
+    let editor = &mut input_data.editor;
+    let mut driver = editor.driver(font_ctx, layout_ctx);
+
+    match command {
+        // Inserting Content
+
+        // Inserts a backtab character.
+        "insertBacktab:" => {}
+        // Inserts a container break, such as a new page break.
+        "insertContainerBreak:" => {}
+        // Inserts a double quotation mark without substituting a curly quotation mark.
+        "insertDoubleQuoteIgnoringSubstitution:" => {
+            driver.insert_or_replace_selection("\"");
             return Some(GeneratedEvent::Input);
         }
+        // Inserts a line break character.
+        "insertLineBreak:" => {
+            driver.insert_or_replace_selection("\n");
+            return Some(GeneratedEvent::Input);
+        }
+        // Inserts a newline character.
+        "insertNewline:" => {
+            driver.insert_or_replace_selection("\n");
+            return Some(GeneratedEvent::Input);
+        }
+        // Inserts a newline character without invoking the field editor’s normal handling to end editing.
+        "insertNewlineIgnoringFieldEditor:" => {
+            driver.insert_or_replace_selection("\n");
+            return Some(GeneratedEvent::Input);
+        }
+        // Inserts a paragraph separator.
+        "insertParagraphSeparator:" => {
+            driver.insert_or_replace_selection("\n");
+            return Some(GeneratedEvent::Input);
+        }
+        "insertSingleQuoteIgnoringSubstitution:" => {
+            driver.insert_or_replace_selection("'");
+            return Some(GeneratedEvent::Input);
+        }
+        // Inserts a tab character.
+        "insertTab:" | "insertTabIgnoringFieldEditor:" => {
+            // Ignore for now seeing as parley has poor support for laying out tabs
+        }
+        // Inserts the text you specify.
+        "insertText:" => {}
+
+        // Deleting Content
+
+        // Deletes content moving backward from the current insertion point.
+        // TODO: handle deleteBackwardByDecomposingPreviousCharacter separately
+        "deleteBackward:" | "deleteBackwardByDecomposingPreviousCharacter:" => {
+            driver.backdelete();
+            return Some(GeneratedEvent::Input);
+        }
+        "deleteForward:" => {
+            driver.delete();
+            return Some(GeneratedEvent::Input);
+        }
+        // Deletes content from the insertion point to the beginning of the current line.
+        "deleteToBeginningOfLine:" => {
+            if driver.editor.raw_selection().is_collapsed() {
+                driver.select_to_line_start();
+            }
+            driver.delete_selection();
+            return Some(GeneratedEvent::Input);
+        }
+        // Deletes content from the insertion point to the beginning of the current paragraph.
+        "deleteToEndOfLine:" => {
+            if driver.editor.raw_selection().is_collapsed() {
+                driver.select_to_line_end();
+            }
+            driver.delete_selection();
+            return Some(GeneratedEvent::Input);
+        }
+        "deleteToBeginningOfParagraph:" => {
+            if driver.editor.raw_selection().is_collapsed() {
+                driver.select_to_hard_line_start();
+            }
+            driver.delete_selection();
+            return Some(GeneratedEvent::Input);
+        }
+
+        // Deletes content from the insertion point to the end of the current line.
+        "deleteToEndOfParagraph:" => {
+            if driver.editor.raw_selection().is_collapsed() {
+                driver.select_to_hard_line_end();
+            }
+            driver.delete_selection();
+            return Some(GeneratedEvent::Input);
+        }
+        // Deletes content from the insertion point to the end of the current paragraph.
+        "deleteWordBackward:" => {
+            driver.backdelete_word();
+            return Some(GeneratedEvent::Input);
+        }
+        // Deletes the word preceding the current insertion point.
+        "deleteWordForward:" => {
+            driver.delete_word();
+            return Some(GeneratedEvent::Input);
+        }
+        // Deletes the current selection, placing it in a temporary buffer, such as the Clipboard.
+        "yank:" => {
+            if let Some(text) = driver.editor.selected_text() {
+                let _ = shell_provider.set_clipboard_text(text.to_owned());
+                driver.delete_selection();
+                return Some(GeneratedEvent::Input);
+            }
+        }
+
+        // Moving the Insertion Pointer
+
+        // Moves the insertion pointer backward in the current content.
+        "moveBackward:" => {
+            driver.move_left(); // TODO: Bidi-aware
+            return Some(GeneratedEvent::Select);
+        }
+
+        // Moves the insertion pointer down in the current content.
+        "moveDown:" => {
+            driver.move_down();
+            return Some(GeneratedEvent::Select);
+        }
+        // Moves the insertion pointer forward in the current content.
+        "moveForward:" => {
+            driver.move_right();
+            return Some(GeneratedEvent::Select);
+        } // TODO: Bidi-aware
+
+        // Moves the insertion pointer left in the current content.
+        "moveLeft:" => {
+            driver.move_left();
+            return Some(GeneratedEvent::Select);
+        }
+        // Moves the insertion pointer right in the current content.
+        "moveRight:" => {
+            driver.move_right();
+            return Some(GeneratedEvent::Select);
+        }
+        // Moves the insertion pointer up in the current content.
+        "moveUp:" => {
+            driver.move_up();
+            return Some(GeneratedEvent::Select);
+        }
+
+        // Modifying the Selection
+
+        // Extends the selection to include the content before the current selection.
+        "moveBackwardAndModifySelection:" => {
+            driver.select_left(); // TODO: Bidi-aware
+            return Some(GeneratedEvent::Select);
+        }
+        // Extends the selection to include the content below the current selection.
+        "moveDownAndModifySelection:" => {
+            driver.select_down();
+            return Some(GeneratedEvent::Select);
+        }
+        // Extends the selection to include the content after the current selection.
+        "moveForwardAndModifySelection:" => {
+            driver.select_right(); // TODO: Bidi-aware
+            return Some(GeneratedEvent::Select);
+        }
+        // Extends the selection to include the content to the left of the current selection.
+        "moveLeftAndModifySelection:" => {
+            driver.select_left();
+            return Some(GeneratedEvent::Select);
+        }
+        // Extends the selection to include the content to the right of the current selection.
+        "moveRightAndModifySelection:" => {
+            driver.select_right();
+            return Some(GeneratedEvent::Select);
+        }
+        // Extends the selection to include the content above the current selection.
+        "moveUpAndModifySelection:" => {
+            driver.select_up();
+            return Some(GeneratedEvent::Select);
+        }
+
+        // Changing the Selection
+        "selectAll:" => {
+            driver.select_all();
+            return Some(GeneratedEvent::Select);
+        }
+        "selectLine:" => {
+            driver.move_to_line_start();
+            driver.select_to_line_end();
+            return Some(GeneratedEvent::Select);
+        }
+        "selectParagraph:" => {
+            driver.move_to_hard_line_start();
+            driver.select_to_hard_line_end();
+            return Some(GeneratedEvent::Select);
+        }
+        "selectWord:" => {
+            // TODO
+        }
+
+        // Moving the Selection in Documents
+        "moveToBeginningOfDocument:" => {
+            driver.move_to_text_start();
+            return Some(GeneratedEvent::Select);
+        }
+        "moveToBeginningOfDocumentAndModifySelection:" => {
+            driver.select_to_text_start();
+            return Some(GeneratedEvent::Select);
+        }
+        "moveToEndOfDocument:" => {
+            driver.move_to_text_end();
+            return Some(GeneratedEvent::Select);
+        }
+        "moveToEndOfDocumentAndModifySelection:" => {
+            driver.move_to_text_end();
+            return Some(GeneratedEvent::Select);
+        }
+
+        // Moving the Selection in Paragraphs
+        "moveParagraphBackwardAndModifySelection:" => {}
+        "moveParagraphForwardAndModifySelection:" => {}
+        "moveToBeginningOfParagraph:" => {
+            driver.move_to_hard_line_start();
+            return Some(GeneratedEvent::Select);
+        }
+        "moveToBeginningOfParagraphAndModifySelection:" => {
+            driver.select_to_hard_line_start();
+            return Some(GeneratedEvent::Select);
+        }
+        "moveToEndOfParagraph:" => {
+            driver.move_to_hard_line_end();
+            return Some(GeneratedEvent::Select);
+        }
+        "moveToEndOfParagraphAndModifySelection:" => {
+            driver.select_to_hard_line_end();
+            return Some(GeneratedEvent::Select);
+        }
+
+        // Moving the Selection in Lines of Text
+        "moveToBeginningOfLine:" => {
+            driver.move_to_line_start();
+            return Some(GeneratedEvent::Select);
+        }
+        "moveToBeginningOfLineAndModifySelection:" => {
+            driver.select_to_line_start();
+            return Some(GeneratedEvent::Select);
+        }
+        "moveToEndOfLine:" => {
+            driver.move_to_line_end();
+            return Some(GeneratedEvent::Select);
+        }
+        "moveToEndOfLineAndModifySelection:" => {
+            driver.select_to_line_end();
+            return Some(GeneratedEvent::Select);
+        }
+        "moveToLeftEndOfLine:" => {
+            driver.move_to_text_start();
+            return Some(GeneratedEvent::Select);
+        }
+        "moveToLeftEndOfLineAndModifySelection:" => {
+            driver.select_to_line_start();
+            return Some(GeneratedEvent::Select);
+        }
+        "moveToRightEndOfLine:" => {
+            driver.move_to_line_end();
+            return Some(GeneratedEvent::Select);
+        }
+        "moveToRightEndOfLineAndModifySelection:" => {
+            driver.select_to_line_end();
+            return Some(GeneratedEvent::Select);
+        }
+
+        // Moving the Selection by Word Boundaries
+        "moveWordBackward:" => {
+            driver.move_word_left();
+            return Some(GeneratedEvent::Select);
+        }
+        "moveWordBackwardAndModifySelection:" => {
+            driver.select_word_left();
+            return Some(GeneratedEvent::Select);
+        }
+        "moveWordForward:" => {
+            driver.move_word_right();
+            return Some(GeneratedEvent::Select);
+        }
+        "moveWordForwardAndModifySelection:" => {
+            driver.select_word_right();
+            return Some(GeneratedEvent::Select);
+        }
+        "moveWordLeft:" => {
+            driver.move_word_left();
+            return Some(GeneratedEvent::Select);
+        }
+        "moveWordLeftAndModifySelection:" => {
+            driver.select_word_left();
+            return Some(GeneratedEvent::Select);
+        }
+        "moveWordRight:" => {
+            driver.move_word_right();
+            return Some(GeneratedEvent::Select);
+        }
+        "moveWordRightAndModifySelection:" => {
+            driver.select_word_right();
+            return Some(GeneratedEvent::Select);
+        }
+
+        // Scrolling Content
+
+        // Scrolls the content down by a page.
+        "scrollPageDown:" => {}
+        // Scrolls the content up by a page.
+        "scrollPageUp:" => {}
+        // Scrolls the content down by a line.
+        "scrollLineDown:" => {}
+        // Scrolls the content up by a line.
+        "scrollLineUp:" => {}
+        // Scrolls the content to the beginning of the document.
+        "scrollToBeginningOfDocument:" => {}
+        // Scrolls the content to the end of the document.
+        "scrollToEndOfDocument:" => {}
+        // Moves the visible content region down by a page.
+        "pageDown:" => {}
+        // Moves the visible content region up by a page.
+        "pageUp:" => {}
+        // Moves the visible content region down by a page, and extends the current selection.
+        "pageDownAndModifySelection:" => {}
+        // Moves the visible content region up by a page, and extends the current selection.
+        "pageUpAndModifySelection:" => {}
+        // Moves the visible content region so the current selection is visually centered.
+        "centerSelectionInVisibleArea:" => {}
+
+        // Transposing Elements
+
+        // Transposes the content around the current selection.
+        "transpose:" => {}
+        // Transposes the words around the current selection.
+        "transposeWords:" => {}
+
+        // Indenting Content
+        // Indents the content at the current selection.
+        "indent:" => {}
+
+        // Canceling Operations
+        // Cancels the current operation.
+        "cancelOperation:" => {}
+
+        // Supporting QuickLook
+        // Invokes QuickLook to preview the current selection.
+        "quickLookPreviewItems:" => {}
+
+        // Supporting Writing Directions
+        "makeBaseWritingDirectionLeftToRight:" => {}
+        "makeBaseWritingDirectionNatural:" => {}
+        "makeBaseWritingDirectionRightToLeft:" => {}
+        "makeTextWritingDirectionLeftToRight:" => {}
+        "makeTextWritingDirectionNatural:" => {}
+        "makeTextWritingDirectionRightToLeft:" => {}
+
+        // Changing Capitalization
+        "capitalizeWord:" => {}
+        "changeCaseOfLetter:" => {}
+        "lowercaseWord:" => {}
+        "uppercaseWord:" => {}
+
+        // Supporting Marked Selections
+        "setMark:" => {}
+        "selectToMark:" => {}
+        "deleteToMark:" => {}
+        "swapWithMark:" => {}
+
+        // Supporting Autocomplete
+        "complete:" => {}
+
+        // Instance Methods
+        "showContextMenuForSelection:" => {}
+
+        // Unknown command
         _ => {}
     };
 

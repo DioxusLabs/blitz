@@ -138,7 +138,6 @@ impl<Rend: WindowRenderer> ApplicationHandler for BlitzApplication<Rend> {
         if let Some(window) = self.windows.get_mut(&window_id) {
             window.handle_winit_event(event);
         }
-
         self.proxy.send_event(BlitzShellEvent::Poll { window_id });
     }
 
@@ -167,12 +166,13 @@ impl<Rend: WindowRenderer> ApplicationHandler for BlitzApplication<Rend> {
 impl<Rend: WindowRenderer> ApplicationHandlerExtMacOS for BlitzApplication<Rend> {
     fn standard_key_binding(
         &mut self,
-        event_loop: &dyn ActiveEventLoop,
+        _event_loop: &dyn ActiveEventLoop,
         window_id: WindowId,
         action: &str,
     ) {
-        let _ = event_loop;
-        let _ = window_id;
-        let _ = action;
+        if let Some(window) = self.windows.get_mut(&window_id) {
+            window.handle_apple_standard_keybinding(action);
+            self.proxy.send_event(BlitzShellEvent::Poll { window_id });
+        }
     }
 }

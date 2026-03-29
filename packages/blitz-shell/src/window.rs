@@ -344,6 +344,13 @@ impl<Rend: WindowRenderer> View<Rend> {
         self.accessibility.update_tree(&inner);
     }
 
+    #[cfg(target_os = "macos")]
+    pub fn handle_apple_standard_keybinding(&mut self, command: &str) {
+        use blitz_traits::SmolStr;
+        let event = UiEvent::AppleStandardKeybinding(SmolStr::new(command));
+        self.doc.handle_ui_event(event);
+    }
+
     pub fn handle_winit_event(&mut self, event: WindowEvent) {
         // Update accessibility focus and window size state in response to a Winit WindowEvent
         #[cfg(feature = "accessibility")]
@@ -392,7 +399,6 @@ impl<Rend: WindowRenderer> View<Rend> {
                 self.keyboard_modifiers = new_state;
             }
             WindowEvent::KeyboardInput { event, .. } => {
-
                 if let PhysicalKey::Code(key_code) = event.physical_key && event.state.is_pressed() {
                         let ctrl = self.keyboard_modifiers.state().control_key();
                         let meta = self.keyboard_modifiers.state().meta_key();
