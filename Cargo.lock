@@ -2809,8 +2809,8 @@ dependencies = [
 
 [[package]]
 name = "fontique"
-version = "0.7.0"
-source = "git+https://github.com/linebender/parley?rev=d7df17aa32637e95b64c1f804fb7ef7ea1981bd3#d7df17aa32637e95b64c1f804fb7ef7ea1981bd3"
+version = "0.8.0"
+source = "git+https://github.com/linebender/parley?rev=07980878fc9ea4b16ddc197ac789d01fb8ada7a3#07980878fc9ea4b16ddc197ac789d01fb8ada7a3"
 dependencies = [
  "hashbrown 0.16.1",
  "linebender_resource_handle",
@@ -2819,10 +2819,10 @@ dependencies = [
  "objc2-core-foundation",
  "objc2-core-text",
  "objc2-foundation 0.3.2",
+ "parlance",
  "read-fonts",
  "roxmltree 0.21.1",
  "smallvec",
- "text_primitives",
  "windows 0.62.2",
  "windows-core 0.62.2",
  "yeslogic-fontconfig-sys",
@@ -5168,9 +5168,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "parlance"
+version = "0.1.0"
+source = "git+https://github.com/linebender/parley?rev=07980878fc9ea4b16ddc197ac789d01fb8ada7a3#07980878fc9ea4b16ddc197ac789d01fb8ada7a3"
+
+[[package]]
 name = "parley"
-version = "0.7.0"
-source = "git+https://github.com/linebender/parley?rev=d7df17aa32637e95b64c1f804fb7ef7ea1981bd3#d7df17aa32637e95b64c1f804fb7ef7ea1981bd3"
+version = "0.8.0"
+source = "git+https://github.com/linebender/parley?rev=07980878fc9ea4b16ddc197ac789d01fb8ada7a3#07980878fc9ea4b16ddc197ac789d01fb8ada7a3"
 dependencies = [
  "fontique",
  "harfrust",
@@ -5179,15 +5184,15 @@ dependencies = [
  "icu_properties",
  "icu_segmenter",
  "linebender_resource_handle",
+ "parlance",
  "parley_data",
  "skrifa",
- "text_primitives",
 ]
 
 [[package]]
 name = "parley_data"
-version = "0.0.0"
-source = "git+https://github.com/linebender/parley?rev=d7df17aa32637e95b64c1f804fb7ef7ea1981bd3#d7df17aa32637e95b64c1f804fb7ef7ea1981bd3"
+version = "0.8.0"
+source = "git+https://github.com/linebender/parley?rev=07980878fc9ea4b16ddc197ac789d01fb8ada7a3#07980878fc9ea4b16ddc197ac789d01fb8ada7a3"
 dependencies = [
  "icu_properties",
 ]
@@ -7070,11 +7075,6 @@ name = "terminal-link"
 version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "253bcead4f3aa96243b0f8fa46f9010e87ca23bd5d0c723d474ff1d2417bbdf8"
-
-[[package]]
-name = "text_primitives"
-version = "0.1.0"
-source = "git+https://github.com/linebender/parley?rev=d7df17aa32637e95b64c1f804fb7ef7ea1981bd3#d7df17aa32637e95b64c1f804fb7ef7ea1981bd3"
 
 [[package]]
 name = "thin-vec"
