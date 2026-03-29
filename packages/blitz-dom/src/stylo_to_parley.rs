@@ -40,7 +40,6 @@ pub(crate) fn generic_font_family(input: stylo::GenericFontFamily) -> parley::Ge
     }
 }
 
-#[allow(dead_code)]
 pub(crate) fn query_font_family(input: &stylo::SingleFontFamily) -> parley::QueryFamily<'_> {
     match input {
         stylo::SingleFontFamily::FamilyName(name) => {
