@@ -63,6 +63,7 @@ pub enum UiEvent {
     KeyUp(BlitzKeyEvent),
     KeyDown(BlitzKeyEvent),
     Ime(BlitzImeEvent),
+    AppleStandardKeybinding(SmolStr),
 }
 impl UiEvent {
     pub fn discriminant(&self) -> u8 {
@@ -139,6 +140,8 @@ pub enum DomEventKind {
     Blur,
     FocusIn,
     FocusOut,
+
+    AppleStandardKeybinding,
 }
 impl DomEventKind {
     pub fn discriminant(self) -> u8 {
@@ -223,6 +226,8 @@ pub enum DomEventData {
     Blur(BlitzFocusEvent),
     FocusIn(BlitzFocusEvent),
     FocusOut(BlitzFocusEvent),
+
+    AppleStandardKeybinding(SmolStr),
 }
 impl DomEventData {
     pub fn discriminant(&self) -> u8 {
@@ -270,6 +275,8 @@ impl DomEventData {
             Self::Blur { .. } => "blur",
             Self::FocusIn { .. } => "focusin",
             Self::FocusOut { .. } => "focusout",
+
+            Self::AppleStandardKeybinding { .. } => "applekeybinding",
         }
     }
 
@@ -308,6 +315,8 @@ impl DomEventData {
             Self::Blur { .. } => DomEventKind::Blur,
             Self::FocusIn { .. } => DomEventKind::FocusIn,
             Self::FocusOut { .. } => DomEventKind::FocusOut,
+
+            Self::AppleStandardKeybinding { .. } => DomEventKind::AppleStandardKeybinding,
         }
     }
 
@@ -346,6 +355,8 @@ impl DomEventData {
             Self::Blur { .. } => false,
             Self::FocusIn { .. } => false,
             Self::FocusOut { .. } => false,
+
+            Self::AppleStandardKeybinding { .. } => true,
         }
     }
 
@@ -384,6 +395,8 @@ impl DomEventData {
             Self::Blur { .. } => false,
             Self::FocusIn { .. } => true,
             Self::FocusOut { .. } => true,
+
+            Self::AppleStandardKeybinding { .. } => false,
         }
     }
 }

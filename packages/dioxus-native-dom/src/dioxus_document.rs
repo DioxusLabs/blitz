@@ -313,6 +313,9 @@ impl EventHandler for DioxusEventHandler<'_> {
 
             // TODO: Implement IME handling
             DomEventData::Ime(_) => None,
+
+            // AppleStandardKeybinding events are not exposed to script
+            DomEventData::AppleStandardKeybinding(_) => None,
         };
 
         let Some(event_data) = event_data else {

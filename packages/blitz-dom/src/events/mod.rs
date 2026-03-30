@@ -9,7 +9,7 @@ use blitz_traits::events::{DomEvent, DomEventData, PointerCoords, UiEvent};
 pub use driver::{EventDriver, EventHandler, NoopEventHandler};
 use focus::generate_focus_events;
 pub(crate) use ime::handle_ime_event;
-pub(crate) use keyboard::handle_keypress;
+use keyboard::{KeyboardOrTextInputEvent, handle_key_or_input_event};
 pub(crate) use pointer::{DragMode, ScrollAnimationState};
 use pointer::{handle_click, handle_pointerdown, handle_pointermove, handle_pointerup};
 
@@ -76,6 +76,9 @@ pub(crate) fn handle_dom_event<F: FnMut(DomEvent)>(
             DomEventData::KeyDown(data) => Some(UiEvent::KeyDown(data)),
             DomEventData::KeyUp(data) => Some(UiEvent::KeyUp(data)),
             DomEventData::Ime(data) => Some(UiEvent::Ime(data)),
+            DomEventData::AppleStandardKeybinding(data) => {
+                Some(UiEvent::AppleStandardKeybinding(data))
+            }
 
             DomEventData::KeyPress(_) => None,
             DomEventData::Click(_) => None,
@@ -140,13 +143,26 @@ pub(crate) fn handle_dom_event<F: FnMut(DomEvent)>(
             handle_click(doc, target_node_id, event, &mut dispatch_event);
         }
         DomEventData::KeyDown(event) => {
-            handle_keypress(doc, target_node_id, event.clone(), dispatch_event);
+            handle_key_or_input_event(
+                doc,
+                target_node_id,
+                KeyboardOrTextInputEvent::KeyPress(event.clone()),
+                dispatch_event,
+            );
         }
         DomEventData::KeyPress(_) => {
             // Do nothing (no default action)
         }
         DomEventData::KeyUp(_) => {
             // Do nothing (no default action)
+        }
+        DomEventData::AppleStandardKeybinding(event) => {
+            handle_key_or_input_event(
+                doc,
+                target_node_id,
+                KeyboardOrTextInputEvent::AppleStandardKeyBinding(event.clone()),
+                dispatch_event,
+            );
         }
         DomEventData::Ime(event) => {
             handle_ime_event(doc, event.clone(), dispatch_event);
