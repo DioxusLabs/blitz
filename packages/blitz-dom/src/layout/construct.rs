@@ -56,7 +56,10 @@ fn push_children_and_pseudos(layout_children: &mut Vec<usize>, node: &Node) {
     if let Some(before) = node.before {
         layout_children.push(before);
     }
-    layout_children.extend_from_slice(&node.children);
+    layout_children.extend(node.children.iter().copied().filter(|child_id| {
+        let child_node = node.with(*child_id);
+        child_node.data.kind() != NodeKind::Comment
+    }));
     if let Some(after) = node.after {
         layout_children.push(after);
     }
@@ -66,12 +69,10 @@ fn push_non_whitespace_children_and_pseudos(layout_children: &mut Vec<usize>, no
     if let Some(before) = node.before {
         layout_children.push(before);
     }
-    layout_children.extend(
-        node.children
-            .iter()
-            .copied()
-            .filter(|child_id| !node.with(*child_id).is_whitespace_node()),
-    );
+    layout_children.extend(node.children.iter().copied().filter(|child_id| {
+        let child_node = node.with(*child_id);
+        !child_node.is_whitespace_node() && child_node.data.kind() != NodeKind::Comment
+    }));
     if let Some(after) = node.after {
         layout_children.push(after);
     }
