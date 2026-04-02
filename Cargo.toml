@@ -87,7 +87,7 @@ dioxus-cli-config = { version = "0.7.3" }
 dioxus-core-macro = { version = "0.7.3" }
 
 # Taffy
-taffy = { git = "https://github.com/DioxusLabs/taffy", rev = "4b6687da0ca1e9d71da4e48b4c659f5c45060707", default-features = false, features = [
+taffy = { version = "0.10", default-features = false, features = [
     "std",
     "flexbox",
     "grid",
@@ -235,7 +235,12 @@ blitz-shell = { workspace = true }
 blitz-net = { workspace = true }
 blitz = { workspace = true, features = ["net"] }
 dioxus = { workspace = true }
-dioxus-native = { workspace = true, features = ["vello", "floats", "svg", "prelude"] }
+dioxus-native = { workspace = true, features = [
+    "vello",
+    "floats",
+    "svg",
+    "prelude",
+] }
 euclid = { workspace = true }
 reqwest = { workspace = true }
 tokio = { workspace = true, features = ["macros"] }
