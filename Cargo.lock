@@ -6737,9 +6737,9 @@ dependencies = [
 
 [[package]]
 name = "stylo"
-version = "0.14.0"
+version = "0.15.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3db1bbd0d306397f76ab4bc2d08bee9eda5eb5f70ce18abce5f429e14a93bc50"
+checksum = "6c032879feb9c437f8eb370b1ddc56c13531267766bd6f3ada99c406d36d60a6"
 dependencies = [
  "app_units",
  "arrayvec",
@@ -6794,9 +6794,9 @@ dependencies = [
 
 [[package]]
 name = "stylo_atoms"
-version = "0.14.0"
+version = "0.15.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5d42e774cee69976c2ecd3bb20807f6aed425d755e9d6f452c0b6db44076f325"
+checksum = "dbb92d87ad2ba792800cc2bf508eb17286044303ebe55b15cd7e541190486c86"
 dependencies = [
  "string_cache",
  "string_cache_codegen",
@@ -6804,9 +6804,9 @@ dependencies = [
 
 [[package]]
 name = "stylo_derive"
-version = "0.14.0"
+version = "0.15.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a288f2c2ac1ac7e99aea3b5863989234eb02d4703d3a7676bf1e371d07f83357"
+checksum = "338d14b4375657058b395afcf11bee2fc22a77e9d80f66ee863b617b38d4319a"
 dependencies = [
  "darling 0.20.11",
  "proc-macro2",
@@ -6817,9 +6817,9 @@ dependencies = [
 
 [[package]]
 name = "stylo_dom"
-version = "0.14.0"
+version = "0.15.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cd0e8a383ccc3c4f6a821a47da1411b3857a7274d2d1568d1e01ca15341963ca"
+checksum = "1aa592a930bd67daa5c9c07bc7b422f23f67b5bd30532e85a6fcfef348cf0fb9"
 dependencies = [
  "bitflags 2.11.0",
  "stylo_malloc_size_of",
@@ -6827,9 +6827,9 @@ dependencies = [
 
 [[package]]
 name = "stylo_malloc_size_of"
-version = "0.14.0"
+version = "0.15.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1cdff8744ef9ccdd7381e28566413446608759cb5eeec418a798c72ae95d86fd"
+checksum = "a8cd4ec615ff7bbc849d1d7d95891c39db20dfd1cb79eb8ba29c54107a4101a3"
 dependencies = [
  "app_units",
  "cssparser",
@@ -6845,9 +6845,9 @@ dependencies = [
 
 [[package]]
 name = "stylo_static_prefs"
-version = "0.14.0"
+version = "0.15.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "61b56e722f192b3716459e30f3d5ae4825f476757703446a3580086668784a8c"
+checksum = "dc94d0d425d29db1da9535b12793a0db91e85ca2fde13adc73df33f49ee75af7"
 
 [[package]]
 name = "stylo_taffy"
@@ -6860,9 +6860,9 @@ dependencies = [
 
 [[package]]
 name = "stylo_traits"
-version = "0.14.0"
+version = "0.15.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "354e851d78b99d3ab591a76a9f768048493540d3575d1acc1e59ad640f36e449"
+checksum = "30cc7f5c9b43201f0d5c81ca190ccbf29382cff3af4cc926c9cd5e53beb6c9e5"
 dependencies = [
  "app_units",
  "bitflags 2.11.0",
