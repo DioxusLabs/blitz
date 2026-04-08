@@ -1528,7 +1528,7 @@ impl BaseDocument {
             x: pos.x as f64 - self.viewport_scroll.x,
             y: pos.y as f64 - self.viewport_scroll.y,
             width: node.unrounded_layout.size.width as f64,
-            height: node.unrounded_layout.size.width as f64,
+            height: node.unrounded_layout.size.height as f64,
         })
     }
 
