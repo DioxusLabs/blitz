@@ -28,6 +28,7 @@ use style::invalidation::element::restyle_hints::RestyleHint;
 use style::properties::ComputedValues;
 use style::properties::{Importance, PropertyDeclaration};
 use style::rule_tree::CascadeLevel;
+use style::rule_tree::CascadeOrigin;
 use style::selector_parser::PseudoElement;
 use style::selector_parser::RestyleDamage;
 use style::stylesheets::layer_rule::LayerOrder;
@@ -829,7 +830,7 @@ impl<'a> TElement for BlitzNode<'a> {
                     self.guard
                         .wrap(PropertyDeclarationBlock::with_one(decl, Importance::Normal)),
                 ),
-                CascadeLevel::PresHints,
+                CascadeLevel::new(CascadeOrigin::PresHints),
                 LayerOrder::root(),
             ));
         };
