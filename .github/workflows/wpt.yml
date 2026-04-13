@@ -39,8 +39,8 @@ jobs:
         run: cargo run -rp wpt css
       - name: Compress report (zstd)
         run: zstd -22 --ultra -o ./wpt/output/wptreport.json.zst ./wpt/output/wptreport.json
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: wpt-report.json.zst
           path: ./wpt/output/wptreport.json.zst
-          compression: 0 # We are already using zstd compression
+          archive: false # Disables zipping. We are already using zstd compression
