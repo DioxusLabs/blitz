@@ -6,6 +6,7 @@ use blitz_traits::{
 };
 use parley::FontContext;
 use std::sync::Arc;
+use style::media_queries::MediaType;
 
 /// Options used when constructing a [`BaseDocument`](crate::BaseDocument)
 #[derive(Default)]
@@ -26,4 +27,7 @@ pub struct DocumentConfig {
     pub html_parser_provider: Option<Arc<dyn HtmlParserProvider>>,
     /// Parley `FontContext`
     pub font_ctx: Option<FontContext>,
+    /// The CSS media type used to evaluate `@media` rules.
+    /// Defaults to [`MediaType::screen`].
+    pub media_type: Option<MediaType>,
 }

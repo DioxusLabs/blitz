@@ -188,6 +188,8 @@ pub struct BaseDocument {
     pub(crate) viewport: Viewport,
     // Scroll within our viewport
     pub(crate) viewport_scroll: crate::Point<f64>,
+    /// CSS media type used to evaluate `@media` rules.
+    pub(crate) media_type: MediaType,
 
     // Events
     pub(crate) tx: Sender<DocumentEvent>,
@@ -290,14 +292,18 @@ pub struct BaseDocument {
     pub html_parser_provider: Arc<dyn HtmlParserProvider>,
 }
 
-pub(crate) fn make_device(viewport: &Viewport, font_ctx: Arc<Mutex<FontContext>>) -> Device {
+pub(crate) fn make_device(
+    viewport: &Viewport,
+    media_type: MediaType,
+    font_ctx: Arc<Mutex<FontContext>>,
+) -> Device {
     let width = viewport.window_size.0 as f32 / viewport.scale();
     let height = viewport.window_size.1 as f32 / viewport.scale();
     let viewport_size = euclid::Size2D::new(width, height);
     let device_pixel_ratio = euclid::Scale::new(viewport.scale());
 
     Device::new(
-        MediaType::screen(),
+        media_type,
         selectors::matching::QuirksMode::NoQuirks,
         viewport_size,
         device_pixel_ratio,
@@ -347,7 +353,8 @@ impl BaseDocument {
         style_config::set_pref!("layout.threads", -1);
 
         let viewport = config.viewport.unwrap_or_default();
-        let device = make_device(&viewport, font_ctx.clone());
+        let media_type = config.media_type.unwrap_or_else(MediaType::screen);
+        let device = make_device(&viewport, media_type.clone(), font_ctx.clone());
         let stylist = Stylist::new(device, QuirksMode::NoQuirks);
         let snapshots = SnapshotMap::new();
         let nodes = Box::new(Slab::new());
@@ -386,6 +393,7 @@ impl BaseDocument {
             snapshots,
             nodes_to_id,
             viewport,
+            media_type,
             devtool_settings: DevtoolSettings::default(),
             viewport_scroll: crate::Point::ZERO,
             url: base_url,
@@ -1253,13 +1261,36 @@ impl BaseDocument {
     pub fn set_viewport(&mut self, viewport: Viewport) {
         let scale_has_changed = viewport.scale_f64() != self.viewport.scale_f64();
         self.viewport = viewport;
-        self.set_stylist_device(make_device(&self.viewport, self.font_ctx.clone()));
+        self.set_stylist_device(make_device(
+            &self.viewport,
+            self.media_type.clone(),
+            self.font_ctx.clone(),
+        ));
         self.scroll_viewport_by(0.0, 0.0); // Clamp scroll offset
 
         if scale_has_changed {
             self.invalidate_inline_contexts();
             self.shell_provider.request_redraw();
         }
+    }
+
+    /// Returns the current CSS media type used to evaluate `@media` rules.
+    pub fn media_type(&self) -> &MediaType {
+        &self.media_type
+    }
+
+    /// Sets the CSS media type used to evaluate `@media` rules (e.g. `screen` or `print`)
+    /// and rebuilds the stylist device so updated rules apply on the next restyle.
+    pub fn set_media_type(&mut self, media_type: MediaType) {
+        if self.media_type == media_type {
+            return;
+        }
+        self.media_type = media_type;
+        self.set_stylist_device(make_device(
+            &self.viewport,
+            self.media_type.clone(),
+            self.font_ctx.clone(),
+        ));
     }
 
     pub fn viewport(&self) -> &Viewport {

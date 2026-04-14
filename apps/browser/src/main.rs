@@ -122,6 +122,7 @@ fn app() -> Element {
             shell_provider: None,
             html_parser_provider: Some(Arc::new(HtmlProvider)),
             font_ctx: Some(loader.font_ctx.clone()),
+            media_type: None,
         };
         let mut document = HtmlDocument::from_html(view_source_html, config).into_inner();
         if let Some(parent_id) = document.get_element_by_id("source") {
@@ -544,6 +545,7 @@ impl DocumentLoader {
                         shell_provider: Some(consume_context::<Arc<dyn ShellProvider>>()),
                         html_parser_provider: Some(Arc::new(HtmlProvider)),
                         font_ctx: Some(font_ctx),
+                        media_type: None,
                     };
 
                     let html = if bytes.is_empty() {
@@ -571,6 +573,7 @@ impl DocumentLoader {
                         shell_provider: Some(consume_context::<Arc<dyn ShellProvider>>()),
                         html_parser_provider: Some(Arc::new(HtmlProvider)),
                         font_ctx: Some(font_ctx),
+                        media_type: None,
                     };
 
                     let error_html = include_str!("../assets/error.html");
