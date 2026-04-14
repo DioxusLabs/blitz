@@ -82,6 +82,7 @@ pub use node::{Attribute, ElementData, Node, NodeData, TextNodeData};
 pub use parley::FontContext;
 pub use style::Atom;
 pub use style::invalidation::element::restyle_hints::RestyleHint;
+pub use style::media_queries::MediaType;
 pub type SelectorList = selectors::SelectorList<style::selector_parser::SelectorImpl>;
 pub use events::{EventDriver, EventHandler, NoopEventHandler};
 pub use html::{DummyHtmlParserProvider, HtmlParserProvider};

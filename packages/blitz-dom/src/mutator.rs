@@ -931,8 +931,11 @@ impl Drop for ViewportMut<'_> {
             return;
         }
 
-        self.doc
-            .set_stylist_device(make_device(&self.doc.viewport, self.doc.font_ctx.clone()));
+        self.doc.set_stylist_device(make_device(
+            &self.doc.viewport,
+            Some(self.doc.media_type.clone()),
+            self.doc.font_ctx.clone(),
+        ));
         self.doc.scroll_viewport_by(0.0, 0.0); // Clamp scroll offset
 
         let scale_has_changed =
@@ -946,9 +949,37 @@ impl Drop for ViewportMut<'_> {
 
 #[cfg(test)]
 mod test {
+    use style::media_queries::MediaType;
     use style_dom::ElementState;
 
     use crate::{Attribute, BaseDocument, DocumentConfig, ElementData, NodeData, qual_name};
+
+    #[test]
+    fn media_type_defaults_to_screen() {
+        let mut document = BaseDocument::new(DocumentConfig::default());
+        assert_eq!(*document.media_type(), MediaType::screen());
+        assert_eq!(document.stylist_device().media_type(), MediaType::screen());
+    }
+
+    #[test]
+    fn media_type_honors_config() {
+        let mut document = BaseDocument::new(DocumentConfig {
+            media_type: Some(MediaType::print()),
+            ..Default::default()
+        });
+        assert_eq!(*document.media_type(), MediaType::print());
+        assert_eq!(document.stylist_device().media_type(), MediaType::print());
+    }
+
+    #[test]
+    fn set_media_type_updates_stylist_device() {
+        let mut document = BaseDocument::new(DocumentConfig::default());
+        assert_eq!(document.stylist_device().media_type(), MediaType::screen());
+
+        document.set_media_type(MediaType::print());
+        assert_eq!(*document.media_type(), MediaType::print());
+        assert_eq!(document.stylist_device().media_type(), MediaType::print());
+    }
 
     #[test]
     fn mutator_remove_disabled() {
