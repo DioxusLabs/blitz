@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Intrinsic Size Matrix</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      padding: 24px;
+      font: 14px/1.45 "Helvetica Neue", Helvetica, Arial, sans-serif;
+      background: #f7f3ea;
+      color: #1d1d1d;
+    }
+    h1, h2 { margin: 0 0 12px; }
+    h1 { font-size: 28px; }
+    h2 { font-size: 18px; margin-top: 32px; }
+    p { margin: 0 0 12px; }
+    .section {
+      margin-top: 24px;
+      padding: 18px;
+      border: 1px solid #d8c8aa;
+      background: #fffaf1;
+    }
+    .stack { display: grid; gap: 12px; }
+    .row { display: grid; gap: 8px; }
+    .row.fixed-240 { width: 240px; }
+    .row.fixed-320 { width: 320px; }
+    .label {
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: #8a6d3b;
+    }
+    .case {
+      padding: 8px;
+      border: 1px solid #ceb98d;
+      background: #fff;
+    }
+    .probe {
+      padding: 8px 10px;
+      border: 2px solid #72521c;
+      background: #f3d7a0;
+      overflow-wrap: normal;
+    }
+    .inline-wrap .probe {
+      display: inline-block;
+      vertical-align: top;
+    }
+    .shell {
+      width: 260px;
+      padding: 10px;
+      border: 2px dashed #b58e50;
+      background: #fff4d9;
+    }
+    .flex-shell {
+      display: flex;
+      gap: 8px;
+      width: 360px;
+      padding: 8px;
+      border: 2px dashed #b58e50;
+      background: #fff4d9;
+    }
+    .grow {
+      flex: 1 1 auto;
+      min-width: 0;
+      padding: 8px;
+      background: #d6ebff;
+      border: 1px solid #7aa6d9;
+    }
+    .replaced {
+      display: block;
+      border: 2px solid #72521c;
+      background: #fff;
+    }
+    .matrix {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+      gap: 12px;
+    }
+    .matrix .case { min-height: 108px; }
+    .token {
+      font-family: Menlo, Consolas, monospace;
+      font-size: 12px;
+      color: #6b4b16;
+    }
+  </style>
+</head>
+<body>
+  <h1>Intrinsic Size Matrix</h1>
+  <p>Manual smoke page for <span class="token">min-content</span>, <span class="token">max-content</span>, <span class="token">fit-content</span>, and <span class="token">fit-content(...)</span>.</p>
+
+  <div class="section">
+    <h2>Targeted Width Cases</h2>
+    <div class="stack">
+      <div class="case row fixed-240">
+        <div class="label">width:min-content with long unbreakable token</div>
+        <div class="probe" style="width:min-content;">AlphaBetaGammaDelta EEEEEEEEEEEEEEEEEEEEEEEE</div>
+      </div>
+      <div class="case row fixed-240">
+        <div class="label">width:max-content with break opportunities</div>
+        <div class="probe" style="width:max-content;">wrap here wrap there wrap everywhere</div>
+      </div>
+      <div class="case row fixed-240">
+        <div class="label">width:fit-content keyword inside fixed shell</div>
+        <div class="probe" style="width:fit-content;">word word word word word word word</div>
+      </div>
+      <div class="case row fixed-240">
+        <div class="label">width:fit-content(110px)</div>
+        <div class="probe" style="width:fit-content(110px);">wide content with enough words to wrap</div>
+      </div>
+      <div class="case row fixed-320">
+        <div class="label">min-width:max-content with width:auto</div>
+        <div class="probe" style="min-width:max-content;">token token token token token token</div>
+      </div>
+      <div class="case row fixed-320">
+        <div class="label">max-width:min-content with width:max-content</div>
+        <div class="probe" style="width:max-content; max-width:min-content;">short short supercalifragilisticexpialidocious</div>
+      </div>
+      <div class="case row fixed-320 inline-wrap">
+        <div class="label">nested inline boxes + subscript + superscript</div>
+        <div class="probe" style="width:fit-content(160px);">
+          H<span style="vertical-align:sub; font-size:12px;">2</span>O
+          and E = mc<span style="vertical-align:super; font-size:12px;">2</span>
+          with <span style="font-weight:bold;">nested inline content</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="section">
+    <h2>Flex Cases</h2>
+    <div class="stack">
+      <div class="case">
+        <div class="label">flex item width:min-content</div>
+        <div class="flex-shell">
+          <div class="probe" style="width:min-content;">LongTokenHere AnotherLongToken</div>
+          <div class="grow">flex grow sibling</div>
+        </div>
+      </div>
+      <div class="case">
+        <div class="label">flex item width:max-content</div>
+        <div class="flex-shell">
+          <div class="probe" style="width:max-content;">word word word word word word word</div>
+          <div class="grow">flex grow sibling</div>
+        </div>
+      </div>
+      <div class="case">
+        <div class="label">flex-basis:min-content</div>
+        <div class="flex-shell">
+          <div class="probe" style="flex:0 1 auto; flex-basis:min-content;">LongTokenHere AnotherLongToken</div>
+          <div class="grow">flex grow sibling</div>
+        </div>
+      </div>
+      <div class="case">
+        <div class="label">flex-basis:max-content</div>
+        <div class="flex-shell">
+          <div class="probe" style="flex:0 1 auto; flex-basis:max-content;">word word word word word word word</div>
+          <div class="grow">flex grow sibling</div>
+        </div>
+      </div>
+      <div class="case">
+        <div class="label">flex-basis:fit-content keyword</div>
+        <div class="flex-shell">
+          <div class="probe" style="flex:0 1 auto; flex-basis:fit-content;">word word word word word word word</div>
+          <div class="grow">flex grow sibling</div>
+        </div>
+      </div>
+      <div class="case">
+        <div class="label">flex-basis:fit-content(120px)</div>
+        <div class="flex-shell">
+          <div class="probe" style="flex:0 1 auto; flex-basis:fit-content(120px);">word word word word word word word</div>
+          <div class="grow">flex grow sibling</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="section">
+    <h2>Replaced Elements</h2>
+    <div class="stack">
+      <div class="case">
+        <div class="label">img width:min-content</div>
+        <div class="shell">
+          <img
+            class="replaced"
+            style="width:min-content;"
+            alt="intrinsic test"
+            src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='70' viewBox='0 0 180 70'%3E%3Crect width='180' height='70' fill='%23e3f2ff'/%3E%3Crect x='5' y='5' width='170' height='60' fill='%23ffb74d' stroke='%236d4c41'/%3E%3Ctext x='90' y='43' text-anchor='middle' font-size='18' font-family='Helvetica'%3E180x70%3C/text%3E%3C/svg%3E"
+          />
+        </div>
+      </div>
+      <div class="case">
+        <div class="label">img max-width:min-content</div>
+        <div class="shell">
+          <img
+            class="replaced"
+            style="width:max-content; max-width:min-content;"
+            alt="intrinsic clamp test"
+            src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='70' viewBox='0 0 180 70'%3E%3Crect width='180' height='70' fill='%23dff7e2'/%3E%3Crect x='5' y='5' width='170' height='60' fill='%2381c784' stroke='%232e7d32'/%3E%3Ctext x='90' y='43' text-anchor='middle' font-size='18' font-family='Helvetica'%3EClamp%3C/text%3E%3C/svg%3E"
+          />
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="section">
+    <h2>Combinatorial Corpus</h2>
+    <p>Generated cases to visually scan for overflow, accidental stretching, and min/max inversions.</p>
+    <div id="matrix" class="matrix"></div>
+  </div>
+
+  <script>
+    const matrix = document.getElementById("matrix");
+    const contents = [
+      "supercalifragilisticexpialidocious short",
+      "wrap wrap wrap wrap wrap wrap",
+      "sub x2 + y2",
+    ];
+    const values = [
+      "min-content",
+      "max-content",
+      "fit-content",
+      "fit-content(80px)",
+      "fit-content(55%)",
+    ];
+    const props = ["width", "min-width", "max-width"];
+
+    const probeMarkup = (content) => {
+      if (content === "sub x2 + y2") {
+        return "x<span style='vertical-align:super;font-size:11px;'>2</span> + y<span style='vertical-align:sub;font-size:11px;'>2</span> nested";
+      }
+      return content;
+    };
+
+    props.forEach((prop) => {
+      values.forEach((value) => {
+        contents.forEach((content) => {
+          const card = document.createElement("div");
+          card.className = "case";
+          card.innerHTML = `
+            <div class="label">${prop}: ${value}</div>
+            <div class="shell">
+              <div class="probe" style="${prop}:${value};">
+                ${probeMarkup(content)}
+              </div>
+            </div>
+          `;
+          matrix.appendChild(card);
+        });
+      });
+    });
+  </script>
+</body>
+</html>

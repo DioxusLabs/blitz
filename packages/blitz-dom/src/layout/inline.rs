@@ -16,6 +16,52 @@ use super::resolve_calc_value;
 use crate::BaseDocument;
 use crate::stylo_to_parley;
 
+fn clamp_intrinsic_outer_width(
+    available: AvailableSpace,
+    min_outer: f32,
+    max_outer: f32,
+    box_adjustment: f32,
+) -> f32 {
+    match available {
+        AvailableSpace::MinContent => min_outer,
+        AvailableSpace::MaxContent => max_outer,
+        AvailableSpace::Definite(limit) => (limit + box_adjustment).clamp(min_outer, max_outer),
+    }
+}
+
+fn resolved_intrinsic_outer_width(
+    raw: taffy::Dimension,
+    resolved_outer_width: Option<f32>,
+    parent_width: Option<f32>,
+    available_width: AvailableSpace,
+    min_outer_width: f32,
+    max_outer_width: f32,
+    box_adjustment: f32,
+) -> Option<f32> {
+    resolved_outer_width.or_else(|| {
+        if raw.is_min_content() {
+            Some(min_outer_width)
+        } else if raw.is_max_content() {
+            Some(max_outer_width)
+        } else if raw.is_fit_content_keyword() {
+            Some(clamp_intrinsic_outer_width(
+                available_width,
+                min_outer_width,
+                max_outer_width,
+                box_adjustment,
+            ))
+        } else if raw.is_fit_content() {
+            Some(
+                raw.definite_limit(parent_width, resolve_calc_value)
+                    .map(|limit| (limit + box_adjustment).clamp(min_outer_width, max_outer_width))
+                    .unwrap_or(max_outer_width),
+            )
+        } else {
+            None
+        }
+    })
+}
+
 impl BaseDocument {
     pub(crate) fn compute_inline_layout(
         &mut self,
@@ -151,6 +197,9 @@ impl BaseDocument {
             .unwrap();
 
         let style = &self.nodes[node_id].style;
+        let raw_size = style.size();
+        let raw_min_size = style.min_size();
+        let raw_max_size = style.max_size();
 
         // Note: both horizontal and vertical percentage padding/borders are resolved against the container's inline size (i.e. width).
         // This is not a bug, but is how CSS is specified (see: https://developer.mozilla.org/en-US/docs/Web/CSS/padding#values)
@@ -325,10 +374,18 @@ impl BaseDocument {
 
                 eprintln!(
                     "[ibox] id={} w={:.1} h={:.1} first_baseline={:?} overflow_hidden={} margin={:.1}/{:.1}/{:.1}/{:.1} output_size={:.1}x{:.1} scale={:.2}",
-                    ibox.id, ibox.width, ibox.height, ibox.first_baseline,
+                    ibox.id,
+                    ibox.width,
+                    ibox.height,
+                    ibox.first_baseline,
                     overflow_not_visible,
-                    margin.top, margin.right, margin.bottom, margin.left,
-                    output.size.width, output.size.height, scale
+                    margin.top,
+                    margin.right,
+                    margin.bottom,
+                    margin.left,
+                    output.size.width,
+                    output.size.height,
+                    scale
                 );
             }
 
@@ -431,15 +488,41 @@ impl BaseDocument {
                 }
                 .ceil();
 
-                let style_width = node_size.width.map(|w| w * scale);
-                let min_width = node_min_size.width.map(|w| w * scale);
-                let max_width = node_max_size.width.map(|w| w * scale);
+                let min_outer_width = min_content_width.max(float_width) + pbw;
+                let max_outer_width = max_content_width + float_width + pbw;
+                let computed_outer_width = computed_width + pbw;
+                let outer_width = resolved_intrinsic_outer_width(
+                    raw_size.width,
+                    node_size.width.map(|w| w * scale),
+                    parent_size.width,
+                    available_space.width,
+                    min_outer_width,
+                    max_outer_width,
+                    box_sizing_adjustment.width * scale,
+                )
+                .unwrap_or(computed_outer_width)
+                .maybe_clamp(
+                    resolved_intrinsic_outer_width(
+                        raw_min_size.width,
+                        node_min_size.width.map(|w| w * scale),
+                        parent_size.width,
+                        available_space.width,
+                        min_outer_width,
+                        max_outer_width,
+                        box_sizing_adjustment.width * scale,
+                    ),
+                    resolved_intrinsic_outer_width(
+                        raw_max_size.width,
+                        node_max_size.width.map(|w| w * scale),
+                        parent_size.width,
+                        available_space.width,
+                        min_outer_width,
+                        max_outer_width,
+                        box_sizing_adjustment.width * scale,
+                    ),
+                );
 
-                (style_width)
-                    .unwrap_or(computed_width + pbw)
-                    .max(computed_width)
-                    .maybe_clamp(min_width, max_width)
-                    - pbw
+                outer_width - pbw
             });
 
         #[cfg(not(feature = "floats"))]
@@ -792,7 +875,10 @@ impl BaseDocument {
                 // Metrics (which may use sTypo metrics that sum to exactly UPM
                 // with zero leading for fonts like Helvetica).
                 use skrifa::raw::TableProvider;
-                let upm = font_ref.head().map(|h| h.units_per_em() as f32).unwrap_or(1000.0);
+                let upm = font_ref
+                    .head()
+                    .map(|h| h.units_per_em() as f32)
+                    .unwrap_or(1000.0);
                 let scale_factor = font_size_px / upm;
                 let normal_lh = font_ref
                     .os2()

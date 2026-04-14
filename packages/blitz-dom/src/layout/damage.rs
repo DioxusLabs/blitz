@@ -419,6 +419,16 @@ impl BaseDocument {
 
             // if damage.intersects(RestyleDamage::RELAYOUT | CONSTRUCT_BOX) {
             node.style = stylo_taffy::to_taffy_style(style);
+            node.style.item_is_replaced = node
+                .data
+                .downcast_element()
+                .map(|element| {
+                    matches!(
+                        &*element.name.local,
+                        "img" | "canvas" | "svg" | "input" | "textarea" | "select" | "iframe"
+                    )
+                })
+                .unwrap_or(false);
             node.css_position = style.clone_position();
             node.display_constructed_as = style.clone_display();
             // }
@@ -559,8 +569,7 @@ impl BaseDocument {
                 // - Positioned elements with explicit z-index (CSS spec §9.9)
                 // - Any element that creates a stacking context (opacity, transform, filter, etc.)
                 let is_positioned_with_z = position != Position::Static && z_index != 0;
-                let creates_stacking_context =
-                    child.is_stacking_context_root(is_flex_or_grid);
+                let creates_stacking_context = child.is_stacking_context_root(is_flex_or_grid);
                 if is_positioned_with_z || creates_stacking_context {
                     stacking_context.children.push(HoistedPaintChild {
                         node_id: child_id,

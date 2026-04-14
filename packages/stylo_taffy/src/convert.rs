@@ -77,12 +77,10 @@ pub fn dimension(val: &stylo::Size) -> taffy::Dimension {
     match val {
         stylo::Size::LengthPercentage(val) => length_percentage(&val.0).into(),
         stylo::Size::Auto => taffy::Dimension::AUTO,
-
-        // TODO: implement other values in Taffy
-        stylo::Size::MaxContent => taffy::Dimension::AUTO,
-        stylo::Size::MinContent => taffy::Dimension::AUTO,
-        stylo::Size::FitContent => taffy::Dimension::AUTO,
-        stylo::Size::FitContentFunction(_) => taffy::Dimension::AUTO,
+        stylo::Size::MaxContent => max_content(),
+        stylo::Size::MinContent => min_content(),
+        stylo::Size::FitContent => taffy::Dimension::fit_content_keyword(),
+        stylo::Size::FitContentFunction(limit) => fit_content(length_percentage(&limit.0)),
         stylo::Size::Stretch => taffy::Dimension::AUTO,
         stylo::Size::WebkitFillAvailable => taffy::Dimension::AUTO,
 
@@ -97,12 +95,10 @@ pub fn max_size_dimension(val: &stylo::MaxSize) -> taffy::Dimension {
     match val {
         stylo::MaxSize::LengthPercentage(val) => length_percentage(&val.0).into(),
         stylo::MaxSize::None => taffy::Dimension::AUTO,
-
-        // TODO: implement other values in Taffy
-        stylo::MaxSize::MaxContent => taffy::Dimension::AUTO,
-        stylo::MaxSize::MinContent => taffy::Dimension::AUTO,
-        stylo::MaxSize::FitContent => taffy::Dimension::AUTO,
-        stylo::MaxSize::FitContentFunction(_) => taffy::Dimension::AUTO,
+        stylo::MaxSize::MaxContent => max_content(),
+        stylo::MaxSize::MinContent => min_content(),
+        stylo::MaxSize::FitContent => taffy::Dimension::fit_content_keyword(),
+        stylo::MaxSize::FitContentFunction(limit) => fit_content(length_percentage(&limit.0)),
         stylo::MaxSize::Stretch => taffy::Dimension::AUTO,
         stylo::MaxSize::WebkitFillAvailable => taffy::Dimension::AUTO,
 
@@ -620,7 +616,8 @@ pub fn to_taffy_style(style: &stylo::ComputedValues) -> taffy::Style<Atom> {
         // Suppress insets for static elements (Taffy maps static to relative, so insets
         // would incorrectly be applied as relative offsets) and sticky elements (insets are
         // sticking thresholds, not layout offsets — raw values remain accessible via Stylo).
-        inset: if css_position == stylo::Position::Sticky || css_position == stylo::Position::Static {
+        inset: if css_position == stylo::Position::Sticky || css_position == stylo::Position::Static
+        {
             taffy::Rect::AUTO
         } else {
             taffy::Rect {
