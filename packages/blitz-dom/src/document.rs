@@ -294,7 +294,7 @@ pub struct BaseDocument {
 
 pub(crate) fn make_device(
     viewport: &Viewport,
-    media_type: Option<MediaType>,
+    media_type: MediaType,
     font_ctx: Arc<Mutex<FontContext>>,
 ) -> Device {
     let width = viewport.window_size.0 as f32 / viewport.scale();
@@ -303,7 +303,7 @@ pub(crate) fn make_device(
     let device_pixel_ratio = euclid::Scale::new(viewport.scale());
 
     Device::new(
-        media_type.unwrap_or_else(MediaType::screen),
+        media_type,
         selectors::matching::QuirksMode::NoQuirks,
         viewport_size,
         device_pixel_ratio,
@@ -354,7 +354,7 @@ impl BaseDocument {
 
         let viewport = config.viewport.unwrap_or_default();
         let media_type = config.media_type.unwrap_or_else(MediaType::screen);
-        let device = make_device(&viewport, Some(media_type.clone()), font_ctx.clone());
+        let device = make_device(&viewport, media_type.clone(), font_ctx.clone());
         let stylist = Stylist::new(device, QuirksMode::NoQuirks);
         let snapshots = SnapshotMap::new();
         let nodes = Box::new(Slab::new());
@@ -1263,7 +1263,7 @@ impl BaseDocument {
         self.viewport = viewport;
         self.set_stylist_device(make_device(
             &self.viewport,
-            Some(self.media_type.clone()),
+            self.media_type.clone(),
             self.font_ctx.clone(),
         ));
         self.scroll_viewport_by(0.0, 0.0); // Clamp scroll offset
@@ -1288,7 +1288,7 @@ impl BaseDocument {
         self.media_type = media_type;
         self.set_stylist_device(make_device(
             &self.viewport,
-            Some(self.media_type.clone()),
+            self.media_type.clone(),
             self.font_ctx.clone(),
         ));
     }

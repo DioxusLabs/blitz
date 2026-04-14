@@ -933,7 +933,7 @@ impl Drop for ViewportMut<'_> {
 
         self.doc.set_stylist_device(make_device(
             &self.doc.viewport,
-            Some(self.doc.media_type.clone()),
+            self.doc.media_type.clone(),
             self.doc.font_ctx.clone(),
         ));
         self.doc.scroll_viewport_by(0.0, 0.0); // Clamp scroll offset
