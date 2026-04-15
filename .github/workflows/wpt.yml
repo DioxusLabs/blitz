@@ -47,6 +47,7 @@ jobs:
   trigger-archive:
     name: "Trigger Archive Job"
     runs-on: ubuntu-latest
+    needs: wpt
     environment: WPT
     steps:
       - name: Trigger Archive job
