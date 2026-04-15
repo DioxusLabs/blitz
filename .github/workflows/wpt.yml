@@ -44,3 +44,14 @@ jobs:
           name: wpt-report.json.zst
           path: ./wpt/output/wptreport.json.zst
           archive: false # Disables zipping. We are already using zstd compression
+  trigger-archive:
+    name: "Trigger Archive Job"
+    runs-on: ubuntu-latest
+    environment: WPT
+    steps:
+      - name: Trigger Archive job
+        uses: peter-evans/repository-dispatch@v4
+        with:
+          token: ${{ secrets.WPT_GITHUB_TOKEN }}
+          repository: DioxusLabs/blitz-wpt-results
+          event-type: update-results
