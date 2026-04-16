@@ -276,11 +276,11 @@ fn apply_keypress_event(
                 return Some(GeneratedEvent::Submit);
             }
         }
-        Key::Character(s) => {
-            if !mods.contains(Modifiers::CONTROL) && !mods.contains(Modifiers::SUPER) {
-                driver.insert_or_replace_selection(&s);
-                return Some(GeneratedEvent::Input);
-            }
+        Key::Character(s)
+            if !mods.contains(Modifiers::CONTROL) && !mods.contains(Modifiers::SUPER) =>
+        {
+            driver.insert_or_replace_selection(&s);
+            return Some(GeneratedEvent::Input);
         }
         _ => {}
     };
