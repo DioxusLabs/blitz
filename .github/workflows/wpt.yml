@@ -15,6 +15,11 @@ env:
   CARGO_REGISTRIES_CRATES_IO_PROTOCOL: "sparse"
   WPT_DIR: "./wpt/tests"
 
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
 jobs:
   wpt:
     name: "Run WPT Tests"
