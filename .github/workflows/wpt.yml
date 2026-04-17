@@ -54,6 +54,12 @@ jobs:
           mkdir -p ./sites/gh-pages
           cp ./wpt/output/wptreport.json ./sites/gh-pages/wptreport.json
           cp ./wpt/output/wptreport.json.zst ./sites/gh-pages/wptreport.json.zst
+      - name: Install wpt cli
+        run: cargo install wpt@0.0.13
+      - name: Generate scores.json
+        run: |
+          wpt calc-scores --in ./sites/gh-pages/wptreport.json --out ./sites/gh-pages/wptscores.json
+          zstd -22 --long --ultra -o ./sites/gh-pages/wptscores.json.zst ./sites/gh-pages/wptscores.json
       - name: Setup Github Pages
         uses: actions/configure-pages@v6
       - name: Upload Pages artifact
