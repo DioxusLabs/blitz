@@ -44,6 +44,20 @@ jobs:
           name: wpt-report.json.zst
           path: ./wpt/output/wptreport.json.zst
           archive: false # Disables zipping. We are already using zstd compression
+      - name: Copy files for Github pages
+        run: |
+          mkdir -p ./sites/gh-pages
+          cp ./wpt/output/wptreport.json ./sites/gh-pages/wptreport.json
+          cp ./wpt/output/wptreport.json.zst ./sites/gh-pages/wptreport.json.zst
+      - name: Setup Github Pages
+        uses: actions/configure-pages@v6
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v5
+        with:
+          path: 'sites/gh-pages'
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v5
   trigger-archive:
     name: "Trigger Archive Job"
     runs-on: ubuntu-latest
