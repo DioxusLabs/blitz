@@ -916,6 +916,14 @@ impl<'a> TElement for BlitzNode<'a> {
                         NonNegative(width),
                     )));
                 }
+            } else if *name == local_name!("width") {
+                if let Some(width) = parse_size_attr(value, |_| true) {
+                    use style::values::generics::{NonNegative, length::Size};
+
+                    push_style(PropertyDeclaration::Width(Size::LengthPercentage(
+                        NonNegative(width),
+                    )));
+                }
             }
 
             if *name == local_name!("height")
@@ -926,6 +934,14 @@ impl<'a> TElement for BlitzNode<'a> {
             {
                 if let Some(height) = parse_size_attr(value, |_| true) {
                     use style::values::generics::{NonNegative, length::Size};
+                    push_style(PropertyDeclaration::Height(Size::LengthPercentage(
+                        NonNegative(height),
+                    )));
+                }
+            } else if *name == local_name!("height") {
+                if let Some(height) = parse_size_attr(value, |_| true) {
+                    use style::values::generics::{NonNegative, length::Size};
+
                     push_style(PropertyDeclaration::Height(Size::LengthPercentage(
                         NonNegative(height),
                     )));
