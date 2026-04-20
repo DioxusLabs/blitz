@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>rowspan reproduction</title>
+<style>
+body { font-family: sans-serif; padding: 16px; }
+table { border-collapse: collapse; width: 400px; }
+td, th { border: 1px solid #333; padding: 8px; text-align: center; }
+thead { background: #eef; }
+.tall { background: #fec; }
+</style>
+</head>
+<body>
+<h1>rowspan minimal reproduction</h1>
+<p>Expected: cell "2" spans rows 2 and 3 (column B); cell "4" is in column A and "6" is in column C of row 3.</p>
+<table>
+  <thead>
+    <tr><th>A</th><th>B</th><th>C</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>1</td><td class="tall" rowspan="2">2 (rowspan=2)</td><td>3</td></tr>
+    <tr><td>4</td><td>6</td></tr>
+    <tr><td>7</td><td>8</td><td>9</td></tr>
+  </tbody>
+</table>
+</body>
+</html>
