@@ -60,19 +60,22 @@ jobs:
         run: |
           wpt calc-scores --in ./sites/gh-pages/wptreport.json --out ./sites/gh-pages/wptscores.json
           zstd -22 --long --ultra -o ./sites/gh-pages/wptscores.json.zst ./sites/gh-pages/wptscores.json
-      - name: Setup Github Pages
-        uses: actions/configure-pages@v6
-      - name: Upload Pages artifact
-        uses: actions/upload-pages-artifact@v5
-        with:
-          path: 'sites/gh-pages'
-      - name: Deploy to GitHub Pages
-        id: deployment
-        uses: actions/deploy-pages@v5
       - name: Fetch main-branch results
         run: curl https://dioxuslabs.github.io/blitz/wptreport.json -o ./wpt/output/main-wptreport.json
       - name: Diff WPT results
         run: wpt diff ./wpt/output/main-wptreport.json ./wpt/output/wptreport.json
+      - name: Setup Github Pages
+        if: github.ref == 'refs/heads/master'
+        uses: actions/configure-pages@v6
+      - name: Upload Pages artifact
+        if: github.ref == 'refs/heads/master'
+        uses: actions/upload-pages-artifact@v5
+        with:
+          path: 'sites/gh-pages'
+      - name: Deploy to GitHub Pages
+        if: github.ref == 'refs/heads/main'
+        id: deployment
+        uses: actions/deploy-pages@v5
   trigger-archive:
     name: "Trigger Archive Job"
     runs-on: ubuntu-latest
