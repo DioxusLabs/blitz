@@ -69,6 +69,10 @@ jobs:
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v5
+      - name: Fetch main-branch results
+        run: curl https://dioxuslabs.github.io/blitz/wptreport.json -o ./wpt/output/main-wptreport.json
+      - name: Diff WPT results
+        run: wpt diff ./wpt/output/main-wptreport.json ./wpt/output/wptreport.json
   trigger-archive:
     name: "Trigger Archive Job"
     runs-on: ubuntu-latest
