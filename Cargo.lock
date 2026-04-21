@@ -837,7 +837,6 @@ dependencies = [
  "cursor-icon",
  "debug_timer 0.1.3",
  "euclid",
- "fastrand",
  "html-escape",
  "image",
  "keyboard-types 0.7.0",
