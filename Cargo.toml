@@ -145,7 +145,7 @@ woff2 = "0.3"
 wuff = "0.2"
 html-escape = "0.2.13"
 percent-encoding = "2.3.1"
-png = "0.17"
+png = "0.18"
 serde = "1"
 
 # Dioxus Native
