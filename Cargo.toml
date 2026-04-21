@@ -117,14 +117,6 @@ skrifa = { version = "0.40", default-features = false, features = [
     "std",
 ] } # Should match parley version
 wgpu = "28"
-softbuffer = "0.4"
-pixels = "0.15"
-vello = { version = "0.6", features = ["wgpu"] }
-vello_encoding = { version = "0.6", default-features = false }
-vello_cpu = { version = "0.0.3", default-features = false, features = [
-    "std",
-    "text",
-] }
 usvg = "0.46"
 
 # Windowing & Input
