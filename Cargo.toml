@@ -155,7 +155,7 @@ webbrowser = "1.0"
 wasm-bindgen-futures = "0.4"
 
 # Other dependencies
-rustc-hash = "1.1.0"
+rustc-hash = "2.1.2"
 bytes = "1.7.1"
 slab = "0.4.9"
 tracing = "0.1.40"
