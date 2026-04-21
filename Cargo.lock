@@ -861,7 +861,6 @@ dependencies = [
  "tracing",
  "url",
  "usvg",
- "woff",
  "wuff",
 ]
 
@@ -4106,18 +4105,6 @@ dependencies = [
  "libc",
  "plain",
  "redox_syscall 0.7.4",
-]
-
-[[package]]
-name = "libz-sys"
-version = "1.1.28"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fc3a226e576f50782b3305c5ccf458698f92798987f551c6a02efe8276721e22"
-dependencies = [
- "cc",
- "libc",
- "pkg-config",
- "vcpkg",
 ]
 
 [[package]]
@@ -7889,12 +7876,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ba73ea9cf16a25df0c8caa16c51acb937d5712a8429db78a3ee29d5dcacd3a65"
 
 [[package]]
-name = "vcpkg"
-version = "0.2.15"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "accd4ea62f7bb7a82fe23066fb0957d48ef677f6eeb8215f372f52e48bb32426"
-
-[[package]]
 name = "vello"
 version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -9499,17 +9480,6 @@ dependencies = [
  "serde_json",
  "unicode-xid",
  "wasmparser",
-]
-
-[[package]]
-name = "woff"
-version = "0.6.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2f3c29a3b824be468d5e2b25c281a9219d083553358ffe3c08d0c0a2b5d1d3a4"
-dependencies = [
- "cc",
- "libc",
- "libz-sys",
 ]
 
 [[package]]

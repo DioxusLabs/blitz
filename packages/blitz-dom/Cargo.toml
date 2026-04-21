@@ -13,17 +13,15 @@ rust-version.workspace = true
 [features]
 default = [
     "svg",
-    "woff-rust",
+    "woff",
     "accessibility",
     "system_fonts",
     "file_input",
 ]
 tracing = ["dep:tracing"]
 svg = ["dep:usvg"]
-# WOFF decoding using the "woff" crate which binds to C libraries
-woff-c = ["dep:woff"]
-# WOFF decoding using the "wuff" crate which is pure Rust
-woff-rust = ["dep:wuff"]
+# WOFF decoding (using the "wuff" crate which is pure Rust)
+woff = ["dep:wuff"]
 accessibility = ["accesskit"]
 system_fonts = ["parley/system"]
 autofocus = []
@@ -72,7 +70,6 @@ rayon = { workspace = true }
 # Media & Decoding
 image = { workspace = true }
 usvg = { workspace = true, optional = true }
-woff = { workspace = true, optional = true, features = ["version1", "version2"] }
 wuff = { workspace = true, optional = true }
 html-escape = { workspace = true }
 percent-encoding = { workspace = true }

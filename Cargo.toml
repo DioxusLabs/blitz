@@ -140,8 +140,6 @@ http-cache = { version = "=1.0.0-alpha.6", default-features = false }
 
 # Media & Decoding
 image = { version = "=0.25.6", default-features = false }
-woff = { version = "0.6", default-features = false }
-woff2 = "0.3"
 wuff = "0.2"
 html-escape = "0.2.13"
 percent-encoding = "2.3.1"
