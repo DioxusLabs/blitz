@@ -86,7 +86,7 @@ dioxus-cli-config = { version = "0.7.3" }
 # Dioxus Prelude
 dioxus-core-macro = { version = "0.7.3" }
 
-# Taffy
+# Taffy + Parley + Fontations
 taffy = { version = "0.10.1", default-features = false, features = [
     "std",
     "flexbox",
@@ -96,6 +96,10 @@ taffy = { version = "0.10.1", default-features = false, features = [
     "calc",
     "detailed_layout_info",
 ] }
+parley = { version = "0.9", default-features = false, features = ["std"] }
+skrifa = { version = "0.40", default-features = false, features = [
+    "std",
+] } # Should match parley and vello versions
 
 # AnyRender
 anyrender = { version = "0.8" }
@@ -112,10 +116,6 @@ color = "0.3"
 linebender_resource_handle = "0.1"
 peniko = "0.6.0"
 kurbo = "0.13"
-parley = { version = "0.9", default-features = false, features = ["std"] }
-skrifa = { version = "0.40", default-features = false, features = [
-    "std",
-] } # Should match parley version
 wgpu = "28"
 usvg = "0.46"
 
