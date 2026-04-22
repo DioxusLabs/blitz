@@ -130,6 +130,7 @@ jobs:
     runs-on: ${{ matrix.platform.os }}
     env:
       RUST_CARGO_COMMAND: ${{ matrix.platform.cross == true && 'cross' || 'cargo' }}
+      RUSTFLAGS: ${{ matrix.platform.name == 'ios' && '-Clink-arg=-target -Clink-arg=arm64-apple-ios18.4 -Clink-arg=-miphoneos-version-min=18.4' || '' }}  
     strategy:
       fail-fast: false
       matrix:
