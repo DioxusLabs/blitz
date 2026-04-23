@@ -1,5 +1,5 @@
 use blitz_shell::{BlitzApplication, BlitzShellProxy, View};
-use dioxus_core::{provide_context, ScopeId};
+use dioxus_core::{ScopeId, provide_context};
 use dioxus_history::{History, MemoryHistory};
 use std::rc::Rc;
 use std::sync::Arc;
@@ -12,7 +12,7 @@ use winit::window::WindowId;
 use winit::platform::macos::ApplicationHandlerExtMacOS;
 
 use crate::DioxusNativeWindowRenderer;
-use crate::{contexts::DioxusNativeDocument, BlitzShellEvent, DioxusDocument, WindowConfig};
+use crate::{BlitzShellEvent, DioxusDocument, WindowConfig, contexts::DioxusNativeDocument};
 
 /// Dioxus-native specific event type
 pub enum DioxusNativeEvent {

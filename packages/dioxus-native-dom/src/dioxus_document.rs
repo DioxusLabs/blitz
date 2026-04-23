@@ -1,18 +1,18 @@
 //! Integration between Dioxus and Blitz
+use crate::NodeId;
 use crate::events::{
     BlitzKeyboardData, NativeConverter, NativeFocusData, NativeFormData, NativePointerData,
     NativeScrollData, NativeWheelData, NodeHandle,
 };
 use crate::mutation_writer::{DioxusState, MutationWriter};
 use crate::qual_name;
-use crate::NodeId;
 use blitz_dom::{
-    Attribute, BaseDocument, DocGuard, DocGuardMut, Document, DocumentConfig, EventDriver,
-    EventHandler, Node, DEFAULT_CSS,
+    Attribute, BaseDocument, DEFAULT_CSS, DocGuard, DocGuardMut, Document, DocumentConfig,
+    EventDriver, EventHandler, Node,
 };
 use blitz_traits::events::{DomEvent, DomEventData, EventState, UiEvent};
 use dioxus_core::{ElementId, Event, VirtualDom};
-use dioxus_html::{set_event_converter, PlatformEventData};
+use dioxus_html::{PlatformEventData, set_event_converter};
 use futures_util::task::noop_waker;
 use std::cell::RefCell;
 use std::future::Future;

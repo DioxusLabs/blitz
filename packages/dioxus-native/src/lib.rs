@@ -56,15 +56,15 @@ pub use android_activity::AndroidApp;
 ))]
 pub use {
     anyrender_vello::{CustomPaintCtx, CustomPaintSource, DeviceHandle, TextureHandle},
-    dioxus_renderer::{use_wgpu, Features, Limits},
+    dioxus_renderer::{Features, Limits, use_wgpu},
 };
 
 pub use config::Config;
 pub use winit::dpi::{LogicalSize, PhysicalSize};
 pub use winit::window::WindowAttributes;
 
-use blitz_shell::{create_default_event_loop, BlitzShellEvent, BlitzShellProxy, WindowConfig};
-use dioxus_core::{consume_context, use_hook, ComponentFunction, Element, VirtualDom};
+use blitz_shell::{BlitzShellEvent, BlitzShellProxy, WindowConfig, create_default_event_loop};
+use dioxus_core::{ComponentFunction, Element, VirtualDom, consume_context, use_hook};
 use link_handler::DioxusNativeNavigationProvider;
 use std::any::Any;
 use std::sync::Arc;

@@ -4,21 +4,21 @@ use blitz_traits::events::{
     BlitzWheelEvent, MouseEventButton,
 };
 use dioxus_html::{
-    geometry::{
-        euclid::{Point2D, Size2D, Vector3D},
-        ClientPoint, ElementPoint, PagePoint, PixelsRect, PixelsSize, PixelsVector2D, ScreenPoint,
-        WheelDelta,
-    },
-    input_data::{MouseButton, MouseButtonSet},
-    point_interaction::{
-        InteractionElementOffset, InteractionLocation, ModifiersInteraction, PointerInteraction,
-    },
     AnimationData, CancelData, ClipboardData, CompositionData, DragData, FocusData, FormData,
     FormValue, HasFileData, HasFocusData, HasFormData, HasKeyboardData, HasMouseData,
     HasPointerData, HasScrollData, HasWheelData, HtmlEventConverter, ImageData, KeyboardData,
     MediaData, MountedData, MountedError, MountedResult, MouseData, PlatformEventData, PointerData,
     RenderedElementBacking, ResizeData, ScrollBehavior, ScrollData, ScrollToOptions, SelectionData,
     ToggleData, TouchData, TransitionData, VisibleData, WheelData,
+    geometry::{
+        ClientPoint, ElementPoint, PagePoint, PixelsRect, PixelsSize, PixelsVector2D, ScreenPoint,
+        WheelDelta,
+        euclid::{Point2D, Size2D, Vector3D},
+    },
+    input_data::{MouseButton, MouseButtonSet},
+    point_interaction::{
+        InteractionElementOffset, InteractionLocation, ModifiersInteraction, PointerInteraction,
+    },
 };
 use keyboard_types::{Code, Key, Location, Modifiers};
 use std::{

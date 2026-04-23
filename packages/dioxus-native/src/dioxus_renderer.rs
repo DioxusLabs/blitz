@@ -12,8 +12,8 @@ use anyrender::WindowRenderer;
     )
 ))]
 pub use anyrender_vello::{
-    wgpu::{Features, Limits},
     CustomPaintSource, VelloRendererOptions, VelloWindowRenderer as InnerRenderer,
+    wgpu::{Features, Limits},
 };
 
 #[cfg(any(
