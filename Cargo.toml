@@ -24,7 +24,7 @@ exclude = ["sites"]
 resolver = "2"
 
 [workspace.package]
-version = "0.2.0"
+version = "0.3.0-alpha.1"
 license = "MIT OR Apache-2.0"
 homepage = "https://github.com/dioxuslabs/blitz"
 repository = "https://github.com/dioxuslabs/blitz"
@@ -34,14 +34,14 @@ rust-version = "1.92.0"
 
 [workspace.dependencies]
 # Blitz dependencies(in-repo)
-blitz = { version = "0.2.0", path = "./packages/blitz" }
-blitz-dom = { version = "0.2.0", path = "./packages/blitz-dom", default-features = false }
-blitz-html = { version = "0.2.0", path = "./packages/blitz-html", default-features = false }
-blitz-net = { version = "0.2.0", path = "./packages/blitz-net", default-features = false }
-blitz-paint = { version = "0.2.0", path = "./packages/blitz-paint", default-features = false }
-blitz-shell = { version = "0.2.0", path = "./packages/blitz-shell", default-features = false }
-blitz-traits = { version = "0.2.0", path = "./packages/blitz-traits", default-features = false }
-stylo_taffy = { version = "0.2.0", path = "./packages/stylo_taffy", default-features = false }
+blitz = { version = "0.3.0-alpha.1", path = "./packages/blitz" }
+blitz-dom = { version = "0.3.0-alpha.1", path = "./packages/blitz-dom", default-features = false }
+blitz-html = { version = "0.3.0-alpha.1", path = "./packages/blitz-html", default-features = false }
+blitz-net = { version = "0.3.0-alpha.1", path = "./packages/blitz-net", default-features = false }
+blitz-paint = { version = "0.3.0-alpha.1", path = "./packages/blitz-paint", default-features = false }
+blitz-shell = { version = "0.3.0-alpha.1", path = "./packages/blitz-shell", default-features = false }
+blitz-traits = { version = "0.3.0-alpha.1", path = "./packages/blitz-traits", default-features = false }
+stylo_taffy = { version = "0.3.0-alpha.1", path = "./packages/stylo_taffy", default-features = false }
 dioxus-native = { version = "0.7.0", path = "./packages/dioxus-native", default-features = false }
 dioxus-native-dom = { version = "0.7.0", path = "./packages/dioxus-native-dom", default-features = false }
 debug_timer = { version = "0.1.2", path = "./packages/debug_timer" }
