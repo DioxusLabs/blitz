@@ -1,10 +1,3 @@
-// #[cfg(feature = "document")]
-// #[cfg_attr(docsrs, doc(cfg(feature = "document")))]
-pub use dioxus_document::{self as document, Meta, Stylesheet, Title};
-// #[cfg(feature = "document")]
-// #[cfg_attr(docsrs, doc(cfg(feature = "document")))]
-pub use dioxus_history::{History, history};
-
 // RSX and component definition
 pub use dioxus_core;
 pub use dioxus_core::{
@@ -29,3 +22,7 @@ pub use manganis::{self, *};
 pub use dioxus_hooks::*;
 pub use dioxus_signals::{self, *};
 pub use dioxus_stores::{self, GlobalStore, ReadStore, Store, WriteStore, store, use_store};
+
+// Document and History
+pub use dioxus_document::{self as document, Meta, Stylesheet, Title};
+pub use dioxus_history::{History, history};
