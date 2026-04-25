@@ -223,22 +223,11 @@ impl<T> InternalQueue<T> {
     pub fn for_each(&self, mut cb: impl FnMut(T)) {
         // Note: we use a temporary Vec here so that the mutex is unlocked prior to any of the callbacks being called.
         // This prevents the mutex from being poisoned if any of the callbacks panic, allowing it to be reused for further tests.
-        //
-        // TODO: replace .retain with .extract_if once Rust 1.87 is stable
         let mut requests = self.requests.lock().unwrap_or_else(|err| err.into_inner());
-        let mut completed: Vec<Result<T, ()>> = Vec::new();
-        requests.retain(|_id, req| match req.status {
-            RequestStatus::InProgress => true,
-            RequestStatus::Success => {
-                let data = req.data.take().ok_or(());
-                completed.push(data);
-                false
-            }
-            RequestStatus::Error => {
-                completed.push(Err(()));
-                false
-            }
-        });
+        let completed: Vec<Result<T, ()>> = requests
+            .extract_if(|_, req| !matches!(req.status, RequestStatus::InProgress))
+            .map(|(_, mut req)| req.data.take().ok_or(()))
+            .collect();
         drop(requests);
 
         for data in completed.into_iter().flatten() {
