@@ -133,10 +133,23 @@ fn marker_for_style(list_style_type: ListStyleType, index: usize) -> Option<Mark
             _ => Marker::Char('□'),
         },
         CounterStyle::String(atom_string) => Marker::String(atom_string.as_ref().to_string()),
-        CounterStyle::Symbols { .. } => {
-            // TODO: support custom symbol lists. For now fallback to •
-            // https://drafts.csswg.org/css-counter-styles/#symbols-function
-            Marker::Char('•')
+        CounterStyle::Symbols { symbols, .. } => {
+            // Use symbols from counter-style definition
+            let syms = &symbols.0;
+            let len = syms.len();
+            if len == 0 {
+                Marker::Char('•')
+            } else {
+                // Cycle through symbols based on index: 1st, 2nd, 1st, 2nd, etc.
+                let idx = if len > 1 { index % len } else { 0 };
+                // Symbol is String or Ident variant, extract the string value
+                let sym = &syms[idx];
+                let marker_str = match sym {
+                    style::counter_style::Symbol::String(s) => s.to_string(),
+                    style::counter_style::Symbol::Ident(id) => id.0.to_string(),
+                };
+                Marker::String(marker_str)
+            }
         }
     })
 }
