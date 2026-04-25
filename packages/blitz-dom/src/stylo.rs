@@ -1,6 +1,7 @@
 //! Enable the dom to participate in styling by servo
 //!
 
+use std::borrow::Cow;
 use std::ptr::NonNull;
 use std::sync::atomic::Ordering;
 
@@ -381,27 +382,31 @@ impl selectors::Element for BlitzNode<'_> {
             AttrSelectorOperation::Exists => true,
             AttrSelectorOperation::WithValue {
                 operator,
-                case_sensitivity: _,
+                case_sensitivity,
                 value,
             } => {
                 let value = value.as_ref();
+                let case_insensitive = matches!(case_sensitivity, selectors::attr::CaseSensitivity::AsciiCaseInsensitive);
 
-                // TODO: case sensitivity
+                let (attr_cmp, value_cmp): (Cow<str>, Cow<str>) = if case_insensitive {
+                    (Cow::Owned(attr_value.to_ascii_lowercase()), Cow::Owned(value.to_ascii_lowercase()))
+                } else {
+                    (Cow::Borrowed(attr_value), Cow::Borrowed(value))
+                };
+
                 match operator {
-                    AttrSelectorOperator::Equal => attr_value == value,
-                    AttrSelectorOperator::Includes => attr_value
+                    AttrSelectorOperator::Equal => attr_cmp == value_cmp,
+                    AttrSelectorOperator::Includes => attr_cmp
                         .split_ascii_whitespace()
-                        .any(|word| word == value),
+                        .any(|word| *word == *value_cmp),
                     AttrSelectorOperator::DashMatch => {
-                        // Represents elements with an attribute name of attr whose value can be exactly value
-                        // or can begin with value immediately followed by a hyphen, - (U+002D)
-                        attr_value.starts_with(value)
-                            && (attr_value.len() == value.len()
-                                || attr_value.chars().nth(value.len()) == Some('-'))
+                        attr_cmp.starts_with(&*value_cmp)
+                            && (attr_cmp.len() == value_cmp.len()
+                                || attr_cmp.chars().nth(value_cmp.len()) == Some('-'))
                     }
-                    AttrSelectorOperator::Prefix => attr_value.starts_with(value),
-                    AttrSelectorOperator::Substring => attr_value.contains(value),
-                    AttrSelectorOperator::Suffix => attr_value.ends_with(value),
+                    AttrSelectorOperator::Prefix => attr_cmp.starts_with(&*value_cmp),
+                    AttrSelectorOperator::Substring => attr_cmp.contains(&*value_cmp),
+                    AttrSelectorOperator::Suffix => attr_cmp.ends_with(&*value_cmp),
                 }
             }
         }
