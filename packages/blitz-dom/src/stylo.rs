@@ -11,7 +11,7 @@ use markup5ever::{LocalName, LocalNameStaticSet, Namespace, NamespaceStaticSet, 
 use selectors::bloom::BLOOM_HASH_MASK;
 use selectors::{
     Element, OpaqueElement,
-    attr::{AttrSelectorOperation, AttrSelectorOperator, NamespaceConstraint},
+    attr::{AttrSelectorOperation, NamespaceConstraint},
     matching::{ElementSelectorFlags, MatchingContext, VisitedHandlingMode},
     sink::Push,
 };
@@ -373,37 +373,9 @@ impl selectors::Element for BlitzNode<'_> {
         local_name: &GenericAtomIdent<LocalNameStaticSet>,
         operation: &AttrSelectorOperation<&AtomString>,
     ) -> bool {
-        let Some(attr_value) = self.data.attr(local_name.0.clone()) else {
-            return false;
-        };
-
-        match operation {
-            AttrSelectorOperation::Exists => true,
-            AttrSelectorOperation::WithValue {
-                operator,
-                case_sensitivity: _,
-                value,
-            } => {
-                let value = value.as_ref();
-
-                // TODO: case sensitivity
-                match operator {
-                    AttrSelectorOperator::Equal => attr_value == value,
-                    AttrSelectorOperator::Includes => attr_value
-                        .split_ascii_whitespace()
-                        .any(|word| word == value),
-                    AttrSelectorOperator::DashMatch => {
-                        // Represents elements with an attribute name of attr whose value can be exactly value
-                        // or can begin with value immediately followed by a hyphen, - (U+002D)
-                        attr_value.starts_with(value)
-                            && (attr_value.len() == value.len()
-                                || attr_value.chars().nth(value.len()) == Some('-'))
-                    }
-                    AttrSelectorOperator::Prefix => attr_value.starts_with(value),
-                    AttrSelectorOperator::Substring => attr_value.contains(value),
-                    AttrSelectorOperator::Suffix => attr_value.ends_with(value),
-                }
-            }
+        match self.data.attr(local_name.0.clone()) {
+            None => false,
+            Some(attr_value) => operation.eval_str(attr_value),
         }
     }
 
