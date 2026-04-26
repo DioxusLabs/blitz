@@ -44,7 +44,7 @@ impl<F: Fn(usize) + Send + Sync + 'static> NetWaker for F {
 pub struct Request {
     pub url: Url,
     pub method: Method,
-    pub content_type: String,
+    pub content_type: Option<String>,
     pub headers: HeaderMap,
     pub body: Body,
     pub signal: Option<AbortSignal>,
@@ -55,7 +55,7 @@ impl Request {
         Self {
             url,
             method: Method::GET,
-            content_type: String::new(),
+            content_type: None,
             headers: HeaderMap::new(),
             body: Body::Empty,
             signal: None,

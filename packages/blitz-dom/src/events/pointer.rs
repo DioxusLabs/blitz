@@ -516,7 +516,7 @@ pub(crate) fn handle_click(
                         if let Some(url) = doc.url.resolve_relative(href) {
                             doc.navigation_provider.navigate_to(NavigationOptions::new(
                                 url,
-                                String::from("text/plain"),
+                                None,
                                 doc.id(),
                             ));
                         } else {

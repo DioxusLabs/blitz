@@ -99,15 +99,17 @@ impl Provider {
                 (request.url.to_string(), Bytes::from(file_content))
             }
             _ => {
-                let response = client
+                let mut req = client
                     .request(request.method, request.url)
                     .headers(request.headers)
-                    .header("Content-Type", request.content_type.as_str())
-                    .header("User-Agent", USER_AGENT)
-                    .apply_body(request.body, request.content_type.as_str())
-                    .await
-                    .send()
-                    .await?;
+                    .header("User-Agent", USER_AGENT);
+
+                if let Some(content_type) = request.content_type.as_ref() {
+                    req = req.header("Content-Type", content_type);
+                }
+
+                let req = req.apply_body(request.body, request.content_type.as_deref());
+                let response = req.await.send().await?;
 
                 (response.url().to_string(), response.bytes().await?)
             }
@@ -286,16 +288,16 @@ impl From<reqwest_middleware::Error> for ProviderError {
 }
 
 trait ReqwestExt {
-    async fn apply_body(self, body: Body, content_type: &str) -> Self;
+    async fn apply_body(self, body: Body, content_type: Option<&str>) -> Self;
 }
 impl ReqwestExt for RequestBuilder {
-    async fn apply_body(self, body: Body, content_type: &str) -> Self {
+    async fn apply_body(self, body: Body, content_type: Option<&str>) -> Self {
         match body {
             Body::Bytes(bytes) => self.body(bytes),
             Body::Form(form_data) => match content_type {
-                "application/x-www-form-urlencoded" => self.form(&form_data),
+                Some("application/x-www-form-urlencoded") => self.form(&form_data),
                 #[cfg(feature = "multipart")]
-                "multipart/form-data" => {
+                Some("multipart/form-data") => {
                     use blitz_traits::net::Entry;
                     use blitz_traits::net::EntryValue;
                     let mut form_data = form_data;

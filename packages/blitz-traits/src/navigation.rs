@@ -25,7 +25,7 @@ pub struct NavigationOptions {
     /// The URL to navigate to
     pub url: Url,
 
-    pub content_type: String,
+    pub content_type: Option<String>,
 
     /// Source document for the navigation
     pub source_document: usize,
@@ -36,7 +36,7 @@ pub struct NavigationOptions {
 }
 
 impl NavigationOptions {
-    pub fn new(url: Url, content_type: String, source_document: usize) -> Self {
+    pub fn new(url: Url, content_type: Option<String>, source_document: usize) -> Self {
         Self {
             url,
             content_type,
