@@ -197,6 +197,17 @@ panic = "unwind"
 inherits = "small"
 opt-level = "z"
 
+[profile.tiny.package.fearless_simd]
+opt-level = 3
+[profile.tiny.package.vello_cpu]
+opt-level = 3
+[profile.tiny.package.taffy]
+opt-level = 3
+[profile.tiny.package.harfrust]
+opt-level = 3
+[profile.tiny.package.skrifa]
+opt-level = 3
+
 # This is a "virtual package"
 # It is not meant to be published, but is used so "cargo run --example XYZ" works properly
 [package]
