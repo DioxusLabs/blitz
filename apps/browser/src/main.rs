@@ -11,11 +11,11 @@ static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 use std::cell::RefCell;
 
 use std::rc::Rc;
-use std::sync::{atomic::AtomicUsize, atomic::Ordering as Ao, Arc};
+use std::sync::{Arc, atomic::AtomicUsize, atomic::Ordering as Ao};
 
 use blitz_traits::shell::ShellProvider;
 use dioxus_core::Task;
-use dioxus_native::{prelude::*, NodeHandle, SubDocumentAttr};
+use dioxus_native::{NodeHandle, SubDocumentAttr, prelude::*};
 
 use blitz_dom::{DocumentConfig, FontContext};
 use blitz_html::{HtmlDocument, HtmlProvider};

@@ -2,7 +2,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use dioxus_native::prelude::*;
-use dioxus_native::{use_wgpu, CustomPaintCtx, CustomPaintSource, DeviceHandle, TextureHandle};
+use dioxus_native::{CustomPaintCtx, CustomPaintSource, DeviceHandle, TextureHandle, use_wgpu};
 
 const RING_LEN: usize = 60;
 

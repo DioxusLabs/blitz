@@ -2,8 +2,8 @@
 
 use anyrender::PaintScene;
 use blitz_paint::paint_scene;
-use peniko::kurbo::Rect;
 use peniko::Fill;
+use peniko::kurbo::Rect;
 
 use anyrender::render_to_buffer;
 #[cfg(feature = "screenshot")]
