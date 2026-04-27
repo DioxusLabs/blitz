@@ -1083,6 +1083,7 @@ dependencies = [
  "peniko",
  "png 0.18.1",
  "rfd",
+ "tokio",
  "tracing-subscriber",
  "webbrowser",
  "winit",

@@ -28,8 +28,12 @@ type StdNetProvider = blitz_net::Provider;
 #[cfg(any(feature = "screenshot", feature = "capture"))]
 mod capture;
 
+mod fps_overlay;
 mod icons;
 use icons::IconButton;
+
+#[derive(Clone, Copy)]
+pub struct ShowFps(pub bool);
 
 static BROWSER_UI_STYLES: Asset = asset!("../assets/browser.css");
 const IS_MOBILE: bool = cfg!(any(target_os = "android", target_os = "ios"));
@@ -44,7 +48,12 @@ pub fn android_main(android_app: dioxus_native::AndroidApp) {
 fn main() {
     #[cfg(feature = "tracing")]
     tracing_subscriber::fmt::init();
-    dioxus_native::launch(app)
+    let show_fps = std::env::args().any(|a| a == "--show-fps");
+    dioxus_native::launch_cfg(
+        app,
+        vec![Box::new(move || Box::new(ShowFps(show_fps)) as Box<dyn std::any::Any>)],
+        Vec::new(),
+    )
 }
 
 type SyncStore<T> = Store<T, CopyValue<T, SyncStorage>>;
@@ -66,6 +75,7 @@ fn app() -> Element {
     let html_source: Signal<String> = use_signal(String::new);
 
     let net_provider = use_context::<Arc<StdNetProvider>>();
+    let show_fps = use_context::<ShowFps>().0;
     let loader = use_hook(|| Rc::new(DocumentLoader::new(net_provider, history, html_source)));
     let content_doc = loader.doc;
 
@@ -339,6 +349,9 @@ fn app() -> Element {
                     let node_handle = evt.downcast::<NodeHandle>().unwrap();
                     *webview_node_handle.write() = Some(node_handle.clone());
                 },
+            }
+            if show_fps {
+                fps_overlay::FpsOverlay {}
             }
         }
     )
