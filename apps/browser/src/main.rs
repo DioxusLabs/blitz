@@ -51,7 +51,9 @@ fn main() {
     let show_fps = std::env::args().any(|a| a == "--show-fps");
     dioxus_native::launch_cfg(
         app,
-        vec![Box::new(move || Box::new(ShowFps(show_fps)) as Box<dyn std::any::Any>)],
+        vec![Box::new(move || {
+            Box::new(ShowFps(show_fps)) as Box<dyn std::any::Any>
+        })],
         Vec::new(),
     )
 }
