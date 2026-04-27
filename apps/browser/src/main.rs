@@ -28,6 +28,8 @@ type StdNetProvider = blitz_net::Provider;
 #[cfg(any(feature = "screenshot", feature = "capture"))]
 mod capture;
 
+#[cfg(feature = "vello")]
+mod fps_overlay;
 mod icons;
 use icons::IconButton;
 
@@ -44,7 +46,7 @@ pub fn android_main(android_app: dioxus_native::AndroidApp) {
 fn main() {
     #[cfg(feature = "tracing")]
     tracing_subscriber::fmt::init();
-    dioxus_native::launch(app)
+    dioxus_native::launch_cfg(app, vec![], Vec::new())
 }
 
 type SyncStore<T> = Store<T, CopyValue<T, SyncStorage>>;
@@ -66,6 +68,8 @@ fn app() -> Element {
     let html_source: Signal<String> = use_signal(String::new);
 
     let net_provider = use_context::<Arc<StdNetProvider>>();
+    #[cfg(feature = "vello")]
+    let mut show_fps = use_signal(|| false);
     let loader = use_hook(|| Rc::new(DocumentLoader::new(net_provider, history, html_source)));
     let content_doc = loader.doc;
 
@@ -228,6 +232,23 @@ fn app() -> Element {
     #[cfg(not(feature = "capture"))]
     let capture_item = rsx!();
 
+    #[cfg(feature = "vello")]
+    let fps_toggle_item = rsx!(
+        div { class: "menu-item", onclick: move |_| {
+            menu_open.set(false);
+            show_fps.toggle();
+        }, "Toggle FPS" }
+    );
+    #[cfg(not(feature = "vello"))]
+    let fps_toggle_item = rsx!();
+
+    #[cfg(feature = "vello")]
+    let fps_overlay_el = rsx!(if show_fps() {
+        fps_overlay::FpsOverlay {}
+    });
+    #[cfg(not(feature = "vello"))]
+    let fps_overlay_el = rsx!();
+
     rsx!(
         div { id: "frame",
               padding_top: TOP_PAD,
@@ -326,6 +347,7 @@ fn app() -> Element {
                             {screenshot_item}
                             {capture_item}
                             div { class: "menu-item", onclick: move |_| devtools_action(()), "Toggle DevTools" }
+                            {fps_toggle_item}
                         }
                     }
                 }
@@ -340,6 +362,7 @@ fn app() -> Element {
                     *webview_node_handle.write() = Some(node_handle.clone());
                 },
             }
+            {fps_overlay_el}
         }
     )
 }

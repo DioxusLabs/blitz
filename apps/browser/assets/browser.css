@@ -132,3 +132,27 @@ body,
   width: 100%;
   background: white;
 }
+
+.fps-overlay {
+  position: fixed;
+  top: 48px;
+  right: 8px;
+  background: rgba(0, 0, 0, 0.7);
+  color: #0f0;
+  font-family: monospace;
+  font-size: 12px;
+  padding: 4px 8px;
+  border-radius: 4px;
+  pointer-events: none;
+  z-index: 50;
+}
+
+.fps-tick {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 1px;
+  height: 1px;
+  opacity: 0.01;
+  pointer-events: none;
+}
