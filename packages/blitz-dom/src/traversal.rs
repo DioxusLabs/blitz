@@ -1,5 +1,4 @@
 use std::cmp::Ordering;
-use std::collections::HashSet;
 
 use style::{dom::TNode as _, values::specified::box_::DisplayInside};
 
@@ -368,81 +367,59 @@ impl BaseDocument {
         };
 
         let mut result = Vec::new();
-        let mut seen = HashSet::new();
-        let mut found_first = false;
 
-        // Traverse tree in document order
-        for node_id in TreeTraverser::new(self) {
-            if !found_first {
-                if node_id == first_anchor {
-                    found_first = true;
-                    if let Some(anon_id) = first_anon {
-                        // First is anonymous: collect from this parent starting at anon_id
-                        // Stop at last_anchor if different parent, or last_anon if same parent
-                        let stop_at = if first_anchor == last_anchor {
-                            // Same parent: stop at last_anon
-                            last_anon
-                        } else {
-                            // Different parents: stop at last_anchor (which is a child of first_anchor)
-                            Some(last_anchor)
-                        };
-                        self.collect_layout_children_inline_roots(
-                            node_id,
-                            Some(anon_id),
-                            stop_at,
-                            &mut result,
-                        );
-                        // If we collected up to last, we're done
-                        if result.last() == Some(&last_anchor)
-                            || last_anon.is_some_and(|la| result.last() == Some(&la))
-                        {
-                            break;
-                        }
-                        continue;
-                    }
+        // Start traversal from first_anchor instead of root.
+        // This ensures we only visit nodes in range [first_anchor, last_anchor] by construction,
+        // so no duplicate tracking is needed.
+        for node_id in TreeTraverser::new_with_root(self, first_anchor) {
+            // Handle first node (anonymous case)
+            if node_id == first_anchor {
+                if let Some(anon_id) = first_anon {
+                    let stop_at = if first_anchor == last_anchor {
+                        last_anon
+                    } else {
+                        Some(last_anchor)
+                    };
+                    self.collect_layout_children_inline_roots(
+                        node_id,
+                        Some(anon_id),
+                        stop_at,
+                        &mut result,
+                    );
+                    continue;
                 }
             }
 
-            if found_first {
-                if node_id == last_anchor {
-                    if let Some(anon_id) = last_anon {
-                        // Last is anonymous: collect up to anon_id (exclusive), then include anon_id
-                        self.collect_layout_children_inline_roots(
-                            node_id,
-                            None,
-                            Some(anon_id),
-                            &mut result,
-                        );
-                        // Include the last_anon itself (until is exclusive, so we add it here)
-                        if !seen.contains(&anon_id) {
-                            seen.insert(anon_id);
-                            result.push(anon_id);
-                        }
-                    } else {
-                        // Last is regular: include it if it's an inline root and not already collected
-                        let node = &self.nodes[node_id];
-                        if node.flags.is_inline_root() && !seen.contains(&node_id) {
-                            seen.insert(node_id);
-                            result.push(node_id);
-                        }
-                    }
-                    break;
-                }
-
-                let node = &self.nodes[node_id];
-                if node.flags.is_inline_root() && !seen.contains(&node_id) {
-                    seen.insert(node_id);
-                    result.push(node_id);
-                } else {
-                    // For non-inline-root nodes, collect any inline roots from their layout_children
-                    // This handles intermediate block containers with anonymous block children
+            // Check if we've reached the end
+            if node_id == last_anchor {
+                if let Some(anon_id) = last_anon {
                     self.collect_layout_children_inline_roots(
                         node_id,
                         None,
-                        Some(last_anchor),
+                        Some(anon_id),
                         &mut result,
                     );
+                    result.push(anon_id);
+                } else {
+                    let node = &self.nodes[node_id];
+                    if node.flags.is_inline_root() {
+                        result.push(node_id);
+                    }
                 }
+                break;
+            }
+
+            // Process nodes between first and last (not first_anon handled above)
+            let node = &self.nodes[node_id];
+            if node.flags.is_inline_root() {
+                result.push(node_id);
+            } else {
+                self.collect_layout_children_inline_roots(
+                    node_id,
+                    None,
+                    Some(last_anchor),
+                    &mut result,
+                );
             }
         }
 
