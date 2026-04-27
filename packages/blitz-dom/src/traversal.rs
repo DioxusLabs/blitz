@@ -1,4 +1,5 @@
 use std::cmp::Ordering;
+use std::collections::HashSet;
 
 use style::{dom::TNode as _, values::specified::box_::DisplayInside};
 
@@ -367,6 +368,7 @@ impl BaseDocument {
         };
 
         let mut result = Vec::new();
+        let mut seen = HashSet::new();
         let mut found_first = false;
 
         // Traverse tree in document order
@@ -412,13 +414,15 @@ impl BaseDocument {
                             &mut result,
                         );
                         // Include the last_anon itself (until is exclusive, so we add it here)
-                        if !result.contains(&anon_id) {
+                        if !seen.contains(&anon_id) {
+                            seen.insert(anon_id);
                             result.push(anon_id);
                         }
                     } else {
                         // Last is regular: include it if it's an inline root and not already collected
                         let node = &self.nodes[node_id];
-                        if node.flags.is_inline_root() && !result.contains(&node_id) {
+                        if node.flags.is_inline_root() && !seen.contains(&node_id) {
+                            seen.insert(node_id);
                             result.push(node_id);
                         }
                     }
@@ -426,7 +430,8 @@ impl BaseDocument {
                 }
 
                 let node = &self.nodes[node_id];
-                if node.flags.is_inline_root() && !result.contains(&node_id) {
+                if node.flags.is_inline_root() && !seen.contains(&node_id) {
+                    seen.insert(node_id);
                     result.push(node_id);
                 } else {
                     // For non-inline-root nodes, collect any inline roots from their layout_children
