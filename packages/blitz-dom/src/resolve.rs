@@ -158,6 +158,12 @@ impl BaseDocument {
         resolve_layout_children_recursive(self, self.root_node().id);
 
         fn resolve_layout_children_recursive(doc: &mut BaseDocument, node_id: usize) {
+            // Anonymous blocks and pseudo-elements can be removed from the slab
+            // between render passes. Bail out rather than panicking on a stale key.
+            if doc.nodes.get(node_id).is_none() {
+                return;
+            }
+
             let mut damage = doc.nodes[node_id].damage().unwrap_or(ALL_DAMAGE);
             let _flags = doc.nodes[node_id].flags;
 
@@ -186,6 +192,14 @@ impl BaseDocument {
                 //if damage.contains(CONSTRUCT_DESCENDENT) {
                 let layout_children = doc.nodes[node_id].layout_children.borrow_mut().take();
                 if let Some(layout_children) = layout_children {
+                    // Filter out stale IDs — anonymous blocks and pseudo-elements
+                    // can be removed from the slab between render passes, so cached
+                    // layout_children may contain keys that are no longer valid.
+                    let layout_children: Vec<usize> = layout_children
+                        .into_iter()
+                        .filter(|&id| doc.nodes.contains(id))
+                        .collect();
+
                     // Recurse into previously computed layout children
                     for child_id in layout_children.iter().copied() {
                         resolve_layout_children_recursive(doc, child_id);
