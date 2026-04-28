@@ -1,5 +1,5 @@
 use blitz_traits::navigation::{NavigationOptions, NavigationProvider};
-use blitz_traits::net::{Request, Url};
+use blitz_traits::net::Request;
 use dioxus_native::prelude::*;
 
 pub type SyncStore<T> = Store<T, CopyValue<T, SyncStorage>>;
@@ -11,9 +11,9 @@ pub struct History {
 }
 
 impl History {
-    pub fn new(initial_url: Url) -> Self {
+    pub fn new(initial_request: Request) -> Self {
         Self {
-            urls: vec![Request::get(initial_url)],
+            urls: vec![initial_request],
             current: 0,
         }
     }
