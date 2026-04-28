@@ -23,7 +23,6 @@ body,
   align-items: stretch;
   height: 34px;
   background: #E0E0E0;
-  border-bottom: 1px solid #CCC;
   overflow: hidden;
 }
 
@@ -32,11 +31,13 @@ body,
   flex-direction: row;
   align-items: center;
   padding: 0 8px;
-  min-width: 80px;
-  max-width: 200px;
+  min-width: 150px;
+  max-width: 375px;
   cursor: pointer;
   border-right: 1px solid #CCC;
   background: #D0D0D0;
+  border-top-left-radius: 12px;
+  border-top-right-radius: 12px;
   overflow: hidden;
 
   &:hover {
@@ -152,6 +153,15 @@ body,
   &.active,
   &:active {
     background: #BBB;
+  }
+
+  &.iconbutton--disabled {
+    cursor: default;
+    opacity: 0.35;
+
+    &:hover {
+      background: transparent;
+    }
   }
 
   >.urlbar-icon {

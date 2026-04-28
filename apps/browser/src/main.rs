@@ -66,34 +66,49 @@ struct Tab {
     document: Signal<Option<SubDocumentAttr>>,
     node_handle: Signal<Option<NodeHandle>>,
     html_source: Signal<String>,
+    title: Signal<String>,
 }
 
 impl Tab {
     fn new(url: Url, net_provider: Arc<StdNetProvider>) -> Self {
         let id = next_tab_id();
-        let history: SyncStore<History> =
-            Store::new_maybe_sync(History::new(url));
+        let history: SyncStore<History> = Store::new_maybe_sync(History::new(url));
         let html_source: Signal<String> = Signal::new(String::new());
-        let loader = Rc::new(DocumentLoader::new(net_provider, history, html_source));
+        let title: Signal<String> = Signal::new(String::new());
+        let loader = Rc::new(DocumentLoader::new(
+            net_provider,
+            history,
+            html_source,
+            title,
+        ));
         let document = loader.doc;
-        Tab { id, history, loader, document, node_handle: Signal::new(None), html_source }
+        Tab {
+            id,
+            history,
+            loader,
+            document,
+            node_handle: Signal::new(None),
+            html_source,
+            title,
+        }
     }
 }
 
-fn active_tab(tabs: &Signal<Vec<Tab>>, active_id: TabId) -> (SyncStore<History>, Rc<DocumentLoader>, Signal<Option<SubDocumentAttr>>, Signal<Option<NodeHandle>>, Signal<String>) {
+fn active_tab(tabs: &Signal<Vec<Tab>>, active_id: TabId) -> Tab {
     let tabs_ref = tabs.read();
-    let tab = tabs_ref
+    tabs_ref
         .iter()
         .find(|t| t.id == active_id)
         .or_else(|| tabs_ref.first())
-        .expect("tabs vec is never empty");
-    (tab.history, tab.loader.clone(), tab.document, tab.node_handle, tab.html_source)
+        .expect("tabs vec is never empty")
+        .clone()
 }
 
 fn tab_title_or_url(tab: &Tab) -> String {
-    // Live document title can't be read during render: the sub-doc lives inside
-    // the chrome doc's element data, and the chrome RefCell is held mutably for
-    // the entire render pass. URL is the safe v1 display; live title is a follow-up.
+    let title = tab.title.read();
+    if !title.trim().is_empty() {
+        return title.clone();
+    }
     tab.history.current_url().read().url.to_string()
 }
 
@@ -109,26 +124,24 @@ fn app() -> Element {
     #[cfg(feature = "vello")]
     let mut show_fps = use_signal(|| false);
 
-    let mut tabs: Signal<Vec<Tab>> = use_hook(|| {
-        Signal::new(vec![Tab::new(home_url.clone(), net_provider.clone())])
-    });
-    let mut active_tab_id: Signal<TabId> = use_hook(|| {
-        Signal::new(tabs.read().first().map(|t| t.id).unwrap_or(0))
-    });
+    let mut tabs: Signal<Vec<Tab>> =
+        use_hook(|| Signal::new(vec![Tab::new(home_url.clone(), net_provider.clone())]));
+    let mut active_tab_id: Signal<TabId> =
+        use_hook(|| Signal::new(tabs.read().first().map(|t| t.id).unwrap_or(0)));
 
     // When active_tab_id changes, sync the URL bar to the new active tab's current URL.
     use_effect(move || {
         let aid = active_tab_id();
-        let (hist, _, _, _, _) = active_tab(&tabs, aid);
-        *url_input_value.write_unchecked() = hist.current_url().read().url.to_string();
+        let tab = active_tab(&tabs, aid);
+        *url_input_value.write_unchecked() = tab.history.current_url().read().url.to_string();
     });
 
     let load_current_url = use_callback(move |_| {
-        let (history, loader, _, node_handle, _) = active_tab(&tabs, *active_tab_id.peek());
-        let request = (*history.current_url().read()).clone();
+        let tab = active_tab(&tabs, *active_tab_id.peek());
+        let request = (*tab.history.current_url().read()).clone();
         *url_input_value.write_unchecked() = request.url.to_string();
 
-        if let Some(handle) = &*node_handle.peek() {
+        if let Some(handle) = &*tab.node_handle.peek() {
             let node_id = handle.node_id();
             let mut doc = handle.doc_mut();
             if let Some(sub_doc) = doc
@@ -142,40 +155,40 @@ fn app() -> Element {
         }
 
         println!("Loading {}...", &request.url.as_str());
-        loader.load_document(request);
+        tab.loader.load_document(request);
     });
 
     use_effect(move || load_current_url(()));
 
     let back_action = use_callback(move |_| {
-        let (mut history, _, _, _, _) = active_tab(&tabs, *active_tab_id.peek());
-        history.go_back();
+        let mut tab = active_tab(&tabs, *active_tab_id.peek());
+        tab.history.go_back();
     });
     let forward_action = use_callback(move |_| {
-        let (mut history, _, _, _, _) = active_tab(&tabs, *active_tab_id.peek());
-        history.go_forward();
+        let mut tab = active_tab(&tabs, *active_tab_id.peek());
+        tab.history.go_forward();
     });
     let home_url_for_new_tab = home_url.clone();
     let home_action = use_callback(move |_| {
-        let (history, _, _, _, _) = active_tab(&tabs, *active_tab_id.peek());
-        history.navigate(Request::get(home_url.clone()));
+        let tab = active_tab(&tabs, *active_tab_id.peek());
+        tab.history.navigate(Request::get(home_url.clone()));
     });
     let refresh_action = load_current_url;
     let open_action = use_callback(move |_| {
-        let (history, _, _, _, _) = active_tab(&tabs, *active_tab_id.peek());
-        open_in_external_browser(&history.current_url().read());
+        let tab = active_tab(&tabs, *active_tab_id.peek());
+        open_in_external_browser(&tab.history.current_url().read());
     });
     let mut menu_open = use_signal(|| false);
 
     let view_source_action = use_callback(move |_| {
         menu_open.set(false);
-        let (history, loader, content_doc, _, html_source) = active_tab(&tabs, *active_tab_id.peek());
-        let source = html_source.read().clone();
+        let tab = active_tab(&tabs, *active_tab_id.peek());
+        let source = tab.html_source.read().clone();
         if source.is_empty() {
             return;
         }
 
-        let current_url = history.current_url().read().url.to_string();
+        let current_url = tab.history.current_url().read().url.to_string();
         *url_input_value.write() = format!("view-source://{current_url}");
 
         let view_source_html = include_str!("../assets/view-source.html");
@@ -187,7 +200,7 @@ fn app() -> Element {
             navigation_provider: None,
             shell_provider: None,
             html_parser_provider: Some(Arc::new(HtmlProvider)),
-            font_ctx: Some(loader.font_ctx.clone()),
+            font_ctx: Some(tab.loader.font_ctx.clone()),
             media_type: None,
         };
         let mut document = HtmlDocument::from_html(view_source_html, config).into_inner();
@@ -196,13 +209,13 @@ fn app() -> Element {
             let text_node = mutator.create_text_node(&source);
             mutator.append_children(parent_id, &[text_node]);
         }
-        *content_doc.write_unchecked() = Some(SubDocumentAttr::new(document));
+        *tab.document.write_unchecked() = Some(SubDocumentAttr::new(document));
     });
 
     #[cfg(feature = "screenshot")]
     let screenshot_action = use_callback(move |_| {
         menu_open.set(false);
-        let (_, _, _, node_handle, _) = active_tab(&tabs, *active_tab_id.peek());
+        let node_handle = active_tab(&tabs, *active_tab_id.peek()).node_handle;
         async move {
             let Some(path) = capture::try_get_save_path("PNG Image", "png").await else {
                 return;
@@ -226,7 +239,7 @@ fn app() -> Element {
     #[cfg(feature = "capture")]
     let capture_action = use_callback(move |_| {
         menu_open.set(false);
-        let (_, _, _, node_handle, _) = active_tab(&tabs, *active_tab_id.peek());
+        let node_handle = active_tab(&tabs, *active_tab_id.peek()).node_handle;
         async move {
             let Some(path) = capture::try_get_save_path("AnyRender Scene", "scene").await else {
                 return;
@@ -249,7 +262,7 @@ fn app() -> Element {
 
     let devtools_action = use_callback(move |_| {
         menu_open.set(false);
-        let (_, _, _, node_handle, _) = active_tab(&tabs, *active_tab_id.peek());
+        let node_handle = active_tab(&tabs, *active_tab_id.peek()).node_handle;
         if let Some(handle) = node_handle() {
             let node_id = handle.node_id();
             let mut doc = handle.doc_mut();
@@ -330,7 +343,11 @@ fn app() -> Element {
         let idx = tabs_w.iter().position(|t| t.id == id).unwrap_or(0);
         tabs_w.remove(idx);
         if current_active == id {
-            let new_idx = if idx < tabs_w.len() { idx } else { tabs_w.len() - 1 };
+            let new_idx = if idx < tabs_w.len() {
+                idx
+            } else {
+                tabs_w.len() - 1
+            };
             if let Some(t) = tabs_w.get(new_idx) {
                 let new_id = t.id;
                 drop(tabs_w);
@@ -343,6 +360,16 @@ fn app() -> Element {
         active_tab_id.set(id);
     });
 
+    let window_title = {
+        let active = active_tab(&tabs, active_tab_id());
+        let t = active.title.read();
+        if t.trim().is_empty() {
+            "Blitz Browser".to_string()
+        } else {
+            t.clone()
+        }
+    };
+
     rsx!(
         div { id: "frame",
               padding_top: TOP_PAD,
@@ -352,7 +379,7 @@ fn app() -> Element {
               } else {
                 ""
               },
-            title { "Blitz Browser" }
+            title { "{window_title}" }
             document::Link { rel: "stylesheet", href: BROWSER_UI_STYLES }
 
             // Tab strip
@@ -389,9 +416,17 @@ fn app() -> Element {
 
             // Toolbar
             div { class: "urlbar",
-                IconButton { icon: icons::BACK_ICON, action: back_action }
+                IconButton {
+                    icon: icons::BACK_ICON,
+                    action: back_action,
+                    disabled: !active_tab(&tabs, active_tab_id()).history.has_back(),
+                }
                 if !IS_MOBILE {
-                    IconButton { icon: icons::FORWARDS_ICON, action: forward_action }
+                    IconButton {
+                        icon: icons::FORWARDS_ICON,
+                        action: forward_action,
+                        disabled: !active_tab(&tabs, active_tab_id()).history.has_forward(),
+                    }
                 }
                 IconButton { icon: icons::REFRESH_ICON, action: refresh_action }
                 if !IS_MOBILE {
@@ -449,8 +484,8 @@ fn app() -> Element {
                             }
                             let req = req_from_string(&url_input_value.read());
                             if let Some(req) = req {
-                                let (history, _, _, _, _) = active_tab(&tabs, *active_tab_id.peek());
-                                history.navigate(req);
+                                let tab = active_tab(&tabs, *active_tab_id.peek());
+                                tab.history.navigate(req);
                             } else {
                                 println!("Error parsing URL {}", &*url_input_value.read());
                             }
@@ -625,6 +660,7 @@ struct DocumentLoader {
     doc: Signal<Option<SubDocumentAttr>>,
     history: SyncStore<History>,
     html_source: Signal<String>,
+    title: Signal<String>,
 }
 
 impl DocumentLoader {
@@ -632,6 +668,7 @@ impl DocumentLoader {
         net_provider: Arc<StdNetProvider>,
         history: SyncStore<History>,
         html_source: Signal<String>,
+        title: Signal<String>,
     ) -> Self {
         let mut font_ctx = FontContext::default();
         font_ctx
@@ -646,6 +683,7 @@ impl DocumentLoader {
             doc: Signal::new(None),
             history,
             html_source,
+            title,
         }
     }
 
@@ -662,6 +700,7 @@ impl DocumentLoader {
             task.cancel();
         };
 
+        let title = self.title;
         let task = spawn(async move {
             let request = net_provider.fetch_async(req);
 
@@ -703,6 +742,11 @@ impl DocumentLoader {
                     *html_source.write_unchecked() = html.to_string();
 
                     let document = HtmlDocument::from_html(html, config).into_inner();
+                    let parsed_title = document
+                        .find_title_node()
+                        .map(|n| n.text_content())
+                        .unwrap_or_default();
+                    *title.write_unchecked() = parsed_title;
                     *doc_signal.write_unchecked() = Some(SubDocumentAttr::new(document));
                 }
                 Err(err) => {
@@ -731,6 +775,7 @@ impl DocumentLoader {
                     {
                         document.mutate().set_node_text(text_node, &error_msg);
                     }
+                    *title.write_unchecked() = String::new();
                     *doc_signal.write_unchecked() = Some(SubDocumentAttr::new(document));
                 }
             }
