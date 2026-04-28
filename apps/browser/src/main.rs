@@ -39,7 +39,7 @@ use icons::IconButton;
 
 static BROWSER_UI_STYLES: Asset = asset!("../assets/browser.css");
 const IS_MOBILE: bool = cfg!(any(target_os = "android", target_os = "ios"));
-const HOME_URL_STR: &str = "https://html.duckduckgo.com";
+const HOME_URL_STR: &str = "about:newtab";
 
 #[unsafe(no_mangle)]
 #[cfg(target_os = "android")]
@@ -710,6 +710,21 @@ impl DocumentLoader {
     }
 
     fn load_document(&self, req: Request) {
+        if req.url.scheme() == "about" && req.url.path() == "newtab" {
+            if let DocumentLoaderStatus::Loading { task, .. } = *self.status.peek() {
+                task.cancel();
+            }
+            let config =
+                make_doc_config(None, Arc::clone(&self.net_provider), self.history, self.font_ctx.clone());
+            let html = include_str!("../assets/start.html");
+            *self.html_source.write_unchecked() = html.to_string();
+            let document = HtmlDocument::from_html(html, config).into_inner();
+            *self.title.write_unchecked() = String::new();
+            *self.doc.write_unchecked() = Some(SubDocumentAttr::new(document));
+            *self.status.write_unchecked() = DocumentLoaderStatus::Idle;
+            return;
+        }
+
         let request_id = self.request_id_counter.fetch_add(1, Ao::Relaxed);
         let net_provider = Arc::clone(&self.net_provider);
         let font_ctx = self.font_ctx.clone();
