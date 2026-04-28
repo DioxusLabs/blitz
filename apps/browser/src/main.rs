@@ -11,7 +11,7 @@ static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 use std::cell::RefCell;
 
 use std::rc::Rc;
-use std::sync::{Arc, atomic::AtomicUsize, atomic::Ordering as Ao};
+use std::sync::{Arc, atomic::AtomicU64, atomic::AtomicUsize, atomic::Ordering as Ao};
 
 use blitz_traits::shell::ShellProvider;
 use dioxus_core::Task;
@@ -50,35 +50,85 @@ fn main() {
 }
 
 type SyncStore<T> = Store<T, CopyValue<T, SyncStorage>>;
+type TabId = u64;
 
-fn use_sync_store<T: Send + Sync + 'static>(value: impl FnOnce() -> T) -> SyncStore<T> {
-    use_hook(|| Store::new_maybe_sync(value()))
+static TAB_ID_COUNTER: AtomicU64 = AtomicU64::new(0);
+
+fn next_tab_id() -> TabId {
+    TAB_ID_COUNTER.fetch_add(1, Ao::Relaxed)
+}
+
+#[derive(Clone)]
+struct Tab {
+    id: TabId,
+    history: SyncStore<History>,
+    loader: Rc<DocumentLoader>,
+    document: Signal<Option<SubDocumentAttr>>,
+    node_handle: Signal<Option<NodeHandle>>,
+    html_source: Signal<String>,
+}
+
+impl Tab {
+    fn new(url: Url, net_provider: Arc<StdNetProvider>) -> Self {
+        let id = next_tab_id();
+        let history: SyncStore<History> =
+            Store::new_maybe_sync(History::new(url));
+        let html_source: Signal<String> = Signal::new(String::new());
+        let loader = Rc::new(DocumentLoader::new(net_provider, history, html_source));
+        let document = loader.doc;
+        Tab { id, history, loader, document, node_handle: Signal::new(None), html_source }
+    }
+}
+
+fn active_tab(tabs: &Signal<Vec<Tab>>, active_id: TabId) -> (SyncStore<History>, Rc<DocumentLoader>, Signal<Option<SubDocumentAttr>>, Signal<Option<NodeHandle>>, Signal<String>) {
+    let tabs_ref = tabs.read();
+    let tab = tabs_ref
+        .iter()
+        .find(|t| t.id == active_id)
+        .or_else(|| tabs_ref.first())
+        .expect("tabs vec is never empty");
+    (tab.history, tab.loader.clone(), tab.document, tab.node_handle, tab.html_source)
+}
+
+fn tab_title_or_url(tab: &Tab) -> String {
+    // Live document title can't be read during render: the sub-doc lives inside
+    // the chrome doc's element data, and the chrome RefCell is held mutably for
+    // the entire render pass. URL is the safe v1 display; live title is a follow-up.
+    tab.history.current_url().read().url.to_string()
 }
 
 fn app() -> Element {
     let home_url = use_hook(|| Url::parse("https://html.duckduckgo.com").unwrap());
 
-    let mut url_input_handle = use_signal(|| None);
-    let mut webview_node_handle: Signal<Option<NodeHandle>> = use_signal(|| None);
+    let mut url_input_handle: Signal<Option<NodeHandle>> = use_signal(|| None);
     let mut url_input_value = use_signal(|| home_url.to_string());
     let mut is_focussed = use_signal(|| false);
     let block_mouse_up = use_hook(|| Rc::new(RefCell::new(false)));
-    let mut history: SyncStore<History> = use_sync_store(|| History::new(home_url.clone()));
-
-    let html_source: Signal<String> = use_signal(String::new);
 
     let net_provider = use_context::<Arc<StdNetProvider>>();
     #[cfg(feature = "vello")]
     let mut show_fps = use_signal(|| false);
-    let loader = use_hook(|| Rc::new(DocumentLoader::new(net_provider, history, html_source)));
-    let content_doc = loader.doc;
 
-    let loader_for_load = loader.clone();
+    let mut tabs: Signal<Vec<Tab>> = use_hook(|| {
+        Signal::new(vec![Tab::new(home_url.clone(), net_provider.clone())])
+    });
+    let mut active_tab_id: Signal<TabId> = use_hook(|| {
+        Signal::new(tabs.read().first().map(|t| t.id).unwrap_or(0))
+    });
+
+    // When active_tab_id changes, sync the URL bar to the new active tab's current URL.
+    use_effect(move || {
+        let aid = active_tab_id();
+        let (hist, _, _, _, _) = active_tab(&tabs, aid);
+        *url_input_value.write_unchecked() = hist.current_url().read().url.to_string();
+    });
+
     let load_current_url = use_callback(move |_| {
+        let (history, loader, _, node_handle, _) = active_tab(&tabs, *active_tab_id.peek());
         let request = (*history.current_url().read()).clone();
         *url_input_value.write_unchecked() = request.url.to_string();
 
-        if let Some(handle) = &*webview_node_handle.peek() {
+        if let Some(handle) = &*node_handle.peek() {
             let node_id = handle.node_id();
             let mut doc = handle.doc_mut();
             if let Some(sub_doc) = doc
@@ -92,27 +142,39 @@ fn app() -> Element {
         }
 
         println!("Loading {}...", &request.url.as_str());
-        loader_for_load.load_document(request);
+        loader.load_document(request);
     });
 
     use_effect(move || load_current_url(()));
 
-    let back_action = use_callback(move |_| history.go_back());
-    let forward_action = use_callback(move |_| history.go_forward());
-    let home_action = use_callback(move |_| history.navigate(Request::get(home_url.clone())));
+    let back_action = use_callback(move |_| {
+        let (mut history, _, _, _, _) = active_tab(&tabs, *active_tab_id.peek());
+        history.go_back();
+    });
+    let forward_action = use_callback(move |_| {
+        let (mut history, _, _, _, _) = active_tab(&tabs, *active_tab_id.peek());
+        history.go_forward();
+    });
+    let home_url_for_new_tab = home_url.clone();
+    let home_action = use_callback(move |_| {
+        let (history, _, _, _, _) = active_tab(&tabs, *active_tab_id.peek());
+        history.navigate(Request::get(home_url.clone()));
+    });
     let refresh_action = load_current_url;
-    let open_action =
-        use_callback(move |_| open_in_external_browser(&history.current_url().read()));
+    let open_action = use_callback(move |_| {
+        let (history, _, _, _, _) = active_tab(&tabs, *active_tab_id.peek());
+        open_in_external_browser(&history.current_url().read());
+    });
     let mut menu_open = use_signal(|| false);
 
     let view_source_action = use_callback(move |_| {
         menu_open.set(false);
+        let (history, loader, content_doc, _, html_source) = active_tab(&tabs, *active_tab_id.peek());
         let source = html_source.read().clone();
         if source.is_empty() {
             return;
         }
 
-        // Update URL bar to show view-source:// URL
         let current_url = history.current_url().read().url.to_string();
         *url_input_value.write() = format!("view-source://{current_url}");
 
@@ -134,18 +196,19 @@ fn app() -> Element {
             let text_node = mutator.create_text_node(&source);
             mutator.append_children(parent_id, &[text_node]);
         }
-        *loader.doc.write_unchecked() = Some(SubDocumentAttr::new(document));
+        *content_doc.write_unchecked() = Some(SubDocumentAttr::new(document));
     });
 
     #[cfg(feature = "screenshot")]
     let screenshot_action = use_callback(move |_| {
         menu_open.set(false);
+        let (_, _, _, node_handle, _) = active_tab(&tabs, *active_tab_id.peek());
         async move {
             let Some(path) = capture::try_get_save_path("PNG Image", "png").await else {
                 return;
             };
 
-            if let Some(handle) = webview_node_handle() {
+            if let Some(handle) = node_handle() {
                 let node_id = handle.node_id();
                 let mut doc = handle.doc_mut();
                 if let Some(sub_doc) = doc
@@ -163,12 +226,13 @@ fn app() -> Element {
     #[cfg(feature = "capture")]
     let capture_action = use_callback(move |_| {
         menu_open.set(false);
+        let (_, _, _, node_handle, _) = active_tab(&tabs, *active_tab_id.peek());
         async move {
             let Some(path) = capture::try_get_save_path("AnyRender Scene", "scene").await else {
                 return;
             };
 
-            if let Some(handle) = webview_node_handle() {
+            if let Some(handle) = node_handle() {
                 let node_id = handle.node_id();
                 let mut doc = handle.doc_mut();
                 if let Some(sub_doc) = doc
@@ -185,7 +249,8 @@ fn app() -> Element {
 
     let devtools_action = use_callback(move |_| {
         menu_open.set(false);
-        if let Some(handle) = webview_node_handle() {
+        let (_, _, _, node_handle, _) = active_tab(&tabs, *active_tab_id.peek());
+        if let Some(handle) = node_handle() {
             let node_id = handle.node_id();
             let mut doc = handle.doc_mut();
             if let Some(sub_doc) = doc
@@ -249,6 +314,35 @@ fn app() -> Element {
     #[cfg(not(feature = "vello"))]
     let fps_overlay_el = rsx!();
 
+    let open_new_tab = use_callback(move |url: Url| {
+        let new_tab = Tab::new(url, net_provider.clone());
+        let new_id = new_tab.id;
+        tabs.write().push(new_tab);
+        active_tab_id.set(new_id);
+        if let Some(handle) = url_input_handle() {
+            core::mem::drop(handle.set_focus(true));
+        }
+    });
+
+    let close_tab = use_callback(move |id: TabId| {
+        let mut tabs_w = tabs.write();
+        let current_active = *active_tab_id.peek();
+        let idx = tabs_w.iter().position(|t| t.id == id).unwrap_or(0);
+        tabs_w.remove(idx);
+        if current_active == id {
+            let new_idx = if idx < tabs_w.len() { idx } else { tabs_w.len() - 1 };
+            if let Some(t) = tabs_w.get(new_idx) {
+                let new_id = t.id;
+                drop(tabs_w);
+                active_tab_id.set(new_id);
+            }
+        }
+    });
+
+    let switch_tab = use_callback(move |id: TabId| {
+        active_tab_id.set(id);
+    });
+
     rsx!(
         div { id: "frame",
               padding_top: TOP_PAD,
@@ -260,6 +354,38 @@ fn app() -> Element {
               },
             title { "Blitz Browser" }
             document::Link { rel: "stylesheet", href: BROWSER_UI_STYLES }
+
+            // Tab strip
+            div { class: "tabstrip",
+                for tab in tabs() {
+                    {
+                        let is_active = tab.id == active_tab_id();
+                        let tab_id = tab.id;
+                        let title = tab_title_or_url(&tab);
+                        let tab_count = tabs.read().len();
+                        rsx!(
+                            div {
+                                key: "{tab_id}",
+                                class: if is_active { "tab tab--active" } else { "tab" },
+                                onclick: move |_| switch_tab(tab_id),
+                                span { class: "tab__title", "{title}" }
+                                if tab_count > 1 {
+                                    div {
+                                        class: "tab__close",
+                                        onclick: move |evt| { evt.stop_propagation(); close_tab(tab_id); },
+                                        "×"
+                                    }
+                                }
+                            }
+                        )
+                    }
+                }
+                div {
+                    class: "tab-new",
+                    onclick: move |_| open_new_tab(home_url_for_new_tab.clone()),
+                    "+"
+                }
+            }
 
             // Toolbar
             div { class: "urlbar",
@@ -323,6 +449,7 @@ fn app() -> Element {
                             }
                             let req = req_from_string(&url_input_value.read());
                             if let Some(req) = req {
+                                let (history, _, _, _, _) = active_tab(&tabs, *active_tab_id.peek());
                                 history.navigate(req);
                             } else {
                                 println!("Error parsing URL {}", &*url_input_value.read());
@@ -353,14 +480,23 @@ fn app() -> Element {
                 }
             }
 
-            // Web content
-            web-view {
-                class: "webview",
-                "__webview_document": content_doc(),
-                onmounted: move |evt: Event<MountedData>| {
-                    let node_handle = evt.downcast::<NodeHandle>().unwrap();
-                    *webview_node_handle.write() = Some(node_handle.clone());
-                },
+            // Web content — one web-view per tab; inactive tabs hidden via display:none
+            for tab in tabs() {
+                {
+                    let mut tab_node_handle = tab.node_handle;
+                    rsx!(
+                        web-view {
+                            key: "{tab.id}",
+                            class: "webview",
+                            style: if tab.id == active_tab_id() { "display: block" } else { "display: none" },
+                            "__webview_document": tab.document.cloned(),
+                            onmounted: move |evt: Event<MountedData>| {
+                                let node_handle = evt.downcast::<NodeHandle>().unwrap();
+                                *tab_node_handle.write() = Some(node_handle.clone());
+                            },
+                        }
+                    )
+                }
             }
             {fps_overlay_el}
         }
@@ -490,19 +626,6 @@ struct DocumentLoader {
     history: SyncStore<History>,
     html_source: Signal<String>,
 }
-
-// impl Clone for DocumentLoader {
-//     fn clone(&self) -> Self {
-//         Self {
-//             font_ctx: self.font_ctx.clone(),
-//             net_provider: self.net_provider.clone(),
-//             status: self.status,
-//             request_id_counter: AtomicUsize::new(self.request_id_counter.load(Ao::SeqCst)),
-//             doc: self.doc,
-//             history: self.history,
-//         }
-//     }
-// }
 
 impl DocumentLoader {
     fn new(
