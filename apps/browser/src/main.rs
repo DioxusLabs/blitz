@@ -570,7 +570,10 @@ fn StatusBar(tabs: Signal<Vec<Tab>>, active_tab_id: Signal<TabId>) -> Element {
                             break 'lookup None;
                         };
                         let node_id = handle.node_id();
-                        let doc = handle.doc();
+                        // Skip this cycle if the event loop currently holds a mutable borrow.
+                        let Some(doc) = handle.try_doc() else {
+                            break 'lookup None;
+                        };
                         let Some(sub_doc) = doc
                             .get_node(node_id)
                             .and_then(|n| n.element_data())
