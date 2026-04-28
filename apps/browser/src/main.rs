@@ -8,10 +8,14 @@
 #[global_allocator]
 static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
-use std::cell::RefCell;
-
-use std::rc::Rc;
-use std::sync::{Arc, atomic::AtomicU64, atomic::AtomicUsize, atomic::Ordering as Ao};
+use std::{
+    cell::RefCell,
+    rc::Rc,
+    sync::{
+        Arc,
+        atomic::{AtomicU64, AtomicUsize, Ordering as Ao},
+    },
+};
 
 use blitz_traits::shell::ShellProvider;
 use dioxus_core::Task;
@@ -35,6 +39,7 @@ use icons::IconButton;
 
 static BROWSER_UI_STYLES: Asset = asset!("../assets/browser.css");
 const IS_MOBILE: bool = cfg!(any(target_os = "android", target_os = "ios"));
+const HOME_URL_STR: &str = "https://html.duckduckgo.com";
 
 #[unsafe(no_mangle)]
 #[cfg(target_os = "android")]
@@ -113,23 +118,158 @@ fn tab_title_or_url(tab: &Tab) -> String {
 }
 
 fn app() -> Element {
-    let home_url = use_hook(|| Url::parse("https://html.duckduckgo.com").unwrap());
-
-    let mut url_input_handle: Signal<Option<NodeHandle>> = use_signal(|| None);
-    let mut url_input_value = use_signal(|| home_url.to_string());
-    let mut is_focussed = use_signal(|| false);
-    let block_mouse_up = use_hook(|| Rc::new(RefCell::new(false)));
-
+    let home_url = use_hook(|| Url::parse(HOME_URL_STR).unwrap());
     let net_provider = use_context::<Arc<StdNetProvider>>();
-    #[cfg(feature = "vello")]
-    let mut show_fps = use_signal(|| false);
+
+    let url_input_handle: Signal<Option<NodeHandle>> = use_signal(|| None);
+    let url_input_value = use_signal(|| home_url.to_string());
 
     let mut tabs: Signal<Vec<Tab>> =
         use_hook(|| Signal::new(vec![Tab::new(home_url.clone(), net_provider.clone())]));
     let mut active_tab_id: Signal<TabId> =
         use_hook(|| Signal::new(tabs.read().first().map(|t| t.id).unwrap_or(0)));
 
-    // When active_tab_id changes, sync the URL bar to the new active tab's current URL.
+    let open_new_tab = use_callback(move |url: Url| {
+        let new_tab = Tab::new(url, net_provider.clone());
+        let new_id = new_tab.id;
+        tabs.write().push(new_tab);
+        active_tab_id.set(new_id);
+        if let Some(handle) = url_input_handle() {
+            drop(handle.set_focus(true));
+        }
+    });
+
+    // HACK: Winit doesn't support "safe area" on Android yet.
+    // So we just hardcode a fallback safe area.
+    const TOP_PAD: &str = if cfg!(target_os = "android") { "30px" } else { "" };
+    const BOTTOM_PAD: &str = if cfg!(target_os = "android") { "44px" } else { "" };
+
+    let show_fps: Signal<bool> = use_signal(|| false);
+
+    #[cfg(feature = "vello")]
+    let fps_overlay_el = rsx!(if show_fps() { fps_overlay::FpsOverlay {} });
+    #[cfg(not(feature = "vello"))]
+    let fps_overlay_el = rsx!();
+
+    let window_title = tab_title_or_url(&active_tab(&tabs, active_tab_id()));
+
+    rsx!(
+        div {
+            id: "frame",
+            padding_top: TOP_PAD,
+            padding_bottom: BOTTOM_PAD,
+            class: if IS_MOBILE { "mobile" } else { "" },
+            title { "{window_title}" }
+            document::Link { rel: "stylesheet", href: BROWSER_UI_STYLES }
+            TabStrip {
+                tabs,
+                active_tab_id,
+                home_url: home_url.clone(),
+                open_new_tab,
+            }
+            Toolbar {
+                url_input_handle,
+                url_input_value,
+                tabs,
+                active_tab_id,
+                show_fps,
+            }
+            for tab in tabs() {
+                {
+                    let mut tab_node_handle = tab.node_handle;
+                    rsx!(
+                        web-view {
+                            key: "{tab.id}",
+                            class: "webview",
+                            style: if tab.id == active_tab_id() { "display: block" } else { "display: none" },
+                            "__webview_document": tab.document.cloned(),
+                            onmounted: move |evt: Event<MountedData>| {
+                                let node_handle = evt.downcast::<NodeHandle>().unwrap();
+                                *tab_node_handle.write() = Some(node_handle.clone());
+                            },
+                        }
+                    )
+                }
+            }
+            {fps_overlay_el}
+        }
+    )
+}
+
+#[component]
+fn TabStrip(
+    tabs: Signal<Vec<Tab>>,
+    active_tab_id: Signal<TabId>,
+    home_url: Url,
+    open_new_tab: Callback<Url>,
+) -> Element {
+    let switch_tab = use_callback(move |id: TabId| {
+        active_tab_id.set(id);
+    });
+
+    let close_tab = use_callback(move |id: TabId| {
+        let mut tabs_w = tabs.write();
+        let current_active = *active_tab_id.peek();
+        let idx = tabs_w.iter().position(|t| t.id == id).unwrap_or(0);
+        tabs_w.remove(idx);
+        if current_active == id {
+            let new_idx = if idx < tabs_w.len() { idx } else { tabs_w.len() - 1 };
+            if let Some(t) = tabs_w.get(new_idx) {
+                let new_id = t.id;
+                drop(tabs_w);
+                active_tab_id.set(new_id);
+            }
+        }
+    });
+
+    rsx!(
+        div { class: "tabstrip",
+            for tab in tabs() {
+                {
+                    let is_active = tab.id == active_tab_id();
+                    let tab_id = tab.id;
+                    let title = tab_title_or_url(&tab);
+                    let tab_count = tabs.read().len();
+                    rsx!(
+                        div {
+                            key: "{tab_id}",
+                            class: if is_active { "tab tab--active" } else { "tab" },
+                            onclick: move |_| switch_tab(tab_id),
+                            span { class: "tab__title", "{title}" }
+                            if tab_count > 1 {
+                                div {
+                                    class: "tab__close",
+                                    onclick: move |evt| { evt.stop_propagation(); close_tab(tab_id); },
+                                    "×"
+                                }
+                            }
+                        }
+                    )
+                }
+            }
+            div {
+                class: "tab-new",
+                onclick: move |_| open_new_tab(home_url.clone()),
+                "+"
+            }
+        }
+    )
+}
+
+#[component]
+fn Toolbar(
+    url_input_handle: Signal<Option<NodeHandle>>,
+    mut url_input_value: Signal<String>,
+    tabs: Signal<Vec<Tab>>,
+    active_tab_id: Signal<TabId>,
+    mut show_fps: Signal<bool>,
+) -> Element {
+    let home_url = use_hook(|| Url::parse(HOME_URL_STR).unwrap());
+    let mut is_focused = use_signal(|| false);
+    let block_mouse_up = use_hook(|| Rc::new(RefCell::new(false)));
+    let mut menu_open = use_signal(|| false);
+
+    // Sync URL bar when active tab changes
     use_effect(move || {
         let aid = active_tab_id();
         let tab = active_tab(&tabs, aid);
@@ -149,36 +289,36 @@ fn app() -> Element {
                 .and_then(|node| node.element_data_mut())
                 .and_then(|el| el.sub_doc_data_mut())
             {
-                let mut sub_doc = sub_doc.inner_mut();
-                sub_doc.clear_focus();
+                sub_doc.inner_mut().clear_focus();
             }
         }
 
-        println!("Loading {}...", &request.url.as_str());
+        tracing::info!("Loading {}", request.url.as_str());
         tab.loader.load_document(request);
     });
 
     use_effect(move || load_current_url(()));
 
     let back_action = use_callback(move |_| {
-        let mut tab = active_tab(&tabs, *active_tab_id.peek());
-        tab.history.go_back();
+        active_tab(&tabs, *active_tab_id.peek()).history.go_back();
     });
     let forward_action = use_callback(move |_| {
-        let mut tab = active_tab(&tabs, *active_tab_id.peek());
-        tab.history.go_forward();
+        active_tab(&tabs, *active_tab_id.peek()).history.go_forward();
     });
-    let home_url_for_new_tab = home_url.clone();
     let home_action = use_callback(move |_| {
-        let tab = active_tab(&tabs, *active_tab_id.peek());
-        tab.history.navigate(Request::get(home_url.clone()));
+        active_tab(&tabs, *active_tab_id.peek())
+            .history
+            .navigate(Request::get(home_url.clone()));
     });
     let refresh_action = load_current_url;
     let open_action = use_callback(move |_| {
-        let tab = active_tab(&tabs, *active_tab_id.peek());
-        open_in_external_browser(&tab.history.current_url().read());
+        open_in_external_browser(
+            &active_tab(&tabs, *active_tab_id.peek())
+                .history
+                .current_url()
+                .read(),
+        );
     });
-    let mut menu_open = use_signal(|| false);
 
     let view_source_action = use_callback(move |_| {
         menu_open.set(false);
@@ -187,7 +327,6 @@ fn app() -> Element {
         if source.is_empty() {
             return;
         }
-
         let current_url = tab.history.current_url().read().url.to_string();
         *url_input_value.write() = format!("view-source://{current_url}");
 
@@ -220,7 +359,6 @@ fn app() -> Element {
             let Some(path) = capture::try_get_save_path("PNG Image", "png").await else {
                 return;
             };
-
             if let Some(handle) = node_handle() {
                 let node_id = handle.node_id();
                 let mut doc = handle.doc_mut();
@@ -229,8 +367,7 @@ fn app() -> Element {
                     .and_then(|node| node.element_data_mut())
                     .and_then(|el| el.sub_doc_data_mut())
                 {
-                    let sub_doc = sub_doc.inner();
-                    capture::capture_screenshot(&sub_doc, &path);
+                    capture::capture_screenshot(&sub_doc.inner(), &path);
                 }
             }
         }
@@ -244,7 +381,6 @@ fn app() -> Element {
             let Some(path) = capture::try_get_save_path("AnyRender Scene", "scene").await else {
                 return;
             };
-
             if let Some(handle) = node_handle() {
                 let node_id = handle.node_id();
                 let mut doc = handle.doc_mut();
@@ -253,8 +389,7 @@ fn app() -> Element {
                     .and_then(|node| node.element_data_mut())
                     .and_then(|el| el.sub_doc_data_mut())
                 {
-                    let sub_doc = sub_doc.inner();
-                    capture::capture_anyrender_scene(&sub_doc, &path);
+                    capture::capture_anyrender_scene(&sub_doc.inner(), &path);
                 }
             }
         }
@@ -271,24 +406,10 @@ fn app() -> Element {
                 .and_then(|node| node.element_data_mut())
                 .and_then(|el| el.sub_doc_data_mut())
             {
-                let mut sub_doc = sub_doc.inner_mut();
-                sub_doc.devtools_mut().toggle_highlight_hover();
+                sub_doc.inner_mut().devtools_mut().toggle_highlight_hover();
             }
         }
     });
-
-    // HACK: Winit doesn't support "safe area" on Android yet.
-    // So we just hardcode a fallback safe area.
-    const TOP_PAD: &str = if cfg!(target_os = "android") {
-        "30px"
-    } else {
-        ""
-    };
-    const BOTTOM_PAD: &str = if cfg!(target_os = "android") {
-        "44px"
-    } else {
-        ""
-    };
 
     #[cfg(feature = "screenshot")]
     let screenshot_item = rsx!(
@@ -320,220 +441,107 @@ fn app() -> Element {
     #[cfg(not(feature = "vello"))]
     let fps_toggle_item = rsx!();
 
-    #[cfg(feature = "vello")]
-    let fps_overlay_el = rsx!(if show_fps() {
-        fps_overlay::FpsOverlay {}
-    });
-    #[cfg(not(feature = "vello"))]
-    let fps_overlay_el = rsx!();
-
-    let open_new_tab = use_callback(move |url: Url| {
-        let new_tab = Tab::new(url, net_provider.clone());
-        let new_id = new_tab.id;
-        tabs.write().push(new_tab);
-        active_tab_id.set(new_id);
-        if let Some(handle) = url_input_handle() {
-            core::mem::drop(handle.set_focus(true));
-        }
-    });
-
-    let close_tab = use_callback(move |id: TabId| {
-        let mut tabs_w = tabs.write();
-        let current_active = *active_tab_id.peek();
-        let idx = tabs_w.iter().position(|t| t.id == id).unwrap_or(0);
-        tabs_w.remove(idx);
-        if current_active == id {
-            let new_idx = if idx < tabs_w.len() {
-                idx
-            } else {
-                tabs_w.len() - 1
-            };
-            if let Some(t) = tabs_w.get(new_idx) {
-                let new_id = t.id;
-                drop(tabs_w);
-                active_tab_id.set(new_id);
-            }
-        }
-    });
-
-    let switch_tab = use_callback(move |id: TabId| {
-        active_tab_id.set(id);
-    });
-
-    let window_title = {
-        let active = active_tab(&tabs, active_tab_id());
-        let t = active.title.read();
-        if t.trim().is_empty() {
-            "Blitz Browser".to_string()
-        } else {
-            t.clone()
-        }
-    };
-
     rsx!(
-        div { id: "frame",
-              padding_top: TOP_PAD,
-              padding_bottom: BOTTOM_PAD,
-              class: if IS_MOBILE {
-                "mobile"
-              } else {
-                ""
-              },
-            title { "{window_title}" }
-            document::Link { rel: "stylesheet", href: BROWSER_UI_STYLES }
-
-            // Tab strip
-            div { class: "tabstrip",
-                for tab in tabs() {
-                    {
-                        let is_active = tab.id == active_tab_id();
-                        let tab_id = tab.id;
-                        let title = tab_title_or_url(&tab);
-                        let tab_count = tabs.read().len();
-                        rsx!(
-                            div {
-                                key: "{tab_id}",
-                                class: if is_active { "tab tab--active" } else { "tab" },
-                                onclick: move |_| switch_tab(tab_id),
-                                span { class: "tab__title", "{title}" }
-                                if tab_count > 1 {
-                                    div {
-                                        class: "tab__close",
-                                        onclick: move |evt| { evt.stop_propagation(); close_tab(tab_id); },
-                                        "×"
-                                    }
-                                }
-                            }
-                        )
-                    }
-                }
-                div {
-                    class: "tab-new",
-                    onclick: move |_| open_new_tab(home_url_for_new_tab.clone()),
-                    "+"
+        div { class: "urlbar",
+            IconButton {
+                icon: icons::BACK_ICON,
+                action: back_action,
+                disabled: !active_tab(&tabs, active_tab_id()).history.has_back(),
+            }
+            if !IS_MOBILE {
+                IconButton {
+                    icon: icons::FORWARDS_ICON,
+                    action: forward_action,
+                    disabled: !active_tab(&tabs, active_tab_id()).history.has_forward(),
                 }
             }
-
-            // Toolbar
-            div { class: "urlbar",
-                IconButton {
-                    icon: icons::BACK_ICON,
-                    action: back_action,
-                    disabled: !active_tab(&tabs, active_tab_id()).history.has_back(),
-                }
-                if !IS_MOBILE {
-                    IconButton {
-                        icon: icons::FORWARDS_ICON,
-                        action: forward_action,
-                        disabled: !active_tab(&tabs, active_tab_id()).history.has_forward(),
+            IconButton { icon: icons::REFRESH_ICON, action: refresh_action }
+            if !IS_MOBILE {
+                IconButton { icon: icons::HOME_ICON, action: home_action }
+            }
+            input {
+                class: "urlbar-input",
+                "type": "text",
+                name: "url",
+                value: url_input_value(),
+                onmounted: move |evt: Event<MountedData>| {
+                    let node_handle = evt.downcast::<NodeHandle>().unwrap();
+                    *url_input_handle.write() = Some(node_handle.clone());
+                },
+                onblur: move |_| {
+                    *is_focused.write() = false;
+                },
+                onfocus: move |_| {
+                    *is_focused.write() = true;
+                    if let Some(handle) = url_input_handle() {
+                        let node_id = handle.node_id();
+                        let mut doc = handle.doc_mut();
+                        doc.with_text_input(node_id, |mut driver| driver.select_all());
                     }
-                }
-                IconButton { icon: icons::REFRESH_ICON, action: refresh_action }
-                if !IS_MOBILE {
-                    IconButton { icon: icons::HOME_ICON, action: home_action }
-                }
-                input {
-                    class: "urlbar-input",
-                    "type": "text",
-                    name: "url",
-                    value: url_input_value(),
-                    onmounted: move |evt: Event<MountedData>| {
-                        let node_handle = evt.downcast::<NodeHandle>().unwrap();
-                        *url_input_handle.write() = Some(node_handle.clone());
-                    },
-                    onblur: move |_evt| {
-                        *is_focussed.write() = false;
-                    },
-                    onfocus: move |_evt| {
-                        *is_focussed.write() = true;
-                        if let Some(handle) = url_input_handle() {
-                            let node_id = handle.node_id();
-                            let mut doc = handle.doc_mut();
-                            doc.with_text_input(node_id, |mut driver| driver.select_all());
-                        }
-                    },
-                    onpointerdown: {
-                        let block_mouse_up = block_mouse_up.clone();
-                        move |_evt| {
-                            *block_mouse_up.borrow_mut() = !is_focussed();
-                        }
-                    },
-                    onpointermove: {
-                        let block_mouse_up = block_mouse_up.clone();
-                        move |evt| {
-                            if *block_mouse_up.borrow() {
-                                evt.prevent_default();
-                            }
-                        }
-                    },
-                    onpointerup: move |evt| {
+                },
+                onpointerdown: {
+                    let block_mouse_up = block_mouse_up.clone();
+                    move |_| {
+                        *block_mouse_up.borrow_mut() = !is_focused();
+                    }
+                },
+                onpointermove: {
+                    let block_mouse_up = block_mouse_up.clone();
+                    move |evt| {
                         if *block_mouse_up.borrow() {
                             evt.prevent_default();
                         }
-                    },
-                    onkeydown: move |evt| {
-                        let is_enter = match evt.key() {
-                            Key::Enter => true,
-                            Key::Character(s) if s == "\n" => true,
-                            _ => false,
-                        };
-                        if is_enter {
-                            evt.prevent_default();
-                            if let Some(handle) = url_input_handle() {
-                                core::mem::drop(handle.set_focus(false));
-                            }
-                            let req = req_from_string(&url_input_value.read());
-                            if let Some(req) = req {
-                                let tab = active_tab(&tabs, *active_tab_id.peek());
-                                tab.history.navigate(req);
-                            } else {
-                                println!("Error parsing URL {}", &*url_input_value.read());
-                            }
+                    }
+                },
+                onpointerup: move |evt| {
+                    if *block_mouse_up.borrow() {
+                        evt.prevent_default();
+                    }
+                },
+                onkeydown: move |evt| {
+                    let is_enter = match evt.key() {
+                        Key::Enter => true,
+                        Key::Character(s) if s == "\n" => true,
+                        _ => false,
+                    };
+                    if is_enter {
+                        evt.prevent_default();
+                        if let Some(handle) = url_input_handle() {
+                            drop(handle.set_focus(false));
                         }
-                    },
-                    oninput: move |evt| { *url_input_value.write() = evt.value() },
+                        let req = req_from_string(&url_input_value.read());
+                        if let Some(req) = req {
+                            active_tab(&tabs, *active_tab_id.peek()).history.navigate(req);
+                        } else {
+                            tracing::warn!("Error parsing URL {}", &*url_input_value.read());
+                        }
+                    }
+                },
+                oninput: move |evt| { *url_input_value.write() = evt.value() },
+            }
+            div { class: "menu-wrapper",
+                IconButton {
+                    icon: icons::MENU_ICON,
+                    action: move |_| menu_open.toggle(),
+                    active: menu_open(),
                 }
-
-                div { class: "menu-wrapper",
-                    IconButton { icon: icons::MENU_ICON, action: move |_| menu_open.toggle(), active: menu_open() },
-                    if menu_open() {
-                        div { class: "menu-dropdown",
-                            div { class: "menu-item", onclick: open_action,
-                                img { class: "menu-item-icon", src: icons::EXTERNAL_LINK_ICON }
-                                "Open in External Browser"
-                            }
-                            div { class: "menu-item", onclick: move |_| view_source_action(()),
-                                img { class: "menu-item-icon", src: icons::CODE_ICON }
-                                "View Source"
-                            }
-                            {screenshot_item}
-                            {capture_item}
-                            div { class: "menu-item", onclick: move |_| devtools_action(()), "Toggle DevTools" }
-                            {fps_toggle_item}
+                if menu_open() {
+                    div { class: "menu-dropdown",
+                        div { class: "menu-item", onclick: open_action,
+                            img { class: "menu-item-icon", src: icons::EXTERNAL_LINK_ICON }
+                            "Open in External Browser"
                         }
+                        div { class: "menu-item", onclick: move |_| view_source_action(()),
+                            img { class: "menu-item-icon", src: icons::CODE_ICON }
+                            "View Source"
+                        }
+                        {screenshot_item}
+                        {capture_item}
+                        div { class: "menu-item", onclick: move |_| devtools_action(()), "Toggle DevTools" }
+                        {fps_toggle_item}
                     }
                 }
             }
-
-            // Web content — one web-view per tab; inactive tabs hidden via display:none
-            for tab in tabs() {
-                {
-                    let mut tab_node_handle = tab.node_handle;
-                    rsx!(
-                        web-view {
-                            key: "{tab.id}",
-                            class: "webview",
-                            style: if tab.id == active_tab_id() { "display: block" } else { "display: none" },
-                            "__webview_document": tab.document.cloned(),
-                            onmounted: move |evt: Event<MountedData>| {
-                                let node_handle = evt.downcast::<NodeHandle>().unwrap();
-                                *tab_node_handle.write() = Some(node_handle.clone());
-                            },
-                        }
-                    )
-                }
-            }
-            {fps_overlay_el}
         }
     )
 }
@@ -571,7 +579,7 @@ fn synthesize_duckduckgo_search_req(query: &str) -> Request {
 fn open_in_external_browser(req: &Request) {
     if req.method == Method::GET && matches!(req.url.scheme(), "http" | "https" | "mailto") {
         if let Err(err) = webbrowser::open(req.url.as_str()) {
-            println!("Failed to open URL: {}", err);
+            tracing::error!("Failed to open URL: {}", err);
         }
     }
 }
@@ -630,11 +638,6 @@ impl<Lens> Store<History, Lens> {
         self.urls().push(req);
         *self.current().write() += 1;
     }
-
-    fn refresh(&mut self) {
-        // Trigger change detection without actually changing the URL
-        let _ = self.current().write();
-    }
 }
 
 struct BrowserNavProvider {
@@ -661,6 +664,25 @@ struct DocumentLoader {
     history: SyncStore<History>,
     html_source: Signal<String>,
     title: Signal<String>,
+}
+
+fn make_doc_config(
+    base_url: Option<String>,
+    net_provider: Arc<StdNetProvider>,
+    history: SyncStore<History>,
+    font_ctx: FontContext,
+) -> DocumentConfig {
+    DocumentConfig {
+        viewport: None,
+        base_url,
+        ua_stylesheets: None,
+        net_provider: Some(net_provider as _),
+        navigation_provider: Some(Arc::new(BrowserNavProvider { history })),
+        shell_provider: Some(consume_context::<Arc<dyn ShellProvider>>()),
+        html_parser_provider: Some(Arc::new(HtmlProvider)),
+        font_ctx: Some(font_ctx),
+        media_type: None,
+    }
 }
 
 impl DocumentLoader {
@@ -695,43 +717,28 @@ impl DocumentLoader {
         let doc_signal = self.doc;
         let history = self.history;
         let html_source = self.html_source;
+        let title = self.title;
 
         if let DocumentLoaderStatus::Loading { task, .. } = *self.status.peek() {
             task.cancel();
         };
 
-        let title = self.title;
         let task = spawn(async move {
-            let request = net_provider.fetch_async(req);
+            let response = net_provider.fetch_async(req).await;
 
-            let response = request.await;
-
-            match *status.peek() {
-                DocumentLoaderStatus::Loading {
-                    request_id: stored_req_id,
-                    ..
-                } if request_id == stored_req_id => {
-                    // Do nothing
+            // Discard response if a newer navigation has started
+            if let DocumentLoaderStatus::Loading { request_id: stored_id, .. } = *status.peek() {
+                if request_id != stored_id {
+                    tracing::debug!("Ignoring stale navigation response (id {request_id})");
+                    return;
                 }
-                _ => {
-                    println!("Ignoring load as it is not the most recent navigation request");
-                }
-            };
+            }
 
             match response {
                 Ok((resolved_url, bytes)) => {
-                    println!("Loaded {}", resolved_url);
-                    let config = DocumentConfig {
-                        viewport: None,
-                        base_url: Some(resolved_url),
-                        ua_stylesheets: None,
-                        net_provider: Some(net_provider as _), // FIXME
-                        navigation_provider: Some(Arc::new(BrowserNavProvider { history })),
-                        shell_provider: Some(consume_context::<Arc<dyn ShellProvider>>()),
-                        html_parser_provider: Some(Arc::new(HtmlProvider)),
-                        font_ctx: Some(font_ctx),
-                        media_type: None,
-                    };
+                    tracing::info!("Loaded {}", resolved_url);
+                    let config =
+                        make_doc_config(Some(resolved_url), net_provider, history, font_ctx);
 
                     let html = if bytes.is_empty() {
                         include_str!("../assets/404.html")
@@ -750,21 +757,10 @@ impl DocumentLoader {
                     *doc_signal.write_unchecked() = Some(SubDocumentAttr::new(document));
                 }
                 Err(err) => {
-                    println!("Error loading document {:?}", err);
+                    tracing::error!("Error loading document: {:?}", err);
 
                     let error_msg = format!("{err:?}");
-
-                    let config = DocumentConfig {
-                        viewport: None,
-                        base_url: None,
-                        ua_stylesheets: None,
-                        net_provider: Some(net_provider as _),
-                        navigation_provider: Some(Arc::new(BrowserNavProvider { history })),
-                        shell_provider: Some(consume_context::<Arc<dyn ShellProvider>>()),
-                        html_parser_provider: Some(Arc::new(HtmlProvider)),
-                        font_ctx: Some(font_ctx),
-                        media_type: None,
-                    };
+                    let config = make_doc_config(None, net_provider, history, font_ctx);
 
                     let error_html = include_str!("../assets/error.html");
                     let mut document = HtmlDocument::from_html(error_html, config).into_inner();
@@ -779,9 +775,8 @@ impl DocumentLoader {
                     *doc_signal.write_unchecked() = Some(SubDocumentAttr::new(document));
                 }
             }
-            // do something with result
         });
 
-        *self.status.write_unchecked() = DocumentLoaderStatus::Loading { request_id, task };
+        *status.write_unchecked() = DocumentLoaderStatus::Loading { request_id, task };
     }
 }
