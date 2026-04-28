@@ -54,7 +54,9 @@ pub fn StatusBar(tabs: Signal<Vec<Tab>>, active_tab_id: Signal<TabId>) -> Elemen
                         base.join(&raw).map(|u| u.to_string()).unwrap_or(raw)
                     }
                 };
-                hover_url.set(found);
+                if found != *hover_url.read() {
+                    hover_url.set(found);
+                }
             }
         });
     });
