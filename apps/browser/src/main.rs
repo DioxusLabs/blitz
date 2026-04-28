@@ -27,10 +27,32 @@ mod tab;
 mod tab_strip;
 mod toolbar;
 
+use history::HistoryNav;
 use status_bar::StatusBar;
 use tab::{Tab, TabId, active_tab, tab_title_or_url};
 use tab_strip::TabStrip;
 use toolbar::Toolbar;
+
+#[component]
+fn TabView(tab: Tab, is_active: bool) -> Element {
+    use_effect(move || {
+        let request = (*tab.history.current_url().read()).clone();
+        tab.loader.load_document(request);
+    });
+
+    let mut tab_node_handle = tab.node_handle;
+    rsx!(
+        web-view {
+            class: "webview",
+            style: if is_active { "display: block" } else { "display: none" },
+            "__webview_document": tab.document.cloned(),
+            onmounted: move |evt: Event<MountedData>| {
+                let node_handle = evt.downcast::<NodeHandle>().unwrap();
+                *tab_node_handle.write() = Some(node_handle.clone());
+            },
+        }
+    )
+}
 
 static BROWSER_UI_STYLES: Asset = asset!("../assets/browser.css");
 pub(crate) const IS_MOBILE: bool = cfg!(any(target_os = "android", target_os = "ios"));
@@ -118,18 +140,10 @@ fn app() -> Element {
             }
             for tab in tabs() {
                 {
-                    let mut tab_node_handle = tab.node_handle;
+                    let id = tab.id;
+                    let is_active = id == active_tab_id();
                     rsx!(
-                        web-view {
-                            key: "{tab.id}",
-                            class: "webview",
-                            style: if tab.id == active_tab_id() { "display: block" } else { "display: none" },
-                            "__webview_document": tab.document.cloned(),
-                            onmounted: move |evt: Event<MountedData>| {
-                                let node_handle = evt.downcast::<NodeHandle>().unwrap();
-                                *tab_node_handle.write() = Some(node_handle.clone());
-                            },
-                        }
+                        TabView { key: "{id}", tab, is_active }
                     )
                 }
             }

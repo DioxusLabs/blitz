@@ -54,15 +54,6 @@ pub fn Toolbar(
         tab.loader.load_document(request);
     });
 
-    use_effect(move || {
-        // Subscribe to every tab's current URL so that navigation in any tab
-        // (URL bar, back/forward/home, or in-page link click) triggers a load.
-        for tab in tabs.read().iter() {
-            let _ = tab.history.current_url().read();
-        }
-        load_current_url(());
-    });
-
     let back_action = use_callback(move |_| {
         active_tab(&tabs, *active_tab_id.peek()).history.go_back();
     });

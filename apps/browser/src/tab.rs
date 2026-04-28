@@ -32,6 +32,12 @@ pub struct Tab {
     pub title: Signal<String>,
 }
 
+impl PartialEq for Tab {
+    fn eq(&self, other: &Self) -> bool {
+        self.id == other.id
+    }
+}
+
 impl Tab {
     pub fn new(url: Url, net_provider: Arc<StdNetProvider>) -> Self {
         let id = next_tab_id();
