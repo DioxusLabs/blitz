@@ -15,6 +15,7 @@ use std::{
         Arc,
         atomic::{AtomicU64, AtomicUsize, Ordering as Ao},
     },
+    time::Duration,
 };
 
 use blitz_traits::shell::ShellProvider;
@@ -192,6 +193,7 @@ fn app() -> Element {
                 }
             }
             {fps_overlay_el}
+            StatusBar { tabs, active_tab_id }
         }
     )
 }
@@ -544,6 +546,101 @@ fn Toolbar(
             }
         }
     )
+}
+
+#[component]
+fn StatusBar(tabs: Signal<Vec<Tab>>, active_tab_id: Signal<TabId>) -> Element {
+    let mut hover_url: Signal<String> = use_signal(|| String::new());
+
+    // Hover state lives inside blitz-dom's BaseDocument, not a Dioxus signal,
+    // so we poll it at ~10 fps (same pattern as FpsOverlay).
+    use_hook(move || {
+        spawn(async move {
+            loop {
+                tokio::time::sleep(Duration::from_millis(100)).await;
+
+                let found = 'find: {
+                    let tab = active_tab(&tabs, *active_tab_id.peek());
+
+                    // Inner block scopes all doc borrows so they're dropped
+                    // before we access tab.history below.
+                    let raw_href: Option<String> = 'lookup: {
+                        let nh = tab.node_handle.peek();
+                        let Some(handle) = (*nh).as_ref() else {
+                            break 'lookup None;
+                        };
+                        let node_id = handle.node_id();
+                        let doc = handle.doc();
+                        let Some(sub_doc) = doc
+                            .get_node(node_id)
+                            .and_then(|n| n.element_data())
+                            .and_then(|el| el.sub_doc_data())
+                        else {
+                            break 'lookup None;
+                        };
+                        let inner = sub_doc.inner();
+                        let Some(hover_id) = inner.get_hover_node_id() else {
+                            break 'lookup None;
+                        };
+
+                        // Walk layout_parent chain to find the nearest <a> ancestor
+                        let mut cur_id = hover_id;
+                        loop {
+                            let Some(node) = inner.get_node(cur_id) else {
+                                break 'lookup None;
+                            };
+                            if let Some(el) = node.element_data() {
+                                if el.name.local.as_ref() == "a" {
+                                    break 'lookup el
+                                        .attrs()
+                                        .iter()
+                                        .find(|a| a.name.local.as_ref() == "href")
+                                        .map(|a| a.value.clone());
+                                }
+                            }
+                            match node.layout_parent.get() {
+                                Some(pid) => cur_id = pid,
+                                None => break 'lookup None,
+                            }
+                        }
+                    };
+                    // All doc borrows dropped here.
+
+                    let Some(raw) = raw_href else {
+                        break 'find String::new();
+                    };
+                    // Resolve relative href against the page's base URL.
+                    let base = tab.history.current_url().read().url.clone();
+                    base.join(&raw).map(|u| u.to_string()).unwrap_or(raw)
+                };
+
+                hover_url.set(found);
+            }
+        });
+    });
+
+    let tab = active_tab(&tabs, active_tab_id());
+    let is_loading = matches!(
+        *tab.loader.status.read(),
+        DocumentLoaderStatus::Loading { .. }
+    );
+
+    let status_text = {
+        let hov = hover_url.read();
+        if !hov.is_empty() {
+            hov.clone()
+        } else if is_loading {
+            format!("Loading {}…", tab.history.current_url().read().url)
+        } else {
+            String::new()
+        }
+    };
+
+    if status_text.is_empty() {
+        return rsx!();
+    }
+
+    rsx!(div { class: "statusbar", "{status_text}" })
 }
 
 fn req_from_string(url_s: &str) -> Option<Request> {

@@ -242,3 +242,23 @@ body,
   opacity: 0.01;
   pointer-events: none;
 }
+
+.statusbar {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  max-width: 60%;
+  background: rgba(240, 240, 240, 0.95);
+  border-top: 1px solid #ccc;
+  border-right: 1px solid #ccc;
+  border-top-right-radius: 3px;
+  padding: 2px 8px;
+  font-size: 12px;
+  font-family: sans-serif;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  pointer-events: none;
+  color: #333;
+  z-index: 10;
+}
