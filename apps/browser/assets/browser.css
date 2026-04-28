@@ -26,12 +26,14 @@ body,
   overflow: hidden;
 }
 
+
 .tab {
   display: flex;
   flex-direction: row;
   align-items: center;
   padding: 0 8px;
-  min-width: 150px;
+  flex: 1 1 0;
+  min-width: 0;
   max-width: 375px;
   cursor: pointer;
   border-right: 1px solid #CCC;
@@ -39,10 +41,32 @@ body,
   border-top-left-radius: 12px;
   border-top-right-radius: 12px;
   overflow: hidden;
+  position: relative;
 
   &:hover {
     background: #E8E8E8;
+    overflow: visible;
   }
+}
+
+.tab__tooltip {
+  display: none;
+  position: absolute;
+  top: 36px;
+  left: 0;
+  background: #333;
+  color: #fff;
+  font-size: 12px;
+  font-family: sans-serif;
+  white-space: nowrap;
+  padding: 4px 8px;
+  border-radius: 4px;
+  pointer-events: none;
+  z-index: 100;
+}
+
+.tab:hover .tab__tooltip {
+  display: block;
 }
 
 .tab--active {
@@ -211,6 +235,7 @@ body,
   height: 16px;
   width: 16px;
 }
+
 
 .webview {
   flex: 1 1 0px;

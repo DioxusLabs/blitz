@@ -45,8 +45,10 @@ pub fn TabStrip(
                         div {
                             key: "{tab_id}",
                             class: if is_active { "tab tab--active" } else { "tab" },
+                            title: "{title}",
                             onclick: move |_| switch_tab(tab_id),
                             span { class: "tab__title", "{title}" }
+                            span { class: "tab__tooltip", "{title}" }
                             if tab_count > 1 {
                                 div {
                                     class: "tab__close",
