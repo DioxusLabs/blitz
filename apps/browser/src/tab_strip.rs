@@ -3,6 +3,11 @@ use dioxus_native::prelude::*;
 
 use crate::tab::{Tab, TabId, tab_title_or_url};
 
+#[cfg(target_os = "macos")]
+const TABSTRIP_CLASS: &str = "tabstrip merged-titlebar";
+#[cfg(not(target_os = "macos"))]
+const TABSTRIP_CLASS: &str = "tabstrip";
+
 #[component]
 pub fn TabStrip(
     tabs: Signal<Vec<Tab>>,
@@ -34,7 +39,7 @@ pub fn TabStrip(
     });
 
     rsx!(
-        div { class: "tabstrip",
+        div { class: TABSTRIP_CLASS,
             for tab in tabs() {
                 {
                     let is_active = tab.id == active_tab_id();

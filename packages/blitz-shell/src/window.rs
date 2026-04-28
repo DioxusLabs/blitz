@@ -28,6 +28,17 @@ use winit::{event::Modifiers, event::WindowEvent, keyboard::KeyCode, window::Win
 #[cfg(feature = "accessibility")]
 use crate::accessibility::AccessibilityState;
 
+// Ignore safe_area_insets on macOS because we don't want to avoid
+// drawing in the titlebar.
+#[cfg(target_os = "macos")]
+fn get_safe_area_insets(_window: &dyn Window) -> PhysicalInsets<u32> {
+    Default::default()
+}
+#[cfg(not(target_os = "macos"))]
+fn get_safe_area_insets(window: &dyn Window) -> PhysicalInsets<u32> {
+    window.safe_area()
+}
+
 pub struct WindowConfig<Rend: WindowRenderer> {
     doc: Box<dyn Document>,
     attributes: WindowAttributes,
@@ -106,7 +117,7 @@ impl<Rend: WindowRenderer> View<Rend> {
         // TODO: account for the "safe area"
         let size = winit_window.surface_size();
         let scale = winit_window.scale_factor() as f32;
-        let safe_area_insets = winit_window.safe_area();
+        let safe_area_insets = get_safe_area_insets(&*winit_window);
         let theme = winit_window.theme().unwrap_or(Theme::Light);
         let color_scheme = theme_to_color_scheme(theme);
         let viewport = Viewport::new(size.width, size.height, scale, color_scheme);
@@ -374,7 +385,7 @@ impl<Rend: WindowRenderer> View<Rend> {
                 }
             },
             WindowEvent::SurfaceResized(physical_size) => {
-                self.safe_area_insets = self.window.safe_area();
+                self.safe_area_insets = get_safe_area_insets(&*self.window);
                 let insets = self.safe_area_insets;
                 let width = physical_size.width - insets.left - insets.right;
                 let height = physical_size.height - insets.top - insets.bottom;

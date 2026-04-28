@@ -24,6 +24,11 @@ body,
   height: 34px;
   background: #E0E0E0;
   overflow: hidden;
+
+  &.merged-titlebar {
+    padding: 10px 10px 0px 90px;
+    height: 44px;
+  }
 }
 
 

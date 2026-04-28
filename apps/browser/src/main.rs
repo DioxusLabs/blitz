@@ -11,7 +11,10 @@ static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 use std::sync::Arc;
 
 use blitz_traits::net::Url;
-use dioxus_native::{NodeHandle, prelude::*};
+use dioxus_native::{NodeHandle, WindowAttributes, prelude::*};
+
+#[cfg(target_os = "macos")]
+use winit::platform::macos::WindowAttributesMacOS;
 
 pub(crate) type StdNetProvider = blitz_net::Provider;
 
@@ -68,7 +71,17 @@ pub fn android_main(android_app: dioxus_native::AndroidApp) {
 fn main() {
     #[cfg(feature = "tracing")]
     tracing_subscriber::fmt::init();
-    dioxus_native::launch_cfg(app, vec![], Vec::new())
+    let window_attributes = WindowAttributes::default();
+    #[cfg(target_os = "macos")]
+    let window_attributes = window_attributes.with_platform_attributes(Box::new(
+        WindowAttributesMacOS::default()
+            .with_titlebar_transparent(true)
+            .with_fullsize_content_view(true)
+            .with_title_hidden(true)
+            .with_unified_titlebar(true),
+    ));
+
+    dioxus_native::launch_cfg(app, Vec::new(), vec![Box::new(window_attributes)])
 }
 
 fn app() -> Element {
