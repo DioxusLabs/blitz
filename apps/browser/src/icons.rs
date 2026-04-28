@@ -15,15 +15,22 @@ pub fn IconButton(
     icon: Asset,
     action: Option<Callback>,
     #[props(default)] active: bool,
+    #[props(default)] disabled: bool,
 ) -> Element {
+    let class = if disabled {
+        "iconbutton iconbutton--disabled"
+    } else if active {
+        "iconbutton active"
+    } else {
+        "iconbutton"
+    };
     rsx!(
         div {
-            class: if active  {
-                "iconbutton active"
-            } else {
-                "iconbutton"
-            },
+            class,
             onclick: move |_| {
+                if disabled {
+                    return;
+                }
                 if let Some(action) = action {
                     action(())
                 }

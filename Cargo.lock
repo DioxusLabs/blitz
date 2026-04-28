@@ -1084,6 +1084,7 @@ dependencies = [
  "png 0.18.1",
  "rfd",
  "tokio",
+ "tracing",
  "tracing-subscriber",
  "webbrowser",
  "winit",

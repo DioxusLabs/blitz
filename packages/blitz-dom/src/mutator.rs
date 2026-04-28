@@ -36,6 +36,7 @@ enum SpecialOp {
     UnloadStylesheet(usize),
     LoadCustomPaintSource(usize),
     ProcessButtonInput(usize),
+    UnloadSubDocument(usize),
 }
 
 pub struct DocumentMutator<'doc> {
@@ -572,6 +573,7 @@ impl<'doc> DocumentMutator<'doc> {
                 SpecialOp::UnloadStylesheet(node_id) => self.unload_stylesheet(node_id),
                 SpecialOp::LoadCustomPaintSource(node_id) => self.load_custom_paint_src(node_id),
                 SpecialOp::ProcessButtonInput(node_id) => self.process_button_input(node_id),
+                SpecialOp::UnloadSubDocument(node_id) => self.remove_sub_document(node_id),
             }
         }
 
@@ -665,7 +667,10 @@ impl<'doc> DocumentMutator<'doc> {
             };
 
             match &element.special_data {
-                SpecialElementData::SubDocument(_) => {}
+                SpecialElementData::SubDocument(_) => {
+                    self.eager_op_queue
+                        .push(SpecialOp::UnloadSubDocument(node_id));
+                }
                 SpecialElementData::Stylesheet(_) => self
                     .eager_op_queue
                     .push(SpecialOp::UnloadStylesheet(node_id)),
