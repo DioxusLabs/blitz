@@ -890,6 +890,7 @@ impl DocumentLoader {
                     *doc_signal.write_unchecked() = Some(SubDocumentAttr::new(document));
                 }
             }
+            *status.write_unchecked() = DocumentLoaderStatus::Idle;
         });
 
         *status.write_unchecked() = DocumentLoaderStatus::Loading { request_id, task };
