@@ -154,6 +154,14 @@ pub fn Toolbar(
         }
     });
 
+    let go_special = use_callback(move |path: &'static str| {
+        menu_open.set(false);
+        let url = Url::parse(&format!("about:{path}")).unwrap();
+        active_tab(&tabs, *active_tab_id.peek())
+            .history
+            .navigate(Request::get(url));
+    });
+
     let devtools_action = use_callback(move |_| {
         menu_open.set(false);
         let node_handle = active_tab(&tabs, *active_tab_id.peek()).node_handle;
@@ -306,6 +314,9 @@ pub fn Toolbar(
                 }
                 if menu_open() {
                     div { class: "menu-dropdown",
+                        div { class: "menu-item", onclick: move |_| go_special("settings"), "Settings" }
+                        div { class: "menu-item", onclick: move |_| go_special("history"), "History" }
+                        div { class: "menu-item", onclick: move |_| go_special("bookmarks"), "Bookmarks" }
                         div { class: "menu-item", onclick: open_action,
                             img { class: "menu-item-icon", src: icons::EXTERNAL_LINK_ICON }
                             "Open in External Browser"

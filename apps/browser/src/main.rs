@@ -20,11 +20,13 @@ pub(crate) type StdNetProvider = blitz_net::Provider;
 
 #[cfg(any(feature = "screenshot", feature = "capture"))]
 mod capture;
+mod config;
 mod document_loader;
 #[cfg(feature = "vello")]
 mod fps_overlay;
 mod history;
 mod icons;
+mod special_pages;
 mod status_bar;
 mod tab;
 mod tab_strip;
@@ -87,17 +89,23 @@ fn main() {
 fn app() -> Element {
     let home_url = use_hook(|| Url::parse(HOME_URL_STR).unwrap());
     let net_provider = use_context::<Arc<StdNetProvider>>();
+    let config_store = use_hook(config::ConfigStore::new);
 
     let url_input_handle: Signal<Option<NodeHandle>> = use_signal(|| None);
     let url_input_value = use_signal(|| home_url.to_string());
 
-    let mut tabs: Signal<Vec<Tab>> =
-        use_hook(|| Signal::new(vec![Tab::new(home_url.clone(), net_provider.clone())]));
+    let mut tabs: Signal<Vec<Tab>> = use_hook(|| {
+        Signal::new(vec![Tab::new(
+            home_url.clone(),
+            net_provider.clone(),
+            config_store.clone(),
+        )])
+    });
     let mut active_tab_id: Signal<TabId> =
         use_hook(|| Signal::new(tabs.read().first().map(|t| t.id).unwrap_or(0)));
 
     let open_new_tab = use_callback(move |url: Url| {
-        let new_tab = Tab::new(url, net_provider.clone());
+        let new_tab = Tab::new(url, net_provider.clone(), config_store.clone());
         let new_id = new_tab.id;
         tabs.write().push(new_tab);
         active_tab_id.set(new_id);

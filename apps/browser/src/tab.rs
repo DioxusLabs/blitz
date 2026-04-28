@@ -10,6 +10,7 @@ use blitz_traits::net::Url;
 use dioxus_native::{NodeHandle, SubDocumentAttr, prelude::*};
 
 use crate::StdNetProvider;
+use crate::config::ConfigStore;
 use crate::document_loader::DocumentLoader;
 use crate::history::{History, HistoryNav, SyncStore};
 
@@ -39,13 +40,14 @@ impl PartialEq for Tab {
 }
 
 impl Tab {
-    pub fn new(url: Url, net_provider: Arc<StdNetProvider>) -> Self {
+    pub fn new(url: Url, net_provider: Arc<StdNetProvider>, config: Arc<ConfigStore>) -> Self {
         let id = next_tab_id();
         let history: SyncStore<History> = Store::new_maybe_sync(History::new(url));
         let html_source: Signal<String> = Signal::new(String::new());
         let title: Signal<String> = Signal::new(String::new());
         let loader = Rc::new(DocumentLoader::new(
             net_provider,
+            config,
             history,
             html_source,
             title,

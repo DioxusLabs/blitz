@@ -11,7 +11,9 @@ use dioxus_native::{SubDocumentAttr, prelude::*};
 use linebender_resource_handle::Blob;
 
 use crate::StdNetProvider;
+use crate::config::ConfigStore;
 use crate::history::{BrowserNavProvider, History, SyncStore};
+use crate::special_pages;
 
 pub enum DocumentLoaderStatus {
     Loading { request_id: usize, task: Task },
@@ -21,6 +23,7 @@ pub enum DocumentLoaderStatus {
 pub struct DocumentLoader {
     pub font_ctx: FontContext,
     pub net_provider: Arc<StdNetProvider>,
+    pub config: Arc<ConfigStore>,
     pub status: Signal<DocumentLoaderStatus>,
     pub request_id_counter: AtomicUsize,
     pub doc: Signal<Option<SubDocumentAttr>>,
@@ -51,6 +54,7 @@ pub fn make_doc_config(
 impl DocumentLoader {
     pub fn new(
         net_provider: Arc<StdNetProvider>,
+        config: Arc<ConfigStore>,
         history: SyncStore<History>,
         html_source: Signal<String>,
         title: Signal<String>,
@@ -63,6 +67,7 @@ impl DocumentLoader {
         Self {
             font_ctx,
             net_provider,
+            config,
             status: Signal::new(DocumentLoaderStatus::Idle),
             request_id_counter: AtomicUsize::new(0),
             doc: Signal::new(None),
@@ -73,23 +78,35 @@ impl DocumentLoader {
     }
 
     pub fn load_document(&self, req: Request) {
-        if req.url.scheme() == "about" && req.url.path() == "newtab" {
-            if let DocumentLoaderStatus::Loading { task, .. } = *self.status.peek() {
-                task.cancel();
+        if req.url.scheme() == "about" {
+            if let Some(_page) = special_pages::lookup(&req.url) {
+                if let DocumentLoaderStatus::Loading { task, .. } = *self.status.peek() {
+                    task.cancel();
+                }
+                let ctx = special_pages::SpecialPageCtx {
+                    url: &req.url,
+                    history: self.history,
+                    config: Arc::clone(&self.config),
+                };
+                let html =
+                    special_pages::dispatch(&ctx).expect("lookup matched, dispatch must succeed");
+                let doc_config = make_doc_config(
+                    Some(req.url.to_string()),
+                    Arc::clone(&self.net_provider),
+                    self.history,
+                    self.font_ctx.clone(),
+                );
+                *self.html_source.write_unchecked() = html.clone();
+                let document = HtmlDocument::from_html(&html, doc_config).into_inner();
+                let parsed_title = document
+                    .find_title_node()
+                    .map(|n| n.text_content())
+                    .unwrap_or_default();
+                *self.title.write_unchecked() = parsed_title;
+                *self.doc.write_unchecked() = Some(SubDocumentAttr::new(document));
+                *self.status.write_unchecked() = DocumentLoaderStatus::Idle;
+                return;
             }
-            let config = make_doc_config(
-                None,
-                Arc::clone(&self.net_provider),
-                self.history,
-                self.font_ctx.clone(),
-            );
-            let html = include_str!("../assets/start.html");
-            *self.html_source.write_unchecked() = html.to_string();
-            let document = HtmlDocument::from_html(html, config).into_inner();
-            *self.title.write_unchecked() = String::new();
-            *self.doc.write_unchecked() = Some(SubDocumentAttr::new(document));
-            *self.status.write_unchecked() = DocumentLoaderStatus::Idle;
-            return;
         }
 
         let request_id = self.request_id_counter.fetch_add(1, Ordering::Relaxed);
