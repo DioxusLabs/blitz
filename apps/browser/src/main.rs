@@ -13,7 +13,7 @@ use std::{
     rc::Rc,
     sync::{
         Arc,
-        atomic::{AtomicU64, AtomicUsize, Ordering as Ao},
+        atomic::{AtomicU64, AtomicUsize, Ordering},
     },
     time::Duration,
 };
@@ -61,7 +61,7 @@ type TabId = u64;
 static TAB_ID_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 fn next_tab_id() -> TabId {
-    TAB_ID_COUNTER.fetch_add(1, Ao::Relaxed)
+    TAB_ID_COUNTER.fetch_add(1, Ordering::Relaxed)
 }
 
 #[derive(Clone)]
@@ -142,13 +142,23 @@ fn app() -> Element {
 
     // HACK: Winit doesn't support "safe area" on Android yet.
     // So we just hardcode a fallback safe area.
-    const TOP_PAD: &str = if cfg!(target_os = "android") { "30px" } else { "" };
-    const BOTTOM_PAD: &str = if cfg!(target_os = "android") { "44px" } else { "" };
+    const TOP_PAD: &str = if cfg!(target_os = "android") {
+        "30px"
+    } else {
+        ""
+    };
+    const BOTTOM_PAD: &str = if cfg!(target_os = "android") {
+        "44px"
+    } else {
+        ""
+    };
 
     let show_fps: Signal<bool> = use_signal(|| false);
 
     #[cfg(feature = "vello")]
-    let fps_overlay_el = rsx!(if show_fps() { fps_overlay::FpsOverlay {} });
+    let fps_overlay_el = rsx!(if show_fps() {
+        fps_overlay::FpsOverlay {}
+    });
     #[cfg(not(feature = "vello"))]
     let fps_overlay_el = rsx!();
 
@@ -215,7 +225,11 @@ fn TabStrip(
         let idx = tabs_w.iter().position(|t| t.id == id).unwrap_or(0);
         tabs_w.remove(idx);
         if current_active == id {
-            let new_idx = if idx < tabs_w.len() { idx } else { tabs_w.len() - 1 };
+            let new_idx = if idx < tabs_w.len() {
+                idx
+            } else {
+                tabs_w.len().saturating_sub(1)
+            };
             if let Some(t) = tabs_w.get(new_idx) {
                 let new_id = t.id;
                 drop(tabs_w);
@@ -307,7 +321,9 @@ fn Toolbar(
         active_tab(&tabs, *active_tab_id.peek()).history.go_back();
     });
     let forward_action = use_callback(move |_| {
-        active_tab(&tabs, *active_tab_id.peek()).history.go_forward();
+        active_tab(&tabs, *active_tab_id.peek())
+            .history
+            .go_forward();
     });
     let home_action = use_callback(move |_| {
         active_tab(&tabs, *active_tab_id.peek())
@@ -461,18 +477,22 @@ fn Toolbar(
     #[cfg(not(feature = "cache"))]
     let clear_cache_item = rsx!();
 
+    let current_tab = active_tab(&tabs, active_tab_id());
+    let has_back = current_tab.history.has_back();
+    let has_forward = current_tab.history.has_forward();
+
     rsx!(
         div { class: "urlbar",
             IconButton {
                 icon: icons::BACK_ICON,
                 action: back_action,
-                disabled: !active_tab(&tabs, active_tab_id()).history.has_back(),
+                disabled: !has_back,
             }
             if !IS_MOBILE {
                 IconButton {
                     icon: icons::FORWARDS_ICON,
                     action: forward_action,
-                    disabled: !active_tab(&tabs, active_tab_id()).history.has_forward(),
+                    disabled: !has_forward,
                 }
             }
             IconButton { icon: icons::REFRESH_ICON, action: refresh_action }
@@ -567,9 +587,36 @@ fn Toolbar(
     )
 }
 
+fn hovered_href(tab: &Tab) -> Option<String> {
+    let nh = tab.node_handle.peek();
+    let handle = (*nh).as_ref()?;
+    let node_id = handle.node_id();
+    // Skip this cycle if the event loop currently holds a mutable borrow.
+    let doc = handle.try_doc()?;
+    let sub_doc = doc
+        .get_node(node_id)
+        .and_then(|n| n.element_data())
+        .and_then(|el| el.sub_doc_data())?;
+    let inner = sub_doc.inner();
+    let mut cur_id = inner.get_hover_node_id()?;
+    loop {
+        let node = inner.get_node(cur_id)?;
+        if let Some(el) = node.element_data() {
+            if el.name.local.as_ref() == "a" {
+                return el
+                    .attrs()
+                    .iter()
+                    .find(|a| a.name.local.as_ref() == "href")
+                    .map(|a| a.value.clone());
+            }
+        }
+        cur_id = node.layout_parent.get()?;
+    }
+}
+
 #[component]
 fn StatusBar(tabs: Signal<Vec<Tab>>, active_tab_id: Signal<TabId>) -> Element {
-    let mut hover_url: Signal<String> = use_signal(|| String::new());
+    let mut hover_url: Signal<String> = use_signal(String::new);
 
     // Hover state lives inside blitz-dom's BaseDocument, not a Dioxus signal,
     // so we poll it at ~10 fps (same pattern as FpsOverlay).
@@ -578,64 +625,16 @@ fn StatusBar(tabs: Signal<Vec<Tab>>, active_tab_id: Signal<TabId>) -> Element {
             loop {
                 tokio::time::sleep(Duration::from_millis(100)).await;
 
-                let found = 'find: {
-                    let tab = active_tab(&tabs, *active_tab_id.peek());
-
-                    // Inner block scopes all doc borrows so they're dropped
-                    // before we access tab.history below.
-                    let raw_href: Option<String> = 'lookup: {
-                        let nh = tab.node_handle.peek();
-                        let Some(handle) = (*nh).as_ref() else {
-                            break 'lookup None;
-                        };
-                        let node_id = handle.node_id();
-                        // Skip this cycle if the event loop currently holds a mutable borrow.
-                        let Some(doc) = handle.try_doc() else {
-                            break 'lookup None;
-                        };
-                        let Some(sub_doc) = doc
-                            .get_node(node_id)
-                            .and_then(|n| n.element_data())
-                            .and_then(|el| el.sub_doc_data())
-                        else {
-                            break 'lookup None;
-                        };
-                        let inner = sub_doc.inner();
-                        let Some(hover_id) = inner.get_hover_node_id() else {
-                            break 'lookup None;
-                        };
-
-                        // Walk layout_parent chain to find the nearest <a> ancestor
-                        let mut cur_id = hover_id;
-                        loop {
-                            let Some(node) = inner.get_node(cur_id) else {
-                                break 'lookup None;
-                            };
-                            if let Some(el) = node.element_data() {
-                                if el.name.local.as_ref() == "a" {
-                                    break 'lookup el
-                                        .attrs()
-                                        .iter()
-                                        .find(|a| a.name.local.as_ref() == "href")
-                                        .map(|a| a.value.clone());
-                                }
-                            }
-                            match node.layout_parent.get() {
-                                Some(pid) => cur_id = pid,
-                                None => break 'lookup None,
-                            }
-                        }
-                    };
-                    // All doc borrows dropped here.
-
-                    let Some(raw) = raw_href else {
-                        break 'find String::new();
-                    };
-                    // Resolve relative href against the page's base URL.
-                    let base = tab.history.current_url().read().url.clone();
-                    base.join(&raw).map(|u| u.to_string()).unwrap_or(raw)
+                let tab = active_tab(&tabs, *active_tab_id.peek());
+                let raw_href = hovered_href(&tab);
+                // All doc borrows dropped here; safe to read history.
+                let found = match raw_href {
+                    None => String::new(),
+                    Some(raw) => {
+                        let base = tab.history.current_url().read().url.clone();
+                        base.join(&raw).map(|u| u.to_string()).unwrap_or(raw)
+                    }
                 };
-
                 hover_url.set(found);
             }
         });
@@ -833,8 +832,12 @@ impl DocumentLoader {
             if let DocumentLoaderStatus::Loading { task, .. } = *self.status.peek() {
                 task.cancel();
             }
-            let config =
-                make_doc_config(None, Arc::clone(&self.net_provider), self.history, self.font_ctx.clone());
+            let config = make_doc_config(
+                None,
+                Arc::clone(&self.net_provider),
+                self.history,
+                self.font_ctx.clone(),
+            );
             let html = include_str!("../assets/start.html");
             *self.html_source.write_unchecked() = html.to_string();
             let document = HtmlDocument::from_html(html, config).into_inner();
@@ -844,7 +847,7 @@ impl DocumentLoader {
             return;
         }
 
-        let request_id = self.request_id_counter.fetch_add(1, Ao::Relaxed);
+        let request_id = self.request_id_counter.fetch_add(1, Ordering::Relaxed);
         let net_provider = Arc::clone(&self.net_provider);
         let font_ctx = self.font_ctx.clone();
         let status = self.status;
@@ -861,7 +864,11 @@ impl DocumentLoader {
             let response = net_provider.fetch_async(req).await;
 
             // Discard response if a newer navigation has started
-            if let DocumentLoaderStatus::Loading { request_id: stored_id, .. } = *status.peek() {
+            if let DocumentLoaderStatus::Loading {
+                request_id: stored_id,
+                ..
+            } = *status.peek()
+            {
                 if request_id != stored_id {
                     tracing::debug!("Ignoring stale navigation response (id {request_id})");
                     return;
@@ -874,10 +881,12 @@ impl DocumentLoader {
                     let config =
                         make_doc_config(Some(resolved_url), net_provider, history, font_ctx);
 
-                    let html = if bytes.is_empty() {
+                    let bytes_str;
+                    let html: &str = if bytes.is_empty() {
                         include_str!("../assets/404.html")
                     } else {
-                        str::from_utf8(&bytes).unwrap()
+                        bytes_str = String::from_utf8_lossy(&bytes);
+                        &bytes_str
                     };
 
                     *html_source.write_unchecked() = html.to_string();
