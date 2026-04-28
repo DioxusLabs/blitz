@@ -270,6 +270,8 @@ fn Toolbar(
     let mut is_focused = use_signal(|| false);
     let block_mouse_up = use_hook(|| Rc::new(RefCell::new(false)));
     let mut menu_open = use_signal(|| false);
+    #[cfg(feature = "cache")]
+    let net_provider = use_context::<Arc<StdNetProvider>>();
 
     // Sync URL bar when active tab changes
     use_effect(move || {
@@ -443,6 +445,22 @@ fn Toolbar(
     #[cfg(not(feature = "vello"))]
     let fps_toggle_item = rsx!();
 
+    #[cfg(feature = "cache")]
+    let clear_cache_item = {
+        let clear_cache_action = use_callback(move |_| {
+            menu_open.set(false);
+            let net = net_provider.clone();
+            async move { net.clear_cache().await }
+        });
+        rsx!(
+            div { class: "menu-item", onclick: move |_| clear_cache_action(()),
+                "Clear Cache"
+            }
+        )
+    };
+    #[cfg(not(feature = "cache"))]
+    let clear_cache_item = rsx!();
+
     rsx!(
         div { class: "urlbar",
             IconButton {
@@ -541,6 +559,7 @@ fn Toolbar(
                         {capture_item}
                         div { class: "menu-item", onclick: move |_| devtools_action(()), "Toggle DevTools" }
                         {fps_toggle_item}
+                        {clear_cache_item}
                     }
                 }
             }

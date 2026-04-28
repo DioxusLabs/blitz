@@ -221,7 +221,7 @@ body,
 
 .fps-overlay {
   position: fixed;
-  top: 48px;
+  top: 80px;
   right: 8px;
   background: rgba(0, 0, 0, 0.7);
   color: #0f0;

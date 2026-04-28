@@ -53,6 +53,8 @@ where
 pub struct Provider {
     client: Client,
     waker: Arc<dyn NetWaker>,
+    #[cfg(feature = "cache")]
+    cache_manager: CACacheManager,
 }
 impl Provider {
     pub fn new(waker: Option<Arc<dyn NetWaker>>) -> Self {
@@ -62,16 +64,24 @@ impl Provider {
         let client = builder.build().unwrap();
 
         #[cfg(feature = "cache")]
+        let cache_manager = CACacheManager::new(get_cache_path(), true);
+
+        #[cfg(feature = "cache")]
         let client = reqwest_middleware::ClientBuilder::new(client)
             .with(Cache(HttpCache {
                 mode: CacheMode::Default,
-                manager: CACacheManager::new(get_cache_path(), true),
+                manager: cache_manager.clone(),
                 options: HttpCacheOptions::default(),
             }))
             .build();
 
         let waker = waker.unwrap_or(Arc::new(DummyNetWaker));
-        Self { client, waker }
+        Self {
+            client,
+            waker,
+            #[cfg(feature = "cache")]
+            cache_manager,
+        }
     }
     pub fn shared(waker: Option<Arc<dyn NetWaker>>) -> Arc<dyn NetProvider> {
         Arc::new(Self::new(waker))
@@ -81,6 +91,16 @@ impl Provider {
     }
     pub fn count(&self) -> usize {
         Arc::strong_count(&self.waker) - 1
+    }
+
+    #[cfg(feature = "cache")]
+    pub async fn clear_cache(&self) {
+        if let Err(e) = self.cache_manager.clear().await {
+            #[cfg(feature = "tracing")]
+            tracing::error!("Failed to clear HTTP cache: {:?}", e);
+            #[cfg(not(feature = "tracing"))]
+            let _ = e;
+        }
     }
 }
 impl Provider {
