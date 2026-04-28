@@ -69,6 +69,7 @@ pub fn Toolbar(
     });
     let refresh_action = load_current_url;
     let open_action = use_callback(move |_| {
+        menu_open.set(false);
         open_in_external_browser(
             &active_tab(&tabs, *active_tab_id.peek())
                 .history
