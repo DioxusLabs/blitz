@@ -57,6 +57,16 @@ const SHARED_STYLES: &str = r#"
     --border: #e5e7eb;
     --card: #ffffff;
 }
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #14161a;
+    --fg: #e6e6e6;
+    --muted: #9aa0a6;
+    --accent: #4ade80;
+    --border: #2a2d33;
+    --card: #1c1f24;
+  }
+}
 html, body { margin: 0; padding: 0; }
 body {
     font-family: -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;
@@ -64,14 +74,6 @@ body {
     color: var(--fg);
     padding: 32px 48px;
     line-height: 1.5;
-}
-body.dark {
-    --bg: #14161a;
-    --fg: #e6e6e6;
-    --muted: #9aa0a6;
-    --accent: #4ade80;
-    --border: #2a2d33;
-    --card: #1c1f24;
 }
 h1 { font-size: 28px; margin: 0 0 12px; }
 h2 { font-size: 18px; margin: 24px 0 8px; color: var(--muted); font-weight: 600; }
@@ -98,7 +100,7 @@ ul { padding-left: 20px; }
 li { margin: 4px 0; }
 "#;
 
-pub fn page_shell(title: &str, body_class: &str, body: &str) -> String {
+pub fn page_shell(title: &str, body: &str) -> String {
     format!(
         r#"<!DOCTYPE html>
 <html>
@@ -107,7 +109,7 @@ pub fn page_shell(title: &str, body_class: &str, body: &str) -> String {
 <title>{title}</title>
 <style>{SHARED_STYLES}</style>
 </head>
-<body class="{body_class}">
+<body>
 {body}
 </body>
 </html>"#

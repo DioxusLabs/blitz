@@ -72,10 +72,26 @@ pub(crate) fn capture_anyrender_scene(doc: &blitz_dom::BaseDocument, path: &Path
     let config = SerializeConfig::new()
         .with_woff2_fonts(true)
         .with_subset_fonts(true);
-    let archive = SceneArchive::from_scene(&scene, &config).unwrap();
 
-    let mut file = std::fs::File::create(path).unwrap();
-    archive.serialize(&mut file).unwrap();
+    let archive = match SceneArchive::from_scene(&scene, &config) {
+        Ok(a) => a,
+        Err(e) => {
+            tracing::error!("Failed to create scene archive: {e}");
+            return;
+        }
+    };
+
+    let mut file = match std::fs::File::create(path) {
+        Ok(f) => f,
+        Err(e) => {
+            tracing::error!("Failed to create file {}: {e}", path.display());
+            return;
+        }
+    };
+
+    if let Err(e) = archive.serialize(&mut file) {
+        tracing::error!("Failed to serialize scene archive: {e}");
+    }
 }
 
 fn render_scene(
@@ -102,7 +118,7 @@ fn render_scene(
 pub(crate) async fn try_get_save_path(file_type_name: &str, ext: &str) -> Option<PathBuf> {
     let timestamp = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
-        .unwrap()
+        .unwrap_or_default()
         .as_secs();
     let default_name = format!("blitz-screenshot-{timestamp}.{ext}");
 

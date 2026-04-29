@@ -118,7 +118,12 @@ impl<Rend: WindowRenderer> View<Rend> {
         let size = winit_window.surface_size();
         let scale = winit_window.scale_factor() as f32;
         let safe_area_insets = get_safe_area_insets(&*winit_window);
-        let theme = winit_window.theme().unwrap_or(Theme::Light);
+        let theme = winit_window.theme().unwrap_or_else(|| {
+            match dark_light::detect().unwrap_or(dark_light::Mode::Light) {
+                dark_light::Mode::Dark => Theme::Dark,
+                _ => Theme::Light,
+            }
+        });
         let color_scheme = theme_to_color_scheme(theme);
         let viewport = Viewport::new(size.width, size.height, scale, color_scheme);
 
@@ -193,7 +198,12 @@ impl<Rend: WindowRenderer> View<Rend> {
 
     pub fn set_theme_override(&mut self, theme: Option<Theme>) {
         self.theme_override = theme;
-        let theme = theme.or(self.window.theme()).unwrap_or(Theme::Light);
+        let theme = theme.or(self.window.theme()).unwrap_or_else(|| {
+            match dark_light::detect().unwrap_or(dark_light::Mode::Light) {
+                dark_light::Mode::Dark => Theme::Dark,
+                _ => Theme::Light,
+            }
+        });
         self.with_viewport(|v| v.color_scheme = theme_to_color_scheme(theme));
     }
 

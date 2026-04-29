@@ -9,10 +9,7 @@ impl SpecialPage for Start {
         "newtab"
     }
 
-    fn render(&self, ctx: &SpecialPageCtx<'_>) -> String {
-        let theme = ctx.config.get("theme").unwrap_or_else(|| "light".into());
-        let body_class = if theme == "dark" { "dark" } else { "" };
-
+    fn render(&self, _ctx: &SpecialPageCtx<'_>) -> String {
         let body = format!(
             r#"<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:60vh;text-align:center;">
   <img src="data:image/png;base64,{LOGO_B64}" alt="Blitz" style="width:160px;height:160px;">
@@ -25,6 +22,6 @@ impl SpecialPage for Start {
 </div>"#
         );
 
-        page_shell("New Tab", body_class, &body)
+        page_shell("New Tab", &body)
     }
 }

@@ -32,6 +32,7 @@ anyrender = { workspace = true }
 
 # Windowing & Input
 winit = { workspace = true }
+dark-light = { workspace = true }
 keyboard-types = { workspace = true }
 accesskit = { workspace = true, optional = true }
 accesskit_xplat = { workspace = true, optional = true }

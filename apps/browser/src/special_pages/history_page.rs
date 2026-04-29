@@ -11,9 +11,6 @@ impl SpecialPage for HistoryPage {
     }
 
     fn render(&self, ctx: &SpecialPageCtx<'_>) -> String {
-        let theme = ctx.config.get("theme").unwrap_or_else(|| "light".into());
-        let body_class = if theme == "dark" { "dark" } else { "" };
-
         let urls = ctx.history.urls();
         let entries = urls.read();
 
@@ -43,7 +40,7 @@ impl SpecialPage for HistoryPage {
 </section>"#
         );
 
-        page_shell("History", body_class, &body)
+        page_shell("History", &body)
     }
 }
 

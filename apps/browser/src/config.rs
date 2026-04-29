@@ -14,6 +14,7 @@ impl ConfigStore {
         Arc::new(Self::default())
     }
 
+    #[allow(dead_code)] // reserved for future settings consumers
     pub fn get(&self, key: &str) -> Option<String> {
         self.inner.read().ok()?.get(key).cloned()
     }
@@ -29,6 +30,7 @@ impl ConfigStore {
         }
     }
 
+    #[allow(dead_code)] // reserved for future settings consumers
     pub fn subscribe<F>(&self, listener: F)
     where
         F: Fn(&str, &str) + Send + Sync + 'static,

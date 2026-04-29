@@ -88,6 +88,7 @@ impl DocumentLoader {
                     history: self.history,
                     config: Arc::clone(&self.config),
                 };
+                #[allow(clippy::expect_used)] // dispatch must succeed: lookup already matched above
                 let html =
                     special_pages::dispatch(&ctx).expect("lookup matched, dispatch must succeed");
                 let doc_config = make_doc_config(

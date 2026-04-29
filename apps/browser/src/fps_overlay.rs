@@ -25,6 +25,8 @@ impl Default for FpsStats {
 }
 
 impl FpsStats {
+    #[allow(clippy::indexing_slicing, clippy::arithmetic_side_effects)]
+    // Ring buffer: idx < RING_LEN always (maintained by % RING_LEN), count <= RING_LEN
     fn record(&mut self, now: Instant) {
         if let Some(prev) = self.last {
             let dt = now.duration_since(prev);
@@ -37,6 +39,8 @@ impl FpsStats {
         self.last = Some(now);
     }
 
+    #[allow(clippy::indexing_slicing, clippy::arithmetic_side_effects)]
+    // count <= RING_LEN and is checked > 0 before use
     fn snapshot(&self) -> (f32, f32) {
         if self.count == 0 {
             return (0.0, 0.0);

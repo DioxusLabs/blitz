@@ -19,6 +19,7 @@ pub fn Toolbar(
     active_tab_id: Signal<TabId>,
     mut show_fps: Signal<bool>,
 ) -> Element {
+    #[allow(clippy::unwrap_used)] // HOME_URL_STR is a hard-coded valid URL
     let home_url = use_hook(|| Url::parse(HOME_URL_STR).unwrap());
     let mut is_focused = use_signal(|| false);
     let block_mouse_up = use_hook(|| Rc::new(RefCell::new(false)));
@@ -89,17 +90,6 @@ pub fn Toolbar(
         *url_input_value.write() = format!("view-source://{current_url}");
 
         let view_source_html = include_str!("../assets/view-source.html");
-        let theme = tab
-            .loader
-            .config
-            .get("theme")
-            .unwrap_or_else(|| "light".into());
-        let view_source_css = if theme == "dark" {
-            include_str!("../assets/view-source-dark.css")
-        } else {
-            include_str!("../assets/view-source-light.css")
-        };
-        let view_source_html = view_source_html.replace("__STYLES__", view_source_css);
         let config = DocumentConfig {
             viewport: None,
             base_url: None,
@@ -111,7 +101,7 @@ pub fn Toolbar(
             font_ctx: Some(tab.loader.font_ctx.clone()),
             media_type: None,
         };
-        let mut document = HtmlDocument::from_html(&view_source_html, config).into_inner();
+        let mut document = HtmlDocument::from_html(view_source_html, config).into_inner();
         if let Some(parent_id) = document.get_element_by_id("source") {
             let mut mutator = document.mutate();
             let text_node = mutator.create_text_node(&source);
@@ -167,6 +157,7 @@ pub fn Toolbar(
 
     let go_special = use_callback(move |path: &'static str| {
         menu_open.set(false);
+        #[allow(clippy::unwrap_used)] // path is a hard-coded &'static str, always a valid about: URL
         let url = Url::parse(&format!("about:{path}")).unwrap();
         active_tab(&tabs, *active_tab_id.peek())
             .history
@@ -263,6 +254,7 @@ pub fn Toolbar(
                 name: "url",
                 value: url_input_value(),
                 onmounted: move |evt: Event<MountedData>| {
+                    #[allow(clippy::unwrap_used)] // NodeHandle is always present on onmounted events
                     let node_handle = evt.downcast::<NodeHandle>().unwrap();
                     *url_input_handle.write() = Some(node_handle.clone());
                 },
@@ -366,6 +358,7 @@ pub fn req_from_string(url_s: &str) -> Option<Request> {
 
 fn synthesize_duckduckgo_search_req(query: &str) -> Request {
     NavigationOptions::new(
+        #[allow(clippy::unwrap_used)] // hard-coded valid URL
         Url::parse("https://html.duckduckgo.com/html/").unwrap(),
         Some(String::from("application/x-www-form-urlencoded")),
         0,

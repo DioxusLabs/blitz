@@ -26,6 +26,7 @@ impl<Lens> Store<History, Lens> {
     }
 
     fn current_url(&self) -> impl Readable<Target = Request> {
+        #[allow(clippy::unwrap_used)] // current_idx is always a valid index: urls is non-empty and current <= len-1
         self.urls().get(self.current_idx()).unwrap()
     }
 
@@ -34,18 +35,18 @@ impl<Lens> Store<History, Lens> {
     }
 
     fn has_forward(&self) -> bool {
-        self.current_idx() < self.urls().len() - 1
+        self.current_idx().saturating_add(1) < self.urls().len()
     }
 
     fn go_back(&mut self) {
         if self.has_back() {
-            *self.current().write() -= 1;
+            *self.current().write() = self.current_idx().saturating_sub(1);
         }
     }
 
     fn go_forward(&mut self) {
         if self.has_forward() {
-            *self.current().write() += 1;
+            *self.current().write() = self.current_idx().saturating_add(1);
         }
     }
 
@@ -53,10 +54,10 @@ impl<Lens> Store<History, Lens> {
     where
         Lens: Writable,
     {
-        let idx = self.current_idx();
-        self.urls().write().truncate(idx + 1);
+        let new_idx = self.current_idx().saturating_add(1);
+        self.urls().write().truncate(new_idx);
         self.urls().push(req);
-        *self.current().write() += 1;
+        *self.current().write() = new_idx;
     }
 }
 

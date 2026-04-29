@@ -5,6 +5,13 @@ edition = "2024"
 license.workspace = true
 publish = false
 
+[lints.clippy]
+unwrap_used             = "warn"
+expect_used             = "warn"
+panic                   = "warn"
+indexing_slicing        = "warn"
+arithmetic_side_effects = "warn"
+
 [[bin]]
 name = "blitz"
 path = "src/main.rs"

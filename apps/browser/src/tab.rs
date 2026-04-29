@@ -67,6 +67,7 @@ impl Tab {
 
 pub fn active_tab(tabs: &Signal<Vec<Tab>>, active_id: TabId) -> Tab {
     let tabs_ref = tabs.read();
+    #[allow(clippy::expect_used)] // tabs is never empty: always initialised with one tab
     tabs_ref
         .iter()
         .find(|t| t.id == active_id)
