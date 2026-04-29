@@ -1,5 +1,6 @@
 use dioxus_native::prelude::*;
 
+pub const PLUS_ICON: &str = include_str!("../assets/icons/plus.svg");
 pub const REFRESH_ICON: &str = include_str!("../assets/icons/rotate-cw.svg");
 pub const HOME_ICON: &str = include_str!("../assets/icons/house.svg");
 pub const BACK_ICON: &str = include_str!("../assets/icons/arrow-left.svg");

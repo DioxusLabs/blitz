@@ -110,8 +110,6 @@ body,
   align-items: center;
   justify-content: center;
   padding: 0 10px;
-  font-size: 18px;
-  line-height: 1;
   cursor: pointer;
   flex: 0 0 auto;
 
@@ -122,6 +120,11 @@ body,
   &:active {
     background: #CCC;
   }
+}
+
+.tab-new-icon {
+  width: 18px;
+  height: 18px;
 }
 
 .urlbar {
@@ -342,10 +345,6 @@ body,
 
   .tab__close:hover {
     background: rgba(255, 255, 255, 0.15);
-  }
-
-  .tab-new {
-    color: #e6e6e6;
   }
 
   .tab-new:hover {

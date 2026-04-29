@@ -53,7 +53,7 @@ const SHARED_STYLES: &str = r#"
     --bg: #f7f7f8;
     --fg: #1a1a1a;
     --muted: #6b7280;
-    --accent: #016340;
+    --accent: #01633f;
     --border: #e5e7eb;
     --card: #ffffff;
 }
@@ -62,7 +62,7 @@ const SHARED_STYLES: &str = r#"
     --bg: #14161a;
     --fg: #e6e6e6;
     --muted: #9aa0a6;
-    --accent: #4ade80;
+    --accent: #01633f;
     --border: #2a2d33;
     --card: #1c1f24;
   }
