@@ -727,9 +727,12 @@ pub(crate) fn find_inline_layout_embedded_boxes(
 
                         if *tag_name == local_name!("img")
                             || *tag_name == local_name!("svg")
+                            || *tag_name == local_name!("canvas")
                             || *tag_name == local_name!("input")
                             || *tag_name == local_name!("textarea")
                             || *tag_name == local_name!("button")
+                            || *tag_name == local_name!("iframe")
+                            || *tag_name == local_name!("frame")
                         {
                             layout_children.push(node_id);
                         } else if *tag_name == local_name!("br") {
@@ -923,9 +926,12 @@ pub(crate) fn build_inline_layout_into(
 
                         if *tag_name == local_name!("img")
                             || *tag_name == local_name!("svg")
+                            || *tag_name == local_name!("canvas")
                             || *tag_name == local_name!("input")
                             || *tag_name == local_name!("textarea")
                             || *tag_name == local_name!("button")
+                            || *tag_name == local_name!("iframe")
+                            || *tag_name == local_name!("frame")
                         {
                             builder.push_inline_box(InlineBox {
                                 id: node_id as u64,

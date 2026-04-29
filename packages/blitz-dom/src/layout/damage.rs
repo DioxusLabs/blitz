@@ -396,6 +396,14 @@ impl BaseDocument {
 
             // if damage.intersects(RestyleDamage::RELAYOUT | CONSTRUCT_BOX) {
             node.style = stylo_taffy::to_taffy_style(style);
+            node.style.item_is_replaced = node
+                .data
+                .downcast_element()
+                .map(|element| {
+                    matches!(element.name.local.as_ref(), "img" | "canvas" | "iframe" | "frame")
+                        || (cfg!(feature = "svg") && element.name.local.as_ref() == "svg")
+                })
+                .unwrap_or(false);
             node.display_constructed_as = style.clone_display();
             // }
 

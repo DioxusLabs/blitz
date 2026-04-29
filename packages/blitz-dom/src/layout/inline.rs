@@ -12,8 +12,9 @@ use parley::YieldData;
 #[cfg(feature = "floats")]
 use taffy::{Clear, Float, prelude::TaffyMaxContent};
 
-use super::resolve_calc_value;
+use super::{replaced::{ReplacedContext, replaced_measure_function}, resolve_calc_value};
 use crate::BaseDocument;
+use markup5ever::local_name;
 
 impl BaseDocument {
     pub(crate) fn compute_inline_layout(
@@ -285,10 +286,53 @@ impl BaseDocument {
 
         // Update inline boxes
         for ibox in inline_layout.layout.inline_boxes_mut() {
+            let node_id = ibox.id as usize;
             let style = &self.nodes[ibox.id as usize].style;
             let margin = style
                 .margin
                 .resolve_or_zero(inputs.parent_size, resolve_calc_value);
+
+            let iframe_replaced_output = self.nodes[node_id]
+                .data
+                .downcast_element()
+                .and_then(|element| {
+                    let tag_name = &element.name.local;
+                    if *tag_name != local_name!("iframe") && *tag_name != local_name!("frame") {
+                        return None;
+                    }
+
+                    let attr_size = Size {
+                        width: element
+                            .attr(local_name!("width"))
+                            .and_then(|value| value.parse::<f32>().ok()),
+                        height: element
+                            .attr(local_name!("height"))
+                            .and_then(|value| value.parse::<f32>().ok()),
+                    };
+                    let size = replaced_measure_function(
+                        child_inputs.known_dimensions,
+                        child_inputs.parent_size,
+                        child_inputs.available_space,
+                        &ReplacedContext {
+                            inherent_size: Size {
+                                width: 300.0,
+                                height: 150.0,
+                            },
+                            attr_size,
+                        },
+                        style,
+                        false,
+                    );
+
+                    Some(LayoutOutput {
+                        size,
+                        content_size: size,
+                        first_baselines: Point::NONE,
+                        top_margin: CollapsibleMarginSet::ZERO,
+                        bottom_margin: CollapsibleMarginSet::ZERO,
+                        margins_can_collapse_through: false,
+                    })
+                });
 
             #[cfg(feature = "floats")]
             let is_floated = style.float.is_floated();
@@ -299,7 +343,8 @@ impl BaseDocument {
                 ibox.width = 0.0;
                 ibox.height = 0.0;
             } else {
-                let output = self.compute_child_layout(NodeId::from(ibox.id), child_inputs);
+                let output = iframe_replaced_output
+                    .unwrap_or_else(|| self.compute_child_layout(NodeId::from(ibox.id), child_inputs));
                 ibox.width = (margin.left + margin.right + output.size.width) * scale;
                 ibox.height = (margin.top + margin.bottom + output.size.height) * scale;
             }
