@@ -92,6 +92,34 @@ fn app() -> Element {
     let net_provider = use_context::<Arc<StdNetProvider>>();
     let config_store = use_hook(config::ConfigStore::new);
 
+    let theme = use_signal_sync(|| config_store.get("theme").unwrap_or_else(|| "light".into()));
+    use_hook(|| {
+        let cs = config_store.clone();
+        cs.subscribe(move |key, value| {
+            if key == "theme" {
+                let mut theme = theme;
+                theme.set(value.to_string());
+            }
+        });
+    });
+
+    let icon_color = use_signal_sync(|| {
+        if theme.peek().as_str() == "dark" {
+            "#e6e6e6"
+        } else {
+            "#1a1a1a"
+        }
+    });
+    use_effect(move || {
+        let mut icon_color = icon_color;
+        icon_color.set(if theme() == "dark" {
+            "#e6e6e6"
+        } else {
+            "#1a1a1a"
+        });
+    });
+    use_context_provider(|| icons::IconColor(icon_color));
+
     let url_input_handle: Signal<Option<NodeHandle>> = use_signal(|| None);
     let url_input_value = use_signal(|| home_url.to_string());
 
@@ -139,12 +167,20 @@ fn app() -> Element {
 
     let window_title = tab_title_or_url(&active_tab(&tabs, active_tab_id()));
 
+    let is_dark = theme() == "dark";
+    let frame_class = match (IS_MOBILE, is_dark) {
+        (true, true) => "mobile dark",
+        (true, false) => "mobile",
+        (false, true) => "dark",
+        (false, false) => "",
+    };
+
     rsx!(
         div {
             id: "frame",
             padding_top: TOP_PAD,
             padding_bottom: BOTTOM_PAD,
-            class: if IS_MOBILE { "mobile" } else { "" },
+            class: frame_class,
             title { "{window_title}" }
             link { rel: "stylesheet", href: BROWSER_UI_STYLES }
             TabStrip {

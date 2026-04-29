@@ -5,18 +5,6 @@ edition = "2024"
 license.workspace = true
 publish = false
 
-[lints.clippy]
-unwrap_used             = "warn"
-expect_used             = "warn"
-panic                   = "warn"
-indexing_slicing        = "warn"
-arithmetic_side_effects = "warn"
-ptr_arg                 = "warn"
-useless_vec             = "warn"
-redundant_clone         = "warn"
-unnecessary_to_owned    = "warn"
-needless_collect        = "warn"
-
 [[bin]]
 name = "blitz"
 path = "src/main.rs"
@@ -47,6 +35,7 @@ mimalloc = ["dep:mimalloc"]
 
 [dependencies]
 dioxus-native = { workspace = true, features = [
+  "html",
   "svg",
   "system-fonts",
   "net",

@@ -1,6 +1,6 @@
 use dioxus_native::prelude::*;
 
-use super::{page_shell, SpecialPage, SpecialPageCtx};
+use super::{SpecialPage, SpecialPageCtx, body_class_for, page_shell};
 
 pub struct Start;
 
@@ -11,7 +11,7 @@ impl SpecialPage for Start {
         "newtab"
     }
 
-    fn render(&self, _ctx: &SpecialPageCtx<'_>) -> String {
+    fn render(&self, ctx: &SpecialPageCtx<'_>) -> String {
         let logo_url = format!("file://{}", BLITZ_LOGO.resolve().display());
         let body = format!(
             r#"<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:60vh;text-align:center;">
@@ -25,6 +25,6 @@ impl SpecialPage for Start {
 </div>"#
         );
 
-        page_shell("New Tab", &body)
+        page_shell("New Tab", body_class_for(ctx), &body)
     }
 }

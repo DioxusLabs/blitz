@@ -1,4 +1,4 @@
-use super::{SpecialPage, SpecialPageCtx, page_shell};
+use super::{SpecialPage, SpecialPageCtx, body_class_for, page_shell};
 
 pub struct Settings;
 
@@ -7,14 +7,24 @@ impl SpecialPage for Settings {
         "settings"
     }
 
-    fn render(&self, _ctx: &SpecialPageCtx<'_>) -> String {
-        let body = r#"<h1>Settings</h1>
+    fn render(&self, ctx: &SpecialPageCtx<'_>) -> String {
+        let theme = ctx.config.get("theme").unwrap_or_else(|| "light".into());
+        let other = if theme == "dark" { "light" } else { "dark" };
+
+        let body = format!(
+            r#"<h1>Settings</h1>
+<section>
+  <h2>Appearance</h2>
+  <p>Theme: <strong>{theme}</strong></p>
+  <p><a class="btn" href="about:settings/set?key=theme&amp;value={other}">Switch to {other}</a></p>
+</section>
 <section>
   <h2>About</h2>
   <p class="muted">Settings persist for the current session only. On-disk persistence is coming.</p>
-</section>"#;
+</section>"#
+        );
 
-        page_shell("Settings", body)
+        page_shell("Settings", body_class_for(ctx), &body)
     }
 
     fn handle_action(&self, ctx: &SpecialPageCtx<'_>) {

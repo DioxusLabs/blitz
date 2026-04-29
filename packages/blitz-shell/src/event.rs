@@ -3,10 +3,7 @@ use blitz_traits::net::NetWaker;
 use futures_util::task::ArcWake;
 use std::sync::mpsc::{Receiver, Sender, channel};
 use std::{any::Any, sync::Arc};
-use winit::{
-    event_loop::EventLoopProxy,
-    window::{Theme, WindowId},
-};
+use winit::{event_loop::EventLoopProxy, window::WindowId};
 
 #[cfg(feature = "accessibility")]
 use accesskit_xplat::WindowEvent as AccessKitEvent;
@@ -41,10 +38,6 @@ pub enum BlitzShellEvent {
         retain_scroll_position: bool,
         is_md: bool,
     },
-
-    /// OS-level light/dark theme changed (detected via polling on platforms where
-    /// winit does not fire WindowEvent::ThemeChanged, e.g. Linux/Wayland).
-    SystemThemeChange(Theme),
 }
 impl BlitzShellEvent {
     pub fn embedder_event<T: Any + Send + Sync>(value: T) -> Self {

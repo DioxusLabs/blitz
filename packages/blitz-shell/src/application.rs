@@ -6,35 +6,7 @@ use std::sync::mpsc::Receiver;
 use winit::application::ApplicationHandler;
 use winit::event::WindowEvent;
 use winit::event_loop::ActiveEventLoop;
-use winit::window::{Theme, WindowId};
-
-#[cfg(any(
-    target_os = "linux",
-    target_os = "dragonfly",
-    target_os = "freebsd",
-    target_os = "netbsd",
-    target_os = "openbsd",
-))]
-fn spawn_theme_watcher(proxy: BlitzShellProxy) {
-    std::thread::Builder::new()
-        .name("theme-watcher".into())
-        .spawn(move || {
-            let mut last_mode = dark_light::detect().ok();
-            loop {
-                std::thread::sleep(std::time::Duration::from_secs(1));
-                let mode = dark_light::detect().ok();
-                if mode != last_mode {
-                    last_mode = mode;
-                    let theme = match mode {
-                        Some(dark_light::Mode::Dark) => Theme::Dark,
-                        _ => Theme::Light,
-                    };
-                    proxy.send_event(BlitzShellEvent::SystemThemeChange(theme));
-                }
-            }
-        })
-        .expect("failed to spawn theme-watcher thread");
-}
+use winit::window::WindowId;
 
 #[cfg(target_os = "macos")]
 use winit::platform::macos::ApplicationHandlerExtMacOS;
@@ -50,15 +22,6 @@ pub struct BlitzApplication<Rend: WindowRenderer> {
 
 impl<Rend: WindowRenderer> BlitzApplication<Rend> {
     pub fn new(proxy: BlitzShellProxy, event_queue: Receiver<BlitzShellEvent>) -> Self {
-        #[cfg(any(
-            target_os = "linux",
-            target_os = "dragonfly",
-            target_os = "freebsd",
-            target_os = "netbsd",
-            target_os = "openbsd",
-        ))]
-        spawn_theme_watcher(proxy.clone());
-
         BlitzApplication {
             windows: HashMap::new(),
             pending_windows: Vec::new(),
@@ -117,11 +80,6 @@ impl<Rend: WindowRenderer> BlitzApplication<Rend> {
             }
             BlitzShellEvent::NavigationLoad { .. } => {
                 // Do nothing. Should be handled by embedders (if required).
-            }
-            BlitzShellEvent::SystemThemeChange(theme) => {
-                for window in self.windows.values_mut() {
-                    window.handle_winit_event(WindowEvent::ThemeChanged(theme));
-                }
             }
         }
     }

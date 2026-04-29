@@ -1,6 +1,6 @@
 use dioxus_native::prelude::*;
 
-use super::{SpecialPage, SpecialPageCtx, page_shell};
+use super::{SpecialPage, SpecialPageCtx, body_class_for, page_shell};
 use crate::history::HistoryStoreExt;
 
 pub struct HistoryPage;
@@ -50,7 +50,7 @@ impl SpecialPage for HistoryPage {
 </section>"#
         );
 
-        page_shell("History", &body)
+        page_shell("History", body_class_for(ctx), &body)
     }
 }
 

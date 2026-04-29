@@ -1,4 +1,4 @@
-use super::{SpecialPage, SpecialPageCtx, page_shell};
+use super::{SpecialPage, SpecialPageCtx, body_class_for, page_shell};
 
 pub struct Bookmarks;
 
@@ -7,12 +7,12 @@ impl SpecialPage for Bookmarks {
         "bookmarks"
     }
 
-    fn render(&self, _ctx: &SpecialPageCtx<'_>) -> String {
+    fn render(&self, ctx: &SpecialPageCtx<'_>) -> String {
         let body = r#"<h1>Bookmarks</h1>
 <section>
   <p class="muted">Coming soon. Bookmark management will live here.</p>
 </section>"#;
 
-        page_shell("Bookmarks", body)
+        page_shell("Bookmarks", body_class_for(ctx), body)
     }
 }

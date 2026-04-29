@@ -127,7 +127,6 @@ arboard = { version = "3.4.1", default-features = false }
 rfd = { version = "0.17.1", default-features = false }
 keyboard-types = "0.7"
 cursor-icon = "1"
-dark-light = "2"
 
 # IO & Networking
 url = "2.5.0"

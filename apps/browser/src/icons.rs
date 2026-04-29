@@ -11,6 +11,9 @@ pub const CODE_ICON: &str = include_str!("../assets/icons/code.svg");
 #[cfg(any(feature = "screenshot", feature = "capture"))]
 pub const CAMERA_ICON: &str = include_str!("../assets/icons/camera.svg");
 
+#[derive(Clone, Copy)]
+pub struct IconColor(pub Signal<&'static str, SyncStorage>);
+
 pub fn icon_data_url(svg: &str, color: &str) -> String {
     let mut out = String::with_capacity(svg.len().saturating_add(32));
     out.push_str("data:image/svg+xml;utf8,");
@@ -43,8 +46,8 @@ pub fn IconButton(
     } else {
         "iconbutton"
     };
-    let light_src = use_hook(|| icon_data_url(icon, "#1a1a1a"));
-    let dark_src = use_hook(|| icon_data_url(icon, "#e6e6e6"));
+    let icon_color = use_context::<IconColor>();
+    let src = icon_data_url(icon, &icon_color.0.read());
     rsx!(
         div {
             class,
@@ -56,19 +59,17 @@ pub fn IconButton(
                     action(())
                 }
             },
-            img { class: "urlbar-icon urlbar-icon-light", src: light_src }
-            img { class: "urlbar-icon urlbar-icon-dark", src: dark_src }
+            img { class: "urlbar-icon", src }
         }
     )
 }
 
 #[component]
 pub fn MenuItemIcon(icon: &'static str) -> Element {
-    let light_src = use_hook(|| icon_data_url(icon, "#1a1a1a"));
-    let dark_src = use_hook(|| icon_data_url(icon, "#e6e6e6"));
-    rsx!(div {
+    let icon_color = use_context::<IconColor>();
+    let src = icon_data_url(icon, &icon_color.0.read());
+    rsx!(img {
         class: "menu-item-icon",
-        img { class: "urlbar-icon-light", src: light_src }
-        img { class: "urlbar-icon-dark", src: dark_src }
+        src
     })
 }

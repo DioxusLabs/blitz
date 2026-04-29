@@ -1,7 +1,7 @@
 use blitz_traits::net::Url;
 use dioxus_native::prelude::*;
 
-use crate::icons::{PLUS_ICON, icon_data_url};
+use crate::icons::{IconColor, PLUS_ICON, icon_data_url};
 use crate::tab::{Tab, TabId, tab_title_or_url};
 
 #[cfg(target_os = "macos")]
@@ -16,8 +16,8 @@ pub fn TabStrip(
     home_url: Url,
     open_new_tab: Callback<Url>,
 ) -> Element {
-    let plus_light = use_hook(|| icon_data_url(PLUS_ICON, "#1a1a1a"));
-    let plus_dark = use_hook(|| icon_data_url(PLUS_ICON, "#e6e6e6"));
+    let icon_color = use_context::<IconColor>();
+    let plus_src = icon_data_url(PLUS_ICON, &icon_color.0.read());
 
     let switch_tab = use_callback(move |id: TabId| {
         active_tab_id.set(id);
@@ -72,8 +72,7 @@ pub fn TabStrip(
             div {
                 class: "tab-new",
                 onclick: move |_| open_new_tab(home_url.clone()),
-                img { class: "tab-new-icon urlbar-icon-light", src: plus_light }
-                img { class: "tab-new-icon urlbar-icon-dark", src: plus_dark }
+                img { class: "tab-new-icon", src: plus_src }
             }
         }
     )
