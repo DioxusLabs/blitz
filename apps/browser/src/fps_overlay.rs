@@ -101,10 +101,7 @@ pub fn FpsOverlay() -> Element {
         spawn(async move {
             loop {
                 tokio::time::sleep(Duration::from_millis(250)).await;
-                let snap = stats
-                    .lock()
-                    .map(|s| s.snapshot())
-                    .unwrap_or((0.0, 0.0));
+                let snap = stats.lock().map(|s| s.snapshot()).unwrap_or((0.0, 0.0));
                 display.set(snap);
             }
         });
