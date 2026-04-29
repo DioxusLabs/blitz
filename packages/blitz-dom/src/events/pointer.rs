@@ -529,7 +529,7 @@ pub(crate) fn handle_click(
                         tracing::info!("Clicked link without href: {:?}", el.attrs());
                     }
                 }
-                local_name!("input")
+                local_name!("input") | local_name!("button")
                     if el.is_submit_button() || el.attr(local_name!("type")) == Some("submit") =>
                 {
                     if let Some(form_owner) = doc.controls_to_form.get(&node_id) {
