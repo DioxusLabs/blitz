@@ -89,6 +89,17 @@ pub fn Toolbar(
         *url_input_value.write() = format!("view-source://{current_url}");
 
         let view_source_html = include_str!("../assets/view-source.html");
+        let theme = tab
+            .loader
+            .config
+            .get("theme")
+            .unwrap_or_else(|| "light".into());
+        let view_source_css = if theme == "dark" {
+            include_str!("../assets/view-source-dark.css")
+        } else {
+            include_str!("../assets/view-source-light.css")
+        };
+        let view_source_html = view_source_html.replace("__STYLES__", view_source_css);
         let config = DocumentConfig {
             viewport: None,
             base_url: None,
@@ -100,7 +111,7 @@ pub fn Toolbar(
             font_ctx: Some(tab.loader.font_ctx.clone()),
             media_type: None,
         };
-        let mut document = HtmlDocument::from_html(view_source_html, config).into_inner();
+        let mut document = HtmlDocument::from_html(&view_source_html, config).into_inner();
         if let Some(parent_id) = document.get_element_by_id("source") {
             let mut mutator = document.mutate();
             let text_node = mutator.create_text_node(&source);

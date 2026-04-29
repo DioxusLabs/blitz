@@ -1,0 +1,12 @@
+body {
+  margin: 0;
+  background: #14161a;
+  color: #e6e6e6;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+pre {
+  margin: 8px;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+}
