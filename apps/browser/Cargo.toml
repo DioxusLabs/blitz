@@ -11,6 +11,11 @@ expect_used             = "warn"
 panic                   = "warn"
 indexing_slicing        = "warn"
 arithmetic_side_effects = "warn"
+ptr_arg                 = "warn"
+useless_vec             = "warn"
+redundant_clone         = "warn"
+unnecessary_to_owned    = "warn"
+needless_collect        = "warn"
 
 [[bin]]
 name = "blitz"

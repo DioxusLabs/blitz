@@ -150,7 +150,7 @@ fn app() -> Element {
             TabStrip {
                 tabs,
                 active_tab_id,
-                home_url: home_url.clone(),
+                home_url,
                 open_new_tab,
             }
             Toolbar {

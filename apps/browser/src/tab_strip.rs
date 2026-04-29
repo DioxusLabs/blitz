@@ -72,8 +72,8 @@ pub fn TabStrip(
             div {
                 class: "tab-new",
                 onclick: move |_| open_new_tab(home_url.clone()),
-                img { class: "tab-new-icon urlbar-icon-light", src: plus_light.clone() }
-                img { class: "tab-new-icon urlbar-icon-dark", src: plus_dark.clone() }
+                img { class: "tab-new-icon urlbar-icon-light", src: plus_light }
+                img { class: "tab-new-icon urlbar-icon-dark", src: plus_dark }
             }
         }
     )

@@ -97,12 +97,11 @@ pub fn FpsOverlay() -> Element {
 
     let mut display = use_signal(|| (0.0_f32, 0.0_f32));
 
-    let stats_for_poll = stats.clone();
     use_hook(move || {
         spawn(async move {
             loop {
                 tokio::time::sleep(Duration::from_millis(250)).await;
-                let snap = stats_for_poll
+                let snap = stats
                     .lock()
                     .map(|s| s.snapshot())
                     .unwrap_or((0.0, 0.0));

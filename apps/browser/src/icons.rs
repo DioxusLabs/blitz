@@ -56,8 +56,8 @@ pub fn IconButton(
                     action(())
                 }
             },
-            img { class: "urlbar-icon urlbar-icon-light", src: light_src.clone() }
-            img { class: "urlbar-icon urlbar-icon-dark", src: dark_src.clone() }
+            img { class: "urlbar-icon urlbar-icon-light", src: light_src }
+            img { class: "urlbar-icon urlbar-icon-dark", src: dark_src }
         }
     )
 }
@@ -68,7 +68,7 @@ pub fn MenuItemIcon(icon: &'static str) -> Element {
     let dark_src = use_hook(|| icon_data_url(icon, "#e6e6e6"));
     rsx!(div {
         class: "menu-item-icon",
-        img { class: "urlbar-icon-light", src: light_src.clone() }
-        img { class: "urlbar-icon-dark", src: dark_src.clone() }
+        img { class: "urlbar-icon-light", src: light_src }
+        img { class: "urlbar-icon-dark", src: dark_src }
     })
 }
