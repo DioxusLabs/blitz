@@ -1,8 +1,10 @@
-use super::{SpecialPage, SpecialPageCtx, page_shell};
+use dioxus_native::prelude::*;
+
+use super::{page_shell, SpecialPage, SpecialPageCtx};
 
 pub struct Start;
 
-const LOGO_B64: &str = include_str!("blitz_logo.b64");
+static BLITZ_LOGO: Asset = asset!("../../assets/blitz-logo.png");
 
 impl SpecialPage for Start {
     fn host(&self) -> &'static str {
@@ -10,9 +12,10 @@ impl SpecialPage for Start {
     }
 
     fn render(&self, _ctx: &SpecialPageCtx<'_>) -> String {
+        let logo_url = format!("file://{}", BLITZ_LOGO.resolve().display());
         let body = format!(
             r#"<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:60vh;text-align:center;">
-  <img src="data:image/png;base64,{LOGO_B64}" alt="Blitz" style="width:160px;height:160px;">
+  <img src="{logo_url}" alt="Blitz" style="width:160px;height:160px;">
   <h1 style="margin-top:24px;">Blitz</h1>
   <div style="margin-top:32px;display:flex;gap:12px;">
     <a class="btn" href="about:settings">Settings</a>
