@@ -12,6 +12,7 @@ use blitz_traits::{
 };
 use keyboard_types::Modifiers;
 use markup5ever::local_name;
+use style::values::computed::UserSelect;
 
 use crate::{BaseDocument, node::SpecialElementData};
 
@@ -157,7 +158,25 @@ pub(crate) fn handle_pointermove<F: FnMut(DomEvent)>(
         if dx.abs() > 2.0 || dy.abs() > 2.0 {
             match event.id {
                 BlitzPointerId::Mouse | BlitzPointerId::Pen => {
-                    doc.drag_mode = DragMode::Selecting;
+                    let node = &doc.nodes[doc.mousedown_node_id.unwrap()];
+                    if let Some(style) = node.primary_styles() {
+                        let user_select = style.clone_user_select();
+                        if user_select == UserSelect::None {
+                            // Do nothing. Continue with rest of function
+                        } else if user_select == UserSelect::Auto {
+                            if let Some(parent) = node.parent {
+                                let node = &doc.nodes[parent];
+                                if let Some(style) = node.primary_styles() {
+                                    let user_select = style.clone_user_select();
+                                    if user_select == UserSelect::None {
+                                        // Do nothing. Continue with rest of function
+                                    } else {
+                                        doc.drag_mode = DragMode::Selecting;
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
                 BlitzPointerId::Finger(_) => {
                     doc.drag_mode = DragMode::Panning(PanState {
@@ -202,7 +221,10 @@ pub(crate) fn handle_pointermove<F: FnMut(DomEvent)>(
     let node = &mut doc.nodes[target];
     let Some(el) = node.data.downcast_element_mut() else {
         // Handle text selection extension for non-element nodes
-        if buttons != MouseEventButtons::None && doc.extend_text_selection_to_point(x, y) {
+        if buttons != MouseEventButtons::None
+            && doc.drag_mode == DragMode::Selecting
+            && doc.extend_text_selection_to_point(x, y)
+        {
             changed = true;
         }
         return changed;
@@ -242,6 +264,7 @@ pub(crate) fn handle_pointermove<F: FnMut(DomEvent)>(
         changed = true;
     } else if event.is_mouse()
         && buttons != MouseEventButtons::None
+        && doc.drag_mode == DragMode::Selecting
         && doc.extend_text_selection_to_point(x, y)
     {
         changed = true;
