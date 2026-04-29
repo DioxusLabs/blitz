@@ -59,7 +59,8 @@ fn TabView(tab: Tab, is_active: bool) -> Element {
     )
 }
 
-static BROWSER_UI_STYLES: Asset = asset!("../assets/browser.css");
+static BROWSER_UI_LIGHT_STYLES: Asset = asset!("../assets/browser-light.css");
+static BROWSER_UI_DARK_STYLES: Asset = asset!("../assets/browser-dark.css");
 pub(crate) const IS_MOBILE: bool = cfg!(any(target_os = "android", target_os = "ios"));
 pub(crate) const HOME_URL_STR: &str = "about:newtab";
 
@@ -90,6 +91,33 @@ fn app() -> Element {
     let home_url = use_hook(|| Url::parse(HOME_URL_STR).unwrap());
     let net_provider = use_context::<Arc<StdNetProvider>>();
     let config_store = use_hook(config::ConfigStore::new);
+
+    let theme = use_signal_sync(|| config_store.get("theme").unwrap_or_else(|| "light".into()));
+    use_hook(|| {
+        config_store.subscribe(move |key, value| {
+            if key == "theme" {
+                let mut theme = theme;
+                theme.set(value.to_string());
+            }
+        });
+    });
+
+    let icon_color = use_signal_sync(|| {
+        if theme.peek().as_str() == "dark" {
+            "#e6e6e6"
+        } else {
+            "#1a1a1a"
+        }
+    });
+    use_effect(move || {
+        let mut icon_color = icon_color;
+        icon_color.set(if theme() == "dark" {
+            "#e6e6e6"
+        } else {
+            "#1a1a1a"
+        });
+    });
+    use_context_provider(|| icons::IconColor(icon_color));
 
     let url_input_handle: Signal<Option<NodeHandle>> = use_signal(|| None);
     let url_input_value = use_signal(|| home_url.to_string());
@@ -138,6 +166,8 @@ fn app() -> Element {
 
     let window_title = tab_title_or_url(&active_tab(&tabs, active_tab_id()));
 
+    let is_dark = theme() == "dark";
+
     rsx!(
         div {
             id: "frame",
@@ -145,7 +175,19 @@ fn app() -> Element {
             padding_bottom: BOTTOM_PAD,
             class: if IS_MOBILE { "mobile" } else { "" },
             title { "{window_title}" }
-            document::Link { rel: "stylesheet", href: BROWSER_UI_STYLES }
+            if is_dark {
+                link {
+                    key: "chrome-{is_dark}",
+                    rel: "stylesheet",
+                    href: BROWSER_UI_DARK_STYLES,
+                }
+            } else {
+                link {
+                    key: "chrome-{is_dark}",
+                    rel: "stylesheet",
+                    href: BROWSER_UI_LIGHT_STYLES,
+                }
+            }
             TabStrip {
                 tabs,
                 active_tab_id,

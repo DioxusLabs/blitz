@@ -181,7 +181,7 @@ pub fn Toolbar(
     #[cfg(feature = "screenshot")]
     let screenshot_item = rsx!(
         div { class: "menu-item", onclick: move |_| screenshot_action(()),
-            img { class: "menu-item-icon", src: icons::CAMERA_ICON }
+            icons::MenuItemIcon { icon: icons::CAMERA_ICON }
             "Capture Screenshot"
         }
     );
@@ -191,7 +191,7 @@ pub fn Toolbar(
     #[cfg(feature = "capture")]
     let capture_item = rsx!(
         div { class: "menu-item", onclick: move |_| capture_action(()),
-            img { class: "menu-item-icon", src: icons::CAMERA_ICON }
+            icons::MenuItemIcon { icon: icons::CAMERA_ICON }
             "Capture AnyRender Archive"
         }
     );
@@ -318,11 +318,11 @@ pub fn Toolbar(
                         div { class: "menu-item", onclick: move |_| go_special("history"), "History" }
                         div { class: "menu-item", onclick: move |_| go_special("bookmarks"), "Bookmarks" }
                         div { class: "menu-item", onclick: open_action,
-                            img { class: "menu-item-icon", src: icons::EXTERNAL_LINK_ICON }
+                            icons::MenuItemIcon { icon: icons::EXTERNAL_LINK_ICON }
                             "Open in External Browser"
                         }
                         div { class: "menu-item", onclick: move |_| view_source_action(()),
-                            img { class: "menu-item-icon", src: icons::CODE_ICON }
+                            icons::MenuItemIcon { icon: icons::CODE_ICON }
                             "View Source"
                         }
                         {screenshot_item}
