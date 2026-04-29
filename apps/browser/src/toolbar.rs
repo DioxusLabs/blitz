@@ -6,6 +6,7 @@ use blitz_traits::navigation::NavigationOptions;
 use blitz_traits::net::{Body, Entry, EntryValue, FormData, Method, Request, Url};
 use dioxus_native::{NodeHandle, SubDocumentAttr, prelude::*};
 
+use crate::document_loader::LoadTrigger;
 use crate::history::HistoryNav;
 use crate::icons::{self, IconButton};
 use crate::tab::{Tab, TabId, active_tab};
@@ -52,21 +53,28 @@ pub fn Toolbar(
         }
 
         tracing::info!("Loading {}", request.url.as_str());
-        tab.loader.load_document(request);
+        let mut lt = tab.load_trigger;
+        lt.set(LoadTrigger::BackForward(request));
     });
 
     let back_action = use_callback(move |_| {
-        active_tab(&tabs, *active_tab_id.peek()).history.go_back();
+        let mut tab = active_tab(&tabs, *active_tab_id.peek());
+        tab.history.go_back();
+        let req = (*tab.history.current_url().read()).clone();
+        let mut lt = tab.load_trigger;
+        lt.set(LoadTrigger::BackForward(req));
     });
     let forward_action = use_callback(move |_| {
-        active_tab(&tabs, *active_tab_id.peek())
-            .history
-            .go_forward();
+        let mut tab = active_tab(&tabs, *active_tab_id.peek());
+        tab.history.go_forward();
+        let req = (*tab.history.current_url().read()).clone();
+        let mut lt = tab.load_trigger;
+        lt.set(LoadTrigger::BackForward(req));
     });
     let home_action = use_callback(move |_| {
-        active_tab(&tabs, *active_tab_id.peek())
-            .history
-            .navigate(Request::get(home_url.clone()));
+        let tab = active_tab(&tabs, *active_tab_id.peek());
+        let mut lt = tab.load_trigger;
+        lt.set(LoadTrigger::NewNav(Request::get(home_url.clone())));
     });
     let refresh_action = load_current_url;
     let open_action = use_callback(move |_| {
@@ -157,11 +165,15 @@ pub fn Toolbar(
 
     let go_special = use_callback(move |path: &'static str| {
         menu_open.set(false);
-        #[allow(clippy::unwrap_used)] // path is a hard-coded &'static str, always a valid about: URL
-        let url = Url::parse(&format!("about:{path}")).unwrap();
-        active_tab(&tabs, *active_tab_id.peek())
-            .history
-            .navigate(Request::get(url));
+        let url_str = format!("about:{path}");
+        #[allow(clippy::unwrap_used)]
+        // path is a hard-coded &'static str, always a valid about: URL
+        let url = Url::parse(&url_str).unwrap();
+        // Update the address bar manually since about: pages don't commit to history.
+        *url_input_value.write() = url_str;
+        let tab = active_tab(&tabs, *active_tab_id.peek());
+        let mut lt = tab.load_trigger;
+        lt.set(LoadTrigger::NewNav(Request::get(url)));
     });
 
     let devtools_action = use_callback(move |_| {
@@ -301,7 +313,9 @@ pub fn Toolbar(
                         }
                         let req = req_from_string(&url_input_value.read());
                         if let Some(req) = req {
-                            active_tab(&tabs, *active_tab_id.peek()).history.navigate(req);
+                            let tab = active_tab(&tabs, *active_tab_id.peek());
+                            let mut lt = tab.load_trigger;
+                            lt.set(LoadTrigger::NewNav(req));
                         } else {
                             tracing::warn!("Error parsing URL {}", &*url_input_value.read());
                         }

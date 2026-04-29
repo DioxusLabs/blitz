@@ -5,15 +5,55 @@ use std::sync::{
 
 use blitz_dom::{DocumentConfig, FontContext};
 use blitz_html::{HtmlDocument, HtmlProvider};
-use blitz_traits::{net::Request, shell::ShellProvider};
+use blitz_traits::{
+    navigation::{NavigationOptions, NavigationProvider},
+    net::{Request, Url},
+    shell::ShellProvider,
+};
 use dioxus_core::Task;
 use dioxus_native::{SubDocumentAttr, prelude::*};
+
+/// A `LoadTriggerSignal` that is `Send + Sync`, required by `NavigationProvider`.
+pub type LoadTriggerSignal = Signal<LoadTrigger, SyncStorage>;
 use linebender_resource_handle::Blob;
 
 use crate::StdNetProvider;
 use crate::config::ConfigStore;
-use crate::history::{BrowserNavProvider, History, SyncStore};
+use crate::history::{History, HistoryNav, SyncStore};
 use crate::special_pages;
+
+/// Drives the `use_effect` in `TabView`.
+///
+/// `NewNav` — user-initiated navigation; commit the resolved URL to history on success.
+/// `BackForward` — navigating within already-committed history; just reload and update title.
+#[derive(Clone)]
+pub enum LoadTrigger {
+    NewNav(Request),
+    BackForward(Request),
+}
+
+impl LoadTrigger {
+    pub fn request(&self) -> &Request {
+        match self {
+            LoadTrigger::NewNav(req) | LoadTrigger::BackForward(req) => req,
+        }
+    }
+
+    fn is_new_nav(&self) -> bool {
+        matches!(self, LoadTrigger::NewNav(_))
+    }
+}
+
+struct BrowserNavProvider {
+    load_trigger: LoadTriggerSignal,
+}
+
+impl NavigationProvider for BrowserNavProvider {
+    fn navigate_to(&self, options: NavigationOptions) {
+        let mut lt = self.load_trigger;
+        lt.set(LoadTrigger::NewNav(options.into_request()));
+    }
+}
 
 pub enum DocumentLoaderStatus {
     Loading { request_id: usize, task: Task },
@@ -28,6 +68,7 @@ pub struct DocumentLoader {
     pub request_id_counter: AtomicUsize,
     pub doc: Signal<Option<SubDocumentAttr>>,
     pub history: SyncStore<History>,
+    pub load_trigger: LoadTriggerSignal,
     pub html_source: Signal<String>,
     pub title: Signal<String>,
 }
@@ -35,7 +76,7 @@ pub struct DocumentLoader {
 pub fn make_doc_config(
     base_url: Option<String>,
     net_provider: Arc<StdNetProvider>,
-    history: SyncStore<History>,
+    load_trigger: LoadTriggerSignal,
     font_ctx: FontContext,
 ) -> DocumentConfig {
     DocumentConfig {
@@ -43,7 +84,7 @@ pub fn make_doc_config(
         base_url,
         ua_stylesheets: None,
         net_provider: Some(net_provider as _),
-        navigation_provider: Some(Arc::new(BrowserNavProvider { history })),
+        navigation_provider: Some(Arc::new(BrowserNavProvider { load_trigger })),
         shell_provider: Some(consume_context::<Arc<dyn ShellProvider>>()),
         html_parser_provider: Some(Arc::new(HtmlProvider)),
         font_ctx: Some(font_ctx),
@@ -56,6 +97,7 @@ impl DocumentLoader {
         net_provider: Arc<StdNetProvider>,
         config: Arc<ConfigStore>,
         history: SyncStore<History>,
+        load_trigger: LoadTriggerSignal,
         html_source: Signal<String>,
         title: Signal<String>,
     ) -> Self {
@@ -72,12 +114,16 @@ impl DocumentLoader {
             request_id_counter: AtomicUsize::new(0),
             doc: Signal::new(None),
             history,
+            load_trigger,
             html_source,
             title,
         }
     }
 
-    pub fn load_document(&self, req: Request) {
+    pub fn load_document(&self, trigger: LoadTrigger) {
+        let req = trigger.request().clone();
+        let commit_to_history = trigger.is_new_nav();
+
         if req.url.scheme() == "about" {
             if let Some(_page) = special_pages::lookup(&req.url) {
                 if let DocumentLoaderStatus::Loading { task, .. } = *self.status.peek() {
@@ -94,7 +140,7 @@ impl DocumentLoader {
                 let doc_config = make_doc_config(
                     Some(req.url.to_string()),
                     Arc::clone(&self.net_provider),
-                    self.history,
+                    self.load_trigger,
                     self.font_ctx.clone(),
                 );
                 *self.html_source.write_unchecked() = html.clone();
@@ -103,6 +149,8 @@ impl DocumentLoader {
                     .find_title_node()
                     .map(|n| n.text_content())
                     .unwrap_or_default();
+                // about: pages are never committed to history and must not overwrite
+                // the title of the current real page in history.
                 *self.title.write_unchecked() = parsed_title;
                 *self.doc.write_unchecked() = Some(SubDocumentAttr::new(document));
                 *self.status.write_unchecked() = DocumentLoaderStatus::Idle;
@@ -116,6 +164,7 @@ impl DocumentLoader {
         let status = self.status;
         let doc_signal = self.doc;
         let history = self.history;
+        let load_trigger = self.load_trigger;
         let html_source = self.html_source;
         let title = self.title;
 
@@ -124,7 +173,7 @@ impl DocumentLoader {
         };
 
         let task = spawn(async move {
-            let response = net_provider.fetch_async(req).await;
+            let response = net_provider.fetch_async(req.clone()).await;
 
             // Discard response if a newer navigation has started
             if let DocumentLoaderStatus::Loading {
@@ -141,8 +190,12 @@ impl DocumentLoader {
             match response {
                 Ok((resolved_url, bytes)) => {
                     tracing::info!("Loaded {}", resolved_url);
+
+                    // Use the resolved (post-redirect) URL for history; fall back to original.
+                    let commit_req = Url::parse(&resolved_url).map(Request::get).unwrap_or(req);
+
                     let config =
-                        make_doc_config(Some(resolved_url), net_provider, history, font_ctx);
+                        make_doc_config(Some(resolved_url), net_provider, load_trigger, font_ctx);
 
                     let bytes_str;
                     let html: &str = if bytes.is_empty() {
@@ -159,14 +212,19 @@ impl DocumentLoader {
                         .find_title_node()
                         .map(|n| n.text_content())
                         .unwrap_or_default();
+                    if commit_to_history {
+                        history.navigate(commit_req);
+                    }
+                    history.set_current_title(parsed_title.clone());
                     *title.write_unchecked() = parsed_title;
                     *doc_signal.write_unchecked() = Some(SubDocumentAttr::new(document));
                 }
                 Err(err) => {
+                    // On load failure, do NOT commit to history.
                     tracing::error!("Error loading document: {:?}", err);
 
                     let error_msg = format!("{err:?}");
-                    let config = make_doc_config(None, net_provider, history, font_ctx);
+                    let config = make_doc_config(None, net_provider, load_trigger, font_ctx);
 
                     let error_html = include_str!("../assets/error.html");
                     let mut document = HtmlDocument::from_html(error_html, config).into_inner();

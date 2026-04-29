@@ -11,18 +11,28 @@ impl SpecialPage for HistoryPage {
     }
 
     fn render(&self, ctx: &SpecialPageCtx<'_>) -> String {
-        let urls = ctx.history.urls();
-        let entries = urls.read();
+        let urls_store = ctx.history.urls();
+        let urls = urls_store.read();
+        let titles_store = ctx.history.titles();
+        let titles = titles_store.read();
 
-        let list = if entries.is_empty() {
+        let has_real_entries = urls.iter().any(|req| req.url.scheme() != "about");
+        let list = if !has_real_entries {
             "<p class=\"muted\">No history yet.</p>".to_string()
         } else {
-            let items: String = entries
+            let items: String = urls
                 .iter()
-                .map(|req| {
+                .zip(titles.iter())
+                .filter(|(req, _)| req.url.scheme() != "about")
+                .map(|(req, title)| {
                     let url = req.url.as_str();
-                    let escaped = html_escape(url);
-                    format!("<li><a href=\"{escaped}\">{escaped}</a></li>")
+                    let escaped_url = html_escape(url);
+                    let display = title
+                        .as_deref()
+                        .filter(|t| !t.trim().is_empty())
+                        .map(html_escape)
+                        .unwrap_or_else(|| escaped_url.clone());
+                    format!("<li><a href=\"{escaped_url}\">{display}</a></li>")
                 })
                 .collect();
             format!("<ul>{items}</ul>")

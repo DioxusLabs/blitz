@@ -1,4 +1,3 @@
-use blitz_traits::navigation::{NavigationOptions, NavigationProvider};
 use blitz_traits::net::{Request, Url};
 use dioxus_native::prelude::*;
 
@@ -7,6 +6,7 @@ pub type SyncStore<T> = Store<T, CopyValue<T, SyncStorage>>;
 #[derive(Store)]
 pub struct History {
     urls: Vec<Request>,
+    titles: Vec<Option<String>>,
     current: usize,
 }
 
@@ -14,6 +14,7 @@ impl History {
     pub fn new(initial_url: Url) -> Self {
         Self {
             urls: vec![Request::get(initial_url)],
+            titles: vec![None],
             current: 0,
         }
     }
@@ -26,7 +27,8 @@ impl<Lens> Store<History, Lens> {
     }
 
     fn current_url(&self) -> impl Readable<Target = Request> {
-        #[allow(clippy::unwrap_used)] // current_idx is always a valid index: urls is non-empty and current <= len-1
+        #[allow(clippy::unwrap_used)]
+        // current_idx is always a valid index: urls is non-empty and current <= len-1
         self.urls().get(self.current_idx()).unwrap()
     }
 
@@ -57,7 +59,19 @@ impl<Lens> Store<History, Lens> {
         let new_idx = self.current_idx().saturating_add(1);
         self.urls().write().truncate(new_idx);
         self.urls().push(req);
+        self.titles().write().truncate(new_idx);
+        self.titles().push(None);
         *self.current().write() = new_idx;
+    }
+
+    fn set_current_title(&self, title: String)
+    where
+        Lens: Writable,
+    {
+        let idx = self.current_idx();
+        if let Some(t) = self.titles().write().get_mut(idx) {
+            *t = Some(title);
+        }
     }
 }
 
@@ -71,6 +85,7 @@ pub trait HistoryNav {
     fn go_back(&mut self);
     fn go_forward(&mut self);
     fn navigate(&self, req: Request);
+    fn set_current_title(&self, title: String);
 }
 
 impl HistoryNav for SyncStore<History> {
@@ -97,14 +112,8 @@ impl HistoryNav for SyncStore<History> {
     fn navigate(&self, req: Request) {
         HistoryStoreImplExt::navigate(self, req)
     }
-}
 
-pub struct BrowserNavProvider {
-    pub history: SyncStore<History>,
-}
-
-impl NavigationProvider for BrowserNavProvider {
-    fn navigate_to(&self, options: NavigationOptions) {
-        HistoryNav::navigate(&self.history, options.into_request());
+    fn set_current_title(&self, title: String) {
+        HistoryStoreImplExt::set_current_title(self, title)
     }
 }

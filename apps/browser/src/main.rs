@@ -32,7 +32,6 @@ mod tab;
 mod tab_strip;
 mod toolbar;
 
-use history::HistoryNav;
 use status_bar::StatusBar;
 use tab::{Tab, TabId, active_tab, tab_title_or_url};
 use tab_strip::TabStrip;
@@ -41,8 +40,8 @@ use toolbar::Toolbar;
 #[component]
 fn TabView(tab: Tab, is_active: bool) -> Element {
     use_effect(move || {
-        let request = (*tab.history.current_url().read()).clone();
-        tab.loader.load_document(request);
+        let trigger = tab.load_trigger.read().clone();
+        tab.loader.load_document(trigger);
     });
 
     let mut tab_node_handle = tab.node_handle;

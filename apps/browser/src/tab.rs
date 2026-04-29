@@ -6,12 +6,12 @@ use std::{
     },
 };
 
-use blitz_traits::net::Url;
+use blitz_traits::net::{Request, Url};
 use dioxus_native::{NodeHandle, SubDocumentAttr, prelude::*};
 
 use crate::StdNetProvider;
 use crate::config::ConfigStore;
-use crate::document_loader::DocumentLoader;
+use crate::document_loader::{DocumentLoader, LoadTrigger, LoadTriggerSignal};
 use crate::history::{History, HistoryNav, SyncStore};
 
 pub type TabId = u64;
@@ -26,6 +26,7 @@ pub fn next_tab_id() -> TabId {
 pub struct Tab {
     pub id: TabId,
     pub history: SyncStore<History>,
+    pub load_trigger: LoadTriggerSignal,
     pub loader: Rc<DocumentLoader>,
     pub document: Signal<Option<SubDocumentAttr>>,
     pub node_handle: Signal<Option<NodeHandle>>,
@@ -42,13 +43,17 @@ impl PartialEq for Tab {
 impl Tab {
     pub fn new(url: Url, net_provider: Arc<StdNetProvider>, config: Arc<ConfigStore>) -> Self {
         let id = next_tab_id();
-        let history: SyncStore<History> = Store::new_maybe_sync(History::new(url));
+        let history: SyncStore<History> = Store::new_maybe_sync(History::new(url.clone()));
+        // BackForward so the initial load doesn't add a duplicate history entry.
+        let load_trigger: LoadTriggerSignal =
+            Signal::new_maybe_sync(LoadTrigger::BackForward(Request::get(url)));
         let html_source: Signal<String> = Signal::new(String::new());
         let title: Signal<String> = Signal::new(String::new());
         let loader = Rc::new(DocumentLoader::new(
             net_provider,
             config,
             history,
+            load_trigger,
             html_source,
             title,
         ));
@@ -56,6 +61,7 @@ impl Tab {
         Tab {
             id,
             history,
+            load_trigger,
             loader,
             document,
             node_handle: Signal::new(None),
