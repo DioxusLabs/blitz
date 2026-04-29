@@ -1,30 +1,45 @@
+use std::sync::Arc;
+
+use blitz_traits::net::Url;
 use dioxus_native::prelude::*;
 
-use super::{SpecialPage, SpecialPageCtx, body_class_for, page_shell};
-
-pub struct Start;
+use super::NavigateFn;
+use crate::config::ConfigStore;
+use crate::history::{History, SyncStore};
 
 static BLITZ_LOGO: Asset = asset!("../../assets/blitz-logo.png");
 
-impl SpecialPage for Start {
-    fn host(&self) -> &'static str {
-        "newtab"
-    }
+pub fn render(
+    _history: SyncStore<History>,
+    _config: Arc<ConfigStore>,
+    navigate: NavigateFn,
+) -> Element {
+    let logo_url = format!("file://{}", BLITZ_LOGO.resolve().display());
 
-    fn render(&self, ctx: &SpecialPageCtx<'_>) -> String {
-        let logo_url = format!("file://{}", BLITZ_LOGO.resolve().display());
-        let body = format!(
-            r#"<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:60vh;text-align:center;">
-  <img src="{logo_url}" alt="Blitz" style="width:160px;height:160px;">
-  <h1 style="margin-top:24px;">Blitz</h1>
-  <div style="margin-top:32px;display:flex;gap:12px;">
-    <a class="btn" href="about:settings">Settings</a>
-    <a class="btn" href="about:history">History</a>
-    <a class="btn" href="about:bookmarks">Bookmarks</a>
-  </div>
-</div>"#
-        );
+    let nav = navigate.clone();
+    let go_settings = move |_| {
+        #[allow(clippy::unwrap_used)]
+        nav(Url::parse("about:settings").unwrap());
+    };
+    let nav = navigate.clone();
+    let go_history = move |_| {
+        #[allow(clippy::unwrap_used)]
+        nav(Url::parse("about:history").unwrap());
+    };
+    let go_bookmarks = move |_| {
+        #[allow(clippy::unwrap_used)]
+        navigate(Url::parse("about:bookmarks").unwrap());
+    };
 
-        page_shell("New Tab", body_class_for(ctx), &body)
-    }
+    rsx!(
+        div { class: "sp-hero",
+            img { class: "sp-logo", src: logo_url, alt: "Blitz" }
+            h1 { "Blitz" }
+            div { class: "sp-actions",
+                button { class: "sp-btn", onclick: go_settings, "Settings" }
+                button { class: "sp-btn", onclick: go_history, "History" }
+                button { class: "sp-btn", onclick: go_bookmarks, "Bookmarks" }
+            }
+        }
+    )
 }

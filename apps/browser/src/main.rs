@@ -32,10 +32,22 @@ mod tab;
 mod tab_strip;
 mod toolbar;
 
+use special_pages::{SpecialPageComponent, TabContent};
 use status_bar::StatusBar;
 use tab::{Tab, TabId, active_tab, tab_title_or_url};
 use tab_strip::TabStrip;
 use toolbar::Toolbar;
+
+#[component]
+fn SpecialPageView(component: SpecialPageComponent, is_active: bool) -> Element {
+    rsx!(
+        div {
+            class: "special-page",
+            style: if is_active { "" } else { "display: none" },
+            {(component.render)()}
+        }
+    )
+}
 
 #[component]
 fn TabView(tab: Tab, is_active: bool) -> Element {
@@ -44,19 +56,31 @@ fn TabView(tab: Tab, is_active: bool) -> Element {
         tab.loader.load_document(trigger);
     });
 
-    let mut tab_node_handle = tab.node_handle;
-    rsx!(
-        web-view {
-            class: "webview",
-            style: if is_active { "display: block" } else { "display: none" },
-            "__webview_document": tab.document.cloned(),
-            onmounted: move |evt: Event<MountedData>| {
-                #[allow(clippy::unwrap_used)] // NodeHandle is always present on onmounted events
-                let node_handle = evt.downcast::<NodeHandle>().unwrap();
-                *tab_node_handle.write() = Some(node_handle.clone());
-            },
+    match tab.content.read().clone() {
+        TabContent::Web => {
+            let mut tab_node_handle = tab.node_handle;
+            rsx!(
+                web-view {
+                    class: "webview",
+                    style: if is_active { "display: block" } else { "display: none" },
+                    "__webview_document": tab.document.cloned(),
+                    onmounted: move |evt: Event<MountedData>| {
+                        #[allow(clippy::unwrap_used)] // NodeHandle is always present on onmounted events
+                        let node_handle = evt.downcast::<NodeHandle>().unwrap();
+                        *tab_node_handle.write() = Some(node_handle.clone());
+                    },
+                }
+            )
         }
-    )
+        TabContent::Special(component) => {
+            let key = component.name;
+            rsx!(SpecialPageView {
+                key: "{key}",
+                component,
+                is_active
+            })
+        }
+    }
 }
 
 static BROWSER_UI_STYLES: Asset = asset!("../assets/browser.css");

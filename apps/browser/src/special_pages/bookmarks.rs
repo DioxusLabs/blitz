@@ -1,18 +1,20 @@
-use super::{SpecialPage, SpecialPageCtx, body_class_for, page_shell};
+use std::sync::Arc;
 
-pub struct Bookmarks;
+use dioxus_native::prelude::*;
 
-impl SpecialPage for Bookmarks {
-    fn host(&self) -> &'static str {
-        "bookmarks"
-    }
+use super::NavigateFn;
+use crate::config::ConfigStore;
+use crate::history::{History, SyncStore};
 
-    fn render(&self, ctx: &SpecialPageCtx<'_>) -> String {
-        let body = r#"<h1>Bookmarks</h1>
-<section>
-  <p class="muted">Coming soon. Bookmark management will live here.</p>
-</section>"#;
-
-        page_shell("Bookmarks", body_class_for(ctx), body)
-    }
+pub fn render(
+    _history: SyncStore<History>,
+    _config: Arc<ConfigStore>,
+    _navigate: NavigateFn,
+) -> Element {
+    rsx!(
+        h1 { "Bookmarks" }
+        div { class: "sp-section",
+            p { class: "sp-muted", "Coming soon. Bookmark management will live here." }
+        }
+    )
 }

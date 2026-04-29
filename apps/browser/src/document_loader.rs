@@ -20,7 +20,7 @@ use linebender_resource_handle::Blob;
 use crate::StdNetProvider;
 use crate::config::ConfigStore;
 use crate::history::{History, HistoryNav, SyncStore};
-use crate::special_pages;
+use crate::special_pages::{self, NavigateFn, SpecialPageComponent, TabContent};
 
 /// Drives the `use_effect` in `TabView`.
 ///
@@ -67,6 +67,7 @@ pub struct DocumentLoader {
     pub status: Signal<DocumentLoaderStatus>,
     pub request_id_counter: AtomicUsize,
     pub doc: Signal<Option<SubDocumentAttr>>,
+    pub content: Signal<TabContent>,
     pub history: SyncStore<History>,
     pub load_trigger: LoadTriggerSignal,
     pub html_source: Signal<String>,
@@ -100,6 +101,7 @@ impl DocumentLoader {
         load_trigger: LoadTriggerSignal,
         html_source: Signal<String>,
         title: Signal<String>,
+        content: Signal<TabContent>,
     ) -> Self {
         let mut font_ctx = FontContext::default();
         font_ctx
@@ -113,6 +115,7 @@ impl DocumentLoader {
             status: Signal::new(DocumentLoaderStatus::Idle),
             request_id_counter: AtomicUsize::new(0),
             doc: Signal::new(None),
+            content,
             history,
             load_trigger,
             html_source,
@@ -125,34 +128,28 @@ impl DocumentLoader {
         let commit_to_history = trigger.is_new_nav();
 
         if req.url.scheme() == "about" {
-            if let Some(_page) = special_pages::lookup(&req.url) {
+            if let Some((title, render_fn)) = special_pages::lookup(&req.url) {
                 if let DocumentLoaderStatus::Loading { task, .. } = *self.status.peek() {
                     task.cancel();
                 }
-                let ctx = special_pages::SpecialPageCtx {
-                    url: &req.url,
-                    history: self.history,
-                    config: Arc::clone(&self.config),
-                };
-                #[allow(clippy::expect_used)] // dispatch must succeed: lookup already matched above
-                let html =
-                    special_pages::dispatch(&ctx).expect("lookup matched, dispatch must succeed");
-                let doc_config = make_doc_config(
-                    Some(req.url.to_string()),
-                    Arc::clone(&self.net_provider),
-                    self.load_trigger,
-                    self.font_ctx.clone(),
-                );
-                *self.html_source.write_unchecked() = html.clone();
-                let document = HtmlDocument::from_html(&html, doc_config).into_inner();
-                let parsed_title = document
-                    .find_title_node()
-                    .map(|n| n.text_content())
-                    .unwrap_or_default();
+                let history = self.history;
+                let config = Arc::clone(&self.config);
+                let lt = self.load_trigger;
+                let navigate: NavigateFn = Arc::new(move |url: Url| {
+                    let mut load_trigger = lt;
+                    load_trigger.set(LoadTrigger::NewNav(Request::get(url)));
+                });
+                let component =
+                    Arc::new(move || render_fn(history, Arc::clone(&config), navigate.clone()))
+                        as Arc<dyn Fn() -> dioxus_native::prelude::Element + Send + Sync>;
                 // about: pages are never committed to history and must not overwrite
                 // the title of the current real page in history.
-                *self.title.write_unchecked() = parsed_title;
-                *self.doc.write_unchecked() = Some(SubDocumentAttr::new(document));
+                *self.title.write_unchecked() = title.to_string();
+                *self.html_source.write_unchecked() = String::new();
+                *self.content.write_unchecked() = TabContent::Special(SpecialPageComponent {
+                    name: title,
+                    render: component,
+                });
                 *self.status.write_unchecked() = DocumentLoaderStatus::Idle;
                 return;
             }
@@ -167,6 +164,7 @@ impl DocumentLoader {
         let load_trigger = self.load_trigger;
         let html_source = self.html_source;
         let title = self.title;
+        let content = self.content;
 
         if let DocumentLoaderStatus::Loading { task, .. } = *self.status.peek() {
             task.cancel();
@@ -217,6 +215,7 @@ impl DocumentLoader {
                     }
                     history.set_current_title(parsed_title.clone());
                     *title.write_unchecked() = parsed_title;
+                    *content.write_unchecked() = TabContent::Web;
                     *doc_signal.write_unchecked() = Some(SubDocumentAttr::new(document));
                 }
                 Err(err) => {
@@ -236,6 +235,7 @@ impl DocumentLoader {
                         document.mutate().set_node_text(text_node, &error_msg);
                     }
                     *title.write_unchecked() = String::new();
+                    *content.write_unchecked() = TabContent::Web;
                     *doc_signal.write_unchecked() = Some(SubDocumentAttr::new(document));
                 }
             }

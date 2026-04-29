@@ -13,6 +13,7 @@ use crate::StdNetProvider;
 use crate::config::ConfigStore;
 use crate::document_loader::{DocumentLoader, LoadTrigger, LoadTriggerSignal};
 use crate::history::{History, HistoryNav, SyncStore};
+use crate::special_pages::TabContent;
 
 pub type TabId = u64;
 
@@ -28,6 +29,7 @@ pub struct Tab {
     pub history: SyncStore<History>,
     pub load_trigger: LoadTriggerSignal,
     pub loader: Rc<DocumentLoader>,
+    pub content: Signal<TabContent>,
     pub document: Signal<Option<SubDocumentAttr>>,
     pub node_handle: Signal<Option<NodeHandle>>,
     pub html_source: Signal<String>,
@@ -49,6 +51,7 @@ impl Tab {
             Signal::new_maybe_sync(LoadTrigger::BackForward(Request::get(url)));
         let html_source: Signal<String> = Signal::new(String::new());
         let title: Signal<String> = Signal::new(String::new());
+        let content: Signal<TabContent> = Signal::new(TabContent::Web);
         let loader = Rc::new(DocumentLoader::new(
             net_provider,
             config,
@@ -56,6 +59,7 @@ impl Tab {
             load_trigger,
             html_source,
             title,
+            content,
         ));
         let document = loader.doc;
         Tab {
@@ -63,6 +67,7 @@ impl Tab {
             history,
             load_trigger,
             loader,
+            content,
             document,
             node_handle: Signal::new(None),
             html_source,

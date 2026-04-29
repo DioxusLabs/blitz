@@ -1,44 +1,43 @@
-use super::{SpecialPage, SpecialPageCtx, body_class_for, page_shell};
+use std::sync::Arc;
 
-pub struct Settings;
+use dioxus_native::prelude::*;
 
-impl SpecialPage for Settings {
-    fn host(&self) -> &'static str {
-        "settings"
-    }
+use super::NavigateFn;
+use crate::config::ConfigStore;
+use crate::history::{History, SyncStore};
 
-    fn render(&self, ctx: &SpecialPageCtx<'_>) -> String {
-        let theme = ctx.config.get("theme").unwrap_or_else(|| "light".into());
-        let other = if theme == "dark" { "light" } else { "dark" };
+pub fn render(
+    _history: SyncStore<History>,
+    config: Arc<ConfigStore>,
+    _navigate: NavigateFn,
+) -> Element {
+    let theme = use_signal_sync(|| config.get("theme").unwrap_or_else(|| "light".into()));
 
-        let body = format!(
-            r#"<h1>Settings</h1>
-<section>
-  <h2>Appearance</h2>
-  <p>Theme: <strong>{theme}</strong></p>
-  <p><a class="btn" href="about:settings/set?key=theme&amp;value={other}">Switch to {other}</a></p>
-</section>
-<section>
-  <h2>About</h2>
-  <p class="muted">Settings persist for the current session only. On-disk persistence is coming.</p>
-</section>"#
-        );
+    use_hook(|| {
+        config.subscribe(move |key, value| {
+            if key == "theme" {
+                let mut t = theme;
+                t.set(value.to_string());
+            }
+        });
+    });
 
-        page_shell("Settings", body_class_for(ctx), &body)
-    }
+    let current = theme();
+    let other: &'static str = if current == "dark" { "light" } else { "dark" };
+    let switch = move |_| config.set("theme", other);
 
-    fn handle_action(&self, ctx: &SpecialPageCtx<'_>) {
-        let mut key = None;
-        let mut value = None;
-        for (k, v) in ctx.url.query_pairs() {
-            match k.as_ref() {
-                "key" => key = Some(v.into_owned()),
-                "value" => value = Some(v.into_owned()),
-                _ => {}
+    rsx!(
+        h1 { "Settings" }
+        div { class: "sp-section",
+            h2 { "Appearance" }
+            p { "Theme: " strong { "{current}" } }
+            button { class: "sp-btn", onclick: switch, "Switch to {other}" }
+        }
+        div { class: "sp-section",
+            h2 { "About" }
+            p { class: "sp-muted",
+                "Settings persist for the current session only. On-disk persistence is coming."
             }
         }
-        if let (Some(k), Some(v)) = (key, value) {
-            ctx.config.set(&k, &v);
-        }
-    }
+    )
 }

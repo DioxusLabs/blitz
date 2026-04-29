@@ -9,6 +9,7 @@ use dioxus_native::{NodeHandle, SubDocumentAttr, prelude::*};
 use crate::document_loader::LoadTrigger;
 use crate::history::HistoryNav;
 use crate::icons::{self, IconButton};
+use crate::special_pages::TabContent;
 use crate::tab::{Tab, TabId, active_tab};
 use crate::{HOME_URL_STR, IS_MOBILE, StdNetProvider};
 
@@ -115,6 +116,7 @@ pub fn Toolbar(
             let text_node = mutator.create_text_node(&source);
             mutator.append_children(parent_id, &[text_node]);
         }
+        *tab.content.write_unchecked() = TabContent::Web;
         *tab.document.write_unchecked() = Some(SubDocumentAttr::new(document));
     });
 

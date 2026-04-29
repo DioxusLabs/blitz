@@ -409,3 +409,122 @@ body,
   border-color: #2a2d33;
   color: #e6e6e6;
 }
+
+/* ================================================================
+   Special pages (about:newtab, about:settings, about:history, etc.)
+   ================================================================ */
+
+.special-page {
+  flex: 1 1 0px;
+  overflow-y: auto;
+  padding: 32px 48px;
+  font-family: -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;
+  line-height: 1.5;
+  background: #f7f7f8;
+  color: #1a1a1a;
+}
+
+.special-page h1 {
+  font-size: 28px;
+  margin: 0 0 12px;
+}
+
+.special-page h2 {
+  font-size: 18px;
+  margin: 24px 0 8px;
+  color: #6b7280;
+  font-weight: 600;
+}
+
+.special-page p {
+  margin: 8px 0;
+}
+
+.special-page ul {
+  padding-left: 20px;
+}
+
+.special-page li {
+  margin: 4px 0;
+}
+
+.sp-section {
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  padding: 16px 20px;
+  margin: 12px 0;
+}
+
+.sp-btn {
+  display: inline-block;
+  padding: 6px 14px;
+  background: #01633f;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  font-size: 14px;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.sp-btn:hover {
+  opacity: 0.9;
+}
+
+.sp-muted {
+  color: #6b7280;
+  font-size: 14px;
+}
+
+.sp-link {
+  color: #01633f;
+  cursor: pointer;
+}
+
+.sp-link:hover {
+  text-decoration: underline;
+}
+
+.sp-hero {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 60vh;
+  text-align: center;
+}
+
+.sp-logo {
+  width: 160px;
+  height: 160px;
+}
+
+.sp-actions {
+  margin-top: 32px;
+  display: flex;
+  gap: 12px;
+}
+
+/* Dark mode */
+#frame.dark .special-page {
+  background: #14161a;
+  color: #e6e6e6;
+}
+
+#frame.dark .special-page h2 {
+  color: #9aa0a6;
+}
+
+#frame.dark .sp-section {
+  background: #1c1f24;
+  border-color: #2a2d33;
+}
+
+#frame.dark .sp-muted {
+  color: #9aa0a6;
+}
+
+#frame.dark .sp-link {
+  color: #4ade80;
+}
