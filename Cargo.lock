@@ -868,7 +868,7 @@ dependencies = [
  "smallvec",
  "stylo",
  "stylo_dom",
- "stylo_static_prefs",
+ "stylo_static_prefs 0.16.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "stylo_taffy",
  "stylo_traits",
  "taffy",
@@ -6260,8 +6260,6 @@ dependencies = [
 [[package]]
 name = "selectors"
 version = "0.37.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2cfaaa6035167f0e604e42723c7650d59ee269ef220d7bbe0565602c8a0173b9"
 dependencies = [
  "bitflags 2.11.1",
  "cssparser",
@@ -6411,8 +6409,6 @@ dependencies = [
 [[package]]
 name = "servo_arc"
 version = "0.4.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "170fb83ab34de17dc69aa7c67482b22218ddb85da56546f9bd6b929e32a05930"
 dependencies = [
  "serde",
  "stable_deref_trait",
@@ -6842,8 +6838,6 @@ dependencies = [
 [[package]]
 name = "stylo"
 version = "0.16.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bf16d4d7f37038ec5d0eb0289045a5d797b1b85d3366d6d2bfaf1f9a55471739"
 dependencies = [
  "app_units",
  "arrayvec",
@@ -6884,7 +6878,7 @@ dependencies = [
  "stylo_derive",
  "stylo_dom",
  "stylo_malloc_size_of",
- "stylo_static_prefs",
+ "stylo_static_prefs 0.16.0",
  "stylo_traits",
  "thin-vec",
  "to_shmem",
@@ -6899,8 +6893,6 @@ dependencies = [
 [[package]]
 name = "stylo_atoms"
 version = "0.16.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b0ccc231ff982eb5e89a9670275046b1283f1218537e1e498e4fafd41ee78c7e"
 dependencies = [
  "string_cache",
  "string_cache_codegen",
@@ -6909,8 +6901,6 @@ dependencies = [
 [[package]]
 name = "stylo_derive"
 version = "0.16.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e23de306a4574a16fabcdac5d711af99a458a96a7a1d5d6aeb6c312c1a18c22a"
 dependencies = [
  "darling 0.20.11",
  "proc-macro2",
@@ -6922,8 +6912,6 @@ dependencies = [
 [[package]]
 name = "stylo_dom"
 version = "0.16.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2b09f4863058955f38d5fee5ae04baa60b2f71735ef406ad35cb01911dfc811d"
 dependencies = [
  "bitflags 2.11.1",
  "stylo_malloc_size_of",
@@ -6932,8 +6920,6 @@ dependencies = [
 [[package]]
 name = "stylo_malloc_size_of"
 version = "0.16.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4bcb103ab4c0ec6fe0cdd71d092d6bd82a5a012489ccf4c4bd1874a659423316"
 dependencies = [
  "app_units",
  "cssparser",
@@ -6946,6 +6932,10 @@ dependencies = [
  "thin-vec",
  "void",
 ]
+
+[[package]]
+name = "stylo_static_prefs"
+version = "0.16.0"
 
 [[package]]
 name = "stylo_static_prefs"
@@ -6965,8 +6955,6 @@ dependencies = [
 [[package]]
 name = "stylo_traits"
 version = "0.16.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "765956b903dbc474540399789062c4a4fcdf3a55d41c4e7919f5e78fc234e30c"
 dependencies = [
  "app_units",
  "bitflags 2.11.1",
@@ -7323,8 +7311,6 @@ checksum = "1f3ccbac311fea05f86f61904b462b55fb3df8837a366dfc601a0161d0532f20"
 [[package]]
 name = "to_shmem"
 version = "0.3.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "eab187810ca1e6aaa4c97a06492aac9ade2ffae6a301fd2aac103656f5a69edb"
 dependencies = [
  "cssparser",
  "servo_arc",
@@ -7337,8 +7323,6 @@ dependencies = [
 [[package]]
 name = "to_shmem_derive"
 version = "0.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2ba1f5563024b63bb6acb4558452d9ba737518c1d11fcc1861febe98d1e31cf4"
 dependencies = [
  "darling 0.20.11",
  "proc-macro2",

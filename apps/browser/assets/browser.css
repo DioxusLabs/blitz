@@ -88,6 +88,7 @@ body,
   white-space: nowrap;
   font-size: 12px;
   font-family: sans-serif;
+  user-select: none;
 }
 
 .tab__close {
