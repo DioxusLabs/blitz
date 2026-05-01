@@ -241,12 +241,19 @@ body,
   width: 16px;
 }
 
+.menu-item-separator {
+  height: 1px;
+  background: #e8e8e8;
+  margin: 4px 0;
+}
 
-.webview {
+
+.tab-content {
   flex: 1 1 0px;
   height: 100%;
   width: 100%;
   background: white;
+  font-family: sans-serif;
 }
 
 .fps-overlay {

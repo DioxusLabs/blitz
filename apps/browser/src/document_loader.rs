@@ -74,22 +74,6 @@ impl DocumentLoader {
     }
 
     pub async fn load_document(&self, req: Request) -> LoadedDocument {
-        if req.url.scheme() == "about" && req.url.path() == "newtab" {
-            let config = make_doc_config(
-                None,
-                Arc::clone(&self.net_provider),
-                self.history,
-                self.font_ctx.clone(),
-            );
-            let html = include_str!("../assets/start.html");
-            let document = HtmlDocument::from_html(html, config).into_inner();
-            return LoadedDocument {
-                document: SubDocumentAttr::new(document),
-                html_source: html.to_string(),
-                title: String::new(),
-            };
-        }
-
         let net_provider = Arc::clone(&self.net_provider);
         let font_ctx = self.font_ctx.clone();
         let history = self.history;

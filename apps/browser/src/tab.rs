@@ -10,6 +10,7 @@ use blitz_traits::net::{Request, Url};
 use dioxus_native::{NodeHandle, SubDocumentAttr, prelude::*};
 
 use crate::StdNetProvider;
+use crate::about_pages::{AboutPage, AboutPageView};
 use crate::document_loader::{DocumentLoader, DocumentLoaderStatus, LoadedDocument};
 use crate::history::{History, HistoryNav, SyncStore};
 
@@ -110,12 +111,21 @@ pub fn active_tab(tabs: Store<Vec<Tab>>, active_id: TabId) -> Store<Tab> {
 
 #[component]
 pub fn TabWebView(tab: Store<Tab>, active_tab_id: Signal<TabId>) -> Element {
+    let about = use_memo(move || AboutPage::from_url(&tab.nav_history().current_url().read().url));
+
     let loader = tab.loader_rc();
     let loaded_document = use_resource(move || {
         let req = (*tab.nav_history().current_url().read()).clone();
         let _reload_generation = loader.reload_generation();
         let loader = loader.clone();
-        async move { loader.load_document(req).await }
+        let is_about = about().is_some();
+        async move {
+            if is_about {
+                None
+            } else {
+                Some(loader.load_document(req).await)
+            }
+        }
     });
 
     use_effect(move || {
@@ -131,26 +141,55 @@ pub fn TabWebView(tab: Store<Tab>, active_tab_id: Signal<TabId>) -> Element {
 
     use_effect(move || {
         if loaded_document.read().is_some() {
-            if let Some(loaded) = loaded_document.write_unchecked().take() {
+            if let Some(loaded) = loaded_document.write_unchecked().take().flatten() {
                 tab.apply_loaded_document(loaded);
             }
+        }
+    });
+
+    // Title ownership: about pages set their own title here (no doc load happens
+    // for them); the memo de-dupes so this only fires on actual page changes.
+    // For real URLs, `apply_loaded_document` sets the title from the network
+    // response. Stale titles persist briefly during navigation, matching
+    // standard browser behavior.
+    use_effect(move || {
+        if let Some(page) = about() {
+            *tab.title().write_unchecked() = page.title().to_string();
         }
     });
 
     let id = tab.tab_id();
     let document = tab.document().cloned();
     let mut node_handle_lens = tab.node_handle();
+    let visibility = if id == active_tab_id() {
+        "display: block"
+    } else {
+        "display: none"
+    };
+
+    let on_navigate = use_callback(move |req: Request| {
+        tab.navigate(req);
+    });
 
     rsx!(
-        web-view {
-            key: "{id}",
-            class: "webview",
-            style: if id == active_tab_id() { "display: block" } else { "display: none" },
-            "__webview_document": document,
-            onmounted: move |evt: Event<MountedData>| {
-                let node_handle = evt.downcast::<NodeHandle>().unwrap();
-                node_handle_lens.set(Some(node_handle.clone()));
-            },
+        if let Some(page) = about() {
+            div {
+                key: "{id}",
+                class: "tab-content",
+                style: visibility,
+                AboutPageView { page, on_navigate }
+            }
+        } else {
+            web-view {
+                key: "{id}",
+                class: "tab-content",
+                style: visibility,
+                "__webview_document": document,
+                onmounted: move |evt: Event<MountedData>| {
+                    let node_handle = evt.downcast::<NodeHandle>().unwrap();
+                    node_handle_lens.set(Some(node_handle.clone()));
+                },
+            }
         }
     )
 }
