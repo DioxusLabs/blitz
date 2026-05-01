@@ -1,0 +1,28 @@
+.about-newtab {
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #f0f0f0;
+}
+.about-newtab .container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 24px;
+}
+.about-newtab img {
+    width: 160px;
+    height: 160px;
+}
+.about-newtab .search-input {
+    width: 320px;
+    padding: 10px 14px;
+    font-size: 16px;
+    border: 1px solid #ccc;
+    border-radius: 8px;
+    outline: none;
+}
+.about-newtab .search-input:focus {
+    border-color: #5e9ed6;
+}

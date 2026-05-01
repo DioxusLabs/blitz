@@ -2,14 +2,15 @@ use std::{cell::RefCell, rc::Rc, sync::Arc};
 
 use blitz_dom::DocumentConfig;
 use blitz_html::{HtmlDocument, HtmlProvider};
-use blitz_traits::navigation::NavigationOptions;
-use blitz_traits::net::{Body, Entry, EntryValue, FormData, Method, Request, Url};
+use blitz_traits::net::Request;
 use dioxus_native::{NodeHandle, SubDocumentAttr, prelude::*};
 
+use crate::about_pages::AboutPage;
 use crate::history::HistoryNav;
 use crate::icons::{self, IconButton};
+use crate::nav::{is_enter_key, open_in_external_browser, req_from_string};
 use crate::tab::{Tab, TabId, TabStoreExt, TabStoreImplExt, active_tab};
-use crate::{HOME_URL_STR, IS_MOBILE, StdNetProvider};
+use crate::{IS_MOBILE, StdNetProvider};
 
 #[component]
 pub fn Toolbar(
@@ -19,7 +20,7 @@ pub fn Toolbar(
     active_tab_id: Signal<TabId>,
     mut show_fps: Signal<bool>,
 ) -> Element {
-    let home_url = use_hook(|| Url::parse(HOME_URL_STR).unwrap());
+    let home_url = use_hook(|| AboutPage::NewTab.parsed_url());
     let mut is_focused = use_signal(|| false);
     let block_mouse_up = use_hook(|| Rc::new(RefCell::new(false)));
     let mut menu_open = use_signal(|| false);
@@ -65,6 +66,11 @@ pub fn Toolbar(
     let refresh_action = use_callback(move |_| {
         clear_document_focus(());
         active_tab(tabs, active_tab_id()).reload();
+    });
+    let nav_about = use_callback(move |page: AboutPage| {
+        menu_open.set(false);
+        clear_document_focus(());
+        active_tab(tabs, active_tab_id()).navigate(Request::get(page.parsed_url()));
     });
     let open_action = use_callback(move |_| {
         menu_open.set(false);
@@ -276,12 +282,7 @@ pub fn Toolbar(
                     }
                 },
                 onkeydown: move |evt| {
-                    let is_enter = match evt.key() {
-                        Key::Enter => true,
-                        Key::Character(s) if s == "\n" => true,
-                        _ => false,
-                    };
-                    if is_enter {
+                    if is_enter_key(&evt.key()) {
                         evt.prevent_default();
                         if let Some(handle) = url_input_handle() {
                             drop(handle.set_focus(false));
@@ -305,6 +306,10 @@ pub fn Toolbar(
                 }
                 if menu_open() {
                     div { class: "menu-dropdown",
+                        div { class: "menu-item", onclick: move |_| nav_about(AboutPage::Settings), "Settings" }
+                        div { class: "menu-item", onclick: move |_| nav_about(AboutPage::History), "History" }
+                        div { class: "menu-item", onclick: move |_| nav_about(AboutPage::Bookmarks), "Bookmarks" }
+                        div { class: "menu-item-separator" }
                         div { class: "menu-item", onclick: open_action,
                             img { class: "menu-item-icon", src: icons::EXTERNAL_LINK_ICON }
                             "Open in External Browser"
@@ -323,42 +328,4 @@ pub fn Toolbar(
             }
         }
     )
-}
-
-pub fn req_from_string(url_s: &str) -> Option<Request> {
-    if let Ok(url) = Url::parse(url_s) {
-        return Some(Request::get(url));
-    };
-
-    let contains_space = url_s.contains(' ');
-    let contains_dot = url_s.contains('.');
-    if contains_dot && !contains_space {
-        if let Ok(url) = Url::parse(&format!("https://{}", &url_s)) {
-            return Some(Request::get(url));
-        }
-    }
-
-    Some(synthesize_duckduckgo_search_req(url_s))
-}
-
-fn synthesize_duckduckgo_search_req(query: &str) -> Request {
-    NavigationOptions::new(
-        Url::parse("https://html.duckduckgo.com/html/").unwrap(),
-        Some(String::from("application/x-www-form-urlencoded")),
-        0,
-    )
-    .set_method(Method::POST)
-    .set_document_resource(Body::Form(FormData(vec![Entry {
-        name: String::from("q"),
-        value: EntryValue::String(query.to_string()),
-    }])))
-    .into_request()
-}
-
-pub fn open_in_external_browser(req: &Request) {
-    if req.method == Method::GET && matches!(req.url.scheme(), "http" | "https" | "mailto") {
-        if let Err(err) = webbrowser::open(req.url.as_str()) {
-            tracing::error!("Failed to open URL: {}", err);
-        }
-    }
 }

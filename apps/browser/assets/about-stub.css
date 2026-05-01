@@ -1,0 +1,13 @@
+.about-stub {
+    height: 100%;
+    background: #f0f0f0;
+    color: #333;
+    padding: 40px;
+}
+.about-stub h1 {
+    margin: 0 0 8px;
+    font-size: 28px;
+}
+.about-stub p {
+    color: #888;
+}

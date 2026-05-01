@@ -18,6 +18,7 @@ use winit::platform::macos::WindowAttributesMacOS;
 
 pub(crate) type StdNetProvider = blitz_net::Provider;
 
+mod about_pages;
 #[cfg(any(feature = "screenshot", feature = "capture"))]
 mod capture;
 mod document_loader;
@@ -25,11 +26,13 @@ mod document_loader;
 mod fps_overlay;
 mod history;
 mod icons;
+mod nav;
 mod status_bar;
 mod tab;
 mod tab_strip;
 mod toolbar;
 
+use about_pages::AboutPage;
 use status_bar::StatusBar;
 use tab::{Tab, TabId, TabStoreImplExt, TabWebView, active_tab, open_tab, tab_title_or_url};
 use tab_strip::TabStrip;
@@ -37,7 +40,6 @@ use toolbar::Toolbar;
 
 static BROWSER_UI_STYLES: Asset = asset!("../assets/browser.css");
 pub(crate) const IS_MOBILE: bool = cfg!(any(target_os = "android", target_os = "ios"));
-pub(crate) const HOME_URL_STR: &str = "about:newtab";
 
 #[unsafe(no_mangle)]
 #[cfg(target_os = "android")]
@@ -63,7 +65,7 @@ fn main() {
 }
 
 fn app() -> Element {
-    let home_url = use_hook(|| Url::parse(HOME_URL_STR).unwrap());
+    let home_url = use_hook(|| AboutPage::NewTab.parsed_url());
     let net_provider = use_context::<Arc<StdNetProvider>>();
 
     let url_input_handle: Signal<Option<NodeHandle>> = use_signal(|| None);
