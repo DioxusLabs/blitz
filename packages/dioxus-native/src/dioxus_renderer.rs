@@ -1,8 +1,9 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::sync::Arc;
+use std::any::Any;
 
-use anyrender::WindowRenderer;
+use anyrender::{RenderContext, WindowRenderer};
 
 #[cfg(any(
     feature = "vello",
@@ -113,6 +114,22 @@ impl DioxusNativeWindowRenderer {
     }
 }
 
+impl RenderContext for DioxusNativeWindowRenderer {
+    fn try_register_custom_resource(
+        &mut self,
+        resource: Box<dyn std::any::Any>,
+    ) -> Result<anyrender::ResourceId, anyrender::RegisterResourceError> {
+        self.inner.borrow_mut().try_register_custom_resource(resource)
+    }
+
+    fn unregister_resource(&mut self, resource_id: anyrender::ResourceId) {
+        self.inner.borrow_mut().unregister_resource(resource_id)
+    }
+
+    fn renderer_specific_context(&self) -> &dyn Any {
+        self.inner.borrow_mut().renderer_specific_context()
+    }
+}
 impl WindowRenderer for DioxusNativeWindowRenderer {
     type ScenePainter<'a>
         = <InnerRenderer as WindowRenderer>::ScenePainter<'a>
