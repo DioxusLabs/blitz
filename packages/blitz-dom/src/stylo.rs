@@ -76,11 +76,17 @@ impl crate::document::BaseDocument {
             .flush(&guards)
             .process_style(root, Some(&self.snapshots));
 
-        // Mark actively animating nodes as dirty
+        // Mark actively animating nodes as dirty.
+        // Use get_mut to skip stale entries: stylo can hold animation keys for
+        // nodes already removed from the slab, and direct indexing panics on
+        // invalid keys. See https://github.com/DioxusLabs/blitz/issues/407
         let mut sets = self.animations.sets.write();
         for (key, set) in sets.iter_mut() {
             let node_id = key.node.id();
-            self.nodes[node_id].set_restyle_hint(RestyleHint::RESTYLE_SELF);
+            let Some(node) = self.nodes.get_mut(node_id) else {
+                continue; // stale animation entry — node removed from slab
+            };
+            node.set_restyle_hint(RestyleHint::RESTYLE_SELF);
 
             for animation in set.animations.iter_mut() {
                 if animation.state == AnimationState::Pending && animation.started_at <= now {
