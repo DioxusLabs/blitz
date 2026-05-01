@@ -4,10 +4,13 @@ use dioxus_native::prelude::*;
 
 use crate::document_loader::DocumentLoaderStatus;
 use crate::history::HistoryNav;
-use crate::tab::{Tab, TabId, active_tab};
+use crate::tab::{Tab, TabId, TabStoreExt, TabStoreImplExt, active_tab};
 
-fn hovered_href(tab: &Tab) -> Option<String> {
-    let nh = tab.node_handle.peek();
+fn hovered_href<L>(tab: Store<Tab, L>) -> Option<String>
+where
+    L: Copy + Readable<Target = Tab> + 'static,
+{
+    let nh = tab.node_handle().peek_unchecked();
     let handle = (*nh).as_ref()?;
     let node_id = handle.node_id();
     // Skip this cycle if the event loop currently holds a mutable borrow.
@@ -34,7 +37,7 @@ fn hovered_href(tab: &Tab) -> Option<String> {
 }
 
 #[component]
-pub fn StatusBar(tabs: Signal<Vec<Tab>>, active_tab_id: Signal<TabId>) -> Element {
+pub fn StatusBar(tabs: Store<Vec<Tab>>, active_tab_id: Signal<TabId>) -> Element {
     let mut hover_url: Signal<String> = use_signal(String::new);
 
     // Hover state lives inside blitz-dom's BaseDocument, not a Dioxus signal,
@@ -44,13 +47,13 @@ pub fn StatusBar(tabs: Signal<Vec<Tab>>, active_tab_id: Signal<TabId>) -> Elemen
             loop {
                 tokio::time::sleep(Duration::from_millis(100)).await;
 
-                let tab = active_tab(&tabs, *active_tab_id.peek());
-                let raw_href = hovered_href(&tab);
+                let tab = active_tab(tabs, active_tab_id());
+                let raw_href = hovered_href(tab);
                 // All doc borrows dropped here; safe to read history.
                 let found = match raw_href {
                     None => String::new(),
                     Some(raw) => {
-                        let base = tab.history.current_url().read().url.clone();
+                        let base = tab.nav_history().current_url().read().url.clone();
                         base.join(&raw).map(|u| u.to_string()).unwrap_or(raw)
                     }
                 };
@@ -61,10 +64,10 @@ pub fn StatusBar(tabs: Signal<Vec<Tab>>, active_tab_id: Signal<TabId>) -> Elemen
         });
     });
 
-    let tab = active_tab(&tabs, active_tab_id());
+    let tab = active_tab(tabs, active_tab_id());
     let is_loading = matches!(
-        *tab.loader.status.read(),
-        DocumentLoaderStatus::Loading { .. }
+        *tab.loader_rc().status.read(),
+        DocumentLoaderStatus::Loading
     );
 
     let status_text = {
@@ -72,7 +75,7 @@ pub fn StatusBar(tabs: Signal<Vec<Tab>>, active_tab_id: Signal<TabId>) -> Elemen
         if !hov.is_empty() {
             hov.clone()
         } else if is_loading {
-            format!("Loading {}…", tab.history.current_url().read().url)
+            format!("Loading {}…", tab.nav_history().current_url().read().url)
         } else {
             String::new()
         }

@@ -1,7 +1,7 @@
 use blitz_traits::net::Url;
 use dioxus_native::prelude::*;
 
-use crate::tab::{Tab, TabId, tab_title_or_url};
+use crate::tab::{Tab, TabId, TabStoreImplExt, tab_title_or_url};
 
 #[cfg(target_os = "macos")]
 const TABSTRIP_CLASS: &str = "tabstrip merged-titlebar";
@@ -10,7 +10,7 @@ const TABSTRIP_CLASS: &str = "tabstrip";
 
 #[component]
 pub fn TabStrip(
-    tabs: Signal<Vec<Tab>>,
+    mut tabs: Store<Vec<Tab>>,
     active_tab_id: Signal<TabId>,
     home_url: Url,
     open_new_tab: Callback<Url>,
@@ -20,32 +20,30 @@ pub fn TabStrip(
     });
 
     let close_tab = use_callback(move |id: TabId| {
-        let mut tabs_w = tabs.write();
-        let current_active = *active_tab_id.peek();
-        let idx = tabs_w.iter().position(|t| t.id == id).unwrap_or(0);
-        tabs_w.remove(idx);
+        let current_active = active_tab_id();
+        let idx = tabs.iter().position(|tab| tab.tab_id() == id).unwrap_or(0);
+        let len_after = tabs.len() - 1;
+        tabs.remove(idx);
         if current_active == id {
-            let new_idx = if idx < tabs_w.len() {
+            let new_idx = if idx < len_after {
                 idx
             } else {
-                tabs_w.len().saturating_sub(1)
+                len_after.saturating_sub(1)
             };
-            if let Some(t) = tabs_w.get(new_idx) {
-                let new_id = t.id;
-                drop(tabs_w);
+            if let Some(new_id) = tabs.get(new_idx).map(|tab| tab.tab_id()) {
                 active_tab_id.set(new_id);
             }
         }
     });
 
+    let tab_count = tabs.len();
     rsx!(
-        div { class: TABSTRIP_CLASS,
-            for tab in tabs() {
+        div { class:TABSTRIP_CLASS,
+            for tab_lens in tabs.iter() {
                 {
-                    let is_active = tab.id == active_tab_id();
-                    let tab_id = tab.id;
-                    let title = tab_title_or_url(&tab);
-                    let tab_count = tabs.read().len();
+                    let tab_id = tab_lens.tab_id();
+                    let is_active = tab_id == active_tab_id();
+                    let title = tab_title_or_url(tab_lens);
                     rsx!(
                         div {
                             key: "{tab_id}",

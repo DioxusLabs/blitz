@@ -8,14 +8,14 @@ use dioxus_native::{NodeHandle, SubDocumentAttr, prelude::*};
 
 use crate::history::HistoryNav;
 use crate::icons::{self, IconButton};
-use crate::tab::{Tab, TabId, active_tab};
+use crate::tab::{Tab, TabId, TabStoreExt, TabStoreImplExt, active_tab};
 use crate::{HOME_URL_STR, IS_MOBILE, StdNetProvider};
 
 #[component]
 pub fn Toolbar(
     url_input_handle: Signal<Option<NodeHandle>>,
     mut url_input_value: Signal<String>,
-    tabs: Signal<Vec<Tab>>,
+    tabs: Store<Vec<Tab>>,
     active_tab_id: Signal<TabId>,
     mut show_fps: Signal<bool>,
 ) -> Element {
@@ -29,16 +29,15 @@ pub fn Toolbar(
     // Sync URL bar when active tab changes
     use_effect(move || {
         let aid = active_tab_id();
-        let tab = active_tab(&tabs, aid);
-        *url_input_value.write_unchecked() = tab.history.current_url().read().url.to_string();
+        let tab = active_tab(tabs, aid);
+        *url_input_value.write_unchecked() = tab.nav_history().current_url().read().url.to_string();
     });
 
-    let load_current_url = use_callback(move |_| {
-        let tab = active_tab(&tabs, *active_tab_id.peek());
-        let request = (*tab.history.current_url().read()).clone();
-        *url_input_value.write_unchecked() = request.url.to_string();
-
-        if let Some(handle) = &*tab.node_handle.peek() {
+    let clear_document_focus = use_callback(move |_| {
+        let tab = active_tab(tabs, active_tab_id());
+        let nh_lens = tab.node_handle();
+        let nh_guard = nh_lens.peek();
+        if let Some(handle) = (*nh_guard).as_ref() {
             let node_id = handle.node_id();
             let mut doc = handle.doc_mut();
             if let Some(sub_doc) = doc
@@ -49,30 +48,29 @@ pub fn Toolbar(
                 sub_doc.inner_mut().clear_focus();
             }
         }
-
-        tracing::info!("Loading {}", request.url.as_str());
-        tab.loader.load_document(request);
     });
 
     let back_action = use_callback(move |_| {
-        active_tab(&tabs, *active_tab_id.peek()).history.go_back();
+        clear_document_focus(());
+        active_tab(tabs, active_tab_id()).go_back();
     });
     let forward_action = use_callback(move |_| {
-        active_tab(&tabs, *active_tab_id.peek())
-            .history
-            .go_forward();
+        clear_document_focus(());
+        active_tab(tabs, active_tab_id()).go_forward();
     });
     let home_action = use_callback(move |_| {
-        active_tab(&tabs, *active_tab_id.peek())
-            .history
-            .navigate(Request::get(home_url.clone()));
+        clear_document_focus(());
+        active_tab(tabs, active_tab_id()).navigate(Request::get(home_url.clone()));
     });
-    let refresh_action = load_current_url;
+    let refresh_action = use_callback(move |_| {
+        clear_document_focus(());
+        active_tab(tabs, active_tab_id()).reload();
+    });
     let open_action = use_callback(move |_| {
         menu_open.set(false);
         open_in_external_browser(
-            &active_tab(&tabs, *active_tab_id.peek())
-                .history
+            &active_tab(tabs, active_tab_id())
+                .nav_history()
                 .current_url()
                 .read(),
         );
@@ -80,12 +78,12 @@ pub fn Toolbar(
 
     let view_source_action = use_callback(move |_| {
         menu_open.set(false);
-        let tab = active_tab(&tabs, *active_tab_id.peek());
-        let source = tab.html_source.read().clone();
+        let tab = active_tab(tabs, active_tab_id());
+        let source = tab.html_source().cloned();
         if source.is_empty() {
             return;
         }
-        let current_url = tab.history.current_url().read().url.to_string();
+        let current_url = tab.nav_history().current_url().read().url.to_string();
         *url_input_value.write() = format!("view-source://{current_url}");
 
         let view_source_html = include_str!("../assets/view-source.html");
@@ -97,7 +95,7 @@ pub fn Toolbar(
             navigation_provider: None,
             shell_provider: None,
             html_parser_provider: Some(Arc::new(HtmlProvider)),
-            font_ctx: Some(tab.loader.font_ctx.clone()),
+            font_ctx: Some(tab.loader_rc().font_ctx.clone()),
             media_type: None,
         };
         let mut document = HtmlDocument::from_html(view_source_html, config).into_inner();
@@ -106,18 +104,18 @@ pub fn Toolbar(
             let text_node = mutator.create_text_node(&source);
             mutator.append_children(parent_id, &[text_node]);
         }
-        *tab.document.write_unchecked() = Some(SubDocumentAttr::new(document));
+        *tab.document().write_unchecked() = Some(SubDocumentAttr::new(document));
     });
 
     #[cfg(feature = "screenshot")]
     let screenshot_action = use_callback(move |_| {
         menu_open.set(false);
-        let node_handle = active_tab(&tabs, *active_tab_id.peek()).node_handle;
+        let node_handle = active_tab(tabs, active_tab_id()).node_handle();
         async move {
             let Some(path) = crate::capture::try_get_save_path("PNG Image", "png").await else {
                 return;
             };
-            if let Some(handle) = node_handle() {
+            if let Some(handle) = node_handle.cloned() {
                 let node_id = handle.node_id();
                 let mut doc = handle.doc_mut();
                 if let Some(sub_doc) = doc
@@ -134,13 +132,13 @@ pub fn Toolbar(
     #[cfg(feature = "capture")]
     let capture_action = use_callback(move |_| {
         menu_open.set(false);
-        let node_handle = active_tab(&tabs, *active_tab_id.peek()).node_handle;
+        let node_handle = active_tab(tabs, active_tab_id()).node_handle();
         async move {
             let Some(path) = crate::capture::try_get_save_path("AnyRender Scene", "scene").await
             else {
                 return;
             };
-            if let Some(handle) = node_handle() {
+            if let Some(handle) = node_handle.cloned() {
                 let node_id = handle.node_id();
                 let mut doc = handle.doc_mut();
                 if let Some(sub_doc) = doc
@@ -156,8 +154,8 @@ pub fn Toolbar(
 
     let devtools_action = use_callback(move |_| {
         menu_open.set(false);
-        let node_handle = active_tab(&tabs, *active_tab_id.peek()).node_handle;
-        if let Some(handle) = node_handle() {
+        let node_handle = active_tab(tabs, active_tab_id()).node_handle();
+        if let Some(handle) = node_handle.cloned() {
             let node_id = handle.node_id();
             let mut doc = handle.doc_mut();
             if let Some(sub_doc) = doc
@@ -216,9 +214,9 @@ pub fn Toolbar(
     #[cfg(not(feature = "cache"))]
     let clear_cache_item = rsx!();
 
-    let current_tab = active_tab(&tabs, active_tab_id());
-    let has_back = current_tab.history.has_back();
-    let has_forward = current_tab.history.has_forward();
+    let current_tab = active_tab(tabs, active_tab_id());
+    let has_back = current_tab.nav_history().has_back();
+    let has_forward = current_tab.nav_history().has_forward();
 
     rsx!(
         div { class: "urlbar",
@@ -290,7 +288,8 @@ pub fn Toolbar(
                         }
                         let req = req_from_string(&url_input_value.read());
                         if let Some(req) = req {
-                            active_tab(&tabs, *active_tab_id.peek()).history.navigate(req);
+                            clear_document_focus(());
+                            active_tab(tabs, active_tab_id()).navigate(req);
                         } else {
                             tracing::warn!("Error parsing URL {}", &*url_input_value.read());
                         }

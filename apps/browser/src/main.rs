@@ -30,32 +30,10 @@ mod tab;
 mod tab_strip;
 mod toolbar;
 
-use history::HistoryNav;
 use status_bar::StatusBar;
-use tab::{Tab, TabId, active_tab, tab_title_or_url};
+use tab::{Tab, TabId, TabStoreImplExt, TabWebView, active_tab, open_tab, tab_title_or_url};
 use tab_strip::TabStrip;
 use toolbar::Toolbar;
-
-#[component]
-fn TabView(tab: Tab, is_active: bool) -> Element {
-    use_effect(move || {
-        let request = (*tab.history.current_url().read()).clone();
-        tab.loader.load_document(request);
-    });
-
-    let mut tab_node_handle = tab.node_handle;
-    rsx!(
-        web-view {
-            class: "webview",
-            style: if is_active { "display: block" } else { "display: none" },
-            "__webview_document": tab.document.cloned(),
-            onmounted: move |evt: Event<MountedData>| {
-                let node_handle = evt.downcast::<NodeHandle>().unwrap();
-                *tab_node_handle.write() = Some(node_handle.clone());
-            },
-        }
-    )
-}
 
 static BROWSER_UI_STYLES: Asset = asset!("../assets/browser.css");
 pub(crate) const IS_MOBILE: bool = cfg!(any(target_os = "android", target_os = "ios"));
@@ -91,16 +69,15 @@ fn app() -> Element {
     let url_input_handle: Signal<Option<NodeHandle>> = use_signal(|| None);
     let url_input_value = use_signal(|| home_url.to_string());
 
-    let mut tabs: Signal<Vec<Tab>> =
-        use_hook(|| Signal::new(vec![Tab::new(home_url.clone(), net_provider.clone())]));
-    let mut active_tab_id: Signal<TabId> =
-        use_hook(|| Signal::new(tabs.read().first().map(|t| t.id).unwrap_or(0)));
+    let tabs: Store<Vec<Tab>> = use_store(Vec::new);
+    let mut active_tab_id: Signal<TabId> = use_hook(|| {
+        let tab = open_tab(tabs, home_url.clone(), net_provider.clone());
+        Signal::new(tab.tab_id())
+    });
 
     let open_new_tab = use_callback(move |url: Url| {
-        let new_tab = Tab::new(url, net_provider.clone());
-        let new_id = new_tab.id;
-        tabs.write().push(new_tab);
-        active_tab_id.set(new_id);
+        let new_id = open_tab(tabs, url, net_provider.clone());
+        active_tab_id.set(new_id.tab_id());
         if let Some(handle) = url_input_handle() {
             drop(handle.set_focus(true));
         }
@@ -128,7 +105,7 @@ fn app() -> Element {
     #[cfg(not(feature = "vello"))]
     let fps_overlay_el = rsx!();
 
-    let window_title = tab_title_or_url(&active_tab(&tabs, active_tab_id()));
+    let window_title = tab_title_or_url(active_tab(tabs, active_tab_id()));
 
     rsx!(
         div {
@@ -151,13 +128,11 @@ fn app() -> Element {
                 active_tab_id,
                 show_fps,
             }
-            for tab in tabs() {
-                {
-                    let id = tab.id;
-                    let is_active = id == active_tab_id();
-                    rsx!(
-                        TabView { key: "{id}", tab, is_active }
-                    )
+            for tab in tabs.iter() {
+                TabWebView {
+                    key: "{tab.tab_id()}",
+                    tab,
+                    active_tab_id,
                 }
             }
             {fps_overlay_el}
