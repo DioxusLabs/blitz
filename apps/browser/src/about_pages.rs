@@ -1,10 +1,19 @@
+use std::collections::VecDeque;
+use std::time::{Duration, SystemTime};
+
 use blitz_traits::net::{Request, Url};
 use dioxus_native::prelude::*;
 
+use crate::browser_history::{HistoryEntry, format_elapsed};
 use crate::nav::{is_enter_key, req_from_string};
+use crate::tab::Favicon;
+
+// How often the history page refreshes its "Just now / N min ago" labels.
+const HISTORY_REFRESH_INTERVAL: Duration = Duration::from_secs(30);
 
 const NEWTAB_CSS: Asset = asset!("../assets/about-newtab.css");
 const STUB_CSS: Asset = asset!("../assets/about-stub.css");
+const HISTORY_CSS: Asset = asset!("../assets/about-history.css");
 const BLITZ_LOGO: Asset = asset!("../assets/blitz-logo.png");
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -57,11 +66,18 @@ impl AboutPage {
 }
 
 #[component]
-pub fn AboutPageView(page: AboutPage, on_navigate: Callback<Request>) -> Element {
+pub fn AboutPageView(
+    page: AboutPage,
+    on_navigate: Callback<Request>,
+    browsing_history: Signal<VecDeque<HistoryEntry>>,
+) -> Element {
     match page {
         AboutPage::NewTab => rsx!(NewTabPage { on_navigate }),
         AboutPage::Settings => rsx!(StubPage { name: "Settings" }),
-        AboutPage::History => rsx!(StubPage { name: "History" }),
+        AboutPage::History => rsx!(HistoryPage {
+            browsing_history,
+            on_navigate
+        }),
         AboutPage::Bookmarks => rsx!(StubPage { name: "Bookmarks" }),
     }
 }
@@ -93,6 +109,83 @@ fn NewTabPage(on_navigate: Callback<Request>) -> Element {
                         }
                     },
                 }
+            }
+        }
+    }
+}
+
+#[component]
+fn HistoryPage(
+    browsing_history: Signal<VecDeque<HistoryEntry>>,
+    on_navigate: Callback<Request>,
+) -> Element {
+    // `now` is bumped on a fixed cadence so each row's elapsed-time label
+    // refreshes while the page is open. Computing the label here (rather than
+    // per-row) keeps the wall-clock read in one place.
+    let mut now = use_signal(SystemTime::now);
+    use_future(move || async move {
+        loop {
+            tokio::time::sleep(HISTORY_REFRESH_INTERVAL).await;
+            now.set(SystemTime::now());
+        }
+    });
+    let now = now();
+
+    let entries = browsing_history.read();
+    rsx! {
+        document::Link { rel: "stylesheet", href: HISTORY_CSS }
+        div { class: "about-history",
+            div { class: "toolbar",
+                h1 { "History" }
+                if !entries.is_empty() {
+                    button {
+                        class: "clear-btn",
+                        onclick: move |_| browsing_history.write().clear(),
+                        "Clear history"
+                    }
+                }
+            }
+            if entries.is_empty() {
+                p { class: "empty", "No history yet." }
+            } else {
+                ul {
+                    for entry in entries.iter() {
+                        HistoryEntryRow {
+                            key: "{entry.id}",
+                            entry: entry.clone(),
+                            elapsed: format_elapsed(entry.visited_at, now),
+                            on_navigate,
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[component]
+fn HistoryEntryRow(
+    entry: HistoryEntry,
+    elapsed: String,
+    on_navigate: Callback<Request>,
+) -> Element {
+    let url = entry.url.clone();
+    rsx! {
+        li {
+            Favicon { url: entry.favicon_url.clone(), class: "favicon" }
+            div { class: "entry-info",
+                div { class: "entry-title",
+                    a {
+                        href: "#",
+                        onclick: move |evt| {
+                            evt.prevent_default();
+                            on_navigate(Request::get(url.clone()));
+                        },
+                        "{entry.title}"
+                    }
+                }
+                div { class: "entry-url", "{entry.url}" }
+                div { class: "entry-time", "{elapsed}" }
             }
         }
     }

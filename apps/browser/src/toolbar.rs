@@ -2,7 +2,7 @@ use std::{cell::RefCell, rc::Rc, sync::Arc};
 
 use blitz_dom::DocumentConfig;
 use blitz_html::{HtmlDocument, HtmlProvider};
-use blitz_traits::net::Request;
+use blitz_traits::net::{Request, Url};
 use dioxus_native::{NodeHandle, SubDocumentAttr, prelude::*};
 
 use crate::about_pages::AboutPage;
@@ -18,6 +18,7 @@ pub fn Toolbar(
     mut url_input_value: Signal<String>,
     tabs: Store<Vec<Tab>>,
     active_tab_id: Signal<TabId>,
+    open_new_tab: Callback<Url>,
     mut show_fps: Signal<bool>,
 ) -> Element {
     let home_url = use_hook(|| AboutPage::NewTab.parsed_url());
@@ -70,7 +71,23 @@ pub fn Toolbar(
     let nav_about = use_callback(move |page: AboutPage| {
         menu_open.set(false);
         clear_document_focus(());
-        active_tab(tabs, active_tab_id()).navigate(Request::get(page.parsed_url()));
+        // NewTab always gets a fresh tab; for other about pages, focus an
+        // existing tab already showing the page if there is one, otherwise
+        // open it in a new tab.
+        if page == AboutPage::NewTab {
+            open_new_tab(page.parsed_url());
+            return;
+        }
+        let existing = tabs.iter().find_map(|tab| {
+            let history = tab.nav_history();
+            let url_signal = history.current_url();
+            let cur = url_signal.read();
+            (AboutPage::from_url(&cur.url) == Some(page)).then(|| tab.tab_id())
+        });
+        match existing {
+            Some(id) => active_tab_id.set(id),
+            None => open_new_tab(page.parsed_url()),
+        }
     });
     let open_action = use_callback(move |_| {
         menu_open.set(false);

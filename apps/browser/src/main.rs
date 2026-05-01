@@ -8,6 +8,7 @@
 #[global_allocator]
 static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
+use std::collections::VecDeque;
 use std::sync::Arc;
 
 use blitz_traits::net::Url;
@@ -19,9 +20,11 @@ use winit::platform::macos::WindowAttributesMacOS;
 pub(crate) type StdNetProvider = blitz_net::Provider;
 
 mod about_pages;
+mod browser_history;
 #[cfg(any(feature = "screenshot", feature = "capture"))]
 mod capture;
 mod document_loader;
+mod favicon;
 #[cfg(feature = "vello")]
 mod fps_overlay;
 mod history;
@@ -33,8 +36,9 @@ mod tab_strip;
 mod toolbar;
 
 use about_pages::AboutPage;
+use browser_history::HistoryEntry;
 use status_bar::StatusBar;
-use tab::{Tab, TabId, TabStoreImplExt, TabWebView, active_tab, open_tab, tab_title_or_url};
+use tab::{Tab, TabId, TabStoreImplExt, TabWebView, active_tab, open_tab, tab_display_title};
 use tab_strip::TabStrip;
 use toolbar::Toolbar;
 
@@ -72,6 +76,7 @@ fn app() -> Element {
     let url_input_value = use_signal(|| home_url.to_string());
 
     let tabs: Store<Vec<Tab>> = use_store(Vec::new);
+    let browsing_history: Signal<VecDeque<HistoryEntry>> = use_signal(VecDeque::new);
     let mut active_tab_id: Signal<TabId> = use_hook(|| {
         let tab = open_tab(tabs, home_url.clone(), net_provider.clone());
         Signal::new(tab.tab_id())
@@ -107,7 +112,7 @@ fn app() -> Element {
     #[cfg(not(feature = "vello"))]
     let fps_overlay_el = rsx!();
 
-    let window_title = tab_title_or_url(active_tab(tabs, active_tab_id()));
+    let window_title = tab_display_title(active_tab(tabs, active_tab_id()));
 
     rsx!(
         div {
@@ -128,6 +133,7 @@ fn app() -> Element {
                 url_input_value,
                 tabs,
                 active_tab_id,
+                open_new_tab,
                 show_fps,
             }
             for tab in tabs.iter() {
@@ -135,6 +141,7 @@ fn app() -> Element {
                     key: "{tab.tab_id()}",
                     tab,
                     active_tab_id,
+                    browsing_history,
                 }
             }
             {fps_overlay_el}
