@@ -8,7 +8,6 @@
 #[global_allocator]
 static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
-use std::collections::VecDeque;
 use std::sync::Arc;
 
 use blitz_traits::net::Url;
@@ -36,7 +35,7 @@ mod tab_strip;
 mod toolbar;
 
 use about_pages::AboutPage;
-use browser_history::HistoryEntry;
+use browser_history::BrowsingHistory;
 use status_bar::StatusBar;
 use tab::{Tab, TabId, TabStoreImplExt, TabWebView, active_tab, open_tab, tab_display_title};
 use tab_strip::TabStrip;
@@ -76,7 +75,7 @@ fn app() -> Element {
     let url_input_value = use_signal(|| home_url.to_string());
 
     let tabs: Store<Vec<Tab>> = use_store(Vec::new);
-    let browsing_history: Signal<VecDeque<HistoryEntry>> = use_signal(VecDeque::new);
+    let browsing_history: Store<BrowsingHistory> = use_store(BrowsingHistory::default);
     let mut active_tab_id: Signal<TabId> = use_hook(|| {
         let tab = open_tab(tabs, home_url.clone(), net_provider.clone());
         Signal::new(tab.tab_id())
@@ -125,7 +124,7 @@ fn app() -> Element {
             TabStrip {
                 tabs,
                 active_tab_id,
-                home_url: home_url.clone(),
+                home_url,
                 open_new_tab,
             }
             Toolbar {

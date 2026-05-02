@@ -3,6 +3,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, SystemTime};
 
 use blitz_traits::net::Url;
+use dioxus_native::prelude::*;
 
 const MAX_HISTORY_ENTRIES: usize = 1000;
 
@@ -38,13 +39,38 @@ fn next_history_entry_id() -> HistoryEntryId {
     COUNTER.fetch_add(1, Ordering::Relaxed)
 }
 
+#[derive(Default, Store)]
+pub struct BrowsingHistory {
+    pub entries: VecDeque<HistoryEntry>,
+}
+
+#[store(pub)]
+impl<Lens> Store<BrowsingHistory, Lens> {
+    fn record_visit(&self, entry: HistoryEntry)
+    where
+        Lens: Writable,
+    {
+        record_visit_into(&mut self.entries().write(), entry);
+    }
+
+    fn clear(&self)
+    where
+        Lens: Writable,
+    {
+        self.entries().write().clear();
+    }
+}
+
 // Dedupe policy: only consecutive visits to the same URL fold into the head
 // entry; non-consecutive revisits are recorded as new entries. This keeps the
 // list a faithful chronological log rather than a most-recently-visited set,
 // matching the simplest behavior a user can predict at a glance. The id of
 // the existing head entry is preserved on fold so its rendered row is not
 // remounted.
-pub fn record_visit(history: &mut VecDeque<HistoryEntry>, entry: HistoryEntry) {
+//
+// Lives as a free function so it can be unit-tested without a Dioxus runtime;
+// the Store method above is the public surface.
+fn record_visit_into(history: &mut VecDeque<HistoryEntry>, entry: HistoryEntry) {
     if let Some(latest) = history.front_mut() {
         if latest.url == entry.url {
             latest.title = entry.title;
@@ -79,6 +105,7 @@ pub fn format_elapsed(visited_at: SystemTime, now: SystemTime) -> String {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::indexing_slicing)]
 mod tests {
     use super::*;
 
@@ -93,9 +120,9 @@ mod tests {
     #[test]
     fn folds_consecutive_same_url_visits() {
         let mut h = VecDeque::new();
-        record_visit(&mut h, entry("https://a.test/"));
+        record_visit_into(&mut h, entry("https://a.test/"));
         let id_after_first = h[0].id;
-        record_visit(&mut h, entry("https://a.test/"));
+        record_visit_into(&mut h, entry("https://a.test/"));
         assert_eq!(h.len(), 1);
         assert_eq!(
             h[0].id, id_after_first,
@@ -106,9 +133,9 @@ mod tests {
     #[test]
     fn keeps_non_consecutive_revisits() {
         let mut h = VecDeque::new();
-        record_visit(&mut h, entry("https://a.test/"));
-        record_visit(&mut h, entry("https://b.test/"));
-        record_visit(&mut h, entry("https://a.test/"));
+        record_visit_into(&mut h, entry("https://a.test/"));
+        record_visit_into(&mut h, entry("https://b.test/"));
+        record_visit_into(&mut h, entry("https://a.test/"));
         assert_eq!(h.len(), 3);
     }
 
@@ -116,7 +143,7 @@ mod tests {
     fn truncates_to_max_entries() {
         let mut h = VecDeque::new();
         for i in 0..(MAX_HISTORY_ENTRIES + 5) {
-            record_visit(&mut h, entry(&format!("https://a.test/{i}")));
+            record_visit_into(&mut h, entry(&format!("https://a.test/{i}")));
         }
         assert_eq!(h.len(), MAX_HISTORY_ENTRIES);
     }

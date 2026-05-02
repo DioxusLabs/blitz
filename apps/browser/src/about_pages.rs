@@ -1,10 +1,12 @@
-use std::collections::VecDeque;
 use std::time::{Duration, SystemTime};
 
 use blitz_traits::net::{Request, Url};
 use dioxus_native::prelude::*;
 
-use crate::browser_history::{HistoryEntry, format_elapsed};
+use crate::browser_history::{
+    BrowsingHistory, BrowsingHistoryStoreExt, BrowsingHistoryStoreImplExt, HistoryEntry,
+    format_elapsed,
+};
 use crate::nav::{is_enter_key, req_from_string};
 use crate::tab::Favicon;
 
@@ -69,7 +71,7 @@ impl AboutPage {
 pub fn AboutPageView(
     page: AboutPage,
     on_navigate: Callback<Request>,
-    browsing_history: Signal<VecDeque<HistoryEntry>>,
+    browsing_history: Store<BrowsingHistory>,
 ) -> Element {
     match page {
         AboutPage::NewTab => rsx!(NewTabPage { on_navigate }),
@@ -116,7 +118,7 @@ fn NewTabPage(on_navigate: Callback<Request>) -> Element {
 
 #[component]
 fn HistoryPage(
-    browsing_history: Signal<VecDeque<HistoryEntry>>,
+    browsing_history: Store<BrowsingHistory>,
     on_navigate: Callback<Request>,
 ) -> Element {
     // `now` is bumped on a fixed cadence so each row's elapsed-time label
@@ -131,7 +133,8 @@ fn HistoryPage(
     });
     let now = now();
 
-    let entries = browsing_history.read();
+    let entries_lens = browsing_history.entries();
+    let entries = entries_lens.read();
     rsx! {
         document::Link { rel: "stylesheet", href: HISTORY_CSS }
         div { class: "about-history",
@@ -140,7 +143,7 @@ fn HistoryPage(
                 if !entries.is_empty() {
                     button {
                         class: "clear-btn",
-                        onclick: move |_| browsing_history.write().clear(),
+                        onclick: move |_| browsing_history.clear(),
                         "Clear history"
                     }
                 }
@@ -203,6 +206,7 @@ fn StubPage(name: &'static str) -> Element {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
 

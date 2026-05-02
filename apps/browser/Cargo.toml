@@ -10,13 +10,9 @@ name = "blitz"
 path = "src/main.rs"
 
 [features]
-default = ["vello", "floats", "incremental", "cookies", "cache", "screenshot", "capture", "ico"]
+default = ["vello", "floats", "incremental", "cookies", "cache", "screenshot", "capture"]
 screenshot = ["dep:anyrender", "dep:anyrender_vello_cpu", "dep:blitz-paint", "dep:png", "dep:peniko", "dep:rfd"]
 capture = ["dep:anyrender", "dep:anyrender_serialize", "dep:blitz-paint", "dep:png", "dep:peniko", "dep:rfd"]
-# Enables the `image` crate's ICO decoder so the renderer can actually
-# display .ico favicons (the bulk of real-world favicons). Without this,
-# <img src="…/favicon.ico"> would silently render nothing.
-ico = ["image/ico"]
 vello = ["dioxus-native/vello"]
 hybrid = ["dioxus-native/vello-hybrid"]
 skia = ["dioxus-native/skia"]
@@ -55,7 +51,8 @@ tracing = { workspace = true }
 tracing-subscriber = { workspace = true, optional = true }
 webbrowser = { workspace = true }
 winit = { workspace = true }
-image = { workspace = true }
+image = { workspace = true, features = ["ico"] }
+usvg = { workspace = true }
 anyrender = { workspace = true, optional = true }
 anyrender_serialize = { workspace = true, optional = true }
 anyrender_vello_cpu = { workspace = true, optional = true }

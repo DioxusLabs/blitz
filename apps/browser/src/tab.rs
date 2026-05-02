@@ -1,5 +1,4 @@
 use std::{
-    collections::VecDeque,
     rc::Rc,
     sync::{
         Arc,
@@ -12,7 +11,7 @@ use dioxus_native::{NodeHandle, SubDocumentAttr, prelude::*};
 
 use crate::StdNetProvider;
 use crate::about_pages::{AboutPage, AboutPageView};
-use crate::browser_history::{HistoryEntry, record_visit};
+use crate::browser_history::{BrowsingHistory, BrowsingHistoryStoreImplExt, HistoryEntry};
 use crate::document_loader::{DocumentLoader, DocumentLoaderStatus, LoadedDocument};
 use crate::history::{History, HistoryNav, SyncStore};
 
@@ -43,6 +42,9 @@ impl<Lens> Store<Tab, Lens> {
     }
 
     fn loader_rc(&self) -> Rc<DocumentLoader> {
+        // `open_tab` always assigns Some(loader) immediately after pushing the
+        // tab, so by the time any view code can call this the loader is set.
+        #[allow(clippy::expect_used)]
         self.loader().cloned().expect("loader uninitialized")
     }
 
@@ -99,7 +101,7 @@ pub fn open_tab(
 ) -> Store<Tab, impl Writable<Target = Tab> + Copy> {
     let id = next_tab_id();
     let initial_request = Request::get(url);
-    let history: SyncStore<History> = Store::new_maybe_sync(History::new(initial_request.clone()));
+    let history: SyncStore<History> = Store::new_maybe_sync(History::new(initial_request));
 
     tabs.push(Tab {
         id,
@@ -112,17 +114,21 @@ pub fn open_tab(
         favicon_url: None,
     });
 
-    let len = tabs.len();
-    let tab_lens = tabs.get(len - 1).expect("just pushed");
+    // We just pushed; the last element is the tab we want.
+    #[allow(clippy::expect_used)]
+    let tab_lens = tabs.iter().last().expect("just pushed");
 
     let loader = Rc::new(DocumentLoader::new(net_provider, history));
 
-    *tab_lens.loader().write() = Some(loader.clone());
+    *tab_lens.loader().write() = Some(loader);
 
     tab_lens
 }
 
 pub fn active_tab(tabs: Store<Vec<Tab>>, active_id: TabId) -> Store<Tab> {
+    // The app always keeps at least one tab open and only switches `active_id`
+    // to ids that exist; closing a tab updates `active_id` first.
+    #[allow(clippy::expect_used)]
     tabs.iter()
         .find(|tab| tab.tab_id() == active_id)
         .expect("tabs vec is never empty")
@@ -133,7 +139,7 @@ pub fn active_tab(tabs: Store<Vec<Tab>>, active_id: TabId) -> Store<Tab> {
 pub fn TabWebView(
     tab: Store<Tab>,
     active_tab_id: Signal<TabId>,
-    browsing_history: Signal<VecDeque<HistoryEntry>>,
+    browsing_history: Store<BrowsingHistory>,
 ) -> Element {
     let about = use_memo(move || AboutPage::from_url(&tab.nav_history().current_url().read().url));
 
@@ -173,10 +179,7 @@ pub fn TabWebView(
                     let url = tab.nav_history().current_url().read().url.clone();
                     let title = display_title(&loaded.title, &url);
                     let favicon = loaded.favicon_url.clone();
-                    record_visit(
-                        &mut browsing_history.write(),
-                        HistoryEntry::new(url, title, favicon),
-                    );
+                    browsing_history.record_visit(HistoryEntry::new(url, title, favicon));
                 }
                 tab.apply_loaded_document(loaded);
             }
@@ -217,7 +220,7 @@ pub fn TabWebView(
                 style: visibility,
                 "__webview_document": document,
                 onmounted: move |evt: Event<MountedData>| {
-                    let node_handle = evt.downcast::<NodeHandle>().unwrap();
+                    let Some(node_handle) = evt.downcast::<NodeHandle>() else { return };
                     node_handle_lens.set(Some(node_handle.clone()));
                 },
             }

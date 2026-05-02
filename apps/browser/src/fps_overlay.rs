@@ -28,10 +28,12 @@ impl FpsStats {
     fn record(&mut self, now: Instant) {
         if let Some(prev) = self.last {
             let dt = now.duration_since(prev);
-            self.ring[self.idx] = dt;
-            self.idx = (self.idx + 1) % RING_LEN;
+            if let Some(slot) = self.ring.get_mut(self.idx) {
+                *slot = dt;
+            }
+            self.idx = self.idx.wrapping_add(1) % RING_LEN;
             if self.count < RING_LEN {
-                self.count += 1;
+                self.count = self.count.wrapping_add(1);
             }
         }
         self.last = Some(now);
@@ -41,8 +43,12 @@ impl FpsStats {
         if self.count == 0 {
             return (0.0, 0.0);
         }
-        let total: Duration = self.ring[..self.count].iter().copied().sum();
-        let avg = total / self.count as u32;
+        let slice = self.ring.get(..self.count).unwrap_or(&[]);
+        let total: Duration = slice.iter().copied().sum();
+        // count > 0 by the early return above, so division is safe.
+        let avg = total
+            .checked_div(self.count as u32)
+            .unwrap_or(Duration::ZERO);
         let ms = avg.as_secs_f32() * 1000.0;
         let fps = if ms > 0.0 { 1000.0 / ms } else { 0.0 };
         (fps, ms)
@@ -93,7 +99,7 @@ pub fn FpsOverlay() -> Element {
 
     let mut display = use_signal(|| (0.0_f32, 0.0_f32));
 
-    let stats_for_poll = stats.clone();
+    let stats_for_poll = stats;
     use_hook(move || {
         spawn(async move {
             loop {

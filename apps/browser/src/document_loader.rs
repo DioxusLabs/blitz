@@ -10,7 +10,7 @@ use dioxus_native::{SubDocumentAttr, prelude::*};
 use linebender_resource_handle::Blob;
 
 use crate::StdNetProvider;
-use crate::favicon::{find_favicon_url, resolve_favicon_url};
+use crate::favicon::resolve_favicon_url;
 use crate::history::{BrowserNavProvider, History, SyncStore};
 
 pub enum DocumentLoaderStatus {
@@ -74,7 +74,8 @@ impl DocumentLoader {
 
     pub fn reload(&self) {
         let mut reload_generation = self.reload_generation;
-        *reload_generation.write() += 1;
+        let next = (*reload_generation.read()).wrapping_add(1);
+        *reload_generation.write() = next;
     }
 
     pub fn reload_generation(&self) -> u64 {
@@ -110,7 +111,7 @@ impl DocumentLoader {
                     .unwrap_or_default();
                 let favicon_url = resolve_favicon_url(
                     &base_url,
-                    find_favicon_url(&document).as_deref(),
+                    document.favicon_url().as_deref(),
                     &net_for_favicon,
                 )
                 .await;

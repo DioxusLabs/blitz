@@ -19,8 +19,11 @@ pub fn req_from_string(url_s: &str) -> Option<Request> {
 }
 
 fn synthesize_duckduckgo_search_req(query: &str) -> Request {
+    // Static URL literal is statically valid; parse cannot fail at runtime.
+    #[allow(clippy::unwrap_used)]
+    let search_url = Url::parse("https://html.duckduckgo.com/html/").unwrap();
     NavigationOptions::new(
-        Url::parse("https://html.duckduckgo.com/html/").unwrap(),
+        search_url,
         Some(String::from("application/x-www-form-urlencoded")),
         0,
     )
