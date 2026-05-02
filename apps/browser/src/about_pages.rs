@@ -206,7 +206,6 @@ fn StubPage(name: &'static str) -> Element {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
 

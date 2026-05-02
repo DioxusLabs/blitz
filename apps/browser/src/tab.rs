@@ -220,7 +220,7 @@ pub fn TabWebView(
                 style: visibility,
                 "__webview_document": document,
                 onmounted: move |evt: Event<MountedData>| {
-                    let Some(node_handle) = evt.downcast::<NodeHandle>() else { return };
+                    let node_handle = evt.downcast::<NodeHandle>().unwrap();
                     node_handle_lens.set(Some(node_handle.clone()));
                 },
             }

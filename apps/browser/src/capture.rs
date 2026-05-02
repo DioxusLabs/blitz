@@ -72,24 +72,10 @@ pub(crate) fn capture_anyrender_scene(doc: &blitz_dom::BaseDocument, path: &Path
     let config = SerializeConfig::new()
         .with_woff2_fonts(true)
         .with_subset_fonts(true);
-    let archive = match SceneArchive::from_scene(&scene, &config) {
-        Ok(a) => a,
-        Err(err) => {
-            tracing::error!("Failed to build scene archive: {err:?}");
-            return;
-        }
-    };
+    let archive = SceneArchive::from_scene(&scene, &config).unwrap();
 
-    let mut file = match std::fs::File::create(path) {
-        Ok(f) => f,
-        Err(err) => {
-            tracing::error!("Failed to create capture file {}: {err}", path.display());
-            return;
-        }
-    };
-    if let Err(err) = archive.serialize(&mut file) {
-        tracing::error!("Failed to serialize scene archive: {err:?}");
-    }
+    let mut file = std::fs::File::create(path).unwrap();
+    archive.serialize(&mut file).unwrap();
 }
 
 fn render_scene(
@@ -116,8 +102,8 @@ fn render_scene(
 pub(crate) async fn try_get_save_path(file_type_name: &str, ext: &str) -> Option<PathBuf> {
     let timestamp = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_secs())
-        .unwrap_or(0);
+        .unwrap()
+        .as_secs();
     let default_name = format!("blitz-screenshot-{timestamp}.{ext}");
 
     #[cfg(any(target_os = "android", target_os = "ios"))]

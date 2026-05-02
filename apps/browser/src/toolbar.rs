@@ -265,7 +265,7 @@ pub fn Toolbar(
                 name: "url",
                 value: url_input_value(),
                 onmounted: move |evt: Event<MountedData>| {
-                    let Some(node_handle) = evt.downcast::<NodeHandle>() else { return };
+                    let node_handle = evt.downcast::<NodeHandle>().unwrap();
                     *url_input_handle.write() = Some(node_handle.clone());
                 },
                 onblur: move |_| {

@@ -22,7 +22,7 @@ pub fn TabStrip(
     let close_tab = use_callback(move |id: TabId| {
         let current_active = active_tab_id();
         let idx = tabs.iter().position(|tab| tab.tab_id() == id).unwrap_or(0);
-        let len_after = tabs.len().saturating_sub(1);
+        let len_after = tabs.len() - 1;
         tabs.remove(idx);
         if current_active == id {
             let new_idx = if idx < len_after {

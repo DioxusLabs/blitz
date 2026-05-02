@@ -105,7 +105,6 @@ pub fn format_elapsed(visited_at: SystemTime, now: SystemTime) -> String {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::indexing_slicing)]
 mod tests {
     use super::*;
 

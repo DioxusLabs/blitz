@@ -74,8 +74,7 @@ impl DocumentLoader {
 
     pub fn reload(&self) {
         let mut reload_generation = self.reload_generation;
-        let next = (*reload_generation.read()).wrapping_add(1);
-        *reload_generation.write() = next;
+        *reload_generation.write() += 1;
     }
 
     pub fn reload_generation(&self) -> u64 {
