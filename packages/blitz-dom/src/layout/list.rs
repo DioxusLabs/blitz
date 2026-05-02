@@ -165,7 +165,7 @@ fn marker_for_style(list_style_type: ListStyleType, index: usize) -> Option<Mark
 }
 
 // Override the font to our specific bullet font when rendering bullets
-fn font_for_bullet_style(list_style_type: ListStyleType) -> Option<FontFamily<'static>> {
+fn font_for_bullet_style(list_style_type: &ListStyleType) -> Option<FontFamily<'static>> {
     if list_style_type.0.is_bullet() {
         return Some("Bullet, monospace, sans-serif".into());
     }

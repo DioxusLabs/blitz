@@ -278,5 +278,5 @@ style = { path = "/Users/jonathankelley/Development/Tinkering/stylo/style", pack
 style_traits = { path = "/Users/jonathankelley/Development/Tinkering/stylo/style_traits", package = "stylo_traits" }
 style_atoms = { path = "/Users/jonathankelley/Development/Tinkering/stylo/stylo_atoms", package = "stylo_atoms" }
 style_dom = { path = "/Users/jonathankelley/Development/Tinkering/stylo/stylo_dom", package = "stylo_dom" }
-static_prefs = { path = "/Users/jonathankelley/Development/Tinkering/stylo/stylo_static_prefs", package = "stylo_static_prefs" }
+style_config = { path = "/Users/jonathankelley/Development/Tinkering/stylo/stylo_static_prefs", package = "stylo_static_prefs" }
 selectors = { path = "/Users/jonathankelley/Development/Tinkering/stylo/selectors", package = "selectors" }
