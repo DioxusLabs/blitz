@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html>
+<head>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: Helvetica, Arial, sans-serif; font-size: 16px; margin: 20px; }
+  .test { background: #f0f0f0; border: 1px solid #ccc; margin: 10px 0; }
+  .label { font-size: 12px; color: #666; font-weight: bold; margin-bottom: 2px; }
+</style>
+</head>
+<body>
+
+<!-- Case 1: line-height: normal (the default — suspected source of drift) -->
+<div class="label">Case 1: line-height: normal — 10 lines (drift should stack)</div>
+<div id="c1" class="test" style="line-height: normal;">
+A<br>B<br>C<br>D<br>E<br>F<br>G<br>H<br>I<br>J
+</div>
+
+<!-- Case 2: line-height: 1 (zero leading — isolates font metrics) -->
+<div class="label">Case 2: line-height: 1 — 10 lines (zero leading, pure font metrics)</div>
+<div id="c2" class="test" style="line-height: 1;">
+A<br>B<br>C<br>D<br>E<br>F<br>G<br>H<br>I<br>J
+</div>
+
+<!-- Case 3: line-height: 19px (fixed, close to Chrome's normal) -->
+<div class="label">Case 3: line-height: 19px — 10 lines (fixed, near Chrome normal)</div>
+<div id="c3" class="test" style="line-height: 19px;">
+A<br>B<br>C<br>D<br>E<br>F<br>G<br>H<br>I<br>J
+</div>
+
+<!-- Case 4: line-height: 20px (fixed, slightly larger) -->
+<div class="label">Case 4: line-height: 20px — 10 lines</div>
+<div id="c4" class="test" style="line-height: 20px;">
+A<br>B<br>C<br>D<br>E<br>F<br>G<br>H<br>I<br>J
+</div>
+
+<!-- Case 5: line-height: 1.2 (common relative value) -->
+<div class="label">Case 5: line-height: 1.2 — 10 lines</div>
+<div id="c5" class="test" style="line-height: 1.2;">
+A<br>B<br>C<br>D<br>E<br>F<br>G<br>H<br>I<br>J
+</div>
+
+<!-- Case 6: Large font to exaggerate any per-line error -->
+<div class="label">Case 6: font-size: 48px, line-height: normal — 5 lines (3x font = 3x error)</div>
+<div id="c6" class="test" style="font-size: 48px; line-height: normal;">
+A<br>B<br>C<br>D<br>E
+</div>
+
+<!-- Case 7: Small font, many lines — max stackup -->
+<div class="label">Case 7: font-size: 10px, line-height: normal — 20 lines</div>
+<div id="c7" class="test" style="font-size: 10px; line-height: normal;">
+A<br>B<br>C<br>D<br>E<br>F<br>G<br>H<br>I<br>J<br>K<br>L<br>M<br>N<br>O<br>P<br>Q<br>R<br>S<br>T
+</div>
+
+<!-- Case 8: Different font family -->
+<div class="label">Case 8: Georgia, line-height: normal — 10 lines</div>
+<div id="c8" class="test" style="font-family: Georgia, serif; line-height: normal;">
+A<br>B<br>C<br>D<br>E<br>F<br>G<br>H<br>I<br>J
+</div>
+
+<pre id="output" style="margin-top: 20px; font-size: 11px; background: #eee; padding: 8px;"></pre>
+
+<script>
+window.addEventListener('load', function() {
+  var ids = ['c1','c2','c3','c4','c5','c6','c7','c8'];
+  var lines = [];
+  ids.forEach(function(id) {
+    var el = document.getElementById(id);
+    var r = el.getBoundingClientRect();
+    var cs = getComputedStyle(el);
+    lines.push(id + ': h=' + r.height.toFixed(1) + ' (content=' + (r.height - parseFloat(cs.borderTopWidth) - parseFloat(cs.borderBottomWidth)).toFixed(1) + ') computed-lh=' + cs.lineHeight);
+  });
+  document.getElementById('output').textContent = lines.join('\n');
+});
+</script>
+
+</body>
+</html>

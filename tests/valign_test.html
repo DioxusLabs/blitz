@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html>
+<head>
+<style>
+  body {
+    font-family: Helvetica, Arial, sans-serif;
+    font-size: 13px;
+    font-weight: 700;
+    margin: 20px;
+  }
+  .nav {
+    background: #fff;
+    border: 1px solid #ccc;
+    padding: 0 8px;
+  }
+  .nav-link {
+    display: block;
+    line-height: calc(4rem - 8px); /* 56px - same as BBC nav */
+    text-align: center;
+    height: 100%;
+  }
+  .item {
+    display: flex;
+    align-self: center;
+    margin-top: -4px;
+  }
+
+  /* Case 1: vertical-align: middle (BBC logo pattern) */
+  .icon-middle {
+    display: inline-flex;
+    width: 33px;
+    height: 33px;
+    vertical-align: middle;
+    background: #000;
+  }
+
+  /* Case 2: vertical-align: -0.5em (burger pattern) */
+  .icon-neg-em {
+    display: inline-flex;
+    width: 24px;
+    height: 22px;
+    vertical-align: -0.5em;
+    background: #333;
+  }
+
+  /* Case 3: vertical-align: -0.6875rem (account icon pattern) */
+  .icon-neg-rem {
+    display: inline-block;
+    width: 32px;
+    height: 32px;
+    vertical-align: -0.6875rem;
+    background: #0071F1;
+    border-radius: 50%;
+  }
+
+  /* Case 4: vertical-align: 0.1875rem (dots pattern) */
+  .icon-pos-rem {
+    display: inline-block;
+    width: 20px;
+    height: 4px;
+    vertical-align: 0.1875rem;
+    background: #000;
+  }
+
+  /* Case 5: vertical-align: baseline (default) */
+  .icon-baseline {
+    display: inline-block;
+    width: 20px;
+    height: 20px;
+    vertical-align: baseline;
+    background: #c00;
+  }
+
+  /* Reference line */
+  .ref {
+    display: block;
+    line-height: 56px;
+    background: #f0f0f0;
+    margin: 4px 0;
+    padding: 0 8px;
+    border: 1px solid #ddd;
+  }
+  .label {
+    color: #666;
+    font-size: 11px;
+    font-weight: 400;
+    margin-left: 8px;
+  }
+</style>
+</head>
+<body>
+
+<h3>Vertical Align Test Cases</h3>
+<p style="font-size:12px; color:#666;">Each row has a colored box + text inside a 56px line-height container (same as BBC nav).</p>
+
+<div class="ref">
+  <span class="icon-middle"></span>
+  <span>middle (logo pattern)</span>
+  <span class="label">vertical-align: middle</span>
+</div>
+
+<div class="ref">
+  <span class="icon-neg-em"></span>
+  <span>neg-em (burger pattern)</span>
+  <span class="label">vertical-align: -0.5em</span>
+</div>
+
+<div class="ref">
+  <span class="icon-neg-rem"></span>
+  <span>neg-rem (account icon)</span>
+  <span class="label">vertical-align: -0.6875rem</span>
+</div>
+
+<div class="ref">
+  <span class="icon-pos-rem"></span>
+  <span>pos-rem (dots pattern)</span>
+  <span class="label">vertical-align: 0.1875rem</span>
+</div>
+
+<div class="ref">
+  <span class="icon-baseline"></span>
+  <span>baseline (default)</span>
+  <span class="label">vertical-align: baseline</span>
+</div>
+
+<hr>
+<h3>Combined (simulated nav bar)</h3>
+<div style="display: flex; align-items: center; background: #fff; border: 1px solid #ccc;">
+  <div style="display: flex; align-self: center;">
+    <a style="display: block; line-height: calc(4rem - 8px); text-align: center; padding: 0 8px;">
+      <span class="icon-middle"></span>
+    </a>
+  </div>
+  <div style="display: flex; align-self: center;">
+    <a style="display: block; line-height: calc(4rem - 8px); padding: 0 8px;">
+      <span class="icon-neg-rem"></span>
+      <span>Your account</span>
+    </a>
+  </div>
+  <div style="display: flex; align-self: center;">
+    <a style="display: block; line-height: calc(4rem - 8px); text-align: center; padding: 0 8px;">
+      <span class="icon-middle" style="width:26px; height:26px; background: #c00;"></span>
+      <span>Home</span>
+    </a>
+  </div>
+  <div style="display: flex; align-self: center;">
+    <a style="display: block; line-height: calc(4rem - 8px); text-align: center; padding: 0 8px;">
+      <span class="icon-neg-em" style="width:24px; height:22px;"></span>
+    </a>
+  </div>
+  <div style="display: flex; align-self: center;">
+    <a style="display: block; line-height: calc(4rem - 8px); text-align: center; padding: 0 8px;">
+      <span class="icon-pos-rem" style="width:20px; height:4px;"></span>
+    </a>
+  </div>
+</div>
+
+</body>
+</html>

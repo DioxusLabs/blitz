@@ -25,7 +25,8 @@ use style::{
     computed_values::border_collapse::T as BorderCollapse,
     dom::TElement,
     properties::{
-        ComputedValues, generated::longhands::visibility::computed_value::T as StyloVisibility,
+        ComputedValues, generated::longhands::position::computed_value::T as CssPosition,
+        generated::longhands::visibility::computed_value::T as StyloVisibility,
         style_structs::Font,
     },
     values::{
@@ -237,7 +238,26 @@ impl<'dom> BlitzDomPainter<'dom> {
             || !matches!(overflow_y, Overflow::Visible);
 
         // Apply padding/border offset to inline root
-        let (layout, box_position) = self.node_position(node_id, location);
+        let (layout, mut box_position) = self.node_position(node_id, location);
+
+        // Fixed-position elements should not scroll with the viewport.
+        // When the layout parent is the root element (no transform/filter ancestor captured it),
+        // compensate for the viewport scroll that was applied at the root.
+        if node.css_position == CssPosition::Fixed {
+            let root_id = self.dom.as_ref().root_element().id;
+            if node.layout_parent.get() == Some(root_id) {
+                let viewport_scroll = self.dom.as_ref().viewport_scroll();
+                box_position.x += viewport_scroll.x;
+                box_position.y += viewport_scroll.y;
+            }
+        }
+
+        // Sticky-position elements: apply pre-computed offset from resolve pass.
+        // The offset is recomputed on every scroll event in recompute_sticky_offsets().
+        if node.css_position == CssPosition::Sticky {
+            box_position.x += node.sticky_offset.x;
+            box_position.y += node.sticky_offset.y;
+        }
         let taffy::Layout {
             size,
             border,
@@ -590,14 +610,49 @@ impl ElementCx<'_> {
         }
     }
 
+    /// Compute the position of a hoisted child relative to this stacking context root.
+    /// Walks the layout_parent chain from the hoisted child's parent up to (but not
+    /// including) the stacking context root, accumulating layout positions and offsets.
+    /// This uses current-frame layout data, avoiding the stale-data problem that occurs
+    /// when positions are pre-accumulated during flush_styles_to_layout (which runs
+    /// before resolve_layout).
+    fn hoisted_child_position(&self, hoisted_node_id: usize) -> kurbo::Point {
+        let dom = self.context.dom.as_ref();
+        let tree = dom.tree();
+        let root_id = self.node.id;
+        let mut x = 0.0f64;
+        let mut y = 0.0f64;
+
+        // Walk from the hoisted child's layout_parent up to the stacking context root.
+        // We don't include the hoisted child's own layout.location because render_element
+        // will add it via node_position(). We accumulate intermediate ancestors only.
+        let mut current = hoisted_node_id;
+        loop {
+            let Some(parent_id) = tree[current].layout_parent.get() else {
+                break;
+            };
+            if parent_id == root_id {
+                break;
+            }
+            let parent = &tree[parent_id];
+            x += parent.final_layout.location.x as f64 + parent.sticky_offset.x
+                - parent.scroll_offset.x;
+            y += parent.final_layout.location.y as f64 + parent.sticky_offset.y
+                - parent.scroll_offset.y;
+            current = parent_id;
+        }
+
+        kurbo::Point {
+            x: self.pos.x + x,
+            y: self.pos.y + y,
+        }
+    }
+
     fn draw_children(&self, scene: &mut impl PaintScene) {
         // Negative z_index hoisted nodes
         if let Some(hoisted) = &self.node.stacking_context {
             for hoisted_child in hoisted.neg_z_hoisted_children() {
-                let pos = kurbo::Point {
-                    x: self.pos.x + hoisted_child.position.x as f64,
-                    y: self.pos.y + hoisted_child.position.y as f64,
-                };
+                let pos = self.hoisted_child_position(hoisted_child.node_id);
                 self.render_node(scene, hoisted_child.node_id, pos);
             }
         }
@@ -612,10 +667,7 @@ impl ElementCx<'_> {
         // Positive z_index hoisted nodes
         if let Some(hoisted) = &self.node.stacking_context {
             for hoisted_child in hoisted.pos_z_hoisted_children() {
-                let pos = kurbo::Point {
-                    x: self.pos.x + hoisted_child.position.x as f64,
-                    y: self.pos.y + hoisted_child.position.y as f64,
-                };
+                let pos = self.hoisted_child_position(hoisted_child.node_id);
                 self.render_node(scene, hoisted_child.node_id, pos);
             }
         }
@@ -623,8 +675,6 @@ impl ElementCx<'_> {
 
     #[cfg(feature = "svg")]
     fn draw_svg(&self, scene: &mut impl PaintScene) {
-        use style::properties::generated::longhands::object_fit::computed_value::T as ObjectFit;
-
         let Some(svg) = self.svg else {
             return;
         };
@@ -636,7 +686,7 @@ impl ElementCx<'_> {
         let x = self.frame.content_box.origin().x;
         let y = self.frame.content_box.origin().y;
 
-        // let object_fit = self.style.clone_object_fit();
+        let object_fit = self.style.clone_object_fit();
         let object_position = self.style.clone_object_position();
 
         // Apply object-fit algorithm
@@ -648,7 +698,7 @@ impl ElementCx<'_> {
             width: svg_size.width(),
             height: svg_size.height(),
         };
-        let paint_size = compute_object_fit(container_size, Some(object_size), ObjectFit::Contain);
+        let paint_size = compute_object_fit(container_size, Some(object_size), object_fit);
 
         // Compute object-position
         let x_offset = object_position.horizontal.resolve(
@@ -665,8 +715,8 @@ impl ElementCx<'_> {
 
         let transform = self
             .transform
-            .pre_scale_non_uniform(x_scale, y_scale)
-            .then_translate(Vec2 { x, y });
+            .pre_translate(Vec2 { x, y })
+            .pre_scale_non_uniform(x_scale, y_scale);
 
         anyrender_svg::render_svg_tree(scene, svg, transform);
     }

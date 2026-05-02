@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Grid in Flex Column - A/B Comparison</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: system-ui, -apple-system, sans-serif; font-size: 14px; padding: 20px; }
+  .label { font-size: 11px; color: #666; margin-bottom: 4px; font-family: monospace; }
+</style>
+</head>
+<body>
+
+<div style="display: flex; gap: 20px; flex-wrap: wrap;">
+
+<!-- A: Simple version label (works) -->
+<div style="width: 300px;">
+  <p class="label">A: simple label in flex-col</p>
+  <div style="display: flex; flex-direction: row; gap: 1rem;">
+    <div style="display: block; position: sticky; top: 0; height: 200px;">
+      <div id="A-flexcol" style="display: flex; flex-direction: column; height: 100%; margin-bottom: 0.5rem; font-size: 0.875rem; line-height: 1.25rem; color: #374151; border: 1px solid blue;">
+        <div id="A-version" style="padding: 4px; background: #eef; border: 1px solid green;">Version 0.7</div>
+        <nav id="A-nav" style="font-size: 0.875rem; width: 14rem; color: #4b5563; overflow-y: scroll; border: 1px solid red; margin-top: 0.5rem; flex: 1;">
+          <div style="margin-top: 2.25rem; padding-top: 1.5rem; margin-bottom: -0.75rem;">
+            <span style="position: sticky; top: -0.75rem; display: flex; flex-direction: column; margin-top: -3.25rem; padding-top: 0.75rem; background: yellow; font-size: 0.75rem;">
+              <h3 style="padding: 4px; font-size: 12px;">INTRO</h3>
+            </span>
+          </div>
+          <a style="display: block; padding: 0.25rem;">Getting Started</a>
+        </nav>
+      </div>
+    </div>
+    <div style="flex-grow: 1; background: #fee; min-height: 200px; padding: 10px;">Main</div>
+  </div>
+</div>
+
+<!-- B: Grid version selector (breaks) -->
+<div style="width: 300px;">
+  <p class="label">B: grid selector in flex-col</p>
+  <div style="display: flex; flex-direction: row; gap: 1rem;">
+    <div style="display: block; position: sticky; top: 0; height: 200px;">
+      <div id="B-flexcol" style="display: flex; flex-direction: column; height: 100%; margin-bottom: 0.5rem; font-size: 0.875rem; line-height: 1.25rem; color: #374151; border: 1px solid blue;">
+        <div id="B-version" tabindex="0" role="button" style="cursor: pointer; border: 1px solid green;">
+          <div style="border-radius: 0.25rem; width: 100%; padding: 0.25rem 0;">
+            <div style="display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 0.5rem; padding: 0 0.25rem;">
+              <div style="width: 2rem; height: 2rem; border-radius: 0.375rem; border: 1px solid #e5e7eb; display: flex; align-items: center; justify-content: center; background: #f9fafb;">V</div>
+              <div style="line-height: 1.375; font-size: 0.75rem; text-align: left;">
+                <p style="font-weight: 500;">Using Stable</p>
+                <p style="font-weight: 300;">0.7.0</p>
+              </div>
+              <div style="width: 20px; height: 20px;">^v</div>
+            </div>
+          </div>
+        </div>
+        <nav id="B-nav" style="font-size: 0.875rem; width: 14rem; color: #4b5563; overflow-y: scroll; border: 1px solid red; margin-top: 0.5rem; flex: 1;">
+          <div style="margin-top: 2.25rem; padding-top: 1.5rem; margin-bottom: -0.75rem;">
+            <span style="position: sticky; top: -0.75rem; display: flex; flex-direction: column; margin-top: -3.25rem; padding-top: 0.75rem; background: yellow; font-size: 0.75rem;">
+              <h3 style="padding: 4px; font-size: 12px;">INTRO</h3>
+            </span>
+          </div>
+          <a style="display: block; padding: 0.25rem;">Getting Started</a>
+        </nav>
+      </div>
+    </div>
+    <div style="flex-grow: 1; background: #fee; min-height: 200px; padding: 10px;">Main</div>
+  </div>
+</div>
+
+<!-- C: Grid selector but NO grid (use block instead) - is grid the trigger? -->
+<div style="width: 300px;">
+  <p class="label">C: same nesting, no grid (block)</p>
+  <div style="display: flex; flex-direction: row; gap: 1rem;">
+    <div style="display: block; position: sticky; top: 0; height: 200px;">
+      <div id="C-flexcol" style="display: flex; flex-direction: column; height: 100%; margin-bottom: 0.5rem; font-size: 0.875rem; line-height: 1.25rem; color: #374151; border: 1px solid blue;">
+        <div id="C-version" tabindex="0" role="button" style="cursor: pointer; border: 1px solid green;">
+          <div style="border-radius: 0.25rem; width: 100%; padding: 0.25rem 0;">
+            <div style="display: block; padding: 0 0.25rem;">
+              <span style="display: inline-block; width: 2rem; height: 2rem; border: 1px solid #e5e7eb; background: #f9fafb; vertical-align: middle;">V</span>
+              <span style="font-size: 0.75rem; vertical-align: middle;">Using Stable 0.7.0</span>
+            </div>
+          </div>
+        </div>
+        <nav id="C-nav" style="font-size: 0.875rem; width: 14rem; color: #4b5563; overflow-y: scroll; border: 1px solid red; margin-top: 0.5rem; flex: 1;">
+          <div style="margin-top: 2.25rem; padding-top: 1.5rem; margin-bottom: -0.75rem;">
+            <span style="position: sticky; top: -0.75rem; display: flex; flex-direction: column; margin-top: -3.25rem; padding-top: 0.75rem; background: yellow; font-size: 0.75rem;">
+              <h3 style="padding: 4px; font-size: 12px;">INTRO</h3>
+            </span>
+          </div>
+          <a style="display: block; padding: 0.25rem;">Getting Started</a>
+        </nav>
+      </div>
+    </div>
+    <div style="flex-grow: 1; background: #fee; min-height: 200px; padding: 10px;">Main</div>
+  </div>
+</div>
+
+</div>
+
+<div id="log" style="white-space: pre; font-size: 11px; margin-top: 20px; padding: 10px; background: #f0f0f0; border: 1px solid #ccc;"></div>
+
+<script>
+function dump(id) {
+  var el = document.getElementById(id);
+  if (!el) return id + ': NOT FOUND';
+  var rect = el.getBoundingClientRect();
+  return id.padEnd(14) +
+    ' w=' + rect.width.toFixed(1).padStart(6) +
+    ' h=' + rect.height.toFixed(1).padStart(6) +
+    ' y=' + rect.y.toFixed(1).padStart(7);
+}
+
+var log = '';
+['A','B','C'].forEach(function(T) {
+  log += '--- ' + T + ' ---\n';
+  ['flexcol', 'version', 'nav'].forEach(function(part) {
+    log += dump(T + '-' + part) + '\n';
+  });
+});
+document.getElementById('log').textContent = log;
+</script>
+</body>
+</html>

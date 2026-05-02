@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html>
+<head>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: Helvetica, Arial, sans-serif; font-size: 14px; margin: 20px; }
+  .test { background: #f0f0f0; margin: 15px 0; padding: 8px; border: 1px solid #ccc; }
+  .label { display: block; font-size: 12px; color: #666; margin-bottom: 4px; font-weight: bold; }
+</style>
+</head>
+<body>
+
+<h3 style="margin-bottom: 10px;">Overflow & Scrolling Tests</h3>
+
+<!-- Case 1: overflow:visible (default) -->
+<span class="label">Case 1: overflow:visible — content spills outside box</span>
+<div class="test">
+  <div style="width: 150px; height: 40px; background: lightcoral; padding: 4px;">
+    This text content overflows the small box and should be visible outside it.
+  </div>
+  <div style="margin-top: 30px; background: lightyellow; padding: 4px;">Content below (may be overlapped)</div>
+</div>
+
+<!-- Case 2: overflow:hidden -->
+<span class="label">Case 2: overflow:hidden — content clipped at boundary</span>
+<div class="test">
+  <div style="width: 150px; height: 40px; overflow: hidden; background: lightblue; padding: 4px;">
+    This text content overflows but is clipped by overflow:hidden.
+  </div>
+</div>
+
+<!-- Case 3: overflow:scroll -->
+<span class="label">Case 3: overflow:scroll — always shows scrollbars</span>
+<div class="test">
+  <div style="width: 200px; height: 60px; overflow: scroll; background: lightgreen; padding: 4px;">
+    This box has overflow:scroll. It should show scrollbars even if content fits.
+    Extra content to make it scrollable vertically. More lines below.
+    And another line. And one more for good measure.
+  </div>
+</div>
+
+<!-- Case 4: overflow:auto -->
+<span class="label">Case 4a: overflow:auto — no scrollbar (content fits)</span>
+<div class="test">
+  <div style="width: 200px; height: 60px; overflow: auto; background: lightyellow; padding: 4px;">
+    Short content that fits.
+  </div>
+</div>
+<span class="label">Case 4b: overflow:auto — scrollbar appears (content overflows)</span>
+<div class="test">
+  <div style="width: 200px; height: 60px; overflow: auto; background: lightyellow; padding: 4px;">
+    This box has overflow:auto with enough content to overflow. The scrollbar should appear only when needed. Extra text to force scrolling here.
+  </div>
+</div>
+
+<!-- Case 5: overflow-x vs overflow-y -->
+<span class="label">Case 5: overflow-x:scroll, overflow-y:hidden</span>
+<div class="test">
+  <div style="width: 150px; height: 40px; overflow-x: scroll; overflow-y: hidden; white-space: nowrap; background: lightcoral; padding: 4px;">
+    This text is nowrap and scrollable horizontally only.
+  </div>
+</div>
+
+<!-- Case 6: Nested overflow contexts -->
+<span class="label">Case 6: Nested overflow — outer hidden, inner scrollable</span>
+<div class="test">
+  <div style="width: 200px; height: 80px; overflow: hidden; background: lightyellow; padding: 4px;">
+    Outer (hidden)
+    <div style="width: 180px; height: 100px; overflow: auto; background: lightblue; padding: 4px; margin-top: 4px;">
+      Inner scrollable. This content is tall enough to scroll within the inner box, but the outer box clips everything.
+      More text. And more. And more lines.
+    </div>
+  </div>
+</div>
+
+<!-- Case 7: Overflow with positioned children -->
+<span class="label">Case 7: overflow:hidden with absolute positioned child</span>
+<div class="test">
+  <div style="position: relative; width: 200px; height: 60px; overflow: hidden; background: lightcoral; padding: 4px;">
+    Container
+    <div style="position: absolute; top: -10px; left: 50px; background: lightblue; padding: 4px;">
+      Abs child (clipped at top)
+    </div>
+  </div>
+</div>
+
+<!-- Case 8: Text overflow with ellipsis -->
+<span class="label">Case 8: text-overflow:ellipsis (requires nowrap + overflow:hidden)</span>
+<div class="test">
+  <div style="width: 200px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; background: lightyellow; padding: 4px;">
+    This is a very long line of text that should show an ellipsis at the end when it overflows.
+  </div>
+</div>
+
+<!-- Case 9: Multi-line text-overflow (display:-webkit-line-clamp) -->
+<span class="label">Case 9: -webkit-line-clamp:2 (2-line text truncation)</span>
+<div class="test">
+  <div style="width: 200px; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; background: lightyellow; padding: 4px;">
+    This is multi-line text content that should be clamped to only two lines with an ellipsis indicating more content is hidden below the visible area.
+  </div>
+</div>
+
+</body>
+</html>

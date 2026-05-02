@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Sticky Scroll Gap Debug</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: monospace; font-size: 12px; padding: 20px; }
+  .test { display: inline-block; vertical-align: top; margin: 10px; }
+  .scroll-box { overflow-y: scroll; height: 120px; border: 2px solid black; width: 200px; }
+  .parent { margin-top: 36px; padding-top: 24px; background: lightblue; }
+  .child { background: yellow; margin-top: -52px; }
+  #log { white-space: pre; font-size: 11px; margin-top: 20px; padding: 10px; background: #f0f0f0; border: 1px solid #ccc; }
+</style>
+</head>
+<body>
+
+<!-- Test 1: block child (works) -->
+<div class="test">
+  <p>1: block child</p>
+  <div class="scroll-box" id="t1-scroll">
+    <div class="parent" id="t1-parent">
+      <div class="child" id="t1-child" style="display: block;">BLOCK</div>
+    </div>
+  </div>
+</div>
+
+<!-- Test 2: flex child -->
+<div class="test">
+  <p>2: flex child</p>
+  <div class="scroll-box" id="t2-scroll">
+    <div class="parent" id="t2-parent">
+      <div class="child" id="t2-child" style="display: flex;">FLEX</div>
+    </div>
+  </div>
+</div>
+
+<!-- Test 3: flex child + sticky -->
+<div class="test">
+  <p>3: flex + sticky</p>
+  <div class="scroll-box" id="t3-scroll">
+    <div class="parent" id="t3-parent">
+      <div class="child" id="t3-child" style="display: flex; position: sticky; top: -12px;">STICKY FLEX</div>
+    </div>
+  </div>
+</div>
+
+<div id="log"></div>
+
+<script>
+function dump(id) {
+  var el = document.getElementById(id);
+  var rect = el.getBoundingClientRect();
+  return id + ': offsetTop=' + el.offsetTop + ' offsetLeft=' + el.offsetLeft +
+    ' rect=(x:' + rect.x.toFixed(1) + ' y:' + rect.y.toFixed(1) +
+    ' w:' + rect.width.toFixed(1) + ' h:' + rect.height.toFixed(1) + ')';
+}
+
+var log = '';
+var ids = [
+  't1-scroll', 't1-parent', 't1-child',
+  't2-scroll', 't2-parent', 't2-child',
+  't3-scroll', 't3-parent', 't3-child'
+];
+for (var i = 0; i < ids.length; i++) {
+  log += dump(ids[i]) + '\n';
+}
+document.getElementById('log').textContent = log;
+</script>
+</body>
+</html>

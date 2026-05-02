@@ -12,3 +12,4 @@ pub use element::{
     Status, TextBrush, TextInputData, TextLayout,
 };
 pub use node::*;
+pub use stylo_data::StyloData;

@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>h-full overflow debug</title>
+<style>
+  :root {
+    --spacing: 0.25rem;
+  }
+  *, ::before, ::after {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+    border: 0 solid;
+  }
+  body {
+    font-family: sans-serif;
+    background: #1a1a2e;
+    color: #eee;
+    padding: 24px;
+  }
+  h2 { margin: 0 0 8px; font-size: 14px; color: #aaa; }
+  .section { margin-bottom: 40px; }
+</style>
+</head>
+<body>
+
+<h1 style="font-size:18px; margin-bottom:24px;">h-full overflow debug (Tailwind v4 patterns)</h1>
+
+<!-- ===== CASE 1: Inline styles only (control) ===== -->
+<div class="section">
+  <h2>Case 1: padding-top/bottom with explicit px (CONTROL - should work)</h2>
+  <div style="
+    height: 64px;
+    padding-top: 8px; padding-bottom: 8px; padding-left: 12px; padding-right: 12px;
+    display: flex; align-items: center; gap: 8px;
+    border-bottom: 1px solid #555;
+    background: #16213e;
+  ">
+    <div style="
+      height: 100%;
+      padding-top: 8px; padding-bottom: 8px; padding-left: 8px; padding-right: 8px;
+      display: flex; align-items: center;
+      background: rgba(255,255,255,0.05);
+    ">
+      <div style="
+        height: 100%;
+        padding-left: 12px; padding-right: 12px;
+        display: flex; align-items: center;
+        background: #0f3460;
+        border: 1px solid #e94560;
+        border-radius: 4px;
+        font-size: 13px;
+      ">Button (should be 30px)</div>
+    </div>
+
+    <div style="
+      height: 30px;
+      padding-left: 12px; padding-right: 12px;
+      display: flex; align-items: center;
+      background: #1a5c2a;
+      border: 1px dashed #6f6;
+      border-radius: 4px;
+      font-size: 13px;
+    ">Reference (30px)</div>
+  </div>
+</div>
+
+<!-- ===== CASE 2: padding-block (logical property) ===== -->
+<div class="section">
+  <h2>Case 2: padding-block (CSS logical property) - should match Case 1</h2>
+  <div style="
+    height: 64px;
+    padding-block: 8px; padding-inline: 12px;
+    display: flex; align-items: center; gap: 8px;
+    border-bottom: 1px solid #555;
+    background: #16213e;
+  ">
+    <div style="
+      height: 100%;
+      padding-block: 8px; padding-inline: 8px;
+      display: flex; align-items: center;
+      background: rgba(255,255,255,0.05);
+    ">
+      <div style="
+        height: 100%;
+        padding-inline: 12px;
+        display: flex; align-items: center;
+        background: #0f3460;
+        border: 1px solid #e94560;
+        border-radius: 4px;
+        font-size: 13px;
+      ">Button (logical props)</div>
+    </div>
+
+    <div style="
+      height: 30px;
+      padding-left: 12px; padding-right: 12px;
+      display: flex; align-items: center;
+      background: #1a5c2a;
+      border: 1px dashed #6f6;
+      border-radius: 4px;
+      font-size: 13px;
+    ">Reference (30px)</div>
+  </div>
+</div>
+
+<!-- ===== CASE 3: calc(var(--spacing) * N) ===== -->
+<div class="section">
+  <h2>Case 3: calc(var(--spacing) * N) - should match Case 1</h2>
+  <div style="
+    height: calc(var(--spacing) * 16);
+    padding-top: calc(var(--spacing) * 2); padding-bottom: calc(var(--spacing) * 2);
+    padding-left: calc(var(--spacing) * 3); padding-right: calc(var(--spacing) * 3);
+    display: flex; align-items: center; gap: 8px;
+    border-bottom: 1px solid #555;
+    background: #16213e;
+  ">
+    <div style="
+      height: 100%;
+      padding-top: calc(var(--spacing) * 2); padding-bottom: calc(var(--spacing) * 2);
+      padding-left: calc(var(--spacing) * 2); padding-right: calc(var(--spacing) * 2);
+      display: flex; align-items: center;
+      background: rgba(255,255,255,0.05);
+    ">
+      <div style="
+        height: 100%;
+        padding-left: 12px; padding-right: 12px;
+        display: flex; align-items: center;
+        background: #0f3460;
+        border: 1px solid #e94560;
+        border-radius: 4px;
+        font-size: 13px;
+      ">Button (calc+var)</div>
+    </div>
+
+    <div style="
+      height: 30px;
+      padding-left: 12px; padding-right: 12px;
+      display: flex; align-items: center;
+      background: #1a5c2a;
+      border: 1px dashed #6f6;
+      border-radius: 4px;
+      font-size: 13px;
+    ">Reference (30px)</div>
+  </div>
+</div>
+
+<!-- ===== CASE 4: padding-block + calc(var()) (exact Tailwind v4 pattern) ===== -->
+<div class="section">
+  <h2>Case 4: padding-block + calc(var()) (EXACT Tailwind v4 pattern)</h2>
+  <div style="
+    height: calc(var(--spacing) * 16);
+    padding-block: calc(var(--spacing) * 2); padding-inline: calc(var(--spacing) * 3);
+    display: flex; align-items: center; gap: 8px;
+    border-bottom: 1px solid #555;
+    background: #16213e;
+  ">
+    <div style="
+      height: 100%;
+      padding-block: calc(var(--spacing) * 2); padding-inline: calc(var(--spacing) * 2);
+      display: flex; align-items: center;
+      background: rgba(255,255,255,0.05);
+    ">
+      <div style="
+        height: 100%;
+        padding-inline: 12px;
+        display: flex; align-items: center;
+        background: #0f3460;
+        border: 1px solid #e94560;
+        border-radius: 4px;
+        font-size: 13px;
+      ">Button (TW4 pattern)</div>
+    </div>
+
+    <div style="
+      height: 30px;
+      padding-left: 12px; padding-right: 12px;
+      display: flex; align-items: center;
+      background: #1a5c2a;
+      border: 1px dashed #6f6;
+      border-radius: 4px;
+      font-size: 13px;
+    ">Reference (30px)</div>
+  </div>
+</div>
+
+<div style="font-size: 12px; color: #666; max-width: 640px; line-height: 1.5; margin-top: 24px;">
+  <strong>What to check:</strong> All 4 cases should look identical.
+  The red-bordered button should be the same height as the green reference (30px).
+  If a case overflows, the button will extend below the grey line.
+  <br><br>
+  Case 1 = control (basic CSS). Case 2 tests logical properties.
+  Case 3 tests calc(var()). Case 4 tests both together (what Tailwind v4 uses).
+</div>
+
+</body>
+</html>

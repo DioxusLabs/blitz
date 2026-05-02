@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html>
+<head>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: Helvetica, Arial, sans-serif; font-size: 16px; }
+
+  /* Container: the <li> */
+  .nav-item {
+    display: inline-block;
+    color: #000;
+    text-align: center;
+    height: 3.75rem; /* 60px */
+    background: #f0f0f0;
+    border: 1px solid #ccc;
+    margin: 10px;
+  }
+
+  /* The <a> link */
+  .nav-link {
+    display: block;
+    height: 100%;
+    line-height: calc(4rem - 8px); /* 56px */
+    text-decoration: inherit;
+    color: inherit;
+    white-space: nowrap;
+    text-align: center;
+    min-width: 3rem;
+  }
+
+  /* Text nav link (same as above but for text items) */
+  .nav-link-text {
+    display: block;
+    height: 100%;
+    line-height: calc(4rem - 8px); /* 56px */
+    text-decoration: inherit;
+    color: inherit;
+    white-space: nowrap;
+    text-align: center;
+  }
+
+  /* The hover state wrapper — inline-block */
+  .hover-state {
+    position: relative;
+    text-decoration: none;
+    display: inline-block;
+  }
+
+  /* Underline indicator (always visible for testing) */
+  .hover-state-underline {
+    position: relative;
+    text-decoration: none;
+    display: inline-block;
+    margin-bottom: -1px;
+    border-bottom: 1px solid currentcolor;
+  }
+
+  /* Dots wrapper — inline-block with tiny explicit height */
+  .dots-wrapper {
+    display: inline-block;
+    width: 1.25rem;  /* 20px */
+    height: 0.25rem; /* 4px */
+  }
+
+  /* SVG inside dots wrapper */
+  .dots-wrapper > svg {
+    vertical-align: 0.1875rem; /* 3px */
+  }
+
+  /* Visually hidden text */
+  .visually-hidden {
+    position: absolute;
+    overflow: hidden;
+    margin: 0;
+    width: 1px;
+    height: 1px;
+    clip-path: inset(100%);
+    clip: rect(1px, 1px, 1px, 1px);
+    white-space: nowrap;
+  }
+
+  .label {
+    display: block;
+    font-size: 12px;
+    color: #666;
+    margin: 15px 0 4px;
+    font-weight: bold;
+  }
+</style>
+</head>
+<body style="margin: 20px;">
+
+<h3>BBC Nav Dots Debug Test</h3>
+
+<!-- Reference: text nav item with underline -->
+<span class="label">Case 1: Text nav item with underline (reference)</span>
+<div>
+  <div class="nav-item">
+    <a class="nav-link-text">
+      <span class="hover-state-underline">Sport</span>
+    </a>
+  </div>
+</div>
+
+<!-- The dots nav item with underline -->
+<span class="label">Case 2: Dots nav item with underline (the bug)</span>
+<div>
+  <div class="nav-item">
+    <a class="nav-link">
+      <span class="hover-state-underline">
+        <span class="dots-wrapper">
+          <svg width="20" height="4" viewBox="0 0 20 4" xmlns="http://www.w3.org/2000/svg" fill="currentColor">
+            <g transform="translate(-14.000000, -22.000000)">
+              <path d="M18,22 L18,26 L14,26 L14,22 L18,22 Z M34,22 L34,26 L30,26 L30,22 L34,22 Z M26,22 L26,26 L22,26 L22,22 L26,22 Z"></path>
+            </g>
+          </svg>
+          <span class="visually-hidden">More menu</span>
+        </span>
+      </span>
+    </a>
+  </div>
+</div>
+
+<!-- Dots without underline for comparison -->
+<span class="label">Case 3: Dots without underline</span>
+<div>
+  <div class="nav-item">
+    <a class="nav-link">
+      <span class="hover-state">
+        <span class="dots-wrapper">
+          <svg width="20" height="4" viewBox="0 0 20 4" xmlns="http://www.w3.org/2000/svg" fill="currentColor">
+            <g transform="translate(-14.000000, -22.000000)">
+              <path d="M18,22 L18,26 L14,26 L14,22 L18,22 Z M34,22 L34,26 L30,26 L30,22 L34,22 Z M26,22 L26,26 L22,26 L22,22 L26,22 Z"></path>
+            </g>
+          </svg>
+          <span class="visually-hidden">More menu</span>
+        </span>
+      </span>
+    </a>
+  </div>
+</div>
+
+<!-- Minimal: just the dots wrapper in a line-height context -->
+<span class="label">Case 4: Minimal — dots wrapper in 56px line-height context</span>
+<div style="background: #f0f0f0; border: 1px solid #ccc; line-height: 56px; padding: 0 10px;">
+  <span style="background: lightyellow;">Text</span>
+  <span class="dots-wrapper" style="background: coral;">
+    <svg width="20" height="4" viewBox="0 0 20 4" xmlns="http://www.w3.org/2000/svg" fill="currentColor">
+      <g transform="translate(-14.000000, -22.000000)">
+        <path d="M18,22 L18,26 L14,26 L14,22 L18,22 Z M34,22 L34,26 L30,26 L30,22 L34,22 Z M26,22 L26,26 L22,26 L22,22 L26,22 Z"></path>
+      </g>
+    </svg>
+  </span>
+  <span style="background: lightyellow;">After</span>
+</div>
+
+<!-- Case 5: Same but without inline-block (just the SVG directly) -->
+<span class="label">Case 5: SVG directly in 56px line-height (no wrapper)</span>
+<div style="background: #f0f0f0; border: 1px solid #ccc; line-height: 56px; padding: 0 10px;">
+  <span style="background: lightyellow;">Text</span>
+  <svg width="20" height="4" viewBox="0 0 20 4" xmlns="http://www.w3.org/2000/svg" fill="currentColor" style="vertical-align: 3px; background: coral;">
+    <g transform="translate(-14.000000, -22.000000)">
+      <path d="M18,22 L18,26 L14,26 L14,22 L18,22 Z M34,22 L34,26 L30,26 L30,22 L34,22 Z M26,22 L26,26 L22,26 L22,22 L26,22 Z"></path>
+    </g>
+  </svg>
+  <span style="background: lightyellow;">After</span>
+</div>
+
+</body>
+</html>

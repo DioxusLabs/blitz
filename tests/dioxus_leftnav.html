@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Dioxus Left Nav - Gap Reproduction</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: system-ui, -apple-system, sans-serif; }
+</style>
+</head>
+<body>
+
+<!-- DIAGNOSTIC: Minimal negative margin test -->
+<h3 style="padding: 8px; background: #eee;">Diagnostic Tests</h3>
+
+<!-- Row 1: display:block children (same BFC path) -->
+<div style="display: flex; gap: 20px; padding: 10px; flex-wrap: wrap;">
+  <div style="width: 200px;">
+    <p style="font-size: 11px; color: #666; margin-bottom: 4px;">A: block child, neg margin</p>
+    <div style="background: lightblue; margin-top: 20px; padding-top: 30px;">
+      <div style="background: yellow; margin-top: -25px;">BLOCK -25px</div>
+    </div>
+  </div>
+  <div style="width: 200px;">
+    <p style="font-size: 11px; color: #666; margin-bottom: 4px;">B: flex child, neg margin</p>
+    <div style="background: lightblue; margin-top: 20px; padding-top: 30px;">
+      <div style="display: flex; background: yellow; margin-top: -25px;">FLEX -25px</div>
+    </div>
+  </div>
+  <div style="width: 200px;">
+    <p style="font-size: 11px; color: #666; margin-bottom: 4px;">C: flex child, neg margin, in scroll</p>
+    <div style="overflow-y: scroll; height: 80px; border: 1px solid #999;">
+      <div style="background: lightblue; margin-top: 20px; padding-top: 30px;">
+        <div style="display: flex; background: yellow; margin-top: -25px;">FLEX scroll</div>
+      </div>
+    </div>
+  </div>
+  <div style="width: 200px;">
+    <p style="font-size: 11px; color: #666; margin-bottom: 4px;">D: flex child, neg margin PAST padding</p>
+    <div style="background: lightblue; margin-top: 40px; padding-top: 20px;">
+      <div style="display: flex; background: yellow; margin-top: -35px;">FLEX past pad</div>
+    </div>
+  </div>
+  <div style="width: 200px;">
+    <p style="font-size: 11px; color: #666; margin-bottom: 4px;">E: sticky flex child, neg margin</p>
+    <div style="background: lightblue; margin-top: 20px; padding-top: 30px;">
+      <div style="display: flex; position: sticky; top: 0; background: yellow; margin-top: -25px;">STICKY FLEX</div>
+    </div>
+  </div>
+  <div style="width: 200px;">
+    <p style="font-size: 11px; color: #666; margin-bottom: 4px;">F: scroll + flex past padding (no sticky)</p>
+    <div style="overflow-y: scroll; height: 80px; border: 1px solid #999;">
+      <div style="margin-top: 2.25rem; padding-top: 1.5rem; background: lightblue;">
+        <div style="display: flex; background: yellow; margin-top: -3.25rem;">FLEX scroll past</div>
+      </div>
+    </div>
+  </div>
+  <div style="width: 200px;">
+    <p style="font-size: 11px; color: #666; margin-bottom: 4px;">G: F + sticky</p>
+    <div style="overflow-y: scroll; height: 80px; border: 1px solid #999;">
+      <div style="margin-top: 2.25rem; padding-top: 1.5rem; background: lightblue;">
+        <div style="display: flex; position: sticky; top: -0.75rem; background: yellow; margin-top: -3.25rem;">STICKY scroll past</div>
+      </div>
+    </div>
+  </div>
+  <div style="width: 200px;">
+    <p style="font-size: 11px; color: #666; margin-bottom: 4px;">H: exact dioxus pattern</p>
+    <div style="overflow-y: scroll; height: 80px; border: 1px solid #999;">
+      <div style="margin-top: 2.25rem; padding-top: 1.5rem; background: lightblue;">
+        <span style="display: flex; flex-direction: column; margin-top: -3.25rem; padding-top: 0.75rem; position: sticky; top: -0.75rem; background: yellow;">
+          <h3 style="font-size: 12px;">INTRODUCTION</h3>
+        </span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<hr style="margin: 20px 0;">
+<!-- Outer container -->
+<div style="width: 100%; font-size: 0.875rem; border-bottom: 1px solid #d1d5db;">
+  <!-- flex row -->
+  <div style="display: flex; flex-direction: row; justify-content: space-between; font-weight: 300; max-width: 1536px; gap: 2rem; margin: 0 auto; padding: 0 2rem;">
+
+    <!-- LEFT SIDEBAR (sticky) -->
+    <div id="sb-sticky" style="display: block; position: sticky; top: 6rem; height: calc(100vh - 7rem);">
+      <div id="sb-flexcol" style="display: flex; flex-direction: column; height: 100%; margin-bottom: 0.5rem; font-size: 0.875rem; line-height: 1.25rem; color: #374151;">
+
+        <!-- Version selector button -->
+        <div id="sb-version" tabindex="0" role="button" style="cursor: pointer;">
+          <div style="border-radius: 0.25rem; width: 100%; padding: 0.25rem 0;">
+            <div style="display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 0.5rem; padding: 0 0.25rem;">
+              <div style="width: 2rem; height: 2rem; border-radius: 0.375rem; border: 1px solid #e5e7eb; display: flex; align-items: center; justify-content: center; background: #f9fafb; color: #111827;">
+                <svg style="width: 16px; height: 16px; color: currentcolor;" stroke-linejoin="round" viewBox="0 0 16 16" width="16" height="16">
+                  <path fill-rule="evenodd" fill="currentColor" d="M1.5 1.5H6.34315C7.00619 1.5 7.64207 1.76339 8.11091 2.23223L13.8787 8L8 13.8787L2.23223 8.11091C1.76339 7.64207 1.5 7.00619 1.5 6.34315V1.5ZM16 8L14.9393 6.93934L9.17157 1.17157C8.42143 0.421427 7.40401 0 6.34315 0H1.5H0V1.5V6.34315C0 7.40401 0.421426 8.42143 1.17157 9.17157L6.93934 14.9393L8 16L9.06066 14.9393L14.9393 9.06066L16 8ZM4.5 5.25C4.91421 5.25 5.25 4.91421 5.25 4.5C5.25 4.08579 4.91421 3.75 4.5 3.75C4.08579 3.75 3.75 4.08579 3.75 4.5C3.75 4.91421 4.08579 5.25 4.5 5.25Z" clip-rule="evenodd"></path>
+                </svg>
+              </div>
+              <div style="line-height: 1.375; font-size: 0.75rem; text-align: left;">
+                <p style="font-weight: 500; color: #374151;">Using Stable Version</p>
+                <p style="font-weight: 300;">0.7.0</p>
+              </div>
+              <svg stroke-linecap="round" width="24" height="24" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5" style="color: currentcolor; width: 20px; height: 20px;" fill="none" stroke-linejoin="round">
+                <path d="M17 8.517L12 3 7 8.517M7 15.48l5 5.517 5-5.517"></path>
+              </svg>
+            </div>
+          </div>
+        </div>
+
+        <!-- Nav with section headers -->
+        <nav id="sb-nav" style="font-size: 0.875rem; width: 18rem; color: #4b5563; overflow-y: scroll; margin-top: 0.5rem;">
+          <!-- Section wrapper: mt-9 pt-6 -mb-3 -->
+          <div id="sb-sec1" style="margin-top: 2.25rem; padding-top: 1.5rem; margin-bottom: -0.75rem;">
+            <!-- Section header: -top-3 -mt-13 pt-3 sticky -->
+            <span id="sb-hdr1" style="color: #374151; position: sticky; top: -0.75rem; z-index: 1; display: flex; align-items: center; flex-direction: column; margin-top: -3.25rem; padding-top: 0.75rem; font-weight: 600; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.025em;">
+              <h3 style="padding: 0.25rem; width: 100%; background: white;">Introduction</h3>
+              <h3 style="background: linear-gradient(to bottom, white, transparent); height: 0.5rem; width: 100%;"></h3>
+            </span>
+          </div>
+
+          <!-- Nav items -->
+          <a id="sb-link1" href="#" style="display: block; padding: 0.25rem 0.25rem; color: #4b5563; text-decoration: none;">Getting Started</a>
+
+          <!-- Another section -->
+          <div style="margin-top: 2.25rem; padding-top: 1.5rem; margin-bottom: -0.75rem;">
+            <span style="color: #374151; position: sticky; top: -0.75rem; z-index: 1; display: flex; align-items: center; flex-direction: column; margin-top: -3.25rem; padding-top: 0.75rem; font-weight: 600; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.025em;">
+              <h3 style="padding: 0.25rem; width: 100%; background: white;">Take a Tour</h3>
+              <h3 style="background: linear-gradient(to bottom, white, transparent); height: 0.5rem; width: 100%;"></h3>
+            </span>
+          </div>
+          <a href="#" style="display: block; padding: 0.25rem 0.25rem; color: #4b5563; text-decoration: none;">Tooling Setup</a>
+          <a href="#" style="display: block; padding: 0.25rem 0.25rem; color: #4b5563; text-decoration: none;">A new app</a>
+          <a href="#" style="display: block; padding: 0.25rem 0.25rem; color: #4b5563; text-decoration: none;">Your First Component</a>
+        </nav>
+
+      </div>
+    </div>
+
+    <!-- MAIN CONTENT -->
+    <section style="color: #4b5563; overflow: hidden; padding-bottom: 3rem; margin-top: 2rem; flex-grow: 1; min-height: 100vh; max-width: 640px;">
+      <div>
+        <div style="height: 1rem; width: 100%;"></div>
+        <div style="display: flex; width: 100%; flex-wrap: wrap; list-style: none; height: 2000px; background-color: red;"></div>
+      </div>
+    </section>
+
+  </div>
+</div>
+<div id="log" style="position: fixed; bottom: 0; left: 0; right: 0; white-space: pre; font-size: 11px; padding: 8px; background: rgba(240,240,240,0.95); border-top: 1px solid #ccc; font-family: monospace; max-height: 200px; overflow: auto; z-index: 999;"></div>
+<script>
+function dump(id) {
+  var el = document.getElementById(id);
+  if (!el) return id + ': NOT FOUND';
+  var rect = el.getBoundingClientRect();
+  var cs = getComputedStyle(el);
+  return id.padEnd(14) +
+    ' h=' + rect.height.toFixed(1).padStart(6) +
+    ' y=' + rect.y.toFixed(1).padStart(7) +
+    ' mt=' + cs.marginTop.padStart(6) +
+    ' pt=' + cs.paddingTop.padStart(6) +
+    ' offTop=' + String(el.offsetTop).padStart(4);
+}
+var ids = ['sb-sticky','sb-flexcol','sb-version','sb-nav','sb-sec1','sb-hdr1','sb-link1'];
+var log = '--- Sidebar Layout ---\n';
+for (var i = 0; i < ids.length; i++) log += dump(ids[i]) + '\n';
+document.getElementById('log').textContent = log;
+</script>
+</body>
+</html>

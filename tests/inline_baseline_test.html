@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html>
+<head>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: Helvetica, Arial, sans-serif; font-size: 16px; margin: 20px; }
+  .test { background: #f0f0f0; margin: 15px 0; padding: 8px; border: 1px solid #ccc; }
+  .label { display: block; font-size: 12px; color: #666; margin-bottom: 4px; font-weight: bold; }
+  .note { display: block; font-size: 11px; color: #999; margin-top: 2px; }
+</style>
+</head>
+<body>
+
+<h3 style="margin-bottom: 10px;">Inline-Block Baseline Tests</h3>
+<p style="font-size: 12px; color: #888; margin-bottom: 15px;">
+  Cross-reference these against Chrome to verify correct baseline alignment.
+</p>
+
+<!-- Case 1: Multi-line inline-block — last baseline alignment -->
+<span class="label">Case 1: Multi-line inline-block (baseline = last line)</span>
+<div class="test">
+  <span style="background: lightyellow;">Parent text</span>
+  <span style="display: inline-block; width: 140px; background: lightblue; font-size: 14px; border: 1px solid #aaa;">
+    First line<br>Second line<br>Last line
+  </span>
+  <span style="background: lightyellow;">Aligned here (should match "Last line")</span>
+</div>
+<span class="note">CSS2.1 §10.8.1: baseline of inline-block = baseline of its last in-flow line box</span>
+
+<!-- Case 2: Single-line inline-block (sanity check) -->
+<span class="label">Case 2: Single-line inline-block (baseline = only line)</span>
+<div class="test">
+  <span style="background: lightyellow;">Parent text</span>
+  <span style="display: inline-block; width: 120px; background: lightblue; font-size: 14px; border: 1px solid #aaa;">
+    Single line
+  </span>
+  <span style="background: lightyellow;">Aligned here</span>
+</div>
+
+<!-- Case 3: overflow:visible vs overflow:hidden -->
+<span class="label">Case 3: overflow:visible vs overflow:hidden</span>
+<div class="test">
+  <span style="background: lightyellow;">Baseline</span>
+  <span style="display: inline-block; width: 110px; height: 50px; background: lightcoral; overflow: visible; font-size: 13px; border: 1px solid #aaa;">
+    visible (text baseline aligns)
+  </span>
+  <span style="display: inline-block; width: 110px; height: 50px; background: lightgreen; overflow: hidden; font-size: 13px; border: 1px solid #aaa;">
+    hidden (bottom at baseline)
+  </span>
+  <span style="background: lightyellow;">After</span>
+</div>
+<span class="note">overflow != visible → bottom margin edge sits at baseline</span>
+
+<!-- Case 4: overflow:auto and overflow:scroll -->
+<span class="label">Case 4: overflow:auto and overflow:scroll</span>
+<div class="test">
+  <span style="background: lightyellow;">Baseline</span>
+  <span style="display: inline-block; width: 100px; height: 50px; background: #d4e6f1; overflow: auto; font-size: 13px; border: 1px solid #aaa;">
+    auto
+  </span>
+  <span style="display: inline-block; width: 100px; height: 50px; background: #d5f5e3; overflow: scroll; font-size: 13px; border: 1px solid #aaa;">
+    scroll
+  </span>
+  <span style="background: lightyellow;">After (both bottom-aligned)</span>
+</div>
+
+<!-- Case 5: Empty inline-block -->
+<span class="label">Case 5: Empty inline-block (bottom at baseline)</span>
+<div class="test">
+  <span style="background: lightyellow;">Text before</span>
+  <span style="display: inline-block; width: 40px; height: 40px; background: gold;"></span>
+  <span style="background: lightyellow;">Text after (gold box bottom at baseline)</span>
+</div>
+<span class="note">No in-flow line boxes → bottom margin edge at baseline</span>
+
+<!-- Case 6: Empty inline-block with different sizes -->
+<span class="label">Case 6: Empty inline-blocks of different heights</span>
+<div class="test">
+  <span style="background: lightyellow;">Text</span>
+  <span style="display: inline-block; width: 20px; height: 10px; background: coral;"></span>
+  <span style="display: inline-block; width: 20px; height: 30px; background: lightblue;"></span>
+  <span style="display: inline-block; width: 20px; height: 50px; background: lightgreen;"></span>
+  <span style="background: lightyellow;">All bottoms at baseline</span>
+</div>
+
+<!-- Case 7: Inline-block with block child (taffy limitation) -->
+<span class="label">Case 7: Inline-block with block child</span>
+<div class="test">
+  <span style="background: lightyellow;">Text before</span>
+  <span style="display: inline-block; width: 160px; background: lavender; border: 1px solid #aaa;">
+    <p>Block paragraph inside inline-block</p>
+  </span>
+  <span style="background: lightyellow;">Text after</span>
+</div>
+<span class="note">Block child baseline (taffy returns Point::NONE for block layout)</span>
+
+<!-- Case 8: Multi-line with large line-height -->
+<span class="label">Case 8: Multi-line inline-block with line-height: 40px</span>
+<div class="test" style="line-height: 40px;">
+  <span style="background: lightyellow;">Parent (lh=40px)</span>
+  <span style="display: inline-block; width: 140px; background: lightblue; font-size: 14px; line-height: 24px; border: 1px solid #aaa;">
+    Line 1 (lh=24px)<br>Line 2<br>Line 3
+  </span>
+  <span style="background: lightyellow;">Aligns with Line 3</span>
+</div>
+
+</body>
+</html>

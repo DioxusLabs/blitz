@@ -1,0 +1,323 @@
+<!DOCTYPE html>
+<html>
+<head>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: Helvetica, Arial, sans-serif; font-size: 14px; margin: 20px; }
+  .test { background: #f0f0f0; margin: 15px 0; padding: 8px; border: 1px solid #ccc; }
+  .label { display: block; font-size: 12px; color: #666; margin-bottom: 4px; font-weight: bold; }
+</style>
+</head>
+<body>
+
+<h3 style="margin-bottom: 10px;">Table Layout Tests</h3>
+<p style="font-size: 12px; color: #888; margin-bottom: 15px;">
+  Tests real &lt;table&gt; elements with colspan, rowspan, border-collapse,<br>
+  alignment, nested content, and edge cases.
+</p>
+
+<!-- Case 1: Basic table with border-collapse -->
+<span class="label">Case 1: Basic 3x3 table, border-collapse:collapse</span>
+<div class="test">
+  <table style="border-collapse: collapse; width: 100%;">
+    <tr>
+      <td style="border: 1px solid #aaa; padding: 8px; background: lightcoral;">A1</td>
+      <td style="border: 1px solid #aaa; padding: 8px; background: lightyellow;">A2</td>
+      <td style="border: 1px solid #aaa; padding: 8px; background: lightblue;">A3</td>
+    </tr>
+    <tr>
+      <td style="border: 1px solid #aaa; padding: 8px;">B1</td>
+      <td style="border: 1px solid #aaa; padding: 8px;">B2</td>
+      <td style="border: 1px solid #aaa; padding: 8px;">B3</td>
+    </tr>
+    <tr>
+      <td style="border: 1px solid #aaa; padding: 8px;">C1</td>
+      <td style="border: 1px solid #aaa; padding: 8px;">C2</td>
+      <td style="border: 1px solid #aaa; padding: 8px;">C3</td>
+    </tr>
+  </table>
+</div>
+
+<!-- Case 2: border-collapse:separate with spacing -->
+<span class="label">Case 2: border-collapse:separate, border-spacing:6px</span>
+<div class="test">
+  <table style="border-collapse: separate; border-spacing: 6px;">
+    <tr>
+      <td style="border: 2px solid coral; padding: 8px; background: lightyellow;">A1</td>
+      <td style="border: 2px solid coral; padding: 8px; background: lightyellow;">A2</td>
+      <td style="border: 2px solid coral; padding: 8px; background: lightyellow;">A3</td>
+    </tr>
+    <tr>
+      <td style="border: 2px solid coral; padding: 8px; background: lightyellow;">B1</td>
+      <td style="border: 2px solid coral; padding: 8px; background: lightyellow;">B2</td>
+      <td style="border: 2px solid coral; padding: 8px; background: lightyellow;">B3</td>
+    </tr>
+  </table>
+</div>
+
+<!-- Case 3: colspan -->
+<span class="label">Case 3: colspan=2 on first row, colspan=3 on last row</span>
+<div class="test">
+  <table style="border-collapse: collapse; width: 100%;">
+    <tr>
+      <td style="border: 1px solid #aaa; padding: 8px; background: lightcoral;" colspan="2">Spans 2 columns</td>
+      <td style="border: 1px solid #aaa; padding: 8px; background: lightyellow;">Normal</td>
+    </tr>
+    <tr>
+      <td style="border: 1px solid #aaa; padding: 8px;">A</td>
+      <td style="border: 1px solid #aaa; padding: 8px;">B</td>
+      <td style="border: 1px solid #aaa; padding: 8px;">C</td>
+    </tr>
+    <tr>
+      <td style="border: 1px solid #aaa; padding: 8px; background: lightblue;" colspan="3">Spans all 3 columns</td>
+    </tr>
+  </table>
+</div>
+
+<!-- Case 4: rowspan -->
+<span class="label">Case 4: rowspan=2 on first column, rowspan=3 on last column</span>
+<div class="test">
+  <table style="border-collapse: collapse;">
+    <tr>
+      <td style="border: 1px solid #aaa; padding: 8px; background: lightcoral;" rowspan="2">Rows 1-2</td>
+      <td style="border: 1px solid #aaa; padding: 8px;">A2</td>
+      <td style="border: 1px solid #aaa; padding: 8px; background: lightblue;" rowspan="3">Rows 1-3</td>
+    </tr>
+    <tr>
+      <td style="border: 1px solid #aaa; padding: 8px;">B2</td>
+    </tr>
+    <tr>
+      <td style="border: 1px solid #aaa; padding: 8px;">C1</td>
+      <td style="border: 1px solid #aaa; padding: 8px;">C2</td>
+    </tr>
+  </table>
+</div>
+
+<!-- Case 5: colspan + rowspan combined -->
+<span class="label">Case 5: Mixed colspan + rowspan in same table</span>
+<div class="test">
+  <table style="border-collapse: collapse; width: 100%;">
+    <tr>
+      <td style="border: 1px solid #aaa; padding: 8px; background: lightcoral;" colspan="2">Header (colspan 2)</td>
+      <td style="border: 1px solid #aaa; padding: 8px; background: lightyellow;" rowspan="2">Tall cell (rowspan 2)</td>
+    </tr>
+    <tr>
+      <td style="border: 1px solid #aaa; padding: 8px;">Left</td>
+      <td style="border: 1px solid #aaa; padding: 8px;">Mid</td>
+    </tr>
+    <tr>
+      <td style="border: 1px solid #aaa; padding: 8px; background: lightblue;" colspan="3">Footer (colspan 3)</td>
+    </tr>
+  </table>
+</div>
+
+<!-- Case 6: thead, tbody, tfoot -->
+<span class="label">Case 6: Proper thead/tbody/tfoot structure</span>
+<div class="test">
+  <table style="border-collapse: collapse; width: 100%;">
+    <thead>
+      <tr>
+        <th style="border: 1px solid #aaa; padding: 8px; background: #2c3e50; color: white; text-align: left;">Name</th>
+        <th style="border: 1px solid #aaa; padding: 8px; background: #2c3e50; color: white; text-align: center;">Score</th>
+        <th style="border: 1px solid #aaa; padding: 8px; background: #2c3e50; color: white; text-align: right;">Grade</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td style="border: 1px solid #ddd; padding: 8px;">Alice</td>
+        <td style="border: 1px solid #ddd; padding: 8px; text-align: center;">95</td>
+        <td style="border: 1px solid #ddd; padding: 8px; text-align: right;">A</td>
+      </tr>
+      <tr style="background: #f9f9f9;">
+        <td style="border: 1px solid #ddd; padding: 8px;">Bob</td>
+        <td style="border: 1px solid #ddd; padding: 8px; text-align: center;">72</td>
+        <td style="border: 1px solid #ddd; padding: 8px; text-align: right;">C</td>
+      </tr>
+      <tr>
+        <td style="border: 1px solid #ddd; padding: 8px;">Carol</td>
+        <td style="border: 1px solid #ddd; padding: 8px; text-align: center;">88</td>
+        <td style="border: 1px solid #ddd; padding: 8px; text-align: right;">B</td>
+      </tr>
+    </tbody>
+    <tfoot>
+      <tr>
+        <td style="border: 1px solid #aaa; padding: 8px; background: #ecf0f1; font-weight: bold;">Average</td>
+        <td style="border: 1px solid #aaa; padding: 8px; background: #ecf0f1; text-align: center; font-weight: bold;">85</td>
+        <td style="border: 1px solid #aaa; padding: 8px; background: #ecf0f1; text-align: right; font-weight: bold;">B</td>
+      </tr>
+    </tfoot>
+  </table>
+</div>
+
+<!-- Case 7: Cell content alignment (vertical-align) -->
+<span class="label">Case 7: vertical-align in table cells (top, middle, bottom)</span>
+<div class="test">
+  <table style="border-collapse: collapse;">
+    <tr style="height: 80px;">
+      <td style="border: 1px solid #aaa; padding: 8px; width: 100px; vertical-align: top; background: lightcoral;">
+        Top aligned
+      </td>
+      <td style="border: 1px solid #aaa; padding: 8px; width: 100px; vertical-align: middle; background: lightyellow;">
+        Middle aligned
+      </td>
+      <td style="border: 1px solid #aaa; padding: 8px; width: 100px; vertical-align: bottom; background: lightblue;">
+        Bottom aligned
+      </td>
+    </tr>
+  </table>
+</div>
+
+<!-- Case 8: Table with percentage widths -->
+<span class="label">Case 8: Percentage column widths (20% + 50% + 30%)</span>
+<div class="test">
+  <table style="border-collapse: collapse; width: 100%;">
+    <tr>
+      <td style="border: 1px solid #aaa; padding: 8px; width: 20%; background: lightcoral;">20%</td>
+      <td style="border: 1px solid #aaa; padding: 8px; width: 50%; background: lightyellow;">50%</td>
+      <td style="border: 1px solid #aaa; padding: 8px; width: 30%; background: lightblue;">30%</td>
+    </tr>
+    <tr>
+      <td style="border: 1px solid #aaa; padding: 8px;">Narrow</td>
+      <td style="border: 1px solid #aaa; padding: 8px;">Wide column with more content to see distribution</td>
+      <td style="border: 1px solid #aaa; padding: 8px;">Medium</td>
+    </tr>
+  </table>
+</div>
+
+<!-- Case 9: table-layout:fixed -->
+<span class="label">Case 9: table-layout:fixed — columns stay at declared widths regardless of content</span>
+<div class="test">
+  <table style="border-collapse: collapse; width: 300px; table-layout: fixed;">
+    <tr>
+      <td style="border: 1px solid #aaa; padding: 8px; width: 100px; background: lightcoral;">100px col</td>
+      <td style="border: 1px solid #aaa; padding: 8px; width: 100px; background: lightyellow;">100px col with much more content that would normally stretch it</td>
+      <td style="border: 1px solid #aaa; padding: 8px; width: 100px; background: lightblue;">100px</td>
+    </tr>
+  </table>
+</div>
+
+<!-- Case 10: Auto layout with content-driven widths -->
+<span class="label">Case 10: table-layout:auto — columns sized by content</span>
+<div class="test">
+  <table style="border-collapse: collapse; table-layout: auto;">
+    <tr>
+      <td style="border: 1px solid #aaa; padding: 8px; background: lightcoral;">Short</td>
+      <td style="border: 1px solid #aaa; padding: 8px; background: lightyellow;">This cell has much more content and drives the column wider</td>
+      <td style="border: 1px solid #aaa; padding: 8px; background: lightblue;">Med</td>
+    </tr>
+    <tr>
+      <td style="border: 1px solid #aaa; padding: 8px;">A</td>
+      <td style="border: 1px solid #aaa; padding: 8px;">B</td>
+      <td style="border: 1px solid #aaa; padding: 8px;">C</td>
+    </tr>
+  </table>
+</div>
+
+<!-- Case 11: Nested table -->
+<span class="label">Case 11: Table nested inside a table cell</span>
+<div class="test">
+  <table style="border-collapse: collapse; width: 100%;">
+    <tr>
+      <td style="border: 1px solid #aaa; padding: 8px; background: lightyellow;">Normal cell</td>
+      <td style="border: 1px solid #aaa; padding: 8px;">
+        <table style="border-collapse: collapse; width: 100%;">
+          <tr>
+            <td style="border: 1px solid coral; padding: 4px; background: lightcoral;">Nested A</td>
+            <td style="border: 1px solid coral; padding: 4px; background: lightcoral;">Nested B</td>
+          </tr>
+          <tr>
+            <td style="border: 1px solid coral; padding: 4px; background: lightcoral;">Nested C</td>
+            <td style="border: 1px solid coral; padding: 4px; background: lightcoral;">Nested D</td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</div>
+
+<!-- Case 12: Empty cells -->
+<span class="label">Case 12: Empty cells (should still render borders and maintain size)</span>
+<div class="test">
+  <table style="border-collapse: collapse; width: 300px;">
+    <tr>
+      <td style="border: 1px solid #aaa; padding: 8px; background: lightcoral;">Has content</td>
+      <td style="border: 1px solid #aaa; padding: 8px;"></td>
+      <td style="border: 1px solid #aaa; padding: 8px; background: lightblue;">Has content</td>
+    </tr>
+    <tr>
+      <td style="border: 1px solid #aaa; padding: 8px;"></td>
+      <td style="border: 1px solid #aaa; padding: 8px; background: lightyellow;">Center</td>
+      <td style="border: 1px solid #aaa; padding: 8px;"></td>
+    </tr>
+  </table>
+</div>
+
+<!-- Case 13: Styled cells — badges, colored backgrounds, mixed content -->
+<span class="label">Case 13: Rich cell content — badges, monospace, mixed alignment</span>
+<div class="test">
+  <table style="border-collapse: collapse; width: 100%;">
+    <thead>
+      <tr>
+        <th style="border: 1px solid #bbb; padding: 8px; background: #2c3e50; color: white; text-align: left;">Item</th>
+        <th style="border: 1px solid #bbb; padding: 8px; background: #2c3e50; color: white; text-align: center;">Status</th>
+        <th style="border: 1px solid #bbb; padding: 8px; background: #2c3e50; color: white; text-align: right;">Price</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td style="border: 1px solid #ddd; padding: 8px;">Widget Pro</td>
+        <td style="border: 1px solid #ddd; padding: 8px; text-align: center;">
+          <span style="background: #d4edda; color: #155724; padding: 2px 8px; border-radius: 10px; font-size: 11px;">Active</span>
+        </td>
+        <td style="border: 1px solid #ddd; padding: 8px; text-align: right; font-family: monospace;">$1,234.00</td>
+      </tr>
+      <tr style="background: #f9f9f9;">
+        <td style="border: 1px solid #ddd; padding: 8px;">Gadget Basic</td>
+        <td style="border: 1px solid #ddd; padding: 8px; text-align: center;">
+          <span style="background: #fff3cd; color: #856404; padding: 2px 8px; border-radius: 10px; font-size: 11px;">Pending</span>
+        </td>
+        <td style="border: 1px solid #ddd; padding: 8px; text-align: right; font-family: monospace;">$56.78</td>
+      </tr>
+      <tr>
+        <td style="border: 1px solid #ddd; padding: 8px;">Doohickey</td>
+        <td style="border: 1px solid #ddd; padding: 8px; text-align: center;">
+          <span style="background: #f8d7da; color: #721c24; padding: 2px 8px; border-radius: 10px; font-size: 11px;">Discontinued</span>
+        </td>
+        <td style="border: 1px solid #ddd; padding: 8px; text-align: right; font-family: monospace;">$0.00</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- Case 14: Caption -->
+<span class="label">Case 14: Table with caption element</span>
+<div class="test">
+  <table style="border-collapse: collapse; width: 100%;">
+    <caption style="padding: 8px; font-weight: bold; text-align: left; caption-side: top;">Table Caption (above)</caption>
+    <tr>
+      <td style="border: 1px solid #aaa; padding: 8px; background: lightcoral;">A</td>
+      <td style="border: 1px solid #aaa; padding: 8px; background: lightyellow;">B</td>
+      <td style="border: 1px solid #aaa; padding: 8px; background: lightblue;">C</td>
+    </tr>
+  </table>
+</div>
+
+<!-- Case 15: display:table on divs (compare with real tables) -->
+<span class="label">Case 15: display:table on divs — should match real table behavior</span>
+<div class="test">
+  <div style="display: table; width: 100%; border-collapse: collapse;">
+    <div style="display: table-row;">
+      <div style="display: table-cell; border: 1px solid #aaa; padding: 8px; background: lightcoral;">Cell 1</div>
+      <div style="display: table-cell; border: 1px solid #aaa; padding: 8px; background: lightyellow;">Cell 2</div>
+      <div style="display: table-cell; border: 1px solid #aaa; padding: 8px; background: lightblue;">Cell 3</div>
+    </div>
+    <div style="display: table-row;">
+      <div style="display: table-cell; border: 1px solid #aaa; padding: 8px;">D</div>
+      <div style="display: table-cell; border: 1px solid #aaa; padding: 8px;">E</div>
+      <div style="display: table-cell; border: 1px solid #aaa; padding: 8px;">F</div>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>

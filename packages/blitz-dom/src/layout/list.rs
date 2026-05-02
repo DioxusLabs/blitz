@@ -77,7 +77,7 @@ fn node_list_item_child(
         ListStylePosition::Outside => {
             let mut parley_style = stylo_to_parley::style(child_id, &styles);
 
-            if let Some(font_family) = font_for_bullet_style(list_style_type) {
+            if let Some(font_family) = font_for_bullet_style(&list_style_type) {
                 parley_style.font_family = font_family;
             }
 
@@ -107,6 +107,16 @@ fn node_list_item_child(
     };
 
     Some(ListItemLayout { marker, position })
+}
+
+/// Helper to get the counter style name atom from a ListStyleType, if it's a named style.
+fn counter_style_name(list_style_type: &ListStyleType) -> Option<&Atom> {
+    use style::counter_style::CounterStyle;
+    use style::values::CustomIdent;
+    match &list_style_type.0 {
+        CounterStyle::Name(CustomIdent(atom)) => Some(atom),
+        _ => None,
+    }
 }
 
 // Determine the marker to render for a given list style type
@@ -155,7 +165,7 @@ fn marker_for_style(list_style_type: ListStyleType, index: usize) -> Option<Mark
 }
 
 // Override the font to our specific bullet font when rendering bullets
-fn font_for_bullet_style(list_style_type: ListStyleType) -> Option<FontFamily<'static>> {
+fn font_for_bullet_style(list_style_type: &ListStyleType) -> Option<FontFamily<'static>> {
     if list_style_type.0.is_bullet() {
         return Some("Bullet, monospace, sans-serif".into());
     }
