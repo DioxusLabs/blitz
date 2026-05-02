@@ -1086,6 +1086,7 @@ dependencies = [
  "tokio",
  "tracing",
  "tracing-subscriber",
+ "usvg",
  "webbrowser",
  "winit",
 ]

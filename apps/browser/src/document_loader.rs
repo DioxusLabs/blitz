@@ -2,11 +2,15 @@ use std::sync::Arc;
 
 use blitz_dom::{DocumentConfig, FontContext};
 use blitz_html::{HtmlDocument, HtmlProvider};
-use blitz_traits::{net::Request, shell::ShellProvider};
+use blitz_traits::{
+    net::{Request, Url},
+    shell::ShellProvider,
+};
 use dioxus_native::{SubDocumentAttr, prelude::*};
 use linebender_resource_handle::Blob;
 
 use crate::StdNetProvider;
+use crate::favicon::resolve_favicon_url;
 use crate::history::{BrowserNavProvider, History, SyncStore};
 
 pub enum DocumentLoaderStatus {
@@ -19,6 +23,10 @@ pub struct LoadedDocument {
     pub document: SubDocumentAttr,
     pub html_source: String,
     pub title: String,
+    pub favicon_url: Option<Url>,
+    // True for synthesized error/404 pages. Callers use this to gate side
+    // effects that should only fire on real loads (e.g. recording history).
+    pub is_error: bool,
 }
 
 pub struct DocumentLoader {
@@ -83,14 +91,16 @@ impl DocumentLoader {
         match response {
             Ok((resolved_url, bytes)) => {
                 tracing::info!("Loaded {}", resolved_url);
+                let base_url = resolved_url.clone();
+                let net_for_favicon = Arc::clone(&net_provider);
                 let config = make_doc_config(Some(resolved_url), net_provider, history, font_ctx);
 
-                let bytes_str;
-                let html: &str = if bytes.is_empty() {
-                    include_str!("../assets/404.html")
+                let body_text;
+                let (html, is_error) = if bytes.is_empty() {
+                    (include_str!("../assets/404.html"), true)
                 } else {
-                    bytes_str = String::from_utf8_lossy(&bytes);
-                    &bytes_str
+                    body_text = String::from_utf8_lossy(&bytes);
+                    (&*body_text, false)
                 };
 
                 let document = HtmlDocument::from_html(html, config).into_inner();
@@ -98,10 +108,18 @@ impl DocumentLoader {
                     .find_title_node()
                     .map(|n| n.text_content())
                     .unwrap_or_default();
+                let favicon_url = resolve_favicon_url(
+                    &base_url,
+                    document.favicon_url().as_deref(),
+                    &net_for_favicon,
+                )
+                .await;
                 LoadedDocument {
                     document: SubDocumentAttr::new(document),
                     html_source: html.to_string(),
                     title: parsed_title,
+                    favicon_url,
+                    is_error,
                 }
             }
             Err(err) => {
@@ -119,10 +137,16 @@ impl DocumentLoader {
                 {
                     document.mutate().set_node_text(text_node, &error_msg);
                 }
+                let parsed_title = document
+                    .find_title_node()
+                    .map(|n| n.text_content())
+                    .unwrap_or_default();
                 LoadedDocument {
                     document: SubDocumentAttr::new(document),
                     html_source: error_html.to_string(),
-                    title: String::new(),
+                    title: parsed_title,
+                    favicon_url: None,
+                    is_error: true,
                 }
             }
         }

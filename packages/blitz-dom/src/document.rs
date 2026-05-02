@@ -498,6 +498,23 @@ impl BaseDocument {
         self.id
     }
 
+    pub fn favicon_url(&self) -> Option<String> {
+        self.tree().iter().find_map(|(_, node)| {
+            let data = &node.data;
+            if !data.is_element_with_tag_name(&local_name!("link")) {
+                return None;
+            }
+            let rel = data.attr(local_name!("rel"))?;
+            if !rel
+                .split_ascii_whitespace()
+                .any(|v| v.eq_ignore_ascii_case("icon"))
+            {
+                return None;
+            }
+            data.attr(local_name!("href")).map(|s| s.to_string())
+        })
+    }
+
     pub fn get_node(&self, node_id: usize) -> Option<&Node> {
         self.nodes.get(node_id)
     }

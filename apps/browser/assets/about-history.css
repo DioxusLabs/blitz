@@ -1,0 +1,85 @@
+.about-history {
+    height: 100%;
+    background: #f0f0f0;
+    padding: 32px 48px;
+    box-sizing: border-box;
+    overflow-y: auto;
+    font-family: system-ui, sans-serif;
+}
+.about-history h1 {
+    font-size: 24px;
+    font-weight: 600;
+    margin: 0 0 8px 0;
+    color: #111;
+}
+.about-history .toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 20px;
+    border-bottom: 1px solid #ddd;
+    padding-bottom: 12px;
+}
+.about-history .clear-btn {
+    font-size: 13px;
+    padding: 5px 14px;
+    border: 1px solid #ccc;
+    border-radius: 6px;
+    background: white;
+    color: #333;
+    cursor: pointer;
+}
+.about-history .clear-btn:hover {
+    background: #e8e8e8;
+}
+.about-history .empty {
+    color: #888;
+    font-size: 15px;
+    margin-top: 32px;
+}
+.about-history ul {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}
+.about-history li {
+    background: white;
+    border: 1px solid #e0e0e0;
+    border-radius: 8px;
+    padding: 12px 16px;
+    margin-bottom: 8px;
+    display: flex;
+    flex-direction: row;
+    align-items: flex-start;
+    gap: 12px;
+}
+.about-history .favicon {
+    margin-top: 2px;
+    flex-shrink: 0;
+}
+.about-history .entry-info {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    min-width: 0;
+}
+.about-history .entry-title a {
+    font-size: 15px;
+    font-weight: 500;
+    color: #1a73e8;
+    text-decoration: none;
+}
+.about-history .entry-title a:hover {
+    text-decoration: underline;
+}
+.about-history .entry-url {
+    font-size: 12px;
+    color: #777;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.about-history .entry-time {
+    font-size: 12px;
+    color: #aaa;
+}
