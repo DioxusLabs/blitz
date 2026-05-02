@@ -72,6 +72,12 @@ pub(crate) fn build_table_context(
 
     let mut style = stylo_taffy::to_taffy_style(&stylo_styles);
     style.item_is_table = true;
+    // Use `dense` row-flow so that each cell scans the row from its
+    // leftmost column for the first free track. Without `dense`,
+    // `place_definite_secondary_axis_item` keeps a per-item secondary
+    // cursor across rows, which means cells in later rows do not
+    // backfill columns freed up by rowspan cells from earlier rows.
+    style.grid_auto_flow = taffy::GridAutoFlow::RowDense;
     style.grid_auto_columns = Vec::new();
     style.grid_auto_rows = Vec::new();
 
@@ -169,7 +175,7 @@ pub(crate) fn collect_table_cells(
     columns: &mut Vec<TrackSizingFunction>,
     first_cell_border: &mut Option<ServoArc<Border>>,
 ) {
-    let node = &doc.nodes[node_id];
+    let node = &mut doc.nodes[node_id];
 
     if !node.is_element() {
         return;
@@ -244,6 +250,11 @@ pub(crate) fn collect_table_cells(
                 .attr(local_name!("colspan"))
                 .and_then(|val| val.parse().ok())
                 .unwrap_or(1);
+            let rowspan: u16 = node
+                .attr(local_name!("rowspan"))
+                .and_then(|val| val.parse::<u16>().ok())
+                .map(|v| v.clamp(1, 65534))
+                .unwrap_or(1);
             let mut style = stylo_taffy::to_taffy_style(stylo_style);
 
             if first_cell_border.is_none() {
@@ -277,13 +288,18 @@ pub(crate) fn collect_table_cells(
                 style.border = taffy::Rect::ZERO.map(style_helpers::length);
             }
 
+            // Let Taffy auto-place the column. Combined with
+            // `grid_auto_flow: RowDense` set on the table root, each cell
+            // scans from the first track in its row for a free position,
+            // which makes cells automatically skip columns occupied by
+            // rowspan cells from earlier rows.
             style.grid_column = taffy::Line {
-                start: style_helpers::line((*col + 1) as i16),
+                start: style_helpers::auto(),
                 end: style_helpers::span(colspan),
             };
             style.grid_row = taffy::Line {
                 start: style_helpers::line(*row as i16),
-                end: style_helpers::span(1),
+                end: style_helpers::span(rowspan),
             };
             style.size.width = style_helpers::auto();
             cells.push(TableCell { node_id, style });

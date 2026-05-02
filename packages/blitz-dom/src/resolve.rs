@@ -165,6 +165,12 @@ impl BaseDocument {
         resolve_layout_children_recursive(self, self.root_node().id);
 
         fn resolve_layout_children_recursive(doc: &mut BaseDocument, node_id: usize) {
+            // Anonymous blocks and pseudo-elements can be removed from the slab
+            // between render passes. Bail out rather than panicking on a stale key.
+            if doc.nodes.get(node_id).is_none() {
+                return;
+            }
+
             let mut damage = doc.nodes[node_id].damage().unwrap_or(ALL_DAMAGE);
             let _flags = doc.nodes[node_id].flags;
 
@@ -178,8 +184,9 @@ impl BaseDocument {
                 for child_id in layout_children.iter().copied() {
                     resolve_layout_children_recursive(doc, child_id);
                     doc.nodes[child_id].layout_parent.set(Some(node_id));
-                    if let Some(mut data) = doc.nodes[child_id].stylo_element_data.borrow_mut() {
-                        data.damage.remove(CONSTRUCT_DESCENDENT | CONSTRUCT_FC | CONSTRUCT_BOX);
+                    if let Some(mut data) = doc.nodes[child_id].stylo_element_data.get_mut() {
+                        data.damage
+                            .remove(CONSTRUCT_DESCENDENT | CONSTRUCT_FC | CONSTRUCT_BOX);
                     }
                 }
 
@@ -192,8 +199,12 @@ impl BaseDocument {
                 //if damage.contains(CONSTRUCT_DESCENDENT) {
                 let layout_children = doc.nodes[node_id].layout_children.borrow_mut().take();
                 if let Some(layout_children) = layout_children {
-                    // Recurse into previously computed layout children
                     for child_id in layout_children.iter().copied() {
+                        // Anonymous blocks and pseudo-elements can be removed from the
+                        // slab between render passes; skip stale IDs.
+                        if !doc.nodes.contains(child_id) {
+                            continue;
+                        }
                         resolve_layout_children_recursive(doc, child_id);
                         doc.nodes[child_id].layout_parent.set(Some(node_id));
                     }
@@ -310,8 +321,7 @@ impl BaseDocument {
         let Some(style) = self.nodes[node_id].primary_styles() else {
             return false;
         };
-        !style.get_box().transform.0.is_empty()
-            || !style.get_effects().filter.0.is_empty()
+        !style.get_box().transform.0.is_empty() || !style.get_effects().filter.0.is_empty()
         // TODO: perspective, will-change: transform/filter
     }
 
@@ -559,16 +569,15 @@ impl BaseDocument {
                 // CREATE an offset, only limit one. This matters when negative margins place
                 // the element outside the parent's box in normal flow.
                 let cb_min_y = (parent_pos.y - node_pos.y).min(0.0);
-                let cb_max_y = (parent_pos.y + parent_height - element_height - node_pos.y)
-                    .max(0.0);
+                let cb_max_y =
+                    (parent_pos.y + parent_height - element_height - node_pos.y).max(0.0);
                 offset_y = offset_y.clamp(cb_min_y, cb_max_y);
             }
 
             if has_x_sticky {
                 let parent_width = parent.final_layout.scroll_width() as f64;
                 let cb_min_x = (parent_pos.x - node_pos.x).min(0.0);
-                let cb_max_x = (parent_pos.x + parent_width - element_width - node_pos.x)
-                    .max(0.0);
+                let cb_max_x = (parent_pos.x + parent_width - element_width - node_pos.x).max(0.0);
                 offset_x = offset_x.clamp(cb_min_x, cb_max_x);
             }
         }

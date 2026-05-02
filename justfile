@@ -19,7 +19,7 @@ wpt *ARGS:
   cargo run --release --package wpt {{ARGS}}
 
 browser *ARGS:
-  cargo run --release --package browser {{ARGS}}
+  cargo run --release --package browser --features log_frame_times,log_phase_times {{ARGS}}
 
 browser-with-perf:
   cargo run --release --package browser --features log_frame_times,log_phase_times

@@ -3,15 +3,14 @@ use std::sync::Arc;
 
 use markup5ever::{QualName, local_name, ns};
 use parley::{
-    FontContext, InlineBox, LayoutContext, StyleProperty, TreeBuilder,
-    WhiteSpaceCollapse,
+    FontContext, InlineBox, LayoutContext, StyleProperty, TreeBuilder, WhiteSpaceCollapse,
 };
 use slab::Slab;
 use style::{
     computed_values::position::T as PositionProperty,
     shared_lock::StylesheetGuards,
     values::{
-        computed::{Content, ContentItem, Display, Float},
+        computed::{Content, ContentItem, Display, Float, TextTransform},
         specified::box_::{DisplayInside, DisplayOutside},
     },
 };
@@ -24,6 +23,7 @@ use crate::{
         TextBrush, TextInputData, TextLayout,
     },
     qual_name, stylo_to_parley,
+    traversal::{iter_children, iter_children_and_pseudos},
 };
 
 use super::{damage::ALL_DAMAGE, list::collect_list_item_children, table::build_table_context};
@@ -54,7 +54,10 @@ fn push_children_and_pseudos(layout_children: &mut Vec<usize>, node: &Node) {
     if let Some(before) = node.before {
         layout_children.push(before);
     }
-    layout_children.extend_from_slice(&node.children);
+    layout_children.extend(node.children.iter().copied().filter(|child_id| {
+        let child_node = node.with(*child_id);
+        child_node.data.kind() != NodeKind::Comment
+    }));
     if let Some(after) = node.after {
         layout_children.push(after);
     }
@@ -64,12 +67,10 @@ fn push_non_whitespace_children_and_pseudos(layout_children: &mut Vec<usize>, no
     if let Some(before) = node.before {
         layout_children.push(before);
     }
-    layout_children.extend(
-        node.children
-            .iter()
-            .copied()
-            .filter(|child_id| !node.with(*child_id).is_whitespace_node()),
-    );
+    layout_children.extend(node.children.iter().copied().filter(|child_id| {
+        let child_node = node.with(*child_id);
+        !child_node.is_whitespace_node() && child_node.data.kind() != NodeKind::Comment
+    }));
     if let Some(after) = node.after {
         layout_children.push(after);
     }
@@ -395,10 +396,12 @@ fn flush_pseudo_elements(doc: &mut BaseDocument, node_id: usize) {
         let after_node_id = node.after;
 
         // Note: yes these are kinda backwards
-        let before_style = node.stylo_element_data
-            .borrow()
+        let style_data = node.stylo_element_data.get();
+        let before_style = style_data
+            .as_ref()
             .and_then(|d| d.styles.pseudos.as_array()[1].clone());
-        let after_style = node.stylo_element_data
+        let after_style = node
+            .stylo_element_data
             .borrow()
             .and_then(|d| d.styles.pseudos.as_array()[0].clone());
 
@@ -447,14 +450,11 @@ fn flush_pseudo_elements(doc: &mut BaseDocument, node_id: usize) {
                 }
             }
 
-            let wrapper = style::data::ElementDataWrapper::default();
-            {
-                let mut element_data = wrapper.borrow_mut();
-                element_data.styles.primary = Some(pe_style.clone());
-                element_data.set_restyled();
-                element_data.damage = ALL_DAMAGE;
-            }
-            doc.nodes[new_node_id].stylo_element_data.set(wrapper);
+            let mut element_data = StyloElementData::default();
+            element_data.styles.primary = Some(pe_style.clone());
+            element_data.set_restyled();
+            element_data.damage = ALL_DAMAGE;
+            *doc.nodes[new_node_id].stylo_element_data.ensure_init_mut() = element_data;
 
             let node = &mut doc.nodes[node_id];
             node.set_pe_by_index(idx, Some(new_node_id));
@@ -465,7 +465,8 @@ fn flush_pseudo_elements(doc: &mut BaseDocument, node_id: usize) {
         if let (Some(pe_node_id), Some(pe_style)) = (pe_node_id, pe_style) {
             // TODO: Update content
 
-            let mut node_styles = doc.nodes[pe_node_id].stylo_element_data.borrow_mut().unwrap();
+            let mut node_styles = doc.nodes[pe_node_id].stylo_element_data.get_mut();
+            let node_styles = &mut node_styles.as_mut().unwrap();
             node_styles.damage.insert(ALL_DAMAGE);
             let primary_styles = &mut node_styles.styles.primary;
 
@@ -549,14 +550,17 @@ fn collect_complex_layout_children(
                     &PseudoElement::ServoAnonymousBox,
                     &parent_style,
                 );
-                let wrapper = style::data::ElementDataWrapper::default();
-                {
-                    let mut stylo_element_data = wrapper.borrow_mut();
-                    stylo_element_data.damage = ALL_DAMAGE;
-                    stylo_element_data.styles.primary = Some(style);
-                    stylo_element_data.set_restyled();
-                }
-                doc.nodes[node_id].stylo_element_data.set(wrapper);
+                let mut stylo_element_data = StyloElementData {
+                    damage: ALL_DAMAGE,
+                    ..Default::default()
+                };
+                drop(parent_style);
+
+                stylo_element_data.styles.primary = Some(style);
+                stylo_element_data.set_restyled();
+
+                *doc.nodes[node_id].stylo_element_data.ensure_init_mut() = stylo_element_data;
+
                 if doc.nodes[container_node_id]
                     .flags
                     .contains(NodeFlags::IS_IN_DOCUMENT)
@@ -654,31 +658,14 @@ pub(crate) fn find_inline_layout_embedded_boxes(
 ) {
     flush_inline_pseudos_recursive(doc, inline_context_root_node_id);
 
-    let root_node = &doc.nodes[inline_context_root_node_id];
-    if let Some(before_id) = root_node.before {
+    iter_children_and_pseudos!(doc.nodes[inline_context_root_node_id], |child_id| {
         find_inline_layout_embedded_boxes_recursive(
-            &doc.nodes,
-            inline_context_root_node_id,
-            before_id,
-            layout_children,
-        );
-    }
-    for child_id in root_node.children.iter().copied() {
-        find_inline_layout_embedded_boxes_recursive(
-            &doc.nodes,
+            &mut doc.nodes,
             inline_context_root_node_id,
             child_id,
             layout_children,
         );
-    }
-    if let Some(after_id) = root_node.after {
-        find_inline_layout_embedded_boxes_recursive(
-            &doc.nodes,
-            inline_context_root_node_id,
-            after_id,
-            layout_children,
-        );
-    }
+    });
 
     fn flush_inline_pseudos_recursive(doc: &mut BaseDocument, node_id: usize) {
         doc.iter_children_mut(node_id, |child_id, doc| {
@@ -698,12 +685,12 @@ pub(crate) fn find_inline_layout_embedded_boxes(
     }
 
     fn find_inline_layout_embedded_boxes_recursive(
-        nodes: &Slab<Node>,
+        nodes: &mut Slab<Node>,
         parent_id: usize,
         node_id: usize,
         layout_children: &mut Vec<usize>,
     ) {
-        let node = &nodes[node_id];
+        let node = &mut nodes[node_id];
 
         // Set layout_parent for node.
         node.layout_parent.set(Some(parent_id));
@@ -724,15 +711,15 @@ pub(crate) fn find_inline_layout_embedded_boxes(
                         node.remove_damage(CONSTRUCT_DESCENDENT | CONSTRUCT_FC | CONSTRUCT_BOX);
                     }
                     (DisplayOutside::None, DisplayInside::Contents) => {
-                        for child_id in node.children.iter().copied() {
-                            node.remove_damage(CONSTRUCT_DESCENDENT | CONSTRUCT_FC | CONSTRUCT_BOX);
+                        node.remove_damage(CONSTRUCT_DESCENDENT | CONSTRUCT_FC | CONSTRUCT_BOX);
+                        iter_children!(nodes[node_id], |child_id| {
                             find_inline_layout_embedded_boxes_recursive(
                                 nodes,
                                 parent_id,
                                 child_id,
                                 layout_children,
                             );
-                        }
+                        });
                     }
                     (DisplayOutside::Inline, DisplayInside::Flow) => {
                         let tag_name = &element_data.name.local;
@@ -748,31 +735,14 @@ pub(crate) fn find_inline_layout_embedded_boxes(
                             node.remove_damage(CONSTRUCT_DESCENDENT | CONSTRUCT_FC | CONSTRUCT_BOX);
                         } else {
                             node.remove_damage(CONSTRUCT_DESCENDENT | CONSTRUCT_FC | CONSTRUCT_BOX);
-
-                            if let Some(before_id) = node.before {
-                                find_inline_layout_embedded_boxes_recursive(
-                                    nodes,
-                                    node_id,
-                                    before_id,
-                                    layout_children,
-                                );
-                            }
-                            for child_id in node.children.iter().copied() {
+                            iter_children_and_pseudos!(nodes[node_id], |child_id| {
                                 find_inline_layout_embedded_boxes_recursive(
                                     nodes,
                                     node_id,
                                     child_id,
                                     layout_children,
                                 );
-                            }
-                            if let Some(after_id) = node.after {
-                                find_inline_layout_embedded_boxes_recursive(
-                                    nodes,
-                                    node_id,
-                                    after_id,
-                                    layout_children,
-                                );
-                            }
+                            });
                         }
                     }
                     // Inline box
@@ -817,10 +787,16 @@ pub(crate) fn build_inline_layout_into(
 
     // Set whitespace collapsing mode
     let collapse_mode = root_node_style
+        .as_ref()
         .map(|s| s.get_inherited_text().white_space_collapse)
         .map(stylo_to_parley::white_space_collapse)
         .unwrap_or(WhiteSpaceCollapse::Collapse);
     builder.set_white_space_mode(collapse_mode);
+
+    let text_transform = root_node_style
+        .as_ref()
+        .map(|s| s.clone_text_transform() & TextTransform::CASE_TRANSFORMS)
+        .unwrap_or(TextTransform::NONE);
 
     // Render position-inside list items
     if let Some(ListItemLayout {
@@ -843,6 +819,7 @@ pub(crate) fn build_inline_layout_into(
             inline_context_root_node_id,
             before_id,
             collapse_mode,
+            text_transform,
             root_line_height,
         );
     }
@@ -853,6 +830,7 @@ pub(crate) fn build_inline_layout_into(
             inline_context_root_node_id,
             child_id,
             collapse_mode,
+            text_transform,
             root_line_height,
         );
     }
@@ -863,6 +841,7 @@ pub(crate) fn build_inline_layout_into(
             inline_context_root_node_id,
             after_id,
             collapse_mode,
+            text_transform,
             root_line_height,
         );
     }
@@ -876,6 +855,7 @@ pub(crate) fn build_inline_layout_into(
         parent_id: usize,
         node_id: usize,
         collapse_mode: WhiteSpaceCollapse,
+        parent_text_transform: TextTransform,
         root_line_height: f32,
     ) {
         let node = &nodes[node_id];
@@ -893,6 +873,10 @@ pub(crate) fn build_inline_layout_into(
             .unwrap_or(collapse_mode);
         builder.set_white_space_mode(collapse_mode);
 
+        let text_transform = style
+            .map(|s| s.clone_text_transform() & TextTransform::CASE_TRANSFORMS)
+            .unwrap_or(TextTransform::NONE);
+
         match &node.data {
             NodeData::Element(element_data) | NodeData::AnonymousBlock(element_data) => {
                 // if the input type is hidden, hide it
@@ -909,11 +893,13 @@ pub(crate) fn build_inline_layout_into(
                 let float = style.map(|s| s.clone_float()).unwrap_or(Float::None);
                 let _is_out_of_flow = position.is_absolutely_positioned() || float.is_floating();
                 let (alignment_baseline, baseline_shift, baseline_source) = style
-                    .map(|s| (
-                        stylo_to_parley::alignment_baseline(&s),
-                        stylo_to_parley::baseline_shift(&s),
-                        stylo_to_parley::baseline_source(&s),
-                    ))
+                    .map(|s| {
+                        (
+                            stylo_to_parley::alignment_baseline(&s),
+                            stylo_to_parley::baseline_shift(&s),
+                            stylo_to_parley::baseline_source(&s),
+                        )
+                    })
                     .unwrap_or_default();
                 match (display.outside(), display.inside()) {
                     (DisplayOutside::None, DisplayInside::None) => {
@@ -928,6 +914,7 @@ pub(crate) fn build_inline_layout_into(
                                 parent_id,
                                 child_id,
                                 collapse_mode,
+                                text_transform,
                                 root_line_height,
                             );
                         }
@@ -991,6 +978,7 @@ pub(crate) fn build_inline_layout_into(
                                     node_id,
                                     before_id,
                                     collapse_mode,
+                                    text_transform,
                                     root_line_height,
                                 );
                             }
@@ -1002,6 +990,7 @@ pub(crate) fn build_inline_layout_into(
                                     node_id,
                                     child_id,
                                     collapse_mode,
+                                    text_transform,
                                     root_line_height,
                                 );
                             }
@@ -1012,6 +1001,7 @@ pub(crate) fn build_inline_layout_into(
                                     node_id,
                                     after_id,
                                     collapse_mode,
+                                    text_transform,
                                     root_line_height,
                                 );
                             }
@@ -1039,7 +1029,19 @@ pub(crate) fn build_inline_layout_into(
             NodeData::Text(data) => {
                 // node.remove_damage(CONSTRUCT_DESCENDENT | CONSTRUCT_FC | CONSTRUCT_BOX);
                 // dbg!(&data.content);
-                builder.push_text(&data.content);
+
+                // TODO: optimize case transforms to be non-allocating
+                match parent_text_transform {
+                    TextTransform::UPPERCASE => {
+                        builder.push_text(&data.content.to_uppercase());
+                    }
+                    TextTransform::LOWERCASE => {
+                        builder.push_text(&data.content.to_lowercase());
+                    }
+                    _ => {
+                        builder.push_text(&data.content);
+                    }
+                }
             }
             NodeData::Comment => {
                 // node.remove_damage(CONSTRUCT_DESCENDENT | CONSTRUCT_FC | CONSTRUCT_BOX);

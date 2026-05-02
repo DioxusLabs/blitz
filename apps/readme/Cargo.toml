@@ -48,12 +48,15 @@ anyrender_skia = { workspace = true, optional = true }
 anyrender_vello_cpu = { workspace = true, features = ["multithreading"], optional = true }
 anyrender_vello_hybrid = { workspace = true, optional = true }
 
-tokio = { workspace = true, features = ["rt", "rt-multi-thread"] }
+tokio = { workspace = true, features = ["rt"] }
 reqwest = { workspace = true }
 url = { workspace = true }
 winit = { workspace = true }
-comrak = { version = "0.50", default-features = false, optional = true }
+comrak = { version = "0.52", default-features = false, optional = true }
 pulldown-cmark = { version = "0.13", default-features = false, features = ["html"], optional = true }
 image = { workspace = true, default-features = false, optional = true }
 notify = "8.0.0"
 tracing-subscriber = { workspace = true, optional = true }
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+tokio = { workspace = true, features = ["rt-multi-thread"]}

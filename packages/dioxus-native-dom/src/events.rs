@@ -4,21 +4,21 @@ use blitz_traits::events::{
     BlitzWheelEvent, MouseEventButton,
 };
 use dioxus_html::{
-    geometry::{
-        euclid::{Point2D, Size2D, Vector3D},
-        ClientPoint, ElementPoint, PagePoint, PixelsRect, PixelsSize, PixelsVector2D, ScreenPoint,
-        WheelDelta,
-    },
-    input_data::{MouseButton, MouseButtonSet},
-    point_interaction::{
-        InteractionElementOffset, InteractionLocation, ModifiersInteraction, PointerInteraction,
-    },
     AnimationData, CancelData, ClipboardData, CompositionData, DragData, FocusData, FormData,
     FormValue, HasFileData, HasFocusData, HasFormData, HasKeyboardData, HasMouseData,
     HasPointerData, HasScrollData, HasWheelData, HtmlEventConverter, ImageData, KeyboardData,
     MediaData, MountedData, MountedError, MountedResult, MouseData, PlatformEventData, PointerData,
     RenderedElementBacking, ResizeData, ScrollBehavior, ScrollData, ScrollToOptions, SelectionData,
     ToggleData, TouchData, TransitionData, VisibleData, WheelData,
+    geometry::{
+        ClientPoint, ElementPoint, PagePoint, PixelsRect, PixelsSize, PixelsVector2D, ScreenPoint,
+        WheelDelta,
+        euclid::{Point2D, Size2D, Vector3D},
+    },
+    input_data::{MouseButton, MouseButtonSet},
+    point_interaction::{
+        InteractionElementOffset, InteractionLocation, ModifiersInteraction, PointerInteraction,
+    },
 };
 use keyboard_types::{Code, Key, Location, Modifiers};
 use std::{
@@ -145,6 +145,12 @@ impl NodeHandle {
 
     pub fn doc(&self) -> Ref<'_, BaseDocument> {
         self.doc.borrow()
+    }
+
+    /// Returns `None` if the document is currently mutably borrowed.
+    /// Use this from background tasks to avoid panicking during event handling.
+    pub fn try_doc(&self) -> Option<Ref<'_, BaseDocument>> {
+        self.doc.try_borrow().ok()
     }
 
     pub fn doc_mut(&self) -> RefMut<'_, BaseDocument> {

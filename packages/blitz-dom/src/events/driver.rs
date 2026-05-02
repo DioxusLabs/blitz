@@ -182,6 +182,7 @@ impl<'doc, Handler: EventHandler> EventDriver<'doc, Handler> {
             UiEvent::KeyUp(_) => focussed_node_id,
             UiEvent::KeyDown(_) => focussed_node_id,
             UiEvent::Ime(_) => focussed_node_id,
+            UiEvent::AppleStandardKeybinding(_) => focussed_node_id,
         };
         let target = target.unwrap_or_else(|| self.doc.inner().root_element().id);
 
@@ -221,6 +222,11 @@ impl<'doc, Handler: EventHandler> EventDriver<'doc, Handler> {
             }
             UiEvent::Ime(data) => {
                 self.handle_dom_event(DomEvent::new(target, DomEventData::Ime(data)))
+            }
+            UiEvent::AppleStandardKeybinding(data) => {
+                let mut dom_event =
+                    DomEvent::new(target, DomEventData::AppleStandardKeybinding(data));
+                self.run_default_action(&mut dom_event);
             }
         };
 

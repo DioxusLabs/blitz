@@ -18,7 +18,7 @@ pub use dioxus_document::DioxusDocument;
 pub use events::NodeHandle;
 pub use sub_document::SubDocumentAttr;
 
-use blitz_dom::{ns, LocalName, Namespace, QualName};
+use blitz_dom::{LocalName, Namespace, QualName, ns};
 type NodeId = usize;
 
 pub(crate) fn qual_name(local_name: &str, namespace: Option<&str>) -> QualName {

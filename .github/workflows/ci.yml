@@ -24,13 +24,13 @@ jobs:
   # We only run `cargo build` (not `cargo test`) so as to avoid requiring dev-dependencies to build with the MSRV
   # version. Building is likely sufficient as runtime errors varying between rust versions is very unlikely.
   build-msrv:
-    name: "MSRV Build [Rust 1.90]"
+    name: "MSRV Build [Rust 1.92]"
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@master
         with:
-          toolchain: 1.90
+          toolchain: 1.92
       - run: perl -pi.bak -e 's/opt-level = 2/opt-level = 0/g' Cargo.toml
       - uses: awalsh128/cache-apt-pkgs-action@latest
         with:
@@ -130,6 +130,7 @@ jobs:
     runs-on: ${{ matrix.platform.os }}
     env:
       RUST_CARGO_COMMAND: ${{ matrix.platform.cross == true && 'cross' || 'cargo' }}
+      RUSTFLAGS: ${{ matrix.platform.name == 'ios' && '-Clink-arg=-target -Clink-arg=arm64-apple-ios18.4 -Clink-arg=-miphoneos-version-min=18.4' || '' }}  
     strategy:
       fail-fast: false
       matrix:

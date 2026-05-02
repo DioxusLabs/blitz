@@ -123,10 +123,7 @@ impl ActiveDemoRenderer {
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: None,
             bind_group_layouts: &[],
-            push_constant_ranges: &[wgpu::PushConstantRange {
-                stages: wgpu::ShaderStages::FRAGMENT,
-                range: 0..16, // full size in bytes, aligned
-            }],
+            immediate_size: 16,
         });
 
         let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
@@ -147,7 +144,7 @@ impl ActiveDemoRenderer {
             primitive: wgpu::PrimitiveState::default(),
             depth_stencil: None,
             multisample: wgpu::MultisampleState::default(),
-            multiview: None,
+            multiview_mask: None,
             cache: None,
         });
 
@@ -215,14 +212,12 @@ impl ActiveDemoRenderer {
                 })],
                 depth_stencil_attachment: None,
                 timestamp_writes: None,
+                multiview_mask: None,
                 occlusion_query_set: None,
             });
             rpass.set_pipeline(&self.pipeline);
-            rpass.set_push_constants(
-                wgpu::ShaderStages::FRAGMENT, // Stage (your constants are for fragment shader)
-                0,                            // Offset in bytes (start at 0)
-                bytemuck::bytes_of(&push_constants),
-            );
+            // Offset in bytes (start at 0)
+            rpass.set_immediates(0, bytemuck::bytes_of(&push_constants));
             rpass.draw(0..3, 0..1);
         }
 

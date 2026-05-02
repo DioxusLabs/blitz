@@ -15,6 +15,11 @@ env:
   CARGO_REGISTRIES_CRATES_IO_PROTOCOL: "sparse"
   WPT_DIR: "./wpt/tests"
 
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
 jobs:
   wpt:
     name: "Run WPT Tests"
@@ -39,8 +44,48 @@ jobs:
         run: cargo run -rp wpt css
       - name: Compress report (zstd)
         run: zstd -22 --ultra -o ./wpt/output/wptreport.json.zst ./wpt/output/wptreport.json
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: wpt-report.json.zst
           path: ./wpt/output/wptreport.json.zst
-          compression: 0 # We are already using zstd compression
+          archive: false # Disables zipping. We are already using zstd compression
+      - name: Copy files for Github pages
+        run: |
+          mkdir -p ./sites/gh-pages
+          cp ./wpt/output/wptreport.json ./sites/gh-pages/wptreport.json
+          cp ./wpt/output/wptreport.json.zst ./sites/gh-pages/wptreport.json.zst
+      - name: Install wpt cli
+        run: cargo install wpt@0.0.13
+      - name: Generate scores.json
+        run: |
+          wpt calc-scores --in ./sites/gh-pages/wptreport.json --out ./sites/gh-pages/wptscores.json
+          zstd -22 --long --ultra -o ./sites/gh-pages/wptscores.json.zst ./sites/gh-pages/wptscores.json
+      - name: Fetch main-branch results
+        run: curl https://dioxuslabs.github.io/blitz/wptreport.json -o ./wpt/output/main-wptreport.json
+      - name: Diff WPT results
+        run: wpt diff ./wpt/output/main-wptreport.json ./wpt/output/wptreport.json
+      - name: Setup Github Pages
+        if: github.ref == 'refs/heads/main'
+        uses: actions/configure-pages@v6
+      - name: Upload Pages artifact
+        if: github.ref == 'refs/heads/main'
+        uses: actions/upload-pages-artifact@v5
+        with:
+          path: 'sites/gh-pages'
+      - name: Deploy to GitHub Pages
+        if: github.ref == 'refs/heads/main'
+        id: deployment
+        uses: actions/deploy-pages@v5
+  trigger-archive:
+    name: "Trigger Archive Job"
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    needs: wpt
+    environment: WPT
+    steps:
+      - name: Trigger archive job
+        uses: peter-evans/repository-dispatch@v4
+        with:
+          token: ${{ secrets.WPT_GITHUB_TOKEN }}
+          repository: DioxusLabs/blitz-wpt-results
+          event-type: update-results

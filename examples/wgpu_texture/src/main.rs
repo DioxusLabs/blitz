@@ -14,10 +14,10 @@ use html::launch_html;
 static STYLES: &str = include_str!("./styles.css");
 
 // WGPU settings required by this example
-const FEATURES: Features = Features::PUSH_CONSTANTS;
+const FEATURES: Features = Features::IMMEDIATES;
 fn limits() -> Limits {
     Limits {
-        max_push_constant_size: 16,
+        max_immediate_size: 16,
         ..Limits::default()
     }
 }

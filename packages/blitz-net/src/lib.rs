@@ -6,7 +6,6 @@
 use blitz_traits::net::{AbortSignal, Body, Bytes, NetHandler, NetProvider, NetWaker, Request};
 use data_url::DataUrl;
 use std::{marker::PhantomData, pin::Pin, sync::Arc, task::Poll};
-use tokio::runtime::Handle;
 
 #[cfg(feature = "cache")]
 use http_cache_reqwest::{CACacheManager, Cache, CacheMode, HttpCache, HttpCacheOptions};
@@ -35,10 +34,27 @@ fn get_cache_path() -> std::path::PathBuf {
     path
 }
 
+#[cfg(target_arch = "wasm32")]
+fn spawn(fut: impl Future + 'static) {
+    wasm_bindgen_futures::spawn_local(async move {
+        fut.await;
+    });
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn spawn<F>(fut: F)
+where
+    F: Future + Send + 'static,
+    F::Output: Send + 'static,
+{
+    tokio::spawn(fut);
+}
+
 pub struct Provider {
-    rt: Handle,
     client: Client,
     waker: Arc<dyn NetWaker>,
+    #[cfg(feature = "cache")]
+    cache_manager: CACacheManager,
 }
 impl Provider {
     pub fn new(waker: Option<Arc<dyn NetWaker>>) -> Self {
@@ -48,19 +64,23 @@ impl Provider {
         let client = builder.build().unwrap();
 
         #[cfg(feature = "cache")]
+        let cache_manager = CACacheManager::new(get_cache_path(), true);
+
+        #[cfg(feature = "cache")]
         let client = reqwest_middleware::ClientBuilder::new(client)
             .with(Cache(HttpCache {
                 mode: CacheMode::Default,
-                manager: CACacheManager::new(get_cache_path(), true),
+                manager: cache_manager.clone(),
                 options: HttpCacheOptions::default(),
             }))
             .build();
 
         let waker = waker.unwrap_or(Arc::new(DummyNetWaker));
         Self {
-            rt: Handle::current(),
             client,
             waker,
+            #[cfg(feature = "cache")]
+            cache_manager,
         }
     }
     pub fn shared(waker: Option<Arc<dyn NetWaker>>) -> Arc<dyn NetProvider> {
@@ -71,6 +91,16 @@ impl Provider {
     }
     pub fn count(&self) -> usize {
         Arc::strong_count(&self.waker) - 1
+    }
+
+    #[cfg(feature = "cache")]
+    pub async fn clear_cache(&self) {
+        if let Err(e) = self.cache_manager.clear().await {
+            #[cfg(feature = "tracing")]
+            tracing::error!("Failed to clear HTTP cache: {:?}", e);
+            #[cfg(not(feature = "tracing"))]
+            let _ = e;
+        }
     }
 }
 impl Provider {
@@ -89,15 +119,17 @@ impl Provider {
                 (request.url.to_string(), Bytes::from(file_content))
             }
             _ => {
-                let response = client
+                let mut req = client
                     .request(request.method, request.url)
                     .headers(request.headers)
-                    .header("Content-Type", request.content_type.as_str())
-                    .header("User-Agent", USER_AGENT)
-                    .apply_body(request.body, request.content_type.as_str())
-                    .await
-                    .send()
-                    .await?;
+                    .header("User-Agent", USER_AGENT);
+
+                if let Some(content_type) = request.content_type.as_ref() {
+                    req = req.header("Content-Type", content_type);
+                }
+
+                let req = req.apply_body(request.body, request.content_type.as_deref());
+                let response = req.await.send().await?;
 
                 (response.url().to_string(), response.bytes().await?)
             }
@@ -114,7 +146,7 @@ impl Provider {
         let url = request.url.to_string();
 
         let client = self.client.clone();
-        self.rt.spawn(async move {
+        spawn(async move {
             let result = Self::fetch_inner(client, request).await;
 
             #[cfg(feature = "tracing")]
@@ -158,7 +190,7 @@ impl NetProvider for Provider {
         tracing::info!(url = request.url.as_str(), "Fetching");
 
         let waker = self.waker.clone();
-        self.rt.spawn(async move {
+        spawn(async move {
             #[cfg(feature = "tracing")]
             let url = request.url.to_string();
 
@@ -212,8 +244,8 @@ impl<F, T> AbortFetch<F, T> {
 
 impl<F, T> Future for AbortFetch<F, T>
 where
-    F: Future + Unpin + Send + 'static,
-    F::Output: Send + Into<Result<T, ProviderError>> + 'static,
+    F: Future + Unpin + 'static,
+    F::Output: Into<Result<T, ProviderError>> + 'static,
     T: Unpin,
 {
     type Output = Result<T, ProviderError>;
@@ -276,16 +308,16 @@ impl From<reqwest_middleware::Error> for ProviderError {
 }
 
 trait ReqwestExt {
-    async fn apply_body(self, body: Body, content_type: &str) -> Self;
+    async fn apply_body(self, body: Body, content_type: Option<&str>) -> Self;
 }
 impl ReqwestExt for RequestBuilder {
-    async fn apply_body(self, body: Body, content_type: &str) -> Self {
+    async fn apply_body(self, body: Body, content_type: Option<&str>) -> Self {
         match body {
             Body::Bytes(bytes) => self.body(bytes),
             Body::Form(form_data) => match content_type {
-                "application/x-www-form-urlencoded" => self.form(&form_data),
+                Some("application/x-www-form-urlencoded") => self.form(&form_data),
                 #[cfg(feature = "multipart")]
-                "multipart/form-data" => {
+                Some("multipart/form-data") => {
                     use blitz_traits::net::Entry;
                     use blitz_traits::net::EntryValue;
                     let mut form_data = form_data;

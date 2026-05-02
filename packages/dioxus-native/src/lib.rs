@@ -10,6 +10,7 @@
 //!  - `tracing`: Enables tracing support.
 
 mod assets;
+mod config;
 mod contexts;
 mod dioxus_application;
 mod dioxus_renderer;
@@ -55,19 +56,21 @@ pub use android_activity::AndroidApp;
 ))]
 pub use {
     anyrender_vello::{CustomPaintCtx, CustomPaintSource, DeviceHandle, TextureHandle},
-    dioxus_renderer::{use_wgpu, Features, Limits},
+    dioxus_renderer::{Features, Limits, use_wgpu},
 };
 
-use blitz_shell::{
-    create_default_event_loop, BlitzShellEvent, BlitzShellProxy, Config, WindowConfig,
-};
-use dioxus_core::{consume_context, use_hook, ComponentFunction, Element, VirtualDom};
+pub use config::Config;
+pub use winit::dpi::{LogicalSize, PhysicalSize};
+pub use winit::window::WindowAttributes;
+
+use blitz_shell::{BlitzShellEvent, BlitzShellProxy, WindowConfig, create_default_event_loop};
+use dioxus_core::{ComponentFunction, Element, VirtualDom, consume_context, use_hook};
 use link_handler::DioxusNativeNavigationProvider;
 use std::any::Any;
 use std::sync::Arc;
 use winit::{
     raw_window_handle::{HasWindowHandle as _, RawWindowHandle},
-    window::{Window, WindowAttributes},
+    window::Window,
 };
 
 pub fn use_window() -> Arc<dyn Window> {
@@ -130,7 +133,7 @@ pub fn launch_cfg_with_props<P: Clone + 'static, M: 'static>(
     ))]
     let (mut features, mut limits) = (None, None);
     let mut window_attributes = None;
-    let mut _config = None;
+    let mut config = None;
     for mut cfg in configs {
         #[cfg(any(
             feature = "vello",
@@ -144,25 +147,32 @@ pub fn launch_cfg_with_props<P: Clone + 'static, M: 'static>(
             cfg = try_read_config!(cfg, limits, Limits);
         }
         cfg = try_read_config!(cfg, window_attributes, WindowAttributes);
-        cfg = try_read_config!(cfg, _config, Config);
+        cfg = try_read_config!(cfg, config, Config);
         let _ = cfg;
     }
 
+    let mut config = config.unwrap_or_default();
+    if let Some(window_attributes) = window_attributes {
+        config.window_attributes = window_attributes;
+    }
     let event_loop = create_default_event_loop();
     let winit_proxy = event_loop.create_proxy();
     let (proxy, event_queue) = BlitzShellProxy::new(winit_proxy);
 
     // Turn on the runtime and enter it
     #[cfg(feature = "net")]
+    #[cfg(not(target_arch = "wasm32"))]
     let rt = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()
         .unwrap();
     #[cfg(feature = "net")]
+    #[cfg(not(target_arch = "wasm32"))]
     let _guard = rt.enter();
 
     // Setup hot-reloading if enabled.
     #[cfg(all(feature = "hot-reload", debug_assertions))]
+    #[cfg(not(target_arch = "wasm32"))]
     {
         let proxy = proxy.clone();
         dioxus_devtools::connect(move |event| {
@@ -238,7 +248,7 @@ pub fn launch_cfg_with_props<P: Clone + 'static, M: 'static>(
     let config = WindowConfig::with_attributes(
         Box::new(doc) as _,
         renderer.clone(),
-        window_attributes.unwrap_or_default(),
+        config.window_attributes,
     );
 
     // Create application

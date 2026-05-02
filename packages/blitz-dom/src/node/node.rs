@@ -1,3 +1,4 @@
+use super::StyloData;
 use bitflags::bitflags;
 use blitz_traits::events::{
     BlitzPointerEvent, BlitzPointerId, DomEventData, HitResult, PointerCoords,
@@ -5,20 +6,22 @@ use blitz_traits::events::{
 use blitz_traits::shell::ShellProvider;
 use html_escape::encode_quoted_attribute_to_string;
 use keyboard_types::Modifiers;
+use kurbo::Affine;
 use markup5ever::{LocalName, local_name};
 use parley::{BreakReason, Cluster, ClusterSide};
 use selectors::matching::ElementSelectorFlags;
 use slab::Slab;
 use std::cell::{Cell, RefCell};
 use std::fmt::Write;
+use std::ops::Deref;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use style::Atom;
-use super::StyloData;
 use style::invalidation::element::restyle_hints::RestyleHint;
 use style::properties::ComputedValues;
 use style::properties::generated::longhands::position::computed_value::T as Position;
 use style::selector_parser::{PseudoElement, RestyleDamage};
+use style::servo_arc::Arc as ServoArc;
 use style::shared_lock::SharedRwLock;
 use style::stylesheets::UrlExtraData;
 use style::values::computed::Display as StyloDisplay;
@@ -33,6 +36,7 @@ use taffy::{
 use crate::Document;
 use crate::layout::damage::HoistedPaintChildren;
 
+use super::stylo_data::StyloData;
 use super::{Attribute, ElementData};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -101,12 +105,17 @@ pub struct Node {
     /// Node type (Element, TextNode, etc) specific data
     pub data: NodeData,
 
-    /// Style data from stylo. Wrapped in `StyloData` to encapsulate the interior
-    /// mutability needed by stylo's `TElement` trait.
+    // This little bundle of joy is our style data from stylo and a lock guard that allows access to it
+    // TODO: See if guard can be hoisted to a higher level
     pub stylo_element_data: StyloData,
     pub selector_flags: Cell<ElementSelectorFlags>,
     pub guard: SharedRwLock,
     pub element_state: ElementState,
+    pub has_snapshot: bool,
+    pub snapshot_handled: AtomicBool,
+    /// Whether any descendant of this node needs restyling.
+    /// Used by Stylo's incremental style traversal to skip unchanged subtrees.
+    pub dirty_descendants: AtomicBool,
 
     // Pseudo element nodes
     pub before: Option<usize>,
@@ -129,6 +138,8 @@ pub struct Node {
     /// Sticky positioning offset: visual displacement from normal-flow position.
     /// Recomputed on every scroll event without relayout.
     pub sticky_offset: crate::Point<f64>,
+
+    pub transform: Option<Affine>,
 }
 
 unsafe impl Send for Node {}
@@ -190,6 +201,8 @@ impl Node {
             final_layout: Layout::new(),
             scroll_offset: crate::Point::ZERO,
             sticky_offset: crate::Point::ZERO,
+
+            transform: None,
         }
     }
 
@@ -261,9 +274,9 @@ impl Node {
             .unwrap_or(false)
     }
 
-    pub fn set_restyle_hint(&self, hint: RestyleHint) {
-        if let Some(mut data) = self.stylo_element_data.borrow_mut() {
-            data.hint.insert(hint);
+    pub fn set_restyle_hint(&mut self, hint: RestyleHint) {
+        if let Some(mut element_data) = self.stylo_element_data.get_mut() {
+            element_data.hint.insert(hint);
         }
         // Mark all ancestors as having dirty descendants so the style traversal
         // will visit this node's subtree
@@ -287,10 +300,10 @@ impl Node {
 
     /// Set appropriate damage for Stylo when an element's style attribute is updated
     pub(crate) fn mark_style_attr_updated(&mut self) {
-        if let Some(mut data) = self.stylo_element_data.borrow_mut() {
+        if let Some(mut data) = self.stylo_element_data.get_mut() {
             data.hint |= RestyleHint::RESTYLE_STYLE_ATTRIBUTE;
-            self.set_dirty_descendants();
         }
+        self.set_dirty_descendants();
     }
 
     /// Marks all ancestors of this node as having dirty descendants.
@@ -309,30 +322,36 @@ impl Node {
         }
     }
 
-    pub fn damage(&mut self) -> Option<RestyleDamage> {
-        self.stylo_element_data.borrow().map(|data| data.damage)
+    // pub fn damage_mut(&mut self) -> Option<&mut RestyleDamage> {
+    //     self.stylo_element_data
+    //         .get_mut()
+    //         .map(|mut data: ElementDataMut<'a>| &'a mut data.damage)
+    // }
+
+    pub fn damage(&self) -> Option<RestyleDamage> {
+        self.stylo_element_data.get().map(|data| data.damage)
     }
 
-    pub fn set_damage(&self, damage: RestyleDamage) {
-        if let Some(mut data) = self.stylo_element_data.borrow_mut() {
+    pub fn set_damage(&mut self, damage: RestyleDamage) {
+        if let Some(mut data) = self.stylo_element_data.get_mut() {
             data.damage = damage;
         }
     }
 
     pub fn insert_damage(&mut self, damage: RestyleDamage) {
-        if let Some(mut data) = self.stylo_element_data.borrow_mut() {
+        if let Some(mut data) = self.stylo_element_data.get_mut() {
             data.damage |= damage;
         }
     }
 
-    pub fn remove_damage(&self, damage: RestyleDamage) {
-        if let Some(mut data) = self.stylo_element_data.borrow_mut() {
+    pub fn remove_damage(&mut self, damage: RestyleDamage) {
+        if let Some(mut data) = self.stylo_element_data.get_mut() {
             data.damage.remove(damage);
         }
     }
 
     pub fn clear_damage_mut(&mut self) {
-        if let Some(mut data) = self.stylo_element_data.borrow_mut() {
+        if let Some(mut data) = self.stylo_element_data.get_mut() {
             data.damage = RestyleDamage::empty();
         }
     }
@@ -795,8 +814,8 @@ impl Node {
         Some(&attr.value)
     }
 
-    pub fn primary_styles(&self) -> Option<style::servo_arc::Arc<ComputedValues>> {
-        self.stylo_element_data.borrow()?.styles.get_primary().cloned()
+    pub fn primary_styles(&self) -> Option<impl Deref<Target = ServoArc<ComputedValues>>> {
+        self.stylo_element_data.primary_styles()
     }
 
     pub fn text_content(&self) -> String {
