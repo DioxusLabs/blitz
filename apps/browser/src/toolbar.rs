@@ -6,10 +6,12 @@ use blitz_traits::net::{Request, Url};
 use dioxus_native::{NodeHandle, SubDocumentAttr, prelude::*};
 
 use crate::about_pages::AboutPage;
+use crate::browser_history::{BrowsingHistory, BrowsingHistoryStoreExt};
 use crate::history::HistoryNav;
 use crate::icons::{self, IconButton};
 use crate::nav::{is_enter_key, open_in_external_browser, req_from_string};
 use crate::tab::{Tab, TabId, TabStoreExt, TabStoreImplExt, active_tab};
+use crate::url_suggestions::{Suggestion, SuggestionKind, UrlSuggestions, build_suggestions};
 use crate::{IS_MOBILE, StdNetProvider};
 
 #[component]
@@ -27,6 +29,13 @@ pub fn Toolbar(
     let mut menu_open = use_signal(|| false);
     #[cfg(feature = "cache")]
     let net_provider = use_context::<Arc<StdNetProvider>>();
+
+    let browsing_history = use_context::<Store<BrowsingHistory>>();
+    let mut selected_suggestion = use_signal::<Option<usize>>(|| None);
+
+    let suggestions = use_memo(move || {
+        build_suggestions(&url_input_value.read(), &browsing_history.entries().read())
+    });
 
     // Sync URL bar when active tab changes
     use_effect(move || {
@@ -48,6 +57,73 @@ pub fn Toolbar(
                 .and_then(|el| el.sub_doc_data_mut())
             {
                 sub_doc.inner_mut().clear_focus();
+            }
+        }
+    });
+
+    // Closing the dropdown is implicit: its visibility is gated on `is_focused`.
+    let blur_urlbar = use_callback(move |_| {
+        if let Some(handle) = url_input_handle() {
+            drop(handle.set_focus(false));
+        }
+        *is_focused.write() = false;
+        selected_suggestion.set(None);
+    });
+
+    // Single path through which the urlbar commits a navigation (Enter or pick).
+    let navigate_from_urlbar = use_callback(move |req: Request| {
+        blur_urlbar(());
+        clear_document_focus(());
+        active_tab(tabs, active_tab_id()).navigate(req);
+    });
+
+    let on_pick = use_callback(move |s: Suggestion| {
+        let req = match s.kind {
+            SuggestionKind::History(entry) => Some(Request::get(entry.url)),
+            SuggestionKind::Search => req_from_string(&url_input_value.read()),
+        };
+        match req {
+            Some(req) => navigate_from_urlbar(req),
+            None => blur_urlbar(()),
+        }
+    });
+
+    let move_selection_down = use_callback(move |_| {
+        let len = suggestions.read().len();
+        if len == 0 {
+            return;
+        }
+        let next = match selected_suggestion() {
+            Some(i) => Some((i + 1) % len),
+            None => Some(0),
+        };
+        selected_suggestion.set(next);
+    });
+
+    let move_selection_up = use_callback(move |_| {
+        let len = suggestions.read().len();
+        if len == 0 {
+            return;
+        }
+        let next = match selected_suggestion() {
+            Some(0) | None => Some(len - 1),
+            Some(i) => Some(i - 1),
+        };
+        selected_suggestion.set(next);
+    });
+
+    let submit_urlbar = use_callback(move |_| {
+        if let Some(i) = selected_suggestion() {
+            if let Some(s) = suggestions.read().get(i).cloned() {
+                on_pick.call(s);
+                return;
+            }
+        }
+        match req_from_string(&url_input_value.read()) {
+            Some(req) => navigate_from_urlbar(req),
+            None => {
+                tracing::warn!("Error parsing URL {}", &*url_input_value.read());
+                blur_urlbar(());
             }
         }
     });
@@ -259,61 +335,81 @@ pub fn Toolbar(
             if !IS_MOBILE {
                 IconButton { icon: icons::HOME_ICON, action: home_action }
             }
-            input {
-                class: "urlbar-input",
-                "type": "text",
-                name: "url",
-                value: url_input_value(),
-                onmounted: move |evt: Event<MountedData>| {
-                    let node_handle = evt.downcast::<NodeHandle>().unwrap();
-                    *url_input_handle.write() = Some(node_handle.clone());
-                },
-                onblur: move |_| {
-                    *is_focused.write() = false;
-                },
-                onfocus: move |_| {
-                    *is_focused.write() = true;
-                    if let Some(handle) = url_input_handle() {
-                        let node_id = handle.node_id();
-                        let mut doc = handle.doc_mut();
-                        doc.with_text_input(node_id, |mut driver| driver.select_all());
-                    }
-                },
-                onpointerdown: {
-                    let block_mouse_up = block_mouse_up.clone();
-                    move |_| {
-                        *block_mouse_up.borrow_mut() = !is_focused();
-                    }
-                },
-                onpointermove: {
-                    let block_mouse_up = block_mouse_up.clone();
-                    move |evt| {
+            div { class: "urlbar-input-wrapper",
+                input {
+                    class: "urlbar-input",
+                    "type": "text",
+                    name: "url",
+                    value: url_input_value(),
+                    onmounted: move |evt: Event<MountedData>| {
+                        let node_handle = evt.downcast::<NodeHandle>().unwrap();
+                        *url_input_handle.write() = Some(node_handle.clone());
+                    },
+                    onblur: move |_| {
+                        *is_focused.write() = false;
+                    },
+                    onfocus: move |_| {
+                        *is_focused.write() = true;
+                        if let Some(handle) = url_input_handle() {
+                            let node_id = handle.node_id();
+                            let mut doc = handle.doc_mut();
+                            doc.with_text_input(node_id, |mut driver| driver.select_all());
+                        }
+                    },
+                    onpointerdown: {
+                        let block_mouse_up = block_mouse_up.clone();
+                        move |_| {
+                            *block_mouse_up.borrow_mut() = !is_focused();
+                        }
+                    },
+                    onpointermove: {
+                        let block_mouse_up = block_mouse_up.clone();
+                        move |evt| {
+                            if *block_mouse_up.borrow() {
+                                evt.prevent_default();
+                            }
+                        }
+                    },
+                    onpointerup: move |evt| {
                         if *block_mouse_up.borrow() {
                             evt.prevent_default();
                         }
-                    }
-                },
-                onpointerup: move |evt| {
-                    if *block_mouse_up.borrow() {
-                        evt.prevent_default();
-                    }
-                },
-                onkeydown: move |evt| {
-                    if is_enter_key(&evt.key()) {
-                        evt.prevent_default();
-                        if let Some(handle) = url_input_handle() {
-                            drop(handle.set_focus(false));
+                    },
+                    onkeydown: move |evt| {
+                        let key = evt.key();
+                        match &key {
+                            Key::ArrowDown => {
+                                evt.prevent_default();
+                                move_selection_down(());
+                            }
+                            Key::ArrowUp => {
+                                evt.prevent_default();
+                                move_selection_up(());
+                            }
+                            Key::Escape => {
+                                evt.prevent_default();
+                                blur_urlbar(());
+                            }
+                            k if is_enter_key(k) => {
+                                evt.prevent_default();
+                                submit_urlbar(());
+                            }
+                            _ => {}
                         }
-                        let req = req_from_string(&url_input_value.read());
-                        if let Some(req) = req {
-                            clear_document_focus(());
-                            active_tab(tabs, active_tab_id()).navigate(req);
-                        } else {
-                            tracing::warn!("Error parsing URL {}", &*url_input_value.read());
-                        }
+                    },
+                    oninput: move |evt| {
+                        *url_input_value.write() = evt.value();
+                        selected_suggestion.set(None);
+                    },
+                }
+                if is_focused() && !suggestions.read().is_empty() {
+                    UrlSuggestions {
+                        suggestions,
+                        selected_idx: selected_suggestion,
+                        on_hover: move |idx| selected_suggestion.set(idx),
+                        on_pick,
                     }
-                },
-                oninput: move |evt| { *url_input_value.write() = evt.value() },
+                }
             }
             div { class: "menu-wrapper",
                 IconButton {

@@ -133,6 +133,8 @@ fn HistoryPage(
     });
     let now = now();
 
+    let history_store = use_context::<crate::history_store::HistoryStore>();
+
     let entries_lens = browsing_history.entries();
     let entries = entries_lens.read();
     rsx! {
@@ -143,7 +145,10 @@ fn HistoryPage(
                 if !entries.is_empty() {
                     button {
                         class: "clear-btn",
-                        onclick: move |_| browsing_history.clear(),
+                        onclick: move |_| {
+                            browsing_history.clear();
+                            history_store.clear();
+                        },
                         "Clear history"
                     }
                 }

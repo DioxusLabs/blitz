@@ -13,7 +13,9 @@ use crate::StdNetProvider;
 use crate::about_pages::{AboutPage, AboutPageView};
 use crate::browser_history::{BrowsingHistory, BrowsingHistoryStoreImplExt, HistoryEntry};
 use crate::document_loader::{DocumentLoader, DocumentLoaderStatus, LoadedDocument};
+use crate::favicon::probe_favicon_cached;
 use crate::history::{History, HistoryNav, SyncStore};
+use crate::history_store::HistoryStore;
 
 pub type TabId = u64;
 
@@ -68,24 +70,13 @@ impl<Lens> Store<Tab, Lens> {
         self.nav_history().go_forward();
     }
 
-    // Chrome state (title, favicon) is owned here for real (loaded) pages and
-    // by `apply_about_chrome` for about pages. Exactly one of the two runs per
-    // navigation, gated on whether the URL parsed as an `AboutPage`.
-    fn apply_loaded_document(&self, loaded: LoadedDocument)
-    where
-        Lens: Writable,
-    {
-        *self.html_source().write_unchecked() = loaded.html_source;
-        *self.title().write_unchecked() = loaded.title;
-        *self.favicon_url().write_unchecked() = loaded.favicon_url;
-        *self.document().write_unchecked() = Some(loaded.document);
-    }
-
-    // Sibling of `apply_loaded_document` for chrome (about:) pages. About URLs
-    // never go through the document loader, so this is the only place their
-    // title is set and the only place a stale favicon from a previous real
-    // page gets cleared.
-    fn apply_about_chrome(&self, page: AboutPage)
+    // Chrome state (title, favicon) for about pages. About URLs never go
+    // through the document loader, so this is the only place their title is
+    // set and the only place a stale favicon from a previous real page gets
+    // cleared. The sibling path for loaded pages is `commit_loaded_document`,
+    // which does the same chrome writes plus history recording and the
+    // favicon probe — about pages skip both.
+    fn commit_about_chrome(&self, page: AboutPage)
     where
         Lens: Writable,
     {
@@ -135,6 +126,61 @@ pub fn active_tab(tabs: Store<Vec<Tab>>, active_id: TabId) -> Store<Tab> {
         .into()
 }
 
+// Sibling of `commit_about_chrome` for network-loaded pages. Chrome writes
+// run as a straight-line block (nothing yields between them) so a render
+// can't sample a half-applied state where the new document is showing under
+// the previous page's icon; the favicon is refilled asynchronously by the
+// spawned probe.
+fn commit_loaded_document(
+    tab: Store<Tab>,
+    browsing_history: Store<BrowsingHistory>,
+    history_store: HistoryStore,
+    loaded: LoadedDocument,
+) {
+    let page_url = tab.nav_history().current_url().read().url.clone();
+    let candidate = loaded.favicon_candidate.clone();
+
+    // Synthesized error pages (404 / network failure) skip history and the
+    // favicon probe; the document loader leaves their `favicon_candidate`
+    // None so the let-else below also short-circuits the spawn.
+    let entry_id = (!loaded.is_error).then(|| {
+        let entry = HistoryEntry::new(
+            page_url.clone(),
+            display_title(&loaded.title, &page_url),
+            None,
+        );
+        let id = browsing_history.record_visit(entry.clone());
+        history_store.record_visit(entry);
+        id
+    });
+
+    *tab.html_source().write_unchecked() = loaded.html_source;
+    *tab.title().write_unchecked() = loaded.title;
+    *tab.favicon_url().write_unchecked() = None;
+    *tab.document().write_unchecked() = Some(loaded.document);
+
+    let (Some(candidate), Some(entry_id)) = (candidate, entry_id) else {
+        return;
+    };
+    let net_provider = Arc::clone(&tab.loader_rc().net_provider);
+    spawn(async move {
+        let Some(resolved) = probe_favicon_cached(candidate, &net_provider).await else {
+            return;
+        };
+        // A → B → A: the probe for the first A may resolve while a second A
+        // entry already exists (non-consecutive revisits don't fold). The
+        // URL check passes (URL is A again), but `entry_id` points at the
+        // *first* A entry. Patching by id is still correct — both rows want
+        // the same icon — and `set_favicon_for_url` catches up the disk
+        // side for every still-NULL row.
+        if tab.nav_history().current_url().read().url == page_url {
+            *tab.favicon_url().write_unchecked() = Some(resolved.clone());
+        }
+        browsing_history.set_favicon(entry_id, resolved.clone());
+        history_store.set_favicon_for_url(page_url, resolved);
+    });
+}
+
 #[component]
 pub fn TabWebView(
     tab: Store<Tab>,
@@ -169,26 +215,19 @@ pub fn TabWebView(
         }
     });
 
+    let history_store = use_context::<HistoryStore>();
+
     use_effect(move || {
         if loaded_document.read().is_some() {
             if let Some(loaded) = loaded_document.write_unchecked().take().flatten() {
-                // Only successful loads count as a visit. Synthesized 404 /
-                // network-error pages parse a title (so the tab strip shows
-                // something sensible) but shouldn't pollute history.
-                if !loaded.is_error {
-                    let url = tab.nav_history().current_url().read().url.clone();
-                    let title = display_title(&loaded.title, &url);
-                    let favicon = loaded.favicon_url.clone();
-                    browsing_history.record_visit(HistoryEntry::new(url, title, favicon));
-                }
-                tab.apply_loaded_document(loaded);
+                commit_loaded_document(tab, browsing_history, history_store.clone(), loaded);
             }
         }
     });
 
     use_effect(move || {
         if let Some(page) = about() {
-            tab.apply_about_chrome(page);
+            tab.commit_about_chrome(page);
         }
     });
 

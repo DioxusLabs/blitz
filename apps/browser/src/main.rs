@@ -27,12 +27,14 @@ mod favicon;
 #[cfg(feature = "vello")]
 mod fps_overlay;
 mod history;
+mod history_store;
 mod icons;
 mod nav;
 mod status_bar;
 mod tab;
 mod tab_strip;
 mod toolbar;
+mod url_suggestions;
 
 use about_pages::AboutPage;
 use browser_history::BrowsingHistory;
@@ -74,8 +76,24 @@ fn app() -> Element {
     let url_input_handle: Signal<Option<NodeHandle>> = use_signal(|| None);
     let url_input_value = use_signal(|| home_url.to_string());
 
+    let history_store: history_store::HistoryStore = use_hook(history_store::HistoryStore::open);
+    use_context_provider(|| history_store.clone());
+
+    // Synchronous on purpose: the toolbar's URL suggestions read from this
+    // store on first render, so the entries need to be present before the
+    // tree mounts. The read is a single sqlite query capped at
+    // MAX_HISTORY_ENTRIES rows and runs once per process.
+    let browsing_history: Store<BrowsingHistory> = {
+        let history_store = history_store.clone();
+        use_store(move || {
+            BrowsingHistory::from_entries(
+                history_store.load_recent(browser_history::MAX_HISTORY_ENTRIES),
+            )
+        })
+    };
+    use_context_provider(|| browsing_history);
+
     let tabs: Store<Vec<Tab>> = use_store(Vec::new);
-    let browsing_history: Store<BrowsingHistory> = use_store(BrowsingHistory::default);
     let mut active_tab_id: Signal<TabId> = use_hook(|| {
         let tab = open_tab(tabs, home_url.clone(), net_provider.clone());
         Signal::new(tab.tab_id())

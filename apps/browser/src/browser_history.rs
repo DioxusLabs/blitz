@@ -5,7 +5,7 @@ use std::time::{Duration, SystemTime};
 use blitz_traits::net::Url;
 use dioxus_native::prelude::*;
 
-const MAX_HISTORY_ENTRIES: usize = 1000;
+pub const MAX_HISTORY_ENTRIES: usize = 1000;
 
 const SECONDS_PER_MINUTE: u64 = 60;
 const SECONDS_PER_HOUR: u64 = SECONDS_PER_MINUTE * 60;
@@ -32,6 +32,22 @@ impl HistoryEntry {
             visited_at: SystemTime::now(),
         }
     }
+
+    /// Construct an entry from persisted parts, assigning a fresh in-memory id.
+    pub fn from_parts(
+        url: Url,
+        title: String,
+        favicon_url: Option<Url>,
+        visited_at: SystemTime,
+    ) -> Self {
+        Self {
+            id: next_history_entry_id(),
+            url,
+            title,
+            favicon_url,
+            visited_at,
+        }
+    }
 }
 
 fn next_history_entry_id() -> HistoryEntryId {
@@ -44,13 +60,29 @@ pub struct BrowsingHistory {
     pub entries: VecDeque<HistoryEntry>,
 }
 
+impl BrowsingHistory {
+    /// Build from a pre-sorted list of persisted entries (visited_at DESC order).
+    pub fn from_entries(entries: Vec<HistoryEntry>) -> Self {
+        Self {
+            entries: VecDeque::from(entries),
+        }
+    }
+}
+
 #[store(pub)]
 impl<Lens> Store<BrowsingHistory, Lens> {
-    fn record_visit(&self, entry: HistoryEntry)
+    fn record_visit(&self, entry: HistoryEntry) -> HistoryEntryId
     where
         Lens: Writable,
     {
-        record_visit_into(&mut self.entries().write(), entry);
+        record_visit_into(&mut self.entries().write(), entry)
+    }
+
+    fn set_favicon(&self, id: HistoryEntryId, favicon_url: Url)
+    where
+        Lens: Writable,
+    {
+        set_favicon_for_entry(&mut self.entries().write(), id, favicon_url);
     }
 
     fn clear(&self)
@@ -70,18 +102,32 @@ impl<Lens> Store<BrowsingHistory, Lens> {
 //
 // Lives as a free function so it can be unit-tested without a Dioxus runtime;
 // the Store method above is the public surface.
-fn record_visit_into(history: &mut VecDeque<HistoryEntry>, entry: HistoryEntry) {
+fn record_visit_into(history: &mut VecDeque<HistoryEntry>, entry: HistoryEntry) -> HistoryEntryId {
     if let Some(latest) = history.front_mut() {
         if latest.url == entry.url {
             latest.title = entry.title;
             latest.favicon_url = entry.favicon_url;
             latest.visited_at = entry.visited_at;
-            return;
+            return latest.id;
         }
     }
+    let id = entry.id;
     history.push_front(entry);
     if history.len() > MAX_HISTORY_ENTRIES {
         history.truncate(MAX_HISTORY_ENTRIES);
+    }
+    id
+}
+
+// No-ops if the entry has aged out before the background favicon probe
+// finished — the visit has already been pushed past the cap.
+fn set_favicon_for_entry(
+    history: &mut VecDeque<HistoryEntry>,
+    id: HistoryEntryId,
+    favicon_url: Url,
+) {
+    if let Some(entry) = history.iter_mut().find(|e| e.id == id) {
+        entry.favicon_url = Some(favicon_url);
     }
 }
 

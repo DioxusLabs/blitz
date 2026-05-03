@@ -148,6 +148,7 @@ serde = "1"
 
 # Dioxus Native
 webbrowser = "1.0"
+directories = "6.0.0"
 
 # WASM
 wasm-bindgen-futures = "0.4"
