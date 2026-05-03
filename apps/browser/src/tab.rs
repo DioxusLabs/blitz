@@ -13,6 +13,7 @@ use crate::StdNetProvider;
 use crate::about_pages::{AboutPage, AboutPageView};
 use crate::browser_history::{BrowsingHistory, BrowsingHistoryStoreImplExt, HistoryEntry};
 use crate::document_loader::{DocumentLoader, DocumentLoaderStatus, LoadedDocument};
+use crate::favicon::probe_favicon_cached;
 use crate::history::{History, HistoryNav, SyncStore};
 
 pub type TabId = u64;
@@ -77,7 +78,10 @@ impl<Lens> Store<Tab, Lens> {
     {
         *self.html_source().write_unchecked() = loaded.html_source;
         *self.title().write_unchecked() = loaded.title;
-        *self.favicon_url().write_unchecked() = loaded.favicon_url;
+        // The favicon is filled in asynchronously by the caller — clear any
+        // stale icon from the previous page so we don't briefly show the wrong
+        // one while the background probe runs.
+        *self.favicon_url().write_unchecked() = None;
         *self.document().write_unchecked() = Some(loaded.document);
     }
 
@@ -172,16 +176,40 @@ pub fn TabWebView(
     use_effect(move || {
         if loaded_document.read().is_some() {
             if let Some(loaded) = loaded_document.write_unchecked().take().flatten() {
+                let candidate = loaded.favicon_candidate.clone();
                 // Only successful loads count as a visit. Synthesized 404 /
                 // network-error pages parse a title (so the tab strip shows
                 // something sensible) but shouldn't pollute history.
-                if !loaded.is_error {
+                let entry_id = if !loaded.is_error {
                     let url = tab.nav_history().current_url().read().url.clone();
                     let title = display_title(&loaded.title, &url);
-                    let favicon = loaded.favicon_url.clone();
-                    browsing_history.record_visit(HistoryEntry::new(url, title, favicon));
-                }
+                    Some(browsing_history.record_visit(HistoryEntry::new(url, title, None)))
+                } else {
+                    None
+                };
                 tab.apply_loaded_document(loaded);
+
+                // Probe the favicon off the load critical path. The page is
+                // already swapped in; the icon will pop in when the probe
+                // resolves. If the user navigates away first, we drop the
+                // result on the tab side (history still gets patched by id).
+                if let Some(candidate) = candidate {
+                    let net_provider = Arc::clone(&tab.loader_rc().net_provider);
+                    let page_url = tab.nav_history().current_url().read().url.clone();
+                    spawn(async move {
+                        let Some(resolved) = probe_favicon_cached(candidate, &net_provider).await
+                        else {
+                            return;
+                        };
+                        let still_current = tab.nav_history().current_url().read().url == page_url;
+                        if still_current {
+                            *tab.favicon_url().write_unchecked() = Some(resolved.clone());
+                        }
+                        if let Some(id) = entry_id {
+                            browsing_history.set_favicon(id, resolved);
+                        }
+                    });
+                }
             }
         }
     });
