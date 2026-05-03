@@ -10,7 +10,7 @@ use dioxus_native::{SubDocumentAttr, prelude::*};
 use linebender_resource_handle::Blob;
 
 use crate::StdNetProvider;
-use crate::favicon::resolve_favicon_url;
+use crate::favicon::favicon_candidate;
 use crate::history::{BrowserNavProvider, History, SyncStore};
 
 pub enum DocumentLoaderStatus {
@@ -23,7 +23,11 @@ pub struct LoadedDocument {
     pub document: SubDocumentAttr,
     pub html_source: String,
     pub title: String,
-    pub favicon_url: Option<Url>,
+    // The favicon URL we'd probe for this page, computed without I/O. The
+    // actual fetch+decode runs in the background after the tab applies the
+    // load, so it doesn't block document swap-in. None means we couldn't even
+    // form a candidate (e.g. an error page with no base URL).
+    pub favicon_candidate: Option<Url>,
     // True for synthesized error/404 pages. Callers use this to gate side
     // effects that should only fire on real loads (e.g. recording history).
     pub is_error: bool,
@@ -92,7 +96,6 @@ impl DocumentLoader {
             Ok((resolved_url, bytes)) => {
                 tracing::info!("Loaded {}", resolved_url);
                 let base_url = resolved_url.clone();
-                let net_for_favicon = Arc::clone(&net_provider);
                 let config = make_doc_config(Some(resolved_url), net_provider, history, font_ctx);
 
                 let body_text;
@@ -108,17 +111,13 @@ impl DocumentLoader {
                     .find_title_node()
                     .map(|n| n.text_content())
                     .unwrap_or_default();
-                let favicon_url = resolve_favicon_url(
-                    &base_url,
-                    document.favicon_url().as_deref(),
-                    &net_for_favicon,
-                )
-                .await;
+                let favicon_candidate =
+                    favicon_candidate(base_url.as_str(), document.favicon_url().as_deref());
                 LoadedDocument {
                     document: SubDocumentAttr::new(document),
                     html_source: html.to_string(),
                     title: parsed_title,
-                    favicon_url,
+                    favicon_candidate,
                     is_error,
                 }
             }
@@ -145,7 +144,7 @@ impl DocumentLoader {
                     document: SubDocumentAttr::new(document),
                     html_source: error_html.to_string(),
                     title: parsed_title,
-                    favicon_url: None,
+                    favicon_candidate: None,
                     is_error: true,
                 }
             }
