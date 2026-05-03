@@ -46,11 +46,18 @@ pub struct BrowsingHistory {
 
 #[store(pub)]
 impl<Lens> Store<BrowsingHistory, Lens> {
-    fn record_visit(&self, entry: HistoryEntry)
+    fn record_visit(&self, entry: HistoryEntry) -> HistoryEntryId
     where
         Lens: Writable,
     {
-        record_visit_into(&mut self.entries().write(), entry);
+        record_visit_into(&mut self.entries().write(), entry)
+    }
+
+    fn set_favicon(&self, id: HistoryEntryId, favicon_url: Url)
+    where
+        Lens: Writable,
+    {
+        set_favicon_for_entry(&mut self.entries().write(), id, favicon_url);
     }
 
     fn clear(&self)
@@ -70,18 +77,34 @@ impl<Lens> Store<BrowsingHistory, Lens> {
 //
 // Lives as a free function so it can be unit-tested without a Dioxus runtime;
 // the Store method above is the public surface.
-fn record_visit_into(history: &mut VecDeque<HistoryEntry>, entry: HistoryEntry) {
+fn record_visit_into(history: &mut VecDeque<HistoryEntry>, entry: HistoryEntry) -> HistoryEntryId {
     if let Some(latest) = history.front_mut() {
         if latest.url == entry.url {
             latest.title = entry.title;
             latest.favicon_url = entry.favicon_url;
             latest.visited_at = entry.visited_at;
-            return;
+            return latest.id;
         }
     }
+    let id = entry.id;
     history.push_front(entry);
     if history.len() > MAX_HISTORY_ENTRIES {
         history.truncate(MAX_HISTORY_ENTRIES);
+    }
+    id
+}
+
+// Patch a previously recorded entry's favicon. Used by the background favicon
+// probe to fill in the icon after the visit has already been recorded with
+// favicon=None. Silently no-ops if the entry has since aged out — that just
+// means the user navigated past it before the probe finished.
+fn set_favicon_for_entry(
+    history: &mut VecDeque<HistoryEntry>,
+    id: HistoryEntryId,
+    favicon_url: Url,
+) {
+    if let Some(entry) = history.iter_mut().find(|e| e.id == id) {
+        entry.favicon_url = Some(favicon_url);
     }
 }
 

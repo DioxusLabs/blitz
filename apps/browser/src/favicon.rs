@@ -14,16 +14,20 @@ use crate::StdNetProvider;
 static FAVICON_CACHE: LazyLock<RwLock<HashMap<Url, Url>>> =
     LazyLock::new(|| RwLock::new(HashMap::new()));
 
-pub async fn resolve_favicon_url(
-    base_url: &str,
-    favicon_href: Option<&str>,
+// Synchronously resolve which URL we'd probe, without doing any I/O. This is
+// what the document loader hands to the tab so the load can return immediately;
+// the actual probe runs in the background via `probe_favicon_cached`.
+pub fn favicon_candidate(base_url: &str, favicon_href: Option<&str>) -> Option<Url> {
+    let base = Url::parse(base_url).ok()?;
+    favicon_href
+        .and_then(|href| base.join(href).ok())
+        .or_else(|| base.join("/favicon.ico").ok())
+}
+
+pub async fn probe_favicon_cached(
+    candidate: Url,
     net_provider: &Arc<StdNetProvider>,
 ) -> Option<Url> {
-    let base = Url::parse(base_url).ok()?;
-    let candidate = favicon_href
-        .and_then(|href| base.join(href).ok())
-        .or_else(|| base.join("/favicon.ico").ok())?;
-
     if let Ok(cache) = FAVICON_CACHE.read() {
         if let Some(cached) = cache.get(&candidate) {
             return Some(cached.clone());
