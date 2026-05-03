@@ -40,7 +40,6 @@ body,
   flex: 1 1 0;
   min-width: 0;
   max-width: 250px;
-  cursor: pointer;
   border-right: 1px solid #CCC;
   background: #D0D0D0;
   border-top-left-radius: 4px;
@@ -116,7 +115,7 @@ body,
   padding: 0 10px;
   font-size: 18px;
   line-height: 1;
-  cursor: pointer;
+  cursor: default;
   flex: 0 0 auto;
 
   &:hover {
@@ -177,7 +176,6 @@ body,
 
 .iconbutton {
   padding: 4px;
-  cursor: pointer;
   border-radius: 4px;
 
   &:hover {
