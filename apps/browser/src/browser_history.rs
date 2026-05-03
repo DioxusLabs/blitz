@@ -77,10 +77,7 @@ impl<Lens> Store<BrowsingHistory, Lens> {
 //
 // Lives as a free function so it can be unit-tested without a Dioxus runtime;
 // the Store method above is the public surface.
-fn record_visit_into(
-    history: &mut VecDeque<HistoryEntry>,
-    entry: HistoryEntry,
-) -> HistoryEntryId {
+fn record_visit_into(history: &mut VecDeque<HistoryEntry>, entry: HistoryEntry) -> HistoryEntryId {
     if let Some(latest) = history.front_mut() {
         if latest.url == entry.url {
             latest.title = entry.title;

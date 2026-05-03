@@ -197,13 +197,11 @@ pub fn TabWebView(
                     let net_provider = Arc::clone(&tab.loader_rc().net_provider);
                     let page_url = tab.nav_history().current_url().read().url.clone();
                     spawn(async move {
-                        let Some(resolved) =
-                            probe_favicon_cached(candidate, &net_provider).await
+                        let Some(resolved) = probe_favicon_cached(candidate, &net_provider).await
                         else {
                             return;
                         };
-                        let still_current =
-                            tab.nav_history().current_url().read().url == page_url;
+                        let still_current = tab.nav_history().current_url().read().url == page_url;
                         if still_current {
                             *tab.favicon_url().write_unchecked() = Some(resolved.clone());
                         }
