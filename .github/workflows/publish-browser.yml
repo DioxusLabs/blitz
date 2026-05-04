@@ -51,12 +51,12 @@ jobs:
                ./target/dx/blitz/bundle/windows/bundle/nsis/Blitz_0.0.0_arm64-setup.exe
           - target: x86_64-apple-darwin
             os: macos-15-intel
-            use_git_cli: false
+            use_git_cli: true
             artifact_name: "Blitz_0.0.0_macos_x86_64"
             artifact_path: "./target/dx/blitz/bundle/macos/bundle/dmg/Blitz_0.0.0_x64.dmg"
           - target: aarch64-apple-darwin
             os: macos-latest
-            use_git_cli: false
+            use_git_cli: true
             artifact_name: "Blitz_0.0.0_macos_aarch64"
             artifact_path: "./target/dx/blitz/bundle/macos/bundle/dmg/Blitz_0.0.0_aarch64.dmg"
           - target: x86_64-unknown-linux-gnu
@@ -103,7 +103,7 @@ jobs:
 
       - name: Install Dioxus CLI (git)
         if: ${{ matrix.platform.use_git_cli == true }}
-        run: cargo install dioxus-cli --git https://github.com/nicoburns/dioxus.git --rev=9ff94e783eb394e3ab712a524861c536818e6661
+        run: cargo install dioxus-cli --git https://github.com/nicoburns/dioxus.git --rev=cccbd986706d348938c08928571be0e364786f65
 
       # - name: Install openssl on macos
       #   if: ${{ matrix.platform.os == 'macos-latest' || matrix.platform.os == 'macos-15-intel' }}
