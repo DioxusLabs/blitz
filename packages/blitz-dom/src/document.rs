@@ -1375,8 +1375,8 @@ impl BaseDocument {
         let keyword = stylo_to_cursor_icon(style.clone_cursor().keyword);
 
         // Return cursor from style if it is non-auto
-        if keyword != CursorIcon::Default {
-            return Some(keyword);
+        if let Some(cursor) = keyword {
+            return Some(cursor);
         }
 
         // Return text cursor for text inputs
