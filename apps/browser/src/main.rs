@@ -33,9 +33,10 @@ mod status_bar;
 mod tab;
 mod tab_strip;
 mod toolbar;
+mod url_suggestions;
 
 use about_pages::AboutPage;
-use browser_history::BrowsingHistory;
+use browser_history::{BrowsingHistory, HistoryService, HistoryStore, MAX_HISTORY_ENTRIES};
 use status_bar::StatusBar;
 use tab::{Tab, TabId, TabStoreImplExt, TabWebView, active_tab, open_tab, tab_display_title};
 use tab_strip::TabStrip;
@@ -74,8 +75,23 @@ fn app() -> Element {
     let url_input_handle: Signal<Option<NodeHandle>> = use_signal(|| None);
     let url_input_value = use_signal(|| home_url.to_string());
 
+    let history_store: HistoryStore = use_hook(HistoryStore::open);
+
+    // Synchronous on purpose: the toolbar's URL suggestions read from this
+    // store on first render, so the entries need to be present before the
+    // tree mounts. The read is a single sqlite query capped at
+    // MAX_HISTORY_ENTRIES rows and runs once per process.
+    let browsing_history: Store<BrowsingHistory> = {
+        let history_store = history_store.clone();
+        use_store(move || {
+            BrowsingHistory::from_entries(history_store.load_recent(MAX_HISTORY_ENTRIES))
+        })
+    };
+
+    let history_service = HistoryService::new(browsing_history, history_store);
+    use_context_provider(|| history_service.clone());
+
     let tabs: Store<Vec<Tab>> = use_store(Vec::new);
-    let browsing_history: Store<BrowsingHistory> = use_store(BrowsingHistory::default);
     let mut active_tab_id: Signal<TabId> = use_hook(|| {
         let tab = open_tab(tabs, home_url.clone(), net_provider.clone());
         Signal::new(tab.tab_id())
@@ -140,7 +156,6 @@ fn app() -> Element {
                     key: "{tab.tab_id()}",
                     tab,
                     active_tab_id,
-                    browsing_history,
                 }
             }
             {fps_overlay_el}

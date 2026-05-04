@@ -4,8 +4,7 @@ use blitz_traits::net::{Request, Url};
 use dioxus_native::prelude::*;
 
 use crate::browser_history::{
-    BrowsingHistory, BrowsingHistoryStoreExt, BrowsingHistoryStoreImplExt, HistoryEntry,
-    format_elapsed,
+    BrowsingHistoryStoreExt, HistoryEntry, HistoryService, format_elapsed,
 };
 use crate::nav::{is_enter_key, req_from_string};
 use crate::tab::Favicon;
@@ -68,18 +67,11 @@ impl AboutPage {
 }
 
 #[component]
-pub fn AboutPageView(
-    page: AboutPage,
-    on_navigate: Callback<Request>,
-    browsing_history: Store<BrowsingHistory>,
-) -> Element {
+pub fn AboutPageView(page: AboutPage, on_navigate: Callback<Request>) -> Element {
     match page {
         AboutPage::NewTab => rsx!(NewTabPage { on_navigate }),
         AboutPage::Settings => rsx!(StubPage { name: "Settings" }),
-        AboutPage::History => rsx!(HistoryPage {
-            browsing_history,
-            on_navigate
-        }),
+        AboutPage::History => rsx!(HistoryPage { on_navigate }),
         AboutPage::Bookmarks => rsx!(StubPage { name: "Bookmarks" }),
     }
 }
@@ -117,10 +109,7 @@ fn NewTabPage(on_navigate: Callback<Request>) -> Element {
 }
 
 #[component]
-fn HistoryPage(
-    browsing_history: Store<BrowsingHistory>,
-    on_navigate: Callback<Request>,
-) -> Element {
+fn HistoryPage(on_navigate: Callback<Request>) -> Element {
     // `now` is bumped on a fixed cadence so each row's elapsed-time label
     // refreshes while the page is open. Computing the label here (rather than
     // per-row) keeps the wall-clock read in one place.
@@ -133,6 +122,9 @@ fn HistoryPage(
     });
     let now = now();
 
+    let history = use_context::<HistoryService>();
+    let browsing_history = history.browsing();
+
     let entries_lens = browsing_history.entries();
     let entries = entries_lens.read();
     rsx! {
@@ -143,7 +135,7 @@ fn HistoryPage(
                 if !entries.is_empty() {
                     button {
                         class: "clear-btn",
-                        onclick: move |_| browsing_history.clear(),
+                        onclick: move |_| history.clear(),
                         "Clear history"
                     }
                 }

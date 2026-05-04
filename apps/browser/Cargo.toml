@@ -46,6 +46,7 @@ blitz-traits = { workspace = true }
 blitz-dom = { workspace = true, features = ["woff", "parallel-construct"] }
 blitz-net = { workspace = true, features = ["http2"] }
 blitz-html = { workspace = true }
+browser-persistence = { workspace = true }
 linebender_resource_handle = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true, optional = true }
@@ -53,6 +54,7 @@ webbrowser = { workspace = true }
 winit = { workspace = true }
 image = { workspace = true, features = ["ico"] }
 usvg = { workspace = true }
+nucleo-matcher = "0.3"
 anyrender = { workspace = true, optional = true }
 anyrender_serialize = { workspace = true, optional = true }
 anyrender_vello_cpu = { workspace = true, optional = true }
@@ -60,7 +62,7 @@ blitz-paint = { workspace = true, optional = true }
 png = { workspace = true, optional = true }
 peniko = { workspace = true, optional = true }
 
-tokio = { workspace = true, features = ["time"] }
+tokio = { workspace = true, features = ["time", "rt"] }
 
 # Allocators
 mimalloc = { version = "0.1.48", optional = true }

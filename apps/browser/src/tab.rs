@@ -11,7 +11,7 @@ use dioxus_native::{NodeHandle, SubDocumentAttr, prelude::*};
 
 use crate::StdNetProvider;
 use crate::about_pages::{AboutPage, AboutPageView};
-use crate::browser_history::{BrowsingHistory, BrowsingHistoryStoreImplExt, HistoryEntry};
+use crate::browser_history::{HistoryEntry, HistoryService};
 use crate::document_loader::{DocumentLoader, DocumentLoaderStatus, LoadedDocument};
 use crate::favicon::probe_favicon_cached;
 use crate::history::{History, HistoryNav, SyncStore};
@@ -69,27 +69,11 @@ impl<Lens> Store<Tab, Lens> {
         self.nav_history().go_forward();
     }
 
-    // Chrome state (title, favicon) is owned here for real (loaded) pages and
-    // by `apply_about_chrome` for about pages. Exactly one of the two runs per
-    // navigation, gated on whether the URL parsed as an `AboutPage`.
-    fn apply_loaded_document(&self, loaded: LoadedDocument)
-    where
-        Lens: Writable,
-    {
-        *self.html_source().write_unchecked() = loaded.html_source;
-        *self.title().write_unchecked() = loaded.title;
-        // The favicon is filled in asynchronously by the caller — clear any
-        // stale icon from the previous page so we don't briefly show the wrong
-        // one while the background probe runs.
-        *self.favicon_url().write_unchecked() = None;
-        *self.document().write_unchecked() = Some(loaded.document);
-    }
-
-    // Sibling of `apply_loaded_document` for chrome (about:) pages. About URLs
-    // never go through the document loader, so this is the only place their
-    // title is set and the only place a stale favicon from a previous real
-    // page gets cleared.
-    fn apply_about_chrome(&self, page: AboutPage)
+    // Chrome state (title, favicon) for about pages. About URLs never go
+    // through the document loader, so this is the only place their title is
+    // set and the only place a stale favicon from a previous real page gets
+    // cleared.
+    fn commit_about_chrome(&self, page: AboutPage)
     where
         Lens: Writable,
     {
@@ -139,12 +123,52 @@ pub fn active_tab(tabs: Store<Vec<Tab>>, active_id: TabId) -> Store<Tab> {
         .into()
 }
 
+// Chrome writes run as a straight-line block (nothing yields between them) so
+// a render can't sample a half-applied state where the new document is showing
+// under the previous page's icon; the favicon is refilled asynchronously by
+// the spawned probe.
+fn commit_loaded_document(tab: Store<Tab>, history: HistoryService, loaded: LoadedDocument) {
+    let page_url = tab.nav_history().current_url().read().url.clone();
+    let candidate = loaded.favicon_candidate.clone();
+
+    // Synthesized error pages (404 / network failure) skip history and the
+    // favicon probe; the document loader leaves their `favicon_candidate`
+    // None so the let-else below also short-circuits the spawn.
+    let entry_id = (!loaded.is_error).then(|| {
+        history.record_visit(HistoryEntry::new(
+            page_url.clone(),
+            display_title(&loaded.title, &page_url),
+            None,
+        ))
+    });
+
+    *tab.html_source().write_unchecked() = loaded.html_source;
+    *tab.title().write_unchecked() = loaded.title;
+    *tab.favicon_url().write_unchecked() = None;
+    *tab.document().write_unchecked() = Some(loaded.document);
+
+    let (Some(candidate), Some(entry_id)) = (candidate, entry_id) else {
+        return;
+    };
+    let net_provider = Arc::clone(&tab.loader_rc().net_provider);
+    spawn(async move {
+        let Some(resolved) = probe_favicon_cached(candidate, &net_provider).await else {
+            return;
+        };
+        // A → B → A: the probe for the first A may resolve while a second A
+        // entry already exists (non-consecutive revisits don't fold). The
+        // URL check passes (URL is A again), but `entry_id` points at the
+        // *first* A entry. The service patches the in-memory row by id and
+        // every still-NULL on-disk row by URL; both rows want the same icon.
+        if tab.nav_history().current_url().read().url == page_url {
+            *tab.favicon_url().write_unchecked() = Some(resolved.clone());
+        }
+        history.set_favicon(entry_id, page_url, resolved);
+    });
+}
+
 #[component]
-pub fn TabWebView(
-    tab: Store<Tab>,
-    active_tab_id: Signal<TabId>,
-    browsing_history: Store<BrowsingHistory>,
-) -> Element {
+pub fn TabWebView(tab: Store<Tab>, active_tab_id: Signal<TabId>) -> Element {
     let about = use_memo(move || AboutPage::from_url(&tab.nav_history().current_url().read().url));
 
     let loader = tab.loader_rc();
@@ -173,50 +197,19 @@ pub fn TabWebView(
         }
     });
 
+    let history = use_context::<HistoryService>();
+
     use_effect(move || {
         if loaded_document.read().is_some() {
             if let Some(loaded) = loaded_document.write_unchecked().take().flatten() {
-                let candidate = loaded.favicon_candidate.clone();
-                // Only successful loads count as a visit. Synthesized 404 /
-                // network-error pages parse a title (so the tab strip shows
-                // something sensible) but shouldn't pollute history.
-                let entry_id = if !loaded.is_error {
-                    let url = tab.nav_history().current_url().read().url.clone();
-                    let title = display_title(&loaded.title, &url);
-                    Some(browsing_history.record_visit(HistoryEntry::new(url, title, None)))
-                } else {
-                    None
-                };
-                tab.apply_loaded_document(loaded);
-
-                // Probe the favicon off the load critical path. The page is
-                // already swapped in; the icon will pop in when the probe
-                // resolves. If the user navigates away first, we drop the
-                // result on the tab side (history still gets patched by id).
-                if let Some(candidate) = candidate {
-                    let net_provider = Arc::clone(&tab.loader_rc().net_provider);
-                    let page_url = tab.nav_history().current_url().read().url.clone();
-                    spawn(async move {
-                        let Some(resolved) = probe_favicon_cached(candidate, &net_provider).await
-                        else {
-                            return;
-                        };
-                        let still_current = tab.nav_history().current_url().read().url == page_url;
-                        if still_current {
-                            *tab.favicon_url().write_unchecked() = Some(resolved.clone());
-                        }
-                        if let Some(id) = entry_id {
-                            browsing_history.set_favicon(id, resolved);
-                        }
-                    });
-                }
+                commit_loaded_document(tab, history.clone(), loaded);
             }
         }
     });
 
     use_effect(move || {
         if let Some(page) = about() {
-            tab.apply_about_chrome(page);
+            tab.commit_about_chrome(page);
         }
     });
 
@@ -239,7 +232,7 @@ pub fn TabWebView(
                 key: "{id}",
                 class: "tab-content",
                 style: visibility,
-                AboutPageView { page, on_navigate, browsing_history }
+                AboutPageView { page, on_navigate }
             }
         } else {
             web-view {
@@ -265,10 +258,6 @@ where
     display_title(&title, &url)
 }
 
-// Single source of truth for the "use the page title, fall back to the URL
-// when the title is empty/whitespace" rule. Both the tab strip (reading the
-// stored title) and history recording (using the freshly parsed title) need
-// the same behavior.
 fn display_title(title: &str, url: &Url) -> String {
     if title.trim().is_empty() {
         url.to_string()

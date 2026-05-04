@@ -1,47 +1,27 @@
 use std::collections::VecDeque;
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, SystemTime};
 
 use blitz_traits::net::Url;
 use dioxus_native::prelude::*;
 
-const MAX_HISTORY_ENTRIES: usize = 1000;
+pub use browser_persistence::{HistoryEntry, HistoryEntryId, HistoryStore, MAX_HISTORY_ENTRIES};
 
 const SECONDS_PER_MINUTE: u64 = 60;
 const SECONDS_PER_HOUR: u64 = SECONDS_PER_MINUTE * 60;
 const SECONDS_PER_DAY: u64 = SECONDS_PER_HOUR * 24;
 
-pub type HistoryEntryId = u64;
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct HistoryEntry {
-    pub id: HistoryEntryId,
-    pub url: Url,
-    pub title: String,
-    pub favicon_url: Option<Url>,
-    pub visited_at: SystemTime,
-}
-
-impl HistoryEntry {
-    pub fn new(url: Url, title: String, favicon_url: Option<Url>) -> Self {
-        Self {
-            id: next_history_entry_id(),
-            url,
-            title,
-            favicon_url,
-            visited_at: SystemTime::now(),
-        }
-    }
-}
-
-fn next_history_entry_id() -> HistoryEntryId {
-    static COUNTER: AtomicU64 = AtomicU64::new(0);
-    COUNTER.fetch_add(1, Ordering::Relaxed)
-}
-
 #[derive(Default, Store)]
 pub struct BrowsingHistory {
     pub entries: VecDeque<HistoryEntry>,
+}
+
+impl BrowsingHistory {
+    /// Build from a pre-sorted list of persisted entries (visited_at DESC order).
+    pub fn from_entries(entries: Vec<HistoryEntry>) -> Self {
+        Self {
+            entries: VecDeque::from(entries),
+        }
+    }
 }
 
 #[store(pub)]
@@ -50,14 +30,14 @@ impl<Lens> Store<BrowsingHistory, Lens> {
     where
         Lens: Writable,
     {
-        record_visit_into(&mut self.entries().write(), entry)
+        record_visit_inner(&mut self.entries().write(), entry)
     }
 
-    fn set_favicon(&self, id: HistoryEntryId, favicon_url: Url)
+    fn set_favicon_by_id(&self, id: HistoryEntryId, favicon_url: Url)
     where
         Lens: Writable,
     {
-        set_favicon_for_entry(&mut self.entries().write(), id, favicon_url);
+        set_favicon_by_id_inner(&mut self.entries().write(), id, favicon_url);
     }
 
     fn clear(&self)
@@ -74,10 +54,7 @@ impl<Lens> Store<BrowsingHistory, Lens> {
 // matching the simplest behavior a user can predict at a glance. The id of
 // the existing head entry is preserved on fold so its rendered row is not
 // remounted.
-//
-// Lives as a free function so it can be unit-tested without a Dioxus runtime;
-// the Store method above is the public surface.
-fn record_visit_into(history: &mut VecDeque<HistoryEntry>, entry: HistoryEntry) -> HistoryEntryId {
+fn record_visit_inner(history: &mut VecDeque<HistoryEntry>, entry: HistoryEntry) -> HistoryEntryId {
     if let Some(latest) = history.front_mut() {
         if latest.url == entry.url {
             latest.title = entry.title;
@@ -94,11 +71,9 @@ fn record_visit_into(history: &mut VecDeque<HistoryEntry>, entry: HistoryEntry) 
     id
 }
 
-// Patch a previously recorded entry's favicon. Used by the background favicon
-// probe to fill in the icon after the visit has already been recorded with
-// favicon=None. Silently no-ops if the entry has since aged out — that just
-// means the user navigated past it before the probe finished.
-fn set_favicon_for_entry(
+// No-ops if the entry has aged out before the background favicon probe
+// finished — the visit has already been pushed past the cap.
+fn set_favicon_by_id_inner(
     history: &mut VecDeque<HistoryEntry>,
     id: HistoryEntryId,
     favicon_url: Url,
@@ -108,9 +83,8 @@ fn set_favicon_for_entry(
     }
 }
 
-// Display helper. Lives here for proximity to the data type but is otherwise
-// a UI concern; pass an explicit `now` so the page can drive a periodic
-// re-render without each row reading the wall clock independently.
+// `now` is injected so the page can drive a periodic re-render without each
+// row reading the wall clock independently.
 pub fn format_elapsed(visited_at: SystemTime, now: SystemTime) -> String {
     let secs = now
         .duration_since(visited_at)
@@ -124,6 +98,68 @@ pub fn format_elapsed(visited_at: SystemTime, now: SystemTime) -> String {
         format!("{} hr ago", secs / SECONDS_PER_HOUR)
     } else {
         format!("{} days ago", secs / SECONDS_PER_DAY)
+    }
+}
+
+// Single entry point for visit/favicon writes. Owns the in-memory `Store` and
+// the on-disk `HistoryStore` together so callers don't have to write to both,
+// and don't have to know that the two sides key favicons differently.
+#[derive(Clone)]
+pub struct HistoryService {
+    browsing: Store<BrowsingHistory>,
+    disk: HistoryStore,
+}
+
+impl HistoryService {
+    pub fn new(browsing: Store<BrowsingHistory>, disk: HistoryStore) -> Self {
+        Self { browsing, disk }
+    }
+
+    /// In-memory store, for read paths that need a reactive `Store` handle.
+    pub fn browsing(&self) -> Store<BrowsingHistory> {
+        self.browsing
+    }
+
+    pub fn record_visit(&self, entry: HistoryEntry) -> HistoryEntryId {
+        let id = self.browsing.record_visit(entry.clone());
+        let disk = self.disk.clone();
+        dispatch_disk_write(move || disk.record_visit(&entry));
+        id
+    }
+
+    /// Favicon resolution lands on both stores at once. The in-memory side is
+    /// patched by id (so the specific row that triggered the probe gets the
+    /// icon); the on-disk side is patched by URL (so every still-NULL row for
+    /// that URL catches up).
+    pub fn set_favicon(&self, id: HistoryEntryId, page_url: Url, favicon_url: Url) {
+        self.browsing.set_favicon_by_id(id, favicon_url.clone());
+        let disk = self.disk.clone();
+        dispatch_disk_write(move || disk.set_favicon_by_url(&page_url, &favicon_url));
+    }
+
+    pub fn clear(&self) {
+        self.browsing.clear();
+        let disk = self.disk.clone();
+        dispatch_disk_write(move || disk.clear());
+    }
+}
+
+// Hop sync sqlite work off the calling thread when a tokio runtime is bound.
+// If no runtime is bound we drop the write rather than blocking the caller —
+// history is best-effort, and silently running sync I/O on the UI thread
+// would mask the bug. `debug_assert!` surfaces it in development.
+fn dispatch_disk_write(f: impl FnOnce() + Send + 'static) {
+    match tokio::runtime::Handle::try_current() {
+        Ok(handle) => {
+            handle.spawn_blocking(f);
+        }
+        Err(_) => {
+            debug_assert!(
+                false,
+                "history: disk write dispatched outside a tokio runtime"
+            );
+            tracing::warn!("history: no tokio runtime; dropping disk write");
+        }
     }
 }
 
@@ -142,9 +178,9 @@ mod tests {
     #[test]
     fn folds_consecutive_same_url_visits() {
         let mut h = VecDeque::new();
-        record_visit_into(&mut h, entry("https://a.test/"));
+        record_visit_inner(&mut h, entry("https://a.test/"));
         let id_after_first = h[0].id;
-        record_visit_into(&mut h, entry("https://a.test/"));
+        record_visit_inner(&mut h, entry("https://a.test/"));
         assert_eq!(h.len(), 1);
         assert_eq!(
             h[0].id, id_after_first,
@@ -155,9 +191,9 @@ mod tests {
     #[test]
     fn keeps_non_consecutive_revisits() {
         let mut h = VecDeque::new();
-        record_visit_into(&mut h, entry("https://a.test/"));
-        record_visit_into(&mut h, entry("https://b.test/"));
-        record_visit_into(&mut h, entry("https://a.test/"));
+        record_visit_inner(&mut h, entry("https://a.test/"));
+        record_visit_inner(&mut h, entry("https://b.test/"));
+        record_visit_inner(&mut h, entry("https://a.test/"));
         assert_eq!(h.len(), 3);
     }
 
@@ -165,7 +201,7 @@ mod tests {
     fn truncates_to_max_entries() {
         let mut h = VecDeque::new();
         for i in 0..(MAX_HISTORY_ENTRIES + 5) {
-            record_visit_into(&mut h, entry(&format!("https://a.test/{i}")));
+            record_visit_inner(&mut h, entry(&format!("https://a.test/{i}")));
         }
         assert_eq!(h.len(), MAX_HISTORY_ENTRIES);
     }
