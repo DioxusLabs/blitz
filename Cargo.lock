@@ -1076,21 +1076,32 @@ dependencies = [
  "blitz-net",
  "blitz-paint",
  "blitz-traits",
+ "browser-persistence",
  "dioxus-native",
- "directories",
  "image",
  "linebender_resource_handle",
  "mimalloc",
+ "nucleo-matcher",
  "peniko",
  "png 0.18.1",
  "rfd",
- "rusqlite",
  "tokio",
  "tracing",
  "tracing-subscriber",
  "usvg",
  "webbrowser",
  "winit",
+]
+
+[[package]]
+name = "browser-persistence"
+version = "0.0.0"
+dependencies = [
+ "directories",
+ "rusqlite",
+ "rusqlite_migration",
+ "tracing",
+ "url",
 ]
 
 [[package]]
@@ -4649,6 +4660,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "nucleo-matcher"
+version = "0.3.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bf33f538733d1a5a3494b836ba913207f14d9d4a1d3cd67030c5061bdd2cac85"
+dependencies = [
+ "memchr",
+ "unicode-segmentation",
+]
+
+[[package]]
 name = "num-bigint"
 version = "0.4.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6086,6 +6107,16 @@ dependencies = [
  "hashlink",
  "libsqlite3-sys",
  "smallvec",
+]
+
+[[package]]
+name = "rusqlite_migration"
+version = "1.3.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "923b42e802f7dc20a0a6b5e097ba7c83fe4289da07e49156fecf6af08aa9cd1c"
+dependencies = [
+ "log",
+ "rusqlite",
 ]
 
 [[package]]

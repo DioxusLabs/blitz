@@ -46,6 +46,7 @@ blitz-traits = { workspace = true }
 blitz-dom = { workspace = true, features = ["woff", "parallel-construct"] }
 blitz-net = { workspace = true, features = ["http2"] }
 blitz-html = { workspace = true }
+browser-persistence = { workspace = true }
 linebender_resource_handle = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true, optional = true }
@@ -53,6 +54,7 @@ webbrowser = { workspace = true }
 winit = { workspace = true }
 image = { workspace = true, features = ["ico"] }
 usvg = { workspace = true }
+nucleo-matcher = "0.3"
 anyrender = { workspace = true, optional = true }
 anyrender_serialize = { workspace = true, optional = true }
 anyrender_vello_cpu = { workspace = true, optional = true }
@@ -67,8 +69,6 @@ mimalloc = { version = "0.1.48", optional = true }
 
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
 rfd = { workspace = true, features = ["xdg-portal"], optional = true }
-rusqlite = { version = "0.32", features = ["bundled"] }
-directories = { workspace = true }
 
 [target.'cfg(target_os = "android")'.dependencies]
 android-activity = { version = "0.6.0", features = ["native-activity"] }

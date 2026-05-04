@@ -27,7 +27,6 @@ mod favicon;
 #[cfg(feature = "vello")]
 mod fps_overlay;
 mod history;
-mod history_store;
 mod icons;
 mod nav;
 mod status_bar;
@@ -37,7 +36,7 @@ mod toolbar;
 mod url_suggestions;
 
 use about_pages::AboutPage;
-use browser_history::BrowsingHistory;
+use browser_history::{BrowsingHistory, HistoryService, HistoryStore, MAX_HISTORY_ENTRIES};
 use status_bar::StatusBar;
 use tab::{Tab, TabId, TabStoreImplExt, TabWebView, active_tab, open_tab, tab_display_title};
 use tab_strip::TabStrip;
@@ -76,8 +75,7 @@ fn app() -> Element {
     let url_input_handle: Signal<Option<NodeHandle>> = use_signal(|| None);
     let url_input_value = use_signal(|| home_url.to_string());
 
-    let history_store: history_store::HistoryStore = use_hook(history_store::HistoryStore::open);
-    use_context_provider(|| history_store.clone());
+    let history_store: HistoryStore = use_hook(HistoryStore::open);
 
     // Synchronous on purpose: the toolbar's URL suggestions read from this
     // store on first render, so the entries need to be present before the
@@ -86,12 +84,12 @@ fn app() -> Element {
     let browsing_history: Store<BrowsingHistory> = {
         let history_store = history_store.clone();
         use_store(move || {
-            BrowsingHistory::from_entries(
-                history_store.load_recent(browser_history::MAX_HISTORY_ENTRIES),
-            )
+            BrowsingHistory::from_entries(history_store.load_recent(MAX_HISTORY_ENTRIES))
         })
     };
-    use_context_provider(|| browsing_history);
+
+    let history_service = HistoryService::new(browsing_history, history_store);
+    use_context_provider(|| history_service.clone());
 
     let tabs: Store<Vec<Tab>> = use_store(Vec::new);
     let mut active_tab_id: Signal<TabId> = use_hook(|| {
@@ -158,7 +156,6 @@ fn app() -> Element {
                     key: "{tab.tab_id()}",
                     tab,
                     active_tab_id,
-                    browsing_history,
                 }
             }
             {fps_overlay_el}

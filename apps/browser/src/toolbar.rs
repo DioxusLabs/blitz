@@ -6,7 +6,7 @@ use blitz_traits::net::{Request, Url};
 use dioxus_native::{NodeHandle, SubDocumentAttr, prelude::*};
 
 use crate::about_pages::AboutPage;
-use crate::browser_history::{BrowsingHistory, BrowsingHistoryStoreExt};
+use crate::browser_history::{BrowsingHistoryStoreExt, HistoryService};
 use crate::history::HistoryNav;
 use crate::icons::{self, IconButton};
 use crate::nav::{is_enter_key, open_in_external_browser, req_from_string};
@@ -30,25 +30,24 @@ pub fn Toolbar(
     #[cfg(feature = "cache")]
     let net_provider = use_context::<Arc<StdNetProvider>>();
 
-    let browsing_history = use_context::<Store<BrowsingHistory>>();
+    let browsing_history = use_context::<HistoryService>().browsing();
     let mut selected_suggestion = use_signal::<Option<usize>>(|| None);
 
     let suggestions = use_memo(move || {
         build_suggestions(&url_input_value.read(), &browsing_history.entries().read())
     });
 
-    // Sync URL bar when active tab changes
     use_effect(move || {
-        let aid = active_tab_id();
-        let tab = active_tab(tabs, aid);
+        let active_id = active_tab_id();
+        let tab = active_tab(tabs, active_id);
         *url_input_value.write_unchecked() = tab.nav_history().current_url().read().url.to_string();
     });
 
     let clear_document_focus = use_callback(move |_| {
         let tab = active_tab(tabs, active_tab_id());
-        let nh_lens = tab.node_handle();
-        let nh_guard = nh_lens.peek();
-        if let Some(handle) = (*nh_guard).as_ref() {
+        let node_handle_lens = tab.node_handle();
+        let node_handle_guard = node_handle_lens.peek();
+        if let Some(handle) = (*node_handle_guard).as_ref() {
             let node_id = handle.node_id();
             let mut doc = handle.doc_mut();
             if let Some(sub_doc) = doc
@@ -78,9 +77,15 @@ pub fn Toolbar(
     });
 
     let on_pick = use_callback(move |s: Suggestion| {
+        // Literal and Search rows both fall back to the bare-input parse path,
+        // which already handles "URL or DuckDuckGo search" itself. The Literal
+        // row is here so users can return to "what Enter would do" after
+        // moving through the list with arrow keys.
         let req = match s.kind {
             SuggestionKind::History(entry) => Some(Request::get(entry.url)),
-            SuggestionKind::Search => req_from_string(&url_input_value.read()),
+            SuggestionKind::Literal | SuggestionKind::Search => {
+                req_from_string(&url_input_value.read())
+            }
         };
         match req {
             Some(req) => navigate_from_urlbar(req),
@@ -406,7 +411,6 @@ pub fn Toolbar(
                     UrlSuggestions {
                         suggestions,
                         selected_idx: selected_suggestion,
-                        on_hover: move |idx| selected_suggestion.set(idx),
                         on_pick,
                     }
                 }

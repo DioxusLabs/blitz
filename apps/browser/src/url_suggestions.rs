@@ -1,6 +1,10 @@
-use std::collections::VecDeque;
+use std::collections::{HashSet, VecDeque};
 
 use dioxus_native::prelude::*;
+use nucleo_matcher::{
+    Config, Matcher, Utf32Str,
+    pattern::{CaseMatching, Normalization, Pattern},
+};
 
 use crate::browser_history::HistoryEntry;
 use crate::tab::Favicon;
@@ -10,9 +14,13 @@ const SEARCH_ENGINE_NAME: &str = "DuckDuckGo";
 
 #[derive(Clone, PartialEq)]
 pub enum SuggestionKind {
-    // Boxed because HistoryEntry is ~224B and the other variant is empty —
-    // unboxed, every Suggestion (including Search rows) pays the worst-case
-    // size. Cheap to box: at most ~7 entries per build_suggestions call.
+    /// Use the literal urlbar text. Picking this row runs the same
+    /// parse-or-search path as pressing Enter on a bare input, giving users a
+    /// way back to "what Enter would do" once they've started moving through
+    /// the list with the arrow keys.
+    Literal,
+    // Boxed so an empty-variant Suggestion (Literal, Search) doesn't pay the
+    // worst-case enum size set by HistoryEntry.
     History(Box<HistoryEntry>),
     Search,
 }
@@ -20,55 +28,76 @@ pub enum SuggestionKind {
 #[derive(Clone, PartialEq)]
 pub struct Suggestion {
     pub kind: SuggestionKind,
-    pub display_title: String,
-    pub display_subtitle: String,
+    display_title: String,
+    display_subtitle: String,
 }
 
 /// Build suggestion rows for `query` against the most-recent `recent` entries.
 ///
-/// Returns an empty vec for an empty query.  Otherwise returns up to 6 history
-/// rows (deduped by URL, most-recent first) followed by exactly one Search row.
+/// Returns an empty vec for an empty query.  Otherwise returns one Literal row
+/// (the "what Enter would do" action), followed by up to 6 history rows
+/// (deduped by URL, ranked by fuzzy-match score against `title + url`, with
+/// recency as the tiebreak), followed by exactly one Search row.
 pub fn build_suggestions(query: &str, recent: &VecDeque<HistoryEntry>) -> Vec<Suggestion> {
     if query.is_empty() {
         return vec![];
     }
 
-    // Lowercase the needle once. Matching against entries uses
-    // `contains_ignore_ascii_case` so we don't allocate per-entry — at up to
-    // ~1000 history rows, three String allocs per entry per keystroke adds up.
-    let q_lower = query.to_ascii_lowercase();
-    let mut history_rows: Vec<Suggestion> = Vec::with_capacity(MAX_HISTORY_SUGGESTIONS);
+    let mut result: Vec<Suggestion> = Vec::with_capacity(MAX_HISTORY_SUGGESTIONS + 2);
 
-    for entry in recent {
-        if history_rows.len() >= MAX_HISTORY_SUGGESTIONS {
-            break;
-        }
+    result.push(Suggestion {
+        kind: SuggestionKind::Literal,
+        display_title: query.to_string(),
+        display_subtitle: String::new(),
+    });
+
+    let mut matcher = Matcher::new(Config::DEFAULT);
+    let pattern = Pattern::parse(query, CaseMatching::Ignore, Normalization::Smart);
+
+    // Score every unique URL; pick the top MAX_HISTORY_SUGGESTIONS afterward.
+    // We have to look at all entries (up to ~1000) rather than stopping at the
+    // first 6, since fuzzy ranking is global rather than recency-prefix.
+    let mut scored: Vec<(u32, usize, &HistoryEntry)> = Vec::new();
+    let mut seen_urls: HashSet<&str> = HashSet::new();
+    let mut haystack_buf = Vec::new();
+
+    for (recency_idx, entry) in recent.iter().enumerate() {
         let url_str = entry.url.as_str();
-        // Linear scan: capped at MAX_HISTORY_SUGGESTIONS, so faster than a
-        // HashSet and avoids the per-key String allocation.
-        if history_rows.iter().any(|s| s.display_subtitle == url_str) {
+        if !seen_urls.insert(url_str) {
             continue;
         }
-        let host = entry.url.host_str().unwrap_or("");
-        let path = entry.url.path();
-        if contains_ignore_ascii_case(host, &q_lower)
-            || contains_ignore_ascii_case(path, &q_lower)
-            || contains_ignore_ascii_case(&entry.title, &q_lower)
-        {
-            let display_title = if entry.title.is_empty() {
-                url_str.to_owned()
-            } else {
-                entry.title.clone()
-            };
-            history_rows.push(Suggestion {
-                kind: SuggestionKind::History(Box::new(entry.clone())),
-                display_title,
-                display_subtitle: url_str.to_owned(),
-            });
+        // Concatenate the user-visible fields into one haystack. Fuzzy matching
+        // finds subsequences across the whole string, so a query like "rust"
+        // matches whether it appears in the title, host, or path.
+        let haystack_string = if entry.title.is_empty() {
+            url_str.to_owned()
+        } else {
+            format!("{} {url_str}", entry.title)
+        };
+        let haystack = Utf32Str::new(&haystack_string, &mut haystack_buf);
+        if let Some(score) = pattern.score(haystack, &mut matcher) {
+            scored.push((score, recency_idx, entry));
         }
     }
 
-    let mut result = history_rows;
+    // Higher score wins; ties go to the more-recent entry (lower recency_idx).
+    scored.sort_by(|a, b| b.0.cmp(&a.0).then(a.1.cmp(&b.1)));
+    scored.truncate(MAX_HISTORY_SUGGESTIONS);
+
+    for (_, _, entry) in &scored {
+        let url_str = entry.url.as_str();
+        let display_title = if entry.title.is_empty() {
+            url_str.to_owned()
+        } else {
+            entry.title.clone()
+        };
+        result.push(Suggestion {
+            kind: SuggestionKind::History(Box::new((*entry).clone())),
+            display_title,
+            display_subtitle: url_str.to_owned(),
+        });
+    }
+
     result.push(Suggestion {
         kind: SuggestionKind::Search,
         display_title: format!("Search with {SEARCH_ENGINE_NAME}: {query}"),
@@ -79,61 +108,56 @@ pub fn build_suggestions(query: &str, recent: &VecDeque<HistoryEntry>) -> Vec<Su
 
 const MAX_HISTORY_SUGGESTIONS: usize = 6;
 
-// Allocation-free case-insensitive substring check. Folds case for ASCII only,
-// which is fine for URL/host/path matching and good enough for titles in a
-// search box. `needle` must already be lowercased.
-//
-// Operates on raw bytes of the UTF-8 string. This is safe because
-// `eq_ignore_ascii_case` only swaps ASCII A-Z/a-z; multi-byte UTF-8 sequences
-// (whose bytes are all >= 0x80) compare bytewise unchanged, so the result is
-// the same as a Unicode-aware byte-substring search — just without the cost of
-// per-entry allocation.
-fn contains_ignore_ascii_case(haystack: &str, needle_lower: &str) -> bool {
-    if needle_lower.is_empty() {
-        return true;
-    }
-    let h = haystack.as_bytes();
-    let n = needle_lower.as_bytes();
-    if h.len() < n.len() {
-        return false;
-    }
-    h.windows(n.len())
-        .any(|w| w.iter().zip(n).all(|(a, b)| a.eq_ignore_ascii_case(b)))
-}
-
 /// Autocomplete dropdown anchored below the urlbar input.
 ///
 /// `selected_idx` indexes into the flat suggestion vec (0-based). Section
-/// headers are visual only and are not counted in the index. Selection state
-/// itself is owned by the parent: the parent decides what to do with hover
-/// and pick events via `on_hover` and `on_pick`.
+/// headers are visual only and are not counted in the index. Hover only
+/// produces a visual highlight (via the CSS `:hover` rule) — the
+/// keyboard-selected row stays selected. Selection state itself is owned by
+/// the parent, which receives picks via `on_pick`.
 #[component]
 pub fn UrlSuggestions(
     suggestions: ReadSignal<Vec<Suggestion>>,
     selected_idx: ReadSignal<Option<usize>>,
-    on_hover: Callback<Option<usize>>,
     on_pick: Callback<Suggestion>,
 ) -> Element {
     let items = suggestions.read();
-    // `build_suggestions` always emits history rows first, then search rows.
-    // Find the boundary once instead of filtering twice.
-    let split = items
+    // Order is fixed: optional Literal row, then history rows, then a Search
+    // row. Find the section boundaries once.
+    let history_start = if items
+        .first()
+        .is_some_and(|s| matches!(s.kind, SuggestionKind::Literal))
+    {
+        1
+    } else {
+        0
+    };
+    let search_start = items
         .iter()
         .position(|s| matches!(s.kind, SuggestionKind::Search))
         .unwrap_or(items.len());
-    let (history, search) = items.split_at(split);
-    let sel = selected_idx();
+    let literal_slice = &items[..history_start];
+    let history = &items[history_start..search_start];
+    let search = &items[search_start..];
+    let selected_idx = selected_idx();
 
     rsx! {
         div { class: "urlbar-suggestions",
+            for (idx, suggestion) in literal_slice.iter().enumerate() {
+                SuggestionRow {
+                    idx,
+                    suggestion: suggestion.clone(),
+                    is_selected: selected_idx == Some(idx),
+                    on_pick,
+                }
+            }
             if !history.is_empty() {
                 div { class: "suggestion-section-header", "History" }
-                for (idx, suggestion) in history.iter().enumerate() {
+                for (offset, suggestion) in history.iter().enumerate() {
                     SuggestionRow {
-                        idx,
+                        idx: history_start + offset,
                         suggestion: suggestion.clone(),
-                        is_selected: sel == Some(idx),
-                        on_hover,
+                        is_selected: selected_idx == Some(history_start + offset),
                         on_pick,
                     }
                 }
@@ -142,10 +166,9 @@ pub fn UrlSuggestions(
                 div { class: "suggestion-section-header", "Search Suggestions" }
                 for (offset, suggestion) in search.iter().enumerate() {
                     SuggestionRow {
-                        idx: split + offset,
+                        idx: search_start + offset,
                         suggestion: suggestion.clone(),
-                        is_selected: sel == Some(split + offset),
-                        on_hover,
+                        is_selected: selected_idx == Some(search_start + offset),
                         on_pick,
                     }
                 }
@@ -161,7 +184,6 @@ fn SuggestionRow(
     idx: usize,
     suggestion: Suggestion,
     is_selected: bool,
-    on_hover: Callback<Option<usize>>,
     on_pick: Callback<Suggestion>,
 ) -> Element {
     let row_class = if is_selected {
@@ -171,14 +193,13 @@ fn SuggestionRow(
     };
     let (favicon_url, show_subtitle) = match &suggestion.kind {
         SuggestionKind::History(entry) => (entry.favicon_url.clone(), true),
-        SuggestionKind::Search => (None, false),
+        SuggestionKind::Literal | SuggestionKind::Search => (None, false),
     };
     let pick = suggestion.clone();
     rsx! {
         div {
             class: row_class,
             "data-idx": "{idx}",
-            onmouseenter: move |_| on_hover.call(Some(idx)),
             onmousedown: move |evt| {
                 evt.prevent_default();
                 on_pick.call(pick.clone());
@@ -222,11 +243,21 @@ mod tests {
     }
 
     #[test]
-    fn no_history_returns_one_search_row() {
+    fn literal_row_is_first() {
         let h = history(vec![]);
         let suggestions = build_suggestions("rust", &h);
-        assert_eq!(suggestions.len(), 1);
-        assert!(matches!(suggestions[0].kind, SuggestionKind::Search));
+        assert!(matches!(suggestions[0].kind, SuggestionKind::Literal));
+        assert_eq!(suggestions[0].display_title, "rust");
+    }
+
+    #[test]
+    fn no_history_returns_literal_and_search_row() {
+        let h = history(vec![]);
+        let suggestions = build_suggestions("rust", &h);
+        // 1 literal + 1 search
+        assert_eq!(suggestions.len(), 2);
+        assert!(matches!(suggestions[0].kind, SuggestionKind::Literal));
+        assert!(matches!(suggestions[1].kind, SuggestionKind::Search));
     }
 
     #[test]
@@ -236,24 +267,25 @@ mod tests {
             "Rust Programming",
         )]);
         let suggestions = build_suggestions("RUST", &h);
-        assert_eq!(suggestions.len(), 2); // 1 history + 1 search
-        assert!(matches!(suggestions[0].kind, SuggestionKind::History(_)));
+        // 1 literal + 1 history + 1 search
+        assert_eq!(suggestions.len(), 3);
+        assert!(matches!(suggestions[1].kind, SuggestionKind::History(_)));
     }
 
     #[test]
     fn matches_url_host_substring() {
         let h = history(vec![entry("https://rust-lang.org/")]);
         let suggestions = build_suggestions("rust", &h);
-        assert_eq!(suggestions.len(), 2);
-        assert!(matches!(suggestions[0].kind, SuggestionKind::History(_)));
+        assert_eq!(suggestions.len(), 3);
+        assert!(matches!(suggestions[1].kind, SuggestionKind::History(_)));
     }
 
     #[test]
     fn matches_url_path_substring() {
         let h = history(vec![entry("https://example.com/rustacean")]);
         let suggestions = build_suggestions("rustacean", &h);
-        assert_eq!(suggestions.len(), 2);
-        assert!(matches!(suggestions[0].kind, SuggestionKind::History(_)));
+        assert_eq!(suggestions.len(), 3);
+        assert!(matches!(suggestions[1].kind, SuggestionKind::History(_)));
     }
 
     #[test]
@@ -269,8 +301,8 @@ mod tests {
             .filter(|s| matches!(s.kind, SuggestionKind::History(_)))
             .count();
         assert_eq!(history_count, 6);
-        // Total: 6 history + 1 search
-        assert_eq!(suggestions.len(), 7);
+        // Total: 1 literal + 6 history + 1 search
+        assert_eq!(suggestions.len(), 8);
     }
 
     #[test]
@@ -306,9 +338,44 @@ mod tests {
     fn search_row_display_title_contains_query() {
         let h = history(vec![]);
         let suggestions = build_suggestions("hello world", &h);
+        // Literal row is at [0]; Search row is the last row.
+        let search = suggestions.last().expect("at least one row");
+        assert!(matches!(search.kind, SuggestionKind::Search));
         assert_eq!(
-            suggestions[0].display_title,
+            search.display_title,
             format!("Search with {SEARCH_ENGINE_NAME}: hello world")
         );
+    }
+
+    #[test]
+    fn fuzzy_matches_subsequence_not_just_substring() {
+        // "rstlng" is not a substring of any field, but is a subsequence of
+        // "rust-lang.org" — fuzzy matching should still surface it.
+        let h = history(vec![entry_with_title("https://rust-lang.org/", "Rust")]);
+        let suggestions = build_suggestions("rstlng", &h);
+        let history_count = suggestions
+            .iter()
+            .filter(|s| matches!(s.kind, SuggestionKind::History(_)))
+            .count();
+        assert_eq!(history_count, 1);
+    }
+
+    #[test]
+    fn ranks_better_match_above_recent_weaker_match() {
+        // Most-recent entry only matches weakly; an older entry is a strong
+        // contiguous match. Ranking should put the strong match first.
+        let mut h = VecDeque::new();
+        h.push_back(entry_with_title(
+            "https://rust-lang.org/",
+            "The Rust Programming Language",
+        )); // older, strong match
+        h.push_front(entry_with_title("https://r.example.com/u/s/t", "Other")); // newer, weak match
+        let suggestions = build_suggestions("rust", &h);
+        let history_rows: Vec<_> = suggestions
+            .iter()
+            .filter(|s| matches!(s.kind, SuggestionKind::History(_)))
+            .collect();
+        assert_eq!(history_rows.len(), 2);
+        assert_eq!(history_rows[0].display_subtitle, "https://rust-lang.org/");
     }
 }

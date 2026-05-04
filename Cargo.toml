@@ -13,6 +13,7 @@ members = [
     "packages/dioxus-native",
     "packages/dioxus-native-dom",
     "apps/browser",
+    "apps/browser/persistence",
     "apps/readme",
     "apps/bump",
     "wpt/runner",
@@ -46,6 +47,7 @@ dioxus-native = { version = "0.7.0", path = "./packages/dioxus-native", default-
 dioxus-native-dom = { version = "0.7.0", path = "./packages/dioxus-native-dom", default-features = false }
 debug_timer = { version = "0.1.2", path = "./packages/debug_timer" }
 accesskit_xplat = { version = "0.1", path = "./packages/accesskit_xplat", default-features = false }
+browser-persistence = { path = "./apps/browser/persistence" }
 
 # Servo dependencies
 style = { version = "0.16.0", package = "stylo" }
