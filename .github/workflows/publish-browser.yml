@@ -31,8 +31,9 @@ jobs:
     permissions:
       contents: write
     runs-on: ${{ matrix.platform.os }}
+    environment: Signed Builds
     strategy:
-      fail-fast: false
+      fail-fast: true
       matrix:
         platform:
           - target: x86_64-pc-windows-msvc
@@ -95,6 +96,10 @@ jobs:
           cache-all-crates: "true"
           save-if: ${{ github.ref == 'refs/heads/main' }}
 
+      - name: Create private key file
+        if: ${{ matrix.platform.os == 'macos-15-intel' || matrix.platform.os == 'macos-latest' }}
+        run: echo "${{ secrets.APPLE_API_KEY_CONTENT }}" > ${{ vars.APPLE_API_KEY_PATH }}
+
       - name: Install Dioxus CLI
         if: ${{ matrix.platform.use_git_cli == false }}
         uses: taiki-e/install-action@v2
@@ -125,6 +130,16 @@ jobs:
 
       - name: Bundle browser
         run: dx bundle --package browser --profile production --locked --verbose --trace
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_API_ISSUER: ${{ vars.APPLE_API_ISSUER }}
+          APPLE_API_KEY_ID: ${{ vars.APPLE_API_KEY_ID }}
+          APPLE_API_KEY_PATH: ${{ vars.APPLE_API_KEY_PATH }}
+
+      - name: Delete private key file
+        if: ${{ always() && (matrix.platform.os == 'macos-15-intel' || matrix.platform.os == 'macos-latest') }}
+        run: rm ${{ vars.APPLE_API_KEY_PATH }}
 
       - name: Upload app bundle
         uses: actions/upload-artifact@v5
