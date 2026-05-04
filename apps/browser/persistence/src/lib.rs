@@ -29,8 +29,8 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use rusqlite::{Connection, params};
-use url::Url;
 use rusqlite_migration::{M, Migrations};
+use url::Url;
 
 // Schema migrations. Append a new `M::up(...)` for every schema change —
 // never edit a previously-released entry, since the index in this list is
