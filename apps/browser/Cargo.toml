@@ -54,7 +54,7 @@ webbrowser = { workspace = true }
 winit = { workspace = true }
 image = { workspace = true, features = ["ico"] }
 usvg = { workspace = true }
-nucleo-matcher = "0.3"
+nucleo = "0.5"
 anyrender = { workspace = true, optional = true }
 anyrender_serialize = { workspace = true, optional = true }
 anyrender_vello_cpu = { workspace = true, optional = true }
@@ -62,7 +62,7 @@ blitz-paint = { workspace = true, optional = true }
 png = { workspace = true, optional = true }
 peniko = { workspace = true, optional = true }
 
-tokio = { workspace = true, features = ["time", "rt"] }
+tokio = { workspace = true, features = ["time", "rt", "sync", "macros"] }
 
 # Allocators
 mimalloc = { version = "0.1.48", optional = true }

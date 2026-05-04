@@ -1081,7 +1081,7 @@ dependencies = [
  "image",
  "linebender_resource_handle",
  "mimalloc",
- "nucleo-matcher",
+ "nucleo",
  "peniko",
  "png 0.18.1",
  "rfd",
@@ -4657,6 +4657,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7957b9740744892f114936ab4a57b3f487491bbeafaf8083688b16841a4240e5"
 dependencies = [
  "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "nucleo"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5262af4c94921c2646c5ac6ff7900c2af9cbb08dc26a797e18130a7019c039d4"
+dependencies = [
+ "nucleo-matcher",
+ "parking_lot",
+ "rayon",
 ]
 
 [[package]]
