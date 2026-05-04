@@ -404,7 +404,7 @@ pub fn Toolbar(
                     },
                     oninput: move |evt| {
                         *url_input_value.write() = evt.value();
-                        selected_suggestion.set(None);
+                        selected_suggestion.set(Some(0));
                     },
                 }
                 if is_focused() && !suggestions.read().is_empty() {
