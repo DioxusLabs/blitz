@@ -249,6 +249,8 @@ impl<Rend: WindowRenderer> View<Rend> {
     pub fn suspend(&mut self) {
         self.waker = None;
         self.renderer.suspend();
+
+        #[cfg(feature = "custom-widget")]
         self.doc.inner_mut().destroy_surfaces();
     }
 

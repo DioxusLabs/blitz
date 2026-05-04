@@ -21,6 +21,10 @@ impl Attributes {
         Self { inner }
     }
 
+    pub fn get(&mut self, name: &QualName) -> Option<&Attribute> {
+        self.inner.iter().find(|attr| attr.name == *name)
+    }
+
     pub fn set(&mut self, name: QualName, value: &str) {
         let existing_attr = self.inner.iter_mut().find(|a| a.name == name);
         if let Some(existing_attr) = existing_attr {

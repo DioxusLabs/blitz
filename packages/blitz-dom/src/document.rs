@@ -263,12 +263,17 @@ pub struct BaseDocument {
     pub(crate) controls_to_form: HashMap<usize, usize>,
     /// Nodes that contain sub documents
     pub(crate) sub_document_nodes: HashSet<usize>,
-    /// Nodes that contain custom widgets
-    pub(crate) custom_widget_nodes: HashSet<usize>,
     /// Set of changed nodes for updating the accessibility tree
     pub(crate) changed_nodes: HashSet<usize>,
     /// Set of changed nodes for updating the accessibility tree
     pub(crate) deferred_construction_nodes: Vec<ConstructionTask>,
+
+    /// Nodes that contain custom widgets
+    #[cfg(feature = "custom-widget")]
+    pub(crate) custom_widget_nodes: HashSet<usize>,
+    /// Rendering resources allocated by custom widgets that should be deallocated during the next render
+    #[cfg(feature = "custom-widget")]
+    pub(crate) pending_resource_deallocations: Vec<anyrender::ResourceId>,
 
     /// Cache of loaded images, keyed by URL. Allows reusing images across multiple
     /// elements without re-fetching from the network.
@@ -415,7 +420,12 @@ impl BaseDocument {
             subdoc_is_animating: false,
             has_canvas: false,
             sub_document_nodes: HashSet::new(),
+
+            #[cfg(feature = "custom-widget")]
             custom_widget_nodes: HashSet::new(),
+            #[cfg(feature = "custom-widget")]
+            pending_resource_deallocations: Vec::new(),
+
             changed_nodes: HashSet::new(),
             deferred_construction_nodes: Vec::new(),
             image_cache: HashMap::new(),
@@ -649,6 +659,26 @@ impl BaseDocument {
             .unwrap()
             .remove_sub_document();
         self.sub_document_nodes.remove(&node_id);
+    }
+
+    #[cfg(feature = "custom-widget")]
+    pub fn set_custom_widget(&mut self, node_id: usize, widget: Box<dyn crate::Widget>) {
+        self.nodes[node_id]
+            .element_data_mut()
+            .unwrap()
+            .set_custom_widget(widget);
+        self.custom_widget_nodes.insert(node_id);
+    }
+
+    #[cfg(feature = "custom-widget")]
+    pub fn remove_custom_widget(&mut self, node_id: usize) {
+        let resources_to_deallocate = self.nodes[node_id]
+            .element_data_mut()
+            .unwrap()
+            .remove_custom_widget();
+        self.pending_resource_deallocations
+            .extend_from_slice(&resources_to_deallocate);
+        self.custom_widget_nodes.remove(&node_id);
     }
 
     pub fn root_node(&self) -> &Node {
@@ -1347,6 +1377,7 @@ impl BaseDocument {
         self.has_canvas
             | self.has_active_animations
             | self.subdoc_is_animating
+            | !self.custom_widget_nodes.is_empty()
             | (self.scroll_animation != ScrollAnimationState::None)
     }
 

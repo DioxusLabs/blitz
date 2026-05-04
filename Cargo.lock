@@ -861,6 +861,7 @@ dependencies = [
  "blitz-paint",
  "blitz-shell",
  "blitz-traits",
+ "color",
  "dioxus",
  "dioxus-native",
  "env_logger",

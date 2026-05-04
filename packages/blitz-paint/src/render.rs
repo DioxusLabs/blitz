@@ -321,6 +321,7 @@ impl<'dom> BlitzDomPainter<'dom> {
                         #[cfg(feature = "svg")]
                         cx.draw_svg(scene);
                         cx.draw_canvas(scene);
+                        cx.draw_custom_widget(scene);
                         cx.draw_sub_document(scene);
                         cx.draw_input(scene);
                         cx.draw_text_input_text(scene, content_position);
@@ -737,6 +738,31 @@ impl ElementCx<'_> {
                 None,
                 &Rect::from_origin_size((0.0, 0.0), (width as f64, height as f64)),
             );
+        }
+    }
+
+    fn draw_custom_widget(&self, scene: &mut impl PaintScene) {
+        if let Some(widget_data) = self.element.custom_widget_data() {
+            let width = self.frame.content_box.width() as u32;
+            let height = self.frame.content_box.height() as u32;
+            let x = self.frame.content_box.origin().x;
+            let y = self.frame.content_box.origin().y;
+
+            let transform = self.transform.then_translate(Vec2 { x, y });
+
+            // TODO: real render context
+            struct DummyRenderCtx;
+            impl anyrender::RenderContext for DummyRenderCtx {}
+
+            let widget_scene = widget_data.widget.paint(
+                &mut DummyRenderCtx,
+                &self.style,
+                width,
+                height,
+                self.scale,
+            );
+
+            scene.append_scene(widget_scene, transform);
         }
     }
 
