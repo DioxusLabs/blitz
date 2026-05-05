@@ -4,8 +4,7 @@ mod markdown {
     pub(crate) const GITHUB_MD_STYLES: &str = include_str!("../assets/github-markdown.css");
     pub(crate) const BLITZ_MD_STYLES: &str = include_str!("../assets/blitz-markdown-overrides.css");
     #[cfg(feature = "comrak")]
-    pub(crate) const SYNTAX_HIGHLIGHT_STYLES: &str =
-        include_str!("../assets/syntax-highlight.css");
+    pub(crate) const SYNTAX_HIGHLIGHT_STYLES: &str = include_str!("../assets/syntax-highlight.css");
 
     #[cfg(feature = "comrak")]
     mod comrak;
