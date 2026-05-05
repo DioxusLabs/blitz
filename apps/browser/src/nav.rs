@@ -1,5 +1,5 @@
 use blitz_traits::navigation::NavigationOptions;
-use blitz_traits::net::{Body, Entry, EntryValue, FormData, Method, Request, Url};
+use blitz_traits::net::{Method, Request, Url};
 use dioxus_native::prelude::Key;
 
 pub fn req_from_string(url_s: &str) -> Option<Request> {
@@ -19,16 +19,15 @@ pub fn req_from_string(url_s: &str) -> Option<Request> {
 }
 
 fn synthesize_duckduckgo_search_req(query: &str) -> Request {
+    let mut url = Url::parse("https://html.duckduckgo.com/html/").unwrap();
+    url.query_pairs_mut().append_pair("q", query);
+
     NavigationOptions::new(
-        Url::parse("https://html.duckduckgo.com/html/").unwrap(),
+        url,
         Some(String::from("application/x-www-form-urlencoded")),
         0,
     )
-    .set_method(Method::POST)
-    .set_document_resource(Body::Form(FormData(vec![Entry {
-        name: String::from("q"),
-        value: EntryValue::String(query.to_string()),
-    }])))
+    .set_method(Method::GET)
     .into_request()
 }
 
