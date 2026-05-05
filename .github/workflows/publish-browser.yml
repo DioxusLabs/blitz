@@ -44,15 +44,15 @@ jobs:
             use_git_cli: false
             artifact_name: "Blitz_0.0.0_windows_x86_64"
             artifact_path: |
-               ./target/dx/blitz/bundle/windows/bundle/msi/Blitz_0.0.0_x64_en-US.msi
-               ./target/dx/blitz/bundle/windows/bundle/nsis/Blitz_0.0.0_x64-setup.exe
+               ./target/dx/blitz/bundle/windows/windows/msi/Blitz_0.0.0_x64_en-US.msi
+               ./target/dx/blitz/bundle/windows/windows/nsis/Blitz_0.0.0_x64-setup.exe
           - target: aarch64-pc-windows-msvc
             os: windows-11-arm
             use_git_cli: false
             artifact_name: "Blitz_0.0.0_windows_aarch64"
             artifact_path: |
-               ./target/dx/blitz/bundle/windows/bundle/msi/Blitz_0.0.0_arm64_en-US.msi
-               ./target/dx/blitz/bundle/windows/bundle/nsis/Blitz_0.0.0_arm64-setup.exe
+               ./target/dx/blitz/bundle/windows/windows/msi/Blitz_0.0.0_arm64_en-US.msi
+               ./target/dx/blitz/bundle/windows/windows/nsis/Blitz_0.0.0_arm64-setup.exe
           - target: x86_64-apple-darwin
             os: macos-15-intel
             use_git_cli: true
@@ -68,17 +68,17 @@ jobs:
             use_git_cli: false
             artifact_name: "Blitz_0.0.0_linux_x86_64"
             artifact_path: |
-               ./target/dx/blitz/bundle/linux/bundle/deb/Blitz_0.0.0_amd64.deb
-               ./target/dx/blitz/bundle/linux/bundle/rpm/Blitz-0.0.0-.x86_64.rpm
-               ./target/dx/blitz/bundle/linux/bundle/appimage/Blitz_0.0.0_amd64.AppImage
+               ./target/dx/blitz/bundle/linux/linux/deb/Blitz_0.0.0_amd64.deb
+               ./target/dx/blitz/bundle/linux/linux/rpm/Blitz-0.0.0-.x86_64.rpm
+               ./target/dx/blitz/bundle/linux/linux/appimage/Blitz_0.0.0_amd64.AppImage
           - target: aarch64-unknown-linux-gnu
             os: ubuntu-24.04-arm
             use_git_cli: false
             artifact_name: "Blitz_0.0.0_linux_aarch64"
             artifact_path: |
-               ./target/dx/blitz/bundle/linux/bundle/deb/Blitz_0.0.arm64.deb
-               ./target/dx/blitz/bundle/linux/bundle/rpm/Blitz-0.0.0-.aarch64.rpm
-               ./target/dx/blitz/bundle/linux/bundle/appimage/Blitz_0.0.0_aarch64.AppImage
+               ./target/dx/blitz/bundle/linux/linux/deb/Blitz_0.0.arm64.deb
+               ./target/dx/blitz/bundle/linux/linux/rpm/Blitz-0.0.0-.aarch64.rpm
+               ./target/dx/blitz/bundle/linux/linux/appimage/Blitz_0.0.0_aarch64.AppImage
           # musl builds
           # - target: x86_64-unknown-linux-musl
           #   os: ubuntu-24.04
@@ -107,7 +107,7 @@ jobs:
         if: ${{ matrix.platform.use_git_cli == false }}
         uses: taiki-e/install-action@v2
         with:
-          tool: dioxus-cli@0.7.3
+          tool: dioxus-cli@0.7.7
 
       - name: Install Dioxus CLI (git)
         if: ${{ matrix.platform.use_git_cli == true }}
