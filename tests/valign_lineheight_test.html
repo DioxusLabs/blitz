@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html>
+<head>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: Helvetica, Arial, sans-serif; font-size: 16px; margin: 20px; }
+  .test { background: #f0f0f0; margin: 15px 0; padding: 8px; border: 1px solid #ccc; }
+  .label { display: block; font-size: 12px; color: #666; margin-bottom: 4px; font-weight: bold; }
+</style>
+</head>
+<body>
+
+<h3 style="margin-bottom: 10px;">Vertical-Align % with Varied Line-Heights</h3>
+<p style="font-size: 12px; color: #888; margin-bottom: 15px;">
+  CSS spec: vertical-align percentage resolves against computed line-height, NOT font-size.<br>
+  So 50% with line-height:40px = 20px shift, regardless of font-size.
+</p>
+
+<!-- Case 1: 50% with line-height:40px — should shift 20px -->
+<span class="label">Case 1: 50% with line-height:40px (should shift 20px up)</span>
+<div class="test" style="line-height: 40px;">
+  <span style="background: lightyellow;">Base</span>
+  <span style="vertical-align: 50%; background: lightcoral;">50% of 40px = 20px up</span>
+  <span style="background: lightyellow;">After</span>
+</div>
+
+<!-- Case 2: 50% with line-height:80px — should shift 40px -->
+<span class="label">Case 2: 50% with line-height:80px (should shift 40px up)</span>
+<div class="test" style="line-height: 80px;">
+  <span style="background: lightyellow;">Base</span>
+  <span style="vertical-align: 50%; background: lightcoral;">50% of 80px = 40px up</span>
+  <span style="background: lightyellow;">After</span>
+</div>
+
+<!-- Case 3: 50% with line-height:1 (16px) — should shift 8px -->
+<span class="label">Case 3: 50% with line-height:1 (=16px at 16px font) — shift 8px up</span>
+<div class="test" style="line-height: 1;">
+  <span style="background: lightyellow;">Base</span>
+  <span style="vertical-align: 50%; background: lightcoral;">50% of 16px = 8px up</span>
+  <span style="background: lightyellow;">After</span>
+</div>
+
+<!-- Case 4: -25% with line-height:40px — should shift 10px down -->
+<span class="label">Case 4: -25% with line-height:40px (should shift 10px down)</span>
+<div class="test" style="line-height: 40px;">
+  <span style="background: lightyellow;">Base</span>
+  <span style="vertical-align: -25%; background: lightblue;">-25% of 40px = 10px down</span>
+  <span style="background: lightyellow;">After</span>
+</div>
+
+<!-- Case 5: 50% with large font but small line-height — shift based on LH not font -->
+<span class="label">Case 5: font:32px, line-height:20px, 50% → shift 10px (NOT 16px)</span>
+<div class="test" style="font-size: 32px; line-height: 20px;">
+  <span style="background: lightyellow;">Big font</span>
+  <span style="vertical-align: 50%; background: lightcoral; font-size: 16px;">50% resolves to 10px</span>
+  <span style="background: lightyellow;">After</span>
+</div>
+
+<!-- Case 6: 50% with small font but large line-height — shift based on LH not font -->
+<span class="label">Case 6: font:12px, line-height:60px, 50% → shift 30px (NOT 6px)</span>
+<div class="test" style="font-size: 12px; line-height: 60px;">
+  <span style="background: lightyellow;">Small font</span>
+  <span style="vertical-align: 50%; background: lightcoral;">50% resolves to 30px</span>
+  <span style="background: lightyellow;">After</span>
+</div>
+
+<!-- Case 7: Comparison — % vs equivalent px (should be identical) -->
+<span class="label">Case 7: 50% vs 20px at line-height:40px (should be identical positions)</span>
+<div class="test" style="line-height: 40px;">
+  <span style="background: lightyellow;">Base</span>
+  <span style="vertical-align: 50%; background: lightcoral;">50%</span>
+  <span style="vertical-align: 20px; background: lightgreen;">20px</span>
+  <span style="background: lightyellow;">(coral and green should align exactly)</span>
+</div>
+
+<!-- Case 8: 100% — shift by full line-height -->
+<span class="label">Case 8: 100% with line-height:40px (shift = full 40px)</span>
+<div class="test" style="line-height: 40px;">
+  <span style="background: lightyellow;">Base</span>
+  <span style="vertical-align: 100%; background: lightcoral;">100% = 40px up</span>
+  <span style="background: lightyellow;">After</span>
+</div>
+
+</body>
+</html>

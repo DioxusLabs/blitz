@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html>
+<head>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: Helvetica, Arial, sans-serif; font-size: 16px; margin: 20px; }
+</style>
+</head>
+<body>
+
+<div style="display: flex; gap: 8px;">
+  <div>
+    <div style="font-size: 12px; color: #666; margin-bottom: 4px; font-weight: bold;">overflow: visible</div>
+    <div id="visible-container" style="background: #f0f0f0; padding: 8px; border: 1px solid #ccc;">
+      <span id="visible-text" style="background: lightyellow;">X</span>
+      <span id="visible-box" style="display: inline-block; width: 80px; background: lightcoral; border: 1px solid #aaa; padding: 4px; overflow: visible;">
+        A<br>B<br>C
+      </span>
+    </div>
+  </div>
+  <div>
+    <div style="font-size: 12px; color: #666; margin-bottom: 4px; font-weight: bold;">overflow: hidden</div>
+    <div id="hidden-container" style="background: #f0f0f0; padding: 8px; border: 1px solid #ccc;">
+      <span id="hidden-text" style="background: lightyellow;">X</span>
+      <span id="hidden-box" style="display: inline-block; width: 80px; background: lightblue; border: 1px solid #aaa; padding: 4px; overflow: hidden;">
+        A<br>B<br>C
+      </span>
+    </div>
+  </div>
+</div>
+
+<pre id="output" style="margin-top: 20px; font-size: 12px; background: #eee; padding: 8px;"></pre>
+
+<script>
+window.addEventListener('load', function() {
+  var ids = ['visible-container', 'visible-text', 'visible-box', 'hidden-container', 'hidden-text', 'hidden-box'];
+  var lines = [];
+  ids.forEach(function(id) {
+    var el = document.getElementById(id);
+    var r = el.getBoundingClientRect();
+    lines.push(id + ': ' + JSON.stringify({x: r.x, y: r.y, w: r.width, h: r.height}, null, 0));
+  });
+  document.getElementById('output').textContent = lines.join('\n');
+});
+</script>
+
+</body>
+</html>

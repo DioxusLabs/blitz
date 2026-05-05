@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>T5 Bisect - Which element breaks it?</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: system-ui, -apple-system, sans-serif; font-size: 14px; padding: 10px; }
+  .label { font-size: 11px; color: #666; margin-bottom: 4px; font-family: monospace; }
+  .test { display: block; margin: 10px 0; padding: 5px; border: 1px solid #ddd; }
+  .nav-content { font-size: 0.875rem; width: 14rem; color: #4b5563; overflow-y: scroll; height: 120px; border: 1px solid #999; margin-top: 0.5rem; }
+  .section { margin-top: 2.25rem; padding-top: 1.5rem; margin-bottom: -0.75rem; }
+  .header { color: #374151; position: sticky; top: -0.75rem; z-index: 1; display: flex; align-items: center; flex-direction: column; margin-top: -3.25rem; padding-top: 0.75rem; font-weight: 600; font-size: 0.75rem; text-transform: uppercase; background: yellow; }
+  .link { display: block; padding: 0.25rem; color: #4b5563; text-decoration: none; }
+</style>
+</head>
+<body>
+
+<!-- A: T4 baseline (works) -->
+<div class="test">
+  <p class="label">A: T4 baseline (flex row + sticky + flex col + nav)</p>
+  <div style="display: flex; flex-direction: row; gap: 1rem;">
+    <div style="position: sticky; top: 0; height: 180px;">
+      <div style="display: flex; flex-direction: column; height: 100%; font-size: 0.875rem; line-height: 1.25rem;">
+        <div style="padding: 4px; background: #eee; font-size: 11px;">Version 0.7</div>
+        <div class="nav-content" id="tA-nav">
+          <div class="section" id="tA-section">
+            <span class="header" id="tA-header"><h3 style="padding: 4px; font-size: 12px;">INTRO</h3></span>
+          </div>
+          <a class="link" id="tA-link">Getting Started</a>
+        </div>
+      </div>
+    </div>
+    <div style="flex-grow: 1; background: #fee; min-height: 200px; padding: 10px;">Main</div>
+  </div>
+</div>
+
+<!-- B: Add display:block to sticky sidebar (T5 has this) -->
+<div class="test">
+  <p class="label">B: + display:block on sticky</p>
+  <div style="display: flex; flex-direction: row; gap: 1rem;">
+    <div style="display: block; position: sticky; top: 0; height: 180px;">
+      <div style="display: flex; flex-direction: column; height: 100%; font-size: 0.875rem; line-height: 1.25rem;">
+        <div style="padding: 4px; background: #eee; font-size: 11px;">Version 0.7</div>
+        <div class="nav-content" id="tB-nav">
+          <div class="section" id="tB-section">
+            <span class="header" id="tB-header"><h3 style="padding: 4px; font-size: 12px;">INTRO</h3></span>
+          </div>
+          <a class="link" id="tB-link">Getting Started</a>
+        </div>
+      </div>
+    </div>
+    <div style="flex-grow: 1; background: #fee; min-height: 200px; padding: 10px;">Main</div>
+  </div>
+</div>
+
+<!-- C: Add margin-bottom to flex-col -->
+<div class="test">
+  <p class="label">C: + margin-bottom:0.5rem on flex-col</p>
+  <div style="display: flex; flex-direction: row; gap: 1rem;">
+    <div style="display: block; position: sticky; top: 0; height: 180px;">
+      <div style="display: flex; flex-direction: column; height: 100%; margin-bottom: 0.5rem; font-size: 0.875rem; line-height: 1.25rem;">
+        <div style="padding: 4px; background: #eee; font-size: 11px;">Version 0.7</div>
+        <div class="nav-content" id="tC-nav">
+          <div class="section" id="tC-section">
+            <span class="header" id="tC-header"><h3 style="padding: 4px; font-size: 12px;">INTRO</h3></span>
+          </div>
+          <a class="link" id="tC-link">Getting Started</a>
+        </div>
+      </div>
+    </div>
+    <div style="flex-grow: 1; background: #fee; min-height: 200px; padding: 10px;">Main</div>
+  </div>
+</div>
+
+<!-- D: Replace simple version label with grid version selector -->
+<div class="test">
+  <p class="label">D: + grid version selector</p>
+  <div style="display: flex; flex-direction: row; gap: 1rem;">
+    <div style="display: block; position: sticky; top: 0; height: 180px;">
+      <div style="display: flex; flex-direction: column; height: 100%; margin-bottom: 0.5rem; font-size: 0.875rem; line-height: 1.25rem; color: #374151;">
+        <div tabindex="0" role="button" style="cursor: pointer;">
+          <div style="border-radius: 0.25rem; width: 100%; padding: 0.25rem 0;">
+            <div style="display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 0.5rem; padding: 0 0.25rem;">
+              <div style="width: 2rem; height: 2rem; border-radius: 0.375rem; border: 1px solid #e5e7eb; display: flex; align-items: center; justify-content: center; background: #f9fafb;">V</div>
+              <div style="line-height: 1.375; font-size: 0.75rem; text-align: left;">
+                <p style="font-weight: 500;">Using Stable</p>
+                <p style="font-weight: 300;">0.7.0</p>
+              </div>
+              <div style="width: 20px; height: 20px;">^v</div>
+            </div>
+          </div>
+        </div>
+        <div class="nav-content" id="tD-nav">
+          <div class="section" id="tD-section">
+            <span class="header" id="tD-header"><h3 style="padding: 4px; font-size: 12px;">INTRO</h3></span>
+          </div>
+          <a class="link" id="tD-link">Getting Started</a>
+        </div>
+      </div>
+    </div>
+    <section style="overflow: hidden; flex-grow: 1; min-height: 200px; background: #fee; padding: 10px;">Main</section>
+  </div>
+</div>
+
+<!-- E: Use <nav> instead of <div> for scroll container -->
+<div class="test">
+  <p class="label">E: + nav element instead of div</p>
+  <div style="display: flex; flex-direction: row; gap: 1rem;">
+    <div style="display: block; position: sticky; top: 0; height: 180px;">
+      <div style="display: flex; flex-direction: column; height: 100%; margin-bottom: 0.5rem; font-size: 0.875rem; line-height: 1.25rem; color: #374151;">
+        <div tabindex="0" role="button" style="cursor: pointer;">
+          <div style="border-radius: 0.25rem; width: 100%; padding: 0.25rem 0;">
+            <div style="display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 0.5rem; padding: 0 0.25rem;">
+              <div style="width: 2rem; height: 2rem; border-radius: 0.375rem; border: 1px solid #e5e7eb; display: flex; align-items: center; justify-content: center; background: #f9fafb;">V</div>
+              <div style="line-height: 1.375; font-size: 0.75rem; text-align: left;">
+                <p style="font-weight: 500;">Using Stable</p>
+                <p style="font-weight: 300;">0.7.0</p>
+              </div>
+              <div style="width: 20px; height: 20px;">^v</div>
+            </div>
+          </div>
+        </div>
+        <nav class="nav-content" id="tE-nav" style="margin-top: 0.5rem;">
+          <div class="section" id="tE-section">
+            <span class="header" id="tE-header"><h3 style="padding: 4px; font-size: 12px;">INTRO</h3></span>
+          </div>
+          <a class="link" id="tE-link">Getting Started</a>
+        </nav>
+      </div>
+    </div>
+    <section style="overflow: hidden; flex-grow: 1; min-height: 200px; background: #fee; padding: 10px;">Main</section>
+  </div>
+</div>
+
+<!-- F: Add justify-content:space-between and font-weight:300 on flex row -->
+<div class="test">
+  <p class="label">F: + justify:space-between, font-weight:300</p>
+  <div style="display: flex; flex-direction: row; justify-content: space-between; font-weight: 300; gap: 2rem;">
+    <div style="display: block; position: sticky; top: 0; height: 180px;">
+      <div style="display: flex; flex-direction: column; height: 100%; margin-bottom: 0.5rem; font-size: 0.875rem; line-height: 1.25rem; color: #374151;">
+        <div tabindex="0" role="button" style="cursor: pointer;">
+          <div style="border-radius: 0.25rem; width: 100%; padding: 0.25rem 0;">
+            <div style="display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 0.5rem; padding: 0 0.25rem;">
+              <div style="width: 2rem; height: 2rem; border-radius: 0.375rem; border: 1px solid #e5e7eb; display: flex; align-items: center; justify-content: center; background: #f9fafb;">V</div>
+              <div style="line-height: 1.375; font-size: 0.75rem; text-align: left;">
+                <p style="font-weight: 500;">Using Stable</p>
+                <p style="font-weight: 300;">0.7.0</p>
+              </div>
+              <div style="width: 20px; height: 20px;">^v</div>
+            </div>
+          </div>
+        </div>
+        <nav class="nav-content" id="tF-nav" style="margin-top: 0.5rem;">
+          <div class="section" id="tF-section">
+            <span class="header" id="tF-header"><h3 style="padding: 4px; font-size: 12px;">INTRO</h3></span>
+          </div>
+          <a class="link" id="tF-link">Getting Started</a>
+        </nav>
+      </div>
+    </div>
+    <section style="overflow: hidden; flex-grow: 1; min-height: 200px; background: #fee; padding: 10px;">Main</section>
+  </div>
+</div>
+
+<div id="log" style="white-space: pre; font-size: 11px; margin-top: 20px; padding: 10px; background: #f0f0f0; border: 1px solid #ccc; max-height: 300px; overflow: auto;"></div>
+
+<script>
+function dump(id) {
+  var el = document.getElementById(id);
+  if (!el) return id + ': NOT FOUND';
+  var rect = el.getBoundingClientRect();
+  return id.padEnd(14) + 'offTop=' + String(el.offsetTop).padEnd(5) +
+    ' rect.y=' + rect.y.toFixed(1).padStart(7) +
+    ' rect.h=' + rect.height.toFixed(1).padStart(6);
+}
+
+var log = '';
+var tests = ['A','B','C','D','E','F'];
+for (var t = 0; t < tests.length; t++) {
+  var T = tests[t];
+  log += '--- ' + T + ' ---\n';
+  var ids = ['nav', 'section', 'header', 'link'];
+  for (var i = 0; i < ids.length; i++) {
+    log += dump('t' + T + '-' + ids[i]) + '\n';
+  }
+}
+document.getElementById('log').textContent = log;
+</script>
+</body>
+</html>

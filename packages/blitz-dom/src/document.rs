@@ -41,7 +41,7 @@ use std::time::Instant;
 use style::Atom;
 use style::animation::DocumentAnimationSet;
 use style::attr::{AttrIdentifier, AttrValue};
-use style::data::{ElementData as StyloElementData, ElementStyles};
+use style::data::ElementStyles;
 use style::media_queries::MediaType;
 use style::properties::ComputedValues;
 use style::properties::style_structs::Font;
@@ -267,6 +267,8 @@ pub struct BaseDocument {
     pub(crate) changed_nodes: HashSet<usize>,
     /// Set of changed nodes for updating the accessibility tree
     pub(crate) deferred_construction_nodes: Vec<ConstructionTask>,
+    /// Node IDs of all position:sticky elements, for efficient recomputation on scroll
+    pub(crate) sticky_nodes: Vec<usize>,
 
     /// Cache of loaded images, keyed by URL. Allows reusing images across multiple
     /// elements without re-fetching from the network.
@@ -415,6 +417,7 @@ impl BaseDocument {
             sub_document_nodes: HashSet::new(),
             changed_nodes: HashSet::new(),
             deferred_construction_nodes: Vec::new(),
+            sticky_nodes: Vec::new(),
             image_cache: HashMap::new(),
             pending_images: HashMap::new(),
             pending_critical_resources: HashSet::new(),
@@ -445,8 +448,10 @@ impl BaseDocument {
         }
 
         // Stylo data on the root node container is needed to render the node
-        let stylo_element_data = StyloElementData {
-            styles: ElementStyles {
+        let wrapper = style::data::ElementDataWrapper::default();
+        {
+            let mut stylo_element_data = wrapper.borrow_mut();
+            stylo_element_data.styles = ElementStyles {
                 primary: Some(
                     ComputedValues::initial_values_with_font_override(Font::initial_values())
                         .to_arc(),
@@ -1118,7 +1123,7 @@ impl BaseDocument {
         cb(&mut self.nodes[node_id]);
     }
 
-    // Takes (x, y) co-ordinates (relative to the )
+    // Takes (x, y) co-ordinates (page coordinates, i.e. viewport + scroll offset)
     pub fn hit(&self, x: f32, y: f32) -> Option<HitResult> {
         if TDocument::as_node(&&self.nodes[0])
             .first_element_child()
@@ -1129,7 +1134,90 @@ impl BaseDocument {
             return None;
         }
 
+        // Fixed-position elements are painted at viewport-relative positions (scroll-compensated),
+        // but hit() receives page coordinates (viewport + scroll). Test fixed children first
+        // with viewport coordinates so they can be hit correctly when the page is scrolled.
+        if let Some(hit) = self.hit_fixed_children(x, y) {
+            return Some(hit);
+        }
+
         self.root_element().hit(x, y)
+    }
+
+    /// Compute the accumulated position offset for a hoisted child relative to a
+    /// stacking context root, by walking the layout_parent chain.
+    fn hoisted_child_offset(&self, hoisted_node_id: usize, root_id: usize) -> (f32, f32) {
+        let mut x = 0.0f32;
+        let mut y = 0.0f32;
+        let mut current = hoisted_node_id;
+        loop {
+            let Some(parent_id) = self.nodes[current].layout_parent.get() else {
+                break;
+            };
+            if parent_id == root_id {
+                break;
+            }
+            let parent = &self.nodes[parent_id];
+            x += parent.final_layout.location.x + parent.sticky_offset.x as f32
+                - parent.scroll_offset.x as f32;
+            y += parent.final_layout.location.y + parent.sticky_offset.y as f32
+                - parent.scroll_offset.y as f32;
+            current = parent_id;
+        }
+        (x, y)
+    }
+
+    /// Test fixed-position children of the root element using viewport coordinates.
+    /// Fixed elements are painted at viewport-relative positions, so hit testing them
+    /// requires subtracting the viewport scroll from page coordinates.
+    fn hit_fixed_children(&self, page_x: f32, page_y: f32) -> Option<HitResult> {
+        use style::properties::generated::longhands::position::computed_value::T as Position;
+
+        let root = self.root_element();
+        let root_id = root.id;
+        let vx = page_x - self.viewport_scroll.x as f32;
+        let vy = page_y - self.viewport_scroll.y as f32;
+
+        // Helper closure to test a single child node
+        let test_child = |node_id: usize, offset_x: f32, offset_y: f32| -> Option<HitResult> {
+            let child = &self.nodes[node_id];
+            if child.css_position == Position::Fixed && child.layout_parent.get() == Some(root_id) {
+                child.hit(vx - offset_x, vy - offset_y)
+            } else {
+                None
+            }
+        };
+
+        // Positive z_index hoisted children (highest priority, painted last)
+        if let Some(hoisted) = &root.stacking_context {
+            for hc in hoisted.pos_z_hoisted_children().rev() {
+                let (ox, oy) = self.hoisted_child_offset(hc.node_id, root_id);
+                if let Some(hit) = test_child(hc.node_id, ox, oy) {
+                    return Some(hit);
+                }
+            }
+        }
+
+        // Regular paint children
+        if let Some(children) = &*root.paint_children.borrow() {
+            for &child_id in children.iter().rev() {
+                if let Some(hit) = test_child(child_id, 0.0, 0.0) {
+                    return Some(hit);
+                }
+            }
+        }
+
+        // Negative z_index hoisted children
+        if let Some(hoisted) = &root.stacking_context {
+            for hc in hoisted.neg_z_hoisted_children().rev() {
+                let (ox, oy) = self.hoisted_child_offset(hc.node_id, root_id);
+                if let Some(hit) = test_child(hc.node_id, ox, oy) {
+                    return Some(hit);
+                }
+            }
+        }
+
+        None
     }
 
     pub fn focus_next_node(&mut self) -> Option<usize> {
@@ -1522,7 +1610,9 @@ impl BaseDocument {
     }
 
     pub fn scroll_viewport_by(&mut self, x: f64, y: f64) {
-        self.scroll_viewport_by_has_changed(x, y);
+        if self.scroll_viewport_by_has_changed(x, y) {
+            self.recompute_sticky_offsets();
+        }
     }
 
     /// Scroll the viewport by the given values
@@ -1552,11 +1642,15 @@ impl BaseDocument {
         scroll_y: f64,
         dispatch_event: &mut dyn FnMut(DomEvent),
     ) -> bool {
-        if let Some(anchor_node_id) = anchor_node_id {
+        let changed = if let Some(anchor_node_id) = anchor_node_id {
             self.scroll_node_by_has_changed(anchor_node_id, scroll_x, scroll_y, dispatch_event)
         } else {
             self.scroll_viewport_by_has_changed(scroll_x, scroll_y)
+        };
+        if changed {
+            self.recompute_sticky_offsets();
         }
+        changed
     }
 
     pub fn viewport_scroll(&self) -> crate::Point<f64> {

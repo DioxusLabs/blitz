@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html>
+<head>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: Helvetica, Arial, sans-serif; font-size: 14px; margin: 20px; }
+  .test { background: #f0f0f0; margin: 15px 0; padding: 8px; border: 1px solid #ccc; }
+  .label { display: block; font-size: 12px; color: #666; margin-bottom: 4px; font-weight: bold; }
+</style>
+</head>
+<body>
+
+<h3 style="margin-bottom: 10px;">align-content in Block Layout Tests</h3>
+<p style="font-size: 12px; color: #888; margin-bottom: 15px;">
+  CSS Box Alignment Module Level 3: align-content on block containers.<br>
+  Distributes extra space along the block axis when height > content height.<br>
+  (Roadmap: taffy#709)
+</p>
+
+<!-- Case 1: align-content:start (default/normal) -->
+<span class="label">Case 1: align-content:start (default — content at top)</span>
+<div class="test" style="height: 120px; align-content: start;">
+  <div style="background: lightcoral; padding: 8px;">Content at top</div>
+</div>
+
+<!-- Case 2: align-content:center -->
+<span class="label">Case 2: align-content:center (vertically centered)</span>
+<div class="test" style="height: 120px; align-content: center;">
+  <div style="background: lightcoral; padding: 8px;">Centered content</div>
+</div>
+
+<!-- Case 3: align-content:end -->
+<span class="label">Case 3: align-content:end (content at bottom)</span>
+<div class="test" style="height: 120px; align-content: end;">
+  <div style="background: lightcoral; padding: 8px;">Content at bottom</div>
+</div>
+
+<!-- Case 4: align-content:space-between -->
+<span class="label">Case 4: align-content:space-between (3 items)</span>
+<div class="test" style="height: 150px; align-content: space-between;">
+  <div style="background: lightcoral; padding: 8px;">Top</div>
+  <div style="background: lightyellow; padding: 8px;">Middle</div>
+  <div style="background: lightblue; padding: 8px;">Bottom</div>
+</div>
+
+<!-- Case 5: align-content:space-around -->
+<span class="label">Case 5: align-content:space-around (equal space around each)</span>
+<div class="test" style="height: 150px; align-content: space-around;">
+  <div style="background: lightcoral; padding: 8px;">Item 1</div>
+  <div style="background: lightyellow; padding: 8px;">Item 2</div>
+  <div style="background: lightblue; padding: 8px;">Item 3</div>
+</div>
+
+<!-- Case 6: align-content:space-evenly -->
+<span class="label">Case 6: align-content:space-evenly (equal gaps everywhere)</span>
+<div class="test" style="height: 150px; align-content: space-evenly;">
+  <div style="background: lightcoral; padding: 8px;">Item 1</div>
+  <div style="background: lightyellow; padding: 8px;">Item 2</div>
+  <div style="background: lightblue; padding: 8px;">Item 3</div>
+</div>
+
+<!-- Case 7: align-content:center with no extra height (no effect) -->
+<span class="label">Case 7: align-content:center but no extra height (no visible effect)</span>
+<div class="test" style="align-content: center;">
+  <div style="background: lightcoral; padding: 8px;">Content fills naturally — no centering effect when height=auto</div>
+</div>
+
+<!-- Case 8: align-content:center with text only (no wrapper div) -->
+<span class="label">Case 8: align-content:center on block with text children only</span>
+<div class="test" style="height: 100px; align-content: center; background: lightyellow;">
+  Plain text centered vertically in block.
+</div>
+
+<!-- Case 9: Comparison with flexbox centering -->
+<span class="label">Case 9: Block align-content vs flex align-items (should look the same)</span>
+<div class="test" style="display: flex; gap: 8px;">
+  <div style="flex: 1; height: 100px; align-content: center; background: lightcoral; padding: 0 8px;">
+    <div style="padding: 4px;">Block: align-content:center</div>
+  </div>
+  <div style="flex: 1; height: 100px; display: flex; align-items: center; background: lightblue; padding: 0 8px;">
+    <div style="padding: 4px;">Flex: align-items:center</div>
+  </div>
+</div>
+
+</body>
+</html>

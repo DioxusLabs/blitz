@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html>
+<head>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: Helvetica, Arial, sans-serif; font-size: 16px; margin: 20px; }
+  .test { background: #f0f0f0; margin: 15px 0; padding: 8px; border: 1px solid #ccc; }
+  .label { display: block; font-size: 12px; color: #666; margin-bottom: 4px; font-weight: bold; }
+</style>
+</head>
+<body>
+
+<h3 style="margin-bottom: 10px;">Inline Span Background, Margin, Border, Padding Tests</h3>
+<p style="font-size: 12px; color: #888; margin-bottom: 15px;">
+  Tests background painting, margin/border/padding on inline spans,<br>
+  including multi-line wrapping and bidi-aware start/end edges.
+</p>
+
+<!-- Case 1: Basic inline background -->
+<span class="label">Case 1: Background on inline span (should highlight just the text)</span>
+<div class="test">
+  Normal text <span style="background: lightcoral;">highlighted span</span> and back to normal.
+</div>
+
+<!-- Case 2: Inline padding -->
+<span class="label">Case 2: Inline span with padding:8px (adds space around text)</span>
+<div class="test">
+  Before <span style="background: lightcoral; padding: 8px;">padded span</span> after. Padding adds space but doesn't affect line height.
+</div>
+
+<!-- Case 3: Inline border -->
+<span class="label">Case 3: Inline span with border</span>
+<div class="test">
+  Text <span style="border: 2px solid red; padding: 4px;">bordered span</span> continues.
+</div>
+
+<!-- Case 4: Inline margin -->
+<span class="label">Case 4: Inline span with margin:0 16px (horizontal margins only)</span>
+<div class="test">
+  Before<span style="background: lightcoral; margin: 0 16px;">margin span</span>after. Note the gaps.
+</div>
+
+<!-- Case 5: Full box model on inline -->
+<span class="label">Case 5: margin + border + padding + background on inline span</span>
+<div class="test">
+  Text <span style="margin: 0 8px; border: 2px solid darkred; padding: 4px 8px; background: lightcoral;">full box model</span> text.
+</div>
+
+<!-- Case 6: Multi-line inline span — background wraps across lines -->
+<span class="label">Case 6: Background on long inline span (wraps across 2+ lines)</span>
+<div class="test" style="width: 300px;">
+  Start of paragraph <span style="background: lightcoral;">this is a long span that should wrap across multiple lines, and the background should paint on each line separately</span> end of paragraph.
+</div>
+
+<!-- Case 7: Multi-line inline span with border — open/closed edges -->
+<span class="label">Case 7: Border on wrapping span (left border on first line, right on last)</span>
+<div class="test" style="width: 300px;">
+  Before <span style="border: 2px solid red; padding: 2px 4px; background: rgba(255,200,200,0.5);">this span wraps across lines. The border should appear on the left of the first fragment and the right of the last fragment</span> after.
+</div>
+
+<!-- Case 8: Nested inline spans -->
+<span class="label">Case 8: Nested inline spans with different backgrounds</span>
+<div class="test">
+  Outer <span style="background: lightcoral; padding: 2px;">red <span style="background: lightblue; padding: 2px;">blue <span style="background: lightgreen; padding: 2px;">green</span> blue</span> red</span> outer.
+</div>
+
+<!-- Case 9: RTL inline span — bidi-aware edges -->
+<span class="label">Case 9: RTL text with inline span (start/end edges should flip)</span>
+<div class="test" dir="rtl">
+  <span style="background: lightyellow;">טקסט רגיל</span>
+  <span style="border: 2px solid red; padding: 4px 8px; background: lightcoral;">טקסט עם גבול</span>
+  <span style="background: lightyellow;">טקסט אחרי</span>
+</div>
+
+<!-- Case 10: Mixed LTR/RTL with inline decoration -->
+<span class="label">Case 10: LTR container with embedded RTL span</span>
+<div class="test">
+  English text <span style="background: lightcoral; padding: 2px 6px; border: 1px solid red;" dir="rtl">עברית</span> more English.
+</div>
+
+<!-- Case 11: Inline span with vertical-align and decoration -->
+<span class="label">Case 11: Superscript span with background + border</span>
+<div class="test">
+  Normal text<span style="vertical-align: super; font-size: 12px; background: lightcoral; border: 1px solid red; padding: 1px 3px;">sup</span> continues.
+</div>
+
+<!-- Case 12: Zero-width inline border/padding (edge case) -->
+<span class="label">Case 12: Empty span with border + padding (should show just the box)</span>
+<div class="test">
+  Before<span style="border: 2px solid coral; padding: 0 8px;"></span>after (empty span with border).
+</div>
+
+<!-- Case 13: Adjacent inline spans with backgrounds -->
+<span class="label">Case 13: Adjacent spans (backgrounds should touch, not overlap)</span>
+<div class="test">
+  <span style="background: lightcoral; padding: 4px;">Red</span><span style="background: lightblue; padding: 4px;">Blue</span><span style="background: lightgreen; padding: 4px;">Green</span>
+</div>
+
+</body>
+</html>

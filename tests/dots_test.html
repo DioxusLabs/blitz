@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html>
+<head>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: Helvetica, Arial, sans-serif;
+    font-weight: 700;
+    font-size: 0.8125rem;
+    line-height: 1.23;
+    color: #000;
+  }
+
+  .nav {
+    background: #eee;
+    padding-top: 8px;
+  }
+  .nav-product {
+    text-align: center;
+    height: 3.75rem;
+  }
+  .nav-link {
+    display: block;
+    height: 100%;
+    line-height: calc(4rem - 8px);
+    text-decoration: none;
+    color: inherit;
+    white-space: nowrap;
+    text-align: center;
+    min-width: 1.5rem;
+  }
+
+  /* Dots menu icon */
+  .dots-wrapper {
+    display: inline-block;
+    width: 1.25rem;
+    height: 0.25rem;
+  }
+  .dots-wrapper > svg {
+    vertical-align: 0.1875rem;
+  }
+  .dots-hover {
+    width: 2rem;
+    position: relative;
+    text-decoration: none;
+    display: inline-block;
+  }
+</style>
+</head>
+<body>
+
+<h3 style="padding: 8px; font-size: 14px;">Dots-only test</h3>
+
+<!-- The actual BBC dots structure -->
+<div class="nav">
+  <div class="nav-product">
+    <a class="nav-link">
+      <span class="dots-hover">
+        <span class="dots-wrapper">
+          <svg width="20" height="4" viewBox="0 0 20 4" xmlns="http://www.w3.org/2000/svg" fill="currentColor">
+            <g transform="translate(-14.000000, -22.000000)">
+              <path d="M18,22 L18,26 L14,26 L14,22 L18,22 Z M34,22 L34,26 L30,26 L30,22 L34,22 Z M26,22 L26,26 L22,26 L22,22 L26,22 Z"></path>
+            </g>
+          </svg>
+        </span>
+      </span>
+    </a>
+  </div>
+</div>
+
+</body>
+</html>

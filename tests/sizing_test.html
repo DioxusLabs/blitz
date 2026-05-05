@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html>
+<head>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: Helvetica, Arial, sans-serif; font-size: 14px; margin: 20px; }
+  .test { background: #f0f0f0; margin: 15px 0; padding: 8px; border: 1px solid #ccc; }
+  .label { display: block; font-size: 12px; color: #666; margin-bottom: 4px; font-weight: bold; }
+</style>
+</head>
+<body>
+
+<h3 style="margin-bottom: 10px;">Intrinsic & Extrinsic Sizing Tests</h3>
+<p style="font-size: 12px; color: #888; margin-bottom: 15px;">
+  Tests min-content, max-content, fit-content(), and auto sizing behavior.
+</p>
+
+<!-- Case 1: width:min-content -->
+<span class="label">Case 1: width:min-content (shrinks to longest word)</span>
+<div class="test">
+  <div style="width: min-content; background: lightcoral; padding: 8px;">
+    This text wraps to the longest individual word width.
+  </div>
+</div>
+
+<!-- Case 2: width:max-content -->
+<span class="label">Case 2: width:max-content (as wide as content wants)</span>
+<div class="test">
+  <div style="width: max-content; background: lightblue; padding: 8px;">
+    This text stays on one line, expanding the box.
+  </div>
+</div>
+
+<!-- Case 3: width:fit-content(200px) -->
+<span class="label">Case 3: width:fit-content(200px) — short text (less than 200px)</span>
+<div class="test">
+  <div style="width: fit-content(200px); background: lightgreen; padding: 8px;">
+    Short text
+  </div>
+</div>
+<span class="label">Case 3b: width:fit-content(200px) — long text (wraps at 200px)</span>
+<div class="test">
+  <div style="width: fit-content(200px); background: lightgreen; padding: 8px;">
+    This is a much longer text that should wrap when it reaches the 200px clamp.
+  </div>
+</div>
+
+<!-- Case 4: min-content and max-content in flex -->
+<span class="label">Case 4: Flex with min-content + 1fr + max-content children</span>
+<div class="test" style="display: flex; gap: 4px;">
+  <div style="width: min-content; background: lightcoral; padding: 8px;">Min content sidebar</div>
+  <div style="flex: 1; background: lightyellow; padding: 8px;">Flexible middle</div>
+  <div style="width: max-content; background: lightblue; padding: 8px;">Max content end</div>
+</div>
+
+<!-- Case 5: min-content and max-content in grid -->
+<span class="label">Case 5: Grid — min-content | 1fr | max-content columns</span>
+<div class="test" style="display: grid; grid-template-columns: min-content 1fr max-content; gap: 4px;">
+  <div style="background: lightcoral; padding: 8px;">Min content col</div>
+  <div style="background: lightyellow; padding: 8px;">Flexible column fills remaining space</div>
+  <div style="background: lightblue; padding: 8px;">Max content column</div>
+</div>
+
+<!-- Case 6: height:min-content (block context) -->
+<span class="label">Case 6: height:min-content on a block</span>
+<div class="test">
+  <div style="height: min-content; width: 200px; background: lightcoral; padding: 8px;">
+    Height shrinks to content. Multiple lines of text to see the minimum height is just enough to contain everything.
+  </div>
+</div>
+
+<!-- Case 7: min-width/max-width interaction with intrinsic sizing -->
+<span class="label">Case 7: max-content constrained by max-width:150px</span>
+<div class="test">
+  <div style="width: max-content; max-width: 150px; background: lightcoral; padding: 8px;">
+    max-content wants wider but max-width clips it.
+  </div>
+</div>
+
+<!-- Case 8: Auto width in different display contexts -->
+<span class="label">Case 8: width:auto — block fills parent, inline shrinks to content</span>
+<div class="test">
+  <div style="background: lightcoral; padding: 8px; margin-bottom: 4px;">Block: auto width fills parent</div>
+  <span style="background: lightblue; padding: 8px;">Inline: auto shrinks to content</span>
+</div>
+
+<!-- Case 9: Percentage in flex (resolved against flex container) -->
+<span class="label">Case 9: 50% width in flex container</span>
+<div class="test" style="display: flex; width: 400px;">
+  <div style="width: 50%; background: lightcoral; padding: 8px;">50% = 200px</div>
+  <div style="flex: 1; background: lightyellow; padding: 8px;">Fills remaining</div>
+</div>
+
+<!-- Case 10: aspect-ratio -->
+<span class="label">Case 10: aspect-ratio:16/9 with width:200px</span>
+<div class="test">
+  <div style="width: 200px; aspect-ratio: 16/9; background: lightcoral; display: flex; align-items: center; justify-content: center;">
+    200 x 112.5
+  </div>
+</div>
+
+<!-- Case 11: aspect-ratio:1 (square) -->
+<span class="label">Case 11: aspect-ratio:1 with width:80px (square)</span>
+<div class="test">
+  <div style="width: 80px; aspect-ratio: 1; background: lightblue; display: flex; align-items: center; justify-content: center;">
+    80x80
+  </div>
+</div>
+
+</body>
+</html>

@@ -1,3 +1,4 @@
+use super::StyloData;
 use bitflags::bitflags;
 use blitz_traits::events::{
     BlitzPointerEvent, BlitzPointerId, DomEventData, HitResult, PointerCoords,
@@ -122,11 +123,21 @@ pub struct Node {
 
     // Taffy layout data:
     pub style: Style<Atom>,
+    /// Original CSS position value (not the Taffy mapping which loses Fixed→Absolute and Sticky→Relative)
+    pub css_position: Position,
+    pub has_snapshot: bool,
+    pub snapshot_handled: AtomicBool,
+    /// Whether any descendant of this node needs restyling.
+    /// Used by Stylo's incremental style traversal to skip unchanged subtrees.
+    pub dirty_descendants: AtomicBool,
     pub display_constructed_as: StyloDisplay,
     pub cache: Cache,
     pub unrounded_layout: Layout,
     pub final_layout: Layout,
     pub scroll_offset: crate::Point<f64>,
+    /// Sticky positioning offset: visual displacement from normal-flow position.
+    /// Recomputed on every scroll event without relayout.
+    pub sticky_offset: crate::Point<f64>,
 
     pub transform: Option<Affine>,
 }
@@ -180,6 +191,7 @@ impl Node {
             after: None,
 
             style: Default::default(),
+            css_position: Position::Static,
             has_snapshot: false,
             snapshot_handled: AtomicBool::new(false),
             dirty_descendants: AtomicBool::new(true),
@@ -188,6 +200,7 @@ impl Node {
             unrounded_layout: Layout::new(),
             final_layout: Layout::new(),
             scroll_offset: crate::Point::ZERO,
+            sticky_offset: crate::Point::ZERO,
 
             transform: None,
         }
@@ -869,12 +882,28 @@ impl Node {
             return true;
         }
 
+        // Scroll containers (overflow: auto/scroll/hidden) create stacking contexts.
+        // This ensures hoisted children are clipped to the scroll container's bounds.
+        let overflow = style.get_box();
+        if overflow.overflow_x.is_scrollable() || overflow.overflow_y.is_scrollable() {
+            return true;
+        }
+
+        // Transform (any value other than none)
+        if !style.get_box().transform.0.is_empty() {
+            return true;
+        }
+
+        // Filter (any value other than none)
+        if !style.get_effects().filter.0.is_empty() {
+            return true;
+        }
+
         // TODO: mix-blend-mode
-        // TODO: transforms
-        // TODO: filter
         // TODO: clip-path
         // TODO: mask
         // TODO: isolation
+        // TODO: perspective
         // TODO: contain
 
         false
@@ -888,6 +917,31 @@ impl Node {
     ///
     /// TODO: z-index
     /// (If multiple children are positioned at the position then a random one will be recursed into)
+    /// Compute the accumulated position offset for a hoisted child relative to this
+    /// stacking context root, by walking the layout_parent chain from the hoisted child
+    /// up to (but not including) this node. Only accumulates intermediate ancestors.
+    fn hoisted_child_offset(&self, hoisted_node_id: usize) -> taffy::Point<f32> {
+        let root_id = self.id;
+        let mut x = 0.0f32;
+        let mut y = 0.0f32;
+        let mut current = hoisted_node_id;
+        loop {
+            let Some(parent_id) = self.with(current).layout_parent.get() else {
+                break;
+            };
+            if parent_id == root_id {
+                break;
+            }
+            let parent = self.with(parent_id);
+            x += parent.final_layout.location.x + parent.sticky_offset.x as f32
+                - parent.scroll_offset.x as f32;
+            y += parent.final_layout.location.y + parent.sticky_offset.y as f32
+                - parent.scroll_offset.y as f32;
+            current = parent_id;
+        }
+        taffy::Point { x, y }
+    }
+
     pub fn hit(&self, x: f32, y: f32) -> Option<HitResult> {
         use style::computed_values::visibility::T as Visibility;
 
@@ -901,8 +955,10 @@ impl Node {
             }
         }
 
-        let mut x = x - self.final_layout.location.x + self.scroll_offset.x as f32;
-        let mut y = y - self.final_layout.location.y + self.scroll_offset.y as f32;
+        let mut x = x - self.final_layout.location.x - self.sticky_offset.x as f32
+            + self.scroll_offset.x as f32;
+        let mut y = y - self.final_layout.location.y - self.sticky_offset.y as f32
+            + self.scroll_offset.y as f32;
 
         let size = self.final_layout.size;
         let matches_self = !(x < 0.0
@@ -944,8 +1000,9 @@ impl Node {
         if matches_hoisted_content {
             if let Some(hoisted) = &self.stacking_context {
                 for hoisted_child in hoisted.pos_z_hoisted_children().rev() {
-                    let x = x - hoisted_child.position.x;
-                    let y = y - hoisted_child.position.y;
+                    let offset = self.hoisted_child_offset(hoisted_child.node_id);
+                    let x = x - offset.x;
+                    let y = y - offset.y;
                     if let Some(hit) = self.with(hoisted_child.node_id).hit(x, y) {
                         return Some(hit);
                     }
@@ -964,8 +1021,9 @@ impl Node {
         if matches_hoisted_content {
             if let Some(hoisted) = &self.stacking_context {
                 for hoisted_child in hoisted.neg_z_hoisted_children().rev() {
-                    let x = x - hoisted_child.position.x;
-                    let y = y - hoisted_child.position.y;
+                    let offset = self.hoisted_child_offset(hoisted_child.node_id);
+                    let x = x - offset.x;
+                    let y = y - offset.y;
                     if let Some(hit) = self.with(hoisted_child.node_id).hit(x, y) {
                         return Some(hit);
                     }
@@ -1064,8 +1122,10 @@ impl Node {
 
     /// Computes the Document-relative coordinates of the `Node`
     pub fn absolute_position(&self, x: f32, y: f32) -> crate::util::Point<f32> {
-        let x = x + self.final_layout.location.x - self.scroll_offset.x as f32;
-        let y = y + self.final_layout.location.y - self.scroll_offset.y as f32;
+        let x = x + self.final_layout.location.x + self.sticky_offset.x as f32
+            - self.scroll_offset.x as f32;
+        let y = y + self.final_layout.location.y + self.sticky_offset.y as f32
+            - self.scroll_offset.y as f32;
 
         // Recurse up the layout hierarchy
         self.layout_parent

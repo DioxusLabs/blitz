@@ -103,6 +103,67 @@ pub(crate) fn white_space_collapse(input: stylo::WhiteSpaceCollapse) -> parley::
     }
 }
 
+/// Convert stylo's `alignment-baseline` longhand to parley's `AlignmentBaseline`.
+pub(crate) fn alignment_baseline(style: &stylo::ComputedValues) -> parley::AlignmentBaseline {
+    use style::values::specified::box_::AlignmentBaseline;
+    match style.clone_alignment_baseline() {
+        AlignmentBaseline::Baseline => parley::AlignmentBaseline::Baseline,
+        AlignmentBaseline::TextBottom => parley::AlignmentBaseline::TextBottom,
+        AlignmentBaseline::Middle => parley::AlignmentBaseline::Middle,
+        AlignmentBaseline::TextTop => parley::AlignmentBaseline::TextTop,
+        // These variants exist in the enum but are css(skip) — they can't come from CSS parsing.
+        // Map them to the closest parley equivalent.
+        AlignmentBaseline::Alphabetic | AlignmentBaseline::Ideographic => {
+            parley::AlignmentBaseline::Baseline
+        }
+        AlignmentBaseline::Central => parley::AlignmentBaseline::Middle,
+        AlignmentBaseline::Mathematical | AlignmentBaseline::Hanging => {
+            parley::AlignmentBaseline::TextTop
+        }
+    }
+}
+
+/// Convert stylo's `baseline-shift` longhand to parley's `BaselineShift`.
+pub(crate) fn baseline_shift(style: &stylo::ComputedValues) -> parley::BaselineShift {
+    use style::values::generics::box_::{BaselineShiftKeyword, GenericBaselineShift};
+    match style.clone_baseline_shift() {
+        GenericBaselineShift::Keyword(kw) => match kw {
+            BaselineShiftKeyword::Sub => parley::BaselineShift::Sub,
+            BaselineShiftKeyword::Super => parley::BaselineShift::Super,
+            BaselineShiftKeyword::Top => parley::BaselineShift::Top,
+            BaselineShiftKeyword::Bottom => parley::BaselineShift::Bottom,
+            // Center is not a CSS baseline-shift value; middle is handled via alignment-baseline
+            BaselineShiftKeyword::Center => parley::BaselineShift::None,
+        },
+        GenericBaselineShift::Length(lp) => {
+            let font_styles = style.get_font();
+            let font_size = font_styles.font_size.used_size.0.px();
+            // CSS spec: vertical-align percentages resolve against computed line-height
+            let line_height = match font_styles.line_height {
+                stylo::LineHeight::Normal => font_size * 1.2,
+                stylo::LineHeight::Number(n) => font_size * n.0,
+                stylo::LineHeight::Length(v) => v.0.px(),
+            };
+            let px = lp.resolve(Length::new(line_height)).px();
+            if px == 0.0 {
+                parley::BaselineShift::None
+            } else {
+                parley::BaselineShift::Length(px)
+            }
+        }
+    }
+}
+
+/// Convert stylo's `baseline-source` longhand to parley's `BaselineSource`.
+pub(crate) fn baseline_source(style: &stylo::ComputedValues) -> parley::BaselineSource {
+    use style::values::specified::box_::BaselineSource;
+    match style.clone_baseline_source() {
+        BaselineSource::Auto => parley::BaselineSource::Auto,
+        BaselineSource::First => parley::BaselineSource::First,
+        BaselineSource::Last => parley::BaselineSource::Last,
+    }
+}
+
 pub(crate) fn style(
     span_id: usize,
     style: &stylo::ComputedValues,
@@ -113,7 +174,7 @@ pub(crate) fn style(
     // Convert font size and line height
     let font_size = font_styles.font_size.used_size.0.px();
     let line_height = match font_styles.line_height {
-        stylo::LineHeight::Normal => parley::LineHeight::FontSizeRelative(1.2),
+        stylo::LineHeight::Normal => parley::LineHeight::MetricsRelative(1.0),
         stylo::LineHeight::Number(num) => parley::LineHeight::FontSizeRelative(num.0),
         stylo::LineHeight::Length(value) => parley::LineHeight::Absolute(value.0.px()),
     };
@@ -218,5 +279,8 @@ pub(crate) fn style(
         strikethrough_offset: Default::default(),
         strikethrough_size: Default::default(),
         strikethrough_brush: Default::default(),
+        alignment_baseline: self::alignment_baseline(style),
+        baseline_shift: self::baseline_shift(style),
+        baseline_source: self::baseline_source(style),
     }
 }

@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Grid Version Selector Height Debug</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: system-ui, -apple-system, sans-serif; font-size: 14px; padding: 20px; }
+  .label { font-size: 11px; color: #666; margin-bottom: 4px; font-family: monospace; }
+  .test { display: inline-block; vertical-align: top; margin: 10px; width: 280px; }
+</style>
+</head>
+<body>
+
+<!-- T1: The grid version selector in isolation -->
+<div class="test">
+  <p class="label">T1: grid selector isolated</p>
+  <div style="border: 2px solid red; font-size: 0.875rem; line-height: 1.25rem;">
+    <div id="t1-button" tabindex="0" role="button" style="cursor: pointer; background: #eef;">
+      <div id="t1-inner" style="border-radius: 0.25rem; width: 100%; padding: 0.25rem 0;">
+        <div id="t1-grid" style="display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 0.5rem; padding: 0 0.25rem;">
+          <div id="t1-icon" style="width: 2rem; height: 2rem; border-radius: 0.375rem; border: 1px solid #e5e7eb; display: flex; align-items: center; justify-content: center; background: #f9fafb;">V</div>
+          <div id="t1-text" style="line-height: 1.375; font-size: 0.75rem; text-align: left;">
+            <p style="font-weight: 500;">Using Stable Version</p>
+            <p style="font-weight: 300;">0.7.0</p>
+          </div>
+          <div id="t1-arrow" style="width: 20px; height: 20px; background: #ddd;">^v</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- T2: Same but without grid (flex instead) -->
+<div class="test">
+  <p class="label">T2: flex instead of grid</p>
+  <div style="border: 2px solid red; font-size: 0.875rem; line-height: 1.25rem;">
+    <div id="t2-button" tabindex="0" role="button" style="cursor: pointer; background: #eef;">
+      <div id="t2-inner" style="border-radius: 0.25rem; width: 100%; padding: 0.25rem 0;">
+        <div id="t2-grid" style="display: flex; align-items: center; gap: 0.5rem; padding: 0 0.25rem;">
+          <div id="t2-icon" style="width: 2rem; height: 2rem; border-radius: 0.375rem; border: 1px solid #e5e7eb; display: flex; align-items: center; justify-content: center; background: #f9fafb;">V</div>
+          <div id="t2-text" style="line-height: 1.375; font-size: 0.75rem; text-align: left; flex: 1;">
+            <p style="font-weight: 500;">Using Stable Version</p>
+            <p style="font-weight: 300;">0.7.0</p>
+          </div>
+          <div id="t2-arrow" style="width: 20px; height: 20px; background: #ddd;">^v</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- T3: Grid but no padding on inner wrapper -->
+<div class="test">
+  <p class="label">T3: grid, no inner padding</p>
+  <div style="border: 2px solid red; font-size: 0.875rem; line-height: 1.25rem;">
+    <div id="t3-button" tabindex="0" role="button" style="cursor: pointer; background: #eef;">
+      <div id="t3-grid" style="display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 0.5rem; padding: 0 0.25rem;">
+        <div id="t3-icon" style="width: 2rem; height: 2rem; border-radius: 0.375rem; border: 1px solid #e5e7eb; display: flex; align-items: center; justify-content: center; background: #f9fafb;">V</div>
+        <div id="t3-text" style="line-height: 1.375; font-size: 0.75rem; text-align: left;">
+          <p style="font-weight: 500;">Using Stable Version</p>
+          <p style="font-weight: 300;">0.7.0</p>
+        </div>
+        <div id="t3-arrow" style="width: 20px; height: 20px; background: #ddd;">^v</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- T4: Just the grid container with children -->
+<div class="test">
+  <p class="label">T4: bare grid</p>
+  <div style="border: 2px solid red;">
+    <div id="t4-grid" style="display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 0.5rem;">
+      <div id="t4-icon" style="width: 2rem; height: 2rem; background: #f9fafb; border: 1px solid #ccc;">V</div>
+      <div id="t4-text" style="font-size: 0.75rem;">
+        <p>Line 1</p>
+        <p>Line 2</p>
+      </div>
+      <div id="t4-arrow" style="width: 20px; height: 20px; background: #ddd;">^</div>
+    </div>
+  </div>
+</div>
+
+<!-- T5: Grid inside flex-column (the actual context) -->
+<div class="test">
+  <p class="label">T5: grid inside flex-col (sidebar context)</p>
+  <div style="display: flex; flex-direction: column; height: 180px; font-size: 0.875rem; line-height: 1.25rem; border: 2px solid red;">
+    <div id="t5-button" tabindex="0" role="button" style="cursor: pointer; background: #eef;">
+      <div id="t5-inner" style="border-radius: 0.25rem; width: 100%; padding: 0.25rem 0;">
+        <div id="t5-grid" style="display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 0.5rem; padding: 0 0.25rem;">
+          <div style="width: 2rem; height: 2rem; border-radius: 0.375rem; border: 1px solid #e5e7eb; display: flex; align-items: center; justify-content: center; background: #f9fafb;">V</div>
+          <div style="line-height: 1.375; font-size: 0.75rem; text-align: left;">
+            <p style="font-weight: 500;">Using Stable Version</p>
+            <p style="font-weight: 300;">0.7.0</p>
+          </div>
+          <div style="width: 20px; height: 20px; background: #ddd;">^v</div>
+        </div>
+      </div>
+    </div>
+    <div style="background: lightgreen; flex: 1; overflow-y: scroll;">Nav area below</div>
+  </div>
+</div>
+
+<div id="log" style="white-space: pre; font-size: 11px; margin-top: 20px; padding: 10px; background: #f0f0f0; border: 1px solid #ccc;"></div>
+
+<script>
+function dump(id) {
+  var el = document.getElementById(id);
+  if (!el) return id + ': NOT FOUND';
+  var rect = el.getBoundingClientRect();
+  return id.padEnd(14) +
+    ' w=' + rect.width.toFixed(1).padStart(6) +
+    ' h=' + rect.height.toFixed(1).padStart(6) +
+    ' y=' + rect.y.toFixed(1).padStart(7);
+}
+
+var log = '';
+for (var t = 1; t <= 5; t++) {
+  log += '--- T' + t + ' ---\n';
+  var ids = ['button', 'inner', 'grid', 'icon', 'text', 'arrow'];
+  for (var i = 0; i < ids.length; i++) {
+    var id = 't' + t + '-' + ids[i];
+    var el = document.getElementById(id);
+    if (el) log += dump(id) + '\n';
+  }
+}
+document.getElementById('log').textContent = log;
+</script>
+</body>
+</html>

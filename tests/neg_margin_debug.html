@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Negative Margin Debug</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: monospace; font-size: 12px; padding: 20px; }
+</style>
+</head>
+<body>
+
+<p style="margin-bottom: 10px; font-weight: bold;">Negative margin inside scroll container (dioxus sidebar pattern)</p>
+
+<!-- Test 1: Simple negative margin (no scroll, no sticky) -->
+<div style="display: inline-block; vertical-align: top; margin: 5px; width: 220px;">
+  <p style="font-size: 11px; color: #666; margin-bottom: 4px;">T1: neg margin, no scroll</p>
+  <div style="border: 1px solid #999; background: #f0f0f0;">
+    <div id="t1-wrapper" style="margin-top: 36px; padding-top: 24px; background: lightblue;">
+      <div id="t1-child" style="display: flex; flex-direction: column; margin-top: -52px; padding-top: 12px; background: yellow;">
+        <span>HEADER</span>
+      </div>
+    </div>
+    <a id="t1-link" style="display: block; padding: 4px;">Link item</a>
+  </div>
+</div>
+
+<!-- Test 2: Same but inside overflow:scroll -->
+<div style="display: inline-block; vertical-align: top; margin: 5px; width: 220px;">
+  <p style="font-size: 11px; color: #666; margin-bottom: 4px;">T2: neg margin, scroll</p>
+  <div style="overflow-y: scroll; height: 150px; border: 1px solid #999; background: #f0f0f0;">
+    <div id="t2-wrapper" style="margin-top: 36px; padding-top: 24px; background: lightblue;">
+      <div id="t2-child" style="display: flex; flex-direction: column; margin-top: -52px; padding-top: 12px; background: yellow;">
+        <span>HEADER</span>
+      </div>
+    </div>
+    <a id="t2-link" style="display: block; padding: 4px;">Link item</a>
+  </div>
+</div>
+
+<!-- Test 3: Same + sticky (the actual dioxus pattern) -->
+<div style="display: inline-block; vertical-align: top; margin: 5px; width: 220px;">
+  <p style="font-size: 11px; color: #666; margin-bottom: 4px;">T3: neg margin, scroll, sticky</p>
+  <div style="overflow-y: scroll; height: 150px; border: 1px solid #999; background: #f0f0f0;">
+    <div id="t3-wrapper" style="margin-top: 36px; padding-top: 24px; background: lightblue;">
+      <div id="t3-child" style="display: flex; flex-direction: column; position: sticky; top: -12px; margin-top: -52px; padding-top: 12px; background: yellow;">
+        <span>HEADER</span>
+      </div>
+    </div>
+    <a id="t3-link" style="display: block; padding: 4px;">Link item</a>
+  </div>
+</div>
+
+<!-- Test 4: Exact dioxus rem values -->
+<div style="display: inline-block; vertical-align: top; margin: 5px; width: 220px;">
+  <p style="font-size: 11px; color: #666; margin-bottom: 4px;">T4: exact dioxus pattern (rem)</p>
+  <div style="overflow-y: scroll; height: 150px; border: 1px solid #999; background: #f0f0f0; font-size: 14px;">
+    <div id="t4-wrapper" style="margin-top: 2.25rem; padding-top: 1.5rem; margin-bottom: -0.75rem;">
+      <span id="t4-child" style="display: flex; flex-direction: column; position: sticky; top: -0.75rem; margin-top: -3.25rem; padding-top: 0.75rem; background: yellow; font-size: 12px;">
+        <h3 style="padding: 4px; background: white; font-size: 12px;">INTRODUCTION</h3>
+      </span>
+    </div>
+    <a id="t4-link" style="display: block; padding: 4px; font-size: 14px;">Getting Started</a>
+    <div id="t4-wrapper2" style="margin-top: 2.25rem; padding-top: 1.5rem; margin-bottom: -0.75rem;">
+      <span id="t4-child2" style="display: flex; flex-direction: column; position: sticky; top: -0.75rem; margin-top: -3.25rem; padding-top: 0.75rem; background: yellow; font-size: 12px;">
+        <h3 style="padding: 4px; background: white; font-size: 12px;">TAKE A TOUR</h3>
+      </span>
+    </div>
+    <a style="display: block; padding: 4px; font-size: 14px;">Tooling Setup</a>
+    <a style="display: block; padding: 4px; font-size: 14px;">A new app</a>
+  </div>
+</div>
+
+<!-- Test 5: block child instead of flex (control) -->
+<div style="display: inline-block; vertical-align: top; margin: 5px; width: 220px;">
+  <p style="font-size: 11px; color: #666; margin-bottom: 4px;">T5: block child, neg margin, scroll</p>
+  <div style="overflow-y: scroll; height: 150px; border: 1px solid #999; background: #f0f0f0;">
+    <div id="t5-wrapper" style="margin-top: 36px; padding-top: 24px; background: lightblue;">
+      <div id="t5-child" style="display: block; margin-top: -52px; padding-top: 12px; background: yellow;">
+        <span>HEADER</span>
+      </div>
+    </div>
+    <a id="t5-link" style="display: block; padding: 4px;">Link item</a>
+  </div>
+</div>
+
+<div id="log" style="white-space: pre; font-size: 11px; margin-top: 20px; padding: 10px; background: #f0f0f0; border: 1px solid #ccc;"></div>
+
+<script>
+function dump(id) {
+  var el = document.getElementById(id);
+  if (!el) return id + ': NOT FOUND';
+  var rect = el.getBoundingClientRect();
+  var cs = getComputedStyle(el);
+  return id + ': offsetTop=' + el.offsetTop +
+    ' rect=(x:' + rect.x.toFixed(1) + ' y:' + rect.y.toFixed(1) +
+    ' w:' + rect.width.toFixed(1) + ' h:' + rect.height.toFixed(1) + ')' +
+    ' mt=' + cs.marginTop + ' pt=' + cs.paddingTop;
+}
+
+var log = '';
+var ids = [
+  't1-wrapper', 't1-child', 't1-link',
+  't2-wrapper', 't2-child', 't2-link',
+  't3-wrapper', 't3-child', 't3-link',
+  't4-wrapper', 't4-child', 't4-link', 't4-wrapper2', 't4-child2',
+  't5-wrapper', 't5-child', 't5-link'
+];
+for (var i = 0; i < ids.length; i++) {
+  log += dump(ids[i]) + '\n';
+}
+document.getElementById('log').textContent = log;
+</script>
+</body>
+</html>

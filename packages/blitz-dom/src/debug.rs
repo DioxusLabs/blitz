@@ -47,10 +47,10 @@ impl BaseDocument {
             println!("Lines:");
             for (i, line) in inline_layout.layout.lines().enumerate() {
                 let metrics = line.metrics();
-                let x = metrics.inline_min_coord;
-                let y = metrics.block_min_coord;
-                let w = metrics.inline_max_coord - metrics.inline_min_coord;
-                let h = metrics.block_max_coord - metrics.block_min_coord;
+                let x = metrics.offset;
+                let y = metrics.min_coord;
+                let w = metrics.advance;
+                let h = metrics.max_coord - metrics.min_coord;
                 println!("Line {i}: x:{x} y:{y} width:{w} height:{h}");
                 for item in line.items() {
                     print!("  ");
@@ -63,8 +63,7 @@ impl BaseDocument {
                             )
                         }
                         PositionedLayoutItem::InlineBox(ibox) => print!(
-                            "BOX {:?} (id: {} x: {} y: {} w: {}, h: {})",
-                            ibox.kind,
+                            "BOX (id: {} x: {} y: {} w: {}, h: {})",
                             ibox.id,
                             ibox.x.round(),
                             ibox.y.round(),
