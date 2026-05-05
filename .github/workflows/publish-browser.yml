@@ -54,12 +54,12 @@ jobs:
             os: macos-15-intel
             use_git_cli: true
             artifact_name: "Blitz_0.0.0_macos_x86_64"
-            artifact_path: "./target/dx/blitz/bundle/macos/bundle/dmg/Blitz_0.0.0_x64.dmg"
+            artifact_path: "./target/dx/blitz/bundle/macos/macos/Blitz_0.0.0_x64.dmg"
           - target: aarch64-apple-darwin
             os: macos-latest
             use_git_cli: true
             artifact_name: "Blitz_0.0.0_macos_aarch64"
-            artifact_path: "./target/dx/blitz/bundle/macos/bundle/dmg/Blitz_0.0.0_aarch64.dmg"
+            artifact_path: "./target/dx/blitz/bundle/macos/macos/Blitz_0.0.0_aarch64.dmg"
           - target: x86_64-unknown-linux-gnu
             os: ubuntu-24.04
             use_git_cli: false
