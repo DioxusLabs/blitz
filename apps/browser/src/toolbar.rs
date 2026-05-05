@@ -6,12 +6,11 @@ use blitz_traits::net::{Request, Url};
 use dioxus_native::{NodeHandle, SubDocumentAttr, prelude::*};
 
 use crate::about_pages::AboutPage;
-use crate::browser_history::{BrowsingHistoryStoreExt, HistoryService};
 use crate::history::HistoryNav;
 use crate::icons::{self, IconButton};
 use crate::nav::{is_enter_key, open_in_external_browser, req_from_string};
 use crate::tab::{Tab, TabId, TabStoreExt, TabStoreImplExt, active_tab};
-use crate::url_suggestions::{Suggestion, SuggestionKind, UrlSuggestions, build_suggestions};
+use crate::url_suggestions::{Suggestion, SuggestionKind, UrlSuggester, UrlSuggestions};
 use crate::{IS_MOBILE, StdNetProvider};
 
 #[component]
@@ -30,12 +29,11 @@ pub fn Toolbar(
     #[cfg(feature = "cache")]
     let net_provider = use_context::<Arc<StdNetProvider>>();
 
-    let browsing_history = use_context::<HistoryService>().browsing();
     let mut selected_suggestion = use_signal::<Option<usize>>(|| None);
 
-    let suggestions = use_memo(move || {
-        build_suggestions(&url_input_value.read(), &browsing_history.entries().read())
-    });
+    let suggester = use_context::<UrlSuggester>();
+    let suggestions = suggester.suggestions();
+    use_effect(move || suggester.set_query(url_input_value.read().clone()));
 
     use_effect(move || {
         let active_id = active_tab_id();
@@ -77,7 +75,7 @@ pub fn Toolbar(
     });
 
     let on_pick = use_callback(move |s: Suggestion| {
-        // Literal and Search rows both fall back to the bare-input parse path,
+        // Literal and Search rows fall back to the bare-input parse path,
         // which already handles "URL or DuckDuckGo search" itself. The Literal
         // row is here so users can return to "what Enter would do" after
         // moving through the list with arrow keys.

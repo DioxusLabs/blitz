@@ -41,6 +41,7 @@ use status_bar::StatusBar;
 use tab::{Tab, TabId, TabStoreImplExt, TabWebView, active_tab, open_tab, tab_display_title};
 use tab_strip::TabStrip;
 use toolbar::Toolbar;
+use url_suggestions::provide_url_suggester;
 #[cfg(target_os = "windows")]
 use winit::platform::windows::WinIcon;
 
@@ -95,6 +96,7 @@ fn app() -> Element {
 
     let history_service = HistoryService::new(browsing_history, history_store);
     use_context_provider(|| history_service.clone());
+    provide_url_suggester(browsing_history);
 
     let tabs: Store<Vec<Tab>> = use_store(Vec::new);
     let mut active_tab_id: Signal<TabId> = use_hook(|| {
