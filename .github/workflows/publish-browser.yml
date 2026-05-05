@@ -134,7 +134,7 @@ jobs:
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
           APPLE_API_ISSUER: ${{ vars.APPLE_API_ISSUER }}
-          APPLE_API_KEY_ID: ${{ vars.APPLE_API_KEY_ID }}
+          APPLE_API_KEY: ${{ vars.APPLE_API_KEY_ID }}
           APPLE_API_KEY_PATH: ${{ vars.APPLE_API_KEY_PATH }}
 
       - name: Delete private key file
