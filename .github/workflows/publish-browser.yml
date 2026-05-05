@@ -57,7 +57,7 @@ jobs:
             os: macos-15-intel
             use_git_cli: true
             artifact_name: "Blitz_0.0.0_macos_x86_64.dmg"
-            artifact_path: "./target/dx/blitz/bundle/macos/macos/Blitz_0.0.0_x64.dmg"
+            artifact_path: "./target/dx/blitz/bundle/macos/macos/Blitz_0.0.0_x86_64.dmg"
           - job_name: macOS (aarch64)
             target: aarch64-apple-darwin
             os: macos-latest
