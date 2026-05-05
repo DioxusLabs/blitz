@@ -35,7 +35,7 @@ jobs:
     runs-on: ${{ matrix.platform.os }}
     environment: Signed Builds
     strategy:
-      fail-fast: true
+      fail-fast: false
       matrix:
         platform:
           - target: x86_64-pc-windows-msvc
