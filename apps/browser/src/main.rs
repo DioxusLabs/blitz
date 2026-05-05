@@ -41,7 +41,12 @@ use status_bar::StatusBar;
 use tab::{Tab, TabId, TabStoreImplExt, TabWebView, active_tab, open_tab, tab_display_title};
 use tab_strip::TabStrip;
 use toolbar::Toolbar;
+<<<<<<< feat/browser-nucleo
 use url_suggestions::provide_url_suggester;
+=======
+#[cfg(target_os = "windows")]
+use winit::platform::windows::WinIcon;
+>>>>>>> main
 
 static BROWSER_UI_STYLES: Asset = asset!("../assets/browser.css");
 pub(crate) const IS_MOBILE: bool = cfg!(any(target_os = "android", target_os = "ios"));
@@ -57,6 +62,9 @@ fn main() {
     #[cfg(feature = "tracing")]
     tracing_subscriber::fmt::init();
     let window_attributes = WindowAttributes::default();
+    #[cfg(target_os = "windows")]
+    let window_attributes = window_attributes
+        .with_window_icon(WinIcon::from_resource(32512, None).map(Into::into).ok());
     #[cfg(target_os = "macos")]
     let window_attributes = window_attributes.with_platform_attributes(Box::new(
         WindowAttributesMacOS::default()
