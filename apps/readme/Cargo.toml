@@ -21,7 +21,7 @@ cpu-softbuffer = ["cpu-base", "anyrender_vello_cpu/softbuffer_window_renderer"]
 cpu-base = ["dep:anyrender_vello_cpu"]
 
 avif = ["dep:image", "image?/avif-native"]
-comrak = ["dep:comrak"]
+comrak = ["dep:comrak", "dep:syntect"]
 pulldown_cmark = ["dep:pulldown-cmark"]
 floats = ["blitz-dom/floats"]
 cache = ["blitz-net/cache"]
@@ -52,7 +52,8 @@ tokio = { workspace = true, features = ["rt"] }
 reqwest = { workspace = true }
 url = { workspace = true }
 winit = { workspace = true }
-comrak = { version = "0.52", default-features = false, optional = true }
+comrak = { version = "0.52", default-features = false, features = ["syntect"], optional = true }
+syntect = { version = "5", default-features = false, features = ["default-fancy"], optional = true }
 pulldown-cmark = { version = "0.13", default-features = false, features = ["html"], optional = true }
 image = { workspace = true, default-features = false, optional = true }
 notify = "8.0.0"
@@ -60,3 +61,8 @@ tracing-subscriber = { workspace = true, optional = true }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 tokio = { workspace = true, features = ["rt-multi-thread"]}
+
+[[example]]
+name = "gen_syntax_css"
+path = "examples/gen_syntax_css.rs"
+required-features = ["comrak"]

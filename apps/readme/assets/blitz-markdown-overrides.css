@@ -29,3 +29,20 @@
     display: none !important;
   }
 }
+
+.markdown-body pre {
+  position: relative;
+}
+
+.markdown-body pre > .codeblock-lang {
+  position: absolute;
+  top: 6px;
+  right: 10px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--fgColor-muted, #6e7781);
+  pointer-events: none;
+  user-select: none;
+}

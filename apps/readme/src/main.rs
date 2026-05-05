@@ -3,6 +3,9 @@ mod readme_application;
 mod markdown {
     pub(crate) const GITHUB_MD_STYLES: &str = include_str!("../assets/github-markdown.css");
     pub(crate) const BLITZ_MD_STYLES: &str = include_str!("../assets/blitz-markdown-overrides.css");
+    #[cfg(feature = "comrak")]
+    pub(crate) const SYNTAX_HIGHLIGHT_STYLES: &str =
+        include_str!("../assets/syntax-highlight.css");
 
     #[cfg(feature = "comrak")]
     mod comrak;
@@ -33,6 +36,8 @@ use blitz_html::HtmlDocument;
 use blitz_net::Provider;
 use blitz_traits::navigation::{NavigationOptions, NavigationProvider};
 use blitz_traits::net::Request;
+#[cfg(feature = "comrak")]
+use markdown::SYNTAX_HIGHLIGHT_STYLES;
 use markdown::{BLITZ_MD_STYLES, GITHUB_MD_STYLES, markdown_to_html};
 use notify::{Error as NotifyError, Event as NotifyEvent, RecursiveMode, Watcher as _};
 use readme_application::{ReadmeApplication, ReadmeEvent};
@@ -92,6 +97,8 @@ fn main() {
         html = markdown_to_html(html);
         stylesheets.push(String::from(GITHUB_MD_STYLES));
         stylesheets.push(String::from(BLITZ_MD_STYLES));
+        #[cfg(feature = "comrak")]
+        stylesheets.push(String::from(SYNTAX_HIGHLIGHT_STYLES));
         title = format!(
             "README for {}",
             base_url.rsplit("/").find(|s| !s.is_empty()).unwrap()
