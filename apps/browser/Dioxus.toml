@@ -4,8 +4,7 @@ android_main_activity = "MainActivity.kt"
 [bundle]
 publisher = "DioxusLabs"
 identifier = "com.dioxuslabs.blitz"
-icon = ["./assets/blitz-logo.png"]
+icon = ["./assets/blitz-logo.png", "./assets/blitz-logo.ico"]
 
 [bundle.windows]
 webview_install_mode = "Skip"
-icon_path = "assets\\blitz-logo.ico"
