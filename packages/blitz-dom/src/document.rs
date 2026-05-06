@@ -49,7 +49,7 @@ use style::queries::values::PrefersColorScheme;
 use style::selector_parser::ServoElementSnapshot;
 use style::servo_arc::Arc as ServoArc;
 use style::values::GenericAtomIdent;
-use style::values::computed::Overflow;
+use style::values::computed::{Overflow, UserSelect};
 use style::{
     device::Device,
     dom::{TDocument, TNode},
@@ -1372,6 +1372,7 @@ impl BaseDocument {
         }
 
         let style = node.primary_styles()?;
+        let user_select = style.clone_user_select();
         let keyword = stylo_to_cursor_icon(style.clone_cursor().keyword);
 
         // Return cursor from style if it is non-auto
@@ -1399,7 +1400,10 @@ impl BaseDocument {
 
         // Return text cursor for text nodes
         if self.hover_node_is_text {
-            return Some(CursorIcon::Text);
+            return Some(match user_select {
+                UserSelect::Text => CursorIcon::Text,
+                _ => CursorIcon::Default,
+            });
         }
 
         // Else fallback to default cursor
