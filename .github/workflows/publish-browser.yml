@@ -79,7 +79,7 @@ jobs:
           - job_name: Android (aarch64)
             target: aarch64-linux-android
             args: --android --package-types apk --no-default-features --features android-defaults
-            os: ubuntu-24.04-arm
+            os: ubuntu-24.04
             use_git_cli: true
             artifact_name: "Blitz_0.0.0_android_aarch64.apk"
             artifact_path: ./target/dx/blitz/release/android/app/app/build/outputs/apk/release/app-release-unsigned.apk
