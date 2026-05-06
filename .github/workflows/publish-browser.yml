@@ -34,7 +34,7 @@ jobs:
     permissions:
       contents: write
     runs-on: ${{ matrix.platform.os }}
-    environment: Signed Builds
+    environment: ${{ github.ref == 'refs/heads/main' && 'Signed Builds' || '' }} 
     name: ${{ matrix.platform.job_name }}
     strategy:
       fail-fast: false
