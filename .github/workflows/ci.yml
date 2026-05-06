@@ -171,7 +171,7 @@ jobs:
               name: android,
               target: aarch64-linux-android,
               os: ubuntu-latest,
-              cross: true,
+              cross: false,
               command: "build",
               args: "--all",
             }
@@ -217,6 +217,12 @@ jobs:
         with:
           packages: libasound2-dev libatk1.0-dev libgtk-3-dev libudev-dev libpango1.0-dev libxdo-dev libssl-dev
           version: 1.0
+
+      - name: Install Arm OpenSSL (Android)
+        if: ${{ matrix.platform.name == 'android' }}
+        run: |
+          dpkg --add-architecture arm64
+          apt-get update && apt-get install --assume-yes libssl-dev:arm64
 
       - name: Setup
         run: ${{ matrix.platform.setup }} 
