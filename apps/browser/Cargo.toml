@@ -11,6 +11,8 @@ path = "src/main.rs"
 
 [features]
 default = ["vello", "floats", "incremental", "cookies", "cache", "screenshot", "capture"]
+android-defaults = ["skia", "floats", "incremental", "cookies"]
+
 screenshot = ["dep:anyrender", "dep:anyrender_vello_cpu", "dep:blitz-paint", "dep:png", "dep:peniko", "dep:rfd"]
 capture = ["dep:anyrender", "dep:anyrender_serialize", "dep:blitz-paint", "dep:png", "dep:peniko", "dep:rfd"]
 vello = ["dioxus-native/vello"]
