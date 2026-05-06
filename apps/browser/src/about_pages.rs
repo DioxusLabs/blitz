@@ -15,7 +15,6 @@ const HISTORY_REFRESH_INTERVAL: Duration = Duration::from_secs(30);
 const NEWTAB_CSS: Asset = asset!("../assets/about-newtab.css");
 const STUB_CSS: Asset = asset!("../assets/about-stub.css");
 const HISTORY_CSS: Asset = asset!("../assets/about-history.css");
-const BLITZ_LOGO: Asset = asset!("../assets/blitz-logo.png");
 const BLITZ_LOGO_WTIH_TEXT: Asset = asset!("../assets/blitz-logo-with-text3.svg");
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
