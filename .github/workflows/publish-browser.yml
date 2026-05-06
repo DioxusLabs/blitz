@@ -144,7 +144,7 @@ jobs:
           version: 1.0
 
       - name: Bundle browser
-        run: dx bundle --package browser --release --profile production --locked --verbose --trace ${{ matrix.platform.args }}
+        run: dx bundle --package browser --release --profile production --target ${{ matrix.platform.target }} --locked --verbose --trace ${{ matrix.platform.args }}
         env:
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
