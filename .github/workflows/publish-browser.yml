@@ -1,5 +1,6 @@
 name: Publish Browser
 on:
+  pull_request:
   push:
     branches:
       - main
