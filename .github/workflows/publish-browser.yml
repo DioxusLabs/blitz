@@ -1,5 +1,6 @@
 name: Publish Browser
 on:
+  pull_request:
   push:
     branches:
       - main
@@ -33,7 +34,7 @@ jobs:
     permissions:
       contents: write
     runs-on: ${{ matrix.platform.os }}
-    environment: Signed Builds
+    environment: ${{ github.ref == 'refs/heads/main' && 'Signed Builds' || '' }} 
     name: ${{ matrix.platform.job_name }}
     strategy:
       fail-fast: false
@@ -75,11 +76,13 @@ jobs:
             use_git_cli: false
             artifact_name: "Blitz_0.0.0_linux_aarch64.AppImage"
             artifact_path: ./target/dx/blitz/bundle/linux/appimage/blitz_0.0.0_aarch64.AppImage
-          # musl builds
-          # - target: x86_64-unknown-linux-musl
-          #   os: ubuntu-24.04
-          # - target: aarch64-unknown-linux-musl
-          #   os: ubuntu-24.04-arm
+          - job_name: Android (aarch64)
+            target: aarch64-linux-android
+            args: --android --package-types apk --no-default-features --features android-defaults
+            os: ubuntu-24.04
+            use_git_cli: true
+            artifact_name: "Blitz_0.0.0_android_aarch64.apk"
+            artifact_path: ./target/dx/blitz/release/android/app/app/build/outputs/apk/release/app-release-unsigned.apk
     steps:
       - name: Checkout
         uses: actions/checkout@v5
@@ -96,7 +99,7 @@ jobs:
           save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - name: Create private key file
-        if: ${{ matrix.platform.os == 'macos-15-intel' || matrix.platform.os == 'macos-latest' }}
+        if: ${{ github.ref == 'refs/heads/main' && (matrix.platform.os == 'macos-15-intel' || matrix.platform.os == 'macos-latest') }}
         run: echo "${{ secrets.APPLE_API_KEY_CONTENT }}" > ${{ vars.APPLE_API_KEY_PATH }}
 
       - name: Install Dioxus CLI
@@ -107,7 +110,7 @@ jobs:
 
       - name: Install Dioxus CLI (git)
         if: ${{ matrix.platform.use_git_cli == true }}
-        run: cargo install dioxus-cli --git https://github.com/nicoburns/dioxus.git --rev=cccbd986706d348938c08928571be0e364786f65
+        run: cargo install dioxus-cli --git https://github.com/nicoburns/dioxus.git --rev=970218978c83d79c9d7fd0ad2e4104e7b082925c
 
       # - name: Install openssl on macos
       #   if: ${{ matrix.platform.os == 'macos-latest' || matrix.platform.os == 'macos-15-intel' }}
@@ -128,7 +131,7 @@ jobs:
           version: 1.0
 
       - name: Bundle browser
-        run: dx bundle --package browser --profile production --locked --verbose --trace
+        run: dx bundle --package browser --release --profile production --locked --verbose --trace ${{ matrix.platform.args }}
         env:
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
@@ -137,7 +140,7 @@ jobs:
           APPLE_API_KEY_PATH: ${{ vars.APPLE_API_KEY_PATH }}
 
       - name: Delete private key file
-        if: ${{ always() && (matrix.platform.os == 'macos-15-intel' || matrix.platform.os == 'macos-latest') }}
+        if: ${{ always() && github.ref == 'refs/heads/main' &&  (matrix.platform.os == 'macos-15-intel' || matrix.platform.os == 'macos-latest') }}
         run: rm ${{ vars.APPLE_API_KEY_PATH }}
 
       - name: Upload app bundle
