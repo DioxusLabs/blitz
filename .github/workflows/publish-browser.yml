@@ -140,7 +140,7 @@ jobs:
           APPLE_API_KEY_PATH: ${{ vars.APPLE_API_KEY_PATH }}
 
       - name: Delete private key file
-        if: ${{ always() && (matrix.platform.os == 'macos-15-intel' || matrix.platform.os == 'macos-latest') }}
+        if: ${{ always() && github.ref == 'refs/heads/main' &&  (matrix.platform.os == 'macos-15-intel' || matrix.platform.os == 'macos-latest') }}
         run: rm ${{ vars.APPLE_API_KEY_PATH }}
 
       - name: Upload app bundle
