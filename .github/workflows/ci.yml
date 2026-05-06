@@ -224,7 +224,7 @@ jobs:
           sudo dpkg --add-architecture arm64
           sudo cp -f .github/android-ubuntu.sources /etc/apt/sources.list.d/ubuntu.sources
           sudo apt-get update
-          sudo apt-get install --assume-yes libssl-dev:arm64
+          sudo apt-get install --assume-yes pkg-config:arm64 libssl-dev:arm64
 
       - name: Setup
         run: ${{ matrix.platform.setup }} 
