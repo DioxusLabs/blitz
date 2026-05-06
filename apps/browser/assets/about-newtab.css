@@ -1,9 +1,10 @@
 .about-newtab {
     height: 100%;
     display: flex;
-    align-items: center;
+    align-items: top;
     justify-content: center;
     background: #f0f0f0;
+    padding-top: 100px;
 }
 .about-newtab .container {
     display: flex;
@@ -12,11 +13,11 @@
     gap: 24px;
 }
 .about-newtab img {
-    width: 160px;
-    height: 160px;
+    width: 280px;
+    height: 120px;
 }
 .about-newtab .search-input {
-    width: 320px;
+    width: 520px;
     padding: 10px 14px;
     font-size: 16px;
     border: 1px solid #ccc;

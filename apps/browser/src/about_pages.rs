@@ -16,6 +16,7 @@ const NEWTAB_CSS: Asset = asset!("../assets/about-newtab.css");
 const STUB_CSS: Asset = asset!("../assets/about-stub.css");
 const HISTORY_CSS: Asset = asset!("../assets/about-history.css");
 const BLITZ_LOGO: Asset = asset!("../assets/blitz-logo.png");
+const BLITZ_LOGO_WTIH_TEXT: Asset = asset!("../assets/blitz-logo-with-text3.svg");
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum AboutPage {
@@ -83,7 +84,7 @@ fn NewTabPage(on_navigate: Callback<Request>) -> Element {
         document::Link { rel: "stylesheet", href: NEWTAB_CSS }
         div { class: "about-newtab",
             div { class: "container",
-                img { src: BLITZ_LOGO, alt: "Blitz" }
+                img { src: BLITZ_LOGO_WTIH_TEXT, alt: "Blitz" }
                 input {
                     class: "search-input",
                     r#type: "text",
