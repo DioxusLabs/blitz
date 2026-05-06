@@ -35,7 +35,7 @@ jobs:
     permissions:
       contents: write
     runs-on: ${{ matrix.platform.os }}
-    environment: ${{ github.ref == 'refs/heads/main' && 'Signed Builds' || '' }} 
+    environment: ${{ (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/ci-test')) && 'Signed Builds' || '' }} 
     name: ${{ matrix.platform.job_name }}
     strategy:
       fail-fast: false
@@ -100,11 +100,11 @@ jobs:
           save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - name: Create Apple private key file
-        if: ${{ github.ref == 'refs/heads/main' && (matrix.platform.os == 'macos-15-intel' || matrix.platform.os == 'macos-latest') }}
+        if: ${{ (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/ci-test')) && (matrix.platform.os == 'macos-15-intel' || matrix.platform.os == 'macos-latest') }}
         run: echo "${{ secrets.APPLE_API_KEY_CONTENT }}" > ${{ vars.APPLE_API_KEY_PATH }}
 
       - name: Setup Android signing keys
-        if: ${{ github.ref == 'refs/heads/main' && matrix.platform.target == 'aarch64-linux-android' }}
+        if: ${{ (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/ci-test')) && matrix.platform.target == 'aarch64-linux-android' }}
         run: |
           cd apps/browser
           base64 -d <<< "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" > keystore.jks
@@ -158,11 +158,11 @@ jobs:
           mv ./target/dx/blitz/release/android/app/app/build/outputs/apk/release/app-release-unsigned.apk ./target/dx/blitz/release/android/app/app/build/outputs/apk/release/Blitz_0.0.0_aarch64.apk
 
       - name: Delete private key file
-        if: ${{ always() && github.ref == 'refs/heads/main' &&  (matrix.platform.os == 'macos-15-intel' || matrix.platform.os == 'macos-latest') }}
+        if: ${{ always() && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/ci-test')) && (matrix.platform.os == 'macos-15-intel' || matrix.platform.os == 'macos-latest') }}
         run: rm ${{ vars.APPLE_API_KEY_PATH }}
 
       - name: Delete Android keystore
-        if: ${{ always() && github.ref == 'refs/heads/main' && matrix.platform.target == 'aarch64-linux-android' }}
+        if: ${{ always() && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/ci-test')) && matrix.platform.target == 'aarch64-linux-android' }}
         run: rm ./apps/browser/keystore.jks
 
       - name: Upload app bundle
