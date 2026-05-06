@@ -23,7 +23,7 @@ blitz-traits = { workspace = true }
 
 # Networking dependencies
 tokio = { workspace = true }
-reqwest = { workspace = true, features = ["charset", "default-tls", "form"] }
+reqwest = { workspace = true, features = ["charset", "native-tls", "form"] }
 data-url = { workspace = true }
 
 # Caching
