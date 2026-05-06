@@ -109,7 +109,7 @@ jobs:
           cd apps/browser
           base64 -d <<< "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" > keystore.jks
           echo '' >> Dioxus.toml
-          echo '[bundle.android]'' >> Dioxus.toml
+          echo '[bundle.android]' >> Dioxus.toml
           echo 'jks_file = "./apps/browser/keystore.jks"' >> Dioxus.toml
           echo 'jks_password = "${{ secrets.ANDROID_KEY_PASSWORD }}"' >> Dioxus.toml
           echo 'key_alias = "upload"' >> Dioxus.toml
