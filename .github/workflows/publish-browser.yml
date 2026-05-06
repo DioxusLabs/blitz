@@ -99,7 +99,7 @@ jobs:
           save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - name: Create private key file
-        if: ${{ matrix.platform.os == 'macos-15-intel' || matrix.platform.os == 'macos-latest' }}
+        if: ${{ github.ref == 'refs/heads/main' && (matrix.platform.os == 'macos-15-intel' || matrix.platform.os == 'macos-latest') }}
         run: echo "${{ secrets.APPLE_API_KEY_CONTENT }}" > ${{ vars.APPLE_API_KEY_PATH }}
 
       - name: Install Dioxus CLI
