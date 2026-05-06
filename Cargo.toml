@@ -50,13 +50,13 @@ accesskit_xplat = { version = "0.1", path = "./packages/accesskit_xplat", defaul
 browser-persistence = { path = "./apps/browser/persistence" }
 
 # Servo dependencies
-style = { version = "0.16.0", package = "stylo" }
-style_traits = { version = "0.16.0", package = "stylo_traits" }
-style_atoms = { version = "0.16.0", package = "stylo_atoms" }
-style_config = { version = "0.16.0", package = "stylo_static_prefs" }
-style_dom = { version = "0.16.0", package = "stylo_dom" }
-selectors = { version = "0.37.0", package = "selectors" }
-cssparser = { version = "0.36" }
+style = { version = "0.17.0", package = "stylo" }
+style_traits = { version = "0.17.0", package = "stylo_traits" }
+style_atoms = { version = "0.17.0", package = "stylo_atoms" }
+style_config = { version = "0.17.0", package = "stylo_static_prefs" }
+style_dom = { version = "0.17.0", package = "stylo_dom" }
+selectors = { version = "0.38.0", package = "selectors" }
+cssparser = { version = "0.37.0" }
 
 # HTML5ever dependencies
 markup5ever = "0.39.0" # needs to match stylo web_atoms version
