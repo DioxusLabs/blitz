@@ -303,7 +303,7 @@ fn SuggestionRow(
         div {
             class: row_class,
             "data-idx": "{idx}",
-            onmousedown: move |evt| {
+            onpointerdown: move |evt| {
                 evt.prevent_default();
                 on_pick.call(pick.clone());
             },
