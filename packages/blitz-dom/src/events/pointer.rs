@@ -158,20 +158,22 @@ pub(crate) fn handle_pointermove<F: FnMut(DomEvent)>(
         if dx.abs() > 2.0 || dy.abs() > 2.0 {
             match event.id {
                 BlitzPointerId::Mouse | BlitzPointerId::Pen => {
-                    let node = &doc.nodes[doc.mousedown_node_id.unwrap()];
-                    if let Some(style) = node.primary_styles() {
-                        let user_select = style.clone_user_select();
-                        if user_select == UserSelect::None {
-                            // Do nothing. Continue with rest of function
-                        } else if user_select == UserSelect::Auto {
-                            if let Some(parent) = node.parent {
-                                let node = &doc.nodes[parent];
-                                if let Some(style) = node.primary_styles() {
-                                    let user_select = style.clone_user_select();
-                                    if user_select == UserSelect::None {
-                                        // Do nothing. Continue with rest of function
-                                    } else {
-                                        doc.drag_mode = DragMode::Selecting;
+                    if let Some(mousedown_node_id) = doc.mousedown_node_id {
+                        let node = &doc.nodes[mousedown_node_id];
+                        if let Some(style) = node.primary_styles() {
+                            let user_select = style.clone_user_select();
+                            if user_select == UserSelect::None {
+                                // Do nothing. Continue with rest of function
+                            } else if user_select == UserSelect::Auto {
+                                if let Some(parent) = node.parent {
+                                    let node = &doc.nodes[parent];
+                                    if let Some(style) = node.primary_styles() {
+                                        let user_select = style.clone_user_select();
+                                        if user_select == UserSelect::None {
+                                            // Do nothing. Continue with rest of function
+                                        } else {
+                                            doc.drag_mode = DragMode::Selecting;
+                                        }
                                     }
                                 }
                             }
