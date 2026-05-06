@@ -82,7 +82,7 @@ jobs:
             os: ubuntu-24.04
             use_git_cli: true
             artifact_name: "Blitz_0.0.0_android_aarch64.apk"
-            artifact_path: ./target/dx/blitz/release/android/app/app/build/outputs/apk/release/Blitz_0.0.0_android_aarch64.apk
+            artifact_path: ./target/dx/blitz/release/android/app/app/build/outputs/apk/release/Blitz_0.0.0_aarch64.apk
     steps:
       - name: Checkout
         uses: actions/checkout@v5
@@ -142,7 +142,7 @@ jobs:
       - name: Post process
         if: ${{ matrix.platform.job_name == 'Android (aarch64)' }} 
         run: |
-          mv ./target/dx/blitz/release/android/app/app/build/outputs/apk/release/app-release-unsigned.apk ./target/dx/blitz/release/android/app/app/build/outputs/apk/release/Blitz_0.0.0_android_aarch64.apk
+          mv ./target/dx/blitz/release/android/app/app/build/outputs/apk/release/app-release-unsigned.apk ./target/dx/blitz/release/android/app/app/build/outputs/apk/release/Blitz_0.0.0_aarch64.apk
 
       - name: Delete private key file
         if: ${{ always() && github.ref == 'refs/heads/main' &&  (matrix.platform.os == 'macos-15-intel' || matrix.platform.os == 'macos-latest') }}
