@@ -78,11 +78,11 @@ jobs:
             artifact_path: ./target/dx/blitz/bundle/linux/appimage/blitz_0.0.0_aarch64.AppImage
           - job_name: Android (aarch64)
             target: aarch64-linux-android
-            features: --no-default-features --features android-defaults
+            args: --android --package-types apk --no-default-features --features android-defaults
             os: ubuntu-24.04-arm
             use_git_cli: true
             artifact_name: "Blitz_0.0.0_android_aarch64.apk"
-            artifact_path: ./target/dx/blitz/bundle/linux/appimage/blitz_0.0.0_aarch64.AppImage
+            artifact_path: ./target/dx/blitz/release/android/app/app/build/outputs/apk/release/app-release-unsigned.apk
     steps:
       - name: Checkout
         uses: actions/checkout@v5
@@ -131,7 +131,7 @@ jobs:
           version: 1.0
 
       - name: Bundle browser
-        run: dx bundle --package browser --release --profile production --locked --verbose --trace ${{ matrix.platform.features }}
+        run: dx bundle --package browser --release --profile production --locked --verbose --trace ${{ matrix.platform.args }}
         env:
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
