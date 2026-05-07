@@ -56,13 +56,13 @@ jobs:
           - job_name: macOS (x86_64)
             target: x86_64-apple-darwin
             os: macos-15-intel
-            use_git_cli: true
+            use_git_cli: false
             artifact_name: "Blitz_0.0.0_macos_x86_64.dmg"
             artifact_path: "./target/dx/blitz/bundle/macos/macos/Blitz_0.0.0_x86_64.dmg"
           - job_name: macOS (aarch64)
             target: aarch64-apple-darwin
             os: macos-latest
-            use_git_cli: true
+            use_git_cli: false
             artifact_name: "Blitz_0.0.0_macos_aarch64.dmg"
             artifact_path: "./target/dx/blitz/bundle/macos/macos/Blitz_0.0.0_aarch64.dmg"
           - job_name: Linux (x86_64)
@@ -81,7 +81,7 @@ jobs:
             target: aarch64-linux-android
             args: --android --package-types apk --no-default-features --features android-defaults
             os: ubuntu-24.04
-            use_git_cli: true
+            use_git_cli: false
             artifact_name: "Blitz_0.0.0_android_aarch64.apk"
             artifact_path: ./target/dx/blitz/release/android/app/app/build/outputs/apk/release/Blitz_0.0.0_aarch64.apk
     steps:
@@ -119,7 +119,7 @@ jobs:
         if: ${{ matrix.platform.use_git_cli == false }}
         uses: taiki-e/install-action@v2
         with:
-          tool: dioxus-cli@0.7.7
+          tool: dioxus-cli@0.7.8
 
       - name: Install Dioxus CLI (git)
         if: ${{ matrix.platform.use_git_cli == true }}
