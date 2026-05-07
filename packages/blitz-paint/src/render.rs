@@ -750,17 +750,13 @@ impl ElementCx<'_> {
 
             let transform = self.transform.then_translate(Vec2 { x, y });
 
-            // TODO: real render context
-            struct DummyRenderCtx;
-            impl anyrender::RenderContext for DummyRenderCtx {}
+            // Note that PaintScene: RenderContext, so scene here is also a RenderContext
+            let render_ctx = &mut *scene;
 
-            let widget_scene = widget_data.widget.paint(
-                &mut DummyRenderCtx,
-                &self.style,
-                width,
-                height,
-                self.scale,
-            );
+            let widget_scene =
+                widget_data
+                    .widget
+                    .paint(render_ctx, &self.style, width, height, self.scale);
 
             scene.append_scene(widget_scene, transform);
         }

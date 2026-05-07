@@ -109,7 +109,7 @@ pub trait Widget {
     ///   - Create it's own texture
     ///   - Pass the `ResourceId` of the paint for an Image in the AnyRender `Scene`
     fn paint(
-        &self,
+        &mut self,
         render_ctx: &mut dyn RenderContext,
         styles: &ComputedStyles,
         width: u32,

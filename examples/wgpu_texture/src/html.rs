@@ -3,7 +3,7 @@ use blitz_dom::{qual_name, DocumentConfig};
 use blitz_html::HtmlDocument;
 use blitz_shell::{create_default_event_loop, BlitzApplication, BlitzShellProxy, WindowConfig};
 
-use crate::{limits, DemoPaintSource, FEATURES, STYLES};
+use crate::{limits, DemoWidget, FEATURES, STYLES};
 
 pub fn launch_html() {
     // Create renderer
@@ -14,7 +14,7 @@ pub fn launch_html() {
     });
 
     // Create custom paint source and register it with the renderer
-    let demo_paint_source = Box::new(DemoPaintSource::new());
+    let demo_paint_source = Box::new(DemoWidget::new());
     let paint_source_id = renderer.register_custom_paint_source(demo_paint_source);
 
     // Parse the HTML into a Blitz document

@@ -8780,6 +8780,7 @@ dependencies = [
  "bytemuck",
  "color",
  "dioxus-native",
+ "peniko",
  "pollster",
  "wgpu 28.0.0",
  "wgpu_context",

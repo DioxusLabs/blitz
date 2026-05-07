@@ -3,7 +3,7 @@ use dioxus_native::prelude::*;
 use dioxus_native::use_wgpu;
 use std::any::Any;
 
-use crate::{limits, Color, DemoMessage, DemoPaintSource, FEATURES, STYLES};
+use crate::{limits, Color, DemoMessage, DemoWidget, FEATURES, STYLES};
 
 pub fn launch_dx_native() {
     let config: Vec<Box<dyn Any>> = vec![Box::new(FEATURES), Box::new(limits())];
@@ -72,7 +72,7 @@ fn ColorControl(label: &'static str, color_str: Signal<String>) -> Element {
 #[component]
 fn SpinningCube(color: Memo<Color>) -> Element {
     // Create custom paint source and register it with the renderer
-    let paint_source = DemoPaintSource::new();
+    let paint_source = DemoWidget::new();
     let sender = paint_source.sender();
     let paint_source_id = use_wgpu(move || paint_source);
 
