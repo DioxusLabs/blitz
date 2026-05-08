@@ -399,10 +399,7 @@ impl BaseDocument {
             node.style.item_is_replaced = node
                 .data
                 .downcast_element()
-                .map(|element| {
-                    matches!(element.name.local.as_ref(), "img" | "canvas" | "iframe" | "frame")
-                        || (cfg!(feature = "svg") && element.name.local.as_ref() == "svg")
-                })
+                .map(|element| matches!(element.name.local.as_ref(), "iframe"))
                 .unwrap_or(false);
             node.display_constructed_as = style.clone_display();
             // }

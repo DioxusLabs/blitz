@@ -727,7 +727,6 @@ pub(crate) fn find_inline_layout_embedded_boxes(
 
                         if *tag_name == local_name!("img")
                             || *tag_name == local_name!("svg")
-                            || *tag_name == local_name!("canvas")
                             || *tag_name == local_name!("input")
                             || *tag_name == local_name!("textarea")
                             || *tag_name == local_name!("button")
@@ -926,7 +925,6 @@ pub(crate) fn build_inline_layout_into(
 
                         if *tag_name == local_name!("img")
                             || *tag_name == local_name!("svg")
-                            || *tag_name == local_name!("canvas")
                             || *tag_name == local_name!("input")
                             || *tag_name == local_name!("textarea")
                             || *tag_name == local_name!("button")
