@@ -299,6 +299,11 @@ impl<Rend: WindowRenderer> View<Rend> {
         let mut inner = self.doc.inner_mut();
         inner.resolve(animation_time);
 
+        // Unregister resources (e.g. textures) from dropped custom widget nodes
+        for id in inner.take_pending_resource_deallocations() {
+            self.renderer.unregister_resource(id);
+        }
+
         let (width, height) = inner.viewport().window_size;
         let scale = inner.viewport().scale_f64();
         let is_animating = inner.is_animating();

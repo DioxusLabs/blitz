@@ -46,9 +46,9 @@ impl BaseDocument {
 /// A `RenderContext` that proxies resource registrations through to an inner `RenderContext`
 /// and also keeps track of the `ResourceId`s of all sucessfully registered resources so that
 /// they can be automatically unregistered if the Widget's node is dropped.
-struct ProxyRenderContext<'widget, 'rend> {
-    resource_ids: &'widget mut Vec<ResourceId>,
-    inner: &'rend mut dyn RenderContext,
+pub struct ProxyRenderContext<'widget, 'rend> {
+    pub resource_ids: &'widget mut Vec<ResourceId>,
+    pub inner: &'rend mut dyn RenderContext,
 }
 
 impl anyrender::RenderContext for ProxyRenderContext<'_, '_> {
@@ -66,7 +66,7 @@ impl anyrender::RenderContext for ProxyRenderContext<'_, '_> {
         self.inner.unregister_resource(resource_id);
     }
 
-    fn renderer_specific_context(&self) -> &dyn Any {
+    fn renderer_specific_context(&self) -> Option<Box<dyn std::any::Any>> {
         self.inner.renderer_specific_context()
     }
 }
@@ -127,18 +127,28 @@ pub trait Widget {
     // fn layout(&mut self, inputs: LayoutInput, styles: &ComputedStyles) -> LayoutOutput;
 }
 
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+pub enum CustomWidgetStatus {
+    Suspended,
+    Active,
+    PendingRemoval,
+}
+
 pub struct CustomWidgetData {
     /// The custom widget
     pub widget: Box<dyn Widget>,
+    /// The custom widget's status
+    pub status: CustomWidgetStatus,
     /// The IDs of active resources
     /// (stored so that we can automatically unregister them if/when the widget is destroyed).
-    active_resource_ids: Vec<ResourceId>,
+    pub active_resource_ids: Vec<ResourceId>,
 }
 
 impl CustomWidgetData {
     pub(crate) fn new(widget: Box<dyn Widget>) -> Self {
         Self {
             widget,
+            status: CustomWidgetStatus::Suspended,
             active_resource_ids: Vec::new(),
         }
     }

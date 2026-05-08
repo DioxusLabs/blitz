@@ -671,6 +671,11 @@ impl BaseDocument {
     }
 
     #[cfg(feature = "custom-widget")]
+    pub fn take_pending_resource_deallocations(&mut self) -> Vec<anyrender::ResourceId> {
+        std::mem::take(&mut self.pending_resource_deallocations)
+    }
+
+    #[cfg(feature = "custom-widget")]
     pub fn set_custom_widget(&mut self, node_id: usize, widget: Box<dyn crate::Widget>) {
         self.nodes[node_id]
             .element_data_mut()

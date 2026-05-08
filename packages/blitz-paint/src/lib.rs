@@ -103,17 +103,33 @@ fn process_custom_widget_node(
     node_id: usize,
     scale: f64,
 ) -> Option<Scene> {
+    use blitz_dom::node::{CustomWidgetStatus, ProxyRenderContext};
+
     let node = doc.get_node_mut(node_id)?;
     let width = (node.final_layout.size.width as f64 * scale) as u32;
     let height = (node.final_layout.size.height as f64 * scale) as u32;
-    let style = node.stylo_element_data.primary_styles()?;
 
+    if width == 0 || height == 0 {
+        return None;
+    }
+
+    let style = node.stylo_element_data.primary_styles()?;
     let element = node.data.downcast_element_mut()?;
     let widget_data = element.custom_widget_data_mut()?;
 
+    let mut render_ctx = ProxyRenderContext {
+        inner: render_ctx,
+        resource_ids: &mut widget_data.active_resource_ids,
+    };
+
+    if widget_data.status == CustomWidgetStatus::Suspended {
+        widget_data.widget.can_create_surfaces(&mut render_ctx);
+        widget_data.status = CustomWidgetStatus::Active;
+    }
+
     let widget_scene = widget_data
         .widget
-        .paint(render_ctx, &style, width, height, scale);
+        .paint(&mut render_ctx, &style, width, height, scale);
 
     Some(widget_scene)
 }

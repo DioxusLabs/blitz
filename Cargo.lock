@@ -8775,6 +8775,7 @@ dependencies = [
  "anyrender_vello",
  "blitz-dom",
  "blitz-html",
+ "blitz-paint",
  "blitz-shell",
  "blitz-traits",
  "bytemuck",

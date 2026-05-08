@@ -45,8 +45,21 @@ impl CustomPaintSource for DemoWidget {
 impl Widget for DemoWidget {
     fn connected(&mut self) {}
     fn disconnected(&mut self) {}
-    fn can_create_surfaces(&mut self, _render_ctx: &mut dyn anyrender::RenderContext) {}
-    fn destroy_surfaces(&mut self) {}
+    fn can_create_surfaces(&mut self, render_ctx: &mut dyn anyrender::RenderContext) {
+        if let Some(renderer_specific_context) = render_ctx.renderer_specific_context() {
+            if let Ok(device_handle) = renderer_specific_context.downcast::<DeviceHandle>() {
+                let active_state = ActiveDemoRenderer::new(&device_handle);
+                self.state = DemoRendererState::Active(Box::new(active_state));
+            } else {
+                println!("WARNING: Running WGPU example with non-wgpu rendering backend");
+            }
+        } else {
+            println!("WARNING: Rendering backend returned no context!");
+        }
+    }
+    fn destroy_surfaces(&mut self) {
+        self.state = DemoRendererState::Suspended;
+    }
 
     fn handle_event(&mut self, event: &blitz_traits::events::UiEvent) {
         let _ = event;
@@ -58,9 +71,13 @@ impl Widget for DemoWidget {
         _styles: &ComputedStyles,
         width: u32,
         height: u32,
-        scale: f64,
+        _scale: f64,
     ) -> anyrender::Scene {
         let mut scene = anyrender::Scene::new();
+
+        // if matches!(self.state, DemoRendererState::Suspended) {
+        //     self.can_create_surfaces(render_ctx);
+        // }
 
         self.process_messages();
         if let Some(resource_id) = self.render(render_ctx, width, height) {
@@ -71,7 +88,9 @@ impl Widget for DemoWidget {
                 None,
                 &Rect::from_origin_size((0.0, 0.0), (width as f64, height as f64)),
             );
-        };
+        } else {
+            println!("WANRING: render returned None");
+        }
 
         scene
     }
@@ -266,6 +285,7 @@ impl ActiveDemoRenderer {
         self.queue.submit(Some(encoder.finish()));
 
         std::mem::swap(&mut self.next_texture, &mut self.displayed_texture);
+
         Some(next_texture_handle)
     }
 }
