@@ -244,6 +244,7 @@ impl DocumentMutator<'_> {
         };
 
         // If element is a CustomWidget, then Ccall attribute_changed on it
+        #[cfg(feature = "custom-widget")]
         if let SpecialElementData::CustomWidget(widget_data) = &mut element.special_data {
             let old_value = element.attrs.get(&name).as_ref().map(|attr| &*attr.value);
             widget_data
@@ -324,7 +325,8 @@ impl DocumentMutator<'_> {
             return;
         }
 
-        // If element is a CustomWidget, then Ccall attribute_changed on it
+        // If element is a CustomWidget, then call attribute_changed on it
+        #[cfg(feature = "custom-widget")]
         if let SpecialElementData::CustomWidget(widget_data) = &mut element.special_data {
             let old_value = removed_attr.as_ref().map(|attr| &*attr.value);
             widget_data

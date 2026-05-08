@@ -106,7 +106,7 @@ fn render_html_to_buffer(
     out_path: &Path,
     html: &str,
 ) {
-    let document = parse_and_resolve_document(ctx, html, relative_path);
+    let mut document = parse_and_resolve_document(ctx, html, relative_path);
 
     // Determine height to render
     // let computed_height = document.as_ref().root_element().final_layout.size.height;
@@ -118,7 +118,7 @@ fn render_html_to_buffer(
     ctx.renderer.render_to_vec(
         |scene| {
             scene.reset();
-            paint_scene(scene, document.as_ref(), SCALE, WIDTH, HEIGHT, 0, 0);
+            paint_scene(scene, &mut document, SCALE, WIDTH, HEIGHT, 0, 0);
         },
         buf,
     );

@@ -239,7 +239,15 @@ impl<Rend: WindowRenderer> View<Rend> {
         // Render
         let insets = self.safe_area_insets.to_logical(scale);
         self.renderer.render(|scene| {
-            paint_scene(scene, &inner, scale, width, height, insets.left, insets.top)
+            paint_scene(
+                scene,
+                &mut inner,
+                scale,
+                width,
+                height,
+                insets.left,
+                insets.top,
+            )
         });
 
         // Set waker
@@ -299,7 +307,15 @@ impl<Rend: WindowRenderer> View<Rend> {
 
         if !is_blocked && is_visible {
             self.renderer.render(|scene| {
-                paint_scene(scene, &inner, scale, width, height, insets.left, insets.top)
+                paint_scene(
+                    scene,
+                    &mut inner,
+                    scale,
+                    width,
+                    height,
+                    insets.left,
+                    insets.top,
+                )
             });
         }
 

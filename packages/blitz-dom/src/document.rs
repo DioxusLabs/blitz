@@ -645,6 +645,10 @@ impl BaseDocument {
         }
     }
 
+    pub fn sub_document_node_ids(&self) -> Vec<usize> {
+        self.sub_document_nodes.iter().copied().collect()
+    }
+
     pub fn set_sub_document(&mut self, node_id: usize, sub_document: Box<dyn Document>) {
         self.nodes[node_id]
             .element_data_mut()
@@ -659,6 +663,11 @@ impl BaseDocument {
             .unwrap()
             .remove_sub_document();
         self.sub_document_nodes.remove(&node_id);
+    }
+
+    #[cfg(feature = "custom-widget")]
+    pub fn custom_widget_node_ids(&self) -> Vec<usize> {
+        self.custom_widget_nodes.iter().copied().collect()
     }
 
     #[cfg(feature = "custom-widget")]
@@ -1374,10 +1383,15 @@ impl BaseDocument {
     }
 
     pub fn is_animating(&self) -> bool {
+        #[cfg(feature = "custom-widget")]
+        let has_custom_widgets = !self.custom_widget_nodes.is_empty();
+        #[cfg(not(feature = "custom-widget"))]
+        let has_custom_widgets = false;
+
         self.has_canvas
             | self.has_active_animations
             | self.subdoc_is_animating
-            | !self.custom_widget_nodes.is_empty()
+            | has_custom_widgets
             | (self.scroll_animation != ScrollAnimationState::None)
     }
 

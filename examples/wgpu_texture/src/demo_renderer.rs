@@ -53,7 +53,7 @@ impl Widget for DemoWidget {
     }
 
     fn paint(
-        &self,
+        &mut self,
         render_ctx: &mut dyn anyrender::RenderContext,
         _styles: &ComputedStyles,
         width: u32,

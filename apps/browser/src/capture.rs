@@ -39,7 +39,7 @@ impl RenderSize {
 
 /// Capture a screenshot as PNG and write it to the specified path
 #[cfg(feature = "screenshot")]
-pub(crate) fn capture_screenshot(doc: &blitz_dom::BaseDocument, path: &Path) {
+pub(crate) fn capture_screenshot(doc: &mut blitz_dom::BaseDocument, path: &Path) {
     let size = RenderSize::Viewport;
     let (render_width, render_height) = size.resolve(doc);
 
@@ -65,7 +65,7 @@ pub(crate) fn capture_screenshot(doc: &blitz_dom::BaseDocument, path: &Path) {
 
 /// Capture a scene as an AnyRender serialized scene
 #[cfg(feature = "capture")]
-pub(crate) fn capture_anyrender_scene(doc: &blitz_dom::BaseDocument, path: &Path) {
+pub(crate) fn capture_anyrender_scene(doc: &mut blitz_dom::BaseDocument, path: &Path) {
     let mut scene = anyrender::Scene::new();
     render_scene(doc, &mut scene, RenderSize::Viewport);
 
@@ -79,7 +79,7 @@ pub(crate) fn capture_anyrender_scene(doc: &blitz_dom::BaseDocument, path: &Path
 }
 
 fn render_scene(
-    doc: &blitz_dom::BaseDocument,
+    doc: &mut blitz_dom::BaseDocument,
     scene: &mut impl PaintScene,
     size: RenderSize,
 ) -> (u32, u32) {

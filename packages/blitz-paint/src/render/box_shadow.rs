@@ -4,7 +4,7 @@ use anyrender::PaintScene;
 use kurbo::{Rect, Vec2};
 use peniko::{Compose, Fill, Mix};
 
-impl ElementCx<'_> {
+impl ElementCx<'_, '_> {
     pub(super) fn draw_outset_box_shadow(&self, scene: &mut impl PaintScene) {
         let box_shadow = &self.style.get_effects().box_shadow.0;
         let has_outset_shadow = box_shadow.iter().any(|s| !s.inset);
