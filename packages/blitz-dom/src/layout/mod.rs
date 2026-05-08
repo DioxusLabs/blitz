@@ -175,8 +175,7 @@ impl BaseDocument {
                     }
                 }
 
-                let is_iframe =
-                    *element_data.name.local == *"iframe" || *element_data.name.local == *"frame";
+                let is_iframe = *element_data.name.local == *"iframe";
 
                 if *element_data.name.local == *"img"
                     || *element_data.name.local == *"canvas"
