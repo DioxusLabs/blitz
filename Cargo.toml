@@ -104,14 +104,14 @@ skrifa = { version = "0.40", default-features = false, features = [
 ] } # Should match parley and vello versions
 
 # AnyRender
-anyrender = { version = "0.8" }
-anyrender_serialize = { version = "0.1" }
-anyrender_vello = { version = "0.8" }
-anyrender_vello_cpu = { version = "0.10" }
-anyrender_vello_hybrid = { version = "0.3" }
-anyrender_skia = { version = "0.5" }
-anyrender_svg = { version = "0.9" }
-wgpu_context = { version = "0.4" }
+anyrender = { git = "https://github.com/DioxusLabs/anyrender", rev = "cc66b7261522a0ee556651391463caf897e59d24" }
+anyrender_serialize = { git = "https://github.com/DioxusLabs/anyrender", rev = "cc66b7261522a0ee556651391463caf897e59d24" }
+anyrender_vello = { git = "https://github.com/DioxusLabs/anyrender", rev = "cc66b7261522a0ee556651391463caf897e59d24" }
+anyrender_vello_cpu = { git = "https://github.com/DioxusLabs/anyrender", rev = "cc66b7261522a0ee556651391463caf897e59d24" }
+anyrender_vello_hybrid = { git = "https://github.com/DioxusLabs/anyrender", rev = "cc66b7261522a0ee556651391463caf897e59d24" }
+anyrender_skia = { git = "https://github.com/DioxusLabs/anyrender", rev = "cc66b7261522a0ee556651391463caf897e59d24" }
+anyrender_svg = { git = "https://github.com/DioxusLabs/anyrender", rev = "cc66b7261522a0ee556651391463caf897e59d24" }
+wgpu_context = { git = "https://github.com/DioxusLabs/anyrender", rev = "cc66b7261522a0ee556651391463caf897e59d24" }
 
 # Linebender + Fontations + WGPU + SVG
 color = "0.3"
@@ -253,14 +253,14 @@ color = { workspace = true }
 env_logger = "0.11"
 tracing-subscriber = "0.3"
 
-[patch.crates-io]
-anyrender = { path = "../anyrender/crates/anyrender" }
-anyrender_skia = { path = "../anyrender/crates/anyrender_skia" }
-anyrender_vello = { path = "../anyrender/crates/anyrender_vello" }
-anyrender_vello_cpu = { path = "../anyrender/crates/anyrender_vello_cpu" }
-anyrender_vello_hybrid = { path = "../anyrender/crates/anyrender_vello_hybrid" }
-anyrender_svg = { path = "../anyrender/crates/anyrender_svg" }
-wgpu_context = { path = "../anyrender/crates/wgpu_context" }
+# [patch.crates-io]
+# anyrender = { path = "../anyrender/crates/anyrender" }
+# anyrender_skia = { path = "../anyrender/crates/anyrender_skia" }
+# anyrender_vello = { path = "../anyrender/crates/anyrender_vello" }
+# anyrender_vello_cpu = { path = "../anyrender/crates/anyrender_vello_cpu" }
+# anyrender_vello_hybrid = { path = "../anyrender/crates/anyrender_vello_hybrid" }
+# anyrender_svg = { path = "../anyrender/crates/anyrender_svg" }
+# wgpu_context = { path = "../anyrender/crates/wgpu_context" }
 
 # vello = { path = "../vello/vello" }
 # vello_cpu = { path = "../vello/sparse_strips/vello_cpu" }

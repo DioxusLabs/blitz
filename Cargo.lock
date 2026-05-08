@@ -276,6 +276,7 @@ checksum = "7f202df86484c868dbad7eaa557ef785d5c66295e41b460ef922eca0723b842c"
 [[package]]
 name = "anyrender"
 version = "0.8.0"
+source = "git+https://github.com/DioxusLabs/anyrender?rev=cc66b7261522a0ee556651391463caf897e59d24#cc66b7261522a0ee556651391463caf897e59d24"
 dependencies = [
  "kurbo",
  "peniko",
@@ -286,8 +287,7 @@ dependencies = [
 [[package]]
 name = "anyrender_serialize"
 version = "0.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "528af468ea29de58015c83cd0d60bd28391b953a089dd537bd0c5902a6565a53"
+source = "git+https://github.com/DioxusLabs/anyrender?rev=cc66b7261522a0ee556651391463caf897e59d24#cc66b7261522a0ee556651391463caf897e59d24"
 dependencies = [
  "anyrender",
  "image",
@@ -305,6 +305,7 @@ dependencies = [
 [[package]]
 name = "anyrender_skia"
 version = "0.5.0"
+source = "git+https://github.com/DioxusLabs/anyrender?rev=cc66b7261522a0ee556651391463caf897e59d24#cc66b7261522a0ee556651391463caf897e59d24"
 dependencies = [
  "anyrender",
  "ash",
@@ -331,6 +332,7 @@ dependencies = [
 [[package]]
 name = "anyrender_svg"
 version = "0.9.1"
+source = "git+https://github.com/DioxusLabs/anyrender?rev=cc66b7261522a0ee556651391463caf897e59d24#cc66b7261522a0ee556651391463caf897e59d24"
 dependencies = [
  "anyrender",
  "image",
@@ -342,6 +344,7 @@ dependencies = [
 [[package]]
 name = "anyrender_vello"
 version = "0.8.0"
+source = "git+https://github.com/DioxusLabs/anyrender?rev=cc66b7261522a0ee556651391463caf897e59d24#cc66b7261522a0ee556651391463caf897e59d24"
 dependencies = [
  "anyrender",
  "debug_timer 0.1.3 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -357,6 +360,7 @@ dependencies = [
 [[package]]
 name = "anyrender_vello_cpu"
 version = "0.10.0"
+source = "git+https://github.com/DioxusLabs/anyrender?rev=cc66b7261522a0ee556651391463caf897e59d24#cc66b7261522a0ee556651391463caf897e59d24"
 dependencies = [
  "anyrender",
  "debug_timer 0.1.3 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -370,6 +374,7 @@ dependencies = [
 [[package]]
 name = "anyrender_vello_hybrid"
 version = "0.3.0"
+source = "git+https://github.com/DioxusLabs/anyrender?rev=cc66b7261522a0ee556651391463caf897e59d24#cc66b7261522a0ee556651391463caf897e59d24"
 dependencies = [
  "anyrender",
  "debug_timer 0.1.3 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -5412,6 +5417,7 @@ dependencies = [
 [[package]]
 name = "pixels_window_renderer"
 version = "0.3.2"
+source = "git+https://github.com/DioxusLabs/anyrender?rev=cc66b7261522a0ee556651391463caf897e59d24#cc66b7261522a0ee556651391463caf897e59d24"
 dependencies = [
  "anyrender",
  "debug_timer 0.1.3 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -6754,6 +6760,7 @@ dependencies = [
 [[package]]
 name = "softbuffer_window_renderer"
 version = "0.3.0"
+source = "git+https://github.com/DioxusLabs/anyrender?rev=cc66b7261522a0ee556651391463caf897e59d24#cc66b7261522a0ee556651391463caf897e59d24"
 dependencies = [
  "anyrender",
  "debug_timer 0.1.3 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -8762,6 +8769,7 @@ dependencies = [
 [[package]]
 name = "wgpu_context"
 version = "0.4.0"
+source = "git+https://github.com/DioxusLabs/anyrender?rev=cc66b7261522a0ee556651391463caf897e59d24#cc66b7261522a0ee556651391463caf897e59d24"
 dependencies = [
  "futures-intrusive",
  "wgpu 28.0.0",
