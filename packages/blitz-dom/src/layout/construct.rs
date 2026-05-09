@@ -730,6 +730,7 @@ pub(crate) fn find_inline_layout_embedded_boxes(
                             || *tag_name == local_name!("input")
                             || *tag_name == local_name!("textarea")
                             || *tag_name == local_name!("button")
+                            || *tag_name == local_name!("iframe")
                         {
                             layout_children.push(node_id);
                         } else if *tag_name == local_name!("br") {
@@ -926,6 +927,7 @@ pub(crate) fn build_inline_layout_into(
                             || *tag_name == local_name!("input")
                             || *tag_name == local_name!("textarea")
                             || *tag_name == local_name!("button")
+                            || *tag_name == local_name!("iframe")
                         {
                             builder.push_inline_box(InlineBox {
                                 id: node_id as u64,

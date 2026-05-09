@@ -12,7 +12,7 @@ use crate::debug_overlay::render_debug_overlay;
 use crate::kurbo_css::NonUniformRoundedRectRadii;
 use crate::layers::LayerManager;
 use crate::sizing::compute_object_fit;
-use anyrender::{CustomPaint, Paint, PaintScene};
+use anyrender::{CustomPaint, Paint, PaintScene, PlaceholderKind};
 use blitz_dom::node::{
     ListItemLayout, ListItemLayoutPosition, Marker, NodeData, RasterImageData, SpecialElementData,
     TextInputData, TextNodeData,
@@ -254,7 +254,6 @@ impl<'dom> BlitzDomPainter<'dom> {
             width: (size.width as f64 - scaled_pb.left - scaled_pb.right) * self.scale,
             height: (size.height as f64 - scaled_pb.top - scaled_pb.bottom) * self.scale,
         };
-
         // Don't render things that are out of view
         let scaled_y = (box_position.y - self.initial_y) * self.scale;
         let scaled_content_height = content_size.height.max(size.height) as f64 * self.scale;
@@ -322,6 +321,7 @@ impl<'dom> BlitzDomPainter<'dom> {
                         cx.draw_svg(scene);
                         cx.draw_canvas(scene);
                         cx.draw_sub_document(scene);
+                        cx.draw_cross_origin_iframe(scene);
                         cx.draw_input(scene);
                         cx.draw_text_input_text(scene, content_position);
                         cx.draw_inline_layout(scene, content_position);
@@ -740,6 +740,22 @@ impl ElementCx<'_> {
         }
     }
 
+    fn fill_embedded_document_background(&self, scene: &mut impl PaintScene) {
+        let width = self.frame.content_box.width();
+        let height = self.frame.content_box.height();
+        let x = self.frame.content_box.origin().x;
+        let y = self.frame.content_box.origin().y;
+        let transform = self.transform.then_translate(Vec2 { x, y });
+
+        scene.fill(
+            Fill::NonZero,
+            transform,
+            Color::WHITE,
+            None,
+            &Rect::from_origin_size((0.0, 0.0), (width, height)),
+        );
+    }
+
     fn draw_sub_document(&self, scene: &mut impl PaintScene) {
         if let Some(sub_doc) = self.element.sub_doc_data().map(|doc| doc.inner()) {
             let scale = self.scale;
@@ -749,10 +765,32 @@ impl ElementCx<'_> {
             let initial_y = self.pos.y + self.frame.content_box.origin().y;
             // let transform = self.transform.then_translate(Vec2 { x, y });
 
+            self.fill_embedded_document_background(scene);
+
             let painter =
                 BlitzDomPainter::new(&sub_doc, scale, width, height, initial_x, initial_y);
             painter.paint_scene(scene);
         }
+    }
+
+    fn draw_cross_origin_iframe(&self, scene: &mut impl PaintScene) {
+        let Some(frame_id) = self.element.cross_origin_iframe_data() else {
+            return;
+        };
+
+        let width = self.frame.content_box.width();
+        let height = self.frame.content_box.height();
+        let x = self.frame.content_box.origin().x;
+        let y = self.frame.content_box.origin().y;
+        let transform = self.transform.then_translate(Vec2 { x, y });
+
+        self.fill_embedded_document_background(scene);
+
+        scene.placeholder(
+            PlaceholderKind::CrossOriginIframe { frame_id },
+            transform,
+            &Rect::from_origin_size((0.0, 0.0), (width, height)),
+        );
     }
 
     fn stroke_devtools(&self, scene: &mut impl PaintScene) {

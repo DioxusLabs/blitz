@@ -640,12 +640,27 @@ impl BaseDocument {
         self.sub_document_nodes.insert(node_id);
     }
 
+    pub fn set_cross_origin_iframe(&mut self, node_id: usize, frame_id: u64) {
+        self.nodes[node_id]
+            .element_data_mut()
+            .unwrap()
+            .set_cross_origin_iframe(frame_id);
+        self.sub_document_nodes.remove(&node_id);
+    }
+
     pub fn remove_sub_document(&mut self, node_id: usize) {
         self.nodes[node_id]
             .element_data_mut()
             .unwrap()
             .remove_sub_document();
         self.sub_document_nodes.remove(&node_id);
+    }
+
+    pub fn remove_cross_origin_iframe(&mut self, node_id: usize) {
+        self.nodes[node_id]
+            .element_data_mut()
+            .unwrap()
+            .remove_cross_origin_iframe();
     }
 
     pub fn root_node(&self) -> &Node {
