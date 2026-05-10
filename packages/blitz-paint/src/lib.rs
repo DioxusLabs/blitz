@@ -91,7 +91,7 @@ fn build_custom_widget_scenes(
     for node_id in sub_document_node_ids.into_iter() {
         if let Some(sub_doc) = doc.get_node_mut(node_id).and_then(|node| node.subdoc_mut()) {
             let mut inner = sub_doc.inner_mut();
-            build_custom_widget_scenes(custom_widget_scenes, &mut *inner, render_ctx, scale);
+            build_custom_widget_scenes(custom_widget_scenes, &mut inner, render_ctx, scale);
         }
     }
 }

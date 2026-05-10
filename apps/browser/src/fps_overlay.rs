@@ -1,8 +1,8 @@
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use dioxus_native::prelude::*;
-use dioxus_native::{CustomPaintCtx, CustomPaintSource, DeviceHandle, TextureHandle, use_wgpu};
+use blitz_dom::Widget;
+use dioxus_native::{CustomWidgetAttr, prelude::*};
 
 const RING_LEN: usize = 60;
 
@@ -55,45 +55,49 @@ impl FpsStats {
     }
 }
 
-struct FpsPaintSource {
+struct FpsWidget {
     stats: Arc<Mutex<FpsStats>>,
 }
 
-impl CustomPaintSource for FpsPaintSource {
-    fn resume(&mut self, _device_handle: &DeviceHandle) {}
+impl FpsWidget {
+    fn new(stats: Arc<Mutex<FpsStats>>) -> Self {
+        Self { stats }
+    }
+}
 
-    fn suspend(&mut self) {
+impl Widget for FpsWidget {
+    fn destroy_surfaces(&mut self) {
         if let Ok(mut s) = self.stats.lock() {
             s.reset();
         }
     }
 
-    fn render(
+    fn paint(
         &mut self,
-        _ctx: CustomPaintCtx<'_>,
+        _render_ctx: &mut dyn anyrender::RenderContext,
+        _styles: &blitz_dom::node::ComputedStyles,
         _width: u32,
         _height: u32,
         _scale: f64,
-    ) -> Option<TextureHandle> {
+    ) -> anyrender::Scene {
         if let Ok(mut s) = self.stats.lock() {
             s.record(Instant::now());
         }
-        None
+        anyrender::Scene::new()
     }
 }
 
 #[component]
 pub fn FpsOverlay() -> Element {
     let stats: Arc<Mutex<FpsStats>> = use_hook(|| Arc::new(Mutex::new(FpsStats::default())));
-
-    let stats_for_source = stats.clone();
-    let paint_source_id = use_wgpu(move || FpsPaintSource {
-        stats: stats_for_source,
+    let stats_for_poll = Arc::clone(&stats);
+    let fps_widget = use_memo(move || {
+        let stats = stats.clone();
+        CustomWidgetAttr::new(FpsWidget::new(stats))
     });
 
     let mut display = use_signal(|| (0.0_f32, 0.0_f32));
 
-    let stats_for_poll = stats.clone();
     use_hook(move || {
         spawn(async move {
             loop {
@@ -110,7 +114,7 @@ pub fn FpsOverlay() -> Element {
     let (fps, ms) = display();
 
     rsx!(
-        canvas { class: "fps-tick", "src": paint_source_id }
+        object { class: "fps-tick", "data": fps_widget }
         div { class: "fps-overlay", "{fps:.0} FPS / {ms:.1} ms" }
     )
 }

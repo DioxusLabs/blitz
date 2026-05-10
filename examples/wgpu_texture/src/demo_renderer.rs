@@ -1,8 +1,7 @@
 // Copyright © SixtyFPS GmbH <info@slint.dev>
 // SPDX-License-Identifier: MIT
 use crate::Color;
-use anyrender::{PaintRef, PaintScene};
-use anyrender_vello::{CustomPaintCtx, CustomPaintSource, TextureHandle};
+use anyrender::{PaintRef, PaintScene, ResourceId};
 use blitz_dom::node::ComputedStyles;
 use blitz_dom::Widget;
 use peniko::kurbo::{Affine, Rect};
@@ -17,29 +16,6 @@ pub struct DemoWidget {
     tx: Sender<DemoMessage>,
     rx: Receiver<DemoMessage>,
     color: Color,
-}
-
-impl CustomPaintSource for DemoWidget {
-    fn resume(&mut self, device_handle: &DeviceHandle) {
-        // TODO: work out what to do about width/height
-        let active_state = ActiveDemoRenderer::new(device_handle);
-        self.state = DemoRendererState::Active(Box::new(active_state));
-    }
-
-    fn suspend(&mut self) {
-        self.state = DemoRendererState::Suspended;
-    }
-
-    fn render(
-        &mut self,
-        mut ctx: CustomPaintCtx<'_>,
-        width: u32,
-        height: u32,
-        _scale: f64,
-    ) -> Option<TextureHandle> {
-        self.process_messages();
-        self.render(&mut ctx, width, height)
-    }
 }
 
 impl Widget for DemoWidget {
@@ -112,7 +88,7 @@ enum DemoRendererState {
 #[derive(Clone)]
 struct TextureAndHandle {
     texture: wgpu::Texture,
-    handle: TextureHandle,
+    handle: ResourceId,
 }
 
 struct ActiveDemoRenderer {
@@ -159,7 +135,7 @@ impl DemoWidget {
         ctx: &mut dyn anyrender::RenderContext,
         width: u32,
         height: u32,
-    ) -> Option<TextureHandle> {
+    ) -> Option<ResourceId> {
         if width == 0 || height == 0 {
             return None;
         }
@@ -226,7 +202,7 @@ impl ActiveDemoRenderer {
         width: u32,
         height: u32,
         start_time: &Instant,
-    ) -> Option<TextureHandle> {
+    ) -> Option<ResourceId> {
         // If "next texture" size doesn't match specified size then unregister and drop texture
         if self
             .next_texture
@@ -251,7 +227,7 @@ impl ActiveDemoRenderer {
         };
 
         let next_texture = &texture_and_handle.texture;
-        let next_texture_handle = texture_and_handle.handle.clone();
+        let next_texture_handle = texture_and_handle.handle;
 
         let elapsed: f32 = start_time.elapsed().as_millis() as f32 / 500.;
         let [light_red, light_green, light_blue] = light;

@@ -2,7 +2,6 @@ mod background;
 mod box_shadow;
 mod form_controls;
 
-use std::any::Any;
 use std::collections::HashMap;
 
 use super::kurbo_css::{CssBox, Edge};
@@ -12,7 +11,7 @@ use crate::kurbo_css::NonUniformRoundedRectRadii;
 use crate::layers::LayerManager;
 use crate::sizing::compute_object_fit;
 use crate::{CustomWidgetSceneMap, SELECTION_COLOR};
-use anyrender::{CustomPaint, Paint, PaintScene, Scene};
+use anyrender::{PaintScene, Scene};
 use blitz_dom::node::{
     ListItemLayout, ListItemLayoutPosition, Marker, NodeData, RasterImageData, SpecialElementData,
     TextInputData, TextNodeData,
@@ -330,7 +329,6 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
                         cx.draw_image(scene);
                         #[cfg(feature = "svg")]
                         cx.draw_svg(scene);
-                        cx.draw_canvas(scene);
                         #[cfg(feature = "custom-widget")]
                         cx.draw_custom_widget(scene);
                         cx.draw_sub_document(scene);
@@ -728,31 +726,6 @@ impl ElementCx<'_, '_> {
                 .pre_scale_non_uniform(x_scale, y_scale);
 
             scene.draw_image(to_peniko_image(image, quality).as_ref(), transform);
-        }
-    }
-
-    fn draw_canvas(&self, scene: &mut impl PaintScene) {
-        if let Some(custom_paint_source) = self.element.canvas_data() {
-            let width = self.frame.content_box.width() as u32;
-            let height = self.frame.content_box.height() as u32;
-            let x = self.frame.content_box.origin().x;
-            let y = self.frame.content_box.origin().y;
-
-            let transform = self.transform.then_translate(Vec2 { x, y });
-
-            scene.fill(
-                Fill::NonZero,
-                transform,
-                // TODO: replace `Arc<dyn Any>` with `CustomPaint` in API?
-                Paint::Custom(&CustomPaint {
-                    source_id: custom_paint_source.custom_paint_source_id,
-                    width,
-                    height,
-                    scale: self.scale,
-                } as &(dyn Any + Send + Sync)),
-                None,
-                &Rect::from_origin_size((0.0, 0.0), (width as f64, height as f64)),
-            );
         }
     }
 
