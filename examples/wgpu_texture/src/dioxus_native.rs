@@ -1,9 +1,9 @@
 use color::{palette::css::WHITE, parse_color};
 use dioxus_native::prelude::*;
-use dioxus_native::use_wgpu;
+use dioxus_native::CustomWidgetAttr;
 use std::any::Any;
 
-use crate::{limits, Color, DemoMessage, DemoPaintSource, FEATURES, STYLES};
+use crate::{limits, Color, DemoMessage, DemoWidget, FEATURES, STYLES};
 
 pub fn launch_dx_native() {
     let config: Vec<Box<dyn Any>> = vec![Box::new(FEATURES), Box::new(limits())];
@@ -71,10 +71,12 @@ fn ColorControl(label: &'static str, color_str: Signal<String>) -> Element {
 
 #[component]
 fn SpinningCube(color: Memo<Color>) -> Element {
-    // Create custom paint source and register it with the renderer
-    let paint_source = DemoPaintSource::new();
-    let sender = paint_source.sender();
-    let paint_source_id = use_wgpu(move || paint_source);
+    let (sender, demo_widget_attr) = use_hook(|| {
+        let demo_widget = DemoWidget::new();
+        let sender = demo_widget.sender();
+        let attr = CustomWidgetAttr::new(demo_widget);
+        (sender, attr)
+    });
 
     use_effect(move || {
         sender.send(DemoMessage::SetColor(color())).unwrap();
@@ -82,7 +84,7 @@ fn SpinningCube(color: Memo<Color>) -> Element {
 
     rsx!(
         div { id: "canvas-container",
-            canvas { id: "demo-canvas", "src": paint_source_id }
+            object { "data": demo_widget_attr }
         }
     )
 }

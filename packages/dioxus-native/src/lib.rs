@@ -55,10 +55,11 @@ pub use android_activity::AndroidApp;
     )
 ))]
 pub use {
-    anyrender_vello::{CustomPaintCtx, CustomPaintSource, DeviceHandle, TextureHandle},
-    dioxus_renderer::{Features, Limits, use_wgpu},
+    anyrender_vello::DeviceHandle,
+    dioxus_renderer::{Features, Limits},
 };
 
+pub use blitz_dom::Widget;
 pub use config::Config;
 pub use winit::dpi::{LogicalSize, PhysicalSize};
 pub use winit::window::WindowAttributes;

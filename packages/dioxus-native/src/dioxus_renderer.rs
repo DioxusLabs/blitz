@@ -1,8 +1,8 @@
-use std::cell::RefCell;
 use std::rc::Rc;
 use std::sync::Arc;
+use std::{any::Any, cell::RefCell};
 
-use anyrender::WindowRenderer;
+use anyrender::{RenderContext, WindowRenderer};
 
 #[cfg(any(
     feature = "vello",
@@ -12,7 +12,7 @@ use anyrender::WindowRenderer;
     )
 ))]
 pub use anyrender_vello::{
-    CustomPaintSource, VelloRendererOptions, VelloWindowRenderer as InnerRenderer,
+    VelloRendererOptions, VelloWindowRenderer as InnerRenderer,
     wgpu::{Features, Limits},
 };
 
@@ -30,31 +30,6 @@ use anyrender_vello_hybrid::VelloHybridWindowRenderer as InnerRenderer;
 
 #[cfg(feature = "skia")]
 use anyrender_skia::SkiaWindowRenderer as InnerRenderer;
-
-#[cfg(any(
-    feature = "vello",
-    all(
-        not(feature = "alt-renderer"),
-        not(all(target_os = "ios", target_abi = "sim"))
-    )
-))]
-pub fn use_wgpu<T: CustomPaintSource>(create_source: impl FnOnce() -> T) -> u64 {
-    use dioxus_core::{consume_context, use_hook_with_cleanup};
-
-    let (_renderer, id) = use_hook_with_cleanup(
-        || {
-            let renderer = consume_context::<DioxusNativeWindowRenderer>();
-            let source = Box::new(create_source());
-            let id = renderer.register_custom_paint_source(source);
-            (renderer, id)
-        },
-        |(renderer, id)| {
-            renderer.unregister_custom_paint_source(id);
-        },
-    );
-
-    id
-}
 
 #[derive(Clone)]
 pub struct DioxusNativeWindowRenderer {
@@ -96,23 +71,24 @@ impl DioxusNativeWindowRenderer {
     }
 }
 
-#[cfg(any(
-    feature = "vello",
-    all(
-        not(feature = "alt-renderer"),
-        not(all(target_os = "ios", target_abi = "sim"))
-    )
-))]
-impl DioxusNativeWindowRenderer {
-    pub fn register_custom_paint_source(&self, source: Box<dyn CustomPaintSource>) -> u64 {
-        self.inner.borrow_mut().register_custom_paint_source(source)
+impl RenderContext for DioxusNativeWindowRenderer {
+    fn try_register_custom_resource(
+        &mut self,
+        resource: Box<dyn Any>,
+    ) -> Result<anyrender::ResourceId, anyrender::RegisterResourceError> {
+        self.inner
+            .borrow_mut()
+            .try_register_custom_resource(resource)
     }
 
-    pub fn unregister_custom_paint_source(&self, id: u64) {
-        self.inner.borrow_mut().unregister_custom_paint_source(id)
+    fn unregister_resource(&mut self, resource_id: anyrender::ResourceId) {
+        self.inner.borrow_mut().unregister_resource(resource_id)
+    }
+
+    fn renderer_specific_context(&self) -> Option<Box<dyn Any>> {
+        self.inner.borrow_mut().renderer_specific_context()
     }
 }
-
 impl WindowRenderer for DioxusNativeWindowRenderer {
     type ScenePainter<'a>
         = <InnerRenderer as WindowRenderer>::ScenePainter<'a>

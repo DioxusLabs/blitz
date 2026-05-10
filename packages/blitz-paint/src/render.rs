@@ -2,17 +2,16 @@ mod background;
 mod box_shadow;
 mod form_controls;
 
-use std::any::Any;
 use std::collections::HashMap;
 
 use super::kurbo_css::{CssBox, Edge};
-use crate::SELECTION_COLOR;
 use crate::color::{Color, ToColorColor};
 use crate::debug_overlay::render_debug_overlay;
 use crate::kurbo_css::NonUniformRoundedRectRadii;
 use crate::layers::LayerManager;
 use crate::sizing::compute_object_fit;
-use anyrender::{CustomPaint, Paint, PaintScene};
+use crate::{CustomWidgetSceneMap, SELECTION_COLOR};
+use anyrender::{PaintScene, Scene};
 use blitz_dom::node::{
     ListItemLayout, ListItemLayoutPosition, Marker, NodeData, RasterImageData, SpecialElementData,
     TextInputData, TextNodeData,
@@ -41,7 +40,7 @@ use taffy::Layout;
 
 /// A short-lived struct which holds a bunch of parameters for rendering a scene so
 /// that we don't have to pass them down as parameters
-pub struct BlitzDomPainter<'dom> {
+pub struct BlitzDomPainter<'dom, 'a> {
     /// Input parameters (read only) for generating the Scene
     pub(crate) dom: &'dom BaseDocument,
     pub(crate) scale: f64,
@@ -52,9 +51,12 @@ pub struct BlitzDomPainter<'dom> {
     pub(crate) layer_manager: LayerManager,
     /// Cached selection ranges for O(1) lookup: node_id -> (start_offset, end_offset)
     pub(crate) selection_ranges: HashMap<usize, (usize, usize)>,
+
+    // Pre-computed `Scene`s for each CustomWidget
+    pub(crate) custom_widget_scenes: &'a CustomWidgetSceneMap,
 }
 
-impl<'dom> BlitzDomPainter<'dom> {
+impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
     /// Create a new BlitzDomPainter for the given document
     pub fn new(
         dom: &'dom BaseDocument,
@@ -63,6 +65,7 @@ impl<'dom> BlitzDomPainter<'dom> {
         height: u32,
         initial_x: f64,
         initial_y: f64,
+        custom_widget_scenes: &'a CustomWidgetSceneMap,
     ) -> Self {
         let selection_ranges: HashMap<usize, (usize, usize)> = dom
             .get_text_selection_ranges()
@@ -81,6 +84,7 @@ impl<'dom> BlitzDomPainter<'dom> {
             initial_y,
             layer_manager,
             selection_ranges,
+            custom_widget_scenes,
         }
     }
 
@@ -268,7 +272,12 @@ impl<'dom> BlitzDomPainter<'dom> {
             return;
         }
 
-        let mut cx = self.element_cx(node, layout, box_position);
+        #[cfg(feature = "custom-widget")]
+        let custom_widget_scene = self.custom_widget_scenes.get(&(self.dom.id(), node_id));
+        #[cfg(not(feature = "custom-widget"))]
+        let custom_widget_scene = None;
+
+        let mut cx = self.element_cx(node, layout, box_position, custom_widget_scene);
 
         cx.draw_outline(scene);
         cx.draw_outset_box_shadow(scene);
@@ -320,7 +329,8 @@ impl<'dom> BlitzDomPainter<'dom> {
                         cx.draw_image(scene);
                         #[cfg(feature = "svg")]
                         cx.draw_svg(scene);
-                        cx.draw_canvas(scene);
+                        #[cfg(feature = "custom-widget")]
+                        cx.draw_custom_widget(scene);
                         cx.draw_sub_document(scene);
                         cx.draw_input(scene);
                         cx.draw_text_input_text(scene, content_position);
@@ -351,12 +361,13 @@ impl<'dom> BlitzDomPainter<'dom> {
         }
     }
 
-    fn element_cx<'w>(
-        &'w self,
-        node: &'w Node,
+    fn element_cx(
+        &'dom self,
+        node: &'dom Node,
         layout: Layout,
         box_position: Point,
-    ) -> ElementCx<'w> {
+        custom_widget_scene: Option<&'a Scene>,
+    ) -> ElementCx<'dom, 'a> {
         let style = node
             .stylo_element_data
             .primary_styles()
@@ -412,6 +423,7 @@ impl<'dom> BlitzDomPainter<'dom> {
             text_input: element.text_input_data(),
             list_item: element.list_item_data.as_deref(),
             devtools: self.dom.devtools(),
+            custom_widget_scene,
         }
     }
 }
@@ -444,20 +456,22 @@ fn to_peniko_image(image: &RasterImageData, quality: peniko::ImageQuality) -> pe
 }
 
 /// A context of loaded and hot data to draw the element from
-struct ElementCx<'a> {
-    context: &'a BlitzDomPainter<'a>,
+struct ElementCx<'dom, 'a> {
+    context: &'dom BlitzDomPainter<'dom, 'a>,
     frame: CssBox,
     style: style::servo_arc::Arc<ComputedValues>,
     pos: Point,
     scale: f64,
-    node: &'a Node,
-    element: &'a ElementData,
+    node: &'dom Node,
+    element: &'dom ElementData,
     transform: Affine,
     #[cfg(feature = "svg")]
-    svg: Option<&'a usvg::Tree>,
-    text_input: Option<&'a TextInputData>,
-    list_item: Option<&'a ListItemLayout>,
-    devtools: &'a DevtoolSettings,
+    svg: Option<&'dom usvg::Tree>,
+    text_input: Option<&'dom TextInputData>,
+    list_item: Option<&'dom ListItemLayout>,
+    devtools: &'dom DevtoolSettings,
+    #[cfg_attr(not(feature = "custom-widget"), expect(unused))]
+    custom_widget_scene: Option<&'a Scene>,
 }
 
 /// Converts parley BoundingBox into peniko Rect
@@ -465,7 +479,7 @@ fn convert_rect(rect: &parley::BoundingBox) -> kurbo::Rect {
     peniko::kurbo::Rect::new(rect.x0, rect.y0, rect.x1, rect.y1)
 }
 
-impl ElementCx<'_> {
+impl ElementCx<'_, '_> {
     fn draw_inline_layout(&self, scene: &mut impl PaintScene, pos: Point) {
         if self.node.flags.is_inline_root() {
             let text_layout = self.element
@@ -715,28 +729,15 @@ impl ElementCx<'_> {
         }
     }
 
-    fn draw_canvas(&self, scene: &mut impl PaintScene) {
-        if let Some(custom_paint_source) = self.element.canvas_data() {
-            let width = self.frame.content_box.width() as u32;
-            let height = self.frame.content_box.height() as u32;
+    #[cfg(feature = "custom-widget")]
+    fn draw_custom_widget(&self, scene: &mut impl PaintScene) {
+        if let Some(widget_scene) = self.custom_widget_scene {
             let x = self.frame.content_box.origin().x;
             let y = self.frame.content_box.origin().y;
-
             let transform = self.transform.then_translate(Vec2 { x, y });
 
-            scene.fill(
-                Fill::NonZero,
-                transform,
-                // TODO: replace `Arc<dyn Any>` with `CustomPaint` in API?
-                Paint::Custom(&CustomPaint {
-                    source_id: custom_paint_source.custom_paint_source_id,
-                    width,
-                    height,
-                    scale: self.scale,
-                } as &(dyn Any + Send + Sync)),
-                None,
-                &Rect::from_origin_size((0.0, 0.0), (width as f64, height as f64)),
-            );
+            // TODO: eliminate clone
+            scene.append_scene(widget_scene.clone(), transform);
         }
     }
 
@@ -749,8 +750,15 @@ impl ElementCx<'_> {
             let initial_y = self.pos.y + self.frame.content_box.origin().y;
             // let transform = self.transform.then_translate(Vec2 { x, y });
 
-            let painter =
-                BlitzDomPainter::new(&sub_doc, scale, width, height, initial_x, initial_y);
+            let painter = BlitzDomPainter::new(
+                &sub_doc,
+                scale,
+                width,
+                height,
+                initial_x,
+                initial_y,
+                self.custom_widget_scenes,
+            );
             painter.paint_scene(scene);
         }
     }
@@ -969,8 +977,8 @@ impl ElementCx<'_> {
         scene.fill(Fill::NonZero, self.transform, color, None, &path);
     }
 }
-impl<'a> std::ops::Deref for ElementCx<'a> {
-    type Target = BlitzDomPainter<'a>;
+impl<'dom, 'a> std::ops::Deref for ElementCx<'dom, 'a> {
+    type Target = BlitzDomPainter<'dom, 'a>;
     fn deref(&self) -> &Self::Target {
         self.context
     }

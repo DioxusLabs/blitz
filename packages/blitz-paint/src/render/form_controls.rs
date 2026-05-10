@@ -6,7 +6,7 @@ use kurbo::{Affine, BezPath, Cap, Circle, Join, Point, RoundedRect, Stroke, Vec2
 use peniko::Fill;
 use style::dom::TElement as _;
 
-impl ElementCx<'_> {
+impl ElementCx<'_, '_> {
     pub(super) fn draw_input(&self, scene: &mut impl PaintScene) {
         if self.node.local_name() != "input" {
             return;

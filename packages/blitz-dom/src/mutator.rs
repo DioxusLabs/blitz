@@ -37,6 +37,8 @@ enum SpecialOp {
     LoadCustomPaintSource(usize),
     ProcessButtonInput(usize),
     UnloadSubDocument(usize),
+    #[cfg(feature = "custom-widget")]
+    UnloadCustomWidget(usize),
 }
 
 pub struct DocumentMutator<'doc> {
@@ -241,6 +243,15 @@ impl DocumentMutator<'_> {
             return;
         };
 
+        // If element is a CustomWidget, then Ccall attribute_changed on it
+        #[cfg(feature = "custom-widget")]
+        if let SpecialElementData::CustomWidget(widget_data) = &mut element.special_data {
+            let old_value = element.attrs.get(&name).as_ref().map(|attr| &*attr.value);
+            widget_data
+                .widget
+                .attribute_changed(&name.local, old_value, Some(value));
+        }
+
         element.attrs.set(name.clone(), value);
 
         let tag = &element.name.local;
@@ -314,6 +325,15 @@ impl DocumentMutator<'_> {
             return;
         }
 
+        // If element is a CustomWidget, then call attribute_changed on it
+        #[cfg(feature = "custom-widget")]
+        if let SpecialElementData::CustomWidget(widget_data) = &mut element.special_data {
+            let old_value = removed_attr.as_ref().map(|attr| &*attr.value);
+            widget_data
+                .widget
+                .attribute_changed(&name.local, old_value, None);
+        }
+
         if name.local == local_name!("id") {
             element.id = None;
         }
@@ -361,6 +381,16 @@ impl DocumentMutator<'_> {
 
     pub fn remove_sub_document(&mut self, node_id: usize) {
         self.doc.remove_sub_document(node_id)
+    }
+
+    #[cfg(feature = "custom-widget")]
+    pub fn set_custom_widget(&mut self, node_id: usize, widget: Box<dyn crate::Widget>) {
+        self.doc.set_custom_widget(node_id, widget)
+    }
+
+    #[cfg(feature = "custom-widget")]
+    pub fn remove_custom_widget(&mut self, node_id: usize) {
+        self.doc.remove_custom_widget(node_id)
     }
 
     /// Remove the node from it's parent but don't drop it
@@ -574,6 +604,8 @@ impl<'doc> DocumentMutator<'doc> {
                 SpecialOp::LoadCustomPaintSource(node_id) => self.load_custom_paint_src(node_id),
                 SpecialOp::ProcessButtonInput(node_id) => self.process_button_input(node_id),
                 SpecialOp::UnloadSubDocument(node_id) => self.remove_sub_document(node_id),
+                #[cfg(feature = "custom-widget")]
+                SpecialOp::UnloadCustomWidget(node_id) => self.remove_custom_widget(node_id),
             }
         }
 
@@ -670,6 +702,11 @@ impl<'doc> DocumentMutator<'doc> {
                 SpecialElementData::SubDocument(_) => {
                     self.eager_op_queue
                         .push(SpecialOp::UnloadSubDocument(node_id));
+                }
+                #[cfg(feature = "custom-widget")]
+                SpecialElementData::CustomWidget(_) => {
+                    self.eager_op_queue
+                        .push(SpecialOp::UnloadCustomWidget(node_id));
                 }
                 SpecialElementData::Stylesheet(_) => self
                     .eager_op_queue

@@ -1,5 +1,5 @@
 use color::{OpaqueColor, Srgb};
-use demo_renderer::{DemoMessage, DemoPaintSource};
+use demo_renderer::{DemoMessage, DemoWidget};
 use std::env;
 use wgpu::{Features, Limits};
 

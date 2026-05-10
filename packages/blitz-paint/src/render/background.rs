@@ -23,7 +23,7 @@ use style::{
 #[cfg(feature = "tracing")]
 use tracing::warn;
 
-impl ElementCx<'_> {
+impl ElementCx<'_, '_> {
     pub(super) fn draw_background(&self, scene: &mut impl PaintScene) {
         use GenericImage::*;
         use StyloBackgroundClip::*;

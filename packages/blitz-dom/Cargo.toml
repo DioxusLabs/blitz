@@ -17,7 +17,9 @@ default = [
     "accessibility",
     "system_fonts",
     "file_input",
+    "custom-widget"
 ]
+custom-widget = ["dep:anyrender", "accessibility"]
 tracing = ["dep:tracing"]
 svg = ["dep:usvg"]
 # WOFF decoding (using the "wuff" crate which is pure Rust)
@@ -52,6 +54,7 @@ smallvec = { workspace = true }
 
 # DioxusLabs dependencies
 taffy = { workspace = true }
+anyrender = { workspace = true, optional = true }
 
 # Linebender/Fontations dependencies
 accesskit = { workspace = true, optional = true }

@@ -233,10 +233,21 @@ impl<Rend: WindowRenderer> View<Rend> {
             panic!("Renderer failed to resume");
         };
 
+        #[cfg(feature = "custom-widget")]
+        inner.can_create_surfaces(&self.renderer as _);
+
         // Render
         let insets = self.safe_area_insets.to_logical(scale);
         self.renderer.render(|scene| {
-            paint_scene(scene, &inner, scale, width, height, insets.left, insets.top)
+            paint_scene(
+                scene,
+                &mut inner,
+                scale,
+                width,
+                height,
+                insets.left,
+                insets.top,
+            )
         });
 
         // Set waker
@@ -246,6 +257,9 @@ impl<Rend: WindowRenderer> View<Rend> {
     pub fn suspend(&mut self) {
         self.waker = None;
         self.renderer.suspend();
+
+        #[cfg(feature = "custom-widget")]
+        self.doc.inner_mut().destroy_surfaces();
     }
 
     pub fn poll(&mut self) -> bool {
@@ -285,6 +299,11 @@ impl<Rend: WindowRenderer> View<Rend> {
         let mut inner = self.doc.inner_mut();
         inner.resolve(animation_time);
 
+        // Unregister resources (e.g. textures) from dropped custom widget nodes
+        for id in inner.take_pending_resource_deallocations() {
+            self.renderer.unregister_resource(id);
+        }
+
         let (width, height) = inner.viewport().window_size;
         let scale = inner.viewport().scale_f64();
         let is_animating = inner.is_animating();
@@ -293,7 +312,15 @@ impl<Rend: WindowRenderer> View<Rend> {
 
         if !is_blocked && is_visible {
             self.renderer.render(|scene| {
-                paint_scene(scene, &inner, scale, width, height, insets.left, insets.top)
+                paint_scene(
+                    scene,
+                    &mut inner,
+                    scale,
+                    width,
+                    height,
+                    insets.left,
+                    insets.top,
+                )
             });
         }
 

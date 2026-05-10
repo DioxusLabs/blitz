@@ -71,6 +71,9 @@ pub mod util;
 #[cfg(feature = "accessibility")]
 mod accessibility;
 
+#[cfg(feature = "custom-widget")]
+pub use crate::node::Widget;
+
 pub use config::DocumentConfig;
 pub use document::{BaseDocument, DocGuard, DocGuardMut, Document, PlainDocument};
 pub use markup5ever::{

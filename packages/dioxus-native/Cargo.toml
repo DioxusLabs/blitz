@@ -57,10 +57,10 @@ tracing = ["dep:tracing", "dioxus-native-dom/tracing", "blitz-shell/tracing", "b
 
 [dependencies]
 # Blitz dependencies
-blitz-dom = { workspace = true }
+blitz-dom = { workspace = true, features = ["custom-widget"] }
 blitz-html = { workspace = true, optional = true }
 blitz-net = { workspace = true, optional = true }
-blitz-paint = { workspace = true, optional = true }
+blitz-paint = { workspace = true, optional = true, features = ["custom-widget"] }
 blitz-traits = { workspace = true }
 blitz-shell = { workspace = true }
 

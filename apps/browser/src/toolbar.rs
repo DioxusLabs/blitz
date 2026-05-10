@@ -225,7 +225,7 @@ pub fn Toolbar(
                     .and_then(|node| node.element_data_mut())
                     .and_then(|el| el.sub_doc_data_mut())
                 {
-                    crate::capture::capture_screenshot(&sub_doc.inner(), &path);
+                    crate::capture::capture_screenshot(&mut sub_doc.inner_mut(), &path);
                 }
             }
         }
@@ -248,7 +248,7 @@ pub fn Toolbar(
                     .and_then(|node| node.element_data_mut())
                     .and_then(|el| el.sub_doc_data_mut())
                 {
-                    crate::capture::capture_anyrender_scene(&sub_doc.inner(), &path);
+                    crate::capture::capture_anyrender_scene(&mut sub_doc.inner_mut(), &path);
                 }
             }
         }

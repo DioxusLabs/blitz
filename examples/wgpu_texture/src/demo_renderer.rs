@@ -1,12 +1,16 @@
 // Copyright © SixtyFPS GmbH <info@slint.dev>
 // SPDX-License-Identifier: MIT
 use crate::Color;
-use anyrender_vello::{CustomPaintCtx, CustomPaintSource, TextureHandle};
+use anyrender::{PaintRef, PaintScene, ResourceId};
+use blitz_dom::node::ComputedStyles;
+use blitz_dom::Widget;
+use peniko::kurbo::{Affine, Rect};
+use peniko::{Fill, ImageBrush, ImageSampler};
 use std::sync::mpsc::{channel, Receiver, Sender};
 use std::time::Instant;
 use wgpu_context::DeviceHandle;
 
-pub struct DemoPaintSource {
+pub struct DemoWidget {
     state: DemoRendererState,
     start_time: std::time::Instant,
     tx: Sender<DemoMessage>,
@@ -14,26 +18,60 @@ pub struct DemoPaintSource {
     color: Color,
 }
 
-impl CustomPaintSource for DemoPaintSource {
-    fn resume(&mut self, device_handle: &DeviceHandle) {
-        // TODO: work out what to do about width/height
-        let active_state = ActiveDemoRenderer::new(device_handle);
-        self.state = DemoRendererState::Active(Box::new(active_state));
+impl Widget for DemoWidget {
+    fn connected(&mut self) {}
+    fn disconnected(&mut self) {}
+    fn can_create_surfaces(&mut self, render_ctx: &mut dyn anyrender::RenderContext) {
+        if let Some(renderer_specific_context) = render_ctx.renderer_specific_context() {
+            if let Ok(device_handle) = renderer_specific_context.downcast::<DeviceHandle>() {
+                let active_state = ActiveDemoRenderer::new(&device_handle);
+                self.state = DemoRendererState::Active(Box::new(active_state));
+            } else {
+                println!("WARNING: Running WGPU example with non-wgpu rendering backend");
+            }
+        } else {
+            println!("WARNING: Rendering backend returned no context!");
+        }
     }
-
-    fn suspend(&mut self) {
+    fn destroy_surfaces(&mut self) {
         self.state = DemoRendererState::Suspended;
     }
 
-    fn render(
+    fn handle_event(&mut self, event: &blitz_traits::events::UiEvent) {
+        let _ = event;
+    }
+
+    fn paint(
         &mut self,
-        ctx: CustomPaintCtx<'_>,
+        render_ctx: &mut dyn anyrender::RenderContext,
+        _styles: &ComputedStyles,
         width: u32,
         height: u32,
         _scale: f64,
-    ) -> Option<TextureHandle> {
+    ) -> anyrender::Scene {
+        let mut scene = anyrender::Scene::new();
+
+        // if matches!(self.state, DemoRendererState::Suspended) {
+        //     self.can_create_surfaces(render_ctx);
+        // }
+
         self.process_messages();
-        self.render(ctx, width, height)
+        if let Some(resource_id) = self.render(render_ctx, width, height) {
+            scene.fill(
+                Fill::NonZero,
+                Affine::IDENTITY,
+                PaintRef::Resource(ImageBrush {
+                    image: resource_id,
+                    sampler: ImageSampler::default(),
+                }),
+                None,
+                &Rect::from_origin_size((0.0, 0.0), (width as f64, height as f64)),
+            );
+        } else {
+            println!("WANRING: render returned None");
+        }
+
+        scene
     }
 }
 
@@ -50,7 +88,7 @@ enum DemoRendererState {
 #[derive(Clone)]
 struct TextureAndHandle {
     texture: wgpu::Texture,
-    handle: TextureHandle,
+    handle: ResourceId,
 }
 
 struct ActiveDemoRenderer {
@@ -61,7 +99,7 @@ struct ActiveDemoRenderer {
     next_texture: Option<TextureAndHandle>,
 }
 
-impl DemoPaintSource {
+impl DemoWidget {
     pub fn new() -> Self {
         let (tx, rx) = channel();
         Self::with_channel(tx, rx)
@@ -94,10 +132,10 @@ impl DemoPaintSource {
 
     fn render(
         &mut self,
-        ctx: CustomPaintCtx<'_>,
+        ctx: &mut dyn anyrender::RenderContext,
         width: u32,
         height: u32,
-    ) -> Option<TextureHandle> {
+    ) -> Option<ResourceId> {
         if width == 0 || height == 0 {
             return None;
         }
@@ -159,12 +197,12 @@ impl ActiveDemoRenderer {
 
     pub(crate) fn render(
         &mut self,
-        mut ctx: CustomPaintCtx<'_>,
+        ctx: &mut dyn anyrender::RenderContext,
         light: [f32; 3],
         width: u32,
         height: u32,
         start_time: &Instant,
-    ) -> Option<TextureHandle> {
+    ) -> Option<ResourceId> {
         // If "next texture" size doesn't match specified size then unregister and drop texture
         if self
             .next_texture
@@ -172,7 +210,7 @@ impl ActiveDemoRenderer {
             .is_some_and(|tex| tex.texture.width() != width || tex.texture.height() != height)
         {
             let handle = self.next_texture.take().unwrap().handle;
-            ctx.unregister_texture(handle);
+            ctx.unregister_resource(handle);
         }
 
         // If there is no "next texture" then create one and register it.
@@ -180,14 +218,16 @@ impl ActiveDemoRenderer {
             Some(next) => next,
             None => {
                 let texture = create_texture(&self.device, width, height);
-                let handle = ctx.register_texture(texture.clone());
+                let handle = ctx
+                    .try_register_custom_resource(Box::new(texture.clone()))
+                    .expect("Renderer can render WGPU textures");
                 self.next_texture = Some(TextureAndHandle { texture, handle });
                 self.next_texture.as_ref().unwrap()
             }
         };
 
         let next_texture = &texture_and_handle.texture;
-        let next_texture_handle = texture_and_handle.handle.clone();
+        let next_texture_handle = texture_and_handle.handle;
 
         let elapsed: f32 = start_time.elapsed().as_millis() as f32 / 500.;
         let [light_red, light_green, light_blue] = light;
@@ -224,6 +264,7 @@ impl ActiveDemoRenderer {
         self.queue.submit(Some(encoder.finish()));
 
         std::mem::swap(&mut self.next_texture, &mut self.displayed_texture);
+
         Some(next_texture_handle)
     }
 }
