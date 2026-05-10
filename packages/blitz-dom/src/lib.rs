@@ -89,4 +89,4 @@ pub use style::media_queries::MediaType;
 pub type SelectorList = selectors::SelectorList<style::selector_parser::SelectorImpl>;
 pub use events::{EventDriver, EventHandler, NoopEventHandler};
 pub use html::{DummyHtmlParserProvider, HtmlParserProvider};
-pub use util::Point;
+pub use util::{Point, decode_font_bytes};

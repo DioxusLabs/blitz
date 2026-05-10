@@ -90,6 +90,25 @@ jobs:
           version: 1.0
       - run: cargo build -p counter
 
+  # Each wasm example under examples/ is a standalone workspace (deliberately
+  # excluded from the root workspace so native `cargo check --workspace`
+  # doesn't try to build them), so we build each one from its own directory.
+  build-wasm-examples:
+    name: "Build wasm examples"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: stable
+          targets: wasm32-unknown-unknown
+      - name: Build wasm_hello
+        run: cargo build --target wasm32-unknown-unknown
+        working-directory: examples/wasm_hello
+      - name: Build wasm_7guis
+        run: cargo build --target wasm32-unknown-unknown
+        working-directory: examples/wasm_7guis
+
   fmt:
     name: Rustfmt
     runs-on: ubuntu-latest
