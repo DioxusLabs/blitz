@@ -6,7 +6,7 @@ use anyrender_vello::{CustomPaintCtx, CustomPaintSource, TextureHandle};
 use blitz_dom::node::ComputedStyles;
 use blitz_dom::Widget;
 use peniko::kurbo::{Affine, Rect};
-use peniko::Fill;
+use peniko::{Fill, ImageBrush, ImageSampler};
 use std::sync::mpsc::{channel, Receiver, Sender};
 use std::time::Instant;
 use wgpu_context::DeviceHandle;
@@ -84,7 +84,10 @@ impl Widget for DemoWidget {
             scene.fill(
                 Fill::NonZero,
                 Affine::IDENTITY,
-                PaintRef::Resource(resource_id),
+                PaintRef::Resource(ImageBrush {
+                    image: resource_id,
+                    sampler: ImageSampler::default(),
+                }),
                 None,
                 &Rect::from_origin_size((0.0, 0.0), (width as f64, height as f64)),
             );
