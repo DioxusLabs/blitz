@@ -104,14 +104,14 @@ skrifa = { version = "0.40", default-features = false, features = [
 ] } # Should match parley and vello versions
 
 # AnyRender
-anyrender = { git = "https://github.com/DioxusLabs/anyrender", rev = "1f400d94172ba1dd10d97501cee823912f7fb6ab" }
-anyrender_serialize = { git = "https://github.com/DioxusLabs/anyrender", rev = "1f400d94172ba1dd10d97501cee823912f7fb6ab" }
-anyrender_vello = { git = "https://github.com/DioxusLabs/anyrender", rev = "1f400d94172ba1dd10d97501cee823912f7fb6ab" }
-anyrender_vello_cpu = { git = "https://github.com/DioxusLabs/anyrender", rev = "1f400d94172ba1dd10d97501cee823912f7fb6ab" }
-anyrender_vello_hybrid = { git = "https://github.com/DioxusLabs/anyrender", rev = "1f400d94172ba1dd10d97501cee823912f7fb6ab" }
-anyrender_skia = { git = "https://github.com/DioxusLabs/anyrender", rev = "1f400d94172ba1dd10d97501cee823912f7fb6ab" }
-anyrender_svg = { git = "https://github.com/DioxusLabs/anyrender", rev = "1f400d94172ba1dd10d97501cee823912f7fb6ab" }
-wgpu_context = { git = "https://github.com/DioxusLabs/anyrender", rev = "1f400d94172ba1dd10d97501cee823912f7fb6ab" }
+anyrender = { version = "0.9" }
+anyrender_serialize = { version = "0.2" }
+anyrender_vello = { version = "0.9" }
+anyrender_vello_cpu = { version = "0.11" }
+anyrender_vello_hybrid = { version = "0.4" }
+anyrender_skia = { version = "0.6" }
+anyrender_svg = { version = "0.10" }
+wgpu_context = { version = "0.5" }
 
 # Linebender + Fontations + WGPU + SVG
 color = "0.3"
