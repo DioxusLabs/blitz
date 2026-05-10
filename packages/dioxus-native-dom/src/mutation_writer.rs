@@ -207,13 +207,13 @@ impl WriteMutations for MutationWriter<'_> {
                 AttributeValue::Any(value) => {
                     if let Some(value) = value
                         .as_any()
-                        .downcast_ref::<WriteOnceAttr<PlainDocument>>()
+                        .downcast_ref::<WriteOnceAttr<Box<PlainDocument>>>()
                         && let Some(mut sub_document) = value.take()
                     {
                         sub_document
                             .inner_mut()
                             .set_shell_provider(self.docm.doc.shell_provider.clone());
-                        self.docm.set_sub_document(node_id, Box::new(sub_document));
+                        self.docm.set_sub_document(node_id, sub_document);
                     }
                 }
                 _ => self.docm.remove_sub_document(node_id),
