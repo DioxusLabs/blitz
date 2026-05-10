@@ -97,6 +97,7 @@ pub fn Crud() -> Element {
                     "Create"
                 }
                 button {
+                    class: if has_selection { "" } else { "btn-off" },
                     disabled: !has_selection,
                     onclick: move |_| {
                         if let Some(idx) = selected() {
@@ -109,6 +110,7 @@ pub fn Crud() -> Element {
                     "Update"
                 }
                 button {
+                    class: if has_selection { "" } else { "btn-off" },
                     disabled: !has_selection,
                     onclick: move |_| {
                         if let Some(idx) = selected() {
@@ -219,11 +221,11 @@ const CSS: &str = r#"
     cursor: pointer;
 }
 
-.crud-buttons button:hover:not(:disabled) {
+.crud-buttons button:hover:not(.btn-off) {
     background-color: #3a5ce5;
 }
 
-.crud-buttons button:disabled {
+.crud-buttons button.btn-off {
     background-color: #b0b8d8;
     cursor: default;
 }
