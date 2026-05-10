@@ -105,14 +105,14 @@ skrifa = { version = "0.40", default-features = false, features = [
 ] } # Should match parley and vello versions
 
 # AnyRender
-anyrender = { version = "0.9" }
-anyrender_serialize = { version = "0.2" }
-anyrender_vello = { version = "0.9" }
-anyrender_vello_cpu = { version = "0.11" }
-anyrender_vello_hybrid = { version = "0.4" }
-anyrender_skia = { version = "0.6" }
-anyrender_svg = { version = "0.10" }
-wgpu_context = { version = "0.5" }
+anyrender = { git = "https://github.com/DioxusLabs/anyrender", rev = "e773eb1fa5705619cadbd6cd43bc18c0c15ed326" }
+anyrender_serialize = { git = "https://github.com/DioxusLabs/anyrender", rev = "e773eb1fa5705619cadbd6cd43bc18c0c15ed326" }
+anyrender_vello = { git = "https://github.com/DioxusLabs/anyrender", rev = "e773eb1fa5705619cadbd6cd43bc18c0c15ed326" }
+anyrender_vello_cpu = { git = "https://github.com/DioxusLabs/anyrender", rev = "e773eb1fa5705619cadbd6cd43bc18c0c15ed326" }
+anyrender_vello_hybrid = { git = "https://github.com/DioxusLabs/anyrender", rev = "e773eb1fa5705619cadbd6cd43bc18c0c15ed326" }
+anyrender_skia = { git = "https://github.com/DioxusLabs/anyrender", rev = "e773eb1fa5705619cadbd6cd43bc18c0c15ed326" }
+anyrender_svg = { git = "https://github.com/DioxusLabs/anyrender", rev = "e773eb1fa5705619cadbd6cd43bc18c0c15ed326" }
+wgpu_context = { git = "https://github.com/DioxusLabs/anyrender", rev = "e773eb1fa5705619cadbd6cd43bc18c0c15ed326" }
 
 # Linebender + Fontations + WGPU + SVG
 color = "0.3"
@@ -258,7 +258,10 @@ color = { workspace = true }
 env_logger = "0.11"
 tracing-subscriber = "0.3"
 
-# [patch.crates-io]
+[patch.crates-io]
+kurbo = { git = "https://github.com/linebender/kurbo", rev = "6836244" }
+
+# [patch."https://github.com/DioxusLabs/anyrender"]
 # anyrender = { path = "../anyrender/crates/anyrender" }
 # anyrender_skia = { path = "../anyrender/crates/anyrender_skia" }
 # anyrender_vello = { path = "../anyrender/crates/anyrender_vello" }

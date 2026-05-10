@@ -282,16 +282,25 @@ dependencies = [
  "kurbo",
  "peniko",
  "raw-window-handle",
+]
+
+[[package]]
+name = "anyrender"
+version = "0.9.0"
+source = "git+https://github.com/DioxusLabs/anyrender?rev=e773eb1fa5705619cadbd6cd43bc18c0c15ed326#e773eb1fa5705619cadbd6cd43bc18c0c15ed326"
+dependencies = [
+ "kurbo",
+ "peniko",
+ "raw-window-handle",
  "serde",
 ]
 
 [[package]]
 name = "anyrender_serialize"
 version = "0.2.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3afb37b305cd4aa7fd99baf9d25c4e3269e7f554217d50888bb38cffea41dbef"
+source = "git+https://github.com/DioxusLabs/anyrender?rev=e773eb1fa5705619cadbd6cd43bc18c0c15ed326#e773eb1fa5705619cadbd6cd43bc18c0c15ed326"
 dependencies = [
- "anyrender",
+ "anyrender 0.9.0 (git+https://github.com/DioxusLabs/anyrender?rev=e773eb1fa5705619cadbd6cd43bc18c0c15ed326)",
  "image",
  "peniko",
  "read-fonts 0.37.0",
@@ -307,10 +316,9 @@ dependencies = [
 [[package]]
 name = "anyrender_skia"
 version = "0.6.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "dfbdead9078ea1540d4aeeb011997486229833737cf28f7b9dc51ba996ef013f"
+source = "git+https://github.com/DioxusLabs/anyrender?rev=e773eb1fa5705619cadbd6cd43bc18c0c15ed326#e773eb1fa5705619cadbd6cd43bc18c0c15ed326"
 dependencies = [
- "anyrender",
+ "anyrender 0.9.0 (git+https://github.com/DioxusLabs/anyrender?rev=e773eb1fa5705619cadbd6cd43bc18c0c15ed326)",
  "ash",
  "ash-window",
  "debug_timer 0.1.3 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -335,10 +343,9 @@ dependencies = [
 [[package]]
 name = "anyrender_svg"
 version = "0.10.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cb74fa406c33abfab666306600f40590c7ab0857fbae53250c04ab1ef00fa3bc"
+source = "git+https://github.com/DioxusLabs/anyrender?rev=e773eb1fa5705619cadbd6cd43bc18c0c15ed326#e773eb1fa5705619cadbd6cd43bc18c0c15ed326"
 dependencies = [
- "anyrender",
+ "anyrender 0.9.0 (git+https://github.com/DioxusLabs/anyrender?rev=e773eb1fa5705619cadbd6cd43bc18c0c15ed326)",
  "image",
  "kurbo",
  "peniko",
@@ -348,10 +355,9 @@ dependencies = [
 [[package]]
 name = "anyrender_vello"
 version = "0.9.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f8b378f986f75c1ee1f9107af65cab7eba07bc8da000e5364b5bf9306bb43704"
+source = "git+https://github.com/DioxusLabs/anyrender?rev=e773eb1fa5705619cadbd6cd43bc18c0c15ed326#e773eb1fa5705619cadbd6cd43bc18c0c15ed326"
 dependencies = [
- "anyrender",
+ "anyrender 0.9.0 (git+https://github.com/DioxusLabs/anyrender?rev=e773eb1fa5705619cadbd6cd43bc18c0c15ed326)",
  "debug_timer 0.1.3 (registry+https://github.com/rust-lang/crates.io-index)",
  "futures-channel",
  "kurbo",
@@ -360,17 +366,16 @@ dependencies = [
  "rustc-hash 2.1.2",
  "vello",
  "wasm-bindgen-futures",
- "wgpu 28.0.0",
- "wgpu_context",
+ "wgpu 29.0.3",
+ "wgpu_context 0.5.0 (git+https://github.com/DioxusLabs/anyrender?rev=e773eb1fa5705619cadbd6cd43bc18c0c15ed326)",
 ]
 
 [[package]]
 name = "anyrender_vello_cpu"
 version = "0.11.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e978613f6252c3d48c7fffde0c05872fa2364afb5d1315c2029463111298f334"
+source = "git+https://github.com/DioxusLabs/anyrender?rev=e773eb1fa5705619cadbd6cd43bc18c0c15ed326#e773eb1fa5705619cadbd6cd43bc18c0c15ed326"
 dependencies = [
- "anyrender",
+ "anyrender 0.9.0 (git+https://github.com/DioxusLabs/anyrender?rev=e773eb1fa5705619cadbd6cd43bc18c0c15ed326)",
  "debug_timer 0.1.3 (registry+https://github.com/rust-lang/crates.io-index)",
  "kurbo",
  "peniko",
@@ -385,18 +390,38 @@ version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9ac30dad68da108d92db821e19d9171d5e563be1029bda7b21ea722f85af0208"
 dependencies = [
- "anyrender",
+ "anyrender 0.9.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "debug_timer 0.1.3 (registry+https://github.com/rust-lang/crates.io-index)",
  "futures-channel",
  "kurbo",
  "peniko",
  "pollster",
  "rustc-hash 2.1.2",
- "vello_common",
- "vello_hybrid",
+ "vello_common 0.0.7 (registry+https://github.com/rust-lang/crates.io-index)",
+ "vello_hybrid 0.0.7 (registry+https://github.com/rust-lang/crates.io-index)",
  "wasm-bindgen-futures",
  "wgpu 28.0.0",
- "wgpu_context",
+ "wgpu_context 0.5.0 (registry+https://github.com/rust-lang/crates.io-index)",
+]
+
+[[package]]
+name = "anyrender_vello_hybrid"
+version = "0.4.0"
+source = "git+https://github.com/DioxusLabs/anyrender?rev=e773eb1fa5705619cadbd6cd43bc18c0c15ed326#e773eb1fa5705619cadbd6cd43bc18c0c15ed326"
+dependencies = [
+ "anyrender 0.9.0 (git+https://github.com/DioxusLabs/anyrender?rev=e773eb1fa5705619cadbd6cd43bc18c0c15ed326)",
+ "debug_timer 0.1.3 (registry+https://github.com/rust-lang/crates.io-index)",
+ "futures-channel",
+ "glifo",
+ "kurbo",
+ "peniko",
+ "pollster",
+ "rustc-hash 2.1.2",
+ "vello_common 0.0.7 (git+https://github.com/linebender/vello?rev=3e1aba3ffa1286012119052cb4bc7250e1b61a4b)",
+ "vello_hybrid 0.0.7 (git+https://github.com/linebender/vello?rev=3e1aba3ffa1286012119052cb4bc7250e1b61a4b)",
+ "wasm-bindgen-futures",
+ "wgpu 29.0.3",
+ "wgpu_context 0.5.0 (git+https://github.com/DioxusLabs/anyrender?rev=e773eb1fa5705619cadbd6cd43bc18c0c15ed326)",
 ]
 
 [[package]]
@@ -825,7 +850,7 @@ name = "blitz-dom"
 version = "0.3.0-alpha.2"
 dependencies = [
  "accesskit",
- "anyrender",
+ "anyrender 0.9.0 (git+https://github.com/DioxusLabs/anyrender?rev=e773eb1fa5705619cadbd6cd43bc18c0c15ed326)",
  "app_units",
  "atomic_refcell",
  "bitflags 2.11.1",
@@ -867,10 +892,10 @@ dependencies = [
 name = "blitz-examples"
 version = "0.0.1"
 dependencies = [
- "anyrender",
+ "anyrender 0.9.0 (git+https://github.com/DioxusLabs/anyrender?rev=e773eb1fa5705619cadbd6cd43bc18c0c15ed326)",
  "anyrender_vello",
  "anyrender_vello_cpu",
- "anyrender_vello_hybrid",
+ "anyrender_vello_hybrid 0.4.0 (git+https://github.com/DioxusLabs/anyrender?rev=e773eb1fa5705619cadbd6cd43bc18c0c15ed326)",
  "blitz",
  "blitz-dom",
  "blitz-html",
@@ -922,7 +947,7 @@ dependencies = [
 name = "blitz-paint"
 version = "0.3.0-alpha.2"
 dependencies = [
- "anyrender",
+ "anyrender 0.9.0 (git+https://github.com/DioxusLabs/anyrender?rev=e773eb1fa5705619cadbd6cd43bc18c0c15ed326)",
  "anyrender_svg",
  "blitz-dom",
  "blitz-traits",
@@ -944,7 +969,7 @@ dependencies = [
  "accesskit",
  "accesskit_xplat",
  "android-activity",
- "anyrender",
+ "anyrender 0.9.0 (git+https://github.com/DioxusLabs/anyrender?rev=e773eb1fa5705619cadbd6cd43bc18c0c15ed326)",
  "arboard",
  "blitz-dom",
  "blitz-paint",
@@ -1056,7 +1081,7 @@ name = "browser"
 version = "0.0.0"
 dependencies = [
  "android-activity",
- "anyrender",
+ "anyrender 0.9.0 (git+https://github.com/DioxusLabs/anyrender?rev=e773eb1fa5705619cadbd6cd43bc18c0c15ed326)",
  "anyrender_serialize",
  "anyrender_vello_cpu",
  "blitz-dom",
@@ -2219,11 +2244,11 @@ name = "dioxus-native"
 version = "0.7.0"
 dependencies = [
  "android-activity",
- "anyrender",
+ "anyrender 0.9.0 (git+https://github.com/DioxusLabs/anyrender?rev=e773eb1fa5705619cadbd6cd43bc18c0c15ed326)",
  "anyrender_skia",
  "anyrender_vello",
  "anyrender_vello_cpu",
- "anyrender_vello_hybrid",
+ "anyrender_vello_hybrid 0.4.0 (git+https://github.com/DioxusLabs/anyrender?rev=e773eb1fa5705619cadbd6cd43bc18c0c15ed326)",
  "blitz-dom",
  "blitz-html",
  "blitz-net",
@@ -3115,6 +3140,21 @@ dependencies = [
  "khronos_api",
  "log",
  "xml-rs",
+]
+
+[[package]]
+name = "glifo"
+version = "0.0.0"
+source = "git+https://github.com/linebender/vello?rev=3e1aba3ffa1286012119052cb4bc7250e1b61a4b#3e1aba3ffa1286012119052cb4bc7250e1b61a4b"
+dependencies = [
+ "bytemuck",
+ "foldhash 0.2.0",
+ "hashbrown 0.17.0",
+ "log",
+ "peniko",
+ "skrifa 0.42.1",
+ "smallvec",
+ "vello_common 0.0.7 (git+https://github.com/linebender/vello?rev=3e1aba3ffa1286012119052cb4bc7250e1b61a4b)",
 ]
 
 [[package]]
@@ -4102,11 +4142,11 @@ dependencies = [
 [[package]]
 name = "kurbo"
 version = "0.13.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7564e90fe3c0d5771e1f0bc95322b21baaeaa0d9213fa6a0b61c99f8b17b3bfb"
+source = "git+https://github.com/linebender/kurbo?rev=6836244#6836244be0b280ff68728f100fca0a5fcf62638a"
 dependencies = [
  "arrayvec",
  "euclid",
+ "polycool",
  "serde",
  "smallvec",
 ]
@@ -5454,10 +5494,9 @@ dependencies = [
 [[package]]
 name = "pixels_window_renderer"
 version = "0.4.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "920cd768c47d728105c7ff70ff188c261289144099a2084855446f639d8a7bce"
+source = "git+https://github.com/DioxusLabs/anyrender?rev=e773eb1fa5705619cadbd6cd43bc18c0c15ed326#e773eb1fa5705619cadbd6cd43bc18c0c15ed326"
 dependencies = [
- "anyrender",
+ "anyrender 0.9.0 (git+https://github.com/DioxusLabs/anyrender?rev=e773eb1fa5705619cadbd6cd43bc18c0c15ed326)",
  "debug_timer 0.1.3 (registry+https://github.com/rust-lang/crates.io-index)",
  "pixels",
 ]
@@ -5519,6 +5558,14 @@ name = "pollster"
 version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2f3a9f18d041e6d0e102a0a46750538147e5e8992d3b4873aaafee2520b00ce3"
+
+[[package]]
+name = "polycool"
+version = "0.4.0"
+source = "git+https://github.com/linebender/kurbo?rev=6836244#6836244be0b280ff68728f100fca0a5fcf62638a"
+dependencies = [
+ "arrayvec",
+]
 
 [[package]]
 name = "portable-atomic"
@@ -5907,7 +5954,7 @@ dependencies = [
  "anyrender_skia",
  "anyrender_vello",
  "anyrender_vello_cpu",
- "anyrender_vello_hybrid",
+ "anyrender_vello_hybrid 0.4.0 (git+https://github.com/DioxusLabs/anyrender?rev=e773eb1fa5705619cadbd6cd43bc18c0c15ed326)",
  "blitz-dom",
  "blitz-html",
  "blitz-net",
@@ -6500,7 +6547,7 @@ dependencies = [
 name = "seven_guis"
 version = "0.1.0"
 dependencies = [
- "anyrender_vello_hybrid",
+ "anyrender_vello_hybrid 0.4.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "console_error_panic_hook",
  "dioxus-native",
  "futures-timer",
@@ -6816,10 +6863,9 @@ dependencies = [
 [[package]]
 name = "softbuffer_window_renderer"
 version = "0.4.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1deac2f754a4ddeffc35136b2e6d6c09f729ed55f63b08730f9cd8475ee3cc03"
+source = "git+https://github.com/DioxusLabs/anyrender?rev=e773eb1fa5705619cadbd6cd43bc18c0c15ed326#e773eb1fa5705619cadbd6cd43bc18c0c15ed326"
 dependencies = [
- "anyrender",
+ "anyrender 0.9.0 (git+https://github.com/DioxusLabs/anyrender?rev=e773eb1fa5705619cadbd6cd43bc18c0c15ed326)",
  "debug_timer 0.1.3 (registry+https://github.com/rust-lang/crates.io-index)",
  "softbuffer",
 ]
@@ -7442,7 +7488,7 @@ name = "todomvc"
 version = "0.1.0"
 dependencies = [
  "android-activity",
- "anyrender_vello_hybrid",
+ "anyrender_vello_hybrid 0.4.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "console_error_panic_hook",
  "dioxus-native",
  "idna_adapter",
@@ -8003,20 +8049,19 @@ checksum = "accd4ea62f7bb7a82fe23066fb0957d48ef677f6eeb8215f372f52e48bb32426"
 [[package]]
 name = "vello"
 version = "0.8.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7484a935acbced16ca6b2a7e6c8d6aa2b32ca0aff269c1b95f62be9b8f672c41"
+source = "git+https://github.com/linebender/vello?rev=3e1aba3ffa1286012119052cb4bc7250e1b61a4b#3e1aba3ffa1286012119052cb4bc7250e1b61a4b"
 dependencies = [
  "bytemuck",
  "futures-intrusive",
  "log",
  "peniko",
  "png 0.18.1",
- "skrifa 0.40.0",
+ "skrifa 0.42.1",
  "static_assertions",
  "thiserror 2.0.18",
  "vello_encoding",
  "vello_shaders",
- "wgpu 28.0.0",
+ "wgpu 29.0.3",
 ]
 
 [[package]]
@@ -8048,31 +8093,45 @@ dependencies = [
 ]
 
 [[package]]
+name = "vello_common"
+version = "0.0.7"
+source = "git+https://github.com/linebender/vello?rev=3e1aba3ffa1286012119052cb4bc7250e1b61a4b#3e1aba3ffa1286012119052cb4bc7250e1b61a4b"
+dependencies = [
+ "bytemuck",
+ "fearless_simd",
+ "guillotiere",
+ "hashbrown 0.17.0",
+ "log",
+ "peniko",
+ "png 0.18.1",
+ "smallvec",
+ "thiserror 2.0.18",
+]
+
+[[package]]
 name = "vello_cpu"
 version = "0.0.7"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a678f91c7524a3a9ac9a19df9f83552866ec70b2ca26441b916a6b219b6aa2de"
+source = "git+https://github.com/linebender/vello?rev=3e1aba3ffa1286012119052cb4bc7250e1b61a4b#3e1aba3ffa1286012119052cb4bc7250e1b61a4b"
 dependencies = [
  "bytemuck",
  "crossbeam-channel",
- "hashbrown 0.16.1",
+ "glifo",
+ "hashbrown 0.17.0",
  "ordered-channel",
  "rayon",
  "thread_local",
- "vello_api",
- "vello_common",
+ "vello_common 0.0.7 (git+https://github.com/linebender/vello?rev=3e1aba3ffa1286012119052cb4bc7250e1b61a4b)",
 ]
 
 [[package]]
 name = "vello_encoding"
 version = "0.8.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d53d864987821f40431e62608bf0f58342db57f2f2860628c8cfc28e16a1cc39"
+source = "git+https://github.com/linebender/vello?rev=3e1aba3ffa1286012119052cb4bc7250e1b61a4b#3e1aba3ffa1286012119052cb4bc7250e1b61a4b"
 dependencies = [
  "bytemuck",
  "guillotiere",
  "peniko",
- "skrifa 0.40.0",
+ "skrifa 0.42.1",
  "smallvec",
 ]
 
@@ -8088,21 +8147,35 @@ dependencies = [
  "log",
  "thiserror 2.0.18",
  "vello_api",
- "vello_common",
- "vello_sparse_shaders",
+ "vello_common 0.0.7 (registry+https://github.com/rust-lang/crates.io-index)",
+ "vello_sparse_shaders 0.0.7 (registry+https://github.com/rust-lang/crates.io-index)",
  "web-sys",
  "wgpu 28.0.0",
 ]
 
 [[package]]
+name = "vello_hybrid"
+version = "0.0.7"
+source = "git+https://github.com/linebender/vello?rev=3e1aba3ffa1286012119052cb4bc7250e1b61a4b#3e1aba3ffa1286012119052cb4bc7250e1b61a4b"
+dependencies = [
+ "bytemuck",
+ "glifo",
+ "hashbrown 0.17.0",
+ "log",
+ "thiserror 2.0.18",
+ "vello_common 0.0.7 (git+https://github.com/linebender/vello?rev=3e1aba3ffa1286012119052cb4bc7250e1b61a4b)",
+ "vello_sparse_shaders 0.0.7 (git+https://github.com/linebender/vello?rev=3e1aba3ffa1286012119052cb4bc7250e1b61a4b)",
+ "wgpu 29.0.3",
+]
+
+[[package]]
 name = "vello_shaders"
 version = "0.8.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c455e04d570129212ecc4c0fdaa051ad66e5be15781a75b38c519d08120db374"
+source = "git+https://github.com/linebender/vello?rev=3e1aba3ffa1286012119052cb4bc7250e1b61a4b#3e1aba3ffa1286012119052cb4bc7250e1b61a4b"
 dependencies = [
  "bytemuck",
  "log",
- "naga 28.0.0",
+ "naga 29.0.3",
  "thiserror 2.0.18",
  "vello_encoding",
 ]
@@ -8115,6 +8188,11 @@ checksum = "9afd2601f1c8cc1e16807aaf1a66dd182eb6f895df095a48fb353fe49377a9ce"
 dependencies = [
  "naga 28.0.0",
 ]
+
+[[package]]
+name = "vello_sparse_shaders"
+version = "0.0.7"
+source = "git+https://github.com/linebender/vello?rev=3e1aba3ffa1286012119052cb4bc7250e1b61a4b#3e1aba3ffa1286012119052cb4bc7250e1b61a4b"
 
 [[package]]
 name = "version-compare"
@@ -8842,10 +8920,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "wgpu_context"
+version = "0.5.0"
+source = "git+https://github.com/DioxusLabs/anyrender?rev=e773eb1fa5705619cadbd6cd43bc18c0c15ed326#e773eb1fa5705619cadbd6cd43bc18c0c15ed326"
+dependencies = [
+ "futures-intrusive",
+ "wgpu 29.0.3",
+]
+
+[[package]]
 name = "wgpu_texture"
 version = "0.0.0"
 dependencies = [
- "anyrender",
+ "anyrender 0.9.0 (git+https://github.com/DioxusLabs/anyrender?rev=e773eb1fa5705619cadbd6cd43bc18c0c15ed326)",
  "anyrender_vello",
  "blitz-dom",
  "blitz-html",
@@ -8858,7 +8945,7 @@ dependencies = [
  "peniko",
  "pollster",
  "wgpu 28.0.0",
- "wgpu_context",
+ "wgpu_context 0.5.0 (git+https://github.com/DioxusLabs/anyrender?rev=e773eb1fa5705619cadbd6cd43bc18c0c15ed326)",
 ]
 
 [[package]]
@@ -9562,7 +9649,7 @@ dependencies = [
 name = "wpt"
 version = "0.1.0"
 dependencies = [
- "anyrender",
+ "anyrender 0.9.0 (git+https://github.com/DioxusLabs/anyrender?rev=e773eb1fa5705619cadbd6cd43bc18c0c15ed326)",
  "anyrender_vello",
  "anyrender_vello_cpu",
  "atomic_float",
