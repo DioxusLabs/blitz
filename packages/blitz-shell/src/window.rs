@@ -4,7 +4,7 @@ use crate::convert_events::{
     pointer_source_to_blitz_details, theme_to_color_scheme, winit_ime_to_blitz,
     winit_key_event_to_blitz, winit_modifiers_to_kbt_modifiers,
 };
-use crate::event::{BlitzShellProxy, create_waker};
+use crate::event::{BlitzShellEvent, BlitzShellProxy, create_waker};
 use anyrender::WindowRenderer;
 use blitz_dom::Document;
 use blitz_paint::paint_scene;
@@ -19,7 +19,7 @@ use winit::keyboard::PhysicalKey;
 use std::any::Any;
 use std::sync::Arc;
 use std::task::Waker;
-use std::time::Instant;
+use web_time::Instant;
 use winit::event::{ButtonSource, ElementState, MouseButton};
 use winit::event_loop::ActiveEventLoop;
 use winit::window::{Theme, WindowAttributes, WindowId};
@@ -41,7 +41,7 @@ fn get_safe_area_insets(window: &dyn Window) -> PhysicalInsets<u32> {
 
 pub struct WindowConfig<Rend: WindowRenderer> {
     doc: Box<dyn Document>,
-    attributes: WindowAttributes,
+    pub(crate) attributes: WindowAttributes,
     renderer: Rend,
 }
 
@@ -103,6 +103,10 @@ impl<Rend: WindowRenderer> View<Rend> {
         // We create window as invisble and then later make window visible
         // after AccessKit has initialised to avoid AccessKit panics
         let is_visible = config.attributes.visible;
+        // Capture the requested surface size before consuming `attributes`, so we can
+        // seed the viewport on platforms (winit-web) that report `surface_size() == 0×0`
+        // until a layout pass fires.
+        let requested_surface_size = config.attributes.surface_size;
         let attrs = config.attributes.with_visible(false);
 
         let winit_window: Arc<dyn Window> = Arc::from(event_loop.create_window(attrs).unwrap());
@@ -115,8 +119,13 @@ impl<Rend: WindowRenderer> View<Rend> {
 
         // Create viewport
         // TODO: account for the "safe area"
-        let size = winit_window.surface_size();
         let scale = winit_window.scale_factor() as f32;
+        let mut size = winit_window.surface_size();
+        if (size.width == 0 || size.height == 0)
+            && let Some(requested) = requested_surface_size
+        {
+            size = requested.to_physical(scale as f64);
+        }
         let safe_area_insets = get_safe_area_insets(&*winit_window);
         let theme = winit_window.theme().unwrap_or(Theme::Light);
         let color_scheme = theme_to_color_scheme(theme);
@@ -215,29 +224,53 @@ impl<Rend: WindowRenderer> View<Rend> {
 }
 
 impl<Rend: WindowRenderer> View<Rend> {
+    /// Start resuming the renderer. Dispatches [`BlitzShellEvent::ResumeReady`]
+    /// when initialization completes — synchronously on native, asynchronously
+    /// on wasm32. The embedder must call [`complete_resume`](Self::complete_resume)
+    /// in response.
     pub fn resume(&mut self) {
         let window_id = self.window_id();
         let animation_time = self.current_animation_time();
 
+        let (width, height) = {
+            let mut inner = self.doc.inner_mut();
+            inner.resolve(animation_time);
+            inner.viewport().window_size
+        };
+
+        let proxy = self.proxy.clone();
+        self.renderer
+            .resume(Arc::new(self.window.clone()), width, height, move || {
+                proxy.send_event(BlitzShellEvent::ResumeReady { window_id });
+            });
+    }
+
+    /// Finalize a previously-started resume. Should be called in response to a
+    /// [`BlitzShellEvent::ResumeReady`] event. Paints the first frame and
+    /// installs the doc poll waker. Returns `true` if the renderer is now active.
+    pub fn complete_resume(&mut self) -> bool {
+        if !self.renderer.complete_resume() {
+            return false;
+        }
+
+        let window_id = self.window_id();
+
+        // Resync the renderer to the current viewport. Resize/scale events that
+        // arrived while the renderer was Pending were no-ops on the renderer
+        // (its `set_size` only matches Active), so the surface created during
+        // resume could be at a stale size by the time we get here.
+        let animation_time = self.current_animation_time();
         let mut inner = self.doc.inner_mut();
-
-        // Resolve dom
         inner.resolve(animation_time);
-
-        // Resume renderer
         let (width, height) = inner.viewport().window_size;
         let scale = inner.viewport().scale_f64();
-        self.renderer
-            .resume(Arc::new(self.window.clone()), width, height);
-        if !self.renderer.is_active() {
-            panic!("Renderer failed to resume");
-        };
+        let insets = self.safe_area_insets.to_logical(scale);
 
         #[cfg(feature = "custom-widget")]
         inner.can_create_surfaces(&self.renderer as _);
 
-        // Render
-        let insets = self.safe_area_insets.to_logical(scale);
+        self.renderer.set_size(width, height);
+
         self.renderer.render(|scene| {
             paint_scene(
                 scene,
@@ -250,8 +283,8 @@ impl<Rend: WindowRenderer> View<Rend> {
             )
         });
 
-        // Set waker
         self.waker = Some(create_waker(&self.proxy, window_id));
+        true
     }
 
     pub fn suspend(&mut self) {

@@ -1,0 +1,36 @@
+[package]
+name = "wasm_hello"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+# Standalone workspace: native `cargo check --workspace` from the blitz root
+# doesn't try to build this crate (it only compiles for wasm32).
+[workspace]
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+anyrender = { git = "https://github.com/DioxusLabs/anyrender", rev = "1f400d94172ba1dd10d97501cee823912f7fb6ab" }
+anyrender_vello_hybrid = { git = "https://github.com/DioxusLabs/anyrender", rev = "1f400d94172ba1dd10d97501cee823912f7fb6ab", features = ["webgl"] }
+blitz-dom = { path = "../../packages/blitz-dom", default-features = false, features = ["woff"] }
+blitz-html = { path = "../../packages/blitz-html" }
+blitz-shell = { path = "../../packages/blitz-shell", default-features = false, features = ["tracing"]}
+
+winit = "=0.31.0-beta.2"
+
+# Browsers don't expose system fonts to wasm, so we register a bundled font
+# directly with the parley FontContext.
+parley = { version = "0.9", default-features = false, features = ["std"] }
+
+# wasm runtime glue
+console_error_panic_hook = "0.1"
+wasm-bindgen = "0.2"
+tracing-wasm = "0.2.1"
+tracing = "0.1.44"
+web-sys = { version = "0.3.98", features = ["Document", "HtmlCanvasElement"] }
+
+[profile.release]
+opt-level = "s"
+lto = true

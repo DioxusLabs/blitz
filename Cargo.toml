@@ -104,14 +104,14 @@ skrifa = { version = "0.40", default-features = false, features = [
 ] } # Should match parley and vello versions
 
 # AnyRender
-anyrender = { git = "https://github.com/DioxusLabs/anyrender", rev = "17d9f7aa87f07b1642203346264a64f79d9bb78d" }
-anyrender_serialize = { git = "https://github.com/DioxusLabs/anyrender", rev = "17d9f7aa87f07b1642203346264a64f79d9bb78d" }
-anyrender_vello = { git = "https://github.com/DioxusLabs/anyrender", rev = "17d9f7aa87f07b1642203346264a64f79d9bb78d" }
-anyrender_vello_cpu = { git = "https://github.com/DioxusLabs/anyrender", rev = "17d9f7aa87f07b1642203346264a64f79d9bb78d" }
-anyrender_vello_hybrid = { git = "https://github.com/DioxusLabs/anyrender", rev = "17d9f7aa87f07b1642203346264a64f79d9bb78d" }
-anyrender_skia = { git = "https://github.com/DioxusLabs/anyrender", rev = "17d9f7aa87f07b1642203346264a64f79d9bb78d" }
-anyrender_svg = { git = "https://github.com/DioxusLabs/anyrender", rev = "17d9f7aa87f07b1642203346264a64f79d9bb78d" }
-wgpu_context = { git = "https://github.com/DioxusLabs/anyrender", rev = "17d9f7aa87f07b1642203346264a64f79d9bb78d" }
+anyrender = { git = "https://github.com/DioxusLabs/anyrender", rev = "1f400d94172ba1dd10d97501cee823912f7fb6ab" }
+anyrender_serialize = { git = "https://github.com/DioxusLabs/anyrender", rev = "1f400d94172ba1dd10d97501cee823912f7fb6ab" }
+anyrender_vello = { git = "https://github.com/DioxusLabs/anyrender", rev = "1f400d94172ba1dd10d97501cee823912f7fb6ab" }
+anyrender_vello_cpu = { git = "https://github.com/DioxusLabs/anyrender", rev = "1f400d94172ba1dd10d97501cee823912f7fb6ab" }
+anyrender_vello_hybrid = { git = "https://github.com/DioxusLabs/anyrender", rev = "1f400d94172ba1dd10d97501cee823912f7fb6ab" }
+anyrender_skia = { git = "https://github.com/DioxusLabs/anyrender", rev = "1f400d94172ba1dd10d97501cee823912f7fb6ab" }
+anyrender_svg = { git = "https://github.com/DioxusLabs/anyrender", rev = "1f400d94172ba1dd10d97501cee823912f7fb6ab" }
+wgpu_context = { git = "https://github.com/DioxusLabs/anyrender", rev = "1f400d94172ba1dd10d97501cee823912f7fb6ab" }
 
 # Linebender + Fontations + WGPU + SVG
 color = "0.3"
@@ -154,6 +154,7 @@ directories = "6.0.0"
 
 # WASM
 wasm-bindgen-futures = "0.4"
+web-time = "1"
 
 # Other dependencies
 rustc-hash = "2.1.2"

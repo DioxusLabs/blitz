@@ -14,6 +14,13 @@ pub enum BlitzShellEvent {
         window_id: WindowId,
     },
 
+    /// The renderer for this window has finished its async initialization. The
+    /// embedder should call `View::complete_resume` to transition the view into
+    /// an active state.
+    ResumeReady {
+        window_id: WindowId,
+    },
+
     RequestRedraw {
         doc_id: usize,
     },

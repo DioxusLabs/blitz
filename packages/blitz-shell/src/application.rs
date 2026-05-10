@@ -49,6 +49,15 @@ impl<Rend: WindowRenderer> BlitzApplication<Rend> {
                     window.poll();
                 };
             }
+            BlitzShellEvent::ResumeReady { window_id } => {
+                // The renderer fires `on_ready` after it has sent on the
+                // channel, so `complete_resume` should always succeed here.
+                // If a stale event survives a suspend, dropping it is safe.
+                if let Some(window) = self.windows.get_mut(&window_id) {
+                    let ok = window.complete_resume();
+                    debug_assert!(ok, "ResumeReady received but renderer not ready");
+                }
+            }
             BlitzShellEvent::RequestRedraw { doc_id } => {
                 // TODO: Handle multiple documents per window
                 if let Some(window) = self.window_mut_by_doc_id(doc_id) {
@@ -92,13 +101,13 @@ impl<Rend: WindowRenderer> ApplicationHandler for BlitzApplication<Rend> {
             view.resume();
         }
 
-        // Initialise pending windows
+        // Initialise pending windows. The renderer's resume is non-blocking —
+        // on native it finishes inline, on wasm32 it spawns a future that will
+        // dispatch BlitzShellEvent::ResumeReady when init completes. Either way
+        // we insert the view immediately so the event handler can find it.
         for window_config in self.pending_windows.drain(..) {
             let mut view = View::init(window_config, event_loop, &self.proxy);
             view.resume();
-            if !view.renderer.is_active() {
-                continue;
-            }
             self.windows.insert(view.window_id(), view);
         }
     }

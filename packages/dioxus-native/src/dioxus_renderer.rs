@@ -95,8 +95,20 @@ impl WindowRenderer for DioxusNativeWindowRenderer {
     where
         Self: 'a;
 
-    fn resume(&mut self, window: Arc<dyn anyrender::WindowHandle>, width: u32, height: u32) {
-        self.inner.borrow_mut().resume(window, width, height)
+    fn resume<F: FnOnce() + 'static>(
+        &mut self,
+        window: Arc<dyn anyrender::WindowHandle>,
+        width: u32,
+        height: u32,
+        on_ready: F,
+    ) {
+        self.inner
+            .borrow_mut()
+            .resume(window, width, height, on_ready)
+    }
+
+    fn complete_resume(&mut self) -> bool {
+        self.inner.borrow_mut().complete_resume()
     }
 
     fn suspend(&mut self) {
@@ -105,6 +117,10 @@ impl WindowRenderer for DioxusNativeWindowRenderer {
 
     fn is_active(&self) -> bool {
         self.inner.borrow().is_active()
+    }
+
+    fn is_pending(&self) -> bool {
+        self.inner.borrow().is_pending()
     }
 
     fn set_size(&mut self, width: u32, height: u32) {
