@@ -300,6 +300,7 @@ impl<Rend: WindowRenderer> View<Rend> {
         inner.resolve(animation_time);
 
         // Unregister resources (e.g. textures) from dropped custom widget nodes
+        #[cfg(feature = "custom-widget")]
         for id in inner.take_pending_resource_deallocations() {
             self.renderer.unregister_resource(id);
         }
