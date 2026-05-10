@@ -119,7 +119,7 @@ async fn main() {
             // Render document
             paint_scene(
                 scene,
-                document.as_ref(),
+                document.as_mut(),
                 scale,
                 render_width,
                 render_height,
