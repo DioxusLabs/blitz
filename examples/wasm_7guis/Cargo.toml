@@ -17,7 +17,7 @@ crate-type = ["cdylib"]
 dioxus-native = { path = "../../packages/dioxus-native", default-features = false, features = ["prelude", "vello-hybrid"] }
 
 # Must explicitly add webgl feature on top of what dioxus-native enables
-anyrender_vello_hybrid = { git = "https://github.com/DioxusLabs/anyrender", rev = "91ec074f8506ff8794bc90330f1d454db8f76e91", features = ["webgl"] }
+anyrender_vello_hybrid = { git = "https://github.com/DioxusLabs/anyrender", rev = "1f400d94172ba1dd10d97501cee823912f7fb6ab", features = ["webgl"] }
 
 # Lower-level shell and DOM types used in the entry point
 blitz-dom   = { path = "../../packages/blitz-dom",   default-features = false, features = ["woff"] }
