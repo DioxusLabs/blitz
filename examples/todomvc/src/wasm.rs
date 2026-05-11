@@ -11,11 +11,6 @@ use winit::event_loop::{ControlFlow, EventLoop};
 use winit::platform::web::WindowAttributesWeb;
 use winit::window::WindowAttributes;
 
-mod app;
-pub mod tasks;
-
-/// DejaVu Sans bundled so the document has a real font on wasm32 (browsers
-/// don't expose system fonts to wasm). License: Bitstream Vera / DejaVu (permissive).
 const DEJAVU_SANS: &[u8] = include_bytes!("../assets/DejaVuSans.woff2");
 
 fn build_font_context() -> FontContext {
@@ -48,14 +43,11 @@ pub fn start() -> Result<(), JsValue> {
     console_error_panic_hook::set_once();
 
     let event_loop = EventLoop::new().map_err(|e| JsValue::from_str(&format!("{e}")))?;
-    // Wait avoids main-thread saturation but throttles timer-driven renders to
-    // ~1Hz on web (winit's web backend uses a long-interval fallback when
-    // there's no rAF pending). Poll fixes the timer but lags the address bar.
     event_loop.set_control_flow(ControlFlow::Wait);
     let winit_proxy = event_loop.create_proxy();
     let (proxy, event_queue) = BlitzShellProxy::new(winit_proxy);
 
-    let vdom = VirtualDom::new(app::app);
+    let vdom = VirtualDom::new(super::app::app);
     let doc = DioxusDocument::new(
         vdom,
         DocumentConfig {
@@ -64,8 +56,6 @@ pub fn start() -> Result<(), JsValue> {
         },
     );
 
-    // DioxusNativeWindowRenderer wraps VelloHybridWindowRenderer when the
-    // `vello-hybrid` feature is active (dioxus_renderer.rs:28-29).
     let renderer = DioxusNativeWindowRenderer::new();
 
     let attrs = WindowAttributes::default()

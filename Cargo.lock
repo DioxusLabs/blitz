@@ -1487,6 +1487,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "console_error_panic_hook"
+version = "0.1.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a06aeb73f470f66dcdbf7223caeebb85984942f22f1adb2a088cf9668146bbbc"
+dependencies = [
+ "cfg-if",
+ "wasm-bindgen",
+]
+
+[[package]]
 name = "const-serialize"
 version = "0.7.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2326,11 +2336,11 @@ dependencies = [
  "futures-channel",
  "futures-util",
  "generational-box",
- "gloo-timers",
+ "gloo-timers 0.3.0",
  "js-sys",
  "lazy-js-bundle",
  "rustc-hash 2.1.2",
- "send_wrapper",
+ "send_wrapper 0.6.0",
  "serde",
  "serde-wasm-bindgen",
  "serde_json",
@@ -2974,6 +2984,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "037711b3d59c33004d3856fbdc83b99d4ff37a24768fa1be9ce3538a1cde4393"
 
 [[package]]
+name = "futures-timer"
+version = "3.0.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f288b0a4f20f9a56b5d1da57e2227c661b7b16168e2f72365f57b63326e29b24"
+dependencies = [
+ "gloo-timers 0.2.6",
+ "send_wrapper 0.4.0",
+]
+
+[[package]]
 name = "futures-util"
 version = "0.3.32"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3100,6 +3120,18 @@ name = "glob"
 version = "0.3.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0cc23270f6e1808e30a928bdc84dea0b9b4136a8bc82338574f23baf47bbd280"
+
+[[package]]
+name = "gloo-timers"
+version = "0.2.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9b995a66bb87bebce9a0f4a95aed01daca4872c050bfcb21653361c03bc35e5c"
+dependencies = [
+ "futures-channel",
+ "futures-core",
+ "js-sys",
+ "wasm-bindgen",
+]
 
 [[package]]
 name = "gloo-timers"
@@ -6324,6 +6356,12 @@ checksum = "8a7852d02fc848982e0c167ef163aaff9cd91dc640ba85e263cb1ce46fae51cd"
 
 [[package]]
 name = "send_wrapper"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f638d531eccd6e23b980caf34876660d38e265409d8e99b397ab71eb3612fad0"
+
+[[package]]
+name = "send_wrapper"
 version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cd0b0ec5f1c1ca621c432a25813d8d60c88abe6d3e08a3eb9cf37d97a0fe3d73"
@@ -6454,6 +6492,23 @@ checksum = "170fb83ab34de17dc69aa7c67482b22218ddb85da56546f9bd6b929e32a05930"
 dependencies = [
  "serde",
  "stable_deref_trait",
+]
+
+[[package]]
+name = "seven_guis"
+version = "0.1.0"
+dependencies = [
+ "anyrender_vello_hybrid",
+ "blitz-dom",
+ "blitz-shell",
+ "console_error_panic_hook",
+ "dioxus-core",
+ "dioxus-native",
+ "futures-timer",
+ "idna_adapter",
+ "parley",
+ "wasm-bindgen",
+ "winit",
 ]
 
 [[package]]
@@ -7390,9 +7445,17 @@ name = "todomvc"
 version = "0.1.0"
 dependencies = [
  "android-activity",
+ "anyrender_vello_hybrid",
+ "blitz-dom",
+ "blitz-shell",
+ "console_error_panic_hook",
+ "dioxus-core",
  "dioxus-native",
  "idna_adapter",
+ "parley",
  "tracing-subscriber",
+ "wasm-bindgen",
+ "winit",
 ]
 
 [[package]]
@@ -8029,11 +8092,13 @@ checksum = "6a2b295a72c9fb73be9679c0d468c64d4f97ef09b91ce6d16d309747719c6ff2"
 dependencies = [
  "bytemuck",
  "hashbrown 0.16.1",
+ "js-sys",
  "log",
  "thiserror 2.0.18",
  "vello_api",
  "vello_common",
  "vello_sparse_shaders",
+ "web-sys",
  "wgpu 28.0.0",
 ]
 
@@ -8055,6 +8120,9 @@ name = "vello_sparse_shaders"
 version = "0.0.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9afd2601f1c8cc1e16807aaf1a66dd182eb6f895df095a48fb353fe49377a9ce"
+dependencies = [
+ "naga 28.0.0",
+]
 
 [[package]]
 name = "version-compare"
