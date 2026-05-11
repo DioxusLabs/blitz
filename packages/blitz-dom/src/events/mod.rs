@@ -119,17 +119,20 @@ pub(crate) fn handle_dom_event<F: FnMut(DomEvent)>(
     }
 
     // Handle event forwarding for custom widget
-    if let Some(sub_doc) = node.subdoc_mut() {
-        let viewport_scroll = sub_doc.inner().viewport_scroll();
-
+    #[cfg(feature = "custom-widget")]
+    if let Some(widget_data) = node
+        .element_data_mut()
+        .and_then(|el| el.custom_widget_data_mut())
+    {
         let set_focus = matches!(
             &event.data,
             DomEventData::PointerDown(_) | DomEventData::PointerUp(_)
         );
+        let viewport_scroll = Point { x: 0.0, y: 0.0 };
         let ui_event = map_dom_event_to_ui_event(event, pos, viewport_scroll);
 
         if let Some(ui_event) = ui_event {
-            sub_doc.handle_ui_event(ui_event);
+            widget_data.widget.handle_event(&ui_event);
         }
 
         if set_focus {

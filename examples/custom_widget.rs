@@ -1,5 +1,6 @@
 use anyrender::PaintScene as _;
 use blitz_dom::node::ComputedStyles;
+use blitz_traits::events::UiEvent;
 use color::parse_color;
 use dioxus_native::CustomWidgetAttr;
 use dioxus_native::Widget;
@@ -7,6 +8,7 @@ use dioxus_native::prelude::*;
 use peniko::Color;
 use peniko::Fill;
 use peniko::kurbo::Affine;
+use peniko::kurbo::Point;
 use peniko::kurbo::Rect;
 use peniko::kurbo::Vec2;
 use std::f64::consts::TAU;
@@ -81,6 +83,7 @@ fn SpinningCube(color: Signal<String>) -> Element {
 pub struct DemoWidget {
     start_time: std::time::Instant,
     color: Color,
+    pos: Option<Point>,
 }
 
 impl DemoWidget {
@@ -88,6 +91,7 @@ impl DemoWidget {
         Self {
             start_time: Instant::now(),
             color: color::palette::css::BLACK,
+            pos: None,
         }
     }
 }
@@ -107,8 +111,16 @@ impl Widget for DemoWidget {
         }
     }
 
-    fn handle_event(&mut self, event: &blitz_traits::events::UiEvent) {
-        let _ = event;
+    fn handle_event(&mut self, event: &UiEvent) {
+        match event {
+            UiEvent::PointerMove(evt) => {
+                self.pos = Some(Point {
+                    x: evt.coords.page_x as f64,
+                    y: evt.coords.page_y as f64,
+                })
+            }
+            _ => {}
+        }
     }
 
     fn paint(
@@ -122,10 +134,19 @@ impl Widget for DemoWidget {
         let _ = (render_ctx, width, height, scale);
         let mut scene = anyrender::Scene::new();
 
-        let w = (width.min(height) / 2) as f64;
-        let h = w;
-        let x = (width as f64 - w) / 2.0;
-        let y = (height as f64 - h) / 2.0;
+        let w = 100.0;
+        let h = 100.0;
+
+        let Point { x, y } = self
+            .pos
+            .map(|pos| Point {
+                x: (pos.x * scale) - (w / 2.0),
+                y: (pos.y * scale) - (h / 2.0),
+            })
+            .unwrap_or_else(|| Point {
+                x: (width as f64 - w) / 2.0,
+                y: (height as f64 - h) / 2.0,
+            });
 
         let ms = Instant::now().duration_since(self.start_time).as_millis();
         let angle = (ms as f64 / 400.0) % TAU;
