@@ -31,7 +31,7 @@ impl Sheet {
         let raw = self.get_raw(row, col);
         let result = if let Some(formula) = raw.strip_prefix('=') {
             match eval_expr(self, formula.trim(), visiting) {
-                Ok(v) => {
+                Some(v) => {
                     // Show integers without a decimal point for cleanliness
                     if v.fract() == 0.0 && v.abs() < 1e15 {
                         format!("{}", v as i64)
@@ -39,7 +39,7 @@ impl Sheet {
                         format!("{}", v)
                     }
                 }
-                Err(_) => "#ERR".to_string(),
+                None => "#ERR".to_string(),
             }
         } else {
             raw.to_string()
@@ -68,7 +68,7 @@ enum Token {
     Comma,
 }
 
-fn tokenize(input: &str) -> Result<Vec<Token>, ()> {
+fn tokenize(input: &str) -> Option<Vec<Token>> {
     let chars: Vec<char> = input.chars().collect();
     let mut pos = 0;
     let mut tokens = Vec::new();
@@ -118,7 +118,7 @@ fn tokenize(input: &str) -> Result<Vec<Token>, ()> {
                     pos += 1;
                 }
                 let num_str: String = chars[start..pos].iter().collect();
-                let v: f64 = num_str.parse().map_err(|_| ())?;
+                let v: f64 = num_str.parse().ok()?;
                 tokens.push(Token::Num(v));
             }
             'A'..='Z' | 'a'..='z' => {
@@ -137,28 +137,28 @@ fn tokenize(input: &str) -> Result<Vec<Token>, ()> {
                     }
                     let digits: String = chars[num_start..pos].iter().collect();
                     let col = col_from_letters(&letters)?;
-                    let row: usize = digits.parse().map_err(|_| ())?;
+                    let row: usize = digits.parse().ok()?;
                     tokens.push(Token::CellRef(row, col));
                 } else {
                     tokens.push(Token::Ident(letters));
                 }
             }
-            _ => return Err(()),
+            _ => return None,
         }
     }
-    Ok(tokens)
+    Some(tokens)
 }
 
 /// Convert a column letter string (A, B, …, Z) to a 0-based index.
 /// Only single-letter columns (A–Z) are supported.
-fn col_from_letters(s: &str) -> Result<usize, ()> {
+fn col_from_letters(s: &str) -> Option<usize> {
     if s.len() == 1 {
         let b = s.as_bytes()[0].to_ascii_uppercase();
         if b.is_ascii_uppercase() {
-            return Ok((b as usize) - (b'A' as usize));
+            return Some((b as usize) - (b'A' as usize));
         }
     }
-    Err(())
+    None
 }
 
 // ---------------------------------------------------------------------------
@@ -197,7 +197,7 @@ impl<'a> Parser<'a> {
     }
 
     /// expr = term (('+' | '-') term)*
-    fn parse_expr(&mut self) -> Result<f64, ()> {
+    fn parse_expr(&mut self) -> Option<f64> {
         let mut val = self.parse_term()?;
         loop {
             match self.peek() {
@@ -212,11 +212,11 @@ impl<'a> Parser<'a> {
                 _ => break,
             }
         }
-        Ok(val)
+        Some(val)
     }
 
     /// term = unary (('*' | '/') unary)*
-    fn parse_term(&mut self) -> Result<f64, ()> {
+    fn parse_term(&mut self) -> Option<f64> {
         let mut val = self.parse_unary()?;
         loop {
             match self.peek() {
@@ -228,34 +228,34 @@ impl<'a> Parser<'a> {
                     self.consume();
                     let divisor = self.parse_unary()?;
                     if divisor == 0.0 {
-                        return Err(());
+                        return None;
                     }
                     val /= divisor;
                 }
                 _ => break,
             }
         }
-        Ok(val)
+        Some(val)
     }
 
     /// unary = '-' unary | factor
-    fn parse_unary(&mut self) -> Result<f64, ()> {
+    fn parse_unary(&mut self) -> Option<f64> {
         if self.peek() == Some(&Token::Minus) {
             self.consume();
-            return Ok(-self.parse_factor()?);
+            return Some(-self.parse_factor()?);
         }
         self.parse_factor()
     }
 
     /// factor = '(' expr ')' | SUM '(' cellref ':' cellref ')' | cellref | number
-    fn parse_factor(&mut self) -> Result<f64, ()> {
+    fn parse_factor(&mut self) -> Option<f64> {
         match self.peek().cloned() {
             Some(Token::LParen) => {
                 self.consume(); // '('
                 let val = self.parse_expr()?;
                 match self.consume() {
-                    Some(Token::RParen) => Ok(val),
-                    _ => Err(()),
+                    Some(Token::RParen) => Some(val),
+                    _ => None,
                 }
             }
             Some(Token::Ident(name)) => {
@@ -263,44 +263,44 @@ impl<'a> Parser<'a> {
                 let upper = name.to_uppercase();
                 match upper.as_str() {
                     "SUM" => self.parse_sum(),
-                    _ => Err(()),
+                    _ => None,
                 }
             }
             Some(Token::CellRef(row, col)) => {
                 self.consume();
                 // Evaluate the referenced cell, converting its display value to f64
                 let cell_val = self.sheet.evaluate_inner(row, col, self.visiting);
-                cell_val.trim().parse::<f64>().map_err(|_| ())
+                cell_val.trim().parse::<f64>().ok()
             }
             Some(Token::Num(v)) => {
                 self.consume();
-                Ok(v)
+                Some(v)
             }
-            _ => Err(()),
+            _ => None,
         }
     }
 
     /// Parses: '(' CellRef ':' CellRef ')'  and returns the sum
-    fn parse_sum(&mut self) -> Result<f64, ()> {
+    fn parse_sum(&mut self) -> Option<f64> {
         match self.consume() {
             Some(Token::LParen) => {}
-            _ => return Err(()),
+            _ => return None,
         }
         let (r1, c1) = match self.consume() {
             Some(Token::CellRef(r, c)) => (*r, *c),
-            _ => return Err(()),
+            _ => return None,
         };
         match self.consume() {
             Some(Token::Colon) => {}
-            _ => return Err(()),
+            _ => return None,
         }
         let (r2, c2) = match self.consume() {
             Some(Token::CellRef(r, c)) => (*r, *c),
-            _ => return Err(()),
+            _ => return None,
         };
         match self.consume() {
             Some(Token::RParen) => {}
-            _ => return Err(()),
+            _ => return None,
         }
 
         let row_min = r1.min(r2);
@@ -318,19 +318,19 @@ impl<'a> Parser<'a> {
                 // non-numeric cells contribute 0 (silently ignored)
             }
         }
-        Ok(sum)
+        Some(sum)
     }
 }
 
-fn eval_expr(sheet: &Sheet, expr: &str, visiting: &mut HashSet<(usize, usize)>) -> Result<f64, ()> {
+fn eval_expr(sheet: &Sheet, expr: &str, visiting: &mut HashSet<(usize, usize)>) -> Option<f64> {
     let tokens = tokenize(expr)?;
     let mut parser = Parser::new(&tokens, sheet, visiting);
     let result = parser.parse_expr()?;
     // Ensure all tokens were consumed
     if parser.pos != parser.tokens.len() {
-        return Err(());
+        return None;
     }
-    Ok(result)
+    Some(result)
 }
 
 // ---------------------------------------------------------------------------

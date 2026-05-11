@@ -90,9 +90,8 @@ jobs:
           version: 1.0
       - run: cargo build -p counter
 
-  # Each wasm example under examples/ is a standalone workspace (deliberately
-  # excluded from the root workspace so native `cargo check --workspace`
-  # doesn't try to build them), so we build each one from its own directory.
+  # wasm_hello is a standalone workspace; seven_guis and todomvc are workspace
+  # members with a [lib] crate-type = ["cdylib"] target for wasm.
   build-wasm-examples:
     name: "Build wasm examples"
     runs-on: ubuntu-latest
@@ -105,9 +104,10 @@ jobs:
       - name: Build wasm_hello
         run: cargo build --target wasm32-unknown-unknown
         working-directory: examples/wasm_hello
-      - name: Build wasm_7guis
-        run: cargo build --target wasm32-unknown-unknown
-        working-directory: examples/wasm_7guis
+      - name: Build seven_guis (wasm)
+        run: cargo build -p seven_guis --lib --target wasm32-unknown-unknown --no-default-features --features hybrid
+      - name: Build todomvc (wasm)
+        run: cargo build -p todomvc --lib --target wasm32-unknown-unknown --no-default-features --features hybrid
 
   fmt:
     name: Rustfmt
