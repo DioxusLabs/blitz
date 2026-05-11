@@ -1005,15 +1005,27 @@ impl BaseDocument {
                     }
                 }
             }
-            Resource::Font(bytes) => {
+            Resource::Font(bytes, overrides) => {
                 let font = Blob::new(Arc::new(bytes));
 
-                // TODO: Implement FontInfoOveride
+                // Build a `FontInfoOverride` from the `@font-face` descriptors
+                // captured during stylesheet parsing. Without this, parley
+                // reads the family name from the TTF's own metadata, which
+                // means CSS `font-family: 'Avenir Book'` won't match a font
+                // file that internally identifies as `Avenir 45 Book`.
+                let weight_override = overrides.weight.map(parley::fontique::FontWeight::new);
+                let info_override = parley::fontique::FontInfoOverride {
+                    family_name: overrides.family_name.as_deref(),
+                    weight: weight_override,
+                    style: overrides.style,
+                    ..Default::default()
+                };
+
                 // TODO: Investigate eliminating double-box
                 let mut global_font_ctx = self.font_ctx.lock().unwrap();
                 global_font_ctx
                     .collection
-                    .register_fonts(font.clone(), None);
+                    .register_fonts(font.clone(), Some(info_override));
 
                 #[cfg(feature = "parallel-construct")]
                 {
@@ -1022,7 +1034,9 @@ impl BaseDocument {
                             .thread_font_contexts
                             .get_or(|| RefCell::new(Box::new(global_font_ctx.clone())))
                             .borrow_mut();
-                        font_ctx.collection.register_fonts(font.clone(), None);
+                        font_ctx
+                            .collection
+                            .register_fonts(font.clone(), Some(info_override));
                     });
                 }
                 drop(global_font_ctx);
