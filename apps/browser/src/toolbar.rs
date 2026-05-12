@@ -199,6 +199,7 @@ pub fn Toolbar(
             html_parser_provider: Some(Arc::new(HtmlProvider)),
             font_ctx: Some(tab.loader_rc().font_ctx.clone()),
             media_type: None,
+            ..Default::default()
         };
         let mut document = HtmlDocument::from_html(view_source_html, config).into_inner();
         if let Some(parent_id) = document.get_element_by_id("source") {
