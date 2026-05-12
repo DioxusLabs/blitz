@@ -4,6 +4,7 @@
 use std::ptr::NonNull;
 use std::sync::atomic::Ordering;
 
+use crate::StyleThreading;
 use crate::layout::damage::compute_layout_damage;
 use crate::node::Node;
 use crate::node::NodeData;
@@ -125,8 +126,11 @@ impl crate::document::BaseDocument {
         if token.should_traverse() {
             // Style the elements, resolving their data
             let traverser = RecalcStyle::new(context);
-            let rayon_pool = STYLE_THREAD_POOL.pool();
-            style::driver::traverse_dom(&traverser, token, rayon_pool.as_ref());
+            // `Sequential` bypasses Stylo's global pool. See `StyleThreading`.
+            let pool_guard = matches!(self.style_threading, StyleThreading::Parallel)
+                .then(|| STYLE_THREAD_POOL.pool());
+            let rayon_pool = pool_guard.as_ref().and_then(|g| g.as_ref());
+            style::driver::traverse_dom(&traverser, token, rayon_pool);
         }
 
         for opaque in self.snapshots.keys() {

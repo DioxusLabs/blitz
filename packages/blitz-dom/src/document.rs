@@ -14,7 +14,8 @@ use crate::url::DocumentUrl;
 use crate::util::ImageType;
 use crate::{
     DEFAULT_CSS, DocumentConfig, DocumentMutator, DummyHtmlParserProvider, ElementData,
-    EventDriver, HtmlParserProvider, Node, NodeData, NoopEventHandler, TextNodeData,
+    EventDriver, HtmlParserProvider, Node, NodeData, NoopEventHandler, StyleThreading,
+    TextNodeData,
 };
 use blitz_traits::devtools::DevtoolSettings;
 use blitz_traits::events::{BlitzScrollEvent, DomEvent, DomEventData, HitResult, UiEvent};
@@ -190,6 +191,8 @@ pub struct BaseDocument {
     pub(crate) viewport_scroll: crate::Point<f64>,
     /// CSS media type used to evaluate `@media` rules.
     pub(crate) media_type: MediaType,
+    /// Strategy for Stylo's style traversal during `resolve`.
+    pub(crate) style_threading: StyleThreading,
 
     // Events
     pub(crate) tx: Sender<DocumentEvent>,
@@ -401,6 +404,7 @@ impl BaseDocument {
             nodes_to_id,
             viewport,
             media_type,
+            style_threading: config.style_threading,
             devtool_settings: DevtoolSettings::default(),
             viewport_scroll: crate::Point::ZERO,
             url: base_url,
