@@ -360,7 +360,7 @@ impl BaseDocument {
         style_config::set_pref!("layout.grid.enabled", true);
         style_config::set_pref!("layout.unimplemented", true);
         style_config::set_pref!("layout.columns.enabled", true);
-        style_config::set_pref!("layout.threads", -1);
+        style_config::set_pref!("layout.threads", config.stylo_thread_count.unwrap_or(-1));
 
         let viewport = config.viewport.unwrap_or_default();
         let media_type = config.media_type.unwrap_or_else(MediaType::screen);
