@@ -777,6 +777,7 @@ impl<'doc> DocumentMutator<'doc> {
             self.doc.tx.clone(),
             self.doc.id(),
             Some(node.id),
+            url.to_string(),
             self.doc.shell_provider.clone(),
             StylesheetHandler {
                 source_url: url.clone(),
@@ -819,10 +820,10 @@ impl<'doc> DocumentMutator<'doc> {
         if let Some(raw_src) = node.attr(local_name!("src")) {
             if !raw_src.is_empty() {
                 let src = self.doc.resolve_url(raw_src);
-                let src_string = src.as_str();
+                let src_string = src.to_string();
 
                 // Check cache first
-                if let Some(cached_image) = self.doc.image_cache.get(src_string) {
+                if let Some(cached_image) = self.doc.image_cache.get(&src_string) {
                     #[cfg(feature = "tracing")]
                     tracing::info!("Loading image {src_string} from cache");
                     let node = &mut self.doc.nodes[target_id];
@@ -834,7 +835,7 @@ impl<'doc> DocumentMutator<'doc> {
                 }
 
                 // Check if there's already a pending request for this URL
-                if let Some(waiting_list) = self.doc.pending_images.get_mut(src_string) {
+                if let Some(waiting_list) = self.doc.pending_images.get_mut(&src_string) {
                     #[cfg(feature = "tracing")]
                     tracing::info!("Image {src_string} already pending, queueing node {target_id}");
                     waiting_list.push((target_id, ImageType::Image));
@@ -846,7 +847,7 @@ impl<'doc> DocumentMutator<'doc> {
                 tracing::info!("Fetching image {src_string}");
                 self.doc
                     .pending_images
-                    .insert(src_string.to_string(), vec![(target_id, ImageType::Image)]);
+                    .insert(src_string.clone(), vec![(target_id, ImageType::Image)]);
 
                 self.doc.net_provider.fetch(
                     self.doc.id(),
@@ -855,6 +856,7 @@ impl<'doc> DocumentMutator<'doc> {
                         self.doc.tx.clone(),
                         self.doc.id(),
                         None, // Don't pass node_id, we'll handle it via pending_images
+                        src_string,
                         self.doc.shell_provider.clone(),
                         ImageHandler::new(ImageType::Image),
                     ),

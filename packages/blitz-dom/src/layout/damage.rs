@@ -441,8 +441,9 @@ impl BaseDocument {
                                 // Start fetch and track as pending
                                 #[cfg(feature = "tracing")]
                                 tracing::info!("Fetching image {url_str}");
+                                let url_string = url_str.to_string();
                                 self.pending_images.insert(
-                                    url_str.to_string(),
+                                    url_string.clone(),
                                     vec![(node_id, ImageType::Background(idx))],
                                 );
 
@@ -453,6 +454,7 @@ impl BaseDocument {
                                         self.tx.clone(),
                                         doc_id,
                                         None, // Don't pass node_id, we'll handle via pending_images
+                                        url_string,
                                         self.shell_provider.clone(),
                                         ImageHandler::new(ImageType::Background(idx)),
                                     ),

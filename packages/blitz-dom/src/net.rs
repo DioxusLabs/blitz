@@ -61,6 +61,7 @@ pub(crate) struct ResourceHandler<T: Send + Sync + 'static> {
     doc_id: usize,
     request_id: usize,
     node_id: Option<usize>,
+    requested_url: String,
     tx: Sender<DocumentEvent>,
     shell_provider: Arc<dyn ShellProvider>,
     data: T,
@@ -71,6 +72,7 @@ impl<T: Send + Sync + 'static> ResourceHandler<T> {
         tx: Sender<DocumentEvent>,
         doc_id: usize,
         node_id: Option<usize>,
+        requested_url: String,
         shell_provider: Arc<dyn ShellProvider>,
         data: T,
     ) -> Self {
@@ -79,6 +81,7 @@ impl<T: Send + Sync + 'static> ResourceHandler<T> {
             request_id: REQUEST_ID_COUNTER.fetch_add(1, Ao::Relaxed),
             doc_id,
             node_id,
+            requested_url,
             tx,
             shell_provider,
             data,
@@ -89,24 +92,32 @@ impl<T: Send + Sync + 'static> ResourceHandler<T> {
         tx: Sender<DocumentEvent>,
         doc_id: usize,
         node_id: Option<usize>,
+        requested_url: String,
         shell_provider: Arc<dyn ShellProvider>,
         data: T,
     ) -> Box<dyn NetHandler>
     where
         ResourceHandler<T>: NetHandler,
     {
-        Box::new(Self::new(tx, doc_id, node_id, shell_provider, data)) as _
+        Box::new(Self::new(
+            tx,
+            doc_id,
+            node_id,
+            requested_url,
+            shell_provider,
+            data,
+        )) as _
     }
 
     pub(crate) fn request_id(&self) -> usize {
         self.request_id
     }
 
-    fn respond(&self, resolved_url: String, result: Result<Resource, String>) {
+    fn respond(&self, result: Result<Resource, String>) {
         let response = ResourceLoadResponse {
             request_id: self.request_id,
             node_id: self.node_id,
-            resolved_url: Some(resolved_url),
+            requested_url: self.requested_url.clone(),
             result,
         };
         let _ = self.tx.send(DocumentEvent::ResourceLoad(response));
@@ -118,7 +129,13 @@ impl<T: Send + Sync + 'static> ResourceHandler<T> {
 pub struct ResourceLoadResponse {
     pub request_id: usize,
     pub node_id: Option<usize>,
-    pub resolved_url: Option<String>,
+    /// The URL passed to `NetProvider::fetch` — i.e. pre-redirect. Used as the
+    /// key for image-cache / pending-image dedup so that lookups on the response
+    /// side match the keys recorded when the fetch was initiated. The post-
+    /// redirect URL (delivered to `NetHandler::bytes`) is intentionally not
+    /// surfaced here: keying on it caused issue #435 (intermittent image loads
+    /// on wikipedia.org) because the queue side had no access to it.
+    pub requested_url: String,
     pub result: Result<Resource, String>,
 }
 
@@ -129,9 +146,9 @@ pub struct StylesheetHandler {
 }
 
 impl NetHandler for ResourceHandler<StylesheetHandler> {
-    fn bytes(self: Box<Self>, resolved_url: String, bytes: Bytes) {
+    fn bytes(self: Box<Self>, _resolved_url: String, bytes: Bytes) {
         let Ok(css) = std::str::from_utf8(&bytes) else {
-            return self.respond(resolved_url, Err(String::from("Invalid UTF8")));
+            return self.respond(Err(String::from("Invalid UTF8")));
         };
 
         // NOTE(Nico): I don't *think* external stylesheets should have HTML entities escaped
@@ -154,10 +171,7 @@ impl NetHandler for ResourceHandler<StylesheetHandler> {
             AllowImportRules::Yes,
         );
 
-        self.respond(
-            resolved_url,
-            Ok(Resource::Css(DocumentStyleSheet(ServoArc::new(sheet)))),
-        );
+        self.respond(Ok(Resource::Css(DocumentStyleSheet(ServoArc::new(sheet)))));
     }
 }
 
@@ -205,6 +219,7 @@ impl ServoStylesheetLoader for StylesheetLoader {
                 self.tx.clone(),
                 self.doc_id,
                 None, // node_id
+                url.to_string(),
                 self.shell_provider.clone(),
                 NestedStylesheetHandler {
                     url: url.clone(),
@@ -231,9 +246,9 @@ struct NestedStylesheetHandler {
 }
 
 impl NetHandler for ResourceHandler<NestedStylesheetHandler> {
-    fn bytes(self: Box<Self>, resolved_url: String, bytes: Bytes) {
+    fn bytes(self: Box<Self>, _resolved_url: String, bytes: Bytes) {
         let Ok(css) = std::str::from_utf8(&bytes) else {
-            return self.respond(resolved_url, Err(String::from("Invalid UTF8")));
+            return self.respond(Err(String::from("Invalid UTF8")));
         };
 
         // NOTE(Nico): I don't *think* external stylesheets should have HTML entities escaped
@@ -266,7 +281,7 @@ impl NetHandler for ResourceHandler<NestedStylesheetHandler> {
         self.data.import_rule.write_with(&mut guard).stylesheet = ImportSheet::Sheet(sheet);
         drop(guard);
 
-        self.respond(resolved_url, Ok(Resource::None))
+        self.respond(Ok(Resource::None))
     }
 }
 
@@ -275,9 +290,9 @@ struct FontFaceHandler {
     overrides: FontFaceOverrides,
 }
 impl NetHandler for ResourceHandler<FontFaceHandler> {
-    fn bytes(mut self: Box<Self>, resolved_url: String, bytes: Bytes) {
+    fn bytes(mut self: Box<Self>, _resolved_url: String, bytes: Bytes) {
         let result = self.data.parse(bytes);
-        self.respond(resolved_url, result)
+        self.respond(result)
     }
 }
 impl FontFaceHandler {
@@ -446,11 +461,12 @@ pub(crate) fn fetch_font_face(
             if let Some((url, format)) = preferred_source {
                 network_provider.fetch(
                     doc_id,
-                    Request::get(url),
+                    Request::get(url.clone()),
                     ResourceHandler::boxed(
                         tx.clone(),
                         doc_id,
                         node_id,
+                        url.to_string(),
                         shell_provider.clone(),
                         FontFaceHandler { format, overrides },
                     ),
@@ -492,9 +508,9 @@ impl ImageHandler {
 }
 
 impl NetHandler for ResourceHandler<ImageHandler> {
-    fn bytes(self: Box<Self>, resolved_url: String, bytes: Bytes) {
+    fn bytes(self: Box<Self>, _resolved_url: String, bytes: Bytes) {
         let result = self.data.parse(bytes);
-        self.respond(resolved_url, result)
+        self.respond(result)
     }
 }
 

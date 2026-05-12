@@ -843,6 +843,7 @@ impl BaseDocument {
                                 self.tx.clone(),
                                 self.id,
                                 Some(node_id),
+                                resolved_href.to_string(),
                                 self.shell_provider.clone(),
                                 StylesheetHandler {
                                     source_url: resolved_href,
@@ -985,9 +986,7 @@ impl BaseDocument {
                 // Create the ImageData and cache it
                 let image = ImageData::Raster(RasterImageData::new(width, height, image_data));
 
-                let Some(url) = res.resolved_url.as_ref() else {
-                    return;
-                };
+                let url = &res.requested_url;
 
                 // Get all nodes waiting for this image
                 let waiting_nodes = self.pending_images.remove(url).unwrap_or_default();
@@ -1033,9 +1032,7 @@ impl BaseDocument {
                 // Create the ImageData and cache it
                 let image = ImageData::Svg(tree);
 
-                let Some(url) = res.resolved_url.as_ref() else {
-                    return;
-                };
+                let url = &res.requested_url;
 
                 // Get all nodes waiting for this image
                 let waiting_nodes = self.pending_images.remove(url).unwrap_or_default();
@@ -2023,7 +2020,7 @@ mod font_face_override_tests {
         let response = ResourceLoadResponse {
             request_id: 0,
             node_id: None,
-            resolved_url: Some(String::from("test://aliased-family")),
+            requested_url: String::from("test://aliased-family"),
             result: Ok(Resource::Font(
                 blitz_traits::net::Bytes::from_static(crate::BULLET_FONT),
                 FontFaceOverrides {
