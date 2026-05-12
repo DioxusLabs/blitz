@@ -158,6 +158,7 @@ wasm-bindgen = "0.2"
 wasm-bindgen-futures = "0.4"
 web-sys = "0.3.98"
 web-time = "1"
+console_error_panic_hook = "0.1"
 
 # Other dependencies
 rustc-hash = "2.1.2"

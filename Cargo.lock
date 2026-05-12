@@ -6501,16 +6501,11 @@ name = "seven_guis"
 version = "0.1.0"
 dependencies = [
  "anyrender_vello_hybrid",
- "blitz-dom",
- "blitz-shell",
  "console_error_panic_hook",
- "dioxus-core",
  "dioxus-native",
  "futures-timer",
  "idna_adapter",
- "parley",
  "wasm-bindgen",
- "winit",
 ]
 
 [[package]]
@@ -7448,16 +7443,11 @@ version = "0.1.0"
 dependencies = [
  "android-activity",
  "anyrender_vello_hybrid",
- "blitz-dom",
- "blitz-shell",
  "console_error_panic_hook",
- "dioxus-core",
  "dioxus-native",
  "idna_adapter",
- "parley",
  "tracing-subscriber",
  "wasm-bindgen",
- "winit",
 ]
 
 [[package]]

@@ -10,7 +10,7 @@ homepage = "https://dioxuslabs.com/learn/0.7/getting_started"
 keywords = ["dom", "ui", "gui", "react"]
 
 [features]
-default = ["accessibility", "hot-reload", "net", "html", "svg", "system-fonts", "clipboard", "file_dialog", "vello", "incremental"]
+default = ["accessibility", "hot-reload", "net", "html", "svg", "system-fonts", "clipboard", "file_dialog", "vello", "incremental", "woff"]
 prelude = ["dep:dioxus-core-macro", "dep:dioxus-hooks", "dep:dioxus-signals", "dep:dioxus-stores", "dep:manganis"]
 
 # DOM features
@@ -19,6 +19,9 @@ floats = ["blitz-dom/floats"]
 incremental = ["blitz-dom/incremental"]
 autofocus = ["blitz-dom/autofocus"]
 system-fonts = ["blitz-dom/system_fonts"]
+# WOFF/WOFF2 decoder. Default-on so wasm callers (which can't use system fonts)
+# can bundle compressed fonts without extra setup.
+woff = ["blitz-dom/woff"]
 
 # Shell Features
 clipboard = ["blitz-shell/clipboard"]
@@ -38,6 +41,8 @@ vello-cpu-base = ["alt-renderer", "dep:anyrender_vello_cpu"]
 alt-renderer = []
 
 # Other features
+# No-op on wasm32 (blitz_net::Provider needs tokio's threaded runtime); launch_cfg
+# falls back to the in-process DioxusNativeNetProvider there.
 net = ["dep:tokio", "dep:blitz-net"]
 html = ["dep:blitz-html"]
 

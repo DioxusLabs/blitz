@@ -39,15 +39,10 @@ idna_adapter = "=1.0.0"
 dioxus-native = { workspace = true, features = ["svg", "system-fonts", "data-uri", "prelude"] }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
-dioxus-native = { workspace = true, features = ["svg", "data-uri", "prelude", "vello-hybrid"] }
+dioxus-native = { workspace = true, features = ["svg", "data-uri", "prelude", "vello-hybrid", "woff"] }
 anyrender_vello_hybrid = { version = "0.4", features = ["webgl"] }
-blitz-dom   = { workspace = true, default-features = false, features = ["woff"] }
-blitz-shell = { workspace = true, default-features = false }
-dioxus-core = { workspace = true }
-winit = "=0.31.0-beta.2"
-parley = { version = "0.9", default-features = false, features = ["std"] }
 wasm-bindgen = { workspace = true }
-console_error_panic_hook = "0.1"
+console_error_panic_hook = { workspace = true }
 
 [target.'cfg(target_os = "android")'.dependencies]
 android-activity = { version = "0.6.0", features = ["native-activity"] }

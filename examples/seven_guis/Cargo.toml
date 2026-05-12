@@ -34,10 +34,6 @@ dioxus-native = { workspace = true, features = ["system-fonts"] }
 # WASM-only: additive wasm-bindgen feature on futures-timer
 futures-timer = { version = "3", features = ["wasm-bindgen"] }
 anyrender_vello_hybrid = { version = "0.4", features = ["webgl"] }
-blitz-dom   = { workspace = true, default-features = false, features = ["woff"] }
-blitz-shell = { workspace = true, default-features = false }
-dioxus-core = { workspace = true }
-winit = "=0.31.0-beta.2"
-parley = { version = "0.9", default-features = false, features = ["std"] }
+dioxus-native = { workspace = true, features = ["woff"] }
 wasm-bindgen = { workspace = true }
-console_error_panic_hook = "0.1"
+console_error_panic_hook = { workspace = true }

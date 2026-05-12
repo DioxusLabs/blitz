@@ -343,7 +343,10 @@ impl BaseDocument {
                     source_cache: SourceCache::new_shared(),
                     collection: Collection::new(CollectionOptions {
                         shared: false,
-                        system_fonts: true,
+                        system_fonts: cfg!(all(
+                            feature = "system_fonts",
+                            not(target_arch = "wasm32")
+                        )),
                     }),
                 };
                 font_ctx
