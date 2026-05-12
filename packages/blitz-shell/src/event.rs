@@ -45,6 +45,14 @@ pub enum BlitzShellEvent {
         retain_scroll_position: bool,
         is_md: bool,
     },
+
+    /// Delivered after the WASM resize-debounce window expires. Route to
+    /// `View::apply_pending_resize_if_settled`, which applies the pending
+    /// size iff motion has actually settled.
+    #[cfg(target_arch = "wasm32")]
+    ResizeSettleCheck {
+        window_id: WindowId,
+    },
 }
 impl BlitzShellEvent {
     pub fn embedder_event<T: Any + Send + Sync>(value: T) -> Self {

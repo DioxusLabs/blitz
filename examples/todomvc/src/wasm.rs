@@ -6,7 +6,6 @@ use dioxus_core::VirtualDom;
 use dioxus_native::{DioxusDocument, DioxusNativeApplication, DioxusNativeWindowRenderer};
 use parley::fontique::{Blob, Collection, CollectionOptions, GenericFamily, SourceCache};
 use wasm_bindgen::prelude::*;
-use winit::dpi::PhysicalSize;
 use winit::event_loop::{ControlFlow, EventLoop};
 use winit::platform::web::WindowAttributesWeb;
 use winit::window::WindowAttributes;
@@ -58,8 +57,10 @@ pub fn start() -> Result<(), JsValue> {
 
     let renderer = DioxusNativeWindowRenderer::new();
 
+    // Intentionally no `.with_surface_size(...)` on wasm: letting winit-web set the
+    // canvas size writes fixed inline CSS (canvas.style.width/height) that overrides
+    // host stylesheet rules and suppresses ResizeObserver. Host CSS sizes the canvas.
     let attrs = WindowAttributes::default()
-        .with_surface_size(PhysicalSize::new(1024u32, 768u32))
         .with_platform_attributes(Box::new(WindowAttributesWeb::default().with_append(true)));
 
     let config = WindowConfig::with_attributes(Box::new(doc) as _, renderer, attrs);

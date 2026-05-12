@@ -12,7 +12,6 @@ use blitz_shell::{BlitzApplication, BlitzShellProxy, WindowConfig};
 use parley::fontique::{Blob, Collection, CollectionOptions, GenericFamily, SourceCache};
 use tracing::info;
 use wasm_bindgen::prelude::*;
-use winit::dpi::LogicalSize;
 use winit::event_loop::EventLoop;
 use winit::platform::web::WindowAttributesWeb;
 use winit::window::WindowAttributes;
@@ -109,9 +108,6 @@ pub fn start() -> Result<(), JsValue> {
     let canvas = document.get_element_by_id("blitz-target").unwrap();
     let canvas = canvas.dyn_into::<web_sys::HtmlCanvasElement>().unwrap();
 
-    let width = canvas.offset_width() as u32;
-    let height = canvas.offset_height() as u32;
-
     // Make sure the canvas can be given focus.
     // https://developer.mozilla.org/en-US/docs/Web/HTML/Global_attributes/tabindex
     canvas.set_tab_index(0);
@@ -131,10 +127,10 @@ pub fn start() -> Result<(), JsValue> {
         },
     );
 
-    // winit-web requires an attached canvas with a definite size before surface
-    // creation, so request the size up front and let winit auto-append the canvas.
+    // Intentionally no `.with_surface_size(...)` on wasm: letting winit-web set the
+    // canvas size writes fixed inline CSS (canvas.style.width/height) that overrides
+    // host stylesheet rules and suppresses ResizeObserver. Host CSS sizes the canvas.
     let attrs = WindowAttributes::default()
-        .with_surface_size(LogicalSize::new(width, height))
         .with_platform_attributes(Box::new(
             WindowAttributesWeb::default().with_canvas(Some(canvas)),
         ));
