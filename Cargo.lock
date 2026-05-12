@@ -954,6 +954,8 @@ dependencies = [
  "keyboard-types 0.7.0",
  "rfd",
  "tracing",
+ "wasm-bindgen",
+ "web-sys",
  "web-time",
  "winit",
 ]
