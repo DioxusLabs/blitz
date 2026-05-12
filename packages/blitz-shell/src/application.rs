@@ -90,6 +90,12 @@ impl<Rend: WindowRenderer> BlitzApplication<Rend> {
             BlitzShellEvent::NavigationLoad { .. } => {
                 // Do nothing. Should be handled by embedders (if required).
             }
+            #[cfg(target_arch = "wasm32")]
+            BlitzShellEvent::ResizeSettleCheck { window_id } => {
+                if let Some(window) = self.windows.get_mut(&window_id) {
+                    window.apply_pending_resize_if_settled();
+                }
+            }
         }
     }
 }

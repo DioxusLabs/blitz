@@ -82,6 +82,16 @@ pub struct View<Rend: WindowRenderer> {
     pub is_visible: bool,
     pub safe_area_insets: PhysicalInsets<u32>,
 
+    #[cfg(target_arch = "wasm32")]
+    pending_resize: Option<winit::dpi::PhysicalSize<u32>>,
+    #[cfg(target_arch = "wasm32")]
+    last_resize_at: Option<web_time::Instant>,
+    /// True iff a setTimeout has been scheduled and not yet observed by
+    /// `apply_pending_resize_if_settled`. Prevents the timer storm that would
+    /// otherwise allocate a fresh `Closure` per resize event during a drag.
+    #[cfg(target_arch = "wasm32")]
+    resize_timer_scheduled: bool,
+
     #[cfg(feature = "accessibility")]
     /// Accessibility adapter for `accesskit`.
     pub accessibility: AccessibilityState,
@@ -126,6 +136,21 @@ impl<Rend: WindowRenderer> View<Rend> {
         {
             size = requested.to_physical(scale as f64);
         }
+        // On wasm, when the embedder didn't call `with_surface_size`, winit-web's
+        // initial `surface_size()` is 0×0 — its ResizeObserver hasn't fired yet.
+        // Resuming the renderer at 0×0 trips a wgpu swapchain-size-0 error, so
+        // seed from the canvas element's CSS layout box (host-stylesheet result).
+        #[cfg(target_arch = "wasm32")]
+        if size.width == 0 || size.height == 0 {
+            use winit::platform::web::WindowExtWeb;
+            if let Some(canvas) = winit_window.canvas() {
+                let css_w = canvas.offset_width().max(0) as u32;
+                let css_h = canvas.offset_height().max(0) as u32;
+                if css_w > 0 && css_h > 0 {
+                    size = winit::dpi::LogicalSize::new(css_w, css_h).to_physical(scale as f64);
+                }
+            }
+        }
         let safe_area_insets = get_safe_area_insets(&*winit_window);
         let theme = winit_window.theme().unwrap_or(Theme::Light);
         let color_scheme = theme_to_color_scheme(theme);
@@ -160,6 +185,12 @@ impl<Rend: WindowRenderer> View<Rend> {
             theme_override: None,
             buttons: MouseEventButtons::None,
             safe_area_insets,
+            #[cfg(target_arch = "wasm32")]
+            pending_resize: None,
+            #[cfg(target_arch = "wasm32")]
+            last_resize_at: None,
+            #[cfg(target_arch = "wasm32")]
+            resize_timer_scheduled: false,
             pointer_pos: Default::default(),
             is_visible: winit_window.is_visible().unwrap_or(true),
             #[cfg(feature = "accessibility")]
@@ -416,6 +447,57 @@ impl<Rend: WindowRenderer> View<Rend> {
         self.accessibility.update_tree(&inner);
     }
 
+    #[cfg(target_arch = "wasm32")]
+    const RESIZE_DEBOUNCE_MS: u32 = 100;
+
+    #[cfg(target_arch = "wasm32")]
+    fn schedule_resize_settle_check(&mut self, delay_ms: u32) {
+        use wasm_bindgen::JsCast;
+        use wasm_bindgen::closure::Closure;
+
+        let proxy = self.proxy.clone();
+        let window_id = self.window_id();
+        let cb = Closure::once_into_js(move || {
+            proxy.send_event(BlitzShellEvent::ResizeSettleCheck { window_id });
+        });
+        if let Some(win) = web_sys::window() {
+            let _ = win.set_timeout_with_callback_and_timeout_and_arguments_0(
+                cb.unchecked_ref(),
+                delay_ms as i32,
+            );
+            self.resize_timer_scheduled = true;
+        }
+    }
+
+    /// Applies the pending resize iff motion has been quiet for the debounce
+    /// window; otherwise re-arms the timer for the remaining time. Called
+    /// when a previously scheduled timer fires.
+    #[cfg(target_arch = "wasm32")]
+    pub fn apply_pending_resize_if_settled(&mut self) {
+        self.resize_timer_scheduled = false;
+        let Some(last) = self.last_resize_at else {
+            return;
+        };
+        let debounce = std::time::Duration::from_millis(Self::RESIZE_DEBOUNCE_MS as u64);
+        let elapsed = web_time::Instant::now().saturating_duration_since(last);
+        if elapsed < debounce {
+            // Motion ongoing — wait out the rest of the window before re-checking.
+            let remaining_ms = (debounce - elapsed).as_millis() as u32;
+            self.schedule_resize_settle_check(remaining_ms);
+            return;
+        }
+        let Some(size) = self.pending_resize.take() else {
+            return;
+        };
+        self.last_resize_at = None;
+
+        let insets = self.safe_area_insets;
+        let width = size.width.saturating_sub(insets.left + insets.right);
+        let height = size.height.saturating_sub(insets.top + insets.bottom);
+        self.with_viewport(|v| v.window_size = (width, height));
+        self.request_redraw();
+    }
+
     #[cfg(target_os = "macos")]
     pub fn handle_apple_standard_keybinding(&mut self, command: &str) {
         use blitz_traits::SmolStr;
@@ -447,11 +529,25 @@ impl<Rend: WindowRenderer> View<Rend> {
             },
             WindowEvent::SurfaceResized(physical_size) => {
                 self.safe_area_insets = get_safe_area_insets(&*self.window);
-                let insets = self.safe_area_insets;
-                let width = physical_size.width - insets.left - insets.right;
-                let height = physical_size.height - insets.top - insets.bottom;
-                self.with_viewport(|v| v.window_size = (width, height));
-                self.request_redraw();
+                // On WASM, defer the apply: wgpu's surface.configure clears the canvas,
+                // so running it every frame flickers during a drag. The browser stretches
+                // the stale backing store until the debounce timer settles.
+                #[cfg(target_arch = "wasm32")]
+                {
+                    self.pending_resize = Some(physical_size);
+                    self.last_resize_at = Some(web_time::Instant::now());
+                    if !self.resize_timer_scheduled {
+                        self.schedule_resize_settle_check(Self::RESIZE_DEBOUNCE_MS);
+                    }
+                }
+                #[cfg(not(target_arch = "wasm32"))]
+                {
+                    let insets = self.safe_area_insets;
+                    let width = physical_size.width - insets.left - insets.right;
+                    let height = physical_size.height - insets.top - insets.bottom;
+                    self.with_viewport(|v| v.window_size = (width, height));
+                    self.request_redraw();
+                }
             }
             WindowEvent::ScaleFactorChanged { scale_factor, .. } => {
                 self.with_viewport(|v| v.set_hidpi_scale(scale_factor as f32));
