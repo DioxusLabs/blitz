@@ -74,7 +74,7 @@ mod accessibility;
 #[cfg(feature = "custom-widget")]
 pub use crate::node::Widget;
 
-pub use config::DocumentConfig;
+pub use config::{DocumentConfig, StyleThreading};
 pub use document::{BaseDocument, DocGuard, DocGuardMut, Document, PlainDocument};
 pub use markup5ever::{
     LocalName, Namespace, NamespaceStaticSet, Prefix, PrefixStaticSet, QualName, local_name,

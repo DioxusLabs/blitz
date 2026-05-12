@@ -57,6 +57,7 @@ pub fn make_doc_config(
         html_parser_provider: Some(Arc::new(HtmlProvider)),
         font_ctx: Some(font_ctx),
         media_type: None,
+        ..Default::default()
     }
 }
 
