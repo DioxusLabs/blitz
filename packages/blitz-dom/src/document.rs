@@ -971,9 +971,28 @@ impl BaseDocument {
     pub fn load_resource(&mut self, res: ResourceLoadResponse) {
         self.pending_critical_resources.remove(&res.request_id);
 
-        let Ok(resource) = res.result else {
-            // TODO: handle error
-            return;
+        let resource = match res.result {
+            Ok(resource) => resource,
+            Err(err) => {
+                if let Some(url) = res.resolved_url.as_ref() {
+                    let waiting_nodes = self.pending_images.remove(url).unwrap_or_default();
+                    #[cfg(feature = "tracing")]
+                    tracing::warn!(
+                        url = url.as_str(),
+                        waiting_nodes = waiting_nodes.len(),
+                        error = err.as_str(),
+                        "Resource load failed"
+                    );
+                    #[cfg(not(feature = "tracing"))]
+                    let _ = (waiting_nodes, err);
+                } else {
+                    #[cfg(feature = "tracing")]
+                    tracing::warn!(error = err.as_str(), "Resource load failed (no url)");
+                    #[cfg(not(feature = "tracing"))]
+                    let _ = err;
+                }
+                return;
+            }
         };
 
         match resource {

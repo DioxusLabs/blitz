@@ -500,30 +500,38 @@ impl NetHandler for ResourceHandler<ImageHandler> {
 
 impl ImageHandler {
     fn parse(&self, bytes: Bytes) -> Result<Resource, String> {
-        // Try parse image
-        if let Ok(image) = image::ImageReader::new(Cursor::new(&bytes))
+        let image_err = match image::ImageReader::new(Cursor::new(&bytes))
             .with_guessed_format()
             .expect("IO errors impossible with Cursor")
             .decode()
         {
-            let raw_rgba8_data = image.clone().into_rgba8().into_raw();
-            return Ok(Resource::Image(
-                self.kind,
-                image.width(),
-                image.height(),
-                Arc::new(raw_rgba8_data),
-            ));
+            Ok(image) => {
+                let raw_rgba8_data = image.clone().into_rgba8().into_raw();
+                return Ok(Resource::Image(
+                    self.kind,
+                    image.width(),
+                    image.height(),
+                    Arc::new(raw_rgba8_data),
+                ));
+            }
+            Err(e) => e.to_string(),
         };
 
         #[cfg(feature = "svg")]
-        {
+        let svg_err = {
             use crate::util::parse_svg;
-            if let Ok(tree) = parse_svg(&bytes) {
-                return Ok(Resource::Svg(self.kind, Arc::new(tree)));
+            match parse_svg(&bytes) {
+                Ok(tree) => return Ok(Resource::Svg(self.kind, Arc::new(tree))),
+                Err(e) => e.to_string(),
             }
-        }
+        };
+        #[cfg(not(feature = "svg"))]
+        let svg_err = "svg feature disabled";
 
-        Err(String::from("Could not parse image"))
+        Err(format!(
+            "Could not parse image ({} bytes): image-crate error: {image_err}; svg fallback error: {svg_err}",
+            bytes.len()
+        ))
     }
 }
 
