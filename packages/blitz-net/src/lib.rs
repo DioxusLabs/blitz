@@ -16,13 +16,7 @@ use tokio::sync::Semaphore;
 #[cfg(feature = "cache")]
 use http_cache_reqwest::{CACacheManager, Cache, CacheMode, HttpCache, HttpCacheOptions};
 
-/// Bot identifier per Wikimedia's User-Agent policy (project name, version,
-/// contact URL).
-const USER_AGENT: &str = concat!(
-    "Mozilla/5.0 (compatible; Blitz/",
-    env!("CARGO_PKG_VERSION"),
-    "; +https://github.com/DioxusLabs/blitz)"
-);
+const USER_AGENT: &str = "Mozilla/5.0 (X11; Linux x86_64; rv:60.0) Gecko/20100101 Firefox/81.0";
 
 /// Matches real browsers' per-origin cap of 6.
 const PER_HOST_MAX_CONCURRENT: usize = 6;
