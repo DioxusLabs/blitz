@@ -10,7 +10,6 @@ use crate::util::ImageType;
 use crate::{
     Attribute, BaseDocument, Document, ElementData, Node, NodeData, QualName, local_name, qual_name,
 };
-use blitz_traits::net::Request;
 use blitz_traits::shell::Viewport;
 use style::Atom;
 use style::invalidation::element::restyle_hints::RestyleHint;
@@ -782,6 +781,7 @@ impl<'doc> DocumentMutator<'doc> {
                 source_url: url.clone(),
                 guard: self.doc.guard.clone(),
                 net_provider: self.doc.net_provider.clone(),
+                abort_signal: self.doc.abort_signal.clone(),
             },
         );
 
@@ -791,9 +791,11 @@ impl<'doc> DocumentMutator<'doc> {
                 .insert(handler.request_id());
         }
 
-        self.doc
-            .net_provider
-            .fetch(self.doc.id(), Request::get(url), Box::new(handler));
+        self.doc.net_provider.fetch(
+            self.doc.id(),
+            self.doc.build_request(url),
+            Box::new(handler),
+        );
     }
 
     fn unload_stylesheet(&mut self, node_id: usize) {
@@ -850,7 +852,7 @@ impl<'doc> DocumentMutator<'doc> {
 
                 self.doc.net_provider.fetch(
                     self.doc.id(),
-                    Request::get(src),
+                    self.doc.build_request(src),
                     ResourceHandler::boxed(
                         self.doc.tx.clone(),
                         self.doc.id(),

@@ -6,7 +6,6 @@ use crate::{
     BaseDocument, net::ImageHandler, node::BackgroundImageData, node::Status, util::ImageType,
 };
 use crate::{NON_INCREMENTAL, Node};
-use blitz_traits::net::Request;
 use style::properties::ComputedValues;
 use style::properties::generated::longhands::position::computed_value::T as Position;
 use style::selector_parser::RestyleDamage;
@@ -448,7 +447,10 @@ impl BaseDocument {
 
                                 self.net_provider.fetch(
                                     doc_id,
-                                    Request::get((**new_url).clone()),
+                                    crate::net::stamped_request(
+                                        (**new_url).clone(),
+                                        self.abort_signal.as_ref(),
+                                    ),
                                     ResourceHandler::boxed(
                                         self.tx.clone(),
                                         doc_id,

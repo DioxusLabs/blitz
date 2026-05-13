@@ -55,9 +55,27 @@ pub fn android_main(android_app: dioxus_native::AndroidApp) {
     main()
 }
 
+#[derive(Clone)]
+pub(crate) struct CliInitialUrl(pub Option<Url>);
+
+fn parse_cli_url(s: &str) -> Option<Url> {
+    if let Ok(url) = Url::parse(s) {
+        return Some(url);
+    }
+    if s.contains('.') && !s.contains(' ') {
+        if let Ok(url) = Url::parse(&format!("https://{s}")) {
+            return Some(url);
+        }
+    }
+    None
+}
+
 fn main() {
     #[cfg(feature = "tracing")]
     tracing_subscriber::fmt::init();
+
+    let cli_url = std::env::args().skip(1).find_map(|a| parse_cli_url(&a));
+
     let window_attributes = WindowAttributes::default();
     #[cfg(target_os = "windows")]
     let window_attributes = window_attributes
@@ -71,11 +89,18 @@ fn main() {
             .with_unified_titlebar(true),
     ));
 
-    dioxus_native::launch_cfg(app, Vec::new(), vec![Box::new(window_attributes)])
+    let initial_url_ctx = CliInitialUrl(cli_url);
+    let contexts: Vec<Box<dyn Fn() -> Box<dyn std::any::Any> + Send + Sync>> =
+        vec![Box::new(move || {
+            Box::new(initial_url_ctx.clone()) as Box<dyn std::any::Any>
+        })];
+
+    dioxus_native::launch_cfg(app, contexts, vec![Box::new(window_attributes)])
 }
 
 fn app() -> Element {
     let home_url = use_hook(|| AboutPage::NewTab.parsed_url());
+    let cli_initial_url = use_hook(|| try_consume_context::<CliInitialUrl>().and_then(|c| c.0));
     let net_provider = use_context::<Arc<StdNetProvider>>();
 
     let url_input_handle: Signal<Option<NodeHandle>> = use_signal(|| None);
@@ -100,7 +125,8 @@ fn app() -> Element {
 
     let tabs: Store<Vec<Tab>> = use_store(Vec::new);
     let mut active_tab_id: Signal<TabId> = use_hook(|| {
-        let tab = open_tab(tabs, home_url.clone(), net_provider.clone());
+        let first_tab_url = cli_initial_url.clone().unwrap_or_else(|| home_url.clone());
+        let tab = open_tab(tabs, first_tab_url, net_provider.clone());
         Signal::new(tab.tab_id())
     });
 

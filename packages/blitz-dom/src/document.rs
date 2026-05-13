@@ -20,7 +20,7 @@ use crate::{
 use blitz_traits::devtools::DevtoolSettings;
 use blitz_traits::events::{BlitzScrollEvent, DomEvent, DomEventData, HitResult, UiEvent};
 use blitz_traits::navigation::{DummyNavigationProvider, NavigationProvider};
-use blitz_traits::net::{DummyNetProvider, NetProvider, Request};
+use blitz_traits::net::{AbortSignal, DummyNetProvider, NetProvider, Request};
 use blitz_traits::shell::{ColorScheme, DummyShellProvider, ShellProvider, Viewport};
 use cursor_icon::CursorIcon;
 use linebender_resource_handle::Blob;
@@ -300,6 +300,10 @@ pub struct BaseDocument {
     pub shell_provider: Arc<dyn ShellProvider>,
     /// HTML parser provider. Used to parse HTML for setInnerHTML
     pub html_parser_provider: Arc<dyn HtmlParserProvider>,
+    /// Carried on every sub-resource `Request` this document issues; aborting
+    /// it cancels all in-flight fetches tied to this document. Set via
+    /// [`DocumentConfig::abort_signal`].
+    pub(crate) abort_signal: Option<AbortSignal>,
 }
 
 pub(crate) fn make_device(
@@ -443,6 +447,7 @@ impl BaseDocument {
             navigation_provider,
             shell_provider,
             html_parser_provider,
+            abort_signal: config.abort_signal,
             last_mousedown_time: None,
             mousedown_position: taffy::Point::ZERO,
             click_count: 0,
@@ -516,6 +521,12 @@ impl BaseDocument {
 
     pub fn id(&self) -> usize {
         self.id
+    }
+
+    /// Wrapper around [`crate::net::stamped_request`]. Use the free function
+    /// when `&self` would conflict with a held `&mut` borrow on a field.
+    pub(crate) fn build_request(&self, url: url::Url) -> Request {
+        crate::net::stamped_request(url, self.abort_signal.as_ref())
     }
 
     pub fn favicon_url(&self) -> Option<String> {
@@ -838,7 +849,7 @@ impl BaseDocument {
                         let resolved_href = self.resolve_url(href);
                         self.net_provider.fetch(
                             self.id(),
-                            Request::get(resolved_href.clone()),
+                            self.build_request(resolved_href.clone()),
                             ResourceHandler::boxed(
                                 self.tx.clone(),
                                 self.id,
@@ -848,6 +859,7 @@ impl BaseDocument {
                                     source_url: resolved_href,
                                     guard: self.guard.clone(),
                                     net_provider: self.net_provider.clone(),
+                                    abort_signal: self.abort_signal.clone(),
                                 },
                             ),
                         );
@@ -888,6 +900,7 @@ impl BaseDocument {
                 doc_id: self.id,
                 net_provider: self.net_provider.clone(),
                 shell_provider: self.shell_provider.clone(),
+                abort_signal: self.abort_signal.clone(),
             }),
             None,
             QuirksMode::NoQuirks,
@@ -919,6 +932,7 @@ impl BaseDocument {
             &self.net_provider,
             &self.shell_provider,
             &self.guard.read(),
+            self.abort_signal.as_ref(),
         );
 
         // Store data on element
@@ -971,9 +985,28 @@ impl BaseDocument {
     pub fn load_resource(&mut self, res: ResourceLoadResponse) {
         self.pending_critical_resources.remove(&res.request_id);
 
-        let Ok(resource) = res.result else {
-            // TODO: handle error
-            return;
+        let resource = match res.result {
+            Ok(resource) => resource,
+            Err(err) => {
+                if let Some(url) = res.resolved_url.as_ref() {
+                    let waiting_nodes = self.pending_images.remove(url).unwrap_or_default();
+                    #[cfg(feature = "tracing")]
+                    tracing::warn!(
+                        url = url.as_str(),
+                        waiting_nodes = waiting_nodes.len(),
+                        error = err.as_str(),
+                        "Resource load failed"
+                    );
+                    #[cfg(not(feature = "tracing"))]
+                    let _ = (waiting_nodes, err);
+                } else {
+                    #[cfg(feature = "tracing")]
+                    tracing::warn!(error = err.as_str(), "Resource load failed (no url)");
+                    #[cfg(not(feature = "tracing"))]
+                    let _ = err;
+                }
+                return;
+            }
         };
 
         match resource {

@@ -1,9 +1,9 @@
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use blitz_dom::{DocumentConfig, FontContext};
 use blitz_html::{HtmlDocument, HtmlProvider};
 use blitz_traits::{
-    net::{Request, Url},
+    net::{AbortController, AbortSignal, Request, Url},
     shell::ShellProvider,
 };
 use dioxus_native::{SubDocumentAttr, prelude::*};
@@ -39,6 +39,7 @@ pub struct DocumentLoader {
     pub status: Signal<DocumentLoaderStatus>,
     pub history: SyncStore<History>,
     pub reload_generation: Signal<u64>,
+    current_abort: Mutex<Option<AbortController>>,
 }
 
 pub fn make_doc_config(
@@ -46,6 +47,7 @@ pub fn make_doc_config(
     net_provider: Arc<StdNetProvider>,
     history: SyncStore<History>,
     font_ctx: FontContext,
+    abort_signal: Option<AbortSignal>,
 ) -> DocumentConfig {
     DocumentConfig {
         viewport: None,
@@ -57,6 +59,7 @@ pub fn make_doc_config(
         html_parser_provider: Some(Arc::new(HtmlProvider)),
         font_ctx: Some(font_ctx),
         media_type: None,
+        abort_signal,
         ..Default::default()
     }
 }
@@ -74,10 +77,12 @@ impl DocumentLoader {
             status: Signal::new(DocumentLoaderStatus::Idle),
             history,
             reload_generation: Signal::new(0),
+            current_abort: Mutex::new(None),
         }
     }
 
     pub fn reload(&self) {
+        self.abort_current();
         let mut reload_generation = self.reload_generation;
         *reload_generation.write() += 1;
     }
@@ -86,10 +91,28 @@ impl DocumentLoader {
         *self.reload_generation.read()
     }
 
+    pub fn abort_current(&self) {
+        if let Some(controller) = self.current_abort.lock().unwrap().take() {
+            controller.abort();
+        }
+    }
+
     pub async fn load_document(&self, req: Request) -> LoadedDocument {
         let net_provider = Arc::clone(&self.net_provider);
         let font_ctx = self.font_ctx.clone();
         let history = self.history;
+
+        let controller = AbortController::default();
+        let signal = controller.signal.clone();
+        {
+            let mut slot = self.current_abort.lock().unwrap();
+            if let Some(prev) = slot.take() {
+                prev.abort();
+            }
+            *slot = Some(controller);
+        }
+
+        let req = req.signal(signal.clone());
 
         let response = net_provider.fetch_async(req).await;
 
@@ -97,7 +120,13 @@ impl DocumentLoader {
             Ok((resolved_url, bytes)) => {
                 tracing::info!("Loaded {}", resolved_url);
                 let base_url = resolved_url.clone();
-                let config = make_doc_config(Some(resolved_url), net_provider, history, font_ctx);
+                let config = make_doc_config(
+                    Some(resolved_url),
+                    net_provider,
+                    history,
+                    font_ctx,
+                    Some(signal.clone()),
+                );
 
                 let body_text;
                 let (html, is_error) = if bytes.is_empty() {
@@ -126,7 +155,8 @@ impl DocumentLoader {
                 tracing::error!("Error loading document: {:?}", err);
 
                 let error_msg = format!("{err:?}");
-                let config = make_doc_config(None, net_provider, history, font_ctx);
+                let config =
+                    make_doc_config(None, net_provider, history, font_ctx, Some(signal.clone()));
 
                 let error_html = include_str!("../assets/error.html");
                 let mut document = HtmlDocument::from_html(error_html, config).into_inner();
@@ -150,5 +180,11 @@ impl DocumentLoader {
                 }
             }
         }
+    }
+}
+
+impl Drop for DocumentLoader {
+    fn drop(&mut self) {
+        self.abort_current();
     }
 }

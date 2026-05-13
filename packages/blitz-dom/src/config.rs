@@ -1,7 +1,7 @@
 use crate::HtmlParserProvider;
 use blitz_traits::{
     navigation::NavigationProvider,
-    net::NetProvider,
+    net::{AbortSignal, NetProvider},
     shell::{ShellProvider, Viewport},
 };
 use parley::FontContext;
@@ -53,4 +53,8 @@ pub struct DocumentConfig {
     /// Strategy for Stylo's style traversal.
     /// Defaults to [`StyleThreading::Parallel`].
     pub style_threading: StyleThreading,
+    /// If set, every sub-resource `Request` blitz-dom creates for this
+    /// document will carry this signal. Aborting it cancels every in-flight
+    /// fetch tied to this document.
+    pub abort_signal: Option<AbortSignal>,
 }

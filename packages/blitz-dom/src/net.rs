@@ -20,12 +20,20 @@ use style::{
     values::{CssUrl, SourceLocation},
 };
 
-use blitz_traits::net::{Bytes, NetHandler, NetProvider, Request};
+use blitz_traits::net::{AbortSignal, Bytes, NetHandler, NetProvider, Request};
 use blitz_traits::shell::ShellProvider;
 
 use url::Url;
 
 use crate::{document::DocumentEvent, util::ImageType};
+
+pub(crate) fn stamped_request(url: Url, signal: Option<&AbortSignal>) -> Request {
+    let mut req = Request::get(url);
+    if let Some(sig) = signal {
+        req = req.signal(sig.clone());
+    }
+    req
+}
 
 /// Carries `@font-face` descriptors from CSS parsing through to font
 /// registration so `parley::Collection::register_fonts` can alias the bytes
@@ -126,6 +134,7 @@ pub struct StylesheetHandler {
     pub source_url: Url,
     pub guard: SharedRwLock,
     pub net_provider: Arc<dyn NetProvider>,
+    pub abort_signal: Option<AbortSignal>,
 }
 
 impl NetHandler for ResourceHandler<StylesheetHandler> {
@@ -148,6 +157,7 @@ impl NetHandler for ResourceHandler<StylesheetHandler> {
                 doc_id: self.doc_id,
                 net_provider: self.data.net_provider.clone(),
                 shell_provider: self.shell_provider.clone(),
+                abort_signal: self.data.abort_signal.clone(),
             }),
             None, // error_reporter
             QuirksMode::NoQuirks,
@@ -167,6 +177,7 @@ pub(crate) struct StylesheetLoader {
     pub(crate) doc_id: usize,
     pub(crate) net_provider: Arc<dyn NetProvider>,
     pub(crate) shell_provider: Arc<dyn ShellProvider>,
+    pub(crate) abort_signal: Option<AbortSignal>,
 }
 impl ServoStylesheetLoader for StylesheetLoader {
     fn request_stylesheet(
@@ -200,7 +211,7 @@ impl ServoStylesheetLoader for StylesheetLoader {
         let import = ServoArc::new(lock.wrap(import));
         self.net_provider.fetch(
             self.doc_id,
-            Request::get(url.as_ref().clone()),
+            stamped_request(url.as_ref().clone(), self.abort_signal.as_ref()),
             ResourceHandler::boxed(
                 self.tx.clone(),
                 self.doc_id,
@@ -260,6 +271,7 @@ impl NetHandler for ResourceHandler<NestedStylesheetHandler> {
             &self.data.net_provider,
             &self.shell_provider,
             &self.data.lock.read(),
+            self.data.loader.abort_signal.as_ref(),
         );
 
         let mut guard = self.data.lock.write();
@@ -351,6 +363,7 @@ impl FontFaceHandler {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn fetch_font_face(
     tx: Sender<DocumentEvent>,
     doc_id: usize,
@@ -359,6 +372,7 @@ pub(crate) fn fetch_font_face(
     network_provider: &Arc<dyn NetProvider>,
     shell_provider: &Arc<dyn ShellProvider>,
     read_guard: &SharedRwLockReadGuard,
+    abort_signal: Option<&AbortSignal>,
 ) {
     sheet
         .contents(read_guard)
@@ -446,7 +460,7 @@ pub(crate) fn fetch_font_face(
             if let Some((url, format)) = preferred_source {
                 network_provider.fetch(
                     doc_id,
-                    Request::get(url),
+                    stamped_request(url, abort_signal),
                     ResourceHandler::boxed(
                         tx.clone(),
                         doc_id,
@@ -500,30 +514,38 @@ impl NetHandler for ResourceHandler<ImageHandler> {
 
 impl ImageHandler {
     fn parse(&self, bytes: Bytes) -> Result<Resource, String> {
-        // Try parse image
-        if let Ok(image) = image::ImageReader::new(Cursor::new(&bytes))
+        let image_err = match image::ImageReader::new(Cursor::new(&bytes))
             .with_guessed_format()
             .expect("IO errors impossible with Cursor")
             .decode()
         {
-            let raw_rgba8_data = image.clone().into_rgba8().into_raw();
-            return Ok(Resource::Image(
-                self.kind,
-                image.width(),
-                image.height(),
-                Arc::new(raw_rgba8_data),
-            ));
+            Ok(image) => {
+                let raw_rgba8_data = image.clone().into_rgba8().into_raw();
+                return Ok(Resource::Image(
+                    self.kind,
+                    image.width(),
+                    image.height(),
+                    Arc::new(raw_rgba8_data),
+                ));
+            }
+            Err(e) => e.to_string(),
         };
 
         #[cfg(feature = "svg")]
-        {
+        let svg_err = {
             use crate::util::parse_svg;
-            if let Ok(tree) = parse_svg(&bytes) {
-                return Ok(Resource::Svg(self.kind, Arc::new(tree)));
+            match parse_svg(&bytes) {
+                Ok(tree) => return Ok(Resource::Svg(self.kind, Arc::new(tree))),
+                Err(e) => e.to_string(),
             }
-        }
+        };
+        #[cfg(not(feature = "svg"))]
+        let svg_err = "svg feature disabled";
 
-        Err(String::from("Could not parse image"))
+        Err(format!(
+            "Could not parse image ({} bytes): image-crate error: {image_err}; svg fallback error: {svg_err}",
+            bytes.len()
+        ))
     }
 }
 

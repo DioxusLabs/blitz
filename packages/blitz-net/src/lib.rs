@@ -2,15 +2,32 @@
 //!
 //! Provides an implementation of the [`blitz_traits::net::NetProvider`] trait.
 
-// use blitz_traits::net::{Body, Bytes, NetHandler, NetProvider, NetWaker, Request};
 use blitz_traits::net::{AbortSignal, Body, Bytes, NetHandler, NetProvider, NetWaker, Request};
 use data_url::DataUrl;
-use std::{marker::PhantomData, pin::Pin, sync::Arc, task::Poll};
+use std::{
+    collections::HashMap,
+    marker::PhantomData,
+    pin::Pin,
+    sync::{Arc, Mutex},
+    task::Poll,
+};
+use tokio::sync::Semaphore;
 
 #[cfg(feature = "cache")]
 use http_cache_reqwest::{CACacheManager, Cache, CacheMode, HttpCache, HttpCacheOptions};
 
-const USER_AGENT: &str = "Mozilla/5.0 (X11; Linux x86_64; rv:60.0) Gecko/20100101 Firefox/81.0";
+/// Bot identifier per Wikimedia's User-Agent policy (project name, version,
+/// contact URL).
+const USER_AGENT: &str = concat!(
+    "Mozilla/5.0 (compatible; Blitz/",
+    env!("CARGO_PKG_VERSION"),
+    "; +https://github.com/DioxusLabs/blitz)"
+);
+
+/// Matches real browsers' per-origin cap of 6.
+const PER_HOST_MAX_CONCURRENT: usize = 6;
+
+type HostLimits = Arc<Mutex<HashMap<String, Arc<Semaphore>>>>;
 
 #[cfg(feature = "cache")]
 type Client = reqwest_middleware::ClientWithMiddleware;
@@ -53,6 +70,7 @@ where
 pub struct Provider {
     client: Client,
     waker: Arc<dyn NetWaker>,
+    per_host_limits: HostLimits,
     #[cfg(feature = "cache")]
     cache_manager: CACacheManager,
 }
@@ -79,6 +97,7 @@ impl Provider {
         Self {
             client,
             waker,
+            per_host_limits: Arc::new(Mutex::new(HashMap::new())),
             #[cfg(feature = "cache")]
             cache_manager,
         }
@@ -107,32 +126,74 @@ impl Provider {
     async fn fetch_inner(
         client: Client,
         request: Request,
+        per_host_limits: HostLimits,
     ) -> Result<(String, Bytes), ProviderError> {
-        Ok(match request.url.scheme() {
+        match request.url.scheme() {
             "data" => {
                 let data_url = DataUrl::process(request.url.as_str())?;
                 let decoded = data_url.decode_to_vec()?;
-                (request.url.to_string(), Bytes::from(decoded.0))
+                Ok((request.url.to_string(), Bytes::from(decoded.0)))
             }
             "file" => {
                 let file_content = std::fs::read(request.url.path())?;
-                (request.url.to_string(), Bytes::from(file_content))
+                Ok((request.url.to_string(), Bytes::from(file_content)))
             }
-            _ => {
-                let mut req = client
-                    .request(request.method, request.url)
-                    .headers(request.headers)
-                    .header("User-Agent", USER_AGENT);
+            _ => Self::fetch_http(client, request, per_host_limits).await,
+        }
+    }
 
-                if let Some(content_type) = request.content_type.as_ref() {
-                    req = req.header("Content-Type", content_type);
-                }
+    async fn fetch_http(
+        client: Client,
+        request: Request,
+        per_host_limits: HostLimits,
+    ) -> Result<(String, Bytes), ProviderError> {
+        // Acquire a per-host permit, held for the duration of the request, to
+        // keep total in-flight requests per origin bounded.
+        let host_key = request
+            .url
+            .host_str()
+            .map(str::to_owned)
+            .unwrap_or_default();
+        let semaphore = {
+            let mut map = per_host_limits.lock().unwrap();
+            map.entry(host_key)
+                .or_insert_with(|| Arc::new(Semaphore::new(PER_HOST_MAX_CONCURRENT)))
+                .clone()
+        };
+        let _permit = semaphore
+            .acquire()
+            .await
+            .expect("per-host semaphore was closed");
 
-                let req = req.apply_body(request.body, request.content_type.as_deref());
-                let response = req.await.send().await?;
+        let mut req = client
+            .request(request.method, request.url)
+            .headers(request.headers)
+            .header("User-Agent", USER_AGENT);
 
-                (response.url().to_string(), response.bytes().await?)
-            }
+        if let Some(content_type) = request.content_type.as_ref() {
+            req = req.header("Content-Type", content_type);
+        }
+
+        let req = req
+            .apply_body(request.body, request.content_type.as_deref())
+            .await;
+        let response = req.send().await?;
+        let status = response.status();
+        let final_url = response.url().to_string();
+
+        if status.is_success() {
+            return Ok((final_url, response.bytes().await?));
+        }
+
+        #[cfg(feature = "tracing")]
+        tracing::warn!(
+            url = final_url.as_str(),
+            status = status.as_u16(),
+            "HTTP error status"
+        );
+        Err(ProviderError::HttpStatus {
+            status,
+            url: final_url,
         })
     }
 
@@ -146,8 +207,9 @@ impl Provider {
         let url = request.url.to_string();
 
         let client = self.client.clone();
+        let per_host_limits = self.per_host_limits.clone();
         spawn(async move {
-            let result = Self::fetch_inner(client, request).await;
+            let result = Self::fetch_inner(client, request, per_host_limits).await;
 
             #[cfg(feature = "tracing")]
             if let Err(e) = &result {
@@ -167,7 +229,8 @@ impl Provider {
         let url = request.url.to_string();
 
         let client = self.client.clone();
-        let result = Self::fetch_inner(client, request).await;
+        let per_host_limits = self.per_host_limits.clone();
+        let result = Self::fetch_inner(client, request, per_host_limits).await;
 
         #[cfg(feature = "tracing")]
         if let Err(e) = &result {
@@ -185,6 +248,7 @@ impl Provider {
 impl NetProvider for Provider {
     fn fetch(&self, doc_id: usize, mut request: Request, handler: Box<dyn NetHandler>) {
         let client = self.client.clone();
+        let per_host_limits = self.per_host_limits.clone();
 
         #[cfg(feature = "tracing")]
         tracing::info!(url = request.url.as_str(), "Fetching");
@@ -198,14 +262,15 @@ impl NetProvider for Provider {
             let result = if let Some(signal) = signal {
                 AbortFetch::new(
                     signal,
-                    Box::pin(async move { Self::fetch_inner(client, request).await }),
+                    Box::pin(
+                        async move { Self::fetch_inner(client, request, per_host_limits).await },
+                    ),
                 )
                 .await
             } else {
-                Self::fetch_inner(client, request).await
+                Self::fetch_inner(client, request, per_host_limits).await
             };
 
-            // Call the waker to notify of completed network request
             waker.wake(doc_id);
 
             match result {
@@ -225,7 +290,6 @@ impl NetProvider for Provider {
     }
 }
 
-/// A future that is cancellable using an AbortSignal
 struct AbortFetch<F, T> {
     signal: AbortSignal,
     future: F,
@@ -274,6 +338,25 @@ pub enum ProviderError {
     ReqwestError(reqwest::Error),
     #[cfg(feature = "cache")]
     ReqwestMiddlewareError(reqwest_middleware::Error),
+    HttpStatus {
+        status: reqwest::StatusCode,
+        url: String,
+    },
+}
+
+impl std::fmt::Display for ProviderError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Abort => write!(f, "request aborted"),
+            Self::Io(e) => write!(f, "io error: {e}"),
+            Self::DataUrl(e) => write!(f, "data url error: {e:?}"),
+            Self::DataUrlBase64(e) => write!(f, "data url base64 error: {e:?}"),
+            Self::ReqwestError(e) => write!(f, "reqwest error: {e}"),
+            #[cfg(feature = "cache")]
+            Self::ReqwestMiddlewareError(e) => write!(f, "reqwest middleware error: {e}"),
+            Self::HttpStatus { status, url } => write!(f, "HTTP {status} for {url}"),
+        }
+    }
 }
 
 impl From<std::io::Error> for ProviderError {

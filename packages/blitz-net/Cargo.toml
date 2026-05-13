@@ -22,7 +22,7 @@ tracing = ["dep:tracing"]
 blitz-traits = { workspace = true }
 
 # Networking dependencies
-tokio = { workspace = true }
+tokio = { workspace = true, features = ["sync", "time"] }
 reqwest = { workspace = true, features = ["charset", "native-tls", "form"] }
 data-url = { workspace = true }
 
