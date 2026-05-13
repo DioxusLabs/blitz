@@ -6,7 +6,6 @@ use crate::{
     BaseDocument, net::ImageHandler, node::BackgroundImageData, node::Status, util::ImageType,
 };
 use crate::{NON_INCREMENTAL, Node};
-use blitz_traits::net::Request;
 use style::properties::ComputedValues;
 use style::properties::generated::longhands::position::computed_value::T as Position;
 use style::selector_parser::RestyleDamage;
@@ -420,13 +419,15 @@ impl BaseDocument {
 
                             // Check cache first
                             let url_str = new_url.as_str();
-                            if let Some(cached_image) = self.image_cache.get(url_str) {
+                            if let Some(cached_image) =
+                                crate::net::image_cache_lookup(&self.image_cache, url_str)
+                            {
                                 #[cfg(feature = "tracing")]
                                 tracing::info!("Loading image {url_str} from cache");
                                 Some(BackgroundImageData {
                                     url: new_url.clone(),
                                     status: Status::Ok,
-                                    image: cached_image.clone(),
+                                    image: cached_image,
                                 })
                             } else if let Some(waiting_list) = self.pending_images.get_mut(url_str)
                             {
@@ -448,7 +449,10 @@ impl BaseDocument {
 
                                 self.net_provider.fetch(
                                     doc_id,
-                                    Request::get((**new_url).clone()),
+                                    crate::net::stamped_request(
+                                        (**new_url).clone(),
+                                        self.abort_signal.as_ref(),
+                                    ),
                                     ResourceHandler::boxed(
                                         self.tx.clone(),
                                         doc_id,

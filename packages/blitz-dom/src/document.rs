@@ -20,7 +20,7 @@ use crate::{
 use blitz_traits::devtools::DevtoolSettings;
 use blitz_traits::events::{BlitzScrollEvent, DomEvent, DomEventData, HitResult, UiEvent};
 use blitz_traits::navigation::{DummyNavigationProvider, NavigationProvider};
-use blitz_traits::net::{DummyNetProvider, NetProvider, Request};
+use blitz_traits::net::{AbortSignal, DummyNetProvider, NetProvider, Request};
 use blitz_traits::shell::{ColorScheme, DummyShellProvider, ShellProvider, Viewport};
 use cursor_icon::CursorIcon;
 use linebender_resource_handle::Blob;
@@ -172,6 +172,8 @@ impl Document for Rc<RefCell<BaseDocument>> {
     }
 }
 
+pub type SharedImageCache = Arc<Mutex<HashMap<String, ImageData>>>;
+
 pub enum DocumentEvent {
     ResourceLoad(ResourceLoadResponse),
 }
@@ -278,9 +280,12 @@ pub struct BaseDocument {
     #[cfg(feature = "custom-widget")]
     pub(crate) pending_resource_deallocations: Vec<anyrender::ResourceId>,
 
-    /// Cache of loaded images, keyed by URL. Allows reusing images across multiple
-    /// elements without re-fetching from the network.
-    pub(crate) image_cache: HashMap<String, ImageData>,
+    /// Cache of decoded images keyed by URL. When supplied via
+    /// [`DocumentConfig::image_cache`] it is shared across documents — e.g.
+    /// across reloads of the same tab — so refreshes reuse already-decoded
+    /// images instead of re-fetching. Otherwise each document allocates its
+    /// own private cache.
+    pub(crate) image_cache: SharedImageCache,
 
     /// Tracks in-flight image requests. When an image is being fetched, additional
     /// requests for the same URL are queued here instead of starting new fetches.
@@ -300,6 +305,10 @@ pub struct BaseDocument {
     pub shell_provider: Arc<dyn ShellProvider>,
     /// HTML parser provider. Used to parse HTML for setInnerHTML
     pub html_parser_provider: Arc<dyn HtmlParserProvider>,
+    /// Carried on every sub-resource `Request` this document issues; aborting
+    /// it cancels all in-flight fetches tied to this document. Set via
+    /// [`DocumentConfig::abort_signal`].
+    pub(crate) abort_signal: Option<AbortSignal>,
 }
 
 pub(crate) fn make_device(
@@ -435,7 +444,9 @@ impl BaseDocument {
 
             changed_nodes: HashSet::new(),
             deferred_construction_nodes: Vec::new(),
-            image_cache: HashMap::new(),
+            image_cache: config
+                .image_cache
+                .unwrap_or_else(|| Arc::new(Mutex::new(HashMap::new()))),
             pending_images: HashMap::new(),
             pending_critical_resources: HashSet::new(),
             controls_to_form: HashMap::new(),
@@ -443,6 +454,7 @@ impl BaseDocument {
             navigation_provider,
             shell_provider,
             html_parser_provider,
+            abort_signal: config.abort_signal,
             last_mousedown_time: None,
             mousedown_position: taffy::Point::ZERO,
             click_count: 0,
@@ -516,6 +528,10 @@ impl BaseDocument {
 
     pub fn id(&self) -> usize {
         self.id
+    }
+
+    pub(crate) fn build_request(&self, url: url::Url) -> Request {
+        crate::net::stamped_request(url, self.abort_signal.as_ref())
     }
 
     pub fn favicon_url(&self) -> Option<String> {
@@ -838,7 +854,7 @@ impl BaseDocument {
                         let resolved_href = self.resolve_url(href);
                         self.net_provider.fetch(
                             self.id(),
-                            Request::get(resolved_href.clone()),
+                            self.build_request(resolved_href.clone()),
                             ResourceHandler::boxed(
                                 self.tx.clone(),
                                 self.id,
@@ -848,6 +864,7 @@ impl BaseDocument {
                                     source_url: resolved_href,
                                     guard: self.guard.clone(),
                                     net_provider: self.net_provider.clone(),
+                                    abort_signal: self.abort_signal.clone(),
                                 },
                             ),
                         );
@@ -888,6 +905,7 @@ impl BaseDocument {
                 doc_id: self.id,
                 net_provider: self.net_provider.clone(),
                 shell_provider: self.shell_provider.clone(),
+                abort_signal: self.abort_signal.clone(),
             }),
             None,
             QuirksMode::NoQuirks,
@@ -919,6 +937,7 @@ impl BaseDocument {
             &self.net_provider,
             &self.shell_provider,
             &self.guard.read(),
+            self.abort_signal.as_ref(),
         );
 
         // Store data on element
@@ -1018,7 +1037,10 @@ impl BaseDocument {
                 );
 
                 // Cache the image
-                self.image_cache.insert(url.clone(), image.clone());
+                self.image_cache
+                    .lock()
+                    .unwrap()
+                    .insert(url.clone(), image.clone());
 
                 // Apply to all waiting nodes
                 for (node_id, image_type) in waiting_nodes {
@@ -1066,7 +1088,10 @@ impl BaseDocument {
                 );
 
                 // Cache the image
-                self.image_cache.insert(url.clone(), image.clone());
+                self.image_cache
+                    .lock()
+                    .unwrap()
+                    .insert(url.clone(), image.clone());
 
                 // Apply to all waiting nodes
                 for (node_id, image_type) in waiting_nodes {

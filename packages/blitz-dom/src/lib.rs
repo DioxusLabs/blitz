@@ -75,7 +75,9 @@ mod accessibility;
 pub use crate::node::Widget;
 
 pub use config::{DocumentConfig, StyleThreading};
-pub use document::{BaseDocument, DocGuard, DocGuardMut, Document, PlainDocument};
+pub use document::{
+    BaseDocument, DocGuard, DocGuardMut, Document, PlainDocument, SharedImageCache,
+};
 pub use markup5ever::{
     LocalName, Namespace, NamespaceStaticSet, Prefix, PrefixStaticSet, QualName, local_name,
     namespace_prefix, namespace_url, ns,

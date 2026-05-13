@@ -10,7 +10,6 @@ use crate::util::ImageType;
 use crate::{
     Attribute, BaseDocument, Document, ElementData, Node, NodeData, QualName, local_name, qual_name,
 };
-use blitz_traits::net::Request;
 use blitz_traits::shell::Viewport;
 use style::Atom;
 use style::invalidation::element::restyle_hints::RestyleHint;
@@ -782,6 +781,7 @@ impl<'doc> DocumentMutator<'doc> {
                 source_url: url.clone(),
                 guard: self.doc.guard.clone(),
                 net_provider: self.doc.net_provider.clone(),
+                abort_signal: self.doc.abort_signal.clone(),
             },
         );
 
@@ -791,9 +791,11 @@ impl<'doc> DocumentMutator<'doc> {
                 .insert(handler.request_id());
         }
 
-        self.doc
-            .net_provider
-            .fetch(self.doc.id(), Request::get(url), Box::new(handler));
+        self.doc.net_provider.fetch(
+            self.doc.id(),
+            self.doc.build_request(url),
+            Box::new(handler),
+        );
     }
 
     fn unload_stylesheet(&mut self, node_id: usize) {
@@ -822,12 +824,14 @@ impl<'doc> DocumentMutator<'doc> {
                 let src_string = src.as_str();
 
                 // Check cache first
-                if let Some(cached_image) = self.doc.image_cache.get(src_string) {
+                if let Some(cached_image) =
+                    crate::net::image_cache_lookup(&self.doc.image_cache, src_string)
+                {
                     #[cfg(feature = "tracing")]
                     tracing::info!("Loading image {src_string} from cache");
                     let node = &mut self.doc.nodes[target_id];
                     node.element_data_mut().unwrap().special_data =
-                        SpecialElementData::Image(Box::new(cached_image.clone()));
+                        SpecialElementData::Image(Box::new(cached_image));
                     node.cache.clear();
                     node.insert_damage(ALL_DAMAGE);
                     return;
@@ -850,7 +854,7 @@ impl<'doc> DocumentMutator<'doc> {
 
                 self.doc.net_provider.fetch(
                     self.doc.id(),
-                    Request::get(src),
+                    self.doc.build_request(src),
                     ResourceHandler::boxed(
                         self.doc.tx.clone(),
                         self.doc.id(),

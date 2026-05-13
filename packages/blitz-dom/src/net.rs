@@ -20,12 +20,27 @@ use style::{
     values::{CssUrl, SourceLocation},
 };
 
-use blitz_traits::net::{Bytes, NetHandler, NetProvider, Request};
+use blitz_traits::net::{AbortSignal, Bytes, NetHandler, NetProvider, Request};
 use blitz_traits::shell::ShellProvider;
 
 use url::Url;
 
 use crate::{document::DocumentEvent, util::ImageType};
+
+pub(crate) fn stamped_request(url: Url, signal: Option<&AbortSignal>) -> Request {
+    let mut req = Request::get(url);
+    if let Some(sig) = signal {
+        req = req.signal(sig.clone());
+    }
+    req
+}
+
+pub(crate) fn image_cache_lookup(
+    cache: &crate::document::SharedImageCache,
+    url: &str,
+) -> Option<crate::node::ImageData> {
+    cache.lock().unwrap().get(url).cloned()
+}
 
 /// Carries `@font-face` descriptors from CSS parsing through to font
 /// registration so `parley::Collection::register_fonts` can alias the bytes
@@ -126,6 +141,7 @@ pub struct StylesheetHandler {
     pub source_url: Url,
     pub guard: SharedRwLock,
     pub net_provider: Arc<dyn NetProvider>,
+    pub abort_signal: Option<AbortSignal>,
 }
 
 impl NetHandler for ResourceHandler<StylesheetHandler> {
@@ -148,6 +164,7 @@ impl NetHandler for ResourceHandler<StylesheetHandler> {
                 doc_id: self.doc_id,
                 net_provider: self.data.net_provider.clone(),
                 shell_provider: self.shell_provider.clone(),
+                abort_signal: self.data.abort_signal.clone(),
             }),
             None, // error_reporter
             QuirksMode::NoQuirks,
@@ -167,6 +184,7 @@ pub(crate) struct StylesheetLoader {
     pub(crate) doc_id: usize,
     pub(crate) net_provider: Arc<dyn NetProvider>,
     pub(crate) shell_provider: Arc<dyn ShellProvider>,
+    pub(crate) abort_signal: Option<AbortSignal>,
 }
 impl ServoStylesheetLoader for StylesheetLoader {
     fn request_stylesheet(
@@ -200,7 +218,7 @@ impl ServoStylesheetLoader for StylesheetLoader {
         let import = ServoArc::new(lock.wrap(import));
         self.net_provider.fetch(
             self.doc_id,
-            Request::get(url.as_ref().clone()),
+            stamped_request(url.as_ref().clone(), self.abort_signal.as_ref()),
             ResourceHandler::boxed(
                 self.tx.clone(),
                 self.doc_id,
@@ -260,6 +278,7 @@ impl NetHandler for ResourceHandler<NestedStylesheetHandler> {
             &self.data.net_provider,
             &self.shell_provider,
             &self.data.lock.read(),
+            self.data.loader.abort_signal.as_ref(),
         );
 
         let mut guard = self.data.lock.write();
@@ -351,6 +370,7 @@ impl FontFaceHandler {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn fetch_font_face(
     tx: Sender<DocumentEvent>,
     doc_id: usize,
@@ -359,6 +379,7 @@ pub(crate) fn fetch_font_face(
     network_provider: &Arc<dyn NetProvider>,
     shell_provider: &Arc<dyn ShellProvider>,
     read_guard: &SharedRwLockReadGuard,
+    abort_signal: Option<&AbortSignal>,
 ) {
     sheet
         .contents(read_guard)
@@ -446,7 +467,7 @@ pub(crate) fn fetch_font_face(
             if let Some((url, format)) = preferred_source {
                 network_provider.fetch(
                     doc_id,
-                    Request::get(url),
+                    stamped_request(url, abort_signal),
                     ResourceHandler::boxed(
                         tx.clone(),
                         doc_id,
