@@ -172,8 +172,6 @@ impl Document for Rc<RefCell<BaseDocument>> {
     }
 }
 
-pub type SharedImageCache = Arc<Mutex<HashMap<String, ImageData>>>;
-
 pub enum DocumentEvent {
     ResourceLoad(ResourceLoadResponse),
 }
@@ -280,12 +278,9 @@ pub struct BaseDocument {
     #[cfg(feature = "custom-widget")]
     pub(crate) pending_resource_deallocations: Vec<anyrender::ResourceId>,
 
-    /// Cache of decoded images keyed by URL. When supplied via
-    /// [`DocumentConfig::image_cache`] it is shared across documents — e.g.
-    /// across reloads of the same tab — so refreshes reuse already-decoded
-    /// images instead of re-fetching. Otherwise each document allocates its
-    /// own private cache.
-    pub(crate) image_cache: SharedImageCache,
+    /// Cache of loaded images, keyed by URL. Allows reusing images across multiple
+    /// elements without re-fetching from the network.
+    pub(crate) image_cache: HashMap<String, ImageData>,
 
     /// Tracks in-flight image requests. When an image is being fetched, additional
     /// requests for the same URL are queued here instead of starting new fetches.
@@ -444,9 +439,7 @@ impl BaseDocument {
 
             changed_nodes: HashSet::new(),
             deferred_construction_nodes: Vec::new(),
-            image_cache: config
-                .image_cache
-                .unwrap_or_else(|| Arc::new(Mutex::new(HashMap::new()))),
+            image_cache: HashMap::new(),
             pending_images: HashMap::new(),
             pending_critical_resources: HashSet::new(),
             controls_to_form: HashMap::new(),
@@ -530,6 +523,8 @@ impl BaseDocument {
         self.id
     }
 
+    /// Wrapper around [`crate::net::stamped_request`]. Use the free function
+    /// when `&self` would conflict with a held `&mut` borrow on a field.
     pub(crate) fn build_request(&self, url: url::Url) -> Request {
         crate::net::stamped_request(url, self.abort_signal.as_ref())
     }
@@ -1037,10 +1032,7 @@ impl BaseDocument {
                 );
 
                 // Cache the image
-                self.image_cache
-                    .lock()
-                    .unwrap()
-                    .insert(url.clone(), image.clone());
+                self.image_cache.insert(url.clone(), image.clone());
 
                 // Apply to all waiting nodes
                 for (node_id, image_type) in waiting_nodes {
@@ -1088,10 +1080,7 @@ impl BaseDocument {
                 );
 
                 // Cache the image
-                self.image_cache
-                    .lock()
-                    .unwrap()
-                    .insert(url.clone(), image.clone());
+                self.image_cache.insert(url.clone(), image.clone());
 
                 // Apply to all waiting nodes
                 for (node_id, image_type) in waiting_nodes {

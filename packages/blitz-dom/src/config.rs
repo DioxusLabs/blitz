@@ -1,4 +1,4 @@
-use crate::{HtmlParserProvider, SharedImageCache};
+use crate::HtmlParserProvider;
 use blitz_traits::{
     navigation::NavigationProvider,
     net::{AbortSignal, NetProvider},
@@ -57,9 +57,4 @@ pub struct DocumentConfig {
     /// document will carry this signal. Aborting it cancels every in-flight
     /// fetch tied to this document.
     pub abort_signal: Option<AbortSignal>,
-    /// Optional shared in-memory image cache. When set, decoded images persist
-    /// across documents that share this cache (e.g. across refreshes of the
-    /// same tab), avoiding re-fetching on reload. If `None`, the document
-    /// allocates its own private cache.
-    pub image_cache: Option<SharedImageCache>,
 }

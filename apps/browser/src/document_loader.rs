@@ -1,7 +1,6 @@
-use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
-use blitz_dom::{DocumentConfig, FontContext, SharedImageCache};
+use blitz_dom::{DocumentConfig, FontContext};
 use blitz_html::{HtmlDocument, HtmlProvider};
 use blitz_traits::{
     net::{AbortController, AbortSignal, Request, Url},
@@ -41,7 +40,6 @@ pub struct DocumentLoader {
     pub history: SyncStore<History>,
     pub reload_generation: Signal<u64>,
     current_abort: Mutex<Option<AbortController>>,
-    image_cache: SharedImageCache,
 }
 
 pub fn make_doc_config(
@@ -50,7 +48,6 @@ pub fn make_doc_config(
     history: SyncStore<History>,
     font_ctx: FontContext,
     abort_signal: Option<AbortSignal>,
-    image_cache: Option<SharedImageCache>,
 ) -> DocumentConfig {
     DocumentConfig {
         viewport: None,
@@ -63,7 +60,6 @@ pub fn make_doc_config(
         font_ctx: Some(font_ctx),
         media_type: None,
         abort_signal,
-        image_cache,
         ..Default::default()
     }
 }
@@ -82,7 +78,6 @@ impl DocumentLoader {
             history,
             reload_generation: Signal::new(0),
             current_abort: Mutex::new(None),
-            image_cache: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 
@@ -131,7 +126,6 @@ impl DocumentLoader {
                     history,
                     font_ctx,
                     Some(signal.clone()),
-                    Some(self.image_cache.clone()),
                 );
 
                 let body_text;
@@ -161,14 +155,8 @@ impl DocumentLoader {
                 tracing::error!("Error loading document: {:?}", err);
 
                 let error_msg = format!("{err:?}");
-                let config = make_doc_config(
-                    None,
-                    net_provider,
-                    history,
-                    font_ctx,
-                    Some(signal.clone()),
-                    Some(self.image_cache.clone()),
-                );
+                let config =
+                    make_doc_config(None, net_provider, history, font_ctx, Some(signal.clone()));
 
                 let error_html = include_str!("../assets/error.html");
                 let mut document = HtmlDocument::from_html(error_html, config).into_inner();

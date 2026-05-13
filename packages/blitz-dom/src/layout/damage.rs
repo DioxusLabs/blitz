@@ -419,15 +419,13 @@ impl BaseDocument {
 
                             // Check cache first
                             let url_str = new_url.as_str();
-                            if let Some(cached_image) =
-                                crate::net::image_cache_lookup(&self.image_cache, url_str)
-                            {
+                            if let Some(cached_image) = self.image_cache.get(url_str) {
                                 #[cfg(feature = "tracing")]
                                 tracing::info!("Loading image {url_str} from cache");
                                 Some(BackgroundImageData {
                                     url: new_url.clone(),
                                     status: Status::Ok,
-                                    image: cached_image,
+                                    image: cached_image.clone(),
                                 })
                             } else if let Some(waiting_list) = self.pending_images.get_mut(url_str)
                             {

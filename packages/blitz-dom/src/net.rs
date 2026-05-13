@@ -35,13 +35,6 @@ pub(crate) fn stamped_request(url: Url, signal: Option<&AbortSignal>) -> Request
     req
 }
 
-pub(crate) fn image_cache_lookup(
-    cache: &crate::document::SharedImageCache,
-    url: &str,
-) -> Option<crate::node::ImageData> {
-    cache.lock().unwrap().get(url).cloned()
-}
-
 /// Carries `@font-face` descriptors from CSS parsing through to font
 /// registration so `parley::Collection::register_fonts` can alias the bytes
 /// under the `font-family` declared in CSS rather than whatever family name

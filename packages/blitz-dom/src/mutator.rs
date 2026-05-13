@@ -824,14 +824,12 @@ impl<'doc> DocumentMutator<'doc> {
                 let src_string = src.as_str();
 
                 // Check cache first
-                if let Some(cached_image) =
-                    crate::net::image_cache_lookup(&self.doc.image_cache, src_string)
-                {
+                if let Some(cached_image) = self.doc.image_cache.get(src_string) {
                     #[cfg(feature = "tracing")]
                     tracing::info!("Loading image {src_string} from cache");
                     let node = &mut self.doc.nodes[target_id];
                     node.element_data_mut().unwrap().special_data =
-                        SpecialElementData::Image(Box::new(cached_image));
+                        SpecialElementData::Image(Box::new(cached_image.clone()));
                     node.cache.clear();
                     node.insert_damage(ALL_DAMAGE);
                     return;
