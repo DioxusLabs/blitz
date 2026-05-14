@@ -7073,8 +7073,6 @@ dependencies = [
 [[package]]
 name = "taffy"
 version = "0.10.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "aea22054047c16c3f34d3ac473a2170be1424b1115b2a3adcf28cfb067c88859"
 dependencies = [
  "arrayvec",
  "grid",
@@ -9898,10 +9896,6 @@ dependencies = [
 ]
 
 [[patch.unused]]
-name = "taffy"
-version = "0.9.2"
-
-[[patch.unused]]
 name = "fontique"
 version = "0.7.0"
 
@@ -9916,7 +9910,3 @@ version = "0.7.0"
 [[patch.unused]]
 name = "parley"
 version = "0.7.0"
-
-[[patch.unused]]
-name = "taffy"
-version = "0.9.2"

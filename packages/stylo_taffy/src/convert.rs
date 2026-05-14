@@ -729,6 +729,5 @@ pub fn to_taffy_style(style: &stylo::ComputedValues) -> taffy::Style<Atom> {
             start: self::grid_line(&pos.grid_column_start),
             end: self::grid_line(&pos.grid_column_end),
         },
-        direction: taffy::Direction::Ltr,
     }
 }
