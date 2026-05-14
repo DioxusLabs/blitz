@@ -3,7 +3,7 @@ mod common;
 use blitz_net::{Provider, ProviderError};
 use blitz_traits::net::Request;
 use common::{make_url, mount_get_body, mount_get_status, write_tempfile};
-use wiremock::matchers::method;
+use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 #[tokio::test]
@@ -141,13 +141,13 @@ async fn http_redirect_resolved_url_is_final() {
     let final_url = format!("{}/final", server.uri());
 
     Mock::given(method("GET"))
-        .and(wiremock::matchers::path("/"))
+        .and(path("/"))
         .respond_with(ResponseTemplate::new(301).insert_header("location", final_url.as_str()))
         .mount(&server)
         .await;
 
     Mock::given(method("GET"))
-        .and(wiremock::matchers::path("/final"))
+        .and(path("/final"))
         .respond_with(ResponseTemplate::new(200).set_body_string("final"))
         .mount(&server)
         .await;
@@ -163,4 +163,96 @@ async fn http_redirect_resolved_url_is_final() {
         resolved.ends_with("/final"),
         "resolved url should end at /final, got: {resolved}"
     );
+}
+
+#[tokio::test]
+async fn http_redirect_loop_returns_error() {
+    let server = MockServer::start().await;
+    let loop_url = format!("{}/loop", server.uri());
+    let root_url = server.uri();
+
+    Mock::given(method("GET"))
+        .and(path("/"))
+        .respond_with(ResponseTemplate::new(302).insert_header("location", loop_url.as_str()))
+        .mount(&server)
+        .await;
+
+    Mock::given(method("GET"))
+        .and(path("/loop"))
+        .respond_with(ResponseTemplate::new(302).insert_header("location", root_url.as_str()))
+        .mount(&server)
+        .await;
+
+    let url = make_url(&server.uri());
+    let provider = Provider::new(None);
+    let err = provider
+        .fetch_async(Request::get(url))
+        .await
+        .expect_err("redirect loop should error");
+    let msg = err.to_string().to_lowercase();
+    assert!(
+        msg.contains("redirect") || msg.contains("too many"),
+        "expected redirect loop error, got: {err}"
+    );
+}
+
+#[tokio::test]
+async fn http_307_preserves_post_method() {
+    let server = MockServer::start().await;
+    let end_url = format!("{}/end", server.uri());
+
+    Mock::given(method("POST"))
+        .and(path("/start"))
+        .respond_with(ResponseTemplate::new(307).insert_header("location", end_url.as_str()))
+        .mount(&server)
+        .await;
+
+    Mock::given(method("POST"))
+        .and(path("/end"))
+        .respond_with(ResponseTemplate::new(200).set_body_string("ok"))
+        .mount(&server)
+        .await;
+
+    let start_url = make_url(&format!("{}/start", server.uri()));
+    let mut req = Request::get(start_url);
+    req.method = http::Method::POST;
+
+    let provider = Provider::new(None);
+    let (_, bytes) = provider
+        .fetch_async(req)
+        .await
+        .expect("307 POST should preserve method and succeed");
+    assert_eq!(bytes.as_ref(), b"ok");
+}
+
+// 302 with POST: reqwest (following browser compat) converts to GET.
+// This test pins the current behavior so any future change is visible.
+#[tokio::test]
+async fn http_302_post_redirect_method() {
+    let server = MockServer::start().await;
+    let end_url = format!("{}/end", server.uri());
+
+    Mock::given(method("POST"))
+        .and(path("/start"))
+        .respond_with(ResponseTemplate::new(302).insert_header("location", end_url.as_str()))
+        .mount(&server)
+        .await;
+
+    // reqwest converts POST→GET on 302; mount GET so the redirected request matches.
+    Mock::given(method("GET"))
+        .and(path("/end"))
+        .respond_with(ResponseTemplate::new(200).set_body_string("ok"))
+        .mount(&server)
+        .await;
+
+    let start_url = make_url(&format!("{}/start", server.uri()));
+    let mut req = Request::get(start_url);
+    req.method = http::Method::POST;
+
+    let provider = Provider::new(None);
+    let (_, bytes) = provider
+        .fetch_async(req)
+        .await
+        .expect("302 POST redirect should succeed after method conversion");
+    assert_eq!(bytes.as_ref(), b"ok");
 }

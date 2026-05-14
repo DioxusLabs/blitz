@@ -83,29 +83,19 @@ mod cache_tests {
     use crate::common::make_url;
     use blitz_net::Provider;
     use blitz_traits::net::Request;
-    use std::sync::OnceLock;
-    use tokio::sync::Mutex as AsyncMutex;
     use wiremock::matchers::method;
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
-    /// `blitz_net::Provider`'s cache lives in a fixed on-disk directory shared
-    /// across all `Provider` instances in-process. Serialize cache-touching tests
-    /// so concurrent tests don't observe partially-cleared state.
-    fn cache_lock() -> &'static AsyncMutex<()> {
-        static LOCK: OnceLock<AsyncMutex<()>> = OnceLock::new();
-        LOCK.get_or_init(|| AsyncMutex::new(()))
-    }
-
     #[tokio::test]
     async fn clear_cache_succeeds_on_fresh_provider() {
-        let _guard = cache_lock().lock().await;
-        let provider = Provider::new(None);
+        let tmp = tempfile::TempDir::new().unwrap();
+        let provider = Provider::with_cache_dir(None, tmp.path().to_path_buf());
         provider.clear_cache().await;
     }
 
     #[tokio::test]
     async fn second_fetch_served_from_cache_and_clear_cache_invalidates_entries() {
-        let _guard = cache_lock().lock().await;
+        let tmp = tempfile::TempDir::new().unwrap();
         let server = MockServer::start().await;
         Mock::given(method("GET"))
             .respond_with(
@@ -117,8 +107,7 @@ mod cache_tests {
             .await;
 
         let url = make_url(&server.uri());
-        let provider = Provider::new(None);
-        provider.clear_cache().await;
+        let provider = Provider::with_cache_dir(None, tmp.path().to_path_buf());
 
         let (_, b1) = provider
             .fetch_async(Request::get(url.clone()))

@@ -87,6 +87,15 @@ jobs:
       - run: cargo test -p blitz-net-tests --features cookies,cache
       - run: cargo test -p blitz-net-tests --features cookies,multipart
 
+  test-blitz-net-windows:
+    name: "Test blitz-net (Windows)"
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo test -p blitz-net-tests
+
   build-counter:
     name: "Build counter example"
     runs-on: ubuntu-latest

@@ -253,6 +253,127 @@ async fn per_host_limit_not_shared_across_hostnames() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn abort_before_dispatch_returns_abort_immediately() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .respond_with(ResponseTemplate::new(200).set_delay(RESPONSE_DELAY))
+        .mount(&server)
+        .await;
+
+    let waker = CaptureWaker::default();
+    let provider = Provider::new(Some(Arc::new(waker.clone())));
+
+    let controller = AbortController::default();
+    let signal = controller.signal.clone();
+    controller.abort();
+
+    let url = make_url(&server.uri());
+    let req = Request::get(url).signal(signal);
+    let (tx, mut rx) = tokio::sync::oneshot::channel();
+    NetProvider::fetch(&provider, 77, req, Box::new(CaptureHandler(tx)));
+
+    let waker_vec = waker.0.clone();
+    assert!(
+        wait_until(Duration::from_secs(2), || !waker_vec
+            .lock()
+            .unwrap()
+            .is_empty())
+        .await,
+        "waker should fire even when pre-aborted"
+    );
+
+    let woken = waker_vec.lock().unwrap().clone();
+    assert!(woken.contains(&77), "waker should fire with doc_id 77");
+    assert!(
+        rx.try_recv().is_err(),
+        "handler should not be called when pre-aborted"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn abort_after_completion_is_noop() {
+    let server = MockServer::start().await;
+    mount_get_ok(&server).await;
+
+    let waker = CaptureWaker::default();
+    let provider = Provider::new(Some(Arc::new(waker)));
+
+    let controller = AbortController::default();
+    let signal = controller.signal.clone();
+
+    let url = make_url(&server.uri());
+    let req = Request::get(url).signal(signal);
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    NetProvider::fetch(&provider, 88, req, Box::new(CaptureHandler(tx)));
+
+    let _ = rx.await;
+    controller.abort();
+
+    assert!(
+        wait_until(Duration::from_secs(1), || provider.is_empty()).await,
+        "provider should become empty after fetch completes"
+    );
+    assert!(provider.is_empty());
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn same_signal_shared_across_requests() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .respond_with(ResponseTemplate::new(200).set_delay(RESPONSE_DELAY))
+        .mount(&server)
+        .await;
+
+    let waker = CaptureWaker::default();
+    let provider = Provider::new(Some(Arc::new(waker.clone())));
+
+    let controller = AbortController::default();
+    let signal_a = controller.signal.clone();
+    let signal_b = controller.signal.clone();
+
+    let base = server.uri();
+    let url_a = make_url(&format!("{base}/?r=a"));
+    let url_b = make_url(&format!("{base}/?r=b"));
+
+    let (tx_a, mut rx_a) = tokio::sync::oneshot::channel();
+    let (tx_b, mut rx_b) = tokio::sync::oneshot::channel();
+
+    NetProvider::fetch(
+        &provider,
+        91,
+        Request::get(url_a).signal(signal_a),
+        Box::new(CaptureHandler(tx_a)),
+    );
+    NetProvider::fetch(
+        &provider,
+        92,
+        Request::get(url_b).signal(signal_b),
+        Box::new(CaptureHandler(tx_b)),
+    );
+
+    controller.abort();
+
+    let waker_vec = waker.0.clone();
+    assert!(
+        wait_until(Duration::from_secs(3), || {
+            let v = waker_vec.lock().unwrap();
+            v.contains(&91) && v.contains(&92)
+        })
+        .await,
+        "both wakers should fire after shared-signal abort"
+    );
+
+    assert!(
+        rx_a.try_recv().is_err(),
+        "handler for request 91 should not be called"
+    );
+    assert!(
+        rx_b.try_recv().is_err(),
+        "handler for request 92 should not be called"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn abort_signal_aborted_mid_flight_returns_abort() {
     let arrived = Arc::new(Notify::new());
     let server = MockServer::start().await;
