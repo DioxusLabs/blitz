@@ -14,7 +14,7 @@ crate-type = ["cdylib"]
 [dependencies]
 # anyrender = { version = "0.9" }
 # anyrender_vello_hybrid = { version = "0.4", features = ["webgl"] }
-anyrender_vello_hybrid = { git = "https://github.com/DioxusLabs/anyrender", rev = "c92bffbae0f52bbc765e1ddbd26a72fb881cfdb2", features = ["webgl"] }
+anyrender_vello_hybrid = { git = "https://github.com/DioxusLabs/anyrender", rev = "1411ad07c4c70b8a6c69d7865db506634d0555d1", features = ["webgl"] }
 blitz-dom = { path = "../../packages/blitz-dom", default-features = false, features = ["woff"] }
 blitz-html = { path = "../../packages/blitz-html" }
 blitz-shell = { path = "../../packages/blitz-shell", default-features = false, features = ["tracing"]}

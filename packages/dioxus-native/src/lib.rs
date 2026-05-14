@@ -49,14 +49,15 @@ pub use android_activity::AndroidApp;
 
 #[cfg(any(
     feature = "vello",
+    feature = "vello-hybrid",
     all(
         not(feature = "alt-renderer"),
         not(all(target_os = "ios", target_abi = "sim"))
     )
 ))]
 pub use {
-    anyrender_vello::DeviceHandle,
     dioxus_renderer::{Features, Limits},
+    wgpu_context::DeviceHandle,
 };
 
 pub use blitz_dom::{FontContext, Widget, build_single_font_ctx};
@@ -127,6 +128,7 @@ pub fn launch_cfg_with_props<P: Clone + 'static, M: 'static>(
     // Read config values
     #[cfg(any(
         feature = "vello",
+        feature = "vello-hybrid",
         all(
             not(feature = "alt-renderer"),
             not(all(target_os = "ios", target_abi = "sim"))
@@ -138,6 +140,7 @@ pub fn launch_cfg_with_props<P: Clone + 'static, M: 'static>(
     for mut cfg in configs {
         #[cfg(any(
             feature = "vello",
+            feature = "vello-hybrid",
             all(
                 not(feature = "alt-renderer"),
                 not(all(target_os = "ios", target_abi = "sim"))
@@ -231,6 +234,7 @@ pub fn launch_cfg_with_props<P: Clone + 'static, M: 'static>(
     );
     #[cfg(any(
         feature = "vello",
+        feature = "vello-hybrid",
         all(
             not(feature = "alt-renderer"),
             not(all(target_os = "ios", target_abi = "sim"))
@@ -239,6 +243,7 @@ pub fn launch_cfg_with_props<P: Clone + 'static, M: 'static>(
     let renderer = DioxusNativeWindowRenderer::with_features_and_limits(features, limits);
     #[cfg(not(any(
         feature = "vello",
+        feature = "vello-hybrid",
         all(
             not(feature = "alt-renderer"),
             not(all(target_os = "ios", target_abi = "sim"))
