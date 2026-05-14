@@ -129,7 +129,13 @@ impl Provider {
                 Ok((request.url.to_string(), Bytes::from(decoded.0)))
             }
             "file" => {
-                let file_content = std::fs::read(request.url.path())?;
+                let path = request.url.to_file_path().map_err(|_| {
+                    std::io::Error::new(
+                        std::io::ErrorKind::InvalidInput,
+                        format!("invalid file URL: {}", request.url),
+                    )
+                })?;
+                let file_content = std::fs::read(path)?;
                 Ok((request.url.to_string(), Bytes::from(file_content)))
             }
             _ => Self::fetch_http(client, request, per_host_limits).await,

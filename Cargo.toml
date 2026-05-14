@@ -17,6 +17,7 @@ members = [
     "apps/readme",
     "apps/bump",
     "wpt/runner",
+    "tests/blitz-net",
     "examples/counter",
     "examples/seven_guis",
     "examples/todomvc",
