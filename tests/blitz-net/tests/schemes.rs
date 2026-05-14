@@ -165,30 +165,25 @@ async fn http_redirect_resolved_url_is_final() {
     );
 }
 
+// Single catch-all mock that 302s to itself: every GET, regardless of path, redirects
+// to /loop, which itself 302s back. Avoids the two-mock + path("/") arrangement which
+// flaked on macOS with apparent cross-test response bleed.
 #[tokio::test]
 async fn http_redirect_loop_returns_error() {
     let server = MockServer::start().await;
-    let loop_url = format!("{}/loop", server.uri());
-    let root_url = server.uri();
+    let target = format!("{}/loop", server.uri());
 
     Mock::given(method("GET"))
-        .and(path("/"))
-        .respond_with(ResponseTemplate::new(302).insert_header("location", loop_url.as_str()))
+        .respond_with(ResponseTemplate::new(302).insert_header("location", target.as_str()))
         .mount(&server)
         .await;
 
-    Mock::given(method("GET"))
-        .and(path("/loop"))
-        .respond_with(ResponseTemplate::new(302).insert_header("location", root_url.as_str()))
-        .mount(&server)
-        .await;
-
-    let url = make_url(&server.uri());
     let provider = Provider::new(None);
-    let err = provider
-        .fetch_async(Request::get(url))
-        .await
-        .expect_err("redirect loop should error");
+    let result = provider.fetch_async(Request::get(make_url(&target))).await;
+    let err = match result {
+        Ok((url, body)) => panic!("redirect loop should error; got Ok(url={url}, body={body:?})"),
+        Err(e) => e,
+    };
     let msg = err.to_string().to_lowercase();
     assert!(
         msg.contains("redirect") || msg.contains("too many"),
