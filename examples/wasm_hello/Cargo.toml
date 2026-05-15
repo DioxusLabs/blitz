@@ -25,7 +25,3 @@ wasm-bindgen = { workspace = true }
 tracing-wasm ={ workspace = true }
 tracing = { workspace = true }
 web-sys = { workspace = true, features = ["Document", "HtmlCanvasElement"] }
-
-[profile.release]
-opt-level = "s"
-lto = true
