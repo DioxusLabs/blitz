@@ -243,7 +243,7 @@ blitz-net = { workspace = true }
 blitz = { workspace = true, features = ["net"] }
 dioxus = { workspace = true }
 dioxus-native = { workspace = true, features = [
-    "vello",
+    "vello-hybrid",
     "floats",
     "svg",
     "prelude",

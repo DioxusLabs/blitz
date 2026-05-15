@@ -9,7 +9,7 @@ license = "MIT"
 publish = false
 
 [features]
-default = ["vello"]
+default = ["vello-hybrid"]
 vello = ["dep:anyrender_vello", "dioxus-native/vello"]
 vello-hybrid = ["dep:anyrender_vello_hybrid", "dioxus-native/vello-hybrid"]
 

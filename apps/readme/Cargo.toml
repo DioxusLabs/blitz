@@ -7,7 +7,7 @@ rust-version.workspace = true
 publish = false
 
 [features]
-default = ["gpu", "comrak", "floats", "tracing"]
+default = ["hybrid", "comrak", "floats", "tracing"]
 
 # Renderers
 gpu = ["dep:anyrender_vello"]

@@ -9,7 +9,7 @@ publish = false
 crate-type = ["cdylib"]
 
 [features]
-default = ["vello"]
+default = ["hybrid"]
 system_fonts = ["blitz-dom/system_fonts"]
 vello = ["dioxus-native/vello"]
 cpu = ["cpu-pixels"]

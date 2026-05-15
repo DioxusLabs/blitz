@@ -13,7 +13,7 @@ path = "src/main.rs"
 crate-type = ["cdylib"]
 
 [features]
-default = ["vello"]
+default = ["hybrid"]
 vello = ["dioxus-native/vello"]
 hybrid = ["dioxus-native/vello-hybrid"]
 skia = ["dioxus-native/skia"]

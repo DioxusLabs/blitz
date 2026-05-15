@@ -10,7 +10,7 @@ homepage = "https://dioxuslabs.com/learn/0.7/getting_started"
 keywords = ["dom", "ui", "gui", "react"]
 
 [features]
-default = ["accessibility", "hot-reload", "net", "html", "svg", "system-fonts", "clipboard", "file_dialog", "vello", "incremental", "woff"]
+default = ["accessibility", "hot-reload", "net", "html", "svg", "system-fonts", "clipboard", "file_dialog", "vello-hybrid", "incremental", "woff"]
 prelude = ["dep:dioxus-core-macro", "dep:dioxus-hooks", "dep:dioxus-signals", "dep:dioxus-stores", "dep:manganis"]
 
 # DOM features
@@ -31,14 +31,13 @@ accessibility = ["blitz-shell/accessibility", "blitz-dom/accessibility"]
 data-uri = ["blitz-shell/data-uri"]
 
 # Renderer features
-vello = ["alt-renderer", "dep:anyrender_vello", "dep:wgpu_context"]
-vello-hybrid = ["alt-renderer", "dep:anyrender_vello_hybrid", "dep:wgpu_context"]
-skia = ["alt-renderer", "dep:anyrender_skia"]
-vello-cpu = ["alt-renderer", "vello-cpu-pixels"]
-vello-cpu-pixels = ["alt-renderer", "vello-cpu-base", "anyrender_vello_cpu/pixels_window_renderer"]
-vello-cpu-softbuffer = ["alt-renderer", "vello-cpu-base", "anyrender_vello_cpu/softbuffer_window_renderer"]
-vello-cpu-base = ["alt-renderer", "dep:anyrender_vello_cpu"]
-alt-renderer = []
+vello = ["dep:anyrender_vello", "dep:wgpu_context"]
+vello-hybrid = ["dep:anyrender_vello_hybrid", "dep:wgpu_context"]
+skia = ["dep:anyrender_skia"]
+vello-cpu = ["vello-cpu-pixels"]
+vello-cpu-pixels = ["vello-cpu-base", "anyrender_vello_cpu/pixels_window_renderer"]
+vello-cpu-softbuffer = ["vello-cpu-base", "anyrender_vello_cpu/softbuffer_window_renderer"]
+vello-cpu-base = ["dep:anyrender_vello_cpu"]
 
 font-embolden = ["blitz-paint/font-embolden"]
 
