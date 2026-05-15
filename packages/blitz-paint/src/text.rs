@@ -68,7 +68,7 @@ pub(crate) fn stroke_text<'a>(
                     glyph_run.positioned_glyphs().map(|glyph| anyrender::Glyph {
                         id: glyph.id as _,
                         x: glyph.x,
-                        y: glyph.y,
+                        y: glyph.y - embolden.y as f32,
                     }),
                 );
 
