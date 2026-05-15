@@ -228,7 +228,7 @@ jobs:
           key: "${{ matrix.platform.target }}"
           cache-all-crates: "true"
           save-if: ${{ github.ref == 'refs/heads/main' }}
-          cache-bin: ${{ matrix.os != 'macos-latest' }} # works around https://github.com/Swatinem/rust-cache/issues/341
+          cache-bin: ${{ matrix.platform.os != 'macos-latest' }} # works around https://github.com/Swatinem/rust-cache/issues/341
 
       - name: Install apt deps
         if: ${{ matrix.platform.os == 'ubuntu-latest' }}
