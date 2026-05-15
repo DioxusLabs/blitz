@@ -13,8 +13,8 @@ path = "src/main.rs"
 default = ["vello", "floats", "incremental", "cookies", "cache", "screenshot", "capture", "font-embolden"]
 android-defaults = ["skia", "floats", "incremental", "cookies"]
 
-screenshot = ["dep:anyrender", "dep:anyrender_vello_cpu", "dep:blitz-paint", "dep:png", "dep:peniko", "dep:rfd"]
-capture = ["dep:anyrender", "dep:anyrender_serialize", "dep:blitz-paint", "dep:png", "dep:peniko", "dep:rfd"]
+screenshot = ["dep:anyrender_vello_cpu", "dep:blitz-paint", "dep:png", "dep:peniko", "dep:rfd"]
+capture = ["dep:anyrender_serialize", "dep:blitz-paint", "dep:png", "dep:peniko", "dep:rfd"]
 vello = ["dioxus-native/vello"]
 hybrid = ["dioxus-native/vello-hybrid"]
 skia = ["dioxus-native/skia"]
@@ -58,7 +58,7 @@ winit = { workspace = true }
 image = { workspace = true, features = ["ico"] }
 usvg = { workspace = true }
 nucleo = "0.5"
-anyrender = { workspace = true, optional = true }
+anyrender = { workspace = true }
 anyrender_serialize = { workspace = true, optional = true }
 anyrender_vello_cpu = { workspace = true, optional = true }
 blitz-paint = { workspace = true, optional = true }
