@@ -90,7 +90,7 @@ dioxus-cli-config = { version = "0.7.3" }
 dioxus-core-macro = { version = "0.7.3" }
 
 # Taffy + Parley + Fontations
-taffy = { version = "0.10.1", default-features = false, features = [
+taffy = { version = "=0.10.1-experimental-cache-fix.1", default-features = false, features = [
     "std",
     "flexbox",
     "grid",
