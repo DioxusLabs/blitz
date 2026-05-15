@@ -1,0 +1,74 @@
+
+flowchart TB
+
+    blitz-paint[**blitz-paint**] --> anyrender
+    blitz-paint --> blitz-dom
+
+    anyrender[**AnyRender**
+    vello_cpu
+    vello
+    vello_hybrid
+    skia]
+    %% anyrender --> vello_cpu
+    %% anyrender --> vello
+    %% anyrender --> vello_hybrid
+    %% anyrender --> skia
+
+    anyrender -.-> wgpu
+
+    %% vello --> wgpu
+    %% vello_hybrid --> wgpu
+
+    blitz-html --> blitz-dom
+
+    blitz-dom["`**Blitz DOM**
+    stylo (css)
+    taffy (box layout)
+    parley (text layout)
+    Event handling
+    Accessibility
+    `"]
+
+    %% blitz-net --> blitz-traits
+    %% blitz-html --> blitz-traits
+    %% blitz-shell --> blitz-traits
+    blitz-dom --> blitz-traits
+    blitz-dom --> stylo
+    blitz-dom --> taffy
+    blitz-dom --> parley
+    blitz-dom --> accesskit
+    %% blitz-dom -.-> anyrender
+
+    dioxus-native["`**Dioxus Native**
+    `"]
+
+    dioxus-native --> blitz-paint[**blitz-paint**
+    AnyRender]
+    dioxus-native --> blitz-shell[**blitz-shell**
+    Winit]
+    dioxus-native --> dioxus-native-dom[**dioxus-native-dom**]
+    dioxus-native --> blitz-net[**blitz-net**
+    Reqwest/Hyper]
+    dioxus-native --> blitz-html[**blitz-html**
+    html5ever]
+
+        dioxus-native-dom --> blitz-dom
+
+    blitz-shell --> blitz-dom
+
+    %% Styles
+
+    %% style blitz-paint fill:#0097B2,color:#FFFFFF
+    %% style blitz-html color:#FFFFFF,fill:#0097B2
+    %% style blitz-shell color:#FFFFFF,fill:#0097B2
+    %% style blitz-net color:#FFFFFF,fill:#0097B2
+    %% style blitz-dom fill:#0097B2,color:#FFFFFF
+    %% style anyrender fill:#5CE1E6
+    %% style taffy color:#000000,fill:#5CE1E6
+    %% style parley fill:#5CE1E6
+    %% style dioxus-native fill:#00BF63,color:#FFFFFF
+    %% style dioxus-native-dom fill:#00BF63,color:#FFFFFF
+    %% style stylo color:#FFFFFF,fill:#FF5757
+    %% style wgpu fill:#FF5757,color:#FFFFFF
+    %% style blitz-traits color:#FFFFFF,fill:#0097B2
+    %% style accesskit color:#FFFFFF,fill:#545454
