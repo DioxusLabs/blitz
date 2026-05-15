@@ -895,11 +895,24 @@ impl ElementCx<'_, '_> {
 
         let border_width = border_style.border_top_width.0.to_f64_px();
 
+        // need to offset the borders in the table by the left and top amount
+        let start_x = if outer_border_style.border_left_style != BorderStyle::Hidden {
+            border_width
+        } else {
+            0.0
+        };
+
+        let start_y = if outer_border_style.border_top_style != BorderStyle::Hidden {
+            border_width
+        } else {
+            0.0
+        };
+
         // Draw horizontal inner borders
-        let mut y = 0.0;
+        let mut y = start_y;
         for (&height, &gutter) in rows.sizes.iter().zip(rows.gutters.iter()) {
-            let shape =
-                Rect::new(0.0, y, inner_width, y + gutter as f64).scale_from_origin(self.scale);
+            let shape = Rect::new(start_x, y, inner_width + start_x, y + gutter as f64)
+                .scale_from_origin(self.scale);
             scene.fill(Fill::NonZero, self.transform, border_color, None, &shape);
 
             y += (height + gutter) as f64;
@@ -914,16 +927,21 @@ impl ElementCx<'_, '_> {
         }
         // Bottom border
         if outer_border_style.border_bottom_style != BorderStyle::Hidden {
-            let shape = Rect::new(0.0, inner_height, inner_width, inner_height + border_width)
-                .scale_from_origin(self.scale);
+            let shape = Rect::new(
+                0.0,
+                inner_height + border_width,
+                inner_width,
+                inner_height + border_width * 2.0,
+            )
+            .scale_from_origin(self.scale);
             scene.fill(Fill::NonZero, self.transform, border_color, None, &shape);
         }
 
         // Draw vertical inner borders
-        let mut x = 0.0;
+        let mut x = start_x;
         for (&width, &gutter) in cols.sizes.iter().zip(cols.gutters.iter()) {
-            let shape =
-                Rect::new(x, 0.0, x + gutter as f64, inner_height).scale_from_origin(self.scale);
+            let shape = Rect::new(x, start_y, x + gutter as f64, inner_height + start_y)
+                .scale_from_origin(self.scale);
             scene.fill(Fill::NonZero, self.transform, border_color, None, &shape);
 
             x += (width + gutter) as f64;
@@ -938,8 +956,13 @@ impl ElementCx<'_, '_> {
         }
         // Right border
         if outer_border_style.border_right_style != BorderStyle::Hidden {
-            let shape = Rect::new(inner_width, 0.0, inner_width + border_width, inner_height)
-                .scale_from_origin(self.scale);
+            let shape = Rect::new(
+                inner_width + start_x,
+                0.0,
+                inner_width + border_width + start_x,
+                inner_height,
+            )
+            .scale_from_origin(self.scale);
             scene.fill(Fill::NonZero, self.transform, border_color, None, &shape);
         }
     }
