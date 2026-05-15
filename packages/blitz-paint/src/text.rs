@@ -57,7 +57,7 @@ pub(crate) fn stroke_text<'a>(
                 scene.draw_glyphs(
                     font,
                     font_size,
-                    true, // hint
+                    !cfg!(feature = "font-embolden"), // hint
                     run.normalized_coords(),
                     embolden,
                     Fill::NonZero,
