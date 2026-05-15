@@ -509,6 +509,7 @@ impl ElementCx<'_, '_> {
                 text_layout.layout.lines(),
                 self.context.dom,
                 transform,
+                self.scale,
             );
         }
     }
@@ -561,6 +562,7 @@ impl ElementCx<'_, '_> {
                 input_data.editor.try_layout().unwrap().lines(),
                 self.context.dom,
                 transform,
+                self.scale,
             );
         }
     }
@@ -600,7 +602,13 @@ impl ElementCx<'_, '_> {
             let transform =
                 Affine::translate((pos.x * self.scale, pos.y * self.scale)) * self.transform;
 
-            crate::text::stroke_text(scene, layout.lines(), self.context.dom, transform);
+            crate::text::stroke_text(
+                scene,
+                layout.lines(),
+                self.context.dom,
+                transform,
+                self.scale,
+            );
         }
     }
 

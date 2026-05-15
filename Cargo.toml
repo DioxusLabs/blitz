@@ -105,21 +105,21 @@ skrifa = { version = "0.40", default-features = false, features = [
 ] } # Should match parley and vello versions
 
 # AnyRender
-anyrender = { version = "0.9" }
-anyrender_serialize = { version = "0.2" }
-anyrender_vello = { version = "0.9" }
-anyrender_vello_cpu = { version = "0.11" }
-anyrender_vello_hybrid = { version = "0.4" }
-anyrender_skia = { version = "0.6" }
-anyrender_svg = { version = "0.10" }
-wgpu_context = { version = "0.5" }
+anyrender = { version = "0.10.0" }
+anyrender_serialize = { version = "0.3.0" }
+anyrender_skia = { version = "0.7.0" }
+anyrender_vello = { version = "0.10.0" }
+anyrender_vello_cpu = { version = "0.12.0" }
+anyrender_vello_hybrid = { version = "0.5.0" }
+anyrender_svg = { version = "0.11.0" }
+wgpu_context = { version = "0.6.0" }
 
 # Linebender + Fontations + WGPU + SVG
 color = "0.3"
 linebender_resource_handle = "0.1"
 peniko = "0.6.0"
-kurbo = "0.13"
-wgpu = "28"
+kurbo = "0.13.1"
+wgpu = "29"
 usvg = "0.46"
 
 # Windowing & Input
@@ -258,7 +258,7 @@ color = { workspace = true }
 env_logger = "0.11"
 tracing-subscriber = "0.3"
 
-# [patch.crates-io]
+# [patch."https://github.com/DioxusLabs/anyrender"]
 # anyrender = { path = "../anyrender/crates/anyrender" }
 # anyrender_skia = { path = "../anyrender/crates/anyrender_skia" }
 # anyrender_vello = { path = "../anyrender/crates/anyrender_vello" }

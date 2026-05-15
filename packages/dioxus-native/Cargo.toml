@@ -31,8 +31,8 @@ accessibility = ["blitz-shell/accessibility", "blitz-dom/accessibility"]
 data-uri = ["blitz-shell/data-uri"]
 
 # Renderer features
-vello = ["alt-renderer", "dep:anyrender_vello"]
-vello-hybrid = ["alt-renderer", "dep:anyrender_vello_hybrid"]
+vello = ["alt-renderer", "dep:anyrender_vello", "dep:wgpu_context"]
+vello-hybrid = ["alt-renderer", "dep:anyrender_vello_hybrid", "dep:wgpu_context"]
 skia = ["alt-renderer", "dep:anyrender_skia"]
 vello-cpu = ["alt-renderer", "vello-cpu-pixels"]
 vello-cpu-pixels = ["alt-renderer", "vello-cpu-base", "anyrender_vello_cpu/pixels_window_renderer"]
@@ -75,6 +75,7 @@ anyrender_vello = { workspace = true, optional = true}
 anyrender_vello_hybrid = { workspace = true, optional = true}
 anyrender_vello_cpu = { workspace = true, optional = true}
 anyrender_skia = { workspace = true, optional = true}
+wgpu_context = { workspace = true, optional = true}
 
 # DioxusLabs dependencies
 dioxus-core = { workspace = true }

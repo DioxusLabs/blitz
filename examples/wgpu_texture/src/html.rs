@@ -1,20 +1,36 @@
-use anyrender_vello::{VelloRendererOptions, VelloWindowRenderer};
 use blitz_dom::DocumentConfig;
 use blitz_html::HtmlDocument;
 use blitz_shell::{create_default_event_loop, BlitzApplication, BlitzShellProxy, WindowConfig};
 
 use crate::{limits, DemoWidget, FEATURES, STYLES};
 
-pub fn launch_html() {
-    // Create renderer
-    let renderer = VelloWindowRenderer::with_options(VelloRendererOptions {
+#[cfg(feature = "vello")]
+/// Create renderer
+fn create_renderer() -> anyrender_vello::VelloWindowRenderer {
+    use anyrender_vello::{VelloRendererOptions, VelloWindowRenderer};
+    VelloWindowRenderer::with_options(VelloRendererOptions {
         features: Some(FEATURES),
         limits: Some(limits()),
         ..VelloRendererOptions::default()
-    });
+    })
+}
 
+#[cfg(feature = "vello-hybrid")]
+/// Create renderer
+fn create_renderer() -> anyrender_vello_hybrid::VelloHybridWindowRenderer {
+    use anyrender_vello_hybrid::{VelloHybridRendererOptions, VelloHybridWindowRenderer};
+    VelloHybridWindowRenderer::with_options(VelloHybridRendererOptions {
+        features: Some(FEATURES),
+        limits: Some(limits()),
+        ..VelloHybridRendererOptions::default()
+    })
+}
+
+pub fn launch_html() {
     // Create custom paint source and register it with the renderer
     let demo_widget = Box::new(DemoWidget::new());
+
+    let renderer = create_renderer();
 
     // Parse the HTML into a Blitz document
     let html = HTML.replace("{{STYLES_PLACEHOLDER}}", STYLES);

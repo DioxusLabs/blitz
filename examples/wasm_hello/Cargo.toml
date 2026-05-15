@@ -12,8 +12,7 @@ publish = false
 crate-type = ["cdylib"]
 
 [dependencies]
-anyrender = { version = "0.9" }
-anyrender_vello_hybrid = { version = "0.4", features = ["webgl"] }
+anyrender_vello_hybrid = { version = "0.5.0", features = ["webgl"] }
 blitz-dom = { path = "../../packages/blitz-dom", default-features = false, features = ["woff"] }
 blitz-html = { path = "../../packages/blitz-html" }
 blitz-shell = { path = "../../packages/blitz-shell", default-features = false, features = ["tracing"]}
