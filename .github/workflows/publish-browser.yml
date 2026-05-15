@@ -97,6 +97,7 @@ jobs:
         with:
           cache-all-crates: "true"
           save-if: ${{ github.ref == 'refs/heads/main' }}
+          cache-bin: ${{ matrix.os != 'macos-latest' }} # works around https://github.com/Swatinem/rust-cache/issues/341
 
       - name: Create Apple private key file
         if: ${{ (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/ci-test')) && (matrix.platform.os == 'macos-15-intel' || matrix.platform.os == 'macos-latest') }}
