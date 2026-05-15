@@ -107,7 +107,7 @@ skrifa = { version = "0.42", default-features = false, features = [
 # AnyRender
 anyrender = { version = "0.10.0" }
 anyrender_serialize = { version = "0.3.0" }
-anyrender_skia = { version = "0.7.0" }
+anyrender_skia = { version = "0.8.0" }
 anyrender_vello = { version = "0.10.1" }
 anyrender_vello_cpu = { version = "0.12.1" }
 anyrender_vello_hybrid = { version = "0.5.1" }
