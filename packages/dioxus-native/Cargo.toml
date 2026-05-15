@@ -40,6 +40,8 @@ vello-cpu-softbuffer = ["alt-renderer", "vello-cpu-base", "anyrender_vello_cpu/s
 vello-cpu-base = ["alt-renderer", "dep:anyrender_vello_cpu"]
 alt-renderer = []
 
+font-embolden = ["blitz-paint/font-embolden"]
+
 # Other features
 # No-op on wasm32 (blitz_net::Provider needs tokio's threaded runtime); launch_cfg
 # falls back to the in-process DioxusNativeNetProvider there.

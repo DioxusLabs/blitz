@@ -47,8 +47,13 @@ pub(crate) fn stroke_text<'a>(
                 let has_strikethrough =
                     text_decoration_line.contains(TextDecorationLine::LINE_THROUGH);
 
-                let fs = font_size as f64 / scale;
-                let embolden = kurbo::Vec2::new((0.015125 * fs).min(0.3), (0.0121 * fs).min(0.3));
+                let embolden = if cfg!(feature = "font-embolden") {
+                    let fs = font_size as f64 / scale;
+                    kurbo::Vec2::new((0.015125 * fs).min(0.3), (0.0121 * fs).min(0.3))
+                } else {
+                    kurbo::Vec2::default()
+                };
+
                 scene.draw_glyphs(
                     font,
                     font_size,
