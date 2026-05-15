@@ -100,7 +100,7 @@ taffy = { version = "=0.10.1-experimental-cache-fix.1", default-features = false
     "detailed_layout_info",
 ] }
 parley = { version = "0.9", default-features = false, features = ["std"] }
-skrifa = { version = "0.40", default-features = false, features = [
+skrifa = { version = "0.42", default-features = false, features = [
     "std",
 ] } # Should match parley and vello versions
 
