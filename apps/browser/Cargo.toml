@@ -10,7 +10,7 @@ name = "blitz"
 path = "src/main.rs"
 
 [features]
-default = ["hybrid", "floats", "incremental", "cookies", "cache", "screenshot", "capture", "font-embolden"]
+default = ["hybrid", "floats", "incremental", "cookies", "cache", "screenshot", "capture", "apple-font-embolden"]
 android-defaults = ["skia", "floats", "incremental", "cookies"]
 
 screenshot = ["dep:anyrender_vello_cpu", "dep:blitz-paint", "dep:png", "dep:peniko", "dep:rfd"]
@@ -35,6 +35,7 @@ hot-reload = ["dioxus-native/hot-reload"]
 accessibility = ["dioxus-native/accessibility"]
 mimalloc = ["dep:mimalloc"]
 font-embolden = ["dioxus-native/font-embolden"]
+apple-font-embolden = ["dioxus-native/apple-font-embolden"]
 
 [dependencies]
 dioxus-native = { workspace = true, features = [

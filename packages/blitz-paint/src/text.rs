@@ -5,7 +5,7 @@ use parley::{Affinity, Cursor, Layout, Line, PositionedLayoutItem, Selection};
 use peniko::Fill;
 use style::values::computed::TextDecorationLine;
 
-use crate::SELECTION_COLOR;
+use crate::{FONT_EMBOLDEN_ENABLED, SELECTION_COLOR};
 
 pub(crate) fn stroke_text<'a>(
     scene: &mut impl PaintScene,
@@ -47,7 +47,7 @@ pub(crate) fn stroke_text<'a>(
                 let has_strikethrough =
                     text_decoration_line.contains(TextDecorationLine::LINE_THROUGH);
 
-                let embolden = if cfg!(feature = "font-embolden") {
+                let embolden = if FONT_EMBOLDEN_ENABLED {
                     let fs = font_size as f64 / scale;
                     kurbo::Vec2::new((0.015125 * fs).min(0.3), (0.0121 * fs).min(0.3))
                 } else {
@@ -57,7 +57,7 @@ pub(crate) fn stroke_text<'a>(
                 scene.draw_glyphs(
                     font,
                     font_size,
-                    !cfg!(feature = "font-embolden"), // hint
+                    !FONT_EMBOLDEN_ENABLED, // hint
                     run.normalized_coords(),
                     embolden,
                     Fill::NonZero,

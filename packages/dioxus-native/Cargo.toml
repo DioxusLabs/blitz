@@ -10,7 +10,7 @@ homepage = "https://dioxuslabs.com/learn/0.7/getting_started"
 keywords = ["dom", "ui", "gui", "react"]
 
 [features]
-default = ["accessibility", "hot-reload", "net", "html", "svg", "system-fonts", "clipboard", "file_dialog", "vello-hybrid", "incremental", "woff"]
+default = ["accessibility", "hot-reload", "net", "html", "svg", "system-fonts", "clipboard", "file_dialog", "vello-hybrid", "incremental", "woff", "apple-font-embolden"]
 prelude = ["dep:dioxus-core-macro", "dep:dioxus-hooks", "dep:dioxus-signals", "dep:dioxus-stores", "dep:manganis"]
 
 # DOM features
@@ -40,6 +40,7 @@ vello-cpu-softbuffer = ["vello-cpu-base", "anyrender_vello_cpu/softbuffer_window
 vello-cpu-base = ["dep:anyrender_vello_cpu"]
 
 font-embolden = ["blitz-paint/font-embolden"]
+apple-font-embolden = ["blitz-paint/apple-font-embolden"]
 
 # Other features
 # No-op on wasm32 (blitz_net::Provider needs tokio's threaded runtime); launch_cfg

@@ -16,6 +16,7 @@ tracing = ["dep:tracing"]
 svg = ["dep:anyrender_svg", "dep:usvg", "blitz-dom/svg"]
 custom-widget = ["blitz-dom/custom-widget"]
 font-embolden = []
+apple-font-embolden = []
 
 [dependencies]
 # Blitz dependencies
