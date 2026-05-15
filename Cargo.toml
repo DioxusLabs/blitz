@@ -21,6 +21,7 @@ members = [
     "examples/seven_guis",
     "examples/todomvc",
     "examples/wgpu_texture",
+    "examples/wasm_hello",
 ]
 exclude = ["sites"]
 resolver = "2"
@@ -156,6 +157,7 @@ directories = "6.0.0"
 # WASM
 wasm-bindgen = "0.2"
 wasm-bindgen-futures = "0.4"
+tracing-wasm = "0.2.1"
 web-sys = "0.3.98"
 web-time = "1"
 console_error_panic_hook = "0.1"

@@ -3,6 +3,8 @@
 //!
 //! Build with: `trunk serve` from this directory.
 
+#![cfg(target_arch = "wasm32")]
+
 use std::sync::Arc;
 
 use anyrender_vello_hybrid::VelloHybridWindowRenderer;
@@ -130,10 +132,9 @@ pub fn start() -> Result<(), JsValue> {
     // Intentionally no `.with_surface_size(...)` on wasm: letting winit-web set the
     // canvas size writes fixed inline CSS (canvas.style.width/height) that overrides
     // host stylesheet rules and suppresses ResizeObserver. Host CSS sizes the canvas.
-    let attrs = WindowAttributes::default()
-        .with_platform_attributes(Box::new(
-            WindowAttributesWeb::default().with_canvas(Some(canvas)),
-        ));
+    let attrs = WindowAttributes::default().with_platform_attributes(Box::new(
+        WindowAttributesWeb::default().with_canvas(Some(canvas)),
+    ));
     let window_config = WindowConfig::with_attributes(Box::new(doc), renderer, attrs);
 
     let mut app = BlitzApplication::<VelloHybridWindowRenderer>::new(proxy, rx);
