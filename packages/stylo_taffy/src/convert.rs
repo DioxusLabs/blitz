@@ -59,13 +59,45 @@ use stylo::Atom;
 use taffy::CompactLength;
 use taffy::style_helpers::*;
 
+/// Helper macro for logging unsupported CSS values that fall back to defaults.
+/// Only logs when the `tracing` feature is enabled.
+#[cfg(feature = "tracing")]
+macro_rules! log_fallback {
+    ($value:expr, $to:expr) => {
+        tracing::debug!(
+            "CSS value '{}' not fully supported, falling back to '{}'",
+            $value,
+            $to
+        )
+    };
+}
+
+#[cfg(not(feature = "tracing"))]
+macro_rules! log_fallback {
+    ($value:expr, $to:expr) => {
+        // Consume args so callers don't trip `unused_variables` on the
+        // bindings they pass in (e.g. `unsupported => { log_fallback!(...) }`).
+        let _ = (&$value, &$to);
+    };
+}
+
+/// Converts a Stylo LengthPercentage to a Taffy LengthPercentage.
+///
+/// # Safety
+///
+/// This function uses `unsafe` when converting calc() values. The pointer
+/// casting is safe because:
+/// - The pointer comes from Stylo's validated computed values
+/// - Taffy's `from_raw` is designed to accept these specific pointer types
+/// - The calc value is guaranteed to be valid by Stylo's type system
 #[inline]
 pub fn length_percentage(val: &stylo::LengthPercentage) -> taffy::LengthPercentage {
     match val.unpack() {
         stylo::UnpackedLengthPercentage::Calc(calc_ptr) => {
             let val =
                 CompactLength::calc(calc_ptr as *const stylo::CalcLengthPercentage as *const ());
-            // SAFETY: calc is a valid value for LengthPercentage
+            // SAFETY: calc_ptr is a valid pointer from Stylo's computed values
+            // and Taffy's from_raw expects this specific format
             unsafe { taffy::LengthPercentage::from_raw(val) }
         }
         stylo::UnpackedLengthPercentage::Length(len) => length(len.px()),
@@ -80,16 +112,40 @@ pub fn dimension(val: &stylo::Size) -> taffy::Dimension {
         stylo::Size::Auto => taffy::Dimension::AUTO,
 
         // TODO: implement other values in Taffy
-        stylo::Size::MaxContent => taffy::Dimension::AUTO,
-        stylo::Size::MinContent => taffy::Dimension::AUTO,
-        stylo::Size::FitContent => taffy::Dimension::AUTO,
-        stylo::Size::FitContentFunction(_) => taffy::Dimension::AUTO,
-        stylo::Size::Stretch => taffy::Dimension::AUTO,
-        stylo::Size::WebkitFillAvailable => taffy::Dimension::AUTO,
+        stylo::Size::MaxContent => {
+            log_fallback!("max-content", "AUTO");
+            taffy::Dimension::AUTO
+        }
+        stylo::Size::MinContent => {
+            log_fallback!("min-content", "AUTO");
+            taffy::Dimension::AUTO
+        }
+        stylo::Size::FitContent => {
+            log_fallback!("fit-content", "AUTO");
+            taffy::Dimension::AUTO
+        }
+        stylo::Size::FitContentFunction(_) => {
+            log_fallback!("fit-content()", "AUTO");
+            taffy::Dimension::AUTO
+        }
+        stylo::Size::Stretch => {
+            log_fallback!("stretch", "AUTO");
+            taffy::Dimension::AUTO
+        }
+        stylo::Size::WebkitFillAvailable => {
+            log_fallback!("-webkit-fill-available", "AUTO");
+            taffy::Dimension::AUTO
+        }
 
-        // Anchor positioning will be flagged off for time being
-        stylo::Size::AnchorSizeFunction(_) => unreachable!(),
-        stylo::Size::AnchorContainingCalcFunction(_) => unreachable!(),
+        // Anchor positioning not yet supported, falling back to AUTO
+        stylo::Size::AnchorSizeFunction(_) => {
+            log_fallback!("anchor-size()", "AUTO");
+            taffy::Dimension::AUTO
+        }
+        stylo::Size::AnchorContainingCalcFunction(_) => {
+            log_fallback!("anchor()", "AUTO");
+            taffy::Dimension::AUTO
+        }
     }
 }
 
@@ -100,16 +156,40 @@ pub fn max_size_dimension(val: &stylo::MaxSize) -> taffy::Dimension {
         stylo::MaxSize::None => taffy::Dimension::AUTO,
 
         // TODO: implement other values in Taffy
-        stylo::MaxSize::MaxContent => taffy::Dimension::AUTO,
-        stylo::MaxSize::MinContent => taffy::Dimension::AUTO,
-        stylo::MaxSize::FitContent => taffy::Dimension::AUTO,
-        stylo::MaxSize::FitContentFunction(_) => taffy::Dimension::AUTO,
-        stylo::MaxSize::Stretch => taffy::Dimension::AUTO,
-        stylo::MaxSize::WebkitFillAvailable => taffy::Dimension::AUTO,
+        stylo::MaxSize::MaxContent => {
+            log_fallback!("max-content (max-size)", "AUTO");
+            taffy::Dimension::AUTO
+        }
+        stylo::MaxSize::MinContent => {
+            log_fallback!("min-content (max-size)", "AUTO");
+            taffy::Dimension::AUTO
+        }
+        stylo::MaxSize::FitContent => {
+            log_fallback!("fit-content (max-size)", "AUTO");
+            taffy::Dimension::AUTO
+        }
+        stylo::MaxSize::FitContentFunction(_) => {
+            log_fallback!("fit-content() (max-size)", "AUTO");
+            taffy::Dimension::AUTO
+        }
+        stylo::MaxSize::Stretch => {
+            log_fallback!("stretch (max-size)", "AUTO");
+            taffy::Dimension::AUTO
+        }
+        stylo::MaxSize::WebkitFillAvailable => {
+            log_fallback!("-webkit-fill-available (max-size)", "AUTO");
+            taffy::Dimension::AUTO
+        }
 
-        // Anchor positioning will be flagged off for time being
-        stylo::MaxSize::AnchorSizeFunction(_) => unreachable!(),
-        stylo::MaxSize::AnchorContainingCalcFunction(_) => unreachable!(),
+        // Anchor positioning not yet supported, falling back to AUTO
+        stylo::MaxSize::AnchorSizeFunction(_) => {
+            log_fallback!("anchor-size() (max-size)", "AUTO");
+            taffy::Dimension::AUTO
+        }
+        stylo::MaxSize::AnchorContainingCalcFunction(_) => {
+            log_fallback!("anchor() (max-size)", "AUTO");
+            taffy::Dimension::AUTO
+        }
     }
 }
 
@@ -119,9 +199,9 @@ pub fn margin(val: &stylo::MarginVal) -> taffy::LengthPercentageAuto {
         stylo::MarginVal::Auto => taffy::LengthPercentageAuto::AUTO,
         stylo::MarginVal::LengthPercentage(val) => length_percentage(val).into(),
 
-        // Anchor positioning will be flagged off for time being
-        stylo::MarginVal::AnchorSizeFunction(_) => unreachable!(),
-        stylo::MarginVal::AnchorContainingCalcFunction(_) => unreachable!(),
+        // Anchor positioning not yet supported, falling back to AUTO
+        stylo::MarginVal::AnchorSizeFunction(_) => taffy::LengthPercentageAuto::AUTO,
+        stylo::MarginVal::AnchorContainingCalcFunction(_) => taffy::LengthPercentageAuto::AUTO,
     }
 }
 
@@ -142,10 +222,10 @@ pub fn inset(val: &stylo::InsetVal) -> taffy::LengthPercentageAuto {
         stylo::InsetVal::Auto => taffy::LengthPercentageAuto::AUTO,
         stylo::InsetVal::LengthPercentage(val) => length_percentage(val).into(),
 
-        // Anchor positioning will be flagged off for time being
-        stylo::InsetVal::AnchorSizeFunction(_) => unreachable!(),
-        stylo::InsetVal::AnchorFunction(_) => unreachable!(),
-        stylo::InsetVal::AnchorContainingCalcFunction(_) => unreachable!(),
+        // Anchor positioning not yet supported, falling back to AUTO
+        stylo::InsetVal::AnchorSizeFunction(_) => taffy::LengthPercentageAuto::AUTO,
+        stylo::InsetVal::AnchorFunction(_) => taffy::LengthPercentageAuto::AUTO,
+        stylo::InsetVal::AnchorContainingCalcFunction(_) => taffy::LengthPercentageAuto::AUTO,
     }
 }
 
@@ -181,8 +261,8 @@ pub fn display(input: stylo::Display) -> taffy::Display {
         // TODO: Support table layout in Taffy
         #[cfg(feature = "grid")]
         stylo::DisplayInside::Table => taffy::Display::Grid,
-        _ => {
-            // println!("FALLBACK {:?} {:?}", input.inside(), input.outside());
+        unsupported => {
+            log_fallback!(&format!("display:{:?}", unsupported), "DEFAULT");
             taffy::Display::DEFAULT
         }
     };
@@ -219,20 +299,44 @@ pub fn box_sizing(input: stylo::BoxSizing) -> taffy::BoxSizing {
     }
 }
 
+/// Converts Stylo position to Taffy position.
+///
+/// # Limitations
+///
+/// Taffy has limited position support compared to CSS:
+/// - `position: static` is treated as `relative` because Taffy doesn't distinguish them
+/// - `position: fixed` is treated as `absolute` (viewport positioning not supported)
+/// - `position: sticky` is treated as `relative` (sticky behavior not implemented)
+///
+/// These limitations mean fixed elements won't stay in viewport during scroll,
+/// and sticky elements won't stick to their container during scroll.
 #[inline]
 pub fn position(input: stylo::Position) -> taffy::Position {
     match input {
-        // TODO: support position:static
         stylo::Position::Relative => taffy::Position::Relative,
-        stylo::Position::Static => taffy::Position::Relative,
-
-        // TODO: support position:fixed and sticky
+        stylo::Position::Static => {
+            log_fallback!("position:static", "Relative");
+            taffy::Position::Relative
+        }
         stylo::Position::Absolute => taffy::Position::Absolute,
-        stylo::Position::Fixed => taffy::Position::Absolute,
-        stylo::Position::Sticky => taffy::Position::Relative,
+        stylo::Position::Fixed => {
+            log_fallback!("position:fixed", "Absolute");
+            taffy::Position::Absolute
+        }
+        stylo::Position::Sticky => {
+            log_fallback!("position:sticky", "Relative");
+            taffy::Position::Relative
+        }
     }
 }
 
+/// Converts Stylo overflow to Taffy overflow.
+///
+/// # Limitations
+///
+/// `overflow: auto` falls back to `scroll` because Taffy doesn't have an `Auto` variant.
+/// This means scrollbars will always be shown for overflow:auto containers,
+/// rather than only appearing when content overflows.
 #[inline]
 pub fn overflow(input: stylo::Overflow) -> taffy::Overflow {
     match input {
@@ -240,11 +344,17 @@ pub fn overflow(input: stylo::Overflow) -> taffy::Overflow {
         stylo::Overflow::Clip => taffy::Overflow::Clip,
         stylo::Overflow::Hidden => taffy::Overflow::Hidden,
         stylo::Overflow::Scroll => taffy::Overflow::Scroll,
-        // TODO: Support Overflow::Auto in Taffy
-        stylo::Overflow::Auto => taffy::Overflow::Scroll,
+        stylo::Overflow::Auto => {
+            log_fallback!("overflow:auto", "Scroll");
+            taffy::Overflow::Scroll
+        }
     }
 }
 
+/// Converts Stylo aspect ratio to an optional f32.
+///
+/// Returns `None` for `aspect-ratio: auto` or if the denominator is zero
+/// (which shouldn't happen in valid CSS but is handled defensively).
 #[inline]
 pub fn direction(input: stylo::Direction) -> taffy::Direction {
     match input {
@@ -257,7 +367,15 @@ pub fn direction(input: stylo::Direction) -> taffy::Direction {
 pub fn aspect_ratio(input: stylo::AspectRatio) -> Option<f32> {
     match input.ratio {
         stylo::PreferredRatio::None => None,
-        stylo::PreferredRatio::Ratio(val) => Some(val.0.0 / val.1.0),
+        stylo::PreferredRatio::Ratio(val) => {
+            let denominator = val.1.0;
+            if denominator == 0.0 {
+                log_fallback!("aspect-ratio with zero denominator", "None");
+                None
+            } else {
+                Some(val.0.0 / denominator)
+            }
+        }
     }
 }
 
@@ -399,24 +517,40 @@ pub fn grid_auto_flow(input: stylo::GridAutoFlow) -> taffy::GridAutoFlow {
     }
 }
 
+/// Converts a Stylo grid line to a Taffy grid placement.
+///
+/// # Edge Case Handling
+///
+/// - Line numbers that overflow i16/u16 are clamped to their respective max values
+/// - Negative line numbers are preserved (valid in CSS grid)
+/// - Zero line number without ident falls back to Auto
 #[inline]
 #[cfg(feature = "grid")]
 pub fn grid_line(input: &stylo::GridLine) -> taffy::GridPlacement<Atom> {
     if input.is_auto() {
         taffy::GridPlacement::Auto
     } else if input.is_span {
-        if input.ident.0 != stylo::atom!("") {
-            taffy::GridPlacement::NamedSpan(
-                input.ident.0.clone(),
-                input.line_num.try_into().unwrap(),
-            )
+        // Clamp span count to valid u16 range
+        let span_count = if input.line_num <= 0 {
+            log_fallback!("grid span with non-positive count", "1");
+            1u16
         } else {
-            taffy::GridPlacement::Span(input.line_num as u16)
+            input.line_num.try_into().unwrap_or(u16::MAX)
+        };
+
+        if input.ident.0 != stylo::atom!("") {
+            taffy::GridPlacement::NamedSpan(input.ident.0.clone(), span_count)
+        } else {
+            taffy::GridPlacement::Span(span_count)
         }
     } else if input.ident.0 != stylo::atom!("") {
-        taffy::GridPlacement::NamedLine(input.ident.0.clone(), input.line_num as i16)
+        // Named line with optional line number offset
+        let line_num = input.line_num.try_into().unwrap_or(i16::MAX);
+        taffy::GridPlacement::NamedLine(input.ident.0.clone(), line_num)
     } else if input.line_num != 0 {
-        taffy::style_helpers::line(input.line_num as i16)
+        // Numeric line number only - clamp to valid i16 range
+        let line_num = input.line_num.try_into().unwrap_or(i16::MAX);
+        taffy::style_helpers::line(line_num)
     } else {
         taffy::GridPlacement::Auto
     }
@@ -513,7 +647,9 @@ pub fn grid_auto_tracks(input: &stylo::ImplicitGridTracks) -> Vec<taffy::TrackSi
 #[cfg(feature = "grid")]
 pub fn track_repeat(input: stylo::RepeatCount<i32>) -> taffy::RepetitionCount {
     match input {
-        stylo::RepeatCount::Number(val) => taffy::RepetitionCount::Count(val.try_into().unwrap()),
+        stylo::RepeatCount::Number(val) => {
+            taffy::RepetitionCount::Count(val.try_into().unwrap_or(u16::MAX))
+        }
         stylo::RepeatCount::AutoFill => taffy::RepetitionCount::AutoFill,
         stylo::RepeatCount::AutoFit => taffy::RepetitionCount::AutoFit,
     }
@@ -540,11 +676,11 @@ pub fn track_size(input: &stylo::TrackSize<stylo::LengthPercentage>) -> taffy::T
                     MaxTrackSizingFunction::fit_content(length_percentage(lp))
                 }
 
-                // Are these valid? Taffy doesn't support this in any case
-                stylo::TrackBreadth::Fr(_) => unreachable!(),
-                stylo::TrackBreadth::Auto => unreachable!(),
-                stylo::TrackBreadth::MinContent => unreachable!(),
-                stylo::TrackBreadth::MaxContent => unreachable!(),
+                // These shouldn't occur in fit-content() per CSS spec, but handle gracefully
+                stylo::TrackBreadth::Fr(_) => MaxTrackSizingFunction::AUTO,
+                stylo::TrackBreadth::Auto => MaxTrackSizingFunction::AUTO,
+                stylo::TrackBreadth::MinContent => MaxTrackSizingFunction::MIN_CONTENT,
+                stylo::TrackBreadth::MaxContent => MaxTrackSizingFunction::MAX_CONTENT,
             },
         },
     }

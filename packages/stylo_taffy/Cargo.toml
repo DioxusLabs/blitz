@@ -15,6 +15,7 @@ rust-version.workspace = true
 taffy = { workspace = true }
 style = { workspace = true }
 style_atoms = { workspace = true }
+tracing = { workspace = true, optional = true }
 
 [features]
 default = ["std", "block", "flexbox", "grid"]
@@ -23,3 +24,4 @@ block = ["taffy/block_layout"]
 flexbox = ["taffy/flexbox"]
 grid = ["taffy/grid"]
 floats = ["taffy/float_layout"]
+tracing = ["dep:tracing"]
