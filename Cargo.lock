@@ -5829,28 +5829,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "read-fonts"
-version = "0.37.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7b634fabf032fab15307ffd272149b622260f55974d9fad689292a5d33df02e5"
-dependencies = [
- "bytemuck",
- "font-types 0.11.3",
-]
-
-[[package]]
-name = "read-fonts"
-version = "0.39.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c4ed38b89c2c77ff968c524145ad65fb010f38af5c7a224b53b81d47ac2daa81"
-dependencies = [
- "bytemuck",
- "core_maths",
- "font-types 0.11.3",
-]
-
-[[package]]
-name = "readme"
+name = "rdme"
 version = "0.1.0"
 dependencies = [
  "anyrender_skia",
@@ -5872,6 +5851,27 @@ dependencies = [
  "tracing-subscriber",
  "url",
  "winit",
+]
+
+[[package]]
+name = "read-fonts"
+version = "0.37.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7b634fabf032fab15307ffd272149b622260f55974d9fad689292a5d33df02e5"
+dependencies = [
+ "bytemuck",
+ "font-types 0.11.3",
+]
+
+[[package]]
+name = "read-fonts"
+version = "0.39.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c4ed38b89c2c77ff968c524145ad65fb010f38af5c7a224b53b81d47ac2daa81"
+dependencies = [
+ "bytemuck",
+ "core_maths",
+ "font-types 0.11.3",
 ]
 
 [[package]]
