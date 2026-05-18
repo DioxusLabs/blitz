@@ -1,6 +1,6 @@
 [package]
 name = "rdme"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2024"
 description = "Markdown renderering app"
 license.workspace = true
@@ -10,7 +10,7 @@ repository.workspace = true
 publish = true
 
 [features]
-default = ["hybrid", "comrak", "floats", "tracing"]
+default = ["hybrid", "comrak", "floats", "incremental"]
 
 # Renderers
 gpu = ["dep:anyrender_vello"]
