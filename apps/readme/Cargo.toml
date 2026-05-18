@@ -2,8 +2,11 @@
 name = "rdme"
 version = "0.1.0"
 edition = "2024"
+description = "Markdown renderering app"
 license.workspace = true
 rust-version.workspace = true
+homepage.workspace = true
+repository.workspace = true
 publish = true
 
 [features]
