@@ -21,8 +21,6 @@ pub use crate::application::BlitzApplication;
 pub use crate::event::{BlitzShellEvent, BlitzShellProxy};
 pub use crate::window::{View, WindowConfig};
 
-pub use peniko::Color;
-
 #[cfg(feature = "data-uri")]
 pub use crate::net::DataUriNetProvider;
 

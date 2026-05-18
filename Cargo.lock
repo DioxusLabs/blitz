@@ -949,7 +949,6 @@ dependencies = [
  "data-url",
  "futures-util",
  "keyboard-types 0.7.0",
- "peniko",
  "rfd",
  "tracing",
  "wasm-bindgen",
