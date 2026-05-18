@@ -291,16 +291,6 @@ pub fn Toolbar(
     #[cfg(not(feature = "capture"))]
     let capture_item = rsx!();
 
-    #[cfg(feature = "vello")]
-    let fps_toggle_item = rsx!(
-        div { class: "menu-item", onclick: move |_| {
-            menu_open.set(false);
-            show_fps.toggle();
-        }, "Toggle FPS" }
-    );
-    #[cfg(not(feature = "vello"))]
-    let fps_toggle_item = rsx!();
-
     #[cfg(feature = "cache")]
     let clear_cache_item = {
         let clear_cache_action = use_callback(move |_| {
@@ -437,7 +427,10 @@ pub fn Toolbar(
                         {screenshot_item}
                         {capture_item}
                         div { class: "menu-item", onclick: move |_| devtools_action(()), "Toggle DevTools" }
-                        {fps_toggle_item}
+                        div { class: "menu-item", onclick: move |_| {
+                            menu_open.set(false);
+                            show_fps.toggle();
+                        }, "Toggle FPS" }
                         {clear_cache_item}
                     }
                 }

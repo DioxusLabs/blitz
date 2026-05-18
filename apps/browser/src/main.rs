@@ -24,7 +24,6 @@ mod browser_history;
 mod capture;
 mod document_loader;
 mod favicon;
-#[cfg(feature = "vello")]
 mod fps_overlay;
 mod history;
 mod icons;
@@ -153,12 +152,9 @@ fn app() -> Element {
 
     let show_fps: Signal<bool> = use_signal(|| false);
 
-    #[cfg(feature = "vello")]
     let fps_overlay_el = rsx!(if show_fps() {
         fps_overlay::FpsOverlay {}
     });
-    #[cfg(not(feature = "vello"))]
-    let fps_overlay_el = rsx!();
 
     let window_title = tab_display_title(active_tab(tabs, active_tab_id()));
 
