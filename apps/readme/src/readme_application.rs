@@ -4,7 +4,7 @@ use crate::WindowRenderer;
 use blitz_dom::DocumentConfig;
 use blitz_html::HtmlDocument;
 use blitz_net::Provider;
-use blitz_shell::{BlitzApplication, BlitzShellEvent, BlitzShellProxy, View, WindowConfig};
+use blitz_shell::{BlitzApplication, BlitzShellEvent, BlitzShellProxy, Color, View, WindowConfig};
 use blitz_traits::navigation::{NavigationOptions, NavigationProvider};
 use tokio::runtime::Handle;
 use winit::application::ApplicationHandler;
@@ -51,7 +51,8 @@ impl ReadmeApplication {
     }
 
     pub fn add_window(&mut self, window_config: WindowConfig<WindowRenderer>) {
-        self.inner.add_window(window_config);
+        self.inner
+            .add_window(window_config.with_bg_color(Color::WHITE));
     }
 
     fn window_mut(&mut self) -> &mut View<WindowRenderer> {

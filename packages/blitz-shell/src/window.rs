@@ -5,7 +5,7 @@ use crate::convert_events::{
     winit_key_event_to_blitz, winit_modifiers_to_kbt_modifiers,
 };
 use crate::event::{BlitzShellEvent, BlitzShellProxy, create_waker};
-use anyrender::WindowRenderer;
+use anyrender::{PaintScene as _, WindowRenderer};
 use blitz_dom::Document;
 use blitz_paint::paint_scene;
 use blitz_traits::events::{
@@ -13,7 +13,8 @@ use blitz_traits::events::{
     MouseEventButtons, PointerCoords, PointerDetails, UiEvent,
 };
 use blitz_traits::shell::Viewport;
-use winit::dpi::{LogicalPosition, PhysicalInsets, PhysicalPosition};
+use peniko::Color;
+use winit::dpi::{LogicalInsets, LogicalPosition, PhysicalInsets, PhysicalPosition};
 use winit::keyboard::PhysicalKey;
 
 use std::any::Any;
@@ -43,6 +44,7 @@ pub struct WindowConfig<Rend: WindowRenderer> {
     doc: Box<dyn Document>,
     pub(crate) attributes: WindowAttributes,
     renderer: Rend,
+    bg_color: Color,
 }
 
 impl<Rend: WindowRenderer> WindowConfig<Rend> {
@@ -59,7 +61,12 @@ impl<Rend: WindowRenderer> WindowConfig<Rend> {
             doc,
             attributes,
             renderer,
+            bg_color: Color::TRANSPARENT,
         }
+    }
+
+    pub fn with_bg_color(self, bg_color: Color) -> Self {
+        WindowConfig { bg_color, ..self }
     }
 }
 
@@ -74,6 +81,7 @@ pub struct View<Rend: WindowRenderer> {
 
     /// The state of the keyboard modifiers (ctrl, shift, etc). Winit/Tao don't track these for us so we
     /// need to store them in order to have access to them when processing keypress events
+    pub bg_color: Color,
     pub theme_override: Option<Theme>,
     pub keyboard_modifiers: Modifiers,
     pub buttons: MouseEventButtons,
@@ -182,6 +190,7 @@ impl<Rend: WindowRenderer> View<Rend> {
             proxy: proxy.clone(),
             window: winit_window.clone(),
             doc,
+            bg_color: config.bg_color,
             theme_override: None,
             buttons: MouseEventButtons::None,
             safe_area_insets,
@@ -373,10 +382,32 @@ impl<Rend: WindowRenderer> View<Rend> {
         let scale = inner.viewport().scale_f64();
         let is_animating = inner.is_animating();
         let is_blocked = inner.has_pending_critical_resources();
-        let insets = self.safe_area_insets.to_logical(scale);
+        let insets: LogicalInsets<u32> = self.safe_area_insets.to_logical(scale);
 
         if !is_blocked && is_visible {
             self.renderer.render(|scene| {
+                use peniko::kurbo;
+
+                // Fill background color
+                if self.bg_color != Color::TRANSPARENT {
+                    scene.fill(
+                        peniko::Fill::NonZero,
+                        kurbo::Affine::IDENTITY,
+                        peniko::Color::WHITE,
+                        None,
+                        &kurbo::Rect::from_origin_size(
+                            kurbo::Point {
+                                x: insets.left as f64,
+                                y: insets.top as f64,
+                            },
+                            kurbo::Size {
+                                width: width as f64,
+                                height: height as f64,
+                            },
+                        ),
+                    );
+                }
+
                 paint_scene(
                     scene,
                     &mut inner,
