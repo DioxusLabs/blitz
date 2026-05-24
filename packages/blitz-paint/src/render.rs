@@ -402,7 +402,7 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
         // TODO: Handle hit testing correctly for transformed nodes
         // TODO: Implement nested transforms
         if let Some(style_transform) =
-            blitz_dom::resolve_2d_transform(style.get_box(), reference_box, scale)
+            blitz_dom::resolve_2d_transform(style.get_box(), reference_box)
         {
             transform *= style_transform
         }

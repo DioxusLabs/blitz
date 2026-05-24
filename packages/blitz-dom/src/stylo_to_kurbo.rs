@@ -25,7 +25,6 @@ use style::{
 pub fn resolve_2d_transform(
     box_styles: &BoxStyleStruct,
     reference_box: Rect<CSSPixelLength>,
-    scale: f64,
 ) -> Option<Affine> {
     let translate = match &box_styles.translate {
         Translate::None => None,
@@ -45,8 +44,8 @@ pub fn resolve_2d_transform(
     let scale_transform = match &box_styles.scale {
         Scale::None => None,
         Scale::Scale(x, y, _z) => Some(Vec2 {
-            x: *x as f64 * scale,
-            y: *y as f64 * scale,
+            x: *x as f64,
+            y: *y as f64,
         }),
     };
 
@@ -61,18 +60,7 @@ pub fn resolve_2d_transform(
             .map(|(t, _has_3d)| {
                 // See: https://drafts.csswg.org/css-transforms-2/#two-dimensional-subset
                 // And https://docs.rs/kurbo/latest/kurbo/struct.Affine.html#method.new
-                Affine::new(
-                    [
-                        t.m11,
-                        t.m12,
-                        t.m21,
-                        t.m22,
-                        // Scale the translation but not the scale or skew
-                        t.m41 * scale as f32,
-                        t.m42 * scale as f32,
-                    ]
-                    .map(|v| v as f64),
-                )
+                Affine::new([t.m11, t.m12, t.m21, t.m22, t.m41, t.m42].map(|v| v as f64))
             })
     };
 
