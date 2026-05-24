@@ -155,13 +155,15 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
             scene.fill(Fill::NonZero, Affine::IDENTITY, bg_color, None, &rect);
         }
 
+        let location = Point {
+            x: self.initial_x - viewport_scroll.x,
+            y: self.initial_y - viewport_scroll.y,
+        };
         self.render_element(
             scene,
             root_id,
-            Point {
-                x: self.initial_x - viewport_scroll.x,
-                y: self.initial_y - viewport_scroll.y,
-            },
+            location,
+            Affine::translate(location.to_vec2()),
         );
 
         // Render debug overlay
@@ -188,7 +190,13 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
     ///
     /// Approaching rendering this way guarantees we have all the styles we need when rendering text with not having
     /// to traverse back to the parent for its styles, or needing to pass down styles
-    fn render_element(&self, scene: &mut impl PaintScene, node_id: usize, location: Point) {
+    fn render_element(
+        &self,
+        scene: &mut impl PaintScene,
+        node_id: usize,
+        location: Point,
+        parent_transform: Affine,
+    ) {
         let node = &self.dom.as_ref().tree()[node_id];
 
         // Early return if the element is hidden
@@ -277,7 +285,13 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
         #[cfg(not(feature = "custom-widget"))]
         let custom_widget_scene = None;
 
-        let mut cx = self.element_cx(node, layout, box_position, custom_widget_scene);
+        let mut cx = self.element_cx(
+            node,
+            layout,
+            box_position,
+            parent_transform,
+            custom_widget_scene,
+        );
 
         cx.draw_outline(scene);
         cx.draw_outset_box_shadow(scene);
@@ -343,12 +357,18 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
         );
     }
 
-    fn render_node(&self, scene: &mut impl PaintScene, node_id: usize, location: Point) {
+    fn render_node(
+        &self,
+        scene: &mut impl PaintScene,
+        node_id: usize,
+        location: Point,
+        parent_transform: Affine,
+    ) {
         let node = &self.dom.as_ref().tree()[node_id];
 
         match &node.data {
             NodeData::Element(_) | NodeData::AnonymousBlock(_) => {
-                self.render_element(scene, node_id, location)
+                self.render_element(scene, node_id, location, parent_transform)
             }
             NodeData::Text(TextNodeData { .. }) => {
                 // Text nodes should never be rendered directly
@@ -366,6 +386,7 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
         node: &'dom Node,
         layout: Layout,
         box_position: Point,
+        parent_transform: Affine,
         custom_widget_scene: Option<&'a Scene>,
     ) -> ElementCx<'dom, 'a> {
         let style = node
@@ -386,7 +407,12 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
 
         // the bezpaths for every element are (potentially) cached (not yet, tbd)
         // By performing the transform, we prevent the cache from becoming invalid when the page shifts around
-        let mut transform = Affine::translate(box_position.to_vec2() * scale);
+        let offset = if parent_transform == Affine::IDENTITY {
+            box_position.to_vec2()
+        } else {
+            Vec2::new(layout.location.x as f64, layout.location.y as f64)
+        };
+        let mut transform = parent_transform * Affine::translate(offset * scale);
 
         // Reference box for resolve percentage transforms
         let reference_box = euclid::Rect::new(
@@ -398,9 +424,6 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
         );
 
         // Apply CSS transform property (where transforms are 2d)
-        //
-        // TODO: Handle hit testing correctly for transformed nodes
-        // TODO: Implement nested transforms
         if let Some(style_transform) =
             blitz_dom::resolve_2d_transform(style.get_box(), reference_box)
         {
@@ -620,14 +643,14 @@ impl ElementCx<'_, '_> {
                     x: self.pos.x + hoisted_child.position.x as f64,
                     y: self.pos.y + hoisted_child.position.y as f64,
                 };
-                self.render_node(scene, hoisted_child.node_id, pos);
+                self.render_node(scene, hoisted_child.node_id, pos, self.transform);
             }
         }
 
         // Regular children
         if let Some(children) = &*self.node.paint_children.borrow() {
             for child_id in children {
-                self.render_node(scene, *child_id, self.pos);
+                self.render_node(scene, *child_id, self.pos, self.transform);
             }
         }
 
@@ -638,7 +661,7 @@ impl ElementCx<'_, '_> {
                     x: self.pos.x + hoisted_child.position.x as f64,
                     y: self.pos.y + hoisted_child.position.y as f64,
                 };
-                self.render_node(scene, hoisted_child.node_id, pos);
+                self.render_node(scene, hoisted_child.node_id, pos, self.transform);
             }
         }
     }

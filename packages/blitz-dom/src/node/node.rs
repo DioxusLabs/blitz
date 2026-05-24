@@ -1,8 +1,11 @@
+use crate::Document;
+use crate::layout::damage::HoistedPaintChildren;
 use bitflags::bitflags;
 use blitz_traits::events::{
     BlitzPointerEvent, BlitzPointerId, DomEventData, HitResult, PointerCoords,
 };
 use blitz_traits::shell::ShellProvider;
+use euclid::{Point2D, Rect, Size2D};
 use html_escape::encode_quoted_attribute_to_string;
 use keyboard_types::Modifiers;
 use kurbo::Affine;
@@ -23,6 +26,7 @@ use style::selector_parser::{PseudoElement, RestyleDamage};
 use style::servo_arc::Arc as ServoArc;
 use style::shared_lock::SharedRwLock;
 use style::stylesheets::UrlExtraData;
+use style::values::computed::CSSPixelLength;
 use style::values::computed::Display as StyloDisplay;
 use style::values::specified::box_::{DisplayInside, DisplayOutside};
 use style_dom::ElementState;
@@ -31,9 +35,6 @@ use taffy::{
     Cache,
     prelude::{Layout, Style},
 };
-
-use crate::Document;
-use crate::layout::damage::HoistedPaintChildren;
 
 use super::stylo_data::StyloData;
 use super::{Attribute, ElementData};
@@ -904,25 +905,42 @@ impl Node {
         let mut x = x - self.final_layout.location.x + self.scroll_offset.x as f32;
         let mut y = y - self.final_layout.location.y + self.scroll_offset.y as f32;
 
+        let (cx, cy) = self
+            .primary_styles()
+            .and_then(|styles| {
+                let w = self.final_layout.size.width;
+                let h = self.final_layout.size.height;
+                let reference_box = Rect::new(
+                    Point2D::new(CSSPixelLength::new(0.0), CSSPixelLength::new(0.0)),
+                    Size2D::new(CSSPixelLength::new(w), CSSPixelLength::new(h)),
+                );
+                crate::resolve_2d_transform(styles.get_box(), reference_box, 1.0)
+            })
+            .map(|t| {
+                let p = t.inverse() * kurbo::Point::new(x as f64, y as f64);
+                (p.x as f32, p.y as f32)
+            })
+            .unwrap_or((x, y));
+
         let size = self.final_layout.size;
-        let matches_self = !(x < 0.0
-            || x > size.width + self.scroll_offset.x as f32
-            || y < 0.0
-            || y > size.height + self.scroll_offset.y as f32);
+        let matches_self = !(cx < 0.0
+            || cx > size.width + self.scroll_offset.x as f32
+            || cy < 0.0
+            || cy > size.height + self.scroll_offset.y as f32);
 
         let content_size = self.final_layout.content_size;
-        let matches_content = !(x < 0.0
-            || x > content_size.width + self.scroll_offset.x as f32
-            || y < 0.0
-            || y > content_size.height + self.scroll_offset.y as f32);
+        let matches_content = !(cx < 0.0
+            || cx > content_size.width + self.scroll_offset.x as f32
+            || cy < 0.0
+            || cy > content_size.height + self.scroll_offset.y as f32);
 
         let matches_hoisted_content = match &self.stacking_context {
             Some(sc) => {
                 let content_area = sc.content_area;
-                x >= content_area.left + self.scroll_offset.x as f32
-                    && x <= content_area.right + self.scroll_offset.x as f32
-                    && y >= content_area.top + self.scroll_offset.y as f32
-                    && y <= content_area.bottom + self.scroll_offset.y as f32
+                cx >= content_area.left + self.scroll_offset.x as f32
+                    && cx <= content_area.right + self.scroll_offset.x as f32
+                    && cy >= content_area.top + self.scroll_offset.y as f32
+                    && cy <= content_area.bottom + self.scroll_offset.y as f32
             }
             None => false,
         };
@@ -944,8 +962,8 @@ impl Node {
         if matches_hoisted_content {
             if let Some(hoisted) = &self.stacking_context {
                 for hoisted_child in hoisted.pos_z_hoisted_children().rev() {
-                    let x = x - hoisted_child.position.x;
-                    let y = y - hoisted_child.position.y;
+                    let x = cx - hoisted_child.position.x;
+                    let y = cy - hoisted_child.position.y;
                     if let Some(hit) = self.with(hoisted_child.node_id).hit(x, y) {
                         return Some(hit);
                     }
@@ -955,7 +973,7 @@ impl Node {
 
         // Call `.hit()` on each child in turn. If any return `Some` then return that value. Else return `Some(self.id).
         for child_id in self.paint_children.borrow().iter().flatten().rev() {
-            if let Some(hit) = self.with(*child_id).hit(x, y) {
+            if let Some(hit) = self.with(*child_id).hit(cx, cy) {
                 return Some(hit);
             }
         }
@@ -964,8 +982,8 @@ impl Node {
         if matches_hoisted_content {
             if let Some(hoisted) = &self.stacking_context {
                 for hoisted_child in hoisted.neg_z_hoisted_children().rev() {
-                    let x = x - hoisted_child.position.x;
-                    let y = y - hoisted_child.position.y;
+                    let x = cx - hoisted_child.position.x;
+                    let y = cy - hoisted_child.position.y;
                     if let Some(hit) = self.with(hoisted_child.node_id).hit(x, y) {
                         return Some(hit);
                     }
@@ -981,7 +999,7 @@ impl Node {
                 let scale = layout.scale();
 
                 if let Some((cluster, _side)) =
-                    Cluster::from_point_exact(layout, x * scale, y * scale)
+                    Cluster::from_point_exact(layout, cx * scale, cy * scale)
                 {
                     let style_index = cluster.glyphs().next()?.style_index();
                     let node_id = layout.styles()[style_index].brush.id;
