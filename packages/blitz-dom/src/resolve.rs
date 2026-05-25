@@ -81,6 +81,9 @@ impl BaseDocument {
         self.resolve_layout();
         timer.record_time("layout");
 
+        self.resolve_transforms(root_node_id);
+        timer.record_time("transform");
+
         // Clear all damage and dirty flags
         #[cfg(feature = "incremental")]
         {
@@ -119,6 +122,26 @@ impl BaseDocument {
         timer.record_time("subdocs");
 
         timer.print_times(&format!("Resolve({}): ", self.id()));
+    }
+
+    fn resolve_transforms(&mut self, node_id: usize) {
+        if !self.nodes.contains(node_id) {
+            return;
+        }
+
+        self.nodes[node_id].set_transform();
+
+        let children = self.nodes[node_id].children.clone();
+        for child_id in children {
+            self.resolve_transforms(child_id);
+        }
+
+        if let Some(before) = self.nodes[node_id].before {
+            self.resolve_transforms(before);
+        }
+        if let Some(after) = self.nodes[node_id].after {
+            self.resolve_transforms(after);
+        }
     }
 
     pub fn resolve_scroll_animation(&mut self) {
