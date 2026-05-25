@@ -450,7 +450,9 @@ impl RoundTree for BaseDocument {
     }
 
     fn set_final_layout(&mut self, node_id: NodeId, layout: &Layout) {
-        self.node_from_id_mut(node_id).final_layout = *layout;
+        let node = self.node_from_id_mut(node_id);
+        node.final_layout = *layout;
+        node.set_transform();
     }
 }
 

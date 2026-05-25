@@ -414,19 +414,8 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
         };
         let mut transform = parent_transform * Affine::translate(offset * scale);
 
-        // Reference box for resolve percentage transforms
-        let reference_box = euclid::Rect::new(
-            euclid::Point2D::new(CSSPixelLength::new(0.0), CSSPixelLength::new(0.0)),
-            euclid::Size2D::new(
-                CSSPixelLength::new(frame.border_box.width() as f32),
-                CSSPixelLength::new(frame.border_box.height() as f32),
-            ),
-        );
-
         // Apply CSS transform property (where transforms are 2d)
-        if let Some(style_transform) =
-            blitz_dom::resolve_2d_transform(style.get_box(), reference_box)
-        {
+        if let Some(style_transform) = node.transform {
             transform *= style_transform
         }
 
