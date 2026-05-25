@@ -129,12 +129,24 @@ impl BaseDocument {
             return;
         }
 
+        if !self.nodes[node_id]
+            .damage()
+            .map(|d| d.contains(RestyleDamage::RECALCULATE_OVERFLOW))
+            .unwrap_or(false)
+        {
+            return;
+        }
+
         self.nodes[node_id].set_transform();
 
-        let children = self.nodes[node_id].children.clone();
-        for child_id in children {
-            self.resolve_transforms(child_id);
+        let layout_children = std::mem::take(self.nodes[node_id].layout_children.get_mut());
+        if let Some(lc) = layout_children.as_ref() {
+            for child_id in lc {
+                self.resolve_transforms(*child_id);
+            }
         }
+
+        *self.nodes[node_id].layout_children.get_mut() = layout_children;
 
         if let Some(before) = self.nodes[node_id].before {
             self.resolve_transforms(before);
