@@ -195,18 +195,15 @@ impl Node {
     }
 
     pub fn set_transform(&mut self) {
-        self.transform = self
-            .primary_styles()
-            .map(|s| {
-                let w = self.final_layout.size.width;
-                let h = self.final_layout.size.height;
-                let reference_box = Rect::new(
-                    Point2D::new(CSSPixelLength::new(0.0), CSSPixelLength::new(0.0)),
-                    Size2D::new(CSSPixelLength::new(w), CSSPixelLength::new(h)),
-                );
-                crate::resolve_2d_transform(s.get_box(), reference_box)
-            })
-            .flatten();
+        self.transform = self.primary_styles().and_then(|s| {
+            let w = self.final_layout.size.width;
+            let h = self.final_layout.size.height;
+            let reference_box = Rect::new(
+                Point2D::new(CSSPixelLength::new(0.0), CSSPixelLength::new(0.0)),
+                Size2D::new(CSSPixelLength::new(w), CSSPixelLength::new(h)),
+            );
+            crate::resolve_2d_transform(s.get_box(), reference_box)
+        });
     }
 
     pub fn pe_by_index(&self, index: usize) -> Option<usize> {
@@ -904,7 +901,7 @@ impl Node {
     ///
     /// TODO: z-index
     /// (If multiple children are positioned at the position then a random one will be recursed into)
-    pub fn hit(&self, x: f32, y: f32) -> Option<HitResult> {
+    pub fn hit(&self, x: f32, y: f32, scale: f64) -> Option<HitResult> {
         use style::computed_values::visibility::T as Visibility;
 
         // Don't hit on visbility:hidden elements
@@ -921,7 +918,10 @@ impl Node {
         let mut y = y - self.final_layout.location.y + self.scroll_offset.y as f32;
 
         if let Some(t) = self.transform {
-            let p = t.inverse() * kurbo::Point::new(x as f64, y as f64);
+            let mut coefs = t.as_coeffs();
+            coefs[4] /= scale;
+            coefs[5] /= scale;
+            let p = Affine::new(coefs).inverse() * kurbo::Point::new((x) as f64, (y) as f64);
             x = p.x as f32;
             y = p.y as f32;
         }
@@ -968,7 +968,7 @@ impl Node {
                 for hoisted_child in hoisted.pos_z_hoisted_children().rev() {
                     let x = x - hoisted_child.position.x;
                     let y = y - hoisted_child.position.y;
-                    if let Some(hit) = self.with(hoisted_child.node_id).hit(x, y) {
+                    if let Some(hit) = self.with(hoisted_child.node_id).hit(x, y, scale) {
                         return Some(hit);
                     }
                 }
@@ -977,7 +977,7 @@ impl Node {
 
         // Call `.hit()` on each child in turn. If any return `Some` then return that value. Else return `Some(self.id).
         for child_id in self.paint_children.borrow().iter().flatten().rev() {
-            if let Some(hit) = self.with(*child_id).hit(x, y) {
+            if let Some(hit) = self.with(*child_id).hit(x, y, scale) {
                 return Some(hit);
             }
         }
@@ -988,7 +988,7 @@ impl Node {
                 for hoisted_child in hoisted.neg_z_hoisted_children().rev() {
                     let x = x - hoisted_child.position.x;
                     let y = y - hoisted_child.position.y;
-                    if let Some(hit) = self.with(hoisted_child.node_id).hit(x, y) {
+                    if let Some(hit) = self.with(hoisted_child.node_id).hit(x, y, scale) {
                         return Some(hit);
                     }
                 }
