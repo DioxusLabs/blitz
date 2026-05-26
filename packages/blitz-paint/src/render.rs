@@ -349,7 +349,7 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
                         cx.draw_text_input_text(scene, content_position);
                         cx.draw_inline_layout(scene, content_position);
                         cx.draw_marker(scene, content_position);
-                        cx.draw_children(scene);
+                        cx.draw_children(scene, parent_transform);
                     },
                 );
             },
@@ -621,22 +621,26 @@ impl ElementCx<'_, '_> {
         }
     }
 
-    fn draw_children(&self, scene: &mut impl PaintScene) {
+    fn draw_children(&self, scene: &mut impl PaintScene, parent_transform: Option<Affine>) {
         // Negative z_index hoisted nodes
+        let transform = match (parent_transform, self.node.transform) {
+            (Some(a), Some(b)) => Some(a * b),
+            (a, b) => a.or(b),
+        };
         if let Some(hoisted) = &self.node.stacking_context {
             for hoisted_child in hoisted.neg_z_hoisted_children() {
                 let pos = kurbo::Point {
                     x: self.pos.x + hoisted_child.position.x as f64,
                     y: self.pos.y + hoisted_child.position.y as f64,
                 };
-                self.render_node(scene, hoisted_child.node_id, pos, self.node.transform);
+                self.render_node(scene, hoisted_child.node_id, pos, transform);
             }
         }
 
         // Regular children
         if let Some(children) = &*self.node.paint_children.borrow() {
             for child_id in children {
-                self.render_node(scene, *child_id, self.pos, self.node.transform);
+                self.render_node(scene, *child_id, self.pos, transform);
             }
         }
 
@@ -647,7 +651,7 @@ impl ElementCx<'_, '_> {
                     x: self.pos.x + hoisted_child.position.x as f64,
                     y: self.pos.y + hoisted_child.position.y as f64,
                 };
-                self.render_node(scene, hoisted_child.node_id, pos, self.node.transform);
+                self.render_node(scene, hoisted_child.node_id, pos, transform);
             }
         }
     }
