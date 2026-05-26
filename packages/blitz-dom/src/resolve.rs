@@ -131,7 +131,7 @@ impl BaseDocument {
 
         if !self.nodes[node_id]
             .damage()
-            .map(|d| d.contains(RestyleDamage::RECALCULATE_OVERFLOW))
+            .map(|d| d.contains(style::selector_parser::RestyleDamage::RECALCULATE_OVERFLOW))
             .unwrap_or(false)
         {
             return;

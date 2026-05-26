@@ -155,15 +155,14 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
             scene.fill(Fill::NonZero, Affine::IDENTITY, bg_color, None, &rect);
         }
 
-        let location = Point {
-            x: self.initial_x - viewport_scroll.x,
-            y: self.initial_y - viewport_scroll.y,
-        };
         self.render_element(
             scene,
             root_id,
-            location,
-            Affine::translate(location.to_vec2()),
+            Point {
+                x: self.initial_x - viewport_scroll.x,
+                y: self.initial_y - viewport_scroll.y,
+            },
+            root_element.transform,
         );
 
         // Render debug overlay
@@ -195,7 +194,7 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
         scene: &mut impl PaintScene,
         node_id: usize,
         location: Point,
-        parent_transform: Affine,
+        parent_transform: Option<Affine>,
     ) {
         let node = &self.dom.as_ref().tree()[node_id];
 
@@ -362,7 +361,7 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
         scene: &mut impl PaintScene,
         node_id: usize,
         location: Point,
-        parent_transform: Affine,
+        parent_transform: Option<Affine>,
     ) {
         let node = &self.dom.as_ref().tree()[node_id];
 
@@ -386,7 +385,7 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
         node: &'dom Node,
         layout: Layout,
         box_position: Point,
-        parent_transform: Affine,
+        parent_transform: Option<Affine>,
         custom_widget_scene: Option<&'a Scene>,
     ) -> ElementCx<'dom, 'a> {
         let style = node
@@ -407,16 +406,14 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
 
         // the bezpaths for every element are (potentially) cached (not yet, tbd)
         // By performing the transform, we prevent the cache from becoming invalid when the page shifts around
-        let offset = if parent_transform == Affine::IDENTITY {
-            box_position.to_vec2()
-        } else {
-            Vec2::new(layout.location.x as f64, layout.location.y as f64)
-        };
-        let mut transform = parent_transform * Affine::translate(offset * scale);
+        let mut transform = Affine::translate(box_position.to_vec2() * scale);
+        if let Some(parent) = parent_transform {
+            transform = parent * transform;
+        }
 
         // Apply CSS transform property (where transforms are 2d)
         if let Some(style_transform) = node.transform {
-            transform *= style_transform
+            transform *= style_transform;
         }
 
         let element = node.element_data().unwrap();
@@ -632,14 +629,14 @@ impl ElementCx<'_, '_> {
                     x: self.pos.x + hoisted_child.position.x as f64,
                     y: self.pos.y + hoisted_child.position.y as f64,
                 };
-                self.render_node(scene, hoisted_child.node_id, pos, self.transform);
+                self.render_node(scene, hoisted_child.node_id, pos, self.node.transform);
             }
         }
 
         // Regular children
         if let Some(children) = &*self.node.paint_children.borrow() {
             for child_id in children {
-                self.render_node(scene, *child_id, self.pos, self.transform);
+                self.render_node(scene, *child_id, self.pos, self.node.transform);
             }
         }
 
@@ -650,7 +647,7 @@ impl ElementCx<'_, '_> {
                     x: self.pos.x + hoisted_child.position.x as f64,
                     y: self.pos.y + hoisted_child.position.y as f64,
                 };
-                self.render_node(scene, hoisted_child.node_id, pos, self.transform);
+                self.render_node(scene, hoisted_child.node_id, pos, self.node.transform);
             }
         }
     }
