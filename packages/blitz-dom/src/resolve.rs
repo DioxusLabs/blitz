@@ -137,7 +137,7 @@ impl BaseDocument {
             return;
         }
 
-        self.nodes[node_id].set_transform();
+        self.nodes[node_id].set_transform(self.viewport.scale());
 
         let layout_children = std::mem::take(self.nodes[node_id].layout_children.get_mut());
         if let Some(lc) = layout_children.as_ref() {

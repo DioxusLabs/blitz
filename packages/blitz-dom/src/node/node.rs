@@ -194,10 +194,10 @@ impl Node {
         }
     }
 
-    pub fn set_transform(&mut self) {
+    pub fn set_transform(&mut self, scale: f32) {
         self.transform = self.primary_styles().and_then(|s| {
-            let w = self.final_layout.size.width;
-            let h = self.final_layout.size.height;
+            let w = self.final_layout.size.width * scale;
+            let h = self.final_layout.size.height * scale;
             let reference_box = Rect::new(
                 Point2D::new(CSSPixelLength::new(0.0), CSSPixelLength::new(0.0)),
                 Size2D::new(CSSPixelLength::new(w), CSSPixelLength::new(h)),
