@@ -162,7 +162,7 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
                 x: self.initial_x - viewport_scroll.x,
                 y: self.initial_y - viewport_scroll.y,
             },
-            root_element.transform.unwrap_or_default(),
+            Affine::IDENTITY,
         );
 
         // Render debug overlay
@@ -285,9 +285,6 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
         let custom_widget_scene = None;
 
         // Apply CSS transform property (where transforms are 2d)
-        if let Some(style_transform) = node.transform {
-            parent_style_transform *= style_transform;
-        }
 
         let mut cx = self.element_cx(
             node,
@@ -296,6 +293,10 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
             parent_style_transform,
             custom_widget_scene,
         );
+
+        if let Some(style_transform) = node.transform {
+            parent_style_transform *= style_transform;
+        }
 
         cx.draw_outline(scene);
         cx.draw_outset_box_shadow(scene);
@@ -409,9 +410,12 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
         // Also! we can cache the bezpaths themselves, saving us a bunch of work
         let frame = create_css_rect(&style, &layout, scale);
 
-        // the bezpaths for every element are (potentially) cached (not yet, tbd)
-        // By performing the transform, we prevent the cache from becoming invalid when the page shifts around
-        let transform = Affine::translate(box_position.to_vec2() * scale) * parent_style_transform;
+        let mut transform =
+            parent_style_transform * Affine::translate(box_position.to_vec2() * scale);
+
+        if let Some(t) = node.transform {
+            transform *= t;
+        }
 
         let element = node.element_data().unwrap();
 
