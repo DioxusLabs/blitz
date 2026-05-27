@@ -31,6 +31,13 @@ impl Viewport {
         self.pan[1] = sy - wy * new_zoom;
         self.zoom = new_zoom;
     }
+
+    pub fn pan(&mut self, screen: &[f32; 2], last: &[f32; 2]) {
+        let dx = (screen[0] - last[0]) / self.zoom;
+        let dy = (screen[1] - last[1]) / self.zoom;
+        self.pan[0] += dx;
+        self.pan[1] += dy;
+    }
 }
 
 impl Default for Viewport {
@@ -43,15 +50,46 @@ impl Default for Viewport {
 }
 
 fn app() -> Element {
-    let mut border = use_signal(|| false);
     let mut viewport = use_store(Viewport::default);
+    let mut active_pointer = use_signal(|| false);
+    let mut last = use_signal(|| [0.0, 0.0]);
+
+    let onpointerdown = move |evt: Event<PointerData>| {
+        active_pointer.set(true);
+        let coords = evt.client_coordinates();
+        if evt
+            .held_buttons()
+            .contains(dioxus_elements::input_data::MouseButton::Auxiliary)
+        {
+            last.set([coords.x as f32, coords.y as f32]);
+            return;
+        }
+    };
+    let onpointerup = move |evt: Event<PointerData>| {
+        active_pointer.set(false);
+        if evt
+            .held_buttons()
+            .contains(dioxus_elements::input_data::MouseButton::Auxiliary)
+        {
+            return;
+        }
+    };
+
+    let onpointermove = move |evt: Event<PointerData>| {
+        if active_pointer() {
+            let coords = evt.client_coordinates();
+            let screen = [coords.x as f32, coords.y as f32];
+            viewport.write().pan(&screen, &last());
+            last.set(screen);
+        }
+    };
 
     let onwheel = move |e: Event<WheelData>| {
         let position = e.client_coordinates();
         let sx = position.x as f32;
         let sy = position.y as f32;
 
-        let sensitivity = 0.01;
+        let sensitivity = 0.001;
 
         let delta = match e.delta() {
             dioxus_elements::geometry::WheelDelta::Pixels(data) => data.y as f32 * sensitivity,
@@ -70,30 +108,6 @@ fn app() -> Element {
 
     rsx! {
         style { {CSS} }
-        div {
-            class: "container",
-
-            div { class: "black",
-                div {
-                    class: "blue",
-                    style: "transform: translateY(-20px);"
-                }
-            }
-
-            div { class: "black",
-                div {
-                    class: "blue",
-                    style: "transform: scale(0.8); transform-origin: center;"
-                }
-            }
-
-            div { class: "black",
-                div {
-                    class: "blue",
-                    style: "transform: rotate(20deg); transform-origin: center;"
-                }
-            }
-        }
 
         div {
             position: "absolute",
@@ -101,7 +115,9 @@ fn app() -> Element {
             left: 0,
             width: "100vw",
             height: "100vh",
-
+            onpointerdown,
+            onpointerup,
+            onpointermove,
             onwheel,
 
             div {
@@ -124,16 +140,15 @@ fn app() -> Element {
                     top: "50px",
                     left: "50px",
                     position: "absolute",
-                    "ITEM 50x50"
+                    "top 50 left 50"
                 }
-                button {
-                    position: "absolute",
-                    top: "150px",
+                // broken rendering
+                ToggleBtn {
                     left: "150px",
-                    border: if border() { "1px solid black"},
-                    onclick: move |_| border.toggle(),
-                    "{border} 150x150"
+                    right: "150px",
+                    width: "100px",
                 }
+
                 div {
                     position: "absolute",
                     top: "0px",
@@ -145,13 +160,94 @@ fn app() -> Element {
                         }
                     }
                 }
+                div {
+                    position: "absolute",
+                    left: "100px",
+                    top: "50px",
+                    a {
+                        class: "button",
+                        display: "inline-flex", // removing this resolves transform
+                        href: "#week-schedule",
+                        "2026 schedule"
+                    }
+                }
 
+                div {
+                    position: "absolute",
+                    left: "300px",
+                    top: "300px",
+                    div { class: "black",
+                        div {
+                            class: "blue",
+                            style: "transform: scale(0.8); transform-origin: center;"
+                        }
+                    }
+                    div { class: "black",
+                        div {
+                            class: "blue",
+                            style: "transform: rotate(20deg); transform-origin: center;"
+                        }
+                    }
+
+                    // I don't know why this one dissapears, making top less than 300px shows it again
+                    div { class: "black",
+                        div {
+                            class: "blue",
+                            style: "transform: translateY(-20px);"
+                        }
+                    }
+                }
+                div {
+                    width: 0,
+                    height: 0,
+                    position: "absolute",
+                    transform_origin: "0 0",
+                    transform: "rotate(20deg) translateY(550px)",
+                    div {
+                        font_size: "20px",
+                        top: "50px",
+                        left: "50px",
+                        position: "absolute",
+                        "top 50 left 50"
+                    }
+
+                    div {
+                        z_index: 10,
+                        font_size: "20px",
+                        top: "50px",
+                        left: "50px",
+                        position: "absolute",
+                        "top 50 left 50 z-index 10"
+                    }
+
+                    ToggleBtn {
+                        left: "150px",
+                        right: "150px",
+                    }
+
+                }
 
             }
         }
 
 
 
+    }
+}
+
+#[component]
+fn ToggleBtn(#[props(extends=GlobalAttributes)] attributes: Vec<Attribute>) -> Element {
+    let mut border = use_signal(|| false);
+
+    rsx! {
+        button {
+            position: "absolute",
+            border: if border() { "1px solid black"},
+            onclick: move |_| border.toggle(),
+
+             ..attributes,
+            "Toggle"
+        }
     }
 }
 
@@ -165,14 +261,56 @@ main {
     width: 100vw;
     height: 100vh;
     margin: 0;
+    overflow: none;
 }
-.container {
-    margin: 20px;
+
+body {
+    background: white;
 }
-.container div { width: 50px; height: 50px }
-body { background: white }
-.black { position: relative; z-index: 0; display: flex; border: 2px solid black; margin: 20px 0; }
-.blue { background: rgba(0, 0, 255, 0.5); }
-.blue:hover { background: rgba(255, 0, 0, 0.5); }
+
+.button {
+    align-items: center;
+    appearance: none;
+    border-radius: 1.5rem 0;
+    cursor: pointer;
+
+    font-size: 1rem;
+    font-weight: 700;
+    line-height: 1;
+    min-height: 3rem;
+    padding-inline: 1.5rem;
+    text-align: center;
+    text-decoration: none;
+    user-select: none;
+    transition-property: filter, scale;
+    transition-duration: 0.15s;
+    background-color: #e74310;
+    color: #fff;
+}
+
+.button:visited {
+    color: #fff;
+}
+
+.button:hover {
+    filter: brightness(90%);
+    scale: 1.2;
+}
+.black {
+    position: relative;
+    width: 50px;
+    height: 50px;
+    display: flex;
+    border: 2px solid black;
+    margin: 50px;
+}
+.blue {
+    width: 50px;
+    height: 50px;
+    background: rgba(0, 0, 255, 0.5);
+}
+.blue:hover {
+    background: rgba(255, 0, 0, 0.5);
+}
 
 "#;
