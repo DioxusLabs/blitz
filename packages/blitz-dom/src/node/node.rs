@@ -882,8 +882,11 @@ impl Node {
             return true;
         }
 
+        if self.transform.is_some() {
+            return true;
+        }
+
         // TODO: mix-blend-mode
-        // TODO: transforms
         // TODO: filter
         // TODO: clip-path
         // TODO: mask
