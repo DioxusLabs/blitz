@@ -1,5 +1,7 @@
 use dioxus_native::prelude::*;
 
+const SVG: Asset = asset!("./assets/hello_world.svg");
+const IMG: Asset = asset!("./assets/servo-color-negative-no-container.png");
 fn main() {
     dioxus_native::launch(app);
 }
@@ -55,24 +57,18 @@ fn app() -> Element {
     let mut last = use_signal(|| [0.0, 0.0]);
 
     let onpointerdown = move |evt: Event<PointerData>| {
-        active_pointer.set(true);
         let coords = evt.client_coordinates();
         if evt
             .held_buttons()
             .contains(dioxus_elements::input_data::MouseButton::Auxiliary)
         {
+            active_pointer.set(true);
             last.set([coords.x as f32, coords.y as f32]);
             return;
         }
     };
-    let onpointerup = move |evt: Event<PointerData>| {
+    let onpointerup = move |_: Event<PointerData>| {
         active_pointer.set(false);
-        if evt
-            .held_buttons()
-            .contains(dioxus_elements::input_data::MouseButton::Auxiliary)
-        {
-            return;
-        }
     };
 
     let onpointermove = move |evt: Event<PointerData>| {
@@ -121,8 +117,7 @@ fn app() -> Element {
             onwheel,
 
             div {
-                position: "absolute",
-                right: 0,
+                class: "overlay",
                 "{viewport}"
             }
             div {
@@ -136,6 +131,21 @@ fn app() -> Element {
                 transform: "{viewport}",
 
                 div {
+                    position: "absolute", left: "400px",
+                    width: "800px",
+                    height: "800px",
+                    img {  position: "absolute",src: SVG }
+                    img {  background: "black", top: "200px",  position: "absolute", src: IMG }
+
+                    img {  position: "absolute", transform: "scale(0.5) rotate(45deg)", src: SVG }
+                    img { background: "black", top: "200px",  position: "absolute", transform: "scale(0.5) rotate(45deg)", src: IMG }
+
+                    img {  position: "absolute", transform: "scale(0.5) translateY(150px) rotate(45deg)", src: SVG }
+                    img { background: "black", top: "200px",  position: "absolute", transform: "scale(0.5) translateY(150px) rotate(45deg)", src: IMG }
+                }
+
+
+                div {
                     font_size: "20px",
                     top: "50px",
                     left: "50px",
@@ -144,8 +154,8 @@ fn app() -> Element {
                 }
                 // broken rendering
                 ToggleBtn {
+                    top: "150px",
                     left: "150px",
-                    right: "150px",
                     width: "100px",
                 }
 
@@ -171,6 +181,8 @@ fn app() -> Element {
                         "2026 schedule"
                     }
                 }
+
+
 
                 div {
                     position: "absolute",
@@ -221,8 +233,8 @@ fn app() -> Element {
                     }
 
                     ToggleBtn {
+                        top: "150px",
                         left: "150px",
-                        right: "150px",
                     }
 
                 }
@@ -264,7 +276,14 @@ main {
     overflow: none;
 }
 
-body {
+.overlay {
+    position: absolute;
+    top: 20px;
+    right: 20px;
+    z-index: 99;
+}
+
+body, .overlay {
     background: white;
 }
 

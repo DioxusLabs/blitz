@@ -410,9 +410,10 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
         // Also! we can cache the bezpaths themselves, saving us a bunch of work
         let frame = create_css_rect(&style, &layout, scale);
 
-        let mut transform =
+        let pre_node_transform =
             parent_style_transform * Affine::translate(box_position.to_vec2() * scale);
 
+        let mut transform = pre_node_transform;
         if let Some(t) = node.transform {
             transform *= t;
         }
@@ -428,6 +429,7 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
             node,
             element,
             transform,
+            pre_node_transform,
             #[cfg(feature = "svg")]
             svg: element.svg_data(),
             text_input: element.text_input_data(),
@@ -475,6 +477,7 @@ struct ElementCx<'dom, 'a> {
     node: &'dom Node,
     element: &'dom ElementData,
     transform: Affine,
+    pre_node_transform: Affine,
     #[cfg(feature = "svg")]
     svg: Option<&'dom usvg::Tree>,
     text_input: Option<&'dom TextInputData>,
@@ -499,8 +502,12 @@ impl ElementCx<'_, '_> {
                     panic!("Tried to render node marked as inline root that does not have an inline layout: {:?}", self.node);
                 });
 
-            let transform =
-                Affine::translate((pos.x * self.scale, pos.y * self.scale)) * self.transform;
+            let mut transform = self.pre_node_transform
+                * Affine::translate((pos.x * self.scale, pos.y * self.scale));
+
+            if let Some(style) = self.node.transform {
+                transform *= style;
+            }
 
             // Render text selection highlight (if any) using cached selection ranges
             if let Some(&(sel_start, sel_end)) = self.context.selection_ranges.get(&self.node.id) {
@@ -535,8 +542,12 @@ impl ElementCx<'_, '_> {
                 y: pos.y + y_offset,
             };
 
-            let transform =
-                Affine::translate((pos.x * self.scale, pos.y * self.scale)) * self.transform;
+            let mut transform = self.pre_node_transform
+                * Affine::translate((pos.x * self.scale, pos.y * self.scale));
+
+            if let Some(style) = self.node.transform {
+                transform *= style;
+            }
 
             if self.node.is_focussed() {
                 // Render selection/caret
@@ -609,8 +620,12 @@ impl ElementCx<'_, '_> {
                 y: pos.y + y_offset as f64,
             };
 
-            let transform =
-                Affine::translate((pos.x * self.scale, pos.y * self.scale)) * self.transform;
+            let mut transform = self.pre_node_transform
+                * Affine::translate((pos.x * self.scale, pos.y * self.scale));
+
+            if let Some(style) = self.node.transform {
+                transform *= style;
+            }
 
             crate::text::stroke_text(
                 scene,
