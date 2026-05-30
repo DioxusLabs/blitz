@@ -147,13 +147,6 @@ impl BaseDocument {
         }
 
         *self.nodes[node_id].layout_children.get_mut() = layout_children;
-
-        if let Some(before) = self.nodes[node_id].before {
-            self.resolve_transforms(before);
-        }
-        if let Some(after) = self.nodes[node_id].after {
-            self.resolve_transforms(after);
-        }
     }
 
     pub fn resolve_scroll_animation(&mut self) {
