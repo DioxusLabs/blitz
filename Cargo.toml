@@ -231,6 +231,11 @@ keywords = ["dom", "ui", "gui", "react", "wasm"]
 rust-version = "1.89.0"
 publish = false
 
+[features]
+logtime = ["log_frame_times", "log_phase_times"]
+log_frame_times = ["dioxus-native/log-frame-times"]
+log_phase_times = ["dioxus-native/log-phase-times"]
+
 [dev-dependencies]
 anyrender = { workspace = true }
 anyrender_vello = { workspace = true }
