@@ -110,8 +110,8 @@ anyrender = { version = "0.10.0" }
 anyrender_serialize = { version = "0.4.0" }
 anyrender_skia = { version = "0.8.0" }
 anyrender_vello = { version = "0.10.1" }
-anyrender_vello_cpu = { version = "0.12.1" }
-anyrender_vello_hybrid = { version = "0.5.1" }
+anyrender_vello_cpu = { version = "0.13.0" }
+anyrender_vello_hybrid = { version = "0.6.0" }
 anyrender_svg = { version = "0.11.0" }
 wgpu_context = { version = "0.6.0" }
 
