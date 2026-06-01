@@ -253,7 +253,6 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
             size,
             border,
             padding,
-            content_size,
             ..
         } = node.final_layout;
         let scaled_pb = (padding + border).map(f64::from);
@@ -267,15 +266,28 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
         };
 
         // Don't render things that are out of view
-        let scaled_y = (box_position.y - self.initial_y) * self.scale;
-        let scaled_content_height = content_size.height.max(size.height) as f64 * self.scale;
-        if scaled_y > self.height as f64 || scaled_y + scaled_content_height < 0.0 {
+        let overflow = node.scrollable_overflow;
+        let pre_node_transform =
+            parent_style_transform * Affine::translate(box_position.to_vec2() * self.scale);
+
+        let mut transform = pre_node_transform;
+        if let Some(t) = node.transform {
+            transform *= t;
+        }
+
+        let screen_bbox = transform.transform_rect_bbox(overflow);
+
+        if screen_bbox.y1 < 0.0 || screen_bbox.y0 > self.height as f64 {
+            return;
+        }
+        if screen_bbox.x1 < 0.0 || screen_bbox.x0 > self.width as f64 {
             return;
         }
 
         // Optimise zero-area (/very small area) clips by not rendering at all
         let clip_area = content_box_size.width * content_box_size.height;
-        if should_clip && clip_area < 0.01 {
+        let overflow_area = node.scrollable_overflow.width() * node.scrollable_overflow.height();
+        if should_clip && clip_area < 0.01 && overflow_area < 0.01 {
             return;
         }
 
@@ -290,7 +302,8 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
             node,
             layout,
             box_position,
-            parent_style_transform,
+            transform,
+            pre_node_transform,
             custom_widget_scene,
         );
 
@@ -337,6 +350,7 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
                             x: content_position.x - node.scroll_offset.x,
                             y: content_position.y - node.scroll_offset.y,
                         };
+
                         cx.pos = Point {
                             x: cx.pos.x - node.scroll_offset.x,
                             y: cx.pos.y - node.scroll_offset.y,
@@ -391,7 +405,8 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
         node: &'dom Node,
         layout: Layout,
         box_position: Point,
-        parent_style_transform: Affine,
+        transform: Affine,
+        pre_node_transform: Affine,
         custom_widget_scene: Option<&'a Scene>,
     ) -> ElementCx<'dom, 'a> {
         let style = node
@@ -409,14 +424,6 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
         // It is quite a bit of math to calculate during render/traverse
         // Also! we can cache the bezpaths themselves, saving us a bunch of work
         let frame = create_css_rect(&style, &layout, scale);
-
-        let pre_node_transform =
-            parent_style_transform * Affine::translate(box_position.to_vec2() * scale);
-
-        let mut transform = pre_node_transform;
-        if let Some(t) = node.transform {
-            transform *= t;
-        }
 
         let element = node.element_data().unwrap();
 
@@ -542,12 +549,8 @@ impl ElementCx<'_, '_> {
                 y: pos.y + y_offset,
             };
 
-            let mut transform = self.pre_node_transform
-                * Affine::translate((pos.x * self.scale, pos.y * self.scale));
-
-            if let Some(style) = self.node.transform {
-                transform *= style;
-            }
+            let transform =
+                self.transform * Affine::translate((pos.x * self.scale, pos.y * self.scale));
 
             if self.node.is_focussed() {
                 // Render selection/caret
@@ -620,12 +623,8 @@ impl ElementCx<'_, '_> {
                 y: pos.y + y_offset as f64,
             };
 
-            let mut transform = self.pre_node_transform
-                * Affine::translate((pos.x * self.scale, pos.y * self.scale));
-
-            if let Some(style) = self.node.transform {
-                transform *= style;
-            }
+            let transform =
+                self.transform * Affine::translate((pos.x * self.scale, pos.y * self.scale));
 
             crate::text::stroke_text(
                 scene,

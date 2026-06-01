@@ -8,7 +8,7 @@ use blitz_traits::shell::ShellProvider;
 use euclid::{Point2D, Rect, Size2D};
 use html_escape::encode_quoted_attribute_to_string;
 use keyboard_types::Modifiers;
-use kurbo::Affine;
+use kurbo::{Affine, Rect as KurboRect};
 use markup5ever::{LocalName, local_name};
 use parley::{BreakReason, Cluster, ClusterSide};
 use selectors::matching::ElementSelectorFlags;
@@ -129,6 +129,7 @@ pub struct Node {
     pub final_layout: Layout,
     pub scroll_offset: crate::Point<f64>,
 
+    pub scrollable_overflow: KurboRect,
     pub transform: Option<Affine>,
 }
 
@@ -190,11 +191,12 @@ impl Node {
             final_layout: Layout::new(),
             scroll_offset: crate::Point::ZERO,
 
+            scrollable_overflow: KurboRect::ZERO,
             transform: None,
         }
     }
 
-    pub fn set_transform(&mut self, scale: f32) {
+    pub fn set_transform(&mut self, scale: f32) -> Option<Affine> {
         self.transform = self.primary_styles().and_then(|s| {
             let w = self.final_layout.size.width * scale;
             let h = self.final_layout.size.height * scale;
@@ -204,6 +206,8 @@ impl Node {
             );
             crate::resolve_2d_transform(s.get_box(), reference_box)
         });
+
+        self.transform
     }
 
     pub fn pe_by_index(&self, index: usize) -> Option<usize> {

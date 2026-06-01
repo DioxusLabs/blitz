@@ -6,6 +6,7 @@ use std::{
 };
 
 use debug_timer::debug_timer;
+use kurbo::{Affine, Rect};
 use parley::LayoutContext;
 use selectors::Element as _;
 use style::dom::TDocument;
@@ -124,9 +125,9 @@ impl BaseDocument {
         timer.print_times(&format!("Resolve({}): ", self.id()));
     }
 
-    fn resolve_transforms(&mut self, node_id: usize) {
+    fn resolve_transforms(&mut self, node_id: usize) -> Rect {
         if !self.nodes.contains(node_id) {
-            return;
+            return Rect::ZERO;
         }
 
         if !self.nodes[node_id]
@@ -134,19 +135,39 @@ impl BaseDocument {
             .map(|d| d.contains(style::selector_parser::RestyleDamage::RECALCULATE_OVERFLOW))
             .unwrap_or(false)
         {
-            return;
+            return self.nodes[node_id].scrollable_overflow;
         }
 
-        self.nodes[node_id].set_transform(self.viewport.scale());
+        let scale = self.viewport.scale_f64();
+
+        let transform = self.nodes[node_id].set_transform(scale as f32);
+
+        let w = self.nodes[node_id].final_layout.size.width as f64 * scale;
+        let h = self.nodes[node_id].final_layout.size.height as f64 * scale;
+        let mut overflow = Rect::new(0.0, 0.0, w, h);
 
         let layout_children = std::mem::take(self.nodes[node_id].layout_children.get_mut());
-        if let Some(lc) = layout_children.as_ref() {
-            for child_id in lc {
-                self.resolve_transforms(*child_id);
+
+        if let Some(ref children) = layout_children {
+            for &child_id in children {
+                let child_rect_in_self = self.resolve_transforms(child_id);
+                overflow = overflow.union(child_rect_in_self);
             }
         }
 
+        self.nodes[node_id].scrollable_overflow = overflow;
         *self.nodes[node_id].layout_children.get_mut() = layout_children;
+
+        let scaled_x = self.nodes[node_id].final_layout.location.x as f64 * scale;
+        let scaled_y = self.nodes[node_id].final_layout.location.y as f64 * scale;
+
+        let full = if let Some(t) = transform {
+            Affine::translate((scaled_x, scaled_y)) * t
+        } else {
+            Affine::translate((scaled_x, scaled_y))
+        };
+
+        full.transform_rect_bbox(overflow)
     }
 
     pub fn resolve_scroll_animation(&mut self) {
