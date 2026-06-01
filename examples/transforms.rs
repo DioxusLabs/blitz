@@ -144,6 +144,16 @@ fn app() -> Element {
                     img { background: "black", top: "200px",  position: "absolute", transform: "scale(0.5) translateY(150px) rotate(45deg)", src: IMG }
                 }
 
+                div {
+                    position: "absolute",
+                     transform: "translate(-500px, -500px) rotate(-45deg) scale(0.7)",
+                ToggleBtn {
+                    top: "150px",
+                    left: "150px",
+                    width: "100px",
+
+
+                }}
 
                 div {
                     font_size: "20px",
@@ -152,11 +162,17 @@ fn app() -> Element {
                     position: "absolute",
                     "top 50 left 50"
                 }
-                // broken rendering
                 ToggleBtn {
                     top: "150px",
                     left: "150px",
                     width: "100px",
+                }
+
+                input {
+                    position: "absolute",
+                    top: "200px",
+                    width: "500px",
+                    translate: "rotate(45deg)"
                 }
 
                 div {
@@ -201,7 +217,6 @@ fn app() -> Element {
                         }
                     }
 
-                    // I don't know why this one dissapears, making top less than 300px shows it again
                     div { class: "black",
                         div {
                             class: "blue",

@@ -925,12 +925,9 @@ impl Node {
         let mut y = y - self.final_layout.location.y + self.scroll_offset.y as f32;
 
         if let Some(t) = self.transform {
-            let mut coefs = t.as_coeffs();
-            coefs[4] /= scale;
-            coefs[5] /= scale;
-            let p = Affine::new(coefs).inverse() * kurbo::Point::new((x) as f64, (y) as f64);
-            x = p.x as f32;
-            y = p.y as f32;
+            let p = t.inverse() * kurbo::Point::new(x as f64 * scale, y as f64 * scale);
+            x = (p.x / scale) as f32;
+            y = (p.y / scale) as f32;
         }
 
         let size = self.final_layout.size;
@@ -956,7 +953,14 @@ impl Node {
             None => false,
         };
 
-        if !matches_self && !matches_content && !matches_hoisted_content {
+        let overflow = self.scrollable_overflow;
+
+        let matches_overflow = x >= overflow.x0 as f32
+            && x <= overflow.x1 as f32
+            && y >= overflow.y0 as f32
+            && y <= overflow.y1 as f32;
+
+        if !matches_self && !matches_content && !matches_hoisted_content && !matches_overflow {
             return None;
         }
 
