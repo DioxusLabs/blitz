@@ -267,10 +267,9 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
 
         // Don't render things that are out of view
         let overflow = node.scrollable_overflow;
-        let pre_node_transform =
+        let mut transform =
             parent_style_transform * Affine::translate(box_position.to_vec2() * self.scale);
 
-        let mut transform = pre_node_transform;
         if let Some(t) = node.transform {
             transform *= t;
         }
@@ -298,14 +297,7 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
 
         // Apply CSS transform property (where transforms are 2d)
 
-        let mut cx = self.element_cx(
-            node,
-            layout,
-            box_position,
-            transform,
-            pre_node_transform,
-            custom_widget_scene,
-        );
+        let mut cx = self.element_cx(node, layout, box_position, transform, custom_widget_scene);
 
         if let Some(style_transform) = node.transform {
             parent_style_transform *= style_transform;
@@ -356,8 +348,8 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
                             y: cx.pos.y - node.scroll_offset.y,
                         };
                         cx.transform = cx.transform.then_translate(Vec2 {
-                            x: -node.scroll_offset.x,
-                            y: -node.scroll_offset.y,
+                            x: -node.scroll_offset.x * self.scale,
+                            y: -node.scroll_offset.y * self.scale,
                         });
                         cx.draw_image(scene);
                         #[cfg(feature = "svg")]
@@ -406,7 +398,6 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
         layout: Layout,
         box_position: Point,
         transform: Affine,
-        pre_node_transform: Affine,
         custom_widget_scene: Option<&'a Scene>,
     ) -> ElementCx<'dom, 'a> {
         let style = node
@@ -436,7 +427,6 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
             node,
             element,
             transform,
-            pre_node_transform,
             #[cfg(feature = "svg")]
             svg: element.svg_data(),
             text_input: element.text_input_data(),
@@ -484,7 +474,6 @@ struct ElementCx<'dom, 'a> {
     node: &'dom Node,
     element: &'dom ElementData,
     transform: Affine,
-    pre_node_transform: Affine,
     #[cfg(feature = "svg")]
     svg: Option<&'dom usvg::Tree>,
     text_input: Option<&'dom TextInputData>,
@@ -509,12 +498,8 @@ impl ElementCx<'_, '_> {
                     panic!("Tried to render node marked as inline root that does not have an inline layout: {:?}", self.node);
                 });
 
-            let mut transform = self.pre_node_transform
-                * Affine::translate((pos.x * self.scale, pos.y * self.scale));
-
-            if let Some(style) = self.node.transform {
-                transform *= style;
-            }
+            let transform =
+                self.transform * Affine::translate((pos.x * self.scale, pos.y * self.scale));
 
             // Render text selection highlight (if any) using cached selection ranges
             if let Some(&(sel_start, sel_end)) = self.context.selection_ranges.get(&self.node.id) {
