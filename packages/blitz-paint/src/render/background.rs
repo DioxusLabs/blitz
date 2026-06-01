@@ -150,6 +150,8 @@ impl ElementCx<'_, '_> {
 
     #[cfg(feature = "svg")]
     fn draw_svg_bg_image(&self, scene: &mut impl PaintScene, idx: usize) {
+        use kurbo::Affine;
+
         let bg_image = self.element.background_images.get(idx);
 
         let Some(Some(bg_image)) = bg_image.as_ref() else {
@@ -183,11 +185,9 @@ impl ElementCx<'_, '_> {
             frame_h - bg_size.height as f32,
         );
 
-        let transform = kurbo::Affine::translate((
-            (self.pos.x + bg_pos.x) * self.scale,
-            (self.pos.y + bg_pos.y) * self.scale,
-        ))
-        .pre_scale_non_uniform(x_ratio, y_ratio);
+        let transform = self.transform
+            * kurbo::Affine::translate((bg_pos.x * self.scale, bg_pos.y * self.scale))
+            * Affine::scale_non_uniform(x_ratio, y_ratio);
 
         anyrender_svg::render_svg_tree(scene, svg, transform);
     }
