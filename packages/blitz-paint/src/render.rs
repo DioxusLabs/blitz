@@ -88,17 +88,6 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
         }
     }
 
-    fn node_position(&self, node: usize, location: Point) -> (Layout, Point) {
-        let layout = self.layout(node);
-        let pos = location + Vec2::new(layout.location.x as f64, layout.location.y as f64);
-        (layout, pos)
-    }
-
-    fn layout(&self, child: usize) -> Layout {
-        // self.dom.as_ref().tree()[child].unrounded_layout
-        self.dom.as_ref().tree()[child].final_layout
-    }
-
     /// Draw the current tree to current render surface
     /// Eventually we'll want the surface itself to be passed into the render function, along with things like the viewport
     ///
@@ -158,11 +147,10 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
         self.render_element(
             scene,
             root_id,
-            Point {
+            Affine::translate(Vec2 {
                 x: self.initial_x - viewport_scroll.x,
                 y: self.initial_y - viewport_scroll.y,
-            },
-            Affine::IDENTITY,
+            }),
         );
 
         // Render debug overlay
@@ -193,8 +181,7 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
         &self,
         scene: &mut impl PaintScene,
         node_id: usize,
-        location: Point,
-        mut parent_style_transform: Affine,
+        parent_style_transform: Affine,
     ) {
         let node = &self.dom.as_ref().tree()[node_id];
 
@@ -248,13 +235,14 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
             || !matches!(overflow_y, Overflow::Visible);
 
         // Apply padding/border offset to inline root
-        let (layout, box_position) = self.node_position(node_id, location);
         let taffy::Layout {
             size,
             border,
             padding,
+            location,
             ..
         } = node.final_layout;
+        let box_position = Vec2::new(location.x as f64, location.y as f64);
         let scaled_pb = (padding + border).map(f64::from);
         let content_position = kurbo::Point {
             x: scaled_pb.left,
@@ -267,12 +255,9 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
 
         // Don't render things that are out of view
         let overflow = node.scrollable_overflow;
-        let mut transform =
-            parent_style_transform * Affine::translate(box_position.to_vec2() * self.scale);
-
-        if let Some(t) = node.transform {
-            transform *= t;
-        }
+        let transform = parent_style_transform
+            * Affine::translate(box_position * self.scale)
+            * node.transform.unwrap_or_default();
 
         let screen_bbox = transform.transform_rect_bbox(overflow);
 
@@ -297,11 +282,7 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
 
         // Apply CSS transform property (where transforms are 2d)
 
-        let mut cx = self.element_cx(node, layout, box_position, transform, custom_widget_scene);
-
-        if let Some(style_transform) = node.transform {
-            parent_style_transform *= style_transform;
-        }
+        let mut cx = self.element_cx(node, node.final_layout, transform, custom_widget_scene);
 
         cx.draw_outline(scene);
         cx.draw_outset_box_shadow(scene);
@@ -343,10 +324,6 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
                             y: content_position.y - node.scroll_offset.y,
                         };
 
-                        cx.pos = Point {
-                            x: cx.pos.x - node.scroll_offset.x,
-                            y: cx.pos.y - node.scroll_offset.y,
-                        };
                         cx.transform = cx.transform.then_translate(Vec2 {
                             x: -node.scroll_offset.x * self.scale,
                             y: -node.scroll_offset.y * self.scale,
@@ -361,7 +338,7 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
                         cx.draw_text_input_text(scene, content_position);
                         cx.draw_inline_layout(scene, content_position);
                         cx.draw_marker(scene, content_position);
-                        cx.draw_children(scene, parent_style_transform);
+                        cx.draw_children(scene, cx.transform);
                     },
                 );
             },
@@ -372,14 +349,13 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
         &self,
         scene: &mut impl PaintScene,
         node_id: usize,
-        location: Point,
         parent_style_transform: Affine,
     ) {
         let node = &self.dom.as_ref().tree()[node_id];
 
         match &node.data {
             NodeData::Element(_) | NodeData::AnonymousBlock(_) => {
-                self.render_element(scene, node_id, location, parent_style_transform)
+                self.render_element(scene, node_id, parent_style_transform)
             }
             NodeData::Text(TextNodeData { .. }) => {
                 // Text nodes should never be rendered directly
@@ -396,7 +372,6 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
         &'dom self,
         node: &'dom Node,
         layout: Layout,
-        box_position: Point,
         transform: Affine,
         custom_widget_scene: Option<&'a Scene>,
     ) -> ElementCx<'dom, 'a> {
@@ -423,7 +398,6 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
             frame,
             scale,
             style,
-            pos: box_position,
             node,
             element,
             transform,
@@ -469,7 +443,6 @@ struct ElementCx<'dom, 'a> {
     context: &'dom BlitzDomPainter<'dom, 'a>,
     frame: CssBox,
     style: style::servo_arc::Arc<ComputedValues>,
-    pos: Point,
     scale: f64,
     node: &'dom Node,
     element: &'dom ElementData,
@@ -626,29 +599,37 @@ impl ElementCx<'_, '_> {
 
         if let Some(hoisted) = &self.node.stacking_context {
             for hoisted_child in hoisted.neg_z_hoisted_children() {
-                let pos = kurbo::Point {
-                    x: self.pos.x + hoisted_child.position.x as f64,
-                    y: self.pos.y + hoisted_child.position.y as f64,
+                let pos = kurbo::Vec2 {
+                    x: hoisted_child.position.x as f64 * self.scale,
+                    y: hoisted_child.position.y as f64 * self.scale,
                 };
-                self.render_node(scene, hoisted_child.node_id, pos, parent_style_transform);
+                self.render_node(
+                    scene,
+                    hoisted_child.node_id,
+                    parent_style_transform.pre_translate(pos),
+                );
             }
         }
 
         // Regular children
         if let Some(children) = &*self.node.paint_children.borrow() {
             for child_id in children {
-                self.render_node(scene, *child_id, self.pos, parent_style_transform);
+                self.render_node(scene, *child_id, parent_style_transform);
             }
         }
 
         // Positive z_index hoisted nodes
         if let Some(hoisted) = &self.node.stacking_context {
             for hoisted_child in hoisted.pos_z_hoisted_children() {
-                let pos = kurbo::Point {
-                    x: self.pos.x + hoisted_child.position.x as f64,
-                    y: self.pos.y + hoisted_child.position.y as f64,
+                let pos = kurbo::Vec2 {
+                    x: hoisted_child.position.x as f64 * self.scale,
+                    y: hoisted_child.position.y as f64 * self.scale,
                 };
-                self.render_node(scene, hoisted_child.node_id, pos, parent_style_transform);
+                self.render_node(
+                    scene,
+                    hoisted_child.node_id,
+                    parent_style_transform.pre_translate(pos),
+                );
             }
         }
     }
@@ -764,8 +745,11 @@ impl ElementCx<'_, '_> {
             let scale = self.scale;
             let width = self.frame.content_box.width() as u32;
             let height = self.frame.content_box.height() as u32;
-            let initial_x = self.pos.x + self.frame.content_box.origin().x;
-            let initial_y = self.pos.y + self.frame.content_box.origin().y;
+
+            // TODO: Support arbitrary transforms of subdocuments
+            let translation = self.transform.translation();
+            let initial_x = translation.x + self.frame.content_box.origin().x;
+            let initial_y = translation.y + self.frame.content_box.origin().y;
             // let transform = self.transform.then_translate(Vec2 { x, y });
 
             let painter = BlitzDomPainter::new(
