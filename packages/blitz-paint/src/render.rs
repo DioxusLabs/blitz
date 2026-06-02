@@ -148,8 +148,8 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
             scene,
             root_id,
             Affine::translate(Vec2 {
-                x: self.initial_x - viewport_scroll.x,
-                y: self.initial_y - viewport_scroll.y,
+                x: self.initial_x - (viewport_scroll.x * self.scale),
+                y: self.initial_y - (viewport_scroll.y * self.scale),
             }),
         );
 
