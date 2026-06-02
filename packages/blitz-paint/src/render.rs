@@ -33,7 +33,7 @@ use style::{
     },
 };
 
-use kurbo::{self, Affine, BezPath, Insets, Point, Rect, Stroke, Vec2};
+use kurbo::{self, Affine, BezPath, Insets, Point, Rect, Size, Stroke, Vec2};
 use peniko::{self, Fill, ImageData, ImageSampler};
 use style::values::generics::color::{ColorOrAuto, GenericColor};
 use taffy::Layout;
@@ -242,7 +242,9 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
             location,
             ..
         } = node.final_layout;
-        let box_position = Vec2::new(location.x as f64, location.y as f64);
+        let box_position = Vec2::new(location.x as f64, location.y as f64) * self.scale;
+        let box_size = Size::new(size.width as f64, size.height as f64);
+        let border_box = Rect::from_origin_size(box_position.to_point(), box_size);
         let scaled_pb = (padding + border).map(f64::from);
         let content_position = kurbo::Point {
             x: scaled_pb.left,
@@ -256,10 +258,14 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
         // Don't render things that are out of view
         let overflow = node.scrollable_overflow;
         let transform = parent_style_transform
-            * Affine::translate(box_position * self.scale)
+            * Affine::translate(box_position)
             * node.transform.unwrap_or_default();
 
-        let screen_bbox = transform.transform_rect_bbox(overflow);
+        let screen_bbox = (Affine::translate(Vec2 {
+            x: -self.initial_x,
+            y: -self.initial_y,
+        }) * transform)
+            .transform_rect_bbox(overflow.union(border_box));
 
         if screen_bbox.y1 < 0.0 || screen_bbox.y0 > self.height as f64 {
             return;
