@@ -104,7 +104,6 @@ fn app() -> Element {
 
     rsx! {
         style { {CSS} }
-
         div {
             position: "absolute",
             top: 0,
@@ -115,7 +114,6 @@ fn app() -> Element {
             onpointerup,
             onpointermove,
             onwheel,
-
             div {
                 class: "overlay",
                 "{viewport}"
@@ -129,7 +127,6 @@ fn app() -> Element {
                 left: 0,
                 transform_origin: "0 0",
                 transform: "{viewport}",
-
                 div {
                     position: "absolute", left: "400px",
                     width: "800px",
@@ -143,7 +140,6 @@ fn app() -> Element {
                     img {  position: "absolute", transform: "scale(0.5) translateY(150px) rotate(45deg)", src: SVG }
                     img { background: "black", top: "200px",  position: "absolute", transform: "scale(0.5) translateY(150px) rotate(45deg)", src: IMG }
                 }
-
                 div {
                     position: "absolute",
                      transform: "translate(-500px, -500px) rotate(-45deg) scale(0.7)",
@@ -154,7 +150,6 @@ fn app() -> Element {
 
 
                 }}
-
                 div {
                     font_size: "20px",
                     top: "50px",
@@ -167,14 +162,12 @@ fn app() -> Element {
                     left: "150px",
                     width: "100px",
                 }
-
                 input {
                     position: "absolute",
                     top: "200px",
                     width: "500px",
-                    translate: "rotate(45deg)"
+                    transform: "rotate(45deg)"
                 }
-
                 div {
                     position: "absolute",
                     top: "0px",
@@ -192,14 +185,11 @@ fn app() -> Element {
                     top: "50px",
                     a {
                         class: "button",
-                        display: "inline-flex", // removing this resolves transform
+                        display: "inline-flex",
                         href: "#week-schedule",
                         "2026 schedule"
                     }
                 }
-
-
-
                 div {
                     position: "absolute",
                     left: "300px",
@@ -216,7 +206,6 @@ fn app() -> Element {
                             style: "transform: rotate(20deg); transform-origin: center;"
                         }
                     }
-
                     div { class: "black",
                         div {
                             class: "blue",
@@ -251,14 +240,9 @@ fn app() -> Element {
                         top: "150px",
                         left: "150px",
                     }
-
                 }
-
             }
         }
-
-
-
     }
 }
 
@@ -271,7 +255,6 @@ fn ToggleBtn(#[props(extends=GlobalAttributes)] attributes: Vec<Attribute>) -> E
             position: "absolute",
             border: if border() { "1px solid black"},
             onclick: move |_| border.toggle(),
-
              ..attributes,
             "Toggle"
         }
