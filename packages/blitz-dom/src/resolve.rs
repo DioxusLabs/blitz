@@ -154,6 +154,14 @@ impl BaseDocument {
                 overflow = overflow.union(child_rect_in_self);
             }
         }
+        if let Some(before) = self.nodes[node_id].before {
+            let child_rect_in_self = self.resolve_transforms(before);
+            overflow = overflow.union(child_rect_in_self);
+        }
+        if let Some(after) = self.nodes[node_id].after {
+            let child_rect_in_self = self.resolve_transforms(after);
+            overflow = overflow.union(child_rect_in_self);
+        }
 
         self.nodes[node_id].scrollable_overflow = overflow;
         *self.nodes[node_id].layout_children.get_mut() = layout_children;
