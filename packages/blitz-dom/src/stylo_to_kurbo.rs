@@ -36,7 +36,7 @@ pub fn resolve_2d_transform(
 
     let rotate = match &box_styles.rotate {
         Rotate::None => None,
-        Rotate::Rotate(angle) => Some(angle.degrees() as f64),
+        Rotate::Rotate(angle) => Some(angle.radians64()),
         // TODO: support 3D transforms
         Rotate::Rotate3D(_, _, _, _) => None,
     };

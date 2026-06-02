@@ -1,11 +1,14 @@
+use crate::Document;
+use crate::layout::damage::HoistedPaintChildren;
 use bitflags::bitflags;
 use blitz_traits::events::{
     BlitzPointerEvent, BlitzPointerId, DomEventData, HitResult, PointerCoords,
 };
 use blitz_traits::shell::ShellProvider;
+use euclid::{Point2D, Rect, Size2D};
 use html_escape::encode_quoted_attribute_to_string;
 use keyboard_types::Modifiers;
-use kurbo::Affine;
+use kurbo::{Affine, Rect as KurboRect};
 use markup5ever::{LocalName, local_name};
 use parley::{BreakReason, Cluster, ClusterSide};
 use selectors::matching::ElementSelectorFlags;
@@ -23,6 +26,7 @@ use style::selector_parser::{PseudoElement, RestyleDamage};
 use style::servo_arc::Arc as ServoArc;
 use style::shared_lock::SharedRwLock;
 use style::stylesheets::UrlExtraData;
+use style::values::computed::CSSPixelLength;
 use style::values::computed::Display as StyloDisplay;
 use style::values::specified::box_::{DisplayInside, DisplayOutside};
 use style_dom::ElementState;
@@ -31,9 +35,6 @@ use taffy::{
     Cache,
     prelude::{Layout, Style},
 };
-
-use crate::Document;
-use crate::layout::damage::HoistedPaintChildren;
 
 use super::stylo_data::StyloData;
 use super::{Attribute, ElementData};
@@ -128,6 +129,7 @@ pub struct Node {
     pub final_layout: Layout,
     pub scroll_offset: crate::Point<f64>,
 
+    pub scrollable_overflow: KurboRect,
     pub transform: Option<Affine>,
 }
 
@@ -189,8 +191,23 @@ impl Node {
             final_layout: Layout::new(),
             scroll_offset: crate::Point::ZERO,
 
+            scrollable_overflow: KurboRect::ZERO,
             transform: None,
         }
+    }
+
+    pub fn set_transform(&mut self, scale: f32) -> Option<Affine> {
+        self.transform = self.primary_styles().and_then(|s| {
+            let w = self.final_layout.size.width * scale;
+            let h = self.final_layout.size.height * scale;
+            let reference_box = Rect::new(
+                Point2D::new(CSSPixelLength::new(0.0), CSSPixelLength::new(0.0)),
+                Size2D::new(CSSPixelLength::new(w), CSSPixelLength::new(h)),
+            );
+            crate::resolve_2d_transform(s.get_box(), reference_box)
+        });
+
+        self.transform
     }
 
     pub fn pe_by_index(&self, index: usize) -> Option<usize> {
@@ -869,8 +886,11 @@ impl Node {
             return true;
         }
 
+        if self.transform.is_some() {
+            return true;
+        }
+
         // TODO: mix-blend-mode
-        // TODO: transforms
         // TODO: filter
         // TODO: clip-path
         // TODO: mask
@@ -888,7 +908,7 @@ impl Node {
     ///
     /// TODO: z-index
     /// (If multiple children are positioned at the position then a random one will be recursed into)
-    pub fn hit(&self, x: f32, y: f32) -> Option<HitResult> {
+    pub fn hit(&self, x: f32, y: f32, scale: f64) -> Option<HitResult> {
         use style::computed_values::visibility::T as Visibility;
 
         // Don't hit on visbility:hidden elements
@@ -903,6 +923,12 @@ impl Node {
 
         let mut x = x - self.final_layout.location.x + self.scroll_offset.x as f32;
         let mut y = y - self.final_layout.location.y + self.scroll_offset.y as f32;
+
+        if let Some(t) = self.transform {
+            let p = t.inverse() * kurbo::Point::new(x as f64 * scale, y as f64 * scale);
+            x = (p.x / scale) as f32;
+            y = (p.y / scale) as f32;
+        }
 
         let size = self.final_layout.size;
         let matches_self = !(x < 0.0
@@ -927,7 +953,14 @@ impl Node {
             None => false,
         };
 
-        if !matches_self && !matches_content && !matches_hoisted_content {
+        let overflow = self.scrollable_overflow;
+
+        let matches_overflow = x >= overflow.x0 as f32
+            && x <= overflow.x1 as f32
+            && y >= overflow.y0 as f32
+            && y <= overflow.y1 as f32;
+
+        if !matches_self && !matches_content && !matches_hoisted_content && !matches_overflow {
             return None;
         }
 
@@ -946,7 +979,7 @@ impl Node {
                 for hoisted_child in hoisted.pos_z_hoisted_children().rev() {
                     let x = x - hoisted_child.position.x;
                     let y = y - hoisted_child.position.y;
-                    if let Some(hit) = self.with(hoisted_child.node_id).hit(x, y) {
+                    if let Some(hit) = self.with(hoisted_child.node_id).hit(x, y, scale) {
                         return Some(hit);
                     }
                 }
@@ -955,7 +988,7 @@ impl Node {
 
         // Call `.hit()` on each child in turn. If any return `Some` then return that value. Else return `Some(self.id).
         for child_id in self.paint_children.borrow().iter().flatten().rev() {
-            if let Some(hit) = self.with(*child_id).hit(x, y) {
+            if let Some(hit) = self.with(*child_id).hit(x, y, scale) {
                 return Some(hit);
             }
         }
@@ -966,7 +999,7 @@ impl Node {
                 for hoisted_child in hoisted.neg_z_hoisted_children().rev() {
                     let x = x - hoisted_child.position.x;
                     let y = y - hoisted_child.position.y;
-                    if let Some(hit) = self.with(hoisted_child.node_id).hit(x, y) {
+                    if let Some(hit) = self.with(hoisted_child.node_id).hit(x, y, scale) {
                         return Some(hit);
                     }
                 }
