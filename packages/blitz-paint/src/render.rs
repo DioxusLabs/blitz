@@ -3,10 +3,12 @@ mod box_shadow;
 mod form_controls;
 
 use std::collections::HashMap;
+use std::sync::Arc;
 
 use super::kurbo_css::{CssBox, Edge};
 use crate::color::{Color, ToColorColor};
 use crate::debug_overlay::render_debug_overlay;
+use crate::filters::convert_filters;
 use crate::kurbo_css::NonUniformRoundedRectRadii;
 use crate::layers::LayerManager;
 use crate::sizing::compute_object_fit;
@@ -33,7 +35,7 @@ use style::{
     },
 };
 
-use kurbo::{self, Affine, BezPath, Insets, Point, Rect, Size, Stroke, Vec2};
+use kurbo::{self, Affine, BezPath, Insets, Point, Rect, Shape, Size, Stroke, Vec2};
 use peniko::{self, Fill, ImageData, ImageSampler};
 use style::values::generics::color::{ColorOrAuto, GenericColor};
 use taffy::Layout;
@@ -206,8 +208,8 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
             return;
         }
 
-        // We can't fully support opacity yet, but we can hide elements with opacity 0
-        let opacity = styles.get_effects().opacity;
+        let effects = styles.get_effects();
+        let opacity = effects.opacity;
         if opacity == 0.0 {
             return;
         }
@@ -293,14 +295,38 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
         cx.draw_outline(scene);
         cx.draw_outset_box_shadow(scene);
 
+        let filter = convert_filters(&effects.filter.0).map(Arc::new);
+        let backdrop_filter = convert_filters(&effects.backdrop_filter.0).map(Arc::new);
+
+        // Adjust effect layer clip by filter expansion area
+        //
+        // Returns a rectangle centered at the origin representing how much the filter
+        // expands the processing region in each direction. The rect coordinates are:
+        // - x0: negative left expansion
+        // - y0: negative top expansion
+        // - x1: positive right expansion
+        // - y1: positive bottom expansion
+        let filter_expansion_area = filter
+            .as_ref()
+            .map(|f| f.expansion_rect())
+            .unwrap_or(Rect::ZERO);
+
+        let mut effect_layer_clip = cx.frame.border_box_path().bounding_box();
+        effect_layer_clip.x0 += filter_expansion_area.x0;
+        effect_layer_clip.y0 += filter_expansion_area.y0;
+        effect_layer_clip.x1 += filter_expansion_area.x1;
+        effect_layer_clip.y1 += filter_expansion_area.y1;
+
         // Opacity layer if box has opacity. Clipped to border-box as it needs to include
         // the background and borders.
         self.layer_manager.maybe_with_layer(
             scene,
-            has_opacity,
+            has_opacity || filter.is_some() || backdrop_filter.is_some(),
             opacity,
             cx.transform,
-            &cx.frame.border_box_path(),
+            &effect_layer_clip,
+            filter,
+            backdrop_filter,
             |scene| {
                 cx.draw_background(scene);
                 cx.draw_inset_box_shadow(scene);
@@ -323,6 +349,8 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
                     1.0, // opacity
                     cx.transform,
                     clip,
+                    None,
+                    None,
                     |scene| {
                         // Now that background has been drawn, offset pos and cx in order to draw our contents scrolled
                         let content_position = Point {

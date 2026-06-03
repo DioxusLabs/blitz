@@ -41,6 +41,8 @@ impl ElementCx<'_, '_> {
             1.0,
             self.transform,
             &self.frame.shadow_clip(max_shadow_rect),
+            None,
+            None,
             |scene| {
                 for shadow in box_shadow.iter().filter(|s| !s.inset).rev() {
                     let shadow_color = shadow
@@ -103,7 +105,7 @@ impl ElementCx<'_, '_> {
                 y: shadow.base.vertical.px() as f64,
             });
 
-            scene.push_layer(Mix::Normal, 1.0, self.transform, &padding_box);
+            scene.push_layer(Mix::Normal, 1.0, self.transform, &padding_box, None, None);
             scene.fill(
                 Fill::NonZero,
                 self.transform,
@@ -112,7 +114,14 @@ impl ElementCx<'_, '_> {
                 &padding_box,
             );
 
-            scene.push_layer(Compose::DestOut, 1.0, self.transform, &padding_box);
+            scene.push_layer(
+                Compose::DestOut,
+                1.0,
+                self.transform,
+                &padding_box,
+                None,
+                None,
+            );
             scene.draw_box_shadow(
                 transform,
                 self.frame.border_box,
