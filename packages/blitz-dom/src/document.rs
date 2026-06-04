@@ -36,7 +36,7 @@ use std::rc::Rc;
 use std::str::FromStr;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::mpsc::{Receiver, Sender, channel};
-use std::sync::{Arc, Mutex, MutexGuard, RwLockReadGuard, RwLockWriteGuard};
+use std::sync::{Arc, Mutex, MutexGuard, OnceLock, RwLockReadGuard, RwLockWriteGuard};
 use std::task::Context as TaskContext;
 use style::Atom;
 use style::animation::DocumentAnimationSet;
@@ -1186,7 +1186,7 @@ impl BaseDocument {
                                 .split_ascii_whitespace()
                                 .map(Atom::from)
                                 .collect();
-                            AttrValue::TokenList(attr.value.clone(), classes)
+                            AttrValue::TokenList(OnceLock::from(attr.value.clone()), classes)
                         } else {
                             AttrValue::String(attr.value.clone())
                         };
