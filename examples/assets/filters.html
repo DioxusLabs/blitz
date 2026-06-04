@@ -1,0 +1,86 @@
+<html>
+<head>
+<style type="text/css">
+    * {
+        box-sizing: border-box;
+    }
+    html { background: white }
+
+    .grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr 1fr 1fr;
+        align-items: center;
+        justify-items: center;
+    }
+
+    .filtered { transition: filter 0.3s linear; }
+    .filtered:hover { filter: none !important; }
+
+</style>
+</head>
+
+<body>
+
+<div class="grid">
+    <div>
+        <h4>Plain</h4>
+        <img src="./blitz-logo.png" width="100" />
+    </div>
+
+    <div>
+        <h4>Blur</h4>
+        <img src="./blitz-logo.png" width="100" class="filtered" style="filter: blur(5px);" />
+    </div>
+
+    <div>
+        <h4>Drop Shadow</h4>
+        <img src="./blitz-logo.png" width="100" class="filtered" style="filter: drop-shadow(0 0 10px crimson);" />
+    </div>
+
+
+    <div>
+        <h4>Grayscale</h4>
+        <img src="./blitz-logo.png" width="100" class="filtered" style="filter: grayscale();" />
+    </div>
+
+    <div>
+        <h4>Sepia</h4>
+        <img src="./blitz-logo.png" width="100" class="filtered" style="filter: sepia();" />
+    </div>
+
+    <div>
+        <h4>Brightness</h4>
+        <img src="./blitz-logo.png" width="100" class="filtered" style="filter: brightness(0.5);" />
+    </div>
+
+    <div>
+        <h4>Contrast</h4>
+        <img src="./blitz-logo.png" width="100" class="filtered" style="filter: brightness(1.5);" />
+    </div>
+
+    <div>
+        <h4>Hue Rotate</h4>
+        <img src="./blitz-logo.png" width="100" class="filtered" style="filter: hue-rotate(45deg);" />
+    </div>
+
+    <div>
+        <h4>Opacity</h4>
+        <img src="./blitz-logo.png" width="100" class="filtered" style="filter: opacity(0.5);" />
+    </div>
+
+    <div>
+        <h4>Invert</h4>
+        <img src="./blitz-logo.png" width="100" class="filtered" style="filter: invert();" />
+    </div>
+
+    <div>
+        <h4>Backdrop Filter</h4>
+        <div style="position: relative;overflow: hidden;">
+            <img src="./blitz-logo.png" width="100" />
+            <div style="position: absolute; width: 100%; height: 40px;top: 30px; left: 0;backdrop-filter: blur(10px);"></div>
+        </div>
+    </div>
+</div>
+
+</body>
+</html>

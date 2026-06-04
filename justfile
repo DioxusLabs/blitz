@@ -38,6 +38,9 @@ open *ARGS:
 openskia *ARGS:
   cargo run --release --package rdme --no-default-features --features skia,comrak,floats,incremental,log_frame_times,log_phase_times {{ARGS}}
 
+opencpu *ARGS:
+  cargo run --release --package rdme --no-default-features --features cpu,comrak,floats,incremental,log_frame_times,log_phase_times {{ARGS}}
+
 dev *ARGS:
   cargo run --package rdme --features log_frame_times,log_phase_times {{ARGS}}
 

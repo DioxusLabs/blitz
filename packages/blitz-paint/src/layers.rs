@@ -1,7 +1,7 @@
-use anyrender::PaintScene;
+use anyrender::{Filter, PaintScene};
 use kurbo::{Affine, Shape};
 use peniko::Mix;
-use std::cell::Cell;
+use std::{cell::Cell, sync::Arc};
 
 const LAYER_LIMIT: u32 = 1024;
 
@@ -16,6 +16,7 @@ pub(crate) struct LayerManager {
 }
 
 impl LayerManager {
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn maybe_with_layer<S: PaintScene, F: FnOnce(&mut S)>(
         &self,
         scene: &mut S,
@@ -23,13 +24,24 @@ impl LayerManager {
         opacity: f32,
         transform: Affine,
         shape: &impl Shape,
+        filter: Option<Arc<Filter>>,
+        backdrop_filter: Option<Arc<Filter>>,
         paint_layer: F,
     ) {
-        let layer_used = self.maybe_push_layer(scene, condition, opacity, transform, shape);
+        let layer_used = self.maybe_push_layer(
+            scene,
+            condition,
+            opacity,
+            transform,
+            shape,
+            filter,
+            backdrop_filter,
+        );
         paint_layer(scene);
         self.maybe_pop_layer(scene, layer_used);
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn maybe_push_layer(
         &self,
         scene: &mut impl PaintScene,
@@ -37,6 +49,8 @@ impl LayerManager {
         opacity: f32,
         transform: Affine,
         shape: &impl Shape,
+        filter: Option<Arc<Filter>>,
+        backdrop_filter: Option<Arc<Filter>>,
     ) -> bool {
         if !condition {
             return false;
@@ -50,10 +64,17 @@ impl LayerManager {
         }
 
         // Actually push the layer
-        if opacity == 1.0 {
+        if opacity == 1.0 && filter.is_none() && backdrop_filter.is_none() {
             scene.push_clip_layer(transform, shape);
         } else {
-            scene.push_layer(Mix::Normal, opacity, transform, shape);
+            scene.push_layer(
+                Mix::Normal,
+                opacity,
+                transform,
+                shape,
+                filter,
+                backdrop_filter,
+            );
         };
 
         // Update accounting

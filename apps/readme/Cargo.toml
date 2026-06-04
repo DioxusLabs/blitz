@@ -23,6 +23,8 @@ cpu-pixels = ["cpu-base", "anyrender_vello_cpu/pixels_window_renderer"]
 cpu-softbuffer = ["cpu-base", "anyrender_vello_cpu/softbuffer_window_renderer"]
 cpu-base = ["dep:anyrender_vello_cpu"]
 
+vello-cpu-filters = ["anyrender_vello_cpu?/filters"]
+
 avif = ["dep:image", "image?/avif-native"]
 comrak = ["dep:comrak"]
 pulldown_cmark = ["dep:pulldown-cmark"]
