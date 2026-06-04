@@ -278,6 +278,7 @@ wgpu_context = { path = "../anyrender/crates/wgpu_context" }
 # vello_cpu = { path = "../vello/sparse_strips/vello_cpu" }
 # vello_hybrid = { path = "../vello/sparse_strips/vello_hybrid" }
 # vello_common = { path = "../vello/sparse_strips/vello_common" }
+# glifo = { path = "../vello/glifo" }
 
 # [patch.crates-io]
 # style = { path = "../stylo/style", package = "stylo" }

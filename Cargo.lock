@@ -378,6 +378,7 @@ dependencies = [
  "peniko",
  "pixels_window_renderer",
  "softbuffer_window_renderer",
+ "vello_common",
  "vello_cpu",
 ]
 
