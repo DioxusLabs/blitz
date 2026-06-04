@@ -1,5 +1,6 @@
 mod background;
 mod box_shadow;
+mod clip_path;
 mod form_controls;
 
 use std::collections::HashMap;
@@ -292,87 +293,106 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
 
         let mut cx = self.element_cx(node, node.final_layout, transform, custom_widget_scene);
 
+        // Compute clip-path (if any) and wrap all rendering in a clip layer
+        let clip_path_shape = cx.clip_path_shape();
+        let has_clip_path = clip_path_shape.is_some();
+        let default_clip = cx.frame.border_box_path();
+        let mut clip_path_for_layer = clip_path_shape.unwrap_or(default_clip);
+        clip_path_for_layer.apply_affine(Affine::scale(self.scale));
+
         cx.draw_outline(scene);
         cx.draw_outset_box_shadow(scene);
 
-        let filter = convert_filters(&effects.filter.0).map(Arc::new);
-        let backdrop_filter = convert_filters(&effects.backdrop_filter.0).map(Arc::new);
-
-        // Adjust effect layer clip by filter expansion area
-        //
-        // Returns a rectangle centered at the origin representing how much the filter
-        // expands the processing region in each direction. The rect coordinates are:
-        // - x0: negative left expansion
-        // - y0: negative top expansion
-        // - x1: positive right expansion
-        // - y1: positive bottom expansion
-        let filter_expansion_area = filter
-            .as_ref()
-            .map(|f| f.expansion_rect())
-            .unwrap_or(Rect::ZERO);
-
-        let mut effect_layer_clip = cx.frame.border_box_path().bounding_box();
-        effect_layer_clip.x0 += filter_expansion_area.x0;
-        effect_layer_clip.y0 += filter_expansion_area.y0;
-        effect_layer_clip.x1 += filter_expansion_area.x1;
-        effect_layer_clip.y1 += filter_expansion_area.y1;
-
-        // Opacity layer if box has opacity. Clipped to border-box as it needs to include
-        // the background and borders.
+        // clip-path clip ayer
         self.layer_manager.maybe_with_layer(
             scene,
-            has_opacity || filter.is_some() || backdrop_filter.is_some(),
-            opacity,
+            has_clip_path,
+            1.0,
             cx.transform,
-            &effect_layer_clip,
-            filter,
-            backdrop_filter,
+            &clip_path_for_layer,
+            None,
+            None,
             |scene| {
-                cx.draw_background(scene);
-                cx.draw_inset_box_shadow(scene);
-                cx.draw_table_row_backgrounds(scene);
-                cx.draw_table_borders(scene);
-                cx.draw_border(scene);
-                cx.stroke_devtools(scene);
+                let filter = convert_filters(&effects.filter.0).map(Arc::new);
+                let backdrop_filter = convert_filters(&effects.backdrop_filter.0).map(Arc::new);
 
-                // TODO: allow layers with opacity to be unclipped (overflow: visible)
-                let clip = if is_text_input {
-                    &cx.frame.content_box_path()
-                } else {
-                    &cx.frame.padding_box_path()
-                };
+                // Adjust effect layer clip by filter expansion area
+                //
+                // Returns a rectangle centered at the origin representing how much the filter
+                // expands the processing region in each direction. The rect coordinates are:
+                // - x0: negative left expansion
+                // - y0: negative top expansion
+                // - x1: positive right expansion
+                // - y1: positive bottom expansion
+                let filter_expansion_area = filter
+                    .as_ref()
+                    .map(|f| f.expansion_rect())
+                    .unwrap_or(Rect::ZERO);
 
-                // Clip layer if box requires clipping. Opacity set to 1.0
+                let mut effect_layer_clip = cx.frame.border_box_path().bounding_box();
+                effect_layer_clip.x0 += filter_expansion_area.x0;
+                effect_layer_clip.y0 += filter_expansion_area.y0;
+                effect_layer_clip.x1 += filter_expansion_area.x1;
+                effect_layer_clip.y1 += filter_expansion_area.y1;
+
+                // Opacity/Filter layer if box has opacity or a filter.
+                // Clipped to border-box as it needs to include the background and borders.
                 self.layer_manager.maybe_with_layer(
                     scene,
-                    should_clip,
-                    1.0, // opacity
+                    has_opacity || filter.is_some() || backdrop_filter.is_some(),
+                    opacity,
                     cx.transform,
-                    clip,
-                    None,
-                    None,
+                    &effect_layer_clip,
+                    filter,
+                    backdrop_filter,
                     |scene| {
-                        // Now that background has been drawn, offset pos and cx in order to draw our contents scrolled
-                        let content_position = Point {
-                            x: content_position.x - node.scroll_offset.x,
-                            y: content_position.y - node.scroll_offset.y,
+                        cx.draw_background(scene);
+                        cx.draw_inset_box_shadow(scene);
+                        cx.draw_table_row_backgrounds(scene);
+                        cx.draw_table_borders(scene);
+                        cx.draw_border(scene);
+                        cx.stroke_devtools(scene);
+
+                        // TODO: allow layers with opacity to be unclipped (overflow: visible)
+                        let clip = if is_text_input {
+                            &cx.frame.content_box_path()
+                        } else {
+                            &cx.frame.padding_box_path()
                         };
 
-                        cx.transform = cx.transform.then_translate(Vec2 {
-                            x: -node.scroll_offset.x * self.scale,
-                            y: -node.scroll_offset.y * self.scale,
-                        });
-                        cx.draw_image(scene);
-                        #[cfg(feature = "svg")]
-                        cx.draw_svg(scene);
-                        #[cfg(feature = "custom-widget")]
-                        cx.draw_custom_widget(scene);
-                        cx.draw_sub_document(scene);
-                        cx.draw_input(scene);
-                        cx.draw_text_input_text(scene, content_position);
-                        cx.draw_inline_layout(scene, content_position);
-                        cx.draw_marker(scene, content_position);
-                        cx.draw_children(scene, cx.transform);
+                        // Clip layer if box requires clipping. Opacity set to 1.0
+                        self.layer_manager.maybe_with_layer(
+                            scene,
+                            should_clip,
+                            1.0, // opacity
+                            cx.transform,
+                            clip,
+                            None,
+                            None,
+                            |scene| {
+                                // Now that background has been drawn, offset pos and cx in order to draw our contents scrolled
+                                let content_position = Point {
+                                    x: content_position.x - node.scroll_offset.x,
+                                    y: content_position.y - node.scroll_offset.y,
+                                };
+
+                                cx.transform = cx.transform.then_translate(Vec2 {
+                                    x: -node.scroll_offset.x * self.scale,
+                                    y: -node.scroll_offset.y * self.scale,
+                                });
+                                cx.draw_image(scene);
+                                #[cfg(feature = "svg")]
+                                cx.draw_svg(scene);
+                                #[cfg(feature = "custom-widget")]
+                                cx.draw_custom_widget(scene);
+                                cx.draw_sub_document(scene);
+                                cx.draw_input(scene);
+                                cx.draw_text_input_text(scene, content_position);
+                                cx.draw_inline_layout(scene, content_position);
+                                cx.draw_marker(scene, content_position);
+                                cx.draw_children(scene, cx.transform);
+                            },
+                        );
                     },
                 );
             },
