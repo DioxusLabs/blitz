@@ -16,6 +16,7 @@ pub(crate) struct LayerManager {
 }
 
 impl LayerManager {
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn maybe_with_layer<S: PaintScene, F: FnOnce(&mut S)>(
         &self,
         scene: &mut S,
@@ -40,6 +41,7 @@ impl LayerManager {
         self.maybe_pop_layer(scene, layer_used);
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn maybe_push_layer(
         &self,
         scene: &mut impl PaintScene,
