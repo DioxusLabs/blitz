@@ -44,6 +44,8 @@ pub mod node;
 
 mod config;
 mod debug;
+#[cfg(feature = "tracing")]
+mod diagnostics;
 mod events;
 mod font_metrics;
 mod form;
