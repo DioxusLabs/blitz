@@ -13,8 +13,8 @@ pub use custom_widget::{
     ComputedStyles, CustomWidgetData, CustomWidgetStatus, ProxyRenderContext, Widget,
 };
 pub use element::{
-    BackgroundImageData, CanvasData, ElementData, ImageData, ListItemLayout,
-    ListItemLayoutPosition, Marker, RasterImageData, SpecialElementData, SpecialElementType,
-    Status, TextBrush, TextInputData, TextLayout,
+    CanvasData, ElementData, ImageData, ImageResourceData, ListItemLayout, ListItemLayoutPosition,
+    Marker, RasterImageData, SpecialElementData, SpecialElementType, Status, TextBrush,
+    TextInputData, TextLayout,
 };
 pub use node::*;

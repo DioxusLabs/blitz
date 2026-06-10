@@ -2,6 +2,7 @@ mod background;
 mod box_shadow;
 mod clip_path;
 mod form_controls;
+mod mask;
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -313,6 +314,13 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
             None,
             None,
             |scene| {
+                // If the element has a CSS `mask`, then push an isolation layer for the
+                // masked content. The mask is applied when the layer is popped below.
+                let mask_layer_pushed = cx.maybe_push_css_mask_layer(scene);
+                // `cx.transform` is mutated to apply scroll offsets while drawing content.
+                // Save it so that the mask can be drawn untransformed by scroll offsets.
+                let unscrolled_transform = cx.transform;
+
                 let filter = convert_filters(&effects.filter.0).map(Arc::new);
                 let backdrop_filter = convert_filters(&effects.backdrop_filter.0).map(Arc::new);
 
@@ -395,6 +403,10 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
                         );
                     },
                 );
+
+                // Apply the CSS `mask` (if any) to the content drawn above
+                cx.transform = unscrolled_transform;
+                cx.maybe_pop_css_mask_layer(scene, mask_layer_pushed);
             },
         );
     }
