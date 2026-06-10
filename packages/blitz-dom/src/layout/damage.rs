@@ -3,7 +3,7 @@ use std::ops::Range;
 use crate::net::ResourceHandler;
 use crate::node::NodeFlags;
 use crate::{
-    BaseDocument, net::ImageHandler, node::ImageResourceData, node::Status, util::ImageType,
+    BaseDocument, net::ImageHandler, node::ImageResourceData, node::Status, util::ImageLayerKind,
 };
 use crate::{NON_INCREMENTAL, Node};
 use style::properties::ComputedValues;
@@ -29,23 +29,6 @@ pub(crate) const ONLY_RELAYOUT: RestyleDamage =
 
 pub(crate) const ALL_DAMAGE: RestyleDamage =
     RestyleDamage::from_bits_retain(0b_0000_0000_0111_1111);
-
-/// Which kind of CSS image layer list (`background-image` or `mask-image`) to
-/// flush from style to dedicated storage on the node.
-#[derive(Clone, Copy)]
-enum ImageLayerKind {
-    Background,
-    Mask,
-}
-
-impl ImageLayerKind {
-    fn image_type(self, idx: usize) -> ImageType {
-        match self {
-            Self::Background => ImageType::Background(idx),
-            Self::Mask => ImageType::Mask(idx),
-        }
-    }
-}
 
 impl BaseDocument {
     #[cfg(feature = "incremental")]
