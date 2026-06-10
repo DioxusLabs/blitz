@@ -18,6 +18,7 @@ use super::ElementCx;
 use super::background::ImageLayerStyles;
 use anyrender::PaintScene;
 use peniko::{BlendMode, Compose, Mix};
+use style::properties::generated::longhands::mask_composite::single_value::computed_value::T as StyloMaskComposite;
 use style::values::generics::image::GenericImage;
 
 #[cfg(feature = "tracing")]
@@ -95,38 +96,44 @@ impl ElementCx<'_, '_> {
             let mask_clip_path = self.box_path(layer.clip);
 
             // TODO: support `mask-mode: luminance` (luminance masks are currently
-            // rendered as alpha masks) and `mask-composite` values other than `add`.
+            // rendered as alpha masks).
             #[cfg(feature = "tracing")]
             {
-                use style::properties::generated::longhands::{
-                    mask_composite::single_value::computed_value::T as StyloMaskComposite,
-                    mask_mode::single_value::computed_value::T as StyloMaskMode,
-                };
+                use style::properties::generated::longhands::mask_mode::single_value::computed_value::T as StyloMaskMode;
                 let mask_mode = &svg_styles.mask_mode.0;
                 if matches!(mask_mode[idx % mask_mode.len()], StyloMaskMode::Luminance) {
                     warn!("mask-mode: luminance is not supported (falling back to alpha)");
                 }
-                let mask_composite = &svg_styles.mask_composite.0;
-                if !matches!(
-                    mask_composite[idx % mask_composite.len()],
-                    StyloMaskComposite::Add
-                ) {
-                    warn!("mask-composite values other than add are not supported");
-                }
             }
 
-            self.context.layer_manager.maybe_with_layer(
-                scene,
-                true,
+            // Each mask layer is composited with the (already drawn) layers below it
+            // using the Porter-Duff operator given by its `mask-composite` value. The
+            // bottommost layer has no layers below it and is always drawn with SrcOver.
+            let compose = if idx == layer_count - 1 {
+                Compose::SrcOver
+            } else {
+                let composite_list = &svg_styles.mask_composite.0;
+                match composite_list[idx % composite_list.len()] {
+                    StyloMaskComposite::Add => Compose::SrcOver,
+                    StyloMaskComposite::Subtract => Compose::SrcOut,
+                    StyloMaskComposite::Intersect => Compose::SrcIn,
+                    StyloMaskComposite::Exclude => Compose::Xor,
+                }
+            };
+
+            // The layer is pushed unconditionally (even for `mask-image: none` layers,
+            // which draw nothing) as compositing a transparent black layer with e.g.
+            // `intersect` clears the mask built up so far.
+            scene.push_layer(
+                BlendMode::new(Mix::Normal, compose),
                 1.0,
                 self.transform,
                 &mask_clip_path,
                 None,
                 None,
-                |scene| {
-                    self.draw_image_layer(scene, &layer);
-                },
             );
+            self.draw_image_layer(scene, &layer);
+            scene.pop_layer();
         }
     }
 }
