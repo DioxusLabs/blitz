@@ -1,0 +1,164 @@
+//! Rendering for the CSS `mask` properties (`mask-image`, `mask-position`,
+//! `mask-size`, `mask-repeat`, `mask-clip`, `mask-origin`).
+//!
+//! Masks are applied by:
+//!
+//!  1. Pushing an isolation layer (clipped to the mask painting area) before the
+//!     element is painted
+//!  2. Painting the element (and its descendants) as normal
+//!  3. Pushing a `Compose::DestIn` layer and drawing the mask image layers into it,
+//!     which multiplies the alpha of the already-painted element by the alpha of
+//!     the mask
+//!  4. Popping both layers
+//!
+//! The mask image layers themselves are positioned/sized/repeated using the same
+//! code as `background-image` layers (see `background.rs`), as the `mask-*` and
+//! `background-*` properties share computed value types.
+use super::ElementCx;
+use super::background::{ImageLayerStyles, get_cyclic};
+use anyrender::PaintScene;
+use peniko::{BlendMode, Compose, Mix};
+use style::{
+    properties::generated::longhands::{
+        background_clip::single_value::computed_value::T as StyloBackgroundClip,
+        background_origin::single_value::computed_value::T as StyloBackgroundOrigin,
+        mask_clip::single_value::computed_value::T as StyloMaskClip,
+        mask_origin::single_value::computed_value::T as StyloMaskOrigin,
+    },
+    values::generics::image::GenericImage,
+};
+
+#[cfg(feature = "tracing")]
+use tracing::warn;
+
+/// An opacity just below 1.0, used to force the renderer to allocate an isolated
+/// buffer for the mask isolation layer. Renderers (e.g. vello_cpu) may optimize
+/// layers with `Mix::Normal`/`Compose::SrcOver` and an opacity of exactly 1.0 into
+/// plain non-isolated clip layers, in which case the `Compose::DestIn` mask
+/// compositing would erase the backdrop behind the element rather than just the
+/// element's own content.
+const ALMOST_OPAQUE: f32 = 1.0 - f32::EPSILON;
+
+impl ElementCx<'_, '_> {
+    /// Whether the element has any CSS `mask-image` layers
+    pub(super) fn has_css_mask(&self) -> bool {
+        self.style
+            .get_svg()
+            .mask_image
+            .0
+            .iter()
+            .any(|image| !matches!(image, GenericImage::None))
+    }
+
+    /// If the element has a CSS mask, push an isolation layer for the masked content
+    /// to be drawn into. Returns whether a layer was pushed, which should later be
+    /// passed to [`maybe_pop_css_mask_layer`](Self::maybe_pop_css_mask_layer).
+    pub(super) fn maybe_push_css_mask_layer(&self, scene: &mut impl PaintScene) -> bool {
+        if !self.has_css_mask() {
+            return false;
+        }
+
+        // Content outside of the mask painting area (at largest the border box) has
+        // a mask alpha of 0, so we can clip the isolation layer to the border box.
+        scene.push_layer(
+            Mix::Normal,
+            ALMOST_OPAQUE,
+            self.transform,
+            &self.frame.border_box_path(),
+            None,
+            None,
+        );
+        true
+    }
+
+    /// Apply the CSS mask to the content drawn since the corresponding
+    /// [`maybe_push_css_mask_layer`](Self::maybe_push_css_mask_layer) by drawing the
+    /// mask image layers with `Compose::DestIn`, then pop the isolation layer.
+    pub(super) fn maybe_pop_css_mask_layer(&self, scene: &mut impl PaintScene, layer_pushed: bool) {
+        if !layer_pushed {
+            return;
+        }
+
+        scene.push_layer(
+            BlendMode::new(Mix::Normal, Compose::DestIn),
+            1.0,
+            self.transform,
+            &self.frame.border_box_path(),
+            None,
+            None,
+        );
+        self.draw_css_mask(scene);
+        scene.pop_layer(); // Mask (DestIn) layer
+        scene.pop_layer(); // Isolation layer
+    }
+
+    /// Draw the mask image layers (analogous to `draw_background` for `background-image`)
+    fn draw_css_mask(&self, scene: &mut impl PaintScene) {
+        let svg_styles = self.style.get_svg();
+        let layers = ImageLayerStyles::from_svg(svg_styles);
+
+        for (idx, segment) in svg_styles.mask_image.0.iter().enumerate().rev() {
+            // The `mask-clip`/`mask-origin` and `background-clip`/`background-origin`
+            // longhands have distinct (but identical) computed value types. Map the
+            // mask values to the background ones so layer painting code can be shared.
+            let mask_clip = match get_cyclic(&svg_styles.mask_clip.0, idx) {
+                StyloMaskClip::BorderBox => StyloBackgroundClip::BorderBox,
+                StyloMaskClip::PaddingBox => StyloBackgroundClip::PaddingBox,
+                StyloMaskClip::ContentBox => StyloBackgroundClip::ContentBox,
+            };
+            let mask_origin = match get_cyclic(&svg_styles.mask_origin.0, idx) {
+                StyloMaskOrigin::BorderBox => StyloBackgroundOrigin::BorderBox,
+                StyloMaskOrigin::PaddingBox => StyloBackgroundOrigin::PaddingBox,
+                StyloMaskOrigin::ContentBox => StyloBackgroundOrigin::ContentBox,
+            };
+            let mask_clip_path = match mask_clip {
+                StyloBackgroundClip::BorderBox => self.frame.border_box_path(),
+                StyloBackgroundClip::PaddingBox => self.frame.padding_box_path(),
+                StyloBackgroundClip::ContentBox => self.frame.content_box_path(),
+            };
+
+            // TODO: support `mask-mode: luminance` (luminance masks are currently
+            // rendered as alpha masks) and `mask-composite` values other than `add`.
+            #[cfg(feature = "tracing")]
+            {
+                use style::properties::generated::longhands::{
+                    mask_composite::single_value::computed_value::T as StyloMaskComposite,
+                    mask_mode::single_value::computed_value::T as StyloMaskMode,
+                };
+                if matches!(
+                    get_cyclic(&svg_styles.mask_mode.0, idx),
+                    StyloMaskMode::Luminance
+                ) {
+                    warn!("mask-mode: luminance is not supported (falling back to alpha)");
+                }
+                if !matches!(
+                    get_cyclic(&svg_styles.mask_composite.0, idx),
+                    StyloMaskComposite::Add
+                ) {
+                    warn!("mask-composite values other than add are not supported");
+                }
+            }
+
+            self.context.layer_manager.maybe_with_layer(
+                scene,
+                true,
+                1.0,
+                self.transform,
+                &mask_clip_path,
+                None,
+                None,
+                |scene| {
+                    self.draw_image_layer(
+                        scene,
+                        segment,
+                        idx,
+                        &layers,
+                        mask_clip,
+                        mask_origin,
+                        &self.element.mask_images,
+                    );
+                },
+            );
+        }
+    }
+}
