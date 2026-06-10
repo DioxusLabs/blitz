@@ -79,10 +79,15 @@ impl From<StyloMaskOrigin> for BoxModelBox {
     }
 }
 
-/// The styles which control the sizing/positioning of the layers in a CSS image
-/// layer list. The `background-*` and `mask-*` properties share computed value
-/// types for these, which allows the layer painting code to be shared.
+/// The styles and image data for the layers in a CSS image layer list
+/// (`background-image` or `mask-image`). The `background-*` and `mask-*`
+/// properties share computed value types, which allows the layer painting code
+/// to be shared.
 pub(super) struct ImageLayerStyles<'a> {
+    /// The computed value of the `background-image`/`mask-image` property
+    pub stylo_image: &'a [ComputedImage],
+    /// The loaded image resources for the `url()` images in `stylo_image`
+    pub image_data: &'a [Option<ImageResourceData>],
     pub position_x: &'a [LengthPercentage],
     pub position_y: &'a [LengthPercentage],
     pub repeat: &'a [BackgroundRepeat],
@@ -92,8 +97,13 @@ pub(super) struct ImageLayerStyles<'a> {
 }
 
 impl<'a> ImageLayerStyles<'a> {
-    pub(super) fn from_background(bg_styles: &'a Background) -> Self {
+    pub(super) fn from_background(
+        bg_styles: &'a Background,
+        image_data: &'a [Option<ImageResourceData>],
+    ) -> Self {
         Self {
+            stylo_image: &bg_styles.background_image.0,
+            image_data,
             position_x: &bg_styles.background_position_x.0,
             position_y: &bg_styles.background_position_y.0,
             repeat: &bg_styles.background_repeat.0,
@@ -103,8 +113,13 @@ impl<'a> ImageLayerStyles<'a> {
         }
     }
 
-    pub(super) fn from_svg(svg_styles: &'a SVG) -> Self {
+    pub(super) fn from_svg(
+        svg_styles: &'a SVG,
+        image_data: &'a [Option<ImageResourceData>],
+    ) -> Self {
         Self {
+            stylo_image: &svg_styles.mask_image.0,
+            image_data,
             position_x: &svg_styles.mask_position_x.0,
             position_y: &svg_styles.mask_position_y.0,
             repeat: &svg_styles.mask_repeat.0,
@@ -122,15 +137,15 @@ fn convert_boxes<T: Copy + Into<BoxModelBox>>(boxes: &[T]) -> Vec<BoxModelBox> {
 impl ElementCx<'_, '_> {
     pub(super) fn draw_background(&self, scene: &mut impl PaintScene) {
         let bg_styles = &self.style.get_background();
-        let layers = ImageLayerStyles::from_background(bg_styles);
+        let layers = ImageLayerStyles::from_background(bg_styles, &self.element.background_images);
 
-        let background_clip = *get_cyclic(&layers.clip, bg_styles.background_image.0.len() - 1);
+        let background_clip = *get_cyclic(&layers.clip, layers.stylo_image.len() - 1);
         let background_clip_path = self.box_path(background_clip);
 
         // Draw background color (if any)
         self.draw_solid_bg(scene, &background_clip_path);
 
-        for (idx, segment) in bg_styles.background_image.0.iter().enumerate().rev() {
+        for idx in (0..layers.stylo_image.len()).rev() {
             let background_clip_path = self.box_path(*get_cyclic(&layers.clip, idx));
 
             self.context.layer_manager.maybe_with_layer(
@@ -142,13 +157,7 @@ impl ElementCx<'_, '_> {
                 None,
                 None,
                 |scene| {
-                    self.draw_image_layer(
-                        scene,
-                        segment,
-                        idx,
-                        &layers,
-                        &self.element.background_images,
-                    );
+                    self.draw_image_layer(scene, idx, &layers);
                 },
             );
         }
@@ -176,12 +185,10 @@ impl ElementCx<'_, '_> {
     pub(super) fn draw_image_layer(
         &self,
         scene: &mut impl PaintScene,
-        segment: &ComputedImage,
         idx: usize,
         layers: &ImageLayerStyles,
-        images: &[Option<ImageResourceData>],
     ) {
-        match segment {
+        match &layers.stylo_image[idx] {
             GenericImage::None => {
                 // Do nothing
             }
@@ -189,9 +196,9 @@ impl ElementCx<'_, '_> {
                 self.draw_gradient_layer(scene, gradient, idx, layers)
             }
             GenericImage::Url(_) => {
-                self.draw_raster_image_layer(scene, idx, layers, images);
+                self.draw_raster_image_layer(scene, idx, layers);
                 #[cfg(feature = "svg")]
-                self.draw_svg_image_layer(scene, idx, layers, images);
+                self.draw_svg_image_layer(scene, idx, layers);
             }
             GenericImage::LightDark(_) => {
                 #[cfg(feature = "tracing")]
@@ -274,11 +281,10 @@ impl ElementCx<'_, '_> {
         scene: &mut impl PaintScene,
         idx: usize,
         layers: &ImageLayerStyles,
-        images: &[Option<ImageResourceData>],
     ) {
         use kurbo::Affine;
 
-        let bg_image = images.get(idx);
+        let bg_image = layers.image_data.get(idx);
 
         let Some(Some(bg_image)) = bg_image.as_ref() else {
             return;
@@ -321,11 +327,10 @@ impl ElementCx<'_, '_> {
         scene: &mut impl PaintScene,
         idx: usize,
         layers: &ImageLayerStyles,
-        images: &[Option<ImageResourceData>],
     ) {
         use BackgroundRepeatKeyword::*;
 
-        let bg_image = images.get(idx);
+        let bg_image = layers.image_data.get(idx);
 
         let Some(Some(bg_image)) = bg_image.as_ref() else {
             return;

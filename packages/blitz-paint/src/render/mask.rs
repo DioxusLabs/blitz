@@ -87,9 +87,9 @@ impl ElementCx<'_, '_> {
     /// Draw the mask image layers (analogous to `draw_background` for `background-image`)
     fn draw_css_mask(&self, scene: &mut impl PaintScene) {
         let svg_styles = self.style.get_svg();
-        let layers = ImageLayerStyles::from_svg(svg_styles);
+        let layers = ImageLayerStyles::from_svg(svg_styles, &self.element.mask_images);
 
-        for (idx, segment) in svg_styles.mask_image.0.iter().enumerate().rev() {
+        for idx in (0..layers.stylo_image.len()).rev() {
             let mask_clip_path = self.box_path(*get_cyclic(&layers.clip, idx));
 
             // TODO: support `mask-mode: luminance` (luminance masks are currently
@@ -123,7 +123,7 @@ impl ElementCx<'_, '_> {
                 None,
                 None,
                 |scene| {
-                    self.draw_image_layer(scene, segment, idx, &layers, &self.element.mask_images);
+                    self.draw_image_layer(scene, idx, &layers);
                 },
             );
         }
